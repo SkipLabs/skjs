@@ -351,6 +351,27 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Relationship to TypeScript**: `tsc` rejects only a purely-`void` condition (TS1345) and always-truthy function/method references (TS2774). `boolean`, `safe`, and `typescript` are never more permissive than `tsc` (they reject at least those). `javascript` *is* more permissive: it accepts any condition, including pure `void` and always-truthy function refs that `tsc` rejects.
 - **Verified by**: `tests/projects/truthiness-{boolean,safe,typescript,javascript}/`
 
+
+### 30. The `this` Parameter — Differences from TypeScript
+SKJS supports the `this` parameter (explicit `this: T`, the implicit class
+`this` on every method, and `.call`/`.apply`/`.bind`). Only the places where it
+**differs from TypeScript** are documented here — it is soundly stricter in some
+cases and conservatively under-approximates a few others.
+
+- **Detached method calls are rejected** (sound; `tsc --strict` accepts them).
+  `const g = obj.m; g()` loses the receiver, so the `this` context (`void`) is
+  not assignable to the method's `this`.
+- **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
+  `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
+  `this` and accepts any receiver; SKJS requires the class instance, since the
+  method body reads the class's fields off the rebound `this`.
+- **Generic call signatures** report "Unbound field" for `.call`/`.apply`/`.bind`
+  (TS resolves their type parameters to `unknown` through these methods).
+- **`.apply` models only required positional parameters**, and partial
+  application **`.bind(thisArg, ...args)`** is rejected (a `never[]` rest) rather
+  than dropping the bound parameters (`OmitThisParameter`).
+- **Verified by**: `tests/expect-error/this-parameter*.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
