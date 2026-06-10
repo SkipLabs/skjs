@@ -182,16 +182,22 @@ mutable class TypePp{
           pp.out(level, margin, ">");
         };
         pp.out(level, margin, "(");
-        tfun.thisParam.each(thisTy -> {
+        tfun.thisParam.tyOpt().each(thisTy -> {
           pp.out(level, margin, "this: ");
           pp.type(level, margin, thisTy);
         });
         for (i => param in tfun.params) {
-          if (i != 0 || tfun.thisParam.isSome()) pp.out(level, margin, ", ");
+          if (i != 0 || tfun.thisParam.tyOpt().isSome()) {
+            pp.out(level, margin, ", ")
+          };
           pp.type(level, margin, param)
         };
         for (i => param in tfun.optionalParams) {
-          if (i != 0 || tfun.params.size() != 0 || tfun.thisParam.isSome()) {
+          if (
+            i != 0 ||
+            tfun.params.size() != 0 ||
+            tfun.thisParam.tyOpt().isSome()
+          ) {
             pp.out(level, margin, ", ")
           };
           pp.out(level, margin, "_?:");
@@ -201,7 +207,7 @@ mutable class TypePp{
           if (
             tfun.optionalParams.size() != 0 ||
             tfun.params.size() != 0 ||
-            tfun.thisParam.isSome()
+            tfun.thisParam.tyOpt().isSome()
           ) {
             pp.out(level, margin, ", ")
           };
@@ -232,7 +238,7 @@ mutable class TypePp{
         };
         pp.out(level, margin, "(");
         pp.newLine();
-        tfun.thisParam.each(thisTy -> {
+        tfun.thisParam.tyOpt().each(thisTy -> {
           pp.out(level, margin, "this: ");
           pp.type(level, margin, thisTy);
           pp.out(level, margin, ",");
