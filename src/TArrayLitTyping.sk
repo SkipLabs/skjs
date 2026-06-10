@@ -40,6 +40,18 @@
  *   2b. u2 contains Array<U> → commit to Array<union(elts)>
  *   2c. u2 is Tuple[...] → commit to Tuple[elts], check element subtyping
  *
+ * ## Fresh Literal Elements
+ *
+ * An element written as a direct primitive literal (`0`, `'a'`, `-1`, ...)
+ * additionally records its precise literal type (TArrayLit.freshElts). The
+ * element checks in cases 2b and 2c use the precise type when the target
+ * demands literal precision -- it contains a literal type, or is an unbound
+ * inference variable whose constraints do -- and the widened element type
+ * otherwise. This mirrors TS fresh literal types: `[[0, 1]]` matches
+ * Array<[0, number]> and infers K = 0 under `K extends 0 | 1`, while an
+ * unconstrained K still infers number. Freshness never escapes: every
+ * commitment uses the target type or the widened element types.
+ *
  * See docs/delayed-array-literal-typing.tex for the formal type theory.
  */
 
@@ -163,16 +175,101 @@ class ArrayLitTyping() {
 
   // Creates ArrayLit<α, elts> with fresh type variable α.
   // Example: [1, 2] -> ArrayLit<α, elts=[number, number]>
+  // freshElts[i] carries the precise literal type of element i when it was a
+  // direct primitive literal (see TArrayLit), None otherwise.
   // Precondition: elementTypes must be non-empty (empty arrays are handled separately).
   static fun typeFromLiteral(
     tcenv: mutable TCEnv,
     pos: PosRange,
     elementTypes: Array<TType>,
+    freshElts: Array<?TType>,
   ): TType {
     invariant(!elementTypes.isEmpty());
+    invariant(elementTypes.size() == freshElts.size());
     tvar = tcenv.subst.gen(pos);
     tcenv.subst.setOrigin(tvar, FromArrayLiteral(pos));
-    TType::arrayLit(tvar, elementTypes)
+    TType::arrayLit(tvar, elementTypes, freshElts)
+  }
+
+  // True when checking against `target` should keep a fresh literal precise:
+  // the target contains a primitive literal type, or it is an unbound
+  // inference variable one of whose constraints does. This mirrors TS, which
+  // keeps a fresh literal type when the contextual type includes a literal
+  // type (so `0` matches a parameter of type `0`, or infers `K = 0` under
+  // `K extends 0 | 1`) and widens it to its base type otherwise (so an
+  // unconstrained `K` infers `number`).
+  // Peeks on a clone of the substitution: resolving the target covariantly on
+  // the live substitution would close open inference variables prematurely.
+  static private fun targetExpectsLiteral(
+    subst: mutable Subst,
+    tenv: TEnv,
+    target: TType,
+  ): Bool {
+    target.getSingleVar() match {
+    | Some(tvar) if (subst.isUnbound(tvar)) ->
+      return tvar.constraints.any(cstr ->
+        ArrayLitTyping::containsLiteralType(subst, tenv, cstr)
+      )
+    | _ -> void
+    };
+    ArrayLitTyping::containsLiteralType(subst, tenv, target)
+  }
+
+  // Returns true if ty resolves to something containing a primitive literal
+  // type (a TPrimValue carrying concrete values).
+  static private fun containsLiteralType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): Bool {
+    ty.getSTypes(subst.clone(), tenv, Covariant()) match {
+    | Some(stypes) ->
+      stypes.any(stype ->
+        stype match {
+        | TPrimValue(_, Some _, _) -> true
+        | _ -> false
+        }
+      )
+    | None() -> false
+    }
+  }
+
+  // The type to check element i against `target`: its precise fresh literal
+  // type when the target demands literal precision, the widened element type
+  // otherwise.
+  static private fun effectiveElt(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+    i: Int,
+    target: TType,
+  ): TType {
+    arrLit.freshElts[i] match {
+    | Some(precise) ->
+      if (ArrayLitTyping::targetExpectsLiteral(subst, tenv, target)) {
+        precise
+      } else {
+        arrLit.tupleElts[i]
+      }
+    | None() -> arrLit.tupleElts[i]
+    }
+  }
+
+  // Like arrayLitEltType, but uses the precise fresh literal types when the
+  // target element type demands literal precision.
+  static private fun arrayLitEltTypeForTarget(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+    target: TType,
+  ): TType {
+    keepFresh = ArrayLitTyping::targetExpectsLiteral(subst, tenv, target);
+    eltType = TType::bottom(arrLit.tvar.pos);
+    for (i => elt in arrLit.tupleElts) {
+      eff = if (keepFresh) arrLit.freshElts[i].default(elt) else elt;
+      !eltType = TType::union(subst, tenv, eltType, eff)
+    };
+    eltType
   }
 
   // Returns true if index type forces array refinement (string, symbol, or non-literal number).
@@ -255,12 +352,17 @@ class ArrayLitTyping() {
       // Case 2b: ArrayLit<α, elts> <: Array<U1> | ... | Array<Un>
       arrayCandidates = ArrayLitTyping::arrayInstArgs(u2);
       if (!arrayCandidates.isEmpty()) {
-        litEltType = ArrayLitTyping::arrayLitEltType(subst, tenv, arrLit);
         expectedEltType = TType::unionN(
           subst,
           tenv,
           arrLit.tvar.pos,
           arrayCandidates,
+        );
+        litEltType = ArrayLitTyping::arrayLitEltTypeForTarget(
+          subst,
+          tenv,
+          arrLit,
+          expectedEltType,
         );
         result = TType::isSub(subst, tenv, litEltType, expectedEltType);
         // Covariance is sound here: we're committing an uncommitted literal,
@@ -285,7 +387,14 @@ class ArrayLitTyping() {
         committedTy = TType::tuple(arrLit.tvar.pos, targetElts, false);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
         for (i in Range(0, targetElts.size())) {
-          TType::isSub(subst, tenv, arrLit.tupleElts[i], targetElts[i]) match {
+          eltTy = ArrayLitTyping::effectiveElt(
+            subst,
+            tenv,
+            arrLit,
+            i,
+            targetElts[i],
+          );
+          TType::isSub(subst, tenv, eltTy, targetElts[i]) match {
           | STOk() -> void
           | err @ STError _ ->
             subst.restore(savedSubst);
