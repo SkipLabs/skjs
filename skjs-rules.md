@@ -539,6 +539,39 @@ x = 5; // Error: Type is not assignable to the variable's type
 - An **array-destructuring assignment** writes each of its targets the same way, so all of the above applies per target (SkipLabs/skjs#839): `[x] = [5]` behaves exactly like `x = 5`, `[o.f] = [5]` like `o.f = 5`, and a target captured by a lambda is checked like any other captured write. Element types are derived as they are for a destructuring declaration: per index from a tuple (a target past the end reads `undefined`), or the iterator's element type widened with `undefined` from anything else iterable, with the rest target taking the remaining elements. Destructuring a rest allocates a *fresh* array, so nothing aliases it at a fixed arity: it is typed like an array literal and can be read as either a tuple or a growable array, whichever the target asks for (`[x, ...r] = [1, 2, 3]` works for `r: [number, number]` and for `r: number[]`). An **existing** tuple stays un-assignable to an array (`const a: number[] = tup` is rejected, where tsc accepts it unsoundly), because writing through the array view would break the tuple's arity. Object-destructuring assignment (`({ a: x } = e)`) remains unsupported.
 - **Verified by**: `tests/expect-error/annotated-write-enforcement.ts`, `tests/expect-error/captured-local-write.ts`
 
+### 32. The `this` Parameter — Differences from TypeScript
+SKJS supports the `this` parameter (explicit `this: T`, the implicit class
+`this` on every method, and `.call`/`.apply`/`.bind`). Only the places where it
+**differs from TypeScript** are documented here — it is soundly stricter in some
+cases and conservatively under-approximates a few others.
+
+- **Detached method calls are rejected** (sound; `tsc --strict` accepts them).
+  `const g = obj.m; g()` loses the receiver, so the `this` context (`void`) is
+  not assignable to the method's `this`.
+- **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
+  `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
+  `this` and accepts any receiver; SKJS requires the class instance, since the
+  method body reads the class's fields off the rebound `this`.
+- **Generic call signatures** report "Unbound field" for `.call`/`.apply`/`.bind`
+  (TS resolves their type parameters to `unknown` through these methods).
+- **`.apply` models only required positional parameters**, and partial
+  application **`.bind(thisArg, ...args)`** is rejected (a `never[]` rest) rather
+  than dropping the bound parameters (`OmitThisParameter`).
+- **A no-`this` function type is a free-call permit** (sound; TS erases the
+  distinction). A `this`-declaring function or a class method is NOT assignable
+  where `() => R` is expected — `const b: () => void = fnBase` then `b()` would
+  run the body with no receiver — and neither is passing a method as a no-`this`
+  callback or storing one in a property-syntax member (`m: () => R`).
+- **Method-syntax members of object-literal types are attach-only.** In
+  `{ m(): R }` the member's receiver is the object it is accessed on (rendered
+  `(this: <shape>) => R`), which is what lets primitives and class instances
+  inhabit such shapes soundly. Extracting the member for a free call
+  (`const f = shape.m; f()`) or laundering it through a no-`this` type is
+  rejected, and `.call`/`.apply`/`.bind` are not synthesized for it (its
+  carrier type is erased). Property-syntax members stay genuinely free
+  functions.
+- **Verified by**: `tests/expect-error/this-parameter*.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
