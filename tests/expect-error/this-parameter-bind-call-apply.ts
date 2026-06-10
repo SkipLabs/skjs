@@ -67,9 +67,11 @@ function optionalCallWrongArg(): void {
   optional.call(ctx, 1, 2);
 }
 
-// Rebinding an implicit-this method via .call/.apply/.bind: for now any
-// receiver is accepted (TS's ThisParameterType of an implicit-this method is
-// `unknown`), including one that lacks the fields the body reads.
+// An implicit class `this` requires the .call/.apply/.bind receiver to be the
+// class instance. SKJS is soundly stricter than TS here: TS resolves an
+// implicit method's ThisParameterType to `unknown` and accepts any receiver,
+// but the method body reads the class's fields off the rebound `this`, so
+// binding it to an unrelated object would be unsound at runtime.
 class Impl {
   v: number = 1;
   mm(a: number): number {
@@ -83,6 +85,7 @@ function implicitRebindCompatibleOk(o: Impl, o2: Impl): void {
   let _b: number = bound(1);
 }
 function implicitRebindWrongReceiver(o: Impl): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   let _ = o.mm.call("anything", 1);
 }
 
