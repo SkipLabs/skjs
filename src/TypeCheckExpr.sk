@@ -500,11 +500,14 @@ extension class TypeChecker {
     // .bind in TS (they resolve to `unknown`), so rather than diverge we leave
     // those as "Unbound field" — a sound under-approximation.
     if (!f.tparams.isEmpty()) return None();
-    // An implicit class `this` is `unknown` to `.call`/`.apply`/`.bind`
-    // (TS's `ThisParameterType` is `unknown` for an implicit this), so any
-    // thisArg is accepted. An explicit `this: T` constrains the thisArg to T.
+    // The thisArg of `.call`/`.apply`/`.bind` is checked against the function's
+    // `this`. For an implicit class `this` we require the thisArg to be the
+    // class instance — TS resolves `ThisParameterType` to `unknown` here (so it
+    // accepts any thisArg), but that is unsound (the method body reads the
+    // class's fields off the rebound receiver), so SKJS is soundly stricter. An
+    // explicit `this: T` constrains to T; no declared `this` accepts anything.
     thisType = f.thisParam match {
-    | ImplicitClass _ -> TType::top(pos)
+    | ImplicitClass(t) -> t
     | Explicit(t) -> t
     | NoThis() -> TType::top(pos)
     };
