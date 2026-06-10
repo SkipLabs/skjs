@@ -497,6 +497,7 @@ extension class TFun {
       spreadParam,
       retType,
       cgNodes,
+      f1.thisParamImplicit && f2.thisParamImplicit,
     )
   }
 }
