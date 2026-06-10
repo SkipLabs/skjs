@@ -443,6 +443,7 @@ extension class TypeChecker {
               `${iterationKind} requires an array, string, or iterable type`,
             ),
           ],
+          TSCode(2488),
         )
       }
     };

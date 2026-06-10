@@ -1,7 +1,7 @@
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 const obj: { f: number } = { f: 1 };
 
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 const obj2: { f?: number } = {};
 
 function returningVoid(): void {}
@@ -47,5 +47,5 @@ const x11: number = maybeObj2()?.f;
 
 const x12: number | undefined = maybeObj2()?.f;
 
-// @ts-expect-error Unbound field: g
+// @skjs-expect-error Property 'g' does not exist on this type
 const x13: number | undefined = obj?.g;

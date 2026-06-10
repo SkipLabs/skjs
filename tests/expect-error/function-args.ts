@@ -44,7 +44,7 @@ function paramTypeOptionalCanBeUndefined2(p?: number): number {
   return paramTypeOptionalCanBeUndefinedWitness(p);
 }
 
-// @ts-expect-error A parameter cannot both be optional and have a default value
+// @skjs-expect-error A parameter cannot have both a question mark and an initializer
 function paramTypeDefaultOptional(_p?: number = 3): void {}
 
 // @skjs-expect-error Type of default value is not assignable to the parameter's type
@@ -82,7 +82,7 @@ function restTypeOptional(..._rest?: number[]): void {}
 // prettier-ignore
 // @ts-expect-error A rest parameter cannot be optional
 // @ts-expect-error A rest parameter cannot have an initializer
-// @ts-expect-error A parameter cannot both be optional and have a default value
+// @skjs-expect-error A parameter cannot have both a question mark and an initializer
 function restTypeDefaultOptional(..._rest?: number[] = new Array()): void {}
 
 // TODO: wrong type

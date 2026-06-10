@@ -99,8 +99,8 @@ function localUniqueSymbol(): void {
 // FIXME (maybe): unique symbol is allowed here for declared const
 // unique symbol in object property types is allowed for top-level const,
 // but Symbol() returns symbol, not a specific unique symbol
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
+// @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 const objWithUniqueSymbol: { prop: unique symbol } = { prop: Symbol() };
 
 ///////////////////////////////////////////////////////////////////////////////

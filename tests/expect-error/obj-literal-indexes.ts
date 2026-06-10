@@ -14,14 +14,14 @@ function testDualIndexedAssignment(): void {
 // Test: local object growth with type annotation should not grow
 function testAnnotatedLocalObject(): void {
   let obj: { x: number } = { x: 1 };
-  // @skjs-expect-error Unbound field: y
+  // @skjs-expect-error Property 'y' does not exist on this type
   obj.y = 2;
 }
 
 // Test: property access on object literal still errors for missing fields
 function testMissingFieldAccess(): void {
   const obj = { x: 10, y: 20 };
-  // @skjs-expect-error Unbound field: z
+  // @skjs-expect-error Property 'z' does not exist on this type
   const z = obj.z;
 }
 

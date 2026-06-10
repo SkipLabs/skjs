@@ -237,11 +237,11 @@ function getDefaultHost(): typeof AppConfig.DEFAULT_HOST {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Non-existent static member
-// @skjs-expect-error Unbound field: NONEXISTENT
+// @skjs-expect-error Property 'NONEXISTENT' does not exist on this type
 type NonExistentType = typeof AppConfig.NONEXISTENT;
 
 // Accessing instance field as static (should fail - instance fields not in static type)
-// @skjs-expect-error Unbound field: instanceField
+// @skjs-expect-error Property 'instanceField' does not exist on this type
 type InstanceAsStaticType = typeof AppConfig.instanceField;
 
 ///////////////////////////////////////////////////////////////////////////////

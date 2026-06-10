@@ -96,7 +96,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
         invariant_violation("Passing typeOnly should return only TypeOnlyDef")
       }
     };
-    fatalError(Array[(path.pos, `Type ${path} not found`)])
+    fatalError(Array[(path.pos, `Cannot find type '${path}'`)], TSCode(2304))
   }
 
   fun getAll(
@@ -122,6 +122,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
               `Internal error: encountered a namespace while getting '${path}'`,
             ),
           ],
+          SKJSCode(9999),
         )
       }
     };

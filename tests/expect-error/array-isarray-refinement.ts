@@ -125,7 +125,7 @@ function testArrayMethodOnNonArray(x: Array<number> | Foo): unknown {
   if (Array.isArray(x)) {
     return x.length;
   } else {
-    // @skjs-expect-error Unbound field: length
+    // @skjs-expect-error Property 'length' does not exist on this type
     return x.length;
   }
 }

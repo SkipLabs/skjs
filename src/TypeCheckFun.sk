@@ -147,9 +147,10 @@ extension class TypeChecker {
             Array[
               (
                 optionalPos,
-                "A parameter cannot both be optional and have a default value",
+                "A parameter cannot have both a question mark and an initializer",
               ),
             ],
+            TSCode(1015),
           )
         };
         savedScope = tcenv.scope;
@@ -170,9 +171,10 @@ extension class TypeChecker {
           Array[
             (
               modifier.pos,
-              `Forbidden modifier '${modifier}' for a function parameter`,
+              `Modifier '${modifier}' is not allowed on a function parameter`,
             ),
           ],
+          SKJSCode(2067),
         )
       };
       paramType
@@ -216,8 +218,12 @@ extension class TypeChecker {
       funSig = this.getFunSig(subst.context, fd);
       subst.error(
         Array[
-          (funSig.retType.i0, `Missing return type for '${fd.name.getName()}'`),
+          (
+            funSig.retType.i0,
+            `Function '${fd.name.getName()}' must have an explicit return type annotation`,
+          ),
         ],
+        TSCode(7010),
       )
     };
     fd.isAsync match {

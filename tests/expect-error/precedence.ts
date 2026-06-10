@@ -17,8 +17,8 @@ function testUnaryVsMemberAccess(): boolean {
 
 function testUnaryVsMemberAccessError(): void {
   let obj = { prop: true };
-  // @skjs-expect-error Unbound field: prop
   // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error Property 'prop' does not exist on this type
   let result = (!obj).prop;
 }
 
@@ -37,8 +37,8 @@ function testUnaryVsMethodCallError(): boolean {
       return true;
     },
   };
-  // @skjs-expect-error Unbound field: met
   // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error Property 'met' does not exist on this type
   return (!obj).met();
 }
 

@@ -46,6 +46,7 @@ extension class TypeChecker {
     | _ ->
       subst.error(
         Array[(ty.pos, "Internal error: new should produce an object")],
+        SKJSCode(9999),
       );
       ty
     }
@@ -259,6 +260,7 @@ fun paramsError<T>(pos: PosRange): T {
           "Use type assertions with 'as' keyword instead",
       ),
     ],
+    SKJSCode(2061),
   )
 }
 

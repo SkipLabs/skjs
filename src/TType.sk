@@ -1468,12 +1468,13 @@ class TFields protected {
           Array[
             (
               brandField.get.pos,
-              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${rawPrettyPrint(
+              `Brand field ${kArrayBrandFieldName} must be 'true' or 'false', but got ${rawPrettyPrint(
                 false,
                 pp -> pp.type(0, Margin{}, brandField.get),
               )}`,
             ),
           ],
+          SKJSCode(2051),
         )
       | brandIsArray @ Some _ -> !isArray = brandIsArray
       }
@@ -1714,13 +1715,14 @@ class TFields protected {
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
     fatalError(
       Array[
-        (pos, `Unbound field: ${fieldName}`),
+        (pos, `Property '${fieldName}' does not exist on this type`),
         (
           pos,
           "Possible options are:\n" +
             this.fields.toArray().map(x -> x.name).join("\n"),
         ),
       ],
+      TSCode(2339),
     )
   }
 

@@ -125,7 +125,7 @@ function testInstanceOf(): MyCls {
 
 function testInOperator(): number {
   if ("a" in gUnionObj) {
-    // @skjs-expect-error Unbound field: a
+    // @skjs-expect-error Property 'a' does not exist on this type
     return gUnionObj.a;
   }
   return 0;

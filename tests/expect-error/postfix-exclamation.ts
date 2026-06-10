@@ -598,8 +598,8 @@ function testOptionalPropertyStillOptional(x: { field?: number }): number {
 
 // Wrong field access after non-null assertion
 function testWrongFieldAccessAfterNonNull(x: { a: number } | null): string {
+  // @skjs-expect-error Property 'b' does not exist on this type
   // @skjs-expect-error The non-null assertion operator '!' is not allowed
-  // @ts-expect-error Unbound field: b
   return x!.b;
 }
 
@@ -703,8 +703,8 @@ function testAssignmentToWrongType(x: number | null): string {
 
 // Using ! on nested object with wrong path
 function testWrongNestedPath(x: { a: { b: number } } | null): string {
+  // @skjs-expect-error Property 'c' does not exist on this type
   // @skjs-expect-error The non-null assertion operator '!' is not allowed
-  // @ts-expect-error Unbound field: c
   return x!.a.c;
 }
 

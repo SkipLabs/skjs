@@ -156,9 +156,10 @@ extension class TypeChecker {
             Array[
               (
                 pos,
-                "A unique symbol type requires a Symbol() call as initializer",
+                "A 'unique symbol' type requires a 'Symbol()' call as its initializer",
               ),
             ],
+            SKJSCode(2057),
           )
         }
       } else {
@@ -185,9 +186,10 @@ extension class TypeChecker {
           Array[
             (
               pos,
-              "Invalid type for constant, only primitive types (not objects) are allowed",
+              "The type of a top-level constant must be a primitive type, not an object",
             ),
           ],
+          SKJSCode(2062),
         )
       }
     | _ -> void
