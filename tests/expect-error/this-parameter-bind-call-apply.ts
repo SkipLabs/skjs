@@ -89,6 +89,13 @@ function implicitRebindWrongReceiver(o: Impl): void {
   let _ = o.mm.call("anything", 1);
 }
 
+// Partial application is not modeled: extra bound args to .bind are rejected
+// (a never[] rest) rather than silently ignored, like TS's TS2554.
+function bindExtraArgsRejected(o: Impl): void {
+  // @skjs-expect-error Invalid argument
+  let _ = o.mm.bind(o, 99);
+}
+
 // .apply's argument array is omittable when the function takes no parameters.
 function noArgs(this: Ctx): number {
   return 0;

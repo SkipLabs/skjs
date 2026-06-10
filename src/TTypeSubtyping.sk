@@ -436,7 +436,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   | STTypeParameterMismatch()
   | STInvalidSpread(TType)
   | STRecFunTParam(?STErrorOnTType, Int)
-  | STRecFunThisParam(?STErrorOnTType)
+  | STRecFunThisParam(STErrorOnTType)
   | STRecFunParam(?STErrorOnTType, Int)
   | STRecFunOptionalSpread(STErrorOnTType, Int)
   | STRecFunSpread(?STErrorOnTType)
@@ -456,8 +456,6 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         None(),
         List[(pos1, `The type parameter${iStr} does not define a constraint`)],
       )
-    | STRecFunThisParam(None(), _f1, _f2) ->
-      (None(), List[(pos1, "The this parameter is missing")])
     | STRecFunParam(None(), i, _f1, _f2) ->
       (None(), List[(pos2, `The parameter ${i + 1} is missing`)])
     | STRecFunSpread(None(), _f1, _f2) ->
@@ -473,7 +471,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         Some((pos1, `Their type parameters${iStr} are not compatible`)),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
-    | STRecFunThisParam(Some(err), _f1, _f2) ->
+    | STRecFunThisParam(err, _f1, _f2) ->
       (
         Some((pos1, "Their this parameters are not compatible")),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
@@ -1574,7 +1572,7 @@ extension class TFun {
       this2 = f2.thisParam.tyOpt().fromSome();
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
-      | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
+      | err @ STErrorOnTType _ -> return STRecFunThisParam(err, f1, f2)
       }
     };
 
