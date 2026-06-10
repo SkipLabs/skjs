@@ -14,7 +14,6 @@ class Other {
 }
 
 class MethodHolder {
-  // @skjs-expect-error TODO: support this parameter
   m(this: Obj, x: number): void {}
 }
 
@@ -34,7 +33,6 @@ class Base {
 class Derived extends Base {}
 
 class BaseMethod {
-  // @skjs-expect-error TODO: support this parameter
   m(this: Base): void {}
 }
 declare const d: Derived & BaseMethod;

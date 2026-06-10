@@ -11,7 +11,6 @@ class TestFirstParameter {
 
 // this parameter as first parameter
 class TestThisFirst {
-  // @skjs-expect-error TODO: support this parameter
   method(this: MyContext, x: number): void {}
 }
 
@@ -29,14 +28,13 @@ type FuncWithThis = (this: MyContext, x: number) => number;
 // Function type with this parameter can be used
 function takesCallback(f: (this: MyContext, x: number) => number): void {}
 
-// this parameter in regular function definition (not supported yet)
-// @skjs-expect-error TODO: support this parameter
+// this parameter in regular function definition
 function withThisParam(this: MyContext, x: number): void {}
 
 // a constructor cannot declare an explicit this parameter (TS2681)
 class TestConstructorThis {
   x: number = 0;
-  // @skjs-expect-error TODO: support this parameter
+  // @skjs-expect-error A constructor cannot have a this parameter
   constructor(this: TestConstructorThis, n: number) {
     this.x = n;
   }
