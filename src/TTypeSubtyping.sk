@@ -900,7 +900,12 @@ extension class TFields {
             | STOk() -> void
             }
           } else {
-            TType::isSub(subst, tenv, idx1.get, f2.get) match {
+            // f2 is optional (checked above), so reads through it yield
+            // f2.get | undefined — union undefined into the target like the
+            // matching-field path does, so an index whose value type
+            // includes undefined can satisfy the optional field.
+            f2type = TType::unionUndefined(subst, tenv, f2.get, f2.pos);
+            TType::isSub(subst, tenv, idx1.get, f2type) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(
                 err,

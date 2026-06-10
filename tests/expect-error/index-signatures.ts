@@ -128,14 +128,11 @@ function assignStringIndexToOptional(x: StringIndex): { a?: number } {
   return x;
 }
 
-// FIXME: should be accepted — reading the optional field yields
-// `number | undefined`, which covers everything the index can hold; the
-// optional-field check compares against bare `number` instead of unioning
-// undefined in (the matching-field path already unions it).
+// Accepted: reading the optional field yields `number | undefined`, which
+// covers everything the index can hold.
 function assignUndefinedIndexToOptional(x: {
   [k: string]: number | undefined;
 }): { a?: number } {
-  // @skjs-expect-error Invalid return type
   return x;
 }
 
