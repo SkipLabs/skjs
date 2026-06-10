@@ -67,19 +67,23 @@ function optionalCallWrongArg(): void {
   optional.call(ctx, 1, 2);
 }
 
-// An implicit class `this` is `unknown` to .call/.apply/.bind, so any receiver
-// is accepted (TS's ThisParameterType of an implicit-this method is `unknown`).
+// Rebinding an implicit-this method via .call/.apply/.bind: for now any
+// receiver is accepted (TS's ThisParameterType of an implicit-this method is
+// `unknown`), including one that lacks the fields the body reads.
 class Impl {
   v: number = 1;
   mm(a: number): number {
-    return a;
+    return this.v + a;
   }
 }
-function implicitRebindOk(o: Impl): void {
-  let _c: number = o.mm.call("anything", 1);
-  let _a: number = o.mm.apply(42, [1]);
-  const bound: (a: number) => number = o.mm.bind(undefined);
+function implicitRebindCompatibleOk(o: Impl, o2: Impl): void {
+  let _c: number = o.mm.call(o2, 1);
+  let _a: number = o.mm.apply(o2, [1]);
+  const bound: (a: number) => number = o.mm.bind(o2);
   let _b: number = bound(1);
+}
+function implicitRebindWrongReceiver(o: Impl): void {
+  let _ = o.mm.call("anything", 1);
 }
 
 // .apply's argument array is omittable when the function takes no parameters.
