@@ -303,28 +303,28 @@ function aliasIndexAccess(x: AliasIndex): number | undefined {
 // Test 20: Invalid key types (all rejected)
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type NeverIndex = { [k: never]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type BooleanIndex = { [k: boolean]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type NullIndex = { [k: null]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type UndefinedIndex = { [k: undefined]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type StringOrBoolIndex = { [k: string | boolean]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type ObjectIndex = { [k: object]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type LiteralIndex = { [k: "a" | "b"]: number };
 
-// @skjs-expect-error An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be 'string', 'number', or 'symbol'
 type GenericIndex<K> = { [k: K]: number };
 
 ///////////////////////////////////////////////////////////////////////////////

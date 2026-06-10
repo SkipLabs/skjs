@@ -1044,7 +1044,8 @@ base class TEnv{
               "'readonly' type modifier is only permitted on array and tuple literal types.",
             ),
           ],
-        ); // TS1354
+          TSCode(1354),
+        );
         this.normalize(tcenvb, ro)
       }
     | TAExtends _ ->
@@ -1305,9 +1306,10 @@ base class TEnv{
           Array[
             (
               expr.pos,
-              "typeof operand must be an identifier or property access",
+              "A 'typeof' operand must be an identifier or a property access",
             ),
           ],
+          SKJSCode(2052),
         )
       };
       return tc.expr(tcenv, expr, false)
@@ -1357,7 +1359,7 @@ base class TEnv{
           Array[
             (
               propertyName.pos,
-              `Cannot get type for property of non-object type ${prettyPrintType(
+              `Cannot access a property on non-object type ${prettyPrintType(
                 false,
                 baseType,
                 subst,
@@ -1365,13 +1367,18 @@ base class TEnv{
               )}`,
             ),
           ],
+          TSCode(2339),
         )
       }
     | _ ->
       fatalError(
         Array[
-          (expr.pos, "typeof operand must be an identifier or property access"),
+          (
+            expr.pos,
+            "A 'typeof' operand must be an identifier or a property access",
+          ),
         ],
+        SKJSCode(2052),
       )
     }
   }
@@ -1430,9 +1437,10 @@ base class TEnv{
       Array[
         (
           pos,
-          "An index signature parameter type must be string, number, or symbol",
+          "An index signature parameter type must be 'string', 'number', or 'symbol'",
         ),
       ],
+      TSCode(1268),
     )
   }
 
@@ -1649,9 +1657,10 @@ base class TEnv{
         Array[
           (
             keyExpr.pos,
-            "Computed property key must be a literal or unique symbol",
+            "A computed property key must be a literal or a 'unique symbol'",
           ),
         ],
+        TSCode(1170),
       )
     }
   }
@@ -1674,8 +1683,12 @@ base class TEnv{
           if (r is OFRemoveReadonly _ && !(fd.name is FNIn _)) {
             tcenvb.error(
               Array[
-                (r.pos, "'-readonly' modifier can only appear in mapped types"),
+                (
+                  r.pos,
+                  "'-readonly' modifier can only appear in a mapped type",
+                ),
               ],
+              SKJSCode(2054),
             )
           }
         );
@@ -1696,7 +1709,13 @@ base class TEnv{
         | FNIn(boundName, kType, asOpt, op) ->
           if (asOpt.isSome()) {
             tcenvb.error(
-              Array[(fd.pos, "Mapped type 'as' clause is not supported yet")],
+              Array[
+                (
+                  fd.pos,
+                  "Mapped type 'as' clauses are not yet supported by SKJS",
+                ),
+              ],
+              SKJSCode(9028),
             )
           };
           isFieldOptional = op match {
@@ -1756,15 +1775,22 @@ base class TEnv{
                 Array[
                   (
                     errPos,
-                    "Mapped type with abstract key type is not supported yet",
+                    "Mapped types with an abstract key type are not yet supported by SKJS",
                   ),
                 ],
+                SKJSCode(9029),
               )
             }
           } else {
             if (!shapeOk) {
               tcenvb.error(
-                Array[(fd.pos, "Mapped type key shape is not supported yet")],
+                Array[
+                  (
+                    fd.pos,
+                    "This mapped type key shape is not yet supported by SKJS",
+                  ),
+                ],
+                SKJSCode(9030),
               )
             } else {
               // Bind P to a deliberately-unresolvable inst type. If V references
