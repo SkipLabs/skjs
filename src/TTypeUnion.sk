@@ -411,14 +411,24 @@ extension class TFun {
     // their this types. A signature with no declared `this` is `this: unknown`
     // (the identity for intersection), so it keeps the other side rather than
     // widening the result back to unknown — matching TS, which requires the
-    // receiver to satisfy every branch's `this`.
-    thisParam = (f1.thisParam, f2.thisParam) match {
-    | (None(), None()) -> None()
-    | (None(), some)
-    | (some, None()) ->
-      some
-    | (Some(this1), Some(this2)) ->
-      Some(TType::inter(subst, tenv, this1, this2))
+    // receiver to satisfy every branch's `this`. The result stays an implicit
+    // class this only when BOTH branches are implicit; any explicit `this`
+    // makes the union explicit (contravariant).
+    thisParam: ThisParam = (f1.thisParam, f2.thisParam) match {
+    | (NoThis(), other)
+    | (other, NoThis()) ->
+      other
+    | (ImplicitClass(t1), ImplicitClass(t2)) ->
+      ImplicitClass(TType::inter(subst, tenv, t1, t2))
+    | (tp1, tp2) ->
+      Explicit(
+        TType::inter(
+          subst,
+          tenv,
+          tp1.tyOpt().fromSome(),
+          tp2.tyOpt().fromSome(),
+        ),
+      )
     };
 
     spread1elt = f1.spreadParam match {
@@ -503,7 +513,6 @@ extension class TFun {
       spreadParam,
       retType,
       cgNodes,
-      f1.thisParamImplicit && f2.thisParamImplicit,
     )
   }
 }

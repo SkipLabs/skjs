@@ -503,10 +503,10 @@ extension class TypeChecker {
     // An implicit class `this` is `unknown` to `.call`/`.apply`/`.bind`
     // (TS's `ThisParameterType` is `unknown` for an implicit this), so any
     // thisArg is accepted. An explicit `this: T` constrains the thisArg to T.
-    thisType = if (f.thisParamImplicit) {
-      TType::top(pos)
-    } else {
-      f.thisParam.default(TType::top(pos))
+    thisType = f.thisParam match {
+    | ImplicitClass _ -> TType::top(pos)
+    | Explicit(t) -> t
+    | NoThis() -> TType::top(pos)
     };
     funType = (tfun: TFun) ->
       TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
@@ -515,7 +515,7 @@ extension class TypeChecker {
       Some(
         TFun(
           Array[],
-          None(),
+          NoThis(),
           Array[thisType].concat(f.params),
           f.optionalParams,
           f.spreadParam,
@@ -540,7 +540,7 @@ extension class TypeChecker {
         Some(
           TFun(
             Array[],
-            None(),
+            NoThis(),
             applyParams,
             applyOptional,
             None(),
@@ -552,12 +552,12 @@ extension class TypeChecker {
     } else {
       // bind(thisArg) => the function with its `this` removed, preserving the
       // remaining (incl. optional/rest) parameters.
-      bound = f with {thisParam => None(), thisParamImplicit => false};
+      bound = f with {thisParam => NoThis()};
       boundTy = funType(bound);
       Some(
         TFun(
           Array[],
-          None(),
+          NoThis(),
           Array[thisType],
           Array[],
           None(),
@@ -2379,7 +2379,7 @@ extension class TypeChecker {
         TFuns::singleFun(
           TFun(
             funClauses,
-            None(),
+            NoThis(),
             normalParams.toArray(),
             optionalParams.toArray(),
             spreadParam,
@@ -2877,32 +2877,31 @@ extension class TypeChecker {
       // composes with signatures whose thisParam is a class instance — the
       // same convention the field-access path uses at src/TypeCheckExpr.sk
       // when resolving `.field` on a TPrimValue.
-      tfun.thisParam.each(expectedThis -> {
-        // An implicit class `this` is the type of the object the method was
-        // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which
-        // supplies `thisArgOpt`) inherently satisfies it. Skip the check there:
-        // for a union receiver the method's `this` is the *intersection* of the
-        // branches, and `union <: intersection` would spuriously fail even
-        // though each branch trivially satisfies its own `this`. Only a free /
-        // detached call (receiver `void`) needs the check, to reject
-        // `const g = o.m; g()`. An explicit `this: T` is always checked — it may
-        // differ from the receiver.
-        if (tfun.thisParamImplicit && thisArgOpt.isSome()) {
-          void
-        } else {
-          actualThis = thisArgOpt match {
-          | Some(t) -> this.autoBoxPrimitiveReceiver(tcenv, t)
-          | None() -> TType::single(TPrimUnit(TVoid(), pos))
-          };
-          this.checkSubType(
-            tcenv,
-            pos,
-            "The 'this' context is not assignable to method's 'this' type",
-            actualThis,
-            expectedThis,
-          )
-        }
-      });
+      tfun.thisParam match {
+      | NoThis() -> void
+      // An implicit class `this` is the type of the object the method was
+      // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
+      // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
+      // receiver the method's `this` is the *intersection* of the branches, and
+      // `union <: intersection` would spuriously fail even though each branch
+      // trivially satisfies its own `this`. Only a free/detached call (receiver
+      // `void`) needs the check, to reject `const g = o.m; g()`.
+      | ImplicitClass _ if (thisArgOpt.isSome()) -> void
+      // Explicit `this: T`, or a detached call on an implicit this.
+      | tp ->
+        expectedThis = tp.tyOpt().fromSome();
+        actualThis = thisArgOpt match {
+        | Some(t) -> this.autoBoxPrimitiveReceiver(tcenv, t)
+        | None() -> TType::single(TPrimUnit(TVoid(), pos))
+        };
+        this.checkSubType(
+          tcenv,
+          pos,
+          "The 'this' context is not assignable to method's 'this' type",
+          actualThis,
+          expectedThis,
+        )
+      };
 
       version = tcenv.subst.version;
       loop {

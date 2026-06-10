@@ -1545,22 +1545,23 @@ extension class TFun {
       !tsubst[tparam2.id] = tparam1;
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
-    // `thisParam` is contravariant. A signature that does not declare a
-    // this parameter is treated as `this: unknown`, so it is compatible
-    // with any declared this type on either side. When both sides carry an
-    // implicit class `this` (the receiver is the object itself), they are
-    // treated as mutually compatible — the per-receiver check happens at
-    // call sites, not during signature subtyping. Without this exemption,
-    // generic container variance (e.g. `ReadonlyArray<Dog>` vs
-    // `ReadonlyArray<Animal>`) and subclass override compatibility would
-    // regress. Explicit `this: T` (thisParamImplicit false) keeps full
-    // contravariance.
+    // `this` handling, by the kind of each side's ThisParam:
+    //  - NoThis (undeclared) is `this: unknown`, compatible with anything.
+    //  - An explicit `this: T` is contravariant.
+    //  - Two implicit class thises are mutually compatible — the receiver is
+    //    the object that carries the method, so the per-receiver check happens
+    //    at the call site, not here. Without this, generic-container variance
+    //    (`ReadonlyArray<Dog>` vs `ReadonlyArray<Animal>`) and subclass override
+    //    compatibility would regress.
     (f1.thisParam, f2.thisParam) match {
-    | (_, None()) -> void
-    | (None(), Some(_)) -> void
-    | (Some(_), Some(_)) if (f1.thisParamImplicit && f2.thisParamImplicit) ->
+    | (NoThis(), _)
+    | (_, NoThis()) ->
       void
-    | (Some(this1), Some(this2)) ->
+    | (ImplicitClass _, ImplicitClass _) -> void
+    | _ ->
+      // At least one side declares an explicit `this: T`: contravariant.
+      this1 = f1.thisParam.tyOpt().fromSome();
+      this2 = f2.thisParam.tyOpt().fromSome();
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
