@@ -38,13 +38,11 @@ function testMixedTypesIndex(): void {
 // type (see skjs-rules.md "Index Signatures") — which makes
 // `{ ...; [k: string]: never; [s: symbol]: never }` a closed-object encoding.
 
-// Test: empty literal vs readonly optional field + never indexes
-// FIXME: should be accepted — the literal provably lacks `a`, and readonly
-// `a?` grants no write capability; rejection comes from the optional-field
-// leg poisoning the literal's synthetic index TVar with `number` before the
-// never-index check runs.
+// Test: empty literal vs readonly optional field + never indexes.
+// Accepted: the literal provably lacks `a` (reads yield undefined, included
+// in the optional field type) and a readonly `a?` grants no write
+// capability, so nothing conflicts with the never index.
 function testEmptyVsReadonlyOptionalNeverIndex(): void {
-  // @skjs-expect-error Invalid annotation
   const x: { readonly a?: number; [k: string]: never; [s: symbol]: never } = {};
 }
 
@@ -71,21 +69,16 @@ function testEmptyVsMutableOptionalNeverIndex(): void {
   const x: { a?: number; [k: string]: never; [s: symbol]: never } = {};
 }
 
-// Test: empty literal vs readonly optional + non-never index
-// FIXME: should be accepted — same poisoning as
-// testEmptyVsReadonlyOptionalNeverIndex, with a `number` index instead of
-// `never` (the optional leg locks the TVar to `string` first).
+// Test: empty literal vs readonly optional + non-never index (accepted;
+// the readonly optional field does not constrain the literal's index).
 function testEmptyVsReadonlyOptionalNumberIndex(): void {
-  // @skjs-expect-error Invalid annotation
   const x: { readonly a?: string; [k: string]: number } = {};
 }
 
 // Test: number-index leg routes through the same synthetic string TVar
-// FIXME: should be accepted — same poisoning as
-// testEmptyVsReadonlyOptionalNeverIndex; the number-index check reuses the
-// literal's synthetic string index, so it fails the same way.
+// (accepted; the number-index check reuses the literal's synthetic string
+// index, which the readonly optional field no longer poisons).
 function testEmptyVsReadonlyOptionalNumberNeverIndex(): void {
-  // @skjs-expect-error Invalid annotation
   const x: {
     readonly a?: number;
     [k: string]: never;
@@ -104,13 +97,12 @@ function testAliasMutableOptionalThenIndex(): void {
   const g: { [k: string]: boolean } = t;
 }
 
-// Test: aliasing with READONLY optional view then index view
-// FIXME: should be accepted — a readonly `a?` cannot write, so the value is
-// provably still `{}` when g reads it; today the read type poisons the TVar.
+// Test: aliasing with READONLY optional view then index view (accepted: a
+// readonly `a?` cannot write, so the value is provably still `{}` when g
+// reads it).
 function testAliasReadonlyOptionalThenIndex(): void {
   const t = {};
   const f: { readonly a?: number } = t;
-  // @skjs-expect-error Invalid annotation
   const g: { [k: string]: boolean } = t;
 }
 
@@ -123,42 +115,40 @@ function testAliasMutableOptionalThenOptional(): void {
   const g: { b?: string } = t;
 }
 
-// Test: never-index view then MUTABLE optional view
-// FIXME: UNSOUND acceptance — b sealed the literal's index to `never`, then
-// c grants write capability `number` at "a"; c can write t.a = 5 and a read
-// through b's view types it `never`. The second assignment must be rejected.
+// Test: never-index view then MUTABLE optional view. Rejected: b sealed the
+// literal's index to `never`, so c's write grant `number` at "a" is not
+// covered (c could write t.a = 5 and a read through b's view would type it
+// `never`).
 function testAliasNeverIndexThenMutableOptional(): void {
   const t = {};
   const b: { [k: string]: never } = t;
+  // @skjs-expect-error Invalid annotation
   const c: { a?: number } = t;
 }
 
-// Test: two readonly optional views of the same empty literal
-// FIXME: should be accepted — neither view can write, the value stays `{}`.
+// Test: two readonly optional views of the same empty literal (accepted:
+// neither view can write, the value stays `{}`).
 function testAliasTwoReadonlyOptionals(): void {
   const t = {};
   const f: { readonly a?: number } = t;
-  // @skjs-expect-error Invalid annotation
   const g: { readonly b?: string } = t;
 }
 
-// Test: widened write grant then index view
-// FIXME: UNSOUND acceptance — h's mutable `a?: number | string` grants
-// writing a string at "a", but only the setter side records it; i then reads
-// "a" as `number`. The third assignment must be rejected.
+// Test: widened write grant then index view. Rejected: h's mutable
+// `a?: number | string` grants writing a string at "a", so i cannot read
+// "a" as `number`.
 function testAliasWidenedGrantThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
   const h: { a?: number | string } = t;
+  // @skjs-expect-error Invalid annotation
   const i: { [k: string]: number } = t;
 }
 
 declare const sk: unique symbol;
 
-// Test: symbol analogue — readonly optional symbol field + never indexes.
-// Accepted today: the symbol-fields leg runs after the symbol-index check,
-// so the synthetic symbol TVar is already sealed to `never` (bottom) and the
-// readonly optional read check passes. Pins the working ordering.
+// Test: symbol analogue — readonly optional symbol field + never indexes
+// (accepted, same rule as testEmptyVsReadonlyOptionalNeverIndex).
 function testEmptyVsReadonlySymbolOptionalNeverIndex(): void {
   const x: {
     readonly [sk]?: number;
@@ -167,13 +157,11 @@ function testEmptyVsReadonlySymbolOptionalNeverIndex(): void {
   } = {};
 }
 
-// Test: symbol analogue with a MUTABLE optional symbol field
-// FIXME: accepted today only because of the string/symbol ordering
-// asymmetry (the symbol-index leg runs before the symbol-fields leg). For
-// uniformity with testEmptyVsMutableOptionalNeverIndex and for the aliasing
-// defense, the mutable grant `number` must be rejected against the sealed
-// `never` index.
+// Test: symbol analogue with a MUTABLE optional symbol field. Rejected,
+// uniformly with testEmptyVsMutableOptionalNeverIndex: the mutable grant
+// `number` is not covered by the `never` index.
 function testEmptyVsMutableSymbolOptionalNeverIndex(): void {
+  // @skjs-expect-error Invalid annotation
   const x: { [sk]?: number; [k: string]: never; [s: symbol]: never } = {};
 }
 
