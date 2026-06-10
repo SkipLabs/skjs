@@ -12,13 +12,19 @@ mutable base class TCEnvBase private {
     this.results.recordClassHierarchy{child, parent}
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
-    this.results.error(messages)
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode,
+  ): void {
+    this.results.error(messages, code)
   }
 
   // A non-fatal diagnostic: always recorded, never aborts (regardless of mode).
-  mutable fun warning(messages: Array<(PosRange, String)>): void {
-    this.results.warning(messages)
+  mutable fun warning(
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode,
+  ): void {
+    this.results.warning(messages, code)
   }
 
   mutable fun subtypingError(
@@ -26,8 +32,9 @@ mutable base class TCEnvBase private {
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
+    code: ErrorCode,
   ): void {
-    this.results.subtypingError(subst, tenv, messages, stErr)
+    this.results.subtypingError(subst, tenv, messages, stErr, code)
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -282,12 +289,15 @@ mutable class TCResultsAcc private {
     }
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode,
+  ): void {
     this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(NamingError(messages))
+    | EHKeepGoing() -> this.errors.push(NamingError(messages, code))
     | EHBacktrace()
     | EHDefault() ->
-      fatalError(messages)
+      fatalError(messages, code)
     }
   }
 
@@ -295,8 +305,11 @@ mutable class TCResultsAcc private {
   // error-handling mode and never throws: warnings are always collected and
   // never abort the current definition. Kept in a separate `warnings` list so
   // they can be reported without failing the build.
-  mutable fun warning(messages: Array<(PosRange, String)>): void {
-    this.warnings.push(NamingError(messages))
+  mutable fun warning(
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode,
+  ): void {
+    this.warnings.push(NamingError(messages, code))
   }
 
   mutable fun subtypingError(
@@ -304,18 +317,24 @@ mutable class TCResultsAcc private {
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
+    code: ErrorCode,
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->
-      this.errors.push(SubtypingError(subst.saveAll(), tenv, messages, stErr))
+      this.errors.push(
+        SubtypingError(subst.saveAll(), tenv, messages, stErr, code),
+      )
     | EHBacktrace()
     | EHDefault() ->
-      subtypingError(subst, tenv, messages, stErr)
+      subtypingError(subst, tenv, messages, stErr, code)
     }
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
-    this.error(Array[(pos, `Construction not supported: ${what} (ignored)`)])
+    this.error(
+      Array[(pos, `${what} is not supported by SKJS (ignored)`)],
+      SKJSCode(9050),
+    )
   }
 
   mutable fun collectErrors(f: () -> void): void {

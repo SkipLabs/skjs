@@ -77,7 +77,7 @@ out=$(
     | run_stdin
 )
 expect_contains "multiFileImportTypeError" \
-  "is not compatible with type string" "$out"
+  "is not assignable to type string" "$out"
 expect_contains "multiFileErrorPath" \
   "$TMPDIR/b.ts" "$out"
 
@@ -143,9 +143,9 @@ out=$(
     | run_stdin
 )
 expect_contains "warningKeptBeforeFatalError" \
-  "Useless '?.'" "$out"
+  "This '?.' is unnecessary" "$out"
 expect_contains "fatalErrorAfterWarning" \
-  "is not compatible with type string" "$out"
+  "is not assignable to type string" "$out"
 
 ########################################################################
 # Summary

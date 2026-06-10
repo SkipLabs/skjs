@@ -74,14 +74,21 @@ extension class TypeChecker {
                 Array[
                   (
                     defaultExpr.pos,
-                    "Default is useless because element cannot be undefined",
+                    "This default is unreachable because the element cannot be 'undefined'",
                   ),
                 ],
+                SKJSCode(2063),
               )
             };
             if (isAlwaysUndefined) {
               tcenv.warning(
-                Array[(defaultExpr.pos, "Element is always undefined")],
+                Array[
+                  (
+                    defaultExpr.pos,
+                    "This default is unreachable: the element is always 'undefined'",
+                  ),
+                ],
+                SKJSCode(2037),
               )
             };
             boundType = if (canBeUndefined) {
@@ -108,13 +115,14 @@ extension class TypeChecker {
             Array[
               (
                 pos,
-                `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
+                `This destructuring pattern has ${arrPat.size()} elements, which does not match the tuple's length`,
               ),
               (
                 type.pos,
                 `It is incompatible with a tuple of size ${tyl.size()}`,
               ),
             ],
+            SKJSCode(2036),
           )
         };
         rest match {
@@ -142,12 +150,13 @@ extension class TypeChecker {
           | None() ->
             fatalError(
               Array[
-                (pos, "Invalid tuple pattern"),
+                (pos, "Cannot use array-destructuring on a non-iterable type"),
                 (
                   type.pos,
                   `This is not iterable, it is ${this.ppType(tcenv, type)}`,
                 ),
               ],
+              TSCode(2461),
             )
           };
           for (i in Range(0, arrPat.size())) {
@@ -198,12 +207,13 @@ extension class TypeChecker {
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid tuple pattern"),
+              (pos, "Cannot use array-destructuring on this type"),
               (
                 type.pos,
                 `This is not a tuple, it is ${this.ppType(tcenv, type)}`,
               ),
             ],
+            TSCode(2461),
           )
         }
       }
@@ -218,9 +228,10 @@ extension class TypeChecker {
       | None() ->
         fatalError(
           Array[
-            (pos, "Invalid object pattern"),
+            (pos, "Cannot use object-destructuring on this type"),
             (type.pos, `This is ${this.ppType(tcenv, type)}`),
           ],
+          SKJSCode(2035),
         )
       | Some(stypes) ->
         for (stype in stypes) {
@@ -230,9 +241,10 @@ extension class TypeChecker {
           | _ ->
             fatalError(
               Array[
-                (pos, "Invalid object pattern"),
+                (pos, "Cannot use object-destructuring on this type"),
                 (type.pos, `This is ${this.ppType(tcenv, type)}`),
               ],
+              SKJSCode(2035),
             )
           };
           for (field in objectFields) {
@@ -247,9 +259,13 @@ extension class TypeChecker {
               | None() ->
                 tcenv.error(
                   Array[
-                    (fieldName.pos, `The field ${fieldName} is missing`),
+                    (
+                      fieldName.pos,
+                      `Property '${fieldName}' does not exist on this type`,
+                    ),
                     (type.pos, `Out of ${this.ppType(tcenv, type)}`),
                   ],
+                  TSCode(2339),
                 )
               | Some(tfield) ->
                 this.checkFieldAccess(tcenv, tfield, fieldName.pos);
@@ -294,9 +310,10 @@ extension class TypeChecker {
                 Array[
                   (
                     defaultPos,
-                    "Default is useless because field cannot be undefined",
+                    "This default is unreachable because the field cannot be 'undefined'",
                   ),
                 ],
+                SKJSCode(2063),
               )
             };
             this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
@@ -326,10 +343,22 @@ extension class TypeChecker {
     value match {
     | None() ->
       if (kind is BKConst()) {
-        tcenv.error(Array[(pos, "Const must be bound to a value")]);
+        tcenv.error(
+          Array[(pos, "A 'const' declaration must be initialized")],
+          TSCode(1155),
+        );
       };
       type match {
-      | None() -> fatalError(Array[(pos, "Was expecting a type or a value")])
+      | None() ->
+        fatalError(
+          Array[
+            (
+              pos,
+              "A binding must have either a type annotation or an initializer",
+            ),
+          ],
+          SKJSCode(2030),
+        )
       | Some(annotAst) ->
         ty = this.normalize(tcenv, annotAst);
         (ty, false)
@@ -351,7 +380,14 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
+        this.checkSubType(
+          tcenv,
+          annotAst.pos,
+          "Type of value is not assignable to the variable's type annotation",
+          ty,
+          annot,
+          TSCode(2322),
+        );
         (annot, true)
       }
     }
@@ -434,6 +470,7 @@ extension class TypeChecker {
             ),
             (field.pos, "Declared here"),
           ],
+          TSCode(2341),
         )
       }
     | FANever() ->
@@ -447,6 +484,7 @@ extension class TypeChecker {
           ),
           (field.pos, "Declared here"),
         ],
+        TSCode(2341),
       )
     | FAPhantom(inPos) ->
       tcenv.error(
@@ -459,6 +497,7 @@ extension class TypeChecker {
           ),
           (inPos, "Presence checked here"),
         ],
+        SKJSCode(2058),
       )
     }
   }
@@ -485,7 +524,11 @@ extension class TypeChecker {
     | Some(ty @ TPrimValue(TNum(), _, _))
     | Some(ty @ TPrimValue(TSymbol(), _, _)) ->
       ty
-    | _ -> fatalError(Array[(idx.pos, "Invalid index type")])
+    | _ ->
+      fatalError(
+        Array[(idx.pos, "This type cannot be used as an index")],
+        TSCode(2538),
+      )
     };
     objType2 = ArrayLitTyping::refineForArrayUse(
       tcenv,
@@ -497,7 +540,13 @@ extension class TypeChecker {
     | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
     | _ ->
       fatalError(
-        Array[(pos, `Invalid access for type ${this.ppType(tcenv, objType2)}`)],
+        Array[
+          (
+            pos,
+            `Cannot access a property on type ${this.ppType(tcenv, objType2)}`,
+          ),
+        ],
+        TSCode(2339),
       )
     };
     isOptionalChaining = accessKind is AKOptionalChain _;
@@ -529,7 +578,10 @@ extension class TypeChecker {
           | TPrimValue(TNum(), Some(numbers), _) ->
             numbers.singleElt().flatMap(lit -> lit.val.toIntOption()) match {
             | Some(n) if (n < 0 || n >= arity) ->
-              tcenv.error(Array[(pos, "Out of bound index")])
+              tcenv.error(
+                Array[(pos, "Tuple index is out of bounds")],
+                TSCode(2493),
+              )
             | _ -> void
             }
           | _ -> void
@@ -578,13 +630,22 @@ extension class TypeChecker {
               if (remainingIdxSType.literals.isNone()) {
                 fatalError(
                   Array[
-                    (pos, "Invalid access"),
+                    (
+                      pos,
+                      "Cannot index this type with a non-literal key: it has no index signature",
+                    ),
                     (idx.pos, "Index has non-literal type symbol"),
                     (objectPos, "But object has no index field"),
                   ],
+                  TSCode(7053),
                 )
               } else {
-                fatalError(Array[(pos, "Symbol property not found on object")])
+                fatalError(
+                  Array[
+                    (pos, "This symbol property does not exist on the object"),
+                  ],
+                  TSCode(2339),
+                )
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -664,11 +725,12 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `Invalid index key: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
                 ],
+                TSCode(2345),
               )
             };
             matchedIndex match {
@@ -677,13 +739,17 @@ extension class TypeChecker {
               | None() ->
                 fatalError(
                   Array[
-                    (pos, "Invalid access"),
+                    (
+                      pos,
+                      "Cannot index this type with a non-literal key: it has no index signature",
+                    ),
                     (
                       idx.pos,
                       `Index has non-literal type ${remainingIdxSType.kind}`,
                     ),
                     (objectPos, "But object has no index field"),
                   ],
+                  TSCode(7053),
                 )
               | Some(lits) ->
                 fields.getTypeTypingError(lits.toStringList(), pos)
@@ -745,12 +811,13 @@ extension class TypeChecker {
       | _ ->
         fatalError(
           Array[
-            (pos, "Type cannot be accessed"),
+            (pos, "Property access is not allowed on this type"),
             (
               idxType.pos,
               "This is a " + this.ppType(tcenv, TType::single(stype)),
             ),
           ],
+          TSCode(2339),
         )
       };
       !optionalChainingIsAlwaysUndefined =
@@ -760,23 +827,28 @@ extension class TypeChecker {
     if (optionalChainingIsUseless) {
       tcenv.warning(
         Array[
-          (pos, "Useless '?.'. Use '.' instead"),
+          (
+            pos,
+            "This '?.' is unnecessary; the value is never nullish, so use '.' instead",
+          ),
           (
             objType.pos,
             `${this.ppType(tcenv, objType)} is never null nor undefined`,
           ),
         ],
+        ESLintCode("@typescript-eslint/no-unnecessary-condition"),
       )
     };
     if (optionalChainingIsAlwaysUndefined) {
       tcenv.warning(
         Array[
-          (pos, "Result of optional chaining is always undefined"),
+          (pos, "The result of this optional chain is always 'undefined'"),
           (
             objType.pos,
             `${this.ppType(tcenv, objType)} is always null or undefined`,
           ),
         ],
+        ESLintCode("@typescript-eslint/no-unnecessary-condition"),
       )
     };
     getResult()
@@ -825,17 +897,22 @@ extension class TypeChecker {
       !isValid = false;
       tcenv.error(
         Array[
-          (pos, "Invalid operation on type void"),
+          (pos, "An expression of type 'void' cannot be used here"),
           (e.pos, `This expression has type ${this.ppType(tcenv, ty)}`),
         ],
+        ESLintCode("@typescript-eslint/no-confusing-void-expression"),
       )
     } else if (!hasTop && !hasNullOrUndefined) {
       !isValid = false;
       tcenv.warning(
         Array[
-          (pos, "This operator is useless"),
+          (
+            pos,
+            "This operator has no effect; the operand is never null or undefined",
+          ),
           (e.pos, "This expression is never null or undefined"),
         ],
+        ESLintCode("@typescript-eslint/no-unnecessary-condition"),
       );
     } else if (!hasTop && !hasOthers) {
       !isValid = false;
@@ -844,13 +921,17 @@ extension class TypeChecker {
       // unsound — `x!` would have the empty type and so satisfy any annotation
       // — so it must be a hard error.
       messages = Array[
-        (pos, "This operator is useless"),
+        (
+          pos,
+          "This operator has no effect; the operand is always null or undefined",
+        ),
         (e.pos, "This expression is always null or undefined"),
       ];
+      eslintCode = ESLintCode("@typescript-eslint/no-unnecessary-condition");
       if (nonNullAssertion) {
-        tcenv.error(messages)
+        tcenv.error(messages, eslintCode)
       } else {
-        tcenv.warning(messages)
+        tcenv.warning(messages, eslintCode)
       }
     };
     (isValid, tyWithoutNullish)
@@ -866,9 +947,10 @@ extension class TypeChecker {
     if (this.nonTopContainsVoid(tcenv, ty)) {
       tcenv.error(
         Array[
-          (pos, "Invalid operation on type void"),
+          (pos, "An expression of type 'void' cannot be used here"),
           (e.pos, `This expression has type ${this.ppType(tcenv, ty)}`),
         ],
+        ESLintCode("@typescript-eslint/no-confusing-void-expression"),
       )
     };
     ty
@@ -913,6 +995,7 @@ extension class TypeChecker {
                   `__SKJS_show: expected ${expected.val}, got ${actual}`,
                 ),
               ],
+              SKJSCode(2059),
             )
           }
         | None() ->
@@ -923,12 +1006,14 @@ extension class TypeChecker {
                 "__SKJS_show: second argument must be a string literal",
               ),
             ],
+            SKJSCode(2059),
           )
         }
       };
       if (args.size() > 2) {
         tcenv.error(
           Array[(args[2].pos, "__SKJS_show: expected at most 2 arguments")],
+          SKJSCode(2059),
         )
       }
     };
@@ -952,6 +1037,7 @@ extension class TypeChecker {
               "Internal error: expr call with both mostPrecise and isLValue",
             ),
           ],
+          SKJSCode(9999),
         )
       };
       this.asConstExpr(tcenv, e) match {
@@ -1001,7 +1087,13 @@ extension class TypeChecker {
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
               tcenv.error(
-                Array[(name.pos, "Non-const members are not supported")],
+                Array[
+                  (
+                    name.pos,
+                    "Only 'const' members are supported in this position by SKJS",
+                  ),
+                ],
+                SKJSCode(2073),
               );
             };
             break type match {
@@ -1016,7 +1108,7 @@ extension class TypeChecker {
           | _ -> void
           }
         } else {
-          fatalError(Array[(pos, "Unbound name")])
+          fatalError(Array[(pos, "Cannot find name")], TSCode(2304))
         }
       | Some(localDef) -> localDef
       }
@@ -1046,9 +1138,10 @@ extension class TypeChecker {
           | _ ->
             tcenv.error(
               Array[
-                (spreadExpr.pos, "Invalid spread"),
+                (spreadExpr.pos, "Only an object type can be spread here"),
                 (spreadTy.pos, `This has type ${this.ppType(tcenv, spreadTy)}`),
               ],
+              SKJSCode(2038),
             );
             continue
           };
@@ -1075,6 +1168,7 @@ extension class TypeChecker {
                   ),
                   (spreadField.pos, "Declared here"),
                 ],
+                SKJSCode(2072),
               )
             }
           };
@@ -1090,6 +1184,7 @@ extension class TypeChecker {
                   ),
                   (spreadField.pos, "Declared here"),
                 ],
+                SKJSCode(2072),
               )
             }
           };
@@ -1368,9 +1463,10 @@ extension class TypeChecker {
               Array[
                 (
                   keyExpr.pos,
-                  "Computed property key must be a literal or unique symbol",
+                  "A computed property key must be a literal or a 'unique symbol'",
                 ),
               ],
+              TSCode(1170),
             );
             continue
           }
@@ -1425,11 +1521,18 @@ extension class TypeChecker {
       obj
     | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
       this.super match {
-      | None() -> tcenv.error(Array[(superPos, "'super' is not defined")])
+      | None() ->
+        tcenv.error(
+          Array[
+            (superPos, "'super' can only be referenced inside a derived class"),
+          ],
+          TSCode(2335),
+        )
       | Some((superCstr, super)) ->
         if (targs.size() != 0) {
           tcenv.error(
-            Array[(pos, "super cannot be called with type arguments")],
+            Array[(pos, "'super' cannot be called with type arguments")],
+            SKJSCode(2071),
           );
         };
         this.callConstructor(tcenv, pos, superCstr, args);
@@ -1441,7 +1544,14 @@ extension class TypeChecker {
           super,
         );
         tcenv.scope.set(thisName, thisType, (x, y) -> {
-          this.checkSubType(tcenv, pos, "Invalid super call", x, y)
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Arguments are not assignable to the base constructor's parameters",
+            x,
+            y,
+            TSCode(2345),
+          )
         })
       };
       TType::single(TPrimUnit(TVoid(), pos))
@@ -1463,21 +1573,23 @@ extension class TypeChecker {
         if (optional) {
           tcenv.error(
             Array[
-              (pos, "Invalid call"),
+              (pos, "This expression is not callable"),
               (
                 fty.pos,
                 `Type ${this.ppType(tcenv, fty)} may not be a function`,
               ),
             ],
+            TSCode(2349),
           )
         };
         tfuns
       | None() ->
         fatalError(
           Array[
-            (pos, "Invalid call"),
+            (pos, "This expression is not callable"),
             (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
           ],
+          TSCode(2349),
         )
       };
       rty = this.call(
@@ -1520,7 +1632,7 @@ extension class TypeChecker {
             if (optional) {
               tcenv.error(
                 Array[
-                  (pos, "Invalid new"),
+                  (pos, "This expression is not constructable"),
                   (
                     obj.pos,
                     `${this.ppType(
@@ -1529,29 +1641,32 @@ extension class TypeChecker {
                     )} may not have a constructor`,
                   ),
                 ],
+                TSCode(2351),
               )
             };
             this.call(tcenv, pos, f, tArgs, args, mostPrecise)
           | None() ->
             fatalError(
               Array[
-                (pos, "Invalid new"),
+                (pos, "This expression is not constructable"),
                 (
                   obj.pos,
                   `${this.ppType(tcenv, subExprTy)} has no constructor`,
                 ),
               ],
+              TSCode(2351),
             )
           }
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid new"),
+              (pos, "This expression is not constructable"),
               (
                 subExprTy.pos,
                 `${this.ppType(tcenv, subExprTy)} is not an object`,
               ),
             ],
+            TSCode(2351),
           )
         }
       }
@@ -1601,7 +1716,14 @@ extension class TypeChecker {
       uop match {
       | UOExclamationMark() ->
         bool = TType::single(TPrimValue::boolean(pos));
-        this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Operand of '!' must be of type 'boolean'",
+          ty,
+          bool,
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
+        );
         bool
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
@@ -1628,9 +1750,10 @@ extension class TypeChecker {
         if (invalid) {
           fatalError(
             Array[
-              (pos, `Invalid unary operation ${nuop}`),
+              (pos, `Unary operator '${nuop}' cannot be applied to this type`),
               (subExpr.pos, `This has type ${this.ppType(tcenv, ty)}`),
             ],
+            SKJSCode(2039),
           )
         };
         res
@@ -1665,14 +1788,22 @@ extension class TypeChecker {
         | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
           ty2 = this.expr(tcenv, e2, true);
           res = TType::single(TPrimValue::full(k, primPos));
-          this.checkSubType(tcenv, e2.pos, "Invalid + operand", ty2, res);
+          this.checkSubType(
+            tcenv,
+            e2.pos,
+            "Right operand of '+' is not assignable to the left operand's type",
+            ty2,
+            res,
+            TSCode(2365),
+          );
           res
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid + operation"),
+              (pos, "Operator '+' cannot be applied to these types"),
               (e1.pos, `For an object of type: ${this.ppType(tcenv, ty1)}`),
             ],
+            TSCode(2365),
           )
         }
       | BOAssignment() ->
@@ -1696,7 +1827,13 @@ extension class TypeChecker {
               | BOStrictInequality() -> "true"
               };
               tcenv.warning(
-                Array[(pos, `This equality is always ${alwaysResult}`)],
+                Array[
+                  (
+                    pos,
+                    `This comparison is always ${alwaysResult} because the operand types do not overlap`,
+                  ),
+                ],
+                SKJSCode(2040),
               )
             }
           }
@@ -1712,9 +1849,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           pos,
-          `Invalid ${opStr}`,
+          `Operand of '${opStr}' must be of type 'boolean'`,
           ty1,
           TType::single(TPrimValue::boolean(e1.pos)),
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
         );
         savedScope = tcenv.scope;
         branch2 = tcenv.mcreateSubScope{isLoop => false};
@@ -1724,9 +1862,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           pos,
-          `Invalid ${opStr}`,
+          `Operand of '${opStr}' must be of type 'boolean'`,
           ty2,
           TType::single(TPrimValue::boolean(e2.pos)),
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
         );
         tcenv.!scope = savedScope;
         tcenv.popScope(this, branch2);
@@ -1747,10 +1886,11 @@ extension class TypeChecker {
               Array[
                 (
                   pos,
-                  "Invalid comparison. You can only compare strings, numbers, bigints, and booleans.",
+                  "A comparison operand must be a string, number, bigint, or boolean",
                 ),
                 (e1.pos, `This is a ${this.ppType(tcenv, ty)}`),
               ],
+              SKJSCode(2070),
             );
             None()
           }
@@ -1761,13 +1901,11 @@ extension class TypeChecker {
         | (Some(k1), Some(k2)) if (k1 != k2) ->
           tcenv.error(
             Array[
-              (
-                pos,
-                "Invalid comparison. Both operands must have the same type.",
-              ),
+              (pos, "Both operands of a comparison must have the same type"),
               (e1.pos, `This is a ${k1}`),
               (e2.pos, `This is a ${k2}`),
             ],
+            SKJSCode(2070),
           )
         | _ -> void
         };
@@ -1792,9 +1930,19 @@ extension class TypeChecker {
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
         ty1 = this.expr(tcenv, e1, true);
-        kind1 = this.checkIsNumeric(tcenv, e1.pos, "Invalid operation", ty1);
+        kind1 = this.checkIsNumeric(
+          tcenv,
+          e1.pos,
+          "This operator requires a numeric operand",
+          ty1,
+        );
         ty2 = this.expr(tcenv, e2, true);
-        kind2 = this.checkIsNumeric(tcenv, e2.pos, "Invalid operation", ty2);
+        kind2 = this.checkIsNumeric(
+          tcenv,
+          e2.pos,
+          "This operator requires a numeric operand",
+          ty2,
+        );
         if (kind1 != kind2) {
           fatalError(
             Array[
@@ -1805,6 +1953,7 @@ extension class TypeChecker {
               (e1.pos, `Left operand is ${kind1}`),
               (e2.pos, `Right operand is ${kind2}`),
             ],
+            TSCode(2365),
           )
         };
         TType::single(TPrimValue::full(kind1, pos))
@@ -1825,7 +1974,11 @@ extension class TypeChecker {
       _ = this.expr(tcenv, e1, true);
       _ = this.getClass(tcenv, className);
       TType::single(TPrimValue::boolean(pos))
-    | InstanceOf(_, e2) -> fatalError(Array[(e2.pos, "Unexpected instanceof")])
+    | InstanceOf(_, e2) ->
+      fatalError(
+        Array[(e2.pos, "The 'instanceof' operator is not supported by SKJS")],
+        SKJSCode(9027),
+      )
     | In(e1, e2) ->
       (t1, fieldsOpt, symFieldsOpt) = this.getInLhsTypeAndFields(
         tcenv,
@@ -1836,7 +1989,14 @@ extension class TypeChecker {
       t2.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
         tcenv.error(
-          Array[(pos, "Invalid in"), (e2.pos, "This has type unknown")],
+          Array[
+            (
+              pos,
+              "The right-hand side of an 'in' expression must be an object",
+            ),
+            (e2.pos, "This has type unknown"),
+          ],
+          TSCode(2361),
         )
       | Some(stypes2) ->
         canBeTrue = false;
@@ -1847,9 +2007,13 @@ extension class TypeChecker {
           | TPrimValue _ ->
             tcenv.error(
               Array[
-                (pos, "Invalid in"),
+                (
+                  pos,
+                  "The right-hand side of an 'in' expression must be an object",
+                ),
                 (e2.pos, `This has type ${this.ppType(tcenv, t2)}`),
               ],
+              TSCode(2361),
             );
             !canBeTrue = true;
             !canBeFalse = true
@@ -1891,9 +2055,13 @@ extension class TypeChecker {
           | TPromise _ ->
             tcenv.error(
               Array[
-                (pos, "TODO: in"),
+                (
+                  pos,
+                  "The 'in' operator is not yet supported by SKJS for this type",
+                ),
                 (e2.pos, `For type ${this.ppType(tcenv, t2)}`),
               ],
+              SKJSCode(9009),
             );
             !canBeTrue = true;
             !canBeFalse = true
@@ -1904,13 +2072,20 @@ extension class TypeChecker {
         | (false, false) ->
           tcenv.error(
             Array[
-              (pos, "Unexpected in"),
+              (
+                pos,
+                "This 'in' check can never succeed for these operand types",
+              ),
               (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
               (e2.pos, `This has type ${this.ppType(tcenv, t2)}`),
             ],
+            SKJSCode(2049),
           )
         | _ ->
-          tcenv.error(Array[(pos, `This expression is always ${canBeTrue}`)])
+          tcenv.error(
+            Array[(pos, `This condition is always ${canBeTrue}`)],
+            ESLintCode("@typescript-eslint/no-unnecessary-condition"),
+          )
         }
       };
       TType::single(TPrimValue::boolean(pos))
@@ -1927,7 +2102,14 @@ extension class TypeChecker {
       | POIncr() ->
         num = TType::single(TPrimValue::number(pos));
         ty = this.expr(tcenv, subExpr, true);
-        this.checkSubType(tcenv, pos, "Expected integer", ty, num);
+        this.checkSubType(
+          tcenv,
+          pos,
+          "The operand of an increment or decrement operator must be of type 'number'",
+          ty,
+          num,
+          TSCode(2356),
+        );
         num
       | POExcl() ->
         (isValid, tyWithoutNullish) = this.exprWithoutNullish(
@@ -1960,7 +2142,10 @@ extension class TypeChecker {
             // Unsafe: v[k]! after side effects in for-in loop
             tcenv.error(
               Array[
-                (pos, "Do not use the postfix ! operator"),
+                (
+                  pos,
+                  "The non-null assertion operator '!' is not allowed here",
+                ),
                 (callPos, "This call could have modified the collection"),
                 (
                   subExpr.pos,
@@ -1969,17 +2154,19 @@ extension class TypeChecker {
                     .join(".")}[${ctx.keyVar}]!`,
                 ),
               ],
+              ESLintCode("@typescript-eslint/no-non-null-assertion"),
             )
           | None() ->
             // Not a for-in pattern — original error
             tcenv.error(
               Array[
-                (pos, "Do not use the postfix ! operator"),
+                (pos, "The non-null assertion operator '!' is not allowed"),
                 (
                   subExpr.pos,
                   "This assertion is unsound and may cause runtime errors",
                 ),
               ],
+              ESLintCode("@typescript-eslint/no-non-null-assertion"),
             )
           }
         };
@@ -2013,16 +2200,34 @@ extension class TypeChecker {
     | As(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
-      this.checkSubType(tcenv, pos, "Unsound 'as' cast", inferredTy, annot);
+      this.checkSubType(
+        tcenv,
+        pos,
+        "This 'as' cast is unsound: the source type is not assignable to the target type",
+        inferredTy,
+        annot,
+        SKJSCode(2003),
+      );
       annot
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
       savedSubst = tcenv.subst.save();
-      this.checkSubType(tcenv, pos, "Invalid 'satisfies'", inferredTy, annot);
+      this.checkSubType(
+        tcenv,
+        pos,
+        "Type does not satisfy the expected type",
+        inferredTy,
+        annot,
+        TSCode(1360),
+      );
       tcenv.subst.restore(savedSubst);
       inferredTy
-    | Async _ -> fatalError(Array[(pos, "Invalid async")])
+    | Async _ ->
+      fatalError(
+        Array[(pos, "'async' is not allowed in this position")],
+        SKJSCode(2043),
+      )
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
       aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
@@ -2031,7 +2236,11 @@ extension class TypeChecker {
       | Some(TPromise(ty, _)) -> ty
       | _ ->
         fatalError(
-          Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
+          Array[
+            (pos, "'await' can only be applied to a Promise"),
+            (aeType.pos, "This is not a promise"),
+          ],
+          ESLintCode("@typescript-eslint/await-thenable"),
         )
       }
     | EIf(e1, e2, e3) ->
@@ -2039,9 +2248,10 @@ extension class TypeChecker {
       this.checkSubType(
         tcenv,
         e1.pos,
-        "Invalid ? condition",
+        "A ternary condition must be of type 'boolean'",
         cond,
         TType::single(TPrimValue::boolean(e1.pos)),
+        ESLintCode("@typescript-eslint/strict-boolean-expressions"),
       );
 
       // Create scopes for the true and false branches with type refinements
@@ -2067,13 +2277,34 @@ extension class TypeChecker {
       | Some(ty) -> TType::single(ty)
       | None() ->
         tcenv.error(
-          Array[(pos, "'as const' can only be used with literal expressions")],
+          Array[
+            (
+              pos,
+              "A 'const' assertion can only be applied to a string, number, boolean, array, or object literal",
+            ),
+          ],
+          TSCode(1355),
         );
         this.expr(tcenv, subExpr, true)
       }
     | Params _ -> paramsError(pos)
-    | Regexp _ -> fatalError(Array[(pos, "TODO: regexp")])
-    | Spread _ -> fatalError(Array[(pos, "TODO: ...")])
+    | Regexp _ ->
+      fatalError(
+        Array[
+          (pos, "Regular expression literals are not yet supported by SKJS"),
+        ],
+        SKJSCode(9010),
+      )
+    | Spread _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Spread elements are not yet supported by SKJS in this position",
+          ),
+        ],
+        SKJSCode(9011),
+      )
     }
   }
 
@@ -2082,7 +2313,10 @@ extension class TypeChecker {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
-      tcenv.error(Array[(subExpr.pos, "Unnecessary 'as const'")]);
+      tcenv.error(
+        Array[(subExpr.pos, "This 'as const' is unnecessary")],
+        SKJSCode(2044),
+      );
       this.asConstExpr(tcenv, subExpr)
     | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
@@ -2099,9 +2333,10 @@ extension class TypeChecker {
           | Some(lit) ->
             tcenv.error(
               Array[
-                (pos, "Constant expression could have been simplified"),
+                (pos, "This constant expression could have been simplified"),
                 (subE.pos, `This has type ${lit.val}`),
               ],
+              SKJSCode(2060),
             );
             res = lit.val match {
             | "true" -> "false"
@@ -2125,12 +2360,13 @@ extension class TypeChecker {
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid unary !"),
+              (pos, "Operator '!' cannot be applied to this type"),
               (
                 subE.pos,
                 `This has type ${this.ppType(tcenv, TType::single(stype))}`,
               ),
             ],
+            ESLintCode("@typescript-eslint/strict-boolean-expressions"),
           )
         }
       )
@@ -2224,12 +2460,13 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             e.pos,
-            "Invalid callback return",
+            "Type of the callback's returned value is not assignable to the expected return type",
             isAsync match {
             | None() -> inferredType
             | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
             },
             annotatedType,
+            TSCode(2322),
           )
         | CBBlock(bl) ->
           if (isAsync is Some _) !this.isAsync = true;
@@ -2285,7 +2522,10 @@ extension class TypeChecker {
     cstrType.cstr match {
     | None() ->
       if (args.size() == 0) return void;
-      tcenv.error(Array[(pos, "Invalid new: constructor expects no arguments")])
+      tcenv.error(
+        Array[(pos, "This constructor expects no arguments")],
+        TSCode(2554),
+      )
     | Some(cstr) -> _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true)
     }
   }
@@ -2302,7 +2542,14 @@ extension class TypeChecker {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
       tcenv.scope.set(n, ty2, (x, y) ->
-        this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Type is not assignable to the variable's type",
+          x,
+          y,
+          TSCode(2322),
+        )
       );
       ty2
     | Dot(
@@ -2336,7 +2583,14 @@ extension class TypeChecker {
     | _ ->
       ty1 = this.expr(tcenv, e1, false, true);
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
+      this.checkSubType(
+        tcenv,
+        e2.pos,
+        "Type is not assignable to the assignment target's type",
+        ty2,
+        ty1,
+        TSCode(2322),
+      );
       ty1
     }
   }
@@ -2430,9 +2684,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           fieldType.pos,
-          "Invalid assignment",
+          "Type is not assignable to the field's type",
           fieldType,
           this.get(tcenv, e1Pos, objectType, keyExpr, AKNormal()),
+          TSCode(2322),
         )
       };
       None()
@@ -2455,9 +2710,10 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             fieldType.pos,
-            "Invalid assignment",
+            "Type is not assignable to the field's type",
             fieldType,
             fd.set,
+            TSCode(2322),
           )
         | None() ->
           // Always grow: don't check index signatures on local objects.
@@ -2493,17 +2749,19 @@ extension class TypeChecker {
         | Some(usedPos) ->
           tcenv.error(
             Array[
-              (pos, "You are trying to add a field to this object"),
+              (pos, "Cannot add a field to this object after it has been used"),
               (
                 usedPos,
                 "But this object has already been used for something else",
               ),
             ],
+            SKJSCode(2065),
           )
         };
         if (tcenv.scope.isThroughLoop(local)) {
           tcenv.error(
-            Array[(local.pos, "You cannot add a field to an object in a loop")],
+            Array[(local.pos, "Cannot add a field to an object inside a loop")],
+            SKJSCode(2069),
           )
         };
         allNewFields = TFields::create{
@@ -2518,11 +2776,21 @@ extension class TypeChecker {
         | Some(mergedObj) -> TType::single(mergedObj)
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
-          this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+          this.checkSubType(
+            tcenv,
+            fieldType.pos,
+            "Type is not assignable to the property's type",
+            x,
+            y,
+            TSCode(2322),
+          )
         })
       }
     | _ ->
-      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
+      tcenv.error(
+        Array[(pos, "Internal error: local object is not an object")],
+        SKJSCode(9999),
+      )
     };
     fieldType
   }
@@ -2557,22 +2825,27 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           fieldType.pos,
-          "Invalid assignment",
+          "Type is not assignable to the index signature's value type",
           fieldType,
           indexField.set,
+          TSCode(2322),
         )
       | None() ->
         tcenv.error(
           Array[
             (
               keyExpr.pos,
-              "Computed property key must match an index signature on this object",
+              "This computed property key must match an index signature on the object",
             ),
           ],
+          SKJSCode(2066),
         )
       }
     | _ ->
-      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
+      tcenv.error(
+        Array[(pos, "Internal error: local object is not an object")],
+        SKJSCode(9999),
+      )
     };
     fieldType
   }
@@ -2608,9 +2881,13 @@ extension class TypeChecker {
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid in"),
+              (
+                pos,
+                "The left-hand side of an 'in' expression must be of type 'string', 'number', or 'symbol'",
+              ),
               (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
             ],
+            TSCode(2360),
           )
         }
       };
@@ -2618,9 +2895,13 @@ extension class TypeChecker {
     | _ ->
       fatalError(
         Array[
-          (pos, "Invalid in"),
+          (
+            pos,
+            "The left-hand side of an 'in' expression must be of type 'string', 'number', or 'symbol'",
+          ),
           (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
         ],
+        TSCode(2360),
       )
     }
   }
@@ -2655,9 +2936,13 @@ extension class TypeChecker {
           | None() ->
             tcenv.error(
               Array[
-                (argExpr.pos, "Invalid spread argument"),
+                (
+                  argExpr.pos,
+                  "A spread argument must be of an array or iterable type",
+                ),
                 (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
               ],
+              SKJSCode(2045),
             )
           | Some(eltType) ->
             !moreArgs = Some(
@@ -2670,9 +2955,13 @@ extension class TypeChecker {
         | _ ->
           tcenv.error(
             Array[
-              (argExpr.pos, "Invalid spread argument"),
+              (
+                argExpr.pos,
+                "A spread argument must be of an array or iterable type",
+              ),
               (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
             ],
+            SKJSCode(2045),
           )
         }
       | _ ->
@@ -2693,10 +2982,11 @@ extension class TypeChecker {
           Array[
             (
               pos,
-              `Incompatible number of type arguments: ${targs.size()} passed`,
+              `Expected ${tfun.tparams.size()} type arguments, but got ${targs.size()}`,
             ),
             (fPos, `Expected: ${tfun.tparams.size()}`),
           ],
+          TSCode(2558),
         )
       };
       map = SortedMap[];
@@ -2745,18 +3035,20 @@ extension class TypeChecker {
           if (i >= args.size()) {
             tcenv.error(
               Array[
-                (pos, "Invalid call"),
+                (pos, "Too few arguments for this call"),
                 (fPos, `This function has ${tfun.params.size()} parameters`),
               ],
+              TSCode(2554),
             );
             break void
           } else {
             this.checkSubType(
               tcenv,
               pos,
-              "Invalid call",
+              "Argument is not assignable to the parameter's type",
               args[i],
               tfun.params[i],
+              TSCode(2345),
             )
           }
         };
@@ -2773,9 +3065,10 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             pos,
-            "Invalid call",
+            "Argument is not assignable to the parameter's type",
             arg,
             tfun.optionalParams[j],
+            TSCode(2345),
           )
         };
         if (tcenv.subst.version == version) break void;

@@ -14,12 +14,12 @@ function getU_UT<T, U>(t: T, both: U & T): U {
 // so 42 is not in the intersection T & U. Both orderings should reject.
 function testTU(): 42 {
   const str: string = "hello";
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return getU_TU(str, 42);
 }
 
 function testUT(): 42 {
   const str: string = "hello";
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return getU_UT(str, 42);
 }

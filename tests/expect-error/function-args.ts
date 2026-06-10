@@ -1,13 +1,13 @@
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function paramNoType(_p): void {}
 
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function paramNoTypeDefault(_p = 3): void {}
 
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function paramNoTypeOptional(_p?): void {}
 
-// @ts-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function paramNoTypeDefaultOptional(_p? = 3): void {}
 
 function paramTypeDefault(_p: number = 3): void {}
@@ -35,40 +35,40 @@ function paramTypeOptionalCanBeUndefined(p?: number): number {
 }
 
 function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
-  // @skjs-expect-warning This operator is useless
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return p ?? 1;
 }
 
 function paramTypeOptionalCanBeUndefined2(p?: number): number {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return paramTypeOptionalCanBeUndefinedWitness(p);
 }
 
-// @ts-expect-error A parameter cannot both be optional and have a default value
+// @skjs-expect-error A parameter cannot have both a question mark and an initializer
 function paramTypeDefaultOptional(_p?: number = 3): void {}
 
-// @ts-expect-error Default value doesn't have the expected type
+// @skjs-expect-error Type of default value is not assignable to the parameter's type
 function paramDefaultWrongType(_p: number = "3"): void {}
 
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function restNoType(..._rest): void {}
 
 // Disabling prettier because it fixes some issues
 
 // prettier-ignore
 // @ts-expect-error A rest parameter cannot have an initializer
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function restNoTypeDefault(..._rest = new Array()): void {}
 
 // prettier-ignore
 // @ts-expect-error A rest parameter cannot be optional
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function restNoTypeOptional(..._rest?): void {}
 
 // prettier-ignore
 // @ts-expect-error A rest parameter cannot be optional
 // @ts-expect-error A rest parameter cannot have an initializer
-// @skjs-expect-error Missing type annotation
+// @skjs-expect-error A parameter must have an explicit type annotation
 function restNoTypeDefaultOptional(..._rest? = new Array()): void {}
 
 // prettier-ignore
@@ -82,7 +82,7 @@ function restTypeOptional(..._rest?: number[]): void {}
 // prettier-ignore
 // @ts-expect-error A rest parameter cannot be optional
 // @ts-expect-error A rest parameter cannot have an initializer
-// @ts-expect-error A parameter cannot both be optional and have a default value
+// @skjs-expect-error A parameter cannot have both a question mark and an initializer
 function restTypeDefaultOptional(..._rest?: number[] = new Array()): void {}
 
 // TODO: wrong type

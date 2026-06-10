@@ -19,7 +19,7 @@ function fromGenericInst(): void {
   const c = new Container();
   c.push(1);
   takeContainer(c);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   c.push("hello");
 }
 
@@ -30,7 +30,7 @@ declare function makeContainer<T>(x: T): Container<T>;
 function fromGenericCall(): void {
   const c = makeContainer(1);
   takeContainer(c);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   c.push("hello");
 }
 
@@ -42,7 +42,7 @@ function fromEmptyArray(): void {
   const arr: number[] = [];
   arr.push(1);
   takeNumberArray(arr);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   arr.push("hello");
 }
 
@@ -51,7 +51,7 @@ function fromEmptyArray(): void {
 function fromArrayLiteral(): void {
   const arr = [1, 2, 3];
   takeNumberArray(arr);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   arr.push("hello");
 }
 
@@ -69,9 +69,9 @@ function fromNullLiteralLocal(): void {
   const c = new Container();
   let n = null;
   c.push(n);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type number
-  // @skjs-expect-error-line3 is not compatible with type null
+  // @skjs-expect-error-line3 is not assignable to type null
   // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <null | number>
   c.push(1);
 }
@@ -90,9 +90,9 @@ function fromUndefinedLiteralLocal(): void {
   const c = new Container();
   let u = undefined;
   c.push(u);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type string
-  // @skjs-expect-error-line3 is not compatible with type undefined
+  // @skjs-expect-error-line3 is not assignable to type undefined
   // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <string | undefined>
   c.push("hello");
 }
@@ -107,7 +107,7 @@ function fromLambdaReturn(): void {
     return 42;
   };
   takeFnReturningNumber(f);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takeFnReturningString(f);
 }
 
@@ -120,7 +120,7 @@ function fromAsyncReturn(): void {
     return 42;
   };
   const p = f();
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takePromiseString(p);
 }
 
@@ -132,11 +132,11 @@ function fromObjectField(): void {
   const c = new Container();
   c.push({ x: 1 });
   takeContainerObj(c);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type 'hello'
-  // @skjs-expect-error-line3 is not compatible with type number
+  // @skjs-expect-error-line3 is not assignable to type number
   // @skjs-expect-error-line4 Type 'hello'
-  // @skjs-expect-error-line5 is not compatible with type number
+  // @skjs-expect-error-line5 is not assignable to type number
   // @skjs-expect-error-line6 Consider adding a type annotation, e.g., number | 'hello'
   // @skjs-expect-error-line7 Consider adding explicit type arguments, e.g., <{ x: number } | { x: 'hello' } | { x: number }>
   c.push({ x: "hello" });
@@ -149,7 +149,7 @@ declare function takeObjArray(arr: Array<{ x: number }>): void;
 function fromArrayElement(): void {
   const arr = [{ x: 1 }, { x: 2 }];
   takeObjArray(arr);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   arr.push({ x: "hello" });
 }
 
@@ -159,13 +159,13 @@ interface StringMap {
 }
 
 function fromSyntheticIndex(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const obj: StringMap = { a: 1 };
 }
 
 // --- FromUntypedVar: untyped variable declaration (parse error in SKJS) ---
 function fromUntypedVar(): void {
-  // @skjs-expect-error Was expecting a type or a value
+  // @skjs-expect-error A binding must have either a type annotation or an initializer
   let x;
   x = 42;
 }

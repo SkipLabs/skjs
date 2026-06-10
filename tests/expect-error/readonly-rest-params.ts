@@ -10,7 +10,7 @@ function acceptsRO(...nums: number[]): ReadonlyArray<number> {
 }
 
 function rejectsArray(...nums: number[]): void {
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<number> = nums;
 }
 
@@ -23,7 +23,7 @@ function readElement(...items: string[]): string | undefined {
 }
 
 function noMutation(...items: string[]): void {
-  // @ts-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   items.push("x");
 }
 
@@ -67,7 +67,7 @@ function tupleMutation(...args: [string, number]): void {
 
 // Tuple rest is already not assignable to mutable Array
 function tupleToArray(...args: [string, number]): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<string | number> = args;
 }
 
@@ -78,7 +78,7 @@ function tupleToArray(...args: [string, number]): void {
 function genericRestMutation<T extends ReadonlyArray<number>>(
   ...args: T
 ): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<number> = args;
 }
 
@@ -109,7 +109,7 @@ function aliasRestRejectsArray(...nums: Numbers): void {
 
 // Non-alias version correctly rejects the same assignment.
 function nonAliasRestRejectsArray(...nums: number[]): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<number> = nums;
 }
 
@@ -122,7 +122,7 @@ function passThroughToSink<T>(
   sink: (items: Array<T>) => void,
   ...items: T[]
 ): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   sink(items);
 }
 
@@ -134,7 +134,7 @@ function passThroughToSinkRO<T>(
 }
 
 function assignRestToMutable<T>(target: Array<T>, ...source: T[]): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const copy: Array<T> = source;
 }
 
@@ -151,7 +151,7 @@ function assignRestToReadonly<T>(
 // constraints are unsound for rest parameters.
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+// @skjs-expect-error A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
 function fullMutableConstraint<T extends string[]>(...args: T): void {
   // If this were allowed, T = string[] means args is mutable,
   // and a mutator could .push() on the rest array.
@@ -160,14 +160,14 @@ function fullMutableConstraint<T extends string[]>(...args: T): void {
 
 function fullMutableWithSink<T extends string[]>(
   mutator: (arr: T) => void,
-  // @skjs-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+  // @skjs-expect-error A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
   ...args: T
 ): void {
   // If this were allowed, mutator could mutate the rest array.
   mutator(args);
 }
 
-// @skjs-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+// @skjs-expect-error A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
 function fullMutableReturn<T extends number[]>(...args: T): T {
   // If this were allowed, caller gets a mutable handle to the rest array.
   return args;

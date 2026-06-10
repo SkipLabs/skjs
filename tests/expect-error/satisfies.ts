@@ -9,7 +9,7 @@ function testBasic(): void {
 
 // Subtype failure: expression is NOT assignable to the target type
 function testSubtypeFailure(): void {
-  // @skjs-expect-error Invalid 'satisfies'
+  // @skjs-expect-error Type does not satisfy the expected type
   const x = "hello" satisfies number;
 }
 

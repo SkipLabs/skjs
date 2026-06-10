@@ -6,20 +6,20 @@
 
 // Return type position
 function testReturn(x: { x: number }): { x: number | string } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 // Parameter position
 function testParam(x: { x: number | string }): void {}
 function testParamCall(x: { x: number }): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   testParam(x);
 }
 
 // Variable assignment position
 function testAssign(x: { x: number }): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: { x: number | string } = x;
 }
 
@@ -28,7 +28,7 @@ interface Box<T> {
   value: T;
 }
 function testGeneric(x: Box<number>): Box<number | string> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -36,6 +36,6 @@ function testGeneric(x: Box<number>): Box<number | string> {
 function testIndex(x: { [k: string]: number }): {
   [k: string]: number | string;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }

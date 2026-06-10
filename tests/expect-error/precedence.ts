@@ -5,8 +5,8 @@ function testUnaryVsFunctionCall(): boolean {
 
 function testUnaryVsFunctionCallError(): void {
   let foo = (): boolean => true;
-  // @skjs-expect-error Invalid call
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error This expression is not callable
   let result = (!foo)();
 }
 
@@ -17,8 +17,8 @@ function testUnaryVsMemberAccess(): boolean {
 
 function testUnaryVsMemberAccessError(): void {
   let obj = { prop: true };
-  // @skjs-expect-error Unbound field: prop
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error Property 'prop' does not exist on this type
   let result = (!obj).prop;
 }
 
@@ -37,8 +37,8 @@ function testUnaryVsMethodCallError(): boolean {
       return true;
     },
   };
-  // @skjs-expect-error Unbound field: met
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error Property 'met' does not exist on this type
   return (!obj).met();
 }
 
@@ -47,7 +47,7 @@ function testArithmeticVsComparison(): boolean {
 }
 
 function testArithmeticVsComparisonError(): void {
-  // @ts-expect-error Invalid + operand
+  // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
   let result = 1 + (2 < 3) + 4;
 }
 
@@ -64,8 +64,8 @@ function testLogicalVsComparisonError(): void {
     b = 2,
     c = 3,
     d = 4;
-  // @skjs-expect-error Invalid comparison. Both operands must have the same type
-  // @ts-expect-error Invalid &&
+  // @skjs-expect-error Operand of '&&' must be of type 'boolean'
+  // @skjs-expect-error Both operands of a comparison must have the same type
   let result = a < (b && c) < d;
 }
 
@@ -81,7 +81,7 @@ function testAssignmentVsLogical(): boolean {
 
 function testPostfixVsMemberAccess(): string {
   let obj: { prop: string } | null = { prop: "hello" };
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return obj!.prop;
 }
 

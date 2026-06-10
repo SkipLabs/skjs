@@ -27,7 +27,7 @@ function testReturnCovarianceWithParams(): void {
 // Test 3: Return type contravariance fails (negative test)
 function testReturnContravarianceFails(): void {
   const returnsAnimal: () => Animal = () => ({ name: "Generic" });
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const acceptsDogReturner: () => Dog = returnsAnimal;
 }
 
@@ -52,7 +52,7 @@ function testParamContravarianceMultiple(): void {
 // Test 6: Parameter covariance fails (negative test)
 function testParamCovarianceFails(): void {
   const acceptsDog: (d: Dog) => void = (_d: Dog) => {};
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const needsAnimalAcceptor: (a: Animal) => void = acceptsDog;
 }
 
@@ -79,7 +79,7 @@ function testMoreRequiredParamsFails(): void {
     _a: number,
     _b: string,
   ) => {};
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const acceptsOneParam: (a: number) => void = twoParams;
 }
 
@@ -91,7 +91,7 @@ function testRequiredForOptional(): void {
     _a: number,
     _b: string,
   ) => {};
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const targetOneRequiredOneOptional: (a: number, b?: string) => void =
     twoRequired;
 }
@@ -137,14 +137,14 @@ function testRestContravariance(): void {
 function testNonVoidToVoid(): void {
   const returnsNumber: () => number = () => 42;
   // FIXME: Should allow assigning function returning T to function returning void (return value discarded)
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const acceptsVoid: () => void = returnsNumber;
 }
 
 // Test 17: Void to non-void fails (negative test)
 function testVoidToNonVoidFails(): void {
   const returnsVoid: () => void = () => {};
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const acceptsNumber: () => number = returnsVoid;
 }
 
@@ -159,7 +159,7 @@ function testSpecificToUnion(): void {
 // Test 19: Union to specific fails (negative test)
 function testUnionToSpecificFails(): void {
   const returnsUnion: () => number | string = () => 42;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const acceptsNumber: () => number = returnsUnion;
 }
 
@@ -207,14 +207,14 @@ function testFunctionInObject(): void {
   const obj1: { fn: (a: Animal) => Dog } = {
     fn: (_a: Animal) => ({ name: "Fido", breed: "Lab" }),
   };
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const obj2: { fn: (d: Dog) => Animal } = obj1;
 }
 
 // Test 26: Higher-order function (parameter contravariance in callback)
 function testHigherOrderFunction(): void {
   const hof: (f: (a: Animal) => Dog) => number = (_f: (a: Animal) => Dog) => 42;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const target: (f: (d: Dog) => Animal) => number = hof;
 }
 

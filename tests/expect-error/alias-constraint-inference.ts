@@ -6,7 +6,6 @@
 
 type Id<P extends string> = P;
 
-// @ts-expect-error Constraint not satisfied
 declare function f<V>(x: Id<V>): V;
 
 export function usesRejectedBoundary(): number {

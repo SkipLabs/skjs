@@ -58,7 +58,7 @@ function takesArrayOrNull(values: number[] | null): void {
 function tupleThenArrayUse(): void {
   const values = [1, 2];
   takesTuple(values);
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   values.push(3);
 }
 
@@ -66,7 +66,7 @@ function tupleThenArrayUse(): void {
 function arrayThenTupleUse(): void {
   const values = [1, 2];
   takesArray(values);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const tuple: [number, number] = values;
 }
 
@@ -107,7 +107,7 @@ function indexRefinesArray(): void {
   if (v < 0) {
     return;
   }
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const tuple: [number, number] = values;
 }
 
@@ -122,7 +122,7 @@ function methodRefinesArray(): void {
   if (first < 0) {
     return;
   }
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const tuple: [number, number] = values;
 }
 
@@ -195,10 +195,10 @@ function supertypePositionTest(): void {
 // Each of those three behaviours is what `tsc` produces too.
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesTuple(numbers);
   takesArray(numbers);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesTuple(numbers);
 }
 

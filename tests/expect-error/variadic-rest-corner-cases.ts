@@ -87,7 +87,7 @@ declare function takesOptTupleRest(cb: OptTupleRestExpected): void;
 declare const optTupleRestCandidate: OptTupleRestCandidate;
 
 function testOptionalBeforeTupleRest(): void {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesOptTupleRest(optTupleRestCandidate);
 }
 
@@ -102,14 +102,14 @@ function testEmptyRestInference(): void {
 // 2) Tuple-rest exact arity
 function testTupleRestExactArity(): void {
   tupleRestExact("a", 1);
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too many arguments for this call
   tupleRestExact("a");
   // Extra args allowed (consistent with no-rest functions)
   tupleRestExact("a", 1, 2);
 
   // Unknown-length array spread into concrete tuple rest
   const arr: (string | number)[] = ["a", 1];
-  // @ts-expect-error Invalid call. Tuple rest parameters require exact arguments
+  // @skjs-expect-error A tuple rest parameter requires an exact number of arguments
   tupleRestExact(...arr);
 }
 
@@ -119,8 +119,8 @@ function testGenericTupleRestInference(): void {
   const t1_as_tuple: readonly [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
-  // @skjs-expect-error This expression was expected to be of type void or ignorable
-  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
+  // @skjs-expect-error The inferred rest arguments readonly [boolean] do not satisfy the rest parameter's constraint
   inferTuple(true);
 }
 
@@ -142,7 +142,7 @@ function testArraySpreadInference(): void {
   const a1 = inferTuple(...arrS);
   // Both fail: resolving the type variable intersects the binding with the constraint,
   // producing element type string & VariadicDepSafe instead of simplifying to string.
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a1_as_tuple: [string, string] = a1;
   const a1_as_array: readonly string[] = a1;
 }
@@ -150,7 +150,7 @@ function testArraySpreadInference(): void {
 // 6) Spread array followed by positional arg: loses precision on string vs numner
 function testSpreadArrayFollowedByPositional(): void {
   const depArr: VariadicDepSafe[] = ["a", 1];
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   twoArgs(...depArr, 2);
 }
 
@@ -165,9 +165,9 @@ function testMotivatingAPI(): void {
   variadicColl.map(Zero);
   variadicColl.map(One, "hello");
   variadicColl.map(Two, "hello", 42);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, "hello");
-  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
+  // @skjs-expect-error The inferred rest arguments readonly [boolean] do not satisfy the rest parameter's constraint
   variadicColl.map(One, true);
 
   // Tuple spread into the rest args should preserve shape
@@ -175,15 +175,15 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, ...args2);
 
   const argsArr: VariadicDepSafe[] = ["z", 7];
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, ...argsArr);
 
   // Mixed fixed + tuple-rest constructor pattern
   prefixedColl.mapWithPrefix("tag", PrefixOne, "hello");
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");
-  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
+  // @skjs-expect-error The inferred rest arguments readonly [boolean] do not satisfy the rest parameter's constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);
 }
 
@@ -196,7 +196,7 @@ declare function takePair(...args: MyPair): void;
 function testTypeAliasTupleSpread(): void {
   takePair("hello", 42);
 
-  // @ts-expect-error Invalid argument
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takePair(42, "hello");
 }
 

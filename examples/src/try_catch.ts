@@ -29,7 +29,7 @@ function tryCatchFinally(): void {
     throw new Error("test");
   } catch (e) {
     if (typeof e === "object" && e !== null) {
-      // @skjs-expect-error Unbound field: message
+      // @skjs-expect-error Property 'message' does not exist on this type
       let msg = e["message"];
       if (msg !== undefined) {
         console.log("caught:", e.message);
@@ -45,7 +45,7 @@ function nestedTryCatch(): void {
     try {
       throw new Error("inner error");
     } catch (inner) {
-      // @skjs-expect-error Unbound field: message
+      // @skjs-expect-error Property 'message' does not exist on this type
       if (inner instanceof Error) console.log("inner catch:", inner.message);
       throw new Error("outer error");
     }

@@ -36,7 +36,7 @@ function readUnion(u: UnionRM): string | number {
 
 // Union makes field readonly (one branch is readonly)
 function writeUnion(u: UnionRM): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   u.y = 42;
 }
 
@@ -51,6 +51,6 @@ function takesInter(b: InterRM): void {
 function passReadonlyToInter(): void {
   const ro: ReadonlyX = { x: "immutable" };
   // Readonly is not assignable to intersection (which requires mutable)
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesInter(ro);
 }

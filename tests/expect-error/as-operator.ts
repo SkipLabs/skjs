@@ -42,7 +42,7 @@ function testArrayLiteralWidening(): string[] {
 
 // Downcast from `unknown`: unknown is NOT a subtype of number
 function testDowncastFromUnknown(u: unknown): void {
-  // @skjs-expect-error Unsound 'as' cast
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   const n: number = u as number;
   // Typing continues: `n` is `number`, so arithmetic works
   const doubled: number = n * 2;
@@ -50,7 +50,7 @@ function testDowncastFromUnknown(u: unknown): void {
 
 // Sideways primitive cast: number and string are unrelated
 function testSidewaysPrimitive(): void {
-  // @skjs-expect-error Unsound 'as' cast
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   const s: string = 42 as string;
   // Typing continues: `s` is `string`, so `.length` works
   const len: number = s.length;
@@ -58,14 +58,14 @@ function testSidewaysPrimitive(): void {
 
 // Union not fully covered by the target type
 function testUnionNotSubtype(x: number[] | { a: number }): number[] {
-  // @skjs-expect-error Unsound 'as' cast
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   return x as number[];
 }
 
 // Double-cast escape hatch: first half is sound (number <: unknown), second
 // half is unsound (unknown </: string). Only the second `as` is flagged.
 function testDoubleCastEscape(): void {
-  // @skjs-expect-error Unsound 'as' cast
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   const s: string = 1 as unknown as string;
   const len: number = s.length;
 }

@@ -46,6 +46,7 @@ extension class TypeChecker {
     | _ ->
       subst.error(
         Array[(ty.pos, "Internal error: new should produce an object")],
+        SKJSCode(9999),
       );
       ty
     }
@@ -57,11 +58,12 @@ extension class TypeChecker {
     msg: String,
     ty1: TType,
     ty2: TType,
+    code: ErrorCode,
   ): void {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
-      tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err)
+      tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err, code)
     }
   }
 
@@ -69,9 +71,10 @@ extension class TypeChecker {
     this.checkSubType(
       tcenv,
       pos,
-      "This expression was expected to be of type void",
+      "This expression was expected to be of type 'void'",
       ty,
       TType::single(TPrimUnit(TVoid(), ty.pos)),
+      SKJSCode(2002),
     );
   }
 
@@ -86,9 +89,10 @@ extension class TypeChecker {
     this.checkSubType(
       tcenv,
       pos,
-      "This expression was expected to be of type void or ignorable",
+      "This expression was expected to be of type 'void' or ignorable",
       ty,
       tyVoid,
+      SKJSCode(2002),
     )
   }
 
@@ -108,9 +112,10 @@ extension class TypeChecker {
     this.checkSubType(
       tcenv,
       e.pos,
-      "A condition is expected to be of type boolean, not: ",
+      "A condition must be of type 'boolean'",
       this.expr(tcenv, e, true),
       TType::single(TPrimValue::boolean(e.pos)),
+      ESLintCode("@typescript-eslint/strict-boolean-expressions"),
     );
   }
 
@@ -139,9 +144,10 @@ extension class TypeChecker {
         Array[
           (
             pos,
-            "Template literal expressions must be string, number, bigint, boolean, null, or undefined",
+            "Template literal expressions must be of type string, number, bigint, boolean, null, or undefined",
           ),
         ],
+        ESLintCode("@typescript-eslint/restrict-template-expressions"),
       );
     }
   }
@@ -156,7 +162,11 @@ extension class TypeChecker {
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TNum(), _, _)) -> void
-    | _ -> tcenv.error(Array[(pos, msg), (ty.pos, "This is not a number")])
+    | _ ->
+      tcenv.error(
+        Array[(pos, msg), (ty.pos, "This is not of type 'number'")],
+        SKJSCode(2041),
+      )
     };
   }
 
@@ -176,8 +186,9 @@ extension class TypeChecker {
       fatalError(
         Array[
           (pos, msg),
-          (ty.pos, "This is not a numeric type (number or bigint)"),
+          (ty.pos, "This is not a numeric type ('number' or 'bigint')"),
         ],
+        SKJSCode(2041),
       )
     };
   }
@@ -212,12 +223,30 @@ extension class TypeChecker {
 
   fun checkLValue(tcenvb: mutable TCEnvBase, e: Expr): void {
     e.value match {
-    | Var(Name(_, "super")) -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
+    | Var(Name(_, "super")) ->
+      tcenvb.error(
+        Array[
+          (
+            e.pos,
+            "The left-hand side of an assignment must be a variable or a property access",
+          ),
+        ],
+        TSCode(2364),
+      )
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
     | Dot(NormalDot(), e1, _) -> this.checkLValue(tcenvb, e1)
-    | _ -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
+    | _ ->
+      tcenvb.error(
+        Array[
+          (
+            e.pos,
+            "The left-hand side of an assignment must be a variable or a property access",
+          ),
+        ],
+        TSCode(2364),
+      )
     }
   }
 }
@@ -231,6 +260,7 @@ fun paramsError<T>(pos: PosRange): T {
           "Use type assertions with 'as' keyword instead",
       ),
     ],
+    SKJSCode(2061),
   )
 }
 

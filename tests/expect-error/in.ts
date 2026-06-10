@@ -1,10 +1,10 @@
 function literalInRecordAlwaysTrue(x: { f: number }): boolean {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   return "f" in x;
 }
 
 function refineLiteralInRecordAlwaysTrue(x: { f: number }): number {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   if ("f" in x) {
     return x.f;
   } else {
@@ -38,8 +38,8 @@ function literalInRecordNotAlwaysFalse(x: { f: number }): boolean {
 
 function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
   if ("g" in x) {
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'g' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.g;
   } else {
     return 0;
@@ -74,8 +74,8 @@ function literalInRecordUnion(x: { f: number } | { g: number }): boolean {
 function refineLiteralInRecordUnion(x: { f: number } | { g: number }): number {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   } else {
     return 0;
@@ -103,8 +103,8 @@ function refineLiteralInRecordOptUnion(
 ): number {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   } else {
     return 0;
@@ -116,8 +116,8 @@ function refineLiteralInRecordOptUnion2(
 ): number | undefined {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   } else {
     return 0;
@@ -131,7 +131,7 @@ function unionInRecord(s: "f" | "g", x: { f: number }): boolean {
 function refineUnionInRecord(s: "f" | "g", x: { f: number }): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -141,7 +141,7 @@ function refineUnionInRecord(s: "f" | "g", x: { f: number }): number {
 function refineUnionInRecord2(s: "f" | "g", x: { f: number }): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -155,7 +155,7 @@ function unionInRecordOpt(s: "f" | "g", x: { f?: number }): boolean {
 function refineUnionInRecordOpt(s: "f" | "g", x: { f?: number }): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -168,7 +168,7 @@ function refineUnionInRecordOpt2(
 ): number | undefined {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -178,7 +178,7 @@ function refineUnionInRecordOpt2(
 function refineUnionInRecordOpt3(s: "f" | "g", x: { f?: number }): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -189,7 +189,7 @@ function unionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): boolean {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   return s in x;
 }
 
@@ -197,7 +197,7 @@ function refineUnionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): number {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   if (s in x) {
     return x[s];
   } else {
@@ -217,7 +217,7 @@ function refineUnionInRecordOpt2_1(
   x: { f?: number; g: number },
 ): number {
   if (s in x) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x[s];
   } else {
     return 0;
@@ -246,7 +246,7 @@ function refineUnionInRecordOpt3_1(
   x: { f?: number; g?: number },
 ): number {
   if (s in x) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x[s];
   } else {
     return 0;
@@ -274,7 +274,7 @@ function refineUnionInRecordNotAlwaysFalse(
 ): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: f | g
+    // @skjs-expect-error Property 'f | g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -287,7 +287,7 @@ function refineUnionInRecordNotAlwaysFalse2(
 ): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: f | g
+    // @skjs-expect-error Property 'f | g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -301,7 +301,7 @@ function stringInRecord(s: string, x: { f: number }): boolean {
 function refineStringInRecord(s: string, x: { f: number }): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     return x[s];
   } else {
     return 0;
@@ -311,7 +311,7 @@ function refineStringInRecord(s: string, x: { f: number }): number {
 function refineStringInRecord2(s: string, x: { f: number }): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     return x[s];
   } else {
     return 0;
@@ -331,12 +331,12 @@ function literalInTupleUnion(x: [number] | [number, number]): boolean {
 }
 
 function literalInNonObject(x: number): boolean {
-  // @ts-expect-error Invalid in
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   return 0 in x;
 }
 
 function refineInMandatoryField(x: { f: string } | string): string {
-  // @ts-expect-error Invalid in
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   if ("f" in x) {
     return x.f;
   } else {
@@ -363,7 +363,7 @@ function takesXY(_: { x: number; y: number }): void {}
 
 function phantomDoesNotSatisfyRealField(obj: { x: number }): void {
   if ("y" in obj) {
-    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Argument is not assignable to the parameter's type
     takesXY(obj);
   }
 }

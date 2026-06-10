@@ -1,4 +1,4 @@
 function unsupportedConsoleApis(): void {
-  // @skjs-expect-error Unbound field: table
+  // @skjs-expect-error Property 'table' does not exist on this type
   console.table("data");
 }

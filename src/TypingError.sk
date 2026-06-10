@@ -207,6 +207,7 @@ class SubtypingError(
   tenv: TEnv,
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
+  code: ErrorCode,
 ) extends TypingError {
   fun toErrorMessage(
     context: mutable SKStore.Context,
@@ -247,7 +248,10 @@ class SubtypingError(
   }
 }
 
-class NamingError(messages: Array<(PosRange, String)>) extends TypingError {
+class NamingError(
+  messages: Array<(PosRange, String)>,
+  code: ErrorCode,
+) extends TypingError {
   fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
@@ -265,8 +269,8 @@ class NamingError(messages: Array<(PosRange, String)>) extends TypingError {
   }
 }
 
-fun fatalError<T>(messages: Array<(PosRange, String)>): T {
-  throw ErrorExn(NamingError(messages))
+fun fatalError<T>(messages: Array<(PosRange, String)>, code: ErrorCode): T {
+  throw ErrorExn(NamingError(messages, code))
 }
 
 fun subtypingError<T>(
@@ -274,12 +278,13 @@ fun subtypingError<T>(
   tenv: TEnv,
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
+  code: ErrorCode,
 ): T {
-  throw ErrorExn(SubtypingError(subst.saveAll(), tenv, messages, stErr))
+  throw ErrorExn(SubtypingError(subst.saveAll(), tenv, messages, stErr, code))
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {
-  fatalError(Array[(pos, `Construction not supported: ${what}`)])
+  fatalError(Array[(pos, `${what} is not supported by SKJS`)], SKJSCode(9050))
 }
 
 module end;

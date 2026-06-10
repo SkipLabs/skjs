@@ -40,7 +40,7 @@ function testForInThenCall(v: { [key: string]: number }): void {
 function testForInAfterCall(v: { [key: string]: number }): void {
   for (const k in v) {
     someFunc();
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = v[k]!;
   }
 }
@@ -48,7 +48,7 @@ function testForInAfterCall(v: { [key: string]: number }): void {
 function testForInAfterNew(v: { [key: string]: number }): void {
   for (const k in v) {
     const _x = new SomeClass();
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = v[k]!;
   }
 }
@@ -58,7 +58,7 @@ function testForInDotAccessAfterCall(obj: {
 }): void {
   for (const k in obj.field) {
     someFunc();
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = obj.field[k]!;
   }
 }
@@ -72,7 +72,7 @@ function testForInWrongObject(
   w: { [key: string]: number },
 ): void {
   for (const k in v) {
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     const val: number = w[k]!;
   }
 }
@@ -82,20 +82,20 @@ function testForInObjectMismatch(
   v2: { [key: string]: number },
 ): void {
   for (const x in v2) {
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     const val: number = v[x]!;
   }
 }
 
 function testRegularExclamation(x: number | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testForOfExclamation(v: { [key: string]: number }): void {
   const arr: (number | null)[] = [1, null, 3];
   for (const x of arr) {
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     const val: number = x!;
   }
 }
@@ -124,7 +124,7 @@ function testNestedInnerCallTaintsOuter(
     for (const x2 in v2) {
       someFunc();
     }
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const a1: number = v1[x1]!;
   }
 }
@@ -148,7 +148,7 @@ function testNestedInnerCallInnerStillSafe(
 function testForInCallWithIterable(v: { [key: string]: number }): void {
   for (const k in v) {
     mutate(v);
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = v[k]!;
   }
 }
@@ -177,7 +177,7 @@ function testForInUnrelatedAssignment2(v: { [key: string]: number }): void {
   for (const k in v) {
     // Safe: unrelated assignment doesn't affect v but SKJS is too conservative
     y = 5;
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = v[k]!;
   }
 }
@@ -188,7 +188,7 @@ function testForInReassignIterable(
 ): void {
   for (const k in v) {
     v = other;
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = v[k]!;
   }
 }
@@ -196,7 +196,7 @@ function testForInReassignIterable(
 function testForInAssignToIterableProperty(v: { [key: string]: number }): void {
   for (const k in v) {
     v[k] = 5;
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed here
     const val: number = v[k]!;
   }
 }

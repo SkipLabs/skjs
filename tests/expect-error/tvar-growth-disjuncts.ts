@@ -59,7 +59,7 @@ function testConstraintPass(): string {
 // `42` which doesn't satisfy `A extends string`; growth is skipped and
 // the top-level isSub call rejects the call.
 function testConstraintFail(): string {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return takeStrBound(42);
 }
 

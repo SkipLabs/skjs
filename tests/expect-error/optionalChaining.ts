@@ -1,7 +1,7 @@
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 const obj: { f: number } = { f: 1 };
 
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 const obj2: { f?: number } = {};
 
 function returningVoid(): void {}
@@ -13,39 +13,39 @@ function maybeObj2(): { f?: number } | null {
   return {};
 }
 
-// @skjs-expect-warning Useless '?.'. Use '.' instead
+// @skjs-expect-warning This '?.' is unnecessary; the value is never nullish, so use '.' instead
 const x1: number = obj?.f;
 
-// @skjs-expect-warning Useless '?.'. Use '.' instead
+// @skjs-expect-warning This '?.' is unnecessary; the value is never nullish, so use '.' instead
 const x2: number | undefined = obj2?.f;
 
-// @skjs-expect-warning Result of optional chaining is always undefined
+// @skjs-expect-warning The result of this optional chain is always 'undefined'
 const x3: undefined = undefined?.f;
 
-// @skjs-expect-warning Result of optional chaining is always undefined
+// @skjs-expect-warning The result of this optional chain is always 'undefined'
 const x4: undefined = null?.f;
 
-// @ts-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x5: null = maybeObj()?.f;
 
-// @ts-expect-error Type cannot be accessed
+// @skjs-expect-error Property access is not allowed on this type
 const x6: undefined = returningVoid()?.f;
 
-// @ts-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x7: undefined = maybeObj()?.f;
 
-// @ts-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x8: number = maybeObj()?.f;
 
 const x9: number | undefined = maybeObj()?.f;
 
-// @ts-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x10: undefined = maybeObj2()?.f;
 
-// @ts-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x11: number = maybeObj2()?.f;
 
 const x12: number | undefined = maybeObj2()?.f;
 
-// @ts-expect-error Unbound field: g
+// @skjs-expect-error Property 'g' does not exist on this type
 const x13: number | undefined = obj?.g;

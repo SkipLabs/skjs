@@ -64,9 +64,10 @@ mutable class Scope{
     | Some(otherDef) ->
       tcenvb.error(
         Array[
-          (name.pos, `${name} is already defined`),
+          (name.pos, `Cannot redeclare block-scoped variable '${name}'`),
           (otherDef.pos, "Previous definition was here"),
         ],
+        TSCode(2451),
       )
     };
     this.!locals[name.value] = name;
@@ -85,7 +86,15 @@ mutable class Scope{
     | None() -> None()
     | Some((_, ref)) ->
       if (!ref.isInitialized) {
-        fatalError(Array[(name.pos, "This local is not fully initialized")])
+        fatalError(
+          Array[
+            (
+              name.pos,
+              `Variable '${name.value}' is used before being assigned`,
+            ),
+          ],
+          TSCode(2454),
+        )
       } else {
         Some(ref.type)
       }
@@ -94,7 +103,11 @@ mutable class Scope{
 
   readonly fun get(name: Name): TType {
     this.maybeGet(name) match {
-    | None() -> fatalError(Array[(name.pos, "Unbound name")])
+    | None() ->
+      fatalError(
+        Array[(name.pos, `Cannot find name '${name.value}'`)],
+        TSCode(2304),
+      )
     | Some(x) -> x
     }
   }
@@ -105,7 +118,11 @@ mutable class Scope{
     isSubType: (TType, TType) -> void,
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
-    | None() -> fatalError(Array[(name.pos, "Unbound name: " + name.value)])
+    | None() ->
+      fatalError(
+        Array[(name.pos, `Cannot find name '${name.value}'`)],
+        TSCode(2304),
+      )
     | Some(x) -> x
     };
     if (throughLoop) {

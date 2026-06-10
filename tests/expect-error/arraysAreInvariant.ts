@@ -40,7 +40,7 @@ function readonlyArrayIsCovariant(dogs: readonly Dog[]): readonly Animal[] {
 function readonlyArrayIsNotContravariant(
   animals: readonly Animal[],
 ): readonly Dog[] {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return animals;
 }
 
@@ -51,13 +51,13 @@ function arrayIsSubtypeOfReadonlyArray(dogs: Dog[]): readonly Dog[] {
 
 // readonly T[] is not a subtype of Array<T>
 function readonlyArrayIsNotSubtypeOfArray(dogs: readonly Dog[]): Dog[] {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return dogs;
 }
 
 // Known limitation: indexOf, includes, lastIndexOf, concat are commented out
 // on ReadonlyArray because T in contravariant position prevents covariant subtyping.
 function readonlyArrayMissingMethods(xs: readonly number[]): void {
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   xs.indexOf(1);
 }

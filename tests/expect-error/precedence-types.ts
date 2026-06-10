@@ -11,7 +11,7 @@ function testUnaryMemberAccessPositive(obj: Obj): boolean {
 }
 
 function testUnaryMemberAccessNegative(obj: boolean): void {
-  // @ts-expect-error Unbound field: flag
+  // @skjs-expect-error Property 'flag' does not exist on this type
   const x: boolean = (!obj).flag; // Forcing wrong precedence: boolean has no .flag
 }
 
@@ -90,8 +90,8 @@ function testUnaryCallPositive(): boolean {
 
 function testUnaryCallNegative(): void {
   const f = (): boolean => true;
-  // @skjs-expect-error Invalid call
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error This expression is not callable
   const result: boolean = (!f)(); // Forcing wrong precedence: boolean is not callable
 }
 
@@ -152,6 +152,6 @@ function testChainedMemberPositive(obj: { nested: { value: number } }): number {
 }
 
 function testChainedMemberNegative(obj: { nested: { value: number } }): void {
-  // @ts-expect-error Unbound field: nested
+  // @skjs-expect-error Property 'nested' does not exist on this type
   const x: number = obj.nested.value.nested; // Type error: number has no .nested
 }

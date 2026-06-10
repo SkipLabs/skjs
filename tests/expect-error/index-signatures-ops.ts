@@ -142,7 +142,7 @@ function strIdxToNumIdx(s: StrIdx): NumIdx {
 
 // Number-indexed NOT assignable to string-indexed
 function numIdxToStrIdx(n: NumIdx): StrIdx {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return n;
 }
 
@@ -151,7 +151,7 @@ function numIdxToStrIdx(n: NumIdx): StrIdx {
 ///////////////////////////////////////////////////////////////////////////////
 
 function dualToStrIdx(d: DualIdx): StrIdxUnion {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return d;
 }
 
@@ -180,7 +180,7 @@ interface DualIdxBadCross {
 // DualIdxBadCross's number index (number) is not compatible with
 // StrIdxBool's string index (boolean)
 function dualBadCrossToStrBool(d: DualIdxBadCross): StrIdxBool {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return d;
 }
 
@@ -205,6 +205,6 @@ function dualGoodCrossReadonlyToStrWide(d: DualIdxGoodCrossReadonly): {
 function dualGoodCrossToStrWide(d: DualIdxGoodCross): {
   [key: string]: number | boolean;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return d;
 }

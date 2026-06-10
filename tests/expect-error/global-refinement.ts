@@ -21,7 +21,7 @@ declare const gCls: MyCls | null;
 
 function testTypeofString(): string {
   if (typeof gStr === "string") {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gStr;
   }
   return "";
@@ -29,7 +29,7 @@ function testTypeofString(): string {
 
 function testTypeofNumber(): number {
   if (typeof gUnion === "number") {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gUnion;
   }
   return 0;
@@ -37,7 +37,7 @@ function testTypeofNumber(): number {
 
 function testTypeofBoolean(): boolean {
   if (typeof gBoolOrNull === "boolean") {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gBoolOrNull;
   }
   return false;
@@ -49,13 +49,13 @@ function testTypeofBoolean(): boolean {
 
 function testEqNull(): string {
   if (gStr === null) return "";
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return gStr;
 }
 
 function testNeqNull(): string {
   if (gStr !== null) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gStr;
   }
   return "";
@@ -63,13 +63,13 @@ function testNeqNull(): string {
 
 function testEqUndefined(): number {
   if (gNum === undefined) return 0;
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return gNum;
 }
 
 function testNeqUndefined(): number {
   if (gNum !== undefined) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gNum;
   }
   return 0;
@@ -81,7 +81,7 @@ function testNeqUndefined(): number {
 
 function testFieldEqConstant(): "x" {
   if (gObj.kind === "x") {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gObj.kind;
   }
   return "x";
@@ -89,7 +89,7 @@ function testFieldEqConstant(): "x" {
 
 function testFieldNeqUndefined(): number {
   if (gObj.a !== undefined) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gObj.a;
   }
   return 0;
@@ -101,7 +101,7 @@ function testFieldNeqUndefined(): number {
 
 function testIsArray(): number[] {
   if (Array.isArray(gArrOrStr)) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gArrOrStr;
   }
   return [];
@@ -113,7 +113,7 @@ function testIsArray(): number[] {
 
 function testInstanceOf(): MyCls {
   if (gCls instanceof MyCls) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gCls;
   }
   return new MyCls();
@@ -125,7 +125,7 @@ function testInstanceOf(): MyCls {
 
 function testInOperator(): number {
   if ("a" in gUnionObj) {
-    // @skjs-expect-error Unbound field: a
+    // @skjs-expect-error Property 'a' does not exist on this type
     return gUnionObj.a;
   }
   return 0;
@@ -137,7 +137,7 @@ function testInOperator(): number {
 
 function testNegation(): string {
   if (!(gStr === null)) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gStr;
   }
   return "";
@@ -145,7 +145,7 @@ function testNegation(): string {
 
 function testAndChain(a: boolean): string {
   if (a && gStr !== null) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return gStr;
   }
   return "";
@@ -153,6 +153,6 @@ function testAndChain(a: boolean): string {
 
 function testOrChain(a: boolean): string {
   if (gStr === null || !a) return "";
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return gStr;
 }

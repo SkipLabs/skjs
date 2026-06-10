@@ -20,7 +20,7 @@ function compare<T>(a: T, b: T): number {
   }
 
   if (typeof a === "object" && typeof b === "object") {
-    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Argument is not assignable to the parameter's type
     return compareObjects(a, b);
   }
 
@@ -55,7 +55,7 @@ function compareObjects(a: object, b: object): number {
     if (keyA > keyB) {
       return 1;
     }
-    // @skjs-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     const valueA = a[keyA];
     const valueB = b[keyB];
     if (valueA === undefined && valueB === undefined) {

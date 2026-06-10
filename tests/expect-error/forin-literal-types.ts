@@ -3,7 +3,7 @@
 // Literal number types are not allowed
 function testNumLiteral(): void {
   const num = 5;
-  // @skjs-expect-error for-in loop requires an object or array type
+  // @skjs-expect-error The right-hand side of a 'for...in' statement must be an object or array type
   for (const k in num) {
   }
 }
@@ -11,7 +11,7 @@ function testNumLiteral(): void {
 // Literal string types are not allowed
 function testStrLiteral(): void {
   const str = "hello";
-  // @skjs-expect-error for-in loop requires an object or array type
+  // @skjs-expect-error The right-hand side of a 'for...in' statement must be an object or array type
   for (const k in str) {
   }
 }

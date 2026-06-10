@@ -70,7 +70,7 @@ class PublicParent {
   x: number = 1;
 }
 
-// @skjs-expect-error Invalid extension
+// @skjs-expect-error This class incorrectly extends its base class
 class NarrowsToPrivate extends PublicParent {
   private x: number = 2;
 }
@@ -79,7 +79,7 @@ class PrivateParent {
   private y: number = 1;
 }
 
-// @skjs-expect-error Invalid extension
+// @skjs-expect-error This class incorrectly extends its base class
 class WidensToPublic extends PrivateParent {
   y: number = 2;
 }
@@ -94,7 +94,7 @@ class PrivateParentZ {
   private z: number = 1;
 }
 
-// @skjs-expect-error Invalid extension
+// @skjs-expect-error This class incorrectly extends its base class
 class PrivateChildZ extends PrivateParentZ {
   private z: number = 2;
 }
@@ -141,7 +141,7 @@ class StructLeak {
 }
 
 function structuralLaunder(c: StructLeak): { q: number } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return c;
 }
 
@@ -150,7 +150,7 @@ function genericLaunder<T extends { q: number }>(t: T): number {
 }
 
 function callGeneric(c: StructLeak): number {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return genericLaunder(c);
 }
 

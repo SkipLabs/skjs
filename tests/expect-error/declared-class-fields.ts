@@ -26,14 +26,14 @@ declare class Box<T> {
 
 function box1(): Box<number> {
   let bs: Box<string> = box1Helper();
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return bs;
 }
 declare function box1Helper(): Box<string>;
 
 // Non-ambient class still requires annotations on public fields.
 class RegularPublicNoType {
-  // @skjs-expect-error Type annotation expected for 'x'
-  // @skjs-expect-error Uninitialized field 'x'
+  // @skjs-expect-error Field 'x' has no initializer and is not assigned in the constructor
+  // @skjs-expect-error Member 'x' must have an explicit type annotation
   x;
 }

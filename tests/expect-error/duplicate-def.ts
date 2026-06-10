@@ -1,49 +1,49 @@
 // Same-space duplicates (should error)
 
 const x: number = 1;
-// @skjs-expect-error x is already defined
+// @skjs-expect-error Duplicate identifier 'x'
 const x: number = 2;
 
 type T = number;
-// @skjs-expect-error T is already defined
+// @skjs-expect-error Duplicate identifier 'T'
 type T = string;
 
-// @skjs-expect-error Found multiple definitions for class A
+// @skjs-expect-error Duplicate class declaration 'A'
 class A {}
-// @skjs-expect-error Found multiple definitions for class A
-// @skjs-expect-error A is already defined
+// @skjs-expect-error Duplicate class declaration 'A'
+// @skjs-expect-error Duplicate identifier 'A'
 class A {}
 
 function f(): void {}
-// @skjs-expect-error f is already defined
+// @skjs-expect-error Duplicate identifier 'f'
 function f(): void {}
 
-// @skjs-expect-error Found multiple definitions for class I
+// @skjs-expect-error Duplicate class declaration 'I'
 interface I {
   a: number;
 }
-// @skjs-expect-error Found multiple definitions for class I
-// @skjs-expect-error I is already defined
+// @skjs-expect-error Duplicate class declaration 'I'
+// @skjs-expect-error Duplicate identifier 'I'
 interface I {
   b: string;
 }
 
-// @skjs-expect-error Construction not supported: enum (ignored)
+// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum E {
   X,
 }
-// @skjs-expect-error Construction not supported: enum (ignored)
-// @skjs-expect-error E is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+// @skjs-expect-error Duplicate identifier 'E'
 enum E {
   Y,
 }
 
 function g(): void {}
-// @skjs-expect-error g is already defined
+// @skjs-expect-error Duplicate identifier 'g'
 const g: number = 1;
 
 type U = number;
-// @skjs-expect-error U is already defined
+// @skjs-expect-error Duplicate identifier 'U'
 interface U {
   a: number;
 }
@@ -70,30 +70,30 @@ const Ic: number = 1;
 // Cross-space with class/enum (should error, they occupy both spaces)
 
 type Ct = number;
-// @skjs-expect-error Ct is already defined
+// @skjs-expect-error Duplicate identifier 'Ct'
 class Ct {}
 
 function Cf(): void {}
-// @skjs-expect-error Cf is already defined
+// @skjs-expect-error Duplicate identifier 'Cf'
 class Cf {}
 
 type Et = number;
-// @skjs-expect-error Construction not supported: enum (ignored)
-// @skjs-expect-error Et is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+// @skjs-expect-error Duplicate identifier 'Et'
 enum Et {
   X,
 }
 
 function Ef(): void {}
-// @skjs-expect-error Construction not supported: enum (ignored)
-// @skjs-expect-error Ef is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+// @skjs-expect-error Duplicate identifier 'Ef'
 enum Ef {
   X,
 }
 
 const Ec: number = 1;
-// @skjs-expect-error Construction not supported: enum (ignored)
-// @skjs-expect-error Ec is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+// @skjs-expect-error Duplicate identifier 'Ec'
 enum Ec {
   X,
 }

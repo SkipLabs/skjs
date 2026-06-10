@@ -7,7 +7,7 @@ function getObj(): { foo: string } {
   return { foo: "bar" };
 }
 
-// @skjs-expect-error Template literal expressions must be string, number, bigint, boolean, null, or undefined
+// @skjs-expect-error Template literal expressions must be of type string, number, bigint, boolean, null, or undefined
 const invalidObjectTemplate: string = `Object: ${getObj()}`;
 
 // Valid templates with various expression types

@@ -50,7 +50,10 @@ extension class TypeChecker {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
-        fatalError(Array[(n.pos, "TODO: support this parameter")])
+        fatalError(
+          Array[(n.pos, "'this' parameters are not yet supported by SKJS")],
+          SKJSCode(9001),
+        )
       | _ -> checkPatternDoesNotContainThis(param.name)
       };
       param.isRest match {
@@ -60,6 +63,7 @@ extension class TypeChecker {
         | Some(optionalPos) ->
           tcenv.error(
             Array[(optionalPos, "A rest parameter cannot be optional")],
+            TSCode(1047),
           )
         };
         param.default match {
@@ -69,6 +73,7 @@ extension class TypeChecker {
             Array[
               (defaultExpr.pos, "A rest parameter cannot have an initializer"),
             ],
+            TSCode(1048),
           )
         };
         if (i != params.size() - 1) {
@@ -76,6 +81,7 @@ extension class TypeChecker {
             Array[
               (restPos, "A rest parameter must be last in a parameter list"),
             ],
+            TSCode(1014),
           )
         };
         param.type.each(paramType ->
@@ -90,7 +96,13 @@ extension class TypeChecker {
       | None() -> void
       };
       paramType = param.type match {
-      | None() -> fatalError(Array[(param.pos, "Missing type annotation")])
+      | None() ->
+        fatalError(
+          Array[
+            (param.pos, "A parameter must have an explicit type annotation"),
+          ],
+          TSCode(7006),
+        )
       | Some(ty) -> this.normalize(tcenv.subst, ty)
       };
       param.isRest.each(_ ->
@@ -103,12 +115,16 @@ extension class TypeChecker {
       ) {
         tcenv.error(
           Array[
-            (param.pos, "This parameter is not optional"),
+            (
+              param.pos,
+              "A required parameter cannot follow an optional parameter",
+            ),
             (
               params[i - 1].pos,
               "It appears after this parameter that is optional",
             ),
           ],
+          TSCode(1016),
         )
       };
       param.optional match {
@@ -131,9 +147,10 @@ extension class TypeChecker {
             Array[
               (
                 optionalPos,
-                "A parameter cannot both be optional and have a default value",
+                "A parameter cannot have both a question mark and an initializer",
               ),
             ],
+            TSCode(1015),
           )
         };
         savedScope = tcenv.scope;
@@ -142,9 +159,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           defaultExpr.pos,
-          "Default value doesn't have the expected type",
+          "Type of default value is not assignable to the parameter's type",
           this.expr(tcenv, defaultExpr, true),
           paramType,
+          TSCode(2322),
         );
         tcenv.!scope = savedScope
       };
@@ -153,9 +171,10 @@ extension class TypeChecker {
           Array[
             (
               modifier.pos,
-              `Forbidden modifier '${modifier}' for a function parameter`,
+              `Modifier '${modifier}' is not allowed on a function parameter`,
             ),
           ],
+          SKJSCode(2067),
         )
       };
       paramType
@@ -182,9 +201,10 @@ extension class TypeChecker {
           Array[
             (
               modifier.pos,
-              `TODO: support for method modifiers (encountered ${modifier})`,
+              `Method modifier '${modifier}' is not yet supported by SKJS`,
             ),
           ],
+          SKJSCode(9002),
         )
       }
     };
@@ -198,8 +218,12 @@ extension class TypeChecker {
       funSig = this.getFunSig(subst.context, fd);
       subst.error(
         Array[
-          (funSig.retType.i0, `Missing return type for '${fd.name.getName()}'`),
+          (
+            funSig.retType.i0,
+            `Function '${fd.name.getName()}' must have an explicit return type annotation`,
+          ),
         ],
+        TSCode(7010),
       )
     };
     fd.isAsync match {
@@ -215,9 +239,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           asyncPos,
-          "Async functions must return an object of type Promise<_>",
+          "The return type of an async function must be the global Promise<T> type",
           retType,
           TType::single(TPromise(type, asyncPos)),
+          TSCode(1064),
         )
       }
     };
@@ -225,11 +250,17 @@ extension class TypeChecker {
     this.getFunBody(subst.context, fd) match {
     | FDBNone() ->
       if (thisTypeOpt is Some((CKClass(), _))) {
-        subst.error(Array[(fdPos, "Missing definition")])
+        subst.error(
+          Array[(fdPos, "Method implementation is missing")],
+          TSCode(2391),
+        )
       }
     | FDBSome(body) ->
       if (thisTypeOpt is Some((CKInterface(), _))) {
-        subst.error(Array[(fdPos, "An interface cannot implement a method")])
+        subst.error(
+          Array[(fdPos, "An interface method cannot have an implementation")],
+          TSCode(1183),
+        )
       };
       this.retType match {
       | None() -> void
@@ -238,7 +269,13 @@ extension class TypeChecker {
         term = StmtTermination::block(tcenv, body);
         if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
           subst.error(
-            Array[(fdPos, "This function may not always return a value")],
+            Array[
+              (
+                fdPos,
+                "Not all code paths return a value, and the return type does not include 'undefined'",
+              ),
+            ],
+            TSCode(2366),
           )
         }
       }

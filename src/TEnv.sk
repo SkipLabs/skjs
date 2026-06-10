@@ -138,7 +138,11 @@ base class TEnv{
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
-    | Enum _ -> fatalError(Array[(name.pos, "TODO: instantiate Enum")])
+    | Enum _ ->
+      fatalError(
+        Array[(name.pos, "Enum instantiation is not yet supported by SKJS")],
+        SKJSCode(9012),
+      )
     }
   }
 
@@ -155,9 +159,10 @@ base class TEnv{
         Array[
           (
             pos,
-            `Too many type parameters: given ${tArgs.size()}, expected ${tParams.size()}`,
+            `Expected ${tParams.size()} type arguments, but got ${tArgs.size()}`,
           ),
         ],
+        TSCode(2707),
       )
     };
 
@@ -170,9 +175,10 @@ base class TEnv{
             Array[
               (
                 pos,
-                `Not enough type parameters: given ${tArgs.size()}, expected ${tParams.size()}`,
+                `Expected ${tParams.size()} type arguments, but got ${tArgs.size()}`,
               ),
             ],
+            TSCode(2707),
           );
           break void
         }
@@ -192,14 +198,14 @@ base class TEnv{
             subst,
             this,
             Array[
-              (pos, "Constraint not satisfied"),
+              (pos, "Type argument does not satisfy the constraint"),
               (
                 tArg.pos,
                 `This is of type: ${prettyPrintType(false, tArg, subst, this)}`,
               ),
               (
                 cstr.pos,
-                `It does not implement: ${prettyPrintType(
+                `It does not satisfy the constraint: ${prettyPrintType(
                   false,
                   cstrTy,
                   subst,
@@ -208,6 +214,7 @@ base class TEnv{
               ),
             ],
             err,
+            TSCode(2344),
           )
         }
       };
@@ -222,7 +229,10 @@ base class TEnv{
     | ca @ Class _ -> ca
     | TypeDef _
     | Enum _ ->
-      fatalError(Array[(className.pos, "Expected a class name")])
+      fatalError(
+        Array[(className.pos, "A class name was expected here")],
+        SKJSCode(2022),
+      )
     };
   }
 
@@ -294,7 +304,13 @@ base class TEnv{
     c = this.getClass(subst, className);
     if (c.tparams.size() != targs.size()) {
       subst.error(
-        Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
+        Array[
+          (
+            className.pos,
+            `Expected ${c.tparams.size()} type arguments, but got ${targs.size()}`,
+          ),
+        ],
+        TSCode(2707),
       )
     };
     visitedClasses = SortedSet[];
@@ -313,7 +329,13 @@ base class TEnv{
     c = this.getClass(subst, className);
     if (c.tparams.size() != targs.size()) {
       subst.error(
-        Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
+        Array[
+          (
+            className.pos,
+            `Expected ${c.tparams.size()} type arguments, but got ${targs.size()}`,
+          ),
+        ],
+        TSCode(2707),
       )
     };
     visitedClasses = SortedSet[];
@@ -444,7 +466,15 @@ base class TEnv{
     targs: Array<TType>,
   ): (this, Class) {
     if (visitedClasses.contains(className.value)) {
-      fatalError(Array[(className.pos, "Cyclic class definition")]);
+      fatalError(
+        Array[
+          (
+            className.pos,
+            "This class is referenced directly or indirectly in its own base class",
+          ),
+        ],
+        TSCode(2506),
+      );
     };
     !visitedClasses = visitedClasses.set(className.value);
     defs = this.defMap.getAll(subst, className);
@@ -455,13 +485,16 @@ base class TEnv{
       }
     );
     defsCls.size() match {
-    | 0 -> fatalError(Array[(className.pos, "Unbound class")])
+    | 0 ->
+      fatalError(
+        Array[(className.pos, `Cannot find name '${className.value}'`)],
+        TSCode(2304),
+      )
     | 1 -> void
     | _ ->
       subst.error(
-        Array[
-          (className.pos, `Found multiple definitions for class ${className}`),
-        ],
+        Array[(className.pos, `Duplicate class declaration '${className}'`)],
+        TSCode(2300),
       )
     };
     cls = defsCls[0];
@@ -471,9 +504,13 @@ base class TEnv{
     ) {
       subst.error(
         Array[
-          (className.pos, "Invalid number of type arguments"),
+          (
+            className.pos,
+            `Expected ${cls.tparams.size()} type arguments, but got ${targs.size()}`,
+          ),
           (cls.name.pos, "Class declaration is here"),
         ],
+        TSCode(2707),
       )
     };
     if (withTParams) {
@@ -517,7 +554,16 @@ base class TEnv{
           },
           filter,
         )
-      | _ -> subst.error(Array[(extend.pos, "Unexpected extend")])
+      | _ ->
+        subst.error(
+          Array[
+            (
+              extend.pos,
+              "An 'extends' clause must reference a class instantiation",
+            ),
+          ],
+          TSCode(2507),
+        )
       }
     };
     constructor: ?TFuns = None();
@@ -541,19 +587,26 @@ base class TEnv{
               Array[
                 (
                   modifier.pos,
-                  `TODO: field modifier '${mod}' (TEnv#addFields)`,
+                  `Field modifier '${mod}' is not yet supported by SKJS`,
                 ),
               ],
+              SKJSCode(9008),
             )
           }
         };
         if (fieldIsStatic != isStatic.isSome()) continue;
         if (fieldIsStatic) {
           if (fieldIsReadonly is None()) {
-            subst.error(Array[(field.pos, "Static fields must be readonly")])
+            subst.error(
+              Array[(field.pos, "A static field must be marked 'readonly'")],
+              SKJSCode(2019),
+            )
           };
           field.optional.each(pos ->
-            subst.error(Array[(pos, "Static fields cannot be optional")])
+            subst.error(
+              Array[(pos, "A static field cannot be optional")],
+              SKJSCode(2020),
+            )
           )
         };
         // Static readonly fields are the class-level analog of a top-level
@@ -622,7 +675,13 @@ base class TEnv{
               },
             ),
           )
-        | _ -> subst.error(Array[(field.pos, "Unsupported field name")])
+        | _ ->
+          subst.error(
+            Array[
+              (field.pos, "This field name syntax is not supported by SKJS"),
+            ],
+            SKJSCode(2024),
+          )
         }
       | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} ->
         if (isStatic is None()) continue;
@@ -630,9 +689,10 @@ base class TEnv{
         | Some(constructorTy) ->
           subst.error(
             Array[
-              (fdPos, "Unexpected multiple constructors"),
+              (fdPos, "Multiple constructor implementations are not allowed."),
               (constructorTy.pos, "Previous constructor was here"),
             ],
+            TSCode(2392),
           )
         | None() -> void
         };
@@ -738,7 +798,16 @@ base class TEnv{
           tparams,
           paramTArgs.map(targ -> this.normalize(subst, targ)),
         )
-      | _ -> subst.error(Array[(extend.pos, "Unexpected extend")])
+      | _ ->
+        subst.error(
+          Array[
+            (
+              extend.pos,
+              "An 'extends' clause must reference a class instantiation",
+            ),
+          ],
+          TSCode(2507),
+        )
       }
     };
     None()
@@ -769,7 +838,10 @@ base class TEnv{
     | None() -> // constructor
       void
     | Some(x) ->
-      tcenvb.error(Array[(x.pos, "Unexpected annotation for constructor")])
+      tcenvb.error(
+        Array[(x.pos, "A constructor cannot have a return type annotation")],
+        TSCode(1093),
+      )
     };
     retTypePos = className.pos;
     retType = Type(
@@ -785,7 +857,11 @@ base class TEnv{
 
   private fun convertParam(param: Param): TAFunParam {
     ty = param.type match {
-    | None() -> fatalError(Array[(param.pos, "Missing type annotation")])
+    | None() ->
+      fatalError(
+        Array[(param.pos, "A parameter must have an explicit type annotation")],
+        TSCode(7006),
+      )
     | Some(ty) -> ty
     };
     optional = param.default match {
@@ -807,8 +883,12 @@ base class TEnv{
       // constructors must use makeConstructor
       fatalError(
         Array[
-          (pos, `Missing return type annotation for '${fd.name.getName()}'`),
+          (
+            pos,
+            `Function '${fd.name.getName()}' must have an explicit return type annotation`,
+          ),
         ],
+        TSCode(7010),
       )
     | (_, Some(x)) -> x
     };
@@ -839,8 +919,18 @@ base class TEnv{
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
-    | TAAssertIs _ -> fatalError(Array[(pos, "TODO assertIs")])
-    | TAAbstract _ -> fatalError(Array[(pos, "TODO abstract")])
+    | TAAssertIs _ ->
+      fatalError(
+        Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
+        SKJSCode(9013),
+      )
+    | TAAbstract _ ->
+      fatalError(
+        Array[
+          (pos, "The 'abstract' type modifier is not yet supported by SKJS"),
+        ],
+        SKJSCode(9014),
+      )
     | TAUniqueSymbol() ->
       if (isTopLevelConst) {
         // Each unique symbol gets a distinct type based on its position.
@@ -857,10 +947,28 @@ base class TEnv{
         }:${displayName.default("")}`;
         TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
       } else {
-        fatalError(Array[(pos, "unique symbol type cannot be used here")])
+        fatalError(
+          Array[
+            (
+              pos,
+              "A 'unique symbol' type is only allowed in a top-level 'const' declaration, a 'static readonly' member, or an imported 'const' binding",
+            ),
+          ],
+          SKJSCode(2029),
+        )
       }
-    | TAAsserts _ -> fatalError(Array[(pos, "TODO asserts")])
-    | TAIs _ -> fatalError(Array[(pos, "TODO is ")])
+    | TAAsserts _ ->
+      fatalError(
+        Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
+        SKJSCode(9013),
+      )
+    | TAIs _ ->
+      fatalError(
+        Array[
+          (pos, "Type predicates ('x is T') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9015),
+      )
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
@@ -872,11 +980,36 @@ base class TEnv{
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
       TType::single(TObject::createNew(tfuns, pos))
-    | TANew _ -> fatalError(Array[(pos, "Invalid new")])
-    | TAEmptyArray _ -> fatalError(Array[(pos, "TODO emptyArray")])
-    | TAInfer _ -> fatalError(Array[(pos, "TODO infer")])
-    | TATemplate _ -> fatalError(Array[(pos, "TODO template")])
-    | TAImport _ -> fatalError(Array[(pos, "TODO import")])
+    | TANew _ ->
+      fatalError(
+        Array[(pos, "A 'new' type annotation must take a function type")],
+        SKJSCode(2025),
+      )
+    | TAEmptyArray _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Empty array/tuple type literals are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9016),
+      )
+    | TAInfer _ ->
+      fatalError(
+        Array[(pos, "The 'infer' keyword is not yet supported by SKJS")],
+        SKJSCode(9017),
+      )
+    | TATemplate _ ->
+      fatalError(
+        Array[(pos, "Template literal types are not yet supported by SKJS")],
+        SKJSCode(9018),
+      )
+    | TAImport _ ->
+      fatalError(
+        Array[(pos, "'import(...)' type syntax is not yet supported by SKJS")],
+        SKJSCode(9019),
+      )
     | TAReadonly(ro) ->
       ro.value match {
       | TAArray(ty) ->
@@ -886,7 +1019,10 @@ base class TEnv{
         )
       | TAInst(Name(_, "Array"), arr) ->
         if (arr.size() != 1) {
-          tcenvb.error(Array[(pos, "Array expects 1 type parameter")])
+          tcenvb.error(
+            Array[(pos, "Array<T> requires exactly 1 type argument")],
+            TSCode(2707),
+          )
         };
         elemType = if (arr.isEmpty()) {
           TType::top(pos)
@@ -908,11 +1044,30 @@ base class TEnv{
               "'readonly' type modifier is only permitted on array and tuple literal types.",
             ),
           ],
-        ); // TS1354
+          TSCode(1354),
+        );
         this.normalize(tcenvb, ro)
       }
-    | TAExtends _ -> fatalError(Array[(pos, "TODO extends")])
-    | TAExtendsQuestion _ -> fatalError(Array[(pos, "TODO extendsQuestion")])
+    | TAExtends _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Conditional types ('T extends U ? X : Y') are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9020),
+      )
+    | TAExtendsQuestion _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Conditional types ('T extends U ? X : Y') are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9020),
+      )
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
@@ -932,7 +1087,12 @@ base class TEnv{
       TType::single(TObject::createSingleBranch(tFields, None(), pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (p, "This type is not generic; it does not accept type arguments"),
+          ],
+          TSCode(2315),
+        )
       };
       TType::single(TObject::createEmpty(pos))
 
@@ -941,17 +1101,35 @@ base class TEnv{
 
     | TAInst(Name(p, "void"), targs) ->
       if (targs.size() != 0) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (p, "This type is not generic; it does not accept type arguments"),
+          ],
+          TSCode(2315),
+        )
       };
       TType::single(TPrimUnit(TVoid(), pos))
     | TAInst(Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (p, "This type is not generic; it does not accept type arguments"),
+          ],
+          TSCode(2315),
+        )
       };
       TType::single(TPrimUnit(TUndefined(), pos))
     | TAInst(Name(p, "Promise"), targs) ->
       if (targs.size() != 1) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (
+              p,
+              `Expected 1 type arguments, but got ${targs.size()} (Promise<T> requires exactly one)`,
+            ),
+          ],
+          TSCode(2707),
+        )
       };
       tArg = if (targs.size() >= 1) {
         this.normalize(tcenvb, targs[0])
@@ -961,18 +1139,33 @@ base class TEnv{
       TType::single(TPromise(tArg, pos))
     | TAInst(Name(p, "unknown"), targs) ->
       if (targs.size() != 0) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (p, "This type is not generic; it does not accept type arguments"),
+          ],
+          TSCode(2315),
+        )
       };
       TType::top(pos)
     | TAInst(Name(p, "never"), targs) ->
       if (targs.size() != 0) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (p, "This type is not generic; it does not accept type arguments"),
+          ],
+          TSCode(2315),
+        )
       };
       TType::bottom(pos)
     | TAInst(Name(p, x @ "true"), targs)
     | TAInst(Name(p, x @ "false"), targs) ->
       if (targs.size() != 0) {
-        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(
+          Array[
+            (p, "This type is not generic; it does not accept type arguments"),
+          ],
+          TSCode(2315),
+        )
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
@@ -986,15 +1179,21 @@ base class TEnv{
             Array[
               (
                 n.pos,
-                "A bound occurrence of a type parameter cannot have type arguments",
+                `Type parameter '${
+                  n.value
+                }' is not generic and cannot have type arguments`,
               ),
             ],
+            TSCode(2315),
           )
         };
         boundTy.withPos(pos)
 
       | None() if (this.forbiddenInsts.contains(n.value)) ->
-        fatalError(Array[(n.pos, "Cyclic definition")])
+        fatalError(
+          Array[(n.pos, `Type '${n.value}' circularly references itself`)],
+          TSCode(2456),
+        )
       | None() ->
         // No bound-name match: treat n as a named type definition.
         tdef = this.defMap.getType(tcenvb, n);
@@ -1012,66 +1211,17 @@ base class TEnv{
             Array[
               (
                 n.pos,
-                `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
+                `Expected ${tparams.size()} type arguments, but got ${targs.size()}`,
               ),
             ],
+            TSCode(2707),
           )
         };
 
         if (this.seenInstantiate.contains(n.value)) {
           !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
         };
-        normalizedTArgs = targs.map(x -> this.normalize(tcenvb, x));
-        // Validate each type argument against its parameter's constraint here,
-        // at the reference site, so constraints are enforced wherever a generic
-        // type appears (annotations, ambient declarations, interface/alias
-        // bodies, ...), not only when the type is later expanded during a
-        // subtyping comparison. A parameter's constraint may reference earlier
-        // parameters, so bind them on a scratch env as we go.
-        scratchEnv = this;
-        cstrSubst = Subst::mcreate(tcenvb);
-        for (i => tParam in tparams) {
-          if (i < normalizedTArgs.size()) {
-            tArg = normalizedTArgs[i];
-            tParam.constraint match {
-            | None() -> void
-            | Some(cstr) ->
-              cstrTy = scratchEnv.normalize(cstrSubst, cstr);
-              TType::isSub(cstrSubst.clone(), scratchEnv, tArg, cstrTy) match {
-              | STOk() -> void
-              | err @ STErrorOnTType _ ->
-                tcenvb.subtypingError(
-                  cstrSubst,
-                  scratchEnv,
-                  Array[
-                    (n.pos, "Constraint not satisfied"),
-                    (
-                      tArg.pos,
-                      `This is of type: ${prettyPrintType(
-                        false,
-                        tArg,
-                        cstrSubst,
-                        scratchEnv,
-                      )}`,
-                    ),
-                    (
-                      cstr.pos,
-                      `It does not implement: ${prettyPrintType(
-                        false,
-                        cstrTy,
-                        cstrSubst,
-                        scratchEnv,
-                      )}`,
-                    ),
-                  ],
-                  err,
-                )
-              }
-            };
-            !scratchEnv.bindings[tParam.name.value] = tArg
-          }
-        };
-        TType::inst(n, TArgs(normalizedTArgs))
+        TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
       }
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
@@ -1090,7 +1240,13 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
-    | TAGet _ -> fatalError(Array[(pos, "TODO TAGet")])
+    | TAGet _ ->
+      fatalError(
+        Array[
+          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9021),
+      )
     }
   }
 
@@ -1106,12 +1262,28 @@ base class TEnv{
     types = tupleElts.map(ty ->
       ty match {
       | TEType(n, optional, x) ->
-        if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
+        if (n is Some _) {
+          tcenvb.error(
+            Array[(pos, "Named tuple elements are not yet supported by SKJS")],
+            SKJSCode(9022),
+          )
+        };
         if (optional is Some _) {
-          tcenvb.error(Array[(pos, "TODO optional element tuple")])
+          tcenvb.error(
+            Array[
+              (pos, "Optional tuple elements are not yet supported by SKJS"),
+            ],
+            SKJSCode(9023),
+          )
         };
         this.normalize(tcenvb, x)
-      | TESpread _ -> fatalError(Array[(pos, "TODO tuple spread")])
+      | TESpread _ ->
+        fatalError(
+          Array[
+            (pos, "Tuple rest/spread elements are not yet supported by SKJS"),
+          ],
+          SKJSCode(9024),
+        )
       }
     );
     TType::tuple(pos, types, isReadonly)
@@ -1134,9 +1306,10 @@ base class TEnv{
           Array[
             (
               expr.pos,
-              "typeof operand must be an identifier or property access",
+              "A 'typeof' operand must be an identifier or a property access",
             ),
           ],
+          SKJSCode(2052),
         )
       };
       return tc.expr(tcenv, expr, false)
@@ -1166,7 +1339,10 @@ base class TEnv{
         | _ -> void
         }
       };
-      fatalError(Array[(varName.pos, `Variable ${varName} not found`)])
+      fatalError(
+        Array[(varName.pos, `Cannot find name '${varName.value}'`)],
+        TSCode(2304),
+      )
     | Dot(_, baseExpr, propertyName) ->
       if (propertyName.value == "prototype") {
         notSupported(propertyName.pos, "prototype access")
@@ -1183,7 +1359,7 @@ base class TEnv{
           Array[
             (
               propertyName.pos,
-              `Cannot get type for property of non-object type ${prettyPrintType(
+              `Cannot access a property on non-object type ${prettyPrintType(
                 false,
                 baseType,
                 subst,
@@ -1191,13 +1367,18 @@ base class TEnv{
               )}`,
             ),
           ],
+          TSCode(2339),
         )
       }
     | _ ->
       fatalError(
         Array[
-          (expr.pos, "typeof operand must be an identifier or property access"),
+          (
+            expr.pos,
+            "A 'typeof' operand must be an identifier or a property access",
+          ),
         ],
+        SKJSCode(2052),
       )
     }
   }
@@ -1256,9 +1437,10 @@ base class TEnv{
       Array[
         (
           pos,
-          "An index signature parameter type must be string, number, or symbol",
+          "An index signature parameter type must be 'string', 'number', or 'symbol'",
         ),
       ],
+      TSCode(1268),
     )
   }
 
@@ -1363,16 +1545,25 @@ base class TEnv{
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
             tcenvb.error(
-              Array[(thisPos, "Parameter named this must be the first one")],
+              Array[
+                (thisPos, "A 'this' parameter must be the first parameter"),
+              ],
+              TSCode(2730),
             );
             continue
           };
           invariant(thisParam is None(), "Assigning thisParam multiple times");
           param.isRest.each(restPos ->
-            tcenvb.error(Array[(restPos, "this cannot be a rest parameter")])
+            tcenvb.error(
+              Array[(restPos, "A 'this' parameter cannot be a rest parameter")],
+              SKJSCode(2026),
+            )
           );
           param.optional.each(optPos ->
-            tcenvb.error(Array[(optPos, "this cannot be optional")])
+            tcenvb.error(
+              Array[(optPos, "A 'this' parameter cannot be optional")],
+              SKJSCode(2027),
+            )
           );
           !thisParam = Some(paramType);
           continue
@@ -1382,7 +1573,10 @@ base class TEnv{
         | Some(restPos) ->
           param.optional match {
           | Some(optPos) ->
-            tcenvb.error(Array[(optPos, "A rest parameter cannot be optional")])
+            tcenvb.error(
+              Array[(optPos, "A rest parameter cannot be optional")],
+              TSCode(1047),
+            )
           | None() -> void
           };
           !spreadParam = Some(TType::arrayToReadonlyArray(paramType));
@@ -1398,6 +1592,7 @@ base class TEnv{
               Array[
                 (restPos, "A rest parameter must be last in a parameter list"),
               ],
+              TSCode(1014),
             );
             break void
           };
@@ -1411,9 +1606,13 @@ base class TEnv{
           | Some(wpos) ->
             tcenvb.error(
               Array[
-                (param.type.pos, "This parameter is not optional"),
+                (
+                  param.type.pos,
+                  "A required parameter cannot follow an optional parameter",
+                ),
                 (wpos, "It appears after this parameter that is optional"),
               ],
+              TSCode(1016),
             )
           };
           normalParams.push(paramType)
@@ -1458,9 +1657,10 @@ base class TEnv{
         Array[
           (
             keyExpr.pos,
-            "Computed property key must be a literal or unique symbol",
+            "A computed property key must be a literal or a 'unique symbol'",
           ),
         ],
+        TSCode(1170),
       )
     }
   }
@@ -1483,8 +1683,12 @@ base class TEnv{
           if (r is OFRemoveReadonly _ && !(fd.name is FNIn _)) {
             tcenvb.error(
               Array[
-                (r.pos, "'-readonly' modifier can only appear in mapped types"),
+                (
+                  r.pos,
+                  "'-readonly' modifier can only appear in a mapped type",
+                ),
               ],
+              SKJSCode(2054),
             )
           }
         );
@@ -1492,8 +1696,12 @@ base class TEnv{
         | None() ->
           fatalError(
             Array[
-              (fd.pos, `Type annotation expected for '${fd.name.getName()}'`),
+              (
+                fd.pos,
+                `Member '${fd.name.getName()}' must have an explicit type annotation`,
+              ),
             ],
+            TSCode(7008),
           )
         | Some(ty) -> ty
         };
@@ -1501,7 +1709,13 @@ base class TEnv{
         | FNIn(boundName, kType, asOpt, op) ->
           if (asOpt.isSome()) {
             tcenvb.error(
-              Array[(fd.pos, "Mapped type 'as' clause is not supported yet")],
+              Array[
+                (
+                  fd.pos,
+                  "Mapped type 'as' clauses are not yet supported by SKJS",
+                ),
+              ],
+              SKJSCode(9028),
             )
           };
           isFieldOptional = op match {
@@ -1561,15 +1775,22 @@ base class TEnv{
                 Array[
                   (
                     errPos,
-                    "Mapped type with abstract key type is not supported yet",
+                    "Mapped types with an abstract key type are not yet supported by SKJS",
                   ),
                 ],
+                SKJSCode(9029),
               )
             }
           } else {
             if (!shapeOk) {
               tcenvb.error(
-                Array[(fd.pos, "Mapped type key shape is not supported yet")],
+                Array[
+                  (
+                    fd.pos,
+                    "This mapped type key shape is not yet supported by SKJS",
+                  ),
+                ],
+                SKJSCode(9030),
               )
             } else {
               // Bind P to a deliberately-unresolvable inst type. If V references
@@ -1775,7 +1996,7 @@ base class TEnv{
             Array[
               (
                 pos,
-                `TODO: keyof ${prettyPrintType(
+                `'keyof' is not yet supported by SKJS for type ${prettyPrintType(
                   false,
                   TType::single(stype),
                   subst,
@@ -1783,6 +2004,7 @@ base class TEnv{
                 )}`,
               ),
             ],
+            SKJSCode(9025),
           )
         }
       }
@@ -1829,7 +2051,10 @@ fun checkPatternDoesNotContainThis(pat: Pattern): void {
     rest
   } match {
   | Some(Name(thisPos, "this")) ->
-    fatalError(Array[(thisPos, "this forbidden here")])
+    fatalError(
+      Array[(thisPos, "'this' is not allowed in this binding position")],
+      SKJSCode(2028),
+    )
   | _ -> void
   }
 }

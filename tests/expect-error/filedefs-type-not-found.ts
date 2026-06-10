@@ -1,2 +1,2 @@
-// @skjs-expect-error Type NonExistent not found
+// @skjs-expect-error Cannot find type 'NonExistent'
 function f(x: NonExistent): void {}

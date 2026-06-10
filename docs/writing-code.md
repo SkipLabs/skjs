@@ -14,6 +14,15 @@ Two-arm matches of the form `| SomePattern -> ... | _ -> ...` are acceptable: th
 
 Exhaustive matching is sometimes impractical because Skip does not support nested or-patterns. This typically arises when matching on a tuple of variant types: the cross-product of cases is large, but most combinations collapse to the same result, and without or-patterns they cannot be grouped. In those cases a wildcard is unavoidable; document why the default is correct for any future combination.
 
+## Error Messages
+
+Error messages are read by AI agents as well as humans; make them as actionable as possible.
+
+- **Name the offending construct, say why it is rejected, and — when applicable — how to fix it or what SKJS supports instead.** Prefer `abstract classes are not supported by SKJS; use a concrete base class` over `Invalid class`.
+- **Reuse the TypeScript compiler's wording when SKJS rejects the same thing `tsc` rejects** — including single-quoting type/identifier names, e.g. `Type 'number' is not assignable to type 'string'`. Verify exact wording with `npx tsc --strict --noEmit`.
+- **Every diagnostic carries an error code.** Prefer, in order: the matching TypeScript code (`TS2322`, …) when there is a TypeScript equivalent; an ESLint / typescript-eslint rule name (`no-var`, `@typescript-eslint/strict-boolean-expressions`, …) when SKJS enforces what that rule enforces; otherwise an `SKJS####` code following TS's numbering convention (1xxx syntax, 2xxx semantic/type, 5xxx options; the 9xxx band is reserved for "not yet supported"). How the code is surfaced in output is configured separately.
+- When you change a message, update the matching `@skjs-expect-error`/`@ts-expect-error` annotations (`UPDATE_EXPECT=2 make test-in-docker`, then review the diff) **and** any quote of that message in `skjs-rules.md` / `docs/error-format.md`, in the same commit.
+
 ## TypeScript Subset Rules
 
 [skjs-rules.md](../skjs-rules.md) is the definitive spec of the supported TypeScript subset. Examples and user programs should follow these rules; tests intentionally exercise and violate them to verify error reporting. Key points:

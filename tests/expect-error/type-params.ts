@@ -1,9 +1,9 @@
 type TGen<X> = X;
 
-// @ts-expect-error Invalid number of type arguments: given 0, expected 1
+// @skjs-expect-error Expected 1 type arguments, but got 0
 function notEnoughTypeParameters(x: TGen): void {}
 
-// @ts-expect-error Invalid number of type arguments: given 2, expected 1
+// @skjs-expect-error Expected 1 type arguments, but got 2
 function tooManyTypeParameters(x: TGen<boolean, number>): void {}
 
 type TDefault<X = boolean> = X;
@@ -25,7 +25,7 @@ function applyTDefaultUsePreviousParamError<X, Y>(
   f: TDefaultUsePreviousParam<X>,
   x: X,
 ): Y {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f(x);
 }
 
@@ -33,15 +33,15 @@ function applyTDefaultUsePreviousParamError<X, Y>(
 type TNonLastDefault<X = boolean, Y> = X | Y;
 
 // @ts-expect-error Optional type parameters are not supported for classes and functions
-// @ts-expect-error Required type parameters may not follow optional type parameters
+// @ts-expect-error Required type parameters may not follow optional type parameters.
 function fNonLastDefault1<X = boolean, Y>(x: X | Y): void {}
 
 // @ts-expect-error Optional type parameters are not supported for classes and functions
-// @ts-expect-error Required type parameters may not follow optional type parameters
+// @ts-expect-error Required type parameters may not follow optional type parameters.
 function fNonLastDefault2(f: <X = boolean, Y>(x: X | Y) => void): void {}
 
 // @ts-expect-error Optional type parameters are not supported for classes and functions
-// @ts-expect-error Required type parameters may not follow optional type parameters
+// @ts-expect-error Required type parameters may not follow optional type parameters.
 class cNonLastDefault<X = boolean, Y> {}
 
 /*

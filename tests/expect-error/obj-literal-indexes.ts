@@ -7,26 +7,26 @@ function testObjLiteralToIndexed(): void {
 function testDualIndexedAssignment(): void {
   const a = {};
   const b: { [k: string]: number } = a;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: { [k: string]: boolean } = a;
 }
 
 // Test: local object growth with type annotation should not grow
 function testAnnotatedLocalObject(): void {
   let obj: { x: number } = { x: 1 };
-  // @skjs-expect-error Unbound field: y
+  // @skjs-expect-error Property 'y' does not exist on this type
   obj.y = 2;
 }
 
 // Test: property access on object literal still errors for missing fields
 function testMissingFieldAccess(): void {
   const obj = { x: 10, y: 20 };
-  // @skjs-expect-error Unbound field: z
+  // @skjs-expect-error Property 'z' does not exist on this type
   const z = obj.z;
 }
 
 // Test: object literal with mixed types not assignable to single-type index
 function testMixedTypesIndex(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: { [k: string]: number } = { x: 1, y: "hello" };
 }

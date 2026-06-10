@@ -126,13 +126,13 @@ function accessStaticThroughTypeof(Ctor: WithStaticConstructor): number {
 
 // Wrong argument count
 function wrongArgCount(Ctor: typeof Point): Point {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   return new Ctor(1);
 }
 
 // Wrong argument type
 function wrongArgType(Ctor: typeof Point): Point {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return new Ctor("a", "b");
 }
 
@@ -237,11 +237,11 @@ function getDefaultHost(): typeof AppConfig.DEFAULT_HOST {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Non-existent static member
-// @skjs-expect-error Unbound field: NONEXISTENT
+// @skjs-expect-error Property 'NONEXISTENT' does not exist on this type
 type NonExistentType = typeof AppConfig.NONEXISTENT;
 
 // Accessing instance field as static (should fail - instance fields not in static type)
-// @skjs-expect-error Unbound field: instanceField
+// @skjs-expect-error Property 'instanceField' does not exist on this type
 type InstanceAsStaticType = typeof AppConfig.instanceField;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -253,5 +253,5 @@ class Config {
   host: string = "localhost";
 }
 
-// @skjs-expect-error Construction not supported: prototype access
+// @skjs-expect-error prototype access is not supported by SKJS
 type PortType = typeof Config.prototype.port;

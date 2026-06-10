@@ -4,7 +4,7 @@ declare function nonIgnorable(): T;
 declare function ignorable(): SKJS_Ignorable<T>;
 
 function doNotIgnore(): void {
-  // @skjs-expect-error This expression was expected to be of type void or ignorable
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
   nonIgnorable();
 }
 

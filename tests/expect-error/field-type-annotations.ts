@@ -2,14 +2,14 @@
 
 // Class field without type annotation or initializer
 class FieldWithoutAnnotation {
-  // @skjs-expect-error Type annotation expected for 'field'
-  // @skjs-expect-error Uninitialized field 'field'
+  // @skjs-expect-error Field 'field' has no initializer and is not assigned in the constructor
+  // @skjs-expect-error Member 'field' must have an explicit type annotation
   field;
 }
 
 // Class field without type annotation but with initializer
 class FieldWithInitializerNoAnnotation {
-  // @skjs-expect-error Type annotation expected for 'field'
+  // @skjs-expect-error Member 'field' must have an explicit type annotation
   field = 5;
 }
 
@@ -21,7 +21,7 @@ class FieldsWithAnnotations {
 
 // Object type field without annotation
 type ObjectWithoutAnnotations = {
-  // @skjs-expect-error Type annotation expected for 'field'
+  // @skjs-expect-error Member 'field' must have an explicit type annotation
   field;
 };
 

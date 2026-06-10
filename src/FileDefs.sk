@@ -96,7 +96,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
         invariant_violation("Passing typeOnly should return only TypeOnlyDef")
       }
     };
-    fatalError(Array[(path.pos, `Type ${path} not found`)])
+    fatalError(Array[(path.pos, `Cannot find type '${path}'`)], TSCode(2304))
   }
 
   fun getAll(
@@ -122,6 +122,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
               `Internal error: encountered a namespace while getting '${path}'`,
             ),
           ],
+          SKJSCode(9999),
         )
       }
     };
@@ -156,13 +157,27 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
       d match {
       | TopLevelFunDef{name => fdName} ->
         tcenvb.error(
-          Array[(fdName.getPos(), `TODO: DefMap#dot while getting ${name}`)],
+          Array[
+            (
+              fdName.getPos(),
+              `Qualified name access ('${name}') is not yet supported by SKJS`,
+            ),
+          ],
+          SKJSCode(9003),
         )
       | TypeDef{name => Name(pos, _)}
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
-        tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
+        tcenvb.error(
+          Array[
+            (
+              pos,
+              `Qualified name access ('${name}') is not yet supported by SKJS`,
+            ),
+          ],
+          SKJSCode(9003),
+        )
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
@@ -442,6 +457,7 @@ mutable class FileDefsState private {
                   `An import path can only end with a '${suffix}' extension when 'allowImportingTsExtensions' is enabled.`,
                 ),
               ],
+              TSCode(5097),
             ),
           )
         }
@@ -458,6 +474,7 @@ mutable class FileDefsState private {
                   "Use 'moduleResolution: \"bundler\"' for extensionless imports.",
               ),
             ],
+            SKJSCode(1011),
           ),
         )
       };
@@ -478,7 +495,15 @@ mutable class FileDefsState private {
     | Some(fileName) -> Some(ModuleName{name, fileName})
     | None() ->
       this.fileErrors.push(
-        NamingError(Array[(mname.pos, `Could not find module '${mname}'`)]),
+        NamingError(
+          Array[
+            (
+              mname.pos,
+              `Cannot find module '${mname}' or its corresponding type declarations`,
+            ),
+          ],
+          TSCode(2307),
+        ),
       );
       None()
     }
@@ -533,7 +558,10 @@ mutable class FileDefsState private {
       | ImportExpr _
       | ExportImport _ ->
         this.fileErrors.push(
-          NamingError(Array[(def.pos, "TODO: unsupported export")]),
+          NamingError(
+            Array[(def.pos, "This export form is not yet supported by SKJS")],
+            SKJSCode(9004),
+          ),
         )
       }
     };
@@ -574,13 +602,13 @@ mutable class FileDefsState private {
           DeclSpaces::ofFileDef(existingDef).overlaps(dSpaces)
         )
         .each(existingDef -> {
-          msg1 = (name.pos, `${name} is already defined`);
+          msg1 = (name.pos, `Duplicate identifier '${name}'`);
           msgs = existingDef.getPos() match {
           | None() -> Array[msg1]
           | Some(existingPos) ->
             Array[msg1, (existingPos, "Previous definition was here")]
           };
-          this.fileErrors.push(NamingError(msgs))
+          this.fileErrors.push(NamingError(msgs, TSCode(2300)))
         });
       existingDefs.push(d)
     }
@@ -610,20 +638,44 @@ mutable class FileDefsState private {
           this.fileErrors.push(
             NamingError(
               Array[
-                (varDef.pat.pos, "TODO: cannot have exports based on names"),
+                (
+                  varDef.pat.pos,
+                  "Exporting a destructuring binding is not yet supported by SKJS",
+                ),
               ],
+              SKJSCode(9005),
             ),
           )
         }
       }
     | Global(defs) ->
       if (defs.size() > 0) {
-        this.fileErrors.push(NamingError(Array[(defs[0].pos, "TODO: global")]))
+        this.fileErrors.push(
+          NamingError(
+            Array[
+              (
+                defs[0].pos,
+                "'declare global' blocks are not yet supported by SKJS",
+              ),
+            ],
+            SKJSCode(9006),
+          ),
+        )
       } else {
         internal_error("TODO: global")
       }
     | Module(Name(pos, _), _defsOpt) ->
-      this.fileErrors.push(NamingError(Array[(pos, "TODO: module")]))
+      this.fileErrors.push(
+        NamingError(
+          Array[
+            (
+              pos,
+              "Namespace ('module') declarations are not yet supported by SKJS",
+            ),
+          ],
+          SKJSCode(9007),
+        ),
+      )
     }
   }
 

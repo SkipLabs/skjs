@@ -124,7 +124,7 @@ function testUnionLiteralFieldPositive(t: TrafficLight): void {
 function testUnionLiteralFieldElimination(t: TrafficLight): void {
   if (t.color !== "green") {
     // No elimination refinement either
-    // @skjs-expect-error Invalid annotation
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const notGreen: { color: "red"; timer: number } = t;
   }
 }
@@ -228,7 +228,7 @@ type Tri10 =
 function testThreeBranchFilter(obj: Tri10, x: 0 | 1): void {
   if (obj.tag === x) {
     // { tag: 2 } filtered; result is { tag:0; a } | { tag:1; b }
-    // @skjs-expect-error Unbound field: a
+    // @skjs-expect-error Property 'a' does not exist on this type
     const a: string = obj.a;
   }
 }
@@ -258,7 +258,7 @@ type AllOverlap10 = { field: 0 | 1 } | { field: 1 | 2 };
 function testAllBranchesOverlap(obj: AllOverlap10, x: 0 | 1): void {
   if (obj.field === x) {
     // Both branches overlap with 0|1
-    // @skjs-expect-error Invalid annotation
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const b1: { field: 0 | 1 } = obj;
   }
 }
@@ -266,7 +266,7 @@ function testAllBranchesOverlap(obj: AllOverlap10, x: 0 | 1): void {
 // N3: Accessing filtered-branch-only field — should error
 function testFilteredBranchAccess(obj: Tagged10, x: 0 | 1): void {
   if (obj.tag === x) {
-    // @skjs-expect-error Unbound field: b
+    // @skjs-expect-error Property 'b' does not exist on this type
     const b: number = obj.b;
   }
 }
@@ -274,7 +274,7 @@ function testFilteredBranchAccess(obj: Tagged10, x: 0 | 1): void {
 // N4: !== with non-singleton — NO refinement
 function testNotEqualsNoRefine(obj: Tagged10, x: 0 | 1): void {
   if (obj.tag !== x) {
-    // @skjs-expect-error Invalid annotation
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const only2: { tag: 2; b: number } = obj;
   }
 }
@@ -284,7 +284,7 @@ type T10 = { field: 0 } | { field: 1 };
 
 function testBothBranchesKept(obj: T10, x: 0 | 1): void {
   if (obj.field === x) {
-    // @skjs-expect-error Invalid annotation
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const only0: { field: 0 } = obj;
   }
 }
@@ -297,7 +297,7 @@ type E10 = { tag: 0; a: string } | { tag: 1; b: number };
 function testRhsFullNumber(obj: E10, x: number): void {
   if (obj.tag === x) {
     // number overlaps all branches — no filtering
-    // @skjs-expect-error Invalid annotation
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const only0: { tag: 0; a: string } = obj;
   }
 }

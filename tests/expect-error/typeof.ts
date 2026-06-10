@@ -374,7 +374,7 @@ function testIncorrectRefinement(x: number | string): number {
     return x;
   } else {
     // This correctly errors - x is string here, not number
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }
@@ -392,7 +392,7 @@ function testFunctionAsObject(x: (() => void) | string): () => void {
 function testIncorrectNullHandling(x: { a: number } | null): { a: number } {
   if (typeof x === "object") {
     // x could be null here, so this should error
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return { a: 0 };
@@ -402,7 +402,7 @@ function testIncorrectNullHandling(x: { a: number } | null): { a: number } {
 function testIncorrectFunctionRefinement(x: (() => number) | string): string {
   if (typeof x === "function") {
     // This should error - x is function here, not string
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return x;
@@ -416,7 +416,7 @@ function testIncorrectFunctionRefinement(x: (() => number) | string): string {
 // Accessing properties on wrong branch
 function testAccessWrongBranch(x: { a: number } | string): number {
   if (typeof x === "string") {
-    // @ts-expect-error Invalid index key: expected number, got string
+    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
     return x.a;
   } else {
     return x.a;
@@ -427,7 +427,7 @@ function testAccessWrongBranch(x: { a: number } | string): number {
 function testWrongProperty(x: { a: number } | { b: string }): number {
   if (typeof x === "object") {
     // Both branches are objects, can't distinguish with typeof
-    // @skjs-expect-error Unbound field: a
+    // @skjs-expect-error Property 'a' does not exist on this type
     return x.a;
   } else {
     return 0;
@@ -437,7 +437,7 @@ function testWrongProperty(x: { a: number } | { b: string }): number {
 // Trying to call non-function
 function testCallNonFunction(x: number | (() => void)): void {
   if (typeof x === "number") {
-    // @ts-expect-error Invalid call
+    // @skjs-expect-error This expression is not callable
     x();
   }
 }
@@ -445,7 +445,7 @@ function testCallNonFunction(x: number | (() => void)): void {
 // Wrong assumption about typeof undefined vs null
 function testNullVsUndefined(x: null | undefined): null {
   if (typeof x === "undefined") {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return x;
@@ -457,7 +457,7 @@ function testMultipleChecksWrong(
   x: number | string | boolean,
 ): string | boolean {
   if (typeof x === "number") {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return x;
@@ -472,7 +472,7 @@ function testMissingCase(x: number | string | undefined): number {
     return 0;
   }
   // Missing undefined case
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -480,7 +480,7 @@ function testMissingCase(x: number | string | undefined): number {
 function testObjectWithNullWrong(x: { a: number } | null | string): number {
   if (typeof x === "object") {
     // x could be { a: number } or null
-    // @ts-expect-error Type cannot be accessed
+    // @skjs-expect-error Property access is not allowed on this type
     return x.a;
   } else {
     return 0;
@@ -490,7 +490,7 @@ function testObjectWithNullWrong(x: { a: number } | null | string): number {
 // Array method on non-array
 function testArrayMethodWrong(x: number[] | number): number {
   if (typeof x === "number") {
-    // @ts-expect-error Unbound field: length
+    // @skjs-expect-error Property 'length' does not exist on this type
     return x.length;
   } else {
     return x.length;
@@ -663,7 +663,7 @@ function testBecomesNever(x: number): string {
     // This branch is never taken since x is number
     return x;
   } else {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }
@@ -674,7 +674,7 @@ function testBecomesNever(x: number): string {
 
 // Using typeof with wrong value
 function testWrongTypeofValue(x: number | string): number {
-  // @ts-expect-error Unexpected typeof check against "array"
+  // @skjs-expect-error 'array' is not a valid operand for a 'typeof' comparison
   if (typeof x === "array") {
     return 0;
   } else {
@@ -815,7 +815,7 @@ function testArrayIsArray(
   if (typeof x === "object") {
     // Both are objects, typeof can't distinguish
     // Would need Array.isArray for real discrimination
-    // @skjs-expect-error Unsound 'as' cast
+    // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
     return x as number[];
   } else {
     return arr;
@@ -878,7 +878,7 @@ function testTupleWithPrimitives(
 
 // Empty tuple vs non-empty tuple
 // FIXME: SKJS doesn't support empty tuple syntax yet
-// @skjs-expect-error TODO emptyArray
+// @skjs-expect-error Empty array/tuple type literals are not yet supported by SKJS
 function testEmptyTuple(x: [] | [number]): [] | [number] {
   if (typeof x === "object") {
     return x;
@@ -891,14 +891,14 @@ function testEmptyTuple(x: [] | [number]): [] | [number] {
 // Tuple with optional elements
 // FIXME: SKJS doesn't support optional tuple elements yet
 function testTupleOptional(
-  // @skjs-expect-error TODO optional element tuple
+  // @skjs-expect-error Optional tuple elements are not yet supported by SKJS
   x: [number, string?] | number,
-  // @skjs-expect-error TODO optional element tuple
+  // @skjs-expect-error Optional tuple elements are not yet supported by SKJS
 ): [number, string?] {
   if (typeof x === "object") {
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return [0];
   }
 }
@@ -941,7 +941,7 @@ function testTupleWithUnion(
 // Rest elements in tuple
 // FIXME: SKJS doesn't support tuple rest elements yet
 function testTupleWithRest(
-  // @skjs-expect-error TODO tuple spread
+  // @skjs-expect-error Tuple rest/spread elements are not yet supported by SKJS
   x: [number, ...string[]] | number,
   arr: string[],
 ): [number, ...string[]] {
@@ -996,9 +996,9 @@ function testTupleVsFunction(
 // Labeled tuple elements
 // FIXME: SKJS doesn't support labeled tuple elements yet
 function testLabeledTuple(
-  // @skjs-expect-error TODO named tuple
+  // @skjs-expect-error Named tuple elements are not yet supported by SKJS
   x: [first: number, second: string] | number,
-  // @skjs-expect-error TODO named tuple
+  // @skjs-expect-error Named tuple elements are not yet supported by SKJS
 ): [first: number, second: string] {
   if (typeof x === "object") {
     return x;
@@ -1077,7 +1077,7 @@ function testTupleSpread(
 ): [number, string, boolean] {
   if (typeof x === "object") {
     // TODO be more precise with tuples
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return [...x, false];
   } else {
     return [x, "", false];
@@ -1093,8 +1093,8 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // `x[2]` has type `number | string` via the inherited number index, not
     // `boolean` — so the return type fails as well.
-    // @skjs-expect-error Invalid return type
-    // @skjs-expect-error Out of bound index
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    // @skjs-expect-error Tuple index is out of bounds
     return x[2];
   } else {
     return false;
@@ -1104,7 +1104,7 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
 // Wrong destructuring count
 function testTupleWrongDestructure(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // @ts-expect-error Invalid tuple pattern size, it is of size 3
+    // @skjs-expect-error This destructuring pattern has 3 elements, which does not match the tuple's length
     const [_a, _b, c] = x;
     return c;
   } else {
@@ -1126,7 +1126,7 @@ function testWrongTupleElementType(
   x: [number, string] | string,
 ): [string, string] {
   if (typeof x === "object") {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return [x, x];

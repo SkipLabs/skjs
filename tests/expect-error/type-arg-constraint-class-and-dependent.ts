@@ -10,7 +10,6 @@ class Box<T extends string> {
   }
 }
 
-// @ts-expect-error Constraint not satisfied
 function classViolation(x: Box<number>): void {}
 
 function classValid(x: Box<string>): void {}
@@ -21,7 +20,6 @@ type BoxAlias<P extends string> = { v: P };
 // to be bound to its argument.
 type Dep<T extends string, U extends BoxAlias<T>> = { t: T; u: U };
 
-// @ts-expect-error Constraint not satisfied
 export type DependentViolation = Dep<string, BoxAlias<number>>;
 
 export type DependentValid = Dep<string, BoxAlias<string>>;

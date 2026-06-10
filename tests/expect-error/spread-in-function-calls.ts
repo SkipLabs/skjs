@@ -33,7 +33,7 @@ function testSpreadArray(): void {
   args.push(1);
   args.push(2);
   args.push(3);
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   takesThreeNumbers(...args);
 }
 
@@ -87,14 +87,14 @@ function testSpreadSingleElement(): void {
 // Test 11: Wrong argument types in spread
 function testWrongTypes(): void {
   const wrongArgs: [string, string, string] = ["a", "b", "c"];
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesThreeNumbers(...wrongArgs);
 }
 
 // Test 12: Too few arguments via spread
 function testTooFewArguments(): void {
   const tooFew: [number, number] = [1, 2];
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   takesThreeNumbers(...tooFew);
 }
 
@@ -109,30 +109,30 @@ function testTooManyArguments(): void {
 // Test 14: Spread non-array type
 function testSpreadNonArray(): void {
   const notArray: number = 42;
-  // @skjs-expect-error Invalid call
-  // @ts-expect-error Invalid spread argument
+  // @skjs-expect-error Too few arguments for this call
+  // @skjs-expect-error A spread argument must be of an array or iterable type
   takesThreeNumbers(...notArray);
 }
 
 // Test 15: Spread object (not array)
 function testSpreadObject(): void {
   const obj: { a: number; b: number; c: number } = { a: 1, b: 2, c: 3 };
-  // @skjs-expect-error Invalid call
-  // @ts-expect-error Invalid spread argument
+  // @skjs-expect-error Too few arguments for this call
+  // @skjs-expect-error A spread argument must be of an array or iterable type
   takesThreeNumbers(...obj);
 }
 
 // Test 16: Mixed types with wrong spread type
 function testMixedWrongTypes(): void {
   const wrongRest: [number, number] = [1, 2];
-  // @ts-expect-error Invalid argument
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesOneAndRest(1, ...wrongRest);
 }
 
 // Test 17: Spread with type mismatch in rest
 function testRestTypeMismatch(): void {
   const wrongTypes: [number, string, number] = [1, "x", 2];
-  // @ts-expect-error Invalid argument
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesTwoAndRest(...wrongTypes);
 }
 
@@ -175,6 +175,6 @@ function testSpreadWithArrayMethods(): void {
   arr.push(1);
   arr.push(2);
   arr.push(3);
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   takesThreeNumbers(...arr);
 }

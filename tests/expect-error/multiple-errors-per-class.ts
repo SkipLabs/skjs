@@ -2,31 +2,31 @@
 
 class MultipleErrors {
   // Type mismatch in field
-  // @ts-expect-error Invalid assignment
+  // @skjs-expect-error Type of field initializer is not assignable to the field's declared type
   field1: number = "hello";
 
   // Type mismatch in another field
-  // @ts-expect-error Invalid assignment
+  // @skjs-expect-error Type of field initializer is not assignable to the field's declared type
   field2: string = 42;
 
   // Type mismatch in method return
   method(): number {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return "not a number";
   }
 
   // Type mismatch in another method return
   method2(): string {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return 123;
   }
 }
 
 // Test multiple errors across different classes
 class AnotherClassWithErrors {
-  // @ts-expect-error Invalid assignment
+  // @skjs-expect-error Type of field initializer is not assignable to the field's declared type
   x: boolean = 5;
 
-  // @ts-expect-error Invalid assignment
+  // @skjs-expect-error Type of field initializer is not assignable to the field's declared type
   y: number = false;
 }

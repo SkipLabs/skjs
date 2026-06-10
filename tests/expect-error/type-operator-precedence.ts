@@ -33,11 +33,11 @@ function testKeyofIntersection(): void {
 
   // This should fail: "y" is not a key
   // SKJS currently has a different bug here (not just precedence)
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: KeyofIntersection = "y";
 
   // This should fail: "hello" is not a key
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: KeyofIntersection = "hello";
 }
 
@@ -65,7 +65,7 @@ function testMultipleKeyof(): void {
   const b: MultipleKeyof = "b";
 
   // This should fail: "c" is not in either keyof
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: MultipleKeyof = "c";
 }
 
@@ -85,7 +85,7 @@ function testKeyofUnionIntersection(): void {
 
   // Currently FAILS because SKJS parses it as keyof ({ x: number } | string) & boolean
   // In TypeScript, string & boolean = never, so result is just "x"
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: KeyofUnionIntersection = "hello";
 }
 
@@ -102,11 +102,11 @@ function testIntersectionUnion(): void {
 
   // Should fail: number & boolean = never, but SKJS has issues with never types
   // SKJS incorrectly rejects this
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: IntersectionUnion = 42;
 
   // Should fail: boolean is not assignable
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: IntersectionUnion = true;
 }
 
@@ -145,7 +145,7 @@ function testArrayUnion(): void {
 
   // Should fail: not an array or string
   // SKJS has type representation issues with arrays here
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: ArrayUnion = 42;
 }
 
@@ -155,7 +155,7 @@ function testArrayUnion(): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 // SKJS doesn't fully support indexed access types yet
-// @skjs-expect-error TODO TAGet
+// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type IndexedUnion = { a: number }["a"] | string;
 
 function testIndexedUnion(): void {
@@ -183,7 +183,7 @@ function testMixedPrefixUnion(): void {
   const c: MixedPrefixUnion = 42;
 
   // Should fail: "c" is not a valid key and not a number
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const d: MixedPrefixUnion = "c";
 }
 
@@ -206,11 +206,11 @@ function testUnionIntersectionMixed(): void {
   const b: UnionIntersectionMixed = { b: 42, c: true };
 
   // Should fail: B alone is not B & C
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: UnionIntersectionMixed = { b: 42 };
 
   // Should fail: C alone is not B & C
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const d: UnionIntersectionMixed = { c: true };
 }
 
@@ -232,10 +232,10 @@ function testComplexPrecedence(): void {
   const b: ComplexPrecedence = { y: "hello", z: true };
 
   // Should fail: object with only y
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: ComplexPrecedence = { y: "hello" };
 
   // Should fail: "hello" is not a valid key or object type
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const d: ComplexPrecedence = "hello";
 }

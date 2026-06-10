@@ -30,13 +30,13 @@ function testCommonProperty(x: Array<number> | ObjWithLength): number {
 
 // Accessing array-only property
 function testArrayOnlyProperty(x: Array<number> | Obj): number {
-  // @skjs-expect-error Unbound field: length
+  // @skjs-expect-error Property 'length' does not exist on this type
   return x.length;
 }
 
 // Accessing object-only property
 function testObjectOnlyProperty(x: Array<number> | Obj): string {
-  // @skjs-expect-error Unbound field: name
+  // @skjs-expect-error Property 'name' does not exist on this type
   return x.name;
 }
 
@@ -46,13 +46,13 @@ function testObjectOnlyProperty(x: Array<number> | Obj): string {
 
 // Calling array method on union
 function testArrayMethodOnUnion(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Unbound field: map
+  // @skjs-expect-error Property 'map' does not exist on this type
   return x.map((n) => n * 2);
 }
 
 // Calling push on union
 function testPushOnUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Unbound field: push
+  // @skjs-expect-error Property 'push' does not exist on this type
   x.push(42);
 }
 
@@ -62,13 +62,13 @@ function testPushOnUnion(x: Array<number> | Obj): void {
 
 // Numeric index on array | object union
 function testNumericIndexOnUnion(x: Array<string> | Obj): string | undefined {
-  // @skjs-expect-error Unbound field: 0
+  // @skjs-expect-error Property '0' does not exist on this type
   return x[0];
 }
 
 // String index on array | object union
 function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
-  // @skjs-expect-error Unbound field: name
+  // @skjs-expect-error Property 'name' does not exist on this type
   return x["name"];
 }
 
@@ -77,7 +77,7 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
 function testLValueIndexOnTupleUnion(
   x: [number, number] | { [k: number]: string },
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[0] = 42;
 }
 
@@ -86,7 +86,7 @@ function testLValueMultiLiteralKey(
   obj: { a: number; b: string },
   key: "a" | "b",
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   obj[key] = 42;
 }
 
@@ -140,7 +140,7 @@ function testIntersectionObjects(
 ): Obj & Obj2 {
   // This tests that intersection of (Array<number> | Obj) & (Array<string> | Obj2)
   // should give us (never | {name: string, value: number, id: number})
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return z;
 }
 
@@ -154,12 +154,12 @@ type Obj3 = {
 
 function testMultipleObjectsGetName(x: Array<number> | Obj | Obj3): string {
   // Can't access any specific property without refinement
-  // @skjs-expect-error Unbound field: name
+  // @skjs-expect-error Property 'name' does not exist on this type
   return x.name;
 }
 
 function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
-  // @skjs-expect-error Unbound field: label
+  // @skjs-expect-error Property 'label' does not exist on this type
   return x.label;
 }
 
@@ -169,8 +169,8 @@ function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
 
 // Spreading array from union
 function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Invalid iterable type for spread
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error Type is not iterable in a 'spread'
   return [...x];
 }
 
@@ -180,7 +180,7 @@ function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
 
 // Iterating over union
 function testForOfOnUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Invalid iterable type for for-of loop
+  // @skjs-expect-error Type is not iterable in a 'for-of loop'
   for (const item of x) {
     console.log(item);
   }
@@ -192,7 +192,7 @@ function testForOfOnUnion(x: Array<number> | Obj): void {
 
 // Destructuring union
 function testDestructuringUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Invalid tuple pattern
+  // @skjs-expect-error Cannot use array-destructuring on a non-iterable type
   const [first, second] = x;
 }
 
@@ -214,13 +214,13 @@ function testObjectSubtypeOfUnion(obj: Obj): Array<number> | Obj {
 
 // Union should not be subtype of just Array
 function testUnionNotSubtypeOfArray(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 // Union should not be subtype of just Object
 function testUnionNotSubtypeOfObject(x: Array<number> | Obj): Obj {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -254,7 +254,7 @@ function testNestedUnionsGetFirst(
   x: (Array<number> | Obj) | (Array<string> | Obj3),
 ): number | string {
   // Should require refinement to access anything
-  // @skjs-expect-error Unbound field: 0
+  // @skjs-expect-error Property '0' does not exist on this type
   return x[0];
 }
 

@@ -14,7 +14,7 @@ function stringMapAccept(): StringMap<number> {
 }
 
 function stringMapReject(): StringMap<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { x: "no" };
 }
 
@@ -38,12 +38,12 @@ function litABAccept(): LitAB<number> {
 }
 
 function litABMissingB(): LitAB<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 
 function litABWrongV(): LitAB<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1, b: "no" };
 }
 
@@ -84,7 +84,7 @@ function litOptAcceptAll(): LitOpt<number> {
 }
 
 function litOptRejectWrongV(): LitOpt<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: "no" };
 }
 
@@ -99,7 +99,7 @@ function litPlusOptAccept(): LitPlusOpt<number> {
 type LitMinusOpt<V> = { [P in "a" | "b"]-?: V };
 
 function litMinusOptMissing(): LitMinusOpt<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 
@@ -112,7 +112,7 @@ function recordStringAccept(): Record<string, number> {
 }
 
 function recordStringWrongV(): Record<string, number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { x: "no" };
 }
 
@@ -121,12 +121,12 @@ function recordLiteralUnion(): Record<"a" | "b", number> {
 }
 
 function recordLiteralUnionMissing(): Record<"a" | "b", number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 
 function recordSingleLitMissing(): Record<"a", number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return {};
 }
 
@@ -139,7 +139,7 @@ function recordNumberAccess(x: Record<number, string>): string | undefined {
 }
 
 function recordNumberStringAccess(x: Record<number, string>): string {
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   return x.foo;
 }
 
@@ -169,13 +169,13 @@ function stringRecordToRecord(x: StringRecord<number>): Record<string, number> {
 ///////////////////////////////////////////////////////////////////////////////
 
 // K is itself a type parameter (abstract after substitution).
-// @skjs-expect-error Mapped type with abstract key type is not supported yet
+// @skjs-expect-error Mapped types with an abstract key type are not yet supported by SKJS
 function recordAbstractK<K extends string>(): Record<K, number> {
   return {};
 }
 
 // Disallowed K kind
-// @skjs-expect-error Mapped type key shape is not supported yet
+// @skjs-expect-error This mapped type key shape is not yet supported by SKJS
 type BadKey<V> = { [P in boolean]: V };
 
 function badKeyUse(): BadKey<number> {
@@ -183,7 +183,7 @@ function badKeyUse(): BadKey<number> {
 }
 
 // V references P → poison alias surfaces a clear unbound-type error
-// @skjs-expect-error Type SKJS_unsupported_key_type_reference_in_mapped_type_value not found
+// @skjs-expect-error Cannot find type 'SKJS_unsupported_key_type_reference_in_mapped_type_value'
 type Boxed<K extends string> = { [P in K]: { key: P } };
 
 function boxedUse(): Boxed<"a"> {
