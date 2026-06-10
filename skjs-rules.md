@@ -300,6 +300,26 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: Move fields after the spread, or restructure the object literal so that fields you need in the result type appear after the last spread
 - **Verified by**: `tests/expect-error/objects.ts`
 
+### 29. The `this` Parameter — Differences from TypeScript
+SKJS supports the `this` parameter (explicit `this: T`, the implicit class
+`this` on every method, and `.call`/`.apply`/`.bind`). Only the places where it
+**differs from TypeScript** are documented here — it is soundly stricter in some
+cases and conservatively under-approximates a few others.
+
+- **Detached method calls are rejected** (sound; `tsc --strict` accepts them).
+  `const g = obj.m; g()` loses the receiver, so the `this` context (`void`) is
+  not assignable to the method's `this`.
+- **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
+  `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
+  `this` and accepts any receiver; SKJS requires the class instance, since the
+  method body reads the class's fields off the rebound `this`.
+- **Generic call signatures** report "Unbound field" for `.call`/`.apply`/`.bind`
+  (TS resolves their type parameters to `unknown` through these methods).
+- **`.apply` models only required positional parameters**, and partial
+  application **`.bind(thisArg, ...args)`** is rejected (a `never[]` rest) rather
+  than dropping the bound parameters (`OmitThisParameter`).
+- **Verified by**: `tests/expect-error/this-parameter*.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
