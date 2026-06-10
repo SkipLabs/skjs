@@ -169,13 +169,13 @@ function stringRecordToRecord(x: StringRecord<number>): Record<string, number> {
 ///////////////////////////////////////////////////////////////////////////////
 
 // K is itself a type parameter (abstract after substitution).
-// @skjs-expect-error Mapped type with abstract key type is not supported yet
+// @skjs-expect-error Mapped types with an abstract key type are not yet supported by SKJS
 function recordAbstractK<K extends string>(): Record<K, number> {
   return {};
 }
 
 // Disallowed K kind
-// @skjs-expect-error Mapped type key shape is not supported yet
+// @skjs-expect-error This mapped type key shape is not yet supported by SKJS
 type BadKey<V> = { [P in boolean]: V };
 
 function badKeyUse(): BadKey<number> {
