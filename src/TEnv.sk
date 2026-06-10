@@ -1389,8 +1389,10 @@ base class TEnv{
           )
         }
       };
+      thisParamImplicit = false;
       if (thisParam is None()) {
-        !thisParam = implicitThisOpt
+        !thisParam = implicitThisOpt;
+        !thisParamImplicit = implicitThisOpt.isSome()
       };
       tfun = TFun(
         funTParams,
@@ -1400,6 +1402,7 @@ base class TEnv{
         spreadParam,
         this.normalize(tcenvb, retType),
         CGNodes::singleton(cgNode),
+        thisParamImplicit,
       );
       if (isMethod) {
         TFuns::singleMethod(tfun, pos)
