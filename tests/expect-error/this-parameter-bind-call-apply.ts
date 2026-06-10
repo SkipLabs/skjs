@@ -49,3 +49,22 @@ function noThisCallWrong(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   noThis.call(ctx, 1);
 }
+
+// .call / .bind should carry the function's optional and rest parameters; for
+// now synthesis bails on them, reporting "Unbound field".
+function optional(this: Ctx, a: number, b?: string): void {}
+function variadic(this: Ctx, a: number, ...rest: boolean[]): void {}
+
+function optionalRestOk(): void {
+  // @skjs-expect-error Property 'call' does not exist on this type
+  optional.call(ctx, 1);
+  optional.call(ctx, 1, "x");
+  variadic.call(ctx, 1, true, false);
+  const bound: (a: number, b?: string) => void = optional.bind(ctx);
+  bound(1);
+}
+
+function optionalCallWrongArg(): void {
+  // @skjs-expect-error Property 'call' does not exist on this type
+  optional.call(ctx, 1, 2);
+}
