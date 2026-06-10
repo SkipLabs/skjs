@@ -14,6 +14,20 @@ mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)>,
   mutable seenInter: SortedMap<(TType, TType), TType>,
   mutable seenUnion: SortedMap<(TType, TType), TType>,
+  // Caches the expansion of an instantiated named type `TSInst(name, targs)`
+  // to its expanded body. Reuse stays sound as inference proceeds and `values`
+  // changes, because the cached body substitutes each type parameter
+  // SYMBOLICALLY: a type argument appears in the cached TType as a free
+  // variable, not as its current binding. normalize resolves a parameter
+  // reference to the symbolic argument (bindings[P]); union/inter never resolve
+  // an unbound TVar (TTypeUnion caches independently of later growth, TTypeInter
+  // attaches the operand as a constraint via setConstraint). So a type
+  // argument's binding is re-resolved at every USE of the cached type — through
+  // Subst::get, which re-applies the variable's constraints — never frozen into
+  // the cache. The only construct that reads an argument's binding while
+  // expanding, `keyof`, approximates an abstract or unresolved operand
+  // identically (string | number) whether or not the variable is bound, so even
+  // there the cached value cannot diverge from a fresh recomputation.
   mutable seenExpansion: SortedMap<TSInst, TType>,
   mutable version: Int,
   mutable values: SortedMap<TVarID, SubstValue>,

@@ -147,6 +147,30 @@ base class TEnv{
     }
   }
 
+  // Binds each type parameter to its corresponding type argument, checking the
+  // argument against the parameter's constraint along the way.
+  //
+  // Soundness of the constraint check:
+  //  - For a CONCRETE type argument the check is exact and fires on a real
+  //    violation. This is the only place explicit class type arguments are
+  //    validated: `new C<number>()` for `class C<V extends string>` reaches
+  //    here via new -> newObject -> processClassSetup, and the `New` branch in
+  //    TypeCheckExpr normalizes each argument individually without checking it
+  //    against the constraint, while normalize's reference-site check fires only
+  //    on type *references* (`C<number>` in a type position), not on `new`
+  //    expressions. So this check is load-bearing, not redundant.
+  //  - For an UNBOUND inference-variable argument the check is vacuous: isSub
+  //    grows the variable on the throwaway clone to satisfy the constraint, then
+  //    discards the growth. This is still sound, because such a variable only
+  //    reaches here from a well-formed declaration, and well-formedness forces
+  //    the variable to already carry a constraint at least as strong. A
+  //    signature `f<V extends C>(x: Alias<V>)` normalizes V to `V & C` (see
+  //    fromTParamWithConstraint and TTypeInter's setConstraint), so the
+  //    inference variable carries C as its own constraint, enforced at growth
+  //    (growTVars / Subst::get) independently of the discarded clone growth. An
+  //    UNCONSTRAINED V flowing into a constrained alias parameter never gets
+  //    this far: it is rejected at the declaration by normalize's reference-site
+  //    check (the rigid TParam V fails C there).
   private fun instantiateTParams(
     subst: mutable Subst,
     pos: PosRange,
@@ -191,7 +215,10 @@ base class TEnv{
         // Clone substitution: constraint checking should verify compatibility
         // but NOT permanently grow type variables. Growing here would close the
         // variable to its constraint, preventing later unification with more
-        // specific types (e.g., TVar<:Json should remain open to unify with string).
+        // specific types (e.g., TVar<:Json should remain open to unify with
+        // string). For an unbound inference-variable argument this makes the
+        // check vacuous, which is sound — see the constraint-check soundness
+        // note on this function.
         TType::isSub(subst.clone(), this, tArg, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
