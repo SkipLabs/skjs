@@ -1809,6 +1809,9 @@ extension class TypeChecker {
               ty
             }
           }),
+          // Under mostPrecise the element types are already precise, so fresh
+          // literal tracking would be redundant.
+          arr.map(x -> if (mostPrecise) None() else this.freshLiteralType(x)),
         )
       }
 
@@ -2458,6 +2461,33 @@ extension class TypeChecker {
         ],
         SKJSCode(9011),
       )
+    }
+  }
+
+  // The precise type of a direct primitive literal expression (`0`, `'a'`,
+  // `true`, `1n`, `-1`), or None for anything else. Unlike asConstExpr this is
+  // pure (no diagnostics) and does not recurse into composite expressions, so
+  // it can be used speculatively (e.g. to record fresh array literal
+  // elements).
+  fun freshLiteralType(e: Expr): ?TType {
+    pos = e.pos;
+    e.value match {
+    | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
+    | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
+    | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
+    | Var(Name(_, "true")) ->
+      Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
+    | Var(Name(_, "false")) ->
+      Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
+    | Unop(UOMinus(), subE) ->
+      subE.value match {
+      | Number(n) ->
+        Some(TType::single(TPrimValue::single(TNum(), `-${n}`, pos)))
+      | BigInt(n) ->
+        Some(TType::single(TPrimValue::single(TBigInt(), `-${n}`, pos)))
+      | _ -> None()
+      }
+    | _ -> None()
     }
   }
 
