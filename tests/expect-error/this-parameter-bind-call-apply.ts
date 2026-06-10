@@ -95,3 +95,9 @@ function noArgs(this: Ctx): number {
 function applyZeroArgOk(): number {
   return noArgs.apply(ctx);
 }
+
+// Partial application is not modeled: for now extra bound args to .bind are
+// silently ignored.
+function bindExtraArgsRejected(o: Impl): void {
+  let _ = o.mm.bind(o, 99);
+}
