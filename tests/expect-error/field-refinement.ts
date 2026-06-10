@@ -228,7 +228,7 @@ type Tri10 =
 function testThreeBranchFilter(obj: Tri10, x: 0 | 1): void {
   if (obj.tag === x) {
     // { tag: 2 } filtered; result is { tag:0; a } | { tag:1; b }
-    // @skjs-expect-error Unbound field: a
+    // @skjs-expect-error Property 'a' does not exist on this type
     const a: string = obj.a;
   }
 }
@@ -266,7 +266,7 @@ function testAllBranchesOverlap(obj: AllOverlap10, x: 0 | 1): void {
 // N3: Accessing filtered-branch-only field — should error
 function testFilteredBranchAccess(obj: Tagged10, x: 0 | 1): void {
   if (obj.tag === x) {
-    // @skjs-expect-error Unbound field: b
+    // @skjs-expect-error Property 'b' does not exist on this type
     const b: number = obj.b;
   }
 }

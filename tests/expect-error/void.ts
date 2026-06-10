@@ -34,8 +34,8 @@ const x2: void = undefined;
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x3: void = {};
 
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
+// @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
 const x4: () => void = () => null;
 
 // @skjs-expect-error Property access is not allowed on this type

@@ -134,14 +134,15 @@ class VariadicTyping() {
               Array[
                 (
                   pos,
-                  `Invalid call. Inferred rest arguments ${tenv.ppType(
+                  `The inferred rest arguments ${tenv.ppType(
                     tcenv,
                     inferred,
-                  )} do not satisfy the constraint`,
+                  )} do not satisfy the rest parameter's constraint`,
                 ),
                 (cstr.pos, `Constraint ${tenv.ppType(tcenv, cstr)}`),
               ],
               stErr,
+              TSCode(2344),
             );
             return true
           }

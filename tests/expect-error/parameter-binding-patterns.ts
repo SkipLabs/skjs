@@ -141,7 +141,7 @@ function testArrowDefaultWrongType(): void {
 
 // Arrow with both optional and default
 function testArrowOptionalAndDefault(): void {
-  // @skjs-expect-error A parameter cannot both be optional and have a default value
+  // @skjs-expect-error A parameter cannot have both a question mark and an initializer
   const f = (x?: number = 0): void => {
     void x;
   };

@@ -119,8 +119,8 @@ function testGenericTupleRestInference(): void {
   const t1_as_tuple: readonly [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
-  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
+  // @skjs-expect-error The inferred rest arguments readonly [boolean] do not satisfy the rest parameter's constraint
   inferTuple(true);
 }
 
@@ -167,7 +167,7 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, "hello", 42);
   // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, "hello");
-  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
+  // @skjs-expect-error The inferred rest arguments readonly [boolean] do not satisfy the rest parameter's constraint
   variadicColl.map(One, true);
 
   // Tuple spread into the rest args should preserve shape
@@ -183,7 +183,7 @@ function testMotivatingAPI(): void {
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
   // @skjs-expect-error Argument is not assignable to the parameter's type
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");
-  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
+  // @skjs-expect-error The inferred rest arguments readonly [boolean] do not satisfy the rest parameter's constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);
 }
 

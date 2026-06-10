@@ -183,7 +183,7 @@ function badKeyUse(): BadKey<number> {
 }
 
 // V references P → poison alias surfaces a clear unbound-type error
-// @skjs-expect-error Type SKJS_unsupported_key_type_reference_in_mapped_type_value not found
+// @skjs-expect-error Cannot find type 'SKJS_unsupported_key_type_reference_in_mapped_type_value'
 type Boxed<K extends string> = { [P in K]: { key: P } };
 
 function boxedUse(): Boxed<"a"> {

@@ -23,7 +23,7 @@ function incorrectIndexReturnTypeDot(x: tIndex): number {
 // Test accessing non-existent property on regular object
 function testRegularObjectAccess(): void {
   const regularObj = { x: 10, y: 20 };
-  // @ts-expect-error Unbound field: z
+  // @skjs-expect-error Property 'z' does not exist on this type
   const invalid = regularObj.z;
 }
 
@@ -59,7 +59,7 @@ function canAccessFieldConstructor(
   obj: object,
   f: "constructor" | "banana",
 ): void {
-  // @skjs-expect-error Unbound field: banana | constructor
+  // @skjs-expect-error Property 'banana | constructor' does not exist on this type
   const whatever = obj[f];
 }
 

@@ -131,7 +131,7 @@ function unionInRecord(s: "f" | "g", x: { f: number }): boolean {
 function refineUnionInRecord(s: "f" | "g", x: { f: number }): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -141,7 +141,7 @@ function refineUnionInRecord(s: "f" | "g", x: { f: number }): number {
 function refineUnionInRecord2(s: "f" | "g", x: { f: number }): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -155,7 +155,7 @@ function unionInRecordOpt(s: "f" | "g", x: { f?: number }): boolean {
 function refineUnionInRecordOpt(s: "f" | "g", x: { f?: number }): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -168,7 +168,7 @@ function refineUnionInRecordOpt2(
 ): number | undefined {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -178,7 +178,7 @@ function refineUnionInRecordOpt2(
 function refineUnionInRecordOpt3(s: "f" | "g", x: { f?: number }): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -274,7 +274,7 @@ function refineUnionInRecordNotAlwaysFalse(
 ): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: f | g
+    // @skjs-expect-error Property 'f | g' does not exist on this type
     return x[s];
   } else {
     return 0;
@@ -287,7 +287,7 @@ function refineUnionInRecordNotAlwaysFalse2(
 ): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Unbound field: f | g
+    // @skjs-expect-error Property 'f | g' does not exist on this type
     return x[s];
   } else {
     return 0;

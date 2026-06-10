@@ -45,7 +45,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   - `static field: number = 42` → "A static field must be marked 'readonly'"
   - `static readonly field?: number = 42` → "A static field cannot be optional"
   - `static readonly field: number;` → "This declaration must have an initializer"
-  - `static readonly obj: MyClass = new MyClass();` → "Invalid type for constant, only primitive types (not objects) are allowed"
+  - `static readonly obj: MyClass = new MyClass();` → "The type of a top-level constant must be a primitive type, not an object"
 - **Supported**:
   ```typescript
   class Config {

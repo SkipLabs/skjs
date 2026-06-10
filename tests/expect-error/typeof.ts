@@ -427,7 +427,7 @@ function testAccessWrongBranch(x: { a: number } | string): number {
 function testWrongProperty(x: { a: number } | { b: string }): number {
   if (typeof x === "object") {
     // Both branches are objects, can't distinguish with typeof
-    // @skjs-expect-error Unbound field: a
+    // @skjs-expect-error Property 'a' does not exist on this type
     return x.a;
   } else {
     return 0;
@@ -490,7 +490,7 @@ function testObjectWithNullWrong(x: { a: number } | null | string): number {
 // Array method on non-array
 function testArrayMethodWrong(x: number[] | number): number {
   if (typeof x === "number") {
-    // @ts-expect-error Unbound field: length
+    // @skjs-expect-error Property 'length' does not exist on this type
     return x.length;
   } else {
     return x.length;
