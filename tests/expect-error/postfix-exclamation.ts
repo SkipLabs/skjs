@@ -549,6 +549,16 @@ function testPromiseThen(x: Promise<number> | null): Promise<string> {
 // Using ! on a value that is never null/undefined
 function testNonNullableValue(): number {
   let x: number = 42;
+  // @skjs-expect-warning This operator is useless
+  return x!;
+}
+
+// Using ! on a value that is ALWAYS null/undefined is unsound, not merely
+// useless: `x!` then has the empty type and would satisfy any annotation, so
+// without an error `const s: string = x!` (s actually undefined at runtime)
+// would be accepted and crash. Unlike the never-null case above this must be a
+// hard error, not a warning.
+function testNonNullOnAlwaysNull(x: undefined): string {
   // @skjs-expect-error This operator is useless
   return x!;
 }
@@ -563,7 +573,7 @@ function testWrongTypeAfterNonNull(x: string | null): number {
 // Using ! on already non-nullable type in wrong context
 function testNonNullOnNonNullable(): string {
   let x: number = 42;
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   // @ts-expect-error Invalid return type
   return x!;
 }
@@ -571,7 +581,7 @@ function testNonNullOnNonNullable(): string {
 // Multiple ! doesn't change the type
 function testMultipleExclamations(x: number | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   // @ts-expect-error Invalid return type
   return x!!;
 }

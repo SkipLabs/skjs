@@ -50,7 +50,7 @@ extension class TypeChecker {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
-        error(Array[(n.pos, "TODO: support this parameter")])
+        fatalError(Array[(n.pos, "TODO: support this parameter")])
       | _ -> checkPatternDoesNotContainThis(param.name)
       };
       param.isRest match {
@@ -90,7 +90,7 @@ extension class TypeChecker {
       | None() -> void
       };
       paramType = param.type match {
-      | None() -> error(Array[(param.pos, "Missing type annotation")])
+      | None() -> fatalError(Array[(param.pos, "Missing type annotation")])
       | Some(ty) -> this.normalize(tcenv.subst, ty)
       };
       param.isRest.each(_ ->

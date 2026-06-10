@@ -16,6 +16,11 @@ mutable base class TCEnvBase private {
     this.results.error(messages)
   }
 
+  // A non-fatal diagnostic: always recorded, never aborts (regardless of mode).
+  mutable fun warning(messages: Array<(PosRange, String)>): void {
+    this.results.warning(messages)
+  }
+
   mutable fun subtypingError(
     subst: readonly Subst,
     tenv: TEnv,
@@ -199,20 +204,20 @@ mutable class TCEnv private {
 
 class TCResults private {
   errors: Array<Error>,
+  warnings: Array<Error>,
   callgraph: SortedMap<CGNode, Array<CGNode>>,
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
 } {
-  static fun ofAccs(
-    accs: readonly Vector<readonly TCResultsAcc>,
-    extraErrors: readonly Vector<Error>,
-  ): TCResults {
+  static fun ofAccs(accs: readonly Vector<readonly TCResultsAcc>): TCResults {
     callgraph = mutable Map[];
     classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
     subtypingEdges = SortedSet[];
-    errors = Vector::mcreateFromItems(extraErrors);
+    errors = mutable Vector<Error>[];
+    warnings = mutable Vector<Error>[];
     for (acc in accs) {
       errors.extend(acc.errors);
+      warnings.extend(acc.warnings);
       for (kv in acc.callgraph) {
         (caller, calleesToAdd) = kv;
         callees = callgraph.getOrAdd(caller, () -> mutable Set[]);
@@ -233,6 +238,7 @@ class TCResults private {
     };
     TCResults{
       errors => errors.toArray(),
+      warnings => warnings.toArray(),
       callgraph => SortedMap::createFromIterator(
         callgraph.items().map(kv -> (kv.i0, Array::createFromItems(kv.i1))),
       ),
@@ -245,6 +251,7 @@ class TCResults private {
 mutable class TCResultsAcc private {
   errorHandling: ErrorHandling,
   errors: mutable Vector<Error> = mutable Vector[],
+  warnings: mutable Vector<Error> = mutable Vector[],
   callgraph: mutable Vector<(CGNode, CGNodes)> = mutable Vector[],
   classHierarchy: mutable Vector<(Class, Class)> = mutable Vector[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
@@ -257,6 +264,7 @@ mutable class TCResultsAcc private {
     static{
       errorHandling => this.errorHandling,
       errors => this.errors.chill(),
+      warnings => this.warnings.chill(),
       callgraph => this.callgraph.chill(),
       classHierarchy => this.classHierarchy.chill(),
       subtypingEdges => this.subtypingEdges,
@@ -267,6 +275,7 @@ mutable class TCResultsAcc private {
     mutable static{
       errorHandling => this.errorHandling,
       errors => Vector::mcreateFromItems(this.errors),
+      warnings => Vector::mcreateFromItems(this.warnings),
       callgraph => Vector::mcreateFromItems(this.callgraph),
       classHierarchy => Vector::mcreateFromItems(this.classHierarchy),
       subtypingEdges => this.subtypingEdges,
@@ -278,8 +287,16 @@ mutable class TCResultsAcc private {
     | EHKeepGoing() -> this.errors.push(NamingError(messages))
     | EHBacktrace()
     | EHDefault() ->
-      error(messages)
+      fatalError(messages)
     }
+  }
+
+  // A non-fatal diagnostic. Unlike `error`, this does not branch on the
+  // error-handling mode and never throws: warnings are always collected and
+  // never abort the current definition. Kept in a separate `warnings` list so
+  // they can be reported without failing the build.
+  mutable fun warning(messages: Array<(PosRange, String)>): void {
+    this.warnings.push(NamingError(messages))
   }
 
   mutable fun subtypingError(

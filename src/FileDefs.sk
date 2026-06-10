@@ -96,7 +96,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
         invariant_violation("Passing typeOnly should return only TypeOnlyDef")
       }
     };
-    error(Array[(path.pos, `Type ${path} not found`)])
+    fatalError(Array[(path.pos, `Type ${path} not found`)])
   }
 
   fun getAll(

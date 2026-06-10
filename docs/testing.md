@@ -22,13 +22,14 @@ make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 - Tests exercise type-checking behavior only
 - Example: `const x: number = "hello";` tests type errors, not runtime values
 
-**Error annotations**:
+**Error and warning annotations**:
 - Use `// @ts-expect-error <exact error message>` for errors TypeScript would also produce
 - Use `// @skjs-expect-error <exact error message>` for SKJS-specific errors
-- Run tests first to see actual error messages, then add the annotations with exact wording
-- **SKJS reports only one type error per definition** — if a function has multiple issues, only the first error is reported (unless passing `--keep-going`, which is best-effort — fatal errors may still hide subsequent ones)
+- Use `// @skjs-expect-warning <exact message>` for non-fatal **warnings** — lint-style diagnostics that are not soundness-critical (e.g. redundant `?.`/`!`, useless `switch` / unused `case` branches, `This equality is always true/false`). Warnings are matched against a separate severity, so a source line with both an error and a warning needs one annotation of each.
+- Run tests first to see actual messages, then add the annotations with exact wording
+- **SKJS reports only one _error_ per definition** — if a function has multiple errors, only the first is reported (unless passing `--keep-going`, which is best-effort — fatal errors may still hide subsequent ones). **Warnings are non-fatal**: every warning in a definition is reported and never aborts checking, and a file whose only diagnostics are warnings exits 0 (does not fail the build).
 - For expected errors that aren't reported due to an earlier error, use plain `// TODO:` comments (not `@ts-expect-error`)
-- **Multiple errors on a single line**: use multiple `@skjs-expect-error` comment lines, one per error. Do NOT use slash-separated errors in a single comment.
+- **Multiple diagnostics on a single line**: use multiple comment lines, one per diagnostic. Do NOT use slash-separated messages in a single comment.
 - **Avoid duplicate annotations**: use `@ts-expect-error` for TypeScript-specific errors and `@skjs-expect-error` for SKJS errors. Don't duplicate the same annotation twice on consecutive lines.
 
 **Parse error constraints**:
@@ -75,7 +76,7 @@ UPDATE_EXPECT=2 make test-in-docker   # Also rewrite existing annotation text
 UPDATE_EXPECT=3 make test-in-docker   # Full rewrite + reorder alphabetically
 ```
 
-This rewrites annotations in `tests/expect-error/` and `examples/src/` to match actual error messages, preserving the `@ts-expect-error` vs `@skjs-expect-error` prefix. New errors get `@skjs-expect-error` by default. Run `make test-in-docker` afterward to verify.
+This rewrites annotations in `tests/expect-error/` and `examples/src/` to match actual diagnostics, preserving the `@ts-expect-error` vs `@skjs-expect-error` prefix. New errors get `@skjs-expect-error` and new warnings get `@skjs-expect-warning` (errors are emitted before warnings on a given line). Run `make test-in-docker` afterward to verify.
 
 ## Regression and Edge Cases
 

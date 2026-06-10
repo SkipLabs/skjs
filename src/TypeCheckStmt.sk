@@ -201,7 +201,7 @@ extension class TypeChecker {
       return void
     };
     if (branches.size() == 1) {
-      tcenv.error(Array[(e.pos, "Useless switch")])
+      tcenv.warning(Array[(e.pos, "Useless switch")])
     };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = (pos, block) -> {
@@ -251,7 +251,7 @@ extension class TypeChecker {
     };
     for (branch in branches) {
       if (cases.isEmpty()) {
-        tcenv.error(Array[(branch.pos, "Unused branch")]);
+        tcenv.warning(Array[(branch.pos, "Unused branch")]);
         break void
       };
       branch match {
@@ -261,7 +261,7 @@ extension class TypeChecker {
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.containsKey(staticValue)) {
-            tcenv.error(Array[(pos, "Unused branch")])
+            tcenv.warning(Array[(pos, "Unused branch")])
           } else {
             cases.remove(staticValue)
           }

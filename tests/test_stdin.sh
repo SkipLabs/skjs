@@ -134,6 +134,20 @@ expect_not_contains "preambleAccepted" \
   "before first '////' marker" "$out"
 
 ########################################################################
+# Default mode (no --keep-going): a non-fatal warning collected before a
+# fatal error in the same definition must NOT be discarded when the
+# definition aborts. Both are reported.
+########################################################################
+out=$(
+  printf '//// warn.ts\nfunction f(x: { a: number }): void {\n  const y: number = x?.a;\n  const z: string = x.a;\n}\n' \
+    | run_stdin
+)
+expect_contains "warningKeptBeforeFatalError" \
+  "Useless '?.'" "$out"
+expect_contains "fatalErrorAfterWarning" \
+  "is not compatible with type string" "$out"
+
+########################################################################
 # Summary
 ########################################################################
 total=$((successes + failures))

@@ -258,9 +258,9 @@ fun validateCallGraph(
   checkResult: SKJS.CheckResult,
   update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
 
   if (parseErrorOpt is Some _) {
     return Array[

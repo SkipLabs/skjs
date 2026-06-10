@@ -134,14 +134,17 @@ fun doUpdateExpectErrorComments(
   fileName: SKJS.FPath,
   fileContents: String,
   actualErrors: Array<SKJS.Error>,
+  actualWarnings: Array<SKJS.Error>,
   update: UMDoUpdate,
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
+  linedWarnings = getLinedErrors(context, checker, fileName, actualWarnings);
   tenv = checker.checker;
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};
   subst = SKJS.Subst::mcreate(tcenvb);
   errorsByLine = mutable Map[];
+  warningsByLine = mutable Map[];
   fullMessages = mutable Map[];
   actualLineNAnnotationsByLine = mutable Map[];
   for (lineErrs in linedErrors) {
@@ -161,12 +164,24 @@ fun doUpdateExpectErrorComments(
     };
     errorsByLine.set(lineErrs.i0, trimmedMsgs)
   };
+  // Warnings have no -lineN continuations; just collect their messages by line.
+  for (lineWarns in linedWarnings) {
+    trimmedMsgs = SortedSet[];
+    for (warn in lineWarns.i1) {
+      full = errorToFullMessage(warn);
+      trimmed = full.trimMessage(true);
+      fullMessages.set(trimmed, full.trimMessage());
+      !trimmedMsgs = trimmedMsgs.set(trimmed)
+    };
+    warningsByLine.set(lineWarns.i0, trimmedMsgs)
+  };
   updateFileAnnotations(
     fileContents,
     errorsByLine.chill(),
     fullMessages.chill(),
     update,
     actualLineNAnnotationsByLine.chill(),
+    warningsByLine.chill(),
   ).each(updatedContents -> {
     absFileName = fileName.toAbsolute(checker.files.rootMap);
     FileSystem.writeTextFile(absFileName.toString(), updatedContents);
@@ -182,9 +197,10 @@ fun validateExpectErrorComments(
   checkResult: SKJS.CheckResult,
   update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
+  typeWarnings = checkResult.warnings;
 
   fileContents = checker.files.filesContent.get(context, fileName);
 
@@ -195,13 +211,23 @@ fun validateExpectErrorComments(
 
   update match {
   | UMValidateOnly() ->
-    tsExpectErrors = findExpectErrors(fileContents.value).iterator();
+    refs = findExpectErrors(fileContents.value);
+    // Errors (incl. @ts-expect-error and parse errors) match the error field;
+    // @skjs-expect-warning match the separate warnings field.
     validateReferenceErrors(
       context,
       checker,
       fileName,
       actualErrors,
-      tsExpectErrors,
+      refs.iterator().filter(r -> r.severity is SKJS.SeverityError()),
+    ).concat(
+      validateReferenceErrors(
+        context,
+        checker,
+        fileName,
+        typeWarnings,
+        refs.iterator().filter(r -> r.severity is SKJS.SeverityWarning()),
+      ),
     )
   | doUpdate @ UMDoUpdate _ ->
     doUpdateExpectErrorComments(
@@ -210,6 +236,7 @@ fun validateExpectErrorComments(
       fileName,
       fileContents.value,
       actualErrors,
+      typeWarnings,
       doUpdate,
     );
     Array[]
@@ -223,9 +250,9 @@ fun validateTSConformance(
   checkResult: SKJS.CheckResult,
   _update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
 
   SKTest.expectEq(parseErrorOpt is None(), true, "Expected no parse errors");
 
@@ -275,9 +302,9 @@ fun validateNotSupported(
   checkResult: SKJS.CheckResult,
   _update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
 
   if (parseErrorOpt is None() && typeErrors.isEmpty()) {
     return Array[
@@ -541,7 +568,7 @@ fun validateTsConfigDiags(
         actuals = lineDiags
           .map(d -> d.message.trimMessage(true))
           .collect(SortedSet);
-        if (actuals != ref.expectedErrors) {
+        if (actuals != ref.expectedMessages) {
           errors.push(
             SKTest.ExpectationError(
               `${configPath}:${actualLine} Wrong tsconfig diagnostic`,

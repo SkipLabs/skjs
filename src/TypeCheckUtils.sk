@@ -173,7 +173,7 @@ extension class TypeChecker {
     | Some(TPrimValue(kind @ TBigInt(), _, _)) ->
       kind
     | _ ->
-      error(
+      fatalError(
         Array[
           (pos, msg),
           (ty.pos, "This is not a numeric type (number or bigint)"),
@@ -223,7 +223,7 @@ extension class TypeChecker {
 }
 
 fun paramsError<T>(pos: PosRange): T {
-  error(
+  fatalError(
     Array[
       (
         pos,

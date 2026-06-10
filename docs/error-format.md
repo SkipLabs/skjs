@@ -8,39 +8,42 @@ The default human-readable format.
 
 ```text
 File "path/to/file.ts", line 2, character 10-11:
-Invalid return type
+error: Invalid return type
 File "path/to/file.ts", line 1, character 16-22:
 Type number
 File "path/to/file.ts", line 1, character 25-31:
 is not compatible with type string
 ```
 
-Each error is a sequence of `<position>\n<message>` pairs. Errors are separated by a blank line.
+Each diagnostic is a sequence of `<position>\n<message>` pairs; the primary (first) message is prefixed with its severity, `error:` or `warning:`. Diagnostics are separated by a blank line, with all errors printed before any warnings.
 
 ## `indent`
 
-Compact format with `file:line:col` positions. The first message of each error starts at the left margin; subsequent context messages are indented by 2 spaces.
+Compact format with `file:line:col` positions. The first message of each diagnostic starts at the left margin, prefixed with its severity (`error:` / `warning:`); subsequent context messages are indented by 2 spaces.
 
 ```text
-path/to/file.ts:2:10: Invalid return type
+path/to/file.ts:2:10: error: Invalid return type
   path/to/file.ts:1:16: Type number
   path/to/file.ts:1:25: is not compatible with type string
 ```
 
-Errors are separated by a blank line.
+Diagnostics are separated by a blank line.
 
 ## `json`
 
-Machine-readable JSON. The output is a single JSON array of error objects, pretty-printed with 2-space indentation.
+Machine-readable JSON. The output is a single JSON array of diagnostics, pretty-printed with 2-space indentation.
 
 ### Schema
 
 ```ts
-ErrorList = Array<Error>
+DiagnosticList = Diagnostic[]
 
-// Non-empty array. Element 0 is the primary message; subsequent
-// elements are related context (e.g., subtyping detail).
-Error = Array<Message>
+// The primary message, then any related context (e.g. subtyping detail).
+// Errors are listed before warnings.
+Diagnostic = [PrimaryMessage, ...Message[]]
+
+// The primary message additionally carries the diagnostic's severity.
+PrimaryMessage = Message & { severity: "error" | "warning" }
 
 Message = {
   pos: Position,
@@ -74,7 +77,8 @@ Position = {
         "col": 10,
         "endCol": 11
       },
-      "message": "Invalid return type"
+      "message": "Invalid return type",
+      "severity": "error"
     },
     {
       "pos": {
@@ -100,6 +104,7 @@ Position = {
 
 ### Notes
 
-- On success (no errors), no output is produced.
-- A parse error appears as an `Error` with a single `Message` (no related context).
+- When there are no diagnostics, no output is produced. A run with only warnings still prints them but exits 0 — only errors set a non-zero exit code.
+- Warnings have the same shape as errors, with `"severity": "warning"` on the primary message, and are listed after all errors.
+- A parse error appears as a `Diagnostic` with a single `Message` (no related context).
 - `endLine`/`endCol` are omitted when the range is a single point or stays on the same line.

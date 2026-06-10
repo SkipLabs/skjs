@@ -143,7 +143,7 @@ extension class TypeChecker {
         if (isStatic) {
           if (c.kind is CKInterface()) {
             // TS#1070: 'static' modifier cannot appear on a type member
-            error(
+            fatalError(
               Array[
                 (
                   field.pos,

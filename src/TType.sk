@@ -1464,7 +1464,7 @@ class TFields protected {
       | _ -> None()
       } match {
       | None() ->
-        error(
+        fatalError(
           Array[
             (
               brandField.get.pos,
@@ -1712,7 +1712,7 @@ class TFields protected {
   }
 
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
-    error(
+    fatalError(
       Array[
         (pos, `Unbound field: ${fieldName}`),
         (

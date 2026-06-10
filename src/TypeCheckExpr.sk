@@ -70,7 +70,7 @@ extension class TypeChecker {
               undefined,
             ) is STOk();
             if (!canBeUndefined) {
-              tcenv.error(
+              tcenv.warning(
                 Array[
                   (
                     defaultExpr.pos,
@@ -80,7 +80,7 @@ extension class TypeChecker {
               )
             };
             if (isAlwaysUndefined) {
-              tcenv.error(
+              tcenv.warning(
                 Array[(defaultExpr.pos, "Element is always undefined")],
               )
             };
@@ -104,7 +104,7 @@ extension class TypeChecker {
         | None() -> arrPat.size() == tyl.size()
         };
         if (!sizeOk) {
-          error(
+          fatalError(
             Array[
               (
                 pos,
@@ -140,7 +140,7 @@ extension class TypeChecker {
           eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
           | Some(t) -> t
           | None() ->
-            error(
+            fatalError(
               Array[
                 (pos, "Invalid tuple pattern"),
                 (
@@ -196,7 +196,7 @@ extension class TypeChecker {
           | None() -> void
           }
         | _ ->
-          error(
+          fatalError(
             Array[
               (pos, "Invalid tuple pattern"),
               (
@@ -216,7 +216,7 @@ extension class TypeChecker {
       };
       type.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
-        error(
+        fatalError(
           Array[
             (pos, "Invalid object pattern"),
             (type.pos, `This is ${this.ppType(tcenv, type)}`),
@@ -228,7 +228,7 @@ extension class TypeChecker {
           | tobj @ TObject(_, _, _) ->
             (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
           | _ ->
-            error(
+            fatalError(
               Array[
                 (pos, "Invalid object pattern"),
                 (type.pos, `This is ${this.ppType(tcenv, type)}`),
@@ -290,7 +290,7 @@ extension class TypeChecker {
             defaultIsUseless match {
             | None() -> void
             | Some(defaultPos) ->
-              tcenv.error(
+              tcenv.warning(
                 Array[
                   (
                     defaultPos,
@@ -329,7 +329,7 @@ extension class TypeChecker {
         tcenv.error(Array[(pos, "Const must be bound to a value")]);
       };
       type match {
-      | None() -> error(Array[(pos, "Was expecting a type or a value")])
+      | None() -> fatalError(Array[(pos, "Was expecting a type or a value")])
       | Some(annotAst) ->
         ty = this.normalize(tcenv, annotAst);
         (ty, false)
@@ -485,7 +485,7 @@ extension class TypeChecker {
     | Some(ty @ TPrimValue(TNum(), _, _))
     | Some(ty @ TPrimValue(TSymbol(), _, _)) ->
       ty
-    | _ -> error(Array[(idx.pos, "Invalid index type")])
+    | _ -> fatalError(Array[(idx.pos, "Invalid index type")])
     };
     objType2 = ArrayLitTyping::refineForArrayUse(
       tcenv,
@@ -496,7 +496,7 @@ extension class TypeChecker {
     stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
     | _ ->
-      error(
+      fatalError(
         Array[(pos, `Invalid access for type ${this.ppType(tcenv, objType2)}`)],
       )
     };
@@ -576,7 +576,7 @@ extension class TypeChecker {
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
               if (remainingIdxSType.literals.isNone()) {
-                error(
+                fatalError(
                   Array[
                     (pos, "Invalid access"),
                     (idx.pos, "Index has non-literal type symbol"),
@@ -584,7 +584,7 @@ extension class TypeChecker {
                   ],
                 )
               } else {
-                error(Array[(pos, "Symbol property not found on object")])
+                fatalError(Array[(pos, "Symbol property not found on object")])
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -660,7 +660,7 @@ extension class TypeChecker {
               // index value without manufacturing a cascade of dependent
               // errors (e.g. "Invalid call" from calling a number) — so bail
               // here instead of continuing.
-              error(
+              fatalError(
                 Array[
                   (
                     pos,
@@ -675,7 +675,7 @@ extension class TypeChecker {
             | None() ->
               remainingIdxSType.literals match {
               | None() ->
-                error(
+                fatalError(
                   Array[
                     (pos, "Invalid access"),
                     (
@@ -743,7 +743,7 @@ extension class TypeChecker {
         addResultCase(TType::single(TPrimUnit(TUndefined(), undefPos)))
 
       | _ ->
-        error(
+        fatalError(
           Array[
             (pos, "Type cannot be accessed"),
             (
@@ -758,7 +758,7 @@ extension class TypeChecker {
         optionalChainingIsAlwaysUndefinedForThisSType;
     };
     if (optionalChainingIsUseless) {
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
           (
@@ -769,7 +769,7 @@ extension class TypeChecker {
       )
     };
     if (optionalChainingIsAlwaysUndefined) {
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "Result of optional chaining is always undefined"),
           (
@@ -787,6 +787,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     e: Expr,
     mostPrecise: Bool,
+    nonNullAssertion: Bool,
   ): (Bool, TType) {
     ty = this.expr(tcenv, e, mostPrecise);
     hasTop = false;
@@ -830,7 +831,7 @@ extension class TypeChecker {
       )
     } else if (!hasTop && !hasNullOrUndefined) {
       !isValid = false;
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "This operator is useless"),
           (e.pos, "This expression is never null or undefined"),
@@ -838,12 +839,19 @@ extension class TypeChecker {
       );
     } else if (!hasTop && !hasOthers) {
       !isValid = false;
-      tcenv.error(
-        Array[
-          (pos, "This operator is useless"),
-          (e.pos, "This expression is always null or undefined"),
-        ],
-      )
+      // For `??` this is a harmless dead operator (the result is the right
+      // operand), so it stays a warning. For a non-null assertion it is
+      // unsound — `x!` would have the empty type and so satisfy any annotation
+      // — so it must be a hard error.
+      messages = Array[
+        (pos, "This operator is useless"),
+        (e.pos, "This expression is always null or undefined"),
+      ];
+      if (nonNullAssertion) {
+        tcenv.error(messages)
+      } else {
+        tcenv.warning(messages)
+      }
     };
     (isValid, tyWithoutNullish)
   }
@@ -1008,7 +1016,7 @@ extension class TypeChecker {
           | _ -> void
           }
         } else {
-          error(Array[(pos, "Unbound name")])
+          fatalError(Array[(pos, "Unbound name")])
         }
       | Some(localDef) -> localDef
       }
@@ -1465,7 +1473,7 @@ extension class TypeChecker {
         };
         tfuns
       | None() ->
-        error(
+        fatalError(
           Array[
             (pos, "Invalid call"),
             (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
@@ -1525,7 +1533,7 @@ extension class TypeChecker {
             };
             this.call(tcenv, pos, f, tArgs, args, mostPrecise)
           | None() ->
-            error(
+            fatalError(
               Array[
                 (pos, "Invalid new"),
                 (
@@ -1536,7 +1544,7 @@ extension class TypeChecker {
             )
           }
         | _ ->
-          error(
+          fatalError(
             Array[
               (pos, "Invalid new"),
               (
@@ -1618,7 +1626,7 @@ extension class TypeChecker {
           }
         );
         if (invalid) {
-          error(
+          fatalError(
             Array[
               (pos, `Invalid unary operation ${nuop}`),
               (subExpr.pos, `This has type ${this.ppType(tcenv, ty)}`),
@@ -1660,7 +1668,7 @@ extension class TypeChecker {
           this.checkSubType(tcenv, e2.pos, "Invalid + operand", ty2, res);
           res
         | _ ->
-          error(
+          fatalError(
             Array[
               (pos, "Invalid + operation"),
               (e1.pos, `For an object of type: ${this.ppType(tcenv, ty1)}`),
@@ -1687,7 +1695,7 @@ extension class TypeChecker {
               | BOStrictEquality() -> "false"
               | BOStrictInequality() -> "true"
               };
-              tcenv.error(
+              tcenv.warning(
                 Array[(pos, `This equality is always ${alwaysResult}`)],
               )
             }
@@ -1788,7 +1796,7 @@ extension class TypeChecker {
         ty2 = this.expr(tcenv, e2, true);
         kind2 = this.checkIsNumeric(tcenv, e2.pos, "Invalid operation", ty2);
         if (kind1 != kind2) {
-          error(
+          fatalError(
             Array[
               (
                 pos,
@@ -1807,6 +1815,7 @@ extension class TypeChecker {
           tcenv,
           e1,
           mostPrecise,
+          false,
         );
         ty2 = this.expr(tcenv, e2, mostPrecise);
         TType::union(tcenv.subst, this, ty1WithoutNullish, ty2)
@@ -1816,7 +1825,7 @@ extension class TypeChecker {
       _ = this.expr(tcenv, e1, true);
       _ = this.getClass(tcenv, className);
       TType::single(TPrimValue::boolean(pos))
-    | InstanceOf(_, e2) -> error(Array[(e2.pos, "Unexpected instanceof")])
+    | InstanceOf(_, e2) -> fatalError(Array[(e2.pos, "Unexpected instanceof")])
     | In(e1, e2) ->
       (t1, fieldsOpt, symFieldsOpt) = this.getInLhsTypeAndFields(
         tcenv,
@@ -1926,6 +1935,7 @@ extension class TypeChecker {
           tcenv,
           subExpr,
           mostPrecise,
+          true,
         );
         if (isValid) {
           // Check if this is a for-in v[k]! pattern
@@ -2012,7 +2022,7 @@ extension class TypeChecker {
       this.checkSubType(tcenv, pos, "Invalid 'satisfies'", inferredTy, annot);
       tcenv.subst.restore(savedSubst);
       inferredTy
-    | Async _ -> error(Array[(pos, "Invalid async")])
+    | Async _ -> fatalError(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
       aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
@@ -2020,7 +2030,7 @@ extension class TypeChecker {
       ) match {
       | Some(TPromise(ty, _)) -> ty
       | _ ->
-        error(
+        fatalError(
           Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
         )
       }
@@ -2062,8 +2072,8 @@ extension class TypeChecker {
         this.expr(tcenv, subExpr, true)
       }
     | Params _ -> paramsError(pos)
-    | Regexp _ -> error(Array[(pos, "TODO: regexp")])
-    | Spread _ -> error(Array[(pos, "TODO: ...")])
+    | Regexp _ -> fatalError(Array[(pos, "TODO: regexp")])
+    | Spread _ -> fatalError(Array[(pos, "TODO: ...")])
     }
   }
 
@@ -2113,7 +2123,7 @@ extension class TypeChecker {
             )
           }
         | _ ->
-          error(
+          fatalError(
             Array[
               (pos, "Invalid unary !"),
               (
@@ -2596,7 +2606,7 @@ extension class TypeChecker {
             Some(symLits.map(more -> existing.union(more)))
           }
         | _ ->
-          error(
+          fatalError(
             Array[
               (pos, "Invalid in"),
               (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
@@ -2606,7 +2616,7 @@ extension class TypeChecker {
       };
       (t1, fieldLitsOpt, symLitsOpt)
     | _ ->
-      error(
+      fatalError(
         Array[
           (pos, "Invalid in"),
           (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),

@@ -1,20 +1,20 @@
 function uselessNull(x: null): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x ?? 0;
 }
 
 function uselessUndefined(x: undefined): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x ?? 0;
 }
 
 function uselessNullOrUndefined(x: null | undefined): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x ?? 0;
 }
 
 function uselessNoNull(x: number): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x ?? 0;
 }
 
@@ -31,12 +31,12 @@ function paramTop<T>(x: T): T | number {
 }
 
 function uselessNullOrUndefinedParam<T extends null | undefined>(x: T): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x ?? 0;
 }
 
 function uselessNoNullParam<T extends number>(x: T): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x ?? 0;
 }
 

@@ -176,45 +176,86 @@ type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
 class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 
+// The severity of a diagnostic. Errors fail the build; warnings do not.
+base class Severity uses Equality {
+  children =
+  | SeverityError()
+  | SeverityWarning()
+
+  fun word(): String
+  | SeverityError() -> "error"
+  | SeverityWarning() -> "warning"
+
+  // Color for the severity word: red for errors, yellow for warnings.
+  fun color(): TermColor.Color
+  | SeverityError() -> TermColor.Red()
+  | SeverityWarning() -> TermColor.Yellow()
+}
+
+// Format a diagnostic for text output. The severity (`error:` / `warning:`)
+// labels the primary message; secondary messages (related locations) are left
+// unlabeled. When `useColor` is set, the severity word is colored.
 fun formatErrorMessage(
   msg: ErrorMessage,
+  severity: Severity,
   errorFormat: TextErrorFormat,
+  useColor: Bool,
 ): String {
+  label = if (useColor) {
+    TermColor.colored(severity.word(), severity.color())
+  } else {
+    severity.word()
+  };
   errorFormat match {
   | EFDefault() ->
-    result = mutable Vector[];
-    for ((pos, text) in msg) {
-      result.push(pos.toString());
-      result.push(text);
-    };
-    result.join("\n")
+    msg
+      .mapWithIndex((i, entry) -> {
+        (pos, text) = entry;
+        labeled = if (i == 0) `${label}: ${text}` else text;
+        `${pos}\n${labeled}`
+      })
+      .join("\n")
   | EFIndent() ->
     msg
       .mapWithIndex((i, entry) -> {
         (pos, text) = entry;
-        prefix = if (i == 0) "" else "  ";
-        `${prefix}${pos.toCompactString()} ${text}`
+        if (i == 0) {
+          `${pos.toCompactString()} ${label}: ${text}`
+        } else {
+          `  ${pos.toCompactString()} ${text}`
+        }
       })
       .join("\n")
   }
 }
 
-fun errorMessageToJson(msg: ErrorMessage): JSON.Value {
+// One diagnostic as a JSON array of (position, message) parts: the primary
+// message followed by any related-location notes. Only the primary (first)
+// part additionally carries the `severity` field.
+fun diagnosticToJson(msg: ErrorMessage, severity: Severity): JSON.Value {
   JSON.Array(
     msg
-      .values()
-      .map(errMsg ->
-        JSON.Object[
+      .mapWithIndex((i, errMsg) -> {
+        obj = JSON.Object[
           "pos" => errMsg.i0.toJsonObject(),
           "message" => JSON.String(errMsg.i1),
-        ]
-      )
+        ];
+        if (i == 0) obj.set("severity", JSON.String(severity.word())) else obj
+      })
       .collect(Vector),
   )
 }
 
-fun errorMessagesToJson(msgs: Array<ErrorMessage>): JSON.Value {
-  JSON.Array(msgs.values().map(errorMessageToJson).collect(Vector))
+fun diagnosticsToJson(
+  errors: Array<ErrorMessage>,
+  warnings: Array<ErrorMessage>,
+): JSON.Value {
+  JSON.Array(
+    errors
+      .map(msg -> diagnosticToJson(msg, SeverityError()))
+      .concat(warnings.map(msg -> diagnosticToJson(msg, SeverityWarning())))
+      .collect(Vector),
+  )
 }
 
 module end;

@@ -43,10 +43,13 @@ extension class TypeChecker {
     defs: Array<Def>,
   ): TCResults {
     results = mutable Vector[];
-    extraErrors = mutable Vector[];
     // Count occurrences of each name to assign stable occurrence numbers
     nameCounts: mutable Map<String, Int> = mutable Map[];
-    checkOne = (def) -> {
+    // checkDef catches fatal errors at the definition boundary (it only lets
+    // them propagate in backtrace mode, for a native trace), so the loop body
+    // never throws an ErrorExn here; any exception that does propagate is a
+    // genuine crash and should not be swallowed.
+    for (def in defs) {
       def.value.defStableName() match {
       | Some(Name(_, name)) ->
         occ = nameCounts.maybeGet(name).default(0);
@@ -59,15 +62,7 @@ extension class TypeChecker {
       | None() -> results.push(this.checkDef(context, def))
       }
     };
-    for (def in defs) {
-      this.errorHandling match {
-      | EHBacktrace() -> checkOne(def)
-      | EHDefault()
-      | EHKeepGoing() ->
-        catchError(() -> checkOne(def)).each(extraErrors.push)
-      }
-    };
-    TCResults::ofAccs(results, extraErrors)
+    TCResults::ofAccs(results)
   }
 
   fun checkDef(
@@ -76,7 +71,16 @@ extension class TypeChecker {
   ): readonly TCResultsAcc {
     results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
     tcenvl = mutable TCEnvLight{context, results};
-    results.collectErrors(() -> this.checkDef_(tcenvl, def));
+    // Catch a fatal abort at the definition boundary so warnings (and any
+    // earlier errors) collected before it survive instead of being discarded
+    // with the unwound stack. The definition still stops at the first fatal
+    // (one error per definition); backtrace mode propagates for a native trace.
+    this.errorHandling match {
+    | EHBacktrace() -> this.checkDef_(tcenvl, def)
+    | EHKeepGoing()
+    | EHDefault() ->
+      catchError(() -> this.checkDef_(tcenvl, def)).each(results.errors.push)
+    };
     results
   }
 
@@ -201,7 +205,7 @@ extension class TypeChecker {
       | PVar(name) -> Some(name.value)
       | PArray _
       | PObject _ ->
-        error(
+        fatalError(
           Array[
             (
               varDef.pat.pos,

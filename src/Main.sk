@@ -237,6 +237,13 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Read additional source files from stdin as a `//// <path>` marker stream, overlaid on the disk filesystem.",
     ),
+  Cli.Arg::string("color")
+    .long("color")
+    .value_name("WHEN")
+    .about(
+      "Colorize diagnostics: auto (default; colored on a terminal, honoring NO_COLOR/FORCE_COLOR), always, never",
+    )
+    .default("auto"),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -427,7 +434,35 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   };
 
+  // True if env var `name` is set to anything other than `off` (its "disabled"
+  // value): NO_COLOR is honored when present and non-empty (per no-color.org);
+  // FORCE_COLOR is honored unless it is "0" (per the common chalk convention).
+  envEnabled = (name, off) ->
+    Environ.varOpt(name) match {
+    | Some(v) -> v != off
+    | None() -> false
+    };
+  // Resolve color: --color=always/never force it; auto (the default) colors
+  // only when stderr is a terminal, with NO_COLOR then FORCE_COLOR taking
+  // priority over TTY detection.
+  useColor = args.getString("color") match {
+  | "always" -> true
+  | "never" -> false
+  | "auto" ->
+    if (envEnabled("NO_COLOR", "")) {
+      false
+    } else if (envEnabled("FORCE_COLOR", "0")) {
+      true
+    } else {
+      IO.stderr().isatty()
+    }
+  | other ->
+    print_error(`Unknown --color value: ${other}. Use auto, always, or never.`);
+    throw Exit(2)
+  };
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
+  warningsDirName = SKStore.DirName::create("/check/warnings/");
 
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
@@ -481,7 +516,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                 (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
                 | None() ->
                   internal_error("Unexpected missing value in print-errors")
-                | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
+                | Some(cr) -> (cr.parseError, cr.errors)
                 };
                 errors = mutable Vector[];
                 parseErrorOpt match {
@@ -498,6 +533,29 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                   );
                 };
                 writer.setArray(SKStore.UnitID::singleton, errors.toArray());
+              },
+            );
+            // Warnings are rendered into a separate dir so the exit code (and
+            // the affected-files gate) can count only errors. They are still
+            // printed, alongside the errors, by the output stage below.
+            _ = checked.map(
+              SKStore.UnitID::keyType,
+              ErrorMessageFile::type,
+              context,
+              warningsDirName,
+              (context, writer, _key, valueIter) ~> {
+                typeWarnings = valueIter.getUnique() match {
+                | None() ->
+                  internal_error("Unexpected missing value in print-errors")
+                | Some(cr) -> cr.warnings
+                };
+                warnings = mutable Vector[];
+                for (warning in typeWarnings) {
+                  warnings.push(
+                    ErrorMessageFile(checker.errorToMessage(context, warning)),
+                  );
+                };
+                writer.setArray(SKStore.UnitID::singleton, warnings.toArray());
               },
             );
             _ = CallGraph::build(context, checked)
@@ -541,22 +599,43 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | None() -> 2
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
-    printErrors(errors, errorFormat);
+    warnings = context
+      .maybeGetEagerDir(warningsDirName)
+      .map(wdir -> wdir.getArrayRaw(SKStore.UnitID::singleton))
+      .default(Array[]);
+    // Print errors and warnings; only errors determine the exit status.
+    printErrors(errors, warnings, errorFormat, useColor);
     if (errors.size() != 0) 2 else 0
   }
 }
 
-fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
-  msgs = errors
+fun printErrors(
+  errors: Array<SKStore.File>,
+  warnings: Array<SKStore.File>,
+  errorFormat: ErrorFormat,
+  useColor: Bool,
+): void {
+  errMsgs = errors
+    .map(e -> ErrorMessageFile::type(e).value)
+    .filter(msg -> !msg.isEmpty());
+  warnMsgs = warnings
     .map(e -> ErrorMessageFile::type(e).value)
     .filter(msg -> !msg.isEmpty());
   errorFormat match {
-  | EFJson() -> errorMessagesToJson(msgs).writeToStream(print_error_raw, 2)
+  | EFJson() ->
+    diagnosticsToJson(errMsgs, warnMsgs).writeToStream(print_error_raw, 2)
   | textErrorFormat @ TextErrorFormat _ ->
-    for (errMsg in msgs) {
-      print_error(formatErrorMessage(errMsg, textErrorFormat));
-      // Blank line separator between errors
-      print_error("")
+    for ((msgs, severity) in Array[
+      (errMsgs, SeverityError()),
+      (warnMsgs, SeverityWarning()),
+    ]) {
+      for (msg in msgs) {
+        print_error(
+          formatErrorMessage(msg, severity, textErrorFormat, useColor),
+        );
+        // Blank line separator between diagnostics
+        print_error("")
+      }
     }
   }
 }
@@ -565,6 +644,7 @@ class CheckResult(
   fileName: FPath,
   parseError: ?LexingOrParsingError,
   errors: Array<Error>,
+  warnings: Array<Error> = Array[],
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
@@ -685,13 +765,17 @@ class Checker private {
               fileName,
               None(),
               errors,
+              results.warnings,
               results.callgraph,
               results.classHierarchy,
               results.subtypingEdges,
             ),
           )
         | PRError(err) ->
-          writer.set(fileName, CheckResult(fileName, Some(err), Array[]))
+          writer.set(
+            fileName,
+            CheckResult(fileName, Some(err), Array[], Array[]),
+          )
         }
       },
     );
