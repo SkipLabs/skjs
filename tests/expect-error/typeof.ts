@@ -416,7 +416,7 @@ function testIncorrectFunctionRefinement(x: (() => number) | string): string {
 // Accessing properties on wrong branch
 function testAccessWrongBranch(x: { a: number } | string): number {
   if (typeof x === "string") {
-    // @ts-expect-error Invalid index key: expected number, got string
+    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
     return x.a;
   } else {
     return x.a;

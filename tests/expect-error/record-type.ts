@@ -139,7 +139,7 @@ function recordNumberAccess(x: Record<number, string>): string | undefined {
 }
 
 function recordNumberStringAccess(x: Record<number, string>): string {
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   return x.foo;
 }
 

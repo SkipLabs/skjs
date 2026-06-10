@@ -58,6 +58,6 @@ function readonlyArrayIsNotSubtypeOfArray(dogs: readonly Dog[]): Dog[] {
 // Known limitation: indexOf, includes, lastIndexOf, concat are commented out
 // on ReadonlyArray because T in contravariant position prevents covariant subtyping.
 function readonlyArrayMissingMethods(xs: readonly number[]): void {
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   xs.indexOf(1);
 }

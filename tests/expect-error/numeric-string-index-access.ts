@@ -14,13 +14,13 @@ function testNumericStringAccessOnNumberIndex(): void {
 // "one error per def" rule doesn't hide the non-canonical case below.
 function testNonNumericStringAccessFails(): void {
   const obj: { [x: number]: string } = {};
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   const e = obj["foo"];
 }
 
 // Non-canonical numeric strings (leading zero, etc.) also fail.
 function testNonCanonicalNumericStringAccessFails(): void {
   const obj: { [x: number]: string } = {};
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   const f = obj["01"];
 }

@@ -23,7 +23,7 @@ function readElement(...items: string[]): string | undefined {
 }
 
 function noMutation(...items: string[]): void {
-  // @ts-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   items.push("x");
 }
 

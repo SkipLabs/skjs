@@ -4,14 +4,14 @@ class TestUnsupportedFeatures {
   // Test postfix ! operator (not supported)
   testPostfixExclamation(): void {
     let x: boolean | null = true;
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     const y: boolean = x!;
   }
 
   // Test non-null assertion on member access (not supported)
   testNonNullAssertion(): void {
     const obj: { value: number } | null = { value: 5 };
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     const x: number = obj!.value;
   }
 }
