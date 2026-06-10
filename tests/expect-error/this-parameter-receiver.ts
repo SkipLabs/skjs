@@ -33,3 +33,8 @@ class BaseMethod {
 }
 declare const d: Derived & BaseMethod;
 d.m();
+
+// Bracket-access calls thread the receiver the same way as dot calls.
+// @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+holder["m"](1);
+objHolder["m"](1);
