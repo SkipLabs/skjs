@@ -51,6 +51,10 @@ type InterOfUnions = Union1 & Union2;
 type UnionWithThisParam =
   | ((this: Dog, x: number) => string)
   | ((this: Cat, x: number) => string);
+// One branch declares `this`, the other does not (i.e. `this: unknown`).
+type UnionMixedThisParam =
+  | ((x: number) => string)
+  | ((this: Cat, x: number) => string);
 type Union1Str = ((x: number) => string) | ((x: string) => string);
 type Union2StrBool = ((x: string) => string) | ((x: boolean) => string);
 type CombinedUnion = Union1Str | Union2StrBool;
@@ -320,6 +324,13 @@ function f2(this: Cat, _x: number): string {
 function testUnionWithThisParam(): void {
   const union1: UnionWithThisParam = f1;
   const union2: UnionWithThisParam = f2;
+}
+
+// For now the union of a this-declaring branch with a no-this branch drops the
+// thisParam entirely, so a free call is accepted; the next commit intersects
+// the branch `this` types instead, rejecting this call.
+function testUnionMixedThisParam(g: UnionMixedThisParam): string {
+  return g(1);
 }
 
 // Test 24: Multiple unions combined
