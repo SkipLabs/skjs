@@ -85,3 +85,13 @@ function implicitRebindOk(o: Impl): void {
   const bound: (a: number) => number = o.mm.bind(undefined);
   let _b: number = bound(1);
 }
+
+// .apply's argument array should be omittable when the function takes no
+// parameters; for now the synthesized .apply requires it.
+function noArgs(this: Ctx): number {
+  return 0;
+}
+function applyZeroArgOk(): number {
+  // @skjs-expect-error Too few arguments for this call
+  return noArgs.apply(ctx);
+}
