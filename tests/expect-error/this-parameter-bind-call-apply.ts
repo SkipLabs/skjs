@@ -67,23 +67,25 @@ function optionalCallWrongArg(): void {
   optional.call(ctx, 1, 2);
 }
 
-// Rebinding an implicit-this method via .call/.apply/.bind. For now the
-// implicit `this` is checked as the class instance, so rebinding to an
-// unrelated receiver is rejected.
+// An implicit class `this` requires the `.call`/`.apply`/`.bind` receiver to be
+// the class instance: rebinding to an unrelated receiver is rejected (sound; TS
+// resolves an implicit method's ThisParameterType to `unknown` and accepts any
+// receiver, but the body reads the class's fields off the rebound `this`).
 class Impl {
   v: number = 1;
   mm(a: number): number {
-    return a;
+    return this.v + a;
   }
 }
-function implicitRebindOk(o: Impl): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  let _c: number = o.mm.call("anything", 1);
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  let _a: number = o.mm.apply(42, [1]);
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  const bound: (a: number) => number = o.mm.bind(undefined);
+function implicitRebindCompatibleOk(o: Impl, o2: Impl): void {
+  let _c: number = o.mm.call(o2, 1);
+  let _a: number = o.mm.apply(o2, [1]);
+  const bound: (a: number) => number = o.mm.bind(o2);
   let _b: number = bound(1);
+}
+function implicitRebindWrongReceiver(o: Impl): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  let _ = o.mm.call("anything", 1);
 }
 
 // .apply's argument array is omittable when the function takes no parameters.
