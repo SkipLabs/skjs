@@ -144,9 +144,12 @@ base class ErrorPos uses Equality {
 /* Error codes.
  *
  * Every diagnostic carries a code. `TSCode` reuses the matching TypeScript
- * compiler code; `SKJSCode` is an SKJS-specific code following TypeScript's
- * numbering convention (1xxx syntax, 2xxx semantic/type, 5xxx options; the
- * 9xxx band is reserved for "not yet supported").
+ * compiler code. `ESLintCode` references an ESLint or typescript-eslint rule
+ * by name when SKJS enforces what that rule enforces (e.g. `no-var`,
+ * `@typescript-eslint/strict-boolean-expressions`). `SKJSCode` is an
+ * SKJS-specific code following TypeScript's numbering convention (1xxx syntax,
+ * 2xxx semantic/type, 5xxx options; the 9xxx band is reserved for "not yet
+ * supported"), used when neither a TypeScript code nor an ESLint rule applies.
  *
  * How the code is surfaced in error output is decided separately; for now it
  * is stored on the error and not rendered.
@@ -156,10 +159,12 @@ base class ErrorPos uses Equality {
 base class ErrorCode uses Equality {
   children =
   | TSCode(Int)
+  | ESLintCode(String)
   | SKJSCode(Int)
 
   fun toString(): String
   | TSCode(n) -> `TS${n}`
+  | ESLintCode(rule) -> rule
   | SKJSCode(n) -> `SKJS${n}`
 }
 
@@ -322,13 +327,13 @@ class DontUseEquality() extends ParsingKind {
   fun toString(): String {
     "Unexpected '=='; use '===' instead (SKJS forbids loose equality)"
   }
-  const code: ErrorCode = SKJSCode(1005);
+  const code: ErrorCode = ESLintCode("eqeqeq");
 }
 class DontUseInequality() extends ParsingKind {
   fun toString(): String {
     "Unexpected '!='; use '!==' instead (SKJS forbids loose inequality)"
   }
-  const code: ErrorCode = SKJSCode(1006);
+  const code: ErrorCode = ESLintCode("eqeqeq");
 }
 
 class FunctionInExpr() extends ParsingKind {

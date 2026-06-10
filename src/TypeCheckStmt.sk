@@ -39,7 +39,7 @@ extension class TypeChecker {
       if (bkind is BKVar()) {
         tcenv.error(
           Array[(st.pos, "Unexpected 'var'; use 'let' or 'const' instead")],
-          SKJSCode(1008),
+          ESLintCode("no-var"),
         )
       };
 
@@ -248,7 +248,7 @@ extension class TypeChecker {
         Array[
           (e.pos, "The 'default' clause must be the last branch of a switch"),
         ],
-        SKJSCode(2013),
+        ESLintCode("default-case-last"),
       );
       this.block(tcenv, block, None())
     };
@@ -328,7 +328,7 @@ extension class TypeChecker {
             "Switch is not exhaustive; the following cases are unhandled",
           ),
         ].concat(missingCases.toArray()),
-        SKJSCode(2015),
+        ESLintCode("@typescript-eslint/switch-exhaustiveness-check"),
       );
     };
     true

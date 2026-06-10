@@ -836,7 +836,7 @@ extension class TypeChecker {
             `${this.ppType(tcenv, objType)} is never null nor undefined`,
           ),
         ],
-        SKJSCode(2031),
+        ESLintCode("@typescript-eslint/no-unnecessary-condition"),
       )
     };
     if (optionalChainingIsAlwaysUndefined) {
@@ -848,7 +848,7 @@ extension class TypeChecker {
             `${this.ppType(tcenv, objType)} is always null or undefined`,
           ),
         ],
-        SKJSCode(2032),
+        ESLintCode("@typescript-eslint/no-unnecessary-condition"),
       )
     };
     getResult()
@@ -900,7 +900,7 @@ extension class TypeChecker {
           (pos, "An expression of type 'void' cannot be used here"),
           (e.pos, `This expression has type ${this.ppType(tcenv, ty)}`),
         ],
-        SKJSCode(2034),
+        ESLintCode("@typescript-eslint/no-confusing-void-expression"),
       )
     } else if (!hasTop && !hasNullOrUndefined) {
       !isValid = false;
@@ -912,7 +912,7 @@ extension class TypeChecker {
           ),
           (e.pos, "This expression is never null or undefined"),
         ],
-        SKJSCode(2033),
+        ESLintCode("@typescript-eslint/no-unnecessary-condition"),
       );
     } else if (!hasTop && !hasOthers) {
       !isValid = false;
@@ -927,10 +927,11 @@ extension class TypeChecker {
         ),
         (e.pos, "This expression is always null or undefined"),
       ];
+      eslintCode = ESLintCode("@typescript-eslint/no-unnecessary-condition");
       if (nonNullAssertion) {
-        tcenv.error(messages, SKJSCode(2033))
+        tcenv.error(messages, eslintCode)
       } else {
-        tcenv.warning(messages, SKJSCode(2033))
+        tcenv.warning(messages, eslintCode)
       }
     };
     (isValid, tyWithoutNullish)
@@ -949,7 +950,7 @@ extension class TypeChecker {
           (pos, "An expression of type 'void' cannot be used here"),
           (e.pos, `This expression has type ${this.ppType(tcenv, ty)}`),
         ],
-        SKJSCode(2034),
+        ESLintCode("@typescript-eslint/no-confusing-void-expression"),
       )
     };
     ty
@@ -1721,7 +1722,7 @@ extension class TypeChecker {
           "Operand of '!' must be of type 'boolean'",
           ty,
           bool,
-          SKJSCode(2001),
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
         );
         bool
       | nuop @ NumericUnaryOperator() ->
@@ -1851,7 +1852,7 @@ extension class TypeChecker {
           `Operand of '${opStr}' must be of type 'boolean'`,
           ty1,
           TType::single(TPrimValue::boolean(e1.pos)),
-          SKJSCode(2001),
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
         );
         savedScope = tcenv.scope;
         branch2 = tcenv.mcreateSubScope{isLoop => false};
@@ -1864,7 +1865,7 @@ extension class TypeChecker {
           `Operand of '${opStr}' must be of type 'boolean'`,
           ty2,
           TType::single(TPrimValue::boolean(e2.pos)),
-          SKJSCode(2001),
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
         );
         tcenv.!scope = savedScope;
         tcenv.popScope(this, branch2);
@@ -2083,7 +2084,7 @@ extension class TypeChecker {
         | _ ->
           tcenv.error(
             Array[(pos, `This condition is always ${canBeTrue}`)],
-            SKJSCode(2042),
+            ESLintCode("@typescript-eslint/no-unnecessary-condition"),
           )
         }
       };
@@ -2153,7 +2154,7 @@ extension class TypeChecker {
                     .join(".")}[${ctx.keyVar}]!`,
                 ),
               ],
-              SKJSCode(2068),
+              ESLintCode("@typescript-eslint/no-non-null-assertion"),
             )
           | None() ->
             // Not a for-in pattern — original error
@@ -2165,7 +2166,7 @@ extension class TypeChecker {
                   "This assertion is unsound and may cause runtime errors",
                 ),
               ],
-              SKJSCode(2068),
+              ESLintCode("@typescript-eslint/no-non-null-assertion"),
             )
           }
         };
@@ -2239,7 +2240,7 @@ extension class TypeChecker {
             (pos, "'await' can only be applied to a Promise"),
             (aeType.pos, "This is not a promise"),
           ],
-          SKJSCode(2050),
+          ESLintCode("@typescript-eslint/await-thenable"),
         )
       }
     | EIf(e1, e2, e3) ->
@@ -2250,7 +2251,7 @@ extension class TypeChecker {
         "A ternary condition must be of type 'boolean'",
         cond,
         TType::single(TPrimValue::boolean(e1.pos)),
-        SKJSCode(2001),
+        ESLintCode("@typescript-eslint/strict-boolean-expressions"),
       );
 
       // Create scopes for the true and false branches with type refinements
@@ -2365,7 +2366,7 @@ extension class TypeChecker {
                 `This has type ${this.ppType(tcenv, TType::single(stype))}`,
               ),
             ],
-            SKJSCode(2001),
+            ESLintCode("@typescript-eslint/strict-boolean-expressions"),
           )
         }
       )

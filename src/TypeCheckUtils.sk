@@ -115,7 +115,7 @@ extension class TypeChecker {
       "A condition must be of type 'boolean'",
       this.expr(tcenv, e, true),
       TType::single(TPrimValue::boolean(e.pos)),
-      SKJSCode(2001),
+      ESLintCode("@typescript-eslint/strict-boolean-expressions"),
     );
   }
 
@@ -147,7 +147,7 @@ extension class TypeChecker {
             "Template literal expressions must be of type string, number, bigint, boolean, null, or undefined",
           ),
         ],
-        SKJSCode(2046),
+        ESLintCode("@typescript-eslint/restrict-template-expressions"),
       );
     }
   }
