@@ -2464,31 +2464,43 @@ extension class TypeChecker {
     }
   }
 
-  // The precise type of a direct primitive literal expression (`0`, `'a'`,
-  // `true`, `1n`, `-1`), or None for anything else. Unlike asConstExpr this is
-  // pure (no diagnostics) and does not recurse into composite expressions, so
-  // it can be used speculatively (e.g. to record fresh array literal
-  // elements).
-  fun freshLiteralType(e: Expr): ?TType {
+  // The precise literal SType of a direct primitive literal expression (`0`,
+  // `'a'`, `true`, `1n`, `-1`, `+1`), or None for anything else. Pure (no
+  // diagnostics) and non-recursive. Single source of truth for direct
+  // literals, shared by freshLiteralType and asConstExpr's leaf cases so the
+  // two cannot drift.
+  fun directLiteralSType(e: Expr): ?SType {
     pos = e.pos;
     e.value match {
-    | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
-    | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
-    | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
-    | Var(Name(_, "true")) ->
-      Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
-    | Var(Name(_, "false")) ->
-      Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
-    | Unop(UOMinus(), subE) ->
-      subE.value match {
-      | Number(n) ->
-        Some(TType::single(TPrimValue::single(TNum(), `-${n}`, pos)))
-      | BigInt(n) ->
-        Some(TType::single(TPrimValue::single(TBigInt(), `-${n}`, pos)))
+    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
+    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
+    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
+    | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
+    | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
+    | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
+      kindValue = subE.value match {
+      | Number(n) -> Some((TNum(), n))
+      | BigInt(n) -> Some((TBigInt(), n))
       | _ -> None()
-      }
+      };
+      kindValue.map(kn -> {
+        (kind, n) = kn;
+        value = nuop match {
+        | UOPlus() -> n
+        | UOMinus() -> `-${n}`
+        };
+        TPrimValue::single(kind, value, pos)
+      })
     | _ -> None()
     }
+  }
+
+  // The precise type of a direct primitive literal expression, or None for
+  // anything else. Unlike asConstExpr this is pure and does not recurse into
+  // composite expressions, so it can be used speculatively (e.g. to record
+  // fresh array literal elements).
+  fun freshLiteralType(e: Expr): ?TType {
+    this.directLiteralSType(e).map(stype -> TType::single(stype))
   }
 
   /* Typechecks expression e as const */
@@ -2503,11 +2515,6 @@ extension class TypeChecker {
       this.asConstExpr(tcenv, subExpr)
     | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
-    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
-    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
-    | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
-    | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
-    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Unop(UOExclamationMark(), subE) ->
       this.asConstExpr(tcenv, subE).map(stype ->
         stype match {
@@ -2603,7 +2610,10 @@ extension class TypeChecker {
         | _ -> None()
         }
       )
-    | _ -> None()
+    // Direct literals (and unary +/- over them, when not caught by the
+    // recursive arithmetic arm above) share the same single source of truth
+    // as freshLiteralType.
+    | _ -> this.directLiteralSType(e)
     }
   }
 

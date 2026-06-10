@@ -355,7 +355,12 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
         ty2.pos,
         detail.decreaseRecType(),
       );
-      if (detail.maxRecTypeDepth > 0) {
+      // When the inner error rendered nothing (e.g. the target is a
+      // constrained inference variable whose contravariant expansion
+      // intersected to the empty type, leaving no clause pairs to report),
+      // fall back to the top-level type pair regardless of the detail
+      // budget: an error must never print bare with no explanation.
+      if (detail.maxRecTypeDepth > 0 || msgs.isEmpty()) {
         ty1Str = prettyPrintType(false, ty1, subst, tenv);
         ty2Str = prettyPrintType(false, ty2, subst, tenv);
         List.Cons(
