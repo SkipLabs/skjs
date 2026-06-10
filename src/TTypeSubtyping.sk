@@ -1557,7 +1557,17 @@ extension class TFun {
     | (NoThis(), _)
     | (_, NoThis()) ->
       void
-    | (ImplicitClass _, ImplicitClass _) -> void
+    | (ImplicitClass _, ImplicitClass _) ->
+      // Two implicit class thises are mutually compatible here. This is sound
+      // for method DISPATCH: the receiver at any call is the real object the
+      // method came from (never a fabricated one), so a method of object S used
+      // where a method of T is expected still runs on an S. Re-checking the
+      // this types would be circular — an implicit `this` IS the enclosing
+      // object, which contains this very method — and breaks recursive/array
+      // types. The only way to rebind a method to a foreign receiver is
+      // .call/.apply/.bind (checked soundly in maybeFunctionMethod) or a
+      // detached/free call (checked below as `void <: this`).
+      void
     | _ ->
       // At least one side declares an explicit `this: T`: contravariant.
       this1 = f1.thisParam.tyOpt().fromSome();
