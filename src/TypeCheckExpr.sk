@@ -357,6 +357,90 @@ extension class TypeChecker {
     }
   }
 
+  // Contextual typing helpers.
+  //
+  // These let a known expected type (e.g. a parameter type) flow into an
+  // argument so that fresh literals are checked precisely against it rather
+  // than being eagerly widened.
+  //
+  // NOTE: they must never mutate the real substitution. They peek at the
+  // expected type purely to decide how to type the argument. Using the live
+  // `tcenv.subst` with `getSTypes(.., Covariant())` would close open inference
+  // variables (e.g. a receiver's `Container<T>` `T`), sealing them prematurely,
+  // so they peek on a throwaway clone whose mutations are discarded.
+
+  // True if the expected type (when known) contains a primitive literal type,
+  // i.e. a `TPrimValue` carrying a concrete value (`0`, `'a'`, `true`, ...).
+  // Kind-agnostic: covers number/string/boolean/bigint/symbol uniformly.
+  fun expectsLiteral(tcenv: mutable TCEnv, expected: ?TType): Bool {
+    expected match {
+    | None() -> false
+    | Some(exp) ->
+      exp.getSTypes(tcenv.subst.clone(), this, Covariant()) match {
+      | None() -> false
+      | Some(stypes) ->
+        stypes.any(st ->
+          st match {
+          | TPrimValue(_, Some _, _) -> true
+          | _ -> false
+          }
+        )
+      }
+    }
+  }
+
+  // The expected type for element `i` of an array/tuple literal, derived from
+  // an enclosing expected type:
+  //   - a tuple [T0, T1, ...] -> Ti (when in range)
+  //   - Array<U> / ReadonlyArray<U> -> U (unioned across multiple array insts)
+  //   - anything else -> None
+  fun expectedElt(tcenv: mutable TCEnv, expected: ?TType, i: Int): ?TType {
+    expected.flatMap(exp -> {
+      peekSubst = tcenv.subst.clone();
+      exp.getSTypes(peekSubst, this, Covariant()) match {
+      | None() -> None()
+      | Some(stypes) ->
+        stypes.getSingleTuple(peekSubst, this) match {
+        | Some(elts) -> if (i < elts.size()) Some(elts[i]) else None()
+        | None() ->
+          eltTys = mutable Vector[];
+          for (inst in exp.insts) {
+            inst match {
+            | TSInst(Name(_, "Array"), TArgs(targs)) if (targs.size() == 1) ->
+              eltTys.push(targs[0])
+            | TSInst(
+              Name(_, "ReadonlyArray"),
+              TArgs(targs),
+            ) if (targs.size() == 1) ->
+              eltTys.push(targs[0])
+            | _ -> void
+            }
+          };
+          if (eltTys.isEmpty()) {
+            None()
+          } else {
+            Some(TType::unionN(peekSubst, this, exp.pos, eltTys.toArray()))
+          }
+        }
+      }
+    })
+  }
+
+  // The declared type of positional parameter `idx` (normal then optional
+  // parameters), or None when `idx` falls beyond them (e.g. a rest parameter).
+  fun paramTypeAt(tfun: TFun, idx: Int): ?TType {
+    if (idx < tfun.params.size()) {
+      Some(tfun.params[idx])
+    } else {
+      j = idx - tfun.params.size();
+      if (j < tfun.optionalParams.size()) {
+        Some(tfun.optionalParams[j])
+      } else {
+        None()
+      }
+    }
+  }
+
   /* Typechecks expression  obj.fieldName
              or expression  obj?.fieldName
        where obj has type objType */
@@ -934,6 +1018,7 @@ extension class TypeChecker {
     e: Expr,
     mostPrecise: Bool,
     isLValue: Bool = false,
+    expected: ?TType = None(),
   ): TType {
     if (mostPrecise) {
       if (isLValue) {
@@ -949,6 +1034,30 @@ extension class TypeChecker {
       this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return TType::single(ty)
       | None() -> void
+      }
+    };
+
+    // Contextual typing: when the surrounding context expects a literal type
+    // (e.g. a parameter of type `0` or `'a'`), keep a fresh literal precise
+    // instead of widening it to its base type. This is monotonic: it only
+    // fires for a *direct* primitive literal node, whose precise type is
+    // strictly more specific, so it can never reject a program that currently
+    // type-checks -- it only un-rejects ones wrongly failed by eager widening.
+    // We match the literal node directly rather than calling asConstExpr, which
+    // has side effects (e.g. it reports "Unnecessary 'as const'") that must not
+    // be triggered here.
+    if (!mostPrecise && this.expectsLiteral(tcenv, expected)) {
+      e.value match {
+      | Number(n) -> return TType::single(TPrimValue::single(TNum(), n, e.pos))
+      | BigInt(n) ->
+        return TType::single(TPrimValue::single(TBigInt(), n, e.pos))
+      | EString(n) ->
+        return TType::single(TPrimValue::single(TString(), n, e.pos))
+      | Var(Name(_, "true")) ->
+        return TType::single(TPrimValue::single(TBool(), "true", e.pos))
+      | Var(Name(_, "false")) ->
+        return TType::single(TPrimValue::single(TBool(), "false", e.pos))
+      | _ -> void
       }
     };
 
@@ -1577,8 +1686,14 @@ extension class TypeChecker {
         ArrayLitTyping::typeFromLiteral(
           tcenv,
           pos,
-          arr.map(x -> {
-            ty = this.expr(tcenv, x, mostPrecise);
+          arr.mapWithIndex((i, x) -> {
+            ty = this.expr(
+              tcenv,
+              x,
+              mostPrecise,
+              false,
+              this.expectedElt(tcenv, expected, i),
+            );
             if (x.value is Object _ || ty.isConcretePrimitive()) {
               this.makeBoundTVar(tcenv, ty, FromArrayElement(x.pos))
             } else {
@@ -2623,58 +2738,6 @@ extension class TypeChecker {
     argExprs: Array<Expr>,
     mostPrecise: Bool,
   ): TType {
-    args = mutable Vector<TType>[];
-    moreArgs: ?TType = None();
-
-    for (argExpr in argExprs) {
-      argExpr.value match {
-      | Spread(spreadExpr) ->
-        spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
-        if (moreArgs is None()) {
-          stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
-          | Some(tupElts) ->
-            args.extend(tupElts);
-            continue
-          | None() -> void
-          }
-        };
-        stypes.flatMap(s ~> s.singleElt()) match {
-        | Some(obj @ TObject _) ->
-          this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
-          | None() ->
-            tcenv.error(
-              Array[
-                (argExpr.pos, "Invalid spread argument"),
-                (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
-              ],
-            )
-          | Some(eltType) ->
-            !moreArgs = Some(
-              moreArgs match {
-              | None() -> eltType
-              | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
-              },
-            )
-          }
-        | _ ->
-          tcenv.error(
-            Array[
-              (argExpr.pos, "Invalid spread argument"),
-              (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
-            ],
-          )
-        }
-      | _ ->
-        argTy = this.expr(tcenv, argExpr, mostPrecise);
-        moreArgs match {
-        | None() -> args.push(argTy)
-        | Some(ma) ->
-          !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
-        }
-      }
-    };
-
     tfuns match {
     | TFuns(tfun, fPos) ->
       tcenv.recordCalls(tfun.cgNodes);
@@ -2710,6 +2773,74 @@ extension class TypeChecker {
         (tcenv.subst, this, map.chill()),
         tfun with {tparams => Array[]},
       );
+
+      // When no generic parameters are left to infer (explicit type args, or a
+      // non-generic function), the parameter types are ground and can be pushed
+      // into the arguments as expected types so that fresh literals are checked
+      // precisely instead of being eagerly widened (e.g. `0` stays `'0'`
+      // against a parameter of type `0`). When parameters still contain
+      // inference variables we skip this, leaving inference unchanged.
+      useExpected = newTVars.isEmpty();
+
+      // Type the arguments. The instantiation above does not depend on the
+      // argument types (generic inference happens later in the param-check
+      // loop via checkSubType), so it is safe to instantiate first and only
+      // then type the arguments with their expected parameter types.
+      args = mutable Vector<TType>[];
+      moreArgs: ?TType = None();
+      for (argExpr in argExprs) {
+        argExpr.value match {
+        | Spread(spreadExpr) ->
+          spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
+          stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
+          if (moreArgs is None()) {
+            stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
+            | Some(tupElts) ->
+              args.extend(tupElts);
+              continue
+            | None() -> void
+            }
+          };
+          stypes.flatMap(s ~> s.singleElt()) match {
+          | Some(obj @ TObject _) ->
+            this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
+            | None() ->
+              tcenv.error(
+                Array[
+                  (argExpr.pos, "Invalid spread argument"),
+                  (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
+                ],
+              )
+            | Some(eltType) ->
+              !moreArgs = Some(
+                moreArgs match {
+                | None() -> eltType
+                | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
+                },
+              )
+            }
+          | _ ->
+            tcenv.error(
+              Array[
+                (argExpr.pos, "Invalid spread argument"),
+                (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
+              ],
+            )
+          }
+        | _ ->
+          expectedForArg = if (useExpected && moreArgs is None()) {
+            this.paramTypeAt(tfun, args.size())
+          } else {
+            None()
+          };
+          argTy = this.expr(tcenv, argExpr, mostPrecise, false, expectedForArg);
+          moreArgs match {
+          | None() -> args.push(argTy)
+          | Some(ma) ->
+            !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
+          }
+        }
+      };
       totalSize = tfun.params.size() + tfun.optionalParams.size();
       // Unified rest-argument mechanism (Stage A): if spreadParam is an unbound generic
       // type variable, infer/bind it from call-site arguments before param checking.
