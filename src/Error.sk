@@ -169,7 +169,7 @@ base class ErrorCode uses Equality {
 
 base class ErrorKind uses Equality {
   fun toString(): String;
-  fun code(): ErrorCode;
+  const code: ErrorCode;
 }
 base class ParsingKind extends ErrorKind
 base class LexingKind extends ErrorKind
@@ -182,41 +182,31 @@ class UnknownCharacter(char: Char) extends LexingKind {
   fun toString(): String {
     `Invalid character '${this.char}' (char code ${this.char.code()})`
   }
-  fun code(): ErrorCode {
-    TSCode(1127)
-  }
+  const code: ErrorCode = TSCode(1127);
 }
 class UnknownOperator(str: String) extends LexingKind {
   fun toString(): String {
     `Unknown operator '${this.str}'`
   }
-  fun code(): ErrorCode {
-    SKJSCode(1001)
-  }
+  const code: ErrorCode = SKJSCode(1001);
 }
 class UnterminatedString() extends LexingKind {
   fun toString(): String {
     `Unterminated string literal`
   }
-  fun code(): ErrorCode {
-    TSCode(1002)
-  }
+  const code: ErrorCode = TSCode(1002);
 }
 class NewLineInString() extends LexingKind {
   fun toString(): String {
     `Unterminated string literal: string literals cannot span multiple lines`
   }
-  fun code(): ErrorCode {
-    TSCode(1002)
-  }
+  const code: ErrorCode = TSCode(1002);
 }
 class UnterminatedComment() extends LexingKind {
   fun toString(): String {
     `Unterminated comment ('*/' expected)`
   }
-  fun code(): ErrorCode {
-    TSCode(1010)
-  }
+  const code: ErrorCode = TSCode(1010);
 }
 
 /***************************************************************************/
@@ -229,199 +219,151 @@ class UnexpectedObjectTypeMethodReadonly(
   fun toString(): String {
     `Unexpected modifier '${this.ro}' on an object literal method`
   }
-  fun code(): ErrorCode {
-    SKJSCode(1002)
-  }
+  const code: ErrorCode = SKJSCode(1002);
 }
 class UnterminatedFunDef() extends ParsingKind {
   fun toString(): String {
     `Unterminated function definition ('}' expected)`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class UnterminatedStmt() extends ParsingKind {
   fun toString(): String {
     `Unterminated statement (';' expected)`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class UnterminatedDef() extends ParsingKind {
   fun toString(): String {
     `Unterminated definition`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class UnexpectedToken() extends ParsingKind {
   fun toString(): String {
     `Unexpected token`
   }
-  fun code(): ErrorCode {
-    TSCode(1128)
-  }
+  const code: ErrorCode = TSCode(1128);
 }
 class UnterminatedImport() extends ParsingKind {
   fun toString(): String {
     `Unterminated import statement`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class UnterminatedBlock() extends ParsingKind {
   fun toString(): String {
     `Unterminated block ('}' expected)`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class UnterminatedExpr() extends ParsingKind {
   fun toString(): String {
     `Unterminated expression`
   }
-  fun code(): ErrorCode {
-    TSCode(1109)
-  }
+  const code: ErrorCode = TSCode(1109);
 }
 class UnterminatedType() extends ParsingKind {
   fun toString(): String {
     `Unterminated type annotation`
   }
-  fun code(): ErrorCode {
-    TSCode(1110)
-  }
+  const code: ErrorCode = TSCode(1110);
 }
 class ExpectedAccessorDefinition() extends ParsingKind {
   fun toString(): String {
     `Expected a getter or setter definition`
   }
-  fun code(): ErrorCode {
-    SKJSCode(1003)
-  }
+  const code: ErrorCode = SKJSCode(1003);
 }
 class ComputedMethodNameNotSupported() extends ParsingKind {
   fun toString(): String {
     `Computed method names are not yet supported by SKJS`
   }
-  fun code(): ErrorCode {
-    SKJSCode(9026)
-  }
+  const code: ErrorCode = SKJSCode(9026);
 }
 class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
   fun toString(): String {
     `'${this.tokenKind}' expected`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class ExpectedTokens(kinds: Array<TokenKind>) extends ParsingKind {
   fun toString(): String {
     `'${this.kinds.join("' or '")}' expected`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class ExpectedStr(str: String) extends ParsingKind {
   fun toString(): String {
     `${this.str} expected`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class ExpectedStrings(strs: Array<String>) extends ParsingKind {
   fun toString(): String {
     `${this.strs.join(" or ")} expected`
   }
-  fun code(): ErrorCode {
-    TSCode(1005)
-  }
+  const code: ErrorCode = TSCode(1005);
 }
 class ExpectedVarName() extends ParsingKind {
   fun toString(): String {
     `A variable name was expected`
   }
-  fun code(): ErrorCode {
-    TSCode(1003)
-  }
+  const code: ErrorCode = TSCode(1003);
 }
 class ExpectedParams() extends ParsingKind {
   fun toString(): String {
     `A parameter list was expected`
   }
-  fun code(): ErrorCode {
-    SKJSCode(1004)
-  }
+  const code: ErrorCode = SKJSCode(1004);
 }
 
 class DontUseEquality() extends ParsingKind {
   fun toString(): String {
     "Unexpected '=='; use '===' instead (SKJS forbids loose equality)"
   }
-  fun code(): ErrorCode {
-    SKJSCode(1005)
-  }
+  const code: ErrorCode = SKJSCode(1005);
 }
 class DontUseInequality() extends ParsingKind {
   fun toString(): String {
     "Unexpected '!='; use '!==' instead (SKJS forbids loose inequality)"
   }
-  fun code(): ErrorCode {
-    SKJSCode(1006)
-  }
+  const code: ErrorCode = SKJSCode(1006);
 }
 
 class FunctionInExpr() extends ParsingKind {
   fun toString(): String {
     "Function expressions are not supported; use an arrow function (closure) instead"
   }
-  fun code(): ErrorCode {
-    SKJSCode(1007)
-  }
+  const code: ErrorCode = SKJSCode(1007);
 }
 
 class ExpectedStmt() extends ParsingKind {
   fun toString(): String {
     "A statement was expected"
   }
-  fun code(): ErrorCode {
-    TSCode(1129)
-  }
+  const code: ErrorCode = TSCode(1129);
 }
 
 class ExpectedCatchOrFinally() extends ParsingKind {
   fun toString(): String {
     "'catch' or 'finally' expected"
   }
-  fun code(): ErrorCode {
-    TSCode(1472)
-  }
+  const code: ErrorCode = TSCode(1472);
 }
 
 class MissingParameterName() extends ParsingKind {
   fun toString(): String {
     "A function parameter must have a name"
   }
-  fun code(): ErrorCode {
-    TSCode(1003)
-  }
+  const code: ErrorCode = TSCode(1003);
 }
 
 class EmptyIfStmt() extends ParsingKind {
   fun toString(): String {
     "The body of an 'if' statement cannot be the empty statement"
   }
-  fun code(): ErrorCode {
-    TSCode(1313)
-  }
+  const code: ErrorCode = TSCode(1313);
 }
 
 module end;
