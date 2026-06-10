@@ -300,48 +300,24 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: Move fields after the spread, or restructure the object literal so that fields you need in the result type appear after the last spread
 - **Verified by**: `tests/expect-error/objects.ts`
 
-### 29. The `this` Parameter ✅ (partial)
-- **Rule**: An explicit `this: T` first parameter is accepted on function and
-  method signatures. Inside the body `this` has type `T`, overriding the
-  enclosing class's implicit `this`. `this` must be the first parameter and
-  cannot be a rest, optional, or default-valued parameter.
-- **Implicit class `this`**: Every non-static method implicitly carries the
-  enclosing class instance as its `this` — including methods inherited from or
-  declared on a class that `extends` a parent, and body-less methods (interfaces,
-  ambient declarations, generic container library types such as
-  `ReadonlyArray<T>`). Calling a method with the wrong receiver is rejected — in
-  particular a detached call loses the receiver:
-  ```typescript
-  class Counter {
-    n: number = 0;
-    inc(): void { this.n = this.n + 1; }
-  }
-  function run(c: Counter): void {
-    c.inc();              // OK
-    const g = c.inc;
-    g();                  // Error: 'this' context (void) is not assignable
-  }
-  ```
-  SKJS is sound here where TS is not: `tsc --strict` accepts these detached
-  calls. Primitive receivers are auto-boxed to their wrapper instance, so
-  `(42).toString()` checks against `Number`'s implicit `this`.
-- **Call-site check**: For `e1.m(...)` (or `e1[k](...)`) the receiver `e1` is
-  checked against the method's `this`; a free call uses `this: void`.
-- **Subtyping**: In function-type subtyping an explicit `this: T` is
-  contravariant, and a signature with no declared `this` is treated as
-  `this: unknown` (compatible with any receiver). Two _implicit_ class
-  thisParams are treated as mutually compatible (bivariant, like TS methods),
-  so adding an implicit `this` to every method preserves generic-container
-  variance (`ReadonlyArray<Dog>` vs `ReadonlyArray<Animal>`) and subclass
-  override compatibility.
-- **`.call` / `.apply` / `.bind`**: A function value's `.call(thisArg, ...args)`
-  and `.apply(thisArg, args)` check `thisArg` against the function's `this`;
-  `.bind(thisArg)` returns the function with its `this` removed
-  (`OmitThisParameter`). Synthesized from the call signature: `.call` and
-  `.bind` carry the function's optional and rest parameters; `.apply` models
-  only required positional params (its argument tuple is exact). Generic call
-  signatures report "Unbound field" (TS resolves them to `unknown` through
-  these methods), as does partial-application `.bind(thisArg, ...args)`.
+### 29. The `this` Parameter — Differences from TypeScript
+SKJS supports the `this` parameter (explicit `this: T`, the implicit class
+`this` on every method, and `.call`/`.apply`/`.bind`). Only the places where it
+**differs from TypeScript** are documented here — it is soundly stricter in some
+cases and conservatively under-approximates a few others.
+
+- **Detached method calls are rejected** (sound; `tsc --strict` accepts them).
+  `const g = obj.m; g()` loses the receiver, so the `this` context (`void`) is
+  not assignable to the method's `this`.
+- **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
+  `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
+  `this` and accepts any receiver; SKJS requires the class instance, since the
+  method body reads the class's fields off the rebound `this`.
+- **Generic call signatures** report "Unbound field" for `.call`/`.apply`/`.bind`
+  (TS resolves their type parameters to `unknown` through these methods).
+- **`.apply` models only required positional parameters**, and partial
+  application **`.bind(thisArg, ...args)`** is rejected (a `never[]` rest) rather
+  than dropping the bound parameters (`OmitThisParameter`).
 - **Verified by**: `tests/expect-error/this-parameter*.ts`
 
 ## Coding Guidelines for SKJS
