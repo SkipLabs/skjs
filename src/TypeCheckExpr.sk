@@ -1022,12 +1022,19 @@ extension class TypeChecker {
         None()
       } else {
         argsTuple = TType::tuple(pos, f.params, true);
+        // The argument array may be omitted when the function takes no
+        // parameters, so `g.apply(thisArg)` type-checks for a zero-arg `g`.
+        (applyParams, applyOptional) = if (f.params.isEmpty()) {
+          (Array[thisType], Array[argsTuple])
+        } else {
+          (Array[thisType, argsTuple], Array[])
+        };
         Some(
           TFun(
             Array[],
             NoThis(),
-            Array[thisType, argsTuple],
-            Array[],
+            applyParams,
+            applyOptional,
             None(),
             f.retType,
             f.cgNodes,
