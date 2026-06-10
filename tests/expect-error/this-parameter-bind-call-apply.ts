@@ -66,3 +66,22 @@ function optionalCallWrongArg(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   optional.call(ctx, 1, 2);
 }
+
+// Rebinding an implicit-this method via .call/.apply/.bind. For now the
+// implicit `this` is checked as the class instance, so rebinding to an
+// unrelated receiver is rejected.
+class Impl {
+  v: number = 1;
+  mm(a: number): number {
+    return a;
+  }
+}
+function implicitRebindOk(o: Impl): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  let _c: number = o.mm.call("anything", 1);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  let _a: number = o.mm.apply(42, [1]);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const bound: (a: number) => number = o.mm.bind(undefined);
+  let _b: number = bound(1);
+}
