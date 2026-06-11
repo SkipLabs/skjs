@@ -57,11 +57,14 @@ function unaryMinusBigintElement(): void {
   takeNegBig([-1n]);
 }
 
-// FIXME: unary '+' on a bigint is a runtime TypeError (tsc rejects it with
-// TS2736), so `+1n` must not become the fresh literal '1n'; SKJS currently
-// keeps it precise and accepts (issue #671).
+// Unary '+' on a bigint is a runtime TypeError (tsc rejects it with TS2736),
+// so `+1n` does not become the fresh literal '1n' and widens to bigint
+// (issue #671).
 declare function takeBig(xs: Array<1n>): void;
 function unaryPlusBigintElement(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Full type bigint
+  // @skjs-expect-error-line3 is not assignable to specific type '1n'
   takeBig([+1n]);
 }
 
