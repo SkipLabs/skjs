@@ -1650,6 +1650,35 @@ class TField{
     this.name.value == kSyntheticIndexName
   }
 
+  // Create a closed-literal index: a real `readonly [k]: never` index
+  // marking a no-spread object literal as closed (no keys beyond its named
+  // fields). It carries no solver state; it participates in subtyping only
+  // and is hidden from field resolution and printing (see
+  // kClosedLiteralIndexName).
+  static fun createClosedIndex(pos: PosRange): TField {
+    TField{
+      pos,
+      name => FieldNameString(kClosedLiteralIndexName),
+      isOptional => true,
+      get => TType::bottom(pos),
+      set => TType::bottom(pos),
+      access => FAPublic(),
+    }
+  }
+
+  // True if this field is the closed-literal index of a no-spread object
+  // literal (see kClosedLiteralIndexName).
+  fun isClosedLiteralIndex(): Bool {
+    this.name.value == kClosedLiteralIndexName
+  }
+
+  // Internal literal-index markers (synthetic TVar index or closed-literal
+  // index): hidden from field resolution and printing, visible to
+  // subtyping.
+  fun isInternalIndex(): Bool {
+    this.isSynthetic() || this.isClosedLiteralIndex()
+  }
+
   // Create a virtual field from an index, renamed for use in union.
   // Indexes are already optional (isOptional = true).
   fun asNamed(name: FieldNameString): TField {
@@ -1737,6 +1766,11 @@ const kMissingTypeAnnotationPrefix: String = "Missing_type_annotation_for_";
 //   `obj.z` on `{ x: 1 }` still reports "Unbound field" rather than resolving
 //   through the synthetic index.
 const kSyntheticIndexName: String = "__SKJS_internal_index";
+
+// Marker name for the closed-literal index of no-spread object literals
+// (real `readonly [k]: never`); same visibility rules as the synthetic
+// index: hidden from field resolution and printing, visible to subtyping.
+const kClosedLiteralIndexName: String = "__SKJS_internal_closed_index";
 
 base class TIndexesBase protected {
   // At most one index per key kind: string, number, symbol.
@@ -1993,7 +2027,7 @@ class TFields protected {
   }
 
   private static fun nonSynthetic(index: ?TField): ?TField {
-    index.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
+    index.flatMap(f -> if (f.isInternalIndex()) None() else Some(f))
   }
 
   fun hasNonSyntheticIndex(): Bool {

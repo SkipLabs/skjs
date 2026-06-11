@@ -403,7 +403,7 @@ mutable class TypePp{
     // --verbose for debugging.
     hideSynthetic: ((?TField) -> ?TField) = idx ->
       if (this.verbose) idx else {
-        idx.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
+        idx.flatMap(f -> if (f.isInternalIndex()) None() else Some(f))
       };
     stringIdx = hideSynthetic(fields.stringIndex);
     numberIdx = hideSynthetic(fields.numberIndex);
