@@ -20,6 +20,14 @@ const config: {
   offset: -100n as const,
 };
 
+// Unary plus on a bigint under 'as const': tsc rejects '+' on a bigint with
+// TS2736 in every context, including const assertions (where it adds TS1355).
+declare function takeBigLiteral(x: 100n): void;
+function plusBigAsConst(): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  takeBigLiteral(+100n as const);
+}
+
 // Type inference from object properties
 // type PortType = typeof config.port;
 // type TimeoutType = typeof config.timeout;

@@ -32,6 +32,31 @@ const negativeBig: bigint = -positiveBig;
 const bitwiseNotBig: bigint = ~positiveBig;
 const negBigLiteral: bigint = -999n;
 
+// Unary plus on bigints: '+' performs ToNumber, which throws on a bigint at
+// runtime, so tsc rejects every occurrence with TS2736 ('-' and '~' stay
+// valid).
+// @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+const plusBig: bigint = +positiveBig;
+
+declare function acceptsBigIntArg(x: bigint): bigint;
+function plusBigLiteralArg(): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  const r = acceptsBigIntArg(+100n);
+}
+
+function unionPlus(x: number | bigint): number | bigint {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  return +x;
+}
+
+// When the operand mixes a bigint with a type that is invalid for unary '+'
+// in SKJS anyway, the tsc-aligned TS2736 diagnostic takes precedence over the
+// generic invalid-operand one (tsc also reports only TS2736 here).
+function mixedUnionPlus(x: string | bigint): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  const y = +x;
+}
+
 // Test unary operators in expressions
 const expr1: number = -(10 + 5);
 const expr2: number = ~(8 - 3);
