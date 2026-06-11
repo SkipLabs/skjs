@@ -22,12 +22,9 @@ function classUnion(s: A | B): number {
 }
 
 // Primitive unions: each branch's wrapper method declares an explicit `this`
-// (string/number), so the unioned `this` is the unsatisfiable intersection
-// string & number. FIXME: false positive — distributing the call over the
-// receiver branches (a later commit) makes each branch check against its own
-// `this`.
+// (string/number). Distributing the call over the receiver branches checks
+// each branch against its own `this`, so the call type-checks.
 function primitiveUnion(x: string | number): string {
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return x.toString();
 }
 
