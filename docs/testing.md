@@ -26,6 +26,7 @@ make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 - Use `// @ts-expect-error <exact error message>` for errors TypeScript would also produce
 - Use `// @skjs-expect-error <exact error message>` for SKJS-specific errors
 - Use `// @skjs-expect-warning <exact message>` for non-fatal **warnings** — lint-style diagnostics that are not soundness-critical (e.g. redundant `?.`/`!`, useless `switch` / unused `case` branches, `This equality is always true/false`). Warnings are matched against a separate severity, so a source line with both an error and a warning needs one annotation of each.
+- Annotations also work in `.json` files (e.g. a test project's `tsconfig.json`), written as `//` comments — see `tests/projects/*/tsconfig.json` for examples
 - Run tests first to see actual messages, then add the annotations with exact wording
 - **SKJS reports only one _error_ per definition** — if a function has multiple errors, only the first is reported (unless passing `--keep-going`, which is best-effort — fatal errors may still hide subsequent ones). **Warnings are non-fatal**: every warning in a definition is reported and never aborts checking, and a file whose only diagnostics are warnings exits 0 (does not fail the build).
 - For expected errors that aren't reported due to an earlier error, use plain `// TODO:` comments (not `@ts-expect-error`)
