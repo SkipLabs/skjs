@@ -71,7 +71,7 @@ base class TEnv{
   // This field keeps track of the subtyping relations that we are in
   // the process of checking. If a cycle occurs, the subtyping
   // relation is considered correct (by co-induction).
-  seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
+  seenSub: SortedSet<(Int, Bool, TType, TType)> = SortedSet[],
 
   // Controls whether field inter/union operations fully expand intersections.
   // When false (default), defers via unexpandedInter to avoid infinite expansion
