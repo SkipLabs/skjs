@@ -5,8 +5,8 @@ function testUnaryVsFunctionCall(): boolean {
 
 function testUnaryVsFunctionCallError(): void {
   let foo = (): boolean => true;
-  // @skjs-expect-error Operand of '!' must be of type 'boolean'
-  // @skjs-expect-error This expression is not callable
+  // @skjs-expect-error This condition will always be true since this value is always defined
+  // @ts-expect-error This expression is not callable
   let result = (!foo)();
 }
 
@@ -17,8 +17,8 @@ function testUnaryVsMemberAccess(): boolean {
 
 function testUnaryVsMemberAccessError(): void {
   let obj = { prop: true };
-  // @skjs-expect-error Operand of '!' must be of type 'boolean'
-  // @skjs-expect-error Property 'prop' does not exist on this type
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  // @ts-expect-error Property 'prop' does not exist on this type
   let result = (!obj).prop;
 }
 
@@ -37,8 +37,8 @@ function testUnaryVsMethodCallError(): boolean {
       return true;
     },
   };
-  // @skjs-expect-error Operand of '!' must be of type 'boolean'
-  // @skjs-expect-error Property 'met' does not exist on this type
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  // @ts-expect-error Property 'met' does not exist on this type
   return (!obj).met();
 }
 
@@ -47,7 +47,7 @@ function testArithmeticVsComparison(): boolean {
 }
 
 function testArithmeticVsComparisonError(): void {
-  // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
+  // @ts-expect-error Right operand of '+' is not assignable to the left operand's type
   let result = 1 + (2 < 3) + 4;
 }
 
@@ -64,8 +64,8 @@ function testLogicalVsComparisonError(): void {
     b = 2,
     c = 3,
     d = 4;
-  // @skjs-expect-error Operand of '&&' must be of type 'boolean'
-  // @skjs-expect-error Both operands of a comparison must have the same type
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  // @ts-expect-error Both operands of a comparison must have the same type
   let result = a < (b && c) < d;
 }
 

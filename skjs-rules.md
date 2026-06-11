@@ -311,6 +311,18 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: Move fields after the spread, or restructure the object literal so that fields you need in the result type appear after the last spread
 - **Verified by**: `tests/expect-error/objects.ts`
 
+### 29. Truthiness Tests and the `truthiness` Option
+- **Rule**: A value used in a boolean-test position — `if`/`while`/`for` conditions, the ternary `?` condition, unary `!`, and the operands of `&&`/`||` — is checked according to the SKJS-specific `truthiness` mode. The mode only decides which diagnostics are emitted; type-checking always continues with **JavaScript value semantics**, so a rejected condition is still narrowed (its truthy part in the then-branch, falsy part in the else-branch) — errors are recoverable.
+- **Modes** (`boolean ⊂ safe ⊂ typescript ⊂ javascript`):
+  - **`boolean`**: the condition must be a subtype of `boolean`.
+  - **`safe`** (default): also accepts a type with **exactly one falsy value and at least one truthy value** (e.g. `T | undefined`/`T | null` with `T` always truthy, bare `string` (only `""`), bare `bigint` (only `0n`), literal unions like `0 | 1`). Rejects `number` (0/-0/NaN — a common footgun), unions with two or more falsy values (e.g. `string | undefined`), unconstrained generics, always-truthy or always-falsy constant conditions, and any condition whose type contains `void` (e.g. `void | number` — stricter than `tsc`, which rejects only a purely-`void` condition).
+  - **`typescript`**: matches `tsc` — accepts everything except a purely-`void` condition (TS1345) and always-truthy function/method references (TS2774). A `void | T` union is accepted (only a whole-`void` condition is rejected). Accepts `number`, always-truthy plain objects, `string | undefined`, `unknown`/generics, class references, etc.
+  - **`javascript`**: accepts any type with no truthiness diagnostics.
+- **`&&` / `||`**: these are value-returning, matching JavaScript: `a && b` has type `(falsy part of a) | typeof b` and `a || b` has type `(truthy part of a) | typeof b` (for boolean operands the result stays `boolean`). Only the left operand is truthiness-tested (and so subject to the mode); the right operand's value flows through unchecked.
+- **Setting it**: `"truthiness": "boolean" | "safe" | "typescript" | "javascript"` in tsconfig `compilerOptions`, or `--truthiness <mode>` on the command line (the flag overrides the tsconfig value). Default is `safe`. Note: `truthiness` is SKJS-specific, so running `tsc` on the same tsconfig reports `TS5023: Unknown compiler option`.
+- **Relationship to TypeScript**: `tsc` rejects only a purely-`void` condition (TS1345) and always-truthy function/method references (TS2774). `boolean`, `safe`, and `typescript` are never more permissive than `tsc` (they reject at least those). `javascript` *is* more permissive: it accepts any condition, including pure `void` and always-truthy function refs that `tsc` rejects.
+- **Verified by**: `tests/projects/truthiness-{boolean,safe,typescript,javascript}/`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes

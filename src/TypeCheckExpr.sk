@@ -1715,16 +1715,13 @@ extension class TypeChecker {
       ty = this.expr(tcenv, subExpr, true);
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(TPrimValue::boolean(pos));
-        this.checkSubType(
+        this.checkCondition(
           tcenv,
           pos,
-          "Operand of '!' must be of type 'boolean'",
           ty,
-          bool,
-          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
+          "Operand of '!' must be of type 'boolean'",
         );
-        bool
+        TType::single(TPrimValue::boolean(pos))
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
         res = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), stypesOpt ->
@@ -1846,30 +1843,44 @@ extension class TypeChecker {
         | BOLogicalOr() -> ("||", false)
         };
         ty1 = this.expr(tcenv, e1, true);
-        this.checkSubType(
+        // The left operand is truthiness-tested, so it is checked per the
+        // truthiness mode.
+        this.checkCondition(
           tcenv,
           pos,
-          `Operand of '${opStr}' must be of type 'boolean'`,
           ty1,
-          TType::single(TPrimValue::boolean(e1.pos)),
-          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
+          `Operand of '${opStr}' must be of type 'boolean'`,
         );
         savedScope = tcenv.scope;
         branch2 = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = branch2;
         this.evalCond(tcenv, e1, continuationTarget);
         ty2 = this.expr(tcenv, e2, true);
-        this.checkSubType(
-          tcenv,
-          pos,
-          `Operand of '${opStr}' must be of type 'boolean'`,
-          ty2,
-          TType::single(TPrimValue::boolean(e2.pos)),
-          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
-        );
         tcenv.!scope = savedScope;
         tcenv.popScope(this, branch2);
-        TType::single(TPrimValue::boolean(pos))
+        // In `boolean` mode the operator must produce a boolean, so the right
+        // operand is required to be boolean too. In the relaxed/javascript modes
+        // `&&`/`||` are value-returning, so the right operand's value flows
+        // through unchecked.
+        this.truthiness match {
+        | TBoolean() ->
+          this.checkCondition(
+            tcenv,
+            e2.pos,
+            ty2,
+            `Operand of '${opStr}' must be of type 'boolean'`,
+          )
+        | TRelaxed()
+        | TJavaScript() ->
+          void
+        };
+        // Value-returning per JavaScript: when the right operand is not taken,
+        // the result is the left operand's non-continuation part — `a`'s falsy
+        // part for `&&` (continuationTarget true) and truthy part for `||`
+        // (continuationTarget false). Boolean operands normalize back to
+        // `boolean`.
+        e1Part = ty1.truthinessPart(tcenv.subst, this, !continuationTarget);
+        TType::union(tcenv.subst, this, e1Part, ty2)
 
       | BOLessThan()
       | BOLessThanOrEqual()
@@ -2245,13 +2256,11 @@ extension class TypeChecker {
       }
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1, true);
-      this.checkSubType(
+      this.checkCondition(
         tcenv,
         e1.pos,
-        "A ternary condition must be of type 'boolean'",
         cond,
-        TType::single(TPrimValue::boolean(e1.pos)),
-        ESLintCode("@typescript-eslint/strict-boolean-expressions"),
+        "A ternary condition must be of type 'boolean'",
       );
 
       // Create scopes for the true and false branches with type refinements

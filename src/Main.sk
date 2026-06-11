@@ -244,6 +244,14 @@ const checkArgs: Array<Cli.Arg> = Array[
       "Colorize diagnostics: auto (default; colored on a terminal, honoring NO_COLOR/FORCE_COLOR), always, never",
     )
     .default("auto"),
+  Cli.Arg::string("truthiness")
+    .long("truthiness")
+    .value_name("MODE")
+    .about(
+      `How strict truthiness tests are. One of: ${Truthiness::all()}. Overrides the tsconfig 'truthiness' option (default: ${
+        Truthiness::default
+      }).`,
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -425,6 +433,20 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
   verbose = args.getBool("verbose", Some(false));
 
+  // A CLI `--truthiness` value overrides the tsconfig `truthiness` option.
+  checkerCompilerOptions = args.maybeGetString("truthiness") match {
+  | None() -> compilerOptions
+  | Some(s) ->
+    Truthiness::fromString(s) match {
+    | Some(t) -> compilerOptions with {truthiness => t}
+    | None() ->
+      print_error(
+        `Unknown truthiness mode: ${s}. Available modes: ${Truthiness::all()}`,
+      );
+      throw Exit(2)
+    }
+  };
+
   errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {
   | Success(ef) -> ef
   | Failure(fmt) ->
@@ -488,7 +510,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             files,
             errorHandling,
             errorDetailConfig,
-            compilerOptions,
+            compilerOptions => checkerCompilerOptions,
             verbose,
           } match {
           | Failure(errs) ->
@@ -708,6 +730,7 @@ class Checker private {
       typeDefBodyMap,
       methodBodyMap,
       verbose,
+      truthiness => compilerOptions.truthiness,
     };
     Success(
       static{
