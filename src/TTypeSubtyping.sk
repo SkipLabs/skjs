@@ -519,6 +519,31 @@ base class FieldMismatchKind uses Equality {
   }
 }
 
+// True if `f` is a closed-literal marker index whose setter obligations are
+// waived by the current ownership-transfer check: the value being checked is
+// fresh (its type is replaced by the target), so granting the target write
+// access to keys the marker forbids is sound. Gated on the eligibility set —
+// only the transferred literal's own markers qualify, never markers of
+// escaped values reached through the target's structure.
+private fun transferWaived(subst: readonly Subst, f: TField): Bool {
+  subst.transferMode &&
+    f.isClosedLiteralIndex() &&
+    subst.transferEligible.contains(f.pos)
+}
+
+// True if these are the fields of the fresh literal being transferred:
+// marked closed AND its marker is in the eligibility set. The literal's own
+// field setters then impose no obligations either (same ownership argument
+// as transferWaived: the value is fresh, the new owner gets write rights).
+private fun transferWaivedFields(
+  subst: readonly Subst,
+  fields1: TFields,
+): Bool {
+  subst.transferMode &&
+    (fields1.stringIndex.map(f -> transferWaived(subst, f)).default(false) ||
+      fields1.symbolIndex.map(f -> transferWaived(subst, f)).default(false))
+}
+
 // Display label for an index field in subtyping diagnostics. The internal
 // literal-index markers (synthetic / closed-literal) must not leak their
 // internal names into messages.
@@ -757,17 +782,23 @@ extension class TFields {
           fields2,
         )
       | STOk() ->
-        TType::isSub(subst, tenv, index2.set, index1.set) match {
-        | err @ STErrorOnTType _ ->
-          STRecFieldsIndexValue(
-            err,
-            index1,
-            index2,
-            FMKSetter(),
-            fields1,
-            fields2,
-          )
-        | STOk() -> STOk()
+        if (transferWaived(subst, index1)) {
+          // Ownership transfer: the fresh literal's marker imposes no
+          // setter obligation on the new owner.
+          STOk()
+        } else {
+          TType::isSub(subst, tenv, index2.set, index1.set) match {
+          | err @ STErrorOnTType _ ->
+            STRecFieldsIndexValue(
+              err,
+              index1,
+              index2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          | STOk() -> STOk()
+          }
         }
       }
     | (None(), Some(index2)) ->
@@ -816,17 +847,21 @@ extension class TFields {
               fields2,
             )
           | STOk() ->
-            TType::isSub(subst, tenv, idx2.set, f1.set) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsFieldIndex(
-                err,
-                f1,
-                idx2,
-                FMKSetter(),
-                fields1,
-                fields2,
-              )
-            | STOk() -> void
+            // Ownership transfer: a fresh literal's field imposes no setter
+            // obligation (the value's only type afterwards is the target).
+            if (!transferWaivedFields(subst, fields1)) {
+              TType::isSub(subst, tenv, idx2.set, f1.set) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsFieldIndex(
+                  err,
+                  f1,
+                  idx2,
+                  FMKSetter(),
+                  fields1,
+                  fields2,
+                )
+              | STOk() -> void
+              }
             }
           }
         }
@@ -849,17 +884,22 @@ extension class TFields {
               fields2,
             )
           | STOk() ->
-            TType::isSub(subst, tenv, f2.set, idx1.set) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsIndexField(
-                err,
-                idx1,
-                f2,
-                FMKSetter(),
-                fields1,
-                fields2,
-              )
-            | STOk() -> void
+            // Ownership transfer: the fresh literal's marker imposes no
+            // setter obligation for a mutable optional super field — the
+            // key is provably absent and the new owner may add it.
+            if (!transferWaived(subst, idx1)) {
+              TType::isSub(subst, tenv, f2.set, idx1.set) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsIndexField(
+                  err,
+                  idx1,
+                  f2,
+                  FMKSetter(),
+                  fields1,
+                  fields2,
+                )
+              | STOk() -> void
+              }
             }
           }
         }
@@ -870,22 +910,34 @@ extension class TFields {
         if (!f1.access.isCompatibleWith(f2.access)) {
           return STRecFieldsFieldAccess(f1, f2, fields1, fields2)
         };
-        // Readonly field cannot satisfy a mutable field: skip the setter isSub
-        // to avoid spurious success from TVar inference.
-        if (f1.set.isBottom() && !f2.set.isBottom()) {
-          return STRecFieldsField(None(), f1, f2, FMKSetter(), fields1, fields2)
-        };
-        TType::isSub(subst, tenv, f2.set, f1.set) match {
-        | STOk() -> void
-        | err @ STErrorOnTType _ ->
-          return STRecFieldsField(
-            Some(err),
-            f1,
-            f2,
-            FMKSetter(),
-            fields1,
-            fields2,
-          )
+        // Ownership transfer: a fresh literal's field imposes no setter
+        // obligation (the value's only type afterwards is the target), so
+        // both the readonly guard and the setter leg are skipped.
+        if (!transferWaivedFields(subst, fields1)) {
+          // Readonly field cannot satisfy a mutable field: skip the setter
+          // isSub to avoid spurious success from TVar inference.
+          if (f1.set.isBottom() && !f2.set.isBottom()) {
+            return STRecFieldsField(
+              None(),
+              f1,
+              f2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          };
+          TType::isSub(subst, tenv, f2.set, f1.set) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(
+              Some(err),
+              f1,
+              f2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          }
         };
         // Exact optional semantics: `f?: T` promises that a PRESENT key
         // holds a T. The sub's field describes present values, so it must

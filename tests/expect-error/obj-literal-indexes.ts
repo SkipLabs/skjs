@@ -36,16 +36,15 @@ function testMixedTypesIndex(): void {
 // encoding `{ ...; [k: string]: never; [s: symbol]: never }`). These super
 // types are TS2411-illegal in tsc; SKJS uses residual index semantics (an
 // index covers only the keys not named in the type — skjs-rules.md "Index
-// Signatures"). The FIXME(closed-literals) markers pin behavior that the
-// closed-object-literal redesign will flip.
+// Signatures"). A no-spread object literal is a closed object; a fresh
+// literal's use (or the first view of an unannotated local object) is an
+// OWNERSHIP TRANSFER that waives the literal's setter obligations, so a
+// fresh literal satisfies these closed types.
 // ============================================================================
 
-// FIXME(closed-literals): should be accepted — the literal provably lacks
-// `a`, and readonly `a?` grants no write capability; the rejection comes
-// from the optional-field leg constraining the literal's synthetic index
-// TVar before the never-index check runs.
+// Accepted: the fresh literal `{}` is transferred to the annotation; the
+// never index has no keys to reject and the optional `a?` is absent.
 function testEmptyVsReadonlyOptionalNeverIndex(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: { readonly a?: number; [k: string]: never; [s: symbol]: never } = {};
 }
 
@@ -63,25 +62,21 @@ function testExcessVsNeverIndex(): void {
   };
 }
 
-// FIXME(closed-literals): should be accepted — single-view annotation; the
-// annotation governs the value afterwards, and ownership transfer waives the
-// never-index setter obligation for the fresh literal.
+// Accepted: ownership transfer waives the never-index setter obligation for
+// the fresh literal; the annotation governs the value afterwards.
 function testEmptyVsMutableOptionalNeverIndex(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: { a?: number; [k: string]: never; [s: symbol]: never } = {};
 }
 
-// FIXME(closed-literals): should be accepted — same as
-// testEmptyVsReadonlyOptionalNeverIndex with a number index.
+// Accepted: same as testEmptyVsReadonlyOptionalNeverIndex with a number
+// index value.
 function testEmptyVsReadonlyOptionalNumberIndex(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: { readonly a?: string; [k: string]: number } = {};
 }
 
-// FIXME(closed-literals): should be accepted — the number-index check reuses
-// the literal's string index slot.
+// Accepted: the number-index leg reuses the literal's closed string index,
+// whose obligations the transfer waives.
 function testEmptyVsReadonlyOptionalNumberNeverIndex(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: {
     readonly a?: number;
     [k: string]: never;
@@ -99,9 +94,10 @@ function testAliasMutableOptionalThenIndex(): void {
   const g: { [k: string]: boolean } = t;
 }
 
-// Readonly view then mutable-index view of the same local. Rejected today
-// (TVar poisoning) and still rejected under the redesign (after the first
-// view transfers, the second is plain-checked: named-field-no-index rule).
+// Readonly view then mutable-index view of the same local: the first view
+// transfers `t` to `{ readonly a?: number }`, so the second is plain-checked
+// and rejected — a named-field type with no index of its own is not an
+// index type.
 function testAliasReadonlyOptionalThenIndex(): void {
   const t = {};
   const f: { readonly a?: number } = t;
@@ -116,35 +112,38 @@ function testAliasMutableOptionalThenOptional(): void {
   const g: { b?: string } = t;
 }
 
-// FIXME(closed-literals): UNSOUND acceptance on the current base — b's view
-// seals nothing usable, c grants write capability number at "a"; c can write
-// t.a = 5 and a read through b types it `never`. Must become an error on the
-// second view (after b's transfer, `{[k:string]: never} <: {a?: number}`
-// fails the setter direction: number is not assignable into a never index).
+// b transfers `t` to `{ [k: string]: never }`; c is then plain-checked and
+// rejected — the mutable optional `a?` would let c write a number where b's
+// never index forbids it. (This was an UNSOUND acceptance before the
+// redesign: nothing recorded c's write grant.)
 function testAliasNeverIndexThenMutableOptional(): void {
   const t = {};
   const b: { [k: string]: never } = t;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: { a?: number } = t;
 }
 
-// Two readonly optional views: rejected today (poisoning); stays rejected
-// under the redesign (after transfer to f's type, g's optional field b is
-// missing and f's type has no index) — conservative but sound.
+// Two readonly optional views: accepted. f retypes `t` to the intersection
+// `{ readonly a?: number; [closed] }`, keeping the literal's closed marker
+// where f names no index; g's optional `b` is then satisfied by that marker
+// with no setter obligation (g is readonly). Both views are pure reads of
+// disjoint keys, so there is no aliasing hazard — sound to accept.
 function testAliasTwoReadonlyOptionals(): void {
   const t = {};
   const f: { readonly a?: number } = t;
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { readonly b?: string } = t;
 }
 
-// FIXME(closed-literals): UNSOUND acceptance on the current base — h's
-// mutable `a?: number | string` grants writing a string at "a"; i reads "a"
-// as number. Under the redesign the error appears at h (after f's transfer,
-// `{a?: number} <: {a?: number | string}` fails the setter direction).
+// f transfers `t` to `{ a?: number }`; h then fails the setter direction
+// (`number | string` is not writable where f reads `number`) and i fails
+// the named-field-no-index rule. (This was an UNSOUND all-accept before the
+// redesign: h could write a string that i read as number.)
 function testAliasWidenedGrantThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const h: { a?: number | string } = t;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const i: { [k: string]: number } = t;
 }
 
@@ -158,9 +157,9 @@ function testEmptyVsReadonlySymbolOptionalNeverIndex(): void {
   } = {};
 }
 
-// Accepted on the current base only via the string/symbol leg-ordering
-// asymmetry; stays accepted under the redesign for the principled reason
-// (single-view annotation + ownership transfer).
+// Accepted, uniformly with testEmptyVsMutableOptionalNeverIndex: single-view
+// ownership transfer waives the mutable optional symbol field's setter
+// obligation against the never symbol index.
 function testEmptyVsMutableSymbolOptionalNeverIndex(): void {
   const x: { [sk]?: number; [k: string]: never; [s: symbol]: never } = {};
 }
@@ -177,8 +176,8 @@ function testAliasMutableSymbolOptionalThenIndex(): void {
 // change (probes beyond the optional-field matrix).
 // ============================================================================
 
-// Must stay accepted: fresh literal to a MUTABLE indexed annotation (the one
-// thing synthetic indexes genuinely deliver; becomes ownership transfer).
+// Fresh literal to a MUTABLE indexed annotation: accepted via ownership
+// transfer (the one capability the old synthetic-index TVars existed for).
 function testFreshLiteralToMutableIndex(): void {
   const a: { [k: string]: number } = { x: 1, y: 2 };
 }
@@ -202,41 +201,45 @@ function testSpreadLiteralToIndex(src: { b: boolean }): void {
   const x: { [k: string]: boolean } = { ...src };
 }
 
-// Array of fresh literals to Array<indexed>: accepted on the current base.
-// FIXME(closed-literals): may conservatively flip to reject in the redesign
-// (array elements commit inside inference where no transfer runs); if so,
-// the `as` workaround applies and this pin must be updated deliberately.
+// Array of fresh literals to Array<indexed>: accepted — an array literal is
+// a transfer site too, and its fresh elements (behind FromArrayElement
+// wrappers) are eligible for the transfer's waivers.
 function testArrayOfLiteralsToArrayOfIndexed(): void {
   const arr: Array<{ [k: string]: number }> = [{ x: 1 }];
 }
 
-// Same mutable view inside a branch and again after it: accepted on the
-// current base (TVars admit repeating an identical view).
-// FIXME(closed-literals): becomes a conservative reject after the branch
-// (the branch transfer merges with the closed type at the join); revisit
-// with the shared-cell extension if the ergonomics matter.
+// Same mutable view inside a branch and again after it: the in-branch
+// transfer merges with the closed type at the join, so the post-branch view
+// is plain-checked and rejected. Known conservative limitation; revisit
+// with a shared-cell extension if the ergonomics matter.
 function testSameViewInBranchThenAfter(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [k: string]: number } = t;
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: number } = t;
 }
 
-// View of an outside-declared local inside a loop: accepted on the current
-// base and stays accepted (one-shot transparent check; no retype in loops).
+// View of an outside-declared local inside a loop: rejected. The local
+// cannot be retyped from inside the loop, so the granted view would go
+// unrecorded — the check runs plain and the closed literal does not satisfy
+// a mutable index. Declare the local inside the loop or annotate it.
 function testViewInsideLoop(): void {
   const t = {};
   for (const i of [1, 2]) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const f: { [k: string]: number } = t;
   }
 }
 
 // ============================================================================
 // Aliasing soundness witnesses: a granted view must be recorded somewhere.
-// On the current base both are rejected because a literal field's get and
-// set share one bound TVar — granting a wider view widens the read type too.
-// Any redesign of literal typing must keep BOTH rejected.
+// Under ownership transfer both stay rejected by construction: an embedded
+// local's markers are not eligible at the container's transfer (only values
+// behind freshness wrappers are), and through-loop views are plain-checked
+// because the local cannot be retyped. Any literal-typing design must keep
+// BOTH rejected.
 // ============================================================================
 
 // An embedded local keeps its own precise binding: if a view of the
@@ -251,14 +254,15 @@ function testEmbeddedLocalThenContainerView(): void {
 }
 
 // A view granted inside a loop cannot be recorded by retyping (the local is
-// declared outside); the write through the view would invalidate the
-// precise post-loop read (f.x = 99; t.x : 1 holding 99).
+// declared outside), so the view itself is rejected — otherwise the write
+// through it would invalidate the precise post-loop read (f.x = 99;
+// t.x : 1 holding 99).
 function testThroughLoopViewThenPreciseRead(): void {
   const t = { x: 1 };
   for (const i of [1, 2]) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const f: { [k: string]: number } = t;
     f.x = 99;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: 1 = t.x;
 }

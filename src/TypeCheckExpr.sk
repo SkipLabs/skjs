@@ -364,6 +364,8 @@ extension class TypeChecker {
         (ty, false)
       }
     | Some(e) ->
+      // Captured before evaluating e (see checkSubTypeView).
+      vi = this.viewInfoFor(tcenv, e);
       ty = this.expr(tcenv, e, kind is BKConst());
       // Wrap null/undefined initializers in a bound TVar so the variable
       // can be widened later (e.g., `let x = null; x = 1`).
@@ -380,13 +382,14 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        this.checkSubType(
+        this.checkSubTypeView(
           tcenv,
           annotAst.pos,
           "Type of value is not assignable to the variable's type annotation",
           ty,
           annot,
           TSCode(2322),
+          vi,
         );
         (annot, true)
       }
@@ -1594,18 +1597,22 @@ extension class TypeChecker {
         };
         !fields[field.name] = field
       };
-      // Add synthetic index type variables so fresh object literals can be
-      // assigned to indexed types via subtyping. These are invisible
-      // to field resolution (filtered by nonSyntheticIndexForKeyKind/hasNonSyntheticIndex).
-      if (tIndexes.stringIndex.isNone()) {
-        !tIndexes.stringIndex = Some(
-          TField::createSyntheticIndex(tcenv.subst, pos),
-        )
-      };
-      if (tIndexes.symbolIndex.isNone()) {
-        !tIndexes.symbolIndex = Some(
-          TField::createSyntheticIndex(tcenv.subst, pos),
-        )
+      // No-spread literals are CLOSED objects: their full key set is the
+      // named fields, expressed as real readonly-never string/symbol
+      // indexes (invisible to field resolution and printing; visible to
+      // subtyping). Ownership-transfer checks (checkSubTypeView) waive the
+      // setter obligations these indexes would impose on a new owner.
+      // Spread literals are width-open and get NO index backfill: the
+      // spread source may carry unknown keys, so a never index would lie
+      // (whatever index the spread merge produced is kept as-is).
+      hasSpread = efields.any(f -> f is FDSpread _);
+      if (!hasSpread) {
+        if (tIndexes.stringIndex.isNone()) {
+          !tIndexes.stringIndex = Some(TField::createClosedIndex(pos))
+        };
+        if (tIndexes.symbolIndex.isNone()) {
+          !tIndexes.symbolIndex = Some(TField::createClosedIndex(pos))
+        }
       };
       obj = TType::single(
         TObject::createSingleBranch(
@@ -2346,27 +2353,38 @@ extension class TypeChecker {
       )
     | As(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
+      vi = this.viewInfoFor(tcenv, subExpr);
       inferredTy = this.expr(tcenv, subExpr, true);
-      this.checkSubType(
+      this.checkSubTypeView(
         tcenv,
         pos,
         "This 'as' cast is unsound: the source type is not assignable to the target type",
         inferredTy,
         annot,
         SKJSCode(2003),
+        vi,
       );
       annot
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
+      // Transfer-transparent check, but never retype: the subst is restored
+      // and no value of the view type escapes, so no write capability is
+      // granted. (The transfer flag lives on Subst, not SubstState, so the
+      // restore below cannot toggle it.)
+      vi = this.viewInfoFor(tcenv, subExpr) match {
+      | VITransfer _ -> VIFresh()
+      | x -> x
+      };
       inferredTy = this.expr(tcenv, subExpr, true);
       savedSubst = tcenv.subst.save();
-      this.checkSubType(
+      this.checkSubTypeView(
         tcenv,
         pos,
         "Type does not satisfy the expected type",
         inferredTy,
         annot,
         TSCode(1360),
+        vi,
       );
       tcenv.subst.restore(savedSubst);
       inferredTy
@@ -2886,14 +2904,16 @@ extension class TypeChecker {
       )
     | _ ->
       ty1 = this.expr(tcenv, e1, false, true);
+      vi = this.viewInfoFor(tcenv, e2);
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      this.checkSubType(
+      this.checkSubTypeView(
         tcenv,
         e2.pos,
         "Type is not assignable to the assignment target's type",
         ty2,
         ty1,
         TSCode(2322),
+        vi,
       );
       ty1
     }
@@ -2972,9 +2992,14 @@ extension class TypeChecker {
     e1Pos: PosRange,
     local: Name,
     keyExpr: Expr,
-    fieldType: TType,
+    fieldType0: TType,
     fieldKeys: Array<FieldKey>,
   ): TType {
+    // A closed-literal index is a transfer-time marker of a fresh binding;
+    // once the value is stored into a field it is owned by the container, so
+    // strip the marker (otherwise the `never` index would clash with a
+    // declared open field type, e.g. at the constructor-exit check).
+    fieldType = this.stripClosedLiteralIndex(tcenv, fieldType0);
     isOptional = fieldKeys.size() > 1;
     used = tcenv.localObjects[local.value] match {
     | LOCanGrow(bound) ->
@@ -3063,10 +3088,14 @@ extension class TypeChecker {
           )
         };
         if (tcenv.scope.isThroughLoop(local)) {
+          // Already diagnosed; skip the rebind — Scope::set's loop-widening
+          // callback would compare the grown type against the closed
+          // original and add a second, misleading error.
           tcenv.error(
             Array[(local.pos, "Cannot add a field to an object inside a loop")],
             SKJSCode(2069),
-          )
+          );
+          return fieldType
         };
         allNewFields = TFields::create{
           fields => newFieldsMap,
@@ -3075,9 +3104,35 @@ extension class TypeChecker {
           isArray => Some(false),
         };
         allNewObj = TObject::createSingleBranch(allNewFields, None(), objPos);
-        newTy = TObject::inter(tcenv.subst, this, obj, allNewObj) match {
+        // A closed-literal index has value `never`; intersecting a new named
+        // field against it would zero the field's get type. Strip the marker
+        // before the merge and re-add it after (it is residual and now
+        // correctly excludes the freshly named keys), so the grown object
+        // stays a recognizable fresh closed literal.
+        hadClosedString = fields.stringIndex
+          .map(f -> f.isClosedLiteralIndex())
+          .default(false);
+        hadClosedSymbol = fields.symbolIndex
+          .map(f -> f.isClosedLiteralIndex())
+          .default(false);
+        objForInter = obj.map(fs -> fs.removeClosedLiteralIndexes());
+        newTy = TObject::inter(
+          tcenv.subst,
+          this,
+          objForInter,
+          allNewObj,
+        ) match {
         | None() -> TType::bottom(objPos)
-        | Some(mergedObj) -> TType::single(mergedObj)
+        | Some(mergedObj) ->
+          TType::single(
+            mergedObj.map(fs ->
+              fs.withClosedLiteralIndexes(
+                objPos,
+                hadClosedString,
+                hadClosedSymbol,
+              )
+            ),
+          )
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(
@@ -3219,6 +3274,7 @@ extension class TypeChecker {
     mostPrecise: Bool,
   ): TType {
     args = mutable Vector<TType>[];
+    viewInfos = mutable Vector<ViewInfo>[];
     moreArgs: ?TType = None();
 
     for (argExpr in argExprs) {
@@ -3230,6 +3286,9 @@ extension class TypeChecker {
           stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
           | Some(tupElts) ->
             args.extend(tupElts);
+            // Spread elements are never fresh-literal ownership transfers;
+            // keep viewInfos aligned with args.
+            for (_ in tupElts) viewInfos.push(VINone());
             continue
           | None() -> void
           }
@@ -3269,9 +3328,12 @@ extension class TypeChecker {
           )
         }
       | _ ->
+        vi = this.viewInfoFor(tcenv, argExpr);
         argTy = this.expr(tcenv, argExpr, mostPrecise);
         moreArgs match {
-        | None() -> args.push(argTy)
+        | None() ->
+          args.push(argTy);
+          viewInfos.push(vi)
         | Some(ma) ->
           !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
         }
@@ -3397,33 +3459,35 @@ extension class TypeChecker {
             );
             break void
           } else {
-            this.checkSubType(
+            this.checkSubTypeView(
               tcenv,
               pos,
               "Argument is not assignable to the parameter's type",
               args[i],
               tfun.params[i],
               TSCode(2345),
+              viewInfos[i],
             )
           }
         };
         for (j in Range(0, tfun.optionalParams.size())) {
           i = tfun.params.size() + j;
-          arg = if (i < args.size()) {
-            args[i]
+          (arg, argView) = if (i < args.size()) {
+            (args[i], viewInfos[i])
           } else {
             moreArgs match {
             | None() -> break void
-            | Some(ma) -> ma
+            | Some(ma) -> (ma, (VINone() : ViewInfo))
             }
           };
-          this.checkSubType(
+          this.checkSubTypeView(
             tcenv,
             pos,
             "Argument is not assignable to the parameter's type",
             arg,
             tfun.optionalParams[j],
             TSCode(2345),
+            argView,
           )
         };
         if (tcenv.subst.version == version) break void;

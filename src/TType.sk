@@ -1987,6 +1987,49 @@ class TFields protected {
     }
   }
 
+  // True if these fields carry the closed-literal index marker — i.e. this
+  // object is a fresh no-spread object literal (see kClosedLiteralIndexName).
+  fun hasClosedLiteralIndex(): Bool {
+    this.stringIndex.map(f -> f.isClosedLiteralIndex()).default(false) ||
+      this.symbolIndex.map(f -> f.isClosedLiteralIndex()).default(false)
+  }
+
+  // Drop the closed-literal index markers (string and symbol). Used before
+  // growing a field onto a local object: intersecting a new named field
+  // against the `never` index value would zero the field's get type, so the
+  // closed index is stripped, the field added, then the index re-added (it
+  // is residual and now correctly excludes the named key).
+  fun removeClosedLiteralIndexes(): TFields {
+    this with {
+      stringIndex => this.stringIndex.flatMap(f ->
+        if (f.isClosedLiteralIndex()) None() else Some(f)
+      ),
+      symbolIndex => this.symbolIndex.flatMap(f ->
+        if (f.isClosedLiteralIndex()) None() else Some(f)
+      ),
+    }
+  }
+
+  // Re-add closed-literal indexes for the kinds that had them, when absent.
+  fun withClosedLiteralIndexes(
+    pos: PosRange,
+    addString: Bool,
+    addSymbol: Bool,
+  ): TFields {
+    this with {
+      stringIndex => if (addString && this.stringIndex.isNone()) {
+        Some(TField::createClosedIndex(pos))
+      } else {
+        this.stringIndex
+      },
+      symbolIndex => if (addSymbol && this.symbolIndex.isNone()) {
+        Some(TField::createClosedIndex(pos))
+      } else {
+        this.symbolIndex
+      },
+    }
+  }
+
   fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TFields {
     f(this.call).map(call -> this with {call})
   }
