@@ -49,6 +49,14 @@ function unionPlus(x: number | bigint): number | bigint {
   return +x;
 }
 
+// When the operand mixes a bigint with a type that is invalid for unary '+'
+// in SKJS anyway, the tsc-aligned TS2736 diagnostic takes precedence over the
+// generic invalid-operand one (tsc also reports only TS2736 here).
+function mixedUnionPlus(x: string | bigint): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  const y = +x;
+}
+
 // Test unary operators in expressions
 const expr1: number = -(10 + 5);
 const expr2: number = ~(8 - 3);
