@@ -87,6 +87,12 @@ This rewrites annotations in `tests/expect-error/` and `examples/src/` to match 
 - Example: if restricting syntax in classes, verify the same keyword works in object types
 - Add FIXME tests documenting where SKJS behavior differs from TypeScript
 
+**"Currently rejected" does not mean "handled"**:
+
+- Do not use "SKJS already errors on this case" as evidence that it needs no treatment — over-strict rejection often masks a never-implemented analog of a handled case
+- Before declaring a case out of scope, check what TypeScript does with it (`npx tsc --strict --noEmit`) and whether it is the structural analog of a case that IS handled
+- Check analogs across all key kinds (string/number/symbol) explicitly — e.g. a general `symbol`-typed key is the non-literal analog of a general `string`/`number` key
+
 **Verifying with TypeScript**:
 - Always check TypeScript's behavior with `npx tsc --strict --noEmit <file>` when creating regression tests
 - Use `--strict` mode to catch errors TypeScript would normally miss (e.g., null checks)
