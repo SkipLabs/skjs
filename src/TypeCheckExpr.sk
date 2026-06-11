@@ -3375,19 +3375,6 @@ extension class TypeChecker {
     }
   }
 
-  // If `ty` reduces to a primitive value, return the wrapper class's
-  // instance type (mirroring the field-access path's handling of
-  // TPrimValue receivers). Otherwise return `ty` unchanged.
-  fun autoBoxPrimitiveReceiver(tcenv: mutable TCEnv, ty: TType): TType {
-    ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-      stypes.singleElt()
-    ) match {
-    | Some(prim @ TPrimValue _) ->
-      this.new(tcenv.subst, prim.asClassName(), Array[])
-    | _ -> ty
-    }
-  }
-
   fun call(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -3584,7 +3571,7 @@ extension class TypeChecker {
       | tp ->
         expectedThis = tp.tyOpt().fromSome();
         actualThis = thisArgOpt match {
-        | Some(t) -> this.autoBoxPrimitiveReceiver(tcenv, t)
+        | Some(t) -> t
         | None() -> TType::single(TPrimUnit(TVoid(), pos))
         };
         this.checkSubType(
