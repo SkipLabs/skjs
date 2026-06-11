@@ -1623,33 +1623,6 @@ class TField{
     }
   }
 
-  // Create a synthetic index field with separate get/set TVars.
-  // Used for object literal indexes that should be transparent to the
-  // setter direction of subtyping (see kSyntheticIndexName).
-  static fun createSyntheticIndex(subst: mutable Subst, pos: PosRange): TField {
-    getTvar = subst.gen(pos);
-    subst.setOrigin(getTvar, FromSyntheticIndex(pos));
-    get = TType::var(getTvar);
-    setTvar = subst.gen(pos);
-    subst.setOrigin(setTvar, FromSyntheticIndex(pos));
-    set = TType::var(setTvar);
-    TField{
-      pos,
-      name => FieldNameString(kSyntheticIndexName),
-      isOptional => true,
-      get,
-      set,
-      access => FAPublic(),
-    }
-  }
-
-  // True if this field is the synthetic index created for object literals
-  // (see kSyntheticIndexName). Used to keep the internal name out of
-  // user-visible output while still letting it participate in subtyping.
-  fun isSynthetic(): Bool {
-    this.name.value == kSyntheticIndexName
-  }
-
   // Create a closed-literal index: a real `readonly [k]: never` index
   // marking a no-spread object literal as closed (no keys beyond its named
   // fields). It carries no solver state; it participates in subtyping only
@@ -1672,11 +1645,10 @@ class TField{
     this.name.value == kClosedLiteralIndexName
   }
 
-  // Internal literal-index markers (synthetic TVar index or closed-literal
-  // index): hidden from field resolution and printing, visible to
-  // subtyping.
+  // Internal literal-index marker (closed-literal index): hidden from field
+  // resolution and printing, visible to subtyping.
   fun isInternalIndex(): Bool {
-    this.isSynthetic() || this.isClosedLiteralIndex()
+    this.isClosedLiteralIndex()
   }
 
   // Create a virtual field from an index, renamed for use in union.
@@ -1757,16 +1729,6 @@ const kMissingTypeAnnotationPrefix: String = "Missing_type_annotation_for_";
 // types like `{ [k: string]: number }` via normal subtyping: the TVar
 // unifies with the target index's value type.
 //
-// These synthetic indexes are named __SKJS_internal_index to distinguish them
-// from user-declared indexes. They must be:
-// - Visible to subtyping (indexForFieldName, isSub_IndexPair) so that object
-//   literals can satisfy indexed type constraints.
-// - Invisible to field resolution (hasNonSyntheticIndex,
-//   nonSyntheticIndexForKeyKind, nonSyntheticIndexKeyKindsString) so that
-//   `obj.z` on `{ x: 1 }` still reports "Unbound field" rather than resolving
-//   through the synthetic index.
-const kSyntheticIndexName: String = "__SKJS_internal_index";
-
 // Marker name for the closed-literal index of no-spread object literals
 // (real `readonly [k]: never`); same visibility rules as the synthetic
 // index: hidden from field resolution and printing, visible to subtyping.
@@ -2442,7 +2404,6 @@ base class TVarOrigin {
   | FromNullLiteral(PosRange)
   | FromUndefinedLiteral(PosRange)
   | FromObjectField(PosRange)
-  | FromSyntheticIndex(PosRange)
   | FromArrayElement(PosRange)
   | FromUntypedVar(PosRange)
 }

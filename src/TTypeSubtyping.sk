@@ -803,8 +803,7 @@ extension class TFields {
       }
     | (None(), Some(index2)) ->
       // Sub has no index for this kind. Check against top/bottom so that
-      // TVars in index2 still get unified. For concrete types this fails;
-      // for synthetic index TVars this succeeds (unifying with top/bottom).
+      // TVars in index2 still get unified; for concrete types this fails.
       TType::isSub(subst, tenv, TType::top(index2.pos), index2.get) match {
       | err @ STErrorOnTType _ ->
         STRecFieldsMissingIndex(err, index2, fields1, fields2)
@@ -1219,8 +1218,7 @@ extension class TType {
         | Some(FromUndefinedLiteral(pos))
         | Some(FromUntypedVar(pos))
         | Some(FromObjectField(pos))
-        | Some(FromArrayElement(pos))
-        | Some(FromSyntheticIndex(pos)) ->
+        | Some(FromArrayElement(pos)) ->
           !hints = List.Cons(
             (pos, `Consider adding a type annotation, e.g., ${widerStr}`),
             hints,
