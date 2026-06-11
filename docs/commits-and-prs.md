@@ -9,6 +9,7 @@
 ## Commit Ordering
 
 - **Tests before code.** Introduce test cases in a commit _before_ the code change that affects them, annotated for the then-current behavior (`@skjs-expect-error` with the pre-change message, or no annotation if the case is silently accepted). The code commit then only flips the annotations, so its diff demonstrates the behavior change. This is always possible with expect-error tests: "the asserted error doesn't exist yet" just means the pre-change annotation is different or absent, not that the test can't be introduced first.
+- **Fixes and infrastructure before the feature that depends on them.** When work spans a fix or refactor and a new feature, commit the fix/infrastructure first, so each commit is self-contained, green, and reviewable in order.
 
 ## When to Update Documentation
 
