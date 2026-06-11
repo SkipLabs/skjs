@@ -519,6 +519,17 @@ base class FieldMismatchKind uses Equality {
   }
 }
 
+// Display label for an index field in subtyping diagnostics. The internal
+// literal-index markers (synthetic / closed-literal) must not leak their
+// internal names into messages.
+private fun indexFieldLabel(f: TField, kindWord: String): String {
+  if (f.isClosedLiteralIndex()) {
+    "the object literal's implicit closed index"
+  } else {
+    `${kindWord} '${f.name.value}'`
+  }
+}
+
 base class STErrorOnTFields(
   fields1: TFields,
   fields2: TFields,
@@ -584,12 +595,16 @@ base class STErrorOnTFields(
     | STRecFieldsIndexValue(err, index1, index2, kind, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Value type of index field '${index1.name.value}'`),
+          (
+            index1.pos,
+            `Value type of ${indexFieldLabel(index1, "index field")}`,
+          ),
           (
             index2.pos,
-            `is not assignable to value type of index field '${
-              index2.name.value
-            }'`,
+            `is not assignable to value type of ${indexFieldLabel(
+              index2,
+              "index field",
+            )}`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -600,7 +615,10 @@ base class STErrorOnTFields(
         List[
           (
             index2.pos,
-            `Missing index signature '${index2.name.value}' in source type`,
+            `Missing ${indexFieldLabel(
+              index2,
+              "index signature",
+            )} in source type`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -612,7 +630,7 @@ base class STErrorOnTFields(
           (field1.pos, `Field '${field1.name.value}'`),
           (
             index2.pos,
-            `is not assignable to index field '${index2.name.value}'`,
+            `is not assignable to ${indexFieldLabel(index2, "index field")}`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -621,7 +639,14 @@ base class STErrorOnTFields(
     | STRecFieldsIndexField(err, index1, field2, kind, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Index field '${index1.name.value}'`),
+          (
+            index1.pos,
+            if (index1.isClosedLiteralIndex()) {
+              "The object literal's implicit closed index"
+            } else {
+              `Index field '${index1.name.value}'`
+            },
+          ),
           (field2.pos, `is not assignable to field '${field2.name.value}'`),
         ],
         err.toError(subst, tenv, detailForRec),
