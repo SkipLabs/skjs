@@ -1044,15 +1044,23 @@ extension class TypeChecker {
     } else {
       // bind(thisArg) => the function with its `this` removed, preserving the
       // remaining (incl. optional/rest) parameters.
+      // TODO: partial application `bind(thisArg, ...args)` is not modeled (it
+      // would drop the bound parameters from the result, an OmitThisParameter
+      // variant). For now a `never[]` rest makes any extra bound argument fail
+      // (rejecting it like TS's TS2554) rather than be silently ignored.
       bound = f with {thisParam => NoThis()};
       boundTy = funType(bound);
+      neverRest = TType::inst(
+        Name(pos, "ReadonlyArray"),
+        TArgs(Array[TType::bottom(pos)]),
+      );
       Some(
         TFun(
           Array[],
           NoThis(),
           Array[thisType],
           Array[],
-          None(),
+          Some(neverRest),
           boundTy,
           f.cgNodes,
         ),
