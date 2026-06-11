@@ -184,15 +184,15 @@ declare const Math: {
 };
 
 declare class boolean {
-  toString(): string;
+  toString(this: boolean): string;
 }
 
 declare class number {
-  toString(): string;
-  toFixed(digits?: number): string;
-  toExponential(fractionDigits?: number): string;
-  toPrecision(precision?: number): string;
-  valueOf(): number;
+  toString(this: number): string;
+  toFixed(this: number, digits?: number): string;
+  toExponential(this: number, fractionDigits?: number): string;
+  toPrecision(this: number, precision?: number): string;
+  valueOf(this: number): number;
 }
 
 // Number object for static access (e.g., Number.MAX_VALUE)
@@ -223,34 +223,34 @@ declare class string {
   [index: number]: string | undefined;
 
   // Existing methods
-  charAt(pos: number): string;
-  startsWith(prefix: string): boolean;
-  endsWith(suffix: string): boolean;
-  substring(start: number, end?: number): string;
-  indexOf(searchString: string): number;
-  split(separator: string): Array<string>;
-  toLowerCase(): string;
-  toUpperCase(): string;
+  charAt(this: string, pos: number): string;
+  startsWith(this: string, prefix: string): boolean;
+  endsWith(this: string, suffix: string): boolean;
+  substring(this: string, start: number, end?: number): string;
+  indexOf(this: string, searchString: string): number;
+  split(this: string, separator: string): Array<string>;
+  toLowerCase(this: string): string;
+  toUpperCase(this: string): string;
 
   // Additional essential String methods
-  charCodeAt(index: number): number;
-  concat(str: string): string;
-  includes(searchString: string): boolean;
-  lastIndexOf(searchString: string): number;
-  localeCompare(compareString: string): number;
-  match(regexp: string): Array<string> | undefined;
-  padEnd(targetLength: number, padString?: string): string;
-  padStart(targetLength: number, padString?: string): string;
-  repeat(count: number): string;
-  replace(searchValue: string, replaceValue: string): string;
-  search(regexp: string): number;
-  slice(start: number, end?: number): string;
-  substr(start: number, length?: number): string;
-  toString(): string;
-  trim(): string;
-  trimEnd(): string;
-  trimStart(): string;
-  valueOf(): string;
+  charCodeAt(this: string, index: number): number;
+  concat(this: string, str: string): string;
+  includes(this: string, searchString: string): boolean;
+  lastIndexOf(this: string, searchString: string): number;
+  localeCompare(this: string, compareString: string): number;
+  match(this: string, regexp: string): Array<string> | undefined;
+  padEnd(this: string, targetLength: number, padString?: string): string;
+  padStart(this: string, targetLength: number, padString?: string): string;
+  repeat(this: string, count: number): string;
+  replace(this: string, searchValue: string, replaceValue: string): string;
+  search(this: string, regexp: string): number;
+  slice(this: string, start: number, end?: number): string;
+  substr(this: string, start: number, length?: number): string;
+  toString(this: string): string;
+  trim(this: string): string;
+  trimEnd(this: string): string;
+  trimStart(this: string): string;
+  valueOf(this: string): string;
 }
 
 declare const String: {
@@ -261,8 +261,8 @@ declare const String: {
 };
 
 declare class symbol {
-  toString(): string;
-  valueOf(): symbol;
+  toString(this: symbol): string;
+  valueOf(this: symbol): symbol;
 }
 
 declare const Symbol: {
@@ -533,9 +533,9 @@ declare class RegExp {
 
 declare class bigint {
   // Instance methods (all verified to exist in real JavaScript)
-  toString(radix?: number): string;
-  valueOf(): bigint;
-  toLocaleString(): string;
+  toString(this: bigint, radix?: number): string;
+  valueOf(this: bigint): bigint;
+  toLocaleString(this: bigint): string;
 }
 
 // BigInt constructor function
