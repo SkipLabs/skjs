@@ -2408,7 +2408,9 @@ extension class TypeChecker {
             | UOPlus() ->
               // Unary '+' performs ToNumber, which throws on a bigint at
               // runtime; tsc rejects it with TS2736 in every context,
-              // including const assertions.
+              // including const assertions. The guard is load-bearing: the
+              // enclosing OR-pattern also binds k to TNum, and '+' on a
+              // number literal stays accepted.
               if (k is TBigInt()) {
                 fatalError(
                   Array[
