@@ -252,6 +252,12 @@ const checkArgs: Array<Cli.Arg> = Array[
         Truthiness::default
       }).`,
     ),
+  Cli.Arg::string("emit-cfg")
+    .long("emit-cfg")
+    .value_name("FORMAT")
+    .about(
+      "Emit typed control-flow graphs for all checked functions to stdout. Formats: json, dot",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -483,8 +489,18 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   };
 
+  emitCfgFormat: ?CFGOutputFormat = args.maybeGetString("emit-cfg") match {
+  | None() -> None()
+  | Some("json") -> Some(CFGJson())
+  | Some("dot") -> Some(CFGDot())
+  | Some(other) ->
+    print_error(`Invalid --emit-cfg format "${other}": expected json or dot`);
+    throw Exit(2)
+  };
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
   warningsDirName = SKStore.DirName::create("/check/warnings/");
+  cfgsDirName = SKStore.DirName::create("/check/cfgs/");
 
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
@@ -549,7 +565,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                     ErrorMessageFile(checker.errorToMessage(context, err)),
                   )
                 };
-
                 for (error in typeErrors) {
                   errors.push(
                     ErrorMessageFile(checker.errorToMessage(context, error)),
@@ -582,7 +597,37 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               },
             );
             _ = CallGraph::build(context, checked)
-          }
+          };
+          emitCfgFormat match {
+          | Some(format) ->
+            _ = checked.map(
+              SKStore.UnitID::keyType,
+              SKStore.StringFile::type,
+              context,
+              cfgsDirName,
+              (_context, writer, _key, valueIter) ~> {
+                res = valueIter.getUnique() match {
+                | None() ->
+                  internal_error("Unexpected missing value in emit-cfg")
+                | Some(r) -> r
+                };
+                // One entry per function; merged across files and assembled
+                // into a single document when printed
+                out = sortedCFGs(res.cfgs).map(cfg ->
+                  format match {
+                  | CFGJson() -> cfgJson(cfg)
+                  | CFGDot() -> cfgToDot(cfg)
+                  }
+                );
+                writer.setArray(
+                  SKStore.UnitID::singleton,
+                  out.map(s -> SKStore.StringFile(s)),
+                )
+              },
+            )
+          | None() -> void
+          };
+          _ = CallGraph::build(context, checked);
         },
       );
       tick = context.getTick();
@@ -618,6 +663,21 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       SKStore.CStop(None())
     },
   );
+  emitCfgFormat match {
+  | None() -> void
+  | Some(format) ->
+    context.maybeGetEagerDir(cfgsDirName) match {
+    | None() -> void
+    | Some(dir) ->
+      entries = dir.getArrayRaw(SKStore.UnitID::singleton).map(f ->
+        SKStore.StringFile::type(f).value
+      );
+      format match {
+      | CFGJson() -> print_raw("[" + ",\n".join(entries) + "]\n")
+      | CFGDot() -> print_raw("\n".join(entries))
+      }
+    }
+  };
   context.maybeGetEagerDir(errorsDirName) match {
   | None() -> 2
   | Some(dir) ->
@@ -671,6 +731,7 @@ class CheckResult(
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
+  cfgs: SortedMap<CGNode, CFG> = SortedMap[],
 ) extends SKStore.File
 
 class Checker private {
@@ -795,6 +856,7 @@ class Checker private {
               results.callgraph,
               results.classHierarchy,
               results.subtypingEdges,
+              results.cfgs,
             ),
           )
         | PRError(err) ->

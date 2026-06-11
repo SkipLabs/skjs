@@ -90,6 +90,7 @@ mutable class CFGBuilder{
     };
     builder.lowerBlock(body);
     builder.finishBlock(CFGTJump(normalExitId));
+    builder.pruneOrphanJumps(entryId);
     sentinel = CFGTUnreachable();
     builder.!blocks[normalExitId] = CFGBlock(
       normalExitId,
@@ -125,19 +126,61 @@ mutable class CFGBuilder{
   }
 
   mutable fun finishBlock(term: BBTerminator): void {
-    block = CFGBlock(
-      this.currentBlockId,
-      this.currentInstrs.toArray(),
-      term,
-      this.currentExnTarget(),
-    );
-    this.!blocks[this.currentBlockId] = block;
-    this.!currentInstrs = mutable Vector[]
+    if (this.terminated) {
+      // Block already closed by a terminal statement (return/throw/break/
+      // continue); ignore the structural close that follows it.
+      void
+    } else {
+      block = CFGBlock(
+        this.currentBlockId,
+        this.currentInstrs.toArray(),
+        term,
+        this.currentExnTarget(),
+      );
+      this.!blocks[this.currentBlockId] = block;
+      this.!currentInstrs = mutable Vector[];
+      this.!terminated = true
+    }
   }
 
   mutable fun startBlock(id: CFGBlockId): void {
     this.!currentBlockId = id;
     this.!terminated = false
+  }
+
+  // Drop empty jump-only blocks that nothing references: the builder starts a
+  // fresh block after each terminal statement so any dead statements have a
+  // home, but when none follow, closing that block at the end of build()
+  // leaves an unreachable empty block behind.
+  mutable fun pruneOrphanJumps(entryId: CFGBlockId): void {
+    referenced = SortedSet<CFGBlockId>[];
+    for (block in this.blocks.values()) {
+      block.terminator match {
+      | CFGTJump(target) -> !referenced = referenced.set(target)
+      | CFGTBranch(_, thenTarget, elseTarget) ->
+        !referenced = referenced.set(thenTarget).set(elseTarget)
+      | CFGTSwitch(_, branches, default_) ->
+        for (branch in branches) {
+          !referenced = referenced.set(branch.i1)
+        };
+        !referenced = referenced.set(default_)
+      | CFGTReturn _
+      | CFGTThrow _
+      | CFGTUnreachable() ->
+        void
+      };
+      block.exnTarget.each(target -> !referenced = referenced.set(target))
+    };
+    for (block in this.blocks.values()) {
+      isOrphanJump =
+        block.id != entryId &&
+        !referenced.contains(block.id) &&
+        block.instrs.isEmpty() &&
+        block.terminator is CFGTJump _;
+      if (isOrphanJump) {
+        this.!blocks = this.blocks.remove(block.id)
+      }
+    }
   }
 
   mutable fun emit(instr: CFGInstr): void {
@@ -150,7 +193,9 @@ mutable class CFGBuilder{
     ty = this.exprTypes.maybeGet(e.pos) match {
     | Some(t) -> t
     | None() ->
-      internal_error("CFGBuilder: missing type for expression: " + inspect(e).toString())
+      internal_error(
+        "CFGBuilder: missing type for expression: " + inspect(e).toString(),
+      )
     };
     TypedExpr(ty, e)
   }
@@ -172,16 +217,21 @@ mutable class CFGBuilder{
     }
   }
 
+  // An expression in statement position: assignments become CFGIAssign,
+  // everything else CFGIExpr.
+  mutable fun emitExprStmt(e: Expr): void {
+    e.value match {
+    | Binop(BOAssignment(), lhs, rhs) ->
+      this.emit(CFGIAssign(this.typed(lhs), this.typed(rhs)))
+    | _ -> this.emit(CFGIExpr(this.typed(e)))
+    }
+  }
+
   mutable fun lowerStmt(st: Stmt): void {
     st.value match {
     | StmtEmpty() -> void
 
-    | StmtExpr(e) ->
-      e.value match {
-      | Binop(BOAssignment(), lhs, rhs) ->
-        this.emit(CFGIAssign(this.typed(lhs), this.typed(rhs)))
-      | _ -> this.emit(CFGIExpr(this.typed(e)))
-      }
+    | StmtExpr(e) -> this.emitExprStmt(e)
 
     | Bind(kind, bindings) ->
       for (binding in bindings) {
@@ -272,7 +322,7 @@ mutable class CFGBuilder{
       _ = this.breakStack.pop();
       this.finishBlock(CFGTJump(incrId));
       this.startBlock(incrId);
-      this.emit(CFGIExpr(this.typed(incr)));
+      this.emitExprStmt(incr);
       this.finishBlock(CFGTJump(headId));
       this.startBlock(exitId)
 
@@ -339,7 +389,12 @@ mutable class CFGBuilder{
       | Some(CatchClause(paramOpt, _type, catchStmts)) ->
         catchId = this.allocId();
         afterTryId = this.allocId();
-        // Lowerlock; any block inside gets exnTarget = catchId
+        // Start a fresh block for the try body so statements before the try
+        // don't end up in a block carrying the exception edge
+        tryId = this.allocId();
+        this.finishBlock(CFGTJump(tryId));
+        this.startBlock(tryId);
+        // Lower the try body; any block inside gets exnTarget = catchId
         this.exnStack.push(catchId);
         this.lowerBlock(tryStmts);
         _ = this.exnStack.pop();

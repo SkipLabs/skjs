@@ -310,7 +310,7 @@ extension class TypeChecker {
           )
         };
         cfg = CFGBuilder::build(
-          cgNode.toString(),
+          cgNode.id.toString(),
           fd.pos,
           Array[], // TODO: populate typed params
           retType,

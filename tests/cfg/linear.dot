@@ -1,0 +1,15 @@
+digraph "fn:add" {
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst sum: number = (a + b)\llet doubled: number = (sum * 2)\ldoubled = (doubled + 1)\lreturn doubled\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:greet" {
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst message: string = (\"hello, \" + name)\lreturn message\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}

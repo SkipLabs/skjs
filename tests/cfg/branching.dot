@@ -1,0 +1,74 @@
+digraph "fn:classify" {
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lif ((n < 0))\l"];
+  BB_0 -> BB_3 [label="true"];
+  BB_0 -> BB_4 [label="false"];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lreturn \"negative\"\l"];
+  BB_3 -> BB_1;
+  BB_4 [label="BB_4:\lif ((n === 0))\l"];
+  BB_4 -> BB_7 [label="true"];
+  BB_4 -> BB_8 [label="false"];
+  BB_5 [label="BB_5:\lreturn \"positive\"\l"];
+  BB_5 -> BB_1;
+  BB_7 [label="BB_7:\lreturn \"zero\"\l"];
+  BB_7 -> BB_1;
+  BB_8 [label="BB_8:\ljump BB_9\l"];
+  BB_8 -> BB_9;
+  BB_9 [label="BB_9:\ljump BB_5\l"];
+  BB_9 -> BB_5;
+}
+
+digraph "fn:sumArray" {
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet total: number = 0\lconst x: number\ljump BB_3\l"];
+  BB_0 -> BB_3;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lif (xs)\l"];
+  BB_3 -> BB_4 [label="true"];
+  BB_3 -> BB_5 [label="false"];
+  BB_4 [label="BB_4:\ltotal = (total + x)\ljump BB_3\l"];
+  BB_4 -> BB_3;
+  BB_5 [label="BB_5:\lreturn total\l"];
+  BB_5 -> BB_1;
+}
+
+digraph "fn:sumTo" {
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet total: number = 0\llet i: number = 0\ljump BB_3\l"];
+  BB_0 -> BB_3;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lif ((i < n))\l"];
+  BB_3 -> BB_4 [label="true"];
+  BB_3 -> BB_5 [label="false"];
+  BB_4 [label="BB_4:\li = (i + 1)\lif (((i % 2) === 0))\l"];
+  BB_4 -> BB_6 [label="true"];
+  BB_4 -> BB_7 [label="false"];
+  BB_5 [label="BB_5:\llet j: number = 0\ljump BB_14\l"];
+  BB_5 -> BB_14;
+  BB_6 [label="BB_6:\ljump BB_3\l"];
+  BB_6 -> BB_3;
+  BB_7 [label="BB_7:\ljump BB_8\l"];
+  BB_7 -> BB_8;
+  BB_8 [label="BB_8:\lif ((i > 100))\l"];
+  BB_8 -> BB_10 [label="true"];
+  BB_8 -> BB_11 [label="false"];
+  BB_10 [label="BB_10:\ljump BB_5\l"];
+  BB_10 -> BB_5;
+  BB_11 [label="BB_11:\ljump BB_12\l"];
+  BB_11 -> BB_12;
+  BB_12 [label="BB_12:\ltotal = (total + i)\ljump BB_3\l"];
+  BB_12 -> BB_3;
+  BB_14 [label="BB_14:\lif ((j < n))\l"];
+  BB_14 -> BB_15 [label="true"];
+  BB_14 -> BB_17 [label="false"];
+  BB_15 [label="BB_15:\ltotal = (total + j)\ljump BB_16\l"];
+  BB_15 -> BB_16;
+  BB_16 [label="BB_16:\lj = (j + 1)\ljump BB_14\l"];
+  BB_16 -> BB_14;
+  BB_17 [label="BB_17:\lreturn total\l"];
+  BB_17 -> BB_1;
+}

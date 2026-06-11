@@ -4,6 +4,17 @@
 
 module SKJS;
 
+base class CFGOutputFormat {
+  children =
+  | CFGJson()
+  | CFGDot()
+}
+
+// CFGs sorted by function name, for deterministic output
+fun sortedCFGs(cfgs: SortedMap<CGNode, CFG>): Array<CFG> {
+  cfgs.values().collect(Array).sortedBy(cfg ~> cfg.name)
+}
+
 /***************************************************************************/
 /* Compact source-like rendering of AST fragments for CFG output. */
 /***************************************************************************/
@@ -319,19 +330,19 @@ fun cfgJson(cfg: CFG): String {
 }
 
 fun serializeCFGsJson(cfgs: SortedMap<CGNode, CFG>): String {
-  entries = mutable Vector[];
-  for (cfg in cfgs.values()) {
-    entries.push(cfgJson(cfg))
-  };
-  jsonArr(entries) + "\n"
+  jsonArr(sortedCFGs(cfgs).map(cfgJson)) + "\n"
 }
 
 /***************************************************************************/
 /* DOT (Graphviz) serialization. */
 /***************************************************************************/
 
+fun dotEscape(s: String): String {
+  s.replace("\\", "\\\\").replace("\"", "\\\"")
+}
+
 fun dotQuote(s: String): String {
-  `"${s.replace("\\", "\\\\").replace("\"", "\\\"")}"`
+  `"${dotEscape(s)}"`
 }
 
 fun instrText(instr: CFGInstr): String {
@@ -379,9 +390,10 @@ fun cfgToDot(cfg: CFG): String {
         labelLines.push(instrText(instr))
       };
       labelLines.push(terminatorText(block.terminator));
-      // \l left-justifies each line in Graphviz
-      label = "\\l".join(labelLines) + "\\l";
-      lines.push(`  ${id} [label=${dotQuote(label)}];`)
+      // \l left-justifies each line in Graphviz; escape line contents first
+      // so the \l separators survive verbatim
+      label = "\\l".join(labelLines.map(dotEscape)) + "\\l";
+      lines.push(`  ${id} [label="${label}"];`)
     };
     block.terminator match {
     | CFGTJump(target) -> lines.push(`  ${id} -> ${target};`)
@@ -417,11 +429,7 @@ fun cfgToDot(cfg: CFG): String {
 }
 
 fun serializeCFGsDot(cfgs: SortedMap<CGNode, CFG>): String {
-  graphs = mutable Vector[];
-  for (cfg in cfgs.values()) {
-    graphs.push(cfgToDot(cfg))
-  };
-  "\n".join(graphs)
+  "\n".join(sortedCFGs(cfgs).map(cfgToDot))
 }
 
 module end;

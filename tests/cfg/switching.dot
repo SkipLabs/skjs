@@ -1,0 +1,17 @@
+digraph "fn:dayName" {
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet name: string = \"unknown\"\lswitch (day)\l"];
+  BB_0 -> BB_4 [label="0"];
+  BB_0 -> BB_5 [label="6"];
+  BB_0 -> BB_6 [label="default"];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lreturn name\l"];
+  BB_3 -> BB_1;
+  BB_4 [label="BB_4:\lname = \"sunday\"\ljump BB_3\l"];
+  BB_4 -> BB_3;
+  BB_5 [label="BB_5:\lname = \"saturday\"\ljump BB_3\l"];
+  BB_5 -> BB_3;
+  BB_6 [label="BB_6:\lname = \"weekday\"\ljump BB_3\l"];
+  BB_6 -> BB_3;
+}
