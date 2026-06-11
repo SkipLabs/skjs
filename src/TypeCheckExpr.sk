@@ -2478,9 +2478,11 @@ extension class TypeChecker {
     | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      kindValue = subE.value match {
-      | Number(n) -> Some((TNum(), n))
-      | BigInt(n) -> Some((TBigInt(), n))
+      // Unary '+' applies only to numbers: '+' on a bigint is a runtime
+      // TypeError (TS2736 in tsc), so only '-' preserves bigint literals.
+      kindValue = (nuop, subE.value) match {
+      | (_, Number(n)) -> Some((TNum(), n))
+      | (UOMinus(), BigInt(n)) -> Some((TBigInt(), n))
       | _ -> None()
       };
       kindValue.map(kn -> {
