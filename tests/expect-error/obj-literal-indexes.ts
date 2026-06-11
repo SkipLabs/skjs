@@ -266,3 +266,36 @@ function testThroughLoopViewThenPreciseRead(): void {
   }
   const z: 1 = t.x;
 }
+
+// ============================================================================
+// Transfer-into-inference pins: a fresh literal instantiating a generic.
+// ============================================================================
+
+type JsonRec = { [key: string]: JsonRec } | number | string;
+declare function processJsonRec<T extends JsonRec>(x: T): T;
+
+// Accepted with an INFERRED type argument: the raw marked literal type grows
+// into the inference TVar; the markers stay strict (closed) in later plain
+// checks, so no write capability leaks.
+function testFreshLiteralToInferredJsonGeneric(): void {
+  const r = processJsonRec({ name: "test", nested: { value: 42 } });
+}
+
+// Rejected with an EXPLICIT type argument: the explicit `{ name: string }` is
+// checked directly against the constraint `T extends JsonRec` (TS2344), and a
+// named object type is not a subtype of JsonRec. Ownership transfer only waives
+// the literal argument's setter obligations against the instantiated parameter
+// type; it does not bypass the type-argument constraint check.
+function testFreshLiteralToExplicitJsonGeneric(): void {
+  // @skjs-expect-error Type argument does not satisfy the constraint
+  const r = processJsonRec<{ name: string }>({ name: "test" });
+}
+
+// The value escaping through the generic stays CLOSED: a later mutable index
+// view of the result is a plain check and rejects.
+declare function idObj<T>(x: T): T;
+function testEscapedInferredLiteralStaysClosed(): void {
+  const r = idObj({ x: 1 });
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const v: { [k: string]: number } = r;
+}
