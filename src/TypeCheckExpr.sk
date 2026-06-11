@@ -1792,59 +1792,82 @@ extension class TypeChecker {
       this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
       tcenv.markForInImpure(pos);
-      // When the callee is `e1.field`, capture the receiver type so the
-      // declared `this` parameter (if any) can be checked against it.
-      (fty, thisArgOpt) = f.value match {
+      normTargs = targs.map(ty -> this.normalize(tcenv, ty));
+      // Resolve a callable value and invoke it with the given receiver.
+      dispatchCall = (fty: TType, thisArgOpt: ?TType) -> {
+        tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
+          stypes.singleElt() match {
+          | Some(obj @ TObject _) -> obj.maybeGetCall(tcenv.subst, this)
+          | _ -> None()
+          }
+        ) match {
+        | Some((optional, tf)) ->
+          if (optional) {
+            tcenv.error(
+              Array[
+                (pos, "This expression is not callable"),
+                (
+                  fty.pos,
+                  `Type ${this.ppType(tcenv, fty)} may not be a function`,
+                ),
+              ],
+              TSCode(2349),
+            )
+          };
+          tf
+        | None() ->
+          fatalError(
+            Array[
+              (pos, "This expression is not callable"),
+              (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
+            ],
+            TSCode(2349),
+          )
+        };
+        this.call(tcenv, pos, tfuns, normTargs, args, mostPrecise, thisArgOpt)
+      };
+      // When the callee is `e1.field` / `e1[idx]`, capture the receiver so the
+      // method's `this` is checked against it. For a (non-optional) union
+      // receiver, distribute the call over each branch — each branch's method is
+      // checked against that branch — since folding the union would intersect the
+      // branch `this` types into a receiver no single branch satisfies. Optional
+      // chaining (`?.`) is NOT distributed: its `undefined`/`void` branch is
+      // short-circuited, not a real call receiver.
+      callViaReceiver = (
+        e1: Expr,
+        distribute: Bool,
+        resolve: TType -> TType,
+      ) -> {
+        e1Ty = this.expr(tcenv, e1, mostPrecise);
+        e1Ty.getSTypes(tcenv.subst, this, Covariant()) match {
+        | Some(stypes) if (distribute && stypes.size() > 1) ->
+          TType::unionN(
+            tcenv.subst,
+            this,
+            pos,
+            stypes.collect(Array).map(stype -> {
+              branchTy = TType::single(stype);
+              dispatchCall(resolve(branchTy), Some(branchTy))
+            }),
+          )
+        | _ -> dispatchCall(resolve(e1Ty), Some(e1Ty))
+        }
+      };
+      rty = f.value match {
       | Dot(dotKind, e1, fieldName) ->
         accessKind = dotKind match {
         | OptionalDot() -> AKOptionalChain()
         | NormalDot() -> AKNormal()
         };
-        e1Ty = this.expr(tcenv, e1, mostPrecise);
-        (this.dot(tcenv, e1.pos, e1Ty, fieldName, accessKind), Some(e1Ty))
-      | Get(e1, idx) ->
-        e1Ty = this.expr(tcenv, e1, mostPrecise);
-        (this.get(tcenv, f.pos, e1Ty, idx, AKNormal()), Some(e1Ty))
-      | _ -> (this.expr(tcenv, f, mostPrecise), None())
-      };
-      tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
-        stypes.singleElt() match {
-        | Some(obj @ TObject _) -> obj.maybeGetCall(tcenv.subst, this)
-        | _ -> None()
-        }
-      ) match {
-      | Some((optional, tfuns)) ->
-        if (optional) {
-          tcenv.error(
-            Array[
-              (pos, "This expression is not callable"),
-              (
-                fty.pos,
-                `Type ${this.ppType(tcenv, fty)} may not be a function`,
-              ),
-            ],
-            TSCode(2349),
-          )
-        };
-        tfuns
-      | None() ->
-        fatalError(
-          Array[
-            (pos, "This expression is not callable"),
-            (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
-          ],
-          TSCode(2349),
+        callViaReceiver(e1, dotKind is NormalDot _, recv ->
+          this.dot(tcenv, e1.pos, recv, fieldName, accessKind)
         )
+      | Get(e1, idx) ->
+        callViaReceiver(e1, true, recv ->
+          this.get(tcenv, f.pos, recv, idx, AKNormal())
+        )
+      | _ -> dispatchCall(this.expr(tcenv, f, mostPrecise), None())
       };
-      rty = this.call(
-        tcenv,
-        pos,
-        tfuns,
-        targs.map(ty -> this.normalize(tcenv, ty)),
-        args,
-        mostPrecise,
-        thisArgOpt,
-      );
       f.value match {
       | Dot(
         NormalDot(),
