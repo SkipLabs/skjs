@@ -491,8 +491,12 @@ extension class TypeChecker {
     if (fieldName != "call" && fieldName != "apply" && fieldName != "bind") {
       return None()
     };
+    // The Bool is true when the call signature is optional (the value may not
+    // actually be callable); in that case a direct call already errors, so do
+    // not synthesize .call/.apply/.bind on it either — fall through.
     tfuns = obj.maybeGetCall(tcenv.subst, this) match {
-    | Some((_, tf)) -> tf
+    | Some((false, tf)) -> tf
+    | Some((true, _)) -> return None()
     | None() -> return None()
     };
     f = tfuns.fun_;
