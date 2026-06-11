@@ -32,6 +32,24 @@ const negativeBig: bigint = -positiveBig;
 const bitwiseNotBig: bigint = ~positiveBig;
 const negBigLiteral: bigint = -999n;
 
+// Unary plus on bigints: '+' performs ToNumber, which throws on a bigint at
+// runtime, so tsc rejects every occurrence with TS2736 ('-' and '~' stay
+// valid).
+// FIXME: SKJS currently accepts unary '+' on bigints and types it 'bigint'.
+const plusBig: bigint = +positiveBig;
+
+declare function acceptsBigIntArg(x: bigint): bigint;
+function plusBigLiteralArg(): void {
+  // FIXME: tsc rejects '+100n' with TS2736; SKJS currently accepts.
+  const r = acceptsBigIntArg(+100n);
+}
+
+function unionPlus(x: number | bigint): number | bigint {
+  // FIXME: tsc rejects with TS2736 (the operand may be a bigint); SKJS
+  // currently accepts.
+  return +x;
+}
+
 // Test unary operators in expressions
 const expr1: number = -(10 + 5);
 const expr2: number = ~(8 - 3);

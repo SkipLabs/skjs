@@ -20,6 +20,14 @@ const config: {
   offset: -100n as const,
 };
 
+// Unary plus on a bigint under 'as const': tsc rejects '+' on a bigint with
+// TS2736 in every context, including const assertions (where it adds TS1355).
+// FIXME: SKJS currently accepts and keeps the literal.
+declare function takeBigLiteral(x: 100n): void;
+function plusBigAsConst(): void {
+  takeBigLiteral(+100n as const);
+}
+
 // Type inference from object properties
 // type PortType = typeof config.port;
 // type TimeoutType = typeof config.timeout;
