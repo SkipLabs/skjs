@@ -11,16 +11,26 @@ extension class TypeChecker {
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
     fdPos = fd.name.getPos();
-    thisType = thisTypeOpt match {
-    | None() ->
-      /* Disallow this in non-methods */ TType::single(
-        TPrimUnit(TVoid(), fdPos),
-      )
-    | Some(thisType) -> thisType
+    !this = this.addTParams(subst, sig.tparams);
+    // An explicit `this: T` as the first parameter overrides the enclosing
+    // class's implicit this type for the body.
+    explicitThisOpt = if (
+      sig.params.size() > 0 &&
+      sig.params[0].isThisParam()
+    ) {
+      sig.params[0].type.map(ty -> this.normalize(tcenv.subst, ty))
+    } else {
+      None()
     };
+    thisType = explicitThisOpt.default(
+      thisTypeOpt.default(
+        /* Disallow this in non-methods */ TType::single(
+          TPrimUnit(TVoid(), fdPos),
+        ),
+      ),
+    );
     !this.bindings["this"] = thisType;
     tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true);
-    !this = this.addTParams(subst, sig.tparams);
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
     this.bindParams(tcenv, sig.params, paramTypes);
     typedParams = sig.params.mapWithIndex((i, param) ->
@@ -38,7 +48,9 @@ extension class TypeChecker {
     paramTypes: Array<TType>,
   ): void {
     for (i => param in params) {
-      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, true, false)
+      if (!param.isThisParam()) {
+        this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, true, false)
+      }
     }
   }
 
@@ -62,9 +74,28 @@ extension class TypeChecker {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
-        fatalError(
-          Array[(n.pos, "'this' parameters are not yet supported by SKJS")],
-          SKJSCode(9001),
+        param.isRest.each(restPos ->
+          tcenv.error(
+            Array[(restPos, "A 'this' parameter cannot be a rest parameter")],
+            SKJSCode(2026),
+          )
+        );
+        param.optional.each(optPos ->
+          tcenv.error(
+            Array[(optPos, "A 'this' parameter cannot be optional")],
+            SKJSCode(2027),
+          )
+        );
+        param.default.each(defaultExpr ->
+          tcenv.error(
+            Array[
+              (
+                defaultExpr.pos,
+                "A 'this' parameter cannot have a default value",
+              ),
+            ],
+            SKJSCode(2031),
+          )
         )
       | _ -> checkPatternDoesNotContainThis(param.name)
       };
