@@ -13,7 +13,6 @@ class NotCtx {
   other: number = 2;
 }
 
-// @skjs-expect-error 'this' parameters are not yet supported by SKJS
 function withThis(this: Ctx, x: number): void {}
 
 // TODO: Once implemented, `withThis.call(ctx, 1)` should succeed and
@@ -25,7 +24,6 @@ function withThis(this: Ctx, x: number): void {}
 
 // A function declaring `this: void` must not be callable with `.call` on a
 // non-void receiver.
-// @skjs-expect-error 'this' parameters are not yet supported by SKJS
 function noThis(this: void, x: number): void {}
 
 // TODO: `noThis(1)` should succeed; `noThis.call(ctx, 1)` should reject.

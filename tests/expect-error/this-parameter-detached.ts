@@ -10,7 +10,6 @@ class Ctx {
 }
 
 class H {
-  // @skjs-expect-error 'this' parameters are not yet supported by SKJS
   method(this: Ctx, x: number): void {}
 }
 

@@ -20,7 +20,6 @@ class MethodWithThisNested {
 
 // Rest parameter cannot be named this
 class TestSpreadParameter1 {
-  // @skjs-expect-error 'this' parameters are not yet supported by SKJS
   // @skjs-expect-error A 'this' parameter cannot be a rest parameter
   method(...this: number[]): void {}
 }
