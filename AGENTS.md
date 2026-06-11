@@ -17,6 +17,8 @@ make fmt                               # Format all code (skfmt for .sk, prettie
 make clean-in-docker                   # Clean build artifacts
 ```
 
+The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, the native equivalents work too: `make build`, `make test`, `make check`, or `skargo` directly. For comment-only changes, `make check-in-docker` / `skargo check` is sufficient verification — comments cannot affect behavior, and it is much faster than the full test run.
+
 ## Fast Iteration (Single File + Binary Variants)
 
 Use this loop for checker debugging (much faster than full builds/tests):

@@ -15,6 +15,8 @@ make check-in-docker    # Type-check Skip code without building
 make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 ```
 
+The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, use the native `make test` / `make check` (or `skargo test` / `skargo check`) directly. For comment-only changes, a compilation check (`make check-in-docker` / `skargo check`) is sufficient — comments cannot affect behavior.
+
 ## Critical Rules
 
 **SKJS is a typechecker, not a runtime**:
