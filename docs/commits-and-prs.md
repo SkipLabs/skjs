@@ -6,6 +6,10 @@
 - Make one commit per logical change
 - Bump the semantic version in `Skargo.toml` in every PR (patch for bug fixes, minor for new features or behavior changes, major for breaking changes). Do this as part of the PR, not a separate release commit.
 
+## Commit Ordering
+
+- **Tests before code.** Introduce test cases in a commit _before_ the code change that affects them, annotated for the then-current behavior (`@skjs-expect-error` with the pre-change message, or no annotation if the case is silently accepted). The code commit then only flips the annotations, so its diff demonstrates the behavior change. This is always possible with expect-error tests: "the asserted error doesn't exist yet" just means the pre-change annotation is different or absent, not that the test can't be introduced first.
+
 ## When to Update Documentation
 
 - Update `skjs-rules.md` when adding or removing restrictions/features that differ from TypeScript
