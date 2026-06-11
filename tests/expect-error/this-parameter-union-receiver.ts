@@ -18,10 +18,6 @@ class B {
   }
 }
 function classUnion(s: A | B): number {
-  // FIXME: false positive — a union receiver's shared method should type-check.
-  // The union resolves the method's `this` to the intersection of the branches,
-  // so the receiver check spuriously fails; corrected later in the series.
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return s.m();
 }
 
@@ -45,7 +41,5 @@ interface Square {
   area(): number;
 }
 function shapeUnion(sh: Circle | Square): number {
-  // FIXME: false positive — same union-receiver issue on a discriminated union.
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return sh.area();
 }
