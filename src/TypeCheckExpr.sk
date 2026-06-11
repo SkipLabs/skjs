@@ -2864,17 +2864,30 @@ extension class TypeChecker {
       // same convention the field-access path uses at src/TypeCheckExpr.sk
       // when resolving `.field` on a TPrimValue.
       tfun.thisParam.each(expectedThis -> {
-        actualThis = thisArgOpt match {
-        | Some(t) -> this.autoBoxPrimitiveReceiver(tcenv, t)
-        | None() -> TType::single(TPrimUnit(TVoid(), pos))
-        };
-        this.checkSubType(
-          tcenv,
-          pos,
-          "The 'this' context is not assignable to method's 'this' type",
-          actualThis,
-          expectedThis,
-        )
+        // An implicit class `this` is the type of the object the method was
+        // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which
+        // supplies `thisArgOpt`) inherently satisfies it. Skip the check there:
+        // for a union receiver the method's `this` is the *intersection* of the
+        // branches, and `union <: intersection` would spuriously fail even
+        // though each branch trivially satisfies its own `this`. Only a free /
+        // detached call (receiver `void`) needs the check, to reject
+        // `const g = o.m; g()`. An explicit `this: T` is always checked — it may
+        // differ from the receiver.
+        if (tfun.thisParamImplicit && thisArgOpt.isSome()) {
+          void
+        } else {
+          actualThis = thisArgOpt match {
+          | Some(t) -> this.autoBoxPrimitiveReceiver(tcenv, t)
+          | None() -> TType::single(TPrimUnit(TVoid(), pos))
+          };
+          this.checkSubType(
+            tcenv,
+            pos,
+            "The 'this' context is not assignable to method's 'this' type",
+            actualThis,
+            expectedThis,
+          )
+        }
       });
 
       version = tcenv.subst.version;
