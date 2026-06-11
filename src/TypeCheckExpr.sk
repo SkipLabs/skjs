@@ -2468,7 +2468,11 @@ extension class TypeChecker {
   // `'a'`, `true`, `1n`, `-1`, `+1`), or None for anything else. Pure (no
   // diagnostics) and non-recursive. Single source of truth for direct
   // literals, shared by freshLiteralType and asConstExpr's leaf cases so the
-  // two cannot drift.
+  // two cannot drift. Exception: unary expressions never reach here from
+  // asConstExpr (its recursive arithmetic arm catches them first), and the
+  // two intentionally disagree on `+1n` -- asConstExpr accepts it
+  // (pre-existing), while this returns None so `+1n` is not a fresh literal
+  // (issue #671).
   fun directLiteralSType(e: Expr): ?SType {
     pos = e.pos;
     e.value match {
@@ -2478,8 +2482,9 @@ extension class TypeChecker {
     | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      // Unary '+' applies only to numbers: '+' on a bigint is a runtime
-      // TypeError (TS2736 in tsc), so only '-' preserves bigint literals.
+      // '+' only preserves number literals here: unary '+' on a bigint is a
+      // runtime TypeError (TS2736 in tsc), so only '-' preserves bigint
+      // literals.
       kindValue = (nuop, subE.value) match {
       | (_, Number(n)) -> Some((TNum(), n))
       | (UOMinus(), BigInt(n)) -> Some((TBigInt(), n))
@@ -2612,9 +2617,10 @@ extension class TypeChecker {
         | _ -> None()
         }
       )
-    // Direct literals (and unary +/- over them, when not caught by the
-    // recursive arithmetic arm above) share the same single source of truth
-    // as freshLiteralType.
+    // Direct literals share the same single source of truth as
+    // freshLiteralType. Unary +/- never reaches here: the recursive
+    // arithmetic arm above catches it first (and, unlike directLiteralSType,
+    // accepts '+' on a bigint -- pre-existing, see issue #671).
     | _ -> this.directLiteralSType(e)
     }
   }
