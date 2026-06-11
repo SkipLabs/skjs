@@ -1,0 +1,427 @@
+/***************************************************************************/
+/* Serialization of typed CFGs to JSON and DOT (Graphviz). */
+/***************************************************************************/
+
+module SKJS;
+
+/***************************************************************************/
+/* Compact source-like rendering of AST fragments for CFG output. */
+/***************************************************************************/
+
+fun renderBindKind(kind: BindKind): String {
+  kind match {
+  | BKLet() -> "let"
+  | BKConst() -> "const"
+  | BKVar() -> "var"
+  }
+}
+
+fun renderBinop(op: BinaryOperator): String {
+  op match {
+  | BOLessThan() -> "<"
+  | BOLessThanOrEqual() -> "<="
+  | BOGreaterThan() -> ">"
+  | BOGreaterThanOrEqual() -> ">="
+  | BOAssignment() -> "="
+  | BOOpAssignment(o) -> renderBinop(o) + "="
+  | BOStrictEquality() -> "==="
+  | BOStrictInequality() -> "!=="
+  | BOExponentiation() -> "**"
+  | BOMultiplication() -> "*"
+  | BODivision() -> "/"
+  | BORemainder() -> "%"
+  | BOAddition() -> "+"
+  | BOSubtraction() -> "-"
+  | BOLeftShift() -> "<<"
+  | BOSignedRightShift() -> ">>"
+  | BOZeroFilledRightShift() -> ">>>"
+  | BOBitwiseAnd() -> "&"
+  | BOBitwiseXor() -> "^"
+  | BOBitwiseOr() -> "|"
+  | BONullishCoalescing() -> "??"
+  | BOLogicalAnd() -> "&&"
+  | BOLogicalOr() -> "||"
+  }
+}
+
+fun renderUnop(op: UnaryOperator): String {
+  op match {
+  | UOExclamationMark() -> "!"
+  | o @ NumericUnaryOperator() -> o.toString()
+  }
+}
+
+fun renderPostOp(op: PostOperator): String {
+  op match {
+  | PODecr() -> "--"
+  | POIncr() -> "++"
+  | POExcl() -> "!"
+  }
+}
+
+fun renderPattern(pat: Pattern): String {
+  pat.value match {
+  | PVar(name) -> name.value
+  | PArray(elements, rest) ->
+    parts = mutable Vector[];
+    for (elemOpt in elements) {
+      elemOpt match {
+      | None() -> parts.push("")
+      | Some((p, defaultOpt)) ->
+        str = renderPattern(p);
+        defaultOpt match {
+        | Some(d) -> parts.push(`${str} = ${renderExpr(d)}`)
+        | None() -> parts.push(str)
+        }
+      }
+    };
+    rest match {
+    | Some(r) -> parts.push(`...${r.value}`)
+    | None() -> void
+    };
+    `[${", ".join(parts)}]`
+  | PObject{fields, rest} ->
+    parts = mutable Vector[];
+    for (field in fields) {
+      (name, p, defaultOpt) = field;
+      str = `${name.value}: ${renderPattern(p)}`;
+      defaultOpt match {
+      | Some(d) -> parts.push(`${str} = ${renderExpr(d)}`)
+      | None() -> parts.push(str)
+      }
+    };
+    rest match {
+    | Some(r) -> parts.push(`...${r.value}`)
+    | None() -> void
+    };
+    `{${", ".join(parts)}}`
+  }
+}
+
+fun renderExprList(exprs: Array<Expr>): String {
+  ", ".join(exprs.map(renderExpr))
+}
+
+fun renderField(field: Field): String {
+  field match {
+  | FDNormal(name, expr) -> `${name.value}: ${renderExpr(expr)}`
+  | FDComputed(key, value) -> `[${renderExpr(key)}]: ${renderExpr(value)}`
+  | FDSpread(expr) -> `...${renderExpr(expr)}`
+  | m @ FDMethod _ -> `${m.name.getName()}() {...}`
+  }
+}
+
+fun renderExpr(e: Expr): String {
+  e.value match {
+  | Number(s) -> s
+  | BigInt(s) -> s
+  | Var(name) -> name.value
+  | Spread(e1) -> `...${renderExpr(e1)}`
+  | EString(s) -> JSON.String(s).encode()
+  | TypeOf(e1) -> `typeof ${renderExpr(e1)}`
+  | Await(e1) -> `await ${renderExpr(e1)}`
+  | Dot(kind, e1, name) ->
+    dot = kind match {
+    | NormalDot() -> "."
+    | OptionalDot() -> "?."
+    };
+    `${renderExpr(e1)}${dot}${name.value}`
+  | Get(e1, e2) -> `${renderExpr(e1)}[${renderExpr(e2)}]`
+  | New(e1, _tys, args) -> `new ${renderExpr(e1)}(${renderExprList(args)})`
+  | Unop(op, e1) -> `${renderUnop(op)}${renderExpr(e1)}`
+  | PostOp(op, e1) -> `${renderExpr(e1)}${renderPostOp(op)}`
+  | Binop(op, e1, e2) ->
+    `(${renderExpr(e1)} ${renderBinop(op)} ${renderExpr(e2)})`
+  | Call(f, _tys, args) -> `${renderExpr(f)}(${renderExprList(args)})`
+  | Params(params) ->
+    `(${", ".join(
+      params.map(p -> {
+        (name, _ty) = p;
+        name.value
+      }),
+    )})`
+  | Object(fields) -> `{${", ".join(fields.map(renderField))}}`
+  | Closure(params, _retTy, body) ->
+    paramStr = ", ".join(
+      params.map(p -> {
+        (name, _ty) = p;
+        name.value
+      }),
+    );
+    body match {
+    | CBExpr(e1) -> `(${paramStr}) => ${renderExpr(e1)}`
+    | CBBlock(_) -> `(${paramStr}) => {...}`
+    }
+  | EArray(elems) -> `[${renderExprList(elems)}]`
+  | EIf(cond, then, else_) ->
+    `(${renderExpr(cond)} ? ${renderExpr(then)} : ${renderExpr(else_)})`
+  | In(e1, e2) -> `(${renderExpr(e1)} in ${renderExpr(e2)})`
+  | InstanceOf(e1, e2) -> `(${renderExpr(e1)} instanceof ${renderExpr(e2)})`
+  | As(e1, _ty) -> `(${renderExpr(e1)} as _)`
+  | AsConst(e1) -> `(${renderExpr(e1)} as const)`
+  | Regexp(s) -> s
+  | Async(e1) -> `async ${renderExpr(e1)}`
+  | TemplateLiteral(strings, exprs) ->
+    buf = mutable Vector["`"];
+    for (i in Range(0, strings.size())) {
+      buf.push(strings[i]);
+      if (i < exprs.size()) {
+        buf.push(`\${${renderExpr(exprs[i])}}`)
+      }
+    };
+    buf.push("`");
+    "".join(buf)
+  }
+}
+
+fun renderType(ty: TType): String {
+  prettyPrintType(true, ty)
+}
+
+/***************************************************************************/
+/* JSON serialization. */
+/***************************************************************************/
+
+fun jsonStr(s: String): String {
+  JSON.String(s).encode()
+}
+
+fun jsonObj(fields: Array<(String, String)>): String {
+  `{${", ".join(fields.map(f -> `${jsonStr(f.i0)}: ${f.i1}`))}}`
+}
+
+fun jsonArr(items: readonly Sequence<String>): String {
+  `[${", ".join(items)}]`
+}
+
+fun typedExprJson(te: TypedExpr): String {
+  jsonObj(
+    Array[
+      ("expr", jsonStr(renderExpr(te.expr))),
+      ("type", jsonStr(renderType(te.ty))),
+    ],
+  )
+}
+
+fun instrJson(instr: CFGInstr): String {
+  instr match {
+  | CFGIBind(kind, pat, ty, initOpt) ->
+    fields = mutable Vector[
+      ("kind", jsonStr("bind")),
+      ("bindKind", jsonStr(renderBindKind(kind))),
+      ("pattern", jsonStr(renderPattern(pat))),
+      ("type", jsonStr(renderType(ty))),
+    ];
+    initOpt match {
+    | Some(init) -> fields.push(("init", typedExprJson(init)))
+    | None() -> void
+    };
+    jsonObj(fields.toArray())
+  | CFGIAssign(target, value) ->
+    jsonObj(
+      Array[
+        ("kind", jsonStr("assign")),
+        ("target", typedExprJson(target)),
+        ("value", typedExprJson(value)),
+      ],
+    )
+  | CFGIExpr(te) ->
+    jsonObj(Array[("kind", jsonStr("expr")), ("expr", typedExprJson(te))])
+  }
+}
+
+fun terminatorJson(term: BBTerminator): String {
+  term match {
+  | CFGTJump(target) ->
+    jsonObj(Array[("kind", jsonStr("jump")), ("target", target.id.toString())])
+  | CFGTBranch(cond, thenTarget, elseTarget) ->
+    jsonObj(
+      Array[
+        ("kind", jsonStr("branch")),
+        ("cond", typedExprJson(cond)),
+        ("then", thenTarget.id.toString()),
+        ("else", elseTarget.id.toString()),
+      ],
+    )
+  | CFGTSwitch(scrutinee, branches, default_) ->
+    cases = branches.map(branch -> {
+      (case, target) = branch;
+      caseStr = case match {
+      | Case(e) -> renderExpr(e)
+      | Default() -> "default"
+      };
+      jsonObj(
+        Array[("case", jsonStr(caseStr)), ("target", target.id.toString())],
+      )
+    });
+    jsonObj(
+      Array[
+        ("kind", jsonStr("switch")),
+        ("scrutinee", typedExprJson(scrutinee)),
+        ("cases", jsonArr(cases)),
+        ("default", default_.id.toString()),
+      ],
+    )
+  | CFGTReturn(valueOpt) ->
+    fields = mutable Vector[("kind", jsonStr("return"))];
+    valueOpt match {
+    | Some(value) -> fields.push(("value", typedExprJson(value)))
+    | None() -> void
+    };
+    jsonObj(fields.toArray())
+  | CFGTThrow(value) ->
+    jsonObj(Array[("kind", jsonStr("throw")), ("value", typedExprJson(value))])
+  | CFGTUnreachable() -> jsonObj(Array[("kind", jsonStr("unreachable"))])
+  }
+}
+
+fun blockJson(block: CFGBlock): String {
+  fields = mutable Vector[
+    ("id", block.id.id.toString()),
+    ("instrs", jsonArr(block.instrs.map(instrJson))),
+    ("terminator", terminatorJson(block.terminator)),
+  ];
+  block.exnTarget match {
+  | Some(target) -> fields.push(("exnTarget", target.id.toString()))
+  | None() -> void
+  };
+  jsonObj(fields.toArray())
+}
+
+fun cfgJson(cfg: CFG): String {
+  blocks = mutable Vector[];
+  for (block in cfg.blocks.values()) {
+    blocks.push(blockJson(block))
+  };
+  jsonObj(
+    Array[
+      ("name", jsonStr(cfg.name)),
+      (
+        "params",
+        jsonArr(
+          cfg.params.map(p ->
+            jsonObj(
+              Array[
+                ("name", jsonStr(p.i0.value)),
+                ("type", jsonStr(renderType(p.i1))),
+              ],
+            )
+          ),
+        ),
+      ),
+      ("retType", jsonStr(renderType(cfg.retType))),
+      ("entry", cfg.entry.id.toString()),
+      ("normalExit", cfg.normalExit.id.toString()),
+      ("exnExit", cfg.exnExit.id.toString()),
+      ("blocks", jsonArr(blocks)),
+    ],
+  )
+}
+
+fun serializeCFGsJson(cfgs: SortedMap<CGNode, CFG>): String {
+  entries = mutable Vector[];
+  for (cfg in cfgs.values()) {
+    entries.push(cfgJson(cfg))
+  };
+  jsonArr(entries) + "\n"
+}
+
+/***************************************************************************/
+/* DOT (Graphviz) serialization. */
+/***************************************************************************/
+
+fun dotQuote(s: String): String {
+  `"${s.replace("\\", "\\\\").replace("\"", "\\\"")}"`
+}
+
+fun instrText(instr: CFGInstr): String {
+  instr match {
+  | CFGIBind(kind, pat, ty, initOpt) ->
+    decl = `${renderBindKind(kind)} ${renderPattern(pat)}: ${renderType(ty)}`;
+    initOpt match {
+    | Some(init) -> `${decl} = ${renderExpr(init.expr)}`
+    | None() -> decl
+    }
+  | CFGIAssign(target, value) ->
+    `${renderExpr(target.expr)} = ${renderExpr(value.expr)}`
+  | CFGIExpr(te) -> `${renderExpr(te.expr)}: ${renderType(te.ty)}`
+  }
+}
+
+fun terminatorText(term: BBTerminator): String {
+  term match {
+  | CFGTJump(target) -> `jump ${target}`
+  | CFGTBranch(cond, _, _) -> `if (${renderExpr(cond.expr)})`
+  | CFGTSwitch(scrutinee, _, _) -> `switch (${renderExpr(scrutinee.expr)})`
+  | CFGTReturn(valueOpt) ->
+    valueOpt match {
+    | Some(value) -> `return ${renderExpr(value.expr)}`
+    | None() -> "return"
+    }
+  | CFGTThrow(value) -> `throw ${renderExpr(value.expr)}`
+  | CFGTUnreachable() -> "unreachable"
+  }
+}
+
+fun cfgToDot(cfg: CFG): String {
+  lines = mutable Vector[];
+  lines.push(`digraph ${dotQuote(cfg.name)} {`);
+  lines.push("  node [shape=box, fontname=\"monospace\"];");
+  for (block in cfg.blocks.values()) {
+    id = block.id;
+    if (id == cfg.normalExit) {
+      lines.push(`  ${id} [label="exit", shape=doublecircle];`)
+    } else if (id == cfg.exnExit) {
+      lines.push(`  ${id} [label="exn", shape=doublecircle];`)
+    } else {
+      labelLines = mutable Vector[`${id}:`];
+      for (instr in block.instrs) {
+        labelLines.push(instrText(instr))
+      };
+      labelLines.push(terminatorText(block.terminator));
+      // \l left-justifies each line in Graphviz
+      label = "\\l".join(labelLines) + "\\l";
+      lines.push(`  ${id} [label=${dotQuote(label)}];`)
+    };
+    block.terminator match {
+    | CFGTJump(target) -> lines.push(`  ${id} -> ${target};`)
+    | CFGTBranch(_, thenTarget, elseTarget) ->
+      lines.push(`  ${id} -> ${thenTarget} [label="true"];`);
+      lines.push(`  ${id} -> ${elseTarget} [label="false"];`)
+    | CFGTSwitch(_, branches, default_) ->
+      for (branch in branches) {
+        (case, target) = branch;
+        caseLabel = case match {
+        | Case(e) -> renderExpr(e)
+        | Default() -> "default"
+        };
+        lines.push(`  ${id} -> ${target} [label=${dotQuote(caseLabel)}];`)
+      };
+      lines.push(`  ${id} -> ${default_} [label="default"];`)
+    | CFGTReturn _ -> lines.push(`  ${id} -> ${cfg.normalExit};`)
+    | CFGTThrow _ ->
+      throwTarget = block.exnTarget.default(cfg.exnExit);
+      lines.push(`  ${id} -> ${throwTarget};`)
+    | CFGTUnreachable() -> void
+    };
+    block.exnTarget match {
+    | Some(target) ->
+      if (!(block.terminator is CFGTThrow _)) {
+        lines.push(`  ${id} -> ${target} [label="exn", style=dashed];`)
+      }
+    | None() -> void
+    }
+  };
+  lines.push("}");
+  "\n".join(lines) + "\n"
+}
+
+fun serializeCFGsDot(cfgs: SortedMap<CGNode, CFG>): String {
+  graphs = mutable Vector[];
+  for (cfg in cfgs.values()) {
+    graphs.push(cfgToDot(cfg))
+  };
+  "\n".join(graphs)
+}
+
+module end;
