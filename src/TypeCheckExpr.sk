@@ -4345,6 +4345,15 @@ extension class TypeChecker {
             SKJSCode(2075),
           )
         }
+      // An implicit class `this` is the type of the object the method was
+      // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
+      // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
+      // receiver the method's `this` is the *intersection* of the branches, and
+      // `union <: intersection` would spuriously fail even though each branch
+      // trivially satisfies its own `this`. Only a free/detached call (receiver
+      // `void`) needs the check, to reject `const g = o.m; g()`.
+      | ImplicitClass _ if (thisArgOpt.isSome()) -> void
+      // Explicit `this: T`, or a detached call on an implicit this.
       | tp ->
         expectedThis = tp.tyOpt().fromSome();
         actualThis = thisArgOpt match {
