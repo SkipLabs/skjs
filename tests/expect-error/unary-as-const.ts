@@ -22,9 +22,9 @@ const config: {
 
 // Unary plus on a bigint under 'as const': tsc rejects '+' on a bigint with
 // TS2736 in every context, including const assertions (where it adds TS1355).
-// FIXME: SKJS currently accepts and keeps the literal.
 declare function takeBigLiteral(x: 100n): void;
 function plusBigAsConst(): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
   takeBigLiteral(+100n as const);
 }
 

@@ -1724,6 +1724,7 @@ extension class TypeChecker {
         TType::single(TPrimValue::boolean(pos))
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
+        plusOnBigInt = false;
         res = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), stypesOpt ->
           stypesOpt match {
           | None() ->
@@ -1733,9 +1734,17 @@ extension class TypeChecker {
             Some(
               stypes.mapSTypes(stype ->
                 stype match {
-                | TPrimValue(k @ TNum(), _, primPos)
-                | TPrimValue(k @ TBigInt(), _, primPos) ->
+                | TPrimValue(k @ TNum(), _, primPos) ->
                   TPrimValue(k, None(), primPos)
+                | TPrimValue(k @ TBigInt(), _, primPos) ->
+                  // Unary '+' performs ToNumber, which throws on a bigint at
+                  // runtime; '-' and '~' stay valid on bigints.
+                  if (nuop is UOPlus()) {
+                    !plusOnBigInt = true;
+                    stype
+                  } else {
+                    TPrimValue(k, None(), primPos)
+                  }
                 | _ ->
                   !invalid = true;
                   stype
@@ -1744,6 +1753,15 @@ extension class TypeChecker {
             )
           }
         );
+        if (plusOnBigInt) {
+          fatalError(
+            Array[
+              (pos, "Operator '+' cannot be applied to type 'bigint'"),
+              (subExpr.pos, `This has type ${this.ppType(tcenv, ty)}`),
+            ],
+            TSCode(2736),
+          )
+        };
         if (invalid) {
           fatalError(
             Array[
@@ -2387,7 +2405,27 @@ extension class TypeChecker {
         | TPrimValue(k @ TBigInt(), valuesOpt, _) ->
           Some(
             nuop match {
-            | UOPlus() -> stype
+            | UOPlus() ->
+              // Unary '+' performs ToNumber, which throws on a bigint at
+              // runtime; tsc rejects it with TS2736 in every context,
+              // including const assertions.
+              if (k is TBigInt()) {
+                fatalError(
+                  Array[
+                    (pos, "Operator '+' cannot be applied to type 'bigint'"),
+                    (
+                      subE.pos,
+                      `This has type ${this.ppType(
+                        tcenv,
+                        TType::single(stype),
+                      )}`,
+                    ),
+                  ],
+                  TSCode(2736),
+                )
+              } else {
+                stype
+              }
             | UOMinus() ->
               valuesOpt.flatMap(v -> v.singleElt()) match {
               | None() ->
