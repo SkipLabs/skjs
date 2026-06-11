@@ -1413,7 +1413,12 @@ extension class TType {
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
     res = TType::isSub_(subst, tenv, u1, u2);
-    if (res is STOk()) {
+    if (res is STOk() && !subst.transferMode) {
+      // Transfer-mode successes may rely on marker waivers; caching them
+      // would let a later PLAIN check of the same pair reuse the waived
+      // verdict. Normal-mode entries are safe in both modes (waivers only
+      // turn failures into successes, so transfer-mode subtyping is a
+      // strict superset of normal-mode).
       subst.!seenSub = subst.seenSub.set(pair)
     };
     res
@@ -1426,8 +1431,12 @@ extension class TType {
     u2: TType,
   ): STResult<TType> {
     if (u2.isTop()) return STOk();
-    if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
-    !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
+    // The coinductive hypothesis set is keyed by transfer mode as well:
+    // an assumption admitted during a transfer check must not discharge a
+    // later plain check of the same pair (and vice versa).
+    seenSubKey = (subst.version, subst.transferMode, u1, u2);
+    if (tenv.seenSub.contains(seenSubKey)) return STOk();
+    !tenv.seenSub = tenv.seenSub.set(seenSubKey);
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {
