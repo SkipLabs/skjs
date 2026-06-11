@@ -1000,6 +1000,59 @@ extension class TFields {
 }
 
 extension class STypes {
+  // A primitive value also inhabits its wrapper class (e.g. a string has
+  // String.prototype, including `length`), so it can satisfy an object member of
+  // the right-hand union even though the two have different tags. Union members
+  // are otherwise matched by tag, which never relates a primitive to an object.
+  // Returns true if `prim`'s wrapper class is a subtype of some object member of
+  // `stypes2`. Growth from the successful comparison is kept; failed attempts
+  // are rolled back.
+  private static fun primSatisfiesObject(
+    subst: mutable Subst,
+    tenv: TEnv,
+    prim: TPrimValue,
+    stypes2: STypes,
+  ): Bool {
+    wrapper = TType::inst(prim.asClassName(), TArgs(Array[]));
+    for (sty2 in stypes2.values()) {
+      sty2 match {
+      | obj2 @ TObject _ ->
+        // Only bridge to an object type that actually has members.
+        //
+        // skjs represents both `object` and `{}` as an empty object, with no
+        // brand to tell them apart, even though they differ on primitives: in
+        // TypeScript `string <: {}` holds (any non-nullish value) but
+        // `string <: object` does not (`object` means "non-primitive"). The
+        // bridge's `isSub(wrapper, obj2)` is vacuously true for an empty obj2
+        // (width subtyping: the wrapper trivially has the zero members an empty
+        // object requires), so bridging to an empty object would make
+        // `string <: object` hold -- unsound. Skipping empty objects keeps that
+        // exclusion (correct for `object`) at the cost of leaving `string <: {}`
+        // unsatisfied (incomplete, but unchanged from before the bridge). The
+        // clean fix is to give `object` a distinct, non-primitive representation
+        // so the bridge can apply uniformly.
+        hasMembers = for (tf in obj2.getAllFields()) {
+          if (!tf.isEmpty()) break true
+        } else {
+          false
+        };
+        if (hasMembers) {
+          saved = subst.save();
+          if (
+            TType::isSub(subst, tenv, wrapper, TType::single(obj2)) is STOk()
+          ) {
+            break true
+          } else {
+            subst.restore(saved)
+          }
+        }
+      | _ -> void
+      }
+    } else {
+      false
+    }
+  }
+
   static fun isSub(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1026,9 +1079,31 @@ extension class STypes {
         | _ -> internal_error("Internal error")
         } match {
         | STOk() -> Success(void)
-        | err @ STErrorOnSTypeBase _ -> Failure(err)
+        | err @ STErrorOnSTypeBase _ ->
+          // The same-tag member did not match, but a primitive can still
+          // satisfy an object member of the union via its wrapper class.
+          sty1 match {
+          | prim @ TPrimValue _ ->
+            if (static::primSatisfiesObject(subst, tenv, prim, stypes2)) {
+              Success(void)
+            } else {
+              Failure(err)
+            }
+          | _ -> Failure(err)
+          }
         }
-      | None() -> Failure(STTooManySType(sty1, stypes2))
+      | None() ->
+        // No same-tag member on the right. A primitive may still satisfy an
+        // object member via its wrapper class.
+        sty1 match {
+        | prim @ TPrimValue _ ->
+          if (static::primSatisfiesObject(subst, tenv, prim, stypes2)) {
+            Success(void)
+          } else {
+            Failure(STTooManySType(sty1, stypes2))
+          }
+        | _ -> Failure(STTooManySType(sty1, stypes2))
+        }
       }
     ) match {
     | Success(void) -> STOk()
