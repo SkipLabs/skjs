@@ -51,6 +51,21 @@ function unaryPlusElements(): void {
   const ones: Array<1> = [+1];
 }
 
+// Unary minus on a bigint stays precise: '-1n' is a valid literal type.
+declare function takeNegBig(xs: Array<-1n>): void;
+function unaryMinusBigintElement(): void {
+  takeNegBig([-1n]);
+}
+
+// Unary '+' on a bigint is a runtime TypeError, rejected at the operator
+// level (TS2736) before element freshness is even consulted (issue #671).
+declare function takeBig(xs: Array<1n>): void;
+function unaryPlusBigintElement(): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  // @skjs-expect-error-line2 This has type '1n'
+  takeBig([+1n]);
+}
+
 // A mismatched string literal is still rejected.
 function mismatchedStringElement(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
