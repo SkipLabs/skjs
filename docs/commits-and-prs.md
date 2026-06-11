@@ -3,7 +3,7 @@
 ## Commit Requirements
 
 - Each commit must pass formatting (`make fmt`) and tests (`make test-in-docker`)
-- Make one commit per logical change
+- Make one commit per logical change — never two concerns in one commit, even when they feel related. Natural seams: fix vs. feature, refactor vs. behavior change, infrastructure vs. consumer. An "and", "also", or ";" in the commit subject is a red flag. Before committing, ask: could a reviewer want to approve one half and reject the other? If yes, split.
 - Bump the semantic version in `Skargo.toml` in every PR (patch for bug fixes, minor for new features or behavior changes, major for breaking changes). Do this as part of the PR, not a separate release commit.
 
 ## Commit Ordering
