@@ -30,3 +30,17 @@ function andValueWiderThanTsc(s: string, b: number): "" | number {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s && b;
 }
+
+// FIXME: same divergence for bigint: the only falsy bigint is `0n`, so tsc
+// types `bi && s` as `0n | string`, while SKJS keeps the whole `bigint` on the
+// falsy side.
+function andValueBigint(bi: bigint, s: string): 0n | string {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return bi && s;
+}
+
+// FIXME: same divergence for number: tsc types `n && s` as `0 | string`.
+function andValueNumberFalsy(n: number, s: string): 0 | string {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return n && s;
+}
