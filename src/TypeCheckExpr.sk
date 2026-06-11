@@ -1895,9 +1895,14 @@ extension class TypeChecker {
         // Value-returning per JavaScript: when the right operand is not taken,
         // the result is the left operand's non-continuation part — `a`'s falsy
         // part for `&&` (continuationTarget true) and truthy part for `||`
-        // (continuationTarget false). Boolean operands normalize back to
+        // (continuationTarget false), with value precision (`s && b` is
+        // `"" | typeof b`, as in tsc). Boolean operands normalize back to
         // `boolean`.
-        e1Part = ty1.truthinessPart(tcenv.subst, this, !continuationTarget);
+        e1Part = ty1.truthinessValuePart(
+          tcenv.subst,
+          this,
+          !continuationTarget,
+        );
         TType::union(tcenv.subst, this, e1Part, ty2)
 
       | BOLessThan()
