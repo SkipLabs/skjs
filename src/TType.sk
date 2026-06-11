@@ -316,13 +316,29 @@ class TType private {
   }
 
   // The sub-type whose values are truthy (`target == true`) or falsy
-  // (`target == false`). Used to narrow conditions and to compute the
-  // value-returning result of `&&`/`||` (#654).
+  // (`target == false`), with narrowing precision: used to narrow conditions
+  // (#654).
   fun truthinessPart(subst: mutable Subst, tenv: TEnv, target: Bool): TType {
+    this.residuePart(subst, tenv, stype -> stype.truthinessResidue(target))
+  }
+
+  // Same, with value precision (full string/bigint narrow to `""`/`0n` on the
+  // falsy side): used for the value-returning result of `&&`/`||` (#654).
+  fun truthinessValuePart(
+    subst: mutable Subst,
+    tenv: TEnv,
+    target: Bool,
+  ): TType {
+    this.residuePart(subst, tenv, stype -> stype.truthinessValueResidue(target))
+  }
+
+  private fun residuePart(
+    subst: mutable Subst,
+    tenv: TEnv,
+    residue: SType -> ?SType,
+  ): TType {
     this.mapSTypes(subst, tenv, Some(Covariant()), stypesOpt ->
-      stypesOpt.map(stypes ->
-        stypes.filterMap(stype -> stype.truthinessResidue(target))
-      )
+      stypesOpt.map(stypes -> stypes.filterMap(residue))
     )
   }
 
@@ -1251,22 +1267,17 @@ base class SType private (
   }
 
   // The part of this single type whose values are truthy (`target == true`) or
-  // falsy (`target == false`); None if there is no such part. Notable cases:
+  // falsy (`target == false`), as used for CONTROL-FLOW NARROWING; None if
+  // there is no such part. Notable cases:
   //   - void is non-observable, so it is never narrowed: it passes through
   //     unchanged for either target rather than being treated as falsy.
-  //   - full string/number/bigint over-approximate to themselves on BOTH sides:
-  //     the truthy side cannot represent "non-empty"/"non-zero", and the falsy
-  //     side keeps the whole type rather than narrowing to `""`/`0`/`0n`. This
-  //     one residue is shared by control-flow narrowing and the value of
-  //     `&&`/`||`, which TypeScript treats differently:
-  //       * narrowing — `if (s: string) {} else { s }` keeps `s: string` in
-  //         tsc, so over-approximating MATCHES tsc here (narrowing the falsy
-  //         side to `""` would be *more* precise than tsc; we deliberately
-  //         don't, to track tsc's narrowing).
-  //       * `&&`/`||` value — tsc narrows the falsy operand, so `s && b` is
-  //         `"" | typeof b` in tsc but `string | typeof b` here. Ours is wider,
-  //         hence sound, but rejects some assignments tsc accepts. This known
-  //         divergence is documented by the `truthiness-typescript` and-or test.
+  //   - full string/number/bigint keep themselves on BOTH sides: the truthy
+  //     side cannot represent "non-empty"/"non-zero", and the falsy side
+  //     deliberately stays wide to track tsc's narrowing — tsc keeps
+  //     `s: string` in `if (s) {} else { s }`, and narrowing it to `""` would
+  //     make SKJS accept programs tsc rejects. The value of `&&`/`||` is
+  //     different (tsc narrows the untaken operand there): see
+  //     `truthinessValueResidue`.
   //   - full boolean narrows to the matching `true`/`false` literal.
   //   - a literal union keeps the literals on the requested side.
   fun truthinessResidue(target: Bool): ?SType {
@@ -1290,6 +1301,25 @@ base class SType private (
       lits
         .filterLiterals(lit -> kind.isFalsy(lit.val) != target)
         .map(l -> TPrimValue(kind, Some(l), pos))
+    }
+  }
+
+  // Like `truthinessResidue`, but for the VALUE an operand contributes to
+  // `a && b` / `a || b` when the other operand is not taken. tsc narrows that
+  // operand precisely, and we match it where this is sound: the only falsy
+  // string is `""` and the only falsy bigint is `0n` (`-0n` is the same
+  // value), so the falsy side of a full string/bigint narrows to that literal
+  // — `s && b` is `"" | typeof b`, as in tsc. Full `number` must keep its
+  // falsy side wide: its falsy values are `0`, `-0` and `NaN`, and `NaN` has
+  // no literal type, so tsc's `0` would be unsound (`NaN && b` evaluates to
+  // `NaN`). All other cases are shared with `truthinessResidue`.
+  fun truthinessValueResidue(target: Bool): ?SType {
+    this match {
+    | TPrimValue(TString(), None(), pos) if (!target) ->
+      Some(TPrimValue::single(TString(), "", pos))
+    | TPrimValue(TBigInt(), None(), pos) if (!target) ->
+      Some(TPrimValue::single(TBigInt(), "0n", pos))
+    | _ -> this.truthinessResidue(target)
     }
   }
 }

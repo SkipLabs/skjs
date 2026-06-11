@@ -1,7 +1,7 @@
 // In "typescript" mode `&&`/`||` largely match tsc: a number left operand is
 // fine (returning the value type), and an always-truthy function reference is
 // rejected (TS2774), in `&&`/`||` just like in a plain condition. The one known
-// gap is the precision of the value type — see `andValueWiderThanTsc` below.
+// gap is a `number` falsy operand — see `andValueNumberFalsy` below.
 
 // Accepted: number left operand (tsc returns number here too).
 function acceptNumberOr(count: number): number {
@@ -15,31 +15,30 @@ function rejectFunctionAnd(fn: () => void, n: number): number {
   return fn && n;
 }
 
-// The over-approximated result type is accepted: `s && b` is `string | number`
-// here (a supertype of tsc's `"" | number`), so the wide annotation type-checks.
+// The precise result type still satisfies a wide annotation: `s && b` is
+// `"" | number`, a subtype of `string | number`.
 function andValueWide(s: string, b: number): string | number {
   return s && b;
 }
 
-// FIXME: known SKJS/tsc divergence. The falsy operand of `&&`/`||` is
-// over-approximated to the whole type (`truthinessResidue` in src/TType.sk), so
-// `s && b` is typed `string | number` here, whereas tsc narrows the falsy side
-// and types it `"" | number`. The wider type is sound — it never accepts
-// unsound code — but rejects this assignment that tsc accepts.
-function andValueWiderThanTsc(s: string, b: number): "" | number {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+// The falsy operand of `&&`/`||` is narrowed to its falsy values where that is
+// precise: the only falsy string is `""`, so `s && b` is `"" | number`,
+// matching tsc.
+function andValuePrecise(s: string, b: number): "" | number {
   return s && b;
 }
 
-// FIXME: same divergence for bigint: the only falsy bigint is `0n`, so tsc
-// types `bi && s` as `0n | string`, while SKJS keeps the whole `bigint` on the
-// falsy side.
+// Same for bigint: the only falsy bigint is `0n`, so `bi && s` is
+// `0n | string`, matching tsc.
 function andValueBigint(bi: bigint, s: string): 0n | string {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return bi && s;
 }
 
-// FIXME: same divergence for number: tsc types `n && s` as `0 | string`.
+// FIXME: known SKJS/tsc divergence. tsc types `n && s` as `0 | string`, but
+// `number`'s falsy values are `0`, `-0` and `NaN`, and `NaN` has no literal
+// type — narrowing to `0` would be unsound (`NaN && s` evaluates to `NaN`), so
+// SKJS keeps the whole `number` on the falsy side and rejects this assignment
+// that tsc accepts.
 function andValueNumberFalsy(n: number, s: string): 0 | string {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return n && s;
