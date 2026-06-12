@@ -90,7 +90,8 @@ function testPromiseIsPromiseLike(p: Promise<number>): PromiseLike<number> {
   return p;
 }
 
-// `await` unwraps any structurally well-shaped thenable, like tsc.
+// `await` unwraps any structurally well-shaped thenable, like tsc and like
+// JavaScript (the runtime calls `then` on whatever it gets).
 async function testAwaitThenable(t: PromiseLike<number>): Promise<number> {
   return await t;
 }
@@ -157,6 +158,9 @@ async function testAsyncRetUnion(): Promise<number> | undefined {
 
 // @ts-expect-error The return type of an async function must be the global Promise<T> type
 async function testAsyncRetThenable(): PromiseLike<number> {
+  // The body is still checked against the annotation; no error here because
+  // `return 0` wraps to Promise<'0'>, which is assignable to
+  // PromiseLike<number> (unlike testAsyncRetNumber's annotation above).
   return 0;
 }
 
