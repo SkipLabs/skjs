@@ -762,14 +762,15 @@ fun testLineNValidation(): void {
   files =
     SKJS.Files::create(context, fs, ".", Array[], Array["./import-stubs"]) |>
     expectFilesSuccess;
-  checker = SKJS.Checker::create{
+  SKJS.writeConfig(
     context,
-    fs,
-    files,
-    errorHandling => SKJS.EHKeepGoing(),
-    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
-    compilerOptions,
-  }.fromSuccess();
+    SKJS.CheckerConfig{
+      compilerOptions,
+      errorHandling => SKJS.EHKeepGoing(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
   tenv = checker.checker;
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};

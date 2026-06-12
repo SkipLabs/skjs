@@ -51,14 +51,15 @@ fun testAffectedFiles(): void {
       Array["./import-stubs"],
     ) |> expectFilesSuccess;
 
-  checker = SKJS.Checker::create{
+  SKJS.writeConfig(
     context,
-    fs,
-    files,
-    errorHandling => SKJS.EHKeepGoing(),
-    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
-    compilerOptions => config.compilerOptions,
-  }.fromSuccess();
+    SKJS.CheckerConfig{
+      compilerOptions => config.compilerOptions,
+      errorHandling => SKJS.EHKeepGoing(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
 
   checked = checker.checkFiles(context);
   callGraph = SKJS.CallGraph::build(context, checked);

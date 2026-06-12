@@ -377,14 +377,15 @@ fun checkFilesWithRoot(
     SKJS.Files::create(context, fs, root, srcFiles, importStubs) |>
     expectFilesSuccess;
 
-  checker = SKJS.Checker::create{
+  SKJS.writeConfig(
     context,
-    fs,
-    files,
-    errorHandling => SKJS.EHKeepGoing(),
-    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
-    compilerOptions,
-  }.fromSuccess();
+    SKJS.CheckerConfig{
+      compilerOptions,
+      errorHandling => SKJS.EHKeepGoing(),
+      errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    },
+  );
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
   checker
     .checkFiles(context)
     .items(context)

@@ -495,6 +495,15 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         return SKStore.CStop(None())
       | Success(checker) -> checker
       };
+      writeConfig(
+        context,
+        CheckerConfig{
+          compilerOptions => checkerCompilerOptions,
+          errorHandling,
+          errorDetailConfig,
+          verbose,
+        },
+      );
 
       initDir = getInitDir(context);
       _ = applyOrReuseMap(
@@ -504,15 +513,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          Checker::create{
-            context,
-            fs,
-            files,
-            errorHandling,
-            errorDetailConfig,
-            compilerOptions => checkerCompilerOptions,
-            verbose,
-          } match {
+          Checker::create{context, fs, files} match {
           | Failure(errs) ->
             _ = applyOrReuseMap(
               initDir,
@@ -691,11 +692,8 @@ class Checker private {
     context: mutable SKStore.Context,
     fs: Fs,
     files: Files,
-    errorHandling: ErrorHandling,
-    errorDetailConfig: ErrorDetailConfig,
-    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
-    verbose: Bool = false,
   }: Result<this, Array<ErrorMessage>> {
+    config = getConfig(context);
     newLinesMap = NewLinesMap::create(context, files);
     (
       parsedAndSymbolsFiles,
@@ -706,7 +704,7 @@ class Checker private {
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
-    ) = files.parse(context, newLinesMap, errorHandling) match {
+    ) = files.parse(context, newLinesMap, config.errorHandling) match {
     | Success(r) -> r
     | Failure(errs) -> return Failure(errs)
     };
@@ -718,19 +716,22 @@ class Checker private {
       builtinsFileName,
       files.rootMap,
       parsedFiles,
-      compilerOptions,
     );
+    // Config fields (errorHandling, truthiness, verbose) are set here for
+    // eager create-time use, but persisted-dir closures must not rely on
+    // these captured values: they re-read the config (withConfig) so that
+    // CLI changes reach --data runs. See Config.sk.
     checker = TypeChecker{
       defMap,
-      errorHandling,
+      errorHandling => config.errorHandling,
       funDefSigMap,
       funDefBodyMap,
       classBodyMap,
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
-      verbose,
-      truthiness => compilerOptions.truthiness,
+      verbose => config.verbose,
+      truthiness => config.compilerOptions.truthiness,
     };
     Success(
       static{
@@ -745,7 +746,7 @@ class Checker private {
         classFieldMap,
         typeDefBodyMap,
         methodBodyMap,
-        errorDetailConfig,
+        errorDetailConfig => config.errorDetailConfig,
       },
     )
   }
@@ -759,8 +760,9 @@ class Checker private {
       context,
       SKStore.DirName::create("/defs/"),
       (context, _self, key) ~> {
+        tc = this.checker.withConfig(getConfig(context));
         results = try {
-          Success(this.checker.checkDef(context, key.def).chill())
+          Success(tc.checkDef(context, key.def).chill())
         } catch {
         | e -> Failure(e)
         };
@@ -776,7 +778,8 @@ class Checker private {
         parsedFile = valueIter.first;
         parsedFile.value match {
         | PROk(defs) ->
-          results = this.checker.check(context, checkDir, fileName, defs);
+          tc = this.checker.withConfig(getConfig(context));
+          results = tc.check(context, checkDir, fileName, defs);
           fileDefErrors = this.checker.defMap.getNamingErrors(
             context,
             fileName,
@@ -813,7 +816,9 @@ class Checker private {
       this.files.rootMap,
       this.newLinesMap,
       this.symbolsMap,
-      this.errorDetailConfig,
+      // Tracked read, not the field captured at init time: this runs inside
+      // persisted output-dir closures (see Config.sk)
+      getConfig(context).errorDetailConfig,
     )
   }
 }

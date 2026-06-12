@@ -166,11 +166,12 @@ class Files(
       ParsedResultAndSymbolsFile::type,
       context,
       parsesDirName,
-      (_context, writer, fileName, contentIter) ~> {
+      (context, writer, fileName, contentIter) ~> {
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content);
         parser = mutable Parser(lexer);
-        parsingResult = errorHandling match {
+        // Tracked read: error handling is config, not capturable state
+        parsingResult = getConfig(context).errorHandling match {
         | EHBacktrace() -> PROk(parser.toplevelDefs())
         | EHKeepGoing() ->
           try {
