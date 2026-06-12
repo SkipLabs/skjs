@@ -93,8 +93,9 @@ base class TEnv{
   instantiateAt: ?PosRange = None(),
 
   // Mirrors the `--verbose` CLI flag. Read by the pretty-printer to opt out
-  // of hiding internal-only details (currently the synthetic index name on
-  // object literals; see kSyntheticIndexName and TypePp::fields).
+  // of hiding internal-only details: the synthetic index name on object
+  // literals (see kSyntheticIndexName and TypePp::fields) and the qualified
+  // type-parameter id, name:counter:file-hash (see TypePp::tparamName).
   verbose: Bool = false,
 } {
   // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages

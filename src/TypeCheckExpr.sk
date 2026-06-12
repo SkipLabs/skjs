@@ -1839,13 +1839,19 @@ extension class TypeChecker {
                   TPrimValue(k, None(), primPos)
                 | TPrimValue(k @ TBigInt(), _, primPos) ->
                   // Unary '+' performs ToNumber, which throws on a bigint at
-                  // runtime; '-' and '~' stay valid on bigints.
+                  // runtime; '-' and '~' stay valid on bigints. Widened even
+                  // in the error case: the headline below prints the widened
+                  // operand type, matching tsc's TS2736 template.
                   if (nuop is UOPlus()) {
                     !plusOnBigInt = true;
-                    stype
-                  } else {
-                    TPrimValue(k, None(), primPos)
-                  }
+                  };
+                  TPrimValue(k, None(), primPos)
+                | TPrimValue(k, Some _, primPos) ->
+                  // Invalid for the operator, but still widened so the
+                  // TS2736 headline below names base types like tsc
+                  // ('a' | bigint reads 'bigint | string').
+                  !invalid = true;
+                  TPrimValue(k, None(), primPos)
                 | _ ->
                   !invalid = true;
                   stype
@@ -1855,9 +1861,18 @@ extension class TypeChecker {
           }
         );
         if (plusOnBigInt) {
+          // tsc's TS2736 names the operand type with every literal member
+          // widened to its base type; res is exactly that. The detail line
+          // keeps the precise operand type.
           fatalError(
             Array[
-              (pos, "Operator '+' cannot be applied to type 'bigint'"),
+              (
+                pos,
+                `Operator '+' cannot be applied to type '${this.ppType(
+                  tcenv,
+                  res,
+                )}'`,
+              ),
               (subExpr.pos, `This has type ${this.ppType(tcenv, ty)}`),
             ],
             TSCode(2736),
