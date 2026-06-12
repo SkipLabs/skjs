@@ -939,12 +939,29 @@ extension class Parser {
               }
             );
             if (isParameterProperty) {
+              // An omitted optional argument assigns `undefined` to the
+              // property at runtime, and optional fields are exact
+              // (present => declared type), so the translated field's type
+              // must include undefined explicitly.
+              fieldType = if (optional.isSome()) {
+                type.map(t ->
+                  Type(
+                    pos,
+                    TAUnion(
+                      t,
+                      Type(pos, TAInst(Name(pos, "undefined"), Array[])),
+                    ),
+                  )
+                )
+              } else {
+                type
+              };
               parameterProperties.push(
                 ClassFieldValue{
                   pos,
                   name => FNNormal(pName),
                   optional,
-                  type,
+                  type => fieldType,
                   value => default,
                   modifiers,
                 },

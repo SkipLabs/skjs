@@ -5,12 +5,10 @@ class WithOptionalParamProp {
   constructor(public y?: string) {}
 }
 
-// FIXME: must be accepted once the translated field's type includes
-// undefined — the field already holds undefined whenever the constructor
-// argument is omitted.
+// Accepted: the translated field's type includes undefined — the field
+// already holds undefined whenever the constructor argument is omitted.
 function writeUndefinedToTranslatedField(): void {
   const b = new WithOptionalParamProp("s");
-  // @skjs-expect-error Type is not assignable to the assignment target's type
   b.y = undefined;
 }
 
