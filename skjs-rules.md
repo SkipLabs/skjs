@@ -262,7 +262,7 @@ let tags = ['urgent' as const, 'priority' as const];
 
 ### 21. Promises and async/await
 - **`Promise<T>` is a plain object type** declared in the builtin stubs with `then`/`catch`/`finally` methods, so promises follow the same structural typing as every other object (`in`, `keyof`, width subtyping, payload covariance all behave normally). The signatures are simplified relative to TypeScript: `then<U>(onfulfilled: (value: T) => U | Promise<U>): Promise<U>` takes exactly one required callback — there is no `onrejected` second argument and the callback is not optional.
-- **No `Promise` value yet**: `new Promise(...)`, `Promise.resolve`, `Promise.reject`, `Promise.all`, ... are not available.
+- **The `Promise` value** exposes the constructor (`new Promise<T>(executor)`, executor required) and the statics `Promise.resolve`, `Promise.reject`, and `Promise.all` (simplified: `all<T>(values: ReadonlyArray<Promise<T>>): Promise<Array<T>>` — no tuple/mixed-iterable form). Other statics (`race`, `any`, `allSettled`, ...) are not available.
 - **`await` is structural**, like tsc: any object whose `then` is shaped like a thenable can be awaited. Applying `await` to a non-thenable is an **error** (`'await' can only be applied to a Promise`, in the spirit of `@typescript-eslint/await-thenable`); tsc instead lets non-thenables pass through unchanged.
 - **`await` unwraps exactly one level**: `await p` with `p: Promise<Promise<T>>` has type `Promise<T>`, whereas tsc's `Awaited` flattens nested thenables recursively to `T`.
 - **Async return annotations must be the global `Promise<T>` type** (TS1064, like tsc) — an annotation that is merely a structurally well-shaped thenable is rejected.

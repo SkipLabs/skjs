@@ -510,13 +510,23 @@ declare class Error {
   constructor(cause?: string);
 }
 
-// T must appear only covariantly so Promise<A> <: Promise<B> iff A <: B;
-// `catch` therefore introduces its own U instead of mentioning T on the
-// callback side (as lib.es5 does).
-declare interface Promise<T> {
+// T must appear only covariantly in instance members so Promise<A> <:
+// Promise<B> iff A <: B; `catch` therefore introduces its own U instead of
+// mentioning T on the callback side (as lib.es5 does). The constructor and
+// statics live on the value side and do not affect instance variance.
+declare class Promise<T> {
+  constructor(
+    executor: (
+      resolve: (value: T) => void,
+      reject: (reason: unknown) => void,
+    ) => void,
+  );
   then<U>(onfulfilled: (value: T) => U | Promise<U>): Promise<U>;
   catch<U>(onrejected: (reason: unknown) => U | Promise<U>): Promise<T | U>;
   finally(onfinally: () => void): Promise<T>;
+  static resolve<T>(value: T): Promise<T>;
+  static reject(reason: unknown): Promise<never>;
+  static all<T>(values: ReadonlyArray<Promise<T>>): Promise<Array<T>>;
 }
 
 declare type StringRecord<V> = {
