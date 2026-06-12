@@ -110,9 +110,9 @@ async function testAwaitPlainObject(o: { a: number }): Promise<number> {
   return r.a;
 }
 
-// FIXME: tsc flattens nested thenables: `await p` is number there, and async
-// return statements compare awaited types, so tsc accepts both functions
-// below. SKJS unwraps exactly one level and rejects testAwaitNestedFlat.
+// `await` flattens nested thenables recursively, like tsc's Awaited<T>, and
+// async return statements compare awaited types (the annotation's nested
+// promise layers flatten the same way), so both functions are accepted.
 async function testAwaitNested(
   p: Promise<Promise<number>>,
 ): Promise<Promise<number>> {
@@ -122,8 +122,63 @@ async function testAwaitNested(
 async function testAwaitNestedFlat(
   p: Promise<Promise<number>>,
 ): Promise<number> {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return await p;
+}
+
+async function testAwaitThenableNested(
+  t: PromiseLike<Promise<number>>,
+): Promise<number> {
+  return await t;
+}
+
+// Self-referential thenables never settle, so they are rejected with
+// TS1062 like tsc: at async declarations, async returns, async arrow
+// bodies, and await expressions (direct or behind a promise).
+interface SelfThen {
+  then(onfulfilled: (value: SelfThen) => void): SelfThen;
+}
+
+// @ts-expect-error Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method
+async function testAwaitSelfThenable(s: SelfThen): Promise<SelfThen> {
+  // @ts-expect-error Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method
+  return await s;
+}
+
+// @ts-expect-error Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method
+async function testAsyncReturnSelfThenable(s: SelfThen): Promise<SelfThen> {
+  // @ts-expect-error Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method
+  return s;
+}
+
+async function testAwaitIndirectSelfThenable(
+  p: Promise<SelfThen>,
+): Promise<number> {
+  // @ts-expect-error Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method
+  const x = await p;
+  return 0;
+}
+
+function testArrowSelfThenable(s: SelfThen): () => Promise<SelfThen> {
+  // @ts-expect-error Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method
+  return async () => s;
+}
+
+// Returning a promise from an async function settles to its payload, in all
+// three shapes.
+async function testAsyncReturnPromise(p: Promise<number>): Promise<number> {
+  return p;
+}
+
+function testArrowReturnPromise(p: Promise<number>): () => Promise<number> {
+  return async () => p;
+}
+
+function testBlockArrowReturnPromise(
+  p: Promise<number>,
+): () => Promise<number> {
+  return async () => {
+    return p;
+  };
 }
 
 // `then` is a required field of every Promise, so the check is always true
@@ -148,7 +203,6 @@ function testArityZero(p: Promise): void {}
 // even for structurally well-shaped thenables.
 // @ts-expect-error The return type of an async function must be the global Promise<T> type
 async function testAsyncRetNumber(): number {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 0;
 }
 

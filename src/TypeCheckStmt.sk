@@ -21,19 +21,30 @@ extension class TypeChecker {
       | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
       | Some(e) -> (e.pos, this.expr(tcenv, e, true))
       };
-      rtype = if (this.isAsync) {
-        TType::promise(epos, etype)
+      // In an async function the returned expression and the declared
+      // return type are compared by awaited type, like tsc: `return p`
+      // settles to p's payload at runtime, and an annotation's nested
+      // promise layers flatten the same way.
+      msg = "Type of returned value is not assignable to the function's return type";
+      if (this.isAsync) {
+        (
+          etype.maybeAwaited(tcenv.subst, this, epos),
+          retType.maybeAwaited(tcenv.subst, this, retType.pos),
+        ) match {
+        | (Some(subTy), Some(superTy)) ->
+          this.checkSubType(tcenv, epos, msg, subTy, superTy, TSCode(2322))
+        | (None(), _) ->
+          // The returned value is a self-referential thenable (TS1062);
+          // the comparison is meaningless and skipped.
+          this.errorSelfReferentialThenable(tcenv, epos)
+        | (Some _, None()) ->
+          // A self-referential annotation is reported once, at the
+          // declaration.
+          void
+        }
       } else {
-        etype
-      };
-      this.checkSubType(
-        tcenv,
-        epos,
-        "Type of returned value is not assignable to the function's return type",
-        rtype,
-        retType,
-        TSCode(2322),
-      )
+        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322))
+      }
 
     | Bind(bkind, bindings) ->
       if (bkind is BKVar()) {

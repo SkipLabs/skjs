@@ -1,6 +1,20 @@
 module SKJS;
 
 extension class TypeChecker {
+  // tsc's TS1062, reported wherever an awaited-type computation
+  // (TType::maybeAwaited) hits a then-callback cycle.
+  fun errorSelfReferentialThenable(tcenv: mutable TCEnv, pos: PosRange): void {
+    tcenv.error(
+      Array[
+        (
+          pos,
+          "Type is referenced directly or indirectly in the fulfillment callback of its own 'then' method",
+        ),
+      ],
+      TSCode(1062),
+    )
+  }
+
   fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
     clauses = ty.expandToClauses(tcenv.subst, this, Covariant());
     for (clause in clauses) {

@@ -502,6 +502,105 @@ class TType private {
     }
   }
 
+  // tsc's Awaited<T> on this type: recursively unwrap thenable object
+  // branches via the thenable protocol and pass non-thenable parts through
+  // unchanged (`await` on a non-thenable yields the value itself at
+  // runtime). Returns None when the type references itself, directly or
+  // indirectly, through its own `then` fulfillment callback — such a type
+  // never settles. Each caller reports tsc's TS1062 for None and keeps
+  // checking with a fallback of its own: `await` continues with `unknown`
+  // (the type itself would re-trigger the error at every later use), an
+  // async arrow body falls back to its unflattened type, and an async
+  // `return` skips the comparison (the function keeps its declared type).
+  fun maybeAwaited(subst: mutable Subst, tenv: TEnv, pos: PosRange): ?TType {
+    tys = mutable Vector[];
+    if (!this.awaitedRec(subst, tenv, pos, tys, SortedSet[], mutable Set[])) {
+      return None()
+    };
+    Some(
+      if (tys.isEmpty()) {
+        this
+      } else {
+        TType::unionN(subst, tenv, pos, tys)
+      },
+    )
+  }
+
+  // Pushes the awaited parts of this type into `tys`; returns false when
+  // the computation hit a then-callback cycle (TS1062). `chain` holds the
+  // in-progress unwraps, so a hit there is a genuine cycle; `visited`
+  // holds every type already flattened into `tys`, so a hit there is a
+  // diamond revisit contributing nothing new. The chain check must come
+  // first: an ancestor is also in `visited`, but reaching it is a cycle.
+  private fun awaitedRec(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    tys: mutable Vector<TType>,
+    chain: SortedSet<TType>,
+    visited: mutable Set<TType>,
+  ): Bool {
+    if (chain.contains(this)) return false;
+    if (visited.contains(this)) return true;
+    visited.insert(this);
+    !chain = chain.set(this);
+    // Expand without resolving type variables: resolving would force (and
+    // thereby seal) them, breaking inference for e.g. unannotated async
+    // lambdas whose return type is Promise<tvar>. Leftover variables are
+    // kept as union parts as-is while the expanded clauses are still
+    // flattened.
+    (insts, clausesVec) = this.expandToVectors(subst, tenv, None()) match {
+    | None() ->
+      // Expands to Top: pass through unchanged.
+      tys.push(this);
+      return true
+    | Some(x) -> x
+    };
+    for (inst in insts) {
+      inst match {
+      | tv @ TVar _ -> tys.push(TType::var(tv))
+      // expandToVectors with expandTVars=None() expands every other inst
+      // kind, so only variables can be left over.
+      | _ -> invariant_violation("unexpected unexpanded inst")
+      }
+    };
+    stypes = Clauses::unionN(subst, tenv, clausesVec).getSTypes(
+      subst,
+      tenv,
+    ) match {
+    | None() ->
+      tys.push(this);
+      return true
+    | Some(x) -> x
+    };
+    for (stype in stypes) {
+      stype match {
+      | obj @ TObject _ ->
+        branches = obj.getBranches();
+        for (fields in branches) {
+          fields.getAwaitedType(subst, tenv, pos) match {
+          | Some(unwrapped) ->
+            if (!unwrapped.awaitedRec(subst, tenv, pos, tys, chain, visited)) {
+              return false
+            }
+          | None() ->
+            tys.push(
+              TType::single(
+                if (branches.size() == 1) {
+                  obj
+                } else {
+                  TObject::createSingleBranch(fields, None(), obj.pos)
+                },
+              ),
+            )
+          }
+        }
+      | other -> tys.push(TType::single(other))
+      }
+    };
+    true
+  }
+
   // OTHER PROPERTIES
 
   // Returns the actual STypes after head expansion, forgetting type parameters,
@@ -904,8 +1003,8 @@ class TObject private (
 
   // Awaited type via the thenable protocol; every branch must be a
   // well-shaped thenable (so a union like Promise<A> | Promise<B> awaits to
-  // A | B). Unwraps exactly one level — no recursive flattening (tsc's
-  // Awaited<T> recurses).
+  // A | B). Unwraps exactly one level; recursive flattening is
+  // TType::awaited.
   fun getAwaitedType(subst: mutable Subst, tenv: TEnv, pos: PosRange): ?TType {
     tys = mutable Vector[];
     for (fields in this.getAllFields()) {
