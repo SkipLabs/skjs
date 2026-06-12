@@ -2342,11 +2342,13 @@ extension class TypeChecker {
       )
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
-      // Collect the awaited type of every thenable branch. Non-thenable
-      // parts are an error, but a non-fatal one as long as at least one
-      // branch is a thenable: checking continues with the awaited type of
-      // the thenable branches only.
-      awaitedTys = mutable Vector[];
+      // Unwrap the thenable branches and pass the non-thenable parts
+      // through unchanged, like the runtime does (and like tsc types it).
+      // Non-thenable parts are an error, but a non-fatal one as long as at
+      // least one branch is a thenable: checking continues with the
+      // combined result type.
+      resultTys = mutable Vector[];
+      hasThenable = false;
       hasNonThenable = false;
       aeType.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() -> !hasNonThenable = true
@@ -2354,17 +2356,29 @@ extension class TypeChecker {
         for (stype in stypes) {
           stype match {
           | obj @ TObject _ ->
-            for (fields in obj.getAllFields()) {
+            branches = obj.getBranches();
+            for (fields in branches) {
               fields.getAwaitedType(tcenv.subst, this, pos) match {
-              | Some(ty) -> awaitedTys.push(ty)
-              | None() -> !hasNonThenable = true
+              | Some(ty) ->
+                !hasThenable = true;
+                resultTys.push(ty)
+              | None() ->
+                !hasNonThenable = true;
+                passedThrough = if (branches.size() == 1) {
+                  obj
+                } else {
+                  TObject::createSingleBranch(fields, None(), obj.pos)
+                };
+                resultTys.push(TType::single(passedThrough))
               }
             }
-          | _ -> !hasNonThenable = true
+          | _ ->
+            !hasNonThenable = true;
+            resultTys.push(TType::single(stype))
           }
         }
       };
-      if (awaitedTys.isEmpty()) {
+      if (!hasThenable) {
         fatalError(
           Array[
             (pos, "'await' can only be applied to a Promise"),
@@ -2382,7 +2396,7 @@ extension class TypeChecker {
             ESLintCode("@typescript-eslint/await-thenable"),
           )
         };
-        TType::unionN(tcenv.subst, this, pos, awaitedTys)
+        TType::unionN(tcenv.subst, this, pos, resultTys)
       }
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1, true);

@@ -48,9 +48,9 @@ async function testAwaitUnion(
 }
 
 // `await` on a union that is only partly a promise: a non-fatal error, and
-// checking continues with the awaited type of the promise branches only.
-// (tsc reports nothing and types the result with the non-thenable parts
-// passed through, e.g. number | { a: number } below where SKJS uses number.)
+// checking continues with the thenable branches unwrapped and the
+// non-thenable parts passed through, exactly as the runtime behaves (and as
+// tsc types the result — tsc just reports nothing).
 async function testAwaitPartialPromise(
   b: boolean,
   p: Promise<number>,
@@ -67,8 +67,7 @@ async function testAwaitPartialPromiseMismatch(
   s: string,
 ): Promise<string> {
   const x = b ? p : s;
-  // Checking continues past the non-fatal await error with the awaited type
-  // of the promise branches only (number here), so the return mismatch is
+  // The continuation type is number | string, so the return mismatch is
   // also reported.
   // @skjs-expect-error 'await' can only be applied to a Promise
   // @ts-expect-error Type of returned value is not assignable to the function's return type
@@ -81,7 +80,9 @@ async function testAwaitPartialThenableObject(
   o: { a: number },
 ): Promise<number> {
   const x = b ? p : o;
+  // The continuation type is number | { a: number }, like tsc's.
   // @skjs-expect-error 'await' can only be applied to a Promise
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return await x;
 }
 
