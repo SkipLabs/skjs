@@ -22,8 +22,7 @@ test:
 # Run only the CFG expectation tests (UPDATE_EXPECT=1 to regenerate expectations)
 .PHONY: test-cfg
 test-cfg:
-	cd skjs-tests && skargo build
-	./skjs-tests/target/host/dev/test testCFG
+	skargo test testCFG
 
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
@@ -67,11 +66,7 @@ test-in-docker:
 
 .PHONY: test-cfg-in-docker
 test-cfg-in-docker:
-ifdef DEVCONTAINER
-	$(MAKE) test-cfg
-else
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) sh -c 'cd skjs-tests && skargo build && cd /work/skjs && ./skjs-tests/target/host/dev/test testCFG'
-endif
+	$(DOCKER_RUN) make test-cfg
 
 %-in-docker:
 	$(DOCKER_RUN) skargo $*
