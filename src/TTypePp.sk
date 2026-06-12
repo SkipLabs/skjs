@@ -550,19 +550,30 @@ mutable class TypePp{
       this.out(level, margin, "never");
       return void;
     };
-    if (!ty.clauses.isEmpty()) {
+    clausesNonEmpty = !ty.clauses.isEmpty();
+    if (clausesNonEmpty) {
       this.clauses(level, margin, ty.clauses)
     };
-    this.insts(level, margin, ty.insts)
+    // When clauses were printed, the first inst must still be joined to them
+    // with " | "; otherwise e.g. `undefined` (clause) + `Array<number>` (inst)
+    // runs together as `undefinedArray<number>`. The multi-line branch already
+    // separates the groups via its buffer-based newLine, so only the
+    // single-line branch needs the leading separator (see #683).
+    this.insts(level, margin, ty.insts, clausesNonEmpty)
   }
 
-  mutable fun insts(level: Int, margin: Margin, insts: TInsts): void {
+  mutable fun insts(
+    level: Int,
+    margin: Margin,
+    insts: TInsts,
+    leadingSep: Bool = false,
+  ): void {
     this.branch(
       level,
       margin,
       (pp, level, margin) ~> {
         for (i => inst in insts) {
-          if (i != 0) pp.out(level, margin, " | ");
+          if (i != 0 || leadingSep) pp.out(level, margin, " | ");
           inst match {
           | tsinst @ TSInst _ -> pp.inst(level, margin, tsinst)
           | TArrayLit(_tvar, tupleElts) ->
