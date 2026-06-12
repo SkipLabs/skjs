@@ -257,6 +257,12 @@ extension class TypeChecker {
             TSCode(1064),
           )
         } else {
+          // tsc's TS1062: the declared payload must not reference itself
+          // through its own then callback.
+          retType.maybeAwaited(tcenv.subst, this, retType.pos) match {
+          | Some _ -> void
+          | None() -> this.errorSelfReferentialThenable(tcenv, retType.pos)
+          };
           tvar = tcenv.subst.gen(asyncPos);
           tcenv.subst.setOrigin(tvar, FromAsyncReturn(asyncPos));
           type = TType::var(tvar);

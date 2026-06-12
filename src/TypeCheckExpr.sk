@@ -2364,7 +2364,14 @@ extension class TypeChecker {
               fields.getAwaitedType(tcenv.subst, this, pos) match {
               | Some(ty) ->
                 !hasThenable = true;
-                resultTys.push(ty)
+                ty.maybeAwaited(tcenv.subst, this, pos) match {
+                | Some(awaited) -> resultTys.push(awaited)
+                | None() ->
+                  // Continue with an unconstrained type: the unflattened
+                  // type would re-trigger TS1062 at every later use.
+                  this.errorSelfReferentialThenable(tcenv, pos);
+                  resultTys.push(TType::top(pos))
+                }
               | None() ->
                 !hasNonThenable = true;
                 passedThrough = if (branches.size() == 1) {
@@ -2659,7 +2666,20 @@ extension class TypeChecker {
         inferredType = this.expr(tcenv, e, true);
         isAsync match {
         | None() -> inferredType
-        | Some(asyncPos) -> TType::promise(asyncPos, inferredType)
+        | Some(asyncPos) ->
+          // An async body settles to its awaited type: `async () => p`
+          // has type () => Promise<number> for p: Promise<number>.
+          payload = inferredType.maybeAwaited(
+            tcenv.subst,
+            this,
+            asyncPos,
+          ) match {
+          | Some(awaited) -> awaited
+          | None() ->
+            this.errorSelfReferentialThenable(tcenv, pos);
+            inferredType
+          };
+          TType::promise(asyncPos, payload)
         }
       | CBBlock(bl) ->
         if (isAsync is Some _) !this.isAsync = true;
@@ -2687,7 +2707,18 @@ extension class TypeChecker {
             "Type of the callback's returned value is not assignable to the expected return type",
             isAsync match {
             | None() -> inferredType
-            | Some(asyncPos) -> TType::promise(asyncPos, inferredType)
+            | Some(asyncPos) ->
+              payload = inferredType.maybeAwaited(
+                tcenv.subst,
+                this,
+                asyncPos,
+              ) match {
+              | Some(awaited) -> awaited
+              | None() ->
+                this.errorSelfReferentialThenable(tcenv, pos);
+                inferredType
+              };
+              TType::promise(asyncPos, payload)
             },
             annotatedType,
             TSCode(2322),
