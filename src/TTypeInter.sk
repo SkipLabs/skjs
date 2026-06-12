@@ -353,9 +353,8 @@ extension class Clauses {
 extension class TPrimValue {
   static fun inter(t1: TPrimValue, t2: TPrimValue): ?TPrimValue {
     if (t1.kind != t2.kind) {
-      internal_error(
-        "Intersection must be called on primitive value types of same kind",
-      )
+      // Different kinds (e.g. number and string) have no common values
+      return None()
     };
     (t1.literals, t2.literals) match {
     | (_, None()) -> Some(t1)
