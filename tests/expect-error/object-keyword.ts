@@ -217,6 +217,36 @@ function typeofFunctionOnObject(x: object): void {
   }
 }
 
+// --- typeof narrowing and structural object types: the runtime check proves
+// the surviving branch is non-primitive ---
+
+function typeofObjectOnEmpty(e: {}): void {
+  if (typeof e === "object") {
+    __SKJS_show(e, `{  }`);
+  }
+}
+
+function typeofObjectProvesNonPrimitive(
+  x: { length: number } | string,
+  s: string,
+): void {
+  if (typeof x === "object") {
+    __SKJS_show(x, `{ length: number }`);
+    if (x === s) {
+      // FIXME: x was proven non-primitive by the typeof check, so it cannot
+      // equal a string; narrowing it to `string` here is literally false
+      // (the boxed String interface satisfies { length: number }).
+      __SKJS_show(x, `string`);
+    }
+  }
+}
+
+function typeofFunctionProvesNonPrimitive(f: (() => void) | string): void {
+  if (typeof f === "function") {
+    __SKJS_show(f, `() => void`);
+  }
+}
+
 // --- for...in over `object` ---
 
 function forInOverObject(o: object): void {
