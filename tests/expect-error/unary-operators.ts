@@ -45,7 +45,7 @@ function plusBigLiteralArg(): void {
 }
 
 function unionPlus(x: number | bigint): number | bigint {
-  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint | number'
   return +x;
 }
 
@@ -53,14 +53,14 @@ function unionPlus(x: number | bigint): number | bigint {
 // in SKJS anyway, the tsc-aligned TS2736 diagnostic takes precedence over the
 // generic invalid-operand one (tsc also reports only TS2736 here).
 function mixedUnionPlus(x: string | bigint): void {
-  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint | string'
   const y = +x;
 }
 
 // A generic operand constrained to bigint is rejected too (tsc: TS2736 with
 // type 'T').
 function genericPlus<T extends bigint>(x: T): void {
-  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  // @skjs-expect-error Operator '+' cannot be applied to type 'T extends bigint'
   // @skjs-expect-error-line2 This has type T extends bigint
   const y = +x;
 }
