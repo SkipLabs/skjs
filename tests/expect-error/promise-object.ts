@@ -126,6 +126,64 @@ async function testAwaitNestedFlat(
   return await p;
 }
 
+// FIXME: tsc accepts: a thenable wrapping a promise awaits to number
+// (recursive flattening); SKJS unwraps exactly one level.
+async function testAwaitThenableNested(
+  t: PromiseLike<Promise<number>>,
+): Promise<number> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return await t;
+}
+
+// FIXME: tsc rejects self-referential thenables with TS1062 ("Type is
+// referenced directly or indirectly in the fulfillment callback of its own
+// 'then' method") at async declarations, async returns, async arrow bodies,
+// and await expressions; SKJS accepts all four shapes below.
+interface SelfThen {
+  then(onfulfilled: (value: SelfThen) => void): SelfThen;
+}
+
+async function testAwaitSelfThenable(s: SelfThen): Promise<SelfThen> {
+  return await s;
+}
+
+async function testAsyncReturnSelfThenable(s: SelfThen): Promise<SelfThen> {
+  return s;
+}
+
+async function testAwaitIndirectSelfThenable(
+  p: Promise<SelfThen>,
+): Promise<number> {
+  const x = await p;
+  return 0;
+}
+
+function testArrowSelfThenable(s: SelfThen): () => Promise<SelfThen> {
+  return async () => s;
+}
+
+// FIXME: tsc accepts returning a promise from an async function (return
+// expressions are compared by awaited type there); SKJS wraps the promise
+// into a nested promise and rejects all three shapes below.
+async function testAsyncReturnPromise(p: Promise<number>): Promise<number> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return p;
+}
+
+function testArrowReturnPromise(p: Promise<number>): () => Promise<number> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return async () => p;
+}
+
+function testBlockArrowReturnPromise(
+  p: Promise<number>,
+): () => Promise<number> {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return async () => {
+    return p;
+  };
+}
+
 // `then` is a required field of every Promise, so the check is always true
 // (tsc does not report this).
 function testIn(p: Promise<number>): boolean {
