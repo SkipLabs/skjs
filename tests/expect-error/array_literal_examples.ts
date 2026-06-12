@@ -178,7 +178,7 @@ function supertypePositionTest(): void {
   const result = genericMerge([1, 2], [3, 4, 5]);
   // Result should be compatible with array operations
   const first = result[0];
-  if (first !== undefined && first < 0) {
+  if (first < 0) {
     return;
   }
 }

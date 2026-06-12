@@ -956,6 +956,107 @@ extension class TypeChecker {
     ty
   }
 
+  // Strict-comparison overlap diagnostic: warn when the operands' value sets
+  // are provably disjoint, i.e. the comparison always has the same outcome.
+  // Both operands expand to their simple-type branches and the comparison is
+  // flagged when no branch pair can overlap. getSTypes over-approximates the
+  // operand types, so disjoint branch sets soundly imply disjoint types;
+  // types that expand to Top (unknown, unconstrained type parameters) bail
+  // out, and constrained type parameters are checked through their
+  // constraint.
+  private fun checkComparisonOverlap(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    op_: BOStrictComparison,
+    e1: Expr,
+    e2: Expr,
+    ty1: TType,
+    ty2: TType,
+  ): void {
+    // Clone subst: this is a diagnostic check ("always false/true?"), not a
+    // type assignment. It should not grow type variables.
+    subst = tcenv.subst.clone();
+    ty1.getSTypes(subst, this, Covariant()) match {
+    | Some(stypes1) if (!stypes1.isEmpty()) ->
+      ty2.getSTypes(subst, this, Covariant()) match {
+      | Some(stypes2) if (!stypes2.isEmpty()) ->
+        // A void operand is already an error (nonVoidExpr — void is
+        // non-observable): skip the lint instead of piling a warning on top
+        isVoid = (sty: SType) -> sty is TPrimUnit(TVoid(), _);
+        if (stypes1.any(isVoid) || stypes2.any(isVoid)) {
+          return void
+        };
+        overlap = stypes1.any(sty1 ->
+          stypes2.any(sty2 -> SType::overlaps(subst, this, sty1, sty2))
+        );
+        if (!overlap) {
+          alwaysResult = op_ match {
+          | BOStrictEquality() -> "false"
+          | BOStrictInequality() -> "true"
+          };
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                `This comparison is always ${alwaysResult} because the operand types do not overlap`,
+              ),
+            ],
+            SKJSCode(2040),
+          )
+        } else if (
+          // Comparing against a literal is exempt: re-checking a narrowed
+          // discriminant (e.g. `else if (color.kind === "blue")` on the
+          // last variant of a union) is idiomatic, not a bug.
+          !e1.isLiteral() &&
+          !e2.isLiteral() &&
+          this.isSameSingletonValue(stypes1, stypes2)
+        ) {
+          alwaysResult = op_ match {
+          | BOStrictEquality() -> "true"
+          | BOStrictInequality() -> "false"
+          };
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                `This comparison is always ${alwaysResult} because the operands always hold the same single value`,
+              ),
+            ],
+            SKJSCode(2074),
+          )
+        }
+      | _ -> void
+      }
+    | _ -> void
+    }
+  }
+
+  // Whether both operand types are the same singleton value type (a single
+  // literal, null, or undefined), making strict equality always true. Sound
+  // under over-approximation: a singleton over-approximation bounds the
+  // operand to at most that one value.
+  private fun isSameSingletonValue(stypes1: STypes, stypes2: STypes): Bool {
+    (stypes1.singleElt(), stypes2.singleElt()) match {
+    | (Some(sty1), Some(sty2)) ->
+      (sty1, sty2) match {
+      | (TPrimUnit(TNull(), _), TPrimUnit(TNull(), _))
+      | (TPrimUnit(TUndefined(), _), TPrimUnit(TUndefined(), _)) ->
+        true
+      | (
+        TPrimValue(kind1, Some(lits1), _),
+        TPrimValue(kind2, Some(lits2), _),
+      ) ->
+        kind1 == kind2 &&
+          ((lits1.singleElt(), lits2.singleElt()) match {
+          | (Some(lit1), Some(lit2)) -> lit1.val == lit2.val
+          | _ -> false
+          })
+      | _ -> false
+      }
+    | _ -> false
+    }
+  }
+
   private fun showTypes(
     tcenv: mutable TCEnv,
     args: Array<Expr>,
@@ -1827,32 +1928,7 @@ extension class TypeChecker {
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
-        // Clone subst: this is a diagnostic check ("always false/true?"),
-        // not a type assignment. It should not grow type variables.
-        if (ty1.clauses.isEmpty() && ty2.clauses.isEmpty()) {
-          clonedSubst = tcenv.subst.clone();
-          TType::isSub(clonedSubst, this, ty1, ty2) match {
-          | STOk() -> void
-          | STError _ ->
-            TType::isSub(clonedSubst, this, ty2, ty1) match {
-            | STOk() -> void
-            | STError _ ->
-              alwaysResult = op_ match {
-              | BOStrictEquality() -> "false"
-              | BOStrictInequality() -> "true"
-              };
-              tcenv.warning(
-                Array[
-                  (
-                    pos,
-                    `This comparison is always ${alwaysResult} because the operand types do not overlap`,
-                  ),
-                ],
-                SKJSCode(2040),
-              )
-            }
-          }
-        };
+        this.checkComparisonOverlap(tcenv, pos, op_, e1, e2, ty1, ty2);
         TType::single(TPrimValue::boolean(pos))
 
       | op_ @ LazyLogicalOperator() ->
