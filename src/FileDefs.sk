@@ -36,7 +36,6 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     builtinsFileName: FPath,
     rootMap: RootMap,
     parsedFiles: S.EHandle<FPath, ParsedResultFile>,
-    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): this {
     static(
       S.LHandle::create(
@@ -67,7 +66,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
                 fileName.dirPath(),
                 includes,
                 rootMap,
-                compilerOptions,
+                getConfig(context).compilerOptions,
                 defs,
               ),
             ]

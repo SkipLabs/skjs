@@ -495,6 +495,18 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         return SKStore.CStop(None())
       | Success(checker) -> checker
       };
+      // The effective config is a tracked input, written every run like
+      // source-file contents, so that config changes propagate through a
+      // persistent cache (see Config.sk)
+      writeConfig(
+        context,
+        CheckerConfig{
+          compilerOptions => checkerCompilerOptions,
+          errorHandling,
+          errorDetailConfig,
+          verbose,
+        },
+      );
 
       initDir = getInitDir(context);
       _ = applyOrReuseMap(
@@ -696,6 +708,9 @@ class Checker private {
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
     verbose: Bool = false,
   }: Result<this, Array<ErrorMessage>> {
+    // Callers must writeConfig before create: the config input dir is read
+    // by the dir computations created here, and create may itself run
+    // inside a map computation (Main.sk), where input writes are illegal
     newLinesMap = NewLinesMap::create(context, files);
     (
       parsedAndSymbolsFiles,
@@ -718,8 +733,11 @@ class Checker private {
       builtinsFileName,
       files.rootMap,
       parsedFiles,
-      compilerOptions,
     );
+    // Config fields (errorHandling, truthiness, verbose) are set here for
+    // eager create-time use, but persisted-dir closures must not rely on
+    // these captured values: they re-read the config (withConfig) so that
+    // CLI changes reach --data runs. See Config.sk.
     checker = TypeChecker{
       defMap,
       errorHandling,
@@ -759,8 +777,9 @@ class Checker private {
       context,
       SKStore.DirName::create("/defs/"),
       (context, _self, key) ~> {
+        tc = this.checker.withConfig(getConfig(context));
         results = try {
-          Success(this.checker.checkDef(context, key.def).chill())
+          Success(tc.checkDef(context, key.def).chill())
         } catch {
         | e -> Failure(e)
         };
@@ -776,7 +795,8 @@ class Checker private {
         parsedFile = valueIter.first;
         parsedFile.value match {
         | PROk(defs) ->
-          results = this.checker.check(context, checkDir, fileName, defs);
+          tc = this.checker.withConfig(getConfig(context));
+          results = tc.check(context, checkDir, fileName, defs);
           fileDefErrors = this.checker.defMap.getNamingErrors(
             context,
             fileName,
@@ -813,7 +833,9 @@ class Checker private {
       this.files.rootMap,
       this.newLinesMap,
       this.symbolsMap,
-      this.errorDetailConfig,
+      // Tracked read, not the field captured at init time: this runs inside
+      // persisted output-dir closures (see Config.sk)
+      getConfig(context).errorDetailConfig,
     )
   }
 }

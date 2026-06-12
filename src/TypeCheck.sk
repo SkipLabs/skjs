@@ -25,7 +25,18 @@ class TypeChecker{
   // the `&&`/`||`/`!`/ternary sites (TypeCheckExpr.sk), and narrowing
   // (TypeCheckRefine.sk). See issue #654.
   truthiness: Truthiness = Truthiness::default,
-} extends TEnv {}
+} extends TEnv {
+  // Apply the run's tracked config (see Config.sk). Persisted-dir closures
+  // capture a TypeChecker from init time; they must call this with a fresh
+  // getConfig read so config changes reach --data runs.
+  fun withConfig(config: CheckerConfig): this {
+    this with {
+      errorHandling => config.errorHandling,
+      truthiness => config.compilerOptions.truthiness,
+      verbose => config.verbose,
+    }
+  }
+}
 
 /***************************************************************************/
 /* Returns true if a statement always is "terminal", meaning if

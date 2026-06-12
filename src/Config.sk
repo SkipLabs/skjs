@@ -1,0 +1,47 @@
+/***************************************************************************/
+/* Per-run checker configuration as a tracked SKStore input.
+/*
+/* Configuration must NOT be captured in the closures of persisted dirs:
+/* closures are serialized into the persistent cache (--init/--data), so a
+/* captured option is frozen at init time and silently ignores later CLI
+/* changes. Instead the effective config is written into an input dir every
+/* run (like source-file contents in Files.sk) and computations read it
+/* through the context, making the dependency visible to SKStore so config
+/* changes invalidate exactly the results that depend on them. */
+/***************************************************************************/
+
+module SKJS;
+
+const configDirName: SKStore.DirName = SKStore.DirName::create("/skjs/config/");
+
+class CheckerConfig{
+  compilerOptions: TsCompilerOptions = TsCompilerOptions{},
+  errorHandling: ErrorHandling = EHDefault(),
+  errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig(Array[]),
+  verbose: Bool = false,
+} extends SKStore.File
+
+// Write the run's effective config. Must be called once per run, before any
+// computation that reads the config, mirroring how Files::create writes
+// source-file contents. An unchanged config diffs to a no-op.
+fun writeConfig(context: mutable SKStore.Context, config: CheckerConfig): void {
+  hdl = createOrReuseEagerDir(
+    context,
+    SKStore.UnitID::keyType,
+    CheckerConfig::type,
+    configDirName,
+  );
+  hdl.writeArray(context, SKStore.UnitID::singleton, Array[config])
+}
+
+// Tracked read of the run's config; call from inside dir computations so
+// SKStore records the dependency.
+fun getConfig(context: mutable SKStore.Context): CheckerConfig {
+  SKStore.EHandle(
+    SKStore.UnitID::keyType,
+    CheckerConfig::type,
+    configDirName,
+  ).get(context, SKStore.UnitID::singleton)
+}
+
+module end;

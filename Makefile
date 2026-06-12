@@ -17,6 +17,7 @@ test:
 	./tests/test_incremental.sh
 	./tests/test_affected_files.sh
 	./tests/test_stdin.sh
+	./tests/test_config_change.sh
 
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
