@@ -292,11 +292,29 @@ mutable class TypePp{
     )
   }
 
+  // True when every named field of a tuple-shaped TFields is a positional
+  // index or `length` -- i.e. the tuple shorthand cannot hide any member.
+  static fun isExactTupleShape(fields: TFields): Bool {
+    fields.isTuple() match {
+    | None() -> false
+    | Some(arity) ->
+      fields.fields.all(field -> {
+        name = field.name.value;
+        name == "length" ||
+          (name.toIntOption() match {
+          | Some(i) -> i >= 0 && i < arity
+          | None() -> false
+          })
+      })
+    }
+  }
+
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
     // A tuple-shaped object (array-branded, literal length, every positional
-    // field present) prints as the tuple it denotes; the expanded object
-    // form, listing every array method, is kept under --verbose.
-    if (!this.verbose) {
+    // field present) prints as the tuple it denotes when it contains nothing
+    // beyond the tuple shape; the expanded object form is kept under
+    // --verbose.
+    if (!this.verbose && TypePp::isExactTupleShape(fields)) {
       fields.asTuple() match {
       | Some(elts) -> return this.tuple(level, margin, elts)
       | None() -> void
