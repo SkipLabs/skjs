@@ -1744,12 +1744,7 @@ class TFields protected {
   // A bare `object` keyword branch: asserts non-primitivity and imposes no
   // structural demands, so every non-primitive value satisfies it.
   fun isBareNonPrimitive(): Bool {
-    this.isNonPrimitive &&
-      this.fields.isEmpty() &&
-      this.symbolFields.isEmpty() &&
-      !this.hasNonSyntheticIndex() &&
-      this.call.isNone() &&
-      this.new.isNone()
+    this.isNonPrimitive && this.isEmpty()
   }
 
   private static fun createFromSortedIterator{
