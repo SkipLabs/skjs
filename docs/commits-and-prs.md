@@ -21,6 +21,8 @@ Never mask the use of AI. When AI wrote or co-wrote a change:
   Co-Authored-By: Claude Fable 5 (Anthropic claude-fable-5[1m], effort high) <noreply@anthropic.com>
   ```
 
+- Include the effort/reasoning setting only when it is actually known. When the tool does not expose it, omit it rather than padding with a guess — "default effort" conveys nothing.
+
 - Report the model and settings that were in effect **when the code was written**, not when the commit was created — e.g. code written by one model but committed later (split, cherry-picked, rebased) under another still credits the model that wrote it. Use one trailer per AI that contributed.
 - Disclose AI assistance in PR descriptions the same way.
 
