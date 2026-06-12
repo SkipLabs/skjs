@@ -260,6 +260,17 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
 - **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
+### 28. Optional Fields Are Exact (present ⇒ T)
+
+- **Rule**: `f?: T` means the key **may be absent**; if the key is present, its value is `T` — not `T | undefined`. To allow a present-but-undefined value, add it to the type: `f?: T | undefined`. This is the same contract as index signatures (a present key holds `V`), keeping fields and indexes uniform.
+- **Reads**: `v.f` types as `T | undefined` — the `undefined` accounts for absence only.
+- **Narrowing**: `"f" in v` confirms presence, so `v.f` narrows to `T`; likewise `v.f !== undefined`.
+- **Writes**: `v.f = x` requires `x: T`; writing `undefined` is an error unless `T` includes it.
+- **Subtyping**: a source whose `f` can be **present** with a non-`T` value is not assignable to `{ f?: T }`: `{ f: undefined }` (literal), `{ f: T | undefined }`, `{ f?: T | undefined }`, and `{ [k: string]: T | undefined }` are all rejected. Mutable optional fields are invariant in the value type (`{ f?: T }` is not assignable to `{ f?: T | undefined }` — a wider alias could store `undefined` that the narrow view reads as `T`); `readonly` optional fields are covariant as usual.
+- **Constructors**: unconditionally assigning an optional parameter to an optional field (`this.f = f` with `f?: T`, including the parameter-property shorthand `constructor(public f?: T)`) makes the field present with a possibly-undefined value and is rejected — declare the field `f?: T | undefined` or assign conditionally.
+- **TypeScript difference**: equals tsc's `--exactOptionalPropertyTypes`, applied unconditionally (default tsc conflates absence with present-undefined). SKJS is stricter than tsc-exact in two places where tsc is unsound or inconsistent: an undefined-bearing *index* source is rejected, and the parameter-property shorthand is rejected like its desugaring.
+- **Verified by**: `tests/expect-error/optional-fields-exact.ts`, `tests/expect-error/parameter-property-optional.ts`, `tests/expect-error/in.ts`
+
 ### 28. Index Signatures
 - **Rule**: Index signatures `[key: T]: V` accept key types `string`, `number`, `symbol`, or unions of these. Other key types (boolean, object, never, literal types, generics) are rejected.
 - **Key kind coverage**: A `string` index covers number keys (since JS coerces numbers to strings). A `number` index only covers number keys. Multi-kind key types like `string | number` are split into separate per-kind entries; when multiple indexes map to the same kind, their value types are merged (getter: intersection, setter: union).

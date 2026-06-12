@@ -3,25 +3,28 @@
 // present-but-undefined value, add undefined to the type: `f?: T | undefined`.
 // This is the same contract as index signatures (present key => V) and
 // matches tsc's --exactOptionalPropertyTypes (default tsc conflates absence
-// with present-undefined and accepts the FIXME cases below).
+// with present-undefined and accepts the first three rejected cases below).
 
-// FIXME: must be rejected — the literal has `f` PRESENT with value
-// undefined, violating present => number. tsc-exact rejects (TS2375).
+// Rejected: the literal has `f` PRESENT with value undefined, violating
+// present => number. tsc-exact rejects too (TS2375).
 function presentUndefinedLiteral(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const v: { f?: number } = { f: undefined };
 }
 
-// FIXME: must be rejected — `f` is always present and may hold undefined.
-// tsc-exact rejects (TS2375).
+// Rejected: `f` is always present and may hold undefined. tsc-exact
+// rejects too (TS2375).
 function requiredUndefinedSource(x: { f: number | undefined }): { f?: number } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
-// FIXME: must be rejected — a present `f` may hold undefined.
-// tsc-exact rejects (TS2375).
+// Rejected: a present `f` may hold undefined. tsc-exact rejects too
+// (TS2375).
 function optionalUndefinedSource(x: { f?: number | undefined }): {
   f?: number;
 } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -72,13 +75,14 @@ function undefinedIndexSourceRejected(x: { [k: string]: number | undefined }): {
   return x;
 }
 
-// FIXME: must be rejected — unconditionally assigning an optional parameter
-// to an optional field makes the field PRESENT with a possibly-undefined
-// value (`"f" in obj` is true after an omitted argument), violating
+// Rejected: unconditionally assigning an optional parameter to an optional
+// field makes the field PRESENT with a possibly-undefined value
+// (`"f" in obj` is true after an omitted argument), violating
 // present => number. tsc-exact rejects the assignment (TS2412). Declare the
 // field `f?: number | undefined` or assign conditionally.
 class UnconditionalOptionalAssign {
   f?: number;
+  // @skjs-expect-error Constructor does not initialize all fields to their declared types
   constructor(f?: number) {
     this.f = f;
   }
