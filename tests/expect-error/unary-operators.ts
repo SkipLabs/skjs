@@ -58,11 +58,10 @@ function mixedUnionPlus(x: string | bigint): void {
 }
 
 // A generic operand constrained to bigint is rejected too (tsc: TS2736 with
-// type 'T'). The detail line currently renders the type parameter with its
-// internal id, which is not user-readable.
+// type 'T').
 function genericPlus<T extends bigint>(x: T): void {
   // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
-  // @skjs-expect-error-line2 This has type T:2:828896149665628166 extends bigint
+  // @skjs-expect-error-line2 This has type T extends bigint
   const y = +x;
 }
 

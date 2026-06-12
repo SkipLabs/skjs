@@ -690,6 +690,14 @@ mutable class TypePp{
     name: String,
     id: Id,
   ): void {
+    // The qualified id (name:counter:file-hash) disambiguates same-named type
+    // parameters but is not user-readable; like synthetic indexes above, it
+    // must not appear in user-visible printed types and is kept under
+    // --verbose for debugging.
+    if (!this.verbose) {
+      this.out(level, margin, name);
+      return void
+    };
     idStr = id.toString();
     nameColon = name + ":";
     if (idStr.startsWith(nameColon)) {
