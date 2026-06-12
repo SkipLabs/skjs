@@ -241,7 +241,9 @@ class SubtypingError(
     | detail @ STErrorDetail _ ->
       e = this.stErr;
       subst = Subst::mcreateFromSaved(context, this.savedSubst);
-      !messages = messages.concat(e.toError(subst, this.tenv, detail).toArray())
+      !messages = messages.concat(
+        e.toErrorWithFallback(subst, this.tenv, detail).toArray(),
+      )
     };
 
     static::resolveMessages(messages, context, rootMap, newLinesMap, symbolsMap)

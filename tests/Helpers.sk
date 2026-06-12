@@ -218,8 +218,10 @@ fun getErrorMessages(
   error match {
   | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
   | SKJS.SubtypingError(_, _, messages, e, _) ->
+    // Render through the same entry point as SubtypingError.toErrorMessage so
+    // annotations validate exactly what the user-facing output contains.
     stErrMsgs = e
-      .toError(subst, tenv, SKJS.STErrorDetail::default)
+      .toErrorWithFallback(subst, tenv, SKJS.STErrorDetail::default)
       .toArray()
       .map(m -> m.i1);
     messages.map(m -> m.i1).concat(stErrMsgs)

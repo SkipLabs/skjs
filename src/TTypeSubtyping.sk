@@ -373,6 +373,29 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   | STRecType(STErrorOnClauses)
   | STRecTypeWithHint(STErrorOnClauses, List<(PosRange, String)>)
 
+  // Like toError, but a requested detail level never renders bare: when
+  // every frame renders empty (e.g. both sides are pure type parameters,
+  // whose clause comparison reports no pairs), falls back to the outermost
+  // type pair, whose positions point at user code. Every renderer of a
+  // SubtypingError's detail should go through this entry point.
+  fun toErrorWithFallback(
+    subst: mutable Subst,
+    tenv: TEnv,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)> {
+    msgs = this.toError(subst, tenv, detail);
+    if (msgs.isEmpty()) {
+      ty1Str = prettyPrintType(false, this.ty1, subst, tenv);
+      ty2Str = prettyPrintType(false, this.ty2, subst, tenv);
+      List[
+        (this.ty1.pos, `Type ${ty1Str}`),
+        (this.ty2.pos, `is not assignable to type ${ty2Str}`),
+      ]
+    } else {
+      msgs
+    }
+  }
+
   fun toError(
     subst: mutable Subst,
     tenv: TEnv,
@@ -390,8 +413,10 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       // When the inner error rendered nothing (e.g. the target is a
       // constrained inference variable whose contravariant expansion
       // intersected to the empty type, leaving no clause pairs to report),
-      // fall back to the top-level type pair regardless of the detail
-      // budget: an error must never print bare with no explanation.
+      // fall back to this frame's type pair regardless of the detail
+      // budget: it is more precise than the outermost pair that
+      // SubtypingError.toErrorMessage falls back to when every frame
+      // renders empty.
       if (detail.maxRecTypeDepth > 0 || msgs.isEmpty()) {
         ty1Str = prettyPrintType(false, ty1, subst, tenv);
         ty2Str = prettyPrintType(false, ty2, subst, tenv);
