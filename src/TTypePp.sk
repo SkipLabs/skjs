@@ -293,6 +293,15 @@ mutable class TypePp{
   }
 
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
+    // A tuple-shaped object (array-branded, literal length, every positional
+    // field present) prints as the tuple it denotes; the expanded object
+    // form, listing every array method, is kept under --verbose.
+    if (!this.verbose) {
+      fields.asTuple() match {
+      | Some(elts) -> return this.tuple(level, margin, elts)
+      | None() -> void
+      }
+    };
     (
       fields.fields.isEmpty(),
       !fields.hasNonSyntheticIndex(),
