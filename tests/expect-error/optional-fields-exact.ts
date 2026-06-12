@@ -71,3 +71,15 @@ function undefinedIndexSourceRejected(x: { [k: string]: number | undefined }): {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
+
+// FIXME: must be rejected — unconditionally assigning an optional parameter
+// to an optional field makes the field PRESENT with a possibly-undefined
+// value (`"f" in obj` is true after an omitted argument), violating
+// present => number. tsc-exact rejects the assignment (TS2412). Declare the
+// field `f?: number | undefined` or assign conditionally.
+class UnconditionalOptionalAssign {
+  f?: number;
+  constructor(f?: number) {
+    this.f = f;
+  }
+}
