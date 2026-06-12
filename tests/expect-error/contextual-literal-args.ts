@@ -34,7 +34,10 @@ function mismatchedLiteralKey(): void {
 }
 
 // Each literal kind stays precise: string and boolean against array and tuple
-// targets (cases 2b and 2c), bigint, negative, and unary-plus numbers.
+// targets (cases 2b and 2c), bigint, negative, and unary-plus numbers. These
+// const-annotated declarations also pass without freshElts (the const path
+// already keeps elements precise); they pin the directLiteralSType arms
+// against drift rather than differentiate the fresh-literal commitment.
 function stringElements(): void {
   const tags: ("urgent" | "priority")[] = ["urgent", "priority"];
 }
