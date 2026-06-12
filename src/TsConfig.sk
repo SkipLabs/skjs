@@ -20,7 +20,11 @@ module SKJS;
 //   Warn if redundantly set to true.
 //     noImplicitAny, strictNullChecks, strictFunctionTypes,
 //     strictBindCallApply, strictPropertyInitialization, noImplicitThis,
-//     alwaysStrict, useUnknownInCatchVariables, exactOptionalPropertyTypes
+//     alwaysStrict, useUnknownInCatchVariables
+//
+// ALWAYS-ON, INDEPENDENT OF strict:
+//   exactOptionalPropertyTypes — SKJS always applies exact optional
+//   property semantics. Warn if absent or false; silent if true.
 //
 // ALWAYS-ON — SKJS always performs these checks.
 //   Warn if explicitly set to false. Silent if absent or true.
@@ -516,6 +520,28 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       }
     };
 
+    // exactOptionalPropertyTypes is independent of `strict` in tsc. SKJS
+    // always applies exact optional property semantics (skjs-rules.md
+    // "Optional Fields Are Exact"); warn when the config does not enable
+    // the option so the project's own tsc runs match what SKJS checks.
+    exactOptName = "exactOptionalPropertyTypes";
+    co.maybeGetBool(exactOptName) match {
+    | Some(true) -> void
+    | notEnabled ->
+      (anchor, state) = if (notEnabled is Some _) {
+        (exactOptName, "disabled")
+      } else {
+        ("compilerOptions", "not enabled")
+      };
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, anchor),
+          message => `Option '${exactOptName}' is ${state}; SKJS applies exact optional property semantics regardless (a present optional field holds its declared type). Enable it so tsc matches SKJS.`,
+          isWarning => true,
+        },
+      )
+    };
+
     // Check restricted options
     for (name in restrictedOptions) {
       if (co.maybeGet(name).isSome()) {
@@ -824,7 +850,6 @@ const strictSubOptions: Array<String> = Array[
   "noImplicitThis",
   "alwaysStrict",
   "useUnknownInCatchVariables",
-  "exactOptionalPropertyTypes",
 ];
 
 const restrictedOptions: Array<String> = Array[

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
     "strict": true,
     "target": "ES2020",
     // @skjs-expect-error Option 'strictNullChecks' cannot be disabled; SKJS requires strict mode.

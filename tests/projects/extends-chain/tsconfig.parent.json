@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.grandparent.json",
   "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
     "rootDir": "./src"
   }
 }

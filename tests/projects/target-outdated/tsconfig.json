@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
     "strict": true,
     // @skjs-expect-error Option 'target' value 'ES5' is outdated. Consider using 'ES6' or later.
     "target": "ES5"

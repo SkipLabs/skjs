@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
     "strict": true,
     "target": "ES2020",
     // @skjs-expect-error Unknown 'truthiness' value 'bogus'. Expected one of: boolean, safe, typescript, javascript.
