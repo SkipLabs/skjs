@@ -9,9 +9,13 @@ extension class TypeChecker {
       | Some(stypes) ->
         stypes.singleElt() match {
         | Some(TPrimUnit(TVoid(), _)) if (!isAsync) -> void
-        | Some(TPromise(realType, _)) if (isAsync) ->
-          if (!this.isVoid(tcenv, false, realType)) {
-            return false
+        | Some(obj @ TObject _) if (isAsync) ->
+          this.getAwaitedType(tcenv.subst, obj, obj.pos) match {
+          | Some(realType) ->
+            if (!this.isVoid(tcenv, false, realType)) {
+              return false
+            }
+          | None() -> return false
           }
         | _ -> return false
         }

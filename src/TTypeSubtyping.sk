@@ -153,38 +153,6 @@ base class STErrorOnTPrimValue(
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 
-base class STErrorOnTPromise(
-  p1: TPromise,
-  p2: TPromise,
-) extends STErrorOnSTypeBase<TPromise> {
-  children =
-  | STRecPromise(STErrorOnTType)
-
-  fun toError(
-    subst: mutable Subst,
-    tenv: TEnv,
-    _pos1: PosRange,
-    _pos2: PosRange,
-    detail: STErrorDetail,
-  ): List<(PosRange, String)>
-  | STRecPromise(err, p1, p2) ->
-    msgs = err.toError(subst, tenv, detail.decreaseIntermediate());
-    if (detail.maxIntermediateDepth > 0) {
-      List.Cons(
-        (p1.pos, `Promise type ${p1.toString(subst, tenv)}`),
-        List.Cons(
-          (
-            p2.pos,
-            `is not assignable to promise type ${p2.toString(subst, tenv)}`,
-          ),
-          msgs,
-        ),
-      )
-    } else {
-      msgs
-    }
-}
-
 base class STErrorOnObject(
   o1: TObject,
   o2: TObject,
@@ -1034,9 +1002,6 @@ extension class STypes {
         | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
           TPrimValue::isSub(prim1, prim2)
 
-        | (p1 @ TPromise _, p2 @ TPromise _) ->
-          TPromise::isSub(subst, tenv, p1, p2)
-
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
 
@@ -1345,10 +1310,6 @@ extension class TType {
     //    left to handle the TVars without pre-seeding. Precise per-branch
     //    pairing would require matching clauses across the two sides.
     //  - Only object fields and call/new return types are descended into.
-    //  - Promise payloads (TPromise) are not descended, so TVars hidden
-    //    inside `Promise<A>` behind an alias are not pre-seeded and are
-    //    left to the top-level isSub call. (Tuples now expand through the
-    //    object path via TupleN/ReadonlyTupleN's positional fields.)
     (expandedOpen.clauses.getObject(), boundTy.clauses.getObject()) match {
     | (Some(openObj), Some(boundObj)) ->
       openFields = openObj.getFields(subst, tenv);
@@ -1448,20 +1409,6 @@ extension class TType {
       hints = static::originSuggestions(subst, tenv, u1, u2);
       subst.restore(savedSubst);
       STRecTypeWithHint(err, hints, u1, u2)
-    }
-  }
-}
-
-extension class TPromise {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    promise1: TPromise,
-    promise2: TPromise,
-  ): STResult<TPromise> {
-    TType::isSub(subst, tenv, promise1.inner, promise2.inner) match {
-    | STOk() -> STOk()
-    | err @ STErrorOnTType _ -> STRecPromise(err, promise1, promise2)
     }
   }
 }

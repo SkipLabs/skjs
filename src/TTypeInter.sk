@@ -280,9 +280,6 @@ extension class STypes {
 
       | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
 
-      | (TPromise(ty1, pos1), TPromise(ty2, _)) ->
-        Some(TPromise(TType::inter(subst, tenv, ty1, ty2), pos1))
-
       | (obj1 @ TObject _, obj2 @ TObject _) ->
         TObject::inter(subst, tenv, obj1, obj2)
 
@@ -394,16 +391,7 @@ extension base class SType {
       // type `{ a: string }` cannot
       boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
       TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
-    | (TPrimValue _, TPromise _)
-    | (TPromise _, TPrimValue _) ->
-      // A primitive value is never a promise
-      false
-    | (TObject _, TObject _)
-    | (TObject _, TPromise _)
-    | (TPromise _, TObject _)
-    | (TPromise _, TPromise _) ->
-      // TODO: treat promises more precisely (e.g. `Promise<number> ===
-      // { a: number }` could report no overlap)
+    | (TObject _, TObject _) ->
       // TODO: some object pairs are provably disjoint and could be
       // reported: a shared field with non-overlapping types can leave no
       // common value (e.g. `{ a?: number }` vs `{ a: string }`)

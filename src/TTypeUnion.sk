@@ -154,8 +154,6 @@ extension class STypes {
 
         | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
 
-        | (TPromise(ty1, pos), TPromise(ty2, _)) ->
-          TPromise(TType::union(subst, tenv, ty1, ty2), pos)
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::union(subst, tenv, obj1, obj2)
         | _ -> internal_error("Internal error")

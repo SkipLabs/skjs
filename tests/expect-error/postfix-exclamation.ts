@@ -535,10 +535,8 @@ function testPromiseNonNull(x: Promise<number> | null): Promise<number> {
 }
 
 function testPromiseThen(x: Promise<number> | null): Promise<string> {
-  // FIXME
-  // @skjs-expect-error Property access is not allowed on this type
   // @skjs-expect-error The non-null assertion operator '!' is not allowed
-  return x!.then((n) => n.toString());
+  return x!.then((n: number) => n.toString());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

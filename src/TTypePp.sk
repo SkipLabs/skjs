@@ -129,24 +129,6 @@ mutable class TypePp{
         !first = false;
         this.object(level, margin, fields)
       }
-    | TPromise(ty, _) ->
-      this.branch(
-        level,
-        margin,
-        (pp, level, margin) ~> {
-          pp.out(level, margin, "Promise<");
-          pp.type(level, margin, ty);
-          pp.out(level, margin, ">");
-        },
-        (pp, level, prevMargin, margin) -> {
-          pp.out(level, margin, "Promise<");
-          pp.newLine();
-          pp.type(level, margin, ty);
-          pp.newLine();
-          pp.out(level, prevMargin, ">");
-          pp.newLine();
-        },
-      )
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
     | TPrimValue(TSymbol(), Some(arr), _) ->

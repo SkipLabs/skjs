@@ -22,7 +22,7 @@ extension class TypeChecker {
       | Some(e) -> (e.pos, this.expr(tcenv, e, true))
       };
       rtype = if (this.isAsync) {
-        TType::single(TPromise(etype, epos))
+        TType::promise(epos, etype)
       } else {
         etype
       };

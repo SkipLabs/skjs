@@ -2,20 +2,20 @@
 // await, `in`, `keyof`, type-argument arity, and async return-type
 // validation.
 
-// FIXME: tsc types `.then`/`.catch`/`.finally` via the Promise lib; SKJS does
-// not yet expose Promise methods.
 function testThen(p: Promise<number>): Promise<string> {
-  // @skjs-expect-error Property access is not allowed on this type
-  return p.then((n) => n.toString());
+  return p.then((n: number) => n.toString());
+}
+
+// A callback returning Promise<U> also produces Promise<U> (then flattens).
+function testThenChained(p: Promise<number>): Promise<string> {
+  return p.then((n: number) => p.then((m: number) => m.toString()));
 }
 
 function testCatch(p: Promise<number>): Promise<number> {
-  // @skjs-expect-error Property access is not allowed on this type
-  return p.catch((reason) => 0);
+  return p.catch((reason: unknown) => 0);
 }
 
 function testFinally(p: Promise<number>): Promise<number> {
-  // @skjs-expect-error Property access is not allowed on this type
   return p.finally(() => {});
 }
 
@@ -51,16 +51,13 @@ interface Thenable {
   then<U>(onfulfilled: (value: number) => U | Promise<U>): Promise<U>;
 }
 
-// FIXME: tsc unwraps any structurally well-shaped thenable in `await`; SKJS
-// requires a Promise.
+// `await` unwraps any structurally well-shaped thenable, like tsc.
 async function testAwaitThenable(t: Thenable): Promise<number> {
-  // @skjs-expect-error 'await' can only be applied to a Promise
   return await t;
 }
 
-// FIXME: tsc accepts: Promise<number> is structurally a thenable.
+// Promise<number> is structurally a thenable.
 function testPromiseIsThenable(p: Promise<number>): Thenable {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return p;
 }
 
@@ -93,23 +90,22 @@ async function testAwaitNestedFlat(
   return await p;
 }
 
-// FIXME: tsc supports `in` on promises; SKJS does not yet.
+// `then` is a required field of every Promise, so the check is always true
+// (tsc does not report this).
 function testIn(p: Promise<number>): boolean {
-  // @skjs-expect-error The 'in' operator is not yet supported by SKJS for this type
+  // @skjs-expect-error This condition is always true
   return "then" in p;
 }
 
-// FIXME: tsc supports `keyof` on promises; SKJS does not yet.
-// @skjs-expect-error 'keyof' is not yet supported by SKJS for type Promise<number>
 function testKeyof(k: "then" | "catch" | "finally"): keyof Promise<number> {
   return k;
 }
 
 // Error: Promise takes exactly one type argument.
-// @ts-expect-error Expected 1 type arguments, but got 2 (Promise<T> requires exactly one)
+// @ts-expect-error Expected 1 type arguments, but got 2
 function testArityTwo(p: Promise<number, string>): void {}
 
-// @ts-expect-error Expected 1 type arguments, but got 0 (Promise<T> requires exactly one)
+// @ts-expect-error Expected 1 type arguments, but got 0
 function testArityZero(p: Promise): void {}
 
 // Error: an async function's return type must be the global Promise type,
@@ -127,7 +123,6 @@ async function testAsyncRetUnion(): Promise<number> | undefined {
 
 // @ts-expect-error The return type of an async function must be the global Promise<T> type
 async function testAsyncRetThenable(): Thenable {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 0;
 }
 

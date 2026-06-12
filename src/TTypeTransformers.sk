@@ -86,7 +86,6 @@ mutable base class ApplyType(
     | x @ TPrimUnit _
     | x @ TPrimValue _ ->
       x
-    | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
     | obj @ TObject _ -> this.object(env, obj)
     }
   }

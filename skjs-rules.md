@@ -260,6 +260,14 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
 - **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
+### 21. Promises and async/await
+- **`Promise<T>` is a plain object type** declared in the builtin stubs with `then`/`catch`/`finally` methods, so promises follow the same structural typing as every other object (`in`, `keyof`, width subtyping, payload covariance all behave normally). The signatures are simplified relative to TypeScript: `then<U>(onfulfilled: (value: T) => U | Promise<U>): Promise<U>` takes exactly one required callback — there is no `onrejected` second argument and the callback is not optional.
+- **No `Promise` value yet**: `new Promise(...)`, `Promise.resolve`, `Promise.reject`, `Promise.all`, ... are not available.
+- **`await` is structural**, like tsc: any object whose `then` is shaped like a thenable can be awaited. Applying `await` to a non-thenable is an **error** (`'await' can only be applied to a Promise`, in the spirit of `@typescript-eslint/await-thenable`); tsc instead lets non-thenables pass through unchanged.
+- **`await` unwraps exactly one level**: `await p` with `p: Promise<Promise<T>>` has type `Promise<T>`, whereas tsc's `Awaited` flattens nested thenables recursively to `T`.
+- **Async return annotations must be the global `Promise<T>` type** (TS1064, like tsc) — an annotation that is merely a structurally well-shaped thenable is rejected.
+- **Verified by**: `tests/expect-error/promise-object.ts`, `examples/src/async_method.ts`.
+
 ### 28. Optional Fields Are Exact (present ⇒ T)
 
 - **Rule**: `f?: T` means the key **may be absent**; if the key is present, its value is `T` — not `T | undefined`. To allow a present-but-undefined value, add it to the type: `f?: T | undefined`. This is the same contract as index signatures (a present key holds `V`), keeping fields and indexes uniform.

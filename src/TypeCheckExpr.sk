@@ -2177,19 +2177,6 @@ extension class TypeChecker {
                   }
                 )
               }
-          | TPromise _ ->
-            tcenv.error(
-              Array[
-                (
-                  pos,
-                  "The 'in' operator is not yet supported by SKJS for this type",
-                ),
-                (e2.pos, `For type ${this.ppType(tcenv, t2)}`),
-              ],
-              SKJSCode(9009),
-            );
-            !canBeTrue = true;
-            !canBeFalse = true
           }
         };
         (canBeTrue, canBeFalse) match {
@@ -2358,8 +2345,11 @@ extension class TypeChecker {
       aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TPromise(ty, _)) -> ty
-      | _ ->
+      | Some(obj @ TObject _) -> this.getAwaitedType(tcenv.subst, obj, pos)
+      | _ -> None()
+      } match {
+      | Some(ty) -> ty
+      | None() ->
         fatalError(
           Array[
             (pos, "'await' can only be applied to a Promise"),
@@ -2581,15 +2571,16 @@ extension class TypeChecker {
         inferredType = this.expr(tcenv, e, true);
         isAsync match {
         | None() -> inferredType
-        | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+        | Some(asyncPos) -> TType::promise(asyncPos, inferredType)
         }
       | CBBlock(bl) ->
         if (isAsync is Some _) !this.isAsync = true;
         tvar = isAsync match {
         | None() -> this.newTVar(tcenv, pos, FromLambdaReturn(pos))
         | Some(asyncPos) ->
-          TType::single(
-            TPromise(this.newTVar(tcenv, pos, FromLambdaReturn(pos)), asyncPos),
+          TType::promise(
+            asyncPos,
+            this.newTVar(tcenv, pos, FromLambdaReturn(pos)),
           )
         };
         !this.retType = Some(tvar);
@@ -2608,7 +2599,7 @@ extension class TypeChecker {
             "Type of the callback's returned value is not assignable to the expected return type",
             isAsync match {
             | None() -> inferredType
-            | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+            | Some(asyncPos) -> TType::promise(asyncPos, inferredType)
             },
             annotatedType,
             TSCode(2322),

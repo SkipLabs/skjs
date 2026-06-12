@@ -510,6 +510,15 @@ declare class Error {
   constructor(cause?: string);
 }
 
+// T must appear only covariantly so Promise<A> <: Promise<B> iff A <: B;
+// `catch` therefore introduces its own U instead of mentioning T on the
+// callback side (as lib.es5 does).
+declare interface Promise<T> {
+  then<U>(onfulfilled: (value: T) => U | Promise<U>): Promise<U>;
+  catch<U>(onrejected: (reason: unknown) => U | Promise<U>): Promise<T | U>;
+  finally(onfinally: () => void): Promise<T>;
+}
+
 declare type StringRecord<V> = {
   [index: string]: V;
 };
