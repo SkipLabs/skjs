@@ -2345,7 +2345,7 @@ extension class TypeChecker {
       aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(obj @ TObject _) -> this.getAwaitedType(tcenv.subst, obj, pos)
+      | Some(obj @ TObject _) -> obj.getAwaitedType(tcenv.subst, this, pos)
       | _ -> None()
       } match {
       | Some(ty) -> ty

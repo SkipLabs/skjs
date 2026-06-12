@@ -10,7 +10,7 @@ extension class TypeChecker {
         stypes.singleElt() match {
         | Some(TPrimUnit(TVoid(), _)) if (!isAsync) -> void
         | Some(obj @ TObject _) if (isAsync) ->
-          this.getAwaitedType(tcenv.subst, obj, obj.pos) match {
+          obj.getAwaitedType(tcenv.subst, this, obj.pos) match {
           | Some(realType) ->
             if (!this.isVoid(tcenv, false, realType)) {
               return false

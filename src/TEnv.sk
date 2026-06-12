@@ -1486,52 +1486,6 @@ base class TEnv{
     }
   }
 
-  // First parameter of a function-typed value: expand to a single object,
-  // then read the first (or first optional) parameter of its call signature.
-  private fun maybeGetFirstCallParam(subst: mutable Subst, ty: TType): ?TType {
-    ty.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
-      stypes.singleElt()
-    ) match {
-    | Some(obj @ TObject(_, _, _)) ->
-      obj.maybeGetCall(subst, this) match {
-      | Some((_, tFuns)) ->
-        fun_ = tFuns.fun_;
-        fun_.params.maybeGet(0) match {
-        | p @ Some _ -> p
-        | None() -> fun_.optionalParams.maybeGet(0)
-        }
-      | None() -> None()
-      }
-    | _ -> None()
-    }
-  }
-
-  // Awaited type via the thenable protocol, per object branch (so a union
-  // like Promise<A> | Promise<B> awaits to A | B): then -> call signature ->
-  // first parameter (onfulfilled) -> call signature -> first parameter.
-  // Unwraps exactly one level — no recursive flattening (tsc's Awaited<T>
-  // recurses). Returns None when some branch is not a well-shaped thenable.
-  fun getAwaitedType(
-    subst: mutable Subst,
-    tObj: TObject,
-    pos: PosRange,
-  ): ?TType {
-    tys = mutable Vector[];
-    for (fields in tObj.getAllFields()) {
-      fields
-        .maybeGetType(subst, this, "then", pos, false)
-        .flatMap(thenType -> this.maybeGetFirstCallParam(subst, thenType))
-        .flatMap(onfulfilledType ->
-          this.maybeGetFirstCallParam(subst, onfulfilledType)
-        ) match {
-      | Some(ty) -> tys.push(ty)
-      | None() -> return None()
-      }
-    };
-    if (tys.isEmpty()) return None();
-    Some(TType::unionN(subst, this, pos, tys))
-  }
-
   fun normalizeFun(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
