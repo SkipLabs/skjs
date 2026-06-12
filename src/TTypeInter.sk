@@ -126,21 +126,28 @@ extension class TType {
     }
   }
 
+  // The boxed interface of a primitive, marked as standing in for the
+  // primitive itself (isPrimitive = Some(true)): structural object types
+  // accept it, while branches asserting non-primitivity (the `object`
+  // keyword, typeof-proven objects) reject it in TFields::isSub.
+  static fun boxedPrim(
+    subst: mutable Subst,
+    tenv: TEnv,
+    primClassName: Name,
+  ): ?TType {
+    TType::inst(primClassName, TArgs(Array[]))
+      .expandToClauses(subst, tenv, Covariant())
+      .getObject()
+      .map(obj -> TType::single(obj.map(f -> f.withIsPrimitive(Some(true)))))
+  }
+
   private static fun inter_(
     subst: mutable Subst,
     tenv: TEnv,
     ty1: TType,
     ty2: TType,
   ): TType {
-    // The boxed interface of a primitive, marked as standing in for the
-    // primitive itself (isPrimitive = Some(true)): structural object types
-    // accept it, while branches asserting non-primitivity (the `object`
-    // keyword, typeof-proven objects) reject it in TFields::isSub.
-    boxedPrim = (primClassName) ->
-      TType::inst(primClassName, TArgs(Array[]))
-        .expandToClauses(subst, tenv, Covariant())
-        .getObject()
-        .map(obj -> TType::single(obj.map(f -> f.withIsPrimitive(Some(true)))));
+    boxedPrim = (primClassName) -> TType::boxedPrim(subst, tenv, primClassName);
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
     (ty1.getSingleVar(), ty2.getSingleVar()) match {
@@ -399,9 +406,14 @@ extension base class SType {
     | (obj @ TObject _, prim @ TPrimValue _) ->
       // A primitive overlaps an object type only through its boxed class:
       // a value of type `Number` can be a primitive number, but a value of
-      // type `{ a: string }` cannot
-      boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
-      TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
+      // type `{ a: string }` cannot — and no primitive can box into a
+      // branch asserting non-primitivity (the `object` keyword, or a
+      // typeof-proven object).
+      TType::boxedPrim(subst, tenv, prim.asClassName()) match {
+      | Some(boxed) ->
+        TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
+      | None() -> true
+      }
     | (TObject _, TObject _) ->
       // TODO: some object pairs are provably disjoint and could be
       // reported: a shared field with non-overlapping types can leave no

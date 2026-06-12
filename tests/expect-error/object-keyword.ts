@@ -234,6 +234,7 @@ function typeofObjectProvesNonPrimitive(
 ): void {
   if (typeof x === "object") {
     __SKJS_show(x, `{ length: number }`);
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (x === s) {
       // x was proven non-primitive by the typeof check, so it cannot equal a
       // string: the equality intersection is uninhabited (without the proof,
@@ -275,9 +276,11 @@ function typeofFunctionOnEmpty(e: {}): void {
   }
 }
 
-// The comparison is provably always false (o is non-primitive) and the
-// equality narrowing already yields never, but no warning is emitted yet.
+// The comparison is provably always false: o is non-primitive, so no string
+// can box into it. The equality narrowing yields never and the comparison
+// warns.
 function objectComparedToString(o: object, s: string): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (o === s) {
     __SKJS_show(o, `never`);
   }

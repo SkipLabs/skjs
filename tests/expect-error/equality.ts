@@ -208,9 +208,10 @@ function numericNotation(x: 1e3, y: 1000): boolean {
   return x === y;
 }
 
-// FIXME: tsc reports TS2367 (`object` excludes primitives); SKJS lowers the
-// `object` keyword to the empty object type, which `number` overlaps
+// The `object` keyword excludes primitives, so no number can box into it
+// (tsc reports TS2367 here too)
 function numberVsObjectKeyword(n: number, o: object): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return n === o;
 }
 
