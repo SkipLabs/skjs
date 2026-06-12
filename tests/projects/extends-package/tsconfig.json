@@ -2,6 +2,7 @@
   // @skjs-expect-error Package-style extends not supported by SKJS: @tsconfig/node16
   "extends": "@tsconfig/node16",
   "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
     "strict": true,
     "target": "ES2020"
   },

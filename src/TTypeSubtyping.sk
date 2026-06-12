@@ -876,12 +876,12 @@ extension class TFields {
             fields2,
           )
         };
-        f2type = if (f2.isOptional) {
-          TType::unionUndefined(subst, tenv, f2.get, f2.pos)
-        } else {
-          f2.get
-        };
-        TType::isSub(subst, tenv, f1.get, f2type) match {
+        // Exact optional semantics: `f?: T` promises that a PRESENT key
+        // holds a T. The sub's field describes present values, so it must
+        // satisfy bare T — never T | undefined (the | undefined of an
+        // optional read accounts for ABSENCE only, and absence is the
+        // Right(f2) case, not this one).
+        TType::isSub(subst, tenv, f1.get, f2.get) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           return STRecFieldsField(

@@ -608,16 +608,21 @@ function checkClassWithCombinedDerivedConstructor(
 
 ///////////////////////////////////////////////////////////////////////////////
 // Initialization Checks with Optional Fields
+//
+// Optional fields are EXACT (present => T): a constructor that
+// unconditionally assigns an optional parameter makes the field present
+// with a possibly-undefined value, so these declarations carry
+// `| undefined` explicitly (see optional-fields-exact.ts).
 ///////////////////////////////////////////////////////////////////////////////
 
 interface OptionalFieldsInterface {
   field1: number;
-  field2?: string;
+  field2?: string | undefined;
 }
 
 class ClassWithOptionalFields implements OptionalFieldsInterface {
   field1: number;
-  field2?: string;
+  field2?: string | undefined;
   constructor(field1: number, field2?: string) {
     this.field1 = field1;
     this.field2 = field2;
@@ -631,15 +636,15 @@ function checkClassWithOptionalFields(
 }
 
 interface ExtendedOptionalFieldsInterface extends OptionalFieldsInterface {
-  field3?: boolean;
+  field3?: boolean | undefined;
 }
 
 class ClassWithExtendedOptionalFields
   implements ExtendedOptionalFieldsInterface
 {
   field1: number;
-  field2?: string;
-  field3?: boolean;
+  field2?: string | undefined;
+  field3?: boolean | undefined;
   constructor(field1: number, field2?: string, field3?: boolean) {
     this.field1 = field1;
     this.field2 = field2;
@@ -658,19 +663,23 @@ function checkClassWithExtendedOptionalFields(
 ///////////////////////////////////////////////////////////////////////////////
 
 interface ComplexOptionalFieldsInterface {
-  nested?: {
-    field1: number;
-    field2?: string;
-  };
-  list?: number[];
+  nested?:
+    | {
+        field1: number;
+        field2?: string;
+      }
+    | undefined;
+  list?: number[] | undefined;
 }
 
 class ClassWithComplexOptionalFields implements ComplexOptionalFieldsInterface {
-  nested?: {
-    field1: number;
-    field2?: string;
-  };
-  list?: number[];
+  nested?:
+    | {
+        field1: number;
+        field2?: string;
+      }
+    | undefined;
+  list?: number[] | undefined;
   constructor(nested?: { field1: number; field2?: string }, list?: number[]) {
     this.nested = nested;
     this.list = list;
@@ -688,13 +697,13 @@ function checkClassWithComplexOptionalFields(
 ///////////////////////////////////////////////////////////////////////////////
 
 interface OptionalAliasWithInterface extends OptionalFieldsInterface {
-  field4?: string;
+  field4?: string | undefined;
 }
 
 class ClassWithOptionalAliasConstructor implements OptionalAliasWithInterface {
   field1: number;
-  field2?: string;
-  field4?: string;
+  field2?: string | undefined;
+  field4?: string | undefined;
   constructor(field1: number, field2?: string, field4?: string) {
     this.field1 = field1;
     this.field2 = field2;
@@ -709,16 +718,16 @@ function checkClassWithOptionalAliasConstructor(
 }
 
 interface OptionalInterfaceWithAlias extends OptionalAliasWithInterface {
-  field5?: boolean;
+  field5?: boolean | undefined;
 }
 
 class ClassWithOptionalInterfaceAliasConstructor
   implements OptionalInterfaceWithAlias
 {
   field1: number;
-  field2?: string;
-  field4?: string;
-  field5?: boolean;
+  field2?: string | undefined;
+  field4?: string | undefined;
+  field5?: boolean | undefined;
   constructor(
     field1: number,
     field2?: string,
@@ -744,19 +753,19 @@ function checkClassWithOptionalInterfaceAliasConstructor(
 
 interface OptionalInterface1 {
   field1: number;
-  field2?: string;
+  field2?: string | undefined;
 }
 
 interface OptionalInterface2 {
-  field3?: boolean;
+  field3?: boolean | undefined;
 }
 
 class ClassImplementingOptionalInterfaces
   implements OptionalInterface1, OptionalInterface2
 {
   field1: number;
-  field2?: string;
-  field3?: boolean;
+  field2?: string | undefined;
+  field3?: boolean | undefined;
   constructor(field1: number, field2?: string, field3?: boolean) {
     this.field1 = field1;
     this.field2 = field2;
@@ -776,17 +785,17 @@ function checkClassImplementingOptionalInterfaces(
 
 interface OptionalBaseInterface {
   baseField: number;
-  optionalBaseField?: string;
+  optionalBaseField?: string | undefined;
 }
 
 interface OptionalDerivedInterface1 extends OptionalBaseInterface {
   derivedField1: string;
-  optionalDerivedField1?: boolean;
+  optionalDerivedField1?: boolean | undefined;
 }
 
 interface OptionalDerivedInterface2 extends OptionalBaseInterface {
   derivedField2: boolean;
-  optionalDerivedField2?: string;
+  optionalDerivedField2?: string | undefined;
 }
 
 interface OptionalCombinedDerivedInterface
@@ -797,11 +806,11 @@ class ClassWithOptionalCombinedDerivedConstructor
   implements OptionalCombinedDerivedInterface
 {
   baseField: number;
-  optionalBaseField?: string;
+  optionalBaseField?: string | undefined;
   derivedField1: string;
-  optionalDerivedField1?: boolean;
+  optionalDerivedField1?: boolean | undefined;
   derivedField2: boolean;
-  optionalDerivedField2?: string;
+  optionalDerivedField2?: string | undefined;
   constructor(
     baseField: number,
     derivedField1: string,

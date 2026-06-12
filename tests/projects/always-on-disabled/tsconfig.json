@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "exactOptionalPropertyTypes": true,
     "strict": true,
     "target": "ES2020",
     // @skjs-expect-error Option 'noImplicitReturns' is always checked by SKJS and cannot be disabled.
