@@ -704,16 +704,6 @@ class TObject private (
     if (branches.isEmpty()) None() else Some(this with {branches})
   }
 
-  // The branches that do not assert non-primitivity (i.e. everything except
-  // `object` keyword branches), or None if there is no such branch. Used to
-  // decide whether a primitive type intersected with this object type boxes
-  // to its interface: the `object` keyword never accepts a primitive.
-  fun withoutNonPrimitiveBranches(): ?TObject {
-    this.mapOpt(fields ->
-      if (fields.isPrimitive == Some(false)) None() else Some(fields)
-    )
-  }
-
   fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
     this.mapOpt(fields -> fields.mapCall(f))
   }
@@ -1755,6 +1745,10 @@ class TFields protected {
   // structural demands, so every non-primitive value satisfies it.
   fun isBareNonPrimitive(): Bool {
     this.isPrimitive == Some(false) && this.isEmpty()
+  }
+
+  fun withIsPrimitive(isPrimitive: ?Bool): TFields {
+    this with {isPrimitive}
   }
 
   private static fun createFromSortedIterator{
