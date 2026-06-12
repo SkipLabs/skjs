@@ -185,13 +185,16 @@ function typeofStringOnObject(x: object): void {
   }
 }
 
-// FIXME: tsc narrows `object` to `Function` here, so `const n: never = x`
-// is an error in tsc; SKJS currently narrows `object` under
-// typeof === "function" to `never`, which is unsound (functions are valid
-// `object` values).
+// Functions are valid `object` values, so typeof === "function" keeps the
+// `object` type on both sides (tsc narrows the matching side to `Function`,
+// which SKJS cannot express; `object` is the sound over-approximation).
 function typeofFunctionOnObject(x: object): void {
   if (typeof x === "function") {
+    const o: object = x;
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
+  } else {
+    const o: object = x;
   }
 }
 

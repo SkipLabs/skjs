@@ -287,11 +287,21 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> Some(if (target) Some((false, f)) else None())
-            | Some((false, _)) -> if (target) Some(call) else None()
-            | None() -> if (target) None() else Some(call)
+          tObj.mapOpt(fields ->
+            if (fields.isBareNonPrimitive()) {
+              // The `object` keyword includes functions, so it stays on both
+              // sides (tsc narrows the matching side to Function, which SKJS
+              // cannot express; `object` is the sound over-approximation).
+              Some(fields)
+            } else {
+              fields.mapCall(call ->
+                call match {
+                | Some((true, f)) ->
+                  Some(if (target) Some((false, f)) else None())
+                | Some((false, _)) -> if (target) Some(call) else None()
+                | None() -> if (target) None() else Some(call)
+                }
+              )
             }
           )
         | _ -> if (target) None() else Some(x)
