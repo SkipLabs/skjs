@@ -10,7 +10,7 @@
 function objectRejectsString(x: string): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Type string
-  // @skjs-expect-error-line3 is not assignable to type {  }
+  // @skjs-expect-error-line3 is not assignable to type object
   const o: object = x;
 }
 
@@ -78,7 +78,7 @@ function objectNotAssignableToFields(o: object): { a: number } {
 // --- Printing: the `object` keyword's printed form ---
 
 function objectPrinting(o: object): void {
-  __SKJS_show(o, `{  }`);
+  __SKJS_show(o, `object`);
 }
 
 // --- SKJS's `{}` also rejects primitives (deliberate, stricter than tsc) ---
@@ -92,19 +92,16 @@ function emptyObjectTypeRejectsString(x: string): void {
   const e: {} = x;
 }
 
-// --- Intersections: in TypeScript `string & object` is uninhabited (no value
-// is both a primitive and a non-primitive) ---
+// --- Intersections: `string & object` is uninhabited (no value is both a
+// primitive and a non-primitive), while `string & {}` collapses to `string`
+// (the boxed String interface satisfies the empty object type) ---
 
-// FIXME: tsc rejects this (`string & object` reduces to never); SKJS
-// currently collapses `string & object` to `string`.
 function stringInterObjectIsUninhabited(x: string): void {
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const so: string & object = x;
 }
 
-// FIXME: tsc accepts this (`string & object` is never); SKJS currently
-// collapses `string & object` to `string`.
 function stringInterObjectToNever(x: string & object): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: never = x;
 }
 

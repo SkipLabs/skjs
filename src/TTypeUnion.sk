@@ -337,6 +337,7 @@ extension class TFields {
       call,
       new,
       isArray,
+      isNonPrimitive => fields1.isNonPrimitive && fields2.isNonPrimitive,
     }
   }
 

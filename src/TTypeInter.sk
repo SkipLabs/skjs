@@ -160,26 +160,38 @@ extension class TType {
     // TODO: These speculative isSub checks use subst directly. They only
     // involve concrete types (expandPrim produces e.g. Number, not TVars),
     // so TVar growth cannot occur. If this changes, consider using clone().
-    (clauses1.primKind(), clauses2.getObject()) match {
-    | (Some(primKind), Some(stype)) ->
+    // A primitive intersected with an object type collapses to the primitive
+    // when the primitive's boxed interface satisfies the object type. The
+    // `object` keyword branches are excluded: they assert non-primitivity, so
+    // they never accept a (boxed) primitive — without any other branch the
+    // shortcut does not apply and the tag-keyed intersection below yields
+    // never (e.g. `string & object`).
+    (
+      clauses1.primKind(),
+      clauses2.getObject().flatMap(obj -> obj.withoutNonPrimitiveBranches()),
+    ) match {
+    | (Some(primKind), Some(obj)) ->
       TType::isSub(
         subst,
         tenv,
         expandPrim(primKind),
-        TType::single(stype),
+        TType::single(obj),
       ) match {
       | STOk() -> return ty1
       | STError _ -> void
       }
     | _ -> void
     };
-    (clauses2.primKind(), clauses1.getObject()) match {
-    | (Some(primKind), Some(stype)) ->
+    (
+      clauses2.primKind(),
+      clauses1.getObject().flatMap(obj -> obj.withoutNonPrimitiveBranches()),
+    ) match {
+    | (Some(primKind), Some(obj)) ->
       TType::isSub(
         subst,
         tenv,
         expandPrim(primKind),
-        TType::single(stype),
+        TType::single(obj),
       ) match {
       | STOk() -> return ty2
       | STError _ -> void
@@ -523,6 +535,7 @@ extension class TFields {
         call,
         new,
         isArray,
+        isNonPrimitive => fields1.isNonPrimitive || fields2.isNonPrimitive,
       },
     )
   }
