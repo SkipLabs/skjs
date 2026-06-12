@@ -267,9 +267,7 @@ extension class TypeChecker {
             | None() -> if (target) Some(call) else None()
             }
           )
-        | TPrimUnit(TNull(), _)
-        | TPromise _ ->
-          if (target) Some(x) else None()
+        | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
       default = if (target) {
@@ -416,7 +414,6 @@ extension class TypeChecker {
         | TPrimUnit _
         | TPrimValue _ ->
           if (target) None() else Some(stype)
-        | TPromise _ -> Some(stype) /* TODO */
         | tObj @ TObject(_, _, _pos) ->
           singleKey match {
           | None() -> Some(stype)

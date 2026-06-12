@@ -171,6 +171,12 @@ class TType private {
     TType::inst(Name(pos, `${base}${tArgs.size()}`), TArgs(tArgs))
   }
 
+  // The global Promise type, lazily expanded from the builtin stubs (like
+  // TAArray for Array).
+  static fun promise(pos: PosRange, inner: TType): TType {
+    TType::inst(Name(pos, "Promise"), TArgs(Array[inner]))
+  }
+
   static fun fromTParamWithConstraint(
     subst: mutable Subst,
     tenv: TEnv,
@@ -485,9 +491,7 @@ class TType private {
         | TPrimUnit _
         | TPrimValue _ ->
           continue
-        | TObject _
-        | TPromise _ ->
-          return false
+        | TObject _ -> return false
         }
       };
       true
@@ -894,6 +898,22 @@ class TObject private (
     Some(TType::unionN(subst, tenv, this.pos, tys))
   }
 
+  // Awaited type via the thenable protocol; every branch must be a
+  // well-shaped thenable (so a union like Promise<A> | Promise<B> awaits to
+  // A | B). Unwraps exactly one level — no recursive flattening (tsc's
+  // Awaited<T> recurses).
+  fun getAwaitedType(subst: mutable Subst, tenv: TEnv, pos: PosRange): ?TType {
+    tys = mutable Vector[];
+    for (fields in this.getAllFields()) {
+      fields.getAwaitedType(subst, tenv, pos) match {
+      | Some(ty) -> tys.push(ty)
+      | None() -> return None()
+      }
+    };
+    if (tys.isEmpty()) return None();
+    Some(TType::unionN(subst, tenv, pos, tys))
+  }
+
   fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
     result: ?(Bool, TFuns) = None();
     for (fields in this.branches) {
@@ -961,6 +981,30 @@ fun maybeGetRestElementType(
   ) match {
   | Some(obj @ TObject(_, _, objectPos)) ->
     tenv.getIteratorElementType(subst, obj, objectPos)
+  | _ -> None()
+  }
+}
+
+// First parameter of a function-typed value: expand to a single object, then
+// read the first (or first optional) parameter of its call signature.
+private fun maybeGetFirstCallParam(
+  subst: mutable Subst,
+  tenv: TEnv,
+  ty: TType,
+): ?TType {
+  ty.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
+    stypes.singleElt()
+  ) match {
+  | Some(obj @ TObject(_, _, _)) ->
+    obj.maybeGetCall(subst, tenv) match {
+    | Some((_, tFuns)) ->
+      fun_ = tFuns.fun_;
+      fun_.params.maybeGet(0) match {
+      | p @ Some _ -> p
+      | None() -> fun_.optionalParams.maybeGet(0)
+      }
+    | None() -> None()
+    }
   | _ -> None()
   }
 }
@@ -1196,16 +1240,12 @@ base class STypeTag final () uses Orderable {
   | TagString
   | TagBigInt
   | TagSymbol
-  | TagPromise
   | TagObject
 }
 
 base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<STypeTag> {
-  children =
-  | TPromise(inner: TType)
-
   fun tag(): STypeTag {
     this match {
     | TPrimUnit(TUndefined(), _) -> TagUndefined()
@@ -1216,7 +1256,6 @@ base class SType private (
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
     | TPrimValue(TSymbol(), _, _) -> TagSymbol()
-    | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
     }
   }
@@ -1241,7 +1280,6 @@ base class SType private (
     | TPrimUnit(TNull(), _) ->
       SFValues(FOne(), false)
     | TObject _
-    | TPromise _
     | TPrimValue(TSymbol(), _, _) ->
       SFValues(FZero(), true)
     | TPrimValue(TBool(), None(), _)
@@ -1287,7 +1325,6 @@ base class SType private (
     | TPrimUnit(TNull(), _) ->
       if (target) None() else Some(this)
     | TObject _
-    | TPromise _
     | TPrimValue(TSymbol(), _, _) ->
       if (target) Some(this) else None()
     | TPrimValue(TString(), None(), _)
@@ -1971,6 +2008,17 @@ class TFields protected {
     this.maybeGet(fieldName).map(fd ->
       TFields::resolveFieldType(subst, tenv, fd, pos, isLValue)
     )
+  }
+
+  // Awaited type of this single branch via the thenable protocol: then ->
+  // call signature -> first parameter (onfulfilled) -> call signature ->
+  // first parameter. None when this branch is not a well-shaped thenable.
+  fun getAwaitedType(subst: mutable Subst, tenv: TEnv, pos: PosRange): ?TType {
+    this.maybeGetType(subst, tenv, "then", pos, false)
+      .flatMap(thenType -> maybeGetFirstCallParam(subst, tenv, thenType))
+      .flatMap(onfulfilledType ->
+        maybeGetFirstCallParam(subst, tenv, onfulfilledType)
+      )
   }
 
   fun maybeGetSymbolType(

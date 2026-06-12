@@ -1120,24 +1120,6 @@ base class TEnv{
         )
       };
       TType::single(TPrimUnit(TUndefined(), pos))
-    | TAInst(Name(p, "Promise"), targs) ->
-      if (targs.size() != 1) {
-        tcenvb.error(
-          Array[
-            (
-              p,
-              `Expected 1 type arguments, but got ${targs.size()} (Promise<T> requires exactly one)`,
-            ),
-          ],
-          TSCode(2707),
-        )
-      };
-      tArg = if (targs.size() >= 1) {
-        this.normalize(tcenvb, targs[0])
-      } else {
-        TType::top(pos)
-      };
-      TType::single(TPromise(tArg, pos))
     | TAInst(Name(p, "unknown"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(
@@ -1992,21 +1974,6 @@ base class TEnv{
           obj = this.newObject(subst, prim.asClassName(), Array[]);
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
-        | TPromise _ ->
-          fatalError(
-            Array[
-              (
-                pos,
-                `'keyof' is not yet supported by SKJS for type ${prettyPrintType(
-                  false,
-                  TType::single(stype),
-                  subst,
-                  this,
-                )}`,
-              ),
-            ],
-            SKJSCode(9025),
-          )
         }
       }
     };

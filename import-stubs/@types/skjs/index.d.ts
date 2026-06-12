@@ -510,6 +510,32 @@ declare class Error {
   constructor(cause?: string);
 }
 
+// The minimal thenable shape, as in lib.es5. Callbacks return
+// `U | PromiseLike<U>` (not `U | Promise<U>`) both here and in Promise so
+// that Promise<T> <: PromiseLike<T> holds.
+declare interface PromiseLike<T> {
+  then<U>(onfulfilled: (value: T) => U | PromiseLike<U>): PromiseLike<U>;
+}
+
+// T must appear only covariantly in instance members so Promise<A> <:
+// Promise<B> iff A <: B; `catch` therefore introduces its own U instead of
+// mentioning T on the callback side (as lib.es5 does). The constructor and
+// statics live on the value side and do not affect instance variance.
+declare class Promise<T> {
+  constructor(
+    executor: (
+      resolve: (value: T) => void,
+      reject: (reason: unknown) => void,
+    ) => void,
+  );
+  then<U>(onfulfilled: (value: T) => U | PromiseLike<U>): Promise<U>;
+  catch<U>(onrejected: (reason: unknown) => U | PromiseLike<U>): Promise<T | U>;
+  finally(onfinally: () => void): Promise<T>;
+  static resolve<T>(value: T): Promise<T>;
+  static reject(reason: unknown): Promise<never>;
+  static all<T>(values: ReadonlyArray<Promise<T>>): Promise<Array<T>>;
+}
+
 declare type StringRecord<V> = {
   [index: string]: V;
 };

@@ -2177,19 +2177,6 @@ extension class TypeChecker {
                   }
                 )
               }
-          | TPromise _ ->
-            tcenv.error(
-              Array[
-                (
-                  pos,
-                  "The 'in' operator is not yet supported by SKJS for this type",
-                ),
-                (e2.pos, `For type ${this.ppType(tcenv, t2)}`),
-              ],
-              SKJSCode(9009),
-            );
-            !canBeTrue = true;
-            !canBeFalse = true
           }
         };
         (canBeTrue, canBeFalse) match {
@@ -2355,11 +2342,43 @@ extension class TypeChecker {
       )
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
-      aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TPromise(ty, _)) -> ty
-      | _ ->
+      // Unwrap the thenable branches and pass the non-thenable parts
+      // through unchanged, like the runtime does (and like tsc types it).
+      // Non-thenable parts are an error, but a non-fatal one as long as at
+      // least one branch is a thenable: checking continues with the
+      // combined result type.
+      resultTys = mutable Vector[];
+      hasThenable = false;
+      hasNonThenable = false;
+      aeType.getSTypes(tcenv.subst, this, Covariant()) match {
+      | None() -> !hasNonThenable = true
+      | Some(stypes) ->
+        for (stype in stypes) {
+          stype match {
+          | obj @ TObject _ ->
+            branches = obj.getBranches();
+            for (fields in branches) {
+              fields.getAwaitedType(tcenv.subst, this, pos) match {
+              | Some(ty) ->
+                !hasThenable = true;
+                resultTys.push(ty)
+              | None() ->
+                !hasNonThenable = true;
+                passedThrough = if (branches.size() == 1) {
+                  obj
+                } else {
+                  TObject::createSingleBranch(fields, None(), obj.pos)
+                };
+                resultTys.push(TType::single(passedThrough))
+              }
+            }
+          | _ ->
+            !hasNonThenable = true;
+            resultTys.push(TType::single(stype))
+          }
+        }
+      };
+      if (!hasThenable) {
         fatalError(
           Array[
             (pos, "'await' can only be applied to a Promise"),
@@ -2367,6 +2386,17 @@ extension class TypeChecker {
           ],
           ESLintCode("@typescript-eslint/await-thenable"),
         )
+      } else {
+        if (hasNonThenable) {
+          tcenv.error(
+            Array[
+              (pos, "'await' can only be applied to a Promise"),
+              (aeType.pos, "This is not always a promise"),
+            ],
+            ESLintCode("@typescript-eslint/await-thenable"),
+          )
+        };
+        TType::unionN(tcenv.subst, this, pos, resultTys)
       }
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1, true);
@@ -2581,15 +2611,16 @@ extension class TypeChecker {
         inferredType = this.expr(tcenv, e, true);
         isAsync match {
         | None() -> inferredType
-        | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+        | Some(asyncPos) -> TType::promise(asyncPos, inferredType)
         }
       | CBBlock(bl) ->
         if (isAsync is Some _) !this.isAsync = true;
         tvar = isAsync match {
         | None() -> this.newTVar(tcenv, pos, FromLambdaReturn(pos))
         | Some(asyncPos) ->
-          TType::single(
-            TPromise(this.newTVar(tcenv, pos, FromLambdaReturn(pos)), asyncPos),
+          TType::promise(
+            asyncPos,
+            this.newTVar(tcenv, pos, FromLambdaReturn(pos)),
           )
         };
         !this.retType = Some(tvar);
@@ -2608,7 +2639,7 @@ extension class TypeChecker {
             "Type of the callback's returned value is not assignable to the expected return type",
             isAsync match {
             | None() -> inferredType
-            | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+            | Some(asyncPos) -> TType::promise(asyncPos, inferredType)
             },
             annotatedType,
             TSCode(2322),

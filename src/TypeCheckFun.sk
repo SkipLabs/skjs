@@ -233,17 +233,42 @@ extension class TypeChecker {
       this.retType match {
       | None() -> void
       | Some(retType) ->
-        tvar = tcenv.subst.gen(asyncPos);
-        tcenv.subst.setOrigin(tvar, FromAsyncReturn(asyncPos));
-        type = TType::var(tvar);
-        this.checkSubType(
-          tcenv,
-          asyncPos,
-          "The return type of an async function must be the global Promise<T> type",
-          retType,
-          TType::single(TPromise(type, asyncPos)),
-          TSCode(1064),
-        )
+        // tsc's TS1064 requires the annotation to resolve to the global
+        // Promise type itself; a merely well-shaped structural thenable is
+        // rejected, so check the nominal identity before the subtype check.
+        // FIXME: this is best-effort, not guaranteed: unexpandedType is a
+        // printing hint that unions/intersections and some transformations
+        // drop, and a user-defined type named "Promise" also satisfies it.
+        isGlobalPromise = retType
+          .getSTypes(tcenv.subst, this, Covariant())
+          .flatMap(stypes ~> stypes.singleElt()) match {
+        | Some(TObject(_, Some(TSInst(Name(_, "Promise"), _)), _)) -> true
+        | _ -> false
+        };
+        if (!isGlobalPromise) {
+          tcenv.error(
+            Array[
+              (
+                asyncPos,
+                "The return type of an async function must be the global Promise<T> type",
+              ),
+              (retType.pos, `This is ${this.ppType(tcenv, retType)}`),
+            ],
+            TSCode(1064),
+          )
+        } else {
+          tvar = tcenv.subst.gen(asyncPos);
+          tcenv.subst.setOrigin(tvar, FromAsyncReturn(asyncPos));
+          type = TType::var(tvar);
+          this.checkSubType(
+            tcenv,
+            asyncPos,
+            "The return type of an async function must be the global Promise<T> type",
+            retType,
+            TType::promise(asyncPos, type),
+            TSCode(1064),
+          )
+        }
       }
     };
     fdPos = fd.name.getPos();
