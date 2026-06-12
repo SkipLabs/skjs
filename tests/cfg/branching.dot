@@ -1,4 +1,6 @@
 digraph "fn:classify" {
+  label="(n: number): string";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lif ((n < 0))\l"];
   BB_0 -> BB_3 [label="true"];
@@ -21,6 +23,8 @@ digraph "fn:classify" {
 }
 
 digraph "fn:sumArray" {
+  label="(xs: Array<number>): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet total: number = 0\lconst x: number\ljump BB_3\l"];
   BB_0 -> BB_3;
@@ -36,6 +40,8 @@ digraph "fn:sumArray" {
 }
 
 digraph "fn:sumTo" {
+  label="(n: number): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet total: number = 0\llet i: number = 0\ljump BB_3\l"];
   BB_0 -> BB_3;

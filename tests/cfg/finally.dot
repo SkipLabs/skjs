@@ -1,4 +1,6 @@
 digraph "fn:breakThroughFinally" {
+  label="(xs: Array<number>): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet count: number = 0\lconst x: number\ljump BB_3\l"];
   BB_0 -> BB_3;
@@ -34,6 +36,8 @@ digraph "fn:breakThroughFinally" {
 }
 
 digraph "fn:finallyOnly" {
+  label="(n: number): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet log: number = 0\ljump BB_4\l"];
   BB_0 -> BB_4;
@@ -59,6 +63,8 @@ digraph "fn:finallyOnly" {
 }
 
 digraph "fn:nestedFinallys" {
+  label="(n: number): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet m: number = n\ljump BB_4\l"];
   BB_0 -> BB_4;

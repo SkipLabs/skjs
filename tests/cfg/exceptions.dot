@@ -1,4 +1,6 @@
 digraph "fn:safeDivide" {
+  label="(a: number, b: number): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet attempts: number = 0\ljump BB_4\l"];
   BB_0 -> BB_4;

@@ -1,4 +1,6 @@
 digraph "fn:dayName" {
+  label="(day: number): string";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet name: string = \"unknown\"\lswitch (day)\l"];
   BB_0 -> BB_4 [label="0"];

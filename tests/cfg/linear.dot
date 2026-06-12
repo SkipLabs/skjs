@@ -1,4 +1,6 @@
 digraph "fn:add" {
+  label="(a: number, b: number): number";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lconst sum: number = (a + b)\llet doubled: number = (sum * 2)\ldoubled = (doubled + 1)\lreturn doubled\l"];
   BB_0 -> BB_1;
@@ -6,7 +8,29 @@ digraph "fn:add" {
   BB_2 [label="exn", shape=doublecircle];
 }
 
+digraph "fn:count" {
+  label="(first: number, rest: ReadonlyArray<number>): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (rest.length + 1)\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:describe" {
+  label="({x: x, y: y}: {x:number,y:number}, label: string|undefined): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst sum: number = (x + y)\lreturn sum\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
 digraph "fn:greet" {
+  label="(name: string): string";
+  labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lconst message: string = (\"hello, \" + name)\lreturn message\l"];
   BB_0 -> BB_1;
