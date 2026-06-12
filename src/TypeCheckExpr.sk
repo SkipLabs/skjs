@@ -2342,14 +2342,29 @@ extension class TypeChecker {
       )
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
-      aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(obj @ TObject _) -> obj.getAwaitedType(tcenv.subst, this, pos)
-      | _ -> None()
-      } match {
-      | Some(ty) -> ty
-      | None() ->
+      // Collect the awaited type of every thenable branch. Non-thenable
+      // parts are an error, but a non-fatal one as long as at least one
+      // branch is a thenable: checking continues with the awaited type of
+      // the thenable branches only.
+      awaitedTys = mutable Vector[];
+      hasNonThenable = false;
+      aeType.getSTypes(tcenv.subst, this, Covariant()) match {
+      | None() -> !hasNonThenable = true
+      | Some(stypes) ->
+        for (stype in stypes) {
+          stype match {
+          | obj @ TObject _ ->
+            for (fields in obj.getAllFields()) {
+              fields.getAwaitedType(tcenv.subst, this, pos) match {
+              | Some(ty) -> awaitedTys.push(ty)
+              | None() -> !hasNonThenable = true
+              }
+            }
+          | _ -> !hasNonThenable = true
+          }
+        }
+      };
+      if (awaitedTys.isEmpty()) {
         fatalError(
           Array[
             (pos, "'await' can only be applied to a Promise"),
@@ -2357,6 +2372,17 @@ extension class TypeChecker {
           ],
           ESLintCode("@typescript-eslint/await-thenable"),
         )
+      } else {
+        if (hasNonThenable) {
+          tcenv.error(
+            Array[
+              (pos, "'await' can only be applied to a Promise"),
+              (aeType.pos, "This is not always a promise"),
+            ],
+            ESLintCode("@typescript-eslint/await-thenable"),
+          )
+        };
+        TType::unionN(tcenv.subst, this, pos, awaitedTys)
       }
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1, true);
