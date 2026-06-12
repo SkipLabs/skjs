@@ -265,14 +265,13 @@ function joinProvenAndUnknown(
   }
 }
 
-// FIXME: tsc narrows `{}` to `Function` under typeof === "function"; SKJS
-// narrows it to `never`, which is literally false (functions are valid `{}`
-// values) — and inconsistent with the same value first narrowed by
-// typeof === "object", which becomes `object` and then survives the
-// typeof === "function" check as `object`.
+// Functions inhabit `{}` (it imposes no demands), so its
+// typeof === "function" part is "all functions" — the bare non-primitive
+// branch, i.e. `object` (tsc narrows to Function, which SKJS cannot
+// express).
 function typeofFunctionOnEmpty(e: {}): void {
   if (typeof e === "function") {
-    __SKJS_show(e, `never`);
+    __SKJS_show(e, `object`);
   }
 }
 

@@ -296,11 +296,14 @@ extension class TypeChecker {
         x match {
         | tObj @ TObject _ ->
           tObj.mapOpt(fields ->
-            if (fields.isBareNonPrimitive()) {
-              // The `object` keyword includes functions, so it stays on both
-              // sides (tsc narrows the matching side to Function, which SKJS
-              // cannot express; `object` is the sound over-approximation).
-              Some(fields)
+            if (fields.isEmpty()) {
+              // A bare branch ({} or the `object` keyword) imposes no
+              // structural demands, so functions inhabit it: its matching
+              // side is "all functions" — a bare non-primitive branch, i.e.
+              // `object` (tsc narrows to Function, which SKJS cannot
+              // express; `object` is the sound over-approximation). The
+              // non-matching side keeps the branch unchanged.
+              Some(if (target) fields.withIsPrimitive(Some(false)) else fields)
             } else {
               fields
                 .mapCall(call ->
