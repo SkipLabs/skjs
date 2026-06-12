@@ -56,7 +56,7 @@ value class FinallyCtx(
 value class CFG{
   name: String,
   pos: PosRange,
-  params: Array<(Name, TType)>,
+  params: Array<(Pattern, TType)>,
   retType: TType,
   entry: CFGBlockId,
   normalExit: CFGBlockId,
@@ -82,7 +82,7 @@ mutable class CFGBuilder{
   static fun build(
     name: String,
     pos: PosRange,
-    params: Array<(Name, TType)>,
+    params: Array<(Pattern, TType)>,
     retType: TType,
     body: Array<Stmt>,
     exprTypes: SortedMap<PosRange, TType>,

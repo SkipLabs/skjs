@@ -301,7 +301,7 @@ fun cfgToJson(cfg: CFG): String {
           cfg.params.map(p ->
             jsonObj(
               Array[
-                ("name", jsonStr(p.i0.value)),
+                ("pattern", jsonStr(renderPattern(p.i0))),
                 ("type", jsonStr(renderType(p.i1))),
               ],
             )
@@ -361,6 +361,11 @@ fun terminatorText(term: BBTerminator): String {
 fun cfgToDot(cfg: CFG): String {
   lines = mutable Vector[];
   lines.push(`digraph ${dotQuote(cfg.name)} {`);
+  sig = `(${", ".join(
+    cfg.params.map(p -> `${renderPattern(p.i0)}: ${renderType(p.i1)}`),
+  )}): ${renderType(cfg.retType)}`;
+  lines.push(`  label=${dotQuote(sig)};`);
+  lines.push("  labelloc=t;");
   lines.push("  node [shape=box, fontname=\"monospace\"];");
   for (block in cfg.blocks.values()) {
     id = block.id;
