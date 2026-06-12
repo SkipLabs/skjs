@@ -365,6 +365,53 @@ extension class TPrimValue {
   }
 }
 
+extension base class SType {
+  // Whether values of the two simple types can be strictly equal (`===`).
+  // Only provably disjoint value sets report no overlap; reference types
+  // always overlap, since a single value can inhabit both sides (width
+  // subtyping for objects, never-returning functions, `Promise<never>`) —
+  // even where tsc reports TS2367. Conversely, null and undefined overlap
+  // nothing but themselves: unlike tsc, `x === null` warns when `x` cannot
+  // be null. Callers are expected to exclude void operands (comparing void
+  // is an error — void is non-observable).
+  static fun overlaps(
+    subst: mutable Subst,
+    tenv: TEnv,
+    sty1: SType,
+    sty2: SType,
+  ): Bool {
+    (sty1, sty2) match {
+    | (TPrimUnit(kind1, _), TPrimUnit(kind2, _)) -> kind1 == kind2
+    | (TPrimUnit _, _)
+    | (_, TPrimUnit _) ->
+      false
+    | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
+      TPrimValue::inter(prim1, prim2).isSome()
+    | (prim @ TPrimValue _, obj @ TObject _)
+    | (obj @ TObject _, prim @ TPrimValue _) ->
+      // A primitive overlaps an object type only through its boxed class:
+      // a value of type `Number` can be a primitive number, but a value of
+      // type `{ a: string }` cannot
+      boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
+      TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
+    | (TPrimValue _, TPromise _)
+    | (TPromise _, TPrimValue _) ->
+      // A primitive value is never a promise
+      false
+    | (TObject _, TObject _)
+    | (TObject _, TPromise _)
+    | (TPromise _, TObject _)
+    | (TPromise _, TPromise _) ->
+      // TODO: treat promises more precisely (e.g. `Promise<number> ===
+      // { a: number }` could report no overlap)
+      // TODO: some object pairs are provably disjoint and could be
+      // reported: a shared field with non-overlapping types can leave no
+      // common value (e.g. `{ a?: number }` vs `{ a: string }`)
+      true
+    }
+  }
+}
+
 extension class TIndexes {
   static fun inter(
     subst: mutable Subst,

@@ -956,6 +956,58 @@ extension class TypeChecker {
     ty
   }
 
+  // Strict-comparison overlap diagnostic: warn when the operands' value sets
+  // are provably disjoint, i.e. the comparison always has the same outcome.
+  // Both operands expand to their simple-type branches and the comparison is
+  // flagged when no branch pair can overlap. getSTypes over-approximates the
+  // operand types, so disjoint branch sets soundly imply disjoint types;
+  // types that expand to Top (unknown, unconstrained type parameters) bail
+  // out, and constrained type parameters are checked through their
+  // constraint.
+  private fun checkComparisonOverlap(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    op_: BOStrictComparison,
+    ty1: TType,
+    ty2: TType,
+  ): void {
+    // Clone subst: this is a diagnostic check ("always false/true?"), not a
+    // type assignment. It should not grow type variables.
+    subst = tcenv.subst.clone();
+    ty1.getSTypes(subst, this, Covariant()) match {
+    | Some(stypes1) if (!stypes1.isEmpty()) ->
+      ty2.getSTypes(subst, this, Covariant()) match {
+      | Some(stypes2) if (!stypes2.isEmpty()) ->
+        // A void operand is already an error (nonVoidExpr — void is
+        // non-observable): skip the lint instead of piling a warning on top
+        isVoid = (sty: SType) -> sty is TPrimUnit(TVoid(), _);
+        if (stypes1.any(isVoid) || stypes2.any(isVoid)) {
+          return void
+        };
+        overlap = stypes1.any(sty1 ->
+          stypes2.any(sty2 -> SType::overlaps(subst, this, sty1, sty2))
+        );
+        if (!overlap) {
+          alwaysResult = op_ match {
+          | BOStrictEquality() -> "false"
+          | BOStrictInequality() -> "true"
+          };
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                `This comparison is always ${alwaysResult} because the operand types do not overlap`,
+              ),
+            ],
+            SKJSCode(2040),
+          )
+        }
+      | _ -> void
+      }
+    | _ -> void
+    }
+  }
+
   private fun showTypes(
     tcenv: mutable TCEnv,
     args: Array<Expr>,
@@ -1827,32 +1879,7 @@ extension class TypeChecker {
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
-        // Clone subst: this is a diagnostic check ("always false/true?"),
-        // not a type assignment. It should not grow type variables.
-        if (ty1.clauses.isEmpty() && ty2.clauses.isEmpty()) {
-          clonedSubst = tcenv.subst.clone();
-          TType::isSub(clonedSubst, this, ty1, ty2) match {
-          | STOk() -> void
-          | STError _ ->
-            TType::isSub(clonedSubst, this, ty2, ty1) match {
-            | STOk() -> void
-            | STError _ ->
-              alwaysResult = op_ match {
-              | BOStrictEquality() -> "false"
-              | BOStrictInequality() -> "true"
-              };
-              tcenv.warning(
-                Array[
-                  (
-                    pos,
-                    `This comparison is always ${alwaysResult} because the operand types do not overlap`,
-                  ),
-                ],
-                SKJSCode(2040),
-              )
-            }
-          }
-        };
+        this.checkComparisonOverlap(tcenv, pos, op_, ty1, ty2);
         TType::single(TPrimValue::boolean(pos))
 
       | op_ @ LazyLogicalOperator() ->

@@ -17,25 +17,20 @@ class Cat2 {
   meow: string = "";
 }
 
-// FIXME: false positive — one value can be both a Cat and a Dog
+// No warning: one value can be both a Cat and a Dog
 // (`{ meow: "", bark: "" }` satisfies both shapes)
 function classDisjoint(x: Cat, y: Dog): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
-// FIXME: false positive — x and y hold the same value here
 function classCounterExample(): boolean {
   const v = { meow: "", bark: "" };
   const x: Cat = v;
   const y: Dog = v;
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
-// FIXME: false positive — both sides can be a Pet
 function classUnionOverlap(x: Cat | Pet, y: Dog | Pet): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -44,12 +39,12 @@ function sameShapeClasses(x: Cat, y: Cat2): boolean {
 }
 
 function primDisjoint(x: number, y: string): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
 function litDisjoint(x: 0 | 1, y: 2 | 3): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -58,12 +53,12 @@ function litOverlap(x: 0 | 1, y: 1 | 2): boolean {
 }
 
 function strLitDisjoint(x: "a", y: "b"): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
 function boolLitDisjoint(x: true, y: false): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -98,28 +93,28 @@ function weakSharedConflict(x: { a?: number }, y: { a: string }): boolean {
 // null and undefined overlap nothing but themselves: a null check on an
 // operand that can never be null is dead code. tsc does not report these.
 function numVsNull(x: number, y: null): boolean {
-  // TODO: should warn: x can never be null
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
 function undefVsNull(x: undefined, y: null): boolean {
-  // TODO: should warn: undefined === null is always false
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
 function nullCheckOnNonNullable(x: number | undefined): boolean {
-  // TODO: should warn: x can never be null
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === null;
 }
 
 function definedCheckOnNonOptional(x: number): boolean {
-  // TODO: should warn: x is never undefined
+  // @skjs-expect-warning This comparison is always true because the operand types do not overlap
   return x !== undefined;
 }
 
 // Inside a union, a null/undefined branch only overlaps the same kind
 function nullInUnionVsString(x: number | null, y: string): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -127,7 +122,7 @@ function unitsInUnionsDisjoint(
   x: number | null,
   y: string | undefined,
 ): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -136,7 +131,7 @@ function nullBranchesOverlap(x: number | null, y: string | null): boolean {
 }
 
 function unionVsWholeNull(x: number | undefined, y: null): boolean {
-  // TODO: should warn: x can never be null
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -171,13 +166,13 @@ function promiseVsObject(p: Promise<number>, o: { a: number }): boolean {
 }
 
 function promiseVsNumber(p: Promise<number>, n: number): boolean {
-  // TODO: should warn (TS2367): a primitive value is never a promise
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return p === n;
 }
 
 // A primitive overlaps an object type only through its boxed class
 function primVsDisjointObject(x: number, y: { a: string }): boolean {
-  // TODO: should warn (TS2367): a primitive value never has field `a`
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -188,9 +183,8 @@ function primVsBoxedShape(
   return x === y;
 }
 
-// FIXME: false positive — a tuple value is an array at runtime
+// No warning: a tuple value is an array at runtime
 function tupleVsArray(t: [number], a: number[]): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return t === a;
 }
 
@@ -199,7 +193,7 @@ function bareTypeParam<T>(x: T, y: number): boolean {
 }
 
 function constrainedTypeParam<T extends string>(x: T, y: number): boolean {
-  // TODO: should warn (TS2367): a string is never a number
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -210,6 +204,7 @@ function unknownOperand(x: unknown, y: number): boolean {
 // FIXME: TS knows 1e3 and 1000 are the same value; SKJS compares numeric
 // literal types textually (they are already mutually unassignable in SKJS)
 function numericNotation(x: 1e3, y: 1000): boolean {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -220,7 +215,7 @@ function numberVsObjectKeyword(n: number, o: object): boolean {
 }
 
 function strictInequalityDisjoint(x: 0, y: 1): boolean {
-  // TODO: should warn (TS2367)
+  // @skjs-expect-warning This comparison is always true because the operand types do not overlap
   return x !== y;
 }
 
