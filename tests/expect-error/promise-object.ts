@@ -47,8 +47,45 @@ async function testAwaitUnion(
   return await p;
 }
 
+// `await` on a union that is only partly a promise.
+async function testAwaitPartialPromise(
+  b: boolean,
+  p: Promise<number>,
+  n: number,
+): Promise<number> {
+  const x = b ? p : n;
+  // @skjs-expect-error 'await' can only be applied to a Promise
+  return await x;
+}
+
+async function testAwaitPartialPromiseMismatch(
+  b: boolean,
+  p: Promise<number>,
+  s: string,
+): Promise<string> {
+  const x = b ? p : s;
+  // @skjs-expect-error 'await' can only be applied to a Promise
+  return await x;
+}
+
+async function testAwaitPartialThenableObject(
+  b: boolean,
+  p: Promise<number>,
+  o: { a: number },
+): Promise<number> {
+  const x = b ? p : o;
+  // @skjs-expect-error 'await' can only be applied to a Promise
+  return await x;
+}
+
 interface Thenable {
   then<U>(onfulfilled: (value: number) => U | Promise<U>): Promise<U>;
+}
+
+// FIXME: tsc declares PromiseLike<T> in its lib; the SKJS stubs do not yet.
+// @skjs-expect-error Cannot find type 'PromiseLike'
+function testPromiseIsPromiseLike(p: Promise<number>): PromiseLike<number> {
+  return p;
 }
 
 // `await` unwraps any structurally well-shaped thenable, like tsc.
