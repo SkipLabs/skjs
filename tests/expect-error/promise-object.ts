@@ -85,24 +85,14 @@ async function testAwaitPartialThenableObject(
   return await x;
 }
 
-interface Thenable {
-  then<U>(onfulfilled: (value: number) => U | Promise<U>): Promise<U>;
-}
-
-// FIXME: tsc declares PromiseLike<T> in its lib; the SKJS stubs do not yet.
-// @skjs-expect-error Cannot find type 'PromiseLike'
+// Promise<number> is structurally a PromiseLike<number>.
 function testPromiseIsPromiseLike(p: Promise<number>): PromiseLike<number> {
   return p;
 }
 
 // `await` unwraps any structurally well-shaped thenable, like tsc.
-async function testAwaitThenable(t: Thenable): Promise<number> {
+async function testAwaitThenable(t: PromiseLike<number>): Promise<number> {
   return await t;
-}
-
-// Promise<number> is structurally a thenable.
-function testPromiseIsThenable(p: Promise<number>): Thenable {
-  return p;
 }
 
 // Error: awaiting a non-thenable value. (tsc lets `await` pass non-thenables
@@ -166,7 +156,7 @@ async function testAsyncRetUnion(): Promise<number> | undefined {
 }
 
 // @ts-expect-error The return type of an async function must be the global Promise<T> type
-async function testAsyncRetThenable(): Thenable {
+async function testAsyncRetThenable(): PromiseLike<number> {
   return 0;
 }
 
