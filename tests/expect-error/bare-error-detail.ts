@@ -1,11 +1,12 @@
 // Error-detail rendering shapes for subtype failures (issue #672).
 
 // Both sides are pure type parameters (no insts), so no frame renders a
-// clause pair.
-// FIXME: prints bare -- only the headline, with no type pair explaining the
-// failure.
+// clause pair; the fall-back prints the type pair, anchored at the type
+// parameters' declarations.
 function id2<T, U>(x: T): U {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line2 Type T
+  // @skjs-expect-error-line3 is not assignable to type U
   return x;
 }
 
