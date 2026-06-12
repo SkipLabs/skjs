@@ -220,9 +220,11 @@ function typeofFunctionOnObject(x: object): void {
 // --- typeof narrowing and structural object types: the runtime check proves
 // the surviving branch is non-primitive ---
 
+// A narrowed {} is exactly the `object` keyword: the runtime check proved
+// non-primitivity and {} imposes no structural demands.
 function typeofObjectOnEmpty(e: {}): void {
   if (typeof e === "object") {
-    __SKJS_show(e, `{  }`);
+    __SKJS_show(e, `object`);
   }
 }
 
@@ -233,10 +235,10 @@ function typeofObjectProvesNonPrimitive(
   if (typeof x === "object") {
     __SKJS_show(x, `{ length: number }`);
     if (x === s) {
-      // FIXME: x was proven non-primitive by the typeof check, so it cannot
-      // equal a string; narrowing it to `string` here is literally false
-      // (the boxed String interface satisfies { length: number }).
-      __SKJS_show(x, `string`);
+      // x was proven non-primitive by the typeof check, so it cannot equal a
+      // string: the equality intersection is uninhabited (without the proof,
+      // the boxed String interface would satisfy { length: number }).
+      __SKJS_show(x, `never`);
     }
   }
 }
