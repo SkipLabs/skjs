@@ -41,11 +41,14 @@ function objectRejectsUnknown(x: unknown): void {
 
 // --- Assignability to `object`: non-primitives are accepted ---
 
+class EmptyClass {}
+
 function objectAcceptsNonPrimitives(
   e: {},
   a: { a: number },
   f: () => void,
   arr: number[],
+  c: EmptyClass,
 ): void {
   const o1: object = {};
   const o2: object = { a: 1 };
@@ -53,6 +56,7 @@ function objectAcceptsNonPrimitives(
   const o4: object = a;
   const o5: object = f;
   const o6: object = arr;
+  const o7: object = c;
 }
 
 // Promises are objects (stub-declared object types since #686): they satisfy
@@ -126,6 +130,18 @@ function objectInterFieldsBack(x: object & { a: number }): { a: number } {
   return x;
 }
 
+// The non-primitivity assertion survives intersection with fields.
+function objectInterFieldsInterString(
+  x: object & { a: number } & string,
+): void {
+  __SKJS_show(x, `never`);
+}
+
+// Unlike `object`, `{}` boxes the primitive: `string & {}` is `string`.
+function stringInterEmptyCollapses(x: string & {}): void {
+  __SKJS_show(x, `string`);
+}
+
 // --- keyof object is never ---
 
 function keyofObjectIsNever(k: keyof object): void {
@@ -166,6 +182,7 @@ function objectHasNoPrototypeMembers(o: object): void {
 function typeofObjectOnUnknown(x: unknown): void {
   if (typeof x === "object") {
     const o: object | null = x;
+    __SKJS_show(x, `null | object`);
     // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const s: string = x;
   }
@@ -175,6 +192,8 @@ function typeofObjectOnObject(x: object): void {
   if (typeof x === "object") {
     const o: object = x;
   } else {
+    // The else branch is never, matching tsc — even though a function value
+    // (typeof "function") would land here at runtime.
     const n: never = x;
   }
 }
