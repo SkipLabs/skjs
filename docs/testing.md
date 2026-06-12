@@ -15,6 +15,8 @@ make check-in-docker    # Type-check Skip code without building
 make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 ```
 
+The `*-in-docker` targets run inside the Skip docker image (directly when in a devcontainer). With a local Skip toolchain, use the native `make test` / `make check` (or `skargo test` / `skargo check`) directly. For comment-only changes, a compilation check (`make check-in-docker` / `skargo check`) is sufficient — comments cannot affect behavior.
+
 ## Critical Rules
 
 **SKJS is a typechecker, not a runtime**:
@@ -26,6 +28,7 @@ make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 - Use `// @ts-expect-error <exact error message>` for errors TypeScript would also produce
 - Use `// @skjs-expect-error <exact error message>` for SKJS-specific errors
 - Use `// @skjs-expect-warning <exact message>` for non-fatal **warnings** — lint-style diagnostics that are not soundness-critical (e.g. redundant `?.`/`!`, useless `switch` / unused `case` branches, `This equality is always true/false`). Warnings are matched against a separate severity, so a source line with both an error and a warning needs one annotation of each.
+- Annotations also work in `.json` files (e.g. a test project's `tsconfig.json`), written as `//` comments — see `tests/projects/*/tsconfig.json` for examples
 - Run tests first to see actual messages, then add the annotations with exact wording
 - **SKJS reports only one _error_ per definition** — if a function has multiple errors, only the first is reported (unless passing `--keep-going`, which is best-effort — fatal errors may still hide subsequent ones). **Warnings are non-fatal**: every warning in a definition is reported and never aborts checking, and a file whose only diagnostics are warnings exits 0 (does not fail the build).
 - For expected errors that aren't reported due to an earlier error, use plain `// TODO:` comments (not `@ts-expect-error`)
@@ -85,6 +88,12 @@ This rewrites annotations in `tests/expect-error/` and `examples/src/` to match 
 - Consider whether modifier or other keywords can be used as field/method/variable names in each context
 - Example: if restricting syntax in classes, verify the same keyword works in object types
 - Add FIXME tests documenting where SKJS behavior differs from TypeScript
+
+**"Currently rejected" does not mean "handled"**:
+
+- Do not use "SKJS already errors on this case" as evidence that it needs no treatment — over-strict rejection often masks a never-implemented analog of a handled case
+- Before declaring a case out of scope, check what TypeScript does with it (`npx tsc --strict --noEmit`) and whether it is the structural analog of a case that IS handled
+- Check analogs across all key kinds (string/number/symbol) explicitly — e.g. a general `symbol`-typed key is the non-literal analog of a general `string`/`number` key
 
 **Verifying with TypeScript**:
 - Always check TypeScript's behavior with `npx tsc --strict --noEmit <file>` when creating regression tests
