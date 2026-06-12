@@ -57,6 +57,15 @@ function mixedUnionPlus(x: string | bigint): void {
   const y = +x;
 }
 
+// A generic operand constrained to bigint is rejected too (tsc: TS2736 with
+// type 'T'). The detail line currently renders the type parameter with its
+// internal id, which is not user-readable.
+function genericPlus<T extends bigint>(x: T): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
+  // @skjs-expect-error-line2 This has type T:2:828896149665628166 extends bigint
+  const y = +x;
+}
+
 // Test unary operators in expressions
 const expr1: number = -(10 + 5);
 const expr2: number = ~(8 - 3);
