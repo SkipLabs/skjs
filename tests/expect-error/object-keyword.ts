@@ -249,7 +249,10 @@ function typeofFunctionProvesNonPrimitive(f: (() => void) | string): void {
   }
 }
 
-// Joining a typeof-proven branch with an unmarked branch of the same shape.
+// Joining a typeof-proven branch with an unmarked branch of the same shape
+// keeps two clauses that render identically (known cosmetic quirk: the
+// proven branch narrows differently, e.g. to never against === string, so
+// the clauses are genuinely distinct — only their printed forms collide).
 function joinProvenAndUnknown(
   x: { length: number } | string,
   y: { length: number },
