@@ -477,7 +477,14 @@ mutable class CFGBuilder{
       for (i in Range(0, branches.size())) {
         this.startBlock(branchIds[i]);
         this.lowerBlock(branches[i].block);
-        this.finishBlock(CFGTJump(exitId))
+        // SKJS forbids fallthrough, but handle it properly here anyway in case
+        // that changes in the future
+        next = if (i + 1 < branches.size()) {
+          branchIds[i + 1]
+        } else {
+          exitId
+        };
+        this.finishBlock(CFGTJump(next))
       };
       _ = this.breakStack.pop();
       this.startBlock(exitId)
