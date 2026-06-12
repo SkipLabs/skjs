@@ -495,9 +495,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         return SKStore.CStop(None())
       | Success(checker) -> checker
       };
-      // The effective config is a tracked input, written every run like
-      // source-file contents, so that config changes propagate through a
-      // persistent cache (see Config.sk)
       writeConfig(
         context,
         CheckerConfig{
@@ -516,15 +513,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          Checker::create{
-            context,
-            fs,
-            files,
-            errorHandling,
-            errorDetailConfig,
-            compilerOptions => checkerCompilerOptions,
-            verbose,
-          } match {
+          Checker::create{context, fs, files} match {
           | Failure(errs) ->
             _ = applyOrReuseMap(
               initDir,
@@ -703,14 +692,8 @@ class Checker private {
     context: mutable SKStore.Context,
     fs: Fs,
     files: Files,
-    errorHandling: ErrorHandling,
-    errorDetailConfig: ErrorDetailConfig,
-    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
-    verbose: Bool = false,
   }: Result<this, Array<ErrorMessage>> {
-    // Callers must writeConfig before create: the config input dir is read
-    // by the dir computations created here, and create may itself run
-    // inside a map computation (Main.sk), where input writes are illegal
+    config = getConfig(context);
     newLinesMap = NewLinesMap::create(context, files);
     (
       parsedAndSymbolsFiles,
@@ -721,7 +704,7 @@ class Checker private {
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
-    ) = files.parse(context, newLinesMap, errorHandling) match {
+    ) = files.parse(context, newLinesMap, config.errorHandling) match {
     | Success(r) -> r
     | Failure(errs) -> return Failure(errs)
     };
@@ -740,15 +723,15 @@ class Checker private {
     // CLI changes reach --data runs. See Config.sk.
     checker = TypeChecker{
       defMap,
-      errorHandling,
+      errorHandling => config.errorHandling,
       funDefSigMap,
       funDefBodyMap,
       classBodyMap,
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
-      verbose,
-      truthiness => compilerOptions.truthiness,
+      verbose => config.verbose,
+      truthiness => config.compilerOptions.truthiness,
     };
     Success(
       static{
@@ -763,7 +746,7 @@ class Checker private {
         classFieldMap,
         typeDefBodyMap,
         methodBodyMap,
-        errorDetailConfig,
+        errorDetailConfig => config.errorDetailConfig,
       },
     )
   }

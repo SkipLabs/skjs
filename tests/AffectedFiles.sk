@@ -59,14 +59,7 @@ fun testAffectedFiles(): void {
       errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
     },
   );
-  checker = SKJS.Checker::create{
-    context,
-    fs,
-    files,
-    errorHandling => SKJS.EHKeepGoing(),
-    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
-    compilerOptions => config.compilerOptions,
-  }.fromSuccess();
+  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
 
   checked = checker.checkFiles(context);
   callGraph = SKJS.CallGraph::build(context, checked);
