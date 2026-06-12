@@ -6,7 +6,7 @@ extension class TypeChecker {
     thisTypeOpt: ?TType,
     fd: FunDef<SimpleFieldName>,
     callingContext: CGNode,
-  ): (this, mutable TCEnv) {
+  ): (this, mutable TCEnv, Array<(Pattern, TType)>) {
     sig = this.getFunSig(subst.context, fd);
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
@@ -23,8 +23,11 @@ extension class TypeChecker {
     !this = this.addTParams(subst, sig.tparams);
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
     this.bindParams(tcenv, sig.params, paramTypes);
+    typedParams = sig.params.mapWithIndex((i, param) ->
+      (param.name, paramTypes[i])
+    );
     !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
-    (this, tcenv)
+    (this, tcenv, typedParams)
   }
 
   fun bindParams(
@@ -208,7 +211,7 @@ extension class TypeChecker {
         )
       }
     };
-    (!this, tcenv) = this.funDefSetup(
+    (!this, tcenv, typedParams) = this.funDefSetup(
       subst,
       thisTypeOpt.map(x -> x.i1),
       fd,
@@ -312,7 +315,7 @@ extension class TypeChecker {
         cfg = CFGBuilder::build(
           cgNode.id.toString(),
           fdPos,
-          Array[], // TODO: populate typed params
+          typedParams,
           retType,
           body,
           tcenv.exprTypes,
