@@ -32,3 +32,23 @@ function nonTupleOperand(): void {
   // @skjs-expect-error-line3 is not assignable to type ['0', '1']
   const r = fk(5);
 }
+
+// Guards: the tuple shorthand must never hide a member.
+// FIXME: an intersection's extra member is hidden by the shorthand -- the
+// only failing member is `foo`, yet both sides render as the same tuple.
+declare function hx<K extends [0, 1] & { foo: string }>(x: K): K;
+function extraMemberHidden(): void {
+  const arg: [0, 1] = [0, 1];
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type ['0', '1']
+  // @skjs-expect-error-line3 is not assignable to type ['0', '1']
+  const r = hx(arg);
+}
+
+// FIXME: a readonly tuple expansion renders without its readonly markers.
+declare function gr<K extends readonly [0, 1]>(x: K): K;
+function readonlyMarkersHidden(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line3 is not assignable to type ['0', '1']
+  const r = gr([0, 2]);
+}
