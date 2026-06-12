@@ -101,7 +101,7 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
   - **Class field initialization**: `status = "ready"` gets literal type in class fields
   - **Array/tuple literal elements**: elements stay literal when the expected type asks for literals — via annotation, parameter, return, nested tuple, or generic constraint (`['urgent']` matches `('urgent' | 'priority')[]`; `[0, 1]` matches `[0, number]`; `[[0, 1]]` satisfies `K extends 0 | 1`); they widen otherwise (`let x = [0, 1]; x.push(2)` makes `x` a `number[]`)
 - **Error for redundant 'as const'**: SKJS errors when `as const` is used unnecessarily
-- **Manual 'as const' still needed for**: Non-ADT object properties, nested values
+- **Manual 'as const' still needed for**: Non-ADT object properties, nested values, and array elements when nothing in the expected type asks for a literal (see the `save` example below)
 
 #### Examples - Automatic Literal Types:
 ```typescript
