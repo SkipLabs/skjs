@@ -1846,6 +1846,12 @@ extension class TypeChecker {
                     !plusOnBigInt = true;
                   };
                   TPrimValue(k, None(), primPos)
+                | TPrimValue(k, Some _, primPos) ->
+                  // Invalid for the operator, but still widened so the
+                  // TS2736 headline below names base types like tsc
+                  // ('a' | bigint reads 'bigint | string').
+                  !invalid = true;
+                  TPrimValue(k, None(), primPos)
                 | _ ->
                   !invalid = true;
                   stype
@@ -1855,8 +1861,9 @@ extension class TypeChecker {
           }
         );
         if (plusOnBigInt) {
-          // tsc's TS2736 names the (literal-widened) operand type; res is
-          // exactly that. The detail line keeps the precise operand type.
+          // tsc's TS2736 names the operand type with every literal member
+          // widened to its base type; res is exactly that. The detail line
+          // keeps the precise operand type.
           fatalError(
             Array[
               (

@@ -65,12 +65,12 @@ function genericPlus<T extends bigint>(x: T): void {
   const y = +x;
 }
 
-// A union of bigint with a non-bigint literal: tsc widens every literal
-// member for the TS2736 headline ('string | bigint').
-// FIXME: SKJS keeps the invalid member's literal in the headline, rendering
-// the awkward nested quotes 'bigint | 'a''.
+// A union of bigint with a non-bigint literal: every literal member is
+// widened for the TS2736 headline, like tsc; the detail line keeps the
+// precise operand type.
 function literalMixedPlus(x: "a" | bigint): void {
-  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint | 'a''
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint | string'
+  // @skjs-expect-error-line2 This has type bigint | 'a'
   const y = +x;
 }
 
