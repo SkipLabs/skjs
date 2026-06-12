@@ -142,11 +142,12 @@ mutable base class ApplyType(
     | TSInst(name, targs) -> Success(TSInst(name, this.targs(env, targs)))
     | tInter @ TInter _ -> tInter.map(x -> this.type(env, x))
     | tvar @ TVar _ -> Success(tvar.mapConstraints(ty -> this.type(env, ty)))
-    | TArrayLit(tvar, tupleElts) ->
+    | TArrayLit(tvar, tupleElts, freshElts) ->
       Success(
         TArrayLit(
           tvar.mapConstraints(ty -> this.type(env, ty)),
           tupleElts.map(ty -> this.type(env, ty)),
+          freshElts.map(opt -> opt.map(ty -> this.type(env, ty))),
         ),
       )
     }

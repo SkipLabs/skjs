@@ -576,7 +576,7 @@ mutable class TypePp{
           if (i != 0 || leadingSep) pp.out(level, margin, " | ");
           inst match {
           | tsinst @ TSInst _ -> pp.inst(level, margin, tsinst)
-          | TArrayLit(_tvar, tupleElts) ->
+          | TArrayLit(_tvar, tupleElts, _) ->
             pp.out(level, margin, "ArrayLit<");
             for (j => eltTy in tupleElts) {
               if (j != 0) pp.out(level, margin, ", ");
@@ -606,7 +606,7 @@ mutable class TypePp{
           };
           inst match {
           | tsinst @ TSInst _ -> pp.inst(level, margin, tsinst)
-          | TArrayLit(_tvar, tupleElts) ->
+          | TArrayLit(_tvar, tupleElts, _) ->
             pp.out(level, margin, "ArrayLit<");
             for (i => eltTy in tupleElts) {
               if (i != 0) pp.out(level, margin, ", ");

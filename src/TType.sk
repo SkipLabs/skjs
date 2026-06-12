@@ -154,10 +154,14 @@ class TType private {
   }
 
   // Delayed array literal instance.
-  static fun arrayLit(tvar: TVar, tupleElts: Array<TType>): TType {
+  static fun arrayLit(
+    tvar: TVar,
+    tupleElts: Array<TType>,
+    freshElts: Array<?TType>,
+  ): TType {
     TType::create(
       tvar.pos,
-      TInsts::single(TArrayLit(tvar, tupleElts)),
+      TInsts::single(TArrayLit(tvar, tupleElts, freshElts)),
       Clauses::empty(),
     )
   }
@@ -2292,8 +2296,18 @@ class TVar private (
 }
 
 /* Array literal with delayed typing.
- * Invariant: tupleElts must be non-empty (empty array literals are handled separately). */
-class TArrayLit(tvar: TVar, tupleElts: Array<TType>) extends TInst {}
+ * Invariant: tupleElts must be non-empty (empty array literals are handled separately).
+ * freshElts[i] is the precise literal type of element i when it was written as
+ * a direct primitive literal (`0`, `'a'`, `-1`, ...) in a non-const context,
+ * None otherwise. Such "fresh" literals are kept on the side so that
+ * committing the array literal against a target that demands literal precision
+ * (a literal type, or an inference variable constrained by one) can check the
+ * precise type, while every other exit widens to tupleElts[i] as before. */
+class TArrayLit(
+  tvar: TVar,
+  tupleElts: Array<TType>,
+  freshElts: Array<?TType>,
+) extends TInst {}
 
 /* Unexpanded named type */
 // possibly with type arguments

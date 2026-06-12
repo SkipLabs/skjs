@@ -1809,6 +1809,9 @@ extension class TypeChecker {
               ty
             }
           }),
+          // Under mostPrecise the element types are already precise, so fresh
+          // literal tracking would be redundant.
+          arr.map(x -> if (mostPrecise) None() else this.freshLiteralType(x)),
         )
       }
 
@@ -2461,6 +2464,52 @@ extension class TypeChecker {
     }
   }
 
+  // The precise literal SType of a direct primitive literal expression (`0`,
+  // `'a'`, `true`, `1n`, `-1`, `+1`), or None for anything else. Pure (no
+  // diagnostics) and non-recursive. Single source of truth for direct
+  // literals, shared by freshLiteralType and asConstExpr's leaf cases so the
+  // two cannot drift. Exception: unary expressions never reach here from
+  // asConstExpr (its recursive arithmetic arm catches them first), and the
+  // two intentionally disagree on `+1n` -- asConstExpr accepts it
+  // (pre-existing), while this returns None so `+1n` is not a fresh literal
+  // (issue #671).
+  fun directLiteralSType(e: Expr): ?SType {
+    pos = e.pos;
+    e.value match {
+    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
+    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
+    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
+    | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
+    | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
+    | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
+      // '+' only preserves number literals here: unary '+' on a bigint is a
+      // runtime TypeError (TS2736 in tsc), so only '-' preserves bigint
+      // literals.
+      kindValue = (nuop, subE.value) match {
+      | (_, Number(n)) -> Some((TNum(), n))
+      | (UOMinus(), BigInt(n)) -> Some((TBigInt(), n))
+      | _ -> None()
+      };
+      kindValue.map(kn -> {
+        (kind, n) = kn;
+        value = nuop match {
+        | UOPlus() -> n
+        | UOMinus() -> `-${n}`
+        };
+        TPrimValue::single(kind, value, pos)
+      })
+    | _ -> None()
+    }
+  }
+
+  // The precise type of a direct primitive literal expression, or None for
+  // anything else. Unlike asConstExpr this is pure and does not recurse into
+  // composite expressions, so it can be used speculatively (e.g. to record
+  // fresh array literal elements).
+  fun freshLiteralType(e: Expr): ?TType {
+    this.directLiteralSType(e).map(stype -> TType::single(stype))
+  }
+
   /* Typechecks expression e as const */
   fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?SType {
     pos = e.pos;
@@ -2473,11 +2522,6 @@ extension class TypeChecker {
       this.asConstExpr(tcenv, subExpr)
     | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
-    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
-    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
-    | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
-    | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
-    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Unop(UOExclamationMark(), subE) ->
       this.asConstExpr(tcenv, subE).map(stype ->
         stype match {
@@ -2573,7 +2617,11 @@ extension class TypeChecker {
         | _ -> None()
         }
       )
-    | _ -> None()
+    // Direct literals share the same single source of truth as
+    // freshLiteralType. Unary +/- never reaches here: the recursive
+    // arithmetic arm above catches it first (and, unlike directLiteralSType,
+    // accepts '+' on a bigint -- pre-existing, see issue #671).
+    | _ -> this.directLiteralSType(e)
     }
   }
 

@@ -99,8 +99,9 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
   - **Switch expressions/cases**: Precise typing applied, enables unused branch detection
   - **Array indexing**: `obj["key"]` uses precise literal type for the index string
   - **Class field initialization**: `status = "ready"` gets literal type in class fields
+  - **Array/tuple literal elements**: elements stay literal when the expected type asks for literals — via annotation, parameter, return, nested tuple, or generic constraint (`['urgent']` matches `('urgent' | 'priority')[]`; `[0, 1]` matches `[0, number]`; `[[0, 1]]` satisfies `K extends 0 | 1`); they widen otherwise (`let x = [0, 1]; x.push(2)` makes `x` a `number[]`)
 - **Error for redundant 'as const'**: SKJS errors when `as const` is used unnecessarily
-- **Manual 'as const' still needed for**: Non-ADT object properties, array elements, nested values
+- **Manual 'as const' still needed for**: Non-ADT object properties, nested values
 
 #### Examples - Automatic Literal Types:
 ```typescript
@@ -125,6 +126,10 @@ function handleCode(code: 1 | 2): string {
     case 3: return 'third';  // Error: "Unused branch" 
   }
 }
+
+// ✓ Array/tuple literal elements - automatic when the expected type asks for literals
+const tags: ('urgent' | 'priority')[] = ['urgent', 'priority'];
+const pair: [0, number] = [0, 1];
 ```
 
 #### Examples - Where `as const` is still needed:
@@ -136,8 +141,11 @@ let config = {
   level: 'high' as const      // ✗ need 'as const' for non-kind fields
 };
 
-// Tuple elements need 'as const'
-let tags = ['urgent' as const, 'priority' as const];
+// Array elements widen when nothing asks for a literal; 'as const' keeps the literal
+declare function save<T>(xs: T[]): T;
+let s1: 'urgent' = save(['urgent' as const]);  // ✓ T = 'urgent'
+let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
+```
 
 ### 10. Function Overloading Not Supported
 - **Rule**: Function overloading is not supported in SKJS
