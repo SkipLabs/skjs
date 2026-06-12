@@ -55,9 +55,22 @@ function objectAcceptsNonPrimitives(
   const o6: object = arr;
 }
 
-// Promises are objects (stub-declared object types since #686).
+// Promises are objects (stub-declared object types since #686): they satisfy
+// the `object` keyword, also inside unions and intersections.
 function objectAcceptsPromise(p: Promise<number>): void {
-  const o: object = p;
+  const o1: object = p;
+  const o2: object | string = p;
+  const o3: object | Promise<string> = p;
+}
+
+function promiseInterObjectKeepsPromise(
+  x: Promise<number> & object,
+): Promise<number> {
+  return x;
+}
+
+function promiseToInterObject(p: Promise<number>): Promise<number> & object {
+  return p;
 }
 
 // --- Assignability from `object` ---
@@ -123,10 +136,11 @@ function keyofObjectIsNever(k: keyof object): void {
 
 function expectsNonPrimitive<T extends object>(x: T): void {}
 
-function checkConstraint(f: () => void): void {
+function checkConstraint(f: () => void, p: Promise<number>): void {
   expectsNonPrimitive({});
   expectsNonPrimitive({ a: 1 });
   expectsNonPrimitive(f);
+  expectsNonPrimitive(p);
   // @ts-expect-error Argument is not assignable to the parameter's type
   expectsNonPrimitive("hello");
 }
