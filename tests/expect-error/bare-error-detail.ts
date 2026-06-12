@@ -10,27 +10,25 @@ function id2<T, U>(x: T): U {
   return x;
 }
 
-// The rescued pair prints K's expanded constraint, the object form of the
-// tuple [0, 1], listing every array method.
-// FIXME: should render as the tuple it is. TypeScript also accepts this call
-// (K = [0, 1]); the array literal commits to the widened tuple before the
-// constraint check (case 2a'), so SKJS rejects it.
+// K's expanded constraint renders as the tuple it denotes, not as the
+// object form listing every array method.
+// FIXME: TypeScript accepts this call (K = [0, 1]); the array literal
+// commits to the widened tuple before the constraint check (case 2a'), so
+// SKJS rejects it.
 declare function g2<K extends [0, 1]>(x: K): K;
 function tupleConstraint(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type [unknown, unknown]
-  // @skjs-expect-error-line3 is not assignable to type {
+  // @skjs-expect-error-line3 is not assignable to type ['0', '1']
   const r = g2([0, 1]);
 }
 
-// A genuinely mismatched operand: same expanded object form for the
-// constraint side.
-// FIXME: should render as the tuple it is.
+// A genuinely mismatched operand gets the readable pair.
 declare function fk<K extends [0, 1]>(x: K): K;
 function nonTupleOperand(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type '5'
-  // @skjs-expect-error-line3 is not assignable to type {
+  // @skjs-expect-error-line3 is not assignable to type ['0', '1']
   const r = fk(5);
 }
 
@@ -45,12 +43,11 @@ function extraMemberShown(): void {
   const r = hx(arg);
 }
 
-// A readonly tuple expansion: the object form shows the readonly markers.
-// FIXME: should render as the readonly tuple it is.
+// A readonly tuple expansion renders as the readonly tuple it is.
 declare function gr<K extends readonly [0, 1]>(x: K): K;
 function readonlyTupleConstraint(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type [unknown, unknown]
-  // @skjs-expect-error-line3 is not assignable to type {
+  // @skjs-expect-error-line3 is not assignable to type readonly ['0', '1']
   const r = gr([0, 2]);
 }

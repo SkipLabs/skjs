@@ -40,6 +40,74 @@ mutable class SavedTypePp private {} extends TypePpState {
   }
 }
 
+// Named fields every tuple expansion carries besides its positional fields:
+// `length` and the array-protocol members inherited from the ReadonlyArray
+// and SKJS_ArrayAndTupleBase stub interfaces. Anything else is a member the
+// tuple shorthand would hide. A stub member missing here only costs the
+// shorthand (the object form prints instead), never correctness.
+const kTupleProtocolFieldNames: SortedSet<String> = SortedSet[
+  "concat",
+  "every",
+  "filter",
+  "find",
+  "findIndex",
+  "flatMap",
+  "forEach",
+  "includes",
+  "indexOf",
+  "join",
+  "lastIndexOf",
+  "length",
+  "map",
+  "reduce",
+  "reduceRight",
+  "slice",
+  "some",
+];
+
+// Returns Some((element types, positionals are readonly)) when the tuple
+// shorthand can render `fields` without hiding anything: an array-branded
+// object whose named fields are exactly the positional indexes 0..N-1
+// (agreeing on mutability), a literal `length` N, and array-protocol
+// members. Single pass over the fields (no isTuple/asTuple re-walks).
+fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
+  if (fields.isArray != Some(true)) return None();
+  arity: ?Int = None();
+  positionals = mutable Map<Int, TType>[];
+  maxIndex = -1;
+  readonlyCount = 0;
+  for (field in fields.fields) {
+    name = field.name.value;
+    name.toIntOption() match {
+    | Some(i) if (i >= 0) ->
+      positionals.set(i, field.get);
+      if (i > maxIndex) !maxIndex = i;
+      if (field.set.isBottom()) {
+        !readonlyCount = readonlyCount + 1;
+      }
+    | _ ->
+      if (!kTupleProtocolFieldNames.contains(name)) return None();
+      if (name == "length") {
+        !arity = field.get.getSingleConstant() match {
+        | Some(TPrimValue(TNum(), Some(lits), _)) ->
+          lits.singleElt().flatMap(lit -> lit.val.toIntOption())
+        | _ -> None()
+        }
+      }
+    }
+  };
+  n = arity match {
+  | Some(x) if (x >= 0) -> x
+  | _ -> return None()
+  };
+  // Field names are unique, so count n with max n-1 means exactly 0..n-1.
+  if (positionals.size() != n || (n != 0 && maxIndex != n - 1)) {
+    return None()
+  };
+  if (readonlyCount != 0 && readonlyCount != n) return None();
+  Some((Array::fillBy(n, i -> positionals[i]), readonlyCount != 0))
+}
+
 mutable class TypePp{
   compact: Bool,
   // Mirrors --verbose: when true, internal-only details (synthetic index
@@ -275,6 +343,20 @@ mutable class TypePp{
   }
 
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
+    // A tuple-shaped object prints as the tuple it denotes when the
+    // shorthand hides nothing: besides its positional fields, a tuple
+    // expansion carries only `length` and the array-protocol members
+    // inherited from the stubs (`map`, `indexOf`, `filter`, ...). Any other
+    // member (e.g. an intersection's extra field) keeps the expanded object
+    // form, which also stays available under --verbose.
+    if (!this.verbose) {
+      tupleShorthand(fields) match {
+      | Some((elts, isReadonly)) ->
+        if (isReadonly) this.out(level, margin, "readonly ");
+        return this.tuple(level, margin, elts)
+      | None() -> void
+      }
+    };
     (
       fields.fields.isEmpty(),
       !fields.hasNonSyntheticIndex(),
