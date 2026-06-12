@@ -9,7 +9,6 @@
 // is intentional and independent of the missing-separator bug pinned here.
 
 function clauseThenNamedInst(x: Array<number> | undefined): void {
-  // @skjs-expect-error __SKJS_show: expected undefined | Array<number>, got undefinedArray<number>
   __SKJS_show(x, "undefined | Array<number>");
 }
 
