@@ -249,6 +249,37 @@ function typeofFunctionProvesNonPrimitive(f: (() => void) | string): void {
   }
 }
 
+// Joining a typeof-proven branch with an unmarked branch of the same shape.
+function joinProvenAndUnknown(
+  x: { length: number } | string,
+  y: { length: number },
+  c: boolean,
+): void {
+  if (typeof x === "object") {
+    const z = c ? x : y;
+    __SKJS_show(z, `{ length: number } | { length: number }`);
+  }
+}
+
+// FIXME: tsc narrows `{}` to `Function` under typeof === "function"; SKJS
+// narrows it to `never`, which is literally false (functions are valid `{}`
+// values) — and inconsistent with the same value first narrowed by
+// typeof === "object", which becomes `object` and then survives the
+// typeof === "function" check as `object`.
+function typeofFunctionOnEmpty(e: {}): void {
+  if (typeof e === "function") {
+    __SKJS_show(e, `never`);
+  }
+}
+
+// The comparison is provably always false (o is non-primitive) and the
+// equality narrowing already yields never, but no warning is emitted yet.
+function objectComparedToString(o: object, s: string): void {
+  if (o === s) {
+    __SKJS_show(o, `never`);
+  }
+}
+
 // --- for...in over `object` ---
 
 function forInOverObject(o: object): void {
