@@ -351,7 +351,31 @@ class CatchClause(
 //   | async <expr>
 /***************************************************************************/
 
-extension class Expr(pos: PosRange, value: Expr_) extends Def_
+extension class Expr(pos: PosRange, value: Expr_) extends Def_ {
+  // Whether this expression is a literal: a number, bigint, or string
+  // literal (possibly signed), or `true`/`false`/`null`/`undefined`
+  fun isLiteral(): Bool {
+    this.value match {
+    | Number _
+    | BigInt _
+    | EString _
+    | Var(Name(_, "true"))
+    | Var(Name(_, "false"))
+    | Var(Name(_, "null"))
+    | Var(Name(_, "undefined")) ->
+      true
+    // Signed numeric literals such as `-1` parse as a unary expression
+    | Unop(ArithmeticUnaryOperator _, e1) ->
+      e1.value match {
+      | Number _
+      | BigInt _ ->
+        true
+      | _ -> false
+      }
+    | _ -> false
+    }
+  }
+}
 
 base class Expr_ uses XXHashable {
   children =

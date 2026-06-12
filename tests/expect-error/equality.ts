@@ -222,32 +222,32 @@ function strictInequalityDisjoint(x: 0, y: 1): boolean {
 // Comparisons between identical singleton types always evaluate to the same
 // result; TypeScript does not report these
 function alwaysTrueUndefined(x: undefined, y: undefined): boolean {
-  // TODO: should warn: always true
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 
 function alwaysTrueNull(x: null, y: null): boolean {
-  // TODO: should warn: always true
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 
 function alwaysTrueString(x: "a", y: "a"): boolean {
-  // TODO: should warn: always true
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 
 function alwaysTrueNumber(x: 0, y: 0): boolean {
-  // TODO: should warn: always true
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 
 function alwaysTrueTrue(x: true, y: true): boolean {
-  // TODO: should warn: always true
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 
 function alwaysFalseInequality(x: "a", y: "a"): boolean {
-  // TODO: should warn: always false
+  // @skjs-expect-warning This comparison is always false because the operands always hold the same single value
   return x !== y;
 }
 
@@ -278,7 +278,7 @@ const B = "b";
 function namedConstantRecheck(x: "a" | "b"): string {
   if (x === "a") {
     return "first";
-    // TODO: should warn: always true (on the else-if line below)
+    // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   } else if (x === B) {
     return "second";
   }

@@ -968,6 +968,8 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     op_: BOStrictComparison,
+    e1: Expr,
+    e2: Expr,
     ty1: TType,
     ty2: TType,
   ): void {
@@ -1001,10 +1003,57 @@ extension class TypeChecker {
             ],
             SKJSCode(2040),
           )
+        } else if (
+          // Comparing against a literal is exempt: re-checking a narrowed
+          // discriminant (e.g. `else if (color.kind === "blue")` on the
+          // last variant of a union) is idiomatic, not a bug.
+          !e1.isLiteral() &&
+          !e2.isLiteral() &&
+          this.isSameSingletonValue(stypes1, stypes2)
+        ) {
+          alwaysResult = op_ match {
+          | BOStrictEquality() -> "true"
+          | BOStrictInequality() -> "false"
+          };
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                `This comparison is always ${alwaysResult} because the operands always hold the same single value`,
+              ),
+            ],
+            SKJSCode(2074),
+          )
         }
       | _ -> void
       }
     | _ -> void
+    }
+  }
+
+  // Whether both operand types are the same singleton value type (a single
+  // literal, null, or undefined), making strict equality always true. Sound
+  // under over-approximation: a singleton over-approximation bounds the
+  // operand to at most that one value.
+  private fun isSameSingletonValue(stypes1: STypes, stypes2: STypes): Bool {
+    (stypes1.singleElt(), stypes2.singleElt()) match {
+    | (Some(sty1), Some(sty2)) ->
+      (sty1, sty2) match {
+      | (TPrimUnit(TNull(), _), TPrimUnit(TNull(), _))
+      | (TPrimUnit(TUndefined(), _), TPrimUnit(TUndefined(), _)) ->
+        true
+      | (
+        TPrimValue(kind1, Some(lits1), _),
+        TPrimValue(kind2, Some(lits2), _),
+      ) ->
+        kind1 == kind2 &&
+          ((lits1.singleElt(), lits2.singleElt()) match {
+          | (Some(lit1), Some(lit2)) -> lit1.val == lit2.val
+          | _ -> false
+          })
+      | _ -> false
+      }
+    | _ -> false
     }
   }
 
@@ -1879,7 +1928,7 @@ extension class TypeChecker {
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
-        this.checkComparisonOverlap(tcenv, pos, op_, ty1, ty2);
+        this.checkComparisonOverlap(tcenv, pos, op_, e1, e2, ty1, ty2);
         TType::single(TPrimValue::boolean(pos))
 
       | op_ @ LazyLogicalOperator() ->
