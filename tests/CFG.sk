@@ -42,7 +42,7 @@ fun validateCFG(
   checkResult.cfgs.each((cgNode, cfg) -> {
     !cfgs = cfgs.set(cgNode, cfg with {name => cgNode.id.descriptor()})
   });
-  actual = SKJS.serializeCFGsDot(cfgs);
+  actual = SKJS.serializeDeterministic(cfgs);
 
   expectationPath = cfgExpectationPath(fileName);
   update match {

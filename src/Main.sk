@@ -615,7 +615,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                 // into a single document when printed
                 out = sortedCFGs(res.cfgs).map(cfg ->
                   format match {
-                  | CFGJson() -> cfgJson(cfg)
+                  | CFGJson() -> cfgToJson(cfg)
                   | CFGDot() -> cfgToDot(cfg)
                   }
                 );

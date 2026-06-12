@@ -10,11 +10,6 @@ base class CFGOutputFormat {
   | CFGDot()
 }
 
-// CFGs sorted by function name, for deterministic output
-fun sortedCFGs(cfgs: SortedMap<CGNode, CFG>): Array<CFG> {
-  cfgs.values().collect(Array).sortedBy(cfg ~> cfg.name)
-}
-
 /***************************************************************************/
 /* Compact source-like rendering of AST fragments for CFG output. */
 /***************************************************************************/
@@ -299,7 +294,7 @@ fun blockJson(block: CFGBlock): String {
   jsonObj(fields.toArray())
 }
 
-fun cfgJson(cfg: CFG): String {
+fun cfgToJson(cfg: CFG): String {
   blocks = mutable Vector[];
   for (block in cfg.blocks.values()) {
     blocks.push(blockJson(block))
@@ -327,10 +322,6 @@ fun cfgJson(cfg: CFG): String {
       ("blocks", jsonArr(blocks)),
     ],
   )
-}
-
-fun serializeCFGsJson(cfgs: SortedMap<CGNode, CFG>): String {
-  jsonArr(sortedCFGs(cfgs).map(cfgJson)) + "\n"
 }
 
 /***************************************************************************/
@@ -428,8 +419,10 @@ fun cfgToDot(cfg: CFG): String {
   "\n".join(lines) + "\n"
 }
 
-fun serializeCFGsDot(cfgs: SortedMap<CGNode, CFG>): String {
-  "\n".join(sortedCFGs(cfgs).map(cfgToDot))
+fun serializeDeterministic(cfgs: SortedMap<CGNode, CFG>): String {
+  "\n".join(
+    cfgs.values().collect(Array).sortedBy(cfg ~> cfg.name).map(cfgToDot),
+  )
 }
 
 module end;
