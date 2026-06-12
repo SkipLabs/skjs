@@ -15,7 +15,7 @@ fun validateCFG(
   checkResult: SKJS.CheckResult,
   update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  fileName = checkResult.fileName;
+  fileName = checkResult.fileName.toAbsolute(checker.files.rootMap);
   // The checked-files map also visits builtins/stubs; only fixture files
   // have expectation *.dot.
   if (!fileName.toString().contains("/tests/cfg/")) {

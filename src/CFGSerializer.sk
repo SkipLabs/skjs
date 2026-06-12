@@ -139,21 +139,10 @@ fun renderExpr(e: Expr): String {
   | Binop(op, e1, e2) ->
     `(${renderExpr(e1)} ${renderBinop(op)} ${renderExpr(e2)})`
   | Call(f, _tys, args) -> `${renderExpr(f)}(${renderExprList(args)})`
-  | Params(params) ->
-    `(${", ".join(
-      params.map(p -> {
-        (name, _ty) = p;
-        name.value
-      }),
-    )})`
+  | Params(params) -> `(${", ".join(params.map(p -> renderPattern(p.name)))})`
   | Object(fields) -> `{${", ".join(fields.map(renderField))}}`
-  | Closure(params, _retTy, body) ->
-    paramStr = ", ".join(
-      params.map(p -> {
-        (name, _ty) = p;
-        name.value
-      }),
-    );
+  | Closure(_tparams, params, _retTy, body) ->
+    paramStr = ", ".join(params.map(p -> renderPattern(p.name)));
     body match {
     | CBExpr(e1) -> `(${paramStr}) => ${renderExpr(e1)}`
     | CBBlock(_) -> `(${paramStr}) => {...}`
@@ -165,6 +154,8 @@ fun renderExpr(e: Expr): String {
   | InstanceOf(e1, e2) -> `(${renderExpr(e1)} instanceof ${renderExpr(e2)})`
   | As(e1, _ty) -> `(${renderExpr(e1)} as _)`
   | AsConst(e1) -> `(${renderExpr(e1)} as const)`
+  | Satisfies(e1, _ty) -> `(${renderExpr(e1)} satisfies _)`
+  | VoidOp(e1) -> `void ${renderExpr(e1)}`
   | Regexp(s) -> s
   | Async(e1) -> `async ${renderExpr(e1)}`
   | TemplateLiteral(strings, exprs) ->
@@ -181,7 +172,9 @@ fun renderExpr(e: Expr): String {
 }
 
 fun renderType(ty: TType): String {
-  prettyPrintType(true, ty)
+  // No Subst/TEnv is available at serialization time, so type variables are
+  // rendered as-is rather than expanded
+  rawPrettyPrint(true, pp -> pp.type(0, Margin{}, ty))
 }
 
 /***************************************************************************/

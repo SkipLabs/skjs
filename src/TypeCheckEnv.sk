@@ -237,11 +237,13 @@ class TCResults private {
   callgraph: SortedMap<CGNode, Array<CGNode>>,
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
+  cfgs: SortedMap<CGNode, CFG>,
 } {
   static fun ofAccs(accs: readonly Vector<readonly TCResultsAcc>): TCResults {
     callgraph = mutable Map[];
     classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
     subtypingEdges = SortedSet[];
+    cfgs = SortedMap<CGNode, CFG>[];
     errors = mutable Vector<Error>[];
     warnings = mutable Vector<Error>[];
     for (acc in accs) {
@@ -263,6 +265,10 @@ class TCResults private {
       };
       for (edge in acc.subtypingEdges) {
         !subtypingEdges = subtypingEdges.set(edge)
+      };
+      for (kv in acc.cfgs.items()) {
+        (cgNode, cfg) = kv;
+        !cfgs = cfgs.set(cgNode, cfg)
       }
     };
     TCResults{
@@ -273,6 +279,7 @@ class TCResults private {
       ),
       classHierarchy,
       subtypingEdges,
+      cfgs,
     }
   }
 }
@@ -298,6 +305,7 @@ mutable class TCResultsAcc private {
       callgraph => this.callgraph.chill(),
       classHierarchy => this.classHierarchy.chill(),
       subtypingEdges => this.subtypingEdges,
+      cfgs => this.cfgs,
     }
   }
 
@@ -309,6 +317,7 @@ mutable class TCResultsAcc private {
       callgraph => Vector::mcreateFromItems(this.callgraph),
       classHierarchy => Vector::mcreateFromItems(this.classHierarchy),
       subtypingEdges => this.subtypingEdges,
+      cfgs => this.cfgs,
     }
   }
 
