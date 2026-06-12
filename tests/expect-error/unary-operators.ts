@@ -65,6 +65,15 @@ function genericPlus<T extends bigint>(x: T): void {
   const y = +x;
 }
 
+// A union of bigint with a non-bigint literal: tsc widens every literal
+// member for the TS2736 headline ('string | bigint').
+// FIXME: SKJS keeps the invalid member's literal in the headline, rendering
+// the awkward nested quotes 'bigint | 'a''.
+function literalMixedPlus(x: "a" | bigint): void {
+  // @skjs-expect-error Operator '+' cannot be applied to type 'bigint | 'a''
+  const y = +x;
+}
+
 // Test unary operators in expressions
 const expr1: number = -(10 + 5);
 const expr2: number = ~(8 - 3);
