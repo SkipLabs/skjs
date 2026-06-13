@@ -50,12 +50,15 @@
  * otherwise. This mirrors how TS fresh literal types widen unless the
  * contextual type includes a literal type: `[[0, 1]]` matches
  * Array<[0, number]>, and under `K extends 0 | 1` the call checks
- * successfully (the precise element satisfies the constraint; K then
- * resolves to the constraint, not to the literal candidate as in TS).
- * Freshness never escapes: every commitment uses the target type or the
- * widened element types.
- *
- * See docs/delayed-array-literal-typing.tex for the formal type theory.
+ * successfully (the precise element satisfies the constraint). What K then
+ * denotes depends on the binding context: in non-const contexts K stays
+ * pinned to the first committed element (a TS-like literal result; later
+ * arguments in the same call are checked against the pin -- see the
+ * firstCommitmentPinning test), while in const (mostPrecise) contexts K
+ * resolves to its constraint, so a result checked against a narrower type
+ * is rejected (unlike TS, which infers the literal candidate). Freshness
+ * never escapes: every commitment uses the target type or the widened
+ * element types.
  */
 
 module SKJS;
@@ -200,8 +203,12 @@ class ArrayLitTyping() {
   // keeps a fresh literal type when the contextual type includes a literal
   // type (so `0` matches a parameter of type `0`, and satisfies
   // `K extends 0 | 1` during inference) and widens it to its base type
-  // otherwise. Unlike TS, a type parameter is not bound to the literal
-  // candidate: K resolves to its constraint, not to `0`.
+  // otherwise. Unlike TS, the literal does not become a unioned inference
+  // candidate for the type parameter: in non-const contexts K stays pinned
+  // to the first committed element (later arguments are checked against the
+  // pin -- see firstCommitmentPinning in
+  // tests/expect-error/contextual-literal-args.ts), while in const
+  // (mostPrecise) contexts K resolves to its constraint.
   // Peeks on a clone of the substitution: resolving the target covariantly on
   // the live substitution would close open inference variables prematurely.
   static private fun targetExpectsLiteral(

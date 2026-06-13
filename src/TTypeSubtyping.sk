@@ -371,13 +371,26 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
         msgs
       }
     } else {
-      err.toError(
+      msgs = err.toError(
         subst,
         tenv,
         ty1.pos,
         ty2.pos,
         detail.ensureIntermediateDepth(),
-      )
+      );
+      // Same fall-back as above: when both sides are pure type parameters,
+      // the clause comparison can report no pairs at all, and an error must
+      // never print bare with no explanation.
+      if (msgs.isEmpty()) {
+        ty1Str = prettyPrintType(false, ty1, subst, tenv);
+        ty2Str = prettyPrintType(false, ty2, subst, tenv);
+        List[
+          (ty1.pos, `Type ${ty1Str}`),
+          (ty2.pos, `is not assignable to type ${ty2Str}`),
+        ]
+      } else {
+        msgs
+      }
     }
   | STRecTypeWithHint(err, hints, ty1, ty2) ->
     msgs = STRecType(err, ty1, ty2).toError(subst, tenv, detail);
