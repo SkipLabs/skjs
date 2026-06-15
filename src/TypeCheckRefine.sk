@@ -394,7 +394,12 @@ extension class TypeChecker {
       }
 
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
-      this.evalInstanceof(tcenv, local, className)
+      // Only a class/interface RHS can drive narrowing; a Function-like value
+      // (e.g. a `typeof Class` const) is a valid RHS but has no class def to
+      // build an instance type from, so it narrows nothing.
+      if (this.hasClassDef(tcenv, className)) {
+        this.evalInstanceof(tcenv, local, className)
+      }
 
     | In(e1, Expr(_, Var(local))) ->
       (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);

@@ -2121,18 +2121,24 @@ extension class TypeChecker {
         TType::union(tcenv.subst, this, ty1WithoutNullish, ty2)
       }
 
-    | InstanceOf(e1, Expr(_, Var(className))) ->
+    | InstanceOf(e1, e2) ->
       _ = this.expr(tcenv, e1, true);
-      _ = this.getClass(tcenv, className);
-      if (this.interfaceAndValueDefs(tcenv, className) == (true, false)) {
-        interfaceAsValueError(tcenv, className)
+      // The RHS must be a value that is constructable or callable (a class,
+      // function, or other Function-like value). A type-only interface used
+      // here is already reported as TS2693 by typechecking it as a value.
+      rhsTy = this.expr(tcenv, e2, true);
+      if (!this.isInstanceofRhs(tcenv, rhsTy)) {
+        tcenv.error(
+          Array[
+            (
+              e2.pos,
+              "The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.",
+            ),
+          ],
+          TSCode(2359),
+        )
       };
       TType::single(TPrimValue::boolean(pos))
-    | InstanceOf(_, e2) ->
-      fatalError(
-        Array[(e2.pos, "The 'instanceof' operator is not supported by SKJS")],
-        SKJSCode(9027),
-      )
     | In(e1, e2) ->
       (t1, fieldsOpt, symFieldsOpt) = this.getInLhsTypeAndFields(
         tcenv,
@@ -2493,6 +2499,23 @@ extension class TypeChecker {
           ),
         ],
         SKJSCode(9011),
+      )
+    }
+  }
+
+  // Whether `rhsTy` is a valid `instanceof` right-hand side: every member of
+  // the type is a Function-like object (each branch carries a construct or
+  // call signature). Mirrors tsc's TS2359 acceptance (modulo
+  // `Symbol.hasInstance`, which SKJS does not model).
+  fun isInstanceofRhs(tcenv: mutable TCEnv, rhsTy: TType): Bool {
+    rhsTy.getSTypes(tcenv.subst, this, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      stypes.all(stype ->
+        stype match {
+        | obj @ TObject _ -> obj.isFunctionLike()
+        | _ -> false
+        }
       )
     }
   }

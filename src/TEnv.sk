@@ -258,6 +258,14 @@ base class TEnv{
     (hasInterface, hasValue)
   }
 
+  // Whether `name` resolves to a class or interface definition (anything
+  // `getClass` would accept). Used to decide whether an `instanceof` RHS can
+  // drive narrowing without `getClass` raising a fatal error on a value-only
+  // name.
+  fun hasClassDef(tcenvb: mutable TCEnvBase, name: Name): Bool {
+    this.defMap.getAll(tcenvb, name).any(def -> def is Class _)
+  }
+
   fun getClassFields(
     context: mutable SKStore.Context,
     c: Class,
