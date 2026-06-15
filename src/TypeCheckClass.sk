@@ -66,6 +66,31 @@ extension class TypeChecker {
       for (ext in c.extends_) {
         ext.value match {
         | TAInst(parentName, parentTArgs) ->
+          parentClass = this.getClass(tcenvl, parentName);
+          if (!isInterface && parentClass.kind is CKInterface()) {
+            // A class extending an interface is only valid if a merged value
+            // declaration provides a runtime constructor; an interface alone
+            // has no value to use as a superclass.
+            hasValueDef = this.defMap.getAll(tcenvl, parentName).any(def ->
+              def match {
+              | Class{kind => CKInterface()}
+              | TypeDef _ ->
+                false
+              | _ -> true
+              }
+            );
+            if (!hasValueDef) {
+              tcenvl.error(
+                Array[
+                  (
+                    parentName.pos,
+                    `Cannot extend an interface '${parentName}'. Did you mean 'implements'?`,
+                  ),
+                ],
+                TSCode(2689),
+              )
+            }
+          };
           superCstr = this.newConstructor(
             subst,
             parentName,
@@ -80,10 +105,7 @@ extension class TypeChecker {
             !this.super = Some((superCstr, super));
           };
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-          tcenv.recordClassHierarchy{
-            child => c,
-            parent => this.getClass(tcenvl, parentName),
-          };
+          tcenv.recordClassHierarchy{child => c, parent => parentClass};
           this.checkSubType(
             tcenv,
             parentName.pos,

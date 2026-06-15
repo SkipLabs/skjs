@@ -10,14 +10,12 @@ class CBase {
   a: number = 1;
 }
 
-// FIXME: tsc rejects with TS2689 "Cannot extend an interface 'IBase'. Did you
-// mean 'implements'?"; SKJS accepts a class extending an interface (issue #696)
+// @ts-expect-error Cannot extend an interface 'IBase'. Did you mean 'implements'?
 class ClassExtendsInterface extends IBase {
   b: number = 2;
 }
 
-// FIXME: tsc rejects with TS2689; SKJS accepts an abstract class extending an
-// interface (issue #696)
+// @ts-expect-error Cannot extend an interface 'IBase'. Did you mean 'implements'?
 abstract class AbstractExtendsInterface extends IBase {
   b: number = 2;
 }

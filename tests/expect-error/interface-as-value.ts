@@ -78,8 +78,7 @@ function readsUnannField(c: UsesTypeofUnann): number {
   return c.f;
 }
 
-// FIXME: tsc rejects with TS2689 "Cannot extend an interface 'Local'. Did you
-// mean 'implements'?"; SKJS accepts extending an interface
+// @ts-expect-error Cannot extend an interface 'Local'. Did you mean 'implements'?
 class Sub extends Local {
   b: number = 2;
 }
