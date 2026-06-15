@@ -273,6 +273,9 @@ fun execCheck(args: Cli.ParseResults): void {
 }
 
 const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
+const checkResultsDirName: SKStore.DirName = SKStore.DirName::create(
+  "/check-results/",
+);
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   args.maybeGetString("directory") match {
@@ -500,7 +503,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
   errorsDirName = SKStore.DirName::create("/check/errors/");
   warningsDirName = SKStore.DirName::create("/check/warnings/");
-  cfgsDirName = SKStore.DirName::create("/check/cfgs/");
 
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
@@ -597,40 +599,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                 writer.setArray(SKStore.UnitID::singleton, warnings.toArray());
               },
             );
-            _ = CallGraph::build(context, checked);
-            emitCfgFormat match {
-            | Some(format) ->
-              _ = checked.map(
-                SKStore.UnitID::keyType,
-                SKStore.StringFile::type,
-                context,
-                cfgsDirName,
-                (_context, writer, _key, valueIter) ~> {
-                  res = valueIter.getUnique() match {
-                  | None() ->
-                    internal_error("Unexpected missing value in emit-cfg")
-                  | Some(r) -> r
-                  };
-                  // One entry per function; merged across files and assembled
-                  // into a single document when printed
-                  out = res.cfgs
-                    .values()
-                    .collect(Array)
-                    .sortedBy(cfg ~> cfg.name)
-                    .map(cfg ->
-                      format match {
-                      | CFGJson() -> cfgToJson(cfg)
-                      | CFGDot() -> cfgToDot(cfg)
-                      }
-                    );
-                  writer.setArray(
-                    SKStore.UnitID::singleton,
-                    out.map(s -> SKStore.StringFile(s)),
-                  )
-                },
-              )
-            | None() -> void
-            }
+            _ = CallGraph::build(context, checked)
           };
         },
       );
@@ -670,12 +639,31 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   emitCfgFormat match {
   | None() -> void
   | Some(format) ->
-    context.maybeGetEagerDir(cfgsDirName) match {
+    context.unsafeMaybeGetEagerDir(checkResultsDirName) match {
     | None() -> void
-    | Some(dir) ->
-      entries = dir.getArrayRaw(SKStore.UnitID::singleton).map(f ->
-        SKStore.StringFile::type(f).value
+    | Some(_) ->
+      checkResults = SKStore.EHandle(
+        FPath::keyType,
+        CheckResult::type,
+        checkResultsDirName,
       );
+      cfgs = mutable Vector<CFG>[];
+      for ((_fileName, results) in checkResults.items(context)) {
+        for (res in results) {
+          res.cfgs.values().each(cfgs.push)
+        }
+      };
+      // One entry per function, merged across files, sorted for determinism
+      // (CheckResults iterate in hash order).
+      entries = cfgs
+        .toArray()
+        .sortedBy(cfg ~> cfg.name)
+        .map(cfg ->
+          format match {
+          | CFGJson() -> cfgToJson(cfg)
+          | CFGDot() -> cfgToDot(cfg)
+          }
+        );
       format match {
       | CFGJson() -> print_raw("[" + ",\n".join(entries) + "]\n")
       | CFGDot() -> print_raw("\n".join(entries))
@@ -838,7 +826,7 @@ class Checker private {
       FPath::keyType,
       CheckResult::type,
       context,
-      SKStore.DirName::create("/check-results/"),
+      checkResultsDirName,
       (context, writer, fileName, valueIter) ~> {
         parsedFile = valueIter.first;
         parsedFile.value match {
