@@ -351,6 +351,18 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Relationship to TypeScript**: `tsc` rejects only a purely-`void` condition (TS1345) and always-truthy function/method references (TS2774). `boolean`, `safe`, and `typescript` are never more permissive than `tsc` (they reject at least those). `javascript` *is* more permissive: it accepts any condition, including pure `void` and always-truthy function refs that `tsc` rejects.
 - **Verified by**: `tests/projects/truthiness-{boolean,safe,typescript,javascript}/`
 
+### 30. The `object` Keyword Type
+- **Rule**: `object` is the type of every non-primitive value — everything except `string`, `number`, `bigint`, `boolean`, `symbol`, `null` and `undefined`. Object/array literals, functions, class instances and values of any object type are assignable to it; primitives, `null`, `undefined` and `unknown` are not. It is not generic (SKJS rejects `object<T>` with TS2315 "This type is not generic"; `tsc` rejects it at parse time) and prints as `object` in diagnostics.
+- **`object` vs `{}`**: In TypeScript, primitives are assignable to `{}` (via apparent boxed members) but not to `object`. SKJS rejects primitives for **both** (no boxing in assignability — stricter than TypeScript for `{}`), so the two types accept the same values; they still differ in:
+  - **Printing**: `object` vs `{  }`.
+  - **Intersections with primitives**: `string & {}` collapses to `string` (the boxed `String` interface satisfies the empty object type), while `string & object` is uninhabited — assigning a string to it, or it to `never`, behaves like `never`, matching `tsc`.
+  - **typeof narrowing**: `typeof x === "object"` on an `unknown`/unannotated local narrows it to `null | object` (the famous `typeof null === "object"` quirk; the type prints exactly so).
+- **Intersections with object types**: `object & { a: number }` is `{ a: number }` (and the result still asserts non-primitivity: further intersecting it with a primitive is uninhabited).
+- **Primitivity is tri-state**: each object-type branch knows whether its values are primitives — unknown for structural object types (a primitive can satisfy `{ length: number }` through its boxed interface), known non-primitive for the `object` keyword, known primitive for a boxed interface standing in for the primitive in intersections. Conflicting assertions are uninhabited, in both intersection and subtyping.
+- **Members**: `object` has no structural members: any property access is an error, and `keyof object` is `never`. TypeScript additionally exposes `Object.prototype` members (`o.toString`, ...) via the apparent type; SKJS rejects them (deliberate: objects created with `Object.create(null)` lack these members, so the access is unsound).
+- **Known limitations (FIXME)**: `typeof x === "function"` on `x: object` narrows to `never` where `tsc` narrows to `Function` — unsound, since functions are valid `object` values.
+- **Verified by**: `tests/expect-error/object-keyword.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes

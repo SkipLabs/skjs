@@ -126,13 +126,28 @@ extension class TType {
     }
   }
 
+  // The boxed interface of a primitive, marked as standing in for the
+  // primitive itself (isPrimitive = Some(true)): structural object types
+  // accept it, while branches asserting non-primitivity (the `object`
+  // keyword, typeof-proven objects) reject it in TFields::isSub.
+  static fun boxedPrim(
+    subst: mutable Subst,
+    tenv: TEnv,
+    primClassName: Name,
+  ): ?TType {
+    TType::inst(primClassName, TArgs(Array[]))
+      .expandToClauses(subst, tenv, Covariant())
+      .getObject()
+      .map(obj -> TType::single(obj.map(f -> f.withIsPrimitive(Some(true)))))
+  }
+
   private static fun inter_(
     subst: mutable Subst,
     tenv: TEnv,
     ty1: TType,
     ty2: TType,
   ): TType {
-    expandPrim = (primClassName) -> TType::inst(primClassName, TArgs(Array[]));
+    boxedPrim = (primClassName) -> TType::boxedPrim(subst, tenv, primClassName);
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
     (ty1.getSingleVar(), ty2.getSingleVar()) match {
@@ -158,31 +173,34 @@ extension class TType {
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
     // TODO: These speculative isSub checks use subst directly. They only
-    // involve concrete types (expandPrim produces e.g. Number, not TVars),
+    // involve concrete types (boxedPrim produces e.g. Number, not TVars),
     // so TVar growth cannot occur. If this changes, consider using clone().
+    // A primitive intersected with an object type collapses to the primitive
+    // when the primitive's boxed interface satisfies the object type. The
+    // boxed interface asserts primitivity, so `object` keyword branches
+    // reject it — without any other branch the shortcut does not apply and
+    // the tag-keyed intersection below yields never (e.g. `string & object`).
     (clauses1.primKind(), clauses2.getObject()) match {
-    | (Some(primKind), Some(stype)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        expandPrim(primKind),
-        TType::single(stype),
-      ) match {
-      | STOk() -> return ty1
-      | STError _ -> void
+    | (Some(primKind), Some(obj)) ->
+      boxedPrim(primKind) match {
+      | Some(boxed) ->
+        TType::isSub(subst, tenv, boxed, TType::single(obj)) match {
+        | STOk() -> return ty1
+        | STError _ -> void
+        }
+      | None() -> void
       }
     | _ -> void
     };
     (clauses2.primKind(), clauses1.getObject()) match {
-    | (Some(primKind), Some(stype)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        expandPrim(primKind),
-        TType::single(stype),
-      ) match {
-      | STOk() -> return ty2
-      | STError _ -> void
+    | (Some(primKind), Some(obj)) ->
+      boxedPrim(primKind) match {
+      | Some(boxed) ->
+        TType::isSub(subst, tenv, boxed, TType::single(obj)) match {
+        | STOk() -> return ty2
+        | STError _ -> void
+        }
+      | None() -> void
       }
     | _ -> void
     };
@@ -474,6 +492,15 @@ extension class TFields {
     | (ia, _) ->
       ia
     };
+    isPrimitive = (fields1.isPrimitive, fields2.isPrimitive) match {
+    | (Some(true), Some(false))
+    | (Some(false), Some(true)) ->
+      // No value is both a primitive and a non-primitive.
+      return None()
+    | (None(), ip)
+    | (ip, _) ->
+      ip
+    };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
     fields = TFields::interNamedFields(
@@ -523,6 +550,7 @@ extension class TFields {
         call,
         new,
         isArray,
+        isPrimitive,
       },
     )
   }

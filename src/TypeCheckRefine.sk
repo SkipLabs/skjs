@@ -276,7 +276,7 @@ extension class TypeChecker {
             tcenv.subst,
             this,
             STypes::single(TPrimUnit(TNull(), typePos)),
-            STypes::single(TObject::createEmpty(typePos)),
+            STypes::single(TObject::createNonPrimitive(typePos)),
           ),
         )
       } else {

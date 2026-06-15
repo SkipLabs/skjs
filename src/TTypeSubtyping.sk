@@ -533,6 +533,7 @@ base class STErrorOnTFields(
   | STRecFieldsMissingField(TField)
   | STRecFieldsField(?STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsFieldAccess(TField, TField)
+  | STRecFieldsPrimitivity()
 
   fun toError(
     subst: mutable Subst,
@@ -569,6 +570,13 @@ base class STErrorOnTFields(
         List[(field.pos, `The field '${field.name.value}' is missing`)],
         None(),
       )
+    | STRecFieldsPrimitivity(fields1, _fields2) ->
+      msg = if (fields1.isPrimitive == Some(true)) {
+        "A primitive type is not assignable to a non-primitive object type"
+      } else {
+        "A non-primitive object type is not assignable to a primitive type"
+      };
+      (List.Nil(), List[(pos1, msg)], None())
     | STRecFieldsCall(Some(err), _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their call signature`)],
@@ -890,6 +898,15 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
+    // Conflicting primitivity assertions are unsatisfiable: no value is both
+    // a primitive (a boxed interface standing in for the primitive) and a
+    // non-primitive (the `object` keyword type).
+    (fields1.isPrimitive, fields2.isPrimitive) match {
+    | (Some(true), Some(false))
+    | (Some(false), Some(true)) ->
+      return STRecFieldsPrimitivity(fields1, fields2)
+    | _ -> void
+    };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
     TFields::isSub_NamedFields(
