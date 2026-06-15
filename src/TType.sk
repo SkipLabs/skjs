@@ -771,8 +771,9 @@ class TObject private (
     TObject(ArraySet::single(tFields), inst, pos)
   }
 
-  static fun createEmpty(pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::empty(), None(), pos)
+  // The `object` keyword type: any non-primitive value.
+  static fun createNonPrimitive(pos: PosRange): TObject {
+    TObject::createSingleBranch(TFields::nonPrimitive(), None(), pos)
   }
 
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
@@ -1820,9 +1821,37 @@ class TFields protected {
   call: ?(/* optional */ Bool, TFuns) = None(),
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
+  // What this branch knows about the primitivity of its values:
+  //   - None: unknown — a structural object type says nothing about
+  //     primitivity, since a primitive can satisfy it through its boxed
+  //     interface (e.g. string satisfies { length: number }).
+  //   - Some(false): known non-primitive — the `object` keyword type, and
+  //     branches that survived a typeof === "object"/"function" check.
+  //     Structurally it imposes no extra demands, but as a conjunct it makes
+  //     the intersection with a primitive type uninhabited, where an unknown
+  //     branch boxes the primitive.
+  //   - Some(true): known primitive — a boxed interface standing in for the
+  //     primitive itself.
+  // Conflicting assertions (Some(true) vs Some(false)) make a branch
+  // unsatisfiable, in both intersection and subtyping.
+  isPrimitive: ?Bool = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
+  }
+
+  static fun nonPrimitive(): TFields {
+    TFields{isPrimitive => Some(false)}
+  }
+
+  // A bare `object` keyword branch: asserts non-primitivity and imposes no
+  // structural demands, so every non-primitive value satisfies it.
+  fun isBareNonPrimitive(): Bool {
+    this.isPrimitive == Some(false) && this.isEmpty()
+  }
+
+  fun withIsPrimitive(isPrimitive: ?Bool): TFields {
+    this with {isPrimitive}
   }
 
   private static fun createFromSortedIterator{
@@ -1940,6 +1969,7 @@ class TFields protected {
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       isArray => this.isArray,
+      isPrimitive => this.isPrimitive,
     }
   }
 

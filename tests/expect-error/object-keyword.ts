@@ -10,7 +10,7 @@
 function objectRejectsString(x: string): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Type string
-  // @skjs-expect-error-line3 is not assignable to type {  }
+  // @skjs-expect-error-line3 is not assignable to type object
   const o: object = x;
 }
 
@@ -95,7 +95,7 @@ function objectNotAssignableToFields(o: object): { a: number } {
 // --- Printing: the `object` keyword's printed form ---
 
 function objectPrinting(o: object): void {
-  __SKJS_show(o, `{  }`);
+  __SKJS_show(o, `object`);
 }
 
 // --- SKJS's `{}` also rejects primitives (deliberate, stricter than tsc) ---
@@ -109,21 +109,16 @@ function emptyObjectTypeRejectsString(x: string): void {
   const e: {} = x;
 }
 
-// --- Intersections: in TypeScript `string & object` is uninhabited (no
-// value is both a primitive and a non-primitive), while `string & {}`
-// collapses to `string` (the boxed String interface satisfies the empty
-// object type) ---
+// --- Intersections: `string & object` is uninhabited (no value is both a
+// primitive and a non-primitive), while `string & {}` collapses to `string`
+// (the boxed String interface satisfies the empty object type) ---
 
-// FIXME: tsc rejects this (`string & object` reduces to never); SKJS
-// currently collapses `string & object` to `string`.
 function stringInterObjectIsUninhabited(x: string): void {
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const so: string & object = x;
 }
 
-// FIXME: tsc accepts this (`string & object` is never); SKJS currently
-// collapses `string & object` to `string`.
 function stringInterObjectToNever(x: string & object): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: never = x;
 }
 
@@ -187,7 +182,7 @@ function objectHasNoPrototypeMembers(o: object): void {
 function typeofObjectOnUnknown(x: unknown): void {
   if (typeof x === "object") {
     const o: object | null = x;
-    __SKJS_show(x, `null | {  }`);
+    __SKJS_show(x, `null | object`);
     // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const s: string = x;
   }
@@ -270,12 +265,13 @@ function typeofFunctionOnEmpty(e: {}): void {
   }
 }
 
-// FIXME: the comparison is provably always false in TypeScript (`object` is
-// non-primitive, so no string can box into it; tsc reports TS2367), but SKJS
-// boxes the string into the empty object type and narrows o to `string`.
+// `object` is non-primitive, so no string can box into it: the equality
+// intersection is uninhabited and o narrows to `never`.
+// TODO: this comparison is provably always false; the warning is not emitted
+// yet (the overlap check does not model primitivity).
 function objectComparedToString(o: object, s: string): void {
   if (o === s) {
-    __SKJS_show(o, `string`);
+    __SKJS_show(o, `never`);
   }
 }
 

@@ -328,6 +328,10 @@ extension class TFields {
     | (Some(a), Some(b)) if (a == b) -> Some(a)
     | _ -> None()
     };
+    isPrimitive = (fields1.isPrimitive, fields2.isPrimitive) match {
+    | (Some(a), Some(b)) if (a == b) -> Some(a)
+    | _ -> None()
+    };
     TFields{
       fields,
       symbolFields,
@@ -337,6 +341,7 @@ extension class TFields {
       call,
       new,
       isArray,
+      isPrimitive,
     }
   }
 
