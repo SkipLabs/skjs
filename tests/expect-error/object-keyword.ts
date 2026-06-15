@@ -204,22 +204,27 @@ function typeofStringOnObject(x: object): void {
   }
 }
 
-// FIXME: tsc narrows `object` to `Function` here, so `const n: never = x`
-// is an error in tsc; SKJS currently narrows `object` under
-// typeof === "function" to `never`, which is unsound (functions are valid
-// `object` values).
+// Functions are valid `object` values, so typeof === "function" keeps the
+// `object` type on both sides (tsc narrows the matching side to `Function`,
+// which SKJS cannot express; `object` is the sound over-approximation).
 function typeofFunctionOnObject(x: object): void {
   if (typeof x === "function") {
+    const o: object = x;
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
+  } else {
+    const o: object = x;
   }
 }
 
 // --- typeof narrowing and structural object types: the runtime check proves
 // the surviving branch is non-primitive ---
 
+// A narrowed {} is exactly the `object` keyword: the runtime check proved
+// non-primitivity and {} imposes no structural demands.
 function typeofObjectOnEmpty(e: {}): void {
   if (typeof e === "object") {
-    __SKJS_show(e, `{  }`);
+    __SKJS_show(e, `object`);
   }
 }
 
@@ -230,10 +235,11 @@ function typeofObjectProvesNonPrimitive(
   if (typeof x === "object") {
     __SKJS_show(x, `{ length: number }`);
     if (x === s) {
-      // FIXME: x was proven non-primitive by the typeof check, so it cannot
-      // equal a string; narrowing it to `string` here is literally false
-      // (the boxed String interface satisfies { length: number }).
-      __SKJS_show(x, `string`);
+      // x was proven non-primitive by the typeof check, so it cannot equal a
+      // string: the equality intersection is uninhabited.
+      // TODO: this comparison is provably always false; the warning is not
+      // emitted yet (the overlap check does not model primitivity).
+      __SKJS_show(x, `never`);
     }
   }
 }
@@ -244,7 +250,10 @@ function typeofFunctionProvesNonPrimitive(f: (() => void) | string): void {
   }
 }
 
-// Joining a typeof-narrowed branch with another value of the same shape.
+// Joining a typeof-proven branch with an unmarked branch of the same shape
+// keeps two clauses that render identically (known cosmetic quirk: the
+// proven branch narrows differently, e.g. to never against === string, so
+// the clauses are genuinely distinct — only their printed forms collide).
 function joinProvenAndUnknown(
   x: { length: number } | string,
   y: { length: number },
@@ -252,16 +261,17 @@ function joinProvenAndUnknown(
 ): void {
   if (typeof x === "object") {
     const z = c ? x : y;
-    __SKJS_show(z, `{ length: number }`);
+    __SKJS_show(z, `{ length: number } | { length: number }`);
   }
 }
 
-// FIXME: tsc narrows `{}` to `Function` under typeof === "function"; SKJS
-// narrows it to `never`, which is literally false (functions are valid `{}`
-// values).
+// Functions inhabit `{}` (it imposes no demands), so its
+// typeof === "function" part is "all functions" — the bare non-primitive
+// branch, i.e. `object` (tsc narrows to Function, which SKJS cannot
+// express).
 function typeofFunctionOnEmpty(e: {}): void {
   if (typeof e === "function") {
-    __SKJS_show(e, `never`);
+    __SKJS_show(e, `object`);
   }
 }
 
