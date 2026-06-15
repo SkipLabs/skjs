@@ -42,6 +42,37 @@ value class CFGBlock(
   exnTarget: ?CFGBlockId,
 )
 
+// Whether a block instruction contains a sub-expression that could throw.
+// `StmtTermination::expr(...).mayThrow` is the single source of truth for which
+// expression forms may raise (calls, `new`, property access and indexing on
+// possibly-nullish bases, etc.), so the CFG and typechecker agree on this.
+fun instrMayThrow(instr: CFGInstr): Bool {
+  instr match {
+  | CFGIBind(_, _, _, initOpt) ->
+    initOpt.map(te -> StmtTermination::expr(te.expr).mayThrow).default(false)
+  | CFGIAssign(target, value) ->
+    StmtTermination::expr(target.expr).mayThrow ||
+      StmtTermination::expr(value.expr).mayThrow
+  | CFGIExpr(te) -> StmtTermination::expr(te.expr).mayThrow
+  }
+}
+
+// Whether a terminator's expression could throw before transferring control. A
+// `throw` always does; jumps and unreachable never carry an expression.
+fun terminatorMayThrow(term: BBTerminator): Bool {
+  term match {
+  | CFGTBranch(cond, _, _) -> StmtTermination::expr(cond.expr).mayThrow
+  | CFGTSwitch(scrutinee, _, _) ->
+    StmtTermination::expr(scrutinee.expr).mayThrow
+  | CFGTReturn(valueOpt) ->
+    valueOpt.map(v -> StmtTermination::expr(v.expr).mayThrow).default(false)
+  | CFGTThrow _ -> true
+  | CFGTJump _
+  | CFGTUnreachable() ->
+    false
+  }
+}
+
 // Scope info for an enclosing `finally`, used to inline a copy of its body on
 // paths that leave the try construct (return/break/continue crossing it) and
 // to lower those copies with the stacks as they were at the try statement.
@@ -142,11 +173,23 @@ mutable class CFGBuilder{
       // continue); ignore the structural close that follows it.
       void
     } else {
+      // Give the block an exception edge only if it actually contains an
+      // expression that could throw (in an instruction or the terminator);
+      // it targets the innermost enclosing handler (catch / exceptional
+      // finally copy), or the function's exn exit when none encloses it.
+      exnTarget = if (
+        this.currentInstrs.any(instrMayThrow) ||
+        terminatorMayThrow(term)
+      ) {
+        Some(this.currentExnTarget().default(this.exnExit))
+      } else {
+        None()
+      };
       block = CFGBlock(
         this.currentBlockId,
         this.currentInstrs.toArray(),
         term,
-        this.currentExnTarget(),
+        exnTarget,
       );
       this.!blocks[this.currentBlockId] = block;
       this.!currentInstrs = mutable Vector[];
