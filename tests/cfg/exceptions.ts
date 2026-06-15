@@ -12,3 +12,11 @@ function safeDivide(a: number, b: number): number {
     attempts = 0;
   }
 }
+
+function f(): number {
+  throw new Error("boom");
+}
+
+function sumThrows(): number {
+  return f() + 42;
+}
