@@ -540,8 +540,14 @@ private fun transferWaivedFields(
   fields1: TFields,
 ): Bool {
   subst.transferMode &&
-    (fields1.stringIndex.map(f -> transferWaived(subst, f)).default(false) ||
-      fields1.symbolIndex.map(f -> transferWaived(subst, f)).default(false))
+    (fields1
+      .effectiveStringIndex()
+      .map(f -> transferWaived(subst, f))
+      .default(false) ||
+      fields1
+        .effectiveSymbolIndex()
+        .map(f -> transferWaived(subst, f))
+        .default(false))
 }
 
 // Display label for an index field in subtyping diagnostics. The internal
@@ -579,9 +585,9 @@ base class STErrorOnTFields(
   ): List<(PosRange, String)> {
     showTypes =
       !this.fields1.fields.isEmpty() ||
-      this.fields1.hasNonSyntheticIndex() ||
+      this.fields1.hasIndex() ||
       !this.fields2.fields.isEmpty() ||
-      this.fields2.hasNonSyntheticIndex() ||
+      this.fields2.hasIndex() ||
       (
         this.fields1.new,
         this.fields1.call,
@@ -973,7 +979,7 @@ extension class TFields {
       tenv,
       fields1.fields,
       fields2.fields,
-      (fs, name) -> fs.indexForFieldName(name.value),
+      (fs, name) -> fs.effectiveIndexForFieldName(name.value),
       fields1,
       fields2,
     ) match {
@@ -982,11 +988,12 @@ extension class TFields {
     };
     // Per-kind index checks: for each kind, if super has an index,
     // sub must also have a compatible index (or named fields that satisfy it).
+    // effective* materializes a closed literal's implicit `never` index here.
     TFields::isSub_IndexPair(
       subst,
       tenv,
-      fields1.stringIndex,
-      fields2.stringIndex,
+      fields1.effectiveStringIndex(),
+      fields2.effectiveStringIndex(),
       fields1,
       fields2,
     ) match {
@@ -997,9 +1004,9 @@ extension class TFields {
     // since string index covers numeric keys.
     (
       fields1.numberIndex,
-      fields1.stringIndex,
+      fields1.effectiveStringIndex(),
       fields2.numberIndex,
-      fields2.stringIndex,
+      fields2.effectiveStringIndex(),
     ) match {
     | (None(), _, None(), _) -> void
     | (effectiveNum1 @ Some _, _, None(), effectiveNum2)
@@ -1020,8 +1027,8 @@ extension class TFields {
     TFields::isSub_IndexPair(
       subst,
       tenv,
-      fields1.symbolIndex,
-      fields2.symbolIndex,
+      fields1.effectiveSymbolIndex(),
+      fields2.effectiveSymbolIndex(),
       fields1,
       fields2,
     ) match {
@@ -1034,7 +1041,7 @@ extension class TFields {
       tenv,
       fields1.symbolFields,
       fields2.symbolFields,
-      (fs, _) -> fs.symbolIndex,
+      (fs, _) -> fs.effectiveSymbolIndex(),
       fields1,
       fields2,
     ) match {

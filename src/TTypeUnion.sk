@@ -337,6 +337,16 @@ extension class TFields {
       call,
       new,
       isArray,
+      // A union is a closed literal only if BOTH sides are: a value of the
+      // union could come from either, so it is closed only when neither
+      // admits extra keys. (Mirrors the per-kind "both" rule for indexes.)
+      closedLiteralPos => (
+        fields1.closedLiteralPos,
+        fields2.closedLiteralPos,
+      ) match {
+      | (p @ Some _, Some _) -> p
+      | _ -> None()
+      },
     }
   }
 

@@ -626,7 +626,7 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields.nonSyntheticIndexForKeyKind(TSymbol()) match {
+            fields.indexForKeyKind(TSymbol()) match {
             | None() ->
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
@@ -700,9 +700,7 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            matchedIndex = fields.nonSyntheticIndexForKeyKind(
-              remainingIdxSType.kind,
-            );
+            matchedIndex = fields.indexForKeyKind(remainingIdxSType.kind);
             // If string literal access fails on a number index, retry as
             // number for keys a number could produce (e.g. obj["0"] or
             // obj["Infinity"] on { [x: number]: T }).
@@ -714,11 +712,11 @@ extension class TypeChecker {
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
-                fields.nonSyntheticIndexForKeyKind(TNum())
+                fields.indexForKeyKind(TNum())
               | _ -> None()
               }
             };
-            if (matchedIndex.isNone() && fields.hasNonSyntheticIndex()) {
+            if (matchedIndex.isNone() && fields.hasIndex()) {
               // Object has indexes but not for this key kind. The access is
               // fundamentally invalid; we can't substitute an unrelated-kind
               // index value without manufacturing a cascade of dependent
@@ -728,7 +726,7 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected ${fields.indexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
@@ -1598,22 +1596,16 @@ extension class TypeChecker {
         !fields[field.name] = field
       };
       // No-spread literals are CLOSED objects: their full key set is the
-      // named fields, expressed as real readonly-never string/symbol
-      // indexes (invisible to field resolution and printing; visible to
-      // subtyping). Ownership-transfer checks (checkSubTypeView) waive the
-      // setter obligations these indexes would impose on a new owner.
-      // Spread literals are width-open and get NO index backfill: the
-      // spread source may carry unknown keys, so a never index would lie
-      // (whatever index the spread merge produced is kept as-is).
+      // named fields, so every index kind they do not declare is implicitly
+      // `never`. This is recorded as closedLiteralPos = Some(pos) and
+      // materialized only during subtyping (effectiveStringIndex), so it
+      // stays invisible to field resolution, printing, and growth.
+      // Ownership-transfer checks (checkSubTypeView) waive the setter
+      // obligation the implicit `never` would impose on a new owner.
+      // Spread literals are width-open: the spread source may carry unknown
+      // keys, so they get NO closed marker (closedLiteralPos = None).
       hasSpread = efields.any(f -> f is FDSpread _);
-      if (!hasSpread) {
-        if (tIndexes.stringIndex.isNone()) {
-          !tIndexes.stringIndex = Some(TField::createClosedIndex(pos))
-        };
-        if (tIndexes.symbolIndex.isNone()) {
-          !tIndexes.symbolIndex = Some(TField::createClosedIndex(pos))
-        }
-      };
+      closedLiteralPos = if (hasSpread) None() else Some(pos);
       obj = TType::single(
         TObject::createSingleBranch(
           TFields::createFromSorted{
@@ -1621,6 +1613,7 @@ extension class TypeChecker {
             symbolFields,
             tIndexes,
             isArray => Some(false),
+            closedLiteralPos,
           },
           None(),
           pos,
@@ -2192,7 +2185,7 @@ extension class TypeChecker {
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
-              objFields.hasNonSyntheticIndex() /* TODO: refine */ ||
+              objFields.hasIndex() /* TODO: refine */ ||
               fieldsOpt match {
               | None() ->
                 false // no field keys to check
@@ -3104,35 +3097,13 @@ extension class TypeChecker {
           isArray => Some(false),
         };
         allNewObj = TObject::createSingleBranch(allNewFields, None(), objPos);
-        // A closed-literal index has value `never`; intersecting a new named
-        // field against it would zero the field's get type. Strip the marker
-        // before the merge and re-add it after (it is residual and now
-        // correctly excludes the freshly named keys), so the grown object
-        // stays a recognizable fresh closed literal.
-        hadClosedString = fields.stringIndex
-          .map(f -> f.isClosedLiteralIndex())
-          .default(false);
-        hadClosedSymbol = fields.symbolIndex
-          .map(f -> f.isClosedLiteralIndex())
-          .default(false);
-        objForInter = obj.map(fs -> fs.removeClosedLiteralIndexes());
-        newTy = TObject::inter(
-          tcenv.subst,
-          this,
-          objForInter,
-          allNewObj,
-        ) match {
+        // The closed-literal marker is just closedLiteralPos (no stored
+        // `never` index), so growing a named field does not zero anything and
+        // the marker flows through the intersection unchanged — the grown
+        // object stays a recognizable fresh closed literal.
+        newTy = TObject::inter(tcenv.subst, this, obj, allNewObj) match {
         | None() -> TType::bottom(objPos)
-        | Some(mergedObj) ->
-          TType::single(
-            mergedObj.map(fs ->
-              fs.withClosedLiteralIndexes(
-                objPos,
-                hadClosedString,
-                hadClosedSymbol,
-              )
-            ),
-          )
+        | Some(mergedObj) -> TType::single(mergedObj)
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(
@@ -3176,9 +3147,7 @@ extension class TypeChecker {
       | Some(TPrimValue(k, _, _)) -> Some(k)
       | _ -> None()
       };
-      matchingIndex = keyKind.flatMap(k ->
-        fields.nonSyntheticIndexForKeyKind(k)
-      );
+      matchingIndex = keyKind.flatMap(k -> fields.indexForKeyKind(k));
       matchingIndex match {
       | Some(indexField) ->
         this.checkSubType(
