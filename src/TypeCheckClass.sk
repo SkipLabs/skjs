@@ -401,7 +401,7 @@ extension class TypeChecker {
         fullType,
         TSCode(2322),
       );
-      if (this.emitCfg) {
+      if (getConfig(tcenv.context).buildCfg) {
         cfg = CFGBuilder::build(
           cgNode.id.toString(),
           fdPos,

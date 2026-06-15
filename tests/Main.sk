@@ -356,7 +356,7 @@ fun testFiles(
   importStubs: Array<String>,
   validateResult: Validator,
   update: UpdateMode = UMValidateOnly(),
-  emitCfg: Bool = false,
+  buildCfg: Bool = false,
 ): void {
   reportExpectationErrors(
     checkFilesWithRoot(
@@ -364,7 +364,7 @@ fun testFiles(
       srcFiles,
       importStubs,
       validateResult,
-      emitCfg,
+      buildCfg,
       update,
     ),
   )
@@ -375,7 +375,7 @@ fun checkFilesWithRoot(
   srcFiles: Array<String>,
   importStubs: Array<String>,
   validateResult: Validator,
-  emitCfg: Bool,
+  buildCfg: Bool,
   update: UpdateMode = UMValidateOnly(),
   compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): Array<SKTest.ExpectationError> {
@@ -392,7 +392,7 @@ fun checkFilesWithRoot(
       compilerOptions,
       errorHandling => SKJS.EHKeepGoing(),
       errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
-      emitCfg,
+      buildCfg,
     },
   );
   checker = SKJS.Checker::create{context, fs, files}.fromSuccess();

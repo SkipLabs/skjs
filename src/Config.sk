@@ -19,7 +19,7 @@ class CheckerConfig{
   errorHandling: ErrorHandling = EHDefault(),
   errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig(Array[]),
   verbose: Bool = false,
-  emitCfg: Bool = false,
+  buildCfg: Bool = false,
 } extends SKStore.File
 
 // Write the run's effective config. Must be called once per run, before any

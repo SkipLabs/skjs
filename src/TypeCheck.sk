@@ -34,7 +34,6 @@ class TypeChecker{
       errorHandling => config.errorHandling,
       truthiness => config.compilerOptions.truthiness,
       verbose => config.verbose,
-      emitCfg => config.emitCfg,
     }
   }
 }
