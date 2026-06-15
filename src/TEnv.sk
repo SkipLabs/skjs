@@ -1116,7 +1116,7 @@ base class TEnv{
           TSCode(2315),
         )
       };
-      TType::single(TObject::createEmpty(pos))
+      TType::single(TObject::createNonPrimitive(pos))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))

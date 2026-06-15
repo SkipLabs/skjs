@@ -343,6 +343,12 @@ mutable class TypePp{
   }
 
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
+    // A bare `object` keyword branch prints as `object`; once it gains
+    // structural members (e.g. through an intersection) it prints those.
+    if (fields.isBareNonPrimitive()) {
+      this.out(level, margin, "object");
+      return void
+    };
     // A tuple-shaped object prints as the tuple it denotes when the
     // shorthand hides nothing: besides its positional fields, a tuple
     // expansion carries only `length` and the array-protocol members
