@@ -406,9 +406,14 @@ extension base class SType {
     | (obj @ TObject _, prim @ TPrimValue _) ->
       // A primitive overlaps an object type only through its boxed class:
       // a value of type `Number` can be a primitive number, but a value of
-      // type `{ a: string }` cannot
-      boxed = TType::inst(prim.asClassName(), TArgs(Array[]));
-      TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
+      // type `{ a: string }` cannot — and no primitive can box into a
+      // branch asserting non-primitivity (the `object` keyword, or a
+      // typeof-proven object).
+      TType::boxedPrim(subst, tenv, prim.asClassName()) match {
+      | Some(boxed) ->
+        TType::isSub(subst, tenv, boxed, TType::single(obj)) is STOk()
+      | None() -> true
+      }
     | (TObject _, TObject _) ->
       // TODO: some object pairs are provably disjoint and could be
       // reported: a shared field with non-overlapping types can leave no

@@ -130,7 +130,7 @@ function objectInterFieldsBack(x: object & { a: number }): { a: number } {
   return x;
 }
 
-// `object & { a: number } & string` is uninhabited.
+// The non-primitivity assertion survives intersection with fields.
 function objectInterFieldsInterString(
   x: object & { a: number } & string,
 ): void {
@@ -234,11 +234,11 @@ function typeofObjectProvesNonPrimitive(
 ): void {
   if (typeof x === "object") {
     __SKJS_show(x, `{ length: number }`);
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (x === s) {
       // x was proven non-primitive by the typeof check, so it cannot equal a
-      // string: the equality intersection is uninhabited.
-      // TODO: this comparison is provably always false; the warning is not
-      // emitted yet (the overlap check does not model primitivity).
+      // string: the equality intersection is uninhabited (without the proof,
+      // the boxed String interface would satisfy { length: number }).
       __SKJS_show(x, `never`);
     }
   }
@@ -275,11 +275,11 @@ function typeofFunctionOnEmpty(e: {}): void {
   }
 }
 
-// `object` is non-primitive, so no string can box into it: the equality
-// intersection is uninhabited and o narrows to `never`.
-// TODO: this comparison is provably always false; the warning is not emitted
-// yet (the overlap check does not model primitivity).
+// The comparison is provably always false: o is non-primitive, so no string
+// can box into it. The equality narrowing yields never and the comparison
+// warns.
 function objectComparedToString(o: object, s: string): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (o === s) {
     __SKJS_show(o, `never`);
   }
