@@ -518,6 +518,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           errorHandling,
           errorDetailConfig,
           verbose,
+          emitCfg => emitCfgFormat.isSome(),
         },
       );
 
@@ -796,6 +797,7 @@ class Checker private {
       methodBodyMap,
       verbose => config.verbose,
       truthiness => config.compilerOptions.truthiness,
+      emitCfg => config.emitCfg,
     };
     Success(
       static{

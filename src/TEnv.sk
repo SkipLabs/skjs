@@ -97,6 +97,10 @@ base class TEnv{
   // literals (see kSyntheticIndexName and TypePp::fields) and the qualified
   // type-parameter id, name:counter:file-hash (see TypePp::tparamName).
   verbose: Bool = false,
+
+  // Mirrors the `--emit-cfg` CLI flag.  Determines whether to store expression-level
+  // type information and build/store CFGson typechecking result object.
+  emitCfg: Bool = false,
 } {
   // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
   fun ppType(tcenv: mutable TCEnv, ty: TType): String {

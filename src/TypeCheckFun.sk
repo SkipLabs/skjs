@@ -312,16 +312,18 @@ extension class TypeChecker {
             TSCode(2366),
           )
         };
-        cfg = CFGBuilder::build(
-          cgNode.id.toString(),
-          fdPos,
-          typedParams,
-          retType,
-          body,
-          tcenv.exprTypes,
-          tcenv.stmtTerminations,
-        );
-        tcenv.results.!cfgs[cgNode] = cfg
+        if (this.emitCfg) {
+          cfg = CFGBuilder::build(
+            cgNode.id.toString(),
+            fdPos,
+            typedParams,
+            retType,
+            body,
+            tcenv.exprTypes,
+            tcenv.stmtTerminations,
+          );
+          tcenv.results.!cfgs[cgNode] = cfg
+        }
       }
     };
   }
