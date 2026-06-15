@@ -1733,7 +1733,16 @@ extension class TypeChecker {
           interfaceAsValueError(tcenv, className);
           // Continue as if the interface were instantiable.
           Some(className)
-        | _ -> Some(className)
+        | _ ->
+          // A class name uses the fast (type-space) constructor path; a
+          // value-only binding (e.g. a `declare const` whose type has a
+          // construct signature) has no class def and is resolved as a value
+          // through the expression path below.
+          if (this.hasClassDef(tcenv, className)) {
+            Some(className)
+          } else {
+            None()
+          }
         }
       | _ -> None()
       };
