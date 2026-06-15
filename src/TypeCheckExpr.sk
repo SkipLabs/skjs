@@ -1177,11 +1177,13 @@ extension class TypeChecker {
       tcenv.scope.maybeGet(local) match {
       | None() ->
         defs = this.defMap.getAll(tcenv, local);
+        sawInterface = false;
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
             tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
+          | Class{kind => CKInterface()} -> !sawInterface = true
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv.subst, c.name);
             break staticClass
@@ -1209,7 +1211,13 @@ extension class TypeChecker {
           | _ -> void
           }
         } else {
-          fatalError(Array[(pos, "Cannot find name")], TSCode(2304))
+          if (sawInterface) {
+            interfaceAsValueError(tcenv, local);
+            // Continue as if the interface name were a value.
+            this.newStatic(tcenv.subst, local)
+          } else {
+            fatalError(Array[(pos, "Cannot find name")], TSCode(2304))
+          }
         }
       | Some(localDef) -> localDef
       }
@@ -1714,15 +1722,30 @@ extension class TypeChecker {
     | New(subExpr, targsAst, args) ->
       tcenv.markForInImpure(pos);
       tArgs = targsAst.map(targ -> this.normalize(tcenv, targ));
-      subExpr.value match {
+      classNameOpt = subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
+        this.interfaceAndValueDefs(tcenv, className) match {
+        | (true, true) ->
+          // A merged value declaration provides the constructor: resolve
+          // it through the expression path below.
+          None()
+        | (true, false) ->
+          interfaceAsValueError(tcenv, className);
+          // Continue as if the interface were instantiable.
+          Some(className)
+        | _ -> Some(className)
+        }
+      | _ -> None()
+      };
+      classNameOpt match {
+      | Some(className) ->
         if (targsAst.size() == 0) {
           !tArgs = this.makeTArgs(tcenv, className)
         };
         cstr = this.newConstructor(tcenv.subst, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
         this.new(tcenv.subst, className, tArgs)
-      | _ ->
+      | None() ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
           stypes.singleElt()
@@ -2101,6 +2124,9 @@ extension class TypeChecker {
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(tcenv, e1, true);
       _ = this.getClass(tcenv, className);
+      if (this.interfaceAndValueDefs(tcenv, className) == (true, false)) {
+        interfaceAsValueError(tcenv, className)
+      };
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) ->
       fatalError(

@@ -5,7 +5,7 @@
 // - a negative test (sealed TVar blocks a wider type), or
 // - a positive test (TVar stays open, no error).
 
-interface Container<T> {
+declare class Container<T> {
   push(arg: T): void;
   append(other: Container<T>): void;
   get(): T;
@@ -18,6 +18,7 @@ declare function takeContainer(b: Container<number>): void;
 function fromGenericInst(): void {
   const c = new Container();
   c.push(1);
+  // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
   takeContainer(c);
   // @skjs-expect-error Argument is not assignable to the parameter's type
   c.push("hello");
@@ -61,6 +62,7 @@ function fromNullLiteralDirect(): Container<number | null> {
   const c = new Container();
   c.push(null);
   c.push(1);
+  // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
   return c;
 }
 
@@ -82,6 +84,7 @@ function fromUndefinedLiteralDirect(): Container<string | undefined> {
   const c = new Container();
   c.push(undefined);
   c.push("hello");
+  // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
   return c;
 }
 
@@ -131,6 +134,7 @@ declare function takeContainerObj(c: Container<{ x: number }>): void;
 function fromObjectField(): void {
   const c = new Container();
   c.push({ x: 1 });
+  // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
   takeContainerObj(c);
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type 'hello'
