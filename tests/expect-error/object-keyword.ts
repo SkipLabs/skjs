@@ -9,8 +9,8 @@
 
 function objectRejectsString(x: string): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 Type string
-  // @skjs-expect-error-line3 is not assignable to type object
+  // @skjs-expect-error-line2 Type 'string'
+  // @skjs-expect-error-line3 is not assignable to type 'object'
   const o: object = x;
 }
 
@@ -130,7 +130,7 @@ function objectInterFieldsBack(x: object & { a: number }): { a: number } {
   return x;
 }
 
-// `object & { a: number } & string` is uninhabited.
+// The non-primitivity assertion survives intersection with fields.
 function objectInterFieldsInterString(
   x: object & { a: number } & string,
 ): void {
@@ -192,8 +192,9 @@ function typeofObjectOnObject(x: object): void {
   if (typeof x === "object") {
     const o: object = x;
   } else {
-    // The else branch is never, matching tsc — even though a function value
-    // (typeof "function") would land here at runtime.
+    // A function value (typeof "function") lands here at runtime; tsc
+    // narrows to never (unsound), SKJS keeps the sound Function.
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = x;
   }
 }
@@ -204,9 +205,9 @@ function typeofStringOnObject(x: object): void {
   }
 }
 
-// Functions are valid `object` values, so typeof === "function" keeps the
-// `object` type on both sides (tsc narrows the matching side to `Function`,
-// which SKJS cannot express; `object` is the sound over-approximation).
+// Functions are valid `object` values; the matching side of
+// typeof === "function" narrows to Function (as in tsc), the non-matching
+// side stays `object`.
 function typeofFunctionOnObject(x: object): void {
   if (typeof x === "function") {
     const o: object = x;
@@ -233,12 +234,12 @@ function typeofObjectProvesNonPrimitive(
   s: string,
 ): void {
   if (typeof x === "object") {
-    __SKJS_show(x, `{ length: number }`);
+    __SKJS_show(x, `{ length: number; }`);
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (x === s) {
       // x was proven non-primitive by the typeof check, so it cannot equal a
-      // string: the equality intersection is uninhabited.
-      // TODO: this comparison is provably always false; the warning is not
-      // emitted yet (the overlap check does not model primitivity).
+      // string: the equality intersection is uninhabited (without the proof,
+      // the boxed String interface would satisfy { length: number }).
       __SKJS_show(x, `never`);
     }
   }
@@ -261,25 +262,23 @@ function joinProvenAndUnknown(
 ): void {
   if (typeof x === "object") {
     const z = c ? x : y;
-    __SKJS_show(z, `{ length: number } | { length: number }`);
+    __SKJS_show(z, `{ length: number; } | { length: number; }`);
   }
 }
 
-// Functions inhabit `{}` (it imposes no demands), so its
-// typeof === "function" part is "all functions" — the bare non-primitive
-// branch, i.e. `object` (tsc narrows to Function, which SKJS cannot
-// express).
+// Functions inhabit `{}` (it imposes no demands), so the runtime check
+// proves [[Call]]: the matching side narrows to Function, as in tsc.
 function typeofFunctionOnEmpty(e: {}): void {
   if (typeof e === "function") {
-    __SKJS_show(e, `object`);
+    __SKJS_show(e, `Function`);
   }
 }
 
-// `object` is non-primitive, so no string can box into it: the equality
-// intersection is uninhabited and o narrows to `never`.
-// TODO: this comparison is provably always false; the warning is not emitted
-// yet (the overlap check does not model primitivity).
+// The comparison is provably always false: o is non-primitive, so no string
+// can box into it. The equality narrowing yields never and the comparison
+// warns.
 function objectComparedToString(o: object, s: string): void {
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   if (o === s) {
     __SKJS_show(o, `never`);
   }

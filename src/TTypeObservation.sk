@@ -817,18 +817,27 @@ mutable class TypeReadContext private {
     context = this with {tenv};
     a = context.expandClauses(left, Covariant());
     b = context.expandClauses(right, Covariant());
+    // The boxed interface is marked as standing in for the primitive itself
+    // (isPrimitive = Some(true)), so a branch asserting non-primitivity (the
+    // `object` keyword, a typeof-proven object) rejects it and the shortcut
+    // does not apply — the tag-keyed intersection below then yields never
+    // (e.g. `string & object`).
     (a.primKind(), b.getObject()) match {
     | (Some(name), Some(obj)) ->
-      if (
-        context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return left
+      TType::boxedPrim(this.scratch, tenv, name) match {
+      | Some(boxed) ->
+        if (context.isSubtype(boxed, TType::single(obj))) return left
+      | None() -> void
+      }
     | _ -> void
     };
     (b.primKind(), a.getObject()) match {
     | (Some(name), Some(obj)) ->
-      if (
-        context.isSubtype(TType::inst(name, TArgs(Array[])), TType::single(obj))
-      ) return right
+      TType::boxedPrim(this.scratch, tenv, name) match {
+      | Some(boxed) ->
+        if (context.isSubtype(boxed, TType::single(obj))) return right
+      | None() -> void
+      }
     | _ -> void
     };
     TType::ofClauses(
