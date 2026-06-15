@@ -1250,6 +1250,7 @@ function checkConstrainedGenericClosureWithParam<T extends { length: number }>(
 function checkConstrainedGenericClosureWithParamString(
   input: string,
 ): (arg: string) => number {
+  // @skjs-expect-error Type argument does not satisfy the constraint
   return checkConstrainedGenericClosureWithParam<string>(input);
 }
 
@@ -1274,6 +1275,7 @@ function checkMultipleConstrainedGenericClosureWithParamStringArray(
   input1: string,
   input2: { size: number },
 ): (arg1: string, arg2: { size: number }) => [number, number] {
+  // @skjs-expect-error Type argument does not satisfy the constraint
   return checkMultipleConstrainedGenericClosureWithParam<
     string,
     { size: number }
@@ -1428,6 +1430,7 @@ function checkConstrainedGenericFunctionWithOptionalParamString(
   input: string,
   arg?: string,
 ): number | undefined {
+  // @skjs-expect-error Type argument does not satisfy the constraint
   return checkConstrainedGenericFunctionWithOptionalParam<string>(input, arg);
 }
 
@@ -1463,6 +1466,7 @@ function checkMultipleConstrainedGenericFunctionWithOptionalParamStringArray(
   arg1?: string,
   arg2?: { size: number },
 ): [number | undefined, number | undefined] {
+  // @skjs-expect-error Type argument does not satisfy the constraint
   return checkMultipleConstrainedGenericFunctionWithOptionalParam<
     string,
     { size: number }

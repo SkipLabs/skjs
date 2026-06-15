@@ -115,6 +115,10 @@ function returningVoidParam<T extends void>(param: T): void {
 
 function takesVoidGeneric<T extends void>(param: T): void {}
 
+// The explicit type argument `number` does not satisfy `T extends void`, which
+// is reported directly; the resulting parameter is uninhabited, so the argument
+// is also rejected.
+// @skjs-expect-error Type argument does not satisfy the constraint
 // @ts-expect-error Argument is not assignable to the parameter's type
 takesVoidGeneric<number>(5);
 
