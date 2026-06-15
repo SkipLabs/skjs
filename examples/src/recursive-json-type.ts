@@ -17,9 +17,11 @@ foo<string>("hello");
 // A readonly array of nullable Json satisfies the array member.
 foo<readonly (Json | null)[]>([1, "two", null]);
 
-// An object type without an index signature. tsc accepts it as a subtype of
-// the index signature; skjs does too here, because an explicit type argument is
-// not checked against the constraint.
+// An object type without an index signature is not a subtype of one: an absent
+// key would read as undefined, which is not in the value type `Json | null`, so
+// skjs soundly rejects it. tsc accepts it (unsound without
+// noUncheckedIndexedAccess).
+// @skjs-expect-error Type argument does not satisfy the constraint
 foo<{ x: number; y: string }>({ x: 0, y: "" });
 
 // Additional test cases
@@ -45,5 +47,6 @@ function testJsonUsage(): void {
   foo<boolean>(true);
   foo<number>(42);
   foo<string>("hello");
+  // @skjs-expect-error Type argument does not satisfy the constraint
   foo<{ name: string; age: number }>({ name: "John", age: 30 });
 }

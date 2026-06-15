@@ -3287,8 +3287,59 @@ extension class TypeChecker {
           tcenv.subst.setOrigin(tv, FromGenericCall(pos, allNewTVars))
         }
       };
+      frozenMap = map.chill();
+      // Validate each explicit type argument against its parameter's constraint.
+      // Inferred arguments (the fresh TVars above) carry their constraint on the
+      // variable and have it enforced at growth, so only explicit arguments need
+      // checking here. The constraint is a subtyping obligation -- every
+      // inhabitant of the argument must inhabit the bound -- so it is checked
+      // with `isSub`. The constraint is instantiated with `frozenMap` first, so
+      // a constraint that references another type parameter (a dependent
+      // constraint like `<A, B extends A>`) is checked against that parameter's
+      // argument. The clone keeps the speculative check from growing inference
+      // variables on the live subst.
+      //
+      // Without this check, an argument that violates the bound is substituted
+      // anyway; where the parameter occurs only covariantly (e.g. the return
+      // type) the constraint-carrying occurrence (the parameter is normalized to
+      // `param & constraint`) collapses to `never`, which is assignable to
+      // anything and silently absorbs the violation -- unsound.
+      for (i => tparamDecl in tfun.tparams) {
+        if (i < targs.size()) {
+          tparamDecl.cstr match {
+          | None() -> void
+          | Some(cstr) ->
+            tArg = targs[i];
+            cstrTy = (mutable Instantiate()).type(
+              (tcenv.subst, this, frozenMap),
+              cstr,
+            );
+            TType::isSub(tcenv.subst.clone(), this, tArg, cstrTy) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              tcenv.subtypingError(
+                tcenv.subst,
+                this,
+                Array[
+                  (pos, "Type argument does not satisfy the constraint"),
+                  (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
+                  (
+                    cstr.pos,
+                    `It does not satisfy the constraint: ${this.ppType(
+                      tcenv,
+                      cstrTy,
+                    )}`,
+                  ),
+                ],
+                err,
+                TSCode(2344),
+              )
+            }
+          }
+        }
+      };
       !tfun = (mutable Instantiate()).fun_(
-        (tcenv.subst, this, map.chill()),
+        (tcenv.subst, this, frozenMap),
         tfun with {tparams => Array[]},
       );
       totalSize = tfun.params.size() + tfun.optionalParams.size();

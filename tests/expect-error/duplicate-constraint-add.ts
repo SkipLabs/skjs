@@ -17,5 +17,6 @@ function getLength<T extends HasLength>(x: T): number {
 function test(): void {
   // String satisfies HasLength
   const s: string = "hello";
+  // @skjs-expect-error Type argument does not satisfy the constraint
   const len: number = getLength<string>(s);
 }

@@ -1,33 +1,33 @@
-// An explicit type argument to a generic function call is not checked against
-// the type parameter's constraint: SKJS accepts the calls below without error,
-// but TypeScript rejects them (TS2344).
-//
-// `pick<V extends string>(): V` instantiated with `number` violates
-// `V extends string`. Because V occurs only in the (covariant) return position,
-// the substituted return type collapses to `number & string` = `never`, which
-// is assignable to anything, so the bad argument is absorbed silently. The same
-// call being assignable to BOTH `number` and `string` — a value cannot be both
-// — shows this is a soundness violation, not merely a divergence from tsc.
-//
-// Inference does not have this hole: an inferred type argument carries its
-// constraint on the inference variable, so `const n: number = pick()` is
-// correctly rejected. Only explicit arguments bypass the check.
+// An explicit type argument to a generic function call is checked against the
+// type parameter's constraint, matching TypeScript (TS2344). The check fires
+// even when the type parameter occurs only in a covariant position (here the
+// return type), where an unchecked substitution would collapse to
+// `argument & constraint` and be silently absorbed. Inference enforces the same
+// constraint via the inference variable; this covers the explicit-argument
+// position, which the inference path does not reach.
 
 declare function pick<V extends string>(): V;
 
-// Unsound: a `number` result is produced from an out-of-constraint explicit
-// type argument.
-export function unsoundNumber(): number {
-  return pick<number>();
-}
-
-// The same out-of-constraint call is also accepted as `string`, exposing the
-// `never` collapse.
-export function unsoundString(): string {
+export function rejectsBareViolation(): number {
+  // @ts-expect-error Type argument does not satisfy the constraint
   return pick<number>();
 }
 
 // A constraint-satisfying explicit argument is accepted.
-export function valid(): string {
+export function acceptsBareValid(): string {
   return pick<"hello">();
+}
+
+// A dependent constraint (B extends A) is checked against the corresponding
+// argument: B = string does not satisfy A = number.
+declare function dependent<A, B extends A>(): B;
+
+export function rejectsDependentViolation(): number {
+  // @ts-expect-error Type argument does not satisfy the constraint
+  return dependent<number, string>();
+}
+
+// The dependent constraint is satisfied: B = 42 extends A = number.
+export function acceptsDependentValid(): number {
+  return dependent<number, 42>();
 }
