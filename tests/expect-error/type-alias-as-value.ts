@@ -5,26 +5,22 @@
 type Alias = { a: number };
 
 function valueRead(): void {
-  // FIXME: tsc rejects with TS2693; SKJS reports "Cannot find name" (issue #699)
-  // @skjs-expect-error Cannot find name
+  // @ts-expect-error 'Alias' only refers to a type, but is being used as a value here
   const x = Alias;
   const _y = x;
 }
 
 function newAlias(): Alias {
-  // FIXME: tsc rejects with TS2693; SKJS reports "Cannot find name" (issue #699)
-  // @skjs-expect-error Cannot find name
+  // @ts-expect-error 'Alias' only refers to a type, but is being used as a value here
   return new Alias();
 }
 
 function instanceofAlias(u: unknown): boolean {
-  // FIXME: tsc rejects with TS2693; SKJS reports "Cannot find name" (issue #699)
-  // @skjs-expect-error Cannot find name
+  // @ts-expect-error 'Alias' only refers to a type, but is being used as a value here
   return u instanceof Alias;
 }
 
-// FIXME: tsc rejects with TS2693; SKJS reports "Cannot find name" (issue #699)
-// @skjs-expect-error Cannot find name 'Alias'
+// @ts-expect-error 'Alias' only refers to a type, but is being used as a value here
 function typeofAlias(v: typeof Alias): void {
   const _x = v;
 }
