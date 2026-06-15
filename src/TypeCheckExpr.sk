@@ -2849,6 +2849,29 @@ extension class TypeChecker {
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
 
+    // Build a CFG for the lambda body, keyed by its AnonymousLambda node, just
+    // like funDef does for named functions and methods. An expression body
+    // `(x) => e` is lowered as an implicit `return e`.
+    if (getConfig(tcenv.context).buildCfg) {
+      cfgBody = body match {
+      | CBBlock(bl) -> bl
+      | CBExpr(e) -> Array[Stmt(e.pos, Return(e.pos, Some(e)))]
+      };
+      typedParams = params.mapWithIndex((i, param) ->
+        (param.name, paramTypes[i])
+      );
+      cfg = CFGBuilder::build(
+        callingContext.id.toString(),
+        pos,
+        typedParams,
+        retType,
+        cfgBody,
+        tcenv.exprTypes,
+        tcenv.stmtTerminations,
+      );
+      tcenv.results.!cfgs[callingContext] = cfg
+    };
+
     normalParams = mutable Vector[];
     optionalParams = mutable Vector[];
     spreadParam: ?TType = None();
