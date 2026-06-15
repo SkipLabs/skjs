@@ -13,40 +13,36 @@ function instanceofClass(x: unknown): boolean {
 declare function fn(): void;
 
 function instanceofFunction(x: unknown): boolean {
-  // @skjs-expect-error Cannot find type 'fn'
   return x instanceof fn;
 }
 
 declare const Alias: typeof C;
 
 function instanceofClassAlias(x: unknown): boolean {
-  // @skjs-expect-error Cannot find type 'Alias'
   return x instanceof Alias;
 }
 
 declare const Ctor: { new (): { a: number } };
 
 function instanceofConstructSignature(x: unknown): boolean {
-  // @skjs-expect-error Cannot find type 'Ctor'
   return x instanceof Ctor;
 }
 
 function instanceofExpression(x: unknown, cond: boolean): boolean {
-  // @skjs-expect-error The 'instanceof' operator is not supported by SKJS
   return x instanceof (cond ? C : C);
 }
 
 declare const n: number;
 
 function instanceofNumber(x: unknown): boolean {
-  // @skjs-expect-error Cannot find type 'n'
+  // @ts-expect-error The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.
   return x instanceof n;
 }
 
 declare const o: { a: number };
 
 function instanceofPlainObject(x: unknown): boolean {
-  // @skjs-expect-error Cannot find type 'o'
+  // @ts-expect-error The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.
   return x instanceof o;
 }
 
@@ -56,7 +52,6 @@ interface Merged {
 declare const Merged: number;
 
 function instanceofNonConstructableMerge(x: unknown): boolean {
-  // FIXME: tsc rejects with TS2359; SKJS accepts instanceof on an interface
-  // merged with a non-constructable value (issue #697)
+  // @ts-expect-error The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.
   return x instanceof Merged;
 }
