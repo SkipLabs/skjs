@@ -260,12 +260,20 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> Some(if (target) None() else Some((false, f)))
-            | Some((false, _)) -> if (target) None() else Some(call)
-            | None() -> if (target) Some(call) else None()
-            }
+          tObj.mapOpt(fields ->
+            fields
+              .mapCall(call ->
+                call match {
+                | Some((true, f)) ->
+                  Some(if (target) None() else Some((false, f)))
+                | Some((false, _)) -> if (target) None() else Some(call)
+                | None() -> if (target) Some(call) else None()
+                }
+              )
+              // The runtime check proves the surviving values are objects
+              // (matching side) or functions (non-matching side) — either
+              // way non-primitive.
+              .map(f -> f.withIsPrimitive(Some(false)))
           )
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
@@ -287,11 +295,29 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> Some(if (target) Some((false, f)) else None())
-            | Some((false, _)) -> if (target) Some(call) else None()
-            | None() -> if (target) None() else Some(call)
+          tObj.mapOpt(fields ->
+            if (fields.isEmpty()) {
+              // A bare branch ({} or the `object` keyword) imposes no
+              // structural demands, so functions inhabit it: its matching
+              // side is "all functions" — a bare non-primitive branch, i.e.
+              // `object` (tsc narrows to Function, which SKJS cannot
+              // express; `object` is the sound over-approximation). The
+              // non-matching side keeps the branch unchanged.
+              Some(if (target) fields.withIsPrimitive(Some(false)) else fields)
+            } else {
+              fields
+                .mapCall(call ->
+                  call match {
+                  | Some((true, f)) ->
+                    Some(if (target) Some((false, f)) else None())
+                  | Some((false, _)) -> if (target) Some(call) else None()
+                  | None() -> if (target) None() else Some(call)
+                  }
+                )
+                // The matching side is proven to hold functions, which are
+                // non-primitive; the non-matching side can still hold
+                // primitives (through boxing), so it stays unknown.
+                .map(f -> if (target) f.withIsPrimitive(Some(false)) else f)
             }
           )
         | _ -> if (target) None() else Some(x)
