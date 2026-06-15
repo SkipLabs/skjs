@@ -300,15 +300,19 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          // Never provenCallable here: even when this branch implies the
-          // value is not typeof "object", it may be a primitive inhabitant
-          // of the branch rather than a callable object. The runtime check
-          // proves the surviving values are objects (matching side) or
-          // functions (non-matching side) — either way non-primitive.
+          // The matching side is proven non-primitive by the runtime check.
+          // The non-matching side may be a primitive inhabitant of an
+          // unknown branch (through boxing), so it stays unmarked — unless
+          // the branch already asserts non-primitivity (the `object`
+          // keyword, a typeof-proven object), in which case the surviving
+          // value is definitely a function and callability is proven.
           tObj.mapOpt(tFields ->
-            tFields.narrowByTypeofFunction(!target, false).map(f ->
-              f.withIsPrimitive(Some(false))
-            )
+            tFields
+              .narrowByTypeofFunction(
+                !target,
+                tFields.isPrimitive == Some(false),
+              )
+              .map(f -> if (target) f.withIsPrimitive(Some(false)) else f)
           )
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
@@ -329,24 +333,14 @@ extension class TypeChecker {
         x match {
         | tObj @ TObject _ ->
           // In the true branch the runtime test proves [[Call]], so the
-          // narrowing may strengthen unknown callability (provenCallable).
-          // A bare branch ({} or the `object` keyword) imposes no structural
-          // demands, so functions inhabit it: its matching side is a bare
-          // non-primitive branch, i.e. `object` (tsc narrows to Function,
-          // which SKJS cannot express; `object` is the sound
-          // over-approximation). The matching side is proven to hold
-          // functions, which are non-primitive; the non-matching side can
-          // still hold primitives (through boxing), so it stays unknown.
+          // narrowing may strengthen unknown callability (provenCallable),
+          // and the surviving values are functions — non-primitive. The
+          // non-matching side can still hold primitives (through boxing),
+          // so it stays unknown.
           tObj.mapOpt(tFields ->
-            if (tFields.isEmpty()) {
-              Some(
-                if (target) tFields.withIsPrimitive(Some(false)) else tFields,
-              )
-            } else {
-              tFields.narrowByTypeofFunction(target, target).map(f ->
-                if (target) f.withIsPrimitive(Some(false)) else f
-              )
-            }
+            tFields.narrowByTypeofFunction(target, target).map(f ->
+              if (target) f.withIsPrimitive(Some(false)) else f
+            )
           )
         | _ -> if (target) None() else Some(x)
         };
