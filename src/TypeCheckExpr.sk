@@ -1724,25 +1724,33 @@ extension class TypeChecker {
       tArgs = targsAst.map(targ -> this.normalize(tcenv, targ));
       classNameOpt = subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
-        this.interfaceAndValueDefs(tcenv, className) match {
-        | (true, true) ->
-          // A merged value declaration provides the constructor: resolve
-          // it through the expression path below.
-          None()
-        | (true, false) ->
-          interfaceAsValueError(tcenv, className);
-          // Continue as if the interface were instantiable.
-          Some(className)
-        | _ ->
-          // A class name uses the fast (type-space) constructor path; a
-          // value-only binding (e.g. a `declare const` whose type has a
-          // construct signature) has no class def and is resolved as a value
-          // through the expression path below.
-          if (this.hasClassDef(tcenv, className)) {
-            Some(className)
-          } else {
-            None()
+        // Classify the definitions of `className` in a single pass.
+        hasInterface = false;
+        hasValue = false;
+        hasClass = false;
+        for (def in this.defMap.getAll(tcenv, className)) {
+          def match {
+          | Class{kind => CKInterface()} -> !hasInterface = true
+          | Class _ ->
+            !hasClass = true;
+            !hasValue = true
+          | TypeDef _ -> void
+          | _ -> !hasValue = true
           }
+        };
+        if (hasInterface && !hasValue) {
+          // A type-only interface used as a value: report TS2693 and continue
+          // as if it were instantiable.
+          interfaceAsValueError(tcenv, className);
+          Some(className)
+        } else if (!hasInterface && hasClass) {
+          // A class uses the fast (type-space) constructor path.
+          Some(className)
+        } else {
+          // A merged interface+value, or a value-only binding (e.g. a
+          // `declare const` whose type has a construct signature): resolve
+          // through the expression path below.
+          None()
         }
       | _ -> None()
       };
