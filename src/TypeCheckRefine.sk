@@ -311,7 +311,7 @@ extension class TypeChecker {
         Some(
           STypes::union(
             STypes::single(TPrimUnit(TNull(), typePos)),
-            STypes::single(TObject::createEmpty(typePos)),
+            STypes::single(TObject::createNonPrimitive(typePos)),
           ),
         )
       } else {
