@@ -264,27 +264,6 @@ base class TEnv{
     };
   }
 
-  // Whether `name` has an `interface` definition, and whether some
-  // definition of `name` provides a value binding (a class, enum, variable,
-  // or function — anything but an interface or type alias). An interface
-  // name with no merged value declaration is type-only: there is no runtime
-  // value behind it.
-  fun interfaceAndValueDefs(
-    tcenvb: mutable TCEnvBase,
-    name: Name,
-  ): (Bool, Bool) {
-    hasInterface = false;
-    hasValue = false;
-    for (def in this.defMap.getAll(tcenvb, name)) {
-      def match {
-      | Class{kind => CKInterface()} -> !hasInterface = true
-      | TypeDef _ -> void
-      | _ -> !hasValue = true
-      }
-    };
-    (hasInterface, hasValue)
-  }
-
   // Whether `name` resolves to a class or interface definition (anything
   // `getClass` would accept). Used to decide whether an `instanceof` RHS can
   // drive narrowing without `getClass` raising a fatal error on a value-only
