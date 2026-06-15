@@ -237,6 +237,27 @@ base class TEnv{
     };
   }
 
+  // Whether `name` has an `interface` definition, and whether some
+  // definition of `name` provides a value binding (a class, enum, variable,
+  // or function — anything but an interface or type alias). An interface
+  // name with no merged value declaration is type-only: there is no runtime
+  // value behind it.
+  fun interfaceAndValueDefs(
+    tcenvb: mutable TCEnvBase,
+    name: Name,
+  ): (Bool, Bool) {
+    hasInterface = false;
+    hasValue = false;
+    for (def in this.defMap.getAll(tcenvb, name)) {
+      def match {
+      | Class{kind => CKInterface()} -> !hasInterface = true
+      | TypeDef _ -> void
+      | _ -> !hasValue = true
+      }
+    };
+    (hasInterface, hasValue)
+  }
+
   fun getClassFields(
     context: mutable SKStore.Context,
     c: Class,
@@ -1302,6 +1323,8 @@ base class TEnv{
     | Var(Name(_, "undefined")) ->
       TType::single(TPrimUnit(TUndefined(), expr.pos))
     | Var(varName) ->
+      sawInterface = false;
+      sawValueDef = false;
       for (def in this.defMap.getAll(tcenvb, varName)) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
@@ -1316,16 +1339,27 @@ base class TEnv{
           return TType::single(
             TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
           )
+        | Class{kind => CKInterface()} -> !sawInterface = true
         | Class _ ->
           subst = Subst::mcreate(tcenvb);
           return this.newStatic(subst, varName)
+        | FDVar _
+        | Enum _ ->
+          !sawValueDef = true
         | _ -> void
         }
       };
-      fatalError(
-        Array[(varName.pos, `Cannot find name '${varName.value}'`)],
-        TSCode(2304),
-      )
+      if (sawInterface && !sawValueDef) {
+        interfaceAsValueError(tcenvb, varName);
+        // Continue as if the interface name were a value.
+        subst = Subst::mcreate(tcenvb);
+        this.newStatic(subst, varName)
+      } else {
+        fatalError(
+          Array[(varName.pos, `Cannot find name '${varName.value}'`)],
+          TSCode(2304),
+        )
+      }
     | Dot(_, baseExpr, propertyName) ->
       if (propertyName.value == "prototype") {
         notSupported(propertyName.pos, "prototype access")

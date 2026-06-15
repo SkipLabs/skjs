@@ -287,4 +287,16 @@ fun notSupported<T>(pos: PosRange, what: String): T {
   fatalError(Array[(pos, `${what} is not supported by SKJS`)], SKJSCode(9050))
 }
 
+fun interfaceAsValueError(tcenvb: mutable TCEnvBase, name: Name): void {
+  tcenvb.error(
+    Array[
+      (
+        name.pos,
+        `'${name}' only refers to a type, but is being used as a value here`,
+      ),
+    ],
+    TSCode(2693),
+  )
+}
+
 module end;
