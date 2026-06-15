@@ -5,12 +5,15 @@ digraph "ctor:Counter" {
   BB_0 [label="BB_0:\lthis.count = start\lif ((step === undefined))\l"];
   BB_0 -> BB_3 [label="true"];
   BB_0 -> BB_4 [label="false"];
+  BB_0 -> BB_2 [label="exn", style=dashed];
   BB_1 [label="exit", shape=doublecircle];
   BB_2 [label="exn", shape=doublecircle];
   BB_3 [label="BB_3:\lthis.step = 1\ljump BB_5\l"];
   BB_3 -> BB_5;
+  BB_3 -> BB_2 [label="exn", style=dashed];
   BB_4 [label="BB_4:\lthis.step = step\ljump BB_5\l"];
   BB_4 -> BB_5;
+  BB_4 -> BB_2 [label="exn", style=dashed];
   BB_5 [label="BB_5:\ljump BB_1\l"];
   BB_5 -> BB_1;
 }
@@ -21,6 +24,7 @@ digraph "method:Counter.increment" {
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lthis.count = (this.count + this.step)\lreturn this.count\l"];
   BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
   BB_1 [label="exit", shape=doublecircle];
   BB_2 [label="exn", shape=doublecircle];
 }
