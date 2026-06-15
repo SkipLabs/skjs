@@ -32,6 +32,10 @@ function instanceofExpression(x: unknown, cond: boolean): boolean {
   return x instanceof (cond ? C : C);
 }
 
+function instanceofFunctionLikeUnion(x: unknown, cond: boolean): boolean {
+  return x instanceof (cond ? C : fn);
+}
+
 declare const n: number;
 
 function instanceofNumber(x: unknown): boolean {

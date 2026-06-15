@@ -850,6 +850,14 @@ class TObject private (
     this.branches.all(fields -> fields.call.isSome())
   }
 
+  // True when every branch carries a call or construct signature, i.e. this
+  // object type is Function-like (assignable to `Function`). Unlike
+  // maybeGetCall/maybeGetNew, branches may mix the two, so a union of a
+  // function and a class still qualifies. Used for the `instanceof` RHS check.
+  fun isFunctionLike(): Bool {
+    this.branches.all(fields -> fields.call.isSome() || fields.new.isSome())
+  }
+
   // Returns Some(arity) when every branch of this TObject is a tuple of the
   // same arity (via TFields::isTuple). Avoids the Subst that `asTuple` needs
   // for element unioning — useful for callers that only care about length
