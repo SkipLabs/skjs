@@ -553,12 +553,17 @@ private fun transferWaivedFields(
 // Display label for an index field in subtyping diagnostics. The internal
 // literal-index markers (synthetic / closed-literal) must not leak their
 // internal names into messages.
-private fun indexFieldLabel(f: TField, kindWord: String): String {
-  if (f.isClosedLiteralIndex()) {
+private fun indexFieldLabel(
+  f: TField,
+  kindWord: String,
+  capitalize: Bool = false,
+): String {
+  label = if (f.isClosedLiteralIndex()) {
     "the object literal's implicit closed index"
   } else {
     `${kindWord} '${f.name.value}'`
-  }
+  };
+  if (capitalize) label.uppercaseFirst() else label
 }
 
 base class STErrorOnTFields(
@@ -670,14 +675,7 @@ base class STErrorOnTFields(
     | STRecFieldsIndexField(err, index1, field2, kind, _fields1, _fields2) ->
       (
         List[
-          (
-            index1.pos,
-            if (index1.isClosedLiteralIndex()) {
-              "The object literal's implicit closed index"
-            } else {
-              `Index field '${index1.name.value}'`
-            },
-          ),
+          (index1.pos, indexFieldLabel(index1, "index field", true)),
           (field2.pos, `is not assignable to field '${field2.name.value}'`),
         ],
         err.toError(subst, tenv, detailForRec),
