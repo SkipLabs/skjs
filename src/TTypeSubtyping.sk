@@ -1446,64 +1446,69 @@ extension class TType {
     //
     // Limitations:
     //  - Clauses::getObject returns Some only for a single-object clause.
-    //    When either side is a union of object types (discriminated or
-    //    otherwise), descent is skipped and the top-level isSub call is
-    //    left to handle the TVars without pre-seeding. Precise per-branch
-    //    pairing would require matching clauses across the two sides.
+    //    A union of object types is one such clause (a multi-branch TObject)
+    //    and IS descended, by pairing every open branch with every bound
+    //    branch below. A union that stays multi-clause (e.g. mixed with a
+    //    primitive, or a discriminated union) is skipped, leaving the
+    //    top-level isSub to handle the TVars without pre-seeding. Over-pairing
+    //    branches is safe: this only seeds bounds, and the constraint check
+    //    plus top-level isSub remain load-bearing for soundness.
     //  - Only object fields and call/new return types are descended into.
     (expandedOpen.clauses.getObject(), boundTy.clauses.getObject()) match {
     | (Some(openObj), Some(boundObj)) ->
-      openFields = openObj.getFields(subst, tenv);
-      boundFields = boundObj.getFields(subst, tenv);
-      for (of in openFields.fields.toArray()) {
-        boundFields.maybeGet(of.name.value) match {
-        | Some(bf) ->
-          rConstraintErr = static::growTVars(
-            subst,
-            tenv,
-            bf.get,
-            of.get,
-            variance,
-          );
-          if (constraintErr is None()) !constraintErr = rConstraintErr
-        | None() -> void
+      for (openFields in openObj.getBranches()) {
+        for (boundFields in boundObj.getBranches()) {
+          for (of in openFields.fields.toArray()) {
+            boundFields.maybeGet(of.name.value) match {
+            | Some(bf) ->
+              rConstraintErr = static::growTVars(
+                subst,
+                tenv,
+                bf.get,
+                of.get,
+                variance,
+              );
+              if (constraintErr is None()) !constraintErr = rConstraintErr
+            | None() -> void
+            }
+          };
+          (openFields.call, boundFields.call) match {
+          | (Some((_, openFuns)), Some((_, boundFuns))) ->
+            // Function return type only. TFun::isSub_ checks params before
+            // return, so any TVar that appears in both would otherwise see only
+            // its param-side bound when the param checks run -- the return-side
+            // contribution would arrive too late to inform them. Pre-growing
+            // the return seeds that bound first, tightening the subsequent
+            // per-param isSub calls. Params themselves are skipped here:
+            // TFun::isSub_ pairs them positionally, which is strictly more
+            // precise than the bulk grow this pre-pass would do.
+            rConstraintErr = static::growTVars(
+              subst,
+              tenv,
+              boundFuns.fun_.retType,
+              openFuns.fun_.retType,
+              variance,
+            );
+            if (constraintErr is None()) !constraintErr = rConstraintErr
+          | _ -> void
+          };
+          (openFields.new, boundFields.new) match {
+          | (Some((_, openFuns)), Some((_, boundFuns))) ->
+            // Constructor signatures: same return-first rationale as call
+            // signatures above. The constructed instance type is the return,
+            // and TVars nested there (e.g. `new <A>(x: T): Container<A>`) need
+            // seeding before per-param isSub runs.
+            rConstraintErr = static::growTVars(
+              subst,
+              tenv,
+              boundFuns.fun_.retType,
+              openFuns.fun_.retType,
+              variance,
+            );
+            if (constraintErr is None()) !constraintErr = rConstraintErr
+          | _ -> void
+          }
         }
-      };
-      (openFields.call, boundFields.call) match {
-      | (Some((_, openFuns)), Some((_, boundFuns))) ->
-        // Function return type only. TFun::isSub_ checks params before
-        // return, so any TVar that appears in both would otherwise see only
-        // its param-side bound when the param checks run -- the return-side
-        // contribution would arrive too late to inform them. Pre-growing the
-        // return seeds that bound first, tightening the subsequent per-param
-        // isSub calls. Params themselves are skipped here: TFun::isSub_ pairs
-        // them positionally, which is strictly more precise than the bulk
-        // grow this pre-pass would do.
-        rConstraintErr = static::growTVars(
-          subst,
-          tenv,
-          boundFuns.fun_.retType,
-          openFuns.fun_.retType,
-          variance,
-        );
-        if (constraintErr is None()) !constraintErr = rConstraintErr
-      | _ -> void
-      };
-      (openFields.new, boundFields.new) match {
-      | (Some((_, openFuns)), Some((_, boundFuns))) ->
-        // Constructor signatures: same return-first rationale as call
-        // signatures above. The constructed instance type is the return,
-        // and TVars nested there (e.g. `new <A>(x: T): Container<A>`) need
-        // seeding before per-param isSub runs.
-        rConstraintErr = static::growTVars(
-          subst,
-          tenv,
-          boundFuns.fun_.retType,
-          openFuns.fun_.retType,
-          variance,
-        );
-        if (constraintErr is None()) !constraintErr = rConstraintErr
-      | _ -> void
       }
     | _ -> void
     };
