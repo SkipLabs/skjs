@@ -494,13 +494,38 @@ extension class TypeChecker {
 
     | Unop(UOExclamationMark(), subE) -> this.evalCond(tcenv, subE, !target)
 
-    | Binop(BOLogicalAnd(), e1, e2) if (target) ->
-      this.evalCond(tcenv, e1, true);
-      this.evalCond(tcenv, e2, true)
-
-    | Binop(BOLogicalOr(), e1, e2) if (!target) ->
-      this.evalCond(tcenv, e1, false);
-      this.evalCond(tcenv, e2, false)
+    | Binop(BOLogicalAnd(), e1, e2) ->
+      if (target) {
+        this.evalCond(tcenv, e1, true);
+        this.evalCond(tcenv, e2, true)
+      } else {
+        savedScope = tcenv.scope;
+        scope1 = tcenv.mcreateSubScope{isLoop => false};
+        scope2 = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = scope1;
+        this.evalCond(tcenv, e1, false);
+        tcenv.!scope = scope2;
+        this.evalCond(tcenv, e1, true);
+        this.evalCond(tcenv, e2, false);
+        tcenv.!scope = savedScope;
+        tcenv.mergeScope(this, scope1, scope2)
+      }
+    | Binop(BOLogicalOr(), e1, e2) ->
+      if (target) {
+        savedScope = tcenv.scope;
+        scope1 = tcenv.mcreateSubScope{isLoop => false};
+        scope2 = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = scope1;
+        this.evalCond(tcenv, e1, true);
+        tcenv.!scope = scope2;
+        this.evalCond(tcenv, e1, false);
+        this.evalCond(tcenv, e2, true);
+        tcenv.!scope = savedScope;
+        tcenv.mergeScope(this, scope1, scope2)
+      } else {
+        this.evalCond(tcenv, e1, false);
+        this.evalCond(tcenv, e2, false)
+      }
 
     // Truthiness: if (x) treated as if (x === true)
     | Var(
