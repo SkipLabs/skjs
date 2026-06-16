@@ -316,6 +316,20 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Class inheritance**: A subclass cannot make a mutable parent field readonly; a subclass can make a readonly parent field mutable
 - **Verified by**: `tests/expect-error/pr437-set-check-unsound.ts`, `tests/expect-error/readonly-inter-union.ts`, `tests/expect-error/readonly-inheritance.ts`
 
+### 27b. `Array.isArray` Narrowing Stays Readonly Unless Provably Mutable (Stricter than TypeScript)
+- **Rule**: `Array.isArray(x)` narrows `x` by intersecting with `ReadonlyArray<unknown>`. A genuinely mutable array stays mutable (`push`/`pop` allowed); a readonly array, a tuple, or a non-array object narrows to a readonly array and cannot be mutated
+- **TypeScript difference**: TypeScript's `Array.isArray` guard narrows to `any[]` (mutable), which is unsound — a value typed as a plain object (e.g. `{ readonly length: number }`, or even `{ a: string; b: number }`) can be inhabited at runtime by a readonly array carrying extra properties, so allowing `push`/`pop` would mutate a readonly array
+- **SKJS enforcement**: `evalIsArray` intersects with `ReadonlyArray<unknown>`. Intersecting index signatures unions the set types, and `union(T, bottom) = T`, so an already-mutable array keeps its writable index while every other shape gets a readonly one. e.g. `number[] | { readonly length: number }` narrows to `number[] | readonly unknown[]`
+- **Examples**:
+  ```typescript
+  function f(x: number[] | { readonly length: number }): void {
+    if (Array.isArray(x)) {
+      x.push(1); // Error in SKJS (x could be a readonly array), allowed in TypeScript
+    }
+  }
+  ```
+- **Verified by**: `tests/expect-error/isarray-readonly.ts`
+
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
 - **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)
