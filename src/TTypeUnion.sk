@@ -377,8 +377,9 @@ extension class TObject {
   // another branch lacks it) — so no field is forgotten. Shared fields union
   // their getters; an index survives if any branch carries it. Single-branch
   // objects pass through unchanged. A precise per-branch union of literal types
-  // (matching TypeScript's distribution) is left as a follow-up; this
-  // over-approximates by collapsing the branches into one open object.
+  // (matching TypeScript's distribution) is left as a follow-up
+  // (SkipLabs/skjs#714); this over-approximates by collapsing the branches into
+  // one open object.
   fun spreadFields(subst: mutable Subst, tenv: TEnv): TFields {
     branchesIt = this.branches.values();
     result = branchesIt.next().fromSome();
