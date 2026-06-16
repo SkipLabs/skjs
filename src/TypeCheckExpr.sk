@@ -1848,7 +1848,11 @@ extension class TypeChecker {
           arr.map(x -> {
             ty = this.expr(tcenv, x, mostPrecise);
             if (x.value is Object _ || ty.isConcretePrimitive()) {
-              this.makeBoundTVar(tcenv, ty, FromArrayElement(x.pos))
+              this.makeBoundTVarForLiteralCommitment(
+                tcenv,
+                ty,
+                FromArrayElement(x.pos),
+              )
             } else {
               ty
             }

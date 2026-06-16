@@ -322,6 +322,17 @@ extension class TypeChecker {
     TType::var(tvar)
   }
 
+  fun makeBoundTVarForLiteralCommitment(
+    tcenv: mutable TCEnv,
+    ty: TType,
+    origin: TVarOrigin,
+  ): TType {
+    tvar = tcenv.subst.genForLiteralCommitment(ty.pos);
+    tcenv.subst.setOrigin(tvar, origin);
+    tcenv.subst.grow(this, tvar, ty, Contravariant());
+    TType::var(tvar)
+  }
+
   fun newTVar(tcenv: mutable TCEnv, pos: PosRange, origin: TVarOrigin): TType {
     tvar = tcenv.subst.gen(pos);
     tcenv.subst.setOrigin(tvar, origin);

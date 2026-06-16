@@ -1307,11 +1307,26 @@ extension class TType {
     // can change which disjuncts are grown into which TVars.
     for (tvar in tvarsToGrow) {
       substCopy = subst.save();
+      valuesBefore = subst.values;
       if (
         tvar.constraints.all(cstr ->
           TType::isSub(subst, tenv, boundTy, cstr) is STOk()
         )
       ) {
+        // The check is speculative w.r.t. value candidates: it decides
+        // `boundTy <: cstr` but must not redefine an already-determined
+        // candidate. It may still commit deferred literal *form*, which the
+        // surrounding subtyping consumes. Literal/field commitments are
+        // structurally marked TVar kinds, so we undo only the seals of ordinary
+        // value variables the check made, keeping the commitments in place.
+        for (cid => oldV in valuesBefore) {
+          if (!cid.isForField() && !cid.isForLiteralCommitment()) {
+            subst.values.maybeGet(cid) match {
+            | Some(newV) if (newV != oldV) -> subst.!values[cid] = oldV
+            | _ -> void
+            }
+          }
+        };
         growUncovered(tvar)
       } else {
         subst.restore(substCopy)

@@ -207,6 +207,12 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     TVar::create(pos, TVarID::createForField(id))
   }
 
+  mutable fun genForLiteralCommitment(pos: PosRange): TVar {
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, TVarID::createForLiteralCommitment(id))
+  }
+
   readonly fun isOpen(tvar: TVar): Bool {
     this.values.maybeGet(tvar.id) match {
     | Some(SVOpen _) -> true
