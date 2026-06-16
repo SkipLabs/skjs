@@ -1,7 +1,9 @@
-// `Array.isArray(a)` narrowing. SKJS currently intersects object-union branches
-// with a mutable `Array`, so a value that could be a readonly array at runtime
-// unsoundly gains `push`/`pop`. A genuine ReadonlyArray and a tuple are already
-// kept non-pushable. tsc unsoundly narrows all of these to `any[]`.
+// `Array.isArray(a)` narrows `a` by intersecting with `ReadonlyArray<unknown>`.
+// A genuinely mutable array stays mutable (its writable index survives the
+// intersection), but a readonly array, a tuple, or a non-array object — which a
+// readonly array can inhabit by carrying extra properties — gets a readonly
+// index and cannot be mutated. tsc unsoundly narrows to `any[]` and accepts the
+// mutations below.
 
 function plainMutable(a: number[]): void {
   if (Array.isArray(a)) {
@@ -15,6 +17,10 @@ function mutableUnion(a: number[] | number): void {
   }
 }
 
+// A mutable tuple has fixed-shape positional fields, not a mutable number
+// index, so it is not a provably mutable (variable-length) array: it narrows
+// to ReadonlyArray and push is rejected (a tuple's length is fixed). tsc
+// unsoundly allows push.
 function mutableTuple(a: [number, string]): void {
   if (Array.isArray(a)) {
     // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
@@ -24,29 +30,33 @@ function mutableTuple(a: [number, string]): void {
 
 function readonlyLengthUnion(a: number[] | { readonly length: number }): void {
   if (Array.isArray(a)) {
-    // FIXME (issue #709): unsound — `a` may be the non-array branch (a readonly
-    // array satisfies `{ readonly length }`), so push must be rejected; SKJS
-    // currently accepts it.
+    // `a` narrows to `number[] | readonly unknown[]`: the non-array branch is
+    // not provably a mutable array, so push is rejected. tsc unsoundly
+    // narrows to any[] and accepts.
+    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
     a.push(1);
   }
 }
 
 function readonlyArray(a: ReadonlyArray<number>): void {
   if (Array.isArray(a)) {
+    // tsc unsoundly narrows ReadonlyArray to any[] and accepts; SKJS keeps it
+    // readonly and rejects.
     // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
     a.push(1);
   }
 }
 
-// A plain object type can be inhabited by a readonly array carrying extra
-// properties: `roWithProps` is a readonly array that also satisfies
-// `{ a: string; b: number }`, so `attack(roWithProps)` flows it into `x`.
+// Attack: a plain object type can be inhabited by a readonly array that carries
+// extra properties, so `Array.isArray` on an object-union branch must not yield
+// a mutable array. Here `roWithProps` is a readonly array that also satisfies
+// `{ a: string; b: number }`, so `attack(roWithProps)` flows it into `x`, and
+// `x.push` would mutate a readonly array — it must be rejected.
 declare const roWithProps: ReadonlyArray<number> & { a: string; b: number };
 
 function attack(x: number[] | { a: string; b: number }): void {
   if (Array.isArray(x)) {
-    // FIXME (issue #709): unsound — `x` may be `roWithProps`, a readonly array,
-    // so push must be rejected; SKJS currently accepts it.
+    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
     x.push(1);
   }
 }

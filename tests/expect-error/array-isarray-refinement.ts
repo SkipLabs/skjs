@@ -1,6 +1,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 // Array.isArray refinement tests
-// Tests that Array.isArray correctly refines Array<T> | OtherType to Array<T>
+// Tests that Array.isArray refines Array<T> | OtherType to its array-compatible
+// part. A non-array object type can be inhabited by a readonly array carrying
+// extra properties, so the array part is a ReadonlyArray unless the source
+// branch is a provably mutable array (see issue #709).
 ///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -12,10 +15,12 @@ type Foo = {
   b: number;
 };
 
-// Test basic refinement - Array | Foo
-function testBasicArrayRefinement(x: Array<number> | Foo): Array<unknown> {
+// Test basic refinement - Array | Foo. The Foo branch could be a readonly
+// array, so the result is only assignable to ReadonlyArray<unknown>.
+function testBasicArrayRefinement(
+  x: Array<number> | Foo,
+): ReadonlyArray<unknown> {
   if (Array.isArray(x)) {
-    // x should be refined to Array<number>
     return x;
   } else {
     return [];
@@ -33,7 +38,9 @@ function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
 }
 
 // Test with different array type
-function testStringArrayRefinement(x: Array<string> | Foo): Array<unknown> {
+function testStringArrayRefinement(
+  x: Array<string> | Foo,
+): ReadonlyArray<unknown> {
   if (Array.isArray(x)) {
     return x;
   } else {
@@ -56,7 +63,9 @@ function testArrayMethodsAfterRefinement(x: Array<number> | Foo): number {
 
 function testArrayPushAfterRefinement(x: Array<number> | Foo): void {
   if (Array.isArray(x)) {
-    // Should be able to call array methods
+    // Unsound to push: the Foo branch could be a readonly array carrying
+    // a/b properties (see the attack in isarray-readonly.ts).
+    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
     x.push(42);
   }
 }
@@ -65,7 +74,9 @@ function testArrayPushAfterRefinement(x: Array<number> | Foo): void {
 // Multiple union types
 ///////////////////////////////////////////////////////////////////////////////
 
-function testMultipleUnion(x: Array<number> | Foo | string): Array<unknown> {
+function testMultipleUnion(
+  x: Array<number> | Foo | string,
+): ReadonlyArray<unknown> {
   if (Array.isArray(x)) {
     return x;
   } else {
@@ -89,7 +100,9 @@ function testMultipleUnionElseBranch(
 // Nested refinement
 ///////////////////////////////////////////////////////////////////////////////
 
-function testNestedRefinement(x: Array<number> | Foo | null): Array<unknown> {
+function testNestedRefinement(
+  x: Array<number> | Foo | null,
+): ReadonlyArray<unknown> {
   if (x === null) {
     return [];
   } else if (Array.isArray(x)) {
@@ -166,11 +179,11 @@ function testObjectPropOnArray(x: Array<number> | Foo): unknown {
 // Early return pattern
 ///////////////////////////////////////////////////////////////////////////////
 
-function testEarlyReturn(x: Array<number> | Foo): Array<unknown> {
+function testEarlyReturn(x: Array<number> | Foo): ReadonlyArray<unknown> {
   if (!Array.isArray(x)) {
     return [];
   }
-  // x should be refined to Array<unknown> here
+  // x is refined to its array part (a readonly array for the Foo branch)
   return x;
 }
 
@@ -188,7 +201,7 @@ function testEarlyReturnWithLength(x: Array<number> | Foo): number {
 
 function testCombinedWithTypeof(
   x: Array<number> | Foo | string,
-): Array<unknown> {
+): ReadonlyArray<unknown> {
   if (typeof x === "string") {
     return [];
   } else if (Array.isArray(x)) {

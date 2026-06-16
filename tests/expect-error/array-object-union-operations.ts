@@ -228,8 +228,10 @@ function testUnionNotSubtypeOfObject(x: Array<number> | Obj): Obj {
 // Narrowing with Array.isArray
 ///////////////////////////////////////////////////////////////////////////////
 
-// After Array.isArray, should be narrowed to array
-function testNarrowToArray(x: Array<number> | Obj): Array<unknown> {
+// After Array.isArray, should be narrowed to array. The Obj branch could be a
+// readonly array carrying extra properties, so the result is only assignable
+// to ReadonlyArray<unknown> (see issue #709).
+function testNarrowToArray(x: Array<number> | Obj): ReadonlyArray<unknown> {
   if (Array.isArray(x)) {
     return x;
   }

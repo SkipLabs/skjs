@@ -315,28 +315,24 @@ extension class TypeChecker {
   // target === false: excludes arrays and tuples.
   fun evalIsArray(tcenv: mutable TCEnv, local: Name, target: Bool): void {
     if (target) {
+      // Intersect with `ReadonlyArray<unknown>`, never mutable `Array`. A
+      // branch that is already a mutable array keeps its mutability — index
+      // intersection unions the set types, and `union(T, bottom) = T` — so
+      // `number[]` stays pushable, while a readonly array, a tuple, or a
+      // non-array object (which a readonly array can inhabit by carrying extra
+      // properties) gets a readonly index and cannot be mutated. e.g.
+      // `number[] | { readonly length: number }` refines to
+      // `number[] | readonly unknown[]`.
+      readonlyArrayObj = this.newObject(
+        tcenv.subst,
+        Name(local.pos, "ReadonlyArray"),
+        Array[TType::top(local.pos)],
+      );
       filterMap = x ->
         x match {
         | tObj @ TObject _ ->
-          tparam = TType::top(local.pos);
-          // Use ReadonlyArray for readonly inputs to avoid adding
-          // mutable methods (push, pop, etc.) to readonly arrays.
-          // Use Array for mutable inputs so the intersection
-          // preserves the wider set type (unknown vs T).
-          hasReadonlyIndex = tObj.getBranches().any(b ->
-            b.numberIndex match {
-            | Some(idx) -> idx.set.isBottom()
-            | None() -> false
-            }
-          );
-          arrName = if (hasReadonlyIndex) "ReadonlyArray" else "Array";
-          arrObj = this.newObject(
-            tcenv.subst,
-            Name(local.pos, arrName),
-            Array[tparam],
-          );
-          TObject::inter(tcenv.subst, this, tObj, arrObj).flatMap(tObj ->
-            tObj.mapOpt(tFields -> tFields.interIsArray(true))
+          TObject::inter(tcenv.subst, this, tObj, readonlyArrayObj).flatMap(
+            o -> o.mapOpt(tFields -> tFields.interIsArray(true)),
           )
         | _ -> None()
         };
