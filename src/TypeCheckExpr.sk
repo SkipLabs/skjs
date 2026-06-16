@@ -3183,7 +3183,17 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _, objPos)) ->
-      fields = obj.getFields(tcenv.subst, this);
+      fields = obj.maybeSingleBranch() match {
+      | Some(f) -> f
+      | None() ->
+        // A local object is single-branch by construction (un-annotated
+        // object-literal initializer grown only via single-branch inter).
+        tcenv.error(
+          Array[(pos, "Internal error: local object is not single-branch")],
+          SKJSCode(9999),
+        );
+        return fieldType
+      };
       // For each key, check existing fields/index sigs and collect
       // new fields to grow.
       newFieldsMap = mutable Map[];
@@ -3295,7 +3305,17 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _, _)) ->
-      fields = obj.getFields(tcenv.subst, this);
+      fields = obj.maybeSingleBranch() match {
+      | Some(f) -> f
+      | None() ->
+        // A local object is single-branch by construction (un-annotated
+        // object-literal initializer grown only via single-branch inter).
+        tcenv.error(
+          Array[(pos, "Internal error: local object is not single-branch")],
+          SKJSCode(9999),
+        );
+        return fieldType
+      };
       keyKind = keyType
         .getSTypes(tcenv.subst, this, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {

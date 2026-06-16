@@ -845,6 +845,14 @@ class TObject private (
     this.branches.toArray()
   }
 
+  // Returns the sole branch when this object has exactly one. Used by callers
+  // that operate on objects which are single-branch by construction (e.g.
+  // local objects: an un-annotated object-literal initializer grown only via
+  // single-branch intersection).
+  fun maybeSingleBranch(): ?TFields {
+    this.branches.getUnique()
+  }
+
   // True when every branch carries a (non-constructor) call signature, i.e.
   // this object type is callable as a function. Cheaper than getFields, which
   // unions all branches; used for the always-truthy-function check (TS2774).
