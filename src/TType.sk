@@ -828,15 +828,6 @@ class TObject private (
 
   /* Accessors */
 
-  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
-    branches = this.branches.values();
-    result = branches.next().fromSome();
-    for (fields in branches) {
-      !result = TFields::union(subst, tenv, result, fields)
-    };
-    result
-  }
-
   fun getAllFields(): mutable Iterator<TFields> {
     this.branches.values()
   }
