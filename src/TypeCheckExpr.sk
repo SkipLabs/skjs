@@ -2334,40 +2334,47 @@ extension class TypeChecker {
             !canBeTrue = true;
             !canBeFalse = true
           | obj @ TObject(_, _, _pos) ->
-            objFields = obj.getFields(tcenv.subst, this);
-            (fields, symbolFields) = objFields match {
-            | TFields{fields, symbolFields} -> (fields, symbolFields)
-            };
             !canBeTrue = true; // object types are open
+            // `k in (A | B)` can be false when some branch can lack k — k is
+            // absent or optional in that branch. A shared index contributes
+            // conservatively, the same way it did on a single object (the
+            // all-branches index matches the old branch-merge). TODO: refine.
             !canBeFalse =
               canBeFalse ||
-              objFields.hasNonSyntheticIndex() /* TODO: refine */ ||
-              fieldsOpt match {
-              | None() ->
-                false // no field keys to check
-              | Some(None()) ->
-                true // broad type, could be any key
-              | Some(Some(fieldsToCheck)) ->
-                fieldsToCheck.values().any(fieldToCheck ->
-                  fields.maybeGet(FieldNameString(fieldToCheck.val)) match {
-                  | Some(tField) -> tField.isOptional
-                  | None() -> true
-                  }
-                )
-              } ||
-              symFieldsOpt match {
-              | None() ->
-                false // no symbol keys to check
-              | Some(None()) ->
-                true // broad symbol, could be any key
-              | Some(Some(symFieldsToCheck)) ->
-                symFieldsToCheck.values().any(symToCheck ->
-                  symbolFields.maybeGet(FieldNameString(symToCheck.val)) match {
-                  | Some(tField) -> tField.isOptional
-                  | None() -> true
-                  }
-                )
-              }
+              obj.hasNonSyntheticIndex(tcenv.subst, this) ||
+              obj.getBranches().any(branchFields -> {
+                (fields, symbolFields) = branchFields match {
+                | TFields{fields, symbolFields} -> (fields, symbolFields)
+                };
+                (fieldsOpt match {
+                | None() ->
+                  false // no field keys to check
+                | Some(None()) ->
+                  true // broad type, could be any key
+                | Some(Some(fieldsToCheck)) ->
+                  fieldsToCheck.values().any(fieldToCheck ->
+                    fields.maybeGet(FieldNameString(fieldToCheck.val)) match {
+                    | Some(tField) -> tField.isOptional
+                    | None() -> true
+                    }
+                  )
+                }) ||
+                  (symFieldsOpt match {
+                  | None() ->
+                    false // no symbol keys to check
+                  | Some(None()) ->
+                    true // broad symbol, could be any key
+                  | Some(Some(symFieldsToCheck)) ->
+                    symFieldsToCheck.values().any(symToCheck ->
+                      symbolFields.maybeGet(
+                        FieldNameString(symToCheck.val),
+                      ) match {
+                      | Some(tField) -> tField.isOptional
+                      | None() -> true
+                      }
+                    )
+                  })
+              })
           }
         };
         (canBeTrue, canBeFalse) match {
