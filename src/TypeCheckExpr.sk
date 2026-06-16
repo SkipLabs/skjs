@@ -2365,7 +2365,7 @@ extension class TypeChecker {
       // granted. (The transfer flag lives on Subst, not SubstState, so the
       // restore below cannot toggle it.)
       vi = this.viewInfoFor(tcenv, subExpr) match {
-      | VITransfer _ -> VIFresh()
+      | VITransfer _ -> VITransfer(None())
       | x -> x
       };
       inferredTy = this.expr(tcenv, subExpr, true);

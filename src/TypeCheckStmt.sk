@@ -49,9 +49,9 @@ extension class TypeChecker {
         // At a non-async return there is never a retype: control leaves the
         // function on this path, so a granted view and a later precise read
         // cannot both execute (per-path soundness). Transfer transparency
-        // still applies (VITransfer demoted to VIFresh, i.e. no retype).
+        // still applies (VITransfer demoted to the no-retype VITransfer(None)).
         viewForCheck = vi0 match {
-        | VITransfer _ -> VIFresh()
+        | VITransfer _ -> VITransfer(None())
         | x -> x
         };
         this.checkSubTypeView(

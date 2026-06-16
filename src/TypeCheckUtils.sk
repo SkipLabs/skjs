@@ -4,8 +4,10 @@ module SKJS;
 base class ViewInfo {
   children =
   | VINone()
-  | VIFresh()
-  | VITransfer(Name)
+  // Ownership-transfer check. None = a fresh literal expression (transparent
+  // check, nothing to retype). Some(n) = the first view of the unannotated
+  // local n (transparent check, then retype n to the accumulated intersection).
+  | VITransfer(?Name)
 }
 
 extension class TypeChecker {
@@ -95,21 +97,21 @@ extension class TypeChecker {
 
   // How the checked expression relates to the type it is checked against
   // (its "view"):
-  // - VIFresh: a fresh literal expression; the check is an ownership
+  // - VITransfer(None): a fresh literal expression; the check is an ownership
   //   transfer (the value's only type afterwards is the view type).
-  // - VITransfer(n): the FIRST view of the unannotated local object n; an
-  //   ownership transfer after which n is retyped to the view type.
+  // - VITransfer(Some(n)): the FIRST view of the unannotated local object n;
+  //   an ownership transfer after which n is retyped to the accumulation.
   // - VINone: plain subtyping.
   // Must be captured BEFORE evaluating the expression — evaluating a Var
   // flips its local-object state to LOUsed, which is what makes the
   // transfer right unique.
   fun viewInfoFor(tcenv: mutable TCEnv, e: Expr): ViewInfo {
     e.value match {
-    | Object _ -> VIFresh()
-    | EArray _ -> VIFresh()
+    | Object _ -> VITransfer(None())
+    | EArray _ -> VITransfer(None())
     | Var(n) if (n.value != "this") ->
       tcenv.localObjects.maybeGet(n.value) match {
-      | Some(LOCanGrow _) -> VITransfer(n)
+      | Some(LOCanGrow _) -> VITransfer(Some(n))
       | _ -> VINone()
       }
     | _ -> VINone()
@@ -244,8 +246,10 @@ extension class TypeChecker {
   ): void {
     view match {
     | VINone() -> this.checkSubType(tcenv, pos, msg, ty1, ty2, code)
-    | VIFresh() -> this.checkSubTypeTransfer(tcenv, pos, msg, ty1, ty2, code)
-    | VITransfer(n) ->
+    // Fresh literal: transparent check, nothing to retype.
+    | VITransfer(None()) ->
+      this.checkSubTypeTransfer(tcenv, pos, msg, ty1, ty2, code)
+    | VITransfer(Some(n)) ->
       if (tcenv.scope.isThroughLoop(n)) {
         // A local declared outside a loop cannot be retyped from inside it,
         // so the granted view would go unrecorded — a later write through
