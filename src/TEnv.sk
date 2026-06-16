@@ -70,7 +70,13 @@ base class TEnv{
 
   // This field keeps track of the subtyping relations that we are in
   // the process of checking. If a cycle occurs, the subtyping
-  // relation is considered correct (by co-induction).
+  // relation is considered correct (by co-induction). The Bool is the
+  // ownership-transfer mode (subst.transferMode) at the time of the check:
+  // transfer mode WAIVES setter obligations, so a hypothesis established
+  // under it must not discharge a cycle reached in plain mode (that would be
+  // unsound). Keying on the flag keeps transfer-mode and plain hypotheses
+  // separate (the set is written unconditionally at recursion entry, so the
+  // write cannot simply be skipped).
   seenSub: SortedSet<(Int, Bool, TType, TType)> = SortedSet[],
 
   // Controls whether field inter/union operations fully expand intersections.
