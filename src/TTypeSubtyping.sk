@@ -585,9 +585,9 @@ base class STErrorOnTFields(
   ): List<(PosRange, String)> {
     showTypes =
       !this.fields1.fields.isEmpty() ||
-      this.fields1.hasNonSyntheticIndex() ||
+      this.fields1.hasIndex() ||
       !this.fields2.fields.isEmpty() ||
-      this.fields2.hasNonSyntheticIndex() ||
+      this.fields2.hasIndex() ||
       (
         this.fields1.new,
         this.fields1.call,
@@ -1225,8 +1225,7 @@ extension class TType {
         | Some(FromUndefinedLiteral(pos))
         | Some(FromUntypedVar(pos))
         | Some(FromObjectField(pos))
-        | Some(FromArrayElement(pos))
-        | Some(FromSyntheticIndex(pos)) ->
+        | Some(FromArrayElement(pos)) ->
           !hints = List.Cons(
             (pos, `Consider adding a type annotation, e.g., ${widerStr}`),
             hints,

@@ -434,7 +434,7 @@ extension class TypeChecker {
                       tf
                     }
                   | None() ->
-                    fieldToAdd = tf.nonSyntheticIndexForKeyKind(
+                    fieldToAdd = tf.indexForKeyKind(
                       key.toPrimValueKind(),
                     ) match {
                     | Some(indexField) ->
