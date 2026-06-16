@@ -1102,6 +1102,76 @@ class TObject private (
     };
     merged.map(fd -> (fd, allBranches))
   }
+
+  // Non-synthetic index for `kind` shared by every branch, combined via
+  // TField::unionIndex (get unioned, set intersected). None if any branch
+  // lacks it: a general/index key is only resolvable when every disjunct can
+  // serve it. Mirrors maybeGetCall/maybeGetNew's all-branches shape.
+  fun maybeGetNonSyntheticIndexForKeyKind(
+    subst: mutable Subst,
+    tenv: TEnv,
+    kind: TPrimValueKind,
+  ): ?TField {
+    indexes: mutable Vector<TField> = mutable Vector[];
+    for (fields in this.branches) {
+      fields.nonSyntheticIndexForKeyKind(kind) match {
+      | None() -> return None()
+      | Some(idx) -> indexes.push(idx)
+      }
+    };
+    indexesIt = indexes.values();
+    indexesIt.next().map(first ->
+      indexesIt.reduce(
+        (acc, idx) -> TField::unionIndex(subst, tenv, acc, idx).fromSome(),
+        first,
+      )
+    )
+  }
+
+  // True when some index kind can serve every branch (a number key may fall
+  // back to a string index), i.e. the union carries an index usable here.
+  fun hasNonSyntheticIndex(subst: mutable Subst, tenv: TEnv): Bool {
+    this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TString()).isSome() ||
+      this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TNum()).isSome() ||
+      this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TSymbol()).isSome()
+  }
+
+  // True when every branch declares a non-synthetic index for `kind` directly
+  // (the string index does NOT stand in for a number key here). Used for the
+  // diagnostic listing, which must name only the kinds actually declared.
+  fun hasNonSyntheticIndexForKeyKind(kind: TPrimValueKind): Bool {
+    this.branches.all(fields -> {
+      idx = kind match {
+      | TString() -> fields.stringIndex
+      | TNum() -> fields.numberIndex
+      | TSymbol() -> fields.symbolIndex
+      | _ -> None()
+      };
+      idx match {
+      | Some(f) -> !f.isSynthetic()
+      | None() -> false
+      }
+    })
+  }
+
+  // Human-readable list of the index key kinds every branch carries directly
+  // (string/number/symbol), used in the "wrong index kind" diagnostic.
+  fun nonSyntheticIndexKeyKindsString(): String {
+    parts: mutable Vector<String> = mutable Vector[];
+    if (this.hasNonSyntheticIndexForKeyKind(TString())) parts.push("string");
+    if (this.hasNonSyntheticIndexForKeyKind(TNum())) parts.push("number");
+    if (this.hasNonSyntheticIndexForKeyKind(TSymbol())) parts.push("symbol");
+    parts.join(" | ")
+  }
+
+  // Named fields of `kind` that a general (non-literal) key could name at
+  // runtime, gathered from every branch (a value of any branch could supply
+  // its own). The caller unions the resolved types.
+  fun namedFieldsForKeyKind(kind: TPrimValueKind): mutable Iterator<TField> {
+    this.getAllFields().flatMap(fields ->
+      fields.namedFieldsForKeyKind(kind).values()
+    )
+  }
 }
 
 /***************************************************************************/

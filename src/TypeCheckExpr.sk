@@ -613,7 +613,6 @@ extension class TypeChecker {
           // property — so it resolves through the symbol index AND unions/
           // intersects every declared symbol field (read: union getters;
           // write: intersect setters).
-          fields = obj.getFields(tcenv.subst, this);
           idxSType.literals match {
           | None() -> Some(idxSType)
           | Some(lits) ->
@@ -641,7 +640,11 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields.nonSyntheticIndexForKeyKind(TSymbol()) match {
+            obj.maybeGetNonSyntheticIndexForKeyKind(
+              tcenv.subst,
+              this,
+              TSymbol(),
+            ) match {
             | None() ->
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
@@ -672,7 +675,7 @@ extension class TypeChecker {
               addResultCase(ty);
               // A general symbol may also name any declared symbol field.
               if (remainingIdxSType.literals.isNone()) {
-                for (symFd in fields.namedFieldsForKeyKind(TSymbol())) {
+                for (symFd in obj.namedFieldsForKeyKind(TSymbol())) {
                   addResultCase(
                     TFields::resolveFieldType(
                       tcenv.subst,
@@ -745,8 +748,9 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields = obj.getFields(tcenv.subst, this);
-            matchedIndex = fields.nonSyntheticIndexForKeyKind(
+            matchedIndex = obj.maybeGetNonSyntheticIndexForKeyKind(
+              tcenv.subst,
+              this,
               remainingIdxSType.kind,
             );
             // If string literal access fails on a number index, retry as
@@ -760,11 +764,18 @@ extension class TypeChecker {
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
-                fields.nonSyntheticIndexForKeyKind(TNum())
+                obj.maybeGetNonSyntheticIndexForKeyKind(
+                  tcenv.subst,
+                  this,
+                  TNum(),
+                )
               | _ -> None()
               }
             };
-            if (matchedIndex.isNone() && fields.hasNonSyntheticIndex()) {
+            if (
+              matchedIndex.isNone() &&
+              obj.hasNonSyntheticIndex(tcenv.subst, this)
+            ) {
               // Object has indexes but not for this key kind. The access is
               // fundamentally invalid; we can't substitute an unrelated-kind
               // index value without manufacturing a cascade of dependent
@@ -774,7 +785,7 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected ${obj.nonSyntheticIndexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
@@ -800,8 +811,7 @@ extension class TypeChecker {
                   ],
                   TSCode(7053),
                 )
-              | Some(lits) ->
-                fields.getTypeTypingError(lits.toStringList(), pos)
+              | Some(lits) -> obj.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -826,7 +836,7 @@ extension class TypeChecker {
               // checked against the declared fields and found absent, so they
               // only hit the index.
               if (remainingIdxSType.literals.isNone()) {
-                for (namedFd in fields.namedFieldsForKeyKind(
+                for (namedFd in obj.namedFieldsForKeyKind(
                   remainingIdxSType.kind,
                 )) {
                   addResultCase(
