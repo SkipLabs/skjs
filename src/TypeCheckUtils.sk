@@ -194,18 +194,12 @@ extension class TypeChecker {
       for (inst in t.insts.values()) {
         inst match {
         | tvar @ TVar _ -> walkWrapperTVar(tvar)
-        | TArrayLit(tvar, tupleElts, freshElts) ->
+        | TArrayLit(tvar, tupleElts, _freshElts) ->
           walkWrapperTVar(tvar);
-          for (e in tupleElts) expandIfWrapper(e);
-          // freshElts carries the precise literal type of each element when
-          // it was a fresh literal — that is where a fresh closed-literal
-          // element's marker lives, so collect directly from it.
-          for (opt in freshElts) {
-            opt match {
-            | Some(e) -> walkTy(e)
-            | None() -> void
-            }
-          }
+          // Fresh object-literal elements live in tupleElts behind
+          // FromArrayElement wrapper TVars; freshElts only records primitive
+          // literal types (directLiteralSType), which carry no marker.
+          for (e in tupleElts) expandIfWrapper(e)
         | _ -> void
         }
       }
