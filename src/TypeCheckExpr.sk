@@ -550,11 +550,7 @@ extension class TypeChecker {
     // accepts any thisArg), but that is unsound (the method body reads the
     // class's fields off the rebound receiver), so SKJS is soundly stricter. An
     // explicit `this: T` constrains to T; no declared `this` accepts anything.
-    thisType = f.thisParam match {
-    | ImplicitClass(t) -> t
-    | Explicit(t) -> t
-    | NoThis() -> TType::top(pos)
-    };
+    thisType = f.thisParam.tyOpt().default(TType::top(pos));
     funType = (tfun: TFun) ->
       TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
     synthOpt: ?TFun = if (fieldName == "call") {

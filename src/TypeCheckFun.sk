@@ -22,17 +22,13 @@ extension class TypeChecker {
     } else {
       None()
     };
-    thisType = explicitThisOpt match {
-    | Some(t) -> t
-    | None() ->
-      thisTypeOpt match {
-      | None() ->
+    thisType = explicitThisOpt.default(
+      thisTypeOpt.default(
         /* Disallow this in non-methods */ TType::single(
           TPrimUnit(TVoid(), fdPos),
-        )
-      | Some(t) -> t
-      }
-    };
+        ),
+      ),
+    );
     !this.bindings["this"] = thisType;
     tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true);
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
