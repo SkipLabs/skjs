@@ -523,6 +523,14 @@ extension class TFields {
         call,
         new,
         isArray,
+        // Closedness is restrictive: the intersection is a closed literal if
+        // EITHER operand is (a value in both has no excess keys). This carries
+        // the literal's pos through the ownership-transfer retype
+        // inter(view, current) so the grown/retyped local stays closed.
+        closedLiteralPos => fields1.closedLiteralPos match {
+        | p @ Some _ -> p
+        | None() -> fields2.closedLiteralPos
+        },
       },
     )
   }

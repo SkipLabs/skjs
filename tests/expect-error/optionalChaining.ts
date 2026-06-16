@@ -2,6 +2,7 @@
 const obj: { f: number } = { f: 1 };
 
 // @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const obj2: { f?: number } = {};
 
 function returningVoid(): void {}
