@@ -1339,6 +1339,7 @@ base class TEnv{
     | Var(varName) ->
       sawInterface = false;
       sawValueDef = false;
+      sawTypeAlias = false;
       for (def in this.defMap.getAll(tcenvb, varName)) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
@@ -1357,10 +1358,10 @@ base class TEnv{
         | Class _ ->
           subst = Subst::mcreate(tcenvb);
           return this.newStatic(subst, varName)
+        | TypeDef _ -> !sawTypeAlias = true
         | FDVar _
         | Enum _ ->
           !sawValueDef = true
-        | _ -> void
         }
       };
       if (sawInterface && !sawValueDef) {
@@ -1368,6 +1369,8 @@ base class TEnv{
         // Continue as if the interface name were a value.
         subst = Subst::mcreate(tcenvb);
         this.newStatic(subst, varName)
+      } else if (sawTypeAlias && !sawValueDef) {
+        typeAliasAsValueError(varName)
       } else {
         fatalError(
           Array[(varName.pos, `Cannot find name '${varName.value}'`)],

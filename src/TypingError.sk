@@ -287,16 +287,19 @@ fun notSupported<T>(pos: PosRange, what: String): T {
   fatalError(Array[(pos, `${what} is not supported by SKJS`)], SKJSCode(9050))
 }
 
+fun typeAsValueMessage(name: Name): String {
+  `'${name}' only refers to a type, but is being used as a value here`
+}
+
+// Non-fatal: the caller continues as if the name were a value (an interface
+// recovers via its synthesized static object).
 fun interfaceAsValueError(tcenvb: mutable TCEnvBase, name: Name): void {
-  tcenvb.error(
-    Array[
-      (
-        name.pos,
-        `'${name}' only refers to a type, but is being used as a value here`,
-      ),
-    ],
-    TSCode(2693),
-  )
+  tcenvb.error(Array[(name.pos, typeAsValueMessage(name))], TSCode(2693))
+}
+
+// Fatal: a type alias has no value to continue as, so abort the definition.
+fun typeAliasAsValueError<T>(name: Name): T {
+  fatalError(Array[(name.pos, typeAsValueMessage(name))], TSCode(2693))
 }
 
 module end;

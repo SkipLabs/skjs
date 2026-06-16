@@ -1178,12 +1178,14 @@ extension class TypeChecker {
       | None() ->
         defs = this.defMap.getAll(tcenv, local);
         sawInterface = false;
+        sawTypeAlias = false;
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
             tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | Class{kind => CKInterface()} -> !sawInterface = true
+          | TypeDef _ -> !sawTypeAlias = true
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv.subst, c.name);
             break staticClass
@@ -1215,6 +1217,8 @@ extension class TypeChecker {
             interfaceAsValueError(tcenv, local);
             // Continue as if the interface name were a value.
             this.newStatic(tcenv.subst, local)
+          } else if (sawTypeAlias) {
+            typeAliasAsValueError(local)
           } else {
             fatalError(Array[(pos, "Cannot find name")], TSCode(2304))
           }
