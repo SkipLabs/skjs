@@ -1158,9 +1158,14 @@ extension class TypeChecker {
     mostPrecise: Bool,
     isLValue: Bool = false,
   ): TType {
-    ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
-    tcenv.!exprTypes[e.pos] = ty;
-    ty
+    key = (e.pos, mostPrecise, isLValue);
+    tcenv.exprTypes.maybeGet(key) match {
+    | Some(ty) -> ty
+    | None() ->
+      ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
+      tcenv.!exprTypes[key] = ty;
+      ty
+    };
   }
 
   private fun exprImpl(
@@ -2029,7 +2034,7 @@ extension class TypeChecker {
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
         ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
-        tcenv.!exprTypes[e1.pos] = ty;
+        tcenv.!exprTypes[(e1.pos, mostPrecise, true)] = ty;
         ty
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);

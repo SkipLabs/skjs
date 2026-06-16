@@ -101,7 +101,10 @@ mutable class TCEnv private {
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
-  mutable exprTypes: SortedMap<PosRange, TType> = SortedMap[],
+  // exprTypes cache is keyed on (pos, mostPrecise, isLValue) triples.
+  // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
+  // construction and as a generic cache for expression typechecking
+  mutable exprTypes: SortedMap<(PosRange, Bool, Bool), TType> = SortedMap[],
   mutable stmtTerminations: SortedMap<PosRange, StmtTermination> = SortedMap[],
   /*
    * Tracks local objects: object literals bound to variables that can grow.
