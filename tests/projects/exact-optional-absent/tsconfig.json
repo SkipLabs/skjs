@@ -1,5 +1,5 @@
 {
-  // @skjs-expect-warning Option 'exactOptionalPropertyTypes' is not enabled; SKJS applies exact optional property semantics regardless (a present optional field holds its declared type). Enable it so tsc matches SKJS.
+  // @skjs-expect-error Option 'exactOptionalPropertyTypes' is not enabled; SKJS applies exact optional property semantics regardless (a present optional field holds its declared type). Enable it so tsc matches SKJS.
   "compilerOptions": {
     "strict": true,
     "target": "ES2020"
