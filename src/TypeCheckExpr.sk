@@ -535,8 +535,9 @@ extension class TypeChecker {
     // not synthesize .call/.apply/.bind on it either — fall through.
     tfuns = obj.maybeGetCall(tcenv.subst, this) match {
     | Some((false, tf)) -> tf
-    | Some((true, _)) -> return None()
-    | None() -> return None()
+    | Some((true, _))
+    | None() ->
+      return None()
     };
     f = tfuns.fun_;
     // A generic call signature loses its type parameters through .call/.apply/

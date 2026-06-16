@@ -1106,8 +1106,9 @@ base class ThisParam uses XXHashable, Orderable {
   // The declared/instance type, if any (None for NoThis).
   fun tyOpt(): ?TType
   | NoThis() -> None()
-  | Explicit(ty) -> Some(ty)
-  | ImplicitClass(ty) -> Some(ty)
+  | Explicit(ty)
+  | ImplicitClass(ty) ->
+    Some(ty)
 }
 
 class TFun(
