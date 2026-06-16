@@ -943,8 +943,33 @@ class TObject private (
   ): TType {
     this.maybeGetType(subst, tenv, fieldName, pos) match {
     | Some(res) -> res
-    | None() -> this.getFields(subst, tenv).getTypeTypingError(fieldName, pos)
+    | None() -> this.getTypeTypingError(fieldName, pos)
     }
+  }
+
+  // "Property does not exist" error listing only the fields common to every
+  // branch — the ones safely accessible on the union. A field present in just
+  // some branches is intentionally omitted: listing it as an "option" while
+  // rejecting the access reads as nonsense. Telling the user the field exists
+  // on some branches and recovering with that type is a separate improvement
+  // (SkipLabs/skjs#716).
+  fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
+    branches = this.getBranches();
+    names = SortedSet<FieldNameString>[];
+    branches.maybeGet(0).each(first ->
+      for (f in first.fields) {
+        if (branches.all(b -> b.maybeGet(f.name.value).isSome())) {
+          !names = names.set(f.name)
+        }
+      }
+    );
+    fatalError(
+      Array[
+        (pos, `Property '${fieldName}' does not exist on this type`),
+        (pos, "Possible options are:\n" + names.toArray().join("\n")),
+      ],
+      TSCode(2339),
+    )
   }
 
   fun maybeGetSymbolType(
