@@ -370,6 +370,104 @@ extension class TFields {
     | (None(), None()) -> None()
     }
   }
+
+  // Pairwise keep-everything branch merge backing TObject::spreadFields. Unlike
+  // `union`, a field present in only one operand is KEPT (as optional) rather
+  // than dropped, so spreading `A | B` never forgets a branch-specific field.
+  // Shared fields union their getters; an index survives if either side has it.
+  static fun spreadMerge(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): TFields {
+    fields = fields1.fields.mergeOpt(fields2.fields, ior ->
+      ior match {
+      | Left(f1) -> Some(TFields::spreadKeep(subst, tenv, f1, fields2, false))
+      | Right(f2) -> Some(TFields::spreadKeep(subst, tenv, f2, fields1, false))
+      | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
+      }
+    );
+    symbolFields = fields1.symbolFields.mergeOpt(fields2.symbolFields, ior ->
+      ior match {
+      | Left(f1) -> Some(TFields::spreadKeep(subst, tenv, f1, fields2, true))
+      | Right(f2) -> Some(TFields::spreadKeep(subst, tenv, f2, fields1, true))
+      | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
+      }
+    );
+    stringIndex = TFields::spreadIndex(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+    );
+    numberIndex = TFields::spreadIndex(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+    );
+    symbolIndex = TFields::spreadIndex(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+    );
+    call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
+    new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
+    isArray = (fields1.isArray, fields2.isArray) match {
+    | (Some(a), Some(b)) if (a == b) -> Some(a)
+    | _ -> None()
+    };
+    TFields{
+      fields,
+      symbolFields,
+      stringIndex,
+      numberIndex,
+      symbolIndex,
+      call,
+      new,
+      isArray,
+    }
+  }
+
+  // A field present in only one branch: keep it as optional, unioning with the
+  // other branch's covering index (a value of that branch may carry the key
+  // via the index) so the result soundly covers both branches.
+  private static fun spreadKeep(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f: TField,
+    other: TFields,
+    isSymbol: Bool,
+  ): TField {
+    coveringIndex = if (isSymbol) {
+      other.symbolIndex
+    } else {
+      other.indexForFieldName(f.name.value)
+    };
+    merged = coveringIndex match {
+    | Some(idx) -> TField::union(subst, tenv, f, idx.asNamed(f.name))
+    | None() -> f
+    };
+    merged.withIsOptional(true)
+  }
+
+  // An index survives the spread if either branch carries it; both -> union.
+  private static fun spreadIndex(
+    subst: mutable Subst,
+    tenv: TEnv,
+    idx1: ?TField,
+    idx2: ?TField,
+  ): ?TField {
+    (idx1, idx2) match {
+    | (Some(i1), Some(i2)) -> TField::unionIndex(subst, tenv, i1, i2)
+    | (some @ Some _, None())
+    | (None(), some @ Some _) ->
+      some
+    | (None(), None()) -> None()
+    }
+  }
 }
 
 extension class TObject {
@@ -380,6 +478,23 @@ extension class TObject {
     obj2: TObject,
   ): TObject {
     TObject(obj1.branches.union(obj2.branches), None(), obj1.pos)
+  }
+
+  // Sound single-object approximation of spreading this (possibly multi-branch)
+  // object: `{ ...(A | B) }`. Unlike intersection/read merges, this KEEPS every
+  // field — one present in only some branches survives as optional (a value of
+  // another branch lacks it) — so no field is forgotten. Shared fields union
+  // their getters; an index survives if any branch carries it. Single-branch
+  // objects pass through unchanged. A precise per-branch union of literal types
+  // (matching TypeScript's distribution) is left as a follow-up; this
+  // over-approximates by collapsing the branches into one open object.
+  fun spreadFields(subst: mutable Subst, tenv: TEnv): TFields {
+    branchesIt = this.branches.values();
+    result = branchesIt.next().fromSome();
+    for (fields in branchesIt) {
+      !result = TFields::spreadMerge(subst, tenv, result, fields)
+    };
+    result
   }
 }
 

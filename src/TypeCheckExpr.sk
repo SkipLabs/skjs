@@ -1385,7 +1385,7 @@ extension class TypeChecker {
           // - Otherwise: keep existing optionality, union get type with
           //   spread's contribution (optional field / index / Top).
           // - Always use only get type (spread reads via getter).
-          spreadTFields = obj.getFields(tcenv.subst, this);
+          spreadTFields = obj.spreadFields(tcenv.subst, this);
           // Spread reads each property via its getter, so a private
           // source field would be exposed as a public one on the
           // resulting object — laundering privacy. Reject the spread
