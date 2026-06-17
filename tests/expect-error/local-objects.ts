@@ -153,7 +153,6 @@ function testReuseAfterSiblingUse(): void {
     const r = o;
   }
   let o = {};
-  // @skjs-expect-error Cannot add a field to this object after it has been used
   o.x = 5;
 }
 
@@ -166,7 +165,7 @@ function testAnnotatedReuseNotGrown(): void {
     let o = {};
   }
   let o: { a: number } = { a: 1 };
-  // FIXME: stale growth state makes this wrongly accepted; should be an error.
+  // @skjs-expect-error Property 'b' does not exist on this type
   o.b = 2;
 }
 

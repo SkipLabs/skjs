@@ -129,7 +129,10 @@ mutable class TCEnv private {
    *
    * See examples/src/tree.ts:Node() for real usage.
    */
-  localObjects: mutable Map<String, LocalObjectState> = mutable Map[],
+  // Keyed by the binding's DECLARATION position (Scope::bindingPos), not by
+  // name: a name can be reused by distinct bindings in sibling/sequential (and,
+  // later, shadowing) scopes, which must not share growth state.
+  localObjects: mutable Map<PosRange, LocalObjectState> = mutable Map[],
   mutable forInContext: ?ForInContext = None(),
   private mutable counter: Int = 0,
 } extends TCEnvBase {
