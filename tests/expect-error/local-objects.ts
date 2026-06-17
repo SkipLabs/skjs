@@ -141,3 +141,43 @@ function testGrowthAfterSpreadWithIndex(src: { [key: string]: number }): void {
 }
 
 // TODO: handle growth on the same field with different type, should probably union
+
+// Test 16: a same-named local object in a sibling/sequential scope is a
+// DISTINCT binding — it must not inherit the prior binding's growth state.
+// Here the inner `o` is used (frozen), but the later top-level `o` is fresh
+// and must grow freely. (The growth state was keyed by name and never scoped,
+// so this wrongly reported "used".)
+function testReuseAfterSiblingUse(): void {
+  if (true) {
+    let o = {};
+    const r = o;
+  }
+  let o = {};
+  // @skjs-expect-error Cannot add a field to this object after it has been used
+  o.x = 5;
+}
+
+// Test 17: a later ANNOTATED variable that reuses a prior local-object name is
+// not a growable local object; assigning an undeclared field must error
+// normally rather than be silently grown via the stale entry. (Pre-fix this
+// is wrongly accepted; the code fix turns it into an expected error.)
+function testAnnotatedReuseNotGrown(): void {
+  if (true) {
+    let o = {};
+  }
+  let o: { a: number } = { a: 1 };
+  // FIXME: stale growth state makes this wrongly accepted; should be an error.
+  o.b = 2;
+}
+
+// Test 18: two sibling branches reusing a name each grow independently
+// (legitimate reuse must keep working under per-binding tracking).
+function testSiblingBranchesReuseName(c: boolean): void {
+  if (c) {
+    let o = {};
+    o.x = 1;
+  } else {
+    let o = {};
+    o.y = 2;
+  }
+}
