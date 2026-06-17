@@ -1041,6 +1041,34 @@ class TObject private (
     };
     result
   }
+
+  // Resolve a literal property key against this (possibly multi-branch) object,
+  // each branch contributing its named field or covering non-synthetic index,
+  // merged via TField::union. Returns the merged field and whether it is present
+  // in EVERY branch: `false` means present in some but not all, so the access is
+  // unsafe but recoverable from the merged field's type (#716). None when no
+  // branch has it (the caller's index / not-found path).
+  fun resolveLiteralAccess(
+    subst: mutable Subst,
+    tenv: TEnv,
+    name: String,
+  ): ?(TField, Bool) {
+    merged: ?TField = None();
+    allBranches = true;
+    for (fields in this.branches) {
+      fields.maybeFieldOrIndex(name) match {
+      | Some(fd) ->
+        !merged = Some(
+          merged match {
+          | None() -> fd
+          | Some(prev) -> TField::union(subst, tenv, prev, fd)
+          },
+        )
+      | None() -> !allBranches = false
+      }
+    };
+    merged.map(fd -> (fd, allBranches))
+  }
 }
 
 /***************************************************************************/
@@ -2054,6 +2082,21 @@ class TFields protected {
 
   fun maybeGet(fieldName: String): ?TField {
     this.fields.maybeGet(FieldNameString(fieldName))
+  }
+
+  // Resolve a literal property key in this branch: its named field, or (failing
+  // that) its covering non-synthetic index as an optional named field. None
+  // when the branch has neither.
+  fun maybeFieldOrIndex(name: String): ?TField {
+    this.maybeGet(name) match {
+    | some @ Some _ -> some
+    | None() ->
+      this.indexForFieldName(name).flatMap(idx ->
+        if (idx.isSynthetic()) None() else {
+          Some(idx.asNamed(FieldNameString(name)))
+        }
+      )
+    }
   }
 
   // Returns Some(length) when this TFields is an array-branded object whose

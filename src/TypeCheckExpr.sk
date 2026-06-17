@@ -669,34 +669,65 @@ extension class TypeChecker {
             }
           }
         } else {
-          fields = obj.getFields(tcenv.subst, this);
           idxSType.literals match {
           | None() -> Some(idxSType)
           | Some(lits) ->
-            lits
-              .filterLiterals(fieldLit ->
-                fields.maybeGet(fieldLit.val) match {
-                | Some(fd) ->
-                  this.checkFieldAccess(tcenv, fd, fieldLit.pos);
-                  addResultCase(
-                    TFields::resolveFieldType(
-                      tcenv.subst,
-                      this,
-                      fd,
-                      fieldLit.pos,
-                      isLValue,
-                    ),
-                  );
-                  false
-                | None() -> true
-                }
+            // Keys present in some branches but not all: collected here and
+            // reported once below, rather than once per literal.
+            partials: mutable Vector<String> = mutable Vector[];
+            remaining = lits.filterLiterals(fieldLit ->
+              obj.resolveLiteralAccess(tcenv.subst, this, fieldLit.val) match {
+              | Some((fd, allBranches)) ->
+                if (allBranches) {
+                  this.checkFieldAccess(tcenv, fd, fieldLit.pos)
+                } else {
+                  partials.push(fieldLit.val)
+                };
+                addResultCase(
+                  TFields::resolveFieldType(
+                    tcenv.subst,
+                    this,
+                    fd,
+                    fieldLit.pos,
+                    isLValue,
+                  ),
+                );
+                false
+              // Present in no branch: keep it for the not-found path below
+              // (its index was already consulted per branch above).
+              | None() -> true
+              }
+            );
+            // Flag a partially-present access (the key may be absent at runtime)
+            // but recover with the merged field's type rather than bailing (#716).
+            if (!partials.isEmpty()) {
+              keys = partials.map(k -> `'${k}'`).join(", ");
+              plural = partials.size() > 1;
+              tcenv.error(
+                Array[
+                  (
+                    idx.pos,
+                    `Propert${if (plural) "ies" else "y"} ${keys} exist${if (
+                      plural
+                    ) "" else {
+                      "s"
+                    }} on some but not all members of the union type, so ${if (
+                      plural
+                    ) "they" else {
+                      "it"
+                    }} may be absent`,
+                  ),
+                ],
+                TSCode(2339),
               )
-              .map(remainingLits ->
-                idxSType with {literals => Some(remainingLits)}
-              )
+            };
+            remaining.map(remainingLits ->
+              idxSType with {literals => Some(remainingLits)}
+            )
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
+            fields = obj.getFields(tcenv.subst, this);
             matchedIndex = fields.nonSyntheticIndexForKeyKind(
               remainingIdxSType.kind,
             );

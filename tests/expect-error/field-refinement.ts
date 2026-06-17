@@ -228,7 +228,7 @@ type Tri10 =
 function testThreeBranchFilter(obj: Tri10, x: 0 | 1): void {
   if (obj.tag === x) {
     // { tag: 2 } filtered; result is { tag:0; a } | { tag:1; b }
-    // @skjs-expect-error Property 'a' does not exist on this type
+    // @skjs-expect-error Property 'a' exists on some but not all members of the union type, so it may be absent
     const a: string = obj.a;
   }
 }

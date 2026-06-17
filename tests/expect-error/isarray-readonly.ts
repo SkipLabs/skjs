@@ -33,7 +33,7 @@ function readonlyLengthUnion(a: number[] | { readonly length: number }): void {
     // `a` narrows to `number[] | readonly unknown[]`: the non-array branch is
     // not provably a mutable array, so push is rejected. tsc unsoundly
     // narrows to any[] and accepts.
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error Property 'push' exists on some but not all members of the union type, so it may be absent
     a.push(1);
   }
 }
@@ -56,7 +56,7 @@ declare const roWithProps: ReadonlyArray<number> & { a: string; b: number };
 
 function attack(x: number[] | { a: string; b: number }): void {
   if (Array.isArray(x)) {
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error Property 'push' exists on some but not all members of the union type, so it may be absent
     x.push(1);
   }
 }

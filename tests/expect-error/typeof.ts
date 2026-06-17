@@ -427,7 +427,7 @@ function testAccessWrongBranch(x: { a: number } | string): number {
 function testWrongProperty(x: { a: number } | { b: string }): number {
   if (typeof x === "object") {
     // Both branches are objects, can't distinguish with typeof
-    // @skjs-expect-error Property 'a' does not exist on this type
+    // @skjs-expect-error Property 'a' exists on some but not all members of the union type, so it may be absent
     return x.a;
   } else {
     return 0;

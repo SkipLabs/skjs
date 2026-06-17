@@ -8,7 +8,7 @@
 // 'a' is present in one branch: flagged, recovered as `number` (so the return
 // type-checks — a wrong recovery type would surface a second error here).
 function readSome(x: { a: number } | { b: string }): number {
-  // @skjs-expect-error Property 'a' does not exist on this type
+  // @skjs-expect-error Property 'a' exists on some but not all members of the union type, so it may be absent
   return x.a;
 }
 
@@ -25,6 +25,6 @@ function readSomePlural(
   x: { a: number; c: 0 } | { b: string; c: 0 },
   k: "a" | "b",
 ): number | string {
-  // @skjs-expect-error Property 'a | b' does not exist on this type
+  // @skjs-expect-error Properties 'a', 'b' exist on some but not all members of the union type, so they may be absent
   return x[k];
 }
