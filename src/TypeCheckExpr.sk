@@ -1200,11 +1200,7 @@ extension class TypeChecker {
       // Once used, the type is frozen - no more fields can be added.
       // This ensures soundness: code that observed the object with N fields
       // won't be invalidated by later additions.
-      tcenv.scope.bindingPos(local) match {
-      | Some(declPos) if (tcenv.localObjects.containsKey(declPos)) ->
-        tcenv.localObjects![declPos] = LOUsed(local.pos)
-      | _ -> void
-      };
+      tcenv.markLocalObjectUsed(local);
       tcenv.scope.maybeGet(local) match {
       | None() ->
         defs = this.defMap.getAll(tcenv, local);
@@ -2912,12 +2908,7 @@ extension class TypeChecker {
       NormalDot(),
       Expr(_, Var(local)),
       fieldName,
-    ) if (
-      tcenv.scope
-        .bindingPos(local)
-        .map(p -> tcenv.localObjects.containsKey(p))
-        .default(false)
-    ) ->
+    ) if (tcenv.localObjectState(local).isSome()) ->
       keyExpr = Expr(fieldName.pos, EString(fieldName.value));
       this.assignLocalObject(
         tcenv,
@@ -2931,12 +2922,7 @@ extension class TypeChecker {
     | Get(
       Expr(_, Var(local)),
       keyExpr,
-    ) if (
-      tcenv.scope
-        .bindingPos(local)
-        .map(p -> tcenv.localObjects.containsKey(p))
-        .default(false)
-    ) ->
+    ) if (tcenv.localObjectState(local).isSome()) ->
       this.assignLocalObject(
         tcenv,
         pos,
@@ -3038,9 +3024,7 @@ extension class TypeChecker {
     fieldKeys: Array<FieldKey>,
   ): TType {
     isOptional = fieldKeys.size() > 1;
-    used = tcenv.scope.bindingPos(local).flatMap(p ->
-      tcenv.localObjects.maybeGet(p)
-    ) match {
+    used = tcenv.localObjectState(local) match {
     | Some(LOCanGrow(bound)) ->
       bound match {
       | None() -> void

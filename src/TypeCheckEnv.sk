@@ -171,6 +171,23 @@ mutable class TCEnv private {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
 
+  // localObjects is keyed by declaration position (Scope::bindingPos); these
+  // accessors hide that keying. Growth state of the in-scope binding of
+  // `local`, or None if it is not a tracked growable local object.
+  readonly fun localObjectState(local: Name): ?LocalObjectState {
+    this.scope.bindingPos(local).flatMap(p -> this.localObjects.maybeGet(p))
+  }
+
+  // Freeze the in-scope growable local object `local` (no-op if it is not one),
+  // recording the use position for diagnostics.
+  mutable fun markLocalObjectUsed(local: Name): void {
+    this.scope.bindingPos(local) match {
+    | Some(p) if (this.localObjects.containsKey(p)) ->
+      this.localObjects![p] = LOUsed(local.pos)
+    | _ -> void
+    }
+  }
+
   /* For-in context for safe v[k]! detection */
 
   readonly fun getForInContext(): ?ForInContext {
