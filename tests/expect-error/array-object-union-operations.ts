@@ -30,13 +30,13 @@ function testCommonProperty(x: Array<number> | ObjWithLength): number {
 
 // Accessing array-only property
 function testArrayOnlyProperty(x: Array<number> | Obj): number {
-  // @skjs-expect-error Property 'length' does not exist on this type
+  // @skjs-expect-error Property 'length' exists on some but not all members of the union type, so it may be absent
   return x.length;
 }
 
 // Accessing object-only property
 function testObjectOnlyProperty(x: Array<number> | Obj): string {
-  // @skjs-expect-error Property 'name' does not exist on this type
+  // @skjs-expect-error Property 'name' exists on some but not all members of the union type, so it may be absent
   return x.name;
 }
 
@@ -46,13 +46,14 @@ function testObjectOnlyProperty(x: Array<number> | Obj): string {
 
 // Calling array method on union
 function testArrayMethodOnUnion(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Property 'map' does not exist on this type
+  // @skjs-expect-error A parameter must have an explicit type annotation
+  // @skjs-expect-error Property 'map' exists on some but not all members of the union type, so it may be absent
   return x.map((n) => n * 2);
 }
 
 // Calling push on union
 function testPushOnUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Property 'push' does not exist on this type
+  // @skjs-expect-error Property 'push' exists on some but not all members of the union type, so it may be absent
   x.push(42);
 }
 
@@ -62,13 +63,13 @@ function testPushOnUnion(x: Array<number> | Obj): void {
 
 // Numeric index on array | object union
 function testNumericIndexOnUnion(x: Array<string> | Obj): string | undefined {
-  // @skjs-expect-error Property '0' does not exist on this type
+  // @skjs-expect-error Property '0' exists on some but not all members of the union type, so it may be absent
   return x[0];
 }
 
 // String index on array | object union
 function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
-  // @skjs-expect-error Property 'name' does not exist on this type
+  // @skjs-expect-error Property 'name' exists on some but not all members of the union type, so it may be absent
   return x["name"];
 }
 
@@ -154,12 +155,12 @@ type Obj3 = {
 
 function testMultipleObjectsGetName(x: Array<number> | Obj | Obj3): string {
   // Can't access any specific property without refinement
-  // @skjs-expect-error Property 'name' does not exist on this type
+  // @skjs-expect-error Property 'name' exists on some but not all members of the union type, so it may be absent
   return x.name;
 }
 
 function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
-  // @skjs-expect-error Property 'label' does not exist on this type
+  // @skjs-expect-error Property 'label' exists on some but not all members of the union type, so it may be absent
   return x.label;
 }
 
@@ -254,9 +255,11 @@ function testNarrowToObject(x: Array<number> | Obj): Obj {
 // Union of unions
 function testNestedUnionsGetFirst(
   x: (Array<number> | Obj) | (Array<string> | Obj3),
-): number | string {
-  // Should require refinement to access anything
-  // @skjs-expect-error Property '0' does not exist on this type
+): number | string | undefined {
+  // '0' is only on the array branches; the access is flagged but recovers as
+  // `number | string | undefined` (the array branches' element type via the
+  // number index, which may be absent).
+  // @skjs-expect-error Property '0' exists on some but not all members of the union type, so it may be absent
   return x[0];
 }
 

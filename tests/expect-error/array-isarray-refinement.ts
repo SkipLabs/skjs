@@ -65,7 +65,7 @@ function testArrayPushAfterRefinement(x: Array<number> | Foo): void {
   if (Array.isArray(x)) {
     // Unsound to push: the Foo branch could be a readonly array carrying
     // a/b properties (see the attack in isarray-readonly.ts).
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error Property 'push' exists on some but not all members of the union type, so it may be absent
     x.push(42);
   }
 }
@@ -167,7 +167,7 @@ function testElseBranchRefined(x: Array<number> | Foo): Foo {
 // Accessing object properties on array branch
 function testObjectPropOnArray(x: Array<number> | Foo): unknown {
   if (Array.isArray(x)) {
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error Property 'a' exists on some but not all members of the union type, so it may be absent
     return x.a;
   } else {
     // x is refined to Foo, x.a is valid
