@@ -284,6 +284,18 @@ extension class TypeChecker {
     branches: Array<SwitchBranch>,
   ): Bool {
     condType = this.expr(tcenv, e, true);
+    // Typecheck every case value exactly once, up front. The exhaustiveness
+    // logic below and the per-branch `scrutinee === case` narrowing (which
+    // looks up the already-computed type via `lookupExprType`) both reuse it.
+    // Doing it here is necessary because the exhaustiveness check returns early
+    // when the scrutinee has no enumerable literals (e.g. a general `boolean`),
+    // which would otherwise leave the case values untyped.
+    for (branch in branches) {
+      branch match {
+      | SwitchBranch(Case(v), _, _) -> _ = this.expr(tcenv, v, true)
+      | SwitchBranch(Default(), _, _) -> void
+      }
+    };
     cases = condType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
@@ -308,7 +320,7 @@ extension class TypeChecker {
       };
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
-        this.expr(tcenv, v, true)
+        this.lookupExprType(tcenv, v)
           .getSTypes(tcenv.subst, this, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
