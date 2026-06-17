@@ -34,6 +34,14 @@ mutable class Scope{
     }
   }
 
+  // The declaration position of the in-scope binding of `name`, or None if
+  // `name` is not a lexical local. This is a stable per-binding identity
+  // (distinct for shadowed / sibling / sequential same-name bindings), used to
+  // key per-binding state (see TCEnv.localObjects) instead of the bare name.
+  readonly fun bindingPos(name: Name): ?PosRange {
+    this.maybeGetLocal(name).map(declName -> declName.pos)
+  }
+
   readonly private fun maybeGetRefHelper(
     throughLoop: Bool,
     name: String,
