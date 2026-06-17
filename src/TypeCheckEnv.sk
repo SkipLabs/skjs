@@ -129,7 +129,10 @@ mutable class TCEnv private {
    *
    * See examples/src/tree.ts:Node() for real usage.
    */
-  localObjects: mutable Map<String, LocalObjectState> = mutable Map[],
+  // Keyed by the binding's DECLARATION position (Scope::bindingPos), not by
+  // name: a name can be reused by distinct bindings in sibling/sequential (and,
+  // later, shadowing) scopes, which must not share growth state.
+  localObjects: mutable Map<PosRange, LocalObjectState> = mutable Map[],
   mutable forInContext: ?ForInContext = None(),
   private mutable counter: Int = 0,
 } extends TCEnvBase {
@@ -166,6 +169,23 @@ mutable class TCEnv private {
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
+  }
+
+  // localObjects is keyed by declaration position (Scope::bindingPos); these
+  // accessors hide that keying. Growth state of the in-scope binding of
+  // `local`, or None if it is not a tracked growable local object.
+  readonly fun localObjectState(local: Name): ?LocalObjectState {
+    this.scope.bindingPos(local).flatMap(p -> this.localObjects.maybeGet(p))
+  }
+
+  // Freeze the in-scope growable local object `local` (no-op if it is not one),
+  // recording the use position for diagnostics.
+  mutable fun markLocalObjectUsed(local: Name): void {
+    this.scope.bindingPos(local) match {
+    | Some(p) if (this.localObjects.containsKey(p)) ->
+      this.localObjects![p] = LOUsed(local.pos)
+    | _ -> void
+    }
   }
 
   /* For-in context for safe v[k]! detection */

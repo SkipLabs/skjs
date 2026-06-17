@@ -361,7 +361,9 @@ extension class TypeChecker {
       },
     );
     (!this, tcenv) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
-    tcenv.localObjects!["this"] = LOCanGrow(Some(thisType));
+    // `this` is bound in funDefSetup as `Name(fdPos, "this")`, so its
+    // declaration position (the localObjects key) is fdPos.
+    tcenv.localObjects![fdPos] = LOCanGrow(Some(thisType));
     fd.isAsync match {
     | None() -> void
     | Some(asyncPos) ->
