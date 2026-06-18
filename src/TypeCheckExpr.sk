@@ -1283,7 +1283,9 @@ extension class TypeChecker {
             // type under the invariant subtyping a mutable field requires. This
             // already covers object and primitive values; a function literal
             // (`{ fn: () => "x" }`) needs the same treatment so its literal
-            // return type can widen to e.g. `() => string`.
+            // return type can widen to e.g. `() => string`, and an async arrow
+            // (`{ fn: async () => "x" }`, parsed as `Async(Closure)`) likewise
+            // so its `() => Promise<'x'>` widens to `() => Promise<string>`.
             //
             // Two facts make this safe. Soundness: the object literal is fresh,
             // so no alias holds the field at the narrower type and it may grow
@@ -1296,6 +1298,7 @@ extension class TypeChecker {
             if (
               y.value is Object _ ||
               y.value is Closure _ ||
+              y.value is Async(Expr(_, Closure _)) ||
               ttype.isConcretePrimitive()
             ) {
               this.makeBoundTVarForField(tcenv, ttype, FromObjectField(y.pos))

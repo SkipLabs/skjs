@@ -51,30 +51,25 @@ function wrongReturnType(): void {
 }
 
 // An async arrow body settles to a Promise: `async () => "x"` has type
-// () => Promise<'x'>. The literal payload is inferred but does not widen to a
-// non-literal Promise<string> declared field type, so the assignment is
-// rejected (object- and primitive-valued fields widen in this position; async
-// function-valued fields do not).
+// () => Promise<'x'>. The literal payload widens through the covariant Promise
+// payload to a non-literal Promise<string> declared field type, the same way
+// the synchronous case widens () => 'x' to () => string.
 function asyncStringField(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: { fn: () => Promise<string> } = { fn: async () => "hello" };
 }
 
 function asyncNumberField(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: { fn: () => Promise<number> } = { fn: async () => 1 };
 }
 
-// The rejection also reaches an async field flowing into a parameter ...
+// Widening of an async field also reaches a parameter ...
 function takesAsyncField(p: { fn: () => Promise<string> }): void {}
 function passesAsyncField(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesAsyncField({ fn: async () => "hello" });
 }
 
-// ... and into a declared return type.
+// ... and a declared return type.
 function returnsAsyncField(): { fn: () => Promise<string> } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { fn: async () => "hello" };
 }
 
