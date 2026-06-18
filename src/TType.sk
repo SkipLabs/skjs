@@ -2401,10 +2401,16 @@ base class TVarID private final (
   | TVID _ ->
     false
 
-  fun isForLiteralCommitment(): Bool
-  | TVIDForLiteralCommitment _ -> true
+  // Whether this is an ordinary inference candidate, as opposed to a
+  // literal-form commitment (object field or array-literal element). A
+  // candidate's value is determined by its defining expression, so a
+  // speculative subtype check must treat it as a read-only input and never
+  // redefine it; a commitment's determination site is the subtype check that
+  // matches the literal against an expected type.
+  fun isCandidate(): Bool
+  | TVID _ -> true
   | TVIDForField _
-  | TVID _ ->
+  | TVIDForLiteralCommitment _ ->
     false
 
   fun xxhash(): XXHash {
@@ -2439,10 +2445,6 @@ class TVar private (
 
   fun isForField(): Bool {
     this.id.isForField()
-  }
-
-  fun isForLiteralCommitment(): Bool {
-    this.id.isForLiteralCommitment()
   }
 
   fun setConstraint(ty: TType): TVar {

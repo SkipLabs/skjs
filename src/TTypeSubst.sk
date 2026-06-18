@@ -73,7 +73,18 @@ mutable class SavedSubst private {} extends SubstState {
   }
 }
 
-mutable class Subst private {} extends TCEnvBase, SubstState {
+mutable class Subst private {
+  // While set, a candidate variable that ALREADY has a binding is read-only: the
+  // two candidate-write sites (grow, and get's covariant seal) refuse to change
+  // an existing candidate binding, though binding a fresh candidate is still
+  // allowed. This lets a constraint-admissibility check (see growTVars) be a
+  // query over candidates determined elsewhere -- it cannot widen them -- while
+  // still solving candidates whose determination site is the check itself (e.g.
+  // a parameter pinned only through another's bound, `T extends Ref<U>`) and
+  // committing the literal forms it touches. Not part of SubstState, so
+  // save/restore never touch it; it is push/popped around the check.
+  mutable freezeCandidates: Bool = false,
+} extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
@@ -144,9 +155,15 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     | None() -> ty
     | Some(SVClosed(_)) -> return void
     | Some(SVOpen(ty2)) ->
-      newTy = TType::union(this, tenv, ty2, ty);
-      if (newTy == ty2) return void;
-      newTy
+      // Inside an admissibility check, changing an existing candidate binding is
+      // suppressed; only fresh bindings (the None case above) are allowed.
+      if (this.freezeCandidates && tvar.id.isCandidate()) {
+        return void
+      } else {
+        newTy = TType::union(this, tenv, ty2, ty);
+        if (newTy == ty2) return void;
+        newTy
+      }
     };
     this.!version = this.version + 1;
     this.!values[tvar.id] = variance match {
@@ -159,14 +176,23 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     result = variance match {
     | Covariant() ->
       this.values.maybeGet(tvar.id) match {
-      | None() -> SVOpen(TType::top(tvar.pos))
-      | Some(sv) -> sv
-      } match {
-      | SVOpen(ty) ->
+      | None() ->
+        // Fresh: sealing to top is a new addition, allowed.
+        topTy = TType::top(tvar.pos);
         this.!version = this.version + 1;
-        this.!values[tvar.id] = SVClosed(ty);
-        ty
-      | SVClosed(ty) -> ty
+        this.!values[tvar.id] = SVClosed(topTy);
+        topTy
+      | Some(SVClosed(ty)) -> ty
+      | Some(SVOpen(ty)) ->
+        // Sealing changes an existing binding, so inside an admissibility check
+        // suppress it for a candidate and return the value unsealed.
+        if (this.freezeCandidates && tvar.id.isCandidate()) {
+          ty
+        } else {
+          this.!version = this.version + 1;
+          this.!values[tvar.id] = SVClosed(ty);
+          ty
+        }
       }
     | Contravariant() ->
       this.values.maybeGet(tvar.id) match {

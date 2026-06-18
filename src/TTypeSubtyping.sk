@@ -1306,30 +1306,28 @@ extension class TType {
     // the collectTVars traversal order (stable, structural); changing it
     // can change which disjuncts are grown into which TVars.
     for (tvar in tvarsToGrow) {
-      substCopy = subst.save();
-      valuesBefore = subst.values;
-      if (
-        tvar.constraints.all(cstr ->
-          TType::isSub(subst, tenv, boundTy, cstr) is STOk()
-        )
-      ) {
-        // The check is speculative w.r.t. value candidates: it decides
-        // `boundTy <: cstr` but must not redefine an already-determined
-        // candidate. It may still commit deferred literal *form*, which the
-        // surrounding subtyping consumes. Literal/field commitments are
-        // structurally marked TVar kinds, so we undo only the seals of ordinary
-        // value variables the check made, keeping the commitments in place.
-        for (cid => oldV in valuesBefore) {
-          if (!cid.isForField() && !cid.isForLiteralCommitment()) {
-            subst.values.maybeGet(cid) match {
-            | Some(newV) if (newV != oldV) -> subst.!values[cid] = oldV
-            | _ -> void
-            }
-          }
-        };
+      saved = subst.save();
+      // The constraint check plays two roles at once on the variables it
+      // touches, and freezeCandidates draws the line at the write sites rather
+      // than undoing writes afterwards. For a value candidate already determined
+      // before the check it is a read-only query -- the gate refuses to widen
+      // it. For a candidate the check itself determines (e.g. a param pinned only
+      // through another's bound, `T extends Ref<U>`) it is the determination
+      // site -- binding a fresh candidate is allowed. For the literal forms it
+      // touches it is likewise the determination site -- which branch/shape a
+      // literal takes against `cstr` is a subtyping computation growUncovered
+      // then consumes -- so those commitments are made. The flag is push/popped
+      // so nested checks restore it.
+      wasFreezing = subst.freezeCandidates;
+      subst.!freezeCandidates = true;
+      ok = tvar.constraints.all(cstr ->
+        TType::isSub(subst, tenv, boundTy, cstr) is STOk()
+      );
+      subst.!freezeCandidates = wasFreezing;
+      if (ok) {
         growUncovered(tvar)
       } else {
-        subst.restore(substCopy)
+        subst.restore(saved)
       }
     };
 
