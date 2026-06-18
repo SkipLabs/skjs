@@ -49,3 +49,49 @@ function wrongReturnType(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: { fn: () => number } = { fn: () => "hello" };
 }
+
+// An async arrow body settles to a Promise: `async () => "x"` has type
+// () => Promise<'x'>. The literal payload is inferred but does not widen to a
+// non-literal Promise<string> declared field type, so the assignment is
+// rejected (object- and primitive-valued fields widen in this position; async
+// function-valued fields do not).
+function asyncStringField(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const x: { fn: () => Promise<string> } = { fn: async () => "hello" };
+}
+
+function asyncNumberField(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const x: { fn: () => Promise<number> } = { fn: async () => 1 };
+}
+
+// The rejection also reaches an async field flowing into a parameter ...
+function takesAsyncField(p: { fn: () => Promise<string> }): void {}
+function passesAsyncField(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  takesAsyncField({ fn: async () => "hello" });
+}
+
+// ... and into a declared return type.
+function returnsAsyncField(): { fn: () => Promise<string> } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { fn: async () => "hello" };
+}
+
+// A Promise<literal> field type is preserved exactly when requested.
+function asyncLiteralFieldOk(): void {
+  const x: { fn: () => Promise<"hello"> } = { fn: async () => "hello" };
+}
+
+// An async literal that is not a subtype of the declared Promise<literal> field
+// type is rejected: the inferred 'world' is not 'hello'.
+function asyncLiteralFieldMismatch(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const x: { fn: () => Promise<"hello"> } = { fn: async () => "world" };
+}
+
+// A genuinely wrong async payload type is rejected.
+function asyncWrongReturnType(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const x: { fn: () => Promise<number> } = { fn: async () => "hello" };
+}
