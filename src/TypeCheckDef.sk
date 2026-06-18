@@ -105,6 +105,16 @@ extension class TypeChecker {
       for (varDef in varDefs) {
         varDef.type.each(t -> checkUniqueSymbolReadonly(tcenvl, t))
       }
+    | Declare(fd @ TopLevelFunDef _)
+    | ExportDeclare(fd @ TopLevelFunDef _) ->
+      // An ambient function declaration has no body, but its signature still
+      // needs checking: normalizing the parameter and return types validates
+      // their type-argument constraints at the reference site (see normalize's
+      // TAInst branch). Without this, an unused ambient declaration is never
+      // normalized anywhere and a constraint violation in its signature
+      // (`Id<number>` for `type Id<P extends string>`) escapes detection.
+      subst = Subst::mcreate(tcenvl);
+      this.funDef(subst, None(), fd, fd.cgNode.fromSome())
     | Declare _
     | ExportDeclare _ ->
       void

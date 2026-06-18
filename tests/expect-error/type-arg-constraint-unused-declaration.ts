@@ -1,12 +1,11 @@
-// FIXME: `Id<number>` does not satisfy `P extends string`, so this declaration
-// should be rejected (TypeScript rejects it with TS2344). skjs does not check it,
-// because an ambient declaration whose signature is normalized nowhere — the
-// declared name is used in no checked position — is not constraint-checked. When
-// that gap is closed, this declaration should error and this file will need an
-// expect-error annotation.
+// An ambient declaration's signature is checked at its declaration site, even
+// when the declared name is never used anywhere else: `Id<number>` does not
+// satisfy `P extends string`, so the parameter type is rejected (TS2344), the
+// same place TypeScript rejects it.
 
 type Id<P extends string> = P;
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 declare function unusedDeclaration(x: Id<number>): void;
 
 export { unusedDeclaration };

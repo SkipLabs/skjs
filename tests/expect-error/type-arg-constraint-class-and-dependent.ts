@@ -10,6 +10,7 @@ class Box<T extends string> {
   }
 }
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 function classViolation(x: Box<number>): void {}
 
 function classValid(x: Box<string>): void {}
@@ -20,6 +21,7 @@ type BoxAlias<P extends string> = { v: P };
 // to be bound to its argument.
 type Dep<T extends string, U extends BoxAlias<T>> = { t: T; u: U };
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 export type DependentViolation = Dep<string, BoxAlias<number>>;
 
 export type DependentValid = Dep<string, BoxAlias<string>>;

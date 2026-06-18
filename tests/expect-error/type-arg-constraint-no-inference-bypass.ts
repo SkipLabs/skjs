@@ -8,10 +8,13 @@
 type Id<P extends string> = P;
 type Tagged<P extends { tag: string }> = P;
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 function bare<V>(x: Id<V>): void {}
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 function union<V>(x: Id<V | "tag">): void {}
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 function nested<V>(x: Tagged<{ tag: V }>): void {}
 
 // A valid boundary is accepted; a violating call is rejected at the call site.
