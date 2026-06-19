@@ -2375,6 +2375,9 @@ base class TVarID private final (
   // A type variable that was introduced to infer the type of a field
   // in a literal object.
   | TVIDForField
+  // A type variable that commits literal structure rather than representing
+  // an ordinary inference candidate.
+  | TVIDForLiteralCommitment
 
   static fun create(id: Int): TVarID {
     TVID(id)
@@ -2384,13 +2387,31 @@ base class TVarID private final (
     TVIDForField(id)
   }
 
+  static fun createForLiteralCommitment(id: Int): TVarID {
+    TVIDForLiteralCommitment(id)
+  }
+
   fun toString(): String {
     this.value.toString()
   }
 
   fun isForField(): Bool
   | TVIDForField _ -> true
-  | TVID _ -> false
+  | TVIDForLiteralCommitment _
+  | TVID _ ->
+    false
+
+  // Whether this is an ordinary inference candidate, as opposed to a
+  // literal-form commitment (object field or array-literal element). A
+  // candidate's value is determined by its defining expression, so a
+  // speculative subtype check must treat it as a read-only input and never
+  // redefine it; a commitment's determination site is the subtype check that
+  // matches the literal against an expected type.
+  fun isCandidate(): Bool
+  | TVID _ -> true
+  | TVIDForField _
+  | TVIDForLiteralCommitment _ ->
+    false
 
   fun xxhash(): XXHash {
     XXHash(this.value)
