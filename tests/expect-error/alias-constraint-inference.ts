@@ -6,6 +6,7 @@
 
 type Id<P extends string> = P;
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 declare function f<V>(x: Id<V>): V;
 
 export function usesRejectedBoundary(): number {

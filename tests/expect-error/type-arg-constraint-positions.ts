@@ -6,12 +6,15 @@
 
 type Id<P extends string> = P;
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 type AliasBody = Id<number>;
 
 interface Field {
+  // @skjs-expect-error Type argument does not satisfy the constraint
   x: Id<number>;
 }
 
+// @skjs-expect-error Type argument does not satisfy the constraint
 function defParam(x: Id<number>): void {}
 
 // @skjs-expect-error Type argument does not satisfy the constraint
@@ -19,8 +22,9 @@ function defTparam<V>(x: Id<V>): V {
   return x;
 }
 
-// A used ambient declaration is checked when its signature is normalized at the
-// use site.
+// An ambient declaration is checked at its declaration site, the same as a
+// function with a body.
+// @skjs-expect-error Type argument does not satisfy the constraint
 declare function usedDecl<V>(x: Id<V>): V;
 export function usesDecl(): number {
   return usedDecl(42);

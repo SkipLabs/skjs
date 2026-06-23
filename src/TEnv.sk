@@ -1220,11 +1220,12 @@ base class TEnv{
         | Class{tparams} -> tparams
         | Enum _ -> Array[]
         };
-        if (
+        arityOk = !(
           targs.size() > tparams.size() ||
           (targs.size() < tparams.size() &&
             tparams[targs.size()].default is None())
-        ) {
+        );
+        if (!arityOk) {
           tcenvb.error(
             Array[
               (
@@ -1239,7 +1240,26 @@ base class TEnv{
         if (this.seenInstantiate.contains(n.value)) {
           !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
         };
-        TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
+        normTargs = targs.map(x -> this.normalize(tcenvb, x));
+        // Check the type arguments against the parameters' constraints at the
+        // reference site, the same obligation enforced when the definition is
+        // expanded (see instantiateTParams), but without expanding the body.
+        // Without this, a violating argument in a reference that is never
+        // expanded — an unused ambient declaration, an interface field, an
+        // unused parameter type — escapes the expansion-time check entirely
+        // and skjs accepts a reference TypeScript rejects (TS2344). The check
+        // runs on a throwaway subst so its discarded bindings and clone growth
+        // never touch the live substitution. Guarded on arityOk so a wrong
+        // count is reported once (as TS2707) rather than also here.
+        if (arityOk) {
+          _ = this.instantiateTParams(
+            Subst::mcreate(tcenvb),
+            n.pos,
+            normTargs,
+            tparams,
+          )
+        };
+        TType::inst(n, TArgs(normTargs))
       }
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
