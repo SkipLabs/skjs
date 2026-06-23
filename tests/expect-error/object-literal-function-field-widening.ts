@@ -50,6 +50,39 @@ function wrongReturnType(): void {
   const x: { fn: () => number } = { fn: () => "hello" };
 }
 
+// A block-bodied arrow (`() => { return "hello"; }`, a Closure with a block
+// body rather than a distinct shape) widens the same way an expression-bodied
+// one does.
+function blockBodyField(): void {
+  const x: { fn: () => string } = {
+    fn: () => {
+      return "hello";
+    },
+  };
+}
+
+// A block-bodied arrow with a genuinely wrong return type is still rejected.
+function blockBodyWrongReturnType(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const x: { fn: () => number } = {
+    fn: () => {
+      return "hello";
+    },
+  };
+}
+
+// Widening reaches a higher-order field: the outer arrow returns an arrow whose
+// literal return type widens to the declared inner () => string.
+function higherOrderField(): void {
+  const x: { fn: () => () => string } = { fn: () => () => "hello" };
+}
+
+// A generic arrow field is routed through the same growable field type variable
+// without corrupting its type parameters.
+function genericArrowField(): void {
+  const x: { fn: <T>(v: T) => T } = { fn: <T>(v: T) => v };
+}
+
 // An async arrow body settles to a Promise: `async () => "x"` has type
 // () => Promise<'x'>. The literal payload widens through the covariant Promise
 // payload to a non-literal Promise<string> declared field type, the same way
@@ -60,6 +93,15 @@ function asyncStringField(): void {
 
 function asyncNumberField(): void {
   const x: { fn: () => Promise<number> } = { fn: async () => 1 };
+}
+
+// An async arrow with a block body widens like the expression-bodied async case.
+function asyncBlockBodyField(): void {
+  const x: { fn: () => Promise<string> } = {
+    fn: async () => {
+      return "hello";
+    },
+  };
 }
 
 // Widening of an async field also reaches a parameter ...
