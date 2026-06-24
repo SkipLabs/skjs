@@ -514,7 +514,27 @@ extension class TypeChecker {
     idx: Expr,
     accessKind: AccessKind,
   ): TType {
-    idxType = this.expr(tcenv, idx, true);
+    this.getWithIndexType(
+      tcenv,
+      pos,
+      objType,
+      this.expr(tcenv, idx, true),
+      idx.pos,
+      accessKind,
+    )
+  }
+
+  /* Like `get`, but for callers that have already typechecked the index
+     expression. Reusing the precomputed `idxType` avoids a redundant second
+     typecheck of the same expression. */
+  fun getWithIndexType(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    objType: TType,
+    idxType: TType,
+    idxPos: PosRange,
+    accessKind: AccessKind,
+  ): TType {
     idxSType = idxType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
@@ -524,7 +544,7 @@ extension class TypeChecker {
       ty
     | _ ->
       fatalError(
-        Array[(idx.pos, "This type cannot be used as an index")],
+        Array[(idxPos, "This type cannot be used as an index")],
         TSCode(2538),
       )
     };
@@ -632,7 +652,7 @@ extension class TypeChecker {
                       pos,
                       "Cannot index this type with a non-literal key: it has no index signature",
                     ),
-                    (idx.pos, "Index has non-literal type symbol"),
+                    (idxPos, "Index has non-literal type symbol"),
                     (objectPos, "But object has no index field"),
                   ],
                   TSCode(7053),
@@ -658,7 +678,7 @@ extension class TypeChecker {
                       tcenv.subst,
                       this,
                       symFd,
-                      idx.pos,
+                      idxPos,
                       isLValue,
                     ),
                   )
@@ -704,7 +724,7 @@ extension class TypeChecker {
               tcenv.error(
                 Array[
                   (
-                    idx.pos,
+                    idxPos,
                     `Propert${if (plural) "ies" else "y"} ${keys} exist${if (
                       plural
                     ) "" else {
@@ -773,7 +793,7 @@ extension class TypeChecker {
                       "Cannot index this type with a non-literal key: it has no index signature",
                     ),
                     (
-                      idx.pos,
+                      idxPos,
                       `Index has non-literal type ${remainingIdxSType.kind}`,
                     ),
                     (objectPos, "But object has no index field"),
@@ -814,7 +834,7 @@ extension class TypeChecker {
                       tcenv.subst,
                       this,
                       namedFd,
-                      idx.pos,
+                      idxPos,
                       isLValue,
                     ),
                   )
@@ -2070,6 +2090,11 @@ extension class TypeChecker {
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
         ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
+        // Record the assignment target's type. The `Var` and local-object
+        // field-write branches of `assign` never typecheck `e1` themselves, so
+        // this is the only place their lvalue type is recorded (the CFG builder
+        // looks it up by `(e1.pos, _, true)`). A plain map write, not an
+        // `expr` call, so it doesn't count as a second typecheck.
         tcenv.!exprTypes[(e1.pos, mostPrecise, true)] = ty;
         ty
       | op_ @ BOStrictComparison() ->
@@ -2246,10 +2271,11 @@ extension class TypeChecker {
       };
       TType::single(TPrimValue::boolean(pos))
     | In(e1, e2) ->
-      (t1, fieldsOpt, symFieldsOpt) = this.getInLhsTypeAndFields(
+      (t1, fieldsOpt, symFieldsOpt) = this.inLhsFieldsFromType(
         tcenv,
         pos,
-        e1,
+        e1.pos,
+        this.expr(tcenv, e1, true),
       );
       t2 = this.expr(tcenv, e2, true);
       t2.getSTypes(tcenv.subst, this, Covariant()) match {
@@ -3077,6 +3103,7 @@ extension class TypeChecker {
           e1Pos,
           local,
           keyExpr,
+          keyType,
           fieldType,
           fieldKeys,
         )
@@ -3101,6 +3128,7 @@ extension class TypeChecker {
     e1Pos: PosRange,
     local: Name,
     keyExpr: Expr,
+    keyType: TType,
     fieldType: TType,
     fieldKeys: Array<FieldKey>,
   ): TType {
@@ -3119,7 +3147,16 @@ extension class TypeChecker {
           fieldType.pos,
           "Type is not assignable to the field's type",
           fieldType,
-          this.get(tcenv, e1Pos, objectType, keyExpr, AKNormal()),
+          // The key was already typechecked by the caller; reuse its type
+          // rather than re-typechecking keyExpr.
+          this.getWithIndexType(
+            tcenv,
+            e1Pos,
+            objectType,
+            keyType,
+            keyExpr.pos,
+            AKNormal(),
+          ),
           TSCode(2322),
         )
       };
@@ -3284,13 +3321,13 @@ extension class TypeChecker {
     fieldType
   }
 
-  fun getInLhsTypeAndFields(
+  fun inLhsFieldsFromType(
     tcenv: mutable TCEnv,
     pos: PosRange,
-    e1: Expr,
+    lhsPos: PosRange,
+    lhsTy: TType,
   ): (TType, ??PrimLiterals, ??PrimLiterals) {
-    t1 = this.expr(tcenv, e1, true);
-    t1.getSTypes(tcenv.subst, this, Covariant()) match {
+    lhsTy.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes1) if (!stypes1.isEmpty()) ->
       fieldLitsOpt: ??PrimLiterals = None();
       symLitsOpt: ??PrimLiterals = None();
@@ -3319,13 +3356,13 @@ extension class TypeChecker {
                 pos,
                 "The left-hand side of an 'in' expression must be of type 'string', 'number', or 'symbol'",
               ),
-              (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
+              (lhsPos, `This has type ${this.ppType(tcenv, lhsTy)}`),
             ],
             TSCode(2360),
           )
         }
       };
-      (t1, fieldLitsOpt, symLitsOpt)
+      (lhsTy, fieldLitsOpt, symLitsOpt)
     | _ ->
       fatalError(
         Array[
@@ -3333,7 +3370,7 @@ extension class TypeChecker {
             pos,
             "The left-hand side of an 'in' expression must be of type 'string', 'number', or 'symbol'",
           ),
-          (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
+          (lhsPos, `This has type ${this.ppType(tcenv, lhsTy)}`),
         ],
         TSCode(2360),
       )

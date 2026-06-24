@@ -398,7 +398,12 @@ extension class TypeChecker {
       }
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      (_t1, litsOpt, symLitsOpt) = this.inLhsFieldsFromType(
+        tcenv,
+        e.pos,
+        e1.pos,
+        this.lookupExprType(tcenv, e1),
+      );
       singleKey = (litsOpt, symLitsOpt) match {
       | (Some(Some(strLits)), None()) ->
         strLits.singleElt().map(singleStr ->
