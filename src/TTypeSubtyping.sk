@@ -595,15 +595,21 @@ base class STErrorOnTFields(
         err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(index2.pos),
       )
-    | STRecFieldsMissingIndex(err, index2, _fields1, _fields2) ->
+    | STRecFieldsMissingIndex(_err, index2, _fields1, _fields2) ->
+      // Mirror STRecFieldsMissingField: the leaf reason ("Missing index
+      // signature") is the substantive message and belongs in the always-shown
+      // `msgs` slot, not the intermediate `recMsgs` slot. The recursive `err`
+      // is only the mechanical probe witness (`top <: indexValue`, i.e.
+      // `unknown <: …`, or `indexValue <: never` for the setter), which conveys
+      // nothing beyond "the source has no index", so it is dropped.
       (
+        List.Nil(),
         List[
           (
             index2.pos,
             `Missing index signature '${index2.name.value}' in source type`,
           ),
         ],
-        err.toError(subst, tenv, detailForRec),
         None(),
       )
     | STRecFieldsFieldIndex(err, field1, index2, kind, _fields1, _fields2) ->

@@ -570,10 +570,17 @@ function nonNumericFieldTypeToNumberIndex(x: { abc: string }): {
 
 // String index, compatible field type: rejected for the same width-subtyping
 // reason (the value may carry extra string-keyed properties of other types).
+//
+// The default-detail message must surface the actionable leaf reason —
+// "Missing index signature" — rather than the mechanical probe artifact
+// (`unknown` <: the index value type) that the synthetic-index check emits.
 function namedFieldTypeToStringIndex(x: { a: number }): {
   [k: string]: number;
 } {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error-line2 Type { a: number }
+  // @skjs-expect-error-line3 is not assignable to type { [ k: string ]: number }
+  // @skjs-expect-error-line4 Missing index signature 'k' in source type
   return x;
 }
 
