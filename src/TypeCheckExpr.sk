@@ -1160,7 +1160,15 @@ extension class TypeChecker {
   ): TType {
     key = (e.pos, mostPrecise, isLValue);
     tcenv.exprTypes.maybeGet(key) match {
-    | Some(ty) -> ty
+    | Some(ty) ->
+      internal_error(
+        "already type checked expression " +
+          renderExpr(e) +
+          " : " +
+          renderType(ty) +
+          " @ " +
+          e.pos.fileName.toString(),
+      )
     | None() ->
       ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
       tcenv.!exprTypes[key] = ty;
