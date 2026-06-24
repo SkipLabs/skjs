@@ -1176,6 +1176,12 @@ extension class TypeChecker {
     };
   }
 
+  fun lookupExprType(tcenv: mutable TCEnv, e: Expr): TType {
+    tcenv.exprTypes.maybeGet((e.pos, true, false)) match {
+    | Some(ty) -> ty
+    | None() -> tcenv.exprTypes.get((e.pos, false, false))
+    }
+  }
   private fun exprImpl(
     tcenv: mutable TCEnv,
     e: Expr,
