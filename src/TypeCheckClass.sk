@@ -177,24 +177,55 @@ extension class TypeChecker {
     for (interface in c.implements) {
       interface.value match {
       | TAInst(parentName, parentTArgs) ->
-        super = this.new(
-          subst,
-          parentName,
-          parentTArgs.map(ty -> this.normalize(subst, ty)),
-        );
-        tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-        tcenv.recordClassHierarchy{
-          child => c,
-          parent => this.getClass(tcenvl, parentName),
-        };
-        this.checkSubType(
-          tcenv,
-          parentName.pos,
-          `This class incorrectly implements '${parentName}'`,
-          thisType,
-          super,
-          TSCode(2420),
-        )
+        if (this.hasClassDef(tcenvl, parentName)) {
+          super = this.new(
+            subst,
+            parentName,
+            parentTArgs.map(ty -> this.normalize(subst, ty)),
+          );
+          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+          tcenv.recordClassHierarchy{
+            child => c,
+            parent => this.getClass(tcenvl, parentName),
+          };
+          this.checkSubType(
+            tcenv,
+            parentName.pos,
+            `This class incorrectly implements '${parentName}'`,
+            thisType,
+            super,
+            TSCode(2420),
+          )
+        } else {
+          // The name is a type alias, not a class/interface. Unlike `extends`,
+          // `implements` contributes no members to the class body, so no
+          // structural merge is needed — only the conformance check.
+          super = this.normalize(subst, interface);
+          super
+            .expand(subst, this, Some(Covariant()))
+            .clauses.getObject() match {
+          | Some(obj) if (obj.getBranches().size() == 1) ->
+            tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+            this.checkSubType(
+              tcenv,
+              parentName.pos,
+              `This class incorrectly implements '${parentName}'`,
+              thisType,
+              super,
+              TSCode(2420),
+            )
+          | _ ->
+            tcenvl.error(
+              Array[
+                (
+                  c.name.pos,
+                  "An 'implements' clause must reference an interface or class",
+                ),
+              ],
+              TSCode(2422),
+            )
+          }
+        }
       | _ ->
         tcenvl.error(
           Array[
