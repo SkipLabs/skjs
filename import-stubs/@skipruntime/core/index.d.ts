@@ -1,38 +1,57 @@
-export interface Context {
-  createLazyCollection<
-    K extends Json,
-    V extends Json,
-    Params extends readonly DepSafe[],
-  >(
-    compute: new (...params: Params) => LazyCompute<K, V>,
-    ...params: Params
-  ): LazyCollection<K, V>;
-
-  useExternalResource<K extends Json, V extends Json>(resource: {
-    service: string;
-    identifier: string;
-    params?: Json;
-  }): EagerCollection<K, V>;
-
-  jsonExtract(value: JsonObject, pattern: string): Json[];
-}
-
-export declare function deepFreeze<T>(value: T): T & DepSafe;
-
-export type DepSafe =
+export type Json =
   | null
   | boolean
   | number
-  | bigint
   | string
-  //   | symbol
-  | Managed;
+  | readonly (Json | null)[]
+  | JsonObject;
+
+export interface JsonObject {
+  readonly [key: string]: Json | null;
+}
+
+export interface JsonPartialObject {
+  readonly [key: string]: Json | null | undefined;
+}
+
+export type int = number;
+
+export type Nullable<T> = T | null;
+
+export interface Managed {}
+
+export type DepSafe = null | boolean | number | bigint | string | Managed;
+
+export declare function deepFreeze<T>(value: T): T & DepSafe;
+
+export interface Mapper<
+  K1 extends Json,
+  V1 extends Json,
+  K2 extends Json,
+  V2 extends Json,
+> {
+  mapEntry(key: K1, values: Values<V1>, context: Context): Iterable<[K2, V2]>;
+}
+
+export interface Reducer<V extends Json, A extends Json> {
+  initial: A;
+
+  add(accum: A, value: V & DepSafe): A;
+
+  remove(accum: A, value: V & DepSafe): Nullable<A>;
+}
+
+export declare abstract class AbstractEagerCollection implements Managed {
+  protected readonly __sk_collectionBrand: undefined;
+}
+
+export declare abstract class AbstractLazyCollection implements Managed {
+  protected readonly __sk_collectionBrand: undefined;
+}
 
 export interface EagerCollection<K extends Json, V extends Json>
-  extends Managed {
+  extends AbstractEagerCollection {
   getArray(key: K): (V & DepSafe)[];
-
-  getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;
 
   map<K2 extends Json, V2 extends Json, Params extends readonly DepSafe[]>(
     mapper: new (...params: Params) => Mapper<K, V, K2, V2>,
@@ -58,16 +77,54 @@ export interface EagerCollection<K extends Json, V extends Json>
 
   slice(start: K & DepSafe, end: K & DepSafe): EagerCollection<K, V>;
 
-  slices(...ranges: [K & DepSafe, K & DepSafe][]): EagerCollection<K, V>;
+  slices(
+    ...ranges: readonly [K & DepSafe, K & DepSafe][]
+  ): EagerCollection<K, V>;
 
   take(limit: int): EagerCollection<K, V>;
 
-  merge(...others: EagerCollection<K, V>[]): EagerCollection<K, V>;
+  merge(...others: readonly EagerCollection<K, V>[]): EagerCollection<K, V>;
 
   size(): number;
 }
 
+export interface LazyCollection<K extends Json, V extends Json>
+  extends AbstractLazyCollection {
+  getArray(key: K): (V & DepSafe)[];
+}
+
+export interface LazyCompute<K extends Json, V extends Json> {
+  compute(self: LazyCollection<K, V>, key: K, context: Context): Iterable<V>;
+}
+
+export interface Context {
+  createLazyCollection<
+    K extends Json,
+    V extends Json,
+    Params extends readonly DepSafe[],
+  >(
+    compute: new (...params: Params) => LazyCompute<K, V>,
+    ...params: Params
+  ): LazyCollection<K, V>;
+
+  useExternalResource<K extends Json, V extends Json>(resource: {
+    service: string;
+    identifier: string;
+    params?: Json;
+  }): EagerCollection<K, V>;
+}
+
+export interface Values<T> extends Iterable<T & DepSafe> {
+  toArray(): (T & DepSafe)[];
+}
+
 export type Entry<K extends Json, V extends Json> = [K, V[]];
+
+export type CollectionUpdate<K extends Json, V extends Json> = {
+  values: Entry<K, V>[];
+  watermark: string;
+  isInitial?: boolean;
+};
 
 export interface ExternalService {
   subscribe(
@@ -85,90 +142,95 @@ export interface ExternalService {
   shutdown(): Promise<void>;
 }
 
-// export type InitialData<Inputs extends NamedCollections> = {
-//   [Name in keyof Inputs]: Inputs[Name] extends EagerCollection<infer K, infer V>
-//     ? Entry<K, V>[]
-//     : Entry<Json, Json>[];
-// };
-export type InitialData<_Inputs extends NamedCollections> = {
-  [name: string]: Entry<Json, Json>[];
+export declare abstract class AbstractInputDefinition {
+  protected readonly __sk_inputDefBrand: undefined;
+}
+
+export declare class InputDefinition<
+  K extends Json,
+  V extends Json,
+> extends AbstractInputDefinition {
+  public initial: Entry<K, V>[];
+}
+
+export type NamedInputDefinitions = {
+  readonly [name: string]: AbstractInputDefinition;
 };
 
-export type int = number;
+export type NamedEagerCollections = {
+  readonly [name: string]: AbstractEagerCollection;
+};
 
-export type Json =
-  | boolean
-  | number
-  | string
-  | readonly (Json | null)[]
-  | JsonObject;
+export type SharedCollections = {
+  readonly [name: string]: AbstractEagerCollection | AbstractLazyCollection;
+};
 
-export type JsonObject = { readonly [key: string]: Json | null };
-
-export interface LazyCollection<K extends Json, V extends Json>
-  extends Managed {
-  getArray(key: K): (V & DepSafe)[];
-
-  getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;
-}
-
-export interface LazyCompute<K extends Json, V extends Json> {
-  compute(self: LazyCollection<K, V>, key: K, context: Context): Iterable<V>;
-}
-
-export interface Managed {
-  //   [sk_managed]: true;
-}
-
-export interface Mapper<
-  K1 extends Json,
-  V1 extends Json,
-  K2 extends Json,
-  V2 extends Json,
-> {
-  mapEntry(key: K1, values: Values<V1>, context: Context): Iterable<[K2, V2]>;
-}
-
-export type NamedCollections = { [name: string]: EagerCollection<Json, Json> };
-
-export type Nullable<T> = T | null;
-
-export interface Reducer<V extends Json, A extends Json> {
-  initial: Nullable<A>;
-
-  add(accum: Nullable<A>, value: V & DepSafe): A;
-
-  remove(accum: A, value: V & DepSafe): Nullable<A>;
-}
-
-export interface Resource<
-  Collections extends NamedCollections /* = NamedCollections */,
-> {
+export interface Resource<Collections extends SharedCollections> {
   instantiate(
     collections: Collections,
     context: Context,
-  ): EagerCollection<Json, Json>;
+  ): AbstractEagerCollection;
 }
 
+export type ResourceClass<
+  Collections extends SharedCollections,
+  Params extends Json,
+> = new (params: Params) => Resource<Collections>;
+
+export type NamedResources<ResourceInputs extends SharedCollections> = {
+  readonly [name: string]: ResourceClass<ResourceInputs, never>;
+};
+
 export interface SkipService<
-  Inputs extends NamedCollections /* = NamedCollections */,
-  ResourceInputs extends NamedCollections /* = NamedCollections */,
+  InputDefs extends NamedInputDefinitions,
+  Inputs extends NamedEagerCollections,
+  ResourceInputs extends SharedCollections,
 > {
-  initialData?: InitialData<Inputs>;
+  readonly inputs: InputDefs;
+
+  readonly resources: NamedResources<ResourceInputs>;
 
   externalServices?: { [name: string]: ExternalService };
 
-  resources: {
-    [name: string]: new (params: Json) => Resource<ResourceInputs>;
-  };
-
-  createGraph(inputCollections: Inputs, context: Context): ResourceInputs;
+  createGraph(inputs: Inputs, context: Context): ResourceInputs;
 }
 
-// export declare const sk_managed: unique symbol;
+export declare class ServiceInstance {
+  instantiateResource(
+    identifier: string,
+    resource: string,
+    params: Json,
+  ): Promise<void>;
 
-export interface Values<T> extends Iterable<T & DepSafe> {
-  getUnique(_default?: { ifMany?: T }): T & DepSafe;
+  getAll<K extends Json, V extends Json>(
+    resource: string,
+    params?: Json,
+  ): Promise<Entry<K, V>[]>;
 
-  toArray(): (T & DepSafe)[];
+  getArray<K extends Json, V extends Json>(
+    resource: string,
+    key: K,
+    params?: Json,
+  ): Promise<V[]>;
+
+  closeResourceInstance(resourceInstanceId: string): void;
+
+  subscribe<K extends Json, V extends Json>(
+    resourceInstanceId: string,
+    notifier: {
+      subscribed: () => void;
+      notify: (update: CollectionUpdate<K, V>) => void;
+      close: () => void;
+    },
+    watermark?: string,
+  ): string;
+
+  unsubscribe(id: string): void;
+
+  update<K extends Json, V extends Json>(
+    collection: string,
+    entries: Entry<K, V>[],
+  ): Promise<void>;
+
+  close(): Promise<unknown>;
 }

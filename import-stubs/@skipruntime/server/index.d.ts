@@ -1,10 +1,16 @@
-import type { NamedCollections, SkipService } from "@skipruntime/core";
+import type {
+  NamedInputDefinitions,
+  NamedEagerCollections,
+  SharedCollections,
+  SkipService,
+} from "@skipruntime/core";
 
 export function runService<
-  Inputs extends NamedCollections /* = NamedCollections */,
-  ResourceInputs extends NamedCollections /* = NamedCollections */,
+  InputDefs extends NamedInputDefinitions,
+  Inputs extends NamedEagerCollections,
+  ResourceInputs extends SharedCollections,
 >(
-  service: SkipService<Inputs, ResourceInputs>,
+  service: SkipService<InputDefs, Inputs, ResourceInputs>,
   options?: {
     streaming_port: number;
     control_port: number;
