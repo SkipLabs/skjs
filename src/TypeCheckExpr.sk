@@ -1278,7 +1278,29 @@ extension class TypeChecker {
           ttype = this.expr(tcenv, y, true);
           (
             name,
-            if (y.value is Object _ || ttype.isConcretePrimitive()) {
+            // A field value is routed through a growable field type variable so
+            // a precise inferred type can widen to a non-literal declared field
+            // type under the invariant subtyping a mutable field requires. This
+            // already covers object and primitive values; a function literal
+            // (`{ fn: () => "x" }`) needs the same treatment so its literal
+            // return type can widen to e.g. `() => string`, and an async arrow
+            // (`{ fn: async () => "x" }`, parsed as `Async(Closure)`) likewise
+            // so its `() => Promise<'x'>` widens to `() => Promise<string>`.
+            //
+            // Two facts make this safe. Soundness: the object literal is fresh,
+            // so no alias holds the field at the narrower type and it may grow
+            // to the declared type at the assignment. No lost inference: a field
+            // position does not pin a type parameter (a primitive field does not
+            // either) — which is the difference from a function passed directly
+            // as a generic callback argument, whose return type does drive
+            // type-parameter inference and so must keep its precise type (e.g.
+            // `p.then(n => n.toString())`, `p.catch(() => 0)`).
+            if (
+              y.value is Object _ ||
+              y.value is Closure _ ||
+              y.value is Async(Expr(_, Closure _)) ||
+              ttype.isConcretePrimitive()
+            ) {
               this.makeBoundTVarForField(tcenv, ttype, FromObjectField(y.pos))
             } else {
               ttype
