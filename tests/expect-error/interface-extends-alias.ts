@@ -101,11 +101,9 @@ function viaEmptyMembers(i: ViaEmpty): void {
 
 // A call/construct signature on the aliased base cannot flow through the
 // field-accumulation maps, so it is reported as unsupported rather than
-// silently dropped (tsc would accept and inherit the signature). Because the
-// merge omits the call signature, the base-compatibility check then also fails
-// spuriously — a second, redundant error on the same clause.
+// silently dropped (tsc would accept and inherit the signature). The base-
+// compatibility check is skipped for such a base, so this is the only error.
 type Callable = { (): number; readonly prop: string };
-// @skjs-expect-error This interface incorrectly extends its base type
 // @skjs-expect-error extending a type alias that has a call or construct signature is not supported by SKJS (ignored)
 interface ViaCallable extends Callable {
   readonly extra: boolean;

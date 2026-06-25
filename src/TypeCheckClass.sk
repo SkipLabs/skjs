@@ -135,25 +135,30 @@ extension class TypeChecker {
               )
             } else {
               super = this.normalize(subst, ext);
-              // Only run the compatibility check when the alias is an object
-              // type; otherwise `addFieldsFromAliasBase` already reported
-              // TS2312 and a subtype check would just pile on a second error.
-              if (
-                super
-                  .expand(subst, this, Some(Covariant()))
-                  .clauses.getObject()
-                  .map(obj -> obj.getBranches().size() == 1)
-                  .default(false)
-              ) {
-                tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-                this.checkSubType(
-                  tcenv,
-                  parentName.pos,
-                  "This interface incorrectly extends its base type",
-                  thisType,
-                  super,
-                  TSCode(2430),
-                )
+              // Run the compatibility check only when the alias is a single-
+              // branch object with no call/construct signature — i.e. exactly
+              // what `addFieldsFromAliasBase` could merge in full. A non-object
+              // base already reported TS2312 there, and a call/construct base
+              // reported notSupported; in both cases the structural merge is
+              // incomplete, so `thisType` would spuriously fail the subtype
+              // check and pile on a second error.
+              super
+                .expand(subst, this, Some(Covariant()))
+                .clauses.getObject() match {
+              | Some(obj) if (obj.getBranches().size() == 1) ->
+                tfields = obj.getBranches()[0];
+                if (tfields.call.isNone() && tfields.new.isNone()) {
+                  tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+                  this.checkSubType(
+                    tcenv,
+                    parentName.pos,
+                    "This interface incorrectly extends its base type",
+                    thisType,
+                    super,
+                    TSCode(2430),
+                  )
+                }
+              | _ -> void
               }
             }
           }
