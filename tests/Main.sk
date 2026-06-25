@@ -356,9 +356,17 @@ fun testFiles(
   importStubs: Array<String>,
   validateResult: Validator,
   update: UpdateMode = UMValidateOnly(),
+  buildCfg: Bool = false,
 ): void {
   reportExpectationErrors(
-    checkFilesWithRoot(".", srcFiles, importStubs, validateResult, update),
+    checkFilesWithRoot(
+      ".",
+      srcFiles,
+      importStubs,
+      validateResult,
+      buildCfg,
+      update,
+    ),
   )
 }
 
@@ -367,6 +375,7 @@ fun checkFilesWithRoot(
   srcFiles: Array<String>,
   importStubs: Array<String>,
   validateResult: Validator,
+  buildCfg: Bool,
   update: UpdateMode = UMValidateOnly(),
   compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): Array<SKTest.ExpectationError> {
@@ -383,6 +392,7 @@ fun checkFilesWithRoot(
       compilerOptions,
       errorHandling => SKJS.EHKeepGoing(),
       errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+      buildCfg,
     },
   );
   checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
@@ -504,6 +514,7 @@ fun testProject(projectDir: String, update: UpdateMode): void {
     srcFiles,
     Array["./import-stubs"],
     validateExpectErrorComments,
+    false,
     update,
     config.compilerOptions,
   );
@@ -683,6 +694,7 @@ fun testNoLostTest(): void {
     "projects", // handled in testProjects
     "callgraph", // handled in testCallGraph
     "callgraph-unsupported", // handled in testCallGraphUnsupported
+    "cfg", // handled in testCFG
   ];
   for (subDir in FileSystem.readDirectory(testsDir)) {
     if (coveredTestDirs.contains(subDir)) continue;

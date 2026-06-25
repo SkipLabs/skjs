@@ -1158,6 +1158,22 @@ extension class TypeChecker {
     mostPrecise: Bool,
     isLValue: Bool = false,
   ): TType {
+    key = (e.pos, mostPrecise, isLValue);
+    tcenv.exprTypes.maybeGet(key) match {
+    | Some(ty) -> ty
+    | None() ->
+      ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
+      tcenv.!exprTypes[key] = ty;
+      ty
+    };
+  }
+
+  private fun exprImpl(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool,
+    isLValue: Bool,
+  ): TType {
     if (mostPrecise) {
       if (isLValue) {
         tcenv.error(
@@ -2017,7 +2033,9 @@ extension class TypeChecker {
         }
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
-        this.assign(tcenv, pos, e1, e2, mostPrecise)
+        ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
+        tcenv.!exprTypes[(e1.pos, mostPrecise, true)] = ty;
+        ty
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
@@ -2835,6 +2853,29 @@ extension class TypeChecker {
 
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
+
+    // Build a CFG for the lambda body, keyed by its AnonymousLambda node, just
+    // like funDef does for named functions and methods. An expression body
+    // `(x) => e` is lowered as an implicit `return e`.
+    if (getConfig(tcenv.context).buildCfg) {
+      cfgBody = body match {
+      | CBBlock(bl) -> bl
+      | CBExpr(e) -> Array[Stmt(e.pos, Return(e.pos, Some(e)))]
+      };
+      typedParams = params.mapWithIndex((i, param) ->
+        (param.name, paramTypes[i])
+      );
+      cfg = CFGBuilder::build(
+        callingContext.id.toString(),
+        pos,
+        typedParams,
+        retType,
+        cfgBody,
+        tcenv.exprTypes,
+        tcenv.stmtTerminations,
+      );
+      tcenv.results.!cfgs[callingContext] = cfg
+    };
 
     normalParams = mutable Vector[];
     optionalParams = mutable Vector[];

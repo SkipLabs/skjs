@@ -1,0 +1,101 @@
+// Expectation tests for typed CFG construction and DOT serialization.
+//
+// Each tests/cfg/*.ts fixture has a sibling *.dot file holding the
+// expected `serializeCFGsDot` output (CFG names are CGNode descriptors so
+// expected files stay machine-independent). Regenerate with UPDATE_EXPECT=1.
+module SKJSTests;
+
+fun cfgExpectationPath(fileName: SKJS.FAbsolute): String {
+  fileName.toString().stripSuffix(".ts") + ".dot"
+}
+
+fun validateCFG(
+  context: mutable SKStore.Context,
+  checker: SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+  update: UpdateMode,
+): Array<SKTest.ExpectationError> {
+  fileName = checkResult.fileName.toAbsolute(checker.files.rootMap);
+  // The checked-files map also visits builtins/stubs; only fixture files
+  // have expectation *.dot.
+  if (!fileName.toString().contains("/tests/cfg/")) {
+    return Array[]
+  };
+
+  if (checkResult.parseError is Some _ || checkResult.errors.size() > 0) {
+    errs = checkResult.parseError match {
+    | None() -> checkResult.errors
+    | Some(parseError) -> checkResult.errors.concat(Array[parseError])
+    };
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: CFG test fixtures must typecheck cleanly`,
+        "no errors",
+        checker.errorsToString(context, errs),
+      ),
+    ]
+  };
+
+  // Rename CFGs from CGNode strings (which embed absolute paths) to
+  // machine-independent descriptors.
+  cfgs = SortedMap[];
+  checkResult.cfgs.each((cgNode, cfg) -> {
+    !cfgs = cfgs.set(cgNode, cfg with {name => cgNode.id.descriptor()})
+  });
+  actual = SKJS.serializeDeterministic(cfgs);
+
+  expectationPath = cfgExpectationPath(fileName);
+  update match {
+  | UMDoUpdate _ ->
+    existing = if (FileSystem.exists(expectationPath)) {
+      FileSystem.readTextFile(expectationPath)
+    } else {
+      ""
+    };
+    if (actual != existing) {
+      FileSystem.writeTextFile(expectationPath, actual);
+      print_string(`Updated: ${expectationPath}\n`)
+    };
+    Array[]
+  | UMValidateOnly() ->
+    if (!FileSystem.exists(expectationPath)) {
+      return Array[
+        SKTest.ExpectationError(
+          `${fileName}: missing CFG expectation file`,
+          expectationPath,
+          "not found (run with UPDATE_EXPECT=1 to create)",
+        ),
+      ]
+    };
+    expected = FileSystem.readTextFile(expectationPath);
+    if (actual != expected) {
+      Array[
+        SKTest.ExpectationError(
+          `${fileName}: CFG output differs from ${expectationPath} (run with UPDATE_EXPECT=1 to update)`,
+          expected,
+          actual,
+        ),
+      ]
+    } else {
+      Array[]
+    }
+  }
+}
+
+@test
+fun testCFG(): void {
+  dir = Path.resolve("./tests/cfg/");
+  srcFiles = FileSystem.readDirectory(dir).filterMap(f ->
+    if (SKJS.isTsFile(f)) Some(Path.join(dir, f)) else None()
+  );
+  invariant(!srcFiles.isEmpty(), "No CFG test fixtures found");
+  testFiles(
+    srcFiles,
+    Array["./import-stubs"],
+    validateCFG,
+    UpdateMode::fromEnv(),
+    true,
+  )
+}
+
+module end;

@@ -252,6 +252,12 @@ const checkArgs: Array<Cli.Arg> = Array[
         Truthiness::default
       }).`,
     ),
+  Cli.Arg::string("emit-cfg")
+    .long("emit-cfg")
+    .value_name("FORMAT")
+    .about(
+      "Emit typed control-flow graphs for all checked functions to stdout. Formats: json, dot",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -267,6 +273,9 @@ fun execCheck(args: Cli.ParseResults): void {
 }
 
 const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
+const checkResultsDirName: SKStore.DirName = SKStore.DirName::create(
+  "/check-results/",
+);
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   args.maybeGetString("directory") match {
@@ -483,6 +492,15 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   };
 
+  emitCfgFormat: ?CFGOutputFormat = args.maybeGetString("emit-cfg") match {
+  | None() -> None()
+  | Some("json") -> Some(CFGJson())
+  | Some("dot") -> Some(CFGDot())
+  | Some(other) ->
+    print_error(`Invalid --emit-cfg format "${other}": expected json or dot`);
+    throw Exit(2)
+  };
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
   warningsDirName = SKStore.DirName::create("/check/warnings/");
 
@@ -502,6 +520,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           errorHandling,
           errorDetailConfig,
           verbose,
+          buildCfg => emitCfgFormat.isSome(),
         },
       );
 
@@ -549,7 +568,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                     ErrorMessageFile(checker.errorToMessage(context, err)),
                   )
                 };
-
                 for (error in typeErrors) {
                   errors.push(
                     ErrorMessageFile(checker.errorToMessage(context, error)),
@@ -582,7 +600,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               },
             );
             _ = CallGraph::build(context, checked)
-          }
+          };
         },
       );
       tick = context.getTick();
@@ -618,6 +636,40 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       SKStore.CStop(None())
     },
   );
+  emitCfgFormat match {
+  | None() -> void
+  | Some(format) ->
+    context.unsafeMaybeGetEagerDir(checkResultsDirName) match {
+    | None() -> void
+    | Some(_) ->
+      checkResults = SKStore.EHandle(
+        FPath::keyType,
+        CheckResult::type,
+        checkResultsDirName,
+      );
+      cfgs = mutable Vector<CFG>[];
+      for ((_fileName, results) in checkResults.items(context)) {
+        for (res in results) {
+          res.cfgs.values().each(cfgs.push)
+        }
+      };
+      // One entry per function, merged across files, sorted for determinism
+      // (CheckResults iterate in hash order).
+      entries = cfgs
+        .toArray()
+        .sortedBy(cfg ~> cfg.name)
+        .map(cfg ->
+          format match {
+          | CFGJson() -> cfgToJson(cfg)
+          | CFGDot() -> cfgToDot(cfg)
+          }
+        );
+      format match {
+      | CFGJson() -> print_raw("[" + ",\n".join(entries) + "]\n")
+      | CFGDot() -> print_raw("\n".join(entries))
+      }
+    }
+  };
   context.maybeGetEagerDir(errorsDirName) match {
   | None() -> 2
   | Some(dir) ->
@@ -671,6 +723,7 @@ class CheckResult(
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
+  cfgs: SortedMap<CGNode, CFG> = SortedMap[],
 ) extends SKStore.File
 
 class Checker private {
@@ -773,7 +826,7 @@ class Checker private {
       FPath::keyType,
       CheckResult::type,
       context,
-      SKStore.DirName::create("/check-results/"),
+      checkResultsDirName,
       (context, writer, fileName, valueIter) ~> {
         parsedFile = valueIter.first;
         parsedFile.value match {
@@ -795,6 +848,7 @@ class Checker private {
               results.callgraph,
               results.classHierarchy,
               results.subtypingEdges,
+              results.cfgs,
             ),
           )
         | PRError(err) ->

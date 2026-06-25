@@ -1,0 +1,80 @@
+digraph "fn:breakThroughFinally" {
+  label="(xs: Array<number>): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet count: number = 0\lconst x: number\ljump BB_3\l"];
+  BB_0 -> BB_3;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lif (xs)\l"];
+  BB_3 -> BB_4 [label="true"];
+  BB_3 -> BB_5 [label="false"];
+  BB_4 [label="BB_4:\ljump BB_7\l"];
+  BB_4 -> BB_7;
+  BB_5 [label="BB_5:\lreturn count\l"];
+  BB_5 -> BB_1;
+  BB_6 [label="BB_6:\ljump BB_3\l"];
+  BB_6 -> BB_3;
+  BB_7 [label="BB_7:\lif ((x < 0))\l"];
+  BB_7 -> BB_9 [label="true"];
+  BB_7 -> BB_10 [label="false"];
+  BB_8 [label="BB_8:\lcount = (count * 2)\ljump BB_2\l"];
+  BB_8 -> BB_2;
+  BB_9 [label="BB_9:\ljump BB_12\l"];
+  BB_9 -> BB_12;
+  BB_10 [label="BB_10:\ljump BB_11\l"];
+  BB_10 -> BB_11;
+  BB_11 [label="BB_11:\lcount = (count + 1)\ljump BB_14\l"];
+  BB_11 -> BB_14;
+  BB_12 [label="BB_12:\lcount = (count * 2)\ljump BB_5\l"];
+  BB_12 -> BB_5;
+  BB_14 [label="BB_14:\lcount = (count * 2)\ljump BB_6\l"];
+  BB_14 -> BB_6;
+}
+
+digraph "fn:finallyOnly" {
+  label="(n: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet log: number = 0\ljump BB_4\l"];
+  BB_0 -> BB_4;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lreturn log\l"];
+  BB_3 -> BB_1;
+  BB_4 [label="BB_4:\lif ((n > 0))\l"];
+  BB_4 -> BB_6 [label="true"];
+  BB_4 -> BB_7 [label="false"];
+  BB_5 [label="BB_5:\llog = 2\ljump BB_2\l"];
+  BB_5 -> BB_2;
+  BB_6 [label="BB_6:\lthrow new Error(\"positive\")\l"];
+  BB_6 -> BB_5;
+  BB_7 [label="BB_7:\ljump BB_8\l"];
+  BB_7 -> BB_8;
+  BB_8 [label="BB_8:\llog = 1\ljump BB_10\l"];
+  BB_8 -> BB_10;
+  BB_10 [label="BB_10:\llog = 2\ljump BB_3\l"];
+  BB_10 -> BB_3;
+}
+
+digraph "fn:nestedFinallys" {
+  label="(n: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet m: number = n\ljump BB_4\l"];
+  BB_0 -> BB_4;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_4 [label="BB_4:\ljump BB_7\l"];
+  BB_4 -> BB_7;
+  BB_5 [label="BB_5:\lm = (m + 2)\ljump BB_2\l"];
+  BB_5 -> BB_2;
+  BB_7 [label="BB_7:\ljump BB_9\l"];
+  BB_7 -> BB_9;
+  BB_8 [label="BB_8:\lm = (m + 1)\ljump BB_5\l"];
+  BB_8 -> BB_5;
+  BB_9 [label="BB_9:\lm = (m + 1)\ljump BB_10\l"];
+  BB_9 -> BB_10;
+  BB_10 [label="BB_10:\lm = (m + 2)\lreturn m\l"];
+  BB_10 -> BB_1;
+}

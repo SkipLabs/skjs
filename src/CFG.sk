@@ -1,0 +1,630 @@
+/***************************************************************************/
+/* CFG data structures and builder for the typed control-flow graph. */
+/***************************************************************************/
+
+module SKJS;
+
+// Unique block identifier within a function CFG
+value class CFGBlockId(id: Int) uses Orderable, Show {
+  fun toString(): String {
+    `BB_${this.id}`
+  }
+}
+
+value class TypedExpr(ty: TType, expr: Expr)
+
+base class CFGInstr {
+  children =
+  | CFGIBind(kind: BindKind, pat: Pattern, ty: TType, init: ?TypedExpr)
+  | CFGIAssign(target: TypedExpr, value: TypedExpr)
+  | CFGIExpr(e: TypedExpr)
+}
+
+base class BBTerminator {
+  children =
+  | CFGTJump(target: CFGBlockId)
+  | CFGTBranch(cond: TypedExpr, thenTarget: CFGBlockId, elseTarget: CFGBlockId)
+  | CFGTSwitch(
+    scrutinee: TypedExpr,
+    branches: Array<(SwitchCase, CFGBlockId)>,
+    default_: CFGBlockId,
+  )
+  | CFGTReturn(value: ?TypedExpr)
+  | CFGTThrow(value: TypedExpr)
+  | CFGTUnreachable()
+}
+
+// A basic block
+value class CFGBlock(
+  id: CFGBlockId,
+  instrs: Array<CFGInstr>,
+  terminator: BBTerminator,
+  exnTarget: ?CFGBlockId,
+)
+
+// Whether a block instruction contains a sub-expression that could throw.
+// `StmtTermination::expr(...).mayThrow` is the single source of truth for which
+// expression forms may raise (calls, `new`, property access and indexing on
+// possibly-nullish bases, etc.), so the CFG and typechecker agree on this.
+fun instrMayThrow(instr: CFGInstr): Bool {
+  instr match {
+  | CFGIBind(_, _, _, initOpt) ->
+    initOpt.map(te -> StmtTermination::expr(te.expr).mayThrow).default(false)
+  | CFGIAssign(target, value) ->
+    StmtTermination::expr(target.expr).mayThrow ||
+      StmtTermination::expr(value.expr).mayThrow
+  | CFGIExpr(te) -> StmtTermination::expr(te.expr).mayThrow
+  }
+}
+
+// Whether a terminator's expression could throw before transferring control. A
+// `throw` always does; jumps and unreachable never carry an expression.
+fun terminatorMayThrow(term: BBTerminator): Bool {
+  term match {
+  | CFGTBranch(cond, _, _) -> StmtTermination::expr(cond.expr).mayThrow
+  | CFGTSwitch(scrutinee, _, _) ->
+    StmtTermination::expr(scrutinee.expr).mayThrow
+  | CFGTReturn(valueOpt) ->
+    valueOpt.map(v -> StmtTermination::expr(v.expr).mayThrow).default(false)
+  | CFGTThrow _ -> true
+  | CFGTJump _
+  | CFGTUnreachable() ->
+    false
+  }
+}
+
+// Scope info for an enclosing `finally`, used to inline a copy of its body on
+// paths that leave the try construct (return/break/continue crossing it) and
+// to lower those copies with the stacks as they were at the try statement.
+value class FinallyCtx(
+  stmts: Array<Stmt>,
+  breakDepth: Int,
+  continueDepth: Int,
+  exnDepth: Int,
+)
+
+// Typed CFG for one function
+value class CFG{
+  name: String,
+  pos: PosRange,
+  params: Array<(Pattern, TType)>,
+  retType: TType,
+  entry: CFGBlockId,
+  normalExit: CFGBlockId,
+  exnExit: CFGBlockId,
+  blocks: SortedMap<CFGBlockId, CFGBlock>,
+}
+
+mutable class CFGBuilder{
+  mutable blocks: SortedMap<CFGBlockId, CFGBlock> = SortedMap[],
+  mutable currentInstrs: mutable Vector<CFGInstr> = mutable Vector[],
+  mutable currentBlockId: CFGBlockId,
+  mutable terminated: Bool = false,
+  mutable exnStack: mutable Vector<CFGBlockId> = mutable Vector[],
+  mutable breakStack: mutable Vector<CFGBlockId> = mutable Vector[],
+  mutable continueStack: mutable Vector<CFGBlockId> = mutable Vector[],
+  mutable finallyStack: mutable Vector<FinallyCtx> = mutable Vector[],
+  mutable nextId: Int,
+  exprTypes: SortedMap<(PosRange, Bool, Bool), TType>,
+  stmtTerminations: SortedMap<PosRange, StmtTermination>,
+  normalExit: CFGBlockId,
+  exnExit: CFGBlockId,
+} {
+  static fun build(
+    name: String,
+    pos: PosRange,
+    params: Array<(Pattern, TType)>,
+    retType: TType,
+    body: Array<Stmt>,
+    exprTypes: SortedMap<(PosRange, Bool, Bool), TType>,
+    stmtTerminations: SortedMap<PosRange, StmtTermination>,
+  ): CFG {
+    entryId = CFGBlockId(0);
+    normalExitId = CFGBlockId(1);
+    exnExitId = CFGBlockId(2);
+    builder = mutable CFGBuilder{
+      currentBlockId => entryId,
+      exprTypes,
+      stmtTerminations,
+      normalExit => normalExitId,
+      exnExit => exnExitId,
+      nextId => 3,
+    };
+    builder.lowerBlock(body);
+    builder.finishBlock(CFGTJump(normalExitId));
+    builder.pruneOrphanJumps(entryId);
+    sentinel = CFGTUnreachable();
+    builder.!blocks[normalExitId] = CFGBlock(
+      normalExitId,
+      Array[],
+      sentinel,
+      None(),
+    );
+    builder.!blocks[exnExitId] = CFGBlock(exnExitId, Array[], sentinel, None());
+    CFG{
+      name,
+      pos,
+      params,
+      retType,
+      entry => entryId,
+      normalExit => normalExitId,
+      exnExit => exnExitId,
+      blocks => builder.blocks,
+    }
+  }
+
+  mutable fun allocId(): CFGBlockId {
+    id = CFGBlockId(this.nextId);
+    this.!nextId = this.nextId + 1;
+    id
+  }
+
+  readonly fun currentExnTarget(): ?CFGBlockId {
+    if (this.exnStack.isEmpty()) {
+      None()
+    } else {
+      Some(this.exnStack[this.exnStack.size() - 1])
+    }
+  }
+
+  mutable fun finishBlock(term: BBTerminator): void {
+    if (this.terminated) {
+      // Block already closed by a terminal statement (return/throw/break/
+      // continue); ignore the structural close that follows it.
+      void
+    } else {
+      // Give the block an exception edge only if it actually contains an
+      // expression that could throw (in an instruction or the terminator);
+      // it targets the innermost enclosing handler (catch / exceptional
+      // finally copy), or the function's exn exit when none encloses it.
+      exnTarget = if (
+        this.currentInstrs.any(instrMayThrow) ||
+        terminatorMayThrow(term)
+      ) {
+        Some(this.currentExnTarget().default(this.exnExit))
+      } else {
+        None()
+      };
+      block = CFGBlock(
+        this.currentBlockId,
+        this.currentInstrs.toArray(),
+        term,
+        exnTarget,
+      );
+      this.!blocks[this.currentBlockId] = block;
+      this.!currentInstrs = mutable Vector[];
+      this.!terminated = true
+    }
+  }
+
+  mutable fun startBlock(id: CFGBlockId): void {
+    // Discard any pending instructions: an open block that is never closed is
+    // abandoned, its instructions must not leak into the new block
+    this.!currentInstrs = mutable Vector[];
+    this.!currentBlockId = id;
+    this.!terminated = false
+  }
+
+  // Whether a statement sequence can complete normally (no statement in it
+  // unconditionally returns/throws/breaks/continues).
+  readonly fun stmtsMayFallthrough(stmts: Array<Stmt>): Bool {
+    stmts.all(st ->
+      this.stmtTerminations.maybeGet(st.pos) match {
+      | Some(t) -> t.mayFallthrough
+      | None() -> true
+      }
+    )
+  }
+
+  private static fun truncate(
+    stack: mutable Vector<CFGBlockId>,
+    depth: Int,
+  ): void {
+    while (stack.size() > depth) {
+      _ = stack.pop()
+    }
+  }
+
+  private readonly fun lookupType(
+    pos: PosRange,
+    isLValue: Bool = false,
+  ): ?TType {
+    this.exprTypes.maybeGet((pos, true, isLValue)) match {
+    | ty @ Some(_) -> ty
+    | None() -> this.exprTypes.maybeGet((pos, false, isLValue))
+    }
+  }
+  // Close the current block with `term`, first inlining a copy of every
+  // enclosing finally body above `keepDepth` (innermost first), since JS runs
+  // them when control leaves the corresponding try constructs. Each copy is
+  // lowered with the break/continue/exn stacks truncated to what they were at
+  // its try statement: a finally's exceptions skip its own catch, and its
+  // break/continue bind to loops enclosing the try. Stacks are restored
+  // afterwards so lowering can continue (e.g. for dead code that follows).
+  mutable fun terminateThroughFinallys(
+    keepDepth: Int,
+    term: BBTerminator,
+  ): void {
+    if (this.finallyStack.size() <= keepDepth) {
+      this.finishBlock(term)
+    } else {
+      origBreaks = this.breakStack.toArray();
+      origConts = this.continueStack.toArray();
+      origExns = this.exnStack.toArray();
+      origFinallys = this.finallyStack.toArray();
+      fellThrough = true;
+      while (fellThrough && this.finallyStack.size() > keepDepth) {
+        ctx = this.finallyStack.pop();
+        if (!ctx.stmts.isEmpty()) {
+          // Fresh block so the finally instructions get the exception edges
+          // of the try statement's scope, not the try body's
+          freshId = this.allocId();
+          this.finishBlock(CFGTJump(freshId));
+          static::truncate(this.breakStack, ctx.breakDepth);
+          static::truncate(this.continueStack, ctx.continueDepth);
+          static::truncate(this.exnStack, ctx.exnDepth);
+          this.startBlock(freshId);
+          this.lowerBlock(ctx.stmts);
+          // A finally that never completes normally (e.g. ends in return)
+          // overrides this completion; lowering that terminal statement
+          // already handled the remaining outer finallys.
+          !fellThrough = this.stmtsMayFallthrough(ctx.stmts)
+        }
+      };
+      if (fellThrough) {
+        this.finishBlock(term)
+      };
+      this.!breakStack = Vector::mcreateFromItems(origBreaks);
+      this.!continueStack = Vector::mcreateFromItems(origConts);
+      this.!exnStack = Vector::mcreateFromItems(origExns);
+      this.!finallyStack = Vector::mcreateFromItems(origFinallys)
+    }
+  }
+
+  // Drop empty instruction-less blocks that nothing references: the builder
+  // starts a fresh block after each terminal statement so any dead statements
+  // have a home, but when none follow, closing that block (with a jump at the
+  // end of build(), or as unreachable on dead try-completion paths) leaves an
+  // unreachable empty block behind.
+  mutable fun pruneOrphanJumps(entryId: CFGBlockId): void {
+    referenced = SortedSet<CFGBlockId>[];
+    for (block in this.blocks.values()) {
+      block.terminator match {
+      | CFGTJump(target) -> !referenced = referenced.set(target)
+      | CFGTBranch(_, thenTarget, elseTarget) ->
+        !referenced = referenced.set(thenTarget).set(elseTarget)
+      | CFGTSwitch(_, branches, default_) ->
+        for (branch in branches) {
+          !referenced = referenced.set(branch.i1)
+        };
+        !referenced = referenced.set(default_)
+      | CFGTReturn _
+      | CFGTThrow _
+      | CFGTUnreachable() ->
+        void
+      };
+      block.exnTarget.each(target -> !referenced = referenced.set(target))
+    };
+    for (block in this.blocks.values()) {
+      isOrphanJump =
+        block.id != entryId &&
+        !referenced.contains(block.id) &&
+        block.instrs.isEmpty() &&
+        (block.terminator is CFGTJump _ ||
+          block.terminator is CFGTUnreachable _);
+      if (isOrphanJump) {
+        this.!blocks = this.blocks.remove(block.id)
+      }
+    }
+  }
+
+  mutable fun emit(instr: CFGInstr): void {
+    if (!this.terminated) {
+      this.currentInstrs.push(instr)
+    }
+  }
+
+  readonly fun typed(e: Expr, isLValue: Bool = false): TypedExpr {
+    ty = this.lookupType(e.pos, isLValue) match {
+    | Some(t) -> t
+    | None() ->
+      internal_error(
+        "CFGBuilder: missing type for expression: " + inspect(e).toString(),
+      )
+    };
+    TypedExpr(ty, e)
+  }
+
+  mutable fun lowerBlock(stmts: Array<Stmt>): void {
+    for (st in stmts) {
+      this.lowerStmt(st);
+      mayFallthrough = this.stmtTerminations.maybeGet(st.pos) match {
+      | Some(t) -> t.mayFallthrough
+      | None() -> true
+      };
+      if (!mayFallthrough) {
+        // Statement never falls through: close any orphan open block (e.g. the
+        // merge block left open by an If where both branches terminate) and
+        // start a fresh block for any subsequent dead statements.
+        this.finishBlock(CFGTUnreachable());
+        this.startBlock(this.allocId())
+      }
+    }
+  }
+
+  // An expression in statement position: assignments become CFGIAssign,
+  // everything else CFGIExpr.
+  mutable fun emitExprStmt(e: Expr): void {
+    e.value match {
+    | Binop(BOAssignment(), lhs, rhs) ->
+      this.emit(CFGIAssign(this.typed(lhs, true), this.typed(rhs)))
+    | _ -> this.emit(CFGIExpr(this.typed(e)))
+    }
+  }
+
+  mutable fun lowerStmt(st: Stmt): void {
+    st.value match {
+    | StmtEmpty() -> void
+
+    | StmtExpr(e) -> this.emitExprStmt(e)
+
+    | Bind(kind, bindings) ->
+      for (binding in bindings) {
+        ty = this.lookupType(binding.pat.pos, true) match {
+        | Some(t) -> t
+        | None() -> internal_error("CFGBuilder: missing binding type")
+        };
+        initOpt = binding.value.map(initExpr ->
+          TypedExpr(
+            this.lookupType(initExpr.pos) match {
+            | Some(t) -> t
+            | None() -> internal_error("CFGBuilder: missing init type")
+            },
+            initExpr,
+          )
+        );
+        this.emit(CFGIBind(kind, binding.pat, ty, initOpt))
+      }
+
+    | Return(_pos, eOpt) ->
+      // Note: JS evaluates the return value before any finally runs, but the
+      // CFG lists the inlined finally instructions ahead of the terminator
+      // holding the value expression.
+      this.terminateThroughFinallys(0, CFGTReturn(eOpt.map(e -> this.typed(e))))
+
+    // Throw needs no finally handling here: the block's exnTarget already
+    // points either at this construct's catch or at the exceptional finally
+    // copy that runs the finally and propagates outward (see Try below).
+    | Throw(e) -> this.finishBlock(CFGTThrow(this.typed(e)))
+
+    | Break() ->
+      if (this.breakStack.isEmpty()) {
+        // unreachable in well-formed code
+        this.finishBlock(CFGTJump(this.exnExit))
+      } else {
+        targetIdx = this.breakStack.size() - 1;
+        target = this.breakStack[targetIdx];
+        // Run the finallys of try constructs entered after the loop
+        keep = this.finallyStack.size();
+        while (keep > 0 && this.finallyStack[keep - 1].breakDepth > targetIdx) {
+          !keep = keep - 1
+        };
+        this.terminateThroughFinallys(keep, CFGTJump(target))
+      }
+
+    | Continue() ->
+      if (this.continueStack.isEmpty()) {
+        // unreachable in well-formed code
+        this.finishBlock(CFGTJump(this.exnExit))
+      } else {
+        targetIdx = this.continueStack.size() - 1;
+        target = this.continueStack[targetIdx];
+        // Run the finallys of try constructs entered after the loop
+        keep = this.finallyStack.size();
+        while (
+          keep > 0 &&
+          this.finallyStack[keep - 1].continueDepth > targetIdx
+        ) {
+          !keep = keep - 1
+        };
+        this.terminateThroughFinallys(keep, CFGTJump(target))
+      }
+
+    | Block(stmts) -> this.lowerBlock(stmts)
+
+    | If(cond, thenStmts, elseStmtsOpt) ->
+      thenId = this.allocId();
+      elseId = this.allocId();
+      mergeId = this.allocId();
+      this.finishBlock(CFGTBranch(this.typed(cond), thenId, elseId));
+      this.startBlock(thenId);
+      this.lowerBlock(thenStmts);
+      this.finishBlock(CFGTJump(mergeId));
+      this.startBlock(elseId);
+      this.lowerBlock(elseStmtsOpt.default(Array[]));
+      this.finishBlock(CFGTJump(mergeId));
+      this.startBlock(mergeId)
+
+    | While(cond, body) ->
+      headId = this.allocId();
+      bodyId = this.allocId();
+      exitId = this.allocId();
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(headId);
+      this.finishBlock(CFGTBranch(this.typed(cond), bodyId, exitId));
+      this.startBlock(bodyId);
+      this.continueStack.push(headId);
+      this.breakStack.push(exitId);
+      this.lowerBlock(body);
+      _ = this.continueStack.pop();
+      _ = this.breakStack.pop();
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(exitId)
+
+    | For(initStmt, cond, incr, body) ->
+      headId = this.allocId();
+      bodyId = this.allocId();
+      incrId = this.allocId();
+      exitId = this.allocId();
+      this.lowerStmt(initStmt);
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(headId);
+      this.finishBlock(CFGTBranch(this.typed(cond), bodyId, exitId));
+      this.startBlock(bodyId);
+      this.continueStack.push(incrId);
+      this.breakStack.push(exitId);
+      this.lowerBlock(body);
+      _ = this.continueStack.pop();
+      _ = this.breakStack.pop();
+      this.finishBlock(CFGTJump(incrId));
+      this.startBlock(incrId);
+      this.emitExprStmt(incr);
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(exitId)
+
+    | ForInOf(_kind, initStmt, iterable, body) ->
+      // initStmt sets up the loop variable via Bind; its type is recorded by
+      // bindLoopVar in TypeCheckStmt. headId uses the iterable as a placeholder
+      // condition representing "more elements available".
+      headId = this.allocId();
+      bodyId = this.allocId();
+      exitId = this.allocId();
+      this.lowerStmt(initStmt);
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(headId);
+      this.finishBlock(CFGTBranch(this.typed(iterable), bodyId, exitId));
+      this.startBlock(bodyId);
+      this.continueStack.push(headId);
+      this.breakStack.push(exitId);
+      this.lowerBlock(body);
+      _ = this.continueStack.pop();
+      _ = this.breakStack.pop();
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(exitId)
+
+    | Switch(scrutinee, branches) ->
+      exitId = this.allocId();
+      defaultId = exitId; // overwritten if a Default branch exists
+      branchIds = mutable Vector[];
+      for (b in branches) {
+        id = this.allocId();
+        branchIds.push(id);
+        if (b.case is Default()) {
+          !defaultId = id
+        }
+      };
+      // Only non-default branches go into the CFGTSwitch branches array
+      caseEntries = mutable Vector[];
+      for (i in Range(0, branches.size())) {
+        b = branches[i];
+        b.case match {
+        | Case _ -> caseEntries.push((b.case, branchIds[i]))
+        | Default() -> void
+        }
+      };
+      this.finishBlock(
+        CFGTSwitch(this.typed(scrutinee), caseEntries.toArray(), defaultId),
+      );
+      this.breakStack.push(exitId);
+      for (i in Range(0, branches.size())) {
+        this.startBlock(branchIds[i]);
+        this.lowerBlock(branches[i].block);
+        // SKJS forbids fallthrough, but handle it properly here anyway in case
+        // that changes in the future
+        next = if (i + 1 < branches.size()) {
+          branchIds[i + 1]
+        } else {
+          exitId
+        };
+        this.finishBlock(CFGTJump(next))
+      };
+      _ = this.breakStack.pop();
+      this.startBlock(exitId)
+
+    | Try(tryStmts, catchClauseOpt, finallyStmtsOpt) ->
+      mergeId = this.allocId();
+      // Fresh block for the try body so statements before the try don't end
+      // up in a block carrying the exception edge
+      tryId = this.allocId();
+      ctxOpt = finallyStmtsOpt.map(stmts ->
+        FinallyCtx(
+          stmts,
+          this.breakStack.size(),
+          this.continueStack.size(),
+          this.exnStack.size(),
+        )
+      );
+      // On exceptional paths this construct's catch does not handle (no catch
+      // at all, or a throw inside the catch body), the finally body runs and
+      // the exception keeps propagating: exnFinallyId is a copy of the
+      // finally body that jumps on to the enclosing handler.
+      exnFinallyOpt = ctxOpt.map(_ -> this.allocId());
+      outerExnTarget = this.currentExnTarget().default(this.exnExit);
+      this.finishBlock(CFGTJump(tryId));
+      this.startBlock(tryId);
+      ctxOpt.each(ctx -> this.finallyStack.push(ctx));
+      keepDepth =
+        this.finallyStack.size() -
+        (if (ctxOpt.isSome()) 1 else {
+          0
+        });
+      catchClauseOpt match {
+      | None() ->
+        // try/finally: exceptions in the try body run the finally then
+        // propagate
+        exnFinallyOpt.each(id -> this.exnStack.push(id));
+        this.lowerBlock(tryStmts);
+        exnFinallyOpt.each(_ -> _ = this.exnStack.pop());
+        if (this.stmtsMayFallthrough(tryStmts)) {
+          this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
+        } else {
+          this.finishBlock(CFGTUnreachable())
+        }
+      | Some(CatchClause(paramOpt, _type, catchStmts)) ->
+        catchId = this.allocId();
+        // Exceptions in the try body go to this construct's own catch; the
+        // finally runs only after the catch completes
+        this.exnStack.push(catchId);
+        this.lowerBlock(tryStmts);
+        _ = this.exnStack.pop();
+        if (this.stmtsMayFallthrough(tryStmts)) {
+          this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
+        } else {
+          this.finishBlock(CFGTUnreachable())
+        };
+        // Catch block
+        this.startBlock(catchId);
+        paramOpt match {
+        | Some(pat) ->
+          catchTy = this.lookupType(pat.pos, true) match {
+          | Some(t) -> t
+          | None() -> TType::top(pat.pos)
+          };
+          this.emit(CFGIBind(BKLet(), pat, catchTy, None()))
+        | None() -> void
+        };
+        // Exceptions in the catch body run the finally then propagate
+        exnFinallyOpt.each(id -> this.exnStack.push(id));
+        this.lowerBlock(catchStmts);
+        exnFinallyOpt.each(_ -> _ = this.exnStack.pop());
+        if (this.stmtsMayFallthrough(catchStmts)) {
+          this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
+        } else {
+          this.finishBlock(CFGTUnreachable())
+        }
+      };
+      ctxOpt.each(_ -> _ = this.finallyStack.pop());
+      // The exceptional finally copy: finally body, then propagate outward.
+      // Lowered after the pops above so its blocks see the try statement's
+      // enclosing scope.
+      exnFinallyOpt.each(exnFinallyId -> {
+        this.startBlock(exnFinallyId);
+        ctxOpt.each(ctx -> this.lowerBlock(ctx.stmts));
+        this.finishBlock(CFGTJump(outerExnTarget))
+      });
+      this.startBlock(mergeId)
+    }
+  }
+}
+
+module end;

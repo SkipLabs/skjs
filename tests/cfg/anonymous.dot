@@ -1,0 +1,151 @@
+digraph "fn:apply" {
+  label="(f: (number)=>number, x: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn f(x)\l"];
+  BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:classify" {
+  label="(n: number): string";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst label: (number)=>string = (m) => {...}\lreturn label(n)\l"];
+  BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:iife" {
+  label="(x: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (n) => (n + 1)(x)\l"];
+  BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:incrTwice" {
+  label="(x: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst incr: (number)=>number = (n) => (n + 1)\lreturn incr(incr(x))\l"];
+  BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:makeAdder" {
+  label="(delta: number): (number)=>number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (n) => {...}\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:makeAdderFactory" {
+  label="(): (number)=>(...)=>...";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (a) => (b) => (a + b)\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:useCallback" {
+  label="(x: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn apply((n) => {...}, x)\l"];
+  BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "lambda:function(classify)@47" {
+  label="(m: number): string";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lif ((m < 0))\l"];
+  BB_0 -> BB_3 [label="true"];
+  BB_0 -> BB_4 [label="false"];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_3 [label="BB_3:\lreturn \"negative\"\l"];
+  BB_3 -> BB_1;
+  BB_4 [label="BB_4:\ljump BB_5\l"];
+  BB_4 -> BB_5;
+  BB_5 [label="BB_5:\lreturn \"nonneg\"\l"];
+  BB_5 -> BB_1;
+}
+
+digraph "lambda:function(iife)@36" {
+  label="(n: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (n + 1)\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "lambda:function(incrTwice)@47" {
+  label="(n: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (n + 1)\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "lambda:function(makeAdder)@60" {
+  label="(n: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst next: number = (n + delta)\lreturn next\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "lambda:function(makeAdderFactory)@69" {
+  label="(a: number): (number)=>number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (b) => (a + b)\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "lambda:function(makeAdderFactory)@84" {
+  label="(b: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (a + b)\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "lambda:function(useCallback)@49" {
+  label="(n: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lconst doubled: number = (n * 2)\lreturn doubled\l"];
+  BB_0 -> BB_1;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}

@@ -360,7 +360,12 @@ extension class TypeChecker {
       | None() -> AnonymousFunDef(fd)
       },
     );
-    (!this, tcenv) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
+    (!this, tcenv, typedParams) = this.funDefSetup(
+      subst,
+      Some(partialThisType),
+      fd,
+      cgNode,
+    );
     // `this` is bound in funDefSetup as `Name(fdPos, "this")`, so its
     // declaration position (the localObjects key) is fdPos.
     tcenv.localObjects![fdPos] = LOCanGrow(Some(thisType));
@@ -395,7 +400,21 @@ extension class TypeChecker {
         objType,
         fullType,
         TSCode(2322),
-      )
+      );
+      if (getConfig(tcenv.context).buildCfg) {
+        cfg = CFGBuilder::build(
+          cgNode.id.toString(),
+          fdPos,
+          typedParams,
+          // Constructors cannot have a return type annotation; model the
+          // return type as void, matching TS semantics
+          TType::single(TPrimUnit(TVoid(), fdPos)),
+          body,
+          tcenv.exprTypes,
+          tcenv.stmtTerminations,
+        );
+        tcenv.results.!cfgs[cgNode] = cfg
+      }
     };
   }
 }

@@ -1,0 +1,47 @@
+digraph "fn:f" {
+  label="(): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lthrow new Error(\"boom\")\l"];
+  BB_0 -> BB_2;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}
+
+digraph "fn:safeDivide" {
+  label="(a: number, b: number): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\llet attempts: number = 0\ljump BB_4\l"];
+  BB_0 -> BB_4;
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+  BB_4 [label="BB_4:\lattempts = (attempts + 1)\lif ((b === 0))\l"];
+  BB_4 -> BB_7 [label="true"];
+  BB_4 -> BB_8 [label="false"];
+  BB_5 [label="BB_5:\lattempts = 0\ljump BB_2\l"];
+  BB_5 -> BB_2;
+  BB_6 [label="BB_6:\llet e: unknown\ljump BB_13\l"];
+  BB_6 -> BB_13;
+  BB_7 [label="BB_7:\lthrow new Error(\"division by zero\")\l"];
+  BB_7 -> BB_6;
+  BB_8 [label="BB_8:\ljump BB_9\l"];
+  BB_8 -> BB_9;
+  BB_9 [label="BB_9:\ljump BB_11\l"];
+  BB_9 -> BB_11;
+  BB_11 [label="BB_11:\lattempts = 0\lreturn (a / b)\l"];
+  BB_11 -> BB_1;
+  BB_13 [label="BB_13:\lattempts = 0\lreturn (0 - attempts)\l"];
+  BB_13 -> BB_1;
+}
+
+digraph "fn:sumThrows" {
+  label="(): number";
+  labelloc=t;
+  node [shape=box, fontname="monospace"];
+  BB_0 [label="BB_0:\lreturn (f() + 42)\l"];
+  BB_0 -> BB_1;
+  BB_0 -> BB_2 [label="exn", style=dashed];
+  BB_1 [label="exit", shape=doublecircle];
+  BB_2 [label="exn", shape=doublecircle];
+}

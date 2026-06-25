@@ -19,6 +19,11 @@ test:
 	./tests/test_stdin.sh
 	./tests/test_config_change.sh
 
+# Run only the CFG expectation tests (UPDATE_EXPECT=1 to regenerate expectations)
+.PHONY: test-cfg
+test-cfg:
+	skargo test testCFG
+
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
 	find . -name \*.sk | parallel skfmt -i {}
@@ -58,6 +63,10 @@ endif
 .PHONY: test-in-docker
 test-in-docker:
 	$(DOCKER_RUN) make test
+
+.PHONY: test-cfg-in-docker
+test-cfg-in-docker:
+	$(DOCKER_RUN) make test-cfg
 
 %-in-docker:
 	$(DOCKER_RUN) skargo $*

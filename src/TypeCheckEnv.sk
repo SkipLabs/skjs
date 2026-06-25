@@ -101,6 +101,11 @@ mutable class TCEnv private {
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
+  // exprTypes cache is keyed on (pos, mostPrecise, isLValue) triples.
+  // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
+  // construction and as a generic cache for expression typechecking
+  mutable exprTypes: SortedMap<(PosRange, Bool, Bool), TType> = SortedMap[],
+  mutable stmtTerminations: SortedMap<PosRange, StmtTermination> = SortedMap[],
   /*
    * Tracks local objects: object literals bound to variables that can grow.
    *
@@ -235,11 +240,13 @@ class TCResults private {
   callgraph: SortedMap<CGNode, Array<CGNode>>,
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
+  cfgs: SortedMap<CGNode, CFG>,
 } {
   static fun ofAccs(accs: readonly Vector<readonly TCResultsAcc>): TCResults {
     callgraph = mutable Map[];
     classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
     subtypingEdges = SortedSet[];
+    cfgs = SortedMap<CGNode, CFG>[];
     errors = mutable Vector<Error>[];
     warnings = mutable Vector<Error>[];
     for (acc in accs) {
@@ -261,6 +268,10 @@ class TCResults private {
       };
       for (edge in acc.subtypingEdges) {
         !subtypingEdges = subtypingEdges.set(edge)
+      };
+      for (kv in acc.cfgs.items()) {
+        (cgNode, cfg) = kv;
+        !cfgs = cfgs.set(cgNode, cfg)
       }
     };
     TCResults{
@@ -271,6 +282,7 @@ class TCResults private {
       ),
       classHierarchy,
       subtypingEdges,
+      cfgs,
     }
   }
 }
@@ -282,6 +294,7 @@ mutable class TCResultsAcc private {
   callgraph: mutable Vector<(CGNode, CGNodes)> = mutable Vector[],
   classHierarchy: mutable Vector<(Class, Class)> = mutable Vector[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
+  mutable cfgs: SortedMap<CGNode, CFG> = SortedMap[],
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable this {
     mutable static{errorHandling}
@@ -295,6 +308,7 @@ mutable class TCResultsAcc private {
       callgraph => this.callgraph.chill(),
       classHierarchy => this.classHierarchy.chill(),
       subtypingEdges => this.subtypingEdges,
+      cfgs => this.cfgs,
     }
   }
 
@@ -306,6 +320,7 @@ mutable class TCResultsAcc private {
       callgraph => Vector::mcreateFromItems(this.callgraph),
       classHierarchy => Vector::mcreateFromItems(this.classHierarchy),
       subtypingEdges => this.subtypingEdges,
+      cfgs => this.cfgs,
     }
   }
 
