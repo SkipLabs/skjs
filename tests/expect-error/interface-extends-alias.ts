@@ -1,63 +1,62 @@
 // An interface may extend a type alias as long as the alias resolves to an
 // object type (or an intersection of object types with statically known
 // members). tsc accepts this; the alias's members are inherited as if the
-// alias were intersected with the interface body.
-//
-// skjs currently resolves the heritage-clause name only against classes and
-// interfaces, so every `extends <alias>` below is wrongly rejected with
-// "Cannot find name" — even the cases tsc accepts. A plain annotation use of
-// the same alias works fine; only the heritage clause is broken.
+// alias were intersected with the interface body. Resolving the heritage-clause
+// name only against classes/interfaces would wrongly report "Cannot find name".
 
-// Object-typed alias with an index signature.
+// Object-typed alias with an index signature: the named field and the index
+// signature are both inherited.
 type AliasBound = { readonly [k: string]: number };
-// @skjs-expect-error Cannot find name 'AliasBound'
 interface ViaAlias extends AliasBound {
   readonly x: number;
 }
 
 function viaAliasMembers(v: ViaAlias): void {
   const _x: number = v.x;
+  const _idx: number | undefined = v.anything;
 }
 
-// Intersection of object-typed aliases.
+// Intersection of object-typed aliases: every branch's members are inherited.
 type A = { readonly a: number };
 type B = { readonly b: string };
 type AB = A & B;
-// @skjs-expect-error Cannot find name 'AB'
 interface ViaInter extends AB {
   readonly c: boolean;
 }
 
 function viaInterMembers(w: ViaInter): void {
+  const _a: number = w.a;
+  const _b: string = w.b;
   const _c: boolean = w.c;
 }
 
-// A union alias has no statically known member set (tsc rejects with TS2312),
-// but skjs cannot even resolve the name in the heritage clause.
+// An alias that does not resolve to an object type cannot be extended (tsc
+// TS2312): a union has no statically known member set, and a primitive is not
+// an object.
 type UnionAlias = { a: number } | { b: string };
-// @skjs-expect-error Cannot find name 'UnionAlias'
+// @skjs-expect-error An interface can only extend an object type or intersection of object types with statically known members.
 interface ViaUnion extends UnionAlias {
   c: boolean;
 }
 
-// A primitive alias is not an object (tsc TS2312).
 type PrimAlias = string;
-// @skjs-expect-error Cannot find name 'PrimAlias'
+// @skjs-expect-error An interface can only extend an object type or intersection of object types with statically known members.
 interface ViaPrim extends PrimAlias {
   c: boolean;
 }
 
-// An incompatible member override (tsc TS2430).
+// A member redeclared incompatibly with the inherited one is rejected the same
+// way as for an interface base (tsc TS2430).
 type NumX = { readonly x: number };
-// @skjs-expect-error Cannot find name 'NumX'
+// @skjs-expect-error This interface incorrectly extends its base type
 interface BadOverride extends NumX {
   readonly x: string;
 }
 
-// A type alias is type-only, so a class extending it uses a type as a value
-// (tsc TS2693).
+// A type alias is type-only, so a class cannot extend it as a value (tsc
+// TS2693) — the name exists, so "Cannot find name" would be the wrong error.
 type ClassBase = { readonly x: number };
-// @skjs-expect-error Cannot find name 'ClassBase'
+// @skjs-expect-error 'ClassBase' only refers to a type, but is being used as a value here.
 class ExtendsAlias extends ClassBase {
   y: number = 1;
 }
@@ -66,7 +65,6 @@ class ExtendsAlias extends ClassBase {
 // alias is normalized after the interface's type parameters are bound, so `T`
 // resolves to the supplied argument.
 type Wrap<T> = { readonly w: T };
-// @skjs-expect-error Cannot find name 'Wrap'
 interface IBox<T> extends Wrap<T> {
   readonly tag: string;
 }
@@ -82,7 +80,6 @@ interface NominalBase<T> {
   readonly v: T;
 }
 type AliasOfNominal = NominalBase<number>;
-// @skjs-expect-error Cannot find name 'AliasOfNominal'
 interface ViaNominal extends AliasOfNominal {
   readonly k: string;
 }
@@ -94,7 +91,6 @@ function viaNominalMembers(i: ViaNominal): void {
 
 // An empty-object alias contributes no members.
 type Empty = {};
-// @skjs-expect-error Cannot find name 'Empty'
 interface ViaEmpty extends Empty {
   readonly e: number;
 }
@@ -109,7 +105,8 @@ function viaEmptyMembers(i: ViaEmpty): void {
 // merge omits the call signature, the base-compatibility check then also fails
 // spuriously — a second, redundant error on the same clause.
 type Callable = { (): number; readonly prop: string };
-// @skjs-expect-error Cannot find name 'Callable'
+// @skjs-expect-error This interface incorrectly extends its base type
+// @skjs-expect-error extending a type alias that has a call or construct signature is not supported by SKJS (ignored)
 interface ViaCallable extends Callable {
   readonly extra: boolean;
 }
@@ -118,7 +115,7 @@ interface ViaCallable extends Callable {
 // an error rather than recursing forever (the alias path is outside the class-
 // cycle guard, so this pins that expansion's own cycle handling).
 type AliasCycle = ICycle;
-// @skjs-expect-error Cannot find name 'AliasCycle'
+// @skjs-expect-error An interface can only extend an object type or intersection of object types with statically known members.
 interface ICycle extends AliasCycle {
   readonly x: number;
 }
