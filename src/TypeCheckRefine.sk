@@ -398,7 +398,7 @@ extension class TypeChecker {
       }
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, litsOpt, symLitsOpt) = this.inLhsFieldsFromType(
+      (litsOpt, symLitsOpt) = this.inLhsFieldsFromType(
         tcenv,
         e.pos,
         e1.pos,

@@ -2271,11 +2271,12 @@ extension class TypeChecker {
       };
       TType::single(TPrimValue::boolean(pos))
     | In(e1, e2) ->
-      (t1, fieldsOpt, symFieldsOpt) = this.inLhsFieldsFromType(
+      t1 = this.expr(tcenv, e1, true);
+      (fieldsOpt, symFieldsOpt) = this.inLhsFieldsFromType(
         tcenv,
         pos,
         e1.pos,
-        this.expr(tcenv, e1, true),
+        t1,
       );
       t2 = this.expr(tcenv, e2, true);
       t2.getSTypes(tcenv.subst, this, Covariant()) match {
@@ -3326,7 +3327,7 @@ extension class TypeChecker {
     pos: PosRange,
     lhsPos: PosRange,
     lhsTy: TType,
-  ): (TType, ??PrimLiterals, ??PrimLiterals) {
+  ): (??PrimLiterals, ??PrimLiterals) {
     lhsTy.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes1) if (!stypes1.isEmpty()) ->
       fieldLitsOpt: ??PrimLiterals = None();
@@ -3362,7 +3363,7 @@ extension class TypeChecker {
           )
         }
       };
-      (lhsTy, fieldLitsOpt, symLitsOpt)
+      (fieldLitsOpt, symLitsOpt)
     | _ ->
       fatalError(
         Array[
