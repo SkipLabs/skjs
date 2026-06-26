@@ -1197,7 +1197,14 @@ extension class TypeChecker {
   fun lookupExprType(tcenv: mutable TCEnv, e: Expr): TType {
     tcenv.exprTypes.maybeGet((e.pos, true, false)) match {
     | Some(ty) -> ty
-    | None() -> tcenv.exprTypes.get((e.pos, false, false))
+    | None() ->
+      tcenv.exprTypes.maybeGet((e.pos, false, false)) match {
+      | Some(ty) -> ty
+      // Not yet typechecked (e.g. an operand skipped because an enclosing
+      // expr's typecheck bailed out under error recovery). Typecheck it now:
+      // a genuine cache miss is not a redundant second typecheck.
+      | None() -> this.expr(tcenv, e, true)
+      }
     }
   }
   private fun exprImpl(
