@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   CourseId,
@@ -21,10 +22,10 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  courses: Entry<CourseId, CourseValue>[];
-  lessons: Entry<LessonId, LessonValue>[];
-  enrollments: Entry<EnrollmentId, EnrollmentValue>[];
+export type Inputs = {
+  courses: InputDefinition<CourseId, CourseValue>;
+  lessons: InputDefinition<LessonId, LessonValue>;
+  enrollments: InputDefinition<EnrollmentId, EnrollmentValue>;
 };
 
 export type InputCollections = {
@@ -39,12 +40,12 @@ export type GraphCollections = {
   enrollments: EagerCollection<EnrollmentId, EnrollmentValue>;
 };
 
-type Resources = {
-  "courses": new (params: Json) => Resource<GraphCollections>;
-  "lessons": new (params: Json) => Resource<GraphCollections>;
-  "enrollments": new (params: Json) => Resource<GraphCollections>;
-  "courses-lessons": new (params: Json) => Resource<GraphCollections>;
-  "students-enrollments": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "courses": ResourceClass<GraphCollections, {}>;
+  readonly "lessons": ResourceClass<GraphCollections, {}>;
+  readonly "enrollments": ResourceClass<GraphCollections, {}>;
+  readonly "courses-lessons": ResourceClass<GraphCollections, CoursesLessonsResourceParams>;
+  readonly "students-enrollments": ResourceClass<GraphCollections, StudentsEnrollmentsResourceParams>;
 };
 
 export class LessonsByCourseMapper implements Mapper<LessonId, LessonValue, LessonId, LessonValue> {
@@ -60,9 +61,7 @@ export class LessonsByCourseMapper implements Mapper<LessonId, LessonValue, Less
     _context: Context
   ): Iterable<[LessonId, LessonValue]> {
     const result: Array<[LessonId, LessonValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.courseId === this.courseId) {
         result.push([key, v]);
       }
@@ -84,9 +83,7 @@ export class EnrollmentsByStudentMapper implements Mapper<EnrollmentId, Enrollme
     _context: Context
   ): Iterable<[EnrollmentId, EnrollmentValue]> {
     const result: Array<[EnrollmentId, EnrollmentValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.studentId === this.studentId) {
         result.push([key, v]);
       }
@@ -97,7 +94,7 @@ export class EnrollmentsByStudentMapper implements Mapper<EnrollmentId, Enrollme
 
 
 export class CoursesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -109,7 +106,7 @@ export class CoursesResource implements Resource<GraphCollections> {
 }
 
 export class LessonsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -121,7 +118,7 @@ export class LessonsResource implements Resource<GraphCollections> {
 }
 
 export class EnrollmentsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -135,9 +132,8 @@ export class EnrollmentsResource implements Resource<GraphCollections> {
 export class CoursesLessonsResource implements Resource<GraphCollections> {
   private courseId: string;
 
-  constructor(params: Json) {
-    const typed = params as CoursesLessonsResourceParams;
-    this.courseId = typed.courseId;
+  constructor(params: CoursesLessonsResourceParams) {
+    this.courseId = params.courseId;
   }
 
   instantiate(
@@ -151,9 +147,8 @@ export class CoursesLessonsResource implements Resource<GraphCollections> {
 export class StudentsEnrollmentsResource implements Resource<GraphCollections> {
   private studentId: string;
 
-  constructor(params: Json) {
-    const typed = params as StudentsEnrollmentsResourceParams;
-    this.studentId = typed.studentId;
+  constructor(params: StudentsEnrollmentsResourceParams) {
+    this.studentId = params.studentId;
   }
 
   instantiate(
@@ -164,15 +159,12 @@ export class StudentsEnrollmentsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyCourses: Entry<CourseId, CourseValue>[] = Array.of();
-    const emptyLessons: Entry<LessonId, LessonValue>[] = Array.of();
-    const emptyEnrollments: Entry<EnrollmentId, EnrollmentValue>[] = Array.of();
-    this.initialData = { courses: emptyCourses, lessons: emptyLessons, enrollments: emptyEnrollments };
+                this.inputs = { courses: new InputDefinition<CourseId, CourseValue>([]), lessons: new InputDefinition<LessonId, LessonValue>([]), enrollments: new InputDefinition<EnrollmentId, EnrollmentValue>([]) };
     this.resources = { "courses": CoursesResource, "lessons": LessonsResource, "enrollments": EnrollmentsResource, "courses-lessons": CoursesLessonsResource, "students-enrollments": StudentsEnrollmentsResource };
   }
 
@@ -181,6 +173,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

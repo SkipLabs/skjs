@@ -1,11 +1,11 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   TodoId,
@@ -13,8 +13,8 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  todos: Entry<TodoId, TodoValue>[];
+export type Inputs = {
+  todos: InputDefinition<TodoId, TodoValue>;
 };
 
 export type InputCollections = {
@@ -25,14 +25,14 @@ export type GraphCollections = {
   todos: EagerCollection<TodoId, TodoValue>;
 };
 
-type Resources = {
-  "todos": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "todos": ResourceClass<GraphCollections, {}>;
 };
 
 
 
 export class TodosResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -43,13 +43,14 @@ export class TodosResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyTodos: Entry<TodoId, TodoValue>[] = Array.of();
-    this.initialData = { todos: emptyTodos };
+    this.inputs = {
+      todos: new InputDefinition<TodoId, TodoValue>([])
+    };
     this.resources = { "todos": TodosResource };
   }
 
@@ -58,6 +59,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

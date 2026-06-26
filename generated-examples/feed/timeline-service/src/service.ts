@@ -50,10 +50,8 @@ export class PostToFeedItemMapper implements Mapper<PostId, PostValue, FeedItemI
     values: Values<PostValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const feedItemId: FeedItemId = key;
       const feedItemValue: FeedItemValue = {
         itemType: "post",
@@ -79,10 +77,8 @@ export class LikeToFeedItemMapper implements Mapper<LikeId, LikeValue, FeedItemI
     values: Values<LikeValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const feedItemId: FeedItemId = key;
       const feedItemValue: FeedItemValue = {
         itemType: "like",
@@ -108,10 +104,8 @@ export class CommentToFeedItemMapper implements Mapper<CommentId, CommentValue, 
     values: Values<CommentValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const feedItemId: FeedItemId = key;
       const feedItemValue: FeedItemValue = {
         itemType: "comment",

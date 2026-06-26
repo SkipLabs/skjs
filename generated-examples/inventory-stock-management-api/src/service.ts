@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ProductId,
@@ -31,10 +32,10 @@ export type StockAccum = {
   total: number;
 };
 
-type Inputs = {
-  products: Entry<ProductId, ProductValue>[];
-  orders: Entry<OrderId, OrderValue>[];
-  receipts: Entry<ReceiptId, ReceiptValue>[];
+export type Inputs = {
+  products: InputDefinition<ProductId, ProductValue>;
+  orders: InputDefinition<OrderId, OrderValue>;
+  receipts: InputDefinition<ReceiptId, ReceiptValue>;
 };
 
 export type InputCollections = {
@@ -52,8 +53,8 @@ export type GraphCollections = {
   availability: EagerCollection<AvailabilityId, AvailabilityValue>;
 };
 
-type Resources = {
-  "availability": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "availability": ResourceClass<GraphCollections, {}>;
 };
 
 export class OrderToProductMapper implements Mapper<OrderId, OrderValue, ProductId, StockChange> {
@@ -65,10 +66,8 @@ export class OrderToProductMapper implements Mapper<OrderId, OrderValue, Product
     values: Values<OrderValue>,
     _context: Context
   ): Iterable<[ProductId, StockChange]> {
-    const arr = values.toArray();
     const result: Array<[ProductId, StockChange]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const order = arr[i]!;
+    for (const order of values) {
       result.push([order.productId, { quantity: order.quantity }]);
     }
     return result;
@@ -84,10 +83,8 @@ export class ReceiptToProductMapper implements Mapper<ReceiptId, ReceiptValue, P
     values: Values<ReceiptValue>,
     _context: Context
   ): Iterable<[ProductId, StockChange]> {
-    const arr = values.toArray();
     const result: Array<[ProductId, StockChange]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const receipt = arr[i]!;
+    for (const receipt of values) {
       result.push([receipt.productId, { quantity: receipt.quantity }]);
     }
     return result;
@@ -111,14 +108,14 @@ export class AvailabilityMapper implements Mapper<ProductId, ProductValue, Avail
     values: Values<ProductValue>,
     _context: Context
   ): Iterable<[AvailabilityId, AvailabilityValue]> {
-    const arr = values.toArray();
     const result: Array<[AvailabilityId, AvailabilityValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const product = arr[i]!;
+    for (const product of values) {
       const orderTotalArr = this.orderTotals.getArray(key);
       const receiptTotalArr = this.receiptTotals.getArray(key);
-      const totalOrdered = orderTotalArr.length > 0 ? orderTotalArr[0]!.total : 0;
-      const totalReceived = receiptTotalArr.length > 0 ? receiptTotalArr[0]!.total : 0;
+      const orderEntry = orderTotalArr[0];
+      const receiptEntry = receiptTotalArr[0];
+      const totalOrdered = orderEntry !== undefined ? orderEntry.total : 0;
+      const totalReceived = receiptEntry !== undefined ? receiptEntry.total : 0;
       const currentStock = product.initialStock - totalOrdered + totalReceived;
       result.push([key, {
         productId: key,
@@ -156,7 +153,7 @@ export class StockReducer implements Reducer<StockChange, StockAccum> {
 }
 
 export class AvailabilityResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -167,15 +164,12 @@ export class AvailabilityResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyProducts: Entry<ProductId, ProductValue>[] = Array.of();
-    const emptyOrders: Entry<OrderId, OrderValue>[] = Array.of();
-    const emptyReceipts: Entry<ReceiptId, ReceiptValue>[] = Array.of();
-    this.initialData = { products: emptyProducts, orders: emptyOrders, receipts: emptyReceipts };
+                this.inputs = { products: new InputDefinition<ProductId, ProductValue>([]), orders: new InputDefinition<OrderId, OrderValue>([]), receipts: new InputDefinition<ReceiptId, ReceiptValue>([]) };
     this.resources = { "availability": AvailabilityResource };
   }
 
@@ -194,6 +188,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

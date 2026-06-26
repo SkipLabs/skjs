@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   UserId,
@@ -36,10 +37,10 @@ export type PopularityAccum = {
   totalScore: number;
 };
 
-type Inputs = {
-  users: Entry<UserId, UserValue>[];
-  products: Entry<ProductId, ProductValue>[];
-  interactions: Entry<InteractionId, InteractionValue>[];
+export type Inputs = {
+  users: InputDefinition<UserId, UserValue>;
+  products: InputDefinition<ProductId, ProductValue>;
+  interactions: InputDefinition<InteractionId, InteractionValue>;
 };
 
 export type InputCollections = {
@@ -56,12 +57,12 @@ export type GraphCollections = {
   productPopularity: EagerCollection<ProductId, PopularityAccum>;
 };
 
-type Resources = {
-  "users": new (params: Json) => Resource<GraphCollections>;
-  "products": new (params: Json) => Resource<GraphCollections>;
-  "products-category": new (params: Json) => Resource<GraphCollections>;
-  "products-popular": new (params: Json) => Resource<GraphCollections>;
-  "recommendations": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "users": ResourceClass<GraphCollections, {}>;
+  readonly "products": ResourceClass<GraphCollections, {}>;
+  readonly "products-category": ResourceClass<GraphCollections, ProductsCategoryResourceParams>;
+  readonly "products-popular": ResourceClass<GraphCollections, {}>;
+  readonly "recommendations": ResourceClass<GraphCollections, RecommendationsResourceParams>;
 };
 
 export class InteractionsByUserMapper implements Mapper<InteractionId, InteractionValue, UserId, InteractionValue> {
@@ -73,10 +74,8 @@ export class InteractionsByUserMapper implements Mapper<InteractionId, Interacti
     values: Values<InteractionValue>,
     _context: Context
   ): Iterable<[UserId, InteractionValue]> {
-    const arr = values.toArray();
     const result: Array<[UserId, InteractionValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.userId, v]);
     }
     return result;
@@ -92,10 +91,8 @@ export class InteractionToProductMapper implements Mapper<InteractionId, Interac
     values: Values<InteractionValue>,
     _context: Context
   ): Iterable<[ProductId, InteractionForPopularity]> {
-    const arr = values.toArray();
     const result: Array<[ProductId, InteractionForPopularity]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.productId, { type: v.type }]);
     }
     return result;
@@ -114,10 +111,8 @@ export class ProductsByCategoryMapper implements Mapper<ProductId, ProductValue,
     values: Values<ProductValue>,
     _context: Context
   ): Iterable<[ProductId, ProductValue]> {
-    const arr = values.toArray();
     const result: Array<[ProductId, ProductValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.category === this.category) {
         result.push([key, v]);
       }
@@ -139,8 +134,7 @@ export class RecommendationMapper implements Mapper<ProductId, ProductValue, Rec
     this.userInteractions = userInteractions;
     this.popularityMap = popularityMap;
     this.interactedProductIds = new Set<string>();
-    for (let i = 0; i < userInteractions.length; i++) {
-      const interaction = userInteractions[i]!;
+    for (const interaction of userInteractions) {
       if (interaction.type === "purchase") {
         this.interactedProductIds.add(interaction.productId);
       }
@@ -152,11 +146,8 @@ export class RecommendationMapper implements Mapper<ProductId, ProductValue, Rec
     values: Values<ProductValue>,
     _context: Context
   ): Iterable<[RecommendationId, RecommendationValue]> {
-    const arr = values.toArray();
     const result: Array<[RecommendationId, RecommendationValue]> = Array.of();
-    
-    for (let i = 0; i < arr.length; i++) {
-      const product = arr[i]!;
+    for (const product of values) {
       
       if (this.interactedProductIds.has(key)) {
         continue;
@@ -178,8 +169,7 @@ export class RecommendationMapper implements Mapper<ProductId, ProductValue, Rec
       }
       
       let tagMatchCount = 0;
-      for (let j = 0; j < product.tags.length; j++) {
-        const tag = product.tags[j]!;
+      for (const tag of product.tags) {
         for (let k = 0; k < this.userPreferences.length; k++) {
           if (tag === this.userPreferences[k]) {
             tagMatchCount = tagMatchCount + 1;
@@ -294,7 +284,7 @@ export class PopularityReducer implements Reducer<InteractionForPopularity, Popu
 }
 
 export class UsersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -306,7 +296,7 @@ export class UsersResource implements Resource<GraphCollections> {
 }
 
 export class ProductsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -320,9 +310,8 @@ export class ProductsResource implements Resource<GraphCollections> {
 export class ProductsCategoryResource implements Resource<GraphCollections> {
   private category: string;
 
-  constructor(params: Json) {
-    const typed = params as ProductsCategoryResourceParams;
-    this.category = typed.category;
+  constructor(params: ProductsCategoryResourceParams) {
+    this.category = params.category;
   }
 
   instantiate(
@@ -334,7 +323,7 @@ export class ProductsCategoryResource implements Resource<GraphCollections> {
 }
 
 export class ProductsPopularResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -348,9 +337,8 @@ export class ProductsPopularResource implements Resource<GraphCollections> {
 export class RecommendationsResource implements Resource<GraphCollections> {
   private userId: string;
 
-  constructor(params: Json) {
-    const typed = params as RecommendationsResourceParams;
-    this.userId = typed.userId;
+  constructor(params: RecommendationsResourceParams) {
+    this.userId = params.userId;
   }
 
   instantiate(
@@ -359,19 +347,20 @@ export class RecommendationsResource implements Resource<GraphCollections> {
   ): EagerCollection<RecommendationId, RecommendationValue> {
     const userValues = cs.users.getArray(this.userId);
     let userPreferences: Array<string> = Array.of();
-    if (userValues.length > 0) {
-      userPreferences = userValues[0]!.preferences;
+    const userEntry = userValues[0];
+    if (userEntry !== undefined) {
+      userPreferences = userEntry.preferences;
     }
     
     const userInteractions = cs.interactionsByUser.getArray(this.userId);
     
     const popularityMap = new Map<ProductId, PopularityAccum & DepSafe>();
     const productIds = cs.products;
-    const allProducts = productIds.slice("" as ProductId & DepSafe, "\uffff" as ProductId & DepSafe);
+    const allProducts = productIds.slice("", "\uffff");
     const productArr = allProducts.take(10000);
     
     const popularityCollection = cs.productPopularity;
-    const popSlice = popularityCollection.slice("" as ProductId & DepSafe, "\uffff" as ProductId & DepSafe);
+    const popSlice = popularityCollection.slice("", "\uffff");
     const popArr = popSlice.take(10000);
     
     for (let i = 0; i < popArr.size(); i++) {
@@ -380,22 +369,19 @@ export class RecommendationsResource implements Resource<GraphCollections> {
     return cs.products.map(
       RecommendationMapper,
       this.userId,
-      userPreferences as Array<string> & DepSafe,
-      userInteractions as unknown as Array<InteractionValue> & DepSafe,
-      popularityMap as unknown as Map<ProductId, PopularityAccum> & DepSafe
+      userPreferences,
+      userInteractions,
+      popularityMap
     );
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyUsers: Entry<UserId, UserValue>[] = Array.of();
-    const emptyProducts: Entry<ProductId, ProductValue>[] = Array.of();
-    const emptyInteractions: Entry<InteractionId, InteractionValue>[] = Array.of();
-    this.initialData = { users: emptyUsers, products: emptyProducts, interactions: emptyInteractions };
+                this.inputs = { users: new InputDefinition<UserId, UserValue>([]), products: new InputDefinition<ProductId, ProductValue>([]), interactions: new InputDefinition<InteractionId, InteractionValue>([]) };
     this.resources = { "users": UsersResource, "products": ProductsResource, "products-category": ProductsCategoryResource, "products-popular": ProductsPopularResource, "recommendations": RecommendationsResource };
   }
 
@@ -413,6 +399,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

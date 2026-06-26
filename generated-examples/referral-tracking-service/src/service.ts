@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   UserId,
@@ -40,10 +41,10 @@ export type StatsAccum = {
   totalRewardsEarned: number;
 };
 
-type Inputs = {
-  users: Entry<UserId, UserValue>[];
-  referrals: Entry<ReferralId, ReferralValue>[];
-  rewards: Entry<RewardId, RewardValue>[];
+export type Inputs = {
+  users: InputDefinition<UserId, UserValue>;
+  referrals: InputDefinition<ReferralId, ReferralValue>;
+  rewards: InputDefinition<RewardId, RewardValue>;
 };
 
 export type InputCollections = {
@@ -59,15 +60,15 @@ export type GraphCollections = {
   referralStats: EagerCollection<ReferralStatsId, ReferralStatsValue>;
 };
 
-type Resources = {
-  "users": new (params: Json) => Resource<GraphCollections>;
-  "referrals": new (params: Json) => Resource<GraphCollections>;
-  "referrals-by-referrer": new (params: Json) => Resource<GraphCollections>;
-  "referrals-by-status-pending": new (params: Json) => Resource<GraphCollections>;
-  "referrals-by-status-completed": new (params: Json) => Resource<GraphCollections>;
-  "rewards": new (params: Json) => Resource<GraphCollections>;
-  "rewards-by-user": new (params: Json) => Resource<GraphCollections>;
-  "stats": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "users": ResourceClass<GraphCollections, {}>;
+  readonly "referrals": ResourceClass<GraphCollections, {}>;
+  readonly "referrals-by-referrer": ResourceClass<GraphCollections, ReferralsByReferrerResourceParams>;
+  readonly "referrals-by-status-pending": ResourceClass<GraphCollections, {}>;
+  readonly "referrals-by-status-completed": ResourceClass<GraphCollections, {}>;
+  readonly "rewards": ResourceClass<GraphCollections, {}>;
+  readonly "rewards-by-user": ResourceClass<GraphCollections, RewardsByUserResourceParams>;
+  readonly "stats": ResourceClass<GraphCollections, {}>;
 };
 
 export class ReferralToUserKeyMapper implements Mapper<ReferralId, ReferralValue, UserId, ReferralForStats> {
@@ -79,10 +80,8 @@ export class ReferralToUserKeyMapper implements Mapper<ReferralId, ReferralValue
     values: Values<ReferralValue>,
     _context: Context
   ): Iterable<[UserId, ReferralForStats]> {
-    const arr = values.toArray();
     const result: Array<[UserId, ReferralForStats]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const forStats: ReferralForStats = {
         status: v.status,
         rewardAmount: v.rewardAmount
@@ -102,10 +101,8 @@ export class StatsAccumToStatsValueMapper implements Mapper<UserId, StatsAccum, 
     values: Values<StatsAccum>,
     _context: Context
   ): Iterable<[ReferralStatsId, ReferralStatsValue]> {
-    const arr = values.toArray();
     const result: Array<[ReferralStatsId, ReferralStatsValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const conversionRate = v.totalReferrals > 0 ? v.completedReferrals / v.totalReferrals : 0;
       const statsValue: ReferralStatsValue = {
         userId: key,
@@ -133,10 +130,8 @@ export class ReferralByReferrerMapper implements Mapper<ReferralId, ReferralValu
     values: Values<ReferralValue>,
     _context: Context
   ): Iterable<[ReferralId, ReferralValue]> {
-    const arr = values.toArray();
     const result: Array<[ReferralId, ReferralValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.referrerId === this.referrerId) {
         result.push([key, v]);
       }
@@ -157,10 +152,8 @@ export class ReferralByStatusMapper implements Mapper<ReferralId, ReferralValue,
     values: Values<ReferralValue>,
     _context: Context
   ): Iterable<[ReferralId, ReferralValue]> {
-    const arr = values.toArray();
     const result: Array<[ReferralId, ReferralValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.status === this.status) {
         result.push([key, v]);
       }
@@ -181,10 +174,8 @@ export class RewardByUserMapper implements Mapper<RewardId, RewardValue, RewardI
     values: Values<RewardValue>,
     _context: Context
   ): Iterable<[RewardId, RewardValue]> {
-    const arr = values.toArray();
     const result: Array<[RewardId, RewardValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.userId === this.userId) {
         result.push([key, v]);
       }
@@ -239,7 +230,7 @@ export class ReferralStatsReducer implements Reducer<ReferralForStats, StatsAccu
 }
 
 export class UsersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -251,7 +242,7 @@ export class UsersResource implements Resource<GraphCollections> {
 }
 
 export class ReferralsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -265,9 +256,8 @@ export class ReferralsResource implements Resource<GraphCollections> {
 export class ReferralsByReferrerResource implements Resource<GraphCollections> {
   private referrerId: string;
 
-  constructor(params: Json) {
-    const typed = params as ReferralsByReferrerResourceParams;
-    this.referrerId = typed.referrerId;
+  constructor(params: ReferralsByReferrerResourceParams) {
+    this.referrerId = params.referrerId;
   }
 
   instantiate(
@@ -279,31 +269,31 @@ export class ReferralsByReferrerResource implements Resource<GraphCollections> {
 }
 
 export class ReferralsByStatusPendingResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<ReferralId, ReferralValue> {
-    return cs.referrals.map(ReferralByStatusMapper, "pending" as ReferralStatus);
+    return cs.referrals.map(ReferralByStatusMapper, "pending");
   }
 }
 
 export class ReferralsByStatusCompletedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<ReferralId, ReferralValue> {
-    return cs.referrals.map(ReferralByStatusMapper, "completed" as ReferralStatus);
+    return cs.referrals.map(ReferralByStatusMapper, "completed");
   }
 }
 
 export class RewardsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -317,9 +307,8 @@ export class RewardsResource implements Resource<GraphCollections> {
 export class RewardsByUserResource implements Resource<GraphCollections> {
   private userId: string;
 
-  constructor(params: Json) {
-    const typed = params as RewardsByUserResourceParams;
-    this.userId = typed.userId;
+  constructor(params: RewardsByUserResourceParams) {
+    this.userId = params.userId;
   }
 
   instantiate(
@@ -331,7 +320,7 @@ export class RewardsByUserResource implements Resource<GraphCollections> {
 }
 
 export class StatsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -342,15 +331,12 @@ export class StatsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyUsers: Entry<UserId, UserValue>[] = Array.of();
-    const emptyReferrals: Entry<ReferralId, ReferralValue>[] = Array.of();
-    const emptyRewards: Entry<RewardId, RewardValue>[] = Array.of();
-    this.initialData = { users: emptyUsers, referrals: emptyReferrals, rewards: emptyRewards };
+                this.inputs = { users: new InputDefinition<UserId, UserValue>([]), referrals: new InputDefinition<ReferralId, ReferralValue>([]), rewards: new InputDefinition<RewardId, RewardValue>([]) };
     this.resources = { 
       "users": UsersResource, 
       "referrals": ReferralsResource, 
@@ -377,6 +363,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

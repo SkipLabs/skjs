@@ -53,9 +53,7 @@ export class FilterRowsByImportMapper implements Mapper<CsvRowId, CsvRowValue, C
     _context: Context
   ): Iterable<[CsvRowId, CsvRowValue]> {
     const result: Array<[CsvRowId, CsvRowValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v: CsvRowValue & DepSafe = arr[i]!;
+    for (const v of values) {
       if (v.importId === this.importId) {
         result.push([key, v]);
       }
@@ -92,9 +90,8 @@ export class CsvRowsResource implements Resource<GraphCollections> {
 export class CsvRowsByImportResource implements Resource<GraphCollections> {
   private importId: string;
 
-  constructor(params: Json) {
-    const typed = params as CsvRowsByImportResourceParams;
-    this.importId = typed.importId;
+  constructor(params: CsvRowsByImportResourceParams) {
+    this.importId = params.importId;
   }
 
   instantiate(

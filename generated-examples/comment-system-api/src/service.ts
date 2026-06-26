@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   CommentId,
@@ -31,10 +32,10 @@ export type CountAccum = {
   count: number;
 };
 
-type Inputs = {
-  comments: Entry<CommentId, CommentValue>[];
-  replies: Entry<ReplyId, ReplyValue>[];
-  likes: Entry<LikeId, LikeValue>[];
+export type Inputs = {
+  comments: InputDefinition<CommentId, CommentValue>;
+  replies: InputDefinition<ReplyId, ReplyValue>;
+  likes: InputDefinition<LikeId, LikeValue>;
 };
 
 export type InputCollections = {
@@ -55,11 +56,11 @@ export type GraphCollections = {
   feed: EagerCollection<FeedItemId, FeedItemValue>;
 };
 
-type Resources = {
-  "comments": new (params: Json) => Resource<GraphCollections>;
-  "repliesByComment": new (params: Json) => Resource<GraphCollections>;
-  "likesByComment": new (params: Json) => Resource<GraphCollections>;
-  "feed": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "comments": ResourceClass<GraphCollections, {}>;
+  readonly "repliesByComment": ResourceClass<GraphCollections, RepliesByCommentResourceParams>;
+  readonly "likesByComment": ResourceClass<GraphCollections, LikesByCommentResourceParams>;
+  readonly "feed": ResourceClass<GraphCollections, {}>;
 };
 
 export class ReplyToCommentKeyMapper implements Mapper<ReplyId, ReplyValue, CommentId, number> {
@@ -70,10 +71,8 @@ export class ReplyToCommentKeyMapper implements Mapper<ReplyId, ReplyValue, Comm
     values: Values<ReplyValue>,
     _context: Context
   ): Iterable<[CommentId, number]> {
-    const arr = values.toArray();
     const result: Array<[CommentId, number]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.commentId, 1]);
     }
     return result;
@@ -88,10 +87,8 @@ export class LikeToCommentKeyMapper implements Mapper<LikeId, LikeValue, Comment
     values: Values<LikeValue>,
     _context: Context
   ): Iterable<[CommentId, number]> {
-    const arr = values.toArray();
     const result: Array<[CommentId, number]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.commentId, 1]);
     }
     return result;
@@ -115,14 +112,14 @@ export class CommentWithStatsMapper implements Mapper<CommentId, CommentValue, C
     values: Values<CommentValue>,
     _context: Context
   ): Iterable<[CommentWithStatsId, CommentWithStatsValue]> {
-    const arr = values.toArray();
     const result: Array<[CommentWithStatsId, CommentWithStatsValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const replyCountArr = this.replyCountsByComment.getArray(key);
       const likeCountArr = this.likeCountsByComment.getArray(key);
-      const replyCount = replyCountArr.length > 0 ? replyCountArr[0]!.count : 0;
-      const likeCount = likeCountArr.length > 0 ? likeCountArr[0]!.count : 0;
+      const replyCountEntry = replyCountArr[0];
+      const likeCountEntry = likeCountArr[0];
+      const replyCount = replyCountEntry !== undefined ? replyCountEntry.count : 0;
+      const likeCount = likeCountEntry !== undefined ? likeCountEntry.count : 0;
       result.push([key, {
         authorId: v.authorId,
         content: v.content,
@@ -143,10 +140,8 @@ export class ReplyByCommentMapper implements Mapper<ReplyId, ReplyValue, Comment
     values: Values<ReplyValue>,
     _context: Context
   ): Iterable<[CommentId, ReplyValue]> {
-    const arr = values.toArray();
     const result: Array<[CommentId, ReplyValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.commentId, v]);
     }
     return result;
@@ -161,10 +156,8 @@ export class LikeByCommentMapper implements Mapper<LikeId, LikeValue, CommentId,
     values: Values<LikeValue>,
     _context: Context
   ): Iterable<[CommentId, LikeValue]> {
-    const arr = values.toArray();
     const result: Array<[CommentId, LikeValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.commentId, v]);
     }
     return result;
@@ -179,10 +172,8 @@ export class CommentToFeedItemMapper implements Mapper<CommentId, CommentValue, 
     values: Values<CommentValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([key, {
         type: "comment",
         authorId: v.authorId,
@@ -203,10 +194,8 @@ export class ReplyToFeedItemMapper implements Mapper<ReplyId, ReplyValue, FeedIt
     values: Values<ReplyValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([key, {
         type: "reply",
         authorId: v.authorId,
@@ -235,9 +224,7 @@ export class FilterByCommentIdMapper implements Mapper<CommentId, ReplyValue, Re
     if (key !== this.commentId) {
       return result;
     }
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const replyId = JSON.stringify([v.commentId, v.authorId, v.createdAt]);
       result.push([replyId, v]);
     }
@@ -261,9 +248,7 @@ export class FilterLikesByCommentIdMapper implements Mapper<CommentId, LikeValue
     if (key !== this.commentId) {
       return result;
     }
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const likeId = JSON.stringify([v.commentId, v.userId, v.createdAt]);
       result.push([likeId, v]);
     }
@@ -293,7 +278,7 @@ export class CountReducer implements Reducer<number, CountAccum> {
 }
 
 export class CommentsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {}
+  constructor(_params: {}) {}
 
   instantiate(
     cs: GraphCollections,
@@ -306,9 +291,8 @@ export class CommentsResource implements Resource<GraphCollections> {
 export class RepliesByCommentResource implements Resource<GraphCollections> {
   private commentId: string;
 
-  constructor(params: Json) {
-    const typed = params as RepliesByCommentResourceParams;
-    this.commentId = typed.commentId;
+  constructor(params: RepliesByCommentResourceParams) {
+    this.commentId = params.commentId;
   }
 
   instantiate(
@@ -322,9 +306,8 @@ export class RepliesByCommentResource implements Resource<GraphCollections> {
 export class LikesByCommentResource implements Resource<GraphCollections> {
   private commentId: string;
 
-  constructor(params: Json) {
-    const typed = params as LikesByCommentResourceParams;
-    this.commentId = typed.commentId;
+  constructor(params: LikesByCommentResourceParams) {
+    this.commentId = params.commentId;
   }
 
   instantiate(
@@ -336,7 +319,7 @@ export class LikesByCommentResource implements Resource<GraphCollections> {
 }
 
 export class FeedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {}
+  constructor(_params: {}) {}
 
   instantiate(
     cs: GraphCollections,
@@ -346,15 +329,12 @@ export class FeedResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyComments: Entry<CommentId, CommentValue>[] = Array.of();
-    const emptyReplies: Entry<ReplyId, ReplyValue>[] = Array.of();
-    const emptyLikes: Entry<LikeId, LikeValue>[] = Array.of();
-    this.initialData = { comments: emptyComments, replies: emptyReplies, likes: emptyLikes };
+                this.inputs = { comments: new InputDefinition<CommentId, CommentValue>([]), replies: new InputDefinition<ReplyId, ReplyValue>([]), likes: new InputDefinition<LikeId, LikeValue>([]) };
     this.resources = { "comments": CommentsResource, "repliesByComment": RepliesByCommentResource, "likesByComment": LikesByCommentResource, "feed": FeedResource };
   }
 
@@ -364,8 +344,8 @@ class Service implements SkipService<InputCollections, GraphCollections> {
     const commentsWithStats = inputs.comments.map(CommentWithStatsMapper, replyCountsByComment, likeCountsByComment);
     const repliesByComment = inputs.replies.map(ReplyByCommentMapper);
     const likesByComment = inputs.likes.map(LikeByCommentMapper);
-    const commentFeedItems = inputs.comments.map(CommentToFeedItemMapper);
-    const replyFeedItems = inputs.replies.map(ReplyToFeedItemMapper);
+    const commentFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.comments.map(CommentToFeedItemMapper);
+    const replyFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.replies.map(ReplyToFeedItemMapper);
     const feed = commentFeedItems.merge(replyFeedItems);
     return {
       comments: inputs.comments,
@@ -381,6 +361,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

@@ -3,16 +3,12 @@
     // Type Checking
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
-    "exactOptionalPropertyTypes": false,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noImplicitReturns": true,
-    "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": false,
-    "noUnusedParameters": true,
     "strict": true,
-    "strictNullChecks": true,
     // Modules
     "module": "node16",
     "moduleResolution": "Node16",
@@ -28,7 +24,7 @@
     // Language and Environment
     "target": "ES2021",
     // Root
-    "rootDir": "./src"
+    "rootDir": "."
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "skipruntime/core.ts"]
 }

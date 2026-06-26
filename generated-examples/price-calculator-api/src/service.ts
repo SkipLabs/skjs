@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ProductId,
@@ -23,11 +24,11 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  products: Entry<ProductId, ProductValue>[];
-  promotions: Entry<PromotionId, PromotionValue>[];
-  taxRates: Entry<TaxRateId, TaxRateValue>[];
-  shippingRules: Entry<ShippingRuleId, ShippingRuleValue>[];
+export type Inputs = {
+  products: InputDefinition<ProductId, ProductValue>;
+  promotions: InputDefinition<PromotionId, PromotionValue>;
+  taxRates: InputDefinition<TaxRateId, TaxRateValue>;
+  shippingRules: InputDefinition<ShippingRuleId, ShippingRuleValue>;
 };
 
 export type InputCollections = {
@@ -47,12 +48,12 @@ export type GraphCollections = {
   finalPrices: EagerCollection<FinalPriceId, FinalPriceValue>;
 };
 
-type Resources = {
-  "products": new (params: Json) => Resource<GraphCollections>;
-  "promotions": new (params: Json) => Resource<GraphCollections>;
-  "taxRates": new (params: Json) => Resource<GraphCollections>;
-  "shippingRules": new (params: Json) => Resource<GraphCollections>;
-  "finalPrices": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "products": ResourceClass<GraphCollections, {}>;
+  readonly "promotions": ResourceClass<GraphCollections, {}>;
+  readonly "taxRates": ResourceClass<GraphCollections, {}>;
+  readonly "shippingRules": ResourceClass<GraphCollections, {}>;
+  readonly "finalPrices": ResourceClass<GraphCollections, {}>;
 };
 
 export class PromotionsByProductMapper implements Mapper<PromotionId, PromotionValue, ProductId, PromotionValue> {
@@ -64,10 +65,8 @@ export class PromotionsByProductMapper implements Mapper<PromotionId, PromotionV
     values: Values<PromotionValue>,
     _context: Context
   ): Iterable<[ProductId, PromotionValue]> {
-    const arr = values.toArray();
     const result: Array<[ProductId, PromotionValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.productId, v]);
     }
     return result;
@@ -83,10 +82,8 @@ export class TaxRatesByCategoryMapper implements Mapper<TaxRateId, TaxRateValue,
     values: Values<TaxRateValue>,
     _context: Context
   ): Iterable<[string, TaxRateValue]> {
-    const arr = values.toArray();
     const result: Array<[string, TaxRateValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.category, v]);
     }
     return result;
@@ -102,10 +99,8 @@ export class ShippingRulesByWeightMapper implements Mapper<ShippingRuleId, Shipp
     values: Values<ShippingRuleValue>,
     _context: Context
   ): Iterable<[string, ShippingRuleValue]> {
-    const arr = values.toArray();
     const result: Array<[string, ShippingRuleValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push(["all", v]);
     }
     return result;
@@ -132,12 +127,10 @@ export class FinalPriceMapper implements Mapper<ProductId, ProductValue, FinalPr
     values: Values<ProductValue>,
     _context: Context
   ): Iterable<[FinalPriceId, FinalPriceValue]> {
-    const arr = values.toArray();
     const result: Array<[FinalPriceId, FinalPriceValue]> = Array.of();
     const currentTime = Date.now();
 
-    for (let i = 0; i < arr.length; i++) {
-      const product = arr[i]!;
+    for (const product of values) {
       const basePrice = product.basePrice;
       const productName = product.name;
       const category = product.category;
@@ -145,8 +138,7 @@ export class FinalPriceMapper implements Mapper<ProductId, ProductValue, FinalPr
 
       const promotions = this.promotionsByProduct.getArray(key);
       let discountAmount = 0;
-      for (let j = 0; j < promotions.length; j++) {
-        const promo = promotions[j]!;
+      for (const promo of promotions) {
         if (promo.validFrom <= currentTime && currentTime <= promo.validUntil) {
           if (promo.discountType === "percentage") {
             discountAmount = discountAmount + (basePrice * promo.discountValue / 100);
@@ -160,15 +152,13 @@ export class FinalPriceMapper implements Mapper<ProductId, ProductValue, FinalPr
 
       const taxRates = this.taxRatesByCategory.getArray(category);
       let taxAmount = 0;
-      for (let j = 0; j < taxRates.length; j++) {
-        const taxRate = taxRates[j]!;
+      for (const taxRate of taxRates) {
         taxAmount = taxAmount + (priceAfterDiscount * taxRate.rate / 100);
       }
 
       let shippingCost = 0;
       const allShippingRules = this.shippingRulesByWeight.getArray("all");
-      for (let j = 0; j < allShippingRules.length; j++) {
-        const rule = allShippingRules[j]!;
+      for (const rule of allShippingRules) {
         if (rule.minWeight <= weight && weight <= rule.maxWeight) {
           shippingCost = rule.baseCost + (weight * rule.costPerGram);
           break;
@@ -196,7 +186,7 @@ export class FinalPriceMapper implements Mapper<ProductId, ProductValue, FinalPr
 }
 
 export class ProductsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -208,7 +198,7 @@ export class ProductsResource implements Resource<GraphCollections> {
 }
 
 export class PromotionsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -220,7 +210,7 @@ export class PromotionsResource implements Resource<GraphCollections> {
 }
 
 export class TaxRatesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -232,7 +222,7 @@ export class TaxRatesResource implements Resource<GraphCollections> {
 }
 
 export class ShippingRulesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -244,7 +234,7 @@ export class ShippingRulesResource implements Resource<GraphCollections> {
 }
 
 export class FinalPricesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -255,16 +245,12 @@ export class FinalPricesResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyProducts: Entry<ProductId, ProductValue>[] = Array.of();
-    const emptyPromotions: Entry<PromotionId, PromotionValue>[] = Array.of();
-    const emptyTaxRates: Entry<TaxRateId, TaxRateValue>[] = Array.of();
-    const emptyShippingRules: Entry<ShippingRuleId, ShippingRuleValue>[] = Array.of();
-    this.initialData = { products: emptyProducts, promotions: emptyPromotions, taxRates: emptyTaxRates, shippingRules: emptyShippingRules };
+                    this.inputs = { products: new InputDefinition<ProductId, ProductValue>([]), promotions: new InputDefinition<PromotionId, PromotionValue>([]), taxRates: new InputDefinition<TaxRateId, TaxRateValue>([]), shippingRules: new InputDefinition<ShippingRuleId, ShippingRuleValue>([]) };
     this.resources = { "products": ProductsResource, "promotions": PromotionsResource, "taxRates": TaxRatesResource, "shippingRules": ShippingRulesResource, "finalPrices": FinalPricesResource };
   }
 
@@ -286,6 +272,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

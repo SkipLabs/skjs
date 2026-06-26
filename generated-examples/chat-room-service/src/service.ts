@@ -1,13 +1,13 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   RoomId,
@@ -23,11 +23,11 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  rooms: Entry<RoomId, RoomValue>[];
-  messages: Entry<MessageId, MessageValue>[];
-  users: Entry<UserId, UserValue>[];
-  roomMembers: Entry<RoomMemberId, RoomMemberValue>[];
+export type Inputs = {
+  rooms: InputDefinition<RoomId, RoomValue>;
+  messages: InputDefinition<MessageId, MessageValue>;
+  users: InputDefinition<UserId, UserValue>;
+  roomMembers: InputDefinition<RoomMemberId, RoomMemberValue>;
 };
 
 export type InputCollections = {
@@ -44,12 +44,12 @@ export type GraphCollections = {
   roomMembers: EagerCollection<RoomMemberId, RoomMemberValue>;
 };
 
-type Resources = {
-  "rooms": new (params: Json) => Resource<GraphCollections>;
-  "messages": new (params: Json) => Resource<GraphCollections>;
-  "rooms-messages": new (params: Json) => Resource<GraphCollections>;
-  "users": new (params: Json) => Resource<GraphCollections>;
-  "rooms-members": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "rooms": ResourceClass<GraphCollections, {}>;
+  readonly "messages": ResourceClass<GraphCollections, {}>;
+  readonly "rooms-messages": ResourceClass<GraphCollections, RoomsMessagesResourceParams>;
+  readonly "users": ResourceClass<GraphCollections, {}>;
+  readonly "rooms-members": ResourceClass<GraphCollections, RoomsMembersResourceParams>;
 };
 
 export class FilterMessagesByRoomMapper implements Mapper<MessageId, MessageValue, MessageId, MessageValue> {
@@ -65,9 +65,7 @@ export class FilterMessagesByRoomMapper implements Mapper<MessageId, MessageValu
     _context: Context
   ): Iterable<[MessageId, MessageValue]> {
     const result: Array<[MessageId, MessageValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.roomId === this.roomId) {
         result.push([key, v]);
       }
@@ -89,9 +87,7 @@ export class FilterMembersByRoomMapper implements Mapper<RoomMemberId, RoomMembe
     _context: Context
   ): Iterable<[RoomMemberId, RoomMemberValue]> {
     const result: Array<[RoomMemberId, RoomMemberValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.roomId === this.roomId) {
         result.push([key, v]);
       }
@@ -102,7 +98,7 @@ export class FilterMembersByRoomMapper implements Mapper<RoomMemberId, RoomMembe
 
 
 export class RoomsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -114,7 +110,7 @@ export class RoomsResource implements Resource<GraphCollections> {
 }
 
 export class MessagesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -128,9 +124,8 @@ export class MessagesResource implements Resource<GraphCollections> {
 export class RoomsMessagesResource implements Resource<GraphCollections> {
   private roomId: string;
 
-  constructor(params: Json) {
-    const typed = params as RoomsMessagesResourceParams;
-    this.roomId = typed.roomId;
+  constructor(params: RoomsMessagesResourceParams) {
+    this.roomId = params.roomId;
   }
 
   instantiate(
@@ -142,7 +137,7 @@ export class RoomsMessagesResource implements Resource<GraphCollections> {
 }
 
 export class UsersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -156,9 +151,8 @@ export class UsersResource implements Resource<GraphCollections> {
 export class RoomsMembersResource implements Resource<GraphCollections> {
   private roomId: string;
 
-  constructor(params: Json) {
-    const typed = params as RoomsMembersResourceParams;
-    this.roomId = typed.roomId;
+  constructor(params: RoomsMembersResourceParams) {
+    this.roomId = params.roomId;
   }
 
   instantiate(
@@ -169,16 +163,17 @@ export class RoomsMembersResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyRooms: Entry<RoomId, RoomValue>[] = Array.of();
-    const emptyMessages: Entry<MessageId, MessageValue>[] = Array.of();
-    const emptyUsers: Entry<UserId, UserValue>[] = Array.of();
-    const emptyRoomMembers: Entry<RoomMemberId, RoomMemberValue>[] = Array.of();
-    this.initialData = { rooms: emptyRooms, messages: emptyMessages, users: emptyUsers, roomMembers: emptyRoomMembers };
+    this.inputs = {
+      rooms: new InputDefinition<RoomId, RoomValue>([]),
+      messages: new InputDefinition<MessageId, MessageValue>([]),
+      users: new InputDefinition<UserId, UserValue>([]),
+      roomMembers: new InputDefinition<RoomMemberId, RoomMemberValue>([]),
+    };
     this.resources = { "rooms": RoomsResource, "messages": MessagesResource, "rooms-messages": RoomsMessagesResource, "users": UsersResource, "rooms-members": RoomsMembersResource };
   }
 
@@ -187,6 +182,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }
