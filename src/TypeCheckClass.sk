@@ -66,54 +66,102 @@ extension class TypeChecker {
       for (ext in c.extends_) {
         ext.value match {
         | TAInst(parentName, parentTArgs) ->
-          parentClass = this.getClass(tcenvl, parentName);
-          if (!isInterface && parentClass.kind is CKInterface()) {
-            // A class extending an interface is only valid if a merged value
-            // declaration provides a runtime constructor; an interface alone
-            // has no value to use as a superclass.
-            hasValueDef = this.defMap.getAll(tcenvl, parentName).any(def ->
-              def match {
-              | Class{kind => CKInterface()}
-              | TypeDef _ ->
-                false
-              | _ -> true
+          if (this.hasClassDef(tcenvl, parentName)) {
+            parentClass = this.getClass(tcenvl, parentName);
+            if (!isInterface && parentClass.kind is CKInterface()) {
+              // A class extending an interface is only valid if a merged value
+              // declaration provides a runtime constructor; an interface alone
+              // has no value to use as a superclass.
+              hasValueDef = this.defMap.getAll(tcenvl, parentName).any(def ->
+                def match {
+                | Class{kind => CKInterface()}
+                | TypeDef _ ->
+                  false
+                | _ -> true
+                }
+              );
+              if (!hasValueDef) {
+                tcenvl.error(
+                  Array[
+                    (
+                      parentName.pos,
+                      `Cannot extend an interface '${parentName}'. Did you mean 'implements'?`,
+                    ),
+                  ],
+                  TSCode(2689),
+                )
               }
+            };
+            superCstr = this.newConstructor(
+              subst,
+              parentName,
+              parentTArgs.map(ty -> this.normalize(subst, ty)),
             );
-            if (!hasValueDef) {
+            super = this.new(
+              subst,
+              parentName,
+              parentTArgs.map(ty -> this.normalize(subst, ty)),
+            );
+            if (!isInterface) {
+              !this.super = Some((superCstr, super));
+            };
+            tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+            tcenv.recordClassHierarchy{child => c, parent => parentClass};
+            this.checkSubType(
+              tcenv,
+              parentName.pos,
+              "This class incorrectly extends its base class",
+              thisType,
+              super,
+              TSCode(2415),
+            )
+          } else {
+            // The base is not a class/interface. An interface may still extend
+            // a type alias that resolves to an object type; its members were
+            // merged into `thisType` structurally by `addFieldsFromAliasBase`.
+            // Verify the interface body is compatible with the base (catching
+            // an incompatible field override, TS2430) and skip the class-
+            // hierarchy bookkeeping, which has no parent Class to record.
+            if (!isInterface) {
+              // A type used as a value: `class C extends Alias` is invalid.
               tcenvl.error(
                 Array[
                   (
                     parentName.pos,
-                    `Cannot extend an interface '${parentName}'. Did you mean 'implements'?`,
+                    `'${parentName}' only refers to a type, but is being used as a value here.`,
                   ),
                 ],
-                TSCode(2689),
+                TSCode(2693),
               )
+            } else {
+              super = this.normalize(subst, ext);
+              // Run the compatibility check only when the alias is a single-
+              // branch object with no call/construct signature — i.e. exactly
+              // what `addFieldsFromAliasBase` could merge in full. A non-object
+              // base already reported TS2312 there, and a call/construct base
+              // reported notSupported; in both cases the structural merge is
+              // incomplete, so `thisType` would spuriously fail the subtype
+              // check and pile on a second error.
+              super
+                .expand(subst, this, Some(Covariant()))
+                .clauses.getObject() match {
+              | Some(obj) if (obj.getBranches().size() == 1) ->
+                tfields = obj.getBranches()[0];
+                if (tfields.call.isNone() && tfields.new.isNone()) {
+                  tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+                  this.checkSubType(
+                    tcenv,
+                    parentName.pos,
+                    "This interface incorrectly extends its base type",
+                    thisType,
+                    super,
+                    TSCode(2430),
+                  )
+                }
+              | _ -> void
+              }
             }
-          };
-          superCstr = this.newConstructor(
-            subst,
-            parentName,
-            parentTArgs.map(ty -> this.normalize(subst, ty)),
-          );
-          super = this.new(
-            subst,
-            parentName,
-            parentTArgs.map(ty -> this.normalize(subst, ty)),
-          );
-          if (!isInterface) {
-            !this.super = Some((superCstr, super));
-          };
-          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-          tcenv.recordClassHierarchy{child => c, parent => parentClass};
-          this.checkSubType(
-            tcenv,
-            parentName.pos,
-            "This class incorrectly extends its base class",
-            thisType,
-            super,
-            TSCode(2415),
-          )
+          }
         | _ ->
           tcenvl.error(
             Array[(c.name.pos, "An 'extends' clause must reference a class")],

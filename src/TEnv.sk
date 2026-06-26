@@ -577,19 +577,35 @@ base class TEnv{
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
-        _ = this.addFields(
-          subst,
-          acc,
-          symbolFields,
-          indexes,
-          visitedClasses,
-          isStatic,
-          parentName,
-          if (isStatic is Some _) Array[] else {
-            paramTArgs.map(targ -> this.normalize(subst, targ))
-          },
-          filter,
-        )
+        if (this.hasClassDef(subst, parentName)) {
+          _ = this.addFields(
+            subst,
+            acc,
+            symbolFields,
+            indexes,
+            visitedClasses,
+            isStatic,
+            parentName,
+            if (isStatic is Some _) Array[] else {
+              paramTArgs.map(targ -> this.normalize(subst, targ))
+            },
+            filter,
+          )
+        } else {
+          // The extends target is not a class or interface. tsc allows an
+          // interface to extend a type alias as long as the alias resolves to
+          // an object type (or an intersection of object types with statically
+          // known members); the alias's members are merged structurally, as if
+          // intersected with the interface body. Resolve and merge them here.
+          this.addFieldsFromAliasBase(
+            subst,
+            acc,
+            symbolFields,
+            indexes,
+            isStatic,
+            extend,
+          )
+        }
       | _ ->
         subst.error(
           Array[
@@ -778,6 +794,87 @@ base class TEnv{
       }
     };
     constructor
+  }
+
+  // Merge the structural members of a type-alias base referenced by an
+  // `interface I extends Alias` heritage clause into the accumulating field
+  // maps. tsc accepts an alias here when it resolves to an object type (or an
+  // intersection of object types with statically known members); the members
+  // are inherited as if `Alias` were intersected with the interface body.
+  // Only instance members are inherited — a type alias declares no statics, so
+  // the static-collection pass contributes nothing.
+  private fun addFieldsFromAliasBase(
+    subst: mutable Subst,
+    acc: mutable Map<FieldNameString, TField>,
+    symbolFields: mutable Map<FieldNameString, TField>,
+    indexes: mutable Vector<(IndexKeyKinds, TField)>,
+    isStatic: ?Array<TypeParam>,
+    extend: Type,
+  ): void {
+    if (isStatic is Some _) {
+      void
+    } else {
+      // `normalize` resolves the alias (reporting "Cannot find name" if the
+      // name is undefined); `expand` then drives it to its object structure.
+      aliasTy = this.normalize(subst, extend);
+      aliasTy.expand(subst, this, Some(Covariant())).clauses.getObject() match {
+      | Some(obj) if (obj.getBranches().size() == 1) ->
+        tfields = obj.getBranches()[0];
+        for (f in tfields.fields.toArray()) {
+          acc![f.name] = f
+        };
+        for (f in tfields.symbolFields.toArray()) {
+          symbolFields![f.name] = f
+        };
+        // A call/construct signature on the base is representable here only as
+        // a named member, so it cannot flow through the field maps; reject
+        // rather than silently drop it.
+        if (tfields.call.isSome() || tfields.new.isSome()) {
+          subst.notSupported(
+            extend.pos,
+            "extending a type alias that has a call or construct signature",
+          )
+        };
+        pushIndex = (index: ?TField, keyKinds: IndexKeyKinds) ->
+          index.each(f -> if (!f.isSynthetic()) indexes.push((keyKinds, f)));
+        pushIndex(
+          tfields.stringIndex,
+          IndexKeyKinds::create{
+            hasString => true,
+            hasNumber => false,
+            hasSymbol => false,
+          }.fromSome(),
+        );
+        pushIndex(
+          tfields.numberIndex,
+          IndexKeyKinds::create{
+            hasString => false,
+            hasNumber => true,
+            hasSymbol => false,
+          }.fromSome(),
+        );
+        pushIndex(
+          tfields.symbolIndex,
+          IndexKeyKinds::create{
+            hasString => false,
+            hasNumber => false,
+            hasSymbol => true,
+          }.fromSome(),
+        )
+      | _ ->
+        // Not an object type (a union, primitive, etc.). tsc rejects this
+        // with TS2312; match it.
+        subst.error(
+          Array[
+            (
+              extend.pos,
+              `An interface can only extend an object type or intersection of object types with statically known members.`,
+            ),
+          ],
+          TSCode(2312),
+        )
+      }
+    }
   }
 
   private fun findConstructor(
