@@ -12,3 +12,4 @@ docs/*.aux
 .claude/CLAUDE.md
 /.claude/settings.local.json
 /.skargoconfig
+.regen-staging/
