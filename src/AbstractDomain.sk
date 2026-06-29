@@ -1,0 +1,35 @@
+module SKJS;
+
+// Abstract domain (a join-semilattice) for forward data-flow analysis. A state
+// value type implements `Domain` to describe how partial results combine where
+// control-flow paths merge, and when the analysis has converged.
+//
+// An implementation is expected to satisfy the usual algebraic structure:
+//   - `join` is commutative, associative, and idempotent
+//   - `<=` is the partial order induced by `join`
+//   - `bottom` is `<=` every element of the domain
+//   - `widen` is an upper bound satisfying the ascending chain condition
+//
+// Furthermore, the domain must be sound, i.e.
+//   - `init` over-approximates the initial state at program entrypoint.
+//   - `transfer` over-approximates concrete semantics of normal control-flow (block only, excluding terminator)
+//   - `transferExn` combines mid-block exceptional control-flows, e.g. by joining over throw-point states (only called for blocks where `exnTarget.isSome()`)
+//   - `transferTerminator` over-approximates terminator semantics (for the outgoing edge with the provided `label`)
+trait AbstractDomain {
+  readonly fun join(other: inst): inst;
+  readonly fun <=(other: inst): Bool;
+  readonly fun bottom(): inst;
+  overridable readonly fun widen(other: inst): inst {
+    this.join(other)
+  }
+  readonly fun init(): inst;
+  readonly fun transfer(block: CFGBlock, s: inst): inst;
+  readonly fun transferExn(block: CFGBlock, s: inst): inst;
+  readonly fun transferTerminator(
+    term: BBTerminator,
+    s: inst,
+    label: CFGEdgeLabel,
+  ): inst;
+}
+
+module end;
