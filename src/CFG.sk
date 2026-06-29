@@ -34,6 +34,19 @@ base class BBTerminator {
   | CFGTUnreachable()
 }
 
+// A labeled out-edge of a block.
+base class CFGEdgeLabel uses Orderable {
+  children =
+  | CFGENormal()
+  | CFGETrue()
+  | CFGEFalse()
+  | CFGECase(
+    idx: Int,
+  ) // index into `CFGTSwitch.branches` array
+  | CFGEDefault()
+  | CFGEException()
+}
+
 // A basic block
 value class CFGBlock(
   id: CFGBlockId,
@@ -93,6 +106,37 @@ value class CFG{
   normalExit: CFGBlockId,
   exnExit: CFGBlockId,
   blocks: SortedMap<CFGBlockId, CFGBlock>,
+} {
+  // The labeled out-edges of a block, in the order they should be presented:
+  // terminator-derived edges first, then the exceptional edge appended last.
+  // This is the single source of truth for the CFG's edge set — the DOT renderer
+  // and any data-flow solver derive successors from here rather than re-deriving
+  // them from terminators. `cfg` supplies the function-level exit blocks that a
+  // `return`/`throw` transfers to.
+  fun successors(block: CFGBlock): Array<(CFGEdgeLabel, CFGBlockId)> {
+    edges = mutable Vector<(CFGEdgeLabel, CFGBlockId)>[];
+    block.terminator match {
+    | CFGTJump(target) -> edges.push((CFGENormal(), target))
+    | CFGTBranch(_, thenTarget, elseTarget) ->
+      edges.push((CFGETrue(), thenTarget));
+      edges.push((CFGEFalse(), elseTarget))
+    | CFGTSwitch(_, branches, default_) ->
+      for (i in Range(0, branches.size())) {
+        edges.push((CFGECase(i), branches[i].i1))
+      };
+      edges.push((CFGEDefault(), default_))
+    | CFGTReturn _ -> edges.push((CFGENormal(), this.normalExit))
+    | CFGTThrow _ ->
+      edges.push((CFGEException(), block.exnTarget.default(this.exnExit)))
+    | CFGTUnreachable() -> void
+    };
+    // A non-throw block that may still raise carries an exceptional edge to its
+    // innermost enclosing handler `exnTarget`
+    if (!(block.terminator is CFGTThrow _)) {
+      block.exnTarget.each(target -> edges.push((CFGEException(), target)))
+    };
+    edges.toArray()
+  }
 }
 
 mutable class CFGBuilder{
