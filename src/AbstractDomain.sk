@@ -1,10 +1,8 @@
 module SKJS;
 
-// Abstract domain (a join-semilattice) for forward data-flow analysis. A state
-// value type implements `Domain` to describe how partial results combine where
-// control-flow paths merge, and when the analysis has converged.
+// Abstract domain interface for forward data-flow analysis.
 //
-// An implementation is expected to satisfy the usual algebraic structure:
+// An implementation is expected to satisfy the usual (join semi-lattice) algebraic structure:
 //   - `join` is commutative, associative, and idempotent
 //   - `<=` is the partial order induced by `join`
 //   - `bottom` is `<=` every element of the domain
