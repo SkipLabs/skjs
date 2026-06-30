@@ -4,5 +4,4 @@
 // Currently rejected; will be supported once TAGet handles the T[number] case.
 
 type StringArray = string[];
-// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type StringElem = StringArray[number];

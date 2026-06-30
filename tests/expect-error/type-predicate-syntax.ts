@@ -3,5 +3,4 @@
 //
 // Currently rejected; will be supported once TAIs → boolean.
 
-// @skjs-expect-error Type predicates ('x is T') are not yet supported by SKJS
 declare function isArray(value: unknown): value is unknown[];

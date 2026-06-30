@@ -1075,12 +1075,9 @@ base class TEnv{
         SKJSCode(9013),
       )
     | TAIs _ ->
-      fatalError(
-        Array[
-          (pos, "Type predicates ('x is T') are not yet supported by SKJS"),
-        ],
-        SKJSCode(9015),
-      )
+      // Type predicates (`x is T`) are boolean-valued; treat as boolean.
+      // Narrowing effects are not modelled, but the syntax is accepted.
+      TType::single(TPrimValue::boolean(pos))
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
@@ -1355,13 +1352,25 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
-    | TAGet _ ->
-      fatalError(
-        Array[
-          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
-        ],
-        SKJSCode(9021),
-      )
+    | TAGet(tyObj, tyKey) ->
+      tyKey.value match {
+      | TAPrim(TPKNum()) ->
+        // T[number]: extract element type.  TVars are expanded to their
+        // constraints so e.g. `N extends string[]` resolves to `string`.
+        subst = Subst::mcreate(tcenvb);
+        objType = this.normalize(tcenvb, tyObj);
+        this.numberIndexedType(subst, objType, pos)
+      | _ ->
+        fatalError(
+          Array[
+            (
+              pos,
+              "Indexed access types ('T[K]') are not yet supported by SKJS",
+            ),
+          ],
+          SKJSCode(9021),
+        )
+      }
     }
   }
 
@@ -2151,6 +2160,55 @@ base class TEnv{
     } else {
       PrimLiterals::ofSet(symbols, pos).each(symLits ->
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
+      )
+    };
+    TType::unionN(subst, this, pos, resultTys)
+  }
+
+  // `T[number]`: the element type of T when T is an array or array-constrained
+  // type variable.  Expands TVars to their constraints so that `N extends
+  // string[]` resolves to `string`.  Returns the union of all numberIndex
+  // element types across the clauses of the expanded object type.
+  private fun numberIndexedType(
+    subst: mutable Subst,
+    objType: TType,
+    pos: PosRange,
+  ): TType {
+    clauses = objType.expandToClauses(subst, this, Covariant());
+    // Clauses with `vars` (TParams) are OK: vars are universally-quantified
+    // type parameters; their `stypes` still carry concrete constraint info.
+    // Only reject when `stypes is None()` (top — no type information at all).
+    if (clauses.any(clause -> clause.stypes is None())) {
+      fatalError(
+        Array[
+          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9021),
+      )
+    };
+    resultTys = mutable Vector[];
+    for (clause in clauses) {
+      stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
+      while (!stypes.isEmpty()) {
+        stype = stypes.pop();
+        stype match {
+        | obj @ TObject _ ->
+          for (fields in obj.getAllFields()) {
+            fields.numberIndex.each(nIdx -> resultTys.push(nIdx.get))
+          }
+        | prim @ TPrimValue _ ->
+          expanded = this.newObject(subst, prim.asClassName(), Array[]);
+          stypes.push(expanded)
+        | TPrimUnit _ -> void
+        }
+      }
+    };
+    if (resultTys.isEmpty()) {
+      fatalError(
+        Array[
+          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9021),
       )
     };
     TType::unionN(subst, this, pos, resultTys)
