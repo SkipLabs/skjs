@@ -54,7 +54,7 @@ class STOk<+T>() extends STResult<T>
 /* All other cases: T1 ⋢ T2 */
 base class STError<+T> extends STResult<T> uses Equality {
   const readonlyHintMessage: String = "This would not be an error if this field were readonly";
-  const contravarianceHintMessage: String = "Function parameters are contravariant: the expected parameter type must be assignable to the provided one";
+  const contravarianceHintPrefix: String = "Function parameter types are checked contravariantly:";
 
   overridable macro fun ==<U>(other: STError<U>): Bool {
     other match {
@@ -95,19 +95,21 @@ base class STError<+T> extends STResult<T> uses Equality {
 
   static fun extractContravarianceHint(
     msgs: List<(PosRange, String)>,
-  ): ?PosRange {
+  ): ?(PosRange, String) {
     for ((pos, msg) in msgs) {
-      if (msg == STError::contravarianceHintMessage) {
-        return Some(pos)
+      if (msg.startsWith(STError::contravarianceHintPrefix)) {
+        return Some((pos, msg))
       }
     };
     None()
   }
 
-  static fun contravarianceHint(pos: ?PosRange): List<(PosRange, String)> {
-    pos match {
+  static fun contravarianceHint(
+    hint: ?(PosRange, String),
+  ): List<(PosRange, String)> {
+    hint match {
     | None() -> List[]
-    | Some(p) -> List[(p, STError::contravarianceHintMessage)]
+    | Some(h) -> List[h]
     }
   }
 
@@ -122,6 +124,41 @@ base class STError<+T> extends STResult<T> uses Equality {
       }
     };
     res
+  }
+}
+
+fun functionParamContravarianceHint(
+  subst: mutable Subst,
+  tenv: TEnv,
+  f1: TFun,
+  f2: TFun,
+  i: Int,
+): ?(PosRange, String) {
+  sourceParam = if (i < f1.params.size()) {
+    Some(f1.params[i])
+  } else {
+    oi = i - f1.params.size();
+    if (oi < f1.optionalParams.size()) Some(f1.optionalParams[oi]) else None()
+  };
+  targetParam = if (i < f2.params.size()) {
+    Some(f2.params[i])
+  } else {
+    oi = i - f2.params.size();
+    if (oi < f2.optionalParams.size()) Some(f2.optionalParams[oi]) else None()
+  };
+  (sourceParam, targetParam) match {
+  | (Some(source), Some(target)) ->
+    sourceStr = prettyPrintType(false, source, subst, tenv);
+    targetStr = prettyPrintType(false, target, subst, tenv);
+    Some(
+      (
+        target.pos,
+        `${
+          STError::contravarianceHintPrefix
+        } target parameter type ${targetStr} must be assignable to source parameter type ${sourceStr}`,
+      ),
+    )
+  | _ -> None()
   }
 }
 
@@ -471,7 +508,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)> {
-    (recMsg, msgs, contraHintPos) = this match {
+    (recMsg, msgs, contraHint) = this match {
     | STRecFunTParam(None(), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
@@ -511,7 +548,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
-        if (i < f2.params.size()) Some(f2.params[i].pos) else None(),
+        functionParamContravarianceHint(subst, tenv, this.f1, f2, i),
       )
     | STRecFunOptionalSpread(err, i, _f1, _f2) ->
       (
@@ -538,10 +575,10 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
       )
     };
     if (
-      contraHintPos is Some _ &&
+      contraHint is Some _ &&
       STError::extractContravarianceHint(msgs) is None()
     ) {
-      !msgs = msgs.concat(STError::contravarianceHint(contraHintPos))
+      !msgs = msgs.concat(STError::contravarianceHint(contraHint))
     };
     recMsg match {
     | Some(m) ->
