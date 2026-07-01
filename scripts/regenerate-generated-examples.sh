@@ -103,17 +103,23 @@
 #                                        target/host/dev/skjs and `make` directly.
 #   GEN_SKJS       [0]                   pass --skjs to the generator (needs the
 #                                        skjs binary on PATH during generation)
-#   JOBS           [1]                   parallel generations (raise with care:
-#                                        each costs credits and hits the backend)
+#   JOBS           [1]                   size of the rolling generation pool —
+#                                        up to JOBS benches generate concurrently,
+#                                        and a finished one is immediately
+#                                        replaced by the next queued bench (raise
+#                                        with care: each costs credits and hits
+#                                        the backend)
 #   DRY_RUN        [0]                   print actions, change nothing
 #
 set -euo pipefail
 
-# Requires bash 4+ (mapfile / associative arrays). macOS ships 3.2 as /bin/bash;
-# install a newer one (`brew install bash`) and run via that, e.g.
+# Requires bash 4.3+ (mapfile / associative arrays / `wait -n` for the rolling
+# job pool). macOS ships 3.2 as /bin/bash; install a newer one (`brew install
+# bash`) and run via that, e.g.
 # `/opt/homebrew/bin/bash scripts/regenerate-generated-examples.sh`.
-if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
-  echo "ERROR: this script needs bash >= 4 (you have ${BASH_VERSION:-unknown})." >&2
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] ||
+  { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -lt 3 ]; }; then
+  echo "ERROR: this script needs bash >= 4.3 (you have ${BASH_VERSION:-unknown})." >&2
   echo "       Install one (brew install bash) and re-run with it." >&2
   exit 1
 fi
@@ -401,8 +407,11 @@ fi
 
 mkdir -p "$STAGING_DIR"
 
-# Phase 1 — generate. Generation is the slow, billed part; run up to JOBS at a
-# time (in batches). Syncing happens afterwards, serially, for clean logging.
+# Phase 1 — generate. Generation is the slow, billed part; run a rolling pool
+# of up to JOBS concurrent generations — a finished job's slot is backfilled
+# immediately (via `wait -n`) rather than draining a fixed-size batch, so a
+# slow straggler doesn't idle the other JOBS-1 workers. Syncing happens
+# afterwards, serially, for clean logging.
 declare -A GEN_RC=()
 
 if [ "$DRY_RUN" = 1 ]; then
@@ -414,13 +423,16 @@ else
     set +e; generate_one "$slug"; rc=$?; set -e
     printf '%s\t%s\n' "$slug" "$rc" >>"$STAGING_DIR/.gen-status"
   }
-  batch=()
+  running=0
   for slug in "${TARGETS[@]}"; do
     gen_worker "$slug" &
-    batch+=("$!")
-    if [ "${#batch[@]}" -ge "$JOBS" ]; then wait "${batch[@]}"; batch=(); fi
+    running=$((running + 1))
+    if [ "$running" -ge "$JOBS" ]; then
+      wait -n
+      running=$((running - 1))
+    fi
   done
-  [ "${#batch[@]}" -gt 0 ] && wait "${batch[@]}"
+  wait
   while IFS=$'\t' read -r s rc; do GEN_RC[$s]=$rc; done < "$STAGING_DIR/.gen-status"
 fi
 
