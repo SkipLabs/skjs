@@ -686,6 +686,7 @@ fun testNoLostTest(): void {
     "callgraph", // handled in testCallGraph
     "callgraph-unsupported", // handled in testCallGraphUnsupported
     "cfg", // handled in testCFG
+    "deadcode", // handled in testDeadCode
   ];
   for (subDir in FileSystem.readDirectory(testsDir)) {
     if (coveredTestDirs.contains(subDir)) continue;
