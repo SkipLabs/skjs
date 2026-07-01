@@ -2380,6 +2380,26 @@ class STypes private (
     if (this.stypes.size() == 1) this.stypes.minimum() else None()
   }
 
+  // For spread: if stypes contains exactly one TObject and any number of
+  // primitive arms (TPrimValue/TPrimUnit), return (obj, hasPrim). Returns None
+  // when there are zero or multiple TObjects, or when any stype is neither an
+  // object nor a primitive (e.g. another object or an unresolved variable).
+  fun singleObjectIgnoringPrimitives(): ?(TObject, Bool) {
+    obj: ?TObject = None();
+    hasPrim = false;
+    for (stype in this.values()) {
+      stype match {
+      | o @ TObject _ ->
+        if (obj.isSome()) return None();
+        !obj = Some(o)
+      | TPrimValue _
+      | TPrimUnit _ ->
+        !hasPrim = true
+      }
+    };
+    obj.map(o -> (o, hasPrim))
+  }
+
   fun getConstantString(): ?PrimLiteral {
     this.singleElt() match {
     | Some(TPrimValue(TString(), Some(lits), _)) -> lits.singleElt()

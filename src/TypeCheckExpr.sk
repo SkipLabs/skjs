@@ -1385,11 +1385,11 @@ extension class TypeChecker {
 
         | FDSpread(spreadExpr) ->
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-          obj = spreadTy
+          (obj, spreadSometimesEmpty) = spreadTy
             .getSTypes(tcenv.subst, this, Covariant())
-            .flatMap(sTypes -> sTypes.singleElt()) match {
-          | Some(obj @ TObject _) -> obj
-          | _ ->
+            .flatMap(sTypes -> sTypes.singleObjectIgnoringPrimitives()) match {
+          | Some((obj, hasPrim)) -> (obj, hasPrim)
+          | None() ->
             tcenv.error(
               Array[
                 (spreadExpr.pos, "Only an object type can be spread here"),
@@ -1400,7 +1400,11 @@ extension class TypeChecker {
             continue
           };
           // Sound spread typing: merge existing fields with spread.
-          // - Non-optional spread field wins (replaces existing).
+          // - Non-optional spread field wins (replaces existing) — but only
+          //   when spread always contributes (spreadSometimesEmpty is false).
+          //   When the spread type includes a primitive arm (e.g. `false |
+          //   {x: T}` from `cond && {x: T}`), the spread might not happen, so
+          //   contributed fields are treated as optional.
           // - Otherwise: keep existing optionality, union get type with
           //   spread's contribution (optional field / index / Top).
           // - Always use only get type (spread reads via getter).
@@ -1445,7 +1449,9 @@ extension class TypeChecker {
           newFields = SortedMap<FieldNameString, TField>[];
           for (existingField in fields) {
             spreadTFields.fields.maybeGet(existingField.name) match {
-            | Some(spreadField) if (!spreadField.isOptional) ->
+            | Some(
+              spreadField,
+            ) if (!spreadField.isOptional && !spreadSometimesEmpty) ->
               !newFields[spreadField.name] = TField::create{
                 pos => spreadField.pos,
                 name => spreadField.name.value,
@@ -1461,8 +1467,19 @@ extension class TypeChecker {
                 spreadTFields.indexForFieldName(
                   existingField.name.value,
                 ) match {
-                | Some(idx) -> idx.get
-                | None() -> TType::top(spreadExpr.pos)
+                | Some(idx) if (!idx.isSynthetic()) -> idx.get
+                | Some(_) ->
+                  // Synthetic string index: a subtyping artifact on object
+                  // literals, not a real runtime property bag. Ignore it so
+                  // spreading `{ y: v }` doesn't widen unrelated named fields.
+                  existingField.get
+                | None() ->
+                  // No index at all: the spread might still carry extra
+                  // properties via width subtyping. Conservatively widen to Top
+                  // (unless the spread sometimes contributes nothing).
+                  if (spreadSometimesEmpty) existingField.get else {
+                    TType::top(spreadExpr.pos)
+                  }
                 }
               };
               mergedGet = TType::union(
@@ -1483,7 +1500,7 @@ extension class TypeChecker {
           };
           for (spreadField in spreadTFields.fields) {
             if (!newFields.containsKey(spreadField.name)) {
-              fieldGet = if (spreadField.isOptional) {
+              fieldGet = if (spreadField.isOptional || spreadSometimesEmpty) {
                 // Union with existing index if present
                 tIndexes.indexForFieldName(spreadField.name.value) match {
                 | Some(idx) ->
@@ -1496,7 +1513,7 @@ extension class TypeChecker {
               !newFields[spreadField.name] = TField::create{
                 pos => spreadField.pos,
                 name => spreadField.name.value,
-                isOptional => spreadField.isOptional,
+                isOptional => spreadField.isOptional || spreadSometimesEmpty,
                 isReadonly => None(),
                 type => fieldGet,
                 access => FAPublic(),
@@ -1508,7 +1525,9 @@ extension class TypeChecker {
           newSymbolFields = SortedMap<FieldNameString, TField>[];
           for (existingField in symbolFields) {
             spreadTFields.symbolFields.maybeGet(existingField.name) match {
-            | Some(spreadField) if (!spreadField.isOptional) ->
+            | Some(
+              spreadField,
+            ) if (!spreadField.isOptional && !spreadSometimesEmpty) ->
               !newSymbolFields[spreadField.name] = TField::create{
                 pos => spreadField.pos,
                 name => spreadField.name.value,
@@ -1522,8 +1541,12 @@ extension class TypeChecker {
               | Some(sf) -> sf.get
               | None() ->
                 spreadTFields.symbolIndex match {
-                | Some(idx) -> idx.get
-                | None() -> TType::top(spreadExpr.pos)
+                | Some(idx) if (!idx.isSynthetic()) -> idx.get
+                | Some(_) -> existingField.get
+                | None() ->
+                  if (spreadSometimesEmpty) existingField.get else {
+                    TType::top(spreadExpr.pos)
+                  }
                 }
               };
               mergedGet = TType::union(
@@ -1544,7 +1567,7 @@ extension class TypeChecker {
           };
           for (spreadField in spreadTFields.symbolFields) {
             if (!newSymbolFields.containsKey(spreadField.name)) {
-              fieldGet = if (spreadField.isOptional) {
+              fieldGet = if (spreadField.isOptional || spreadSometimesEmpty) {
                 tIndexes.symbolIndex match {
                 | Some(idx) ->
                   TType::union(tcenv.subst, this, idx.get, spreadField.get)
@@ -1556,7 +1579,7 @@ extension class TypeChecker {
               !newSymbolFields[spreadField.name] = TField::create{
                 pos => spreadField.pos,
                 name => spreadField.name.value,
-                isOptional => spreadField.isOptional,
+                isOptional => spreadField.isOptional || spreadSometimesEmpty,
                 isReadonly => None(),
                 type => fieldGet,
                 access => FAPublic(),
