@@ -5,7 +5,7 @@
 module SKJS;
 
 // Unique block identifier within a function CFG
-value class CFGBlockId(id: Int) uses Orderable, Show {
+value class CFGBlockId(id: Int) uses Orderable, Hashable, Show {
   fun toString(): String {
     `BB_${this.id}`
   }
