@@ -11,8 +11,8 @@ module SKJS;
 // Furthermore, the domain must be sound, i.e.
 //   - `init` over-approximates the initial state at program entrypoint.
 //   - `transfer` over-approximates concrete semantics of normal control-flow (block only, excluding terminator)
-//   - `transferExn` combines mid-block exceptional control-flows, e.g. by joining over throw-point states (only called for blocks where `exnTarget.isSome()`)
-//   - `transferTerminator` over-approximates terminator semantics (for the outgoing edge with the provided `label`)
+//   - `transferExn` combines _all_ exceptional control flow out of a block, including both mid-block exceptional control-flows and explicit `throw` terminators (only called for blocks where `exnTarget.isSome()`)
+//   - `transferTerminator` over-approximates terminator semantics for normal control-flow edges (for the outgoing edge with the provided `label`)
 trait AbstractDomain {
   readonly fun join(other: inst): inst;
   readonly fun <=(other: inst): Bool;
@@ -21,7 +21,7 @@ trait AbstractDomain {
     this.join(other)
   }
   readonly fun init(): inst;
-  readonly fun transfer(block: CFGBlock, s: inst): inst;
+  readonly fun transfer(instrs: Array<CFGInstr>, s: inst): inst;
   readonly fun transferExn(block: CFGBlock, s: inst): inst;
   readonly fun transferTerminator(
     term: BBTerminator,
