@@ -1,4 +1,10 @@
-import type { Order_skip_id_, OrderStored, Order } from "../types.js";
+import { FilterOrderByOwnerMapper } from "../mappers/FilterOrderByOwnerMapper.js";
+import type {
+  Order_skip_id_,
+  OrderStored,
+  GetOrderParams,
+  Order,
+} from "../types.js";
 import type {
   Resource,
   EagerCollection,
@@ -11,12 +17,22 @@ export interface GetOrderResourceInputs extends SharedCollections {
 }
 
 export class GetOrderResource implements Resource<GetOrderResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly orderId: string;
+  private readonly userId: string;
+
+  constructor(params: GetOrderParams) {
+    this.orderId = params.orderId;
+    this.userId = params.userId;
+  }
 
   instantiate(
     inputs: GetOrderResourceInputs,
     _context: Context,
   ): EagerCollection<Order_skip_id_, OrderStored> {
-    return inputs.orders;
+    return inputs.orders.map(
+      FilterOrderByOwnerMapper,
+      this.userId,
+      this.orderId,
+    );
   }
 }

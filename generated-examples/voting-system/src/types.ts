@@ -1,224 +1,240 @@
-export type ApiError = { readonly error: string; readonly message?: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = { readonly code?: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type ApiError_skip_id_ = {
-  readonly error: string;
-  readonly message?: string;
-};
+  readonly code?: string;
+  readonly message: string;
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
-  readonly error: string;
-  readonly message?: string;
+  readonly code?: string;
+  readonly message: string;
+} & { readonly [key: string]: Json | null };
+
+export type CastVoteRequest = { readonly optionId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type CastVoteRequest = { readonly optionIndex: number };
+export type CastVoteRequest_skip_id_ = { readonly optionId: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CastVoteRequest_skip_id_ = { readonly optionIndex: number };
+export type CastVoteRequest_skip_value_ = { readonly optionId: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CastVoteRequest_skip_value_ = { readonly optionIndex: number };
+export type CreatePollOptionRequest = { readonly label: string } & {
+  readonly [key: string]: Json | null;
+};
+
+export type CreatePollOptionRequest_skip_id_ = { readonly label: string } & {
+  readonly [key: string]: Json | null;
+};
+
+export type CreatePollOptionRequest_skip_value_ = { readonly label: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type CreatePollRequest = {
-  readonly options: string[];
+  readonly options: CreatePollOptionRequest[];
   readonly question: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreatePollRequest_skip_id_ = {
-  readonly options: string[];
+  readonly options: CreatePollOptionRequest[];
   readonly question: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreatePollRequest_skip_value_ = {
-  readonly options: string[];
+  readonly options: CreatePollOptionRequest[];
   readonly question: string;
+} & { readonly [key: string]: Json | null };
+
+export type GetPollParams = { readonly pollId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type GetPollParams = { readonly pollId: string };
-
-export type GetPollResultsParams = { readonly pollId: string };
-
-export type GetVoteParams = {
+export type GetPollVoteParams = {
   readonly pollId: string;
-  readonly voterId: string;
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type ListPollVotesParams = { readonly pollId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ListPollsParams = { readonly ownerId?: string };
-
-export type ListVotesForPollParams = { readonly pollId: string };
-
-export type OptionTally = {
-  readonly count: number;
-  readonly optionIndex: number;
-  readonly text: string;
-  readonly votes: Vote[];
-};
-
-export type OptionTally_skip_id_ = {
-  readonly count: number;
-  readonly optionIndex: number;
-  readonly text: string;
-  readonly votes: Vote[];
-};
-
-export type OptionTally_skip_value_ = {
-  readonly count: number;
-  readonly optionIndex: number;
-  readonly text: string;
-  readonly votes: Vote[];
+export type ListPollsParams = { readonly status: PollStatus } & {
+  readonly [key: string]: Json | null;
 };
 
 export type Poll = {
-  readonly closed: boolean;
+  readonly closedAt?: string;
   readonly createdAt: string;
   readonly id: string;
   readonly options: PollOption[];
   readonly ownerId: string;
   readonly question: string;
-};
+  readonly status: PollStatus;
+  readonly totalVotes: number;
+} & { readonly [key: string]: Json | null };
 
-export type PollList = {
-  readonly limit: number;
-  readonly offset: number;
-  readonly polls: Poll[];
+export type PollList = { readonly items: Poll[]; readonly total: number } & {
+  readonly [key: string]: Json | null;
 };
 
 export type PollList_skip_id_ = {
-  readonly limit: number;
-  readonly offset: number;
-  readonly polls: Poll[];
-};
+  readonly items: Poll[];
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
 export type PollList_skip_value_ = {
-  readonly limit: number;
-  readonly offset: number;
-  readonly polls: Poll[];
-};
+  readonly items: Poll[];
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
 export type PollOption = {
-  readonly optionIndex: number;
+  readonly label: string;
+  readonly optionId: string;
   readonly pollId: string;
-  readonly text: string;
+  readonly voteCount: number;
+} & { readonly [key: string]: Json | null };
+
+export type PollOptionKey = {
+  readonly optionId: string;
+  readonly pollId: string;
+} & { readonly [key: string]: Json | null };
+
+export type PollOptionStored = { readonly label: string } & {
+  readonly [key: string]: Json | null;
 };
 
 export type PollOption_skip_id_ = {
-  readonly optionIndex: number;
+  readonly optionId: string;
   readonly pollId: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type PollOption_skip_value_ = { readonly text: string };
+export type PollOption_skip_value_ = {
+  readonly label: string;
+  readonly voteCount: number;
+} & { readonly [key: string]: Json | null };
 
-export type PollResults = {
-  readonly pollId: string;
-  readonly tallies: OptionTally[];
-  readonly totalVotes: number;
-  readonly votes: Vote[];
-};
+export type PollStatus = "OPEN" | "CLOSED";
 
-export type PollResults_skip_id_ = {
-  readonly pollId: string;
-  readonly tallies: OptionTally[];
-  readonly totalVotes: number;
-  readonly votes: Vote[];
-};
+export type PollStatus_skip_id_ = "OPEN" | "CLOSED";
 
-export type PollResults_skip_value_ = {
-  readonly pollId: string;
-  readonly tallies: OptionTally[];
-  readonly totalVotes: number;
-  readonly votes: Vote[];
-};
+export type PollStatus_skip_value_ = "OPEN" | "CLOSED";
 
 export type PollStored = {
-  readonly closed: boolean;
+  readonly closedAt?: string;
   readonly createdAt: string;
   readonly ownerId: string;
   readonly question: string;
-};
+  readonly status: PollStatus;
+} & { readonly [key: string]: Json | null };
 
 export type Poll_skip_id_ = string;
 
 export type Poll_skip_value_ = {
-  readonly closed: boolean;
+  readonly closedAt?: string;
   readonly createdAt: string;
   readonly options: PollOption[];
   readonly ownerId: string;
   readonly question: string;
-};
+  readonly status: PollStatus;
+  readonly totalVotes: number;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest = {
+  readonly avatarUrl?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
+  readonly avatarUrl?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
+  readonly avatarUrl?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdatePollRequest = {
-  readonly closed?: boolean;
   readonly question?: string;
-};
+  readonly status?: PollStatus;
+} & { readonly [key: string]: Json | null };
 
 export type UpdatePollRequest_skip_id_ = {
-  readonly closed?: boolean;
   readonly question?: string;
-};
+  readonly status?: PollStatus;
+} & { readonly [key: string]: Json | null };
 
 export type UpdatePollRequest_skip_value_ = {
-  readonly closed?: boolean;
   readonly question?: string;
-};
+  readonly status?: PollStatus;
+} & { readonly [key: string]: Json | null };
 
 export type User = {
+  readonly avatarUrl?: string;
   readonly createdAt?: string;
   readonly displayName?: string;
   readonly email?: string;
   readonly id: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
+  readonly avatarUrl?: string;
   readonly createdAt?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type Vote = {
   readonly castAt: string;
-  readonly optionIndex: number;
+  readonly optionId: string;
   readonly pollId: string;
-  readonly voterId: string;
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type VoteCountValue = number;
+
+export type VoteKey = { readonly pollId: string; readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type VoteList = {
-  readonly limit: number;
-  readonly offset: number;
-  readonly votes: Vote[];
+export type VoteList = { readonly items: Vote[]; readonly total: number } & {
+  readonly [key: string]: Json | null;
 };
 
 export type VoteList_skip_id_ = {
-  readonly limit: number;
-  readonly offset: number;
-  readonly votes: Vote[];
-};
+  readonly items: Vote[];
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
 export type VoteList_skip_value_ = {
-  readonly limit: number;
-  readonly offset: number;
-  readonly votes: Vote[];
-};
+  readonly items: Vote[];
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
+
+export type VoteStored = {
+  readonly castAt: string;
+  readonly optionId: string;
+} & { readonly [key: string]: Json | null };
 
 export type Vote_skip_id_ = {
   readonly pollId: string;
-  readonly voterId: string;
-};
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
 
 export type Vote_skip_value_ = {
   readonly castAt: string;
-  readonly optionIndex: number;
-};
+  readonly optionId: string;
+} & { readonly [key: string]: Json | null };

@@ -1,22 +1,23 @@
-import type { Vote_skip_id_, Vote_skip_value_, Vote } from "../types.js";
+import type { VoteKey, VoteStored } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetVoteResourceInputs extends SharedCollections {
-  readonly votes: EagerCollection<Vote_skip_id_, Vote_skip_value_>;
+  readonly votes: EagerCollection<VoteKey, VoteStored>;
 }
 
 export class GetVoteResource implements Resource<GetVoteResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetVoteResourceInputs,
     _context: Context,
-  ): EagerCollection<Vote_skip_id_, Vote_skip_value_> {
+  ): EagerCollection<VoteKey, VoteStored> {
     return inputs.votes;
   }
 }

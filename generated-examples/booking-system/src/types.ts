@@ -1,14 +1,22 @@
-export type ApiError = { readonly code: string; readonly message: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = {
+  readonly code: string;
+  readonly details?: string;
+  readonly message: string;
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_id_ = {
   readonly code: string;
+  readonly details?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
   readonly code: string;
+  readonly details?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type Appointment = {
   readonly cancellationReason?: string;
@@ -17,28 +25,37 @@ export type Appointment = {
   readonly completedAt?: string;
   readonly createdAt: string;
   readonly customerId: string;
-  readonly endsAt: string;
+  readonly endAt: string;
   readonly id: string;
   readonly notes?: string;
-  readonly resourceId: string;
-  readonly startsAt: string;
+  readonly providerId: string;
+  readonly revision: number;
+  readonly serviceId: string;
+  readonly startAt: string;
   readonly status: AppointmentStatus;
-};
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
 
 export type AppointmentList = {
   readonly items: Appointment[];
   readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type AppointmentList_skip_id_ = {
   readonly items: Appointment[];
   readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type AppointmentList_skip_value_ = {
   readonly items: Appointment[];
   readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
+
+export type AppointmentRoleFilter = "customer" | "provider";
+
+export type AppointmentRoleFilter_skip_id_ = "customer" | "provider";
+
+export type AppointmentRoleFilter_skip_value_ = "customer" | "provider";
 
 export type AppointmentStatus = "SCHEDULED" | "CANCELLED" | "COMPLETED";
 
@@ -61,234 +78,253 @@ export type Appointment_skip_value_ = {
   readonly completedAt?: string;
   readonly createdAt: string;
   readonly customerId: string;
-  readonly endsAt: string;
+  readonly endAt: string;
   readonly notes?: string;
-  readonly resourceId: string;
-  readonly startsAt: string;
+  readonly providerId: string;
+  readonly revision: number;
+  readonly serviceId: string;
+  readonly startAt: string;
   readonly status: AppointmentStatus;
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
+
+export type AppointmentsByServiceParams = { readonly serviceId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type AvailabilityWindow = {
-  readonly createdAt: string;
-  readonly endsAt: string;
-  readonly id: string;
-  readonly resourceId: string;
-  readonly startsAt: string;
+export type AvailabilityList = { readonly slots: AvailableSlot[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type AvailabilityWindowKey = {
-  readonly id: string;
-  readonly resourceId: string;
+export type AvailabilityList_skip_id_ = { readonly slots: AvailableSlot[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type AvailabilityWindowList = { readonly items: AvailabilityWindow[] };
+export type AvailabilityList_skip_value_ = {
+  readonly slots: AvailableSlot[];
+} & { readonly [key: string]: Json | null };
 
-export type AvailabilityWindowList_skip_id_ = {
-  readonly items: AvailabilityWindow[];
-};
+export type AvailabilityRule = {
+  readonly dayOfWeek: number;
+  readonly endTimeMinutes: number;
+  readonly startTimeMinutes: number;
+  readonly timezone?: string;
+} & { readonly [key: string]: Json | null };
 
-export type AvailabilityWindowList_skip_value_ = {
-  readonly items: AvailabilityWindow[];
-};
+export type AvailabilityRule_skip_id_ = {
+  readonly dayOfWeek: number;
+  readonly endTimeMinutes: number;
+  readonly startTimeMinutes: number;
+  readonly timezone?: string;
+} & { readonly [key: string]: Json | null };
 
-export type AvailabilityWindowStored = {
-  readonly createdAt: string;
-  readonly endsAt: string;
-  readonly startsAt: string;
-};
+export type AvailabilityRule_skip_value_ = {
+  readonly dayOfWeek: number;
+  readonly endTimeMinutes: number;
+  readonly startTimeMinutes: number;
+  readonly timezone?: string;
+} & { readonly [key: string]: Json | null };
 
-export type AvailabilityWindow_skip_id_ = {
-  readonly id: string;
-  readonly resourceId: string;
-};
+export type AvailableSlot = {
+  readonly endAt: string;
+  readonly serviceId: string;
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type AvailabilityWindow_skip_value_ = {
-  readonly createdAt: string;
-  readonly endsAt: string;
-  readonly startsAt: string;
-};
+export type AvailableSlot_skip_id_ = {
+  readonly endAt: string;
+  readonly serviceId: string;
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type BookableResource = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly durationMinutes?: number;
-  readonly id: string;
-  readonly name: string;
-  readonly ownerId: string;
-};
+export type AvailableSlot_skip_value_ = {
+  readonly endAt: string;
+  readonly serviceId: string;
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type BookableResource_skip_id_ = string;
-
-export type BookableResource_skip_value_ = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly durationMinutes?: number;
-  readonly name: string;
-  readonly ownerId: string;
-};
-
-export type CancelAppointmentRequest = { readonly cancellationReason?: string };
+export type CancelAppointmentRequest = {
+  readonly cancellationReason?: string;
+} & { readonly [key: string]: Json | null };
 
 export type CancelAppointmentRequest_skip_id_ = {
   readonly cancellationReason?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CancelAppointmentRequest_skip_value_ = {
   readonly cancellationReason?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateAppointmentRequest = {
-  readonly endsAt: string;
   readonly notes?: string;
-  readonly resourceId: string;
-  readonly startsAt: string;
-};
+  readonly serviceId: string;
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
 export type CreateAppointmentRequest_skip_id_ = {
-  readonly endsAt: string;
   readonly notes?: string;
-  readonly resourceId: string;
-  readonly startsAt: string;
-};
+  readonly serviceId: string;
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
 export type CreateAppointmentRequest_skip_value_ = {
-  readonly endsAt: string;
   readonly notes?: string;
-  readonly resourceId: string;
-  readonly startsAt: string;
-};
+  readonly serviceId: string;
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type CreateAvailabilityWindowRequest = {
-  readonly endsAt: string;
-  readonly startsAt: string;
-};
-
-export type CreateAvailabilityWindowRequest_skip_id_ = {
-  readonly endsAt: string;
-  readonly startsAt: string;
-};
-
-export type CreateAvailabilityWindowRequest_skip_value_ = {
-  readonly endsAt: string;
-  readonly startsAt: string;
-};
-
-export type CreateResourceRequest = {
+export type CreateServiceRequest = {
+  readonly availabilityRules: AvailabilityRule[];
+  readonly currency?: string;
   readonly description?: string;
-  readonly durationMinutes?: number;
+  readonly durationMinutes: number;
   readonly name: string;
-};
+  readonly priceCents?: number;
+} & { readonly [key: string]: Json | null };
 
-export type CreateResourceRequest_skip_id_ = {
+export type CreateServiceRequest_skip_id_ = {
+  readonly availabilityRules: AvailabilityRule[];
+  readonly currency?: string;
   readonly description?: string;
-  readonly durationMinutes?: number;
+  readonly durationMinutes: number;
   readonly name: string;
-};
+  readonly priceCents?: number;
+} & { readonly [key: string]: Json | null };
 
-export type CreateResourceRequest_skip_value_ = {
+export type CreateServiceRequest_skip_value_ = {
+  readonly availabilityRules: AvailabilityRule[];
+  readonly currency?: string;
   readonly description?: string;
-  readonly durationMinutes?: number;
+  readonly durationMinutes: number;
   readonly name: string;
+  readonly priceCents?: number;
+} & { readonly [key: string]: Json | null };
+
+export type GetUserByIdParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type GetAppointmentParams = { readonly appointmentId: string };
-
-export type GetResourceParams = { readonly resourceId: string };
-
-export type GetUserParams = { readonly userId: string };
-
-export type ListAppointmentsParams = {
-  readonly customerId?: string;
-  readonly resourceId?: string;
-  readonly status?: AppointmentStatus;
+export type ListServicesParams = { readonly providerId?: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ListAvailabilityParams = { readonly resourceId: string };
-
-export type ListResourcesParams = { readonly ownerId?: string };
-
-export type RescheduleAppointmentRequest = {
-  readonly endsAt: string;
-  readonly notes?: string;
-  readonly startsAt: string;
+export type RescheduleAppointmentRequest = { readonly startAt: string } & {
+  readonly [key: string]: Json | null;
 };
 
 export type RescheduleAppointmentRequest_skip_id_ = {
-  readonly endsAt: string;
-  readonly notes?: string;
-  readonly startsAt: string;
-};
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
 export type RescheduleAppointmentRequest_skip_value_ = {
-  readonly endsAt: string;
-  readonly notes?: string;
-  readonly startsAt: string;
-};
+  readonly startAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type ResourceList = {
-  readonly items: BookableResource[];
-  readonly total?: number;
-};
+export type Service = {
+  readonly availabilityRules: AvailabilityRule[];
+  readonly createdAt: string;
+  readonly currency?: string;
+  readonly description?: string;
+  readonly durationMinutes: number;
+  readonly id: string;
+  readonly name: string;
+  readonly priceCents?: number;
+  readonly providerId: string;
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
 
-export type ResourceList_skip_id_ = {
-  readonly items: BookableResource[];
+export type ServiceList = {
+  readonly items: Service[];
   readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type ResourceList_skip_value_ = {
-  readonly items: BookableResource[];
+export type ServiceList_skip_id_ = {
+  readonly items: Service[];
   readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
+
+export type ServiceList_skip_value_ = {
+  readonly items: Service[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
+
+export type Service_skip_id_ = string;
+
+export type Service_skip_value_ = {
+  readonly availabilityRules: AvailabilityRule[];
+  readonly createdAt: string;
+  readonly currency?: string;
+  readonly description?: string;
+  readonly durationMinutes: number;
+  readonly name: string;
+  readonly priceCents?: number;
+  readonly providerId: string;
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest = {
   readonly avatarUrl?: string;
+  readonly bio?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
   readonly avatarUrl?: string;
+  readonly bio?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
   readonly avatarUrl?: string;
+  readonly bio?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type UpdateResourceRequest = {
+export type UpdateServiceRequest = {
+  readonly availabilityRules?: AvailabilityRule[];
+  readonly currency?: string;
   readonly description?: string;
   readonly durationMinutes?: number;
   readonly name?: string;
-};
+  readonly priceCents?: number;
+} & { readonly [key: string]: Json | null };
 
-export type UpdateResourceRequest_skip_id_ = {
+export type UpdateServiceRequest_skip_id_ = {
+  readonly availabilityRules?: AvailabilityRule[];
+  readonly currency?: string;
   readonly description?: string;
   readonly durationMinutes?: number;
   readonly name?: string;
-};
+  readonly priceCents?: number;
+} & { readonly [key: string]: Json | null };
 
-export type UpdateResourceRequest_skip_value_ = {
+export type UpdateServiceRequest_skip_value_ = {
+  readonly availabilityRules?: AvailabilityRule[];
+  readonly currency?: string;
   readonly description?: string;
   readonly durationMinutes?: number;
   readonly name?: string;
-};
+  readonly priceCents?: number;
+} & { readonly [key: string]: Json | null };
 
 export type User = {
   readonly avatarUrl?: string;
+  readonly bio?: string;
   readonly createdAt?: string;
   readonly displayName?: string;
   readonly email?: string;
   readonly id: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
   readonly avatarUrl?: string;
+  readonly bio?: string;
   readonly createdAt?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };

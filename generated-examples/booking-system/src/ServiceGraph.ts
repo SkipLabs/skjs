@@ -1,12 +1,12 @@
+import { AppointmentByCustomerMapper } from "./mappers/AppointmentByCustomerMapper.js";
+import { AppointmentByProviderMapper } from "./mappers/AppointmentByProviderMapper.js";
 import type {
   Appointment_skip_id_,
   Appointment,
   Appointment_skip_value_,
-  AvailabilityWindowKey,
-  AvailabilityWindowStored,
-  BookableResource_skip_id_,
-  BookableResource,
-  BookableResource_skip_value_,
+  Service_skip_id_,
+  Service,
+  Service_skip_value_,
   User_skip_id_,
   User,
   User_skip_value_,
@@ -23,14 +23,7 @@ export interface InputCollections extends NamedEagerCollections {
     Appointment_skip_id_,
     Appointment_skip_value_
   >;
-  readonly availabilityWindows: EagerCollection<
-    AvailabilityWindowKey,
-    AvailabilityWindowStored
-  >;
-  readonly resources: EagerCollection<
-    BookableResource_skip_id_,
-    BookableResource_skip_value_
-  >;
+  readonly services: EagerCollection<Service_skip_id_, Service_skip_value_>;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
@@ -39,14 +32,9 @@ export interface GraphCollections extends SharedCollections {
     Appointment_skip_id_,
     Appointment_skip_value_
   >;
-  readonly availabilityWindows: EagerCollection<
-    AvailabilityWindowKey,
-    AvailabilityWindowStored
-  >;
-  readonly resources: EagerCollection<
-    BookableResource_skip_id_,
-    BookableResource_skip_value_
-  >;
+  readonly appointmentsByCustomer: EagerCollection<User_skip_id_, Appointment>;
+  readonly appointmentsByProvider: EagerCollection<User_skip_id_, Appointment>;
+  readonly services: EagerCollection<Service_skip_id_, Service_skip_value_>;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
@@ -54,14 +42,22 @@ export function createGraph(
   inputs: InputCollections,
   _context: Context,
 ): GraphCollections {
+  const appointmentsByCustomer = inputs.appointments.map(
+    AppointmentByCustomerMapper,
+  );
+  const appointmentsByProvider = inputs.appointments.map(
+    AppointmentByProviderMapper,
+  );
   const output_appointments = inputs.appointments;
-  const output_availabilityWindows = inputs.availabilityWindows;
-  const output_resources = inputs.resources;
+  const output_appointmentsByCustomer = appointmentsByCustomer;
+  const output_appointmentsByProvider = appointmentsByProvider;
+  const output_services = inputs.services;
   const output_users = inputs.users;
   return {
     appointments: output_appointments,
-    availabilityWindows: output_availabilityWindows,
-    resources: output_resources,
+    appointmentsByCustomer: output_appointmentsByCustomer,
+    appointmentsByProvider: output_appointmentsByProvider,
+    services: output_services,
     users: output_users,
   };
 }

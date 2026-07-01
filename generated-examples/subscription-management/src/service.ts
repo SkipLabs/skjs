@@ -1,25 +1,20 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetMySpendingSummaryResource } from "./resources/GetMySpendingSummaryResource.js";
+import { GetPaymentResource } from "./resources/GetPaymentResource.js";
 import { GetSubscriptionResource } from "./resources/GetSubscriptionResource.js";
-import { GetSubscriptionStoredResource } from "./resources/GetSubscriptionStoredResource.js";
-import { ListSubscriptionPaymentsResource } from "./resources/ListSubscriptionPaymentsResource.js";
 import { ListSubscriptionsResource } from "./resources/ListSubscriptionsResource.js";
-import { PaymentEventsByOwnerResource } from "./resources/PaymentEventsByOwnerResource.js";
+import { PaymentsBySubscriptionResource } from "./resources/PaymentsBySubscriptionResource.js";
 import { SubscriptionsByOwnerResource } from "./resources/SubscriptionsByOwnerResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
-  PaymentEvent_skip_id_,
-  PaymentEvent_skip_value_,
+  Payment_skip_id_,
+  Payment_skip_value_,
   Subscription_skip_id_,
   Subscription_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetSpendingSummaryParams,
-  GetSubscriptionParams,
-  ListPaymentsByOwnerSubParams,
   ListSubscriptionsParams,
-  PaymentEvent,
+  Payment,
   Subscription,
   User,
 } from "./types.js";
@@ -27,6 +22,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -34,10 +30,7 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
-  readonly paymentEvents: InputDefinition<
-    PaymentEvent_skip_id_,
-    PaymentEvent_skip_value_
-  >;
+  readonly payments: InputDefinition<Payment_skip_id_, Payment_skip_value_>;
   readonly subscriptions: InputDefinition<
     Subscription_skip_id_,
     Subscription_skip_value_
@@ -46,24 +39,16 @@ interface Inputs extends NamedInputDefinitions {
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getMySpendingSummaryResource: ResourceClass<
-    GraphCollections,
-    GetSpendingSummaryParams
-  >;
-  readonly getSubscriptionResource: ResourceClass<
-    GraphCollections,
-    GetSubscriptionParams
-  >;
-  readonly getSubscriptionStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly listSubscriptionPaymentsResource: ResourceClass<
-    GraphCollections,
-    ListPaymentsByOwnerSubParams
-  >;
+  readonly getPaymentResource: ResourceClass<GraphCollections, Json>;
+  readonly getSubscriptionResource: ResourceClass<GraphCollections, Json>;
   readonly listSubscriptionsResource: ResourceClass<
     GraphCollections,
     ListSubscriptionsParams
   >;
-  readonly paymentEventsByOwnerResource: ResourceClass<GraphCollections, Json>;
+  readonly paymentsBySubscriptionResource: ResourceClass<
+    GraphCollections,
+    Json
+  >;
   readonly subscriptionsByOwnerResource: ResourceClass<GraphCollections, Json>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
@@ -75,13 +60,11 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
-      paymentEvents: new InputDefinition<
-        PaymentEvent_skip_id_,
-        PaymentEvent_skip_value_
-      >([]),
+      payments: new InputDefinition<Payment_skip_id_, Payment_skip_value_>([]),
       subscriptions: new InputDefinition<
         Subscription_skip_id_,
         Subscription_skip_value_
@@ -89,12 +72,10 @@ class Service implements SkipService<
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getMySpendingSummaryResource: GetMySpendingSummaryResource,
+      getPaymentResource: GetPaymentResource,
       getSubscriptionResource: GetSubscriptionResource,
-      getSubscriptionStoredResource: GetSubscriptionStoredResource,
-      listSubscriptionPaymentsResource: ListSubscriptionPaymentsResource,
       listSubscriptionsResource: ListSubscriptionsResource,
-      paymentEventsByOwnerResource: PaymentEventsByOwnerResource,
+      paymentsBySubscriptionResource: PaymentsBySubscriptionResource,
       subscriptionsByOwnerResource: SubscriptionsByOwnerResource,
       getMeResource: getMeResource,
     };
