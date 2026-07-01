@@ -19,15 +19,15 @@ fun analyzeForward<S, D: AbstractDomain<S>>(
   !preStates[cfg.entry] = domain.init();
 
   // `queued` mirrors the set of block ids currently in `worklist`, so a block
-  // is never enqueued twice concurrently. `CFGBlockId` is Orderable but not
-  // Hashable, hence a SortedSet rather than a mutable Set.
+  // is never enqueued twice concurrently.
   worklist = mutable Vector<CFGBlockId>[];
   worklist.push(cfg.entry);
-  queued = SortedSet<CFGBlockId>[].set(cfg.entry);
+  queued = mutable Set<CFGBlockId>[];
+  queued.add(cfg.entry);
 
   while (!worklist.isEmpty()) {
     blockId = worklist.pop();
-    !queued = queued.remove(blockId);
+    queued.remove(blockId);
     block = cfg.blocks.get(blockId);
     blockPre = preStates.maybeGet(blockId).default(bottom);
     // Block body only; the terminator is modeled per outgoing edge below.
@@ -45,7 +45,7 @@ fun analyzeForward<S, D: AbstractDomain<S>>(
         !preStates[target] = merged;
         if (!queued.contains(target)) {
           worklist.push(target);
-          !queued = queued.set(target)
+          queued.add(target)
         }
       }
     }
