@@ -46,7 +46,7 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
   // Slicing / combining (still pure)
-  slice(start: number, end?: number): ReadonlyArray<T>;
+  slice(start?: number, end?: number): ReadonlyArray<T>;
   // T in contravariant position prevents covariant subtyping from Array to ReadonlyArray.
   // concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
 }
@@ -55,7 +55,7 @@ declare interface SKJS_ArrayAndTupleBase<T> extends ReadonlyArray<T> {
   indexOf(x: T): number;
   map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): Array<T>;
-  slice(start: number, end?: number): Array<T>;
+  slice(start?: number, end?: number): Array<T>;
   concat(other: Array<T>): Array<T>;
   includes(element: T): boolean;
   lastIndexOf(element: T): number;
@@ -86,7 +86,7 @@ declare class Array<T> implements SKJS_ArrayAndTupleBase<T> {
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
   static isArray<T>(value: T): boolean;
   join(separator: string): string;
-  slice(start: number, end?: number): Array<T>;
+  slice(start?: number, end?: number): Array<T>;
 
   // Additional essential Array methods
   pop(): T | undefined;
@@ -377,7 +377,7 @@ declare class WeakSet<T> {
 
 declare class Date {
   constructor(
-    year?: number,
+    year?: string | number,
     month?: number,
     day?: number,
     hour?: number,
