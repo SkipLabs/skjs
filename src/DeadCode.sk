@@ -1,0 +1,68 @@
+// Reachability / dead-code analysis as a two-element abstract domain
+
+module SKJS;
+
+base class Liveness {
+  children =
+  | Dead()
+  | Live()
+}
+
+// Reachability / dead-code analysis. Liveness propagates unchanged along every
+// edge (the transfers are the identity), so with `analyzeForward` the entry
+// starts `Live` and the reachable blocks are exactly the keys present in the
+// resulting map; dead blocks are the rest (see `deadBlocks`).
+class LivenessDomain() uses AbstractDomain<Liveness> {
+  fun bottom(): Liveness {
+    Dead()
+  }
+
+  fun init(): Liveness {
+    Live()
+  }
+
+  fun join(l: Liveness, r: Liveness): Liveness {
+    l match {
+    | Live() -> Live()
+    | Dead() -> r
+    }
+  }
+  fun leq(l: Liveness, r: Liveness): Bool {
+    l match {
+    | Dead() -> true
+    | Live() -> r is Live()
+    }
+  }
+
+  fun transfer(_instrs: Array<CFGInstr>, s: Liveness): Liveness {
+    s
+  }
+
+  fun transferExn(_block: CFGBlock, s: Liveness): Liveness {
+    s
+  }
+
+  fun transferTerminator(
+    _term: BBTerminator,
+    s: Liveness,
+    _label: CFGENormalLabel,
+  ): Liveness {
+    s
+  }
+}
+
+// The blocks of `cfg` unreachable from the entry — i.e. dead code. Runs the
+// liveness analysis and returns every block id absent from the fixpoint (all
+// present blocks are `Live`).
+fun deadBlocks(cfg: CFG): SortedSet<CFGBlockId> {
+  live = analyzeForward(cfg, LivenessDomain());
+  dead = SortedSet<CFGBlockId>[];
+  for (block in cfg.blocks.values()) {
+    if (!live.containsKey(block.id)) {
+      !dead = dead.set(block.id)
+    }
+  };
+  dead
+}
+
+module end;
