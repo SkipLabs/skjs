@@ -1,33 +1,43 @@
 module SKJS;
 
-// Abstract domain interface for forward data-flow analysis.
+// The (join semi-)lattice of analysis states for a forward data-flow analysis.
+
+// An abstract domain for a forward analysis over a state lattice `S`
 //
-// An implementation is expected to satisfy the usual (join semi-lattice) algebraic structure:
-//   - `join` is commutative, associative, and idempotent
-//   - `<=` is the partial order induced by `join`
-//   - `bottom` is `<=` every element of the domain
-//   - `widen` is an upper bound satisfying the ascending chain condition
+// An implementation is expected to satisfy the usual laws:
+//   - `join` is commutative, associative, and idempotent (the least upper bound)
+//   - `leq` is the partial order induced by `join`
+//   - `widen` is an upper bound satisfying the ascending chain condition; it
+//     defaults to `join`, which is correct for finite-height lattices.
 //
-// Furthermore, the domain must be sound, i.e.
-//   - `init` over-approximates the initial state at program entrypoint.
-//   - `transfer` over-approximates concrete semantics of normal control-flow (block only, excluding terminator)
-//   - `transferExn` combines _all_ exceptional control flow out of a block, including both mid-block exceptional control-flows and explicit `throw` terminators (only called for blocks where `exnTarget.isSome()`)
-//   - `transferTerminator` over-approximates terminator semantics for normal control-flow edges (for the outgoing edge with the provided `label`)
-trait AbstractDomain {
-  readonly fun join(other: inst): inst;
-  readonly fun <=(other: inst): Bool;
-  readonly fun bottom(): inst;
-  overridable readonly fun widen(other: inst): inst {
-    this.join(other)
+// The domain must also be sound w.r.t. the concrete semantics:
+//   - `bottom()` is `leq` every element of `S`.
+//   - `init()` over-approximates the state at the program entrypoint.
+//   - `transfer` over-approximates a block body's normal control-flow (the
+//     instruction sequence only, excluding the terminator).
+//   - `transferExn` over-approximates the state escaping to the enclosing
+//     handler: mid-block implicit throws and explicit `throw` terminators, e.g.
+//     by joining over throw-point states (only invoked for blocks with an
+//     exceptional successor).
+//   - `transferTerminator` over-approximates terminator semantics for the
+//     normal outgoing edge carrying the provided `label`.
+trait AbstractDomain<S> {
+  readonly fun bottom(): S;
+  readonly fun init(): S;
+
+  readonly fun join(l: S, r: S): S;
+  readonly fun leq(l: S, r: S): Bool;
+  overridable readonly fun widen(l: S, r: S): S {
+    this.join(l, r)
   }
-  readonly fun init(): inst;
-  readonly fun transfer(instrs: Array<CFGInstr>, s: inst): inst;
-  readonly fun transferExn(block: CFGBlock, s: inst): inst;
+
+  readonly fun transfer(instrs: Array<CFGInstr>, s: S): S;
+  readonly fun transferExn(block: CFGBlock, s: S): S;
   readonly fun transferTerminator(
     term: BBTerminator,
-    s: inst,
+    s: S,
     label: CFGENormalLabel,
-  ): inst;
+  ): S;
 }
 
 module end;

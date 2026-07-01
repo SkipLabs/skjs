@@ -3,23 +3,19 @@
 module SKJS;
 
 // Runs a forward data-flow analysis to a fixpoint over `cfg`, returning the
-// pre-state computed for each reachable block. `domain` is a seed instance of
-// the analysis: the solver calls its `init`/`bottom`/`transfer*` methods to
-// bootstrap and to model each block, and merges states with `widen` (which
-// defaults to `join`). Blocks unreachable from the entry are simply absent from
-// the result — their pre-state is `bottom`.
+// pre-state computed for each reachable block.  Blocks unreachable from the
+// entry are absent from the result — their pre-state is `domain.bottom()`.
 //
 // For each popped block the solver computes the block body `post`-state once,
 // then pushes state along every successor edge using transferTerminator for normal
 // control flow and transferExn for exceptional control flow (both mid-block implicit
 // throws and block-terminating explicit `throw`s)
-
-fun analyzeForward<D: AbstractDomain>(
+fun analyzeForward<S, D: AbstractDomain<S>>(
   cfg: CFG,
   domain: D,
-): SortedMap<CFGBlockId, D> {
+): SortedMap<CFGBlockId, S> {
   bottom = domain.bottom();
-  preStates = SortedMap<CFGBlockId, D>[];
+  preStates = SortedMap<CFGBlockId, S>[];
   !preStates[cfg.entry] = domain.init();
 
   // `queued` mirrors the set of block ids currently in `worklist`, so a block
@@ -43,9 +39,9 @@ fun analyzeForward<D: AbstractDomain>(
         domain.transferTerminator(block.terminator, post, normal)
       };
       old = preStates.maybeGet(target).default(bottom);
-      merged = old.widen(edgeState);
-      // `widen` is an upper bound, so `merged <= old` exactly when nothing grew.
-      if (!(merged <= old)) {
+      merged = domain.widen(old, edgeState);
+      // `widen` is an upper bound, so merged <= old exactly when nothing grew.
+      if (!(domain.leq(merged, old))) {
         !preStates[target] = merged;
         if (!queued.contains(target)) {
           worklist.push(target);
