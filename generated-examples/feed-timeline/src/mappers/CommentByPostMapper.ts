@@ -8,7 +8,7 @@ import type {
 } from "../types.js";
 import type { Context, Mapper, Values } from "@skipruntime/core";
 
-// For each comment entry, emit one output pair whose key is sourced from the entry's value's postId field, paired with a new value listing every required field of Comment explicitly: id sourced from the entry's key (the original Comment.id is preserved on the value because the new output key is postId, so id would otherwise be lost); postId sourced from the entry's value's postId field; authorId sourced from the entry's value's authorId field; content sourced from the entry's value's content field; createdAt sourced from the entry's value's createdAt field.
+// For each comment entry, emit one output pair whose key is sourced from the entry's value's postId field, and whose value lists every required field of Comment explicitly: id sourced from the entry's key (the comment id); postId sourced from the entry's value's postId field; authorId sourced from the entry's value's authorId field; content sourced from the entry's value's content field; createdAt sourced from the entry's value's createdAt field. Re-injecting the comment id on the value side is required so the api handler for GET /posts/{postId}/comments can emit full Comment objects (which require id) when consulting the re-keyed collection by postId. The original Comment.id is preserved in the value as id.
 export class CommentByPostMapper implements Mapper<
   Comment_skip_id_,
   Comment_skip_value_,

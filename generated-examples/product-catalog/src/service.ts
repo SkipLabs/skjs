@@ -1,36 +1,32 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { AdjustmentsByInventoryResource } from "./resources/AdjustmentsByInventoryResource.js";
-import { GetInventoryItemStoredResource } from "./resources/GetInventoryItemStoredResource.js";
+import { GetProductResource } from "./resources/GetProductResource.js";
 import { ListCategoriesResource } from "./resources/ListCategoriesResource.js";
-import { ListInventoryItemsResource } from "./resources/ListInventoryItemsResource.js";
+import { ListInventoryAdjustmentsByProductResource } from "./resources/ListInventoryAdjustmentsByProductResource.js";
+import { ListInventoryAdjustmentsResource } from "./resources/ListInventoryAdjustmentsResource.js";
 import { ListProductsResource } from "./resources/ListProductsResource.js";
-import { ListWarehousesResource } from "./resources/ListWarehousesResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Category_skip_id_,
   Category_skip_value_,
   InventoryAdjustment_skip_id_,
   InventoryAdjustment_skip_value_,
-  InventoryItem_skip_id_,
-  InventoryItem_skip_value_,
   Product_skip_id_,
-  Product_skip_value_,
+  ProductStored,
   User_skip_id_,
   User_skip_value_,
-  Warehouse_skip_id_,
-  Warehouse_skip_value_,
+  ListInventoryAdjustmentsParams,
+  ListProductsParams,
   Category,
   InventoryAdjustment,
-  InventoryItem,
   Product,
   User,
-  Warehouse,
 } from "./types.js";
 import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -43,31 +39,25 @@ interface Inputs extends NamedInputDefinitions {
     InventoryAdjustment_skip_id_,
     InventoryAdjustment_skip_value_
   >;
-  readonly inventoryItems: InputDefinition<
-    InventoryItem_skip_id_,
-    InventoryItem_skip_value_
-  >;
-  readonly products: InputDefinition<Product_skip_id_, Product_skip_value_>;
+  readonly products: InputDefinition<Product_skip_id_, ProductStored>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
-  readonly warehouses: InputDefinition<
-    Warehouse_skip_id_,
-    Warehouse_skip_value_
-  >;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly adjustmentsByInventoryResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
-  readonly getInventoryItemStoredResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
+  readonly getProductResource: ResourceClass<GraphCollections, Json>;
   readonly listCategoriesResource: ResourceClass<GraphCollections, Json>;
-  readonly listInventoryItemsResource: ResourceClass<GraphCollections, Json>;
-  readonly listProductsResource: ResourceClass<GraphCollections, Json>;
-  readonly listWarehousesResource: ResourceClass<GraphCollections, Json>;
+  readonly listInventoryAdjustmentsByProductResource: ResourceClass<
+    GraphCollections,
+    Json
+  >;
+  readonly listInventoryAdjustmentsResource: ResourceClass<
+    GraphCollections,
+    ListInventoryAdjustmentsParams
+  >;
+  readonly listProductsResource: ResourceClass<
+    GraphCollections,
+    ListProductsParams
+  >;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -78,6 +68,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -88,24 +79,16 @@ class Service implements SkipService<
         InventoryAdjustment_skip_id_,
         InventoryAdjustment_skip_value_
       >([]),
-      inventoryItems: new InputDefinition<
-        InventoryItem_skip_id_,
-        InventoryItem_skip_value_
-      >([]),
-      products: new InputDefinition<Product_skip_id_, Product_skip_value_>([]),
+      products: new InputDefinition<Product_skip_id_, ProductStored>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
-      warehouses: new InputDefinition<
-        Warehouse_skip_id_,
-        Warehouse_skip_value_
-      >([]),
     };
     this.resources = {
-      adjustmentsByInventoryResource: AdjustmentsByInventoryResource,
-      getInventoryItemStoredResource: GetInventoryItemStoredResource,
+      getProductResource: GetProductResource,
       listCategoriesResource: ListCategoriesResource,
-      listInventoryItemsResource: ListInventoryItemsResource,
+      listInventoryAdjustmentsByProductResource:
+        ListInventoryAdjustmentsByProductResource,
+      listInventoryAdjustmentsResource: ListInventoryAdjustmentsResource,
       listProductsResource: ListProductsResource,
-      listWarehousesResource: ListWarehousesResource,
       getMeResource: getMeResource,
     };
   }

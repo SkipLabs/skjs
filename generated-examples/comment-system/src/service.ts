@@ -1,11 +1,11 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
+import { GetCommentLikeStoredResource } from "./resources/GetCommentLikeStoredResource.js";
 import { GetCommentResource } from "./resources/GetCommentResource.js";
 import { GetCommentStoredResource } from "./resources/GetCommentStoredResource.js";
-import { GetUserResource } from "./resources/GetUserResource.js";
-import { ListAllCommentLikesResource } from "./resources/ListAllCommentLikesResource.js";
 import { ListCommentLikesResource } from "./resources/ListCommentLikesResource.js";
 import { ListCommentsResource } from "./resources/ListCommentsResource.js";
+import { getMeResource } from "./resources/getMeResource.js";
 import type {
   CommentLike_skip_id_,
   CommentLike_skip_value_,
@@ -13,6 +13,8 @@ import type {
   CommentStored,
   User_skip_id_,
   User_skip_value_,
+  ListCommentLikesParams,
+  ListCommentsParams,
   CommentLike,
   Comment,
   User,
@@ -21,6 +23,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -37,12 +40,18 @@ interface Inputs extends NamedInputDefinitions {
 }
 
 interface Resources extends NamedResources<GraphCollections> {
+  readonly getCommentLikeStoredResource: ResourceClass<GraphCollections, Json>;
   readonly getCommentResource: ResourceClass<GraphCollections, Json>;
   readonly getCommentStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly getUserResource: ResourceClass<GraphCollections, Json>;
-  readonly listAllCommentLikesResource: ResourceClass<GraphCollections, Json>;
-  readonly listCommentLikesResource: ResourceClass<GraphCollections, Json>;
-  readonly listCommentsResource: ResourceClass<GraphCollections, Json>;
+  readonly listCommentLikesResource: ResourceClass<
+    GraphCollections,
+    ListCommentLikesParams
+  >;
+  readonly listCommentsResource: ResourceClass<
+    GraphCollections,
+    ListCommentsParams
+  >;
+  readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
 class Service implements SkipService<
@@ -52,6 +61,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -63,12 +73,12 @@ class Service implements SkipService<
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
+      getCommentLikeStoredResource: GetCommentLikeStoredResource,
       getCommentResource: GetCommentResource,
       getCommentStoredResource: GetCommentStoredResource,
-      getUserResource: GetUserResource,
-      listAllCommentLikesResource: ListAllCommentLikesResource,
       listCommentLikesResource: ListCommentLikesResource,
       listCommentsResource: ListCommentsResource,
+      getMeResource: getMeResource,
     };
   }
 

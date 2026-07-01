@@ -1,21 +1,16 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetNotificationResource } from "./resources/GetNotificationResource.js";
 import { GetNotificationStoredResource } from "./resources/GetNotificationStoredResource.js";
-import { GetUserByIdResource } from "./resources/GetUserByIdResource.js";
-import { ListNotificationsResource } from "./resources/ListNotificationsResource.js";
-import { NotificationsByRecipientResource } from "./resources/NotificationsByRecipientResource.js";
-import { UnreadCountResource } from "./resources/UnreadCountResource.js";
+import { GetUnreadCountResource } from "./resources/GetUnreadCountResource.js";
+import { ListAllNotificationsByUserResource } from "./resources/ListAllNotificationsByUserResource.js";
+import { ListNotificationsByUserResource } from "./resources/ListNotificationsByUserResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Notification_skip_id_,
   Notification_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetNotificationParams,
-  GetUserByIdParams,
   ListNotificationsParams,
-  UnreadCountParams,
   Notification,
   User,
 } from "./types.js";
@@ -23,6 +18,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -38,26 +34,15 @@ interface Inputs extends NamedInputDefinitions {
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getNotificationResource: ResourceClass<
-    GraphCollections,
-    GetNotificationParams
-  >;
   readonly getNotificationStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly getUserByIdResource: ResourceClass<
-    GraphCollections,
-    GetUserByIdParams
-  >;
-  readonly listNotificationsResource: ResourceClass<
-    GraphCollections,
-    ListNotificationsParams
-  >;
-  readonly notificationsByRecipientResource: ResourceClass<
+  readonly getUnreadCountResource: ResourceClass<GraphCollections, Json>;
+  readonly listAllNotificationsByUserResource: ResourceClass<
     GraphCollections,
     Json
   >;
-  readonly unreadCountResource: ResourceClass<
+  readonly listNotificationsByUserResource: ResourceClass<
     GraphCollections,
-    UnreadCountParams
+    ListNotificationsParams
   >;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
@@ -69,6 +54,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -79,12 +65,10 @@ class Service implements SkipService<
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getNotificationResource: GetNotificationResource,
       getNotificationStoredResource: GetNotificationStoredResource,
-      getUserByIdResource: GetUserByIdResource,
-      listNotificationsResource: ListNotificationsResource,
-      notificationsByRecipientResource: NotificationsByRecipientResource,
-      unreadCountResource: UnreadCountResource,
+      getUnreadCountResource: GetUnreadCountResource,
+      listAllNotificationsByUserResource: ListAllNotificationsByUserResource,
+      listNotificationsByUserResource: ListNotificationsByUserResource,
       getMeResource: getMeResource,
     };
   }

@@ -1,9 +1,6 @@
-import { CommentWithLikeCountByIdMapper } from "../mappers/CommentWithLikeCountByIdMapper.js";
 import type {
   Comment_skip_id_,
-  CommentStored,
-  LikeIncrement,
-  CommentWithLikeCount,
+  Comment_skip_value_,
   Comment,
 } from "../types.js";
 import type {
@@ -11,23 +8,23 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetCommentResourceInputs extends SharedCollections {
-  readonly comments: EagerCollection<Comment_skip_id_, CommentStored>;
-  readonly likeCountByComment: EagerCollection<Comment_skip_id_, LikeIncrement>;
+  readonly commentsAssembled: EagerCollection<
+    Comment_skip_id_,
+    Comment_skip_value_
+  >;
 }
 
 export class GetCommentResource implements Resource<GetCommentResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetCommentResourceInputs,
     _context: Context,
-  ): EagerCollection<Comment_skip_id_, CommentWithLikeCount> {
-    return inputs.comments.map(
-      CommentWithLikeCountByIdMapper,
-      inputs.likeCountByComment,
-    );
+  ): EagerCollection<Comment_skip_id_, Comment_skip_value_> {
+    return inputs.commentsAssembled;
   }
 }

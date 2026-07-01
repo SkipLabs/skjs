@@ -22,8 +22,6 @@
     "incremental": true,
     "target": "ES2021",
     "rootDir": "./",
-    "allowJs": true,
-    "checkJs": false,
     "types": ["bun-types"]
   }
 }

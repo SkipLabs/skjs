@@ -1,9 +1,9 @@
-import { GetLoanByOwnerMapper } from "../mappers/GetLoanByOwnerMapper.js";
+import { LoanByIdWithOwnerCheckMapper } from "../mappers/LoanByIdWithOwnerCheckMapper.js";
 import type {
   Loan_skip_id_,
   Loan_skip_value_,
-  Loan,
   GetLoanParams,
+  Loan,
 } from "../types.js";
 import type {
   Resource,
@@ -28,7 +28,11 @@ export class GetLoanResource implements Resource<GetLoanResourceInputs> {
   instantiate(
     inputs: GetLoanResourceInputs,
     _context: Context,
-  ): EagerCollection<0, Loan> {
-    return inputs.loans.map(GetLoanByOwnerMapper, this.loanId, this.userId);
+  ): EagerCollection<Loan_skip_id_, Loan_skip_value_> {
+    return inputs.loans.map(
+      LoanByIdWithOwnerCheckMapper,
+      this.loanId,
+      this.userId,
+    );
   }
 }

@@ -4,6 +4,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetPolicyResourceInputs extends SharedCollections {
@@ -11,7 +12,7 @@ export interface GetPolicyResourceInputs extends SharedCollections {
 }
 
 export class GetPolicyResource implements Resource<GetPolicyResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetPolicyResourceInputs,

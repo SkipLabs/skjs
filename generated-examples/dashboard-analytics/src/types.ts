@@ -1,365 +1,205 @@
-export type AggregationPeriod = "HOUR" | "DAY" | "WEEK" | "MONTH";
+import type { Json } from "@skipruntime/core";
 
-export type AggregationPeriod_skip_id_ = "HOUR" | "DAY" | "WEEK" | "MONTH";
+export type AggregateBucket = {
+  readonly avg: number;
+  readonly bucketStart: string;
+  readonly count: number;
+  readonly max: number;
+  readonly min: number;
+  readonly sum: number;
+} & { readonly [key: string]: Json | null };
 
-export type AggregationPeriod_skip_value_ = "HOUR" | "DAY" | "WEEK" | "MONTH";
+export type AggregateBucket_skip_id_ = {
+  readonly avg: number;
+  readonly bucketStart: string;
+  readonly count: number;
+  readonly max: number;
+  readonly min: number;
+  readonly sum: number;
+} & { readonly [key: string]: Json | null };
 
-export type ApiError = { readonly code: string; readonly message: string };
+export type AggregateBucket_skip_value_ = {
+  readonly avg: number;
+  readonly bucketStart: string;
+  readonly count: number;
+  readonly max: number;
+  readonly min: number;
+  readonly sum: number;
+} & { readonly [key: string]: Json | null };
+
+export type AggregateResponse = {
+  readonly buckets: AggregateBucket[];
+  readonly name: string;
+  readonly period: Period;
+  readonly since: string;
+  readonly until: string;
+} & { readonly [key: string]: Json | null };
+
+export type AggregateResponse_skip_id_ = {
+  readonly buckets: AggregateBucket[];
+  readonly name: string;
+  readonly period: Period;
+  readonly since: string;
+  readonly until: string;
+} & { readonly [key: string]: Json | null };
+
+export type AggregateResponse_skip_value_ = {
+  readonly buckets: AggregateBucket[];
+  readonly name: string;
+  readonly period: Period;
+  readonly since: string;
+  readonly until: string;
+} & { readonly [key: string]: Json | null };
+
+export type ApiError = { readonly code: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type ApiError_skip_id_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
   readonly code: string;
   readonly message: string;
-};
-
-export type CreateDashboardRequest = {
-  readonly description?: string;
-  readonly name: string;
-  readonly panels?: DashboardPanel[];
-};
-
-export type CreateDashboardRequest_skip_id_ = {
-  readonly description?: string;
-  readonly name: string;
-  readonly panels?: DashboardPanel[];
-};
-
-export type CreateDashboardRequest_skip_value_ = {
-  readonly description?: string;
-  readonly name: string;
-  readonly panels?: DashboardPanel[];
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateMetricRequest = {
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly kind: MetricKind;
   readonly name: string;
-  readonly unit?: string;
-};
+  readonly occurredAt: string;
+  readonly tags?: CreateMetricRequestTags;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
+
+export type CreateMetricRequestTags = Record<string, string>;
+
+export type CreateMetricRequestTags_skip_id_ = Record<string, string>;
+
+export type CreateMetricRequestTags_skip_value_ = Record<string, string>;
 
 export type CreateMetricRequest_skip_id_ = {
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly kind: MetricKind;
   readonly name: string;
-  readonly unit?: string;
-};
+  readonly occurredAt: string;
+  readonly tags?: CreateMetricRequestTags;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
 
 export type CreateMetricRequest_skip_value_ = {
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly kind: MetricKind;
   readonly name: string;
-  readonly unit?: string;
-};
+  readonly occurredAt: string;
+  readonly tags?: CreateMetricRequestTags;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
 
-export type Dashboard = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly id: string;
-  readonly name: string;
-  readonly ownerId: string;
-  readonly panels: DashboardPanel[];
-  readonly updatedAt?: string;
-};
-
-export type DashboardList = {
-  readonly items: Dashboard[];
-  readonly limit: number;
-  readonly offset: number;
-};
-
-export type DashboardList_skip_id_ = {
-  readonly items: Dashboard[];
-  readonly limit: number;
-  readonly offset: number;
-};
-
-export type DashboardList_skip_value_ = {
-  readonly items: Dashboard[];
-  readonly limit: number;
-  readonly offset: number;
-};
-
-export type DashboardPanel = {
+export type GetMetricParams = {
   readonly metricId: string;
-  readonly period: AggregationPeriod;
-  readonly title?: string;
-};
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
 
-export type DashboardPanel_skip_id_ = {
-  readonly metricId: string;
-  readonly period: AggregationPeriod;
-  readonly title?: string;
-};
-
-export type DashboardPanel_skip_value_ = {
-  readonly metricId: string;
-  readonly period: AggregationPeriod;
-  readonly title?: string;
-};
-
-export type Dashboard_skip_id_ = string;
-
-export type Dashboard_skip_value_ = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly name: string;
-  readonly ownerId: string;
-  readonly panels: DashboardPanel[];
-  readonly updatedAt?: string;
-};
-
-export type IngestMetricEventRequest = {
-  readonly occurredAt?: string;
-  readonly tags?: IngestMetricEventRequestTags;
-  readonly value?: number;
-};
-
-export type IngestMetricEventRequestTags = Record<string, string>;
-
-export type IngestMetricEventRequestTags_skip_id_ = Record<string, string>;
-
-export type IngestMetricEventRequestTags_skip_value_ = Record<string, string>;
-
-export type IngestMetricEventRequest_skip_id_ = {
-  readonly occurredAt?: string;
-  readonly tags?: IngestMetricEventRequestTags;
-  readonly value?: number;
-};
-
-export type IngestMetricEventRequest_skip_value_ = {
-  readonly occurredAt?: string;
-  readonly tags?: IngestMetricEventRequestTags;
-  readonly value?: number;
+export type ListMetricsParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
 export type Metric = {
   readonly createdAt: string;
-  readonly description?: string;
-  readonly displayName?: string;
   readonly id: string;
-  readonly kind: MetricKind;
   readonly name: string;
-  readonly ownerId: string;
-  readonly unit?: string;
-  readonly updatedAt?: string;
-};
-
-export type MetricEvent = {
-  readonly createdAt: string;
-  readonly id: string;
-  readonly metricId: string;
   readonly occurredAt: string;
   readonly ownerId: string;
-  readonly tags?: MetricEventTags;
+  readonly tags?: MetricTags;
   readonly value: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type MetricEventKey = { readonly id: string; readonly metricId: string };
-
-export type MetricEventList = {
-  readonly items: MetricEvent[];
-  readonly limit: number;
-  readonly offset: number;
-};
-
-export type MetricEventList_skip_id_ = {
-  readonly items: MetricEvent[];
-  readonly limit: number;
-  readonly offset: number;
-};
-
-export type MetricEventList_skip_value_ = {
-  readonly items: MetricEvent[];
-  readonly limit: number;
-  readonly offset: number;
-};
-
-export type MetricEventTags = Record<string, string>;
-
-export type MetricEventTags_skip_id_ = Record<string, string>;
-
-export type MetricEventTags_skip_value_ = Record<string, string>;
-
-export type MetricEvent_skip_id_ = {
-  readonly id: string;
-  readonly metricId: string;
-};
-
-export type MetricEvent_skip_value_ = {
-  readonly createdAt: string;
-  readonly occurredAt: string;
-  readonly ownerId: string;
-  readonly tags?: MetricEventTags;
-  readonly value: number;
-};
-
-export type MetricKind = "COUNTER" | "GAUGE" | "HISTOGRAM";
-
-export type MetricKind_skip_id_ = "COUNTER" | "GAUGE" | "HISTOGRAM";
-
-export type MetricKind_skip_value_ = "COUNTER" | "GAUGE" | "HISTOGRAM";
-
-export type MetricList = {
+export type MetricPage = {
   readonly items: Metric[];
-  readonly limit: number;
-  readonly offset: number;
-};
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
-export type MetricList_skip_id_ = {
+export type MetricPage_skip_id_ = {
   readonly items: Metric[];
-  readonly limit: number;
-  readonly offset: number;
-};
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
-export type MetricList_skip_value_ = {
+export type MetricPage_skip_value_ = {
   readonly items: Metric[];
-  readonly limit: number;
-  readonly offset: number;
-};
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
-export type MetricStatBucket = {
-  readonly avg: number;
-  readonly bucketEnd: string;
-  readonly bucketStart: string;
-  readonly count: number;
-  readonly max: number;
-  readonly min: number;
-  readonly sum: number;
-};
+export type MetricTags = Record<string, string>;
 
-export type MetricStatBucket_skip_id_ = {
-  readonly avg: number;
-  readonly bucketEnd: string;
-  readonly bucketStart: string;
-  readonly count: number;
-  readonly max: number;
-  readonly min: number;
-  readonly sum: number;
-};
+export type MetricTags_skip_id_ = Record<string, string>;
 
-export type MetricStatBucket_skip_value_ = {
-  readonly avg: number;
-  readonly bucketEnd: string;
-  readonly bucketStart: string;
-  readonly count: number;
-  readonly max: number;
-  readonly min: number;
-  readonly sum: number;
-};
-
-export type MetricStats = {
-  readonly buckets: MetricStatBucket[];
-  readonly metricId: string;
-  readonly period: AggregationPeriod;
-  readonly since?: string;
-  readonly until?: string;
-};
-
-export type MetricStats_skip_id_ = {
-  readonly buckets: MetricStatBucket[];
-  readonly metricId: string;
-  readonly period: AggregationPeriod;
-  readonly since?: string;
-  readonly until?: string;
-};
-
-export type MetricStats_skip_value_ = {
-  readonly buckets: MetricStatBucket[];
-  readonly metricId: string;
-  readonly period: AggregationPeriod;
-  readonly since?: string;
-  readonly until?: string;
-};
+export type MetricTags_skip_value_ = Record<string, string>;
 
 export type Metric_skip_id_ = string;
 
 export type Metric_skip_value_ = {
   readonly createdAt: string;
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly kind: MetricKind;
   readonly name: string;
+  readonly occurredAt: string;
   readonly ownerId: string;
-  readonly unit?: string;
-  readonly updatedAt?: string;
-};
+  readonly tags?: MetricTags;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
 
-export type UpdateDashboardRequest = {
-  readonly description?: string;
-  readonly name?: string;
-  readonly panels?: DashboardPanel[];
-};
+export type Period = "hour" | "day" | "week" | "month";
 
-export type UpdateDashboardRequest_skip_id_ = {
-  readonly description?: string;
-  readonly name?: string;
-  readonly panels?: DashboardPanel[];
-};
+export type Period_skip_id_ = "hour" | "day" | "week" | "month";
 
-export type UpdateDashboardRequest_skip_value_ = {
-  readonly description?: string;
-  readonly name?: string;
-  readonly panels?: DashboardPanel[];
-};
+export type Period_skip_value_ = "hour" | "day" | "week" | "month";
+
+export type SummaryStat = {
+  readonly avg: number;
+  readonly count: number;
+  readonly max?: number;
+  readonly min?: number;
+  readonly name: string;
+  readonly sum: number;
+} & { readonly [key: string]: Json | null };
+
+export type SummaryStat_skip_id_ = {
+  readonly avg: number;
+  readonly count: number;
+  readonly max?: number;
+  readonly min?: number;
+  readonly name: string;
+  readonly sum: number;
+} & { readonly [key: string]: Json | null };
+
+export type SummaryStat_skip_value_ = {
+  readonly avg: number;
+  readonly count: number;
+  readonly max?: number;
+  readonly min?: number;
+  readonly name: string;
+  readonly sum: number;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest = {
-  readonly avatarUrl?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
-  readonly avatarUrl?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
-  readonly avatarUrl?: string;
   readonly displayName?: string;
   readonly email?: string;
-};
-
-export type UpdateMetricRequest = {
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly unit?: string;
-};
-
-export type UpdateMetricRequest_skip_id_ = {
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly unit?: string;
-};
-
-export type UpdateMetricRequest_skip_value_ = {
-  readonly description?: string;
-  readonly displayName?: string;
-  readonly unit?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User = {
-  readonly avatarUrl?: string;
-  readonly createdAt?: string;
   readonly displayName?: string;
   readonly email?: string;
   readonly id: string;
-  readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
-  readonly avatarUrl?: string;
-  readonly createdAt?: string;
   readonly displayName?: string;
   readonly email?: string;
-  readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };

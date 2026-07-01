@@ -1,7 +1,6 @@
-import { OnHandBySkuMapper } from "./mappers/OnHandBySkuMapper.js";
 import { OrderBySkuMapper } from "./mappers/OrderBySkuMapper.js";
 import { ReceiptBySkuMapper } from "./mappers/ReceiptBySkuMapper.js";
-import { ReservedBySkuMapper } from "./mappers/ReservedBySkuMapper.js";
+import { SkuAvailabilityMapper } from "./mappers/SkuAvailabilityMapper.js";
 import type {
   Order_skip_id_,
   Order,
@@ -15,7 +14,7 @@ import type {
   User_skip_id_,
   User,
   User_skip_value_,
-  QuantityAccum,
+  SkuAvailability,
 } from "./types.js";
 import type {
   EagerCollection,
@@ -32,12 +31,9 @@ export interface InputCollections extends NamedEagerCollections {
 }
 
 export interface GraphCollections extends SharedCollections {
-  readonly onHandBySku: EagerCollection<Sku_skip_id_, QuantityAccum>;
   readonly orders: EagerCollection<Order_skip_id_, Order_skip_value_>;
-  readonly ordersBySku: EagerCollection<Sku_skip_id_, Order_skip_value_>;
   readonly receipts: EagerCollection<Receipt_skip_id_, Receipt_skip_value_>;
-  readonly receiptsBySku: EagerCollection<Sku_skip_id_, Receipt_skip_value_>;
-  readonly reservedBySku: EagerCollection<Sku_skip_id_, QuantityAccum>;
+  readonly skuAvailability: EagerCollection<Sku_skip_id_, SkuAvailability>;
   readonly skus: EagerCollection<Sku_skip_id_, Sku_skip_value_>;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
@@ -46,25 +42,21 @@ export function createGraph(
   inputs: InputCollections,
   _context: Context,
 ): GraphCollections {
-  const receiptsBySku = inputs.receipts.map(ReceiptBySkuMapper);
-  const onHandBySku = receiptsBySku.map(OnHandBySkuMapper);
   const ordersBySku = inputs.orders.map(OrderBySkuMapper);
-  const output_onHandBySku = onHandBySku;
   const output_orders = inputs.orders;
-  const output_ordersBySku = ordersBySku;
   const output_receipts = inputs.receipts;
-  const output_receiptsBySku = receiptsBySku;
-  const reservedBySku = ordersBySku.map(ReservedBySkuMapper);
-  const output_reservedBySku = reservedBySku;
+  const receiptsBySku = inputs.receipts.map(ReceiptBySkuMapper);
+  const output_skuAvailability = inputs.skus.map(
+    SkuAvailabilityMapper,
+    receiptsBySku,
+    ordersBySku,
+  );
   const output_skus = inputs.skus;
   const output_users = inputs.users;
   return {
-    onHandBySku: output_onHandBySku,
     orders: output_orders,
-    ordersBySku: output_ordersBySku,
     receipts: output_receipts,
-    receiptsBySku: output_receiptsBySku,
-    reservedBySku: output_reservedBySku,
+    skuAvailability: output_skuAvailability,
     skus: output_skus,
     users: output_users,
   };

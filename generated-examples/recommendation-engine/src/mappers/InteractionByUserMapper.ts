@@ -8,7 +8,7 @@ import type {
 } from "../types.js";
 import type { Context, Mapper, Values } from "@skipruntime/core";
 
-// For each interaction entry, emit one output pair whose key is sourced from the entry's value at the userId field (the User primary key), paired with a new value of type Interaction listing every required field explicitly: id sourced from the entry's key (the original Interaction primary key), userId sourced from the entry's value at userId, productId sourced from the entry's value at productId, type sourced from the entry's value at type, occurredAt sourced from the entry's value at occurredAt, and rating sourced from the entry's value at rating when present. This preserves the original interaction id which would otherwise be lost in the re-key, since Interaction_skip_value_ excludes the id field by construction.
+// For each interaction entry, emit one output pair whose key is sourced from the entry's value's userId field, paired with a new value listing every required field of Interaction explicitly: id sourced from the entry's key (= the original Interaction.id, preserved on the value side so downstream consumers can identify the source Interaction row); userId sourced from the entry's value's userId field; productId sourced from the entry's value's productId field; type sourced from the entry's value's type field; occurredAt sourced from the entry's value's occurredAt field; rating present when the entry's value has a rating field, sourced from the entry's value's rating field, absent otherwise.
 export class InteractionByUserMapper implements Mapper<
   Interaction_skip_id_,
   Interaction_skip_value_,

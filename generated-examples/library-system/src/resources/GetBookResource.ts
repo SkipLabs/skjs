@@ -1,32 +1,37 @@
-import { GetBookMapper } from "../mappers/GetBookMapper.js";
+import { EnrichBookWithAvailableCopiesMapper } from "../mappers/EnrichBookWithAvailableCopiesMapper.js";
 import type {
   Book_skip_id_,
+  ActiveLoanCount,
+  BookStored,
   Book_skip_value_,
   Book,
-  GetBookParams,
 } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetBookResourceInputs extends SharedCollections {
-  readonly books: EagerCollection<Book_skip_id_, Book_skip_value_>;
+  readonly activeLoanCountByBook: EagerCollection<
+    Book_skip_id_,
+    ActiveLoanCount
+  >;
+  readonly booksStored: EagerCollection<Book_skip_id_, BookStored>;
 }
 
 export class GetBookResource implements Resource<GetBookResourceInputs> {
-  private readonly bookId: string;
-
-  constructor(params: GetBookParams) {
-    this.bookId = params.bookId;
-  }
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetBookResourceInputs,
     _context: Context,
-  ): EagerCollection<0, Book> {
-    return inputs.books.map(GetBookMapper, this.bookId);
+  ): EagerCollection<Book_skip_id_, Book_skip_value_> {
+    return inputs.booksStored.map(
+      EnrichBookWithAvailableCopiesMapper,
+      inputs.activeLoanCountByBook,
+    );
   }
 }

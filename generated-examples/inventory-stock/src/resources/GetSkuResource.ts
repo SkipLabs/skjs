@@ -4,6 +4,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetSkuResourceInputs extends SharedCollections {
@@ -11,7 +12,7 @@ export interface GetSkuResourceInputs extends SharedCollections {
 }
 
 export class GetSkuResource implements Resource<GetSkuResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetSkuResourceInputs,

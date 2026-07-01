@@ -2,7 +2,7 @@ import { isJsonObject, isJsonArray } from "../../helpers/index.js";
 import type { Course_skip_id_, Course_skip_value_, Course } from "../types.js";
 import type { Context, Mapper, Values } from "@skipruntime/core";
 
-// For each course entry, emit the entry unchanged when (the instructorId param is absent OR the entry's value's instructorId field equals the instructorId param) AND (the published param is absent OR (the published param is true AND the entry's value's status field equals the literal 'PUBLISHED') OR (the published param is false AND the entry's value's status field equals the literal 'DRAFT')). Otherwise emit nothing.
+// For each course entry, emit the entry unchanged when (the instructorId param is absent OR the entry's value's instructorId field equals the instructorId param) AND (the published param is absent OR the entry's value's published field equals the published param). Otherwise emit nothing.
 export class FilterCoursesMapper implements Mapper<
   Course_skip_id_,
   Course_skip_value_,
@@ -22,13 +22,11 @@ export class FilterCoursesMapper implements Mapper<
     // > body
     const emits: [Course_skip_id_, Course_skip_value_][] = [];
     for (const value of values.toArray()) {
-      const instructorOk =
+      const instructorMatches =
         this.instructorId === null || value.instructorId === this.instructorId;
-      const publishedOk =
-        this.published === null ||
-        (this.published === true && value.status === "PUBLISHED") ||
-        (this.published === false && value.status === "DRAFT");
-      if (instructorOk && publishedOk) {
+      const publishedMatches =
+        this.published === null || value.published === this.published;
+      if (instructorMatches && publishedMatches) {
         emits.push([key, value]);
       }
     }

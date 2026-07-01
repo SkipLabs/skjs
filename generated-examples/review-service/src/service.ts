@@ -1,21 +1,19 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetReviewForSubjectResource } from "./resources/GetReviewForSubjectResource.js";
-import { GetSubjectRatingSummaryResource } from "./resources/GetSubjectRatingSummaryResource.js";
-import { ListMyReviewsResource } from "./resources/ListMyReviewsResource.js";
-import { ListReviewsBySubjectInternalResource } from "./resources/ListReviewsBySubjectInternalResource.js";
-import { ListReviewsForSubjectResource } from "./resources/ListReviewsForSubjectResource.js";
-import { ListSubjectsResource } from "./resources/ListSubjectsResource.js";
+import { GetReviewResource } from "./resources/GetReviewResource.js";
+import { GetSubjectStoredResource } from "./resources/GetSubjectStoredResource.js";
+import { ReviewsByAuthorResource } from "./resources/ReviewsByAuthorResource.js";
+import { ReviewsByAuthorSubjectResource } from "./resources/ReviewsByAuthorSubjectResource.js";
+import { ReviewsBySubjectResource } from "./resources/ReviewsBySubjectResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
-  ReviewKey,
-  ReviewStored,
+  Review_skip_id_,
+  Review_skip_value_,
   Subject_skip_id_,
-  Subject_skip_value_,
+  SubjectStored,
   User_skip_id_,
   User_skip_value_,
-  ListMyReviewsParams,
-  ListReviewsForSubjectParams,
+  Review,
   Subject,
   User,
 } from "./types.js";
@@ -23,6 +21,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -30,30 +29,20 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
-  readonly reviews: InputDefinition<ReviewKey, ReviewStored>;
-  readonly subjects: InputDefinition<Subject_skip_id_, Subject_skip_value_>;
+  readonly reviews: InputDefinition<Review_skip_id_, Review_skip_value_>;
+  readonly subjects: InputDefinition<Subject_skip_id_, SubjectStored>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getReviewForSubjectResource: ResourceClass<GraphCollections, Json>;
-  readonly getSubjectRatingSummaryResource: ResourceClass<
+  readonly getReviewResource: ResourceClass<GraphCollections, Json>;
+  readonly getSubjectStoredResource: ResourceClass<GraphCollections, Json>;
+  readonly reviewsByAuthorResource: ResourceClass<GraphCollections, Json>;
+  readonly reviewsByAuthorSubjectResource: ResourceClass<
     GraphCollections,
     Json
   >;
-  readonly listMyReviewsResource: ResourceClass<
-    GraphCollections,
-    ListMyReviewsParams
-  >;
-  readonly listReviewsBySubjectInternalResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
-  readonly listReviewsForSubjectResource: ResourceClass<
-    GraphCollections,
-    ListReviewsForSubjectParams
-  >;
-  readonly listSubjectsResource: ResourceClass<GraphCollections, Json>;
+  readonly reviewsBySubjectResource: ResourceClass<GraphCollections, Json>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -64,21 +53,20 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
-      reviews: new InputDefinition<ReviewKey, ReviewStored>([]),
-      subjects: new InputDefinition<Subject_skip_id_, Subject_skip_value_>([]),
+      reviews: new InputDefinition<Review_skip_id_, Review_skip_value_>([]),
+      subjects: new InputDefinition<Subject_skip_id_, SubjectStored>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getReviewForSubjectResource: GetReviewForSubjectResource,
-      getSubjectRatingSummaryResource: GetSubjectRatingSummaryResource,
-      listMyReviewsResource: ListMyReviewsResource,
-      listReviewsBySubjectInternalResource:
-        ListReviewsBySubjectInternalResource,
-      listReviewsForSubjectResource: ListReviewsForSubjectResource,
-      listSubjectsResource: ListSubjectsResource,
+      getReviewResource: GetReviewResource,
+      getSubjectStoredResource: GetSubjectStoredResource,
+      reviewsByAuthorResource: ReviewsByAuthorResource,
+      reviewsByAuthorSubjectResource: ReviewsByAuthorSubjectResource,
+      reviewsBySubjectResource: ReviewsBySubjectResource,
       getMeResource: getMeResource,
     };
   }

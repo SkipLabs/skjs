@@ -1,5 +1,6 @@
-import { UnreadNotificationByRecipientMapper } from "./mappers/UnreadNotificationByRecipientMapper.js";
-import { SumReducer } from "./reducers/SumReducer.js";
+import { NotificationsByUserWithIdMapper } from "./mappers/NotificationsByUserWithIdMapper.js";
+import { UnreadCountByUserMapper } from "./mappers/UnreadCountByUserMapper.js";
+import { UnreadNotificationByUserMapper } from "./mappers/UnreadNotificationByUserMapper.js";
 import type {
   Notification_skip_id_,
   Notification,
@@ -7,7 +8,7 @@ import type {
   User_skip_id_,
   User,
   User_skip_value_,
-  UnreadMarker,
+  UnreadCount,
 } from "./types.js";
 import type {
   EagerCollection,
@@ -29,7 +30,8 @@ export interface GraphCollections extends SharedCollections {
     Notification_skip_id_,
     Notification_skip_value_
   >;
-  readonly unreadByRecipient: EagerCollection<User_skip_id_, UnreadMarker>;
+  readonly notificationsByUser: EagerCollection<User_skip_id_, Notification>;
+  readonly unreadCountByUser: EagerCollection<User_skip_id_, UnreadCount>;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
@@ -37,16 +39,24 @@ export function createGraph(
   inputs: InputCollections,
   _context: Context,
 ): GraphCollections {
-  const output_notifications = inputs.notifications;
-  const unreadMarkersByRecipient = inputs.notifications.map(
-    UnreadNotificationByRecipientMapper,
+  const notificationsByUser = inputs.notifications.map(
+    NotificationsByUserWithIdMapper,
   );
-  const unreadCountByRecipient = unreadMarkersByRecipient.reduce(SumReducer);
-  const output_unreadByRecipient = unreadCountByRecipient;
+  const output_notifications = inputs.notifications;
+  const output_notificationsByUser = notificationsByUser;
+  const unreadOnesByUser = notificationsByUser.map(
+    UnreadNotificationByUserMapper,
+  );
+  const unreadCountByUser = inputs.users.map(
+    UnreadCountByUserMapper,
+    unreadOnesByUser,
+  );
+  const output_unreadCountByUser = unreadCountByUser;
   const output_users = inputs.users;
   return {
     notifications: output_notifications,
-    unreadByRecipient: output_unreadByRecipient,
+    notificationsByUser: output_notificationsByUser,
+    unreadCountByUser: output_unreadCountByUser,
     users: output_users,
   };
 }

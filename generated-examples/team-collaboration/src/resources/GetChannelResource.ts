@@ -8,6 +8,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetChannelResourceInputs extends SharedCollections {
@@ -15,7 +16,7 @@ export interface GetChannelResourceInputs extends SharedCollections {
 }
 
 export class GetChannelResource implements Resource<GetChannelResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetChannelResourceInputs,

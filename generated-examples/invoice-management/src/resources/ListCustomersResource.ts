@@ -1,6 +1,10 @@
+import { AssembleCustomerMapper } from "../mappers/AssembleCustomerMapper.js";
+import { FilterCustomerByOwnerMapper } from "../mappers/FilterCustomerByOwnerMapper.js";
 import type {
   Customer_skip_id_,
+  CustomerStored,
   Customer_skip_value_,
+  ListCustomersParams,
   Customer,
 } from "../types.js";
 import type {
@@ -11,16 +15,24 @@ import type {
 } from "@skipruntime/core";
 
 export interface ListCustomersResourceInputs extends SharedCollections {
-  readonly customers: EagerCollection<Customer_skip_id_, Customer_skip_value_>;
+  readonly customers: EagerCollection<Customer_skip_id_, CustomerStored>;
 }
 
 export class ListCustomersResource implements Resource<ListCustomersResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly userId: string;
+
+  constructor(params: ListCustomersParams) {
+    this.userId = params.userId;
+  }
 
   instantiate(
     inputs: ListCustomersResourceInputs,
     _context: Context,
   ): EagerCollection<Customer_skip_id_, Customer_skip_value_> {
-    return inputs.customers;
+    const filtered = inputs.customers.map(
+      FilterCustomerByOwnerMapper,
+      this.userId,
+    );
+    return filtered.map(AssembleCustomerMapper);
   }
 }

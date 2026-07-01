@@ -1,7 +1,10 @@
+import { GetProductMapper } from "../mappers/GetProductMapper.js";
 import type {
   Product_skip_id_,
-  Product_skip_value_,
+  ProductPopularityCount,
+  ProductStored,
   Product,
+  GetProductParams,
 } from "../types.js";
 import type {
   Resource,
@@ -11,16 +14,28 @@ import type {
 } from "@skipruntime/core";
 
 export interface GetProductResourceInputs extends SharedCollections {
-  readonly products: EagerCollection<Product_skip_id_, Product_skip_value_>;
+  readonly popularityByProduct: EagerCollection<
+    Product_skip_id_,
+    ProductPopularityCount
+  >;
+  readonly products: EagerCollection<Product_skip_id_, ProductStored>;
 }
 
 export class GetProductResource implements Resource<GetProductResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly productId: string;
+
+  constructor(params: GetProductParams) {
+    this.productId = params.productId;
+  }
 
   instantiate(
     inputs: GetProductResourceInputs,
     _context: Context,
-  ): EagerCollection<Product_skip_id_, Product_skip_value_> {
-    return inputs.products;
+  ): EagerCollection<Product_skip_id_, Product> {
+    return inputs.products.map(
+      GetProductMapper,
+      this.productId,
+      inputs.popularityByProduct,
+    );
   }
 }

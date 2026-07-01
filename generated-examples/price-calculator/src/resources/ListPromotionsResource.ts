@@ -1,4 +1,4 @@
-import { FilterPromotionByActiveMapper } from "../mappers/FilterPromotionByActiveMapper.js";
+import { FilterPromotionActiveMapper } from "../mappers/FilterPromotionActiveMapper.js";
 import type {
   Promotion_skip_id_,
   Promotion_skip_value_,
@@ -20,16 +20,16 @@ export interface ListPromotionsResourceInputs extends SharedCollections {
 }
 
 export class ListPromotionsResource implements Resource<ListPromotionsResourceInputs> {
-  private readonly active: boolean | null;
+  private readonly activeOnly: boolean | null;
 
   constructor(params: ListPromotionsParams) {
-    this.active = params.active ?? null;
+    this.activeOnly = params.activeOnly ?? null;
   }
 
   instantiate(
     inputs: ListPromotionsResourceInputs,
     _context: Context,
   ): EagerCollection<Promotion_skip_id_, Promotion_skip_value_> {
-    return inputs.promotions.map(FilterPromotionByActiveMapper, this.active);
+    return inputs.promotions.map(FilterPromotionActiveMapper, this.activeOnly);
   }
 }

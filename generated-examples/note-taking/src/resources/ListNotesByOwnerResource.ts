@@ -1,10 +1,9 @@
-import { NotesByOwnerMapper } from "../mappers/NotesByOwnerMapper.js";
+import { FilterNoteByOwnerMapper } from "../mappers/FilterNoteByOwnerMapper.js";
 import type {
   Note_skip_id_,
   Note_skip_value_,
-  User_skip_id_,
+  ListNotesParams,
   Note,
-  User,
 } from "../types.js";
 import type {
   Resource,
@@ -18,12 +17,16 @@ export interface ListNotesByOwnerResourceInputs extends SharedCollections {
 }
 
 export class ListNotesByOwnerResource implements Resource<ListNotesByOwnerResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly userId: string;
+
+  constructor(params: ListNotesParams) {
+    this.userId = params.userId;
+  }
 
   instantiate(
     inputs: ListNotesByOwnerResourceInputs,
     _context: Context,
-  ): EagerCollection<User_skip_id_, Note> {
-    return inputs.notes.map(NotesByOwnerMapper);
+  ): EagerCollection<Note_skip_id_, Note_skip_value_> {
+    return inputs.notes.map(FilterNoteByOwnerMapper, this.userId);
   }
 }

@@ -8,6 +8,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetCommentStoredResourceInputs extends SharedCollections {
@@ -15,7 +16,7 @@ export interface GetCommentStoredResourceInputs extends SharedCollections {
 }
 
 export class GetCommentStoredResource implements Resource<GetCommentStoredResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetCommentStoredResourceInputs,

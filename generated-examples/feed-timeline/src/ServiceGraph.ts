@@ -1,28 +1,27 @@
 import { CommentByPostMapper } from "./mappers/CommentByPostMapper.js";
-import { CommentCountUnitMapper } from "./mappers/CommentCountUnitMapper.js";
+import { CommentCountByPostMapper } from "./mappers/CommentCountByPostMapper.js";
+import { CommentFeedEventMapper } from "./mappers/CommentFeedEventMapper.js";
 import { EnrichPostWithCountsMapper } from "./mappers/EnrichPostWithCountsMapper.js";
-import { FeedItemFromCommentMapper } from "./mappers/FeedItemFromCommentMapper.js";
-import { FeedItemFromLikeMapper } from "./mappers/FeedItemFromLikeMapper.js";
-import { FeedItemFromPostMapper } from "./mappers/FeedItemFromPostMapper.js";
 import { LikeByPostMapper } from "./mappers/LikeByPostMapper.js";
-import { LikeCountUnitMapper } from "./mappers/LikeCountUnitMapper.js";
-import { SumCommentReducer } from "./reducers/SumCommentReducer.js";
-import { SumLikeReducer } from "./reducers/SumLikeReducer.js";
+import { LikeCountByPostMapper } from "./mappers/LikeCountByPostMapper.js";
+import { LikeFeedEventMapper } from "./mappers/LikeFeedEventMapper.js";
+import { PostFeedEventMapper } from "./mappers/PostFeedEventMapper.js";
+import { SumReducer } from "./reducers/SumReducer.js";
 import type {
   Comment_skip_id_,
   Comment,
   Comment_skip_value_,
-  LikeKey,
-  LikeStored,
+  Like_skip_id_,
+  Like,
+  Like_skip_value_,
   Post_skip_id_,
   Post,
   PostStored,
   User_skip_id_,
   User,
   User_skip_value_,
-  FeedItemKey,
-  FeedItem,
-  Like,
+  FeedEventId,
+  FeedEvent,
   Post_skip_value_,
 } from "./types.js";
 import type {
@@ -34,7 +33,7 @@ import type {
 
 export interface InputCollections extends NamedEagerCollections {
   readonly comments: EagerCollection<Comment_skip_id_, Comment_skip_value_>;
-  readonly likes: EagerCollection<LikeKey, LikeStored>;
+  readonly likes: EagerCollection<Like_skip_id_, Like_skip_value_>;
   readonly posts: EagerCollection<Post_skip_id_, PostStored>;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
@@ -42,11 +41,11 @@ export interface InputCollections extends NamedEagerCollections {
 export interface GraphCollections extends SharedCollections {
   readonly comments: EagerCollection<Comment_skip_id_, Comment_skip_value_>;
   readonly commentsByPost: EagerCollection<Post_skip_id_, Comment>;
-  readonly feedItems: EagerCollection<FeedItemKey, FeedItem>;
-  readonly likes: EagerCollection<LikeKey, LikeStored>;
+  readonly feedEvents: EagerCollection<FeedEventId, FeedEvent>;
+  readonly likes: EagerCollection<Like_skip_id_, Like_skip_value_>;
   readonly likesByPost: EagerCollection<Post_skip_id_, Like>;
-  readonly posts: EagerCollection<Post_skip_id_, PostStored>;
-  readonly postsEnriched: EagerCollection<Post_skip_id_, Post_skip_value_>;
+  readonly posts: EagerCollection<Post_skip_id_, Post_skip_value_>;
+  readonly postsStored: EagerCollection<Post_skip_id_, PostStored>;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
@@ -54,37 +53,36 @@ export function createGraph(
   inputs: InputCollections,
   _context: Context,
 ): GraphCollections {
-  const commentUnitByPost = inputs.comments.map(CommentCountUnitMapper);
-  const commentCountByPost = commentUnitByPost.reduce(SumCommentReducer);
+  const postFeedEvents = inputs.posts.map(PostFeedEventMapper);
+  const likeFeedEvents = inputs.likes.map(LikeFeedEventMapper);
+  const commentFeedEvents = inputs.comments.map(CommentFeedEventMapper);
+  const allFeedEvents = postFeedEvents.merge(likeFeedEvents, commentFeedEvents);
+  const commentOnesByPost = inputs.comments.map(CommentCountByPostMapper);
+  const commentCountByPost = commentOnesByPost.reduce(SumReducer);
   const commentsByPost = inputs.comments.map(CommentByPostMapper);
-  const feedFromComments = inputs.comments.map(FeedItemFromCommentMapper);
-  const feedFromLikes = inputs.likes.map(FeedItemFromLikeMapper);
-  const feedFromPosts = inputs.posts.map(FeedItemFromPostMapper);
-  const feedItems = feedFromPosts.merge(feedFromLikes, feedFromComments);
-  const likeUnitByPost = inputs.likes.map(LikeCountUnitMapper);
-  const likeCountByPost = likeUnitByPost.reduce(SumLikeReducer);
+  const likeOnesByPost = inputs.likes.map(LikeCountByPostMapper);
+  const likeCountByPost = likeOnesByPost.reduce(SumReducer);
   const likesByPost = inputs.likes.map(LikeByPostMapper);
   const output_comments = inputs.comments;
   const output_commentsByPost = commentsByPost;
-  const output_feedItems = feedItems;
+  const output_feedEvents = allFeedEvents;
   const output_likes = inputs.likes;
   const output_likesByPost = likesByPost;
-  const output_posts = inputs.posts;
-  const postsEnriched = inputs.posts.map(
+  const output_posts = inputs.posts.map(
     EnrichPostWithCountsMapper,
     likeCountByPost,
     commentCountByPost,
   );
-  const output_postsEnriched = postsEnriched;
+  const output_postsStored = inputs.posts;
   const output_users = inputs.users;
   return {
     comments: output_comments,
     commentsByPost: output_commentsByPost,
-    feedItems: output_feedItems,
+    feedEvents: output_feedEvents,
     likes: output_likes,
     likesByPost: output_likesByPost,
     posts: output_posts,
-    postsEnriched: output_postsEnriched,
+    postsStored: output_postsStored,
     users: output_users,
   };
 }

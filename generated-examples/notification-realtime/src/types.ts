@@ -1,57 +1,68 @@
-export type ApiError = { readonly code: string; readonly message: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = { readonly code: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type ApiError_skip_id_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateNotificationRequest = {
   readonly body?: string;
   readonly linkUrl?: string;
-  readonly recipientUserId: string;
   readonly title: string;
   readonly type: NotificationType;
-};
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
 
 export type CreateNotificationRequest_skip_id_ = {
   readonly body?: string;
   readonly linkUrl?: string;
-  readonly recipientUserId: string;
   readonly title: string;
   readonly type: NotificationType;
-};
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
 
 export type CreateNotificationRequest_skip_value_ = {
   readonly body?: string;
   readonly linkUrl?: string;
-  readonly recipientUserId: string;
   readonly title: string;
   readonly type: NotificationType;
-};
-
-export type GetNotificationParams = {
-  readonly notificationId: string;
   readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type Created = "created";
+
+export type Created_skip_id_ = "created";
+
+export type Created_skip_value_ = "created";
+
+export type GetNotificationParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type GetUserByIdParams = { readonly userId: string };
-
-export type ListNotificationsParams = {
-  readonly since?: string;
-  readonly status?: NotificationStatus;
-  readonly userId: string;
+export type ListNotificationsParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type MarkAllReadResult = { readonly markedCount: number };
+export type MarkAllReadResponse = { readonly updatedCount: number } & {
+  readonly [key: string]: Json | null;
+};
 
-export type MarkAllReadResult_skip_id_ = { readonly markedCount: number };
+export type MarkAllReadResponse_skip_id_ = { readonly updatedCount: number } & {
+  readonly [key: string]: Json | null;
+};
 
-export type MarkAllReadResult_skip_value_ = { readonly markedCount: number };
+export type MarkAllReadResponse_skip_value_ = {
+  readonly updatedCount: number;
+} & { readonly [key: string]: Json | null };
 
 export type Notification = {
   readonly body?: string;
@@ -59,90 +70,64 @@ export type Notification = {
   readonly id: string;
   readonly linkUrl?: string;
   readonly readAt?: string;
-  readonly recipientUserId: string;
-  readonly senderUserId: string;
-  readonly status: NotificationStatus;
   readonly title: string;
   readonly type: NotificationType;
-};
-
-export type NotificationByRecipientCreatedKey = {
-  readonly id: string;
-  readonly negCreatedAt: number;
-  readonly recipientUserId: string;
-};
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationEvent = {
-  readonly eventType: NotificationEventType;
-  readonly notification?: Notification;
-  readonly notificationId: string;
-  readonly occurredAt: string;
-};
-
-export type NotificationEventType = "created" | "read" | "deleted";
-
-export type NotificationEventType_skip_id_ = "created" | "read" | "deleted";
-
-export type NotificationEventType_skip_value_ = "created" | "read" | "deleted";
+  readonly eventType: Created;
+  readonly notification: Notification;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationEvent_skip_id_ = {
-  readonly eventType: NotificationEventType;
-  readonly notification?: Notification;
-  readonly notificationId: string;
-  readonly occurredAt: string;
-};
+  readonly eventType: Created;
+  readonly notification: Notification;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationEvent_skip_value_ = {
-  readonly eventType: NotificationEventType;
-  readonly notification?: Notification;
-  readonly notificationId: string;
-  readonly occurredAt: string;
-};
+  readonly eventType: Created;
+  readonly notification: Notification;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationList = {
-  readonly items: Notification[];
-  readonly total: number;
-};
+  readonly notifications: Notification[];
+  readonly totalCount: number;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationList_skip_id_ = {
-  readonly items: Notification[];
-  readonly total: number;
-};
+  readonly notifications: Notification[];
+  readonly totalCount: number;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationList_skip_value_ = {
-  readonly items: Notification[];
-  readonly total: number;
-};
-
-export type NotificationStatus = "UNREAD" | "READ";
-
-export type NotificationStatus_skip_id_ = "UNREAD" | "READ";
-
-export type NotificationStatus_skip_value_ = "UNREAD" | "READ";
+  readonly notifications: Notification[];
+  readonly totalCount: number;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationType =
   | "INFO"
+  | "SUCCESS"
+  | "WARNING"
+  | "ERROR"
   | "MENTION"
-  | "FOLLOW"
-  | "MESSAGE"
-  | "SYSTEM"
-  | "ALERT";
+  | "SYSTEM";
 
 export type NotificationType_skip_id_ =
   | "INFO"
+  | "SUCCESS"
+  | "WARNING"
+  | "ERROR"
   | "MENTION"
-  | "FOLLOW"
-  | "MESSAGE"
-  | "SYSTEM"
-  | "ALERT";
+  | "SYSTEM";
 
 export type NotificationType_skip_value_ =
   | "INFO"
+  | "SUCCESS"
+  | "WARNING"
+  | "ERROR"
   | "MENTION"
-  | "FOLLOW"
-  | "MESSAGE"
-  | "SYSTEM"
-  | "ALERT";
+  | "SYSTEM";
 
 export type Notification_skip_id_ = string;
 
@@ -151,66 +136,62 @@ export type Notification_skip_value_ = {
   readonly createdAt: string;
   readonly linkUrl?: string;
   readonly readAt?: string;
-  readonly recipientUserId: string;
-  readonly senderUserId: string;
-  readonly status: NotificationStatus;
   readonly title: string;
   readonly type: NotificationType;
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type UnreadCount = number;
+
+export type UnreadCountParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type RecipientUserIdKey = string;
+export type UnreadCountResponse = { readonly unreadCount: number } & {
+  readonly [key: string]: Json | null;
+};
 
-export type UnreadCount = { readonly count: number };
+export type UnreadCountResponse_skip_id_ = { readonly unreadCount: number } & {
+  readonly [key: string]: Json | null;
+};
 
-export type UnreadCountParams = { readonly userId: string };
+export type UnreadCountResponse_skip_value_ = {
+  readonly unreadCount: number;
+} & { readonly [key: string]: Json | null };
 
-export type UnreadCount_skip_id_ = { readonly count: number };
-
-export type UnreadCount_skip_value_ = { readonly count: number };
-
-export type UnreadMarker = number;
+export type UnreadOne = number;
 
 export type UpdateMeRequest = {
   readonly avatarUrl?: string;
-  readonly bio?: string;
   readonly displayName?: string;
   readonly email?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
   readonly avatarUrl?: string;
-  readonly bio?: string;
   readonly displayName?: string;
   readonly email?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
   readonly avatarUrl?: string;
-  readonly bio?: string;
   readonly displayName?: string;
   readonly email?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User = {
   readonly avatarUrl?: string;
-  readonly bio?: string;
-  readonly createdAt?: string;
+  readonly createdAt: string;
   readonly displayName?: string;
   readonly email?: string;
   readonly id: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
   readonly avatarUrl?: string;
-  readonly bio?: string;
-  readonly createdAt?: string;
+  readonly createdAt: string;
   readonly displayName?: string;
   readonly email?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };

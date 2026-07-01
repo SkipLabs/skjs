@@ -8,6 +8,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetWorkspaceResourceInputs extends SharedCollections {
@@ -18,7 +19,7 @@ export interface GetWorkspaceResourceInputs extends SharedCollections {
 }
 
 export class GetWorkspaceResource implements Resource<GetWorkspaceResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetWorkspaceResourceInputs,

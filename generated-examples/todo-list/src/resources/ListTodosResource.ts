@@ -1,4 +1,4 @@
-import { FilterTodosByOwnerAndCompletedMapper } from "../mappers/FilterTodosByOwnerAndCompletedMapper.js";
+import { FilterTodosByOwnerMapper } from "../mappers/FilterTodosByOwnerMapper.js";
 import type {
   Todo_skip_id_,
   Todo_skip_value_,
@@ -17,11 +17,9 @@ export interface ListTodosResourceInputs extends SharedCollections {
 }
 
 export class ListTodosResource implements Resource<ListTodosResourceInputs> {
-  private readonly completed: boolean | null;
   private readonly userId: string;
 
   constructor(params: ListTodosParams) {
-    this.completed = params.completed ?? null;
     this.userId = params.userId;
   }
 
@@ -29,10 +27,6 @@ export class ListTodosResource implements Resource<ListTodosResourceInputs> {
     inputs: ListTodosResourceInputs,
     _context: Context,
   ): EagerCollection<Todo_skip_id_, Todo_skip_value_> {
-    return inputs.todos.map(
-      FilterTodosByOwnerAndCompletedMapper,
-      this.userId,
-      this.completed,
-    );
+    return inputs.todos.map(FilterTodosByOwnerMapper, this.userId);
   }
 }

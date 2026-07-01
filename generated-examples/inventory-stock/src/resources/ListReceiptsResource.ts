@@ -1,9 +1,11 @@
-import { FilterReceiptBySkuMapper } from "../mappers/FilterReceiptBySkuMapper.js";
+import { ReceiptByOwnerMapper } from "../mappers/ReceiptByOwnerMapper.js";
 import type {
   Receipt_skip_id_,
   Receipt_skip_value_,
-  ListReceiptsParams,
+  User_skip_id_,
   Receipt,
+  ListReceiptsParams,
+  User,
 } from "../types.js";
 import type {
   Resource,
@@ -17,16 +19,16 @@ export interface ListReceiptsResourceInputs extends SharedCollections {
 }
 
 export class ListReceiptsResource implements Resource<ListReceiptsResourceInputs> {
-  private readonly skuId: string | null;
+  private readonly userId: string;
 
   constructor(params: ListReceiptsParams) {
-    this.skuId = params.skuId ?? null;
+    this.userId = params.userId;
   }
 
   instantiate(
     inputs: ListReceiptsResourceInputs,
     _context: Context,
-  ): EagerCollection<Receipt_skip_id_, Receipt_skip_value_> {
-    return inputs.receipts.map(FilterReceiptBySkuMapper, this.skuId);
+  ): EagerCollection<User_skip_id_, Receipt> {
+    return inputs.receipts.map(ReceiptByOwnerMapper, this.userId);
   }
 }

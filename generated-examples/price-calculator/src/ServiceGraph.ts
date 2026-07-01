@@ -2,18 +2,12 @@ import type {
   Promotion_skip_id_,
   Promotion,
   Promotion_skip_value_,
-  QuoteLineItemKey,
-  QuoteLineItem_skip_value_,
-  QuoteLineItem,
-  Quote_skip_id_,
-  Quote,
-  QuoteStored,
-  ShippingOption_skip_id_,
-  ShippingOption,
-  ShippingOption_skip_value_,
-  TaxRate_skip_id_,
-  TaxRate,
-  TaxRate_skip_value_,
+  TaxRule_skip_id_,
+  TaxRule,
+  TaxRule_skip_value_,
+  User_skip_id_,
+  User,
+  User_skip_value_,
 } from "./types.js";
 import type {
   EagerCollection,
@@ -27,16 +21,8 @@ export interface InputCollections extends NamedEagerCollections {
     Promotion_skip_id_,
     Promotion_skip_value_
   >;
-  readonly quoteLineItems: EagerCollection<
-    QuoteLineItemKey,
-    QuoteLineItem_skip_value_
-  >;
-  readonly quotes: EagerCollection<Quote_skip_id_, QuoteStored>;
-  readonly shippingOptions: EagerCollection<
-    ShippingOption_skip_id_,
-    ShippingOption_skip_value_
-  >;
-  readonly taxRates: EagerCollection<TaxRate_skip_id_, TaxRate_skip_value_>;
+  readonly taxRules: EagerCollection<TaxRule_skip_id_, TaxRule_skip_value_>;
+  readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
 export interface GraphCollections extends SharedCollections {
@@ -44,16 +30,8 @@ export interface GraphCollections extends SharedCollections {
     Promotion_skip_id_,
     Promotion_skip_value_
   >;
-  readonly quoteLineItems: EagerCollection<
-    QuoteLineItemKey,
-    QuoteLineItem_skip_value_
-  >;
-  readonly quotes: EagerCollection<Quote_skip_id_, QuoteStored>;
-  readonly shippingOptions: EagerCollection<
-    ShippingOption_skip_id_,
-    ShippingOption_skip_value_
-  >;
-  readonly taxRates: EagerCollection<TaxRate_skip_id_, TaxRate_skip_value_>;
+  readonly taxRules: EagerCollection<TaxRule_skip_id_, TaxRule_skip_value_>;
+  readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
 export function createGraph(
@@ -61,15 +39,11 @@ export function createGraph(
   _context: Context,
 ): GraphCollections {
   const output_promotions = inputs.promotions;
-  const output_quoteLineItems = inputs.quoteLineItems;
-  const output_quotes = inputs.quotes;
-  const output_shippingOptions = inputs.shippingOptions;
-  const output_taxRates = inputs.taxRates;
+  const output_taxRules = inputs.taxRules;
+  const output_users = inputs.users;
   return {
     promotions: output_promotions,
-    quoteLineItems: output_quoteLineItems,
-    quotes: output_quotes,
-    shippingOptions: output_shippingOptions,
-    taxRates: output_taxRates,
+    taxRules: output_taxRules,
+    users: output_users,
   };
 }

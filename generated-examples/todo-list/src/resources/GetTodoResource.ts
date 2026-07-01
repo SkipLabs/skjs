@@ -1,4 +1,10 @@
-import type { Todo_skip_id_, Todo_skip_value_, Todo } from "../types.js";
+import { FilterTodoByIdAndOwnerMapper } from "../mappers/FilterTodoByIdAndOwnerMapper.js";
+import type {
+  Todo_skip_id_,
+  Todo_skip_value_,
+  GetTodoParams,
+  Todo,
+} from "../types.js";
 import type {
   Resource,
   EagerCollection,
@@ -11,12 +17,22 @@ export interface GetTodoResourceInputs extends SharedCollections {
 }
 
 export class GetTodoResource implements Resource<GetTodoResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly todoId: string;
+  private readonly userId: string;
+
+  constructor(params: GetTodoParams) {
+    this.todoId = params.todoId;
+    this.userId = params.userId;
+  }
 
   instantiate(
     inputs: GetTodoResourceInputs,
     _context: Context,
   ): EagerCollection<Todo_skip_id_, Todo_skip_value_> {
-    return inputs.todos;
+    return inputs.todos.map(
+      FilterTodoByIdAndOwnerMapper,
+      this.userId,
+      this.todoId,
+    );
   }
 }
