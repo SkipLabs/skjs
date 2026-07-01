@@ -1,28 +1,27 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetMyNotificationResource } from "./resources/GetMyNotificationResource.js";
-import { GetMyUnreadCountResource } from "./resources/GetMyUnreadCountResource.js";
+import { GetNotificationResource } from "./resources/GetNotificationResource.js";
 import { GetNotificationStoredResource } from "./resources/GetNotificationStoredResource.js";
-import { ListMyNotificationsResource } from "./resources/ListMyNotificationsResource.js";
-import { ListNotificationEventsRawResource } from "./resources/ListNotificationEventsRawResource.js";
+import { GetUnreadCountResource } from "./resources/GetUnreadCountResource.js";
 import { ListNotificationEventsResource } from "./resources/ListNotificationEventsResource.js";
-import { NotificationsByRecipientResource } from "./resources/NotificationsByRecipientResource.js";
+import { ListNotificationEventsStoredResource } from "./resources/ListNotificationEventsStoredResource.js";
+import { ListNotificationsResource } from "./resources/ListNotificationsResource.js";
+import { getMeResource } from "./resources/getMeResource.js";
 import type {
-  NotificationEvent_skip_id_,
-  NotificationEvent_skip_value_,
+  NotificationEventCompositeKey,
+  NotificationEventStored,
   Notification_skip_id_,
   NotificationStored,
-  GetMyNotificationParams,
-  UnreadCountParams,
-  ListMyNotificationsParams,
-  ListNotificationEventsParams,
-  NotificationEvent,
+  User_skip_id_,
+  User_skip_value_,
   Notification,
+  User,
 } from "./types.js";
 import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -31,41 +30,30 @@ import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
   readonly notificationEvents: InputDefinition<
-    NotificationEvent_skip_id_,
-    NotificationEvent_skip_value_
+    NotificationEventCompositeKey,
+    NotificationEventStored
   >;
   readonly notifications: InputDefinition<
     Notification_skip_id_,
     NotificationStored
   >;
+  readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getMyNotificationResource: ResourceClass<
-    GraphCollections,
-    GetMyNotificationParams
-  >;
-  readonly getMyUnreadCountResource: ResourceClass<
-    GraphCollections,
-    UnreadCountParams
-  >;
+  readonly getNotificationResource: ResourceClass<GraphCollections, Json>;
   readonly getNotificationStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly listMyNotificationsResource: ResourceClass<
-    GraphCollections,
-    ListMyNotificationsParams
-  >;
-  readonly listNotificationEventsRawResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
+  readonly getUnreadCountResource: ResourceClass<GraphCollections, Json>;
   readonly listNotificationEventsResource: ResourceClass<
     GraphCollections,
-    ListNotificationEventsParams
+    Json
   >;
-  readonly notificationsByRecipientResource: ResourceClass<
+  readonly listNotificationEventsStoredResource: ResourceClass<
     GraphCollections,
     Json
   >;
+  readonly listNotificationsResource: ResourceClass<GraphCollections, Json>;
+  readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
 class Service implements SkipService<
@@ -75,26 +63,29 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
       notificationEvents: new InputDefinition<
-        NotificationEvent_skip_id_,
-        NotificationEvent_skip_value_
+        NotificationEventCompositeKey,
+        NotificationEventStored
       >([]),
       notifications: new InputDefinition<
         Notification_skip_id_,
         NotificationStored
       >([]),
+      users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getMyNotificationResource: GetMyNotificationResource,
-      getMyUnreadCountResource: GetMyUnreadCountResource,
+      getNotificationResource: GetNotificationResource,
       getNotificationStoredResource: GetNotificationStoredResource,
-      listMyNotificationsResource: ListMyNotificationsResource,
-      listNotificationEventsRawResource: ListNotificationEventsRawResource,
+      getUnreadCountResource: GetUnreadCountResource,
       listNotificationEventsResource: ListNotificationEventsResource,
-      notificationsByRecipientResource: NotificationsByRecipientResource,
+      listNotificationEventsStoredResource:
+        ListNotificationEventsStoredResource,
+      listNotificationsResource: ListNotificationsResource,
+      getMeResource: getMeResource,
     };
   }
 

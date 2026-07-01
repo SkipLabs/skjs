@@ -8,6 +8,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetNotificationStoredResourceInputs extends SharedCollections {
@@ -18,7 +19,7 @@ export interface GetNotificationStoredResourceInputs extends SharedCollections {
 }
 
 export class GetNotificationStoredResource implements Resource<GetNotificationStoredResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetNotificationStoredResourceInputs,

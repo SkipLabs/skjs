@@ -1,8 +1,6 @@
-import { FilterEventsByParentMapper } from "../mappers/FilterEventsByParentMapper.js";
 import type {
   Notification_skip_id_,
-  NotificationEventChild,
-  ListNotificationEventsParams,
+  NotificationEvent,
   Notification,
 } from "../types.js";
 import type {
@@ -10,29 +8,23 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface ListNotificationEventsResourceInputs extends SharedCollections {
-  readonly notificationEventsByParent: EagerCollection<
+  readonly eventsByNotificationForList: EagerCollection<
     Notification_skip_id_,
-    NotificationEventChild
+    NotificationEvent
   >;
 }
 
 export class ListNotificationEventsResource implements Resource<ListNotificationEventsResourceInputs> {
-  private readonly notificationId: string;
-
-  constructor(params: ListNotificationEventsParams) {
-    this.notificationId = params.notificationId;
-  }
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: ListNotificationEventsResourceInputs,
     _context: Context,
-  ): EagerCollection<Notification_skip_id_, NotificationEventChild> {
-    return inputs.notificationEventsByParent.map(
-      FilterEventsByParentMapper,
-      this.notificationId,
-    );
+  ): EagerCollection<Notification_skip_id_, NotificationEvent> {
+    return inputs.eventsByNotificationForList;
   }
 }
