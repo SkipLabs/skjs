@@ -25,6 +25,11 @@ test:
 test-cfg:
 	skargo test testCFG
 
+# Run only the dead-code expectation tests (UPDATE_EXPECT=1 to regenerate)
+.PHONY: test-deadcode
+test-deadcode:
+	skargo test testDeadCode
+
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
 	find . -name \*.sk | parallel skfmt -i {}
@@ -68,6 +73,10 @@ test-in-docker:
 .PHONY: test-cfg-in-docker
 test-cfg-in-docker:
 	$(DOCKER_RUN) make test-cfg
+
+.PHONY: test-deadcode-in-docker
+test-deadcode-in-docker:
+	$(DOCKER_RUN) make test-deadcode
 
 %-in-docker:
 	$(DOCKER_RUN) skargo $*
