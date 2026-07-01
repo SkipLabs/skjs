@@ -26,7 +26,7 @@ trait AbstractDomain {
   readonly fun transferTerminator(
     term: BBTerminator,
     s: inst,
-    label: CFGEdgeLabel,
+    label: CFGENormalLabel,
   ): inst;
 }
 

@@ -39,7 +39,8 @@ fun analyzeForward<D: AbstractDomain>(
     for ((label, target) in cfg.successors(block)) {
       edgeState = label match {
       | CFGEException() -> domain.transferExn(block, blockPre)
-      | _ -> domain.transferTerminator(block.terminator, post, label)
+      | normal @ CFGENormalLabel _ ->
+        domain.transferTerminator(block.terminator, post, normal)
       };
       old = preStates.maybeGet(target).default(bottom);
       merged = old.widen(edgeState);

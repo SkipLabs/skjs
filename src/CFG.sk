@@ -34,8 +34,12 @@ base class BBTerminator {
   | CFGTUnreachable()
 }
 
-// A labeled out-edge of a block.
-base class CFGEdgeLabel uses Orderable {
+// A labeled out-edge of a block. The normal (non-exceptional) labels are
+// grouped under `CFGENormalLabel` so a terminator transfer can be typed to
+// exclude the exceptional edge; `CFGEException` is the out-of-band edge taken
+// when the block raises.
+base class CFGEdgeLabel uses Orderable
+base class CFGENormalLabel extends CFGEdgeLabel {
   children =
   | CFGENormal()
   | CFGETrue()
@@ -44,8 +48,8 @@ base class CFGEdgeLabel uses Orderable {
     idx: Int,
   ) // index into `CFGTSwitch.branches` array
   | CFGEDefault()
-  | CFGEException()
 }
+class CFGEException() extends CFGEdgeLabel
 
 // A basic block
 value class CFGBlock(
