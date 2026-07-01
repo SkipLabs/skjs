@@ -15,6 +15,7 @@ fun analyzeForward<S, D: AbstractDomain<S>>(
   domain: D,
 ): SortedMap<CFGBlockId, S> {
   bottom = domain.bottom();
+  backEdges = cfg.backEdges();
   preStates = SortedMap<CFGBlockId, S>[];
   !preStates[cfg.entry] = domain.init();
 
@@ -39,8 +40,14 @@ fun analyzeForward<S, D: AbstractDomain<S>>(
         domain.transferTerminator(block.terminator, post, normal)
       };
       old = preStates.maybeGet(target).default(bottom);
-      merged = domain.widen(old, edgeState);
-      // `widen` is an upper bound, so merged <= old exactly when nothing grew.
+
+      merged = if (backEdges.contains((blockId, target))) {
+        domain.widen(old, edgeState)
+      } else {
+        domain.join(old, edgeState)
+      };
+      // Both `join` and `widen` are upper bounds, so `leq(merged, old)` holds
+      // exactly when nothing grew.
       if (!(domain.leq(merged, old))) {
         !preStates[target] = merged;
         if (!queued.contains(target)) {

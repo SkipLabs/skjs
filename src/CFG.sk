@@ -141,6 +141,32 @@ value class CFG{
     };
     edges.toArray()
   }
+
+  // Find CFG back-edges via a depth-first search from the entry
+  fun backEdges(): SortedSet<(CFGBlockId, CFGBlockId)> {
+    accum = mutable Vector<(CFGBlockId, CFGBlockId)>[];
+    this.backEdgesHelper(this.entry, accum);
+    SortedSet::createFromItems(accum)
+  }
+  // DFS from `curr`, recording every back-edge into `accum`
+  // `path` are those nodes that can reach `curr`, used to determine back-edges
+  // `visited` is a global set of visited nodes, to avoid exponential blowup on sequential branching
+  private fun backEdgesHelper(
+    curr: CFGBlockId,
+    accum: mutable Vector<(CFGBlockId, CFGBlockId)>,
+    path: SortedSet<CFGBlockId> = SortedSet[],
+    visited: mutable Set<CFGBlockId> = mutable Set[],
+  ): void {
+    !path = path.add(curr);
+    visited.add(curr);
+    for ((_label, succ) in this.successors(this.blocks.get(curr))) {
+      if (path.contains(succ)) {
+        accum.push((curr, succ))
+      } else if (!visited.contains(succ)) {
+        this.backEdgesHelper(succ, accum, path, visited)
+      }
+    }
+  }
 }
 
 mutable class CFGBuilder{
