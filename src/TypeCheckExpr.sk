@@ -3861,7 +3861,9 @@ extension class TypeChecker {
             TSCode(2345),
           )
         };
-        if (tcenv.subst.version == version) break void;
+        if (tcenv.subst.version == version) {
+          break void
+        };
         !version = tcenv.subst.version;
       };
       VariadicTyping::checkRestArgs(
