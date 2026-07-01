@@ -449,7 +449,24 @@ class TType private {
       clause0.stypes match {
       | None() -> clause1
       | Some(stypes) ->
-        TType::inter(subst, tenv, clause1, TType::fromSTypes(this.pos, stypes))
+        sty = TType::fromSTypes(this.pos, stypes);
+        // When clause1 is a concrete type that already satisfies the
+        // constraint, inter(clause1, constraint) = clause1. Gated on
+        // no-TVar-or-TInter: a TInter in insts wraps unbound TVars (created
+        // by inter_ when both sides are unbound), and calling isSub on it
+        // would seal those TVars prematurely via growTVars.
+        hasTVar = (
+          for (inst in clause1.insts) {
+            if (inst is TVar _ || inst is TInter _) break true
+          } else {
+            false
+          }
+        );
+        if (!hasTVar && TType::isSub(subst, tenv, clause1, sty) is STOk()) {
+          clause1
+        } else {
+          TType::inter(subst, tenv, clause1, sty)
+        }
       }
     })
   }
