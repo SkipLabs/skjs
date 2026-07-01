@@ -417,10 +417,4 @@ fun cfgToDot(cfg: CFG): String {
   "\n".join(lines) + "\n"
 }
 
-fun serializeDeterministic(cfgs: SortedMap<CGNode, CFG>): String {
-  "\n".join(
-    cfgs.values().collect(Array).sortedBy(cfg ~> cfg.name).map(cfgToDot),
-  )
-}
-
 module end;

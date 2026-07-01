@@ -42,7 +42,7 @@ fun validateCFG(
   checkResult.cfgs.each((cgNode, cfg) -> {
     !cfgs = cfgs.set(cgNode, cfg with {name => cgNode.id.descriptor()})
   });
-  actual = SKJS.serializeDeterministic(cfgs);
+  actual = serializeDeterministic(cfgs);
 
   expectationPath = cfgExpectationPath(fileName);
   update match {
@@ -95,6 +95,12 @@ fun testCFG(): void {
     validateCFG,
     UpdateMode::fromEnv(),
     true,
+  )
+}
+
+fun serializeDeterministic(cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>): String {
+  "\n".join(
+    cfgs.values().collect(Array).sortedBy(cfg ~> cfg.name).map(SKJS.cfgToDot),
   )
 }
 
