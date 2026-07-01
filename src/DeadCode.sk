@@ -51,14 +51,15 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
   }
 }
 
-// The blocks of `cfg` unreachable from the entry — i.e. dead code. Runs the
-// liveness analysis and returns every block id absent from the fixpoint (all
-// present blocks are `Live`).
+// The blocks of `cfg` that hold unreachable source — i.e. dead code. Runs the
+// liveness analysis and returns every block absent from the fixpoint (excluding
+// the structural `normalExit`/`exnExit` sentinels)
 fun deadBlocks(cfg: CFG): SortedSet<CFGBlockId> {
   live = analyzeForward(cfg, LivenessDomain());
   dead = SortedSet<CFGBlockId>[];
   for (block in cfg.blocks.values()) {
-    if (!live.containsKey(block.id)) {
+    isSentinel = block.id == cfg.normalExit || block.id == cfg.exnExit;
+    if (!isSentinel && !live.containsKey(block.id)) {
       !dead = dead.set(block.id)
     }
   };
