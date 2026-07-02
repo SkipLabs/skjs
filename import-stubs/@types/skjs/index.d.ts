@@ -35,7 +35,10 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   join(separator: string): string;
 
   // Pure transforms
-  map<T2>(f: (item: T) => T2): ReadonlyArray<T2>;
+  // Returns Array<T2> (not ReadonlyArray<T2>) since map creates a fresh
+  // mutable array; sound because T2 is a fresh per-call generic unrelated to
+  // T, unlike filter/slice below whose return reuses T itself.
+  map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): ReadonlyArray<T>;
   // Callback returns Array<U> (not ReadonlyArray<U>) to avoid T in contravariant
   // position. Return is also Array<U> since flatMap creates a fresh mutable array.
