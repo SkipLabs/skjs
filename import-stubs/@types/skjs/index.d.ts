@@ -35,7 +35,10 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   join(separator: string): string;
 
   // Pure transforms
-  map<T2>(f: (item: T) => T2): ReadonlyArray<T2>;
+  // Returns Array<T2> (not ReadonlyArray<T2>) since map creates a fresh
+  // mutable array; sound because T2 is a fresh per-call generic unrelated to
+  // T, unlike filter/slice below whose return reuses T itself.
+  map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): ReadonlyArray<T>;
   // Callback returns Array<U> (not ReadonlyArray<U>) to avoid T in contravariant
   // position. Return is also Array<U> since flatMap creates a fresh mutable array.
@@ -46,7 +49,7 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
   // Slicing / combining (still pure)
-  slice(start: number, end?: number): ReadonlyArray<T>;
+  slice(start?: number, end?: number): ReadonlyArray<T>;
   // T in contravariant position prevents covariant subtyping from Array to ReadonlyArray.
   // concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
 }
@@ -55,7 +58,7 @@ declare interface SKJS_ArrayAndTupleBase<T> extends ReadonlyArray<T> {
   indexOf(x: T): number;
   map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): Array<T>;
-  slice(start: number, end?: number): Array<T>;
+  slice(start?: number, end?: number): Array<T>;
   concat(other: Array<T>): Array<T>;
   includes(element: T): boolean;
   lastIndexOf(element: T): number;
@@ -86,7 +89,7 @@ declare class Array<T> implements SKJS_ArrayAndTupleBase<T> {
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
   static isArray<T>(value: T): boolean;
   join(separator: string): string;
-  slice(start: number, end?: number): Array<T>;
+  slice(start?: number, end?: number): Array<T>;
 
   // Additional essential Array methods
   pop(): T | undefined;
@@ -376,8 +379,14 @@ declare class WeakSet<T> {
 }
 
 declare class Date {
+  // TODO: skjs doesn't support constructor overloads, so `year` accepts
+  // `string | number` to cover both the single-argument ISO-string form and
+  // the multi-argument numeric form. This wrongly also accepts a string
+  // `year` combined with numeric `month`/`day`/etc (e.g. `new Date("2020-01",
+  // 1)`), a combination the real Date constructor doesn't support — see
+  // tests/expect-error/date-constructor-string.ts.
   constructor(
-    year?: number,
+    year?: string | number,
     month?: number,
     day?: number,
     hour?: number,
