@@ -509,21 +509,24 @@ base class TEnv{
     this
   }
 
-  // Normalizes a function/method's return type annotation. The top-level
-  // `x is T` type-predicate form is only accepted when `allowTypePredicate`
-  // is true — callers pass true for a bodyless (ambient/interface)
-  // signature, since SKJS can't verify the predicate against a real
-  // implementation. All other positions (including `x is T` nested anywhere
-  // else, or on a signature with a body) go through the ordinary recursive
-  // `normalize`, whose own TAIs handling always rejects.
+  // Normalizes a function/method's return type annotation. The top-level `x
+  // is T` type-predicate form is accepted here (unlike in the general
+  // recursive `normalize`, whose own TAIs handling always rejects, covering
+  // any nested position). Whether this is legal on the enclosing
+  // declaration (only on a bodyless signature — see callers of
+  // rejectTypePredicateOnBodiedSignature) is deliberately NOT checked here:
+  // this return-type normalization must stay independent of whether the
+  // declaration has a body, since it feeds a signature that's cached
+  // separately from — and read by callers regardless of — the body, and
+  // depending on body content here would incorrectly propagate body-only
+  // edits to those callers under incremental checking.
   fun normalizeReturnType(
     tcenvb: mutable TCEnvBase,
     rty: Type,
     paramNames: Array<Pattern>,
-    allowTypePredicate: Bool,
   ): TType {
     rty.value match {
-    | TAIs(lhs, rhs) if (allowTypePredicate) ->
+    | TAIs(lhs, rhs) ->
       // The subject must be a plain identifier, the only form TS grammar
       // allows.
       // TODO: model the narrowing effect precisely.
@@ -539,6 +542,32 @@ base class TEnv{
       _ = this.normalize(tcenvb, rhs);
       TType::single(TPrimValue::boolean(rty.pos))
     | _ -> this.normalize(tcenvb, rty)
+    }
+  }
+
+  // A type predicate return type is only accepted on a bodyless
+  // (ambient/interface) signature, since SKJS never checks it against a
+  // real implementation. Called from funDef/method-checking, right where
+  // the body is already legitimately read to type-check its statements —
+  // deliberately NOT from normalizeReturnType/funDefSetup, which must stay
+  // independent of body content for incremental checking (see
+  // normalizeReturnType's doc comment).
+  fun rejectTypePredicateOnBodiedSignature(
+    tcenvb: mutable TCEnvBase,
+    retTypeAst: ?Type,
+  ): void {
+    retTypeAst match {
+    | Some(Type(pos, TAIs _)) ->
+      tcenvb.error(
+        Array[
+          (
+            pos,
+            "A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature",
+          ),
+        ],
+        SKJSCode(9032),
+      )
+    | _ -> void
     }
   }
 
@@ -1080,11 +1109,7 @@ base class TEnv{
       retType,
       cgNode,
     );
-    // A type predicate return type is only accepted on a bodyless
-    // (ambient/interface) declaration, since SKJS can't verify it against
-    // a real implementation.
-    allowTypePredicate = this.getFunBody(tcenvb.context, fd) is FDBNone _;
-    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, allowTypePredicate)
+    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, true)
   }
 
   // Normalizes a type annotation.
@@ -1727,11 +1752,18 @@ base class TEnv{
     }
   }
 
+  // isDeclaredSignature: true only when tafun is a named function/method
+  // declaration's own signature (from funDecl) — the only case where a
+  // top-level `x is T` return type is accepted (see normalizeReturnType).
+  // False (the default) for every other TAFun position: constructor
+  // synthesis, callable/newable object types, and TAFun appearing as a
+  // nested type annotation (e.g. a type alias or callback parameter type),
+  // where `x is T` is never legal.
   fun normalizeFun(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     tafun: TAFun,
-    allowTypePredicate: Bool = false,
+    isDeclaredSignature: Bool = false,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -1854,12 +1886,11 @@ base class TEnv{
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
-        this.normalizeReturnType(
-          tcenvb,
-          retType,
-          params.map(p -> p.name),
-          allowTypePredicate,
-        ),
+        if (isDeclaredSignature) {
+          this.normalizeReturnType(tcenvb, retType, params.map(p -> p.name))
+        } else {
+          this.normalize(tcenvb, retType)
+        },
         CGNodes::singleton(cgNode),
       );
       if (isMethod) {
