@@ -610,7 +610,7 @@ class TAFunParam(
   isRest: ?PosRange,
   name: Pattern,
   optional: ?PosRange,
-  type: Type,
+  type: ?Type,
 ) uses XXHashable
 
 /***************************************************************************/

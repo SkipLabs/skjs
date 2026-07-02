@@ -395,7 +395,7 @@ extension class Parser {
       };
       this.expect(TKColon());
       type = this.type(0);
-      result.push(TAFunParam(isRest, name, qm, type));
+      result.push(TAFunParam(isRest, name, qm, Some(type)));
       tokComma = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
       | Some(x) -> x

@@ -1001,7 +1001,7 @@ base class TEnv{
     | None() -> param.optional
     | Some(defaultExpr) -> Some(defaultExpr.pos)
     };
-    TAFunParam(param.isRest, param.name, optional, ty)
+    TAFunParam(param.isRest, param.name, optional, Some(ty))
   }
 
   fun funDecl(
@@ -1691,7 +1691,20 @@ base class TEnv{
       spreadParam: ?TType = None();
       thisParam: ?TType = None();
       for (i => param in params) {
-        paramType = this.normalize(tcenvb, param.type);
+        paramTypeAst = param.type match {
+        | Some(ty) -> ty
+        | None() ->
+          fatalError(
+            Array[
+              (
+                param.name.pos,
+                "A parameter must have an explicit type annotation",
+              ),
+            ],
+            TSCode(7006),
+          )
+        };
+        paramType = this.normalize(tcenvb, paramTypeAst);
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
@@ -1735,7 +1748,7 @@ base class TEnv{
             tcenvb,
             this,
             restPos,
-            param.type,
+            paramTypeAst,
             tParams,
           );
           if (i != params.size() - 1) {
@@ -1758,7 +1771,7 @@ base class TEnv{
             tcenvb.error(
               Array[
                 (
-                  param.type.pos,
+                  paramTypeAst.pos,
                   "A required parameter cannot follow an optional parameter",
                 ),
                 (wpos, "It appears after this parameter that is optional"),
