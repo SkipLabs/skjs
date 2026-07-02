@@ -53,6 +53,14 @@ class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
 base class STError<+T> extends STResult<T> uses Equality {
+  // Hint wording is shared between the sites that emit hints and
+  // extractReadonlyHint/extractContravarianceHint, which recover hints from
+  // rendered messages by matching on these exact strings. Never inline or
+  // fork this wording: an emitter that bypasses the constants breaks
+  // extraction silently.
+  const readonlyHintMessage: String = "This would not be an error if this field were readonly";
+  const contravarianceHintPrefix: String = "Function parameter types are checked contravariantly:";
+
   overridable macro fun ==<U>(other: STError<U>): Bool {
     other match {
     | otherTyped @ #ThisClass _ ->
@@ -77,9 +85,57 @@ base class STError<+T> extends STResult<T> uses Equality {
   ): List<(PosRange, String)> {
     suggestReadonly match {
     | None() -> List[]
-    | Some(pos) ->
-      List[(pos, "This would not be an error if this field were readonly")]
+    | Some(pos) -> List[(pos, STError::readonlyHintMessage)]
     }
+  }
+
+  static fun extractReadonlyHint(msgs: List<(PosRange, String)>): ?PosRange {
+    for ((pos, msg) in msgs) {
+      if (msg == STError::readonlyHintMessage) {
+        return Some(pos)
+      }
+    };
+    None()
+  }
+
+  static fun extractContravarianceHint(
+    msgs: List<(PosRange, String)>,
+  ): ?(PosRange, String) {
+    for ((pos, msg) in msgs) {
+      if (msg.startsWith(STError::contravarianceHintPrefix)) {
+        return Some((pos, msg))
+      }
+    };
+    None()
+  }
+
+  static fun contravarianceHint(
+    hint: ?(PosRange, String),
+  ): List<(PosRange, String)> {
+    hint match {
+    | None() -> List[]
+    | Some(h) -> List[h]
+    }
+  }
+
+  // Append hints not already present in msgs. The same hint can arrive by
+  // two routes: rendered inline by the failing node inside `err` (e.g.
+  // STRecFunParam's contravariance hint), and attached to STRecTypeWithHint
+  // after being extracted from a constraint-check error in isSub_. This
+  // equality check collapses those duplicates. (De-duplication of *nested*
+  // contravariance hints — innermost wins — is separate: see the
+  // extractContravarianceHint guard in STErrorOnTFun::toError.)
+  static fun concatNewHints(
+    msgs: List<(PosRange, String)>,
+    hints: List<(PosRange, String)>,
+  ): List<(PosRange, String)> {
+    res = msgs;
+    for (hint in hints) {
+      if (!res.any(msg -> msg == hint)) {
+        !res = res.concat(List[hint])
+      }
+    };
+    res
   }
 }
 
@@ -394,7 +450,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
     }
   | STRecTypeWithHint(err, hints, ty1, ty2) ->
     msgs = STRecType(err, ty1, ty2).toError(subst, tenv, detail);
-    msgs.concat(hints)
+    STError::concatNewHints(msgs, hints)
 }
 
 base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
@@ -429,39 +485,59 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)> {
-    (recMsg, msgs) = this match {
+    (recMsg, msgs, contraHint) = this match {
     | STRecFunTParam(None(), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
         None(),
         List[(pos1, `The type parameter${iStr} does not define a constraint`)],
+        None(),
       )
     | STRecFunThisParam(None(), _f1, _f2) ->
-      (None(), List[(pos1, "The this parameter is missing")])
+      (None(), List[(pos1, "The this parameter is missing")], None())
     | STRecFunParam(None(), i, _f1, _f2) ->
-      (None(), List[(pos2, `The parameter ${i + 1} is missing`)])
+      (None(), List[(pos2, `The parameter ${i + 1} is missing`)], None())
     | STRecFunSpread(None(), _f1, _f2) ->
-      (None(), List[(pos2, "The rest parameter is missing")])
+      (None(), List[(pos2, "The rest parameter is missing")], None())
     | STTypeParameterMismatch(_f1, _f2) ->
-      (None(), List[(pos1, "Their number of type parameters differ")])
+      (None(), List[(pos1, "Their number of type parameters differ")], None())
     | STInvalidSpread(rest, _f1, _f2) ->
       restStr = prettyPrintType(false, rest, subst, tenv);
-      (None(), List[(pos1, `Invalid type for a rest parameter: ${restStr}`)])
+      (
+        None(),
+        List[(pos1, `Invalid type for a rest parameter: ${restStr}`)],
+        None(),
+      )
     | STRecFunTParam(Some(err), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
         Some((pos1, `Their type parameters${iStr} are not compatible`)),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
       )
     | STRecFunThisParam(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their this parameters are not compatible")),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
       )
     | STRecFunParam(Some(err), i, _f1, _f2) ->
+      // err records the failed contravariant check `target param <: source
+      // param`, so err.ty1/err.ty2 are the exact parameter types compared
+      // (after rest/tuple flattening in TFun::isSub_).
+      targetStr = prettyPrintType(false, err.ty1, subst, tenv);
+      sourceStr = prettyPrintType(false, err.ty2, subst, tenv);
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
+        Some(
+          (
+            err.ty1.pos,
+            `${
+              STError::contravarianceHintPrefix
+            } target parameter type ${targetStr} must be assignable to source parameter type ${sourceStr}`,
+          ),
+        ),
       )
     | STRecFunOptionalSpread(err, i, _f1, _f2) ->
       (
@@ -472,17 +548,26 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
           ),
         ),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
       )
     | STRecFunSpread(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their rest parameters are not compatible")),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
       )
     | STRecFunReturn(err, _f1, _f2) ->
       (
         Some((pos1, "Their return types are not compatible")),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
+        None(),
       )
+    };
+    if (
+      contraHint is Some _ &&
+      STError::extractContravarianceHint(msgs) is None()
+    ) {
+      !msgs = msgs.concat(STError::contravarianceHint(contraHint))
     };
     recMsg match {
     | Some(m) ->
@@ -1236,7 +1321,14 @@ extension class TType {
     boundTy: TType,
     openTy: TType,
     variance: Variance,
-  ): void {
+  ): ?STErrorOnTType {
+    // First failed constraint check from speculative growth. It is only
+    // rendered by isSub_ if the overall subtyping check also fails. Note the
+    // approximation: this is the first failure on *any* TVar reached by the
+    // growth, which need not be the cause of the eventual top-level error, so
+    // a hint extracted from it can occasionally attach to an unrelated
+    // failure.
+    constraintErr: ?STErrorOnTType = None();
     tvarsToGrow: mutable Vector<TVar> = mutable Vector[];
     static::collectTVars(subst, tenv, openTy.insts, tvarsToGrow, mutable Set[]);
 
@@ -1326,9 +1418,16 @@ extension class TType {
       // so nested checks restore it.
       wasFreezing = subst.freezeCandidates;
       subst.!freezeCandidates = true;
-      ok = tvar.constraints.all(cstr ->
-        TType::isSub(subst, tenv, boundTy, cstr) is STOk()
-      );
+      ok = true;
+      for (cstr in tvar.constraints) {
+        TType::isSub(subst, tenv, boundTy, cstr) match {
+        | STOk() -> void
+        | err @ STErrorOnTType _ ->
+          if (constraintErr is None()) !constraintErr = Some(err);
+          !ok = false;
+          break void
+        }
+      };
       subst.!freezeCandidates = wasFreezing;
       if (ok) {
         growUncovered(tvar)
@@ -1355,7 +1454,15 @@ extension class TType {
       boundFields = boundObj.getFields(subst, tenv);
       for (of in openFields.fields.toArray()) {
         boundFields.maybeGet(of.name.value) match {
-        | Some(bf) -> static::growTVars(subst, tenv, bf.get, of.get, variance)
+        | Some(bf) ->
+          rConstraintErr = static::growTVars(
+            subst,
+            tenv,
+            bf.get,
+            of.get,
+            variance,
+          );
+          if (constraintErr is None()) !constraintErr = rConstraintErr
         | None() -> void
         }
       };
@@ -1369,13 +1476,14 @@ extension class TType {
         // isSub calls. Params themselves are skipped here: TFun::isSub_ pairs
         // them positionally, which is strictly more precise than the bulk
         // grow this pre-pass would do.
-        static::growTVars(
+        rConstraintErr = static::growTVars(
           subst,
           tenv,
           boundFuns.fun_.retType,
           openFuns.fun_.retType,
           variance,
-        )
+        );
+        if (constraintErr is None()) !constraintErr = rConstraintErr
       | _ -> void
       };
       (openFields.new, boundFields.new) match {
@@ -1384,17 +1492,19 @@ extension class TType {
         // signatures above. The constructed instance type is the return,
         // and TVars nested there (e.g. `new <A>(x: T): Container<A>`) need
         // seeding before per-param isSub runs.
-        static::growTVars(
+        rConstraintErr = static::growTVars(
           subst,
           tenv,
           boundFuns.fun_.retType,
           openFuns.fun_.retType,
           variance,
-        )
+        );
+        if (constraintErr is None()) !constraintErr = rConstraintErr
       | _ -> void
       }
     | _ -> void
-    }
+    };
+    constraintErr
   }
 
   static fun isSub(
@@ -1435,10 +1545,11 @@ extension class TType {
     };
 
     savedSubst = subst.save();
-    // grow TVars in u2 from u1
-    static::growTVars(subst, tenv, u1, u2, Contravariant());
-    // seal TVars in u1 from u2
-    static::growTVars(subst, tenv, u2, u1, Covariant());
+    // grow TVars in u2 from u1, preserving any failed constraint check for
+    // hint extraction if the overall subtyping check also fails.
+    constraintErr = static::growTVars(subst, tenv, u1, u2, Contravariant());
+    // seal TVars in u1 from u2 (its constraint-check hints are not relevant)
+    _ = static::growTVars(subst, tenv, u2, u1, Covariant());
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
@@ -1446,6 +1557,19 @@ extension class TType {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
       hints = static::originSuggestions(subst, tenv, u1, u2);
+      constraintErr match {
+      | Some(cerr) ->
+        cerrMsgs = cerr.toError(subst, tenv, STErrorDetail::full);
+        !hints = hints.concat(
+          STError::readonlyHint(STError::extractReadonlyHint(cerrMsgs)),
+        );
+        !hints = hints.concat(
+          STError::contravarianceHint(
+            STError::extractContravarianceHint(cerrMsgs),
+          ),
+        )
+      | None() -> void
+      };
       subst.restore(savedSubst);
       STRecTypeWithHint(err, hints, u1, u2)
     }

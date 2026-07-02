@@ -116,7 +116,23 @@ function testReadonlyTupleField(): void {
 }
 
 // ============================================================
-// Case 6: Readonly callback field to mutable
+// Case 6: Mutable constraint prevents subtype assignment
+// ============================================================
+
+function takeExtends<T extends { x: number | string }>(o: T): void {}
+
+function testMutableConstraint(v: { x: number }): void {
+  // Correctly rejected — { x: number } is not a subtype of { x: number | string }
+  // because the mutable field 'x' would allow writing a string into a number slot.
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  // @skjs-expect-error-line2 Type { x: number }
+  // @skjs-expect-error-line3 is not assignable to type { x: number | string }
+  // @skjs-expect-error-line4 This would not be an error if this field were readonly
+  takeExtends(v);
+}
+
+// ============================================================
+// Case 7: Readonly callback field to mutable
 // ============================================================
 
 interface ReadonlyCallback {
