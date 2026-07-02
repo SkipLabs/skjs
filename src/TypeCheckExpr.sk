@@ -1200,10 +1200,18 @@ extension class TypeChecker {
     | None() ->
       tcenv.exprTypes.maybeGet((e.pos, false, false)) match {
       | Some(ty) -> ty
-      // Not yet typechecked (e.g. an operand skipped because an enclosing
-      // expr's typecheck bailed out under error recovery). Typecheck it now:
-      // a genuine cache miss is not a redundant second typecheck.
-      | None() -> this.expr(tcenv, e, true)
+      // Not yet typechecked -- can't lookup.
+      // Currently treating this as a loud internal failure, but could equally
+      // fall back to actually typechecking here instead (making this essentially a
+      // memoization table)
+      | None() ->
+        internal_error(
+          "expresssion " +
+            inspect(e).toString() +
+            " @ " +
+            e.pos.fileName.toString() +
+            " not yet typechecked",
+        )
       }
     }
   }
