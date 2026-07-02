@@ -27,7 +27,7 @@ extension class TypeChecker {
       (param.name, paramTypes[i])
     );
     !this.retType = sig.retType.i1.map(rty ->
-      this.normalizeReturnType(subst, rty, sig.params.map(p -> p.name))
+      this.normalizeReturnType(subst, rty, () -> sig.params.map(p -> p.name))
     );
     (this, tcenv, typedParams)
   }

@@ -494,21 +494,6 @@ base class TEnv{
     this
   }
 
-  // Binds each simple parameter name to an opaque type in `this.bindings`
-  // (mirroring addTParams), so a type predicate's subject naming an actual
-  // parameter resolves via lexical bindings instead of erroring with
-  // "Cannot find name". Destructuring patterns have no single name to bind
-  // and are skipped (a type predicate can't name them anyway).
-  fun addParamNames(paramNames: Array<Pattern>): this {
-    for (name in paramNames) {
-      name.value match {
-      | PVar(n) -> !this.bindings[n.value] = TType::top(n.pos)
-      | _ -> void
-      }
-    };
-    this
-  }
-
   // Normalizes a function/method's return type annotation. The top-level `x
   // is T` type-predicate form is accepted here (unlike in the general
   // recursive `normalize`, whose own TAIs handling always rejects, covering
@@ -520,25 +505,43 @@ base class TEnv{
   // separately from — and read by callers regardless of — the body, and
   // depending on body content here would incorrectly propagate body-only
   // edits to those callers under incremental checking.
+  // paramNames is a thunk (not a plain array) so the caller's mapping from
+  // its own param representation to names is skipped entirely when rty
+  // isn't a type predicate — the overwhelmingly common case.
   fun normalizeReturnType(
     tcenvb: mutable TCEnvBase,
     rty: Type,
-    paramNames: Array<Pattern>,
+    paramNames: () -> Array<Pattern>,
   ): TType {
     rty.value match {
     | TAIs(lhs, rhs) ->
-      // The subject must be a plain identifier, the only form TS grammar
-      // allows.
+      // The subject must name an actual parameter of the enclosing
+      // function, or be `this` — nothing else (unlike a full `normalize`
+      // call, which would also accept any other valid type expression,
+      // e.g. `true is ...`).
       // TODO: model the narrowing effect precisely.
-      lhs.value match {
-      | TAInst(_, args) if (args.isEmpty()) -> void
-      | _ ->
+      isValidSubject = lhs.value match {
+      | TAInst(Name(_, "this"), args) if (args.isEmpty()) -> true
+      | TAInst(name, args) if (args.isEmpty()) ->
+        paramNames().any(p ->
+          p.value match {
+          | PVar(n) -> n.value == name.value
+          | _ -> false
+          }
+        )
+      | _ -> false
+      };
+      if (!isValidSubject) {
         fatalError(
-          Array[(lhs.pos, "A type predicate's subject must be an identifier")],
+          Array[
+            (
+              lhs.pos,
+              "A type predicate's subject must be a parameter of the enclosing function, or 'this'",
+            ),
+          ],
           SKJSCode(9031),
         )
       };
-      _ = this.addParamNames(paramNames).normalize(tcenvb, lhs);
       _ = this.normalize(tcenvb, rhs);
       TType::single(TPrimValue::boolean(rty.pos))
     | _ -> this.normalize(tcenvb, rty)
@@ -1887,7 +1890,9 @@ base class TEnv{
         optionalParams.toArray(),
         spreadParam,
         if (isDeclaredSignature) {
-          this.normalizeReturnType(tcenvb, retType, params.map(p -> p.name))
+          this.normalizeReturnType(tcenvb, retType, () ->
+            params.map(p -> p.name)
+          )
         } else {
           this.normalize(tcenvb, retType)
         },
