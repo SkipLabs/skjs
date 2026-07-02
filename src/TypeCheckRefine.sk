@@ -81,7 +81,7 @@ extension class TypeChecker {
         default = None();
         this.setLocal(tcenv, local, default, filter)
       | _ ->
-        otherType = this.expr(tcenv, otherExpr, true);
+        otherType = this.lookupExprType(tcenv, otherExpr);
         // Clone subst because inter may unify type variables as a side
         // effect; we want the exploratory narrowing not to mutate the main subst.
         if (target) {
@@ -117,7 +117,7 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    otherType = this.expr(tcenv, otherExpr, true);
+    otherType = this.lookupExprType(tcenv, otherExpr);
     this.evalFieldEqualityType(tcenv, local, fieldName, otherType, target)
   }
 
@@ -398,7 +398,12 @@ extension class TypeChecker {
       }
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      (litsOpt, symLitsOpt) = this.inLhsFieldsFromType(
+        tcenv,
+        e.pos,
+        e1.pos,
+        this.lookupExprType(tcenv, e1),
+      );
       singleKey = (litsOpt, symLitsOpt) match {
       | (Some(Some(strLits)), None()) ->
         strLits.singleElt().map(singleStr ->
