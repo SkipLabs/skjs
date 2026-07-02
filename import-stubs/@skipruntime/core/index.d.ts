@@ -151,6 +151,7 @@ export declare class InputDefinition<
   V extends Json,
 > extends AbstractInputDefinition {
   public initial: Entry<K, V>[];
+  constructor(initial?: Entry<K, V>[]);
 }
 
 export type NamedInputDefinitions = {
