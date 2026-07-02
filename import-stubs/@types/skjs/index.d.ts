@@ -379,6 +379,12 @@ declare class WeakSet<T> {
 }
 
 declare class Date {
+  // TODO: skjs doesn't support constructor overloads, so `year` accepts
+  // `string | number` to cover both the single-argument ISO-string form and
+  // the multi-argument numeric form. This wrongly also accepts a string
+  // `year` combined with numeric `month`/`day`/etc (e.g. `new Date("2020-01",
+  // 1)`), a combination the real Date constructor doesn't support — see
+  // tests/expect-error/date-constructor-string.ts.
   constructor(
     year?: string | number,
     month?: number,
