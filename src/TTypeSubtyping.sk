@@ -53,6 +53,11 @@ class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
 base class STError<+T> extends STResult<T> uses Equality {
+  // Hint wording is shared between the sites that emit hints and
+  // extractReadonlyHint/extractContravarianceHint, which recover hints from
+  // rendered messages by matching on these exact strings. Never inline or
+  // fork this wording: an emitter that bypasses the constants breaks
+  // extraction silently.
   const readonlyHintMessage: String = "This would not be an error if this field were readonly";
   const contravarianceHintPrefix: String = "Function parameter types are checked contravariantly:";
 
@@ -113,6 +118,13 @@ base class STError<+T> extends STResult<T> uses Equality {
     }
   }
 
+  // Append hints not already present in msgs. The same hint can arrive by
+  // two routes: rendered inline by the failing node inside `err` (e.g.
+  // STRecFunParam's contravariance hint), and attached to STRecTypeWithHint
+  // after being extracted from a constraint-check error in isSub_. This
+  // equality check collapses those duplicates. (De-duplication of *nested*
+  // contravariance hints — innermost wins — is separate: see the
+  // extractContravarianceHint guard in STErrorOnTFun::toError.)
   static fun concatNewHints(
     msgs: List<(PosRange, String)>,
     hints: List<(PosRange, String)>,
@@ -1311,7 +1323,11 @@ extension class TType {
     variance: Variance,
   ): ?STErrorOnTType {
     // First failed constraint check from speculative growth. It is only
-    // rendered by isSub_ if the overall subtyping check also fails.
+    // rendered by isSub_ if the overall subtyping check also fails. Note the
+    // approximation: this is the first failure on *any* TVar reached by the
+    // growth, which need not be the cause of the eventual top-level error, so
+    // a hint extracted from it can occasionally attach to an unrelated
+    // failure.
     constraintErr: ?STErrorOnTType = None();
     tvarsToGrow: mutable Vector<TVar> = mutable Vector[];
     static::collectTVars(subst, tenv, openTy.insts, tvarsToGrow, mutable Set[]);
