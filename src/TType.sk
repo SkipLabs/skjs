@@ -2381,9 +2381,16 @@ class STypes private (
   }
 
   // For spread: if stypes contains exactly one TObject and any number of
-  // primitive arms (TPrimValue/TPrimUnit), return (obj, hasPrim). Returns None
-  // when there are zero or multiple TObjects, or when any stype is neither an
-  // object nor a primitive (e.g. another object or an unresolved variable).
+  // primitive arms that are genuinely safe to spread as a no-op (TPrimValue
+  // other than string, plus TPrimUnit other than void), return (obj,
+  // hasPrim). Returns None when there are zero or multiple TObjects, or when
+  // any stype is neither an object nor such a primitive:
+  // - `void` is excluded: it should never be observed, so a spread operand
+  //   whose type includes it is rejected outright rather than treated as a
+  //   sometimes-empty contribution.
+  // - `string` is excluded: unlike other primitives, spreading a string
+  //   contributes its indexed characters as enumerable own properties (e.g.
+  //   `{...'ab'}` is `{0: 'a', 1: 'b'}`), so it is not a no-op.
   fun singleObjectIgnoringPrimitives(): ?(TObject, Bool) {
     obj: ?TObject = None();
     hasPrim = false;
@@ -2392,6 +2399,9 @@ class STypes private (
       | o @ TObject _ ->
         if (obj.isSome()) return None();
         !obj = Some(o)
+      | TPrimUnit(TVoid(), _)
+      | TPrimValue(TString(), _, _) ->
+        return None()
       | TPrimValue _
       | TPrimUnit _ ->
         !hasPrim = true

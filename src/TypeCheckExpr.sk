@@ -1475,11 +1475,12 @@ extension class TypeChecker {
                   existingField.get
                 | None() ->
                   // No index at all: the spread might still carry extra
-                  // properties via width subtyping. Conservatively widen to Top
-                  // (unless the spread sometimes contributes nothing).
-                  if (spreadSometimesEmpty) existingField.get else {
-                    TType::top(spreadExpr.pos)
-                  }
+                  // properties via width subtyping. Conservatively widen to
+                  // Top regardless of spreadSometimesEmpty: when the spread
+                  // does fire, it may still carry an untyped excess property
+                  // here; spreadSometimesEmpty only governs whether the
+                  // field becomes optional, not this widening.
+                  TType::top(spreadExpr.pos)
                 }
               };
               mergedGet = TType::union(
@@ -1544,9 +1545,9 @@ extension class TypeChecker {
                 | Some(idx) if (!idx.isSynthetic()) -> idx.get
                 | Some(_) -> existingField.get
                 | None() ->
-                  if (spreadSometimesEmpty) existingField.get else {
-                    TType::top(spreadExpr.pos)
-                  }
+                  // See the analogous named-field case above: widen to Top
+                  // regardless of spreadSometimesEmpty.
+                  TType::top(spreadExpr.pos)
                 }
               };
               mergedGet = TType::union(
