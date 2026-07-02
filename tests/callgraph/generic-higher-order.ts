@@ -22,9 +22,18 @@ function foo<V>(a: V, f: (x: V) => void, b: V): void {
   f(b);
 }
 
+// The fn:double: fn:triple edge comes from V's inference: V is determined by
+// the first argument (double), and a covariant check never widens a
+// determined candidate, so V stays at double's function type rather than
+// folding to the arrow annotation. triple then flows into b: V, i.e. into a
+// parameter abstracted by double's type, so a call through that type may
+// invoke triple. triple stays reachable from the arrow-annot node via
+// fn:double, so the closure below is unchanged.
+//
 // @skjs-callgraph-full
-// arrow-annot: fn:apply, fn:double, fn:triple
+// arrow-annot: fn:apply, fn:double
 // fn:apply: arrow-annot
+// fn:double: fn:triple
 // fn:foo: arrow-annot
 // fn:test: fn:foo
 //

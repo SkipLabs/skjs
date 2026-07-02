@@ -1407,15 +1407,18 @@ extension class TType {
       saved = subst.save();
       // The constraint check plays two roles at once on the variables it
       // touches, and freezeCandidates draws the line at the write sites rather
-      // than undoing writes afterwards. For a value candidate already determined
-      // before the check it is a read-only query -- the gate refuses to widen
-      // it. For a candidate the check itself determines (e.g. a param pinned only
-      // through another's bound, `T extends Ref<U>`) it is the determination
-      // site -- binding a fresh candidate is allowed. For the literal forms it
-      // touches it is likewise the determination site -- which branch/shape a
-      // literal takes against `cstr` is a subtyping computation growUncovered
-      // then consumes -- so those commitments are made. The flag is push/popped
-      // so nested checks restore it.
+      // than undoing writes afterwards. For a value candidate already
+      // determined before the check it is a read-only query -- covariant
+      // contact can never modify a bound candidate (a global invariant of
+      // Subst::grow), and the flag additionally suppresses contravariant
+      // lower-bound growth and get's covariant seal. For a candidate the check
+      // itself determines (e.g. a param pinned only through another's bound,
+      // `T extends Ref<U>`) it is the determination site -- binding a fresh
+      // candidate is allowed. For the literal forms it touches it is likewise
+      // the determination site -- which branch/shape a literal takes against
+      // `cstr` is a subtyping computation growUncovered then consumes -- so
+      // those commitments are made. The flag is push/popped so nested checks
+      // restore it.
       wasFreezing = subst.freezeCandidates;
       subst.!freezeCandidates = true;
       ok = true;
