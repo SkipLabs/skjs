@@ -8,7 +8,6 @@ declare function isArray(value: unknown): value is unknown[];
 // @skjs-expect-error Cannot find type 'NonExistentType'
 declare function isFoo(value: unknown): value is NonExistentType;
 
-// The subject must name an actual parameter of the enclosing function; a
-// typo is currently (wrongly) accepted since the subject is only
-// shape-checked, not resolved.
+// The subject must name an actual parameter of the enclosing function.
+// @skjs-expect-error Cannot find type 'valeu'
 declare function isBar(value: unknown): valeu is string;

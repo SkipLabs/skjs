@@ -494,6 +494,54 @@ base class TEnv{
     this
   }
 
+  // Binds each simple parameter name to an opaque type in `this.bindings`
+  // (mirroring addTParams), so a type predicate's subject naming an actual
+  // parameter resolves via lexical bindings instead of erroring with
+  // "Cannot find name". Destructuring patterns have no single name to bind
+  // and are skipped (a type predicate can't name them anyway).
+  fun addParamNames(paramNames: Array<Pattern>): this {
+    for (name in paramNames) {
+      name.value match {
+      | PVar(n) -> !this.bindings[n.value] = TType::top(n.pos)
+      | _ -> void
+      }
+    };
+    this
+  }
+
+  // Normalizes a function/method's return type annotation. The top-level
+  // `x is T` type-predicate form is only accepted when `allowTypePredicate`
+  // is true — callers pass true for a bodyless (ambient/interface)
+  // signature, since SKJS can't verify the predicate against a real
+  // implementation. All other positions (including `x is T` nested anywhere
+  // else, or on a signature with a body) go through the ordinary recursive
+  // `normalize`, whose own TAIs handling always rejects.
+  fun normalizeReturnType(
+    tcenvb: mutable TCEnvBase,
+    rty: Type,
+    paramNames: Array<Pattern>,
+    allowTypePredicate: Bool,
+  ): TType {
+    rty.value match {
+    | TAIs(lhs, rhs) if (allowTypePredicate) ->
+      // The subject must be a plain identifier, the only form TS grammar
+      // allows.
+      // TODO: model the narrowing effect precisely.
+      lhs.value match {
+      | TAInst(_, args) if (args.isEmpty()) -> void
+      | _ ->
+        fatalError(
+          Array[(lhs.pos, "A type predicate's subject must be an identifier")],
+          SKJSCode(9031),
+        )
+      };
+      _ = this.addParamNames(paramNames).normalize(tcenvb, lhs);
+      _ = this.normalize(tcenvb, rhs);
+      TType::single(TPrimValue::boolean(rty.pos))
+    | _ -> this.normalize(tcenvb, rty)
+    }
+  }
+
   private fun processClassSetup(
     subst: mutable Subst,
     visitedClasses: SortedSet<String>,
@@ -1032,7 +1080,11 @@ base class TEnv{
       retType,
       cgNode,
     );
-    this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
+    // A type predicate return type is only accepted on a bodyless
+    // (ambient/interface) declaration, since SKJS can't verify it against
+    // a real implementation.
+    allowTypePredicate = this.getFunBody(tcenvb.context, fd) is FDBNone _;
+    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, allowTypePredicate)
   }
 
   // Normalizes a type annotation.
@@ -1095,25 +1147,22 @@ base class TEnv{
         Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
         SKJSCode(9013),
       )
-    | TAIs(lhs, rhs) ->
-      // Type predicates (`x is T`) are boolean-valued; treat as boolean.
-      // Narrowing effects are not modelled, but the syntax is accepted.
-      // The subject `x` is usually a parameter name, not itself a
-      // resolvable type, so it is only shape-checked here (a plain
-      // identifier, as required by TS grammar), not resolved.
-      // TODO: validate that a named subject matches an actual parameter of
-      // the enclosing function (or is `this`), and model the narrowing
-      // effect precisely.
-      lhs.value match {
-      | TAInst(_, args) if (args.isEmpty()) -> void
-      | _ ->
-        fatalError(
-          Array[(lhs.pos, "A type predicate's subject must be an identifier")],
-          SKJSCode(9031),
-        )
-      };
-      _ = this.normalize(tcenvb, rhs);
-      TType::single(TPrimValue::boolean(pos))
+    | TAIs _ ->
+      // A type predicate (`x is T`) is only accepted as the top-level
+      // return type of a declared (bodyless) function or method signature —
+      // see normalizeReturnType, called from funDefSetup/funDecl instead of
+      // this general recursive normalize for that position. Anywhere else
+      // (nested in another type, or on a signature with a body, which SKJS
+      // cannot verify the predicate against) is rejected.
+      fatalError(
+        Array[
+          (
+            pos,
+            "A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature",
+          ),
+        ],
+        SKJSCode(9032),
+      )
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
@@ -1682,6 +1731,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     tafun: TAFun,
+    allowTypePredicate: Bool = false,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -1804,7 +1854,12 @@ base class TEnv{
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
-        this.normalize(tcenvb, retType),
+        this.normalizeReturnType(
+          tcenvb,
+          retType,
+          params.map(p -> p.name),
+          allowTypePredicate,
+        ),
         CGNodes::singleton(cgNode),
       );
       if (isMethod) {

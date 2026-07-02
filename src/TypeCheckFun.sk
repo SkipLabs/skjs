@@ -26,7 +26,18 @@ extension class TypeChecker {
     typedParams = sig.params.mapWithIndex((i, param) ->
       (param.name, paramTypes[i])
     );
-    !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
+    // A type predicate return type is only accepted on a bodyless
+    // (ambient/interface) signature, since SKJS can't verify it against a
+    // real implementation.
+    allowTypePredicate = this.getFunBody(subst.context, fd) is FDBNone _;
+    !this.retType = sig.retType.i1.map(rty ->
+      this.normalizeReturnType(
+        subst,
+        rty,
+        sig.params.map(p -> p.name),
+        allowTypePredicate,
+      )
+    );
     (this, tcenv, typedParams)
   }
 
