@@ -380,6 +380,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
 13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
 14. **Template literals work as expected**: Use backticks and `${expression}` syntax for string interpolation and multiline strings
+15. **Annotate bindings that are used across statements**: without an annotation, inference for `[]`, `new Container()`, and some generic-call results can depend on later use; for a `const`, an annotation or explicit type arguments make it order-independent. Prefer `const` — a `let`'s type follows its assignments
+16. **Declare the widest type a value will ever need at its creation site**: declared mutable element and field types do not widen with use (sound invariance, stricter than tsc); on parameters that only read, use `readonly` element types so narrower arguments are accepted
 
 ## File Organization and Structure Guidelines
 
