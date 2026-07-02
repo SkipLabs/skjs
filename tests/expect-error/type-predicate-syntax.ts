@@ -4,6 +4,6 @@
 
 declare function isArray(value: unknown): value is unknown[];
 
-// The target type `T` is not validated yet: a nonexistent type is currently
-// accepted too.
+// The target type `T` is validated like any other type reference.
+// @skjs-expect-error Cannot find type 'NonExistentType'
 declare function isFoo(value: unknown): value is NonExistentType;

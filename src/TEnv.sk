@@ -1074,9 +1074,24 @@ base class TEnv{
         Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
         SKJSCode(9013),
       )
-    | TAIs _ ->
+    | TAIs(lhs, rhs) ->
       // Type predicates (`x is T`) are boolean-valued; treat as boolean.
       // Narrowing effects are not modelled, but the syntax is accepted.
+      // The subject `x` is usually a parameter name, not itself a
+      // resolvable type, so it is only shape-checked here (a plain
+      // identifier, as required by TS grammar), not resolved.
+      // TODO: validate that a named subject matches an actual parameter of
+      // the enclosing function (or is `this`), and model the narrowing
+      // effect precisely.
+      lhs.value match {
+      | TAInst(_, args) if (args.isEmpty()) -> void
+      | _ ->
+        fatalError(
+          Array[(lhs.pos, "A type predicate's subject must be an identifier")],
+          SKJSCode(9031),
+        )
+      };
+      _ = this.normalize(tcenvb, rhs);
       TType::single(TPrimValue::boolean(pos))
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
@@ -2169,6 +2184,9 @@ base class TEnv{
   // type variable.  Expands TVars to their constraints so that `N extends
   // string[]` resolves to `string`.  Returns the union of all numberIndex
   // element types across the clauses of the expanded object type.
+  // TODO: generalize to `T[K]` for any `K: TPrimValue` (e.g. `string`), by
+  // parameterizing this over the index kind (numberIndex/stringIndex/
+  // symbolIndex) instead of hardcoding numberIndex.
   private fun numberIndexedType(
     subst: mutable Subst,
     objType: TType,
@@ -2188,13 +2206,25 @@ base class TEnv{
     };
     resultTys = mutable Vector[];
     for (clause in clauses) {
-      stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
+      stypes = Vector::mcreateFromItems(clause.stypes.fromSome());
       while (!stypes.isEmpty()) {
         stype = stypes.pop();
         stype match {
         | obj @ TObject _ ->
           for (fields in obj.getAllFields()) {
-            fields.numberIndex.each(nIdx -> resultTys.push(nIdx.get))
+            fields.numberIndex.each(nIdx -> resultTys.push(nIdx.get));
+            // A number key also reaches any named field whose name a
+            // number key can produce (e.g. `{0: string}[number]`), and
+            // falls back to the string index when there is no number
+            // index (JS coerces a number key to a string for lookup).
+            for (field in fields.fields.values()) {
+              if (isJSNumberKeyName(field.name.value)) {
+                resultTys.push(field.get)
+              }
+            };
+            if (fields.numberIndex.isNone()) {
+              fields.stringIndex.each(sIdx -> resultTys.push(sIdx.get))
+            }
           }
         | prim @ TPrimValue _ ->
           expanded = this.newObject(subst, prim.asClassName(), Array[]);
