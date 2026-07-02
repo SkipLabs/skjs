@@ -66,16 +66,15 @@ function fromNullLiteralDirect(): Container<number | null> {
   return c;
 }
 
-// Via local variable: bound TVar seals T=null, push(1) fails.
-function fromNullLiteralLocal(): void {
+// Via local variable: the bound TVar stays open (a covariant check never
+// widens or reseals an already-bound candidate), so T grows to null | number.
+function fromNullLiteralLocal(): Container<number | null> {
   const c = new Container();
   let n = null;
   c.push(n);
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type number
-  // @skjs-expect-error-line3 is not assignable to type null
-  // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <null | number>
   c.push(1);
+  // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
+  return c;
 }
 
 // --- FromUndefinedLiteral: undefined ---
@@ -88,16 +87,16 @@ function fromUndefinedLiteralDirect(): Container<string | undefined> {
   return c;
 }
 
-// Via local variable: bound TVar seals T=undefined, push("hello") fails.
-function fromUndefinedLiteralLocal(): void {
+// Via local variable: the bound TVar stays open (a covariant check never
+// widens or reseals an already-bound candidate), so T grows to
+// undefined | string.
+function fromUndefinedLiteralLocal(): Container<string | undefined> {
   const c = new Container();
   let u = undefined;
   c.push(u);
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type string
-  // @skjs-expect-error-line3 is not assignable to type undefined
-  // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <string | undefined>
   c.push("hello");
+  // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
+  return c;
 }
 
 // --- FromLambdaReturn: () => { return 42; } ---
@@ -139,10 +138,8 @@ function fromObjectField(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type 'hello'
   // @skjs-expect-error-line3 is not assignable to type number
-  // @skjs-expect-error-line4 Type 'hello'
-  // @skjs-expect-error-line5 is not assignable to type number
-  // @skjs-expect-error-line6 Consider adding a type annotation, e.g., number | 'hello'
-  // @skjs-expect-error-line7 Consider adding explicit type arguments, e.g., <{ x: number } | { x: 'hello' } | { x: number }>
+  // @skjs-expect-error-line4 Consider adding a type annotation, e.g., number | 'hello'
+  // @skjs-expect-error-line5 Consider adding explicit type arguments, e.g., <{ x: number } | { x: 'hello' }>
   c.push({ x: "hello" });
 }
 

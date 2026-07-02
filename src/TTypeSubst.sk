@@ -74,15 +74,18 @@ mutable class SavedSubst private {} extends SubstState {
 }
 
 mutable class Subst private {
-  // While set, a candidate variable that ALREADY has a binding is read-only: the
-  // two candidate-write sites (grow, and get's covariant seal) refuse to change
-  // an existing candidate binding, though binding a fresh candidate is still
-  // allowed. This lets a constraint-admissibility check (see growTVars) be a
-  // query over candidates determined elsewhere -- it cannot widen them -- while
-  // still solving candidates whose determination site is the check itself (e.g.
-  // a parameter pinned only through another's bound, `T extends Ref<U>`) and
-  // committing the literal forms it touches. Not part of SubstState, so
-  // save/restore never touch it; it is push/popped around the check.
+  // While set, a candidate variable that ALREADY has a binding is fully
+  // read-only: the remaining candidate-write sites (grow's contravariant
+  // lower-bound union, and get's covariant seal) refuse to touch an existing
+  // candidate binding, though binding a fresh candidate is still allowed.
+  // (Covariant grow never modifies a bound candidate, flag or no flag -- see
+  // grow.) This lets a constraint-admissibility check (see growTVars) be a
+  // query over candidates determined elsewhere -- it cannot grow or seal them
+  // -- while still solving candidates whose determination site is the check
+  // itself (e.g. a parameter pinned only through another's bound,
+  // `T extends Ref<U>`) and committing the literal forms it touches. Not part
+  // of SubstState, so save/restore never touch it; it is push/popped around
+  // the check.
   mutable freezeCandidates: Bool = false,
 } extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
@@ -155,9 +158,19 @@ mutable class Subst private {
     | None() -> ty
     | Some(SVClosed(_)) -> return void
     | Some(SVOpen(ty2)) ->
-      // Inside an admissibility check, changing an existing candidate binding is
-      // suppressed; only fresh bindings (the None case above) are allowed.
-      if (this.freezeCandidates && tvar.id.isCandidate()) {
+      // A covariant grow pushes an expected type (an upper bound) into the
+      // variable. For a candidate that already has a value this must not
+      // change the value -- the value came from the candidate's defining
+      // expression, and the actual subtype check against the expected type
+      // happens downstream (Clauses::isSub after a covariant get). Only an
+      // unbound candidate (the None case above) takes the expected type as
+      // its value. Inside an admissibility check (freezeCandidates), a
+      // contravariant grow of a bound candidate is suppressed too: a query
+      // must not add lower bounds either.
+      if (
+        tvar.id.isCandidate() &&
+        (variance is Covariant _ || this.freezeCandidates)
+      ) {
         return void
       } else {
         newTy = TType::union(this, tenv, ty2, ty);
