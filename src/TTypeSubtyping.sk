@@ -127,41 +127,6 @@ base class STError<+T> extends STResult<T> uses Equality {
   }
 }
 
-fun functionParamContravarianceHint(
-  subst: mutable Subst,
-  tenv: TEnv,
-  f1: TFun,
-  f2: TFun,
-  i: Int,
-): ?(PosRange, String) {
-  sourceParam = if (i < f1.params.size()) {
-    Some(f1.params[i])
-  } else {
-    oi = i - f1.params.size();
-    if (oi < f1.optionalParams.size()) Some(f1.optionalParams[oi]) else None()
-  };
-  targetParam = if (i < f2.params.size()) {
-    Some(f2.params[i])
-  } else {
-    oi = i - f2.params.size();
-    if (oi < f2.optionalParams.size()) Some(f2.optionalParams[oi]) else None()
-  };
-  (sourceParam, targetParam) match {
-  | (Some(source), Some(target)) ->
-    sourceStr = prettyPrintType(false, source, subst, tenv);
-    targetStr = prettyPrintType(false, target, subst, tenv);
-    Some(
-      (
-        target.pos,
-        `${
-          STError::contravarianceHintPrefix
-        } target parameter type ${targetStr} must be assignable to source parameter type ${sourceStr}`,
-      ),
-    )
-  | _ -> None()
-  }
-}
-
 base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
   fun toError(
     mutable Subst,
@@ -544,11 +509,23 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         err.toError(subst, tenv, detail.decreaseIntermediate()),
         None(),
       )
-    | STRecFunParam(Some(err), i, _f1, f2) ->
+    | STRecFunParam(Some(err), i, _f1, _f2) ->
+      // err records the failed contravariant check `target param <: source
+      // param`, so err.ty1/err.ty2 are the exact parameter types compared
+      // (after rest/tuple flattening in TFun::isSub_).
+      targetStr = prettyPrintType(false, err.ty1, subst, tenv);
+      sourceStr = prettyPrintType(false, err.ty2, subst, tenv);
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
-        functionParamContravarianceHint(subst, tenv, this.f1, f2, i),
+        Some(
+          (
+            err.ty1.pos,
+            `${
+              STError::contravarianceHintPrefix
+            } target parameter type ${targetStr} must be assignable to source parameter type ${sourceStr}`,
+          ),
+        ),
       )
     | STRecFunOptionalSpread(err, i, _f1, _f2) ->
       (

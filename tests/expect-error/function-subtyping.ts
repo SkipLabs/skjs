@@ -257,13 +257,13 @@ function testMethodContravarianceSafe(w: WideHandler): void {
   const n: NarrowHandler = w;
 }
 
-// Test 30: Rest-parameter contravariance — no hint yet: the positional
-// reconstruction in functionParamContravarianceHint cannot see the rest
-// element type the parameter was actually checked against.
+// Test 30: Rest-parameter contravariance — the hint names the rest element
+// type paired against the positional target parameter.
 function testRestParamContravariance(): void {
   const sumNums: (...xs: number[]) => void = (..._xs: number[]) => {};
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Type string
   // @skjs-expect-error-line3 is not assignable to type number
+  // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type string must be assignable to source parameter type number
   const needsStrings: (a: string, b: string) => void = sumNums;
 }
