@@ -382,6 +382,10 @@ mutable class Lexer private {
       Some(Token(TKVar(), Pos(start), Pos(pos)))
 
     | c if (c >= '0' && c <= '9') ->
+      isHex =
+        c == '0' &&
+        pos + 1 < this.contents.size() &&
+        (this.contents[pos + 1] == 'x' || this.contents[pos + 1] == 'X');
       loop {
         l = this.contents[pos];
         if (
@@ -398,6 +402,20 @@ mutable class Lexer private {
           l == '_' ||
           l >= 'a' && l <= 'f' ||
           l >= 'A' && l <= 'F'
+        ) {
+          !pos = pos + 1;
+          continue
+        };
+        // An ES ExponentPart may carry a sign (1e+3, 1e-3): consume a
+        // '+'/'-' right after 'e'/'E' when a digit follows. Not in hex
+        // literals, where 'e'/'E' is a digit and `0x1e+2` is an addition.
+        if (
+          !isHex &&
+          (l == '+' || l == '-') &&
+          (this.contents[pos - 1] == 'e' || this.contents[pos - 1] == 'E') &&
+          pos + 1 < this.contents.size() &&
+          this.contents[pos + 1] >= '0' &&
+          this.contents[pos + 1] <= '9'
         ) {
           !pos = pos + 1;
           continue
