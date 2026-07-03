@@ -13,9 +13,8 @@ function bigintHex(): void {
   const a: 16n = 0x10n;
 }
 
-// FIXME: tsc accepts: -0n is 0n (bigint has no negative zero)
+// Bigint has no negative zero: -0n collapses to 0n at the negation site.
 function bigintNegativeZero(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: 0n = -0n;
 }
 

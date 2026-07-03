@@ -2710,7 +2710,7 @@ extension class TypeChecker {
         (kind, n) = kn;
         value = nuop match {
         | UOPlus() -> n
-        | UOMinus() -> `-${n}`
+        | UOMinus() -> negateJSNumberLiteral(n)
         };
         TPrimValue::single(kind, value, pos)
       })
@@ -2821,12 +2821,7 @@ extension class TypeChecker {
                   "asConstExpr should return literals with a single value",
                 )
               | Some(lit) ->
-                num = if (lit.val.startsWith("-")) {
-                  lit.val.stripPrefix("-")
-                } else {
-                  `-${lit.val}`
-                };
-                TPrimValue::single(k, num, pos)
+                TPrimValue::single(k, negateJSNumberLiteral(lit.val), pos)
               }
             },
           )

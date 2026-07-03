@@ -367,13 +367,12 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Verified by**: `tests/projects/truthiness-{boolean,safe,typescript,javascript}/`
 
 ### 30. Number Literal Normalization
-- **Rule**: Number literals are normalized to their canonical `String(Number(x))` form at parse time, so different spellings of the same value are the same literal type: `1.0` = `1`, `0x10` = `16`, `0b10` = `2`, `0o17` = `15`, `1_000` = `1000`, `1e3` = `1000`, `1e+3` = `1000`, `1e-3` = `0.001`. This applies to literal types, object field names, and expression literal types.
+- **Rule**: Number literals are normalized to their canonical `String(Number(x))` form at parse time, so different spellings of the same value are the same literal type: `1.0` = `1`, `0x10` = `16`, `0b10` = `2`, `0o17` = `15`, `1_000` = `1000`, `1e3` = `1000`, `1e+3` = `1000`, `1e-3` = `0.001`, and `-0` = `0` (`-0n` = `0n`). This applies to literal types, object field names, and expression literal types.
 - **Matches TypeScript**: tsc keys number literal types by their double value; textual canonicalization agrees with it for all values within IEEE-754 double precision.
 - **Invalid forms are syntax errors**: malformed numeric literals (`0b12`, `0o8`, `0x`, `1e`, misplaced separators `1__0`/`1_`, legacy octal `010`) are parse errors matching tsc (TS1177/TS1178/TS1125/TS1124/TS6188/TS6189/TS1121).
 - **Current caveats** (pinned with FIXME tests in `tests/expect-error/`):
   - Literals whose exact value is not representable in a double (radix literals above 2^53, exponents beyond ~1e6) are left in their spelled form and compare textually: sound, but stricter than tsc for two spellings of the same double.
   - Decimal literals beyond double precision (more than ~15 significant digits, or beyond the double range) compare textually: two spellings of the same double stay distinct literal types.
-  - Negative zero: `-0` is currently a literal type distinct from `0` (tsc folds them).
   - Bigint literals are not normalized (`1_000n` and `1000n` are distinct literal types).
 
 ## Coding Guidelines for SKJS

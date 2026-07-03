@@ -297,6 +297,22 @@ fun consumeDecimalDigitRun(
   (i, count, None())
 }
 
+// Negate a canonical numeric literal name. Negative literals are built by
+// the parser and typechecker as unary minus around an unsigned literal, so
+// the sign is applied AFTER normalization: this is where -0 collapses to 0
+// (String(-0) is "0") and -0n to 0n (bigint has no negative zero). Negating
+// an already-negative name (only reachable through constant folding)
+// strips the sign.
+fun negateJSNumberLiteral(canonical: String): String {
+  if (canonical.startsWith("-")) {
+    canonical.stripPrefix("-")
+  } else if (canonical == "0" || canonical == "0n") {
+    canonical
+  } else {
+    "-" + canonical
+  }
+}
+
 // Normalize a JS numeric literal to its canonical String(Number(x)) form.
 // Handles underscores (1_000), hex (0x10), binary (0b10), trailing
 // decimal zeros (1.0), and non-canonical scientific notation (1e3).

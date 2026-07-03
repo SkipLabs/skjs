@@ -281,6 +281,18 @@ fun testNormalizeResultIsCanonical(): void {
   };
 }
 
+// --- negateJSNumberLiteral tests ------------------------------------------
+
+@test
+fun testNegateJSNumberLiteral(): void {
+  SKTest.expectEq("-5", SKJS.negateJSNumberLiteral("5"));
+  SKTest.expectEq("-1.5", SKJS.negateJSNumberLiteral("1.5"));
+  SKTest.expectEq("5", SKJS.negateJSNumberLiteral("-5"));
+  SKTest.expectEq("0", SKJS.negateJSNumberLiteral("0"));
+  SKTest.expectEq("0n", SKJS.negateJSNumberLiteral("0n"));
+  SKTest.expectEq("-16n", SKJS.negateJSNumberLiteral("16n"));
+}
+
 // --- Pinned known gaps --------------------------------------------------
 
 // FIXME: these forms are not canonical String(Number(x)) output (String(1e3)
