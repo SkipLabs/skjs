@@ -239,7 +239,13 @@ class Param{
   pos: PosRange,
   modifiers: Modifiers,
   default: ?Expr,
-} extends ParamBase
+} extends ParamBase {
+  // Whether the argument may be omitted at a call site: either an explicit
+  // `?` marker or a default value makes it omittable.
+  fun isOmittable(): Bool {
+    this.optional.isSome() || this.default.isSome()
+  }
+}
 
 /***************************************************************************/
 // <stmt_> ::=

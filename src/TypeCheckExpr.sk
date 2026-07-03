@@ -2984,7 +2984,7 @@ extension class TypeChecker {
       paramType = paramTypes[i];
       if (param.isRest is Some _) {
         !spreadParam = Some(paramType)
-      } else if (param.optional is Some _ || param.default is Some _) {
+      } else if (param.isOmittable()) {
         optionalParams.push(paramType)
       } else {
         normalParams.push(paramType)
