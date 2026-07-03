@@ -295,15 +295,22 @@ fun testNegateJSNumberLiteral(): void {
 
 // --- Pinned known gaps --------------------------------------------------
 
-// FIXME: these forms are not canonical String(Number(x)) output (String(1e3)
-// is "1000", 22-digit integers print as scientific, and String(1e-7) is
-// "1e-7"), but isJSNumericString accepts them: it checks shape only, not the
-// ECMA-262 magnitude bounds (n > 21 / n <= -6) that pick the form.
+// Shapes that are valid numbers but not canonical String(Number(x)) output:
+// String(1e3) is "1000", 22-digit integers print as scientific, and
+// String(1e-7) is "1e-7". The ECMA-262 magnitude bounds (n > 21 / n <= -6)
+// pick the form.
 @test
-fun testJSNumericStringAcceptsNonCanonicalForms(): void {
-  SKTest.expectTrue(SKJS.isJSNumericString("1e+3"));
-  SKTest.expectTrue(SKJS.isJSNumericString("10000000000000000000000"));
-  SKTest.expectTrue(SKJS.isJSNumericString("0.0000001"));
+fun testJSNumericStringRejectsOutOfBoundsForms(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString("1e+3"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1e+20"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1e-6"));
+  SKTest.expectFalse(SKJS.isJSNumericString("10000000000000000000000"));
+  SKTest.expectFalse(SKJS.isJSNumericString("0.0000001"));
+  // Boundary cases on the canonical side
+  SKTest.expectTrue(SKJS.isJSNumericString("1e+21"));
+  SKTest.expectTrue(SKJS.isJSNumericString("1e-7"));
+  SKTest.expectTrue(SKJS.isJSNumericString("0.000001"));
+  SKTest.expectTrue(SKJS.isJSNumericString("100000000000000000000"));
 }
 
 // Literals whose exact value is not representable in an IEEE-754 double

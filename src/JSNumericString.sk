@@ -11,9 +11,12 @@
 /*   - -5 ≤ n ≤ 0:  "0." + leading zeros + digits                        */
 /*   - otherwise:    scientific notation d.ddd...e±N                       */
 /*                                                                         */
-/* Canonical forms (regex):                                                */
+/* Canonical forms (regex, plus magnitude bounds):                         */
 /*   Plain:      [-](0|[1-9][0-9]*)(.[0-9]*[1-9])?                       */
+/*               <= 21 integer digits; <= 5 zeros after "0." before the   */
+/*               first significant digit                                   */
 /*   Scientific: [-][1-9](.[0-9]*[1-9])?e[+-][1-9][0-9]*                 */
+/*               exponent >= 21 for e+, >= 7 for e-                        */
 /*                                                                         */
 /* Limitations / TODO:                                                      */
 /*   - No IEEE-754 rounding: literals whose exact value is not             */
@@ -48,7 +51,7 @@ fun isJSNumericString(s: String): Bool {
     };
     if (it.current() == Some('.')) {
       _ = it.next();
-      isJSNumericDecimalPartIter(it, false)
+      isJSNumericDecimalPartIter(it, false, true)
     } else {
       false
     }
@@ -59,10 +62,12 @@ fun isJSNumericString(s: String): Bool {
       !intDigits = intDigits + 1;
       _ = it.next();
     };
-    if (it.current().isNone()) return true; // plain integer
+    // Integers with more than 21 digits print in scientific form (n > 21).
+    if (it.current().isNone()) return intDigits <= 21; // plain integer
     if (it.current() == Some('.')) {
+      if (intDigits > 21) return false;
       _ = it.next();
-      isJSNumericDecimalPartIter(it, intDigits == 1)
+      isJSNumericDecimalPartIter(it, intDigits == 1, false)
     } else if (it.current() == Some('e') && intDigits == 1) {
       _ = it.next();
       isJSNumericExponentPartIter(it)
@@ -92,21 +97,36 @@ fun isDigitChar(c: ?Char): Bool {
   }
 }
 
-// Parse decimal digits after '.'. No trailing zeros allowed.
+// Parse decimal digits after '.'. No trailing zeros allowed. When
+// limitLeadingZeros is set (integer part "0"), at most 5 zeros may precede
+// the first significant digit: smaller magnitudes (n <= -6) print in
+// scientific form ("0.000001" is canonical, "0.0000001" prints as "1e-7").
 fun isJSNumericDecimalPartIter(
   it: mutable String.StringIterator,
   allowExponent: Bool,
+  limitLeadingZeros: Bool,
 ): Bool {
   // Must have at least one digit after '.'
   if (!isDigitChar(it.current())) return false;
 
   // Consume digits, track last digit
+  leadingZeros = 0;
+  seenNonZero = false;
   lastDigit = it.current().fromSome();
+  if (lastDigit == '0') !leadingZeros = 1 else !seenNonZero = true;
   _ = it.next();
   while (isDigitChar(it.current())) {
     !lastDigit = it.current().fromSome();
+    if (!seenNonZero) {
+      if (lastDigit == '0') {
+        !leadingZeros = leadingZeros + 1;
+      } else {
+        !seenNonZero = true;
+      }
+    };
     _ = it.next();
   };
+  if (limitLeadingZeros && leadingZeros > 5) return false;
 
   // No trailing zeros in decimal part
   if (lastDigit == '0') return false;
@@ -120,11 +140,15 @@ fun isJSNumericDecimalPartIter(
   }
 }
 
-// Parse exponent part after 'e'. Requires +/- sign, non-zero exponent.
+// Parse exponent part after 'e'. Requires +/- sign and an exponent within
+// the range Number.toString actually emits: scientific form only occurs for
+// n > 21 (exponent >= 21) or n <= -6 (exponent <= -7); smaller magnitudes
+// print in plain form ("1e+3" is not canonical, String(1e3) is "1000").
 fun isJSNumericExponentPartIter(it: mutable String.StringIterator): Bool {
   // Must have + or - sign
   c = it.current();
   if (c != Some('+') && c != Some('-')) return false;
+  isNegative = c == Some('-');
   _ = it.next();
 
   // First exponent digit must be 1-9 (no leading zeros, no zero exponent)
@@ -134,12 +158,17 @@ fun isJSNumericExponentPartIter(it: mutable String.StringIterator): Bool {
   if (ch < '1' || ch > '9') return false;
   _ = it.next();
 
-  // Remaining exponent digits
+  // Remaining exponent digits (value capped: only the thresholds matter)
+  value = ch.code() - '0'.code();
   while (isDigitChar(it.current())) {
+    if (value < 100000) {
+      !value = value * 10 + (it.current().fromSome().code() - '0'.code());
+    };
     _ = it.next();
   };
 
-  it.current().isNone()
+  if (it.current().isSome()) return false;
+  if (isNegative) value >= 7 else value >= 21
 }
 
 // Validate that a TKNumber lexeme is a well-formed ES2021 NumericLiteral.
