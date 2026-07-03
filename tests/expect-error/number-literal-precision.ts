@@ -1,26 +1,28 @@
-// Number literals beyond IEEE-754 double precision. SKJS normalizes radix
-// literals and exponents with exact 64-bit integer arithmetic, which wraps
-// silently at 2^63 instead of rounding to a double like JavaScript.
+// Number literals beyond IEEE-754 double precision. Literals whose exact
+// value is not representable in a double (radix literals above 2^53,
+// exponents beyond the guard) are left in their spelled form and compare
+// textually: sound, but two spellings of the same double stay distinct
+// literal types (stricter than tsc for such pairs).
 
-// FIXME: 0xffffffffffffffff is 18446744073709552000, never -1 (Int64 wraparound)
 function hexWraparound(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: -1 = 0xffffffffffffffff;
 }
 
-// FIXME: exponent digits wrap mod 2^64 (2^64 + 3 -> 3), equating this literal with 1000
 function exponentWraparound(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: 1000 = 1e18446744073709551619;
 }
 
-// FIXME: the runtime key is "18446744073709552000"; SKJS wraps the field name to "-1"
 function fieldWraparound(x: { 0xffffffffffffffff: string }): { "-1": string } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
-// FIXME: 0xffffffffffffffff is 18446744073709552000 as a double, never -1,
-// so this comparison is always false
+// 0xffffffffffffffff is 18446744073709552000 as a double, never -1: the
+// spelled forms do not overlap, and neither do the runtime values.
 function wraparoundAlwaysTrue(x: 0xffffffffffffffff, y: -1): boolean {
-  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
