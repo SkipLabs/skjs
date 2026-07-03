@@ -346,6 +346,15 @@ fun negateJSNumberLiteral(canonical: String): String {
 // Handles underscores (1_000), hex (0x10), binary (0b10), trailing
 // decimal zeros (1.0), and non-canonical scientific notation (1e3).
 fun normalizeJSNumber(raw: String): String {
+  // Fast path: this runs for every numeric literal token, and most literals
+  // ("0", "42", "1.5") are already canonical. Sound because canonical-form
+  // strings are fixed points of the pipeline below: isJSNumericString
+  // enforces the same ECMA-262 magnitude bounds the formatter applies, and
+  // it rejects everything the pipeline would rewrite (underscores, radix
+  // prefixes, unsigned or out-of-bounds exponents, trailing zeros, "-0").
+  if (isJSNumericString(raw)) {
+    return raw
+  };
   s0 = raw.replace("_", "");
 
   // Handle negative sign
