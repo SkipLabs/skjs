@@ -281,6 +281,27 @@ fun testNormalizeResultIsCanonical(): void {
   };
 }
 
+// --- normalizeJSBigInt tests ------------------------------------------------
+
+@test
+fun testNormalizeJSBigInt(): void {
+  SKTest.expectEq("0n", SKJS.normalizeJSBigInt("0n"));
+  SKTest.expectEq("1000n", SKJS.normalizeJSBigInt("1_000n"));
+  SKTest.expectEq("16n", SKJS.normalizeJSBigInt("0x10n"));
+  SKTest.expectEq("7n", SKJS.normalizeJSBigInt("0b111n"));
+  SKTest.expectEq("15n", SKJS.normalizeJSBigInt("0o17n"));
+  SKTest.expectEq("0n", SKJS.normalizeJSBigInt("0x0n"));
+  // Bigints are arbitrary precision: radix conversion is exact beyond 2^64.
+  SKTest.expectEq(
+    "18446744073709551615n",
+    SKJS.normalizeJSBigInt("0xFFFFFFFFFFFFFFFFn"),
+  );
+  SKTest.expectEq(
+    "340282366920938463463374607431768211455n",
+    SKJS.normalizeJSBigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFn"),
+  );
+}
+
 // --- isPreciseJSNumberLiteral tests ----------------------------------------
 
 @test

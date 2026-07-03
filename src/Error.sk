@@ -346,6 +346,12 @@ class MultipleNumericSeparators() extends ParsingKind {
   }
   const code: ErrorCode = TSCode(6189);
 }
+class BigIntLiteralMustBeInteger() extends ParsingKind {
+  fun toString(): String {
+    "A bigint literal must be an integer"
+  }
+  const code: ErrorCode = TSCode(1353);
+}
 class InvalidNumericLiteral() extends ParsingKind {
   fun toString(): String {
     "Invalid numeric literal"

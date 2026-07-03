@@ -31,8 +31,11 @@ extension class Parser {
 
   readonly fun getBigInt(tok: Token): String {
     if (tok.kind is TKBigInt()) {
-      // TODO: check and normalize somehow
-      this.lex.getTokenRawStringContent(tok)
+      raw = this.lex.getTokenRawStringContent(tok);
+      validateJSBigIntLiteral(raw) match {
+      | Some(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
+      | None() -> normalizeJSBigInt(raw)
+      }
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKBigInt()))
     }
