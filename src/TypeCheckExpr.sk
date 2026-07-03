@@ -772,10 +772,7 @@ extension class TypeChecker {
               | _ -> None()
               }
             };
-            if (
-              matchedIndex.isNone() &&
-              obj.hasNonSyntheticIndex(tcenv.subst, this)
-            ) {
+            if (matchedIndex.isNone() && obj.hasNonSyntheticIndex()) {
               // Object has indexes but not for this key kind. The access is
               // fundamentally invalid; we can't substitute an unrelated-kind
               // index value without manufacturing a cascade of dependent
@@ -2341,7 +2338,7 @@ extension class TypeChecker {
             // all-branches index matches the old branch-merge). TODO: refine.
             !canBeFalse =
               canBeFalse ||
-              obj.hasNonSyntheticIndex(tcenv.subst, this) ||
+              obj.hasNonSyntheticIndex() ||
               obj.getBranches().any(branchFields -> {
                 (fields, symbolFields) = branchFields match {
                 | TFields{fields, symbolFields} -> (fields, symbolFields)
