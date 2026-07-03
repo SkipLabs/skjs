@@ -1127,22 +1127,11 @@ class TObject private (
       this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TSymbol()).isSome()
   }
 
-  // True when every branch declares a non-synthetic index for `kind` directly
-  // (the string index does NOT stand in for a number key here). Used for the
-  // diagnostic listing, which must name only the kinds actually declared.
+  // True when every branch accepts a non-synthetic index for `kind`
   fun hasNonSyntheticIndexForKeyKind(kind: TPrimValueKind): Bool {
-    this.branches.all(fields -> {
-      idx = kind match {
-      | TString() -> fields.stringIndex
-      | TNum() -> fields.numberIndex
-      | TSymbol() -> fields.symbolIndex
-      | _ -> None()
-      };
-      idx match {
-      | Some(f) -> !f.isSynthetic()
-      | None() -> false
-      }
-    })
+    this.branches.all(fields ->
+      fields.nonSyntheticIndexForKeyKind(kind).isSome()
+    )
   }
 
   // Human-readable list of the index key kinds every branch carries directly
