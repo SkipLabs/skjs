@@ -49,3 +49,24 @@ function testUnderscoreFieldName(x: { 1_000: string }): { 1000: string } {
 function testScientificFieldName(x: { 1e3: string }): { 1000: string } {
   return x;
 }
+
+// --- Octal and binary field names ---
+
+function testOctalValue(): void {
+  const a: 15 = 0o17;
+}
+
+function testOctalFieldName(x: { 0o17: string }): { 15: string } {
+  return x;
+}
+
+function testBinaryFieldName(x: { 0b10: string }): { 2: string } {
+  return x;
+}
+
+// --- Negative control: normalization must not conflate distinct values ---
+
+function testMismatchStillErrors(): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const a: 1001 = 1e3;
+}

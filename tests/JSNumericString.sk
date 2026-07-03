@@ -281,4 +281,30 @@ fun testNormalizeResultIsCanonical(): void {
   };
 }
 
+// --- Pinned known gaps --------------------------------------------------
+
+// FIXME: these forms are not canonical String(Number(x)) output (String(1e3)
+// is "1000", 22-digit integers print as scientific, and String(1e-7) is
+// "1e-7"), but isJSNumericString accepts them: it checks shape only, not the
+// ECMA-262 magnitude bounds (n > 21 / n <= -6) that pick the form.
+@test
+fun testJSNumericStringAcceptsNonCanonicalForms(): void {
+  SKTest.expectTrue(SKJS.isJSNumericString("1e+3"));
+  SKTest.expectTrue(SKJS.isJSNumericString("10000000000000000000000"));
+  SKTest.expectTrue(SKJS.isJSNumericString("0.0000001"));
+}
+
+// FIXME: radix digits and exponents accumulate in wrapping 64-bit Int, so
+// literals at or beyond 2^63 alias to unrelated values instead of being left
+// unnormalized.
+@test
+fun testNormalizeWrapsBeyondInt64(): void {
+  SKTest.expectEq("-1", SKJS.normalizeJSNumber("0xFFFFFFFFFFFFFFFF"));
+  SKTest.expectEq(
+    "-9223372036854775808",
+    SKJS.normalizeJSNumber("0x8000000000000000"),
+  );
+  SKTest.expectEq("1000", SKJS.normalizeJSNumber("1e18446744073709551619"));
+}
+
 module end;
