@@ -246,77 +246,59 @@ extension class TPrimValue {
 }
 
 extension class TFields {
-  static fun union(
+  static fun unionOptTFuns(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1opt: ?(Bool, TFuns),
+    f2opt: ?(Bool, TFuns),
+  ): ?(Bool, TFuns) {
+    (f1opt, f2opt) match {
+    | (None(), Some((_, f)))
+    | (Some((_, f)), None()) ->
+      Some((true, f))
+    | (Some((opt1, f1)), Some((opt2, f2))) ->
+      Some((opt1 || opt2, TFuns::union(subst, tenv, f1, f2)))
+    | (None(), None()) -> None()
+    }
+  }
+
+  // Pairwise keep-everything branch merge backing TObject::spreadFields. Unlike
+  // `union`, a field present in only one operand is KEPT (as optional) rather
+  // than dropped, so spreading `A | B` never forgets a branch-specific field.
+  // Shared fields union their getters; an index survives if either side has it.
+  static fun spreadMerge(
     subst: mutable Subst,
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
   ): TFields {
-    // Process fields first so that tuple index type variables are resolved
-    // before call/new signatures with union types.
-    // An index signature [key: K]: V acts as an implicit optional field
-    // for any key of type K. When a named field exists on one side but not
-    // the other, check if the other side has a matching index and union the
-    // field with an optional version of that index.
     fields = fields1.fields.mergeOpt(fields2.fields, ior ->
       ior match {
-      | Left(f1) ->
-        fields2.indexForFieldName(f1.name.value).map(idx ->
-          TField::union(subst, tenv, f1, idx.asNamed(f1.name))
-        )
-      | Right(f2) ->
-        fields1.indexForFieldName(f2.name.value).map(idx ->
-          TField::union(subst, tenv, f2, idx.asNamed(f2.name))
-        )
+      | Left(f1) -> Some(TFields::spreadKeep(subst, tenv, f1, fields2, false))
+      | Right(f2) -> Some(TFields::spreadKeep(subst, tenv, f2, fields1, false))
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );
     symbolFields = fields1.symbolFields.mergeOpt(fields2.symbolFields, ior ->
       ior match {
-      | Left(f1) ->
-        fields2.symbolIndex.map(idx ->
-          TField::union(subst, tenv, f1, idx.asNamed(f1.name))
-        )
-      | Right(f2) ->
-        fields1.symbolIndex.map(idx ->
-          TField::union(subst, tenv, f2, idx.asNamed(f2.name))
-        )
+      | Left(f1) -> Some(TFields::spreadKeep(subst, tenv, f1, fields2, true))
+      | Right(f2) -> Some(TFields::spreadKeep(subst, tenv, f2, fields1, true))
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );
-    // String index: only if both sides have it
-    stringIndex = TFields::unionOptIndex(
+    stringIndex = TFields::spreadIndex(
       subst,
       tenv,
       fields1.stringIndex,
       fields2.stringIndex,
     );
-    // Number index uses effective = numberIndex ?? stringIndex, since
-    // string index covers number keys. When both string and number survive,
-    // intersect N with S to maintain N.get <: S.get invariant.
-    numberIndex = (
+    numberIndex = TFields::spreadIndex(
+      subst,
+      tenv,
       fields1.numberIndex,
-      fields1.stringIndex,
       fields2.numberIndex,
-      fields2.stringIndex,
-    ) match {
-    // Both sides have number index: union them directly
-    | (Some(n1), _, Some(n2), _) -> TField::unionIndex(subst, tenv, n1, n2)
-    // One side has number, other has string only: effective N = S
-    | (Some(n), _, None(), Some(s))
-    | (None(), Some(s), Some(n), _) ->
-      TField::unionIndex(subst, tenv, n, s)
-    // Neither side has number index
-    | _ -> None()
-    };
-    // Intersect N with S to maintain N.get <: S.get invariant.
-    (numberIndex, stringIndex) match {
-    | (Some(n), Some(s)) ->
-      !numberIndex = Some(TField::interIndex(subst, tenv, n, s))
-    | _ -> void
-    };
-    // Symbol index: only if both sides have it
-    symbolIndex = TFields::unionOptIndex(
+    );
+    symbolIndex = TFields::spreadIndex(
       subst,
       tenv,
       fields1.symbolIndex,
@@ -340,33 +322,40 @@ extension class TFields {
     }
   }
 
-  static fun unionOptIndex(
+  // A field present in only one branch: keep it as optional, unioning with the
+  // other branch's covering index (a value of that branch may carry the key
+  // via the index) so the result soundly covers both branches.
+  private static fun spreadKeep(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f: TField,
+    other: TFields,
+    isSymbol: Bool,
+  ): TField {
+    coveringIndex = if (isSymbol) {
+      other.symbolIndex
+    } else {
+      other.indexForFieldName(f.name.value)
+    };
+    merged = coveringIndex match {
+    | Some(idx) -> TField::union(subst, tenv, f, idx.asNamed(f.name))
+    | None() -> f
+    };
+    merged.withIsOptional(true)
+  }
+
+  // An index survives the spread if either branch carries it; both -> union.
+  private static fun spreadIndex(
     subst: mutable Subst,
     tenv: TEnv,
     idx1: ?TField,
     idx2: ?TField,
   ): ?TField {
     (idx1, idx2) match {
-    | (None(), _)
-    | (_, None()) ->
-      None()
-    | (Some(index1), Some(index2)) ->
-      TField::unionIndex(subst, tenv, index1, index2)
-    }
-  }
-
-  static fun unionOptTFuns(
-    subst: mutable Subst,
-    tenv: TEnv,
-    f1opt: ?(Bool, TFuns),
-    f2opt: ?(Bool, TFuns),
-  ): ?(Bool, TFuns) {
-    (f1opt, f2opt) match {
-    | (None(), Some((_, f)))
-    | (Some((_, f)), None()) ->
-      Some((true, f))
-    | (Some((opt1, f1)), Some((opt2, f2))) ->
-      Some((opt1 || opt2, TFuns::union(subst, tenv, f1, f2)))
+    | (Some(i1), Some(i2)) -> TField::unionIndex(subst, tenv, i1, i2)
+    | (some @ Some _, None())
+    | (None(), some @ Some _) ->
+      some
     | (None(), None()) -> None()
     }
   }
@@ -380,6 +369,24 @@ extension class TObject {
     obj2: TObject,
   ): TObject {
     TObject(obj1.branches.union(obj2.branches), None(), obj1.pos)
+  }
+
+  // Sound single-object approximation of spreading this (possibly multi-branch)
+  // object: `{ ...(A | B) }`. Unlike intersection/read merges, this KEEPS every
+  // field — one present in only some branches survives as optional (a value of
+  // another branch lacks it) — so no field is forgotten. Shared fields union
+  // their getters; an index survives if any branch carries it. Single-branch
+  // objects pass through unchanged. A precise per-branch union of literal types
+  // (matching TypeScript's distribution) is left as a follow-up
+  // (SkipLabs/skjs#714); this over-approximates by collapsing the branches into
+  // one open object.
+  fun spreadFields(subst: mutable Subst, tenv: TEnv): TFields {
+    branchesIt = this.branches.values();
+    result = branchesIt.next().fromSome();
+    for (fields in branchesIt) {
+      !result = TFields::spreadMerge(subst, tenv, result, fields)
+    };
+    result
   }
 }
 

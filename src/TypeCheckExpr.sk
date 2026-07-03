@@ -613,7 +613,6 @@ extension class TypeChecker {
           // property — so it resolves through the symbol index AND unions/
           // intersects every declared symbol field (read: union getters;
           // write: intersect setters).
-          fields = obj.getFields(tcenv.subst, this);
           idxSType.literals match {
           | None() -> Some(idxSType)
           | Some(lits) ->
@@ -641,7 +640,11 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields.nonSyntheticIndexForKeyKind(TSymbol()) match {
+            obj.maybeGetNonSyntheticIndexForKeyKind(
+              tcenv.subst,
+              this,
+              TSymbol(),
+            ) match {
             | None() ->
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
@@ -672,7 +675,7 @@ extension class TypeChecker {
               addResultCase(ty);
               // A general symbol may also name any declared symbol field.
               if (remainingIdxSType.literals.isNone()) {
-                for (symFd in fields.namedFieldsForKeyKind(TSymbol())) {
+                for (symFd in obj.namedFieldsForKeyKind(TSymbol())) {
                   addResultCase(
                     TFields::resolveFieldType(
                       tcenv.subst,
@@ -745,8 +748,9 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields = obj.getFields(tcenv.subst, this);
-            matchedIndex = fields.nonSyntheticIndexForKeyKind(
+            matchedIndex = obj.maybeGetNonSyntheticIndexForKeyKind(
+              tcenv.subst,
+              this,
               remainingIdxSType.kind,
             );
             // If string literal access fails on a number index, retry as
@@ -760,11 +764,15 @@ extension class TypeChecker {
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
-                fields.nonSyntheticIndexForKeyKind(TNum())
+                obj.maybeGetNonSyntheticIndexForKeyKind(
+                  tcenv.subst,
+                  this,
+                  TNum(),
+                )
               | _ -> None()
               }
             };
-            if (matchedIndex.isNone() && fields.hasNonSyntheticIndex()) {
+            if (matchedIndex.isNone() && obj.hasNonSyntheticIndex()) {
               // Object has indexes but not for this key kind. The access is
               // fundamentally invalid; we can't substitute an unrelated-kind
               // index value without manufacturing a cascade of dependent
@@ -774,7 +782,7 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected ${obj.nonSyntheticIndexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
@@ -800,8 +808,7 @@ extension class TypeChecker {
                   ],
                   TSCode(7053),
                 )
-              | Some(lits) ->
-                fields.getTypeTypingError(lits.toStringList(), pos)
+              | Some(lits) -> obj.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
               ty = if (isLValue) index.set else {
@@ -826,7 +833,7 @@ extension class TypeChecker {
               // checked against the declared fields and found absent, so they
               // only hit the index.
               if (remainingIdxSType.literals.isNone()) {
-                for (namedFd in fields.namedFieldsForKeyKind(
+                for (namedFd in obj.namedFieldsForKeyKind(
                   remainingIdxSType.kind,
                 )) {
                   addResultCase(
@@ -1375,7 +1382,7 @@ extension class TypeChecker {
           // - Otherwise: keep existing optionality, union get type with
           //   spread's contribution (optional field / index / Top).
           // - Always use only get type (spread reads via getter).
-          spreadTFields = obj.getFields(tcenv.subst, this);
+          spreadTFields = obj.spreadFields(tcenv.subst, this);
           // Spread reads each property via its getter, so a private
           // source field would be exposed as a public one on the
           // resulting object — laundering privacy. Reject the spread
@@ -2324,40 +2331,47 @@ extension class TypeChecker {
             !canBeTrue = true;
             !canBeFalse = true
           | obj @ TObject(_, _, _pos) ->
-            objFields = obj.getFields(tcenv.subst, this);
-            (fields, symbolFields) = objFields match {
-            | TFields{fields, symbolFields} -> (fields, symbolFields)
-            };
             !canBeTrue = true; // object types are open
+            // `k in (A | B)` can be false when some branch can lack k — k is
+            // absent or optional in that branch. A shared index contributes
+            // conservatively, the same way it did on a single object (the
+            // all-branches index matches the old branch-merge). TODO: refine.
             !canBeFalse =
               canBeFalse ||
-              objFields.hasNonSyntheticIndex() /* TODO: refine */ ||
-              fieldsOpt match {
-              | None() ->
-                false // no field keys to check
-              | Some(None()) ->
-                true // broad type, could be any key
-              | Some(Some(fieldsToCheck)) ->
-                fieldsToCheck.values().any(fieldToCheck ->
-                  fields.maybeGet(FieldNameString(fieldToCheck.val)) match {
-                  | Some(tField) -> tField.isOptional
-                  | None() -> true
-                  }
-                )
-              } ||
-              symFieldsOpt match {
-              | None() ->
-                false // no symbol keys to check
-              | Some(None()) ->
-                true // broad symbol, could be any key
-              | Some(Some(symFieldsToCheck)) ->
-                symFieldsToCheck.values().any(symToCheck ->
-                  symbolFields.maybeGet(FieldNameString(symToCheck.val)) match {
-                  | Some(tField) -> tField.isOptional
-                  | None() -> true
-                  }
-                )
-              }
+              obj.hasNonSyntheticIndex() ||
+              obj.getBranches().any(branchFields -> {
+                (fields, symbolFields) = branchFields match {
+                | TFields{fields, symbolFields} -> (fields, symbolFields)
+                };
+                (fieldsOpt match {
+                | None() ->
+                  false // no field keys to check
+                | Some(None()) ->
+                  true // broad type, could be any key
+                | Some(Some(fieldsToCheck)) ->
+                  fieldsToCheck.values().any(fieldToCheck ->
+                    fields.maybeGet(FieldNameString(fieldToCheck.val)) match {
+                    | Some(tField) -> tField.isOptional
+                    | None() -> true
+                    }
+                  )
+                }) ||
+                  (symFieldsOpt match {
+                  | None() ->
+                    false // no symbol keys to check
+                  | Some(None()) ->
+                    true // broad symbol, could be any key
+                  | Some(Some(symFieldsToCheck)) ->
+                    symFieldsToCheck.values().any(symToCheck ->
+                      symbolFields.maybeGet(
+                        FieldNameString(symToCheck.val),
+                      ) match {
+                      | Some(tField) -> tField.isOptional
+                      | None() -> true
+                      }
+                    )
+                  })
+              })
           }
         };
         (canBeTrue, canBeFalse) match {
@@ -3183,7 +3197,17 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _, objPos)) ->
-      fields = obj.getFields(tcenv.subst, this);
+      fields = obj.maybeSingleBranch() match {
+      | Some(f) -> f
+      | None() ->
+        // A local object is single-branch by construction (un-annotated
+        // object-literal initializer grown only via single-branch inter).
+        tcenv.error(
+          Array[(pos, "Internal error: local object is not single-branch")],
+          SKJSCode(9999),
+        );
+        return fieldType
+      };
       // For each key, check existing fields/index sigs and collect
       // new fields to grow.
       newFieldsMap = mutable Map[];
@@ -3295,7 +3319,17 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _, _)) ->
-      fields = obj.getFields(tcenv.subst, this);
+      fields = obj.maybeSingleBranch() match {
+      | Some(f) -> f
+      | None() ->
+        // A local object is single-branch by construction (un-annotated
+        // object-literal initializer grown only via single-branch inter).
+        tcenv.error(
+          Array[(pos, "Internal error: local object is not single-branch")],
+          SKJSCode(9999),
+        );
+        return fieldType
+      };
       keyKind = keyType
         .getSTypes(tcenv.subst, this, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {

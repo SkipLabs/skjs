@@ -828,21 +828,20 @@ class TObject private (
 
   /* Accessors */
 
-  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
-    branches = this.branches.values();
-    result = branches.next().fromSome();
-    for (fields in branches) {
-      !result = TFields::union(subst, tenv, result, fields)
-    };
-    result
-  }
-
   fun getAllFields(): mutable Iterator<TFields> {
     this.branches.values()
   }
 
   fun getBranches(): Array<TFields> {
     this.branches.toArray()
+  }
+
+  // Returns the sole branch when this object has exactly one. Used by callers
+  // that operate on objects which are single-branch by construction (e.g.
+  // local objects: an un-annotated object-literal initializer grown only via
+  // single-branch intersection).
+  fun maybeSingleBranch(): ?TFields {
+    this.branches.getUnique()
   }
 
   // True when every branch carries a (non-constructor) call signature, i.e.
@@ -935,8 +934,33 @@ class TObject private (
   ): TType {
     this.maybeGetType(subst, tenv, fieldName, pos) match {
     | Some(res) -> res
-    | None() -> this.getFields(subst, tenv).getTypeTypingError(fieldName, pos)
+    | None() -> this.getTypeTypingError(fieldName, pos)
     }
+  }
+
+  // "Property does not exist" error listing only the fields common to every
+  // branch — the ones safely accessible on the union. A field present in just
+  // some branches is intentionally omitted: listing it as an "option" while
+  // rejecting the access reads as nonsense. Telling the user the field exists
+  // on some branches and recovering with that type is a separate improvement
+  // (SkipLabs/skjs#716).
+  fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
+    branches = this.getBranches();
+    names = SortedSet<FieldNameString>[];
+    branches.maybeGet(0).each(first ->
+      for (f in first.fields) {
+        if (branches.all(b -> b.maybeGet(f.name.value).isSome())) {
+          !names = names.set(f.name)
+        }
+      }
+    );
+    fatalError(
+      Array[
+        (pos, `Property '${fieldName}' does not exist on this type`),
+        (pos, "Possible options are:\n" + names.toArray().join("\n")),
+      ],
+      TSCode(2339),
+    )
   }
 
   fun maybeGetSymbolType(
@@ -1068,6 +1092,65 @@ class TObject private (
       }
     };
     merged.map(fd -> (fd, allBranches))
+  }
+
+  // Non-synthetic index for `kind` shared by every branch, combined via
+  // TField::unionIndex (get unioned, set intersected). None if any branch
+  // lacks it: a general/index key is only resolvable when every disjunct can
+  // serve it. Mirrors maybeGetCall/maybeGetNew's all-branches shape.
+  fun maybeGetNonSyntheticIndexForKeyKind(
+    subst: mutable Subst,
+    tenv: TEnv,
+    kind: TPrimValueKind,
+  ): ?TField {
+    indexes: mutable Vector<TField> = mutable Vector[];
+    for (fields in this.branches) {
+      fields.nonSyntheticIndexForKeyKind(kind) match {
+      | None() -> return None()
+      | Some(idx) -> indexes.push(idx)
+      }
+    };
+    indexesIt = indexes.values();
+    indexesIt.next().map(first ->
+      indexesIt.reduce(
+        (acc, idx) -> TField::unionIndex(subst, tenv, acc, idx).fromSome(),
+        first,
+      )
+    )
+  }
+
+  // True when some index kind can serve every branch (a number key may fall
+  // back to a string index), i.e. the union carries an index usable here.
+  fun hasNonSyntheticIndex(): Bool {
+    this.hasNonSyntheticIndexForKeyKind(TString()) ||
+      this.hasNonSyntheticIndexForKeyKind(TNum()) ||
+      this.hasNonSyntheticIndexForKeyKind(TSymbol())
+  }
+
+  // True when every branch accepts a non-synthetic index for `kind`
+  fun hasNonSyntheticIndexForKeyKind(kind: TPrimValueKind): Bool {
+    this.branches.all(fields ->
+      fields.nonSyntheticIndexForKeyKind(kind).isSome()
+    )
+  }
+
+  // Human-readable list of the index key kinds every branch carries directly
+  // (string/number/symbol), used in the "wrong index kind" diagnostic.
+  fun nonSyntheticIndexKeyKindsString(): String {
+    parts: mutable Vector<String> = mutable Vector[];
+    if (this.hasNonSyntheticIndexForKeyKind(TString())) parts.push("string");
+    if (this.hasNonSyntheticIndexForKeyKind(TNum())) parts.push("number");
+    if (this.hasNonSyntheticIndexForKeyKind(TSymbol())) parts.push("symbol");
+    parts.join(" | ")
+  }
+
+  // Named fields of `kind` that a general (non-literal) key could name at
+  // runtime, gathered from every branch (a value of any branch could supply
+  // its own). The caller unions the resolved types.
+  fun namedFieldsForKeyKind(kind: TPrimValueKind): mutable Iterator<TField> {
+    this.getAllFields().flatMap(fields ->
+      fields.namedFieldsForKeyKind(kind).values()
+    )
   }
 }
 
@@ -2028,15 +2111,6 @@ class TFields protected {
     TFields::nonSynthetic(this.stringIndex).isSome() ||
       TFields::nonSynthetic(this.numberIndex).isSome() ||
       TFields::nonSynthetic(this.symbolIndex).isSome()
-  }
-
-  // Human-readable string of supported index key kinds (e.g. "number").
-  fun nonSyntheticIndexKeyKindsString(): String {
-    parts: mutable Vector<String> = mutable Vector[];
-    if (TFields::nonSynthetic(this.stringIndex).isSome()) parts.push("string");
-    if (TFields::nonSynthetic(this.numberIndex).isSome()) parts.push("number");
-    if (TFields::nonSynthetic(this.symbolIndex).isSome()) parts.push("symbol");
-    parts.join(" | ")
   }
 
   // Find an index that accepts the given key kind.
