@@ -140,6 +140,161 @@ fun isJSNumericExponentPartIter(it: mutable String.StringIterator): Bool {
   it.current().isNone()
 }
 
+// Validate that a TKNumber lexeme is a well-formed ES2021 NumericLiteral.
+// The lexer scans any run of number-ish characters, so malformed forms like
+// 0b12, 0o8, 0x, 1e, 1__0, 1_ and legacy octal 010 arrive here as single
+// tokens; tsc rejects all of them as syntax errors. Returns the parse error
+// to report, or None for a valid literal.
+fun validateJSNumericLiteral(raw: String): ?ParsingKind {
+  chars = raw.chars().toArray();
+  sz = chars.size();
+  if (sz >= 2 && chars[0] == '0') {
+    chars[1] match {
+    | 'x' | 'X' ->
+      return validateRadixDigits(chars, HexDigitExpected(), c ->
+        c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+      )
+    | 'b' | 'B' ->
+      return validateRadixDigits(chars, BinaryDigitExpected(), c ->
+        c == '0' || c == '1'
+      )
+    | 'o' | 'O' ->
+      return validateRadixDigits(chars, OctalDigitExpected(), c ->
+        c >= '0' && c <= '7'
+      )
+    | _ -> void
+    };
+  };
+  validateDecimalJSLiteral(chars)
+}
+
+fun isDecimalDigit(c: Char): Bool {
+  c >= '0' && c <= '9'
+}
+
+// Validate the digits of a radix literal (after the two prefix chars).
+fun validateRadixDigits(
+  chars: Array<Char>,
+  digitExpected: ParsingKind,
+  isDigit: Char -> Bool,
+): ?ParsingKind {
+  sz = chars.size();
+  if (sz == 2) {
+    return Some(digitExpected)
+  };
+  for (i in Range(2, sz)) {
+    c = chars[i];
+    if (isDigit(c)) {
+      continue
+    };
+    if (c == '_') {
+      if (i == 2 || i == sz - 1) {
+        return Some(NumericSeparatorsNotAllowedHere())
+      };
+      if (chars[i + 1] == '_') {
+        return Some(MultipleNumericSeparators())
+      };
+      if (!isDigit(chars[i - 1]) || !isDigit(chars[i + 1])) {
+        return Some(NumericSeparatorsNotAllowedHere())
+      };
+      continue
+    };
+    return Some(digitExpected)
+  };
+  None()
+}
+
+// Validate a decimal literal: digits [. digits] [eE [+-] digits], with
+// numeric separators only between digits, and no leading zeros (legacy
+// octal). The lexer guarantees the first char is a digit.
+fun validateDecimalJSLiteral(chars: Array<Char>): ?ParsingKind {
+  sz = chars.size();
+  if (chars[0] == '0' && sz > 1) {
+    c1 = chars[1];
+    if (c1 == '_') {
+      return Some(NumericSeparatorsNotAllowedHere())
+    };
+    if (isDecimalDigit(c1)) {
+      rest = chars.slice(1, sz);
+      if (rest.all(c -> c >= '0' && c <= '7')) {
+        return Some(OctalLiteralsNotAllowed("0o" + String::fromChars(rest)))
+      };
+      return Some(LeadingZeroDecimalNotAllowed())
+    };
+  };
+  (i0, _intCount, intErr) = consumeDecimalDigitRun(chars, 0);
+  intErr match {
+  | Some _ -> return intErr
+  | None() -> void
+  };
+  i = i0;
+  if (i < sz && chars[i] == '.') {
+    (i1, _fracCount, fracErr) = consumeDecimalDigitRun(chars, i + 1);
+    fracErr match {
+    | Some _ -> return fracErr
+    | None() -> void
+    };
+    !i = i1;
+  };
+  if (i < sz && (chars[i] == 'e' || chars[i] == 'E')) {
+    !i = i + 1;
+    if (i < sz && (chars[i] == '+' || chars[i] == '-')) {
+      !i = i + 1;
+    };
+    (i2, expCount, expErr) = consumeDecimalDigitRun(chars, i);
+    expErr match {
+    | Some _ -> return expErr
+    | None() -> void
+    };
+    if (expCount == 0) {
+      return Some(DigitExpected())
+    };
+    !i = i2;
+  };
+  if (i < sz) {
+    // Hex letters in a decimal literal (1a), a second dot or exponent, a
+    // misplaced radix prefix char (1x0), ...
+    return Some(InvalidNumericLiteral())
+  };
+  None()
+}
+
+// Consume a run of decimal digits with numeric separators starting at
+// `start`. Returns (index after the run, digit count, separator error).
+fun consumeDecimalDigitRun(
+  chars: Array<Char>,
+  start: Int,
+): (Int, Int, ?ParsingKind) {
+  sz = chars.size();
+  i = start;
+  count = 0;
+  loop {
+    if (i >= sz) {
+      break void
+    };
+    c = chars[i];
+    if (isDecimalDigit(c)) {
+      !count = count + 1;
+      !i = i + 1;
+      continue
+    };
+    if (c == '_') {
+      prevIsDigit = i > start && isDecimalDigit(chars[i - 1]);
+      nextIsDigit = i + 1 < sz && isDecimalDigit(chars[i + 1]);
+      if (i + 1 < sz && chars[i + 1] == '_') {
+        return (i, count, Some(MultipleNumericSeparators()))
+      };
+      if (!prevIsDigit || !nextIsDigit) {
+        return (i, count, Some(NumericSeparatorsNotAllowedHere()))
+      };
+      !i = i + 1;
+      continue
+    };
+    break void;
+  };
+  (i, count, None())
+}
+
 // Normalize a JS numeric literal to its canonical String(Number(x)) form.
 // Handles underscores (1_000), hex (0x10), binary (0b10), trailing
 // decimal zeros (1.0), and non-canonical scientific notation (1e3).
