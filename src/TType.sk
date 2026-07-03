@@ -2113,15 +2113,6 @@ class TFields protected {
       TFields::nonSynthetic(this.symbolIndex).isSome()
   }
 
-  // Human-readable string of supported index key kinds (e.g. "number").
-  fun nonSyntheticIndexKeyKindsString(): String {
-    parts: mutable Vector<String> = mutable Vector[];
-    if (TFields::nonSynthetic(this.stringIndex).isSome()) parts.push("string");
-    if (TFields::nonSynthetic(this.numberIndex).isSome()) parts.push("number");
-    if (TFields::nonSynthetic(this.symbolIndex).isSome()) parts.push("symbol");
-    parts.join(" | ")
-  }
-
   // Find an index that accepts the given key kind.
   // For number keys, try numberIndex first, then fall back to stringIndex
   // (since JS coerces number keys to strings).
