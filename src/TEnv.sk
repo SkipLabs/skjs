@@ -989,14 +989,6 @@ base class TEnv{
   }
 
   private fun convertParam(param: Param): TAFunParam {
-    ty = param.type match {
-    | None() ->
-      fatalError(
-        Array[(param.pos, "A parameter must have an explicit type annotation")],
-        TSCode(7006),
-      )
-    | Some(ty) -> ty
-    };
     optional = param.default match {
     | None() -> param.optional
     | Some(defaultExpr) -> Some(defaultExpr.pos)
@@ -1005,7 +997,7 @@ base class TEnv{
       isRest => param.isRest,
       name => param.name,
       optional,
-      type => Some(ty),
+      type => param.type,
     }
   }
 
