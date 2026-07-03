@@ -1121,10 +1121,10 @@ class TObject private (
 
   // True when some index kind can serve every branch (a number key may fall
   // back to a string index), i.e. the union carries an index usable here.
-  fun hasNonSyntheticIndex(subst: mutable Subst, tenv: TEnv): Bool {
-    this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TString()).isSome() ||
-      this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TNum()).isSome() ||
-      this.maybeGetNonSyntheticIndexForKeyKind(subst, tenv, TSymbol()).isSome()
+  fun hasNonSyntheticIndex(_subst: mutable Subst, _tenv: TEnv): Bool {
+    this.hasNonSyntheticIndexForKeyKind(TString()) ||
+      this.hasNonSyntheticIndexForKeyKind(TNum()) ||
+      this.hasNonSyntheticIndexForKeyKind(TSymbol())
   }
 
   // True when every branch accepts a non-synthetic index for `kind`
