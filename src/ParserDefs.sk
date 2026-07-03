@@ -920,15 +920,14 @@ extension class Parser {
         initializationStatements = mutable Vector[];
         newParams = sigParams.map(param -> {
           param match {
-          | Param(
-            _pos,
+          | Param{
             modifiers,
-            /* isRest */ None(),
-            Pattern(pos, PVar(pName)),
+            isRest => None(),
+            name => Pattern(pos, PVar(pName)),
             optional,
             type,
             default,
-          ) ->
+          } ->
             isParameterProperty = false;
             !param.modifiers.modifiers = modifiers.modifiers.filter(modifier ->
               modifier match {
@@ -1209,15 +1208,15 @@ extension class Parser {
           None()
         };
         params.push(
-          Param(
-            paramName.pos,
+          Param{
+            pos => paramName.pos,
             modifiers,
             isRest,
-            paramName,
+            name => paramName,
             optional,
-            paramType,
-            paramValue,
-          ),
+            type => paramType,
+            default => paramValue,
+          },
         );
         nextTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())

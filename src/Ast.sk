@@ -228,15 +228,18 @@ class TypeParam(
 // <param> ::= <modifiers> <param-names> ("?"?) (: <type>)? (= <expr>)?
 /***************************************************************************/
 
-class Param(
-  pos: PosRange,
-  modifiers: Modifiers,
+base class ParamBase{
   isRest: ?PosRange,
   name: Pattern,
   optional: ?PosRange,
   type: ?Type,
+} uses XXHashable
+
+class Param{
+  pos: PosRange,
+  modifiers: Modifiers,
   default: ?Expr,
-) uses XXHashable
+} extends ParamBase
 
 /***************************************************************************/
 // <stmt_> ::=
@@ -606,12 +609,7 @@ base class TupleEltType uses XXHashable {
 // <ta-fun-param> ::= <ta-param-names> "?"? : <type>
 /***************************************************************************/
 
-class TAFunParam(
-  isRest: ?PosRange,
-  name: Pattern,
-  optional: ?PosRange,
-  type: ?Type,
-) uses XXHashable
+class TAFunParam extends ParamBase
 
 /***************************************************************************/
 // Modifiers

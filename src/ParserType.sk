@@ -399,7 +399,7 @@ extension class Parser {
       } else {
         None()
       };
-      result.push(TAFunParam(isRest, name, qm, type));
+      result.push(TAFunParam{isRest, name, optional => qm, type});
       tokComma = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
       | Some(x) -> x
