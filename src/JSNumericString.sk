@@ -158,20 +158,21 @@ fun normalizeJSNumber(raw: String): String {
 }
 
 fun normalizeUnsignedJSNumber(s: String): String {
-  if (s.length() >= 2) {
-    c0 = s.chars().toArray()[0];
-    c1 = s.chars().toArray()[1];
-    if (c0 == '0' && (c1 == 'x' || c1 == 'X')) {
-      hex = s.sub(s.getIter().forward(2), s.length() - 2);
-      return parseHexInt(hex).toString()
-    };
-    if (c0 == '0' && (c1 == 'b' || c1 == 'B')) {
-      bin = s.sub(s.getIter().forward(2), s.length() - 2);
-      return parseBinaryInt(bin).toString()
-    };
-    if (c0 == '0' && (c1 == 'o' || c1 == 'O')) {
-      oct = s.sub(s.getIter().forward(2), s.length() - 2);
-      return parseOctalInt(oct).toString()
+  it = s.getIter();
+  c0 = it.next();
+  c1 = it.next();
+  if (c0 == Some('0')) {
+    c1 match {
+    | Some('x')
+    | Some('X') ->
+      return parseHexInt(s.substring(it)).toString()
+    | Some('b')
+    | Some('B') ->
+      return parseBinaryInt(s.substring(it)).toString()
+    | Some('o')
+    | Some('O') ->
+      return parseOctalInt(s.substring(it)).toString()
+    | _ -> void
     };
   };
   normalizeDecimalJS(s)
@@ -256,15 +257,15 @@ fun normalizeDecimalJS(s: String): String {
     r
   };
 
-  // Collect all digits (skipping dot), track fractional length
+  // Collect all digits (skipping dot); the fractional length is the digit
+  // count after the dot.
   allDigits = mutable Vector[];
-  fracLen = 0;
   for (i in Range(0, mantissaEnd)) {
     if (i != dotPos) {
       allDigits.push(chars[i]);
-      if (dotPos >= 0 && i > dotPos) !fracLen = fracLen + 1;
     };
   };
+  fracLen = if (dotPos >= 0) mantissaEnd - dotPos - 1 else 0;
 
   exp = rawExp - fracLen;
   sz = allDigits.size();
@@ -285,23 +286,18 @@ fun normalizeDecimalJS(s: String): String {
   // Check for zero
   if (trail - lead == 1 && allDigits[lead] == '0') return "0";
 
-  // Build significant digits string
-  sigChars = mutable Vector[];
-  for (i in Range(lead, trail)) {
-    sigChars.push(allDigits[i]);
-  };
-  sigDigits = String::fromChars(sigChars.toArray());
-  sigLen = sigDigits.length();
+  sigDigits = String::fromChars(allDigits.toArray().slice(lead, trail));
 
   // n = number of digits before decimal point in canonical form
-  n = sigLen + exp;
+  n = (trail - lead) + exp;
 
-  formatCanonicalJSNumber(sigDigits, sigLen, n)
+  formatCanonicalJSNumber(sigDigits, n)
 }
 
 // Format a number from its significant digits and decimal point position.
 // n = number of digits before the decimal point.
-fun formatCanonicalJSNumber(digits: String, len: Int, n: Int): String {
+fun formatCanonicalJSNumber(digits: String, n: Int): String {
+  len = digits.length();
   if (n > 21 || n <= -6) {
     // Scientific notation: d.ddd...e[+|-]N
     sciExp = n - 1;
@@ -310,32 +306,21 @@ fun formatCanonicalJSNumber(digits: String, len: Int, n: Int): String {
     if (len == 1) {
       digits + "e" + expSign + absExp.toString()
     } else {
-      first = digits.sub(digits.getIter(), 1);
-      rest = digits.sub(digits.getIter().forward(1), len - 1);
-      first + "." + rest + "e" + expSign + absExp.toString()
+      rest = digits.substring(digits.getIter().forward(1));
+      digits.take(1) + "." + rest + "e" + expSign + absExp.toString()
     }
   } else if (n >= len) {
     // Plain integer: digits followed by zeros
-    digits + nZeroChars(n - len)
+    digits + "0".repeat(n - len)
   } else if (n > 0) {
     // Decimal point inside digits
-    before = digits.sub(digits.getIter(), n);
-    after = digits.sub(digits.getIter().forward(n), len - n);
-    before + "." + after
+    digits.take(n) + "." + digits.substring(digits.getIter().forward(n))
   } else if (n == 0) {
     "0." + digits
   } else {
     // n < 0: leading zeros after decimal point
-    "0." + nZeroChars(-n) + digits
+    "0." + "0".repeat(-n) + digits
   }
-}
-
-fun nZeroChars(count: Int): String {
-  result = "";
-  for (_ in Range(0, count)) {
-    !result = result + "0";
-  };
-  result
 }
 
 module end;
