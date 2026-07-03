@@ -19,10 +19,10 @@ function fieldWraparound(x: { 0xffffffffffffffff: string }): { "-1": string } {
   return x;
 }
 
-// 0xffffffffffffffff is 18446744073709552000 as a double, never -1: the
-// spelled forms do not overlap, and neither do the runtime values.
+// 0xffffffffffffffff is 18446744073709552000 as a double, never -1. The
+// always-false claim would be correct here, but spelled-form literals are
+// conservatively treated as imprecise, so no warning is emitted.
 function wraparoundAlwaysTrue(x: 0xffffffffffffffff, y: -1): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
@@ -32,17 +32,17 @@ function hexVsDecimalSameDouble(): void {
   const a: 9007199254740992 = 0x20000000000001;
 }
 
-// FIXME: both literals are the double 9007199254740992, so x === y is always true
+// Both literals are the double 9007199254740992: the comparison is always
+// true at runtime, so no non-overlap warning may be emitted for
+// beyond-precision literal pairs.
 function impreciseDecimalPair(
   x: 9007199254740993,
   y: 9007199254740992,
 ): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
-// FIXME: both values are Infinity at runtime, so x === y is always true
+// Both values are Infinity at runtime: same suppression.
 function beyondRangePair(x: 1e309, y: 2e309): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }

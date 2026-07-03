@@ -281,6 +281,35 @@ fun testNormalizeResultIsCanonical(): void {
   };
 }
 
+// --- isPreciseJSNumberLiteral tests ----------------------------------------
+
+@test
+fun testPreciseJSNumberLiteral(): void {
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("0"));
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1"));
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("-1.5"));
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("123456789012345"));
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1e+21"));
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1e-7"));
+  SKTest.expectTrue(SKJS.isPreciseJSNumberLiteral("1.5e+307"));
+}
+
+@test
+fun testImpreciseJSNumberLiteral(): void {
+  // 16+ significant digits can collide on one double
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("9007199254740993"));
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1234567890123456"));
+  // Trailing integer zeros count as significant for round-trip identity
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("100000000000000000000"));
+  // Beyond the double range
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e+308"));
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e+309"));
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e-308"));
+  // Non-canonical spelled forms kept raw by the normalizer
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("0xFFFFFFFFFFFFFFFF"));
+  SKTest.expectFalse(SKJS.isPreciseJSNumberLiteral("1e18446744073709551619"));
+}
+
 // --- negateJSNumberLiteral tests ------------------------------------------
 
 @test
