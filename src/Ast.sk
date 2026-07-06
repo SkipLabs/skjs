@@ -234,11 +234,16 @@ base class ParamBase{
   optional: ?PosRange,
   type: ?Type,
 } uses XXHashable {
-  // Whether the argument may be omitted at a call site. The `?` marker
-  // makes any parameter omittable; Param additionally treats a default
-  // value as omittable.
-  overridable fun isOmittable(): Bool {
-    this.optional.isSome()
+  // The position of the marker that makes the argument omittable at a call
+  // site, if any. The `?` marker applies to every parameter; Param also
+  // folds in a default value.
+  overridable fun omittablePos(): ?PosRange {
+    this.optional
+  }
+
+  // Whether the argument may be omitted at a call site.
+  fun isOmittable(): Bool {
+    this.omittablePos().isSome()
   }
 }
 
@@ -247,10 +252,11 @@ class Param{
   modifiers: Modifiers,
   default: ?Expr,
 } extends ParamBase {
-  // Whether the argument may be omitted at a call site: either an explicit
-  // `?` marker or a default value makes it omittable.
-  fun isOmittable(): Bool {
-    this.optional.isSome() || this.default.isSome()
+  fun omittablePos(): ?PosRange {
+    this.optional match {
+    | some @ Some _ -> some
+    | None() -> this.default.map(defaultExpr -> defaultExpr.pos)
+    }
   }
 }
 
@@ -591,7 +597,7 @@ base class Type_ uses XXHashable {
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
   | TATuple(Array<TupleEltType>)
-  | TAFun(Bool, Array<TypeParam>, Array<TAFunParam>, Type, CGNode)
+  | TAFun(Bool, Array<TypeParam>, Array<ParamBase>, Type, CGNode)
   | TAGet(Type, Type)
   | TAExtendsQuestion(Type, Type, Type, Type)
   | TAExtends(Type, Type)

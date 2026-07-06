@@ -966,7 +966,6 @@ base class TEnv{
       x
     });
     sig = this.getFunSig(tcenvb.context, fd);
-    params = sig.params.map(this.convertParam);
     sig.retType.i1 match {
     | None() -> // constructor
       void
@@ -984,21 +983,8 @@ base class TEnv{
         tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
       ),
     );
-    tafun = TAFun(false, tparams, params, retType, cgNode);
+    tafun = TAFun(false, tparams, sig.params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
-  }
-
-  private fun convertParam(param: Param): TAFunParam {
-    optional = param.default match {
-    | None() -> param.optional
-    | Some(defaultExpr) -> Some(defaultExpr.pos)
-    };
-    TAFunParam{
-      isRest => param.isRest,
-      name => param.name,
-      optional,
-      type => param.type,
-    }
   }
 
   fun funDecl(
@@ -1022,13 +1008,7 @@ base class TEnv{
       )
     | (_, Some(x)) -> x
     };
-    tafun = TAFun(
-      isMethod,
-      sig.tparams,
-      sig.params.map(this.convertParam),
-      retType,
-      cgNode,
-    );
+    tafun = TAFun(isMethod, sig.tparams, sig.params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
   }
 
@@ -1720,7 +1700,7 @@ base class TEnv{
               SKJSCode(2026),
             )
           );
-          param.optional.each(optPos ->
+          param.omittablePos().each(optPos ->
             tcenvb.error(
               Array[(optPos, "A 'this' parameter cannot be optional")],
               SKJSCode(2027),
@@ -1732,7 +1712,7 @@ base class TEnv{
         };
         param.isRest match {
         | Some(restPos) ->
-          param.optional match {
+          param.omittablePos() match {
           | Some(optPos) ->
             tcenvb.error(
               Array[(optPos, "A rest parameter cannot be optional")],
@@ -1760,7 +1740,7 @@ base class TEnv{
           continue
         | None() -> void
         };
-        param.optional match {
+        param.omittablePos() match {
         | None() ->
           optionalWitness match {
           | None() -> void
