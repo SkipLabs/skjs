@@ -233,7 +233,14 @@ base class ParamBase{
   name: Pattern,
   optional: ?PosRange,
   type: ?Type,
-} uses XXHashable
+} uses XXHashable {
+  // Whether the argument may be omitted at a call site. The `?` marker
+  // makes any parameter omittable; Param additionally treats a default
+  // value as omittable.
+  overridable fun isOmittable(): Bool {
+    this.optional.isSome()
+  }
+}
 
 class Param{
   pos: PosRange,
@@ -615,13 +622,7 @@ base class TupleEltType uses XXHashable {
 // <ta-fun-param> ::= <ta-param-names> "?"? : <type>
 /***************************************************************************/
 
-class TAFunParam extends ParamBase {
-  // A function-type parameter is omittable exactly when it carries the `?`
-  // marker (function types have no default values).
-  fun isOmittable(): Bool {
-    this.optional.isSome()
-  }
-}
+class TAFunParam extends ParamBase
 
 /***************************************************************************/
 // Modifiers
