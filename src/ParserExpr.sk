@@ -778,7 +778,15 @@ fun exprToParam(e: Expr): ?Param {
     )
   | _ ->
     exprToPattern(e).map(p ->
-      Param(e.pos, Modifiers::empty(), None(), p, None(), None(), None())
+      Param{
+        pos => e.pos,
+        modifiers => Modifiers::empty(),
+        isRest => None(),
+        name => p,
+        optional => None(),
+        type => None(),
+        default => None(),
+      }
     )
   }
 }

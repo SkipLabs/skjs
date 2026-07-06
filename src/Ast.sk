@@ -228,15 +228,52 @@ class TypeParam(
 // <param> ::= <modifiers> <param-names> ("?"?) (: <type>)? (= <expr>)?
 /***************************************************************************/
 
-class Param(
-  pos: PosRange,
-  modifiers: Modifiers,
+base class ParamBase{
   isRest: ?PosRange,
   name: Pattern,
   optional: ?PosRange,
   type: ?Type,
+} uses XXHashable {
+  // The position of the marker that makes the argument omittable at a call
+  // site, if any. The `?` marker applies to every parameter; Param also
+  // folds in a default value.
+  overridable fun omittablePos(): ?PosRange {
+    this.optional
+  }
+
+  // Whether the argument may be omitted at a call site.
+  fun isOmittable(): Bool {
+    this.omittablePos().isSome()
+  }
+
+  // The parameter's declared type, or a fatal TS7006 when the annotation
+  // was omitted.
+  fun requiredType(): Type {
+    this.type match {
+    | Some(ty) -> ty
+    | None() ->
+      fatalError(
+        Array[
+          (this.name.pos, "A parameter must have an explicit type annotation"),
+        ],
+        TSCode(7006),
+      )
+    }
+  }
+}
+
+class Param{
+  pos: PosRange,
+  modifiers: Modifiers,
   default: ?Expr,
-) uses XXHashable
+} extends ParamBase {
+  fun omittablePos(): ?PosRange {
+    this.optional match {
+    | some @ Some _ -> some
+    | None() -> this.default.map(defaultExpr -> defaultExpr.pos)
+    }
+  }
+}
 
 /***************************************************************************/
 // <stmt_> ::=
@@ -575,7 +612,7 @@ base class Type_ uses XXHashable {
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
   | TATuple(Array<TupleEltType>)
-  | TAFun(Bool, Array<TypeParam>, Array<TAFunParam>, Type, CGNode)
+  | TAFun(Bool, Array<TypeParam>, Array<ParamBase>, Type, CGNode)
   | TAGet(Type, Type)
   | TAExtendsQuestion(Type, Type, Type, Type)
   | TAExtends(Type, Type)
@@ -603,15 +640,10 @@ base class TupleEltType uses XXHashable {
 }
 
 /***************************************************************************/
-// <ta-fun-param> ::= <ta-param-names> "?"? : <type>
+// <ta-fun-param> ::= "..."? <ta-param-names> "?"? (: <type>)?
 /***************************************************************************/
 
-class TAFunParam(
-  isRest: ?PosRange,
-  name: Pattern,
-  optional: ?PosRange,
-  type: Type,
-) uses XXHashable
+class TAFunParam extends ParamBase
 
 /***************************************************************************/
 // Modifiers

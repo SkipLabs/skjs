@@ -206,10 +206,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 
 
 ### 16. Function Signatures Must Be Fully Annotated
-- **Rule**: Every function parameter requires an explicit type annotation. Named function declarations must also supply an explicit return type; arrow callbacks currently infer their return type but still need annotated parameters.
-- **Error**: `TypeCheckFun.sk` emits "A parameter must have an explicit type annotation" for parameters without types and a "must have an explicit return type annotation" error if a named function omits its return type.
+- **Rule**: Every function parameter requires an explicit type annotation — in function/method declarations, arrow callbacks, and function *type* annotations (e.g. `type F = (x) => void`). Named function declarations must also supply an explicit return type; arrow callbacks currently infer their return type but still need annotated parameters.
+- **Error**: `TypeCheckFun.sk` emits "A parameter must have an explicit type annotation" for parameters without types and a "must have an explicit return type annotation" error if a named function omits its return type. Function-type annotations parse an omitted parameter type and report the same error from `TEnv.sk` (`normalizeFun`) rather than a `':' expected` parse error, matching tsc's TS7006 (`Parameter 'x' implicitly has an 'any' type`).
 - **Workaround**: Declare signatures like `function handler(value: string | number): Result { ... }` and annotate callback parameters, adding `: T` return annotations where needed for clarity.
-- **Verified by**: `tests/expect-error/function-args.ts`, `tests/expect-error/anonymous-function-annotations.ts`, and `tests/expect-error/missing-return-type.ts`.
+- **Verified by**: `tests/expect-error/function-args.ts`, `tests/expect-error/anonymous-function-annotations.ts`, `tests/expect-error/function-type-omitted-param-annotation.ts`, `tests/expect-error/function-type-parameter-names.ts`, and `tests/expect-error/missing-return-type.ts`.
 
 ### 17. The `any` Type is Not Supported
 - **CRITICAL RULE**: NEVER use the `any` type in SKJS code

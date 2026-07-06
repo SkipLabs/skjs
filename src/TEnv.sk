@@ -454,6 +454,12 @@ base class TEnv{
     )
   }
 
+  // The class's own type parameters, as type arguments applying the class
+  // to itself (e.g. `class C<T>` -> `C<T>`).
+  private static fun tparamsAsTArgs(tparams: Array<TypeParam>): Array<Type> {
+    tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])))
+  }
+
   private fun makeEmptyConstructor(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
@@ -461,8 +467,7 @@ base class TEnv{
     c: Class,
   ): TFuns {
     cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
-    targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
-    retType = Type(pos, TAInst(className, targs));
+    retType = Type(pos, TAInst(className, TEnv::tparamsAsTArgs(c.tparams)));
     tafun = TAFun(false, c.tparams, Array[], retType, cgNode);
     this.normalizeFun(tcenvb, pos, tafun)
   }
@@ -966,7 +971,6 @@ base class TEnv{
       x
     });
     sig = this.getFunSig(tcenvb.context, fd);
-    params = sig.params.map(this.convertParam);
     sig.retType.i1 match {
     | None() -> // constructor
       void
@@ -979,29 +983,10 @@ base class TEnv{
     retTypePos = className.pos;
     retType = Type(
       retTypePos,
-      TAInst(
-        Name(retTypePos, className.value),
-        tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
-      ),
+      TAInst(Name(retTypePos, className.value), TEnv::tparamsAsTArgs(tparams)),
     );
-    tafun = TAFun(false, tparams, params, retType, cgNode);
+    tafun = TAFun(false, tparams, sig.params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
-  }
-
-  private fun convertParam(param: Param): TAFunParam {
-    ty = param.type match {
-    | None() ->
-      fatalError(
-        Array[(param.pos, "A parameter must have an explicit type annotation")],
-        TSCode(7006),
-      )
-    | Some(ty) -> ty
-    };
-    optional = param.default match {
-    | None() -> param.optional
-    | Some(defaultExpr) -> Some(defaultExpr.pos)
-    };
-    TAFunParam(param.isRest, param.name, optional, ty)
   }
 
   fun funDecl(
@@ -1025,13 +1010,7 @@ base class TEnv{
       )
     | (_, Some(x)) -> x
     };
-    tafun = TAFun(
-      isMethod,
-      sig.tparams,
-      sig.params.map(this.convertParam),
-      retType,
-      cgNode,
-    );
+    tafun = TAFun(isMethod, sig.tparams, sig.params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
   }
 
@@ -1109,8 +1088,9 @@ base class TEnv{
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
       TType::single(TObject::createCallWithPos(tfuns, pos))
-    | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
-      tafun = TAFun(false, clauses, params, retType, cgNode);
+    | TANew(Type(tyPos, tafun @ TAFun _)) ->
+      // The inner function type comes only from ParserType.typeFun, which
+      // always sets isMethod=false, so it can be normalized as-is.
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
       TType::single(TObject::createNew(tfuns, pos))
     | TANew _ ->
@@ -1691,7 +1671,8 @@ base class TEnv{
       spreadParam: ?TType = None();
       thisParam: ?TType = None();
       for (i => param in params) {
-        paramType = this.normalize(tcenvb, param.type);
+        paramTypeAst = param.requiredType();
+        paramType = this.normalize(tcenvb, paramTypeAst);
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
@@ -1710,7 +1691,7 @@ base class TEnv{
               SKJSCode(2026),
             )
           );
-          param.optional.each(optPos ->
+          param.omittablePos().each(optPos ->
             tcenvb.error(
               Array[(optPos, "A 'this' parameter cannot be optional")],
               SKJSCode(2027),
@@ -1735,7 +1716,7 @@ base class TEnv{
             tcenvb,
             this,
             restPos,
-            param.type,
+            paramTypeAst,
             tParams,
           );
           if (i != params.size() - 1) {
@@ -1750,7 +1731,7 @@ base class TEnv{
           continue
         | None() -> void
         };
-        param.optional match {
+        param.omittablePos() match {
         | None() ->
           optionalWitness match {
           | None() -> void
@@ -1758,7 +1739,7 @@ base class TEnv{
             tcenvb.error(
               Array[
                 (
-                  param.type.pos,
+                  paramTypeAst.pos,
                   "A required parameter cannot follow an optional parameter",
                 ),
                 (wpos, "It appears after this parameter that is optional"),

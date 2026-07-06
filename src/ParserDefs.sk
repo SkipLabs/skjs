@@ -920,15 +920,14 @@ extension class Parser {
         initializationStatements = mutable Vector[];
         newParams = sigParams.map(param -> {
           param match {
-          | Param(
-            _pos,
+          | Param{
             modifiers,
-            /* isRest */ None(),
-            Pattern(pos, PVar(pName)),
+            isRest => None(),
+            name => Pattern(pos, PVar(pName)),
             optional,
             type,
             default,
-          ) ->
+          } ->
             isParameterProperty = false;
             !param.modifiers.modifiers = modifiers.modifiers.filter(modifier ->
               modifier match {
@@ -1185,23 +1184,7 @@ extension class Parser {
     | _ ->
       loop {
         modifiers = this.modifiers();
-        isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
-          Some(this.lex.posRange(this.lex.next().fromSome()))
-        } else {
-          None()
-        };
-        paramName = this.pattern();
-        optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          Some(this.lex.posRange(this.lex.next().fromSome()))
-        } else {
-          None()
-        };
-        paramType = if (this.lex.peekKind() is Some(TKColon())) {
-          _ = this.lex.next();
-          Some(this.type(0))
-        } else {
-          None()
-        };
+        (isRest, paramName, optional, paramType) = this.paramHeader();
         paramValue = if (this.lex.peekKind() is Some(TKAssignment())) {
           _ = this.lex.next();
           Some(this.expr(0))
@@ -1209,15 +1192,15 @@ extension class Parser {
           None()
         };
         params.push(
-          Param(
-            paramName.pos,
+          Param{
+            pos => paramName.pos,
             modifiers,
             isRest,
-            paramName,
+            name => paramName,
             optional,
-            paramType,
-            paramValue,
-          ),
+            type => paramType,
+            default => paramValue,
+          },
         );
         nextTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
