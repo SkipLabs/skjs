@@ -625,7 +625,7 @@ base class TupleEltType uses XXHashable {
 }
 
 /***************************************************************************/
-// <ta-fun-param> ::= <ta-param-names> "?"? : <type>
+// <ta-fun-param> ::= "..."? <ta-param-names> "?"? (: <type>)?
 /***************************************************************************/
 
 class TAFunParam extends ParamBase
