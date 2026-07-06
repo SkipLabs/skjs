@@ -115,7 +115,7 @@ function testComputedKeyBroadNoIndex(): void {
   let obj = {};
   obj.x = 1;
   let key: string = "y";
-  // @skjs-expect-error This computed property key must match an index signature on the object
+  // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
   obj[key] = 2;
 }
 

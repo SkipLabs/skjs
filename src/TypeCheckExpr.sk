@@ -3129,40 +3129,44 @@ extension class TypeChecker {
   ): TType {
     fieldType = this.expr(tcenv, e2, mostPrecise);
     keyType = this.expr(tcenv, keyExpr, true);
-    keyType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
-      stypes.singleElt()
-    ) match {
-    | Some(stype) ->
-      fieldKeys = FieldKey::allOfSType(keyExpr.pos, stype);
-      if (fieldKeys.isEmpty()) {
-        this.assignLocalObjectByIndex(
-          tcenv,
-          pos,
-          local,
-          keyExpr,
-          keyType,
-          fieldType,
-        )
-      } else {
-        this.assignLocalObjectByKeys(
-          tcenv,
-          pos,
-          e1Pos,
-          local,
-          keyExpr,
-          keyType,
-          fieldType,
-          fieldKeys,
-        )
-      }
-    | _ ->
-      this.assignLocalObjectByIndex(
+    fieldKeys = keyType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes -> stypes.singleElt()) match {
+    | Some(stype) -> FieldKey::allOfSType(keyExpr.pos, stype)
+    | _ -> Array[]
+    };
+    if (fieldKeys.isEmpty()) {
+      // Computed (non-literal) key: a named field can't be added, so this is an
+      // ordinary element write. Validate the value against the object's index
+      // via the shared element access (AKLValue = the setter direction), the
+      // same as writing through an index on any object.
+      elemType = this.getWithIndexType(
+        tcenv,
+        e1Pos,
+        tcenv.scope.get(local),
+        keyType,
+        keyExpr.pos,
+        AKLValue(),
+      );
+      this.checkSubType(
+        tcenv,
+        fieldType.pos,
+        "Type is not assignable to the index signature's value type",
+        fieldType,
+        elemType,
+        TSCode(2322),
+      );
+      fieldType
+    } else {
+      this.assignLocalObjectByKeys(
         tcenv,
         pos,
+        e1Pos,
         local,
         keyExpr,
         keyType,
         fieldType,
+        fieldKeys,
       )
     }
   }
@@ -3313,71 +3317,6 @@ extension class TypeChecker {
             TSCode(2322),
           )
         })
-      }
-    | _ ->
-      tcenv.error(
-        Array[(pos, "Internal error: local object is not an object")],
-        SKJSCode(9999),
-      )
-    };
-    fieldType
-  }
-
-  // Validates a computed-key assignment on a local object when the key
-  // can't be resolved to a single literal. Checks index signatures.
-  private fun assignLocalObjectByIndex(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    local: Name,
-    keyExpr: Expr,
-    keyType: TType,
-    fieldType: TType,
-  ): TType {
-    tcenv.scope
-      .get(local)
-      .getSTypes(tcenv.subst, this, Covariant())
-      .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _, _)) ->
-      fields = obj.maybeSingleBranch() match {
-      | Some(f) -> f
-      | None() ->
-        // A local object is single-branch by construction (un-annotated
-        // object-literal initializer grown only via single-branch inter).
-        tcenv.error(
-          Array[(pos, "Internal error: local object is not single-branch")],
-          SKJSCode(9999),
-        );
-        return fieldType
-      };
-      keyKind = keyType
-        .getSTypes(tcenv.subst, this, Covariant())
-        .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(TPrimValue(k, _, _)) -> Some(k)
-      | _ -> None()
-      };
-      matchingIndex = keyKind.flatMap(k ->
-        fields.nonSyntheticIndexForKeyKind(k)
-      );
-      matchingIndex match {
-      | Some(indexField) ->
-        this.checkSubType(
-          tcenv,
-          fieldType.pos,
-          "Type is not assignable to the index signature's value type",
-          fieldType,
-          indexField.set,
-          TSCode(2322),
-        )
-      | None() ->
-        tcenv.error(
-          Array[
-            (
-              keyExpr.pos,
-              "This computed property key must match an index signature on the object",
-            ),
-          ],
-          SKJSCode(2066),
-        )
       }
     | _ ->
       tcenv.error(
