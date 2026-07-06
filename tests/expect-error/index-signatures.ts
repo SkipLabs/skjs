@@ -128,6 +128,25 @@ function assignStringIndexToOptional(x: StringIndex): { a?: number } {
   return x;
 }
 
+// Accepted: reading the optional field yields `number | undefined`, which
+// covers everything the index can hold.
+function assignUndefinedIndexToOptional(x: {
+  [k: string]: number | undefined;
+}): { a?: number } {
+  return x;
+}
+
+// Rejected: the index can hold a string at "a", which a read of the
+// optional field would type as `number | undefined`. Note tsc accepts this
+// (it does not check target optional fields against the source index) and
+// is unsound as a result, so SKJS must not follow it.
+function assignStringValuedIndexToOptional(x: {
+  [k: string]: string | undefined;
+}): { a?: number } {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Test 8: Bracket assignment on indexed type
 ///////////////////////////////////////////////////////////////////////////////

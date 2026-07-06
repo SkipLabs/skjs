@@ -904,17 +904,57 @@ extension class TFields {
         indexFor(fields1, f2.name) match {
         | None() -> return STRecFieldsMissingField(f2, fields1, fields2)
         | Some(idx1) ->
-          TType::isSub(subst, tenv, idx1.get, f2.get) match {
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsIndexField(
-              err,
-              idx1,
-              f2,
-              FMKGetter(),
-              fields1,
-              fields2,
-            )
-          | STOk() ->
+          if (idx1.isSynthetic()) {
+            // Synthetic index: the sub is a fresh object literal with no
+            // spreads, so it provably lacks the key f2.name and the optional
+            // field imposes no read requirement of its own (reads yield
+            // undefined, included in the optional field type). Two checks
+            // remain:
+            //
+            // 1. Content check (non-committing): write capability already
+            //    granted to the literal's index by previous views must be
+            //    readable at this view's optional field type. Run on a saved
+            //    subst and rolled back so that this view's read type does NOT
+            //    grow the synthetic TVar — committing it would wrongly
+            //    conflict with the super's own index (e.g. an empty literal
+            //    vs `{ a?: number; [k: string]: never }`).
+            saved = subst.save();
+            f2type = TType::unionUndefined(subst, tenv, f2.get, f2.pos);
+            contentRes = TType::isSub(subst, tenv, idx1.get, f2type);
+            subst.restore(saved);
+            contentRes match {
+            | err @ STErrorOnTType _ ->
+              return STRecFieldsIndexField(
+                err,
+                idx1,
+                f2,
+                FMKGetter(),
+                fields1,
+                fields2,
+              )
+            | STOk() -> void
+            };
+            // 2. Write grant (committing, checked): a mutable optional field
+            //    lets this view write f2.set at the key, so that type becomes
+            //    readable content of the literal's index — later index views
+            //    must cover it. The isSub result must be checked because grow
+            //    is a no-op on a sealed TVar: there the check degenerates to
+            //    "grant covered by the sealed read bound", exactly the sound
+            //    requirement. Readonly fields (set = bottom) grant nothing.
+            if (!f2.set.isBottom()) {
+              TType::isSub(subst, tenv, f2.set, idx1.get) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsIndexField(
+                  err,
+                  idx1,
+                  f2,
+                  FMKSetter(),
+                  fields1,
+                  fields2,
+                )
+              | STOk() -> void
+              }
+            };
             TType::isSub(subst, tenv, f2.set, idx1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(
@@ -926,6 +966,36 @@ extension class TFields {
                 fields2,
               )
             | STOk() -> void
+            }
+          } else {
+            // f2 is optional (checked above), so reads through it yield
+            // f2.get | undefined — union undefined into the target like the
+            // matching-field path does, so an index whose value type
+            // includes undefined can satisfy the optional field.
+            f2type = TType::unionUndefined(subst, tenv, f2.get, f2.pos);
+            TType::isSub(subst, tenv, idx1.get, f2type) match {
+            | err @ STErrorOnTType _ ->
+              return STRecFieldsIndexField(
+                err,
+                idx1,
+                f2,
+                FMKGetter(),
+                fields1,
+                fields2,
+              )
+            | STOk() ->
+              TType::isSub(subst, tenv, f2.set, idx1.set) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsIndexField(
+                  err,
+                  idx1,
+                  f2,
+                  FMKSetter(),
+                  fields1,
+                  fields2,
+                )
+              | STOk() -> void
+              }
             }
           }
         }
