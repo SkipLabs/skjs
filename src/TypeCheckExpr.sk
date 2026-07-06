@@ -1680,18 +1680,11 @@ extension class TypeChecker {
             numberIndex => mergedNumberIndex,
             symbolIndex => mergedSymbolIndex,
           };
-          spreadTFields.call.each(_ ->
-            tcenv.notSupported(
-              spreadExpr.pos,
-              "call signature in spread object",
-            )
-          );
-          spreadTFields.new.each(_ ->
-            tcenv.notSupported(
-              spreadExpr.pos,
-              "constructor signature in spread object",
-            )
-          );
+          // The source's call/construct signatures are dropped: object spread
+          // copies only own enumerable properties, and a call/construct
+          // signature is not one. The merged result never carries them (an
+          // object literal populates no call/new), so there is nothing to do —
+          // matching TypeScript and JavaScript.
           continue
         | FDComputed(keyExpr, valueExpr) ->
           keyType = this.expr(tcenv, keyExpr, true);
