@@ -26,7 +26,9 @@ extension class TypeChecker {
     typedParams = sig.params.mapWithIndex((i, param) ->
       (param.name, paramTypes[i])
     );
-    !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
+    !this.retType = sig.retType.i1.map(rty ->
+      this.normalizeReturnType(subst, rty, sig.params)
+    );
     (this, tcenv, typedParams)
   }
 
@@ -204,8 +206,8 @@ extension class TypeChecker {
       fd,
       cgNode,
     );
+    funSig = this.getFunSig(subst.context, fd);
     if (this.retType is None()) {
-      funSig = this.getFunSig(subst.context, fd);
       subst.error(
         Array[
           (
@@ -283,6 +285,7 @@ extension class TypeChecker {
           TSCode(1183),
         )
       };
+      this.rejectTypePredicateOnBodiedSignature(subst, funSig.retType.i1);
       this.retType match {
       | None() -> void
       | Some(retType) ->
