@@ -13,9 +13,5 @@ function assignNamed(): void {
 
 function assignArrow(): void {
   const f = (x: number = 0): number => x;
-  // FIXME: SKJS gives the arrow's defaulted parameter the bare type
-  // `number` instead of `number | undefined` (unlike the named form
-  // above), so this assignment is wrongly rejected; tsc accepts it.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: (x?: number) => number = f;
 }
