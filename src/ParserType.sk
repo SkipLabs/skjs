@@ -375,6 +375,29 @@ extension class Parser {
     })
   }
 
+  // Parse the fields shared by every parameter: a leading rest marker, the
+  // name pattern, an optional `?` marker, and an optional `: <type>`.
+  mutable fun paramHeader(): (?PosRange, Pattern, ?PosRange, ?Type) {
+    isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
+      Some(this.lex.posRange(this.lex.next().fromSome()))
+    } else {
+      None()
+    };
+    name = this.pattern();
+    optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+      Some(this.lex.posRange(this.lex.next().fromSome()))
+    } else {
+      None()
+    };
+    type = if (this.lex.peekKind() is Some(TKColon())) {
+      _ = this.lex.next();
+      Some(this.type(0))
+    } else {
+      None()
+    };
+    (isRest, name, optional, type)
+  }
+
   mutable fun typeFunParams(): Array<TAFunParam> {
     if (this.lex.peekKind() is Some(TKCloseParen())) {
       _ = this.lex.next();
@@ -382,24 +405,8 @@ extension class Parser {
     };
     result = mutable Vector[];
     loop {
-      isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
-        Some(this.lex.posRange(this.lex.next().fromSome()))
-      } else {
-        None()
-      };
-      name = this.pattern();
-      qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-        Some(this.lex.posRange(this.lex.next().fromSome()))
-      } else {
-        None()
-      };
-      type = if (this.lex.peekKind() is Some(TKColon())) {
-        _ = this.lex.next();
-        Some(this.type(0))
-      } else {
-        None()
-      };
-      result.push(TAFunParam{isRest, name, optional => qm, type});
+      (isRest, name, optional, type) = this.paramHeader();
+      result.push(TAFunParam{isRest, name, optional, type});
       tokComma = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
       | Some(x) -> x
