@@ -456,7 +456,7 @@ base class TEnv{
 
   // The class's own type parameters, as type arguments applying the class
   // to itself (e.g. `class C<T>` -> `C<T>`).
-  private fun tparamsAsTArgs(tparams: Array<TypeParam>): Array<Type> {
+  private static fun tparamsAsTArgs(tparams: Array<TypeParam>): Array<Type> {
     tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])))
   }
 
@@ -467,7 +467,7 @@ base class TEnv{
     c: Class,
   ): TFuns {
     cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
-    retType = Type(pos, TAInst(className, this.tparamsAsTArgs(c.tparams)));
+    retType = Type(pos, TAInst(className, TEnv::tparamsAsTArgs(c.tparams)));
     tafun = TAFun(false, c.tparams, Array[], retType, cgNode);
     this.normalizeFun(tcenvb, pos, tafun)
   }
@@ -983,7 +983,7 @@ base class TEnv{
     retTypePos = className.pos;
     retType = Type(
       retTypePos,
-      TAInst(Name(retTypePos, className.value), this.tparamsAsTArgs(tparams)),
+      TAInst(Name(retTypePos, className.value), TEnv::tparamsAsTArgs(tparams)),
     );
     tafun = TAFun(false, tparams, sig.params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
