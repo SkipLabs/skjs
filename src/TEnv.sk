@@ -1086,8 +1086,9 @@ base class TEnv{
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
       TType::single(TObject::createCallWithPos(tfuns, pos))
-    | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
-      tafun = TAFun(false, clauses, params, retType, cgNode);
+    | TANew(Type(tyPos, tafun @ TAFun _)) ->
+      // The inner function type comes only from ParserType.typeFun, which
+      // always sets isMethod=false, so it can be normalized as-is.
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
       TType::single(TObject::createNew(tfuns, pos))
     | TANew _ ->
@@ -1712,7 +1713,7 @@ base class TEnv{
         };
         param.isRest match {
         | Some(restPos) ->
-          param.omittablePos() match {
+          param.optional match {
           | Some(optPos) ->
             tcenvb.error(
               Array[(optPos, "A rest parameter cannot be optional")],
