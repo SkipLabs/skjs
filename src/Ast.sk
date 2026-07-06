@@ -245,6 +245,21 @@ base class ParamBase{
   fun isOmittable(): Bool {
     this.omittablePos().isSome()
   }
+
+  // The parameter's declared type, or a fatal TS7006 when the annotation
+  // was omitted.
+  fun requiredType(): Type {
+    this.type match {
+    | Some(ty) -> ty
+    | None() ->
+      fatalError(
+        Array[
+          (this.name.pos, "A parameter must have an explicit type annotation"),
+        ],
+        TSCode(7006),
+      )
+    }
+  }
 }
 
 class Param{

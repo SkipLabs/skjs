@@ -98,16 +98,7 @@ extension class TypeChecker {
         )
       | None() -> void
       };
-      paramType = param.type match {
-      | None() ->
-        fatalError(
-          Array[
-            (param.pos, "A parameter must have an explicit type annotation"),
-          ],
-          TSCode(7006),
-        )
-      | Some(ty) -> this.normalize(tcenv.subst, ty)
-      };
+      paramType = this.normalize(tcenv.subst, param.requiredType());
       param.isRest.each(_ ->
         !paramType = TType::arrayToReadonlyArray(paramType)
       );
