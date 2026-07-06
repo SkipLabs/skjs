@@ -499,6 +499,85 @@ base class TEnv{
     this
   }
 
+  // Normalizes a function/method's return type annotation. The top-level `x
+  // is T` type-predicate form is accepted here (unlike in the general
+  // recursive `normalize`, whose own TAIs handling always rejects, covering
+  // any nested position). Whether this is legal on the enclosing
+  // declaration (only on a bodyless signature — see callers of
+  // rejectTypePredicateOnBodiedSignature) is deliberately NOT checked here:
+  // this return-type normalization must stay independent of whether the
+  // declaration has a body, since it feeds a signature that's cached
+  // separately from — and read by callers regardless of — the body, and
+  // depending on body content here would incorrectly propagate body-only
+  // edits to those callers under incremental checking. `params` is consulted
+  // only inside the TAIs branch, so the common (non-predicate) return type
+  // costs nothing.
+  fun normalizeReturnType(
+    tcenvb: mutable TCEnvBase,
+    rty: Type,
+    params: Array<ParamBase>,
+  ): TType {
+    rty.value match {
+    | TAIs(lhs, rhs) ->
+      // The subject must name an actual parameter of the enclosing
+      // function, or be `this` — nothing else (unlike a full `normalize`
+      // call, which would also accept any other valid type expression,
+      // e.g. `true is ...`).
+      // TODO: model the narrowing effect precisely.
+      isValidSubject = lhs.value match {
+      | TAInst(Name(_, "this"), args) if (args.isEmpty()) -> true
+      | TAInst(name, args) if (args.isEmpty()) ->
+        params.any(p ->
+          p.name.value match {
+          | PVar(n) -> n.value == name.value
+          | _ -> false
+          }
+        )
+      | _ -> false
+      };
+      if (!isValidSubject) {
+        fatalError(
+          Array[
+            (
+              lhs.pos,
+              "A type predicate's subject must be a parameter of the enclosing function, or 'this'",
+            ),
+          ],
+          SKJSCode(9031),
+        )
+      };
+      _ = this.normalize(tcenvb, rhs);
+      TType::single(TPrimValue::boolean(rty.pos))
+    | _ -> this.normalize(tcenvb, rty)
+    }
+  }
+
+  // A type predicate return type is only accepted on a bodyless
+  // (ambient/interface) signature, since SKJS never checks it against a
+  // real implementation. Called from funDef/method-checking, right where
+  // the body is already legitimately read (to check its statements) —
+  // deliberately NOT from normalizeReturnType/funDefSetup, which must stay
+  // independent of body content for incremental checking (see
+  // normalizeReturnType's doc comment).
+  fun rejectTypePredicateOnBodiedSignature(
+    tcenvb: mutable TCEnvBase,
+    retTypeAst: ?Type,
+  ): void {
+    retTypeAst match {
+    | Some(Type(pos, TAIs _)) ->
+      tcenvb.error(
+        Array[
+          (
+            pos,
+            "A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature",
+          ),
+        ],
+        SKJSCode(9032),
+      )
+    | _ -> void
+    }
+  }
+
   private fun processClassSetup(
     subst: mutable Subst,
     visitedClasses: SortedSet<String>,
@@ -1011,7 +1090,7 @@ base class TEnv{
     | (_, Some(x)) -> x
     };
     tafun = TAFun(isMethod, sig.tparams, sig.params, retType, cgNode);
-    this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
+    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, true)
   }
 
   // Normalizes a type annotation.
@@ -1075,11 +1154,20 @@ base class TEnv{
         SKJSCode(9013),
       )
     | TAIs _ ->
+      // A type predicate (`x is T`) is only accepted as the top-level
+      // return type of a declared (bodyless) function or method signature —
+      // see normalizeReturnType, called from funDefSetup/funDecl instead of
+      // this general recursive normalize for that position. Anywhere else
+      // (nested in another type, or on a signature with a body, which SKJS
+      // cannot verify the predicate against) is rejected.
       fatalError(
         Array[
-          (pos, "Type predicates ('x is T') are not yet supported by SKJS"),
+          (
+            pos,
+            "A type predicate ('x is T') is only supported as the top-level return type of a declared function or method signature",
+          ),
         ],
-        SKJSCode(9015),
+        SKJSCode(9032),
       )
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
@@ -1355,13 +1443,25 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
-    | TAGet _ ->
-      fatalError(
-        Array[
-          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
-        ],
-        SKJSCode(9021),
-      )
+    | TAGet(tyObj, tyKey) ->
+      tyKey.value match {
+      | TAPrim(TPKNum()) ->
+        // T[number]: extract element type.  TVars are expanded to their
+        // constraints so e.g. `N extends string[]` resolves to `string`.
+        subst = Subst::mcreate(tcenvb);
+        objType = this.normalize(tcenvb, tyObj);
+        this.numberIndexedType(subst, objType, pos)
+      | _ ->
+        fatalError(
+          Array[
+            (
+              pos,
+              "Indexed access types ('T[K]') are not yet supported by SKJS",
+            ),
+          ],
+          SKJSCode(9021),
+        )
+      }
     }
   }
 
@@ -1634,10 +1734,18 @@ base class TEnv{
     }
   }
 
+  // isDeclaredSignature: true only when tafun is a named function/method
+  // declaration's own signature (from funDecl) — the only case where a
+  // top-level `x is T` return type is accepted (see normalizeReturnType).
+  // False (the default) for every other TAFun position: constructor
+  // synthesis, callable/newable object types, and TAFun appearing as a
+  // nested type annotation (e.g. a type alias or callback parameter type),
+  // where `x is T` is never legal.
   fun normalizeFun(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     tafun: TAFun,
+    isDeclaredSignature: Bool = false,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -1761,7 +1869,11 @@ base class TEnv{
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
-        this.normalize(tcenvb, retType),
+        if (isDeclaredSignature) {
+          this.normalizeReturnType(tcenvb, retType, params)
+        } else {
+          this.normalize(tcenvb, retType)
+        },
         CGNodes::singleton(cgNode),
       );
       if (isMethod) {
@@ -2151,6 +2263,70 @@ base class TEnv{
     } else {
       PrimLiterals::ofSet(symbols, pos).each(symLits ->
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
+      )
+    };
+    TType::unionN(subst, this, pos, resultTys)
+  }
+
+  // `T[number]`: the element type of T when T is an array or array-constrained
+  // type variable.  Expands TVars to their constraints so that `N extends
+  // string[]` resolves to `string`.  Returns the union of all numberIndex
+  // element types across the clauses of the expanded object type.
+  // TODO: generalize to `T[K]` for any `K: TPrimValue` (e.g. `string`), by
+  // parameterizing this over the index kind (numberIndex/stringIndex/
+  // symbolIndex) instead of hardcoding numberIndex.
+  private fun numberIndexedType(
+    subst: mutable Subst,
+    objType: TType,
+    pos: PosRange,
+  ): TType {
+    clauses = objType.expandToClauses(subst, this, Covariant());
+    // Clauses with `vars` (TParams) are OK: vars are universally-quantified
+    // type parameters; their `stypes` still carry concrete constraint info.
+    // Only reject when `stypes is None()` (top — no type information at all).
+    if (clauses.any(clause -> clause.stypes is None())) {
+      fatalError(
+        Array[
+          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9021),
+      )
+    };
+    resultTys = mutable Vector[];
+    for (clause in clauses) {
+      stypes = Vector::mcreateFromItems(clause.stypes.fromSome());
+      while (!stypes.isEmpty()) {
+        stype = stypes.pop();
+        stype match {
+        | obj @ TObject _ ->
+          for (fields in obj.getAllFields()) {
+            fields.numberIndex.each(nIdx -> resultTys.push(nIdx.get));
+            // A number key also reaches any named field whose name a
+            // number key can produce (e.g. `{0: string}[number]`), and
+            // falls back to the string index when there is no number
+            // index (JS coerces a number key to a string for lookup).
+            for (field in fields.fields.values()) {
+              if (isJSNumberKeyName(field.name.value)) {
+                resultTys.push(field.get)
+              }
+            };
+            if (fields.numberIndex.isNone()) {
+              fields.stringIndex.each(sIdx -> resultTys.push(sIdx.get))
+            }
+          }
+        | prim @ TPrimValue _ ->
+          expanded = this.newObject(subst, prim.asClassName(), Array[]);
+          stypes.push(expanded)
+        | TPrimUnit _ -> void
+        }
+      }
+    };
+    if (resultTys.isEmpty()) {
+      fatalError(
+        Array[
+          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9021),
       )
     };
     TType::unionN(subst, this, pos, resultTys)
