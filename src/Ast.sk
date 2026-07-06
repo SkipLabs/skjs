@@ -615,7 +615,13 @@ base class TupleEltType uses XXHashable {
 // <ta-fun-param> ::= <ta-param-names> "?"? : <type>
 /***************************************************************************/
 
-class TAFunParam extends ParamBase
+class TAFunParam extends ParamBase {
+  // A function-type parameter is omittable exactly when it carries the `?`
+  // marker (function types have no default values).
+  fun isOmittable(): Bool {
+    this.optional.isSome()
+  }
+}
 
 /***************************************************************************/
 // Modifiers
