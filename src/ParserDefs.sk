@@ -68,7 +68,10 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
       | Some(x) -> x
       };
-      Name(this.lex.posRange2(tokSub, nbrTok), "-" + this.getNumber(nbrTok))
+      Name(
+        this.lex.posRange2(tokSub, nbrTok),
+        negateJSNumberLiteral(this.getNumber(nbrTok)),
+      )
     | _ ->
       this.error(
         this.lex.posEnd(),

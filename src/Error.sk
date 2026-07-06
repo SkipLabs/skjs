@@ -298,6 +298,66 @@ class ExpectedTokens(kinds: Array<TokenKind>) extends ParsingKind {
   }
   const code: ErrorCode = TSCode(1005);
 }
+class BinaryDigitExpected() extends ParsingKind {
+  fun toString(): String {
+    "Binary digit expected"
+  }
+  const code: ErrorCode = TSCode(1177);
+}
+class OctalDigitExpected() extends ParsingKind {
+  fun toString(): String {
+    "Octal digit expected"
+  }
+  const code: ErrorCode = TSCode(1178);
+}
+class HexDigitExpected() extends ParsingKind {
+  fun toString(): String {
+    "Hexadecimal digit expected"
+  }
+  const code: ErrorCode = TSCode(1125);
+}
+class DigitExpected() extends ParsingKind {
+  fun toString(): String {
+    "Digit expected"
+  }
+  const code: ErrorCode = TSCode(1124);
+}
+class OctalLiteralsNotAllowed(suggestion: String) extends ParsingKind {
+  fun toString(): String {
+    `Octal literals are not allowed. Use the syntax '${this.suggestion}'`
+  }
+  const code: ErrorCode = TSCode(1121);
+}
+class LeadingZeroDecimalNotAllowed() extends ParsingKind {
+  fun toString(): String {
+    "Decimals with leading zeros are not allowed"
+  }
+  const code: ErrorCode = TSCode(1489);
+}
+class NumericSeparatorsNotAllowedHere() extends ParsingKind {
+  fun toString(): String {
+    "Numeric separators are not allowed here"
+  }
+  const code: ErrorCode = TSCode(6188);
+}
+class MultipleNumericSeparators() extends ParsingKind {
+  fun toString(): String {
+    "Multiple consecutive numeric separators are not permitted"
+  }
+  const code: ErrorCode = TSCode(6189);
+}
+class BigIntLiteralMustBeInteger() extends ParsingKind {
+  fun toString(): String {
+    "A bigint literal must be an integer"
+  }
+  const code: ErrorCode = TSCode(1353);
+}
+class InvalidNumericLiteral() extends ParsingKind {
+  fun toString(): String {
+    "Invalid numeric literal"
+  }
+  const code: ErrorCode = SKJSCode(1008);
+}
 class ExpectedStr(str: String) extends ParsingKind {
   fun toString(): String {
     `${this.str} expected`

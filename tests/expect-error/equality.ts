@@ -201,10 +201,9 @@ function unknownOperand(x: unknown, y: number): boolean {
   return x === y;
 }
 
-// FIXME: TS knows 1e3 and 1000 are the same value; SKJS compares numeric
-// literal types textually (they are already mutually unassignable in SKJS)
+// 1e3 and 1000 normalize to the same numeric literal, so this is always true.
 function numericNotation(x: 1e3, y: 1000): boolean {
-  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
+  // @skjs-expect-warning This comparison is always true because the operands always hold the same single value
   return x === y;
 }
 

@@ -1301,33 +1301,20 @@ base class TPrimValueKind uses XXHashable, Orderable {
     }
   }
 
-  // Whether `literal` (a value as stored in PrimLiterals for this kind) is one
-  // of JavaScript's falsy values: `false`, `0`/`-0`/`NaN`, `0n`, `""`. Symbols
-  // are always truthy.
+  // Whether `literal` (a value as stored in PrimLiterals for this kind) is
+  // one of JavaScript's falsy values: `false`, `0`/`NaN`, `0n`, `""`.
+  // Symbols are always truthy. Numeric and bigint literal names are
+  // normalized when literal types are built (getNumber/getBigInt, with
+  // signs applied through negateJSNumberLiteral — issue #655), so zero has
+  // exactly one spelling per kind: "0" and "0n". Beyond-precision number
+  // literals keep their spelled form, but those can never be zero.
   fun isFalsy(literal: String): Bool {
     this match {
     | TBool() -> literal == "false"
     | TString() -> literal == ""
-    | TNum() -> literal == "NaN" || TPrimValueKind::isZeroSpelling(literal)
-    // bigint literals carry a trailing `n` (e.g. `0n`, `-0x0n`).
-    | TBigInt() -> TPrimValueKind::isZeroSpelling(literal.stripSuffix("n"))
+    | TNum() -> literal == "NaN" || literal == "0"
+    | TBigInt() -> literal == "0n"
     | TSymbol() -> false
-    }
-  }
-
-  // Whether `literal` is a recognized spelling of numeric zero, with an optional
-  // sign: decimal `0` and the hex/binary/octal single zeros `0x0`/`0b0`/`0o0`
-  // (either case). Matched against the raw lexeme, so it allocates nothing. This
-  // is a stopgap — numeric/bigint literal types store the raw source lexeme, so
-  // zero has unbounded spellings we do not catch here (`0.0`, `0e0`, `0_0`,
-  // `0x00`, ...). The proper fix is to normalize numeric literals when literal
-  // types are built; see https://github.com/SkipLabs/skjs/issues/655 .
-  static fun isZeroSpelling(literal: String): Bool {
-    literal match {
-    | "0" | "-0" | "0x0" | "0X0" | "-0x0" | "-0X0" | "0b0" | "0B0" | "-0b0"
-    | "-0B0" | "0o0" | "0O0" | "-0o0" | "-0O0" ->
-      true
-    | _ -> false
     }
   }
 }
