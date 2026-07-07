@@ -1768,6 +1768,19 @@ class TField{
     this with {name}
   }
 
+  // Structural equality ignoring the declaration position. TType's own
+  // equality is already position-insensitive (it compares hashes over the
+  // type structure), so this only skips the field's `pos`. Used to
+  // deduplicate spread-distribution states that differ solely in where their
+  // source types were declared.
+  fun equalsIgnoringPos(other: TField): Bool {
+    this.name == other.name &&
+      this.isOptional == other.isOptional &&
+      this.get == other.get &&
+      this.set == other.set &&
+      this.access == other.access
+  }
+
   fun mapType(f: TType -> TType): TField {
     this with {get => f(this.get), set => f(this.set)}
   }

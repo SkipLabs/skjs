@@ -35,7 +35,7 @@ class ObjectSpreadState{
   fields: SortedMap<FieldNameString, TField>,
   symbolFields: SortedMap<FieldNameString, TField>,
   tIndexes: TIndexes,
-} uses XXHashable, Orderable {
+} uses XXHashable {
   const empty: ObjectSpreadState = ObjectSpreadState{
     fields => SortedMap[],
     symbolFields => SortedMap[],
@@ -52,6 +52,58 @@ class ObjectSpreadState{
     newSymbolFields = this.symbolFields;
     !newSymbolFields[field.name] = field;
     this with {symbolFields => newSymbolFields}
+  }
+
+  // Structural equality ignoring field declaration positions, used to
+  // deduplicate the distribution worklist. The derived == is TField.pos-
+  // sensitive, so semantically-identical states built from same-shaped but
+  // separately-declared source types would never deduplicate (and, since the
+  // hash is position-INsensitive, would pile into one linearly-rescanned hash
+  // bucket) — inflating the worklist toward the branch cap for no semantic
+  // difference. Keeping the first state of an equivalence class only affects
+  // which positions later diagnostics point at.
+  fun dedupEquals(other: ObjectSpreadState): Bool {
+    static::fieldMapsEqualIgnoringPos(this.fields, other.fields) &&
+      static::fieldMapsEqualIgnoringPos(
+        this.symbolFields,
+        other.symbolFields,
+      ) &&
+      static::optFieldsEqualIgnoringPos(
+        this.tIndexes.stringIndex,
+        other.tIndexes.stringIndex,
+      ) &&
+      static::optFieldsEqualIgnoringPos(
+        this.tIndexes.numberIndex,
+        other.tIndexes.numberIndex,
+      ) &&
+      static::optFieldsEqualIgnoringPos(
+        this.tIndexes.symbolIndex,
+        other.tIndexes.symbolIndex,
+      )
+  }
+
+  private static fun fieldMapsEqualIgnoringPos(
+    m1: SortedMap<FieldNameString, TField>,
+    m2: SortedMap<FieldNameString, TField>,
+  ): Bool {
+    if (m1.size() != m2.size()) return false;
+    it2 = m2.items();
+    for ((k1, v1) in m1.items()) {
+      it2.next() match {
+      | Some((k2, v2)) ->
+        if (!(k1 == k2 && v1.equalsIgnoringPos(v2))) return false
+      | None() -> return false
+      }
+    };
+    true
+  }
+
+  private static fun optFieldsEqualIgnoringPos(f1: ?TField, f2: ?TField): Bool {
+    (f1, f2) match {
+    | (None(), None()) -> true
+    | (Some(a), Some(b)) -> a.equalsIgnoringPos(b)
+    | _ -> false
+    }
   }
 
   // Finish a branch: add the synthetic string/symbol index type variables that
@@ -1778,7 +1830,7 @@ extension class TypeChecker {
               bucket = seenByHash.getOrAdd(merged.xxhash().value, () ->
                 mutable Vector[]
               );
-              if (bucket.all(seen -> seen != merged)) {
+              if (bucket.all(seen -> !seen.dedupEquals(merged))) {
                 bucket.push(merged);
                 newStates.push(merged);
                 if (newStates.size() > kMaxObjectBranches) {
