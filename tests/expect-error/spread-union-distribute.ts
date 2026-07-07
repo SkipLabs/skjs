@@ -56,3 +56,43 @@ function fieldBefore(
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { k: true, ...x };
 }
+
+// 14 distinct two-branch union spreads would distribute to 2^14 branches,
+// exceeding the branch cap: SKJS rejects the literal ("too complex") rather than
+// materialize the exponential union (it does not attempt tsc's graceful
+// fallback). Converging spreads like `{ ...x, ...x }` are deduplicated and
+// stay bounded, so they are unaffected.
+function tooManyUnionSpreads(
+  p0: { a0: 0 } | { b0: 1 },
+  p1: { a1: 0 } | { b1: 1 },
+  p2: { a2: 0 } | { b2: 1 },
+  p3: { a3: 0 } | { b3: 1 },
+  p4: { a4: 0 } | { b4: 1 },
+  p5: { a5: 0 } | { b5: 1 },
+  p6: { a6: 0 } | { b6: 1 },
+  p7: { a7: 0 } | { b7: 1 },
+  p8: { a8: 0 } | { b8: 1 },
+  p9: { a9: 0 } | { b9: 1 },
+  p10: { a10: 0 } | { b10: 1 },
+  p11: { a11: 0 } | { b11: 1 },
+  p12: { a12: 0 } | { b12: 1 },
+  p13: { a13: 0 } | { b13: 1 },
+): void {
+  // @skjs-expect-error This object literal spreads too many union-typed sources; the distributed union is too complex to represent
+  const o = {
+    ...p0,
+    ...p1,
+    ...p2,
+    ...p3,
+    ...p4,
+    ...p5,
+    ...p6,
+    ...p7,
+    ...p8,
+    ...p9,
+    ...p10,
+    ...p11,
+    ...p12,
+    ...p13,
+  };
+}

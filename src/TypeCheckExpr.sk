@@ -7,6 +7,33 @@ base class AccessKind uses XXHashable {
   | AKOptionalChain()
 }
 
+// The stdlib gives SortedMap Hashable/Equality/Orderable but not XXHashable;
+// add it (when keys and values are XXHashable) so records that accumulate into
+// SortedMaps — e.g. ObjectSpreadState — can derive XXHashable. Folds over the
+// entries in sorted order, so equal maps hash equal.
+extension base class .SortedMap uses XXHashable[K: XXHashable, V: XXHashable] {
+  fun xxhash[K: XXHashable, V: XXHashable](): XXHash {
+    XXHash(
+      this.reduce(
+        (h, k, v) ->
+          XXHash64.xxHash64(
+            XXHash64.xxHash64(h, k.xxhash().value),
+            v.xxhash().value,
+          ),
+        -1,
+      ),
+    )
+  }
+}
+
+// Cap on the number of distinct branches a distributed object spread may
+// produce. Distribution cross-products the source unions, so this bounds the
+// checker's memory: past it we reject the literal ("union too complex") rather
+// than materialize an exponential number of branches. A sound graceful
+// degradation (falling back to a collapsed open object) is tracked in
+// SkipLabs/skjs#747.
+const kMaxObjectSpreadBranches: Int = 10000;
+
 // Accumulator for one prospective branch of an object literal under
 // construction: the named/symbol fields written so far plus the index
 // signatures. The literal is built by threading a worklist of these through the
@@ -16,7 +43,7 @@ class ObjectSpreadState{
   fields: SortedMap<FieldNameString, TField>,
   symbolFields: SortedMap<FieldNameString, TField>,
   tIndexes: TIndexes,
-} {
+} uses XXHashable, Orderable {
   const empty: ObjectSpreadState = ObjectSpreadState{
     fields => SortedMap[],
     symbolFields => SortedMap[],
@@ -1735,6 +1762,12 @@ extension class TypeChecker {
               }
             }
           };
+          // Cross-product the worklist with the source branches, then dedup
+          // structurally-identical results so converging spreads (e.g.
+          // `{ ...x, ...x }`) stay bounded. The cap on the pre-dedup product
+          // rejects a literal whose distributed union would blow up (kept small
+          // for converging cases because the incoming worklist is already
+          // deduped).
           newStates = mutable Vector[];
           for (state in states) {
             for (branch in sourceBranches) {
@@ -1746,10 +1779,31 @@ extension class TypeChecker {
                   branch,
                   spreadExpr.pos,
                 ),
-              )
+              );
+              if (newStates.size() > kMaxObjectSpreadBranches) {
+                fatalError(
+                  Array[
+                    (
+                      pos,
+                      "This object literal spreads too many union-typed sources; the distributed union is too complex to represent",
+                    ),
+                  ],
+                  TSCode(2590),
+                )
+              }
             }
           };
-          !states = newStates;
+          !states = mutable Vector[];
+          seenByHash = mutable Map<Int, mutable Vector<ObjectSpreadState>>[];
+          for (state in newStates) {
+            bucket = seenByHash.getOrAdd(state.xxhash().value, () ->
+              mutable Vector[]
+            );
+            if (bucket.all(seen -> seen != state)) {
+              bucket.push(state);
+              states.push(state)
+            }
+          };
           // The source's call/construct signatures are dropped: object spread
           // copies only own enumerable properties, and a call/construct
           // signature is not one. The merged result never carries them (an

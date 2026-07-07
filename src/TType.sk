@@ -1876,7 +1876,7 @@ base class TIndexesBase protected {
   }
 }
 
-class TIndexes{} extends TIndexesBase {
+class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
   const empty: TIndexes = TIndexes{};
 
   // Split indexes by key kind and merge duplicates per kind.
