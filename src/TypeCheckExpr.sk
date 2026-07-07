@@ -1766,48 +1766,44 @@ extension class TypeChecker {
               }
             }
           };
-          // Cross-product the worklist with the source branches, then dedup
-          // structurally-identical results so converging spreads (e.g.
-          // `{ ...x, ...x }`) stay bounded. The cap on the pre-dedup product
-          // rejects a literal whose distributed union would blow up (kept small
-          // for converging cases because the incoming worklist is already
-          // deduped).
+          // Cross-product the worklist with the source branches, deduplicating
+          // structurally-identical results at push time so converging spreads
+          // (e.g. `{ ...x, ...x }`, or a final spread whose branches override
+          // every discriminating field) count only DISTINCT branches toward
+          // the cap; only a literal whose deduplicated distributed union would
+          // exceed the cap is rejected ("too complex").
           newStates = mutable Vector[];
+          seenByHash = mutable Map<Int, mutable Vector<ObjectSpreadState>>[];
           for (state in states) {
             for (branch in sourceBranches) {
-              newStates.push(
-                ObjectSpreadState::merge(
-                  tcenv.subst,
-                  this,
-                  state,
-                  branch,
-                  spreadExpr.pos,
-                ),
+              merged = ObjectSpreadState::merge(
+                tcenv.subst,
+                this,
+                state,
+                branch,
+                spreadExpr.pos,
               );
-              if (newStates.size() > kMaxObjectSpreadBranches) {
-                fatalError(
-                  Array[
-                    (
-                      pos,
-                      "The object spread distributes over too many union branches; the result is too complex to represent",
-                    ),
-                  ],
-                  TSCode(2590),
-                )
+              bucket = seenByHash.getOrAdd(merged.xxhash().value, () ->
+                mutable Vector[]
+              );
+              if (bucket.all(seen -> seen != merged)) {
+                bucket.push(merged);
+                newStates.push(merged);
+                if (newStates.size() > kMaxObjectSpreadBranches) {
+                  fatalError(
+                    Array[
+                      (
+                        pos,
+                        "The object spread distributes over too many union branches; the result is too complex to represent",
+                      ),
+                    ],
+                    TSCode(2590),
+                  )
+                }
               }
             }
           };
-          !states = mutable Vector[];
-          seenByHash = mutable Map<Int, mutable Vector<ObjectSpreadState>>[];
-          for (state in newStates) {
-            bucket = seenByHash.getOrAdd(state.xxhash().value, () ->
-              mutable Vector[]
-            );
-            if (bucket.all(seen -> seen != state)) {
-              bucket.push(state);
-              states.push(state)
-            }
-          };
+          !states = newStates;
           // The source's call/construct signatures are dropped: object spread
           // copies only own enumerable properties, and a call/construct
           // signature is not one. The merged result never carries them (an

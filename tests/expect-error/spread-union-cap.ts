@@ -1,9 +1,8 @@
-// The branch cap is currently checked on the raw pre-dedup cross-product:
-// two 100-branch spreads legally build a 10000-state worklist, and a final
-// 2-branch spread whose branches override every discriminating field would
-// deduplicate to just 2 states — but the pre-dedup product 10000 * 2 exceeds
-// the cap, so the literal is spuriously rejected. TypeScript accepts.
-// Pinned to the current behavior.
+// The branch cap counts deduplicated states: two 100-branch spreads legally
+// build a 10000-state worklist, and a final 2-branch spread whose branches
+// override every discriminating field deduplicates to just 2 states — under
+// the cap, so the literal is accepted (as in TypeScript) even though the raw
+// cross-product is 10000 * 2.
 type UA =
   | { a: 0 }
   | { a: 1 }
@@ -208,6 +207,5 @@ type UB =
   | { b: 99 };
 type UL = { a: 0; b: 0; x: 1 } | { a: 0; b: 0; x: 2 };
 function convergingFinalSpread(pa: UA, pb: UB, pl: UL): void {
-  // @skjs-expect-error The object spread distributes over too many union branches; the result is too complex to represent
   const o = { ...pa, ...pb, ...pl };
 }
