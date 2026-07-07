@@ -7,6 +7,279 @@ base class AccessKind uses XXHashable {
   | AKOptionalChain()
 }
 
+// Accumulator for one prospective branch of an object literal under
+// construction: the named/symbol fields written so far plus the index
+// signatures. The literal is built by threading a worklist of these through the
+// field descriptors; distributing a spread over a union-typed source fans the
+// worklist out — one state per source branch (SkipLabs/skjs#714).
+class ObjectSpreadState{
+  fields: SortedMap<FieldNameString, TField>,
+  symbolFields: SortedMap<FieldNameString, TField>,
+  tIndexes: TIndexes,
+} {
+  const empty: ObjectSpreadState = ObjectSpreadState{
+    fields => SortedMap[],
+    symbolFields => SortedMap[],
+    tIndexes => TIndexes::empty,
+  };
+
+  fun withField(field: TField): ObjectSpreadState {
+    newFields = this.fields;
+    !newFields[field.name] = field;
+    this with {fields => newFields}
+  }
+
+  fun withSymbolField(field: TField): ObjectSpreadState {
+    newSymbolFields = this.symbolFields;
+    !newSymbolFields[field.name] = field;
+    this with {symbolFields => newSymbolFields}
+  }
+
+  // Finish a branch: add the synthetic string/symbol index type variables that
+  // let a fresh object literal be assigned to indexed types via subtyping (they
+  // are invisible to field resolution), then build the TFields.
+  fun toTFields(subst: mutable Subst, pos: PosRange): TFields {
+    tIndexes = this.tIndexes;
+    if (tIndexes.stringIndex.isNone()) {
+      !tIndexes.stringIndex = Some(TField::createSyntheticIndex(subst, pos))
+    };
+    if (tIndexes.symbolIndex.isNone()) {
+      !tIndexes.symbolIndex = Some(TField::createSyntheticIndex(subst, pos))
+    };
+    TFields::createFromSorted{
+      fields => this.fields,
+      symbolFields => this.symbolFields,
+      tIndexes,
+      isArray => Some(false),
+    }
+  }
+
+  // Merge an object-spread source branch into this state. Pure (no diagnostics),
+  // so it is safe to call once per (state, source branch) pair when distributing
+  // a spread. Sound spread typing:
+  //   - a non-optional source field wins (replaces existing);
+  //   - otherwise keep the existing optionality, union the get type with the
+  //     source's contribution (optional field / covering index / Top);
+  //   - always read via the getter (spread copies values through getters).
+  static fun merge(
+    subst: mutable Subst,
+    tenv: TEnv,
+    state: ObjectSpreadState,
+    branch: TFields,
+    pos: PosRange,
+  ): ObjectSpreadState {
+    newFields = SortedMap<FieldNameString, TField>[];
+    for (existingField in state.fields) {
+      branch.fields.maybeGet(existingField.name) match {
+      | Some(spreadField) if (!spreadField.isOptional) ->
+        !newFields[spreadField.name] = TField::create{
+          pos => spreadField.pos,
+          name => spreadField.name.value,
+          isOptional => false,
+          isReadonly => None(),
+          type => spreadField.get,
+          access => FAPublic(),
+        }
+      | optSpreadField ->
+        spreadGet = optSpreadField match {
+        | Some(sf) -> sf.get
+        | None() ->
+          branch.indexForFieldName(existingField.name.value) match {
+          | Some(idx) -> idx.get
+          | None() -> TType::top(pos)
+          }
+        };
+        mergedGet = TType::union(subst, tenv, existingField.get, spreadGet);
+        !newFields[existingField.name] = TField::create{
+          pos => existingField.pos,
+          name => existingField.name.value,
+          isOptional => existingField.isOptional,
+          isReadonly => None(),
+          type => mergedGet,
+          access => FAPublic(),
+        }
+      }
+    };
+    for (spreadField in branch.fields) {
+      if (!newFields.containsKey(spreadField.name)) {
+        fieldGet = if (spreadField.isOptional) {
+          state.tIndexes.indexForFieldName(spreadField.name.value) match {
+          | Some(idx) -> TType::union(subst, tenv, idx.get, spreadField.get)
+          | None() -> spreadField.get
+          }
+        } else {
+          spreadField.get
+        };
+        !newFields[spreadField.name] = TField::create{
+          pos => spreadField.pos,
+          name => spreadField.name.value,
+          isOptional => spreadField.isOptional,
+          isReadonly => None(),
+          type => fieldGet,
+          access => FAPublic(),
+        }
+      }
+    };
+    newSymbolFields = SortedMap<FieldNameString, TField>[];
+    for (existingField in state.symbolFields) {
+      branch.symbolFields.maybeGet(existingField.name) match {
+      | Some(spreadField) if (!spreadField.isOptional) ->
+        !newSymbolFields[spreadField.name] = TField::create{
+          pos => spreadField.pos,
+          name => spreadField.name.value,
+          isOptional => false,
+          isReadonly => None(),
+          type => spreadField.get,
+          access => FAPublic(),
+        }
+      | optSpreadField ->
+        spreadGet = optSpreadField match {
+        | Some(sf) -> sf.get
+        | None() ->
+          branch.symbolIndex match {
+          | Some(idx) -> idx.get
+          | None() -> TType::top(pos)
+          }
+        };
+        mergedGet = TType::union(subst, tenv, existingField.get, spreadGet);
+        !newSymbolFields[existingField.name] = TField::create{
+          pos => existingField.pos,
+          name => existingField.name.value,
+          isOptional => existingField.isOptional,
+          isReadonly => None(),
+          type => mergedGet,
+          access => FAPublic(),
+        }
+      }
+    };
+    for (spreadField in branch.symbolFields) {
+      if (!newSymbolFields.containsKey(spreadField.name)) {
+        fieldGet = if (spreadField.isOptional) {
+          state.tIndexes.symbolIndex match {
+          | Some(idx) -> TType::union(subst, tenv, idx.get, spreadField.get)
+          | None() -> spreadField.get
+          }
+        } else {
+          spreadField.get
+        };
+        !newSymbolFields[spreadField.name] = TField::create{
+          pos => spreadField.pos,
+          name => spreadField.name.value,
+          isOptional => spreadField.isOptional,
+          isReadonly => None(),
+          type => fieldGet,
+          access => FAPublic(),
+        }
+      }
+    };
+    if (
+      state.tIndexes.numberIndex.isSome() &&
+      state.tIndexes.stringIndex.isNone()
+    ) {
+      invariant_violation(
+        "Spread with existing number index but no string index",
+      );
+    };
+    spreadStrIdx = branch.stringIndex.map(f -> f.get).default(TType::top(pos));
+    mergedNumberIndex = (
+      state.tIndexes.numberIndex,
+      state.tIndexes.stringIndex,
+      branch.numberIndex,
+    ) match {
+    | (None(), _, None()) -> None()
+    | (None(), None(), Some(spreadNumIdx)) ->
+      Some(
+        TField::create{
+          pos => spreadNumIdx.pos,
+          name => spreadNumIdx.name.value,
+          isOptional => true,
+          isReadonly => None(),
+          type => spreadNumIdx.get,
+          access => FAPublic(),
+        },
+      )
+    | (None(), Some(existingIdx), spreadNumIdx @ Some _)
+    | (Some(existingIdx), _, spreadNumIdx) ->
+      type = TType::union(
+        subst,
+        tenv,
+        existingIdx.get,
+        spreadNumIdx.map(f -> f.get).default(spreadStrIdx),
+      );
+      Some(
+        TField::create{
+          pos => existingIdx.pos,
+          name => existingIdx.name.value,
+          isOptional => true,
+          isReadonly => None(),
+          type,
+          access => FAPublic(),
+        },
+      )
+    };
+    mergedStringIndex = Some(
+      state.tIndexes.stringIndex match {
+      | None() ->
+        TField::create{
+          pos => branch.stringIndex.map(f -> f.pos).default(pos),
+          name => branch.stringIndex
+            .map(f -> f.name.value)
+            .default("SKJS_ObjectSpread"),
+          isOptional => true,
+          isReadonly => None(),
+          type => spreadStrIdx,
+          access => FAPublic(),
+        }
+      | Some(existingIdx) ->
+        type = TType::union(subst, tenv, existingIdx.get, spreadStrIdx);
+        TField::create{
+          pos => existingIdx.pos,
+          name => existingIdx.name.value,
+          isOptional => true,
+          isReadonly => None(),
+          type,
+          access => FAPublic(),
+        }
+      },
+    );
+    spreadSymIdx = branch.symbolIndex.map(f -> f.get).default(TType::top(pos));
+    mergedSymbolIndex = Some(
+      state.tIndexes.symbolIndex match {
+      | None() ->
+        TField::create{
+          pos => branch.symbolIndex.map(f -> f.pos).default(pos),
+          name => branch.symbolIndex
+            .map(f -> f.name.value)
+            .default("SKJS_ObjectSpread"),
+          isOptional => true,
+          isReadonly => None(),
+          type => spreadSymIdx,
+          access => FAPublic(),
+        }
+      | Some(existingIdx) ->
+        type = TType::union(subst, tenv, existingIdx.get, spreadSymIdx);
+        TField::create{
+          pos => existingIdx.pos,
+          name => existingIdx.name.value,
+          isOptional => true,
+          isReadonly => None(),
+          type,
+          access => FAPublic(),
+        }
+      },
+    );
+    ObjectSpreadState{
+      fields => newFields,
+      symbolFields => newSymbolFields,
+      tIndexes => TIndexes{
+        stringIndex => mergedStringIndex,
+        numberIndex => mergedNumberIndex,
+        symbolIndex => mergedSymbolIndex,
+      },
+    }
+  }
+}
+
 extension class TypeChecker {
   fun block(
     tcenv: mutable TCEnv,
@@ -1345,9 +1618,10 @@ extension class TypeChecker {
       | Some(localDef) -> localDef
       }
     | Object(efields) ->
-      fields = SortedMap<FieldNameString, TField>[];
-      symbolFields = SortedMap<FieldNameString, TField>[];
-      tIndexes: TIndexes = TIndexes::empty;
+      // Worklist of prospective result branches. Starts with one empty branch;
+      // spreading a union-typed source fans it out (one branch per source
+      // member), so most literals keep a single state.
+      states = mutable Vector[ObjectSpreadState::empty];
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
@@ -1442,243 +1716,14 @@ extension class TypeChecker {
               )
             }
           };
-          newFields = SortedMap<FieldNameString, TField>[];
-          for (existingField in fields) {
-            spreadTFields.fields.maybeGet(existingField.name) match {
-            | Some(spreadField) if (!spreadField.isOptional) ->
-              !newFields[spreadField.name] = TField::create{
-                pos => spreadField.pos,
-                name => spreadField.name.value,
-                isOptional => false,
-                isReadonly => None(),
-                type => spreadField.get,
-                access => FAPublic(),
-              }
-            | optSpreadField ->
-              spreadGet = optSpreadField match {
-              | Some(sf) -> sf.get
-              | None() ->
-                spreadTFields.indexForFieldName(
-                  existingField.name.value,
-                ) match {
-                | Some(idx) -> idx.get
-                | None() -> TType::top(spreadExpr.pos)
-                }
-              };
-              mergedGet = TType::union(
-                tcenv.subst,
-                this,
-                existingField.get,
-                spreadGet,
-              );
-              !newFields[existingField.name] = TField::create{
-                pos => existingField.pos,
-                name => existingField.name.value,
-                isOptional => existingField.isOptional,
-                isReadonly => None(),
-                type => mergedGet,
-                access => FAPublic(),
-              }
-            }
-          };
-          for (spreadField in spreadTFields.fields) {
-            if (!newFields.containsKey(spreadField.name)) {
-              fieldGet = if (spreadField.isOptional) {
-                // Union with existing index if present
-                tIndexes.indexForFieldName(spreadField.name.value) match {
-                | Some(idx) ->
-                  TType::union(tcenv.subst, this, idx.get, spreadField.get)
-                | None() -> spreadField.get
-                }
-              } else {
-                spreadField.get
-              };
-              !newFields[spreadField.name] = TField::create{
-                pos => spreadField.pos,
-                name => spreadField.name.value,
-                isOptional => spreadField.isOptional,
-                isReadonly => None(),
-                type => fieldGet,
-                access => FAPublic(),
-              }
-            }
-          };
-          !fields = newFields;
-          // Same merge for symbol fields (using symbolIndex as fallback)
-          newSymbolFields = SortedMap<FieldNameString, TField>[];
-          for (existingField in symbolFields) {
-            spreadTFields.symbolFields.maybeGet(existingField.name) match {
-            | Some(spreadField) if (!spreadField.isOptional) ->
-              !newSymbolFields[spreadField.name] = TField::create{
-                pos => spreadField.pos,
-                name => spreadField.name.value,
-                isOptional => false,
-                isReadonly => None(),
-                type => spreadField.get,
-                access => FAPublic(),
-              }
-            | optSpreadField ->
-              spreadGet = optSpreadField match {
-              | Some(sf) -> sf.get
-              | None() ->
-                spreadTFields.symbolIndex match {
-                | Some(idx) -> idx.get
-                | None() -> TType::top(spreadExpr.pos)
-                }
-              };
-              mergedGet = TType::union(
-                tcenv.subst,
-                this,
-                existingField.get,
-                spreadGet,
-              );
-              !newSymbolFields[existingField.name] = TField::create{
-                pos => existingField.pos,
-                name => existingField.name.value,
-                isOptional => existingField.isOptional,
-                isReadonly => None(),
-                type => mergedGet,
-                access => FAPublic(),
-              }
-            }
-          };
-          for (spreadField in spreadTFields.symbolFields) {
-            if (!newSymbolFields.containsKey(spreadField.name)) {
-              fieldGet = if (spreadField.isOptional) {
-                tIndexes.symbolIndex match {
-                | Some(idx) ->
-                  TType::union(tcenv.subst, this, idx.get, spreadField.get)
-                | None() -> spreadField.get
-                }
-              } else {
-                spreadField.get
-              };
-              !newSymbolFields[spreadField.name] = TField::create{
-                pos => spreadField.pos,
-                name => spreadField.name.value,
-                isOptional => spreadField.isOptional,
-                isReadonly => None(),
-                type => fieldGet,
-                access => FAPublic(),
-              }
-            }
-          };
-          !symbolFields = newSymbolFields;
-          if (tIndexes.numberIndex.isSome() && tIndexes.stringIndex.isNone()) {
-            invariant_violation(
-              "Spread with existing number index but no string index",
-            );
-          };
-          spreadStrIdx = spreadTFields.stringIndex
-            .map(f -> f.get)
-            .default(TType::top(spreadExpr.pos));
-          mergedNumberIndex = (
-            tIndexes.numberIndex,
-            tIndexes.stringIndex,
-            spreadTFields.numberIndex,
-          ) match {
-          | (None(), _, None()) -> None()
-          | (None(), None(), Some(spreadNumIdx)) ->
-            Some(
-              TField::create{
-                pos => spreadNumIdx.pos,
-                name => spreadNumIdx.name.value,
-                isOptional => true,
-                isReadonly => None(),
-                type => spreadNumIdx.get,
-                access => FAPublic(),
-              },
-            )
-          | (None(), Some(existingIdx), spreadNumIdx @ Some _)
-          | (Some(existingIdx), _, spreadNumIdx) ->
-            type = TType::union(
+          for (i in Range(0, states.size())) {
+            states![i] = ObjectSpreadState::merge(
               tcenv.subst,
               this,
-              existingIdx.get,
-              spreadNumIdx.map(f -> f.get).default(spreadStrIdx),
-            );
-            Some(
-              TField::create{
-                pos => existingIdx.pos,
-                name => existingIdx.name.value,
-                isOptional => true,
-                isReadonly => None(),
-                type,
-                access => FAPublic(),
-              },
+              states[i],
+              spreadTFields,
+              spreadExpr.pos,
             )
-          };
-          mergedStringIndex = Some(
-            tIndexes.stringIndex match {
-            | None() ->
-              TField::create{
-                pos => spreadTFields.stringIndex
-                  .map(f -> f.pos)
-                  .default(spreadExpr.pos),
-                name => spreadTFields.stringIndex
-                  .map(f -> f.name.value)
-                  .default("SKJS_ObjectSpread"),
-                isOptional => true,
-                isReadonly => None(),
-                type => spreadStrIdx,
-                access => FAPublic(),
-              }
-            | Some(existingIdx) ->
-              type = TType::union(
-                tcenv.subst,
-                this,
-                existingIdx.get,
-                spreadStrIdx,
-              );
-              TField::create{
-                pos => existingIdx.pos,
-                name => existingIdx.name.value,
-                isOptional => true,
-                isReadonly => None(),
-                type,
-                access => FAPublic(),
-              }
-            },
-          );
-          spreadSymIdx = spreadTFields.symbolIndex
-            .map(f -> f.get)
-            .default(TType::top(spreadExpr.pos));
-          mergedSymbolIndex = Some(
-            tIndexes.symbolIndex match {
-            | None() ->
-              TField::create{
-                pos => spreadTFields.symbolIndex
-                  .map(f -> f.pos)
-                  .default(spreadExpr.pos),
-                name => spreadTFields.symbolIndex
-                  .map(f -> f.name.value)
-                  .default("SKJS_ObjectSpread"),
-                isOptional => true,
-                isReadonly => None(),
-                type => spreadSymIdx,
-                access => FAPublic(),
-              }
-            | Some(existingIdx) ->
-              type = TType::union(
-                tcenv.subst,
-                this,
-                existingIdx.get,
-                spreadSymIdx,
-              );
-              TField::create{
-                pos => existingIdx.pos,
-                name => existingIdx.name.value,
-                isOptional => true,
-                isReadonly => None(),
-                type,
-                access => FAPublic(),
-              }
-            },
-          );
-          !tIndexes = TIndexes{
-            stringIndex => mergedStringIndex,
-            numberIndex => mergedNumberIndex,
-            symbolIndex => mergedSymbolIndex,
           };
           // The source's call/construct signatures are dropped: object spread
           // copies only own enumerable properties, and a call/construct
@@ -1703,7 +1748,9 @@ extension class TypeChecker {
               type => valueTy,
               access => FAPublic(),
             };
-            !symbolFields[field.name] = field;
+            for (i in Range(0, states.size())) {
+              states![i] = states[i].withSymbolField(field)
+            };
             continue
           | None() ->
             tcenv.error(
@@ -1730,32 +1777,23 @@ extension class TypeChecker {
           type => ty,
           access => FAPublic(),
         };
-        !fields[field.name] = field
+        for (i in Range(0, states.size())) {
+          states![i] = states[i].withField(field)
+        }
       };
-      // Add synthetic index type variables so fresh object literals can be
-      // assigned to indexed types via subtyping. These are invisible
-      // to field resolution (filtered by nonSyntheticIndexForKeyKind/hasNonSyntheticIndex).
-      if (tIndexes.stringIndex.isNone()) {
-        !tIndexes.stringIndex = Some(
-          TField::createSyntheticIndex(tcenv.subst, pos),
-        )
-      };
-      if (tIndexes.symbolIndex.isNone()) {
-        !tIndexes.symbolIndex = Some(
-          TField::createSyntheticIndex(tcenv.subst, pos),
-        )
+      // Build one object branch per accumulated state (each adds its synthetic
+      // indexes in toTFields): a single branch for a literal with no union
+      // spread, otherwise the distributed union.
+      branches = mutable Vector<TFields>[];
+      for (state in states) {
+        branches.push(state.toTFields(tcenv.subst, pos))
       };
       obj = TType::single(
-        TObject::createSingleBranch(
-          TFields::createFromSorted{
-            fields,
-            symbolFields,
-            tIndexes,
-            isArray => Some(false),
-          },
-          None(),
-          pos,
-        ),
+        if (branches.size() == 1) {
+          TObject::createSingleBranch(branches[0], None(), pos)
+        } else {
+          TObject::createFromBranches(branches, pos)
+        },
       );
       for (efield in efields) {
         efield match {

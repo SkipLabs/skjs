@@ -773,6 +773,21 @@ class TObject private (
     TObject(ArraySet::single(tFields), inst, pos)
   }
 
+  // Build a multi-branch object from its branches (a disjunction). The vector
+  // must be non-empty; identical branches are deduplicated harmlessly. Used by
+  // callers outside `extension class TObject` that can't reach the private
+  // constructor (e.g. distributing object spread over a union, #714).
+  static fun createFromBranches(
+    branches: mutable Vector<TFields>,
+    pos: PosRange,
+  ): TObject {
+    invariant(
+      !branches.isEmpty(),
+      "TObject::createFromBranches requires a non-empty branch vector",
+    );
+    TObject(ArraySet::createFromMVector(branches), None(), pos)
+  }
+
   static fun createEmpty(pos: PosRange): TObject {
     TObject::createSingleBranch(TFields::empty(), None(), pos)
   }
