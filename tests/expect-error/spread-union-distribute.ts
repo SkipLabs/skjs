@@ -95,4 +95,34 @@ function tooManyUnionSpreads(
     ...p12,
     ...p13,
   };
+  // The cap aborts the whole definition (fatalError), so this unrelated error
+  // is currently suppressed.
+  const s: string = 42;
+}
+
+// A field written after a union spread currently shares ONE growable type
+// variable across every distributed branch, so checking against a union target
+// whose members want different widths for that field (k: boolean vs k: true)
+// lets one member grow the shared tvar and spuriously fail the other.
+// TypeScript accepts this; the homogeneous-target case (fieldAfter above)
+// works. Pinned to the current behavior.
+function sharedTvarCorrelatedTarget(
+  x: AB,
+): { a: number; k: boolean } | { b: string; k: true } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { ...x, k: true };
+}
+
+// Discriminating a spread result with `in` no longer recovers the field's
+// type: in the branch that lacks `a`, the key is covered only by the spread's
+// `[string]: unknown` excess index, so `o.a` is `unknown` (sound — the source
+// may carry an excess `a` of any type at runtime; the old collapse's
+// `a?: number` accepted an unsound read here). TypeScript accepts.
+function inNarrowAfterSpread(x: AB): number {
+  const o = { ...x };
+  if ("a" in o) {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    return o.a;
+  }
+  return 0;
 }
