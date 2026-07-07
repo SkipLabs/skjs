@@ -1785,7 +1785,7 @@ extension class TypeChecker {
                   Array[
                     (
                       pos,
-                      "This object literal spreads too many union-typed sources; the distributed union is too complex to represent",
+                      "The object spread distributes over too many union branches; the result is too complex to represent",
                     ),
                   ],
                   TSCode(2590),

@@ -78,7 +78,7 @@ function tooManyUnionSpreads(
   p12: { a12: 0 } | { b12: 1 },
   p13: { a13: 0 } | { b13: 1 },
 ): void {
-  // @skjs-expect-error This object literal spreads too many union-typed sources; the distributed union is too complex to represent
+  // @skjs-expect-error The object spread distributes over too many union branches; the result is too complex to represent
   const o = {
     ...p0,
     ...p1,

@@ -208,6 +208,6 @@ type UB =
   | { b: 99 };
 type UL = { a: 0; b: 0; x: 1 } | { a: 0; b: 0; x: 2 };
 function convergingFinalSpread(pa: UA, pb: UB, pl: UL): void {
-  // @skjs-expect-error This object literal spreads too many union-typed sources; the distributed union is too complex to represent
+  // @skjs-expect-error The object spread distributes over too many union branches; the result is too complex to represent
   const o = { ...pa, ...pb, ...pl };
 }
