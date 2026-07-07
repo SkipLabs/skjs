@@ -100,15 +100,12 @@ function tooManyUnionSpreads(
   const s: string = 42;
 }
 
-// A field written after a union spread currently shares ONE growable type
-// variable across every distributed branch, so checking against a union target
-// whose members want different widths for that field (k: boolean vs k: true)
-// lets one member grow the shared tvar and spuriously fail the other.
-// TypeScript accepts this; the homogeneous-target case (fieldAfter above)
-// works. Pinned to the current behavior.
+// A field written after a union spread gets its own growable type variable in
+// every distributed branch, so a union target whose members want different
+// widths for that field (k: boolean vs k: true) checks each branch
+// independently — as in TypeScript.
 type Correlated = { a: number; k: boolean } | { b: string; k: true };
 function sharedTvarCorrelatedTarget(x: AB): Correlated {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...x, k: true };
 }
 
