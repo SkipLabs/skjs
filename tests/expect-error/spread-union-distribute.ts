@@ -106,11 +106,22 @@ function tooManyUnionSpreads(
 // lets one member grow the shared tvar and spuriously fail the other.
 // TypeScript accepts this; the homogeneous-target case (fieldAfter above)
 // works. Pinned to the current behavior.
-function sharedTvarCorrelatedTarget(
-  x: AB,
-): { a: number; k: boolean } | { b: string; k: true } {
+type Correlated = { a: number; k: boolean } | { b: string; k: true };
+function sharedTvarCorrelatedTarget(x: AB): Correlated {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...x, k: true };
+}
+
+// FIXME: pre-existing (SkipLabs/skjs#749, reproduces on main with no spread):
+// the SAME union written INLINE in the annotation rejects even a plain
+// single-branch literal — the inline members get related to each other
+// ("Full type boolean is not assignable to specific type 'true'") where the
+// alias form above is checked member by member. TypeScript accepts both.
+function inlineUnionTarget():
+  | { a: number; k: boolean }
+  | { b: string; k: true } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { b: "s", k: true };
 }
 
 // Discriminating a spread result with `in` no longer recovers the field's
