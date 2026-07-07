@@ -753,6 +753,13 @@ base class Variance {
 /* Object types. */
 /***************************************************************************/
 
+// Cap on the number of branches an object-branch cross-product may produce
+// (distributing a spread over unions, intersecting unions of objects). This
+// bounds the checker's memory: past it the construct is rejected ("too complex
+// to represent") rather than materializing an exponential number of branches.
+// A sound graceful degradation is tracked in SkipLabs/skjs#747.
+const kMaxObjectBranches: Int = 10000;
+
 // Regular Typescript (open) object type
 //
 // Interpretation:

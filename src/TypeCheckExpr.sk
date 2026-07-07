@@ -26,14 +26,6 @@ extension base class .SortedMap uses XXHashable[K: XXHashable, V: XXHashable] {
   }
 }
 
-// Cap on the number of distinct branches a distributed object spread may
-// produce. Distribution cross-products the source unions, so this bounds the
-// checker's memory: past it we reject the literal ("union too complex") rather
-// than materialize an exponential number of branches. A sound graceful
-// degradation (falling back to a collapsed open object) is tracked in
-// SkipLabs/skjs#747.
-const kMaxObjectSpreadBranches: Int = 10000;
-
 // Accumulator for one prospective branch of an object literal under
 // construction: the named/symbol fields written so far plus the index
 // signatures. The literal is built by threading a worklist of these through the
@@ -1789,7 +1781,7 @@ extension class TypeChecker {
               if (bucket.all(seen -> seen != merged)) {
                 bucket.push(merged);
                 newStates.push(merged);
-                if (newStates.size() > kMaxObjectSpreadBranches) {
+                if (newStates.size() > kMaxObjectBranches) {
                   fatalError(
                     Array[
                       (
