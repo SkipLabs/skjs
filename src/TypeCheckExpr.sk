@@ -338,6 +338,43 @@ class ObjectSpreadState{
 }
 
 extension class TypeChecker {
+  // Spread reads each property via its getter, so a private source field would
+  // be exposed as a public one on the resulting object — laundering privacy.
+  // Reject the spread (but keep going so the rest of the expression still
+  // type-checks). Scans every branch of the source, reporting each offending
+  // name once; serves both the named-field and symbol-field maps.
+  private fun checkSpreadPrivacy(
+    tcenv: mutable TCEnv,
+    spreadPos: PosRange,
+    sourceBranches: Array<TFields>,
+    fieldsOf: TFields -> InternalKeyedArrayMap<FieldNameString, TField>,
+    what: String,
+  ): void {
+    reported = mutable Set[];
+    for (branch in sourceBranches) {
+      for (spreadField in fieldsOf(branch)) {
+        if (
+          !(spreadField.access is FAPublic _) &&
+          !reported.contains(spreadField.name.value)
+        ) {
+          reported.insert(spreadField.name.value);
+          tcenv.error(
+            Array[
+              (
+                spreadPos,
+                `Cannot spread an object with non-public ${what} '${
+                  spreadField.name.value
+                }'`,
+              ),
+              (spreadField.pos, "Declared here"),
+            ],
+            SKJSCode(2072),
+          )
+        }
+      }
+    }
+  }
+
   fun block(
     tcenv: mutable TCEnv,
     stmts: Array<Stmt>,
@@ -1745,57 +1782,20 @@ extension class TypeChecker {
           // optionality and union the get type with the source's contribution
           // (optional field / covering index / Top); values are read via getters.
           sourceBranches = obj.getBranches();
-          // Spread reads each property via its getter, so a private source field
-          // would be exposed as a public one on the resulting object —
-          // laundering privacy. Reject the spread (but keep going so the rest of
-          // the expression still type-checks). Scan every branch, reporting each
-          // offending name once.
-          reportedFields = mutable Set[];
-          for (branch in sourceBranches) {
-            for (spreadField in branch.fields) {
-              if (
-                !(spreadField.access is FAPublic _) &&
-                !reportedFields.contains(spreadField.name.value)
-              ) {
-                reportedFields.insert(spreadField.name.value);
-                tcenv.error(
-                  Array[
-                    (
-                      spreadExpr.pos,
-                      `Cannot spread an object with non-public field '${
-                        spreadField.name.value
-                      }'`,
-                    ),
-                    (spreadField.pos, "Declared here"),
-                  ],
-                  SKJSCode(2072),
-                )
-              }
-            }
-          };
-          reportedSymbolFields = mutable Set[];
-          for (branch in sourceBranches) {
-            for (spreadField in branch.symbolFields) {
-              if (
-                !(spreadField.access is FAPublic _) &&
-                !reportedSymbolFields.contains(spreadField.name.value)
-              ) {
-                reportedSymbolFields.insert(spreadField.name.value);
-                tcenv.error(
-                  Array[
-                    (
-                      spreadExpr.pos,
-                      `Cannot spread an object with non-public symbol field '${
-                        spreadField.name.value
-                      }'`,
-                    ),
-                    (spreadField.pos, "Declared here"),
-                  ],
-                  SKJSCode(2072),
-                )
-              }
-            }
-          };
+          this.checkSpreadPrivacy(
+            tcenv,
+            spreadExpr.pos,
+            sourceBranches,
+            branch -> branch.fields,
+            "field",
+          );
+          this.checkSpreadPrivacy(
+            tcenv,
+            spreadExpr.pos,
+            sourceBranches,
+            branch -> branch.symbolFields,
+            "symbol field",
+          );
           // Cross-product the worklist with the source branches, deduplicating
           // structurally-identical results at push time so converging spreads
           // (e.g. `{ ...x, ...x }`, or a final spread whose branches override
