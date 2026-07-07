@@ -134,9 +134,12 @@ function testMultiLiteralKey(key: "a" | "b"): void {
   const result: { a?: number; b?: number } = obj;
 }
 
-// Test 15: Growth after spread with index — field should override index
+// Test 15: assigning a key covered by a spread-provided index is an index
+// write, not an overriding field — so the value is checked against the index
+// (a field contradicting the index would be an unsound object type).
 function testGrowthAfterSpreadWithIndex(src: { [key: string]: number }): void {
   let obj = { ...src };
+  // @skjs-expect-error Type is not assignable to the field's type
   obj.x = "hello";
 }
 
@@ -211,7 +214,6 @@ function testMultiLiteralKeyPartlyExisting(key: "a" | "b"): void {
 function testUsedThenIndexCovered(src: { [k: string]: number }): void {
   let o = { ...src };
   const ref = o;
-  // @skjs-expect-error Cannot add a field to this object after it has been used
   o.x = 5;
 }
 
@@ -220,7 +222,7 @@ function testUsedThenIndexCovered(src: { [k: string]: number }): void {
 function testUsedThenIndexWrongType(src: { [k: string]: number }): void {
   let o = { ...src };
   const ref = o;
-  // @skjs-expect-error Cannot add a field to this object after it has been used
+  // @skjs-expect-error Type is not assignable to the field's type
   o.x = "hello";
 }
 
