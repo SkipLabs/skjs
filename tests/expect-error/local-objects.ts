@@ -134,9 +134,12 @@ function testMultiLiteralKey(key: "a" | "b"): void {
   const result: { a?: number; b?: number } = obj;
 }
 
-// Test 15: Growth after spread with index — field should override index
+// Test 15: assigning a key covered by a spread-provided index is an index
+// write, not an overriding field — so the value is checked against the index
+// (a field contradicting the index would be an unsound object type).
 function testGrowthAfterSpreadWithIndex(src: { [key: string]: number }): void {
   let obj = { ...src };
+  // @skjs-expect-error Type is not assignable to the field's type
   obj.x = "hello";
 }
 
@@ -179,4 +182,55 @@ function testSiblingBranchesReuseName(c: boolean): void {
     let o = {};
     o.y = 2;
   }
+}
+
+// Test 19: assigning to an ALREADY-grown field takes the write-check path
+// (the field exists, so it is checked rather than re-added); a compatible
+// value is accepted and the field keeps its type.
+function testReassignGrownField(): void {
+  let obj = {};
+  obj.x = 1;
+  obj.x = 2;
+  const r: number = obj.x;
+}
+
+// Test 20: a multi-literal computed key where one key already exists and one
+// does not. `a` already exists, so it is checked and stays a required
+// `number`; `b` is absent, so it is grown as an OPTIONAL field. The object is
+// therefore `{ a: number; b?: number }` — assignable to that shape, but `b` is
+// not required.
+function testMultiLiteralKeyPartlyExisting(key: "a" | "b"): void {
+  let obj = {};
+  obj.a = 1;
+  obj[key] = 2;
+  const ok: { a: number; b?: number } = obj;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const bad: { a: number; b: number } = obj;
+}
+
+// Test 21: once a local object has been used it is frozen, but a key covered by
+// an index signature is a normal index write, not an attempt to add a field —
+// so it is allowed when the value matches the index's value type.
+function testUsedThenIndexCovered(src: { [k: string]: number }): void {
+  let o = { ...src };
+  const ref = o;
+  o.x = 5;
+}
+
+// Test 22: the same used object, but the value is not assignable to the index's
+// value type — rejected against the index rather than as a field addition.
+function testUsedThenIndexWrongType(src: { [k: string]: number }): void {
+  let o = { ...src };
+  const ref = o;
+  // @skjs-expect-error Type is not assignable to the field's type
+  o.x = "hello";
+}
+
+// Test 23: a used object with no covering index genuinely cannot take the new
+// key — the field can't be added after use.
+function testUsedThenNoIndex(): void {
+  let o = { a: 1 };
+  const ref = o;
+  // @skjs-expect-error Cannot add a field to this object after it has been used
+  o.b = 2;
 }

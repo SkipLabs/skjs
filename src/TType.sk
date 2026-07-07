@@ -836,14 +836,6 @@ class TObject private (
     this.branches.toArray()
   }
 
-  // Returns the sole branch when this object has exactly one. Used by callers
-  // that operate on objects which are single-branch by construction (e.g.
-  // local objects: an un-annotated object-literal initializer grown only via
-  // single-branch intersection).
-  fun maybeSingleBranch(): ?TFields {
-    this.branches.getUnique()
-  }
-
   // True when every branch carries a (non-constructor) call signature, i.e.
   // this object type is callable as a function. Cheaper than getFields, which
   // unions all branches; used for the always-truthy-function check (TS2774).
@@ -2254,6 +2246,21 @@ class TFields protected {
     key match {
     | FKName(name, _) -> this.maybeGet(name.value)
     | FKSymbol(_, uniqueId) -> this.maybeGetSymbol(uniqueId)
+    }
+  }
+
+  // Like maybeGetField, but falls back to a covering non-synthetic index when
+  // the key is not a named field: the write then targets the index, not a new
+  // field. Returns the resolved field/index (its `set` is the write type), or
+  // None when the key is neither a named field nor index-covered.
+  fun maybeGetFieldOrIndex(key: FieldKey): ?TField {
+    key match {
+    | FKName(name, _) -> this.maybeFieldOrIndex(name.value)
+    | FKSymbol(_, uniqueId) ->
+      this.maybeGetSymbol(uniqueId) match {
+      | some @ Some _ -> some
+      | None() -> this.nonSyntheticIndexForKeyKind(TSymbol())
+      }
     }
   }
 

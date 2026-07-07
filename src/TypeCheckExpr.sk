@@ -3220,62 +3220,72 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _, objPos)) ->
-      fields = obj.maybeSingleBranch() match {
-      | Some(f) -> f
-      | None() ->
-        // A local object is single-branch by construction (un-annotated
-        // object-literal initializer grown only via single-branch inter).
-        tcenv.error(
-          Array[(pos, "Internal error: local object is not single-branch")],
-          SKJSCode(9999),
-        );
-        return fieldType
-      };
-      // For each key, check existing fields/index sigs and collect
-      // new fields to grow.
-      newFieldsMap = mutable Map[];
-      newSymbolFieldsMap = mutable Map[];
+      // A local object may be multi-branch: distributing an object spread over
+      // a union yields one branch per member (SkipLabs/skjs#714). Handle each
+      // branch independently — resolve every key as a named field or a covering
+      // non-synthetic index and check the write against that slot; when the key
+      // resolves to neither, grow the branch with a new field. The growth still
+      // happens (so later assignments see the field), but is recorded so that a
+      // used or in-loop object can be diagnosed afterwards.
       needsGrowth = false;
-      for (key in fieldKeys) {
-        fields.maybeGetField(key) match {
-        | Some(fd) ->
-          this.checkSubType(
-            tcenv,
-            fieldType.pos,
-            "Type is not assignable to the field's type",
-            fieldType,
-            fd.set,
-            TSCode(2322),
-          )
-        | None() ->
-          // Always grow: don't check index signatures on local objects.
-          // Indexes may come from a spread, but since local objects are
-          // unused fresh objects, we can just add fields directly.
-          !needsGrowth = true;
-          // When growing `this` inside a class body (e.g. constructor
-          // initialization of a parameter property), inherit the access
-          // declared on the class so the constructor-exit subtype check
-          // sees matching access kinds.
-          access = if (local.value == "this") {
-            this.lookupEnclosingFieldAccess(tcenv, key.value())
-          } else {
-            FAPublic()
-          };
-          field = TField::create{
-            pos => key.pos(),
-            name => key.value(),
-            isOptional,
-            isReadonly => None(),
-            type => fieldType,
-            access,
-          };
-          key match {
-          | FKName _ -> newFieldsMap![field.name] = field
-          | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
+      grownObj = obj.mapOpt(branch -> {
+        newFieldsMap = mutable Map[];
+        newSymbolFieldsMap = mutable Map[];
+        for (key in fieldKeys) {
+          branch.maybeGetFieldOrIndex(key) match {
+          | Some(fd) ->
+            this.checkSubType(
+              tcenv,
+              fieldType.pos,
+              "Type is not assignable to the field's type",
+              fieldType,
+              fd.set,
+              TSCode(2322),
+            )
+          | None() ->
+            !needsGrowth = true;
+            // When growing `this` inside a class body (e.g. constructor
+            // initialization of a parameter property), inherit the access
+            // declared on the class so the constructor-exit subtype check sees
+            // matching access kinds.
+            access = if (local.value == "this") {
+              this.lookupEnclosingFieldAccess(tcenv, key.value())
+            } else {
+              FAPublic()
+            };
+            field = TField::create{
+              pos => key.pos(),
+              name => key.value(),
+              isOptional,
+              isReadonly => None(),
+              type => fieldType,
+              access,
+            };
+            key match {
+            | FKName _ -> newFieldsMap![field.name] = field
+            | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
+            }
           }
+        };
+        if (newFieldsMap.isEmpty() && newSymbolFieldsMap.isEmpty()) {
+          Some(branch)
+        } else {
+          newFields = TFields::create{
+            fields => newFieldsMap,
+            symbolFields => newSymbolFieldsMap,
+            /* Local objects are not arrays but a type annotation may lose this information */
+            isArray => Some(false),
+          };
+          // The added fields are absent from the branch, so the intersection
+          // just inserts them; None (an isArray/signature clash) drops the
+          // branch, mirroring TObject::inter.
+          TFields::inter(tcenv.subst, this, branch, newFields)
         }
-      };
+      });
       if (needsGrowth) {
+        // A field was added to at least one branch. That's fine on a still-
+        // growable object; a used (frozen) or in-loop object is diagnosed here,
+        // but the grown type is still recorded so later code type-checks.
         used match {
         | None() -> void
         | Some(usedPos) ->
@@ -3296,16 +3306,9 @@ extension class TypeChecker {
             SKJSCode(2069),
           )
         };
-        allNewFields = TFields::create{
-          fields => newFieldsMap,
-          symbolFields => newSymbolFieldsMap,
-          /* Local objects are not arrays but a type annotation may lose this information */
-          isArray => Some(false),
-        };
-        allNewObj = TObject::createSingleBranch(allNewFields, None(), objPos);
-        newTy = TObject::inter(tcenv.subst, this, obj, allNewObj) match {
+        newTy = grownObj match {
+        | Some(o) -> TType::single(o)
         | None() -> TType::bottom(objPos)
-        | Some(mergedObj) -> TType::single(mergedObj)
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(
