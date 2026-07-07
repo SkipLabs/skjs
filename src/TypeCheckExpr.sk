@@ -1673,58 +1673,83 @@ extension class TypeChecker {
             );
             continue
           };
-          // Sound spread typing: merge existing fields with spread.
-          // - Non-optional spread field wins (replaces existing).
-          // - Otherwise: keep existing optionality, union get type with
-          //   spread's contribution (optional field / index / Top).
-          // - Always use only get type (spread reads via getter).
-          spreadTFields = obj.spreadFields(tcenv.subst, this);
-          // Spread reads each property via its getter, so a private
-          // source field would be exposed as a public one on the
-          // resulting object — laundering privacy. Reject the spread
-          // (but keep going so the rest of the expression still
-          // type-checks).
-          for (spreadField in spreadTFields.fields) {
-            if (!(spreadField.access is FAPublic _)) {
-              tcenv.error(
-                Array[
-                  (
-                    spreadExpr.pos,
-                    `Cannot spread an object with non-public field '${
-                      spreadField.name.value
-                    }'`,
-                  ),
-                  (spreadField.pos, "Declared here"),
-                ],
-                SKJSCode(2072),
+          // Distribute the spread over the source's branches: `{ ...(A | B) }`
+          // is `(spread A) | (spread B)`. Each prospective result branch (state)
+          // is merged with each source branch below, so the worklist grows by
+          // the source's branch count; a single-branch source keeps the worklist
+          // size, reducing to a plain merge.
+          //
+          // Sound spread typing (per source branch, in ObjectSpreadState::merge):
+          // a non-optional source field wins; otherwise keep the existing
+          // optionality and union the get type with the source's contribution
+          // (optional field / covering index / Top); values are read via getters.
+          sourceBranches = obj.getBranches();
+          // Spread reads each property via its getter, so a private source field
+          // would be exposed as a public one on the resulting object —
+          // laundering privacy. Reject the spread (but keep going so the rest of
+          // the expression still type-checks). Scan every branch, reporting each
+          // offending name once.
+          reportedFields = mutable Set[];
+          for (branch in sourceBranches) {
+            for (spreadField in branch.fields) {
+              if (
+                !(spreadField.access is FAPublic _) &&
+                !reportedFields.contains(spreadField.name.value)
+              ) {
+                reportedFields.insert(spreadField.name.value);
+                tcenv.error(
+                  Array[
+                    (
+                      spreadExpr.pos,
+                      `Cannot spread an object with non-public field '${
+                        spreadField.name.value
+                      }'`,
+                    ),
+                    (spreadField.pos, "Declared here"),
+                  ],
+                  SKJSCode(2072),
+                )
+              }
+            }
+          };
+          reportedSymbolFields = mutable Set[];
+          for (branch in sourceBranches) {
+            for (spreadField in branch.symbolFields) {
+              if (
+                !(spreadField.access is FAPublic _) &&
+                !reportedSymbolFields.contains(spreadField.name.value)
+              ) {
+                reportedSymbolFields.insert(spreadField.name.value);
+                tcenv.error(
+                  Array[
+                    (
+                      spreadExpr.pos,
+                      `Cannot spread an object with non-public symbol field '${
+                        spreadField.name.value
+                      }'`,
+                    ),
+                    (spreadField.pos, "Declared here"),
+                  ],
+                  SKJSCode(2072),
+                )
+              }
+            }
+          };
+          newStates = mutable Vector[];
+          for (state in states) {
+            for (branch in sourceBranches) {
+              newStates.push(
+                ObjectSpreadState::merge(
+                  tcenv.subst,
+                  this,
+                  state,
+                  branch,
+                  spreadExpr.pos,
+                ),
               )
             }
           };
-          for (spreadField in spreadTFields.symbolFields) {
-            if (!(spreadField.access is FAPublic _)) {
-              tcenv.error(
-                Array[
-                  (
-                    spreadExpr.pos,
-                    `Cannot spread an object with non-public symbol field '${
-                      spreadField.name.value
-                    }'`,
-                  ),
-                  (spreadField.pos, "Declared here"),
-                ],
-                SKJSCode(2072),
-              )
-            }
-          };
-          for (i in Range(0, states.size())) {
-            states![i] = ObjectSpreadState::merge(
-              tcenv.subst,
-              this,
-              states[i],
-              spreadTFields,
-              spreadExpr.pos,
-            )
-          };
+          !states = newStates;
           // The source's call/construct signatures are dropped: object spread
           // copies only own enumerable properties, and a call/construct
           // signature is not one. The merged result never carries them (an
