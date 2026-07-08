@@ -1822,12 +1822,25 @@ value class IndexKeyKinds private {
 // before non-numeric ones. This ensures tuple fields are processed first
 // in intersection, union, and subtyping, so their type variables are
 // resolved before other fields/methods with union types.
+//
+// The numeric ordering only tie-breaks: names with equal integer value but
+// distinct raw strings (e.g. "01"/"1", "0"/"-0", "+1"/"1") fall back to raw
+// string order so this comparison stays total over distinct strings. Those
+// are distinct own properties at runtime (`{ "01": …, "1": … }` has two), so
+// collapsing them into one key would (a) crash createTFields, whose field map
+// requires strictly-increasing keys, and (b) unsoundly merge their types. The
+// tie-break also keeps `==` consistent with the derived Hashable/XXHashable,
+// which hash the raw `value` string.
 value class FieldNameString(
   value: String,
 ) uses Orderable, Hashable, Show, XXHashable {
   fun compare(other: FieldNameString): Order {
     (this.value.toIntOption(), other.value.toIntOption()) match {
-    | (Some(a), Some(b)) -> a.compare(b)
+    | (Some(a), Some(b)) ->
+      a.compare(b) match {
+      | EQ() -> this.value.compare(other.value)
+      | ord -> ord
+      }
     | (Some(_), None()) -> LT()
     | (None(), Some(_)) -> GT()
     | (None(), None()) -> this.value.compare(other.value)
