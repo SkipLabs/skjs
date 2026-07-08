@@ -109,16 +109,31 @@ function sharedTvarCorrelatedTarget(x: AB): Correlated {
   return { ...x, k: true };
 }
 
-// FIXME: pre-existing (SkipLabs/skjs#749, reproduces on main with no spread):
-// the SAME union written INLINE in the annotation rejects even a plain
-// single-branch literal — the inline members get related to each other
-// ("Full type boolean is not assignable to specific type 'true'") where the
-// alias form above is checked member by member. TypeScript accepts both.
+// The SAME union written INLINE in the annotation (not behind the `Correlated`
+// alias above) is likewise checked member by member: the literal matches the
+// `k: true` member, so its `k` stays `'true'` instead of being widened to
+// `boolean` by the other member. TypeScript accepts both forms.
 function inlineUnionTarget():
   | { a: number; k: boolean }
   | { b: string; k: true } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { b: "s", k: true };
+}
+
+// A nested growable type variable (the empty array) is still seeded from the
+// matching member, so `b` commits to `number[]`.
+function nestedSeedInlineUnion():
+  | { a: number[]; k: boolean }
+  | { b: number[]; k: true } {
+  return { b: [], k: true };
+}
+
+// Soundness: a literal matching no member is rejected — `{ c, k }` has neither
+// the first member's `a` nor the second member's `b`.
+function inlineUnionNoMemberMatches():
+  | { a: number; k: boolean }
+  | { b: string; k: true } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { c: 0, k: true };
 }
 
 // Discriminating a spread result with `in` no longer recovers the field's
