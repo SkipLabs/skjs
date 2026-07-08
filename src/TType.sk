@@ -449,7 +449,28 @@ class TType private {
       clause0.stypes match {
       | None() -> clause1
       | Some(stypes) ->
-        TType::inter(subst, tenv, clause1, TType::fromSTypes(this.pos, stypes))
+        sty = TType::fromSTypes(this.pos, stypes);
+        // When clause1 already satisfies the constraint, inter(clause1,
+        // constraint) = clause1, letting us skip the (potentially
+        // exponentially expensive) intersection. But `isSub` may seal
+        // inference variables reachable from clause1 via growTVars — whether
+        // top-level (a TVar/TInter/TArrayLit inst) or nested inside the
+        // structure — and committing them to the constraint instead of to the
+        // actual argument types would be unsound. So only take the shortcut
+        // when isSub SUCCEEDS WITHOUT MUTATING the substitution (its version
+        // is unchanged), which proves clause1 already satisfies the constraint
+        // on its own; otherwise restore whatever isSub sealed and fall back to
+        // the real intersection.
+        saved = subst.save();
+        if (
+          TType::isSub(subst, tenv, clause1, sty) is STOk() &&
+          subst.version == saved.version
+        ) {
+          clause1
+        } else {
+          subst.restore(saved);
+          TType::inter(subst, tenv, clause1, sty)
+        }
       }
     })
   }
