@@ -563,7 +563,23 @@ extension class TObject {
       for (fields2 in obj2.branches) {
         TFields::inter(subst, tenv, fields1, fields2) match {
         | None() -> void
-        | Some(x) -> branches.push(x)
+        | Some(x) ->
+          branches.push(x);
+          // Intersecting unions of objects cross-products their branches; cap
+          // the result like the distributed spread does, instead of
+          // materializing an exponential number of branches (an n-way
+          // intersection of two-branch unions yields 2^n).
+          if (branches.size() > kMaxObjectBranches) {
+            fatalError(
+              Array[
+                (
+                  obj1.pos,
+                  "This intersection produces too many object branches; the type is too complex to represent",
+                ),
+              ],
+              TSCode(2590),
+            )
+          }
         }
       }
     };

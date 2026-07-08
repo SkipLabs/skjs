@@ -8,6 +8,9 @@ class MaxSizeReached() extends Exception {
 
 const kDefaultMaxDepth: Int = 2;
 
+// Object-union branches rendered before eliding the rest ("... N more ...").
+const kMaxPrintedObjectBranches: Int = 5;
+
 value class Margin{
   max_depth: Int = kDefaultMaxDepth,
   size: Int = 0,
@@ -191,10 +194,16 @@ mutable class TypePp{
     sty match {
     | TObject(_, Some(inst), _) -> this.inst(level, margin, inst)
     | obj @ TObject(_, _, _) ->
-      first = true;
-      for (fields in obj.getAllFields()) {
-        if (!first) this.out(level, margin, " | ");
-        !first = false;
+      // A distributed spread or union can legitimately carry thousands of
+      // branches (up to kMaxObjectBranches); render only the first few so a
+      // failing subtype check doesn't produce a megabyte-scale diagnostic.
+      branches = obj.getBranches();
+      for (i => fields in branches) {
+        if (i == kMaxPrintedObjectBranches) {
+          this.out(level, margin, ` | ... ${branches.size() - i} more ...`);
+          break void
+        };
+        if (i != 0) this.out(level, margin, " | ");
         this.object(level, margin, fields)
       }
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())

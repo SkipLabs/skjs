@@ -753,6 +753,13 @@ base class Variance {
 /* Object types. */
 /***************************************************************************/
 
+// Cap on the number of branches an object-branch cross-product may produce
+// (distributing a spread over unions, intersecting unions of objects). This
+// bounds the checker's memory: past it the construct is rejected ("too complex
+// to represent") rather than materializing an exponential number of branches.
+// A sound graceful degradation is tracked in SkipLabs/skjs#747.
+const kMaxObjectBranches: Int = 10000;
+
 // Regular Typescript (open) object type
 //
 // Interpretation:
@@ -771,6 +778,21 @@ class TObject private (
     pos: PosRange,
   ): TObject {
     TObject(ArraySet::single(tFields), inst, pos)
+  }
+
+  // Build a multi-branch object from its branches (a disjunction). The vector
+  // must be non-empty; identical branches are deduplicated harmlessly. Used by
+  // callers outside `extension class TObject` that can't reach the private
+  // constructor (e.g. distributing object spread over a union, #714).
+  static fun createFromBranches(
+    branches: mutable Vector<TFields>,
+    pos: PosRange,
+  ): TObject {
+    invariant(
+      !branches.isEmpty(),
+      "TObject::createFromBranches requires a non-empty branch vector",
+    );
+    TObject(ArraySet::createFromMVector(branches), None(), pos)
   }
 
   static fun createEmpty(pos: PosRange): TObject {
@@ -1746,6 +1768,19 @@ class TField{
     this with {name}
   }
 
+  // Structural equality ignoring the declaration position. TType's own
+  // equality is already position-insensitive (it compares hashes over the
+  // type structure), so this only skips the field's `pos`. Used to
+  // deduplicate spread-distribution states that differ solely in where their
+  // source types were declared.
+  fun equalsIgnoringPos(other: TField): Bool {
+    this.name == other.name &&
+      this.isOptional == other.isOptional &&
+      this.get == other.get &&
+      this.set == other.set &&
+      this.access == other.access
+  }
+
   fun mapType(f: TType -> TType): TField {
     this with {get => f(this.get), set => f(this.set)}
   }
@@ -1861,7 +1896,7 @@ base class TIndexesBase protected {
   }
 }
 
-class TIndexes{} extends TIndexesBase {
+class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
   const empty: TIndexes = TIndexes{};
 
   // Split indexes by key kind and merge duplicates per kind.
