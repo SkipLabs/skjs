@@ -121,6 +121,26 @@ function inlineUnionTarget():
   return { b: "s", k: true };
 }
 
+// FIXME(SkipLabs/skjs#749): same inline-union bug with a nested growable type
+// variable — the empty array should be seeded from the matching member's
+// `number[]`, but the shared-field widening rejects the whole literal.
+// TypeScript accepts.
+function nestedSeedInlineUnion():
+  | { a: number[]; k: boolean }
+  | { b: number[]; k: true } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { b: [], k: true };
+}
+
+// Soundness: a literal matching no member is rejected — `{ c, k }` has neither
+// the first member's `a` nor the second member's `b`.
+function inlineUnionNoMemberMatches():
+  | { a: number; k: boolean }
+  | { b: string; k: true } {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return { c: 0, k: true };
+}
+
 // Discriminating a spread result with `in` no longer recovers the field's
 // type: in the branch that lacks `a`, the key is covered only by the spread's
 // `[string]: unknown` excess index, so `o.a` is `unknown` (sound — the source
