@@ -346,7 +346,7 @@ extension class TypeChecker {
   private fun checkSpreadPrivacy(
     tcenv: mutable TCEnv,
     spreadPos: PosRange,
-    sourceBranches: Array<TFields>,
+    sourceBranches: readonly Vector<TFields>,
     fieldsOf: TFields -> InternalKeyedArrayMap<FieldNameString, TField>,
     what: String,
   ): void {
@@ -1768,7 +1768,7 @@ extension class TypeChecker {
           // union (the `cond && { x: T }` idiom, whose type is
           // `false | { x: T }`). A void or string arm, or any
           // non-object/non-primitive stype, makes the whole spread invalid.
-          objectBranches = mutable Vector<TFields>[];
+          sourceBranches = mutable Vector<TFields>[];
           sawNoopPrimitive = false;
           sawInvalid = spreadTy.getSTypes(
             tcenv.subst,
@@ -1780,7 +1780,7 @@ extension class TypeChecker {
             invalid = false;
             for (stype in sTypes.values()) {
               stype match {
-              | obj @ TObject _ -> objectBranches.extend(obj.getBranches())
+              | obj @ TObject _ -> sourceBranches.extend(obj.getBranches())
               | TPrimUnit(TVoid(), _)
               | TPrimValue(TString(), _, _) ->
                 !invalid = true
@@ -1791,7 +1791,7 @@ extension class TypeChecker {
             };
             invalid
           };
-          if (sawInvalid || objectBranches.isEmpty()) {
+          if (sawInvalid || sourceBranches.isEmpty()) {
             tcenv.error(
               Array[
                 (spreadExpr.pos, "Only an object type can be spread here"),
@@ -1806,7 +1806,6 @@ extension class TypeChecker {
           // otherwise keep the existing optionality and union the get type
           // with the source's contribution (optional field / covering index
           // / Top); values are read via getters.
-          sourceBranches = objectBranches.toArray();
           this.checkSpreadPrivacy(
             tcenv,
             spreadExpr.pos,
