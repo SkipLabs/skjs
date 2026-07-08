@@ -1458,6 +1458,20 @@ extension class TType {
     | (Some(openObj), Some(boundObj)) ->
       for (openFields in openObj.getBranches()) {
         for (boundFields in boundObj.getBranches()) {
+          // Only pre-seed from a bound branch the open branch could actually be
+          // a subtype of. If the open branch lacks one of this branch's
+          // required fields it can never match it, so growing shared-field
+          // TVars from it would over-widen them: given the target
+          // `{ a: number; k: boolean } | { b: string; k: true }` and a literal
+          // `{ b, k }`, pairing with the unreachable first branch grows the
+          // literal's `k` to `boolean`, which then fails the reachable
+          // `k: true` branch. Seeds are best-effort lower bounds and the
+          // top-level isSub stays load-bearing for soundness, so skipping a
+          // non-viable branch only forgoes precision, never soundness.
+          openCanMatchBranch = boundFields.fields.toArray().all(bf ->
+            bf.isOptional || openFields.maybeGet(bf.name.value).isSome()
+          );
+          if (!openCanMatchBranch) continue;
           for (of in openFields.fields.toArray()) {
             boundFields.maybeGet(of.name.value) match {
             | Some(bf) ->

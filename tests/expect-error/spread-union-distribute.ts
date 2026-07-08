@@ -109,26 +109,21 @@ function sharedTvarCorrelatedTarget(x: AB): Correlated {
   return { ...x, k: true };
 }
 
-// FIXME: pre-existing (SkipLabs/skjs#749, reproduces on main with no spread):
-// the SAME union written INLINE in the annotation rejects even a plain
-// single-branch literal — the inline members get related to each other
-// ("Full type boolean is not assignable to specific type 'true'") where the
-// alias form above is checked member by member. TypeScript accepts both.
+// The SAME union written INLINE in the annotation (not behind the `Correlated`
+// alias above) is likewise checked member by member: the literal matches the
+// `k: true` member, so its `k` stays `'true'` instead of being widened to
+// `boolean` by the other member. TypeScript accepts both forms.
 function inlineUnionTarget():
   | { a: number; k: boolean }
   | { b: string; k: true } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { b: "s", k: true };
 }
 
-// FIXME(SkipLabs/skjs#749): same inline-union bug with a nested growable type
-// variable — the empty array should be seeded from the matching member's
-// `number[]`, but the shared-field widening rejects the whole literal.
-// TypeScript accepts.
+// A nested growable type variable (the empty array) is still seeded from the
+// matching member, so `b` commits to `number[]`.
 function nestedSeedInlineUnion():
   | { a: number[]; k: boolean }
   | { b: number[]; k: true } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { b: [], k: true };
 }
 
