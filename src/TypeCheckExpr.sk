@@ -165,7 +165,15 @@ class ObjectSpreadState{
         "Spread with existing number index but no string index",
       );
     };
-    spreadStrIdx = branch.stringIndex.map(f -> f.get).default(TType::top(pos));
+    // A synthetic index is a subtyping artifact on a closed object literal,
+    // not a real property bag, so it contributes nothing to the spread; an
+    // absent index on a (named) source may still hide excess properties, so
+    // that widens to Top. See mergeFieldMap and the index merges below.
+    spreadStrIdx = branch.stringIndex match {
+    | Some(f) if (!f.isSynthetic()) -> f.get
+    | Some(_) -> TType::bottom(pos)
+    | None() -> TType::top(pos)
+    };
     mergedNumberIndex = (
       state.tIndexes.numberIndex,
       state.tIndexes.stringIndex,
@@ -202,24 +210,39 @@ class ObjectSpreadState{
         },
       )
     };
-    mergedStringIndex = Some(
-      static::mergeSpreadIndex(
-        subst,
-        tenv,
-        state.tIndexes.stringIndex,
-        branch.stringIndex,
-        pos,
-      ),
-    );
-    mergedSymbolIndex = Some(
-      static::mergeSpreadIndex(
-        subst,
-        tenv,
-        state.tIndexes.symbolIndex,
-        branch.symbolIndex,
-        pos,
-      ),
-    );
+    // A synthetic string/symbol index (an object-literal subtyping artifact)
+    // must not merge into the accumulated index: the literal is closed, so it
+    // adds no real index. Keep the existing index unchanged in that case,
+    // rather than routing the literal's shared synthetic get-tvar into the
+    // result (which chained spreads could then drive to a contradiction). A
+    // real index still merges; an absent index still widens to an open Top
+    // index via mergeSpreadIndex.
+    mergedStringIndex = branch.stringIndex match {
+    | Some(f) if (f.isSynthetic()) -> state.tIndexes.stringIndex
+    | branchStringIndex ->
+      Some(
+        static::mergeSpreadIndex(
+          subst,
+          tenv,
+          state.tIndexes.stringIndex,
+          branchStringIndex,
+          pos,
+        ),
+      )
+    };
+    mergedSymbolIndex = branch.symbolIndex match {
+    | Some(f) if (f.isSynthetic()) -> state.tIndexes.symbolIndex
+    | branchSymbolIndex ->
+      Some(
+        static::mergeSpreadIndex(
+          subst,
+          tenv,
+          state.tIndexes.symbolIndex,
+          branchSymbolIndex,
+          pos,
+        ),
+      )
+    };
     ObjectSpreadState{
       fields => newFields,
       symbolFields => newSymbolFields,
@@ -263,7 +286,17 @@ class ObjectSpreadState{
         | Some(sf) -> sf.get
         | None() ->
           branchIndexFor(existingField.name.value) match {
-          | Some(idx) -> idx.get
+          // A synthetic index is a subtyping artifact on an object literal
+          // (added so `{x:1}` can satisfy `{[k:string]:number}`), not a real
+          // runtime property bag. Spreading a closed object literal that
+          // lacks this field contributes nothing to it, so keep the existing
+          // field type — do NOT union in the synthetic index's get. Merging
+          // it would couple unrelated siblings through the literal's shared
+          // synthetic get-tvar and drive them to a spurious contradiction.
+          | Some(idx) if (!idx.isSynthetic()) -> idx.get
+          | Some(_) -> existingField.get
+          // No index at all: a named-field source may still carry an untyped
+          // excess property here via width subtyping, so widen to Top.
           | None() -> TType::top(pos)
           }
         };

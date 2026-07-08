@@ -9,10 +9,9 @@ import type { Json } from "@skipruntime/core";
 
 // Multiple pre-existing siblings + a spread literal that omits them: the
 // literal's synthetic string index must not couple `s` and `n` (which would
-// wrongly report "number is not assignable to string"). skjs currently
-// rejects this; tsc accepts it and the value `{ s, n, q }` is sound.
+// wrongly report "number is not assignable to string"). The value
+// `{ s, n, q }` is sound.
 function siblings(): { s: string; n: number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { s: "a", n: 1, ...{ q: true } };
 }
 
@@ -27,13 +26,11 @@ function chained(keyId: string, count: number | undefined): Target {
 
 // Symbol path: the synthetic SYMBOL index of a spread literal (here an empty
 // literal, whose only symbol-domain contribution IS its synthetic symbol
-// index) must not leak onto the symbol-keyed field `[kId]: string`. skjs
-// currently rejects this; tsc accepts it.
+// index) must not leak onto the symbol-keyed field `[kId]: string`.
 declare const kId: unique symbol;
 function symbolPath(idv: string): { readonly [kId]: string } & {
   readonly [key: symbol]: number | string;
 } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { [kId]: idv, ...{} };
 }
 
