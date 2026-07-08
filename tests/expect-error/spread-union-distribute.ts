@@ -100,6 +100,52 @@ function tooManyUnionSpreads(
   const s: string = 42;
 }
 
+// An over-cap spread whose OVERFLOWING source shares a field across its
+// branches: `c` is present in both branches of `pl`. Under distribution `o.c`
+// is `number` (as in TypeScript). This literal overflows the branch cap on the
+// final `...pl` spread. Pinned to the current hard-fail (the whole definition
+// is abandoned, so the reads below are suppressed).
+function capDegradeDropsCommonSourceField(
+  p0: { a0: 0 } | { b0: 1 },
+  p1: { a1: 0 } | { b1: 1 },
+  p2: { a2: 0 } | { b2: 1 },
+  p3: { a3: 0 } | { b3: 1 },
+  p4: { a4: 0 } | { b4: 1 },
+  p5: { a5: 0 } | { b5: 1 },
+  p6: { a6: 0 } | { b6: 1 },
+  p7: { a7: 0 } | { b7: 1 },
+  p8: { a8: 0 } | { b8: 1 },
+  p9: { a9: 0 } | { b9: 1 },
+  p10: { a10: 0 } | { b10: 1 },
+  p11: { a11: 0 } | { b11: 1 },
+  p12: { a12: 0 } | { b12: 1 },
+  pl: { c: number; d: 0 } | { c: number; e: 1 },
+): void {
+  // @skjs-expect-error The object spread distributes over too many union branches; the result is too complex to represent
+  const o = {
+    ...p0,
+    ...p1,
+    ...p2,
+    ...p3,
+    ...p4,
+    ...p5,
+    ...p6,
+    ...p7,
+    ...p8,
+    ...p9,
+    ...p10,
+    ...p11,
+    ...p12,
+    ...pl,
+  };
+  // PRECISION (SkipLabs/skjs#747 follow-up): once the cap degrades `...pl` to an
+  // open object, `c` is dropped and `o.c` is `unknown`, so `cc` errors — a more
+  // precise collapse that kept fields common to all of `pl`'s branches would
+  // keep `c: number` here (TypeScript does). Sound either way.
+  const cc: number = o.c;
+  const uc: unknown = o.c;
+}
+
 // A field written after a union spread gets its own growable type variable in
 // every distributed branch, so a union target whose members want different
 // widths for that field (k: boolean vs k: true) checks each branch
