@@ -1545,11 +1545,50 @@ extension class TType {
     u2: TType,
   ): STResult<TType> {
     if (u1 == u2) return STOk();
+    // Fast path: a pure TSInst whose type args are all pure TVars that
+    // individually resolve to the concrete args of u2 is equal to u2 after
+    // substitution. Names are compared by string value (position-independent),
+    // matching how TType hash equality works (PosRange hashes to a constant).
+    // Avoiding structural expansion is critical for recursive generics like
+    // EagerCollection whose methods reference EC itself, causing an exponential
+    // blowup when the value type is a deeply nested record.
+    if (u1.clauses.isEmpty() && u2.clauses.isEmpty()) {
+      u1.insts.getUnique() match {
+      | Some(TSInst(name1, TArgs(targs1))) ->
+        u2.insts.getUnique() match {
+        | Some(TSInst(name2, TArgs(targs2))) ->
+          if (name1.value == name2.value && targs1.size() == targs2.size()) {
+            argsMatch = (
+              for (i in Range(0, targs1.size())) {
+                t1 = targs1[i];
+                t2 = targs2[i];
+                if (t1 != t2) {
+                  t1ArgMatch = t1.getSingleVar() match {
+                  | Some(tv) ->
+                    subst.peekRaw(tv) match {
+                    | Some(resolved) -> resolved == t2
+                    | None() -> false
+                    }
+                  | _ -> false
+                  };
+                  if (!t1ArgMatch) break false
+                }
+              } else {
+                true
+              }
+            );
+            if (argsMatch) return STOk()
+          }
+        | _ -> void
+        }
+      | _ -> void
+      }
+    };
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
     res = TType::isSub_(subst, tenv, u1, u2);
     if (res is STOk()) {
-      subst.!seenSub = subst.seenSub.set(pair)
+      subst.!seenSub = subst.seenSub.set(pair);
     };
     res
   }
