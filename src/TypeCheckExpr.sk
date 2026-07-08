@@ -1757,11 +1757,41 @@ extension class TypeChecker {
 
         | FDSpread(spreadExpr) ->
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-          obj = spreadTy
-            .getSTypes(tcenv.subst, this, Covariant())
-            .flatMap(sTypes -> sTypes.singleElt()) match {
-          | Some(obj @ TObject _) -> obj
-          | _ ->
+          // Collect the source branches to distribute over. `{ ...(A | B) }`
+          // is `(spread A) | (spread B)`: each object arm contributes its
+          // TObject branches. A union arm that is a primitive spreading to a
+          // no-op — any primitive EXCEPT a string (whose indexed characters
+          // WOULD be copied, e.g. `{...'ab'}` is `{0:'a',1:'b'}`) and void
+          // (which must never be observed) — contributes the accumulated
+          // state UNCHANGED (the "spread did not fire" branch), which makes
+          // the fields the object arms add optional in the distributed
+          // union (the `cond && { x: T }` idiom, whose type is
+          // `false | { x: T }`). A void or string arm, or any
+          // non-object/non-primitive stype, makes the whole spread invalid.
+          objectBranches = mutable Vector<TFields>[];
+          sawNoopPrimitive = false;
+          sawInvalid = spreadTy.getSTypes(
+            tcenv.subst,
+            this,
+            Covariant(),
+          ) match {
+          | None() -> true
+          | Some(sTypes) ->
+            invalid = false;
+            for (stype in sTypes.values()) {
+              stype match {
+              | obj @ TObject _ -> objectBranches.extend(obj.getBranches())
+              | TPrimUnit(TVoid(), _)
+              | TPrimValue(TString(), _, _) ->
+                !invalid = true
+              | TPrimValue _
+              | TPrimUnit _ ->
+                !sawNoopPrimitive = true
+              }
+            };
+            invalid
+          };
+          if (sawInvalid || objectBranches.isEmpty()) {
             tcenv.error(
               Array[
                 (spreadExpr.pos, "Only an object type can be spread here"),
@@ -1771,17 +1801,12 @@ extension class TypeChecker {
             );
             continue
           };
-          // Distribute the spread over the source's branches: `{ ...(A | B) }`
-          // is `(spread A) | (spread B)`. Each prospective result branch (state)
-          // is merged with each source branch below, so the worklist grows by
-          // the source's branch count; a single-branch source keeps the worklist
-          // size, reducing to a plain merge.
-          //
-          // Sound spread typing (per source branch, in ObjectSpreadState::merge):
-          // a non-optional source field wins; otherwise keep the existing
-          // optionality and union the get type with the source's contribution
-          // (optional field / covering index / Top); values are read via getters.
-          sourceBranches = obj.getBranches();
+          // Sound spread typing (per source branch, in
+          // ObjectSpreadState::merge): a non-optional source field wins;
+          // otherwise keep the existing optionality and union the get type
+          // with the source's contribution (optional field / covering index
+          // / Top); values are read via getters.
+          sourceBranches = objectBranches.toArray();
           this.checkSpreadPrivacy(
             tcenv,
             spreadExpr.pos,
@@ -1804,33 +1829,43 @@ extension class TypeChecker {
           // exceed the cap is rejected ("too complex").
           newStates = mutable Vector[];
           seenByHash = mutable Map<Int, mutable Vector<ObjectSpreadState>>[];
+          pushState = candidate -> {
+            bucket = seenByHash.getOrAdd(candidate.xxhash().value, () ->
+              mutable Vector[]
+            );
+            if (bucket.all(seen -> !seen.dedupEquals(candidate))) {
+              bucket.push(candidate);
+              newStates.push(candidate);
+              if (newStates.size() > kMaxObjectBranches) {
+                fatalError(
+                  Array[
+                    (
+                      pos,
+                      "The object spread distributes over too many union branches; the result is too complex to represent",
+                    ),
+                  ],
+                  TSCode(2590),
+                )
+              }
+            }
+          };
           for (state in states) {
             for (branch in sourceBranches) {
-              merged = ObjectSpreadState::merge(
-                tcenv.subst,
-                this,
-                state,
-                branch,
-                spreadExpr.pos,
-              );
-              bucket = seenByHash.getOrAdd(merged.xxhash().value, () ->
-                mutable Vector[]
-              );
-              if (bucket.all(seen -> !seen.dedupEquals(merged))) {
-                bucket.push(merged);
-                newStates.push(merged);
-                if (newStates.size() > kMaxObjectBranches) {
-                  fatalError(
-                    Array[
-                      (
-                        pos,
-                        "The object spread distributes over too many union branches; the result is too complex to represent",
-                      ),
-                    ],
-                    TSCode(2590),
-                  )
-                }
-              }
+              pushState(
+                ObjectSpreadState::merge(
+                  tcenv.subst,
+                  this,
+                  state,
+                  branch,
+                  spreadExpr.pos,
+                ),
+              )
+            };
+            // The "spread did not fire" branch: a no-op primitive arm leaves
+            // the accumulated state unchanged, so the object arms' fields
+            // become optional in the union.
+            if (sawNoopPrimitive) {
+              pushState(state)
             }
           };
           !states = newStates;
