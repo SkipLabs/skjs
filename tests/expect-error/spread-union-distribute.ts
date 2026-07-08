@@ -58,10 +58,11 @@ function fieldBefore(
 }
 
 // 14 distinct two-branch union spreads would distribute to 2^14 branches,
-// exceeding the branch cap: SKJS rejects the literal ("too complex") rather than
-// materialize the exponential union (it does not attempt tsc's graceful
-// fallback). Converging spreads like `{ ...x, ...x }` are deduplicated and
-// stay bounded, so they are unaffected.
+// exceeding the branch cap. Rather than reject the literal, SKJS soundly
+// degrades the overflowing spread to an open over-approximation and warns; the
+// literal still type-checks (TypeScript accepts it too — its limit is ~100k).
+// Converging spreads like `{ ...x, ...x }` are deduplicated and stay bounded,
+// so they never reach the cap.
 function tooManyUnionSpreads(
   p0: { a0: 0 } | { b0: 1 },
   p1: { a1: 0 } | { b1: 1 },
@@ -78,7 +79,6 @@ function tooManyUnionSpreads(
   p12: { a12: 0 } | { b12: 1 },
   p13: { a13: 0 } | { b13: 1 },
 ): void {
-  // @skjs-expect-error The object spread distributes over too many union branches; the result is too complex to represent
   const o = {
     ...p0,
     ...p1,
@@ -93,11 +93,61 @@ function tooManyUnionSpreads(
     ...p10,
     ...p11,
     ...p12,
+    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
     ...p13,
   };
-  // The cap aborts the whole definition (fatalError), so this unrelated error
-  // is currently suppressed.
+  // The literal degrades (non-fatal) instead of aborting the definition, so
+  // this unrelated error now surfaces.
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const s: string = 42;
+}
+
+// An over-cap spread whose OVERFLOWING source shares a field across its
+// branches: `c` is present in both branches of `pl`. Under distribution `o.c`
+// is `number` (as in TypeScript). This literal overflows the branch cap on the
+// final `...pl` spread, so that spread degrades to an open object: `c` is
+// dropped and `o.c` becomes `unknown` — sound, but less precise than tsc here.
+function capDegradeDropsCommonSourceField(
+  p0: { a0: 0 } | { b0: 1 },
+  p1: { a1: 0 } | { b1: 1 },
+  p2: { a2: 0 } | { b2: 1 },
+  p3: { a3: 0 } | { b3: 1 },
+  p4: { a4: 0 } | { b4: 1 },
+  p5: { a5: 0 } | { b5: 1 },
+  p6: { a6: 0 } | { b6: 1 },
+  p7: { a7: 0 } | { b7: 1 },
+  p8: { a8: 0 } | { b8: 1 },
+  p9: { a9: 0 } | { b9: 1 },
+  p10: { a10: 0 } | { b10: 1 },
+  p11: { a11: 0 } | { b11: 1 },
+  p12: { a12: 0 } | { b12: 1 },
+  pl: { c: number; d: 0 } | { c: number; e: 1 },
+): void {
+  const o = {
+    ...p0,
+    ...p1,
+    ...p2,
+    ...p3,
+    ...p4,
+    ...p5,
+    ...p6,
+    ...p7,
+    ...p8,
+    ...p9,
+    ...p10,
+    ...p11,
+    ...p12,
+    // @skjs-expect-warning This object spread distributes over more than 10000 union branches; its type is over-approximated to an open object, so some properties are typed 'unknown'
+    ...pl,
+  };
+  // PRECISION (SkipLabs/skjs#747 follow-up): once the cap degrades `...pl` to an
+  // open object, `c` is dropped and `o.c` is `unknown`, so `cc` errors — a more
+  // precise collapse that kept fields common to all of `pl`'s branches would
+  // keep `c: number` here (TypeScript does; skjs is soundly stricter). Reading
+  // `o.c` as `unknown` stays sound.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const cc: number = o.c;
+  const uc: unknown = o.c;
 }
 
 // A field written after a union spread gets its own growable type variable in
