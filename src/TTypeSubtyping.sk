@@ -900,9 +900,18 @@ extension class TFields {
         if (!f2.isOptional) {
           return STRecFieldsMissingField(f2, fields1, fields2)
         };
-        // When sub has an index, use it to satisfy super's optional fields
+        // A synthetic index marks a closed object literal (or a spread of
+        // closed literals): it provably has no own key at f2.name, so omitting
+        // the optional field f2 is sound — an absent key reads as undefined,
+        // which an optional field permits. Its value only exists to grow
+        // against index-signature targets, and spread distribution may have
+        // committed it to a sibling field's type, so it must not be required to
+        // satisfy f2 (that spuriously rejects a closed `{ b: string }` branch
+        // against `{ b?: string; c?: number }`). A real index (an open object,
+        // whose excess keys could hide an incompatible f2) is still checked.
         indexFor(fields1, f2.name) match {
         | None() -> return STRecFieldsMissingField(f2, fields1, fields2)
+        | Some(idx1) if (idx1.isSynthetic()) -> void
         | Some(idx1) ->
           TType::isSub(subst, tenv, idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
