@@ -1871,18 +1871,20 @@ extension class TypeChecker {
           };
           if (overflow) {
             // The deduplicated cross-product would exceed kMaxObjectBranches.
-            // Soundly over-approximate this spread's source by an arbitrary
-            // object — merge each existing state with the empty (fully open)
-            // TFields — and apply it WITHOUT fan-out, so the worklist size is
-            // unchanged (still <= cap). Every source field is dropped and every
-            // pre-spread field widens to `unknown` (an arbitrary source may
-            // override it via an excess property), plus the
-            // `[string]/[symbol]: unknown` excess indexes. A fully open state is
-            // a supertype of the unchanged state, so this also covers a no-op
-            // primitive arm. Sound (a fresh literal's value inhabits the widened
-            // type by its getters) but imprecise, so warn rather than reject. A
-            // more precise collapse that keeps fields common to every source
-            // branch is a possible follow-up (SkipLabs/skjs#747).
+            // Collapse the whole worklist to a SINGLE fully open object: an
+            // arbitrary source (the empty TFields) drops every field name and
+            // widens every value to `unknown` — covered by the resulting
+            // `[string]/[symbol]: unknown` excess indexes — so all the per-state
+            // results are supertyped by this one open object. Collapsing to size
+            // 1 (rather than mapping every state) keeps any further union spreads
+            // in the same literal bounded, instead of re-materializing ~cap
+            // states each time (which drives peak memory up). A fully open object
+            // is a supertype of every distributed branch (any object inhabits it)
+            // and of the unchanged no-op-primitive state, so this stays sound —
+            // a fresh literal's value inhabits it by its getters; it is only
+            // imprecise, so warn rather than reject. A more precise collapse that
+            // keeps fields common to every source branch is a possible follow-up
+            // (SkipLabs/skjs#747).
             tcenv.warning(
               Array[
                 (
@@ -1895,19 +1897,15 @@ extension class TypeChecker {
               ],
               SKJSCode(9009),
             );
-            degraded = mutable Vector[];
-            for (state in states) {
-              degraded.push(
-                ObjectSpreadState::merge(
-                  tcenv.subst,
-                  this,
-                  state,
-                  TFields::empty(),
-                  spreadExpr.pos,
-                ),
-              )
-            };
-            !states = degraded
+            !states = mutable Vector[
+              ObjectSpreadState::merge(
+                tcenv.subst,
+                this,
+                ObjectSpreadState::empty,
+                TFields::empty(),
+                spreadExpr.pos,
+              ),
+            ]
           } else {
             !states = newStates
           };
