@@ -200,17 +200,16 @@ function inNarrowAfterSpread(x: AB): number {
   return 0;
 }
 
-// FIXME(SkipLabs/skjs#754): two conditional spreads distribute to the closed
-// union `{} | { b } | { c } | { b, c }`. Every branch is a closed literal that
-// provably omits nothing but its own keys, so each soundly inhabits
-// `{ b?: string; c?: number }` — TypeScript accepts. skjs wrongly rejects: the
-// branches keep a synthetic index committed to a sibling field's type, so a
-// branch that omits an optional target field fails against it.
+// Two conditional spreads distribute to the closed union
+// `{} | { b } | { c } | { b, c }`. Every branch is a closed literal that
+// provably has only its own keys, so each soundly inhabits
+// `{ b?: string; c?: number }` by omitting the optional fields it lacks —
+// matching TypeScript. (A branch's synthetic index only marks closedness; it
+// need not cover an omitted optional field.)
 function closedSpreadBranchesOmitOptional(
   c1: boolean,
   c2: boolean,
 ): { b?: string; c?: number } {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...(c1 && { b: "y" }), ...(c2 && { c: 3 }) };
 }
 
