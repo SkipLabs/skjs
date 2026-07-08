@@ -1824,10 +1824,13 @@ extension class TypeChecker {
           // structurally-identical results at push time so converging spreads
           // (e.g. `{ ...x, ...x }`, or a final spread whose branches override
           // every discriminating field) count only DISTINCT branches toward
-          // the cap; only a literal whose deduplicated distributed union would
-          // exceed the cap is rejected ("too complex").
+          // the cap. If the deduplicated distributed union would still exceed
+          // the cap, stop distributing THIS spread and degrade (below).
           newStates = mutable Vector[];
           seenByHash = mutable Map<Int, mutable Vector<ObjectSpreadState>>[];
+          overflow = false;
+          // Dedup a candidate branch and push it; returns true if that pushed
+          // the deduplicated worklist past the branch cap.
           pushState = candidate -> {
             bucket = seenByHash.getOrAdd(candidate.xxhash().value, () ->
               mutable Vector[]
@@ -1835,39 +1838,79 @@ extension class TypeChecker {
             if (bucket.all(seen -> !seen.dedupEquals(candidate))) {
               bucket.push(candidate);
               newStates.push(candidate);
-              if (newStates.size() > kMaxObjectBranches) {
-                fatalError(
-                  Array[
-                    (
-                      pos,
-                      "The object spread distributes over too many union branches; the result is too complex to represent",
-                    ),
-                  ],
-                  TSCode(2590),
-                )
-              }
+              newStates.size() > kMaxObjectBranches
+            } else {
+              false
             }
           };
           for (state in states) {
             for (branch in sourceBranches) {
-              pushState(
+              if (
+                pushState(
+                  ObjectSpreadState::merge(
+                    tcenv.subst,
+                    this,
+                    state,
+                    branch,
+                    spreadExpr.pos,
+                  ),
+                )
+              ) {
+                !overflow = true;
+                break void
+              }
+            };
+            if (overflow) break void;
+            // The "spread did not fire" branch: a no-op primitive arm leaves
+            // the accumulated state unchanged, so the object arms' fields
+            // become optional in the union.
+            if (sawNoopPrimitive && pushState(state)) {
+              !overflow = true;
+              break void
+            }
+          };
+          if (overflow) {
+            // The deduplicated cross-product would exceed kMaxObjectBranches.
+            // Soundly over-approximate this spread's source by an arbitrary
+            // object — merge each existing state with the empty (fully open)
+            // TFields — and apply it WITHOUT fan-out, so the worklist size is
+            // unchanged (still <= cap). Every source field is dropped and every
+            // pre-spread field widens to `unknown` (an arbitrary source may
+            // override it via an excess property), plus the
+            // `[string]/[symbol]: unknown` excess indexes. A fully open state is
+            // a supertype of the unchanged state, so this also covers a no-op
+            // primitive arm. Sound (a fresh literal's value inhabits the widened
+            // type by its getters) but imprecise, so warn rather than reject. A
+            // more precise collapse that keeps fields common to every source
+            // branch is a possible follow-up (SkipLabs/skjs#747).
+            tcenv.warning(
+              Array[
+                (
+                  spreadExpr.pos,
+                  "This object spread distributes over more than " +
+                    kMaxObjectBranches +
+                    " union branches; its type is over-approximated to an open " +
+                    "object, so some properties are typed 'unknown'",
+                ),
+              ],
+              SKJSCode(9009),
+            );
+            degraded = mutable Vector[];
+            for (state in states) {
+              degraded.push(
                 ObjectSpreadState::merge(
                   tcenv.subst,
                   this,
                   state,
-                  branch,
+                  TFields::empty(),
                   spreadExpr.pos,
                 ),
               )
             };
-            // The "spread did not fire" branch: a no-op primitive arm leaves
-            // the accumulated state unchanged, so the object arms' fields
-            // become optional in the union.
-            if (sawNoopPrimitive) {
-              pushState(state)
-            }
+            !states = degraded
+          } else {
+            !states = newStates
           };
-          !states = newStates;
           // The source's call/construct signatures are dropped: object spread
           // copies only own enumerable properties, and a call/construct
           // signature is not one. The merged result never carries them (an

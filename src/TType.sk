@@ -755,9 +755,11 @@ base class Variance {
 
 // Cap on the number of branches an object-branch cross-product may produce
 // (distributing a spread over unions, intersecting unions of objects). This
-// bounds the checker's memory: past it the construct is rejected ("too complex
-// to represent") rather than materializing an exponential number of branches.
-// A sound graceful degradation is tracked in SkipLabs/skjs#747.
+// bounds the checker's memory. Past it the two sites behave differently: a
+// distributed object spread degrades soundly to an open over-approximation and
+// warns (SkipLabs/skjs#747), while an intersection is rejected ("too complex to
+// represent") — no sound degradation exists there, since an intersection type
+// flows into contravariant positions where widening it would be unsound.
 const kMaxObjectBranches: Int = 10000;
 
 // Regular Typescript (open) object type
