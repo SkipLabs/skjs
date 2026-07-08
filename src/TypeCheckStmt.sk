@@ -18,9 +18,12 @@ extension class TypeChecker {
         TType::single(TPrimUnit(TVoid(), st.pos)) // constructor
       | Some(x) -> x
       };
-      (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(tcenv, e, true))
+      (epos, etype, vi0) = eOpt match {
+      | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)), VINone())
+      | Some(e) ->
+        // Captured before evaluating e (see checkSubTypeView).
+        vi = this.viewInfoFor(tcenv, e);
+        (e.pos, this.expr(tcenv, e, true), vi)
       };
       // In an async function the returned expression and the declared
       // return type are compared by awaited type, like tsc: `return p`
@@ -44,7 +47,23 @@ extension class TypeChecker {
           void
         }
       } else {
-        this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322))
+        // At a non-async return there is never a retype: control leaves the
+        // function on this path, so a granted view and a later precise read
+        // cannot both execute (per-path soundness). Transfer transparency
+        // still applies (VITransfer demoted to the no-retype VITransfer(None)).
+        viewForCheck = vi0 match {
+        | VITransfer _ -> VITransfer(None())
+        | x -> x
+        };
+        this.checkSubTypeView(
+          tcenv,
+          epos,
+          msg,
+          etype,
+          retType,
+          TSCode(2322),
+          viewForCheck,
+        )
       }
 
     | Bind(bkind, bindings) ->
