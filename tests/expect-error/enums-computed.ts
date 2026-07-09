@@ -150,6 +150,14 @@ function ambientUninitializedMemberIsOpaque(): 1 {
   return DE.B;
 }
 
+declare enum AmbientComputed {
+  A = ".".length,
+}
+
+function ambientComputedMember(): number {
+  return AmbientComputed.A;
+}
+
 declare const enum DCE {
   A,
   B,
@@ -257,6 +265,10 @@ enum SpelledBig {
 function spelledBigCanonicalReverse(): string {
   // @skjs-expect-error Property '9007199254740994' does not exist on this type
   return SpelledBig[9007199254740994];
+}
+
+function spelledBigSpelledReverse(): "A" {
+  return SpelledBig[0x20000000000001];
 }
 
 function duplicateNameMemberType(): D.A {
