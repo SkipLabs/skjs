@@ -307,26 +307,31 @@ extension class TypeChecker {
       /* branches.size() > 1 from the caller */
       return branches[branches.size() - 1] is SwitchBranch(Default(), _, _)
     };
+    // Kept for truthful unreachability reasons: a case value can be
+    // unreachable because it is not in the switched type at all, or because
+    // an earlier case (e.g. an alias enum member with the same value)
+    // already handled it.
+    originalValues = SortedSet::createFromIterator(cases.keys());
     for (branch in branches) {
-      if (cases.isEmpty()) {
-        tcenv.warning(
-          Array[
-            (
-              branch.pos,
-              "This case is unreachable: its value is not in the switched type",
-            ),
-          ],
-          SKJSCode(2014),
-        );
-        break void
-      };
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
         this.lookupExprType(tcenv, v)
           .getSTypes(tcenv.subst, this, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
-          if (!cases.containsKey(staticValue)) {
+          if (cases.containsKey(staticValue)) {
+            cases.remove(staticValue)
+          } else if (originalValues.contains(staticValue)) {
+            tcenv.warning(
+              Array[
+                (
+                  pos,
+                  "This case is unreachable: its value is already handled by an earlier case",
+                ),
+              ],
+              SKJSCode(2014),
+            )
+          } else {
             tcenv.warning(
               Array[
                 (
@@ -336,12 +341,23 @@ extension class TypeChecker {
               ],
               SKJSCode(2014),
             )
-          } else {
-            cases.remove(staticValue)
           }
         | None() -> void
         }
-      | SwitchBranch(Default(), _stmts, _pos) -> cases.clear()
+      | SwitchBranch(Default(), _stmts, pos) ->
+        if (cases.isEmpty()) {
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                "This 'default' case is unreachable: all values of the switched type are already handled",
+              ),
+            ],
+            SKJSCode(2014),
+          )
+        } else {
+          cases.clear()
+        }
       }
     };
     if (!cases.isEmpty()) {

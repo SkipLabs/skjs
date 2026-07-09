@@ -280,9 +280,10 @@ function switchDuplicateValueCase(x: Same): number {
   switch (x) {
     case Same.A:
       return 0;
-    // @skjs-expect-warning This case is unreachable: its value is not in the switched type
+    // @skjs-expect-warning This case is unreachable: its value is already handled by an earlier case
     case Same.B:
       return 1;
+    // @skjs-expect-warning This 'default' case is unreachable: all values of the switched type are already handled
     default:
       return 2;
   }
