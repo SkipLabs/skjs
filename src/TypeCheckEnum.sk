@@ -233,6 +233,12 @@ extension base class TEnv {
           | None() ->
             prevValue match {
             | EMVNumber(ENRAmbient()) -> EMVNumber(ENRAmbient())
+            // The predecessor is certainly a number, just untracked
+            // (fractional/out-of-range/constant-reference): the increment is
+            // a number too, and tsc accepts it (it folds these precisely).
+            | EMVNumber(ENRImprecise())
+            | EMVNumber(ENRConstUnknown()) ->
+              EMVNumber(ENRImprecise())
             | _ -> EMVNumber(ENRMissingInitializer())
             }
           }

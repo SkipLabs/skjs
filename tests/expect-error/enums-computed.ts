@@ -242,7 +242,6 @@ function crossLaterMember(): number {
 enum FracTail {
   A = 1.5,
   B,
-  // @skjs-expect-error Enum member must have initializer
   C,
 }
 
