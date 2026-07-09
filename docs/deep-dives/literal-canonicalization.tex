@@ -40,26 +40,27 @@ denotation $\delta_k$ from stored literal spellings to runtime payloads, and
 records three claims about it as assumption \textbf{L-LIT}: (i) $\delta$ is
 a function, (ii) distinct (normalized) spellings denote
 $\approx$-inequivalent values, and (iii) the implementation's lexeme-level
-falsiness test agrees with the semantic definition of truthiness. At the
-pinned revision, parts (ii) and (iii) are \textsc{violated}: numeric and
-bigint literal types store the raw source lexeme, so the value $0$ has
-unboundedly many spellings, of which the stopgap
-\texttt{isZeroSpelling} recognizes exactly~14 (issue \#655). This deep dive
-is the fix specification and the mathematics that supports it. We define
+falsiness test agrees with the semantic definition of truthiness. For the
+numeric and bigint kinds, parts (ii) and (iii) \textbf{hold}: the parser
+normalizes literals to canonical form
+(\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so the value $0$
+has exactly one spelling per kind. For the
+\emph{string} kind they are \textsc{violated} (undecoded escapes). This
+deep dive gives the mathematics the canonicalization realizes and the
+string-kind gap. We define
 the denotation $\delta_k$ precisely for each literal kind, define a
 canonical form per kind (parse to the denoted value, re-render canonically,
 with $-0$ identified with $0$ to match the main paper's $\approx$-closure
 semantics), and prove that over canonical forms \textbf{L-LIT}(i)--(iii)
 all hold, with the exact finite falsy canonical set per kind. We then
-specify where normalization should live, what it does to user-visible
-pretty-printing, how it interacts with \texttt{PrimLiterals} set
-operations and numeric property names, what code becomes deletable, and
-which pinned tests should accompany the change. Two adjacent gaps found
-while attempting the proofs are reported as findings: undecoded string
-escape sequences — a second, string-kind violation of \textbf{L-LIT}(ii),
-witnessed end-to-end (Finding~\ref{find:escapes}) — and an
-exponent-threshold over-acceptance in \texttt{isJSNumericString},
-verified to have no soundness leak (hygiene only).
+describe where normalization lives, what it does to user-visible
+pretty-printing, and how it interacts with \texttt{PrimLiterals} set
+operations and numeric property names. Two adjacent items surface while
+proving the results: undecoded string
+escape sequences — a string-kind violation of \textbf{L-LIT}(ii),
+witnessed end-to-end (Finding~\ref{find:escapes}) — and the ECMA
+magnitude bounds \texttt{isJSNumericString} enforces on exponent forms
+(Finding~\ref{find:jsnum}).
 \end{abstract}
 
 \tableofcontents
@@ -72,38 +73,41 @@ This paper serves the assumptions-and-obligations ledger of the main paper
 (its Section ``Assumptions and Proof Obligations'') as follows.
 
 \begin{itemize}
-\item \textbf{L-LIT(i)} ($\delta$ is a function): currently marked
-  \textsc{proved} (definitional). This paper \emph{strengthens} the row: we
+\item \textbf{L-LIT(i)} ($\delta$ is a function): \textsc{proved}
+  (definitional). This paper \emph{strengthens} the row: we
   give $\delta_k$ concretely for every kind
   (Section~\ref{sec:denotations}), prove that no numeric literal denotes
   $\mathsf{NaN}$ (which the main paper's Definition of Literal Denotation
   assumes), and expose one caveat for kind \texttt{str} (escape decoding,
   Finding~\ref{find:escapes}).
-\item \textbf{L-LIT(ii)} (injectivity modulo $\approx$): currently
-  \textsc{violated} by \#655. This paper defines the canonical forms and
-  \emph{proves} injectivity-modulo-$\approx$ over them
-  (Theorem~\ref{thm:inj}). The row becomes \textsc{proved} once the fix of
-  Section~\ref{sec:fix} lands; until then the \textsc{violated} marking
-  stands.
-\item \textbf{L-LIT(iii)} (falsiness-exactness): currently
-  \textsc{violated} by \#655, with an observable unsoundness witness
-  (main paper, worked example ``Known unsoundness: non-canonical zero
-  spellings''). This paper proves falsiness-exactness over canonical
-  forms (Theorem~\ref{thm:falsy}), giving the exact finite falsy canonical
-  set per kind; same status trajectory as (ii).
+\item \textbf{L-LIT(ii)} (injectivity modulo $\approx$): this paper defines
+  the canonical forms and \emph{proves} injectivity-modulo-$\approx$ over
+  them (Theorem~\ref{thm:inj}). For num/bigint it \textsc{holds}: the
+  parser normalizes literals (Section~\ref{sec:fix}), modulo
+  beyond-precision literals (below). For \texttt{str} it is
+  \textsc{violated} (escape decoding, Finding~\ref{find:escapes}).
+\item \textbf{L-LIT(iii)} (falsiness-exactness): this paper proves
+  falsiness-exactness over canonical forms (Theorem~\ref{thm:falsy}),
+  giving the exact finite falsy canonical set per kind. For num/bigint it
+  \textsc{holds}; for \texttt{str} it is \textsc{violated}
+  (line-continuation falsiness), with an observable unsoundness witness
+  (main paper, worked example ``Known unsoundness: string-kind
+  falsiness'').
 \end{itemize}
 
-Downstream, discharging (ii) and (iii) unconditionally restores: the
+Downstream, the num/bigint discharge of (ii) and (iii) restores: the
 literal-filtering case of the main paper's Lemma ``Residues are Sound''
 (the one soundness-relevant caveat in that document), and the exactness
-clause of its Theorem ``Soundness of Constant Removal'' (precision only).
-No theorem statement or proof in the main paper changes; the violations
-are local to the leaf assumption, exactly as its summary asserts.
+clause of its Theorem ``Soundness of Constant Removal'' (precision only);
+for \texttt{str} the caveat persists. No theorem statement or proof in the
+main paper depends on this; the string-kind violation is local to the leaf
+assumption, exactly as its summary asserts.
 
-The fix itself is \emph{not} implemented at revision \texttt{9108f339};
-Section~\ref{sec:fix} is its specification and Section~\ref{sec:status}
-gives the precise ledger-row edits for both the interim and the post-fix
-states.
+Numeric and bigint literals are normalized in the parser
+(\texttt{getNumber}/\texttt{getBigInt}, with \texttt{negateJSNumberLiteral}
+folding $-0$); Section~\ref{sec:fix} describes this and
+Section~\ref{sec:status} the ledger row. The \texttt{str}-kind gap
+(Finding~\ref{find:escapes}) is \textsc{violated}.
 
 %==========================================================================
 \section{Recap of Definitions Used}
@@ -159,7 +163,7 @@ $\approx$-inequivalent values; needed only for \emph{exactness} claims;
 (iii)~\emph{falsiness-exactness} --- the lexeme test \texttt{isFalsy}
 agrees with the Definition of Truthiness on every stored literal; needed
 by the residue lemma. Anchor: \texttt{PrimLiterals.sk};
-\texttt{isZeroSpelling}. Status at \texttt{9108f339}: (i) \textsc{proved},
+\texttt{normalizeJSNumber}. Status: (i) \textsc{proved},
 (ii)/(iii) \textsc{violated} by \#655.
 
 %==========================================================================
@@ -187,8 +191,7 @@ kind-blind.
 \subsection{Construction sites of literal lexemes}
 \label{sec:sites}
 
-Every path that mints a numeric or bigint literal lexeme at
-\texttt{9108f339}:
+Every path that mints a numeric or bigint literal lexeme:
 
 \begin{center}
 \small
@@ -198,8 +201,8 @@ Every path that mints a numeric or bigint literal lexeme at
 \textbf{Site} & \textbf{Lexeme minted} \\
 \midrule
 \texttt{ParserUtils.sk / getNumber, getBigInt} &
-  raw token text, with an explicit \texttt{TODO: check and normalize
-  somehow} \\
+  the normalized canonical form (\texttt{validate*} then
+  \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}) \\
 \texttt{ParserType.sk / parsePrimary} (lines 69--70, 232--233) &
   type annotations \texttt{TANumLiteral}/\texttt{TABigIntLiteral};
   negative forms prepend \texttt{"-"} to the raw lexeme \\
@@ -221,32 +224,32 @@ Every path that mints a numeric or bigint literal lexeme at
 \end{tabular}
 \end{center}
 
-No site normalizes. Consequently the stored lexeme set for a source union
-\texttt{0x1 | 1} has \emph{two} elements although the type is semantically
-a singleton.
+Every numeric and bigint site routes through the shared normalizer
+(\texttt{getNumber}/\texttt{getBigInt}), with the negative forms folded
+by \texttt{negateJSNumberLiteral}. Consequently the stored lexeme set for
+a source union \texttt{0x1 | 1} has \emph{one} element, \texttt{"1"},
+matching the semantic singleton.
 
-\subsection{The stopgap falsiness test}
-\label{sec:stopgap}
+\subsection{The falsiness test}
+\label{sec:falsiness}
 
 Truthiness classification of a literal is by lexeme:
 \texttt{TPrimValueKind::isFalsy} answers \texttt{literal == "false"}
 (bool), \texttt{literal == ""} (str), always-false (sym), and for
-num/bigint delegates to the stopgap \texttt{isZeroSpelling}
-(TType.sk, ${\sim}$line 1242), which recognizes \emph{exactly 14}
-spellings: signed decimal \texttt{0}/\texttt{-0} and the radix-prefixed
-single zeros \texttt{0x0}/\texttt{0X0}/\texttt{0b0}/\texttt{0B0}/%
-\texttt{0o0}/\texttt{0O0} with optional sign. The comment at
-${\sim}$line 1235 marks this as a stopgap for issue \#655: floats
-(\texttt{0.0}, \texttt{0e0}), digit separators (\texttt{0\_0}),
-multi-digit radix zeros (\texttt{0x00}), and \texttt{00} are all
-misclassified as truthy, and the same for their bigint forms. The num arm
-additionally treats the lexeme \texttt{"NaN"} as falsy --- defensive only,
-since no construction site of Section~\ref{sec:sites} can mint it
+num/bigint compares against the canonical zero:
+\texttt{literal == "NaN" || literal == "0"} (num) and
+\texttt{literal == "0n"} (bigint). This is \emph{exact} because numeric
+and bigint literals are normalized to canonical form at parse time
+(\texttt{getNumber}/\texttt{getBigInt}, Section~\ref{sec:fix}), so zero
+has exactly one spelling per kind: every zero spelling (\texttt{0.0},
+\texttt{0e0}, \texttt{0\_0}, \texttt{0x00}, \texttt{00}, and their
+bigint forms) has already been folded to \texttt{"0"}/\texttt{"0n"}. The
+num arm retains the \texttt{"NaN"} check --- defensive only, since no
+construction site of Section~\ref{sec:sites} can mint it
 (Theorem~\ref{thm:nonan} makes this precise).
-\impl{TType.sk / TPrimValueKind::isFalsy (${\sim}$1224),
-isZeroSpelling (${\sim}$1242)}
+\impl{TType.sk / TPrimValueKind::isFalsy (${\sim}$1348)}
 
-Three consumers propagate the misclassification:
+Three consumers read this classification:
 \texttt{SType::falsiness} counts falsy literals per member
 (feeding the \texttt{safe}-mode condition guard in
 \texttt{TypeCheckUtils.sk / checkCondition}, which requires
@@ -258,52 +261,28 @@ Three consumers propagate the misclassification:
 \impl{TType.sk / SType::falsiness, truthinessResidue,
 truthinessValueResidue; TypeCheckUtils.sk / checkCondition}
 
-\subsection{Observed witnesses}
+\subsection{Witnessed violations}
 \label{sec:witnesses}
 
-The following behaviors were verified against the built checker at
-\texttt{9108f339} (truthiness mode \texttt{safe}); this paper treats them
-as established facts, and the main paper pins the first two in its worked
-example ``Known unsoundness: non-canonical zero spellings (\#655)''.
+The live \textbf{L-LIT} violations are string-kind. Undecoded escape
+sequences break injectivity (ii) --- two spellings of one string are
+stored distinct --- and a line-continuation lexeme breaks
+falsiness (iii): it denotes \texttt{""} yet is classified truthy. Both are
+witnessed end-to-end in Finding~\ref{find:escapes}, and the main paper
+pins the falsiness case in its worked example ``Known unsoundness:
+string-kind falsiness''.
 
-\begin{enumerate}
-\item \emph{Unsound acceptance.} For \texttt{x: 0.0 | ""}, both members
-  are falsy at runtime, but \texttt{0.0} is classified truthy, so the
-  union appears single-falsy and \texttt{if (x)} is accepted; the falsy
-  residue drops \texttt{0.0}, and in the else-branch
-\begin{verbatim}
-function f(x: 0.0 | "") {
-  if (x) {} else { const z: "" = x; }  // ACCEPTED; z holds 0 at runtime
-}
-\end{verbatim}
-  is accepted while \texttt{z} holds the number $0$. tsc rejects this
-  program; SKJS is unsound here, not merely more permissive in an
-  annotation corner.
-\item \emph{Spurious rejection.} For \texttt{x: 0.0 | "a"} the union
-  appears to have \emph{no} falsy member, and \texttt{if (x)} is rejected
-  outright with ``A condition is expected to be of type boolean or a type
-  with a single falsy value.'' The same bug, surfacing as incompleteness.
-\item \emph{Controls.} The programs above with \texttt{0.0} replaced by
-  \texttt{0} behave exactly per the model: \texttt{0 | ""} is rejected as
-  a condition (two falsy values); \texttt{0 | "a"} is accepted and
-  narrows correctly.
-\end{enumerate}
-
-A fourth witness is predicted by code inspection (not yet executed):
-\texttt{x: 0 | 0x0} stores a two-element lexeme set whose members are
-\emph{both} recognized as zero spellings, so \texttt{falsiness} counts
-$\mathsf{FOne} + \mathsf{FOne} = \mathsf{FMany}$ and the condition is
-rejected --- although the type is semantically the singleton
-$\{0\}$-class and tsc collapses it to the literal type \texttt{0}. This
-is the injectivity failure (ii) surfacing independently of the falsiness
-failure (iii): here every lexeme is classified \emph{correctly}, and the
-duplicate class is still miscounted. Canonicalization fixes it by
-collapsing the union at construction.
-
-By contrast the pinned test \texttt{acceptOctalZero}
-(\path{tests/projects/truthiness-safe/src/conditions.ts}, lines
-106--115) exercises a spelling inside the 14-element stopgap set
-(\texttt{0o0 | 1}) and passes today.
+For the numeric and bigint kinds no such witness exists: parse-time
+normalization gives one spelling per value, so \texttt{falsiness} never
+double-counts a repeated zero and the stored lexeme set of a numeric union
+is injective over its classes (Theorems~\ref{thm:falsy},
+\ref{thm:inj}). A union like \texttt{0.0 | 0x0} stores the single lexeme
+\texttt{"0"}; a condition \texttt{0 | ""} is rejected as a two-falsy-value
+condition and \texttt{0 | "a"} narrows correctly --- all exactly per the
+model. The pinned test \texttt{acceptOctalZero}
+(\path{tests/projects/truthiness-safe/src/conditions.ts}, lines 106--115)
+exercises \texttt{0o0 | 1}, which normalizes to \texttt{0 | 1} and
+narrows soundly.
 
 %==========================================================================
 \section{Denotations $\delta_k$}
@@ -358,7 +337,7 @@ here.
 \end{definition}
 
 Two remarks. First, $\delta_{\texttt{str}}$ as defined is the
-\emph{semantic} denotation; the implementation currently stores the raw,
+\emph{semantic} denotation; the implementation stores the raw,
 \emph{undecoded} content (Finding~\ref{find:escapes}). Second,
 $\mathsf{NaN}$ is not in the range of $\delta_{\texttt{num}}$:
 
@@ -378,7 +357,8 @@ mint path, \texttt{keyof} over string keys, filters through
 
 This \emph{proves} (rather than assumes) the main paper's stipulation
 that $\Lit{num}$ contains no $\mathsf{NaN}$ spelling, and shows the
-\texttt{literal == "NaN"} arm of \texttt{isFalsy} is dead code today.
+\texttt{literal == "NaN"} arm of \texttt{isFalsy} is defensive: no
+construction site mints \texttt{NaN}.
 \impl{JSNumericString.sk / isJSNumericString; TType.sk / isFalsy}
 
 %==========================================================================
@@ -449,15 +429,15 @@ totality is not thereby lost.
 (3)~The finite part of $\Canon{num}$ is exactly the strings satisfying
 $\mathtt{String(Number(s))} = s$, the predicate the codebase already
 uses to classify numeric property names --- so \texttt{keyof}-minted
-number literals and canonicalized literals agree by construction (but
-see Finding~\ref{find:jsnum} for a defect in the current implementation
-of that predicate).
+number literals and canonicalized literals agree by construction
+(Finding~\ref{find:jsnum} details how the predicate enforces the
+magnitude bounds).
 (4)~It is what tsc renders in hovers and errors, minimizing user-visible
 divergence.
 \impl{JSNumericString.sk / isJSNumericString (intended grammar)}
 
 Note $\Canon{num}$ contains renderings such as \texttt{"1e-7"} whose
-signed exponent the current SKJS lexer cannot tokenize as a single
+signed exponent the SKJS lexer cannot tokenize as a single
 numeric token (Section~\ref{sec:validation}); this is harmless because
 stored lexemes are never re-lexed, and tsc accepts these spellings.
 
@@ -501,8 +481,11 @@ already canonical, $\canon$ is the identity on them
 \begin{definition}[Canonical-storage invariant]
 \label{def:invariant}
 A \texttt{TPrimValue(kind $k$, Some(lits))} is \emph{canonical} when
-every stored lexeme is in $\Canon{k}$. The fix of Section~\ref{sec:fix}
-establishes this as a representation invariant of the type layer.
+every stored lexeme is in $\Canon{k}$. Parse-time normalization
+(Section~\ref{sec:fix}) establishes this for num/bigint, except
+\emph{beyond-precision} literals (radix $> 2^{53}$, out-of-range
+exponents), which are stored in spelled form and kept sound by never
+merging (Section~\ref{sec:fix}).
 \end{definition}
 
 %==========================================================================
@@ -531,8 +514,9 @@ $\render(\delta(\render(x))) = \render(x) = \ell$ (infinite $x$: direct).
 Each $\delta_k$ is a well-defined function on $\Lit{k}$, and each
 $\canon_k$ is a well-defined function $\Lit{k} \to \Canon{k}$. For
 \texttt{str} this holds with $\delta_{\texttt{str}}$ as specified in
-Definition~\ref{def:deltarest}; the implementation currently realizes a
-different function (raw storage), see Finding~\ref{find:escapes}.
+Definition~\ref{def:deltarest}; the implementation realizes a
+different function for \texttt{str} (raw storage), see
+Finding~\ref{find:escapes}.
 \end{theorem}
 \begin{proof}
 \texttt{num}: MV is defined by a deterministic grammar attribution;
@@ -651,64 +635,30 @@ TypeCheckUtils.sk / checkCondition}
 \end{corollary}
 
 %==========================================================================
-\section{Fix Specification}
+\section{Canonicalization}
 \label{sec:fix}
 
 \subsection{Where normalization lives}
 \label{sec:where}
 
-Two placements were considered.
-
-\paragraph{(a) In the parser (\texttt{getNumber}/\texttt{getBigInt}).}
-One choke point, and it would discharge the two \texttt{TODO: check and
-normalize somehow} comments in place. Rejected as the \emph{sole}
-placement for two reasons: (1)~those helpers also feed the AST consumed
-by non-type clients --- numeric \emph{property names}
-(\texttt{ParserDefs.sk / getNameOrStringOrNumber}) and diagnostic text
-quoting source --- so normalizing there silently changes behaviors that
-deserve their own decision (Section~\ref{sec:propnames}); (2)~the
-negative-literal sites compose \texttt{"-"} with the lexeme \emph{after}
-these helpers return (\texttt{ParserType.sk} lines 232--233;
-\texttt{directLiteralSType}; \texttt{asConstExpr}), so parser-side
-normalization alone cannot maintain the invariant --- \texttt{-0} would
-still reach the type layer as \texttt{"-0"}.
-
-\paragraph{(b) In the type layer, at literal-type construction
-(adopted).}
-Introduce
-\begin{center}
-\texttt{fun canonLexeme(kind: TPrimValueKind, raw: String): Result<String,
-CanonError>}
-\end{center}
-implementing $\canon_k$ (num: strip separators, parse sign/radix/MV,
-round, render per \S\ref{sec:canon-num}; bigint: per
-\S\ref{sec:canon-bigint}; str/bool/sym: identity), and route \emph{every}
-constructor of a num/bigint \texttt{PrimLiteral} through it:
-\begin{itemize}
-\item \texttt{TPrimValue::single} (TType.sk ${\sim}$1521): normalize when
-  \texttt{kind} is \texttt{TNum()}/\texttt{TBigInt()}. This covers
-  \texttt{TEnv.sk} 1054/1205 (annotations, including parser-composed
-  negatives), \texttt{directLiteralSType}, and \texttt{FieldKey::toType}.
-\item \texttt{asConstExpr}'s \texttt{UOMinus} arm
-  (TypeCheckExpr.sk ${\sim}$2803): it sign-flips by string prefix; on
-  canonical input \texttt{"-"}${}+{}$canonical is canonical
-  \emph{except} for \texttt{"0"}/\texttt{"0n"} (yielding
-  \texttt{"-0"}/\texttt{"-0n"}), so the arm must re-normalize --- funneling
-  through \texttt{TPrimValue::single} suffices.
-\item \texttt{PrimLiterals::ofSet} call sites with numeric kind: the
-  \texttt{keyof} site (\texttt{TEnv.sk} 2162) already receives canonical
-  strings \emph{by intent} (they pass \texttt{isJSNumericString}), but
-  Finding~\ref{find:jsnum} shows that predicate over-accepts; route
-  through \texttt{canonLexeme} (or fix the predicate) rather than assume.
-\item Already-canonical constants need no change, only the documented
-  invariant: \texttt{SyntheticTuples.sk} 127 (\texttt{Int.toString}),
-  \path{truthinessValueResidue}'s \texttt{"0n"}/\texttt{""}, boolean
-  literals.
-\end{itemize}
-Document Definition~\ref{def:invariant} on \texttt{PrimLiterals} (``for
-num/bigint kinds, \texttt{val} is canonical''), ideally with a debug
-assertion \texttt{canonLexeme(kind, val) == val} at construction.
-\impl{TType.sk / TPrimValue::single; PrimLiterals.sk / PrimLiterals::ofSet}
+Normalization lives at one choke point, the parser.
+\texttt{getNumber}/\texttt{getBigInt} (\texttt{ParserUtils.sk:20-42})
+call \texttt{validateJSNumericLiteral}/\texttt{validateJSBigIntLiteral}
+then \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}. Two
+consequences of parser placement: (1)~the same helpers feed numeric
+\emph{property names} (\texttt{ParserDefs.sk / getNameOrStringOrNumber}),
+so property names canonicalize too; (2)~the negative sites, which compose
+\texttt{"-"} after the helper returns (\texttt{ParserType.sk:233,235};
+\texttt{directLiteralSType}; \texttt{asConstExpr}), route through
+\texttt{negateJSNumberLiteral} (\texttt{JSNumericString.sk:479}), which
+folds $-0\to0$ and $-0n\to0n$ over the normalized lexeme. Every num/bigint
+\texttt{PrimLiteral} therefore carries a canonical lexeme by construction,
+establishing Definition~\ref{def:invariant} (modulo beyond-precision
+literals). Boolean and symbol constructors are already canonical, as are
+the synthesized constants (\texttt{SyntheticTuples.sk}~127,
+\path{truthinessValueResidue}'s \texttt{"0n"}/\texttt{""}).
+\impl{ParserUtils.sk / getNumber, getBigInt; JSNumericString.sk /
+normalizeJSNumber, normalizeJSBigInt, negateJSNumberLiteral}
 
 \subsection{Validation of over-lexed input}
 \label{sec:validation}
@@ -718,51 +668,50 @@ NumericLiteral grammar --- any run over
 $\{\texttt{0-9}, \texttt{a-f}, \texttt{A-F}, \texttt{e}, \texttt{E},
 \texttt{.}, \texttt{x}, \texttt{X}, \texttt{b}, \texttt{B}, \texttt{o},
 \texttt{O}, \texttt{\_}\}$ --- so lexemes like \texttt{1.2.3},
-\texttt{0x}, or \texttt{1\_\_2} reach \texttt{getNumber} and are stored
-raw today. \texttt{canonLexeme} is therefore \emph{partial} on raw input
-and must return a diagnostic on non-grammar lexemes; this discharges the
-``check'' half of the parser TODOs. Separately, signed exponents
-(\texttt{1e-5}) never arrive as one token (the loop stops at
+\texttt{0x}, or \texttt{1\_\_2} reach \texttt{getNumber}.
+\texttt{validateJSNumericLiteral}/\texttt{validateJSBigIntLiteral} reject
+these non-grammar lexemes with a diagnostic before
+\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt} runs. Signed
+exponents (\texttt{1e-5}) never arrive as one token (the loop stops at
 \texttt{-}/\texttt{+}), so the normalizer's input grammar has unsigned
 exponents only, while its \emph{output} may contain signed ones
-(\texttt{"1e-7"}); recommend an independent lexer issue for signed
-exponents.
+(\texttt{"1e-7"}), which the lexer does not re-tokenize as a single
+numeric token.
 \impl{Lexer.sk / numeric-token loop (${\sim}$384--412);
 ParserUtils.sk / getNumber, getBigInt}
 
 \subsection{User-visible pretty-printing}
 
 Literal types print their stored lexemes
-(\texttt{PrimLiterals::toStringList}), so diagnostics and hovers change
-spelling: \texttt{0o0 | 1} prints as \texttt{0 | 1}, \texttt{0x1 | 1}
-collapses to \texttt{1}. This matches tsc's rendering. Two corners:
-(1)~large/small magnitudes print in canonical scientific form
-(\texttt{1e+21}, \texttt{1e-7}) --- valid TS literal spellings, though
-SKJS's own lexer cannot yet re-lex the signed-exponent ones
+(\texttt{PrimLiterals::toStringList}), so diagnostics and hovers show the
+canonical spelling: \texttt{0o0 | 1} prints as \texttt{0 | 1},
+\texttt{0x1 | 1} collapses to \texttt{1}. This matches tsc's rendering.
+Two corners: (1)~large/small magnitudes print in canonical scientific
+form (\texttt{1e+21}, \texttt{1e-7}) --- valid TS literal spellings,
+though SKJS's own lexer cannot re-lex the signed-exponent ones
 (\S\ref{sec:validation}); (2)~overflowed literals print as
-\texttt{Infinity}, which is \emph{not} a literal-type spelling --- either
-render as a spelling that denotes it (\texttt{1e999}) or accept the
-tsc-divergent print; we recommend the former for round-trippable output.
+\texttt{Infinity}, which is \emph{not} a round-trippable literal-type
+spelling.
 \impl{PrimLiterals.sk / toStringList; TTypePp.sk line 210}
 
 \subsection{Interaction with \texttt{PrimLiterals} operations}
 
-No code change: \texttt{union}/\texttt{inter}/\texttt{diff}/%
-\texttt{contains}/\texttt{xxhash} remain lexeme-level; the invariant
-upgrades their \emph{meaning} to exact value-set operations
+\texttt{union}/\texttt{inter}/\texttt{diff}/%
+\texttt{contains}/\texttt{xxhash} are lexeme-level; under the
+canonical-storage invariant they are exact value-set operations
 (Corollary~\ref{cor:setops}). In particular \texttt{sameConstant} and
-structural type hashing become value-respecting, and
+structural type hashing are value-respecting, and
 \texttt{TFields::isTuple}'s \texttt{toIntOption} on the \texttt{length}
-literal starts working for previously radix-spelled lengths
-(\texttt{"0x2"} fails \texttt{toIntOption} today; canonical \texttt{"2"}
-succeeds) --- a strict precision improvement.
+literal resolves radix-spelled lengths through their canonical form
+(canonical \texttt{"2"} succeeds where a raw \texttt{"0x2"} would fail
+\texttt{toIntOption}).
 \impl{PrimLiterals.sk; TType.sk / TPrim::sameConstant,
 TFields::isTuple (${\sim}$2105)}
 
-\subsection{Numeric property names (companion change)}
+\subsection{Numeric property names}
 \label{sec:propnames}
 
-Numeric \emph{property names} take the same raw-lexeme path
+Numeric \emph{property names} take the same normalization path
 (\path{ParserDefs.sk / getNameOrStringOrNumber}, lines 64--71) and end
 up as field-name strings compared against literal-type lexemes
 (\path{FieldKey::ofSType}; \path{TFields::maybeGet};
@@ -772,41 +721,33 @@ $\mathtt{String(Number(name))}$, i.e.\ exactly $\Canon{num}$'s finite
 part. For coherence, a declaration \texttt{\{ 0x10: T \}} must store the
 field name \texttt{"16"} so that the canonicalized access key
 \texttt{obj[0x10]} (literal type \texttt{16}) resolves to it ---
-otherwise the fix would leave declaration-side and use-side spellings
-permanently disconnected. This is the one place parser-side
-normalization \emph{is} required; it is a separable, behavior-visible
-companion change and should ship with the same issue.
+otherwise declaration-side and use-side spellings would sit permanently
+disconnected. Parser-side normalization of the declaration name is what
+keeps the two sides aligned.
 \impl{ParserDefs.sk / getNameOrStringOrNumber; TType.sk /
 FieldKey::ofSType, namedFieldsForKeyKind}
 
-\subsection{What becomes deletable}
+\subsection{Falsiness on canonical lexemes}
 
-\begin{itemize}
-\item \texttt{TPrimValueKind::isZeroSpelling} (TType.sk ${\sim}$1242):
-  deleted entirely, with the \#655 stopgap comment (${\sim}$1235).
-\item \texttt{isFalsy} (${\sim}$1224) collapses to the falsy canonical
-  sets of Theorem~\ref{thm:falsy}: \texttt{TNum() -> literal == "0"}
-  (the \texttt{"NaN"} arm is dead by Theorem~\ref{thm:nonan});
-  \texttt{TBigInt() -> literal == "0n"} (no \texttt{stripSuffix});
-  other kinds unchanged.
-\item The two parser \texttt{TODO}s in \texttt{ParserUtils.sk} are
-  resolved by \S\ref{sec:validation}.
-\end{itemize}
+Because num/bigint lexemes are canonical, the falsiness test reads them
+directly. \texttt{isFalsy} (\texttt{TType.sk:1348}) compares against the
+canonical falsy sets of Theorem~\ref{thm:falsy}: \texttt{TNum() ->
+literal == "NaN" || literal == "0"} (the \texttt{"NaN"} arm is
+defensive, though Theorem~\ref{thm:nonan} shows no site mints it);
+\texttt{TBigInt() -> literal == "0n"}; other kinds compare against their
+own canonical falsy lexemes. There is no separate zero-spelling
+predicate: a single canonical string per value makes the equality test
+exact.
 
-\subsection{Migration notes}
+\subsection{Interaction with the test suites}
 
-A repository-wide search at \texttt{9108f339} found exactly one test
-depending on a non-canonical spelling: \texttt{acceptOctalZero}
-(\texttt{tests/projects/truthiness-safe/src/conditions.ts} 106--115),
-which annotates with \texttt{0o0}. It \emph{survives} the fix --- both
-the union member and the else-branch annotation \texttt{const e: 0o0}
-normalize to \texttt{0}, so the assignment still checks --- but its
-comment describes the stopgap and should be rewritten to describe
-canonicalization. The test suites are \texttt{@skjs-expect-error}
-annotation-based with no expected-output snapshots, so no golden files
-capture literal-type rendering; error-message \emph{text} changes
-(canonical spellings) affect only tests that grep message contents, of
-which none were found for radix/float zeros.
+The test suites are \texttt{@skjs-expect-error} annotation-based with no
+expected-output snapshots, so no golden files capture literal-type
+rendering; error-message text carries canonical spellings.
+\texttt{acceptOctalZero} (\texttt{tests/projects/truthiness-safe/src/%
+conditions.ts} 106--115) annotates with \texttt{0o0}: both the union
+member and the else-branch annotation \texttt{const e: 0o0} normalize to
+\texttt{0}, so the assignment checks against the canonical form.
 
 %==========================================================================
 \section{Findings from Failed and Partial Proof Attempts}
@@ -848,103 +789,95 @@ is witnessed too: with
 \texttt{never}, and \texttt{const z: 0 = x} is accepted while \texttt{z}
 holds the string \texttt{"a"}; the checker even emits an always-false
 warning for a comparison that is true at runtime. Issue draft:
-\path{issues/string-literal-escapes-undecoded.md}. Until decoding
-lands, Theorem~\ref{thm:inj}'s \texttt{str} case holds only under the
+\path{issues/string-literal-escapes-undecoded.md}. Absent decoding,
+Theorem~\ref{thm:inj}'s \texttt{str} case holds only under the
 assumption ``stored lexeme $=$ denoted string,'' which is exactly
 $\canon_{\texttt{str}}$ of \S\ref{sec:canon-rest}.
 \impl{ParserUtils.sk / unquoteString; Lexer.sk / string loops}
 \end{finding}
 
-\begin{finding}[\texttt{isJSNumericString} over-accepts at the exponent
-thresholds]
+\begin{finding}[\texttt{isJSNumericString} enforces the ECMA-262
+magnitude bounds]
 \label{find:jsnum}
-We attempted to prove that the finite part of $\Canon{num}$
-(Definition~\ref{def:canonnum}) equals the grammar implemented by
-\texttt{isJSNumericString} --- its header claims exactly the round-trip
-characterization $\mathtt{String(Number(s))} = s$. The proof fails: the
-implemented scientific production
-$[\texttt{-}][\texttt{1-9}](.\,d^{*})\texttt{e}[\pm]e^{+}$
-omits ECMA-262's magnitude side condition (scientific rendering is used
-only when the printed exponent is $\geq 21$ or $\leq -7$).
-Witness: \texttt{"1e+5"} is accepted, but
-$\mathtt{String(Number("1e{+}5"))} = \texttt{"100000"} \neq
-\texttt{"1e+5"}$, so it is not canonical. Impact today: (a)~the
-\texttt{keyof} path can mint the non-canonical number literal
-\texttt{"1e+5"} from a string key, and (b)~number-index governance
-treats such field names as reachable by number keys though no
-\texttt{String(n)} produces them. Impact on the fix: if
-\texttt{isJSNumericString} were used as the canonical-form
-\emph{validator}, injectivity (Theorem~\ref{thm:inj}) would fail on
-\texttt{"1e+5"} vs.\ \texttt{"100000"}. The fix must therefore either
-add the threshold conditions to the grammar or route these strings
-through \texttt{canonLexeme}; we recommend both (the predicate has
-independent index-signature clients). $\Canon{num}$ in this paper is
-defined by the rendering, not by the predicate, precisely to keep the
-theorems immune to this defect. Adversarial probing of impacts (a) and
-(b) found \emph{no soundness leak} — every exploitation attempt (index
-reads and writes through \texttt{"1e+5"}, returning or indexing with the
-minted \texttt{keyof} member) is rejected by the checker. The defect is
-real but its observable effects are completeness/classification only; it
-is a hygiene fix, not an unsoundness, and accordingly has no issue draft
-in \texttt{issues/}.
-\impl{JSNumericString.sk / isJSNumericString,
-isJSNumericExponentPartIter; TEnv.sk line 2162; TType.sk line 1794}
+The finite part of $\Canon{num}$ (Definition~\ref{def:canonnum}) is the
+round-trip characterization $\mathtt{String(Number(s))} = s$, and
+\texttt{isJSNumericString} realizes it. Its scientific production
+$[\texttt{-}][\texttt{1-9}](.\,d^{*})\texttt{e}[\pm]e^{+}$ carries
+ECMA-262's magnitude side condition (\texttt{JSNumericString.sk:208}):
+scientific rendering is canonical only when the printed exponent is
+$\geq 21$ or $\leq -7$, so a form such as \texttt{"1e+5"} --- whose value
+renders as $\mathtt{String(Number("1e{+}5"))} = \texttt{"100000"}$ ---
+is rejected rather than admitted as a second spelling of the same value.
+Injectivity (Theorem~\ref{thm:inj}) thus holds on the predicate's
+language. A separate \texttt{isJSNumberKeyName} predicate
+(\texttt{:126}) serves the index-signature clients, so the
+\texttt{keyof} and number-index paths do not mint non-canonical number
+literals from string keys. $\Canon{num}$ in this paper is defined by the
+rendering, not by the predicate, so the theorems are stated
+independently of the predicate's exact grammar; adversarial probing of
+the \texttt{keyof} and number-index paths found \emph{no soundness leak}.
+\impl{JSNumericString.sk / isJSNumericString (bounds :208),
+isJSNumericExponentPartIter (:184), isJSNumberKeyName (:126);
+TEnv.sk:2255; TType.sk:1927}
 \end{finding}
 
-\begin{finding}[Rejected alternative: compare-by-value at use sites]
+\begin{finding}[Why normalization is at construction, not at use sites]
 \label{find:usesite}
-An alternative fix --- keep raw lexemes and parse to values inside
+The alternative --- keep raw lexemes and parse to values inside
 \texttt{isFalsy}, \texttt{inter}, \texttt{diff}, \texttt{sameConstant},
-\texttt{xxhash}, subtyping, and printing --- was considered and
-rejected. The comparison surface is wide and grows (any future consumer
-of \texttt{PrimLiteral.val} silently reverts to lexeme semantics), the
-hash requires a canonical key anyway (hashing raw spellings breaks
-hash-consistency of semantically equal types), and per-use parsing
-re-does work the constructor does once. Normalize-at-construction makes
-the invariant local and every downstream operation correct by
-Corollary~\ref{cor:setops} without modification. This mirrors the issue
+\texttt{xxhash}, subtyping, and printing --- is inferior. The comparison
+surface is wide and grows (any consumer of \texttt{PrimLiteral.val}
+reading the raw lexeme would revert to lexeme semantics), the hash
+requires a canonical key anyway (hashing raw spellings would break
+hash-consistency of semantically equal types), and per-use parsing would
+re-do work the constructor does once. Normalize-at-construction keeps the
+invariant local and makes every downstream operation correct by
+Corollary~\ref{cor:setops} without per-site logic. This mirrors the issue
 tracker's own recommendation on \#655.
 \end{finding}
 
 %==========================================================================
-\section{Status and Ledger Edits}
+\section{Status and Registry}
 \label{sec:status}
 
-\subsection{Effect of the fix}
+\subsection{L-LIT at the pin}
 
 \begingroup
 \renewcommand{\arraystretch}{1.25}
 \small
 \begin{longtable}{@{}p{2.4cm}p{11.0cm}@{}}
 \toprule
-\textbf{Item} & \textbf{After the fix of \S\ref{sec:fix}} \\
+\textbf{Item} & \textbf{At the pin} \\
 \midrule
 \endhead
-L-LIT(i) & unchanged (already established: $\delta_k$ concrete per kind,
+L-LIT(i) & holds ($\delta_k$ concrete per kind,
   \S\ref{sec:denotations}; NaN-freeness of $\Lit{num}$ a theorem,
   Thm.~\ref{thm:nonan}); the \texttt{str} raw-storage caveat
-  (Finding~\ref{find:escapes}) persists until escape decoding \\
-L-LIT(ii) & closes for num/bigint/bool/sym; \texttt{str} conditional on
-  escape decoding (injectivity over canonical forms, Thm.~\ref{thm:inj};
-  the string-kind violation is witnessed end-to-end,
-  Finding~\ref{find:escapes}, issue draft
+  (Finding~\ref{find:escapes}) stands absent escape decoding \\
+L-LIT(ii) & holds for num/bigint/bool/sym (injectivity over canonical
+  forms, Thm.~\ref{thm:inj}); for \texttt{str} it fails, witnessed
+  end-to-end (Finding~\ref{find:escapes}, issue draft
   \path{issues/string-literal-escapes-undecoded.md}) \\
-L-LIT(iii) & closes for num/bigint/bool/sym; for \texttt{str},
-  conditional on escape \emph{and} line-continuation decoding
-  (Finding~\ref{find:escapes} witnesses both an (ii) and an (iii)
-  string-kind violation) \\
+L-LIT(iii) & holds for num/bigint/bool/sym; for \texttt{str} it fails
+  (Finding~\ref{find:escapes} witnesses both an (ii)
+  and an (iii) string-kind violation) \\
 Residue lemma (main paper) & unconditional (Cor.~\ref{cor:residue}) \\
 rmc exactness (main paper) & unconditional (Cor.~\ref{cor:rmc}) \\
-New obligations & \texttt{canonLexeme} correctness
-  ($= \canon_k$ of \S\ref{sec:canonical}); property-name
-  normalization (\S\ref{sec:propnames}); \texttt{isJSNumericString}
-  thresholds (Finding~\ref{find:jsnum}) --- each small and pinnable \\
+Storage & parse-time \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}
+  ($= \canon_k$ of \S\ref{sec:canonical}); property names normalize via
+  the shared \texttt{getNumber} (\S\ref{sec:propnames}); the
+  \texttt{isJSNumericString} thresholds (Finding~\ref{find:jsnum}) are
+  enforced. Carve-out: beyond-precision literals ($>2^{53}$, out-of-range
+  exponents) are left non-canonical --- kept sound by never
+  merging --- so the canonical-storage invariant of
+  Definition~\ref{def:invariant} is only \emph{partial} for \texttt{num} \\
 \bottomrule
 \end{longtable}
 \endgroup
 
-Until the fix lands, the main paper's \textsc{violated} marking on
-L-LIT(ii)/(iii) stands unchanged; nothing in this paper weakens it.
+For num/bigint, L-LIT(ii)/(iii) hold under the canonical-storage
+invariant; the \texttt{str}-kind violation is witnessed
+(Finding~\ref{find:escapes}).
 
 \subsection{Registry}
 
@@ -962,60 +895,55 @@ statement; no other paper's internals are in scope:
 
 \input{../generated/imports-G}
 
-\subsection{Registry impact of the fix}
+\subsection{Registry alignment}
 
-When the canonicalization fix of Section~\ref{sec:fix} lands, the
-registry changes as follows.
+The registry records, consistent with this paper:
 \begin{enumerate}
 \item \textbf{L-LIT status.} (i) \textsc{proved}; (ii)/(iii)
   \textsc{proved} (this paper, Thms.~\ref{thm:inj}/\ref{thm:falsy})
   for num/bigint/bool/sym under the canonical-storage invariant, pinned
-  by the tests below; for \texttt{str}, (ii) \textsc{assumed} pending
-  escape decoding (its own issue). Anchor field: \texttt{isZeroSpelling}
-  (deleted by the fix) is replaced by \texttt{canonLexeme}.
-\item \textbf{Main paper, worked example ``Known unsoundness
-  (\#655)''.} Becomes a discharged example whose pins flip polarity
-  (see below); the generated summary's \textsc{violated} grouping drops
-  its L-LIT items (except the string-kind escape entry, until decoding
-  lands).
+  by the tests below; for \texttt{str}, (ii)/(iii) \textsc{violated}
+  (its own issue, escape decoding). The row anchors
+  \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}.
+\item \textbf{Main paper, worked example ``Known unsoundness:
+  string-kind falsiness''.} The remaining witnessed L-LIT unsoundness is
+  the string kind; the generated summary's \textsc{violated} grouping
+  carries its string-kind entry.
 \item \textbf{Main paper, Definition ``Literal Denotation''.} The
-  assumption ``$\Lit{num}$ contains no NaN spelling'' becomes a citation
-  of Theorem~\ref{thm:nonan}.
+  premise ``$\Lit{num}$ contains no NaN spelling'' is a citation of
+  Theorem~\ref{thm:nonan}.
 \end{enumerate}
 
-\subsection{Recommended pinned tests}
+\subsection{Pinned tests}
 
-To ship with the fix, in
-\texttt{tests/projects/truthiness-safe/src/conditions.ts} unless noted:
+In \texttt{tests/projects/truthiness-safe/src/conditions.ts} unless
+noted:
 \begin{enumerate}
-\item \texttt{x: 0.0 | ""} --- \texttt{if (x)} becomes
-  \texttt{@skjs-expect-error} (two falsy values), matching today's
-  \texttt{0 | ""} control; this inverts the current unsound acceptance
-  of \texttt{const z: "" = x} in the else-branch
-  (witness~1, \S\ref{sec:witnesses}).
+\item \texttt{x: 0.0 | ""} --- \texttt{if (x)} is
+  \texttt{@skjs-expect-error} (two falsy values), matching the
+  \texttt{0 | ""} control, since both spellings of zero canonicalize to
+  \texttt{0}.
 \item \texttt{x: 0.0 | "a"} --- \texttt{if (x)} accepted; then-branch
   narrows to \texttt{"a"}, else-branch to \texttt{0} (and
-  \texttt{const e: 0.0 = x} checks, both spellings canonicalizing);
-  inverts witness~2.
+  \texttt{const e: 0.0 = x} checks, both spellings canonicalizing).
 \item \texttt{x: 0 | 0x0} --- accepted as a condition (the union
-  collapses to one falsy class); pins Corollary~\ref{cor:count} and the
-  predicted fourth witness.
-\item Keep \texttt{acceptOctalZero} with an updated comment
-  (\S migration).
+  collapses to one falsy class); pins Corollary~\ref{cor:count}.
+\item \texttt{acceptOctalZero}, whose \texttt{0o0} annotation
+  canonicalizes to \texttt{0}.
 \item A rendering pin: a diagnostic that prints a literal type declared
-  \texttt{0o0 | 1} must show \texttt{0 | 1}.
+  \texttt{0o0 | 1} shows \texttt{0 | 1}.
 \item (With Finding~\ref{find:jsnum}) \texttt{keyof} over
-  \texttt{\{ "1e+5": T \}} must \emph{not} yield a numeric literal
+  \texttt{\{ "1e+5": T \}} does \emph{not} yield a numeric literal
   member.
 \item (With Finding~\ref{find:escapes}, separate issue) an equality or
   assignment mixing \texttt{"a"} and \texttt{"\textbackslash x61"}
-  literal types, pinned to current (incorrect) behavior until decoding
-  lands.
+  literal types, pinned to the string-kind behavior of
+  Finding~\ref{find:escapes}.
 \end{enumerate}
 
 Anchor cross-check hooks per the main paper's maintenance appendix: the
-deleted \path{isZeroSpelling} anchor must be removed from the L-LIT
-row in the same change that deletes the function, and
-\texttt{canonLexeme} becomes the row's anchor.
+L-LIT row anchors
+\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt} and
+\texttt{unquoteString} (for the string-kind gap).
 
 \end{document}

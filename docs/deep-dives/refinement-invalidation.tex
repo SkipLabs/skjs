@@ -7,7 +7,7 @@
 \newtheorem{finding}[theorem]{Finding}
 \newtheorem{policy}[theorem]{Policy}
 
-% Macros copied from the main paper (skjs-type-soundness.tex @ 9108f339).
+% Macros copied from the main paper (skjs-type-soundness.tex @ \skjspinhash).
 \newcommand{\ObjVal}{\mathsf{ObjVal}}
 \newcommand{\Env}{\Gamma}
 \newcommand{\RefineB}[4]{#1 \vdash #2 \stackrel{#4}{\rightsquigarrow} #3}
@@ -272,7 +272,7 @@ TType.sk / TFields::resolveFieldType (isLValue reads set)}
 \section{What the Implementation Does at Each Mutation Site}
 \label{sec:sites}
 
-Established by code inspection at \texttt{9108f339} and, where marked
+Established by code inspection at \texttt{\skjspinhash} and, where marked
 \emph{(probed)}, by running the checker (\texttt{make
 check-file-in-docker}) on minimal programs.
 

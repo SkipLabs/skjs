@@ -10,7 +10,7 @@
 % allow a little inter-word stretch instead of overfull lines.
 \emergencystretch=2em
 
-% Macros copied from the main paper (skjs-type-soundness.tex, rev 9108f339)
+% Macros copied from the main paper (skjs-type-soundness.tex, rev \skjspinhash)
 \newcommand{\ObjVal}{\mathsf{ObjVal}}
 \newcommand{\String}{\mathsf{String}}
 \newcommand{\SymVal}{\mathsf{SymVal}}
@@ -70,7 +70,7 @@ ledger edits for the main paper.
 This document is deep dive A of the series supporting
 \emph{Refinement and Inference Growth in SKJS: a Soundness Model of the
 Type Checker} (the \emph{main paper}), pinned like it to revision
-\texttt{9108f339}. Its job is to discharge, sharpen, or refute the rows of
+\texttt{\skjspinhash}. Its job is to discharge, sharpen, or refute the rows of
 the main paper's assumption ledger (its Section ``Assumptions and Proof
 Obligations'') that concern the \emph{runtime} rather than the checker:
 
@@ -114,7 +114,7 @@ payloads $(\Payload_k)_k$, $\ObjVal$, the object interface
 ($\mathsf{props}$, $\mathsf{get}$, $\mathsf{has}$, $\mathsf{callable}$,
 $\mathsf{constructible}$, $\mathsf{isArrayV}$), $\approx$,
 $\mathsf{truthy}$, and $\sem{\cdot}$. Implementation anchors
-(\textsf{impl:}~\texttt{\dots}) point into revision \texttt{9108f339}.
+(\textsf{impl:}~\texttt{\dots}) point into revision \texttt{\skjspinhash}.
 
 %==========================================================================
 \section{Minimal Recap of the Modeled Runtime}
@@ -408,8 +408,8 @@ lemma of the main paper (its Lemma ``Residues are Sound'') additionally
 needs the
 \emph{implementation's lexeme-level} falsiness test to agree with
 $\mathsf{truthy}$ on literal spellings — a checker-internal (not
-runtime) lexeme-level matter, which remains \textsc{violated} by the
-\#655 zero spellings, and is out of scope here.
+runtime) lexeme-level matter, violated for string literals whose escapes
+are stored undecoded, and out of scope here.
 The runtime side contributes no further caveat.
 \impl{TType.sk / TPrimValueKind::isFalsy, SType::falsiness}
 
@@ -945,7 +945,7 @@ narrowing makes realms a pure completeness concern
 \section{Implementation and Specification Anchors}
 \label{app:anchors}
 
-All implementation references are to revision \texttt{9108f339}.
+All implementation references are to revision \texttt{\skjspinhash}.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.25}

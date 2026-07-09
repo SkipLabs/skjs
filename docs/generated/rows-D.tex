@@ -11,13 +11,14 @@ L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the 
 SEM-GFP & The set-theoretic semantics is read as a greatest fixpoint for recursive types. & \textsc{assumed} \\
 E-SIG & Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement). & \textsc{assumed} \\
 A-HASH & \texttt{TType::compare} equality is trustworthy (XXHash-only fast paths). & \textsc{assumed} \\
-O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause). & \textsc{violated} \\
+O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
 F-CALL & The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads \texttt{call{=}None} as unknown callability (vs.\ refinement's definitely-not-callable). & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
+L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{proved} \\
 \bottomrule
 \end{tabular}
 \end{center}

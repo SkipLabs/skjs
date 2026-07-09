@@ -66,8 +66,8 @@ papers:
     file: literal-canonicalization.tex
     title: "Literal Canonicalization"
     scope: >-
-      Canonical literal forms: the fix specification for issue 655 with
-      injectivity and falsiness-exactness proofs.
+      Canonical literal forms: injectivity and falsiness-exactness of the
+      lexeme tests over the parser's canonical literals.
 
 entries:
   - id: L-TAG
@@ -144,19 +144,18 @@ entries:
     anchor_files: [src/TTypeInter.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive B) in two witnessed strata —
-      \texttt{STypes::inter} per-tag zeroing and \texttt{TFun::inter}
-      treating incomparable signatures as disjoint (issue drafts
-      \texttt{stypes-inter-per-tag-zeroing.md},
-      \texttt{tfun-inter-incomparable-not-disjoint.md}) — plus a third
-      stratum mediated by \#655 literal spellings; the remaining bottoms
-      are semantic and \textsc{proved}
+      \textsc{violated} (deep dive B) in the \texttt{TFun::inter} stratum —
+      incomparable signatures treated as disjoint (issue draft
+      \texttt{tfun-inter-incomparable-not-disjoint.md}) — and the
+      string-kind literal-spelling stratum (undecoded escapes, mediated by
+      L-LIT). The per-tag \texttt{STypes} assembly and numeric literal
+      spellings produce only semantic bottoms and are \textsc{proved}
     summary:
       - {bucket: violated-witnessed,
-         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (two strata)"}
+         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (\\texttt{TFun} + string-spelling)"}
     owner: B
     consumers: [D]
-    issues: [stypes-inter-per-tag-zeroing.md, tfun-inter-incomparable-not-disjoint.md]
+    issues: [tfun-inter-incomparable-not-disjoint.md]
 
   - id: L-EXP
     kind: assumption
@@ -310,29 +309,27 @@ entries:
       after normalization — needed only for \emph{exactness} claims; (iii)
       \emph{falsiness-exactness}: the lexeme test \texttt{isFalsy} agrees
       with Definition~\ref{def:truthiness} — needed by the residue lemma
-    anchor: \texttt{PrimLiterals.sk}; \texttt{isZeroSpelling}
-    anchor_files: [src/PrimLiterals.sk, src/TType.sk]
+    anchor: \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; \texttt{isFalsy}; \texttt{unquoteString}
+    anchor_files: [src/JSNumericString.sk, src/ParserUtils.sk, src/TType.sk, src/PrimLiterals.sk]
     status: [violated]
     status_note: >-
-      (i) \textsc{proved} (definitional); (ii)/(iii) \textsc{violated} by
-      \#655: \texttt{isZeroSpelling} covers exactly 14 spellings (signed
-      decimal/hex/binary/octal zero), missing \texttt{0.0}, \texttt{0e0},
-      \texttt{00}, \texttt{0\_0}, bigint analogues, and non-\texttt{NaN}
-      spellings. Conditional on (ii): the exactness clause of
-      Theorem~\ref{thm:rmc} (precision only); on (iii): the
-      literal-filtering case of Lemma~\ref{lem:residue-sound} — with an
-      \emph{observable unsoundness witness} (\S\ref{sec:ex-655}, pinned).
-      Claim (ii) is additionally \textsc{violated} for the \emph{string}
-      kind: escape sequences are stored undecoded, witnessed end-to-end
-      (deep dive G; issue draft
-      \texttt{string-literal-escapes-undecoded.md} — outside \#655's
-      numeric/bigint scope). Claim (iii) is \emph{also} \textsc{violated}
-      for the string kind: a line-continuation lexeme denotes \texttt{""}
-      but is classified truthy (witnessed end-to-end; same issue draft).
-      All other results are unconditional
+      (i) \textsc{proved} (definitional). For num/bigint, (ii)/(iii) are
+      \textsc{proved}: literals are normalized to canonical form at parse
+      time (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so
+      zero has one spelling per kind and injectivity holds — modulo
+      \emph{beyond-precision} numeric literals (radix $> 2^{53}$,
+      out-of-range exponents), deliberately left non-canonical but kept
+      sound by never merging (an adherence carve-out on (ii) for
+      \texttt{num}). For the \emph{string} kind, (ii)/(iii) remain
+      \textsc{violated}: escapes are stored undecoded
+      (\texttt{unquoteString}; issue draft
+      \texttt{string-literal-escapes-undecoded.md}), so distinct spellings
+      of one string are treated as distinct (ii), and a line-continuation
+      lexeme denotes \texttt{""} yet is classified truthy (iii) — both
+      witnessed end-to-end. All other results are unconditional
     summary:
       - {bucket: violated-witnessed,
-         label: "L-LIT(ii)/(iii) (\\#655 and the string escapes)"}
+         label: "L-LIT(ii)/(iii) string-kind (undecoded escapes)"}
     owner: G
     consumers: [B, D]
     issues: [string-literal-escapes-undecoded.md]
@@ -882,16 +879,15 @@ entries:
     statement: ""
     anchor: \texttt{Subst::get} (covariant); \texttt{expandToClauses}
     anchor_files: [src/TTypeSubst.sk]
-    status: [violated]
+    status: [open]
     status_note: >-
-      \textsc{violated} (derived, deep dive D): the covariant variable read
-      inherits the end-to-end-witnessed \texttt{L-INTER-BOT} per-tag zeroing
-      (a candidate with two same-tag-overlapping constraints expands to
-      $\bot$, making \texttt{Clauses::isSub}($\bot$, \dots) vacuously
-      succeed). On L-SUB's critical path; closed by B's per-tag-zeroing repair
+      \textsc{open} (deep dive D): the covariant variable read applies
+      \texttt{Subst::get}'s constraint-intersection loop, whose soundness
+      rests on the \texttt{L-INTER-BOT} bottoms; its live strata
+      (incomparable signatures; string-spelling) leave the read unproven.
+      On L-SUB's critical path
     summary:
-      - {bucket: violated-derived, label: "the covariant variable read O-GETCOV"}
-      - {bucket: open, label: "O-GETCONTRA, O-ARRAYLIT"}
+      - {bucket: open, label: "O-GETCOV, O-GETCONTRA, O-ARRAYLIT"}
     owner: D
     consumers: []
     issues: []
@@ -1118,16 +1114,25 @@ entries:
     consumers: []
     issues: [getter-typed-as-method.md]
 
-# Verified fixes: a tested patch that closes an issue, recorded but not
-# landed. The row stays violated at the pinned revision; this records only
-# that a fix exists and was verified (witness flips, suite green).
-fixes:
-  - issue: stypes-inter-per-tag-zeroing.md
-    patch: stypes-inter-per-tag-zeroing.patch
-    row: L-INTER-BOT
-    verified: >-
-      One line in \texttt{mapInterOption}: an empty shared key drops that
-      key instead of zeroing the whole map. The witness flips accepted to
-      rejected and the full test suite passes (no regressions). Closes the
-      \texttt{STypes} stratum of L-INTER-BOT and the root of O-GETCOV; the
-      \texttt{TFun}-incomparable stratum remains
+
+  - id: L-SUB-TSINST
+    kind: series-obligation
+    table: series
+    short: >-
+      The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same
+      name, arguments equal after \texttt{peekRaw}) is sound.
+    statement: ""
+    anchor: \texttt{TType::isSub} (TSInst reflexive arm)
+    anchor_files: [src/TTypeSubtyping.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive D): the arm returns acceptance only when
+      $u_1,u_2$ are pure \texttt{TSInst} of the same name with equal
+      argument count and each argument pair equal — syntactically, or a
+      variable resolving to the other via \texttt{peekRaw}; equal name and
+      equal arguments give $\sem{u_1}_\rho = \sem{u_2}_\rho$, so
+      $\sem{u_1}_\rho \subseteq \sem{u_2}_\rho$ (guidance-free, no growth)
+    summary: [{bucket: proved, label: "L-SUB-TSINST"}]
+    owner: D
+    consumers: []
+    issues: []

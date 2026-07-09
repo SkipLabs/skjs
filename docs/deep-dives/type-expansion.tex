@@ -99,7 +99,7 @@ Failed proof attempts are reported as numbered Findings.
 Notation, semantics, and the status vocabulary
 (\textsc{proved} / \textsc{assumed} / \textsc{open} / \textsc{violated})
 are the main paper's. All code references are against the pinned revision
-\texttt{9108f339}; line numbers are cited where they disambiguate.
+\texttt{\skjspinhash}; line numbers are cited where they disambiguate.
 ``Paper B'' is the deep dive on union and intersection
 (\textbf{L-UNION}/\textbf{L-INTER}), which this paper cites and does not
 re-prove.
@@ -126,7 +126,7 @@ named instantiations
 \texttt{TInter}$(\{t_1,\dots,t_k\})$, and delayed array literals
 \texttt{TArrayLit}$(\alpha, \mathit{elts}, \mathit{fresh})$.
 \impl{TType.sk / TType, TInsts, Clause, Clauses}
-\impl{TType.sk / TVar (2437), TSInst (2487), TArrayLit (2479);
+\impl{TType.sk / TVar (2576), TSInst (2626), TArrayLit (2618);
 TTypeInter.sk / TInter (17)}
 
 The main paper gives the instance layer an abstract, state-indexed
@@ -254,8 +254,8 @@ $\TInsts{::}\mathsf{unionN}(I')$ and
 $\Clauses{::}\mathsf{unionN}(C')$;
 \texttt{expandToClauses} does the same in mode
 \texttt{Some(variance)} and returns the clause part.
-\impl{TType.sk / expandToVectors (613), expand (659), expandToClauses
-(671)}
+\impl{TType.sk / expandToVectors (634), expand (680), expandToClauses
+(692)}
 \end{definition}
 
 \begin{lemma}[State Evolutions of Expansion]
@@ -277,7 +277,7 @@ arm calls \texttt{tenv.instantiate(subst, subst, ...)}, and
 \texttt{Subst::mcreate(tcenvb, baseSubst)} \emph{copy} — its binding
 writes (constraint-check clones, class-body expansion) land in the copy
 and are dropped; only the caller's \texttt{seenExpansion} write at
-\texttt{TType.sk:632} touches the live state. The \texttt{TInter} and
+\texttt{TType.sk:653} touches the live state. The \texttt{TInter} and
 \texttt{TArrayLit} arms call \texttt{interN} (get-transitions inside
 \texttt{inter\_}'s covariant expansions, plus \texttt{seenInter}) and
 \texttt{peek} (read-only). \qedhere
@@ -405,7 +405,7 @@ $\sem{\alpha^K}_\rho \subseteq \sem{\bot} = \emptyset$ is false whenever
 the variable's envelope is inhabited. This is not a bug: a contravariant
 read is a deliberate \emph{under}-approximation — ``the lower bound
 gathered so far'' — consumed by the subtyping/growth machinery
-(\texttt{growTVars}, \texttt{getRestElementType}), where the required
+(\texttt{growTVars}, \texttt{maybeGetRestElementType}), where the required
 direction is reversed; that is the main paper's Obligation ``Validation
 Soundness'', not this paper's. For a \emph{bound}
 variable, case (b)'s argument goes through verbatim in mode $\Contra$,
@@ -428,7 +428,7 @@ machinery of the main paper uses mode $\Cov$ or mode $\NoneM$:
   \texttt{Some(Covariant())} (\texttt{TType.sk:350});
 \item \texttt{conditionVerdict} and \texttt{getSTypes}-based readers use
   \texttt{expandToClauses} with \texttt{Covariant()}
-  (\texttt{TType.sk:279, 609});
+  (\texttt{TType.sk:279, 631});
 \item \texttt{removeConstant} expands with \texttt{None()}
   (\texttt{TType.sk:212}), leaving variables residual and untouched, as
   its model in the main paper's Definition ``Constant Removal'' requires
@@ -456,7 +456,7 @@ unexpanded $\mathsf{TSInst}$ itself — the synthetic missing-annotation
 placeholder, and the recursion guard when $n$ is already being expanded
 (\texttt{seenInstantiate}).
 \impl{TEnv.sk / instantiate (110--148), instantiateTParams (174),
-normalize TAInst arm (1286--1360), new (325), newObject (359)}
+normalize TAInst arm (1354--1428), new (325), newObject (359)}
 
 What normalization computes from the body is \texttt{TEnv} territory:
 this paper does not model \texttt{normalize} and instead names the
@@ -633,20 +633,20 @@ diagnostics only.
 \label{lem:blind}
 \texttt{TEnv::normalize} and the helpers it reaches on the
 \texttt{TypeDef} path are binding-blind. By arms of the dispatch
-(\texttt{TEnv.sk:1046--1386}):
+(\texttt{TEnv.sk:1104--1445}):
 \begin{itemize}
 \item \emph{Literals, primitives, top, bottom, tuples-as-names, and the
   fatal arms}: these construct constants or \texttt{TType::inst}; no
   substitution is involved.
-\item \emph{\texttt{TAInst}} (1286): resolves through the lexical
+\item \emph{\texttt{TAInst}} (1354): resolves through the lexical
   \texttt{bindings} map — a \texttt{TEnv} field, not a substitution —
   returning the bound term via \texttt{withPos} (verbatim insertion,
   case (i) of Definition~\ref{def:symbolic}); or emits an unexpanded
-  \texttt{TType::inst}; the reference-site constraint check (1351--1358)
+  \texttt{TType::inst}; the reference-site constraint check (1419--1426)
   runs on \texttt{Subst::mcreate(tcenvb)} — \emph{empty state} — and
   affects diagnostics only.
-\item \emph{\texttt{TAUnion}/\texttt{TAInter}} (1361--1376): both create
-  a fresh empty \texttt{Subst} (1362, 1370). \texttt{union} never reads
+\item \emph{\texttt{TAUnion}/\texttt{TAInter}} (1429--1444): both create
+  a fresh empty \texttt{Subst} (1430, 1438). \texttt{union} never reads
   bindings at any level (Lemma~\ref{lem:union-blind}). \texttt{inter}
   under the empty state sees every variable as unbound: bare-variable
   operands take the \texttt{setConstraint}/\texttt{unexpandedInter} arms
@@ -654,18 +654,18 @@ diagnostics only.
   \emph{in the throwaway state} and thus replaced by the
   binding-independent $\top$ (case (iii)) — see
   Finding~\ref{find:inter-comment}.
-\item \emph{\texttt{TAKeyOf}} (1105--1108): creates a fresh empty
-  \texttt{Subst} (1106) and expands the operand under it; see
+\item \emph{\texttt{TAKeyOf}} (1172--1175): creates a fresh empty
+  \texttt{Subst} (1173) and expands the operand under it; see
   Finding~\ref{find:keyof}.
 \item \emph{\texttt{TAObject}/\texttt{TAFun}/\texttt{TATypeOf}/tuples}:
   recursive normalization plus fresh empty substitutions at every
-  operation site (\texttt{TEnv.sk:1476, 1487, 1502, 1559, 1664, 1800,
-  1880}); the mapped-type key analysis (\texttt{FNIn}, 1860--1976)
+  operation site (\texttt{TEnv.sk:1451, 1556, 1567, 1582, 1639, 1752,
+  1893}); the mapped-type key analysis (\texttt{FNIn}, 1953)
   expands the key type in mode $\NoneM$ under a fresh empty
-  \texttt{Subst} (1880, 1895), leaving variables residual and unread.
+  \texttt{Subst} (1893, 1973), leaving variables residual and unread.
 \end{itemize}
-\impl{TEnv.sk / normalize (1046), Subst creation sites (1106, 1353,
-1362, 1370, 1476, 1487, 1502, 1559, 1664, 1800, 1880)}
+\impl{TEnv.sk / normalize (1104), Subst creation sites (1173, 1421,
+1430, 1438, 1451, 1556, 1567, 1582, 1639, 1752, 1893, 1973)}
 \end{lemma}
 
 \begin{theorem}[Alias-Path Expansion Invariance]
@@ -735,7 +735,7 @@ components — and through \texttt{inter} on contravariant ones, which is
 where the next lemma takes over. The \texttt{seenUnion} cache comment
 (``any TVar in the operands passes through unchanged'') is confirmed at
 the \texttt{TType} level.
-\impl{TTypeUnion.sk / union (22), union\_ (42), TInsts::union (166)}
+\impl{TTypeUnion.sk / union (22), union\_ (42), TInsts::union (167)}
 \end{lemma}
 
 \begin{finding}[The comment's \texttt{inter} claim is imprecise]
@@ -770,10 +770,10 @@ The comment says \texttt{keyof} ``approximates an abstract or
 unresolved operand identically (\texttt{string | number}) whether or not
 the variable is bound.'' The audit shows something stronger: the
 \texttt{TAKeyOf} arm creates a fresh \emph{empty} \texttt{Subst}
-(\texttt{TEnv.sk:1106}) and \texttt{keyOfType} expands the operand under
+(\texttt{TEnv.sk:1173}) and \texttt{keyOfType} expands the operand under
 it, so a variable argument is \emph{always} treated as unbound — its
 covariant read seals it to top in the throwaway state, the expansion has
-a top clause, and the guard at \texttt{TEnv.sk:2104--2113} returns
+a top clause, and the guard at \texttt{TEnv.sk:2197--2206} returns
 \texttt{string | number}. The live binding is unreachable, so cached and
 fresh values agree not because the two reads approximate identically but
 because there is no read. (The result also covers rigid parameters,
@@ -781,11 +781,11 @@ whose clauses have nonempty var-sets — the same guard.) Two caveats,
 both outside the cache theorem: \texttt{keyOfType}'s own
 over-approximation contract explicitly excludes validity checking
 (``do not use keyof to check that a key is valid,''
-\texttt{TEnv.sk:2095--2098}), and symbol keys of an unresolved operand
+\texttt{TEnv.sk:2188--2193}), and symbol keys of an unresolved operand
 are not covered by \texttt{string | number} — both are
 \textbf{E-NORM}-side concerns about what the approximation means, not
 about cache invariance.
-\impl{TEnv.sk / normalize TAKeyOf arm (1105--1108), keyOfType (2102)}
+\impl{TEnv.sk / normalize TAKeyOf arm (1172--1175), keyOfType (2195)}
 \end{finding}
 
 \subsection{Where the proof stops: the class path}
@@ -836,7 +836,7 @@ the Live Cache]
 $\instop$ returns the unexpanded $\mathsf{TSInst}$ itself when the
 guard set \texttt{seenInstantiate} already contains $n$
 (\texttt{TEnv.sk:128--130}), and \texttt{expandToVectors} caches
-whatever $\instop$ returns (\texttt{TType.sk:632}). If such an
+whatever $\instop$ returns (\texttt{TType.sk:653}). If such an
 \emph{identity} entry were ever written to a long-lived substitution's
 cache, every later expansion of that instance would hit the identity,
 whose sole instance is then dropped by the $\mathit{seen}$ check — the
@@ -863,7 +863,7 @@ rather than letting the seen-set drop it. A cache-write invariant that only asse
 (it is empty there); the invariant must instead assert ``the cached
 value's insts $\neq$ the key.''
 \impl{TEnv.sk / instantiate (125--130); TType.sk / expandToVectors
-(626--634)}
+(646--656)}
 \end{obligation}
 
 %==========================================================================
@@ -876,7 +876,7 @@ each cutoff is the point here, termination secondary.
 \paragraph{One-level unfolding (\texttt{seenInstantiate}).}
 While expanding $n$, an inner reference to $n$ normalizes to an
 unexpanded \texttt{TSInst} instead of unfolding
-(\texttt{TEnv.sk:45--60, 128--131, 1337--1339}). The cutoff is sound by
+(\texttt{TEnv.sk:45--60, 128--131, 1405--1407}). The cutoff is sound by
 construction: the re-emitted instance denotes the named type ((N1)),
 and nested occurrences sit inside object fields or targs, where the
 worklist does not descend — expansion is one level deep by design (the
@@ -887,7 +887,7 @@ view'' is inherently head expansion).
 A \emph{top-level} recursive occurrence — \texttt{type A = A | number}
 normalizes to $(\{\mathsf{TSInst}(A)\}, \{\texttt{number}\})$ — is
 deduplicated: the body's $\mathsf{TSInst}(A)$ equals the instance being
-expanded and is dropped (\texttt{TType.sk:650--653}). The expansion of
+expanded and is dropped (\texttt{TType.sk:671--675}). The expansion of
 $A$ is then just \texttt{number}. This is sound under a least-fixpoint
 reading of type definitions: the equation
 $X = X \cup \sem{\texttt{number}}$ has least solution
@@ -903,8 +903,8 @@ definitions at validation (TS2456).
 
 \paragraph{Fatal circularity (\texttt{forbiddenInsts}).}
 Within one $\instop$ frame, a \emph{second} reference to the
-in-expansion name is fatal (TS2456, \texttt{TEnv.sk:1307--1311}): the
-first reference marks the name forbidden (1337--1339), the next lookup
+in-expansion name is fatal (TS2456, \texttt{TEnv.sk:1375--1379}): the
+first reference marks the name forbidden (1405--1407), the next lookup
 dies. Generative loops (\texttt{type A<T> = A<A<T>> | number}) die the
 same way — normalizing the inner argument \texttt{A<T>} is a second
 reference. A fatal diagnostic ends checking, which is trivially sound.
@@ -917,7 +917,7 @@ have not proved a global termination bound for the class path (chains of
 distinct \texttt{TSInst}s through superclass clauses); termination is
 outside the soundness contract and is left unstated.
 \impl{TEnv.sk / seenInstantiate (60), forbiddenInsts (64), normalize
-TAInst (1307, 1337); TType.sk / expandToVectors (650--654)}
+TAInst (1375, 1405); TType.sk / expandToVectors (671--675)}
 
 %==========================================================================
 \section{Status and Ledger Edits}
@@ -964,7 +964,7 @@ E-CLASS-SYM & Cache invariance, \texttt{Class} path
   \texttt{TField::interIndex} \\
 E-GUARD & Recursion-guard identities never cached into a long-lived
   substitution (Obligation~\ref{obl:guard}) &
-  \texttt{expandToVectors} (632) \\
+  \texttt{expandToVectors} (653) \\
 \end{longtable}
 \endgroup
 
@@ -1030,25 +1030,25 @@ audit only.
 \footnotesize
 \begin{tabular}{@{}l@{\quad}l@{}}
 \toprule
-\textbf{Model} & \textbf{Implementation (rev.\ \texttt{9108f339})} \\
+\textbf{Model} & \textbf{Implementation (rev.\ \texttt{\skjspinhash})} \\
 \midrule
-$\expandop_m$, worklist & \texttt{TType.sk / expandToVectors (613)} \\
-rebuilds & \texttt{expand (659), expandToClauses (671), mapSTypes (388),
+$\expandop_m$, worklist & \texttt{TType.sk / expandToVectors (634)} \\
+rebuilds & \texttt{expand (680), expandToClauses (692), mapSTypes (388),
   rawMap (362)} \\
 $\getop$ transitions, freeze & \texttt{TTypeSubst.sk / Subst::get (188),
   freezeCandidates (89)} \\
 cache + saved state & \texttt{TTypeSubst.sk / seenExpansion (31),
   restore (40), clone (137)} \\
-cache read/write site & \texttt{TType.sk / expandToVectors (626--634)} \\
+cache read/write site & \texttt{TType.sk / expandToVectors (646--656)} \\
 $\instop$, parameter binding & \texttt{TEnv.sk / instantiate (110),
   instantiateTParams (174)} \\
 symbolic resolution & \texttt{TEnv.sk / normalize TAInst arm
-  (1286--1305), bindings (43)} \\
-fresh empty substitutions & \texttt{TEnv.sk / 1106, 1353, 1362, 1370,
-  1476,} \\
- & \texttt{1487, 1502, 1559, 1664, 1800, 1880} \\
-keyof & \texttt{TEnv.sk / keyOfType (2102)} \\
-mapped types & \texttt{TEnv.sk / FNIn arm (1860--1976)} \\
+  (1354--1373), bindings (43)} \\
+fresh empty substitutions & \texttt{TEnv.sk / 1173, 1421, 1430, 1438,
+  1451,} \\
+ & \texttt{1556, 1567, 1582, 1639, 1752, 1893, 1973} \\
+keyof & \texttt{TEnv.sk / keyOfType (2195)} \\
+mapped types & \texttt{TEnv.sk / FNIn arm (1953)} \\
 class path & \texttt{TEnv.sk / new (325), newObject (359), addFields
   (559)} \\
 intersections & \texttt{TTypeInter.sk / TInter (17), expand (37),

@@ -57,19 +57,18 @@ The outcome is asymmetric. Union is \emph{proved}: every stratum
 over-approximates, and all strata that membership semantics can observe are
 in fact exact; the \texttt{seenUnion} cache is unconditionally sound because
 the union computation never reads the substitution. Intersection is
-\emph{refuted as stated}: two independent defects make \texttt{inter} return
-$\bot$ on semantically overlapping operands — a per-tag zeroing bug in
-\texttt{STypes::inter} that collapses the whole union when any one shared
-tag is empty, and the treatment of a failed call/new signature intersection
-as branch disjointness — and a third, conditional defect inherits the known
-\textbf{L-LIT}(ii) spelling violation (\#655). All three are empirically
-witnessed at the pinned revision: the checker silently narrows an inhabited
-variable to \texttt{never} in a reachable branch. Every other intersection
-stratum (units, tags, named fields, indexes under the covering semantics,
-the array brand, the instance layer) is proved sound, so the ledger row
-splits into proved strata, one conditional stratum, two violated strata,
-and one named residual obligation (the \texttt{seenInter} cache under
-candidate freezing).
+\emph{refuted as stated} by one defect that makes \texttt{inter} return
+$\bot$ on semantically overlapping operands — the treatment of a failed
+call/new signature intersection as branch disjointness — with a second,
+string-kind defect inheriting the \textbf{L-LIT}(ii) escape-spelling
+violation. Both are empirically witnessed at the pinned revision: the
+checker silently narrows an inhabited variable to \texttt{never} in a
+reachable branch. Every other intersection stratum (units, tags, named
+fields, indexes under the covering semantics, the array brand, the per-tag
+\texttt{STypes} assembly, the instance layer) is proved sound, so the
+ledger row splits into proved strata, the two violated strata, and one
+named residual obligation (the \texttt{seenInter} cache under candidate
+freezing).
 \end{abstract}
 
 \tableofcontents
@@ -130,7 +129,7 @@ per tag (literal-set union for primitives, branch-set union for objects).
 Crucially, no arm of this computation expands an instance or reads a
 variable binding: union is a pure function of its operands' syntax.
 \impl{TTypeUnion.sk / TType::union\_, Clauses::union, STypes::union,
-TObject::union; TType.sk / TInsts::union}
+TObject::union, TInsts::union}
 
 \paragraph{Intersection's shape.}
 \texttt{TType::inter} short-circuits top/bottom, then handles bare
@@ -151,7 +150,7 @@ main paper, prove it or reduce it to a named assumption, and separately
 classify every $\bot$-producing site as \emph{semantic} (disjointness
 holds) or \emph{heuristic} (it does not). Claims about observable behavior
 were tested against the pinned checker binary
-(\texttt{target/host/dev/skjs} built from \texttt{9108f339}, run via
+(\texttt{target/host/dev/skjs} built from \texttt{\skjspinhash}, run via
 \texttt{make check-file-in-docker}); Section~\ref{sec:findings} reproduces
 the probe programs.
 
@@ -326,10 +325,14 @@ $\bot$, the exact empty union.
 \subsection{The branch-merging client: TFields::union}
 \label{sec:tfields-union}
 
-\texttt{TObject::getFields} folds a multi-branch object into one summary
-branch with \texttt{TFields::union}; the summary feeds field reads
-(\texttt{maybeGetType}), hence the resolved read types of
-\textsc{R-EqField}. The correctness statement is branch-level:
+A multi-branch object's field reads union the per-field types across the
+branches: \texttt{maybeGetType} combines each branch's field with
+\texttt{TField::union} (via \texttt{TType::unionN}), and the sibling read
+paths (\texttt{resolveLiteralAccess}, \texttt{maybeGetSymbol},
+\texttt{maybeGetCall}/\texttt{maybeGetNew},
+\texttt{maybeGetNonSyntheticIndexForKeyKind}) do the same; these feed the
+resolved read types of \textsc{R-EqField}. The correctness statement is
+branch-level:
 
 \begin{lemma}[Branch Merge Over-Approximates]
 \label{lem:tfields-union}
@@ -381,8 +384,9 @@ for write-through-the-summary, but nothing here depends on it; and
 \texttt{FieldAccess::combine} is most-restrictive, which only
 \emph{restricts} programs (main paper, Definition of object semantics,
 Never/Phantom discussion).
-\impl{TTypeUnion.sk / TFields::union, TField::union, unionOptTFuns,
-unionIndex; TType.sk / TObject::getFields, FieldAccess::combine}
+\impl{TType.sk / maybeGetType, resolveLiteralAccess, maybeGetSymbol,
+maybeGetCall, maybeGetNew, maybeGetNonSyntheticIndexForKeyKind;
+TTypeUnion.sk / TField::union, unionIndex}
 \end{proof}
 
 Unlike the branch-set union of Lemma~\ref{lem:obj-union}, the merge is a
@@ -430,9 +434,9 @@ denotations exclude NaN). By transitivity
 $\delta_k(\ell_1) \approx \delta_k(\ell_2)$, so by injectivity
 $\ell_1 = \ell_2 \in L_1 \cap L_2$. The implementation intersects
 \emph{spelling} sets, so this is exactly its computation. If injectivity
-fails — the \#655 non-canonical zero spellings — two spellings of the
-same value make $L_1 \cap L_2 = \emptyset$ while the semantic
-intersection is inhabited.
+fails — as for the string kind, whose escape spellings are stored
+undecoded — two spellings of the same value make
+$L_1 \cap L_2 = \emptyset$ while the semantic intersection is inhabited.
 \impl{PrimLiterals.sk / inter; TTypeInter.sk / TPrimValue::inter}
 \end{proof}
 
@@ -448,7 +452,7 @@ disjointness (A1).
 \impl{TTypeInter.sk / TPrimValue::inter, STypes::inter}
 \end{lemma}
 
-\subsection{The per-tag assembly: STypes::inter is wrong}
+\subsection{The per-tag assembly: STypes::inter}
 \label{sec:inter-stypes}
 
 The correct per-tag decomposition of an intersection of unions is
@@ -462,46 +466,26 @@ sound and exact assembly is therefore: intersect per shared tag,
 \emph{drop} the tags whose per-tag intersection is empty, and return
 $\bot$ iff \emph{no} tag survives.
 
-The implementation instead builds the result with
-\texttt{mapInterOption}, whose combiner treats a per-tag \texttt{None} as
-the \emph{zero} of the whole merge (\texttt{mergeOption}: any
-\texttt{None()} from the combining function aborts the map and returns
-\texttt{None} overall). Unmatched tags are correctly treated as units
-(dropped), and an all-tags-dropped result is correctly $\bot$; but a
-single \emph{shared tag with empty intersection zeroes the entire result}
-even when other tags survive.
-
-\begin{finding}[Per-Tag Zeroing: L-INTER is Violated at the STypes
-Stratum]
-\label{find:zeroing}
-For $S_1 = \{\mathsf{str}{:}\texttt{"a"},\ \mathsf{num}{:}\{0\}\}$ and
-$S_2 = \{\mathsf{str}{:}\texttt{"a"},\ \mathsf{num}{:}\{1\}\}$,
-$\STypes\mathord{::}\inter(S_1,S_2) = \bot$ while
-$\sem{S_1} \cap \sem{S_2} \supseteq \sem{\texttt{"a"}} \neq \emptyset$.
-Both halves of L-INTER fail. Empirically confirmed at the pinned
-revision (probe~1 in Section~\ref{sec:findings}): in
-\texttt{if (x === y)} with \texttt{x: "a" | 0} and \texttt{y: "a" | 1},
-the checker narrows \texttt{x} to \texttt{never} and accepts
-\texttt{const z: never = x}, yet the branch is taken at runtime with
-\texttt{x = "a"}. Type-level intersections hit the same code through
-\texttt{TInter::expand}: \texttt{("a" | 0) \& ("a" | 1)} expands to
-\texttt{never} (probe~4). Note the trigger requires a \emph{shared} tag
-to be empty; disjoint unions like
-\texttt{(0 | "a") \& (1 | true)} at distinct tags take the
-correct all-dropped path.
+The implementation realises exactly this. \texttt{STypes::inter} builds
+the result with \texttt{mapInterOption}, whose combiner returns
+\texttt{Some(f(x,y))} on a shared tag: an empty per-tag intersection
+(\texttt{f} returns \texttt{None}) is \emph{dropped} from the map, not
+treated as the zero of the merge, and unmatched tags are dropped likewise;
+the wrapping \texttt{if (!stypes.isEmpty())} guard then returns $\bot$
+exactly when no tag survives. Hence
+$\STypes\mathord{::}\inter(S_1,S_2) = \bot$ iff every shared tag has an
+empty per-tag intersection, i.e.\ iff $\sem{S_1}\cap\sem{S_2}=\emptyset$:
+the assembly is exact and its bottoms are semantic. For example
+$\{\mathsf{str}{:}\texttt{"a"},\ \mathsf{num}{:}\{0\}\} \cap
+\{\mathsf{str}{:}\texttt{"a"},\ \mathsf{num}{:}\{1\}\}$ drops the empty
+\texttt{num} tag and keeps \texttt{str}${:}\texttt{"a"}$, so
+\texttt{("a" | 0) \& ("a" | 1) = "a"}, not \texttt{never}.
 \impl{TTypeInter.sk / STypes::inter; InternalKeyedArrayMap.sk /
-mapInterOption, mergeOption}
-\end{finding}
+mapInterOption}
 
-The defect is local: replacing the zeroing combinator with
-``drop empty tags, bottom only if all dropped''
-(\texttt{mapInter}-with-filter semantics) restores the exact assembly,
-after which the stratum's soundness reduces to the per-tag lemmas
-(\ref{lem:prim-inter} for primitives, Section~\ref{sec:inter-object} for
-objects). All statements below about higher strata are therefore phrased
-\emph{conditionally on the corrected assembly}, so that they remain the
-correct proof obligations once the bug is fixed; the Status table keeps
-the violation visible at the L-INTER row itself.
+With the assembly exact, the stratum's soundness reduces to the per-tag
+lemmas (\ref{lem:prim-inter} for primitives,
+Section~\ref{sec:inter-object} for objects).
 
 \subsection{Object branch pairs}
 \label{sec:inter-object}
@@ -650,8 +634,8 @@ $\sem{\clause{V_1}{S_1}} \cap \sem{\clause{V_2}{S_2}} \subseteq
 \sem{\clause{V_1 \cup V_2}{S_1 \sqcap S_2}}$ (with $\top$ absorbing on
 either side, kept exactly), \emph{given} the STypes-level containment;
 the \texttt{None} result inherits its status from
-\texttt{STypes::inter} — i.e.\ today it inherits
-Finding~\ref{find:zeroing}.
+\texttt{STypes::inter}, which is exact (Section~\ref{sec:inter-stypes}),
+so the clause-level bottom is semantic.
 \end{lemma}
 \begin{proof}
 $(\bigcap_{V_1} \cap\, \sem{S_1}) \cap (\bigcap_{V_2} \cap\, \sem{S_2})
@@ -769,15 +753,14 @@ inherited from the sites it aggregates.
 \textbf{Site} & \textbf{When $\bot$} & \textbf{Nature of $\bot$} \\
 \midrule
 \texttt{PrimLiterals::inter} & spelling sets disjoint &
-  semantic iff L-LIT(ii); spurious under \#655
+  semantic iff L-LIT(ii); spurious for the string kind
   (Finding~\ref{find:spelling}) \\
 \texttt{TPrimValue::inter} & kind mismatch & semantic (A1); unreachable
   from \texttt{STypes::inter} \\
 \texttt{STypes::inter}, no shared tag survives & all per-tag results
   empty or unmatched & semantic (A1), derived \\
-\texttt{STypes::inter}, zeroing & \emph{any} shared tag empty while
-  others survive & heuristic
-  (Finding~\ref{find:zeroing}) \\
+\texttt{STypes::inter}, empty shared tag & a shared tag's per-tag
+  intersection is empty & semantic (A1); dropped, not zeroed \\
 \texttt{TFields::inter}, brand & $\mathsf{Some}(\mathsf{true})$ vs
   $\mathsf{Some}(\mathsf{false})$ & semantic \\
 \texttt{TFields::inter}, call/new & \texttt{TFuns::inter} fails both
@@ -927,24 +910,8 @@ idempotent operands.
 \label{sec:findings}
 
 All probes were run against the pinned binary
-(\texttt{target/host/dev/skjs}, built from \texttt{9108f339}) via
+(\texttt{target/host/dev/skjs}, built from \texttt{\skjspinhash}) via
 \texttt{make check-file-in-docker}. ``Accepted'' means zero diagnostics.
-
-\subsection{Probe 1: per-tag zeroing (Finding~\ref{find:zeroing})}
-\begin{verbatim}
-function p1(x: "a" | 0, y: "a" | 1): void {
-  if (x === y) {
-    const z: never = x;   // ACCEPTED (silently)
-    console.log(z);
-  }
-}
-\end{verbatim}
-At runtime \texttt{p1("a", "a")} takes the branch with
-\texttt{z = "a"}: a value inhabits \texttt{never}. tsc narrows
-\texttt{x} to \texttt{"a"} here. No no-overlap warning is emitted
-(correctly — \texttt{overlaps} consults the literal sets pairwise and
-finds \texttt{"a"}), which confirms the defect is in
-\texttt{STypes::inter}'s assembly, not in overlap detection.
 
 \subsection{Probe 2: signature bottom (Finding~\ref{find:tfun})}
 \begin{verbatim}
@@ -967,45 +934,45 @@ comparison itself with TS2367; either way tsc rejects the program.
 \label{find:spelling}
 \leavevmode
 \begin{verbatim}
-function p3(a: 0.0, b: 0): void {
+function p3(a: "\x61", b: "a"): void {
   if (a === b) {          // warning: "comparison is always false
     const z: never = a;   //   because the operand types do not
     console.log(z);       //   overlap" -- and z: never ACCEPTED
   }
 }
 \end{verbatim}
-\texttt{0.0 === 0} is \emph{true} at runtime, so both the warning and
-the narrowing are wrong. This is not a new root cause: it is
-\textbf{L-LIT}(ii) (\#655) propagating through
-Lemma~\ref{lem:lit-inter} into \texttt{PrimLiterals::inter}'s bottom
-and thence into \texttt{overlaps} and the branch logic. It is recorded
-here because it is L-INTER's \emph{disjointness} reading that this
-instance breaks — a distinct consequence of \#655 from the falsiness
-one the main paper's worked example covers; the main paper's L-INTER row
-records it as the third violated stratum.
+\texttt{"\textbackslash x61" === "a"} is \emph{true} at runtime (both
+denote \texttt{"a"}), so both the warning and the narrowing are wrong.
+This is not a new root cause: it is the \emph{string}-kind
+\textbf{L-LIT}(ii) violation (escape sequences stored undecoded, issue
+draft \path{issues/string-literal-escapes-undecoded.md}) propagating
+through Lemma~\ref{lem:lit-inter} into \texttt{PrimLiterals::inter}'s
+bottom and thence into \texttt{overlaps} and the branch logic — L-INTER's
+\emph{disjointness} reading breaking on it. Numeric spellings do not
+trigger it: the parser normalizes numeric literals, so \texttt{0.0} and
+\texttt{0} share one lexeme.
 \end{finding}
 
 \subsection{Probe 4: type-level intersections}
 \begin{verbatim}
 type C = ("a" | 0) & ("a" | 1);
-function p6(c: C): void { const z: never = c; }  // ACCEPTED: C = never
-function p7(): void { const c: C = "a"; }        // REJECTED
+function p6(): void { const c: C = "a"; }        // ACCEPTED: C = "a"
 type F = ((s: string) => void) & ((n: number) => void);
 function p8(f: F): void { const z: never = f; }  // ACCEPTED: F = never
 \end{verbatim}
-\texttt{p7}'s rejection shows the findings double as
-\emph{incompleteness}: \texttt{\&}-types users write become
-uninhabitable. (tsc: \texttt{C = "a"}; \texttt{F} is a callable
-overload.)
+The STypes assembly is exact: \texttt{C = "a"} (the empty \texttt{num}
+tag is dropped, not zeroed), matching tsc. The call/new stratum still
+collapses: \texttt{F} is \texttt{never} where tsc reads a callable
+overload — \texttt{p8}'s acceptance is the incompleteness dual of
+Finding~\ref{find:tfun}.
 
 \subsection{Failed proof attempts, recorded}
 For completeness, the containments we attempted and could not close,
 each of which became a Finding or Obligation rather than a theorem:
-(1) STypes-level L-INTER — refuted (Finding~\ref{find:zeroing});
-(2) call/new-level $\bot$-implies-disjoint — refuted
+(1) call/new-level $\bot$-implies-disjoint — refuted
 (Finding~\ref{find:tfun});
-(3) literal-level $\bot$-implies-disjoint without L-LIT(ii) — refuted
-(Finding~\ref{find:spelling});
+(2) literal-level $\bot$-implies-disjoint without the string-kind
+L-LIT(ii) — refuted (Finding~\ref{find:spelling});
 (4) unconditional \texttt{seenInter} reuse — the sealing argument's
 freeze gap resisted proof and is Obligation~\ref{obl:freeze-cache};
 (5) exactness of constraint attachment from the main paper's one-sided
@@ -1042,9 +1009,9 @@ Union: branch-merge client (\texttt{TFields::union}) &
 Inter: units, tag dropping, no-shared-tag $\bot$ &
   Lemma~\ref{lem:prim-inter}, A1 \\
 Inter: literal sets & Lemma~\ref{lem:lit-inter}, conditional on
-  L-LIT(ii); spurious under \#655 (Finding~\ref{find:spelling}) \\
-Inter: STypes assembly & per-tag zeroing (Finding~\ref{find:zeroing},
-  pinned probe) \\
+  L-LIT(ii); string-kind escapes spurious (Finding~\ref{find:spelling}) \\
+Inter: STypes assembly & exact — empty shared tags dropped, $\bot$ iff all
+  drop \\
 Inter: named fields, indexes, brand, access &
   Section~\ref{sec:inter-object} (brand $\bot$ semantic; given
   sub-level L-INTER) \\
@@ -1081,13 +1048,14 @@ membership semantics and remain part of the subtyping surface.''
   Sections~\ref{sec:inter-prim}--\ref{sec:inter-inst}); the instance
   layer conditionally on \textbf{TVAR-SEM}
   (Obligation~\ref{obl:tvar-sem}).
-\item \textbf{L-INTER-b} (literal sets): \textsc{violated} — inherits
-  \textbf{L-LIT}(ii)/\#655; witness pinned
-  (Finding~\ref{find:spelling}). Fixing \#655's normalization restores
-  \textsc{proved} via Lemma~\ref{lem:lit-inter}.
-\item \textbf{L-INTER-c} (STypes assembly): \textsc{violated} — per-tag
-  zeroing, witness pinned (Finding~\ref{find:zeroing}). Local fix:
-  drop empty tags, $\bot$ only when all drop.
+\item \textbf{L-INTER-b} (literal sets): \textsc{violated} for the
+  \emph{string} kind — inherits \textbf{L-LIT}(ii) undecoded escapes;
+  witness pinned (Finding~\ref{find:spelling}). Numeric spellings are
+  normalized at parse time, so that half is \textsc{proved} via
+  Lemma~\ref{lem:lit-inter}.
+\item \textbf{L-INTER-c} (STypes assembly): \textsc{proved} — empty
+  shared tags are dropped, $\bot$ only when all drop
+  (Section~\ref{sec:inter-stypes}).
 \item \textbf{L-INTER-d} (call/new): \textsc{violated} — heuristic
   branch drop on incomparable signatures, witness pinned
   (Finding~\ref{find:tfun}). Fix: never convert \texttt{TFuns::inter}
@@ -1130,7 +1098,7 @@ statement; no other paper's internals are in scope:
 \section{Implementation Anchor Index}
 \label{sec:anchors}
 
-Pinned to \texttt{9108f339}.
+Pinned to \texttt{\skjspinhash}.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.2}
@@ -1152,8 +1120,8 @@ object branch sets & \texttt{TTypeUnion.sk / TObject::union};
   \texttt{TTypeInter.sk / TObject::inter} \\
 branch pair & \texttt{TTypeInter.sk / TFields::inter,
   interNamedFields, TIndexes::inter} \\
-branch merge (reads) & \texttt{TTypeUnion.sk / TFields::union};
-  \texttt{TType.sk / TObject::getFields} \\
+branch merge (reads) & \texttt{TType.sk / maybeGetType,
+  resolveLiteralAccess, maybeGetSymbol, maybeGetCall/New} \\
 fields & \texttt{TTypeInter.sk / TField::inter, interIndex};
   \texttt{TTypeUnion.sk / TField::union, unionIndex} \\
 access lattice & \texttt{TType.sk / FieldAccess::combine} \\

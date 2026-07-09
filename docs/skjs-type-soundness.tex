@@ -77,7 +77,7 @@ attached to PR \#342 (``Refinement and Type Difference in SKJS'').
 
 \paragraph{Pinned revision.}
 All implementation references (file, class, function) are against commit
-\texttt{9108f339}. The document is maintained by the discipline of
+\texttt{\skjspinhash}. The document is maintained by the discipline of
 Appendix~\ref{app:maintenance}: every inference rule in the refinement master
 list corresponds to one dispatch arm of \texttt{evalCond}, and drift between
 the list and the dispatch is intended to be mechanically checkable.
@@ -1274,10 +1274,10 @@ result. The literal-filtering case is sound \emph{only if} the
 implementation's lexeme-level falsiness test agrees with
 Definition~\ref{def:truthiness} on every literal in $L$ — this is the
 falsiness-exactness part (iii) of assumption \textbf{L-LIT}, which the
-\#655 zero spellings violate (see the assumptions table for the full
-inventory of violated assumptions): a literal type spelled
-\texttt{0.0} is classified truthy and would be dropped from the falsy
-branch. For $\mathsf{vres}_{\mathsf{false}}$: the only falsy string value is
+string kind violates (see the assumptions table for the full
+inventory of violated assumptions): a line-continuation string lexeme
+denotes \texttt{""} yet is classified truthy, and would be dropped from
+the falsy branch. For $\mathsf{vres}_{\mathsf{false}}$: the only falsy string value is
 $\texttt{""}$ and the only falsy bigint value is $0$, so the narrowed
 literal contains every falsy member; number stays wide precisely because its
 falsy set $\{0, -0, \mathsf{NaN}\}$ is not expressible as literals.
@@ -1501,6 +1501,9 @@ accounted for by the constraint intersection in $\mathsf{get}$.
 \begin{definition}[Subtyping Check Architecture]
 \label{def:issub-arch}
 \texttt{isSub}$(t_1, t_2)$ proceeds as:
+(0) acceptance shortcuts that return before any growth --- $t_1 = t_2$, and
+the reflexive \texttt{TSInst} arm (equal name, arguments equal after
+\texttt{peekRaw}), both guidance-free (deep dive D);
 (1) $\mathsf{growTVars}(t_1, t_2, \mathsf{contra})$ — grow variables of the
 to-be-grown side $t_2$ (the implementation's ``open'' side) from bound
 material in $t_1$;
@@ -1626,21 +1629,26 @@ When the key expression's type is a union of literals, \textsc{R-In} keeps
 object members unchanged (still dropping primitives on the true branch);
 per-key case splits are not performed.
 
-\subsection{Known unsoundness: non-canonical zero spellings (\#655)}
-\label{sec:ex-655}
-The lexeme-level falsiness test misclassifies literal types spelled with
-non-canonical zeros (assumption \textbf{L-LIT}(iii)); this is
-\emph{observable}, in both directions. For \texttt{x: 0.0 | ""} — both
-values falsy at runtime — \texttt{0.0} is classified truthy, so the union
-appears to have exactly one falsy member; the boolean-condition guard
-passes, the falsy residue of \texttt{if (x)} drops \texttt{0.0}, and in
-the else-branch \texttt{const z: "" = x} is \emph{accepted} while $z$
-holds the value $0$ at runtime (pinned; tsc rejects — SKJS is strictly more
-permissive here). Dually, for \texttt{x: 0.0 | "a"} the union appears to
-have \emph{no} falsy member and the condition is rejected outright
-(``A condition is expected to be of type boolean or a type with a single
-falsy value'') — the same bug surfacing as spurious rejection. The controls
-spelled \texttt{0} behave exactly per the model.
+\subsection{Known unsoundness: string-kind falsiness}
+\label{sec:ex-strfalsy}
+The lexeme-level falsiness test classifies a string literal by its stored
+lexeme (\texttt{lexeme == ""}), but the lexeme is not decoded. An
+ECMA-262 \emph{LineContinuation} — a backslash followed by a line
+terminator — has string value \texttt{""}, so a non-empty
+backslash-newline lexeme denotes the falsy value \texttt{""} while the
+test reads it truthy (assumption \textbf{L-LIT}(iii)). This is
+\emph{observable}. Let \texttt{L} be such a line-continuation string
+literal and take \texttt{x: L | 0} — both members falsy at runtime.
+\texttt{L} is classified truthy, so the union appears to have exactly one
+falsy member; the boolean-condition guard passes, the falsy residue of
+\texttt{if (x)} drops \texttt{L}, and in the else-branch
+\texttt{const z: 0 = x} is \emph{accepted} while $x$ holds the string
+\texttt{""} at runtime. The canonical control \texttt{"" | 0} is
+correctly rejected as a two-falsy-value condition. The sibling assumption
+\textbf{L-LIT}(ii) fails on the same undecoded-lexeme root: two spellings
+of one string (e.g.\ \texttt{"a"} and \texttt{"\textbackslash x61"}) are
+stored as distinct literals, so an equality that holds at runtime is
+typed as always-false.
 
 %==========================================================================
 \section{Assumptions and Proof Obligations}
@@ -1697,7 +1705,7 @@ and quarantined — future work, not architectural debt.
 \section{Implementation Correspondence}
 \label{app:impl}
 
-Pinned to \texttt{9108f339}.
+Pinned to \texttt{\skjspinhash}.
 
 \begin{center}
 \renewcommand{\arraystretch}{1.25}

@@ -113,8 +113,9 @@ Section~\ref{sec:status} gives the resulting ledger split.
 \paragraph{Relation to the rest of the series.}
 We build on three dives (exact rows in this paper's Imports table):
 Deep Dive~B (\texttt{lattice-operations.tex}) for the union/intersection
-results --- union proved exact, and the $\bot$-clause refuted (per-tag
-zeroing; incomparable signatures, \textbf{L-INTER-BOT});
+results --- union proved exact, and the $\bot$-clause refuted in its
+live strata (incomparable signatures and string-spelling,
+\textbf{L-INTER-BOT});
 Deep Dive~C (\texttt{type-expansion.tex}) for \textbf{L-EXP} scoped to
 expansion modes \texttt{None}/\texttt{Covariant} (its theorem T-EXP),
 which explicitly delegates the \emph{contravariant} expansion read to this
@@ -126,8 +127,8 @@ with the named residue MR-1 (the freeze-window memo hazard, which lives in
 and the refutation of the naive ``version is a state hash'' reading of the
 \texttt{tenv.seenSub} key, whose corrected argument we complete in
 \S\ref{sec:tenvseen}. All code references are to revision
-\texttt{9108f339}; the primary sources are
-\texttt{src/TTypeSubtyping.sk} (all 1830 lines audited),
+\texttt{\skjspinhash}; the primary sources are
+\texttt{src/TTypeSubtyping.sk} (all 1897 lines audited),
 \texttt{src/TTypeSubst.sk}, and the \texttt{isSub} helpers in
 \texttt{src/TType.sk}.
 
@@ -198,7 +199,7 @@ burying them in the notation.
 
 \paragraph{Result vocabulary.}
 \texttt{STResult} is $\STOk$ or an $\STErr$ tree. The error hierarchy
-(roughly 600 of the file's 1830 lines) exists to \emph{render} failures;
+(roughly 600 of the file's 1897 lines) exists to \emph{render} failures;
 it never influences acceptance. We audit it only for state effects:
 \texttt{toError} renderers take the substitution and may expand types for
 printing, but every render site on the acceptance path occurs strictly
@@ -217,7 +218,11 @@ Lemma~\ref{lem:restore}.
 \begin{definition}[Dispatch]
 \label{def:dispatch}
 \texttt{TType::isSub}$(u_1,u_2)$ is a thin wrapper: (a) if $u_1 = u_2$,
-accept; (b) if $(u_1,u_2) \in \texttt{subst.seenSub}$, accept; (c) call
+accept; (a$'$) \emph{reflexive-\texttt{TSInst} fast path}: if $u_1$ and
+$u_2$ are clause-free single \texttt{TSInst}s of the same name value and
+equal arity with each argument pair equal --- syntactically, or $u_1$'s
+argument a variable that \texttt{peekRaw}-resolves to $u_2$'s --- accept;
+(b) if $(u_1,u_2) \in \texttt{subst.seenSub}$, accept; (c) call
 \texttt{isSub\_}, and on $\STOk$ insert $(u_1,u_2)$ into
 \texttt{subst.seenSub}. \texttt{isSub\_}$(u_1,u_2)$ in order:
 (1) if $u_2.\mathsf{isTop}()$, accept;
@@ -233,8 +238,8 @@ accept; (b) if $(u_1,u_2) \in \texttt{subst.seenSub}$, accept; (c) call
 \impl{TTypeSubtyping.sk / TType::isSub, TType::isSub\_}
 \end{definition}
 
-There are thus exactly seven ways to accept: (a), (b), (1)--(4) accepting,
-and (5) validating. We prove (a), (1), (3) here; (b) in
+There are thus exactly eight ways to accept: (a), (a$'$), (b), (1)--(4)
+accepting, and (5) validating. We prove (a), (a$'$), (1), (3) here; (b) in
 \S\ref{sec:substseen}; (2) in \S\ref{sec:tenvseen} and
 \S\ref{sec:coinduction}; (5) is Part~II. (4) is \emph{delegated}:
 
@@ -259,19 +264,35 @@ $\TType$ in this paper --- the $u_1 = u_2$ fast path, both
 \texttt{seenSub} caches, \texttt{seenExpansion} --- therefore identifies
 types up to hash collision. We assume no two distinct constructed types
 collide. This is the standard hash-consing wager; it is stated once here
-and not repeated at each use. (A collision would be a \emph{soundness}
+and not repeated at each use. The reflexive-\texttt{TSInst} arm (a$'$) adds
+a second identity notion --- equality of name \emph{value} plus
+\texttt{peekRaw}-resolution of argument variables --- finer than raw hash
+equality, discharged directly in Lemma~\ref{lem:fastpath} rather than
+resting on this wager. (A collision would be a \emph{soundness}
 event: the fast path would equate distinct types.) Status:
 \textsc{assumed}.
 \end{assumption}
 
 \begin{lemma}[Fast Path, Top, and the TInter Shortcut]
 \label{lem:fastpath}
-Acceptances (a), (1), (3) are sound.
+Acceptances (a), (a$'$), (1), (3) are sound.
 \end{lemma}
 \begin{proof}
 (a) $u_1 = u_2$ (modulo A-HASH) gives $\sem{u_1}_\rho = \sem{u_2}_\rho$
 for any $\rho$: the denotation is a function of the term and the state,
 and no state evolution occurs on this path.
+(a$'$) $u_1,u_2$ are clause-free with single instances
+$\mathsf{TSInst}(n_1,\bar t_1)$, $\mathsf{TSInst}(n_2,\bar t_2)$; the arm
+accepts only when $n_1.\mathsf{value} = n_2.\mathsf{value}$,
+$|\bar t_1| = |\bar t_2|$, and for each $i$ either $t_{1,i} = t_{2,i}$ or
+$t_{1,i}$ is a lone variable with
+$\texttt{peekRaw}(t_{1,i}) = t_{2,i}$. A variable that \texttt{peekRaw}-resolves
+to $t_{2,i}$ denotes exactly $\sem{t_{2,i}}_\rho$ (the raw peek returns its
+bound value), so in either case $\sem{t_{1,i}}_\rho = \sem{t_{2,i}}_\rho$.
+Equal name value and pointwise-equal arguments give the same named
+instantiation, so $\sem{u_1}_\rho = \sem{u_2}_\rho$; the arm returns
+$\STOk$ without expanding or growing (guidance-free), so no state write
+occurs (registry row \textbf{L-SUB-TSINST}).
 (1) $u_2.\mathsf{isTop}()$ holds iff the clause map is the singleton top
 clause $\clause{\emptyset}{\top}$ (\texttt{Clauses::isTop}), whose
 denotation is $\Val$; note \texttt{TType::create} deletes the instance
@@ -533,7 +554,7 @@ intervening growth, treating a judgement-in-progress under $\rho$ as
 applicable under a strictly grown $\rho'$ --- the stale-cache regression
 class (\#446) the key was introduced to kill. What remains to justify is
 the logic of accepting a pending pair at all.
-\impl{TTypeSubtyping.sk / isSub\_ (lines 1536--1537); TEnv.sk / seenSub
+\impl{TTypeSubtyping.sk / isSub\_ (lines 1603--1604); TEnv.sk / seenSub
 comment}
 
 \section{Coinduction over the Value Semantics}
@@ -624,8 +645,8 @@ own verdict state; we henceforth suppress $\rho$.
 Now show $\forall n.\ \forall (a,b) \in R.\ \sem{a} \subseteq \semn{b}{n}$
 by induction on $n$. Base: $\semn{b}{0} = \Val$. Step: fix
 $(a,b) \in R$ and $v \in \sem{a}$. The node for $(a,b)$ accepted through
-one of the seven acceptance points. Fast path/top/TInter: by
-Lemma~\ref{lem:fastpath} the full inclusion $\sem{a} \subseteq \sem{b}$
+one of the eight acceptance points. Fast path (including the
+reflexive-\texttt{TSInst} arm)/top/TInter: by Lemma~\ref{lem:fastpath} the full inclusion $\sem{a} \subseteq \sem{b}$
 holds outright, and $\sem{b} \subseteq \semn{b}{n+1}$.
 Memo (\texttt{subst.seenSub}): by Theorem~\ref{thm:memo} the entry
 witnesses an earlier accepting node, i.e.\ another element of $R$ with
@@ -1279,21 +1300,21 @@ The two approximation facts themselves decompose as follows.
 \emph{Covariant/sub side:} Deep Dive~C's T-EXP proves expansion
 over-approximates for modes \texttt{None}/\texttt{Covariant},
 conditional on (among others) \textbf{L-INTER} --- and Deep Dive~B
-\emph{refuted} L-INTER as stated (per-tag zeroing; incomparable
-signatures return $\bot$). The exposure here is concrete: \texttt{get}'s
-constraint application $\mathsf{inter}(\mathit{binding}, \mathit{cstr})$
-can under-shoot the true intersection, shrinking the covariant expansion
-below $\sem{\alpha}$ and validating vacuously (a multiply-constrained
-variable whose constraints share a tag with empty syntactic meet
-expands toward $\bot$). We name the residue:
+\emph{refuted} the $\bot$-clause \textbf{L-INTER-BOT} in its live strata
+(incomparable signatures return $\bot$; the string-spelling stratum). The
+exposure here is concrete: \texttt{get}'s constraint application
+$\mathsf{inter}(\mathit{binding}, \mathit{cstr})$ can under-shoot the true
+intersection through those strata, shrinking the covariant expansion below
+$\sem{\alpha}$ and validating vacuously. We name the residue:
 
 \begin{obligation}[O-GETCOV: Covariant Reads Over-Approximate]
 \label{obl:getcov}
 $\sem{\alpha}_\rho \subseteq
 \sem{\texttt{Subst::get}(\alpha, \mathsf{cov})}_{\rho'}$. Follows from
-the instance-semantics axiom plus L-INTER; conditional today on Deep
-Dive~B's repair of the per-tag zeroing (its proposed fix restores the
-over-approximation on the get path). Status: \textsc{open}, inherited.
+the instance-semantics axiom plus L-INTER; open on the remaining live
+\textbf{L-INTER-BOT} strata (incomparable signatures; string-spelling),
+which the constraint application can still hit. Status: \textsc{open},
+inherited.
 \end{obligation}
 
 \begin{obligation}[O-GETCONTRA: Contravariant Reads Under-Approximate]
@@ -1392,8 +1413,9 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   drops) as the defect; wire the two composite witnesses of
   Findings~\ref{find:call}/\ref{find:brand} as pinned tests either way.
 \item \emph{Cross-reference}: the L-INTER row lists O-GETCOV as a
-  downstream dependent, so that repairing the per-tag zeroing is
-  understood to be on L-SUB's critical path, not only refinement's.
+  downstream dependent, so that repairing the remaining L-INTER-BOT
+  strata is understood to be on L-SUB's critical path, not only
+  refinement's.
 \end{enumerate}
 
 \paragraph{Registry.}

@@ -61,7 +61,7 @@ Every runtime value carries exactly one tag consistent with its static tag (the 
 A $\bot$ result from \texttt{inter} implies semantic disjointness — the clause every branch-dropping refinement step and L-SUB's covariant variable read (O-GETCOV) consume\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeInter.sk}}\par
 \nopagebreak
-\textsc{violated} (deep dive B) in two witnessed strata — \texttt{STypes::inter} per-tag zeroing and \texttt{TFun::inter} treating incomparable signatures as disjoint (issue drafts \path{stypes-inter-per-tag-zeroing.md}, \path{tfun-inter-incomparable-not-disjoint.md}) — plus a third stratum mediated by \#655 literal spellings; the remaining bottoms are semantic and \textsc{proved}
+\textsc{violated} (deep dive B) in the \texttt{TFun::inter} stratum — incomparable signatures treated as disjoint (issue draft \path{tfun-inter-incomparable-not-disjoint.md}) — and the string-kind literal-spelling stratum (undecoded escapes, mediated by L-LIT). The per-tag \texttt{STypes} assembly and numeric literal spellings produce only semantic bottoms and are \textsc{proved}
 
 \medskip\par\noindent\textbf{L-EXP}\quad(\textsc{proved})\\*[0.15em]
 Expansion preserves or enlarges semantics; residual instances keep theirs\\*[0.15em]
@@ -101,9 +101,9 @@ Checked expressions inhabit their checked types (used for the RHS of \textsc{R-E
 
 \medskip\par\noindent\textbf{L-LIT}\quad(\textsc{violated})\\*[0.15em]
 Three claims about literal spellings: (i) $\delta$ is a function — definitional, used by R2; (ii) \emph{injectivity modulo $\approx$} after normalization — needed only for \emph{exactness} claims; (iii) \emph{falsiness-exactness}: the lexeme test \texttt{isFalsy} agrees with Definition~\ref{def:truthiness} — needed by the residue lemma\\*[0.15em]
-{\small\emph{Anchor:} \texttt{PrimLiterals.sk}; \texttt{isZeroSpelling}}\par
+{\small\emph{Anchor:} \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; \texttt{isFalsy}; \texttt{unquoteString}}\par
 \nopagebreak
-(i) \textsc{proved} (definitional); (ii)/(iii) \textsc{violated} by \#655: \texttt{isZeroSpelling} covers exactly 14 spellings (signed decimal/hex/binary/octal zero), missing \texttt{0.0}, \texttt{0e0}, \texttt{00}, \texttt{0\_0}, bigint analogues, and non-\texttt{NaN} spellings. Conditional on (ii): the exactness clause of Theorem~\ref{thm:rmc} (precision only); on (iii): the literal-filtering case of Lemma~\ref{lem:residue-sound} — with an \emph{observable unsoundness witness} (\S\ref{sec:ex-655}, pinned). Claim (ii) is additionally \textsc{violated} for the \emph{string} kind: escape sequences are stored undecoded, witnessed end-to-end (deep dive G; issue draft \path{string-literal-escapes-undecoded.md} — outside \#655's numeric/bigint scope). Claim (iii) is \emph{also} \textsc{violated} for the string kind: a line-continuation lexeme denotes \texttt{""} but is classified truthy (witnessed end-to-end; same issue draft). All other results are unconditional
+(i) \textsc{proved} (definitional). For num/bigint, (ii)/(iii) are \textsc{proved}: literals are normalized to canonical form at parse time (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so zero has one spelling per kind and injectivity holds — modulo \emph{beyond-precision} numeric literals (radix $> 2^{53}$, out-of-range exponents), deliberately left non-canonical but kept sound by never merging (an adherence carve-out on (ii) for \texttt{num}). For the \emph{string} kind, (ii)/(iii) remain \textsc{violated}: escapes are stored undecoded (\texttt{unquoteString}; issue draft \path{string-literal-escapes-undecoded.md}), so distinct spellings of one string are treated as distinct (ii), and a line-continuation lexeme denotes \texttt{""} yet is classified truthy (iii) — both witnessed end-to-end. All other results are unconditional
 
 \medskip\par\noindent\textbf{L-INST}\quad(\textsc{violated})\\*[0.15em]
 $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site\\*[0.15em]
