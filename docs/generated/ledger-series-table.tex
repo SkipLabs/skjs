@@ -49,7 +49,7 @@ L-SUB-IDXNAME & A numeric-named field is checked against both a number and a str
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
 E-GUARD-PLACEHOLDER & An un-annotated ambient-class field placeholder must not head-expand to $\bot$ (the case E-GUARD's recursion-guard audit did not cover). & \textsc{violated} \\
 ACCESSOR-METHOD & Accessor (\texttt{get}/\texttt{set}) members must be typed as fields, not methods; today a getter is a call signature, so \texttt{c.p()} type-checks and throws. & \textsc{violated} \\
-L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{proved} \\
+L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{violated} \\
 \end{longtable}
 \endgroup
 \paragraph{Details.}\leavevmode
@@ -57,7 +57,7 @@ L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same n
 Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get}; \texttt{TType::isSub}}\par
 \nopagebreak
-\textsc{violated} in two witnessed instances — \texttt{instanceof}-born argument sealing and the freeze-window memo staleness MR-1; the general transport statement is the separate \textsc{proved} row E-TRANSPORT
+\textsc{violated} in three witnessed instances — \texttt{instanceof}-born argument sealing, the freeze-window memo staleness MR-1, and the unsealed \texttt{peekRaw} read of the reflexive \texttt{TSInst} arm (L-SUB-TSINST, not memo-mediated); the general transport statement is the separate \textsc{proved} row E-TRANSPORT
 
 \medskip\par\noindent\textbf{OBL-RESTORE}\quad(\textsc{proved})\\*[0.15em]
 No Commitment on Failure: failing and exploratory paths restore all relevant state.\\*[0.15em]
@@ -177,7 +177,7 @@ Sharpened variable denotation (get-time constraint intersection as definition), 
 Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause).\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get} (covariant); \texttt{expandToClauses}}\par
 \nopagebreak
-\textsc{open} (deep dive D): the covariant variable read applies \texttt{Subst::get}'s constraint-intersection loop, whose soundness rests on the \texttt{L-INTER-BOT} bottoms; its live strata (incomparable signatures; string-spelling) leave the read unproven. On L-SUB's critical path
+\textsc{open} (deep dive D): the covariant variable read applies \texttt{Subst::get}'s constraint-intersection loop, whose soundness rests on the \texttt{L-INTER-BOT} bottoms; its live strata (incomparable signatures; string-spelling; beyond-precision num-spelling) leave the read unproven. On L-SUB's critical path
 
 \medskip\par\noindent\textbf{O-GETCONTRA}\quad(\textsc{open})\\*[0.15em]
 Soundness of the contravariant variable read in subtyping.\\*[0.15em]
@@ -245,9 +245,9 @@ Accessor (\texttt{get}/\texttt{set}) members must be typed as fields, not method
 \nopagebreak
 \textsc{violated}, witnessed end-to-end (SKJS-specific; tsc rejects with TS6234): the parser's \texttt{isGetSet} marker is never read by the checker, so a getter \texttt{get p(): T} is typed as a method \texttt{p(): T}. \texttt{c.p()} is accepted and throws at runtime (\texttt{c.p} is not a function). Issue draft \path{getter-typed-as-method.md}. Adjacent to F's accessor caveat and L-GETSET, but a distinct (member-typing) hole
 
-\medskip\par\noindent\textbf{L-SUB-TSINST}\quad(\textsc{proved})\\*[0.15em]
+\medskip\par\noindent\textbf{L-SUB-TSINST}\quad(\textsc{violated})\\*[0.15em]
 The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TType::isSub} (TSInst reflexive arm)}\par
 \nopagebreak
-\textsc{proved} (deep dive D): the arm returns acceptance only when $u_1,u_2$ are pure \texttt{TSInst} of the same name with equal argument count and each argument pair equal — syntactically, or a variable resolving to the other via \texttt{peekRaw}; equal name and equal arguments give $\sem{u_1}_\rho = \sem{u_2}_\rho$, so $\sem{u_1}_\rho \subseteq \sem{u_2}_\rho$ (guidance-free, no growth)
+\textsc{violated} (deep dive D): the inclusion at the verdict state holds for unconstrained bindings, but the arm reads an unsealed \texttt{SVOpen} candidate via \texttt{peekRaw} without the covariant seal the slow path performs, so a later contravariant grow widens the binding and reads through aliases break — witnessed end-to-end (a value typed \texttt{number} holds a string; issue draft \path{reflexive-tsinst-fastpath-unsealed-read.md}). For constrained variables the equality claim also fails as stated: the occurrence denotes $\sem{t_2}_\rho \cap \bigcap\sem{C}$, not $\sem{t_2}_\rho$
 

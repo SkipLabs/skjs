@@ -114,8 +114,8 @@ Section~\ref{sec:status} gives the resulting ledger split.
 We build on three dives (exact rows in this paper's Imports table):
 Deep Dive~B (\texttt{lattice-operations.tex}) for the union/intersection
 results --- union proved exact, and the $\bot$-clause refuted in its
-live strata (incomparable signatures and string-spelling,
-\textbf{L-INTER-BOT});
+live strata (incomparable signatures, string-spelling, and
+beyond-precision num-spelling, \textbf{L-INTER-BOT});
 Deep Dive~C (\texttt{type-expansion.tex}) for \textbf{L-EXP} scoped to
 expansion modes \texttt{None}/\texttt{Covariant} (its theorem T-EXP),
 which explicitly delegates the \emph{contravariant} expansion read to this
@@ -239,7 +239,9 @@ argument a variable that \texttt{peekRaw}-resolves to $u_2$'s --- accept;
 \end{definition}
 
 There are thus exactly eight ways to accept: (a), (a$'$), (b), (1)--(4)
-accepting, and (5) validating. We prove (a), (a$'$), (1), (3) here; (b) in
+accepting, and (5) validating. We prove (a), (1), (3) here; (a$'$) is
+examined here and carries a \emph{violated} transport premise, witnessed
+(Lemma~\ref{lem:fastpath}, registry row \textbf{L-SUB-TSINST}); (b) is
 \S\ref{sec:substseen}; (2) in \S\ref{sec:tenvseen} and
 \S\ref{sec:coinduction}; (5) is Part~II. (4) is \emph{delegated}:
 
@@ -267,7 +269,7 @@ collide. This is the standard hash-consing wager; it is stated once here
 and not repeated at each use. The reflexive-\texttt{TSInst} arm (a$'$) adds
 a second identity notion --- equality of name \emph{value} plus
 \texttt{peekRaw}-resolution of argument variables --- finer than raw hash
-equality, discharged directly in Lemma~\ref{lem:fastpath} rather than
+equality, analyzed directly in Lemma~\ref{lem:fastpath} rather than
 resting on this wager. (A collision would be a \emph{soundness}
 event: the fast path would equate distinct types.) Status:
 \textsc{assumed}.
@@ -275,24 +277,55 @@ event: the fast path would equate distinct types.) Status:
 
 \begin{lemma}[Fast Path, Top, and the TInter Shortcut]
 \label{lem:fastpath}
-Acceptances (a), (a$'$), (1), (3) are sound.
+Acceptances (a), (1), (3) are sound. Acceptance (a$'$) satisfies the
+verdict-state inclusion when the resolved argument variables are
+unconstrained; its transport premise is \emph{violated}, with an
+end-to-end witness (registry row \textbf{L-SUB-TSINST}).
 \end{lemma}
 \begin{proof}
 (a) $u_1 = u_2$ (modulo A-HASH) gives $\sem{u_1}_\rho = \sem{u_2}_\rho$
-for any $\rho$: the denotation is a function of the term and the state,
+for any $\rho$: the denotation is a function of the term and the state
+(of the term \emph{including its position's file} --- name resolution
+keys on the referencing file --- a scope shared by every
+position-blind identity in this paper and folded into A-HASH's wager),
 and no state evolution occurs on this path.
 (a$'$) $u_1,u_2$ are clause-free with single instances
 $\mathsf{TSInst}(n_1,\bar t_1)$, $\mathsf{TSInst}(n_2,\bar t_2)$; the arm
 accepts only when $n_1.\mathsf{value} = n_2.\mathsf{value}$,
 $|\bar t_1| = |\bar t_2|$, and for each $i$ either $t_{1,i} = t_{2,i}$ or
 $t_{1,i}$ is a lone variable with
-$\texttt{peekRaw}(t_{1,i}) = t_{2,i}$. A variable that \texttt{peekRaw}-resolves
-to $t_{2,i}$ denotes exactly $\sem{t_{2,i}}_\rho$ (the raw peek returns its
-bound value), so in either case $\sem{t_{1,i}}_\rho = \sem{t_{2,i}}_\rho$.
-Equal name value and pointwise-equal arguments give the same named
-instantiation, so $\sem{u_1}_\rho = \sem{u_2}_\rho$; the arm returns
-$\STOk$ without expanding or growing (guidance-free), so no state write
-occurs (registry row \textbf{L-SUB-TSINST}).
+$\texttt{peekRaw}(t_{1,i}) = t_{2,i}$. Three facts bound what this
+buys.
+\emph{(Verdict state, unconstrained.)} \texttt{peekRaw} returns the
+variable's current binding without the constraint intersection of
+\texttt{Subst::get}; for an occurrence with
+$\mathit{tv}.\mathsf{constraints} = \emptyset$ it denotes exactly
+$\sem{t_{2,i}}_\rho$, so pointwise-equal arguments give
+$\sem{u_1}_\rho = \sem{u_2}_\rho$ at the verdict state.
+\emph{(Constrained occurrences.)} With
+$\mathit{tv}.\mathsf{constraints} = C \neq \emptyset$ the occurrence
+denotes $\sem{t_{2,i}}_\rho \cap \bigcap\sem{C}$, not
+$\sem{t_{2,i}}_\rho$: the equality --- which is what lets the arm ignore
+the variance of the argument position --- fails as stated, leaving only
+an inclusion that invariant and contravariant argument positions do not
+license.
+\emph{(Transport.)} The equality is read off an \emph{unsealed}
+$\SVOpen$ candidate. The slow path's covariant grow seals what it reads
+(\texttt{isSub\_} step (2); \texttt{Subst::get} covariant,
+$\SVOpen \to \SVClosed$, \texttt{TTypeSubst.sk:199-208}); the arm
+performs the exact-value read \emph{without} the seal --- precisely the
+read discipline the main paper's monotone-reads obligation forbids for
+open candidates --- so a later contravariant grow widens the binding and
+the verdict-state equality is not transported. This is not hypothetical:
+an inferred \texttt{Box<number>} aliased through the arm, then widened
+by \texttt{b.set("s")}, yields an accepted program in which a value
+typed \texttt{number} holds the string \texttt{"s"} at runtime (issue
+draft \path{issues/reflexive-tsinst-fastpath-unsealed-read.md}, runnable
+repro). The arm returns $\STOk$ without expanding or growing
+(guidance-free, no state write, not memoized) --- which is exactly why
+nothing seals the peeked variable. Fix directions: seal the peeked
+variables (a covariant \texttt{get}) before accepting; restrict the arm
+to $\SVClosed$ bindings; or retire the arm.
 (1) $u_2.\mathsf{isTop}()$ holds iff the clause map is the singleton top
 clause $\clause{\emptyset}{\top}$ (\texttt{Clauses::isTop}), whose
 denotation is $\Val$; note \texttt{TType::create} deletes the instance
@@ -640,14 +673,21 @@ of pairs of all \texttt{TType::isSub} nodes that returned $\STOk$,
 indexing: every node's verdict state precedes $\rho^\ast$ on the same
 never-restored timeline (failed excursions restored,
 Lemma~\ref{lem:restore}), so by Deep Dive~E's monotone-reads transport
-(with its MR-1 proviso) it suffices to prove each node's inclusion at its
+(with its MR-1 proviso, and modulo the unsealed exact-value read of arm
+(a$'$), registry row \textbf{L-SUB-TSINST} --- the transport premise
+that arm violates) it suffices to prove each node's inclusion at its
 own verdict state; we henceforth suppress $\rho$.
 Now show $\forall n.\ \forall (a,b) \in R.\ \sem{a} \subseteq \semn{b}{n}$
 by induction on $n$. Base: $\semn{b}{0} = \Val$. Step: fix
 $(a,b) \in R$ and $v \in \sem{a}$. The node for $(a,b)$ accepted through
-one of the eight acceptance points. Fast path (including the
-reflexive-\texttt{TSInst} arm)/top/TInter: by Lemma~\ref{lem:fastpath} the full inclusion $\sem{a} \subseteq \sem{b}$
-holds outright, and $\sem{b} \subseteq \semn{b}{n+1}$.
+one of the eight acceptance points. Fast path/top/TInter: by
+Lemma~\ref{lem:fastpath} the full inclusion $\sem{a} \subseteq \sem{b}$
+holds outright, and $\sem{b} \subseteq \semn{b}{n+1}$. The
+reflexive-\texttt{TSInst} arm (a$'$): the verdict-state inclusion needs
+unconstrained argument variables, and the flattening step above already
+carries its violated transport premise, so this case --- hence the
+theorem --- is conditional on registry row \textbf{L-SUB-TSINST},
+exactly as the transport step is on MR-1.
 Memo (\texttt{subst.seenSub}): by Theorem~\ref{thm:memo} the entry
 witnesses an earlier accepting node, i.e.\ another element of $R$ with
 the same pair; use its case.
@@ -1301,7 +1341,8 @@ The two approximation facts themselves decompose as follows.
 over-approximates for modes \texttt{None}/\texttt{Covariant},
 conditional on (among others) \textbf{L-INTER} --- and Deep Dive~B
 \emph{refuted} the $\bot$-clause \textbf{L-INTER-BOT} in its live strata
-(incomparable signatures return $\bot$; the string-spelling stratum). The
+(incomparable signatures return $\bot$; the string- and beyond-precision
+num-spelling strata). The
 exposure here is concrete: \texttt{get}'s constraint application
 $\mathsf{inter}(\mathit{binding}, \mathit{cstr})$ can under-shoot the true
 intersection through those strata, shrinking the covariant expansion below
@@ -1312,7 +1353,8 @@ $\sem{\alpha}$ and validating vacuously. We name the residue:
 $\sem{\alpha}_\rho \subseteq
 \sem{\texttt{Subst::get}(\alpha, \mathsf{cov})}_{\rho'}$. Follows from
 the instance-semantics axiom plus L-INTER; open on the remaining live
-\textbf{L-INTER-BOT} strata (incomparable signatures; string-spelling),
+\textbf{L-INTER-BOT} strata (incomparable signatures; string- and
+beyond-precision num-spelling),
 which the constraint application can still hit. Status: \textsc{open},
 inherited.
 \end{obligation}
@@ -1412,7 +1454,7 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   (\texttt{isSubOptTFuns} arm or \textsc{R-Typeof}/\textsc{R-IsArray}
   drops) as the defect; wire the two composite witnesses of
   Findings~\ref{find:call}/\ref{find:brand} as pinned tests either way.
-\item \emph{Cross-reference}: the L-INTER row lists O-GETCOV as a
+\item \emph{Cross-reference}: the L-INTER-BOT row lists O-GETCOV as a
   downstream dependent, so that repairing the remaining L-INTER-BOT
   strata is understood to be on L-SUB's critical path, not only
   refinement's.

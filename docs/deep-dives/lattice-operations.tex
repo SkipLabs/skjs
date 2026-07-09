@@ -59,16 +59,17 @@ in fact exact; the \texttt{seenUnion} cache is unconditionally sound because
 the union computation never reads the substitution. Intersection is
 \emph{refuted as stated} by one defect that makes \texttt{inter} return
 $\bot$ on semantically overlapping operands — the treatment of a failed
-call/new signature intersection as branch disjointness — with a second,
-string-kind defect inheriting the \textbf{L-LIT}(ii) escape-spelling
-violation. Both are empirically witnessed at the pinned revision: the
-checker silently narrows an inhabited variable to \texttt{never} in a
-reachable branch. Every other intersection stratum (units, tags, named
-fields, indexes under the covering semantics, the array brand, the per-tag
-\texttt{STypes} assembly, the instance layer) is proved sound, so the
-ledger row splits into proved strata, the two violated strata, and one
-named residual obligation (the \texttt{seenInter} cache under candidate
-freezing).
+call/new signature intersection as branch disjointness — with two further
+spelling defects inheriting the \textbf{L-LIT}(ii) violations:
+string-kind escape spellings, and beyond-precision numeric spellings that
+alias one double. All three are empirically witnessed at the pinned
+revision: the checker silently narrows an inhabited variable to
+\texttt{never} in a reachable branch. Every other intersection stratum
+(units, tags, named fields, indexes under the covering semantics, the
+array brand, the per-tag \texttt{STypes} assembly, the instance layer) is
+proved sound, so the ledger row splits into proved strata, the three
+violated strata, and one named residual obligation (the
+\texttt{seenInter} cache under candidate freezing).
 \end{abstract}
 
 \tableofcontents
@@ -78,13 +79,15 @@ freezing).
 \label{sec:purpose}
 
 This document is deep dive B in the series supporting the main paper
-(\emph{Refinement and Inference Growth in SKJS}, same pinned revision). It
-addresses exactly two rows of the main paper's ``Assumptions and Proof
-Obligations'' ledger: \textbf{L-UNION} (union over-approximates set union
-at all levels), established here \emph{exact at every stratum}; and
-\textbf{L-INTER} (intersection over-approximates, with the
-$\bot$-implies-disjointness clause), which splits here into an exact
-containment and the $\bot$-clause, refuted in two strata.
+(\emph{Refinement and Inference Growth in SKJS}, same pinned revision).
+Its lattice rows in the main paper's ``Assumptions and Proof
+Obligations'' ledger are: \textbf{L-UNION} (union over-approximates set
+union at all levels), established here \emph{exact at every stratum};
+\textbf{L-INTER} (the containment clause of intersection); and
+\textbf{L-INTER-BOT} (the $\bot$-implies-disjointness clause), which
+splits here into an exact containment and the $\bot$-clause, refuted in
+three strata. It also owns the cache obligation C-FREEZE-CACHE and the
+variable-denotation obligation TVAR-SEM, both raised by its proofs.
 
 \noindent
 Note that the two halves of L-INTER are one property: if
@@ -753,8 +756,8 @@ inherited from the sites it aggregates.
 \textbf{Site} & \textbf{When $\bot$} & \textbf{Nature of $\bot$} \\
 \midrule
 \texttt{PrimLiterals::inter} & spelling sets disjoint &
-  semantic iff L-LIT(ii); spurious for the string kind
-  (Finding~\ref{find:spelling}) \\
+  semantic iff L-LIT(ii); spurious for the string kind and for
+  beyond-precision num spellings (Finding~\ref{find:spelling}) \\
 \texttt{TPrimValue::inter} & kind mismatch & semantic (A1); unreachable
   from \texttt{STypes::inter} \\
 \texttt{STypes::inter}, no shared tag survives & all per-tag results
@@ -948,9 +951,32 @@ This is not a new root cause: it is the \emph{string}-kind
 draft \path{issues/string-literal-escapes-undecoded.md}) propagating
 through Lemma~\ref{lem:lit-inter} into \texttt{PrimLiterals::inter}'s
 bottom and thence into \texttt{overlaps} and the branch logic — L-INTER's
-\emph{disjointness} reading breaking on it. Numeric spellings do not
-trigger it: the parser normalizes numeric literals, so \texttt{0.0} and
-\texttt{0} share one lexeme.
+\emph{disjointness} reading breaking on it. \emph{Within-precision}
+numeric spellings do not trigger it: the parser normalizes them, so
+\texttt{0.0} and \texttt{0} share one lexeme. \emph{Beyond-precision}
+numeric spellings do trigger it, through the same lemma: spellings that
+alias one double are kept distinct (the num-kind \textbf{L-LIT}(ii)
+violation, issue draft
+\path{issues/beyond-precision-numeric-literals.md}), so their lexeme
+intersection is empty while their value sets coincide.
+\begin{verbatim}
+function t(x: 9007199254740993 | "q",
+           y: 9007199254740992 | "r"): void {
+  if (x === y) {          // both num spellings are the double 2^53
+    const z: never = x;   //   -- ACCEPTED, and t's call below makes
+    const s: string = z;  //   the branch live: a number inhabits
+    console.log(s);       //   never and flows into string
+  }
+}
+t(9007199254740993, 9007199254740992);
+\end{verbatim}
+The program is accepted with zero diagnostics and the branch executes at
+runtime. The comparison \emph{lint} knows the runtime truth —
+\texttt{checkComparisonOverlap} is silenced for imprecise pairs by
+\texttt{hasImpreciseNumberLiteral}
+(\texttt{TypeCheckExpr.sk:1448-1458}), its comment citing this very pair
+— but the narrowing and intersection path carries no precision guard, so
+the spurious $\bot$ is still installed.
 \end{finding}
 
 \subsection{Probe 4: type-level intersections}
@@ -971,8 +997,9 @@ For completeness, the containments we attempted and could not close,
 each of which became a Finding or Obligation rather than a theorem:
 (1) call/new-level $\bot$-implies-disjoint — refuted
 (Finding~\ref{find:tfun});
-(2) literal-level $\bot$-implies-disjoint without the string-kind
-L-LIT(ii) — refuted (Finding~\ref{find:spelling});
+(2) literal-level $\bot$-implies-disjoint without the string-kind and
+beyond-precision num-kind L-LIT(ii) — refuted, both kinds
+(Finding~\ref{find:spelling});
 (4) unconditional \texttt{seenInter} reuse — the sealing argument's
 freeze gap resisted proof and is Obligation~\ref{obl:freeze-cache};
 (5) exactness of constraint attachment from the main paper's one-sided
@@ -1009,7 +1036,8 @@ Union: branch-merge client (\texttt{TFields::union}) &
 Inter: units, tag dropping, no-shared-tag $\bot$ &
   Lemma~\ref{lem:prim-inter}, A1 \\
 Inter: literal sets & Lemma~\ref{lem:lit-inter}, conditional on
-  L-LIT(ii); string-kind escapes spurious (Finding~\ref{find:spelling}) \\
+  L-LIT(ii); string-kind escapes and beyond-precision num spellings
+  spurious (Finding~\ref{find:spelling}) \\
 Inter: STypes assembly & exact — empty shared tags dropped, $\bot$ iff all
   drop \\
 Inter: named fields, indexes, brand, access &
@@ -1049,9 +1077,11 @@ membership semantics and remain part of the subtyping surface.''
   layer conditionally on \textbf{TVAR-SEM}
   (Obligation~\ref{obl:tvar-sem}).
 \item \textbf{L-INTER-b} (literal sets): \textsc{violated} for the
-  \emph{string} kind — inherits \textbf{L-LIT}(ii) undecoded escapes;
-  witness pinned (Finding~\ref{find:spelling}). Numeric spellings are
-  normalized at parse time, so that half is \textsc{proved} via
+  \emph{string} kind — inherits \textbf{L-LIT}(ii) undecoded escapes —
+  and for \emph{beyond-precision} numeric spellings, which alias one
+  double yet stay distinct lexemes; both witnesses pinned
+  (Finding~\ref{find:spelling}). Within-precision numeric spellings are
+  normalized at parse time, so that range is \textsc{proved} via
   Lemma~\ref{lem:lit-inter}.
 \item \textbf{L-INTER-c} (STypes assembly): \textsc{proved} — empty
   shared tags are dropped, $\bot$ only when all drop

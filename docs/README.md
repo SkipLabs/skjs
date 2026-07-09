@@ -128,7 +128,7 @@ Three patterns span multiple papers (statuses: see the registry).
 - **The `call = None` dichotomy**: refinement and one subtyping arm read
   the mode incompatibly (rows A-CTOR-CALL, F-CALL); no single reading
   validates both, so the fixes are gated on a representation decision.
-- **`⊥ ⟹ disjoint`** (row L-INTER) is consumed both by the main paper's
+- **`⊥ ⟹ disjoint`** (row L-INTER-BOT) is consumed both by the main paper's
   branch-dropping refinement rules and by subtyping's covariant variable
   read (row O-GETCOV) — repairing it sits on both critical paths.
 

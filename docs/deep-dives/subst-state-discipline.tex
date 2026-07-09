@@ -51,10 +51,14 @@ value, not a mutation of shared state, which removes the envelope-shrinking
 threat the main paper flagged for \textbf{L-MONO} and \textbf{L-CLONE}.
 With that, \textbf{L-MONO} is proved under two stated modeling conditions;
 \emph{Monotone Reads} is proved by a read-variance audit everywhere except
-one \textsc{violated} residue, MR-1 — a freeze-window unsealed read
+one \textsc{violated} residue within the audited family, MR-1 — a
+freeze-window unsealed read
 memoized in \texttt{seenSub}, witnessed end-to-end by an order-dependent
 unsound acceptance (issue draft
-\path{issues/freeze-window-stale-memo-caches.md}); \textbf{L-CLONE} is
+\path{issues/freeze-window-stale-memo-caches.md}) — plus one read site
+outside it, the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}
+(audited in deep dive D; issue draft
+\path{issues/reflexive-tsinst-fastpath-unsealed-read.md}); \textbf{L-CLONE} is
 proved conditional on a strengthened, fork-state form of \textbf{L-INTER}
 — the clone-generated-identifier hazard is verified \emph{unreachable}
 (no \texttt{gen*} call site lies in the clone-compute-install tree),
@@ -667,9 +671,15 @@ recommended.
 
 Theorem~\ref{thm:stable} discharges the obligation
 \emph{conditional on} MR-1 and on \textbf{L-SUB}, and the audit above
-discharges its MR/BR premises for every other site; since MR-1 fails, the
-obligation stands \textsc{violated} exactly at the freeze-window memo and
-\textsc{proved} everywhere else.
+discharges its MR/BR premises for every other site of the audited
+\texttt{Subst::get}/grow family. One read site sits outside that family:
+the reflexive-\texttt{TSInst} fast path in \texttt{TType::isSub} reads
+an open candidate via \texttt{peekRaw} — an exact-value read with no
+seal, no memo, and no \texttt{get}-mediated variance — analyzed and
+witnessed in deep dive D (issue draft
+\path{issues/reflexive-tsinst-fastpath-unsealed-read.md}). The
+obligation therefore stands \textsc{violated} at the freeze-window memo
+and at that read, and \textsc{proved} everywhere else.
 
 %==========================================================================
 \section{L-CLONE: Clone--Compute--Install}
@@ -1021,7 +1031,8 @@ L-MONO & Theorem~\ref{thm:lmono}, conditional on M1
 Obl.\ Monotone Reads & general statement via
   Theorem~\ref{thm:stable} (given M1 + the MR/BR audit,
   \S\ref{sec:mr-audit}); the residue MR-1 is witnessed
-  (Finding~\ref{find:freeze-memo}) \\
+  (Finding~\ref{find:freeze-memo}), and the reflexive-\texttt{TSInst}
+  \texttt{peekRaw} read sits outside the audited family (deep dive D) \\
 L-CLONE & Theorem~\ref{thm:lclone} given I$_f$
   (fork-state L-INTER; registry row I-F); the id-collision hazard CL-1
   discharged as
@@ -1060,7 +1071,11 @@ audited site except its one sharp residue, MR-1, which is
 \textsc{violated} with an end-to-end witness (issue draft
 \path{issues/freeze-window-stale-memo-caches.md}); the fix
 (version-keying or freeze-window write suppression) must cover both
-\texttt{seenSub} and \texttt{seenInter}.
+\texttt{seenSub} and \texttt{seenInter}. A further violated read site,
+the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}, lies
+outside this paper's audited family and is analyzed in deep dive D
+(issue draft
+\path{issues/reflexive-tsinst-fastpath-unsealed-read.md}).
 
 %==========================================================================
 \appendix

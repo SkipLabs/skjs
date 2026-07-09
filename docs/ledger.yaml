@@ -144,18 +144,24 @@ entries:
     anchor_files: [src/TTypeInter.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive B) in the \texttt{TFun::inter} stratum —
-      incomparable signatures treated as disjoint (issue draft
-      \texttt{tfun-inter-incomparable-not-disjoint.md}) — and the
-      string-kind literal-spelling stratum (undecoded escapes, mediated by
-      L-LIT). The per-tag \texttt{STypes} assembly and numeric literal
-      spellings produce only semantic bottoms and are \textsc{proved}
+      \textsc{violated} (deep dive B) in three strata: the
+      \texttt{TFun::inter} stratum — incomparable signatures treated as
+      disjoint (issue draft
+      \texttt{tfun-inter-incomparable-not-disjoint.md}); the string-kind
+      literal-spelling stratum (undecoded escapes, mediated by L-LIT); and
+      the num-kind beyond-precision spelling stratum — distinct spellings
+      of one double kept distinct, their lexeme intersection a spurious
+      $\bot$ (mediated by L-LIT; issue draft
+      \texttt{beyond-precision-numeric-literals.md}). The per-tag
+      \texttt{STypes} assembly and within-precision numeric spellings
+      produce only semantic bottoms and are \textsc{proved}
     summary:
       - {bucket: violated-witnessed,
-         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (\\texttt{TFun} + string-spelling)"}
+         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (\\texttt{TFun} + string/num spellings)"}
     owner: B
     consumers: [D]
-    issues: [tfun-inter-incomparable-not-disjoint.md]
+    issues: [tfun-inter-incomparable-not-disjoint.md,
+             beyond-precision-numeric-literals.md]
 
   - id: L-EXP
     kind: assumption
@@ -314,25 +320,33 @@ entries:
     status: [violated]
     status_note: >-
       (i) \textsc{proved} (definitional). For num/bigint, (ii)/(iii) are
-      \textsc{proved}: literals are normalized to canonical form at parse
-      time (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so
-      zero has one spelling per kind and injectivity holds — modulo
-      \emph{beyond-precision} numeric literals (radix $> 2^{53}$,
-      out-of-range exponents), deliberately left non-canonical but kept
-      sound by never merging (an adherence carve-out on (ii) for
-      \texttt{num}). For the \emph{string} kind, (ii)/(iii) remain
-      \textsc{violated}: escapes are stored undecoded
-      (\texttt{unquoteString}; issue draft
+      \textsc{proved} for \emph{within-precision} literals: normalized to
+      canonical form at parse time
+      (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so on that
+      range zero has one spelling per kind and injectivity holds. For
+      \emph{beyond-precision} numeric literals — those failing the
+      round-trip $\mathtt{String(Number(s))} = s$: 16--17-digit decimals,
+      radix forms $> 2^{53}$, over/underflow exponent forms — (ii)/(iii)
+      are \textsc{violated}: distinct spellings of one double are kept
+      distinct, so \texttt{===} narrowing yields a spurious \texttt{never}
+      (ii), and the normalizer can emit a zero-denoting lexeme
+      (\texttt{1e-400}, underflow to $+0$) classified truthy (iii) — both
+      witnessed end-to-end (issue draft
+      \texttt{beyond-precision-numeric-literals.md}). For the
+      \emph{string} kind, (ii)/(iii) are \textsc{violated}: escapes are
+      stored undecoded (\texttt{unquoteString}; issue draft
       \texttt{string-literal-escapes-undecoded.md}), so distinct spellings
       of one string are treated as distinct (ii), and a line-continuation
       lexeme denotes \texttt{""} yet is classified truthy (iii) — both
       witnessed end-to-end. All other results are unconditional
     summary:
       - {bucket: violated-witnessed,
-         label: "L-LIT(ii)/(iii) string-kind (undecoded escapes)"}
+         label: "L-LIT(ii)/(iii) string-kind (undecoded escapes) + num
+           beyond-precision spellings"}
     owner: G
     consumers: [B, D]
-    issues: [string-literal-escapes-undecoded.md]
+    issues: [string-literal-escapes-undecoded.md,
+             beyond-precision-numeric-literals.md]
 
   - id: L-INST
     kind: assumption
@@ -538,16 +552,21 @@ entries:
     anchor_files: [src/TTypeSubst.sk, src/TTypeSubtyping.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} in two witnessed instances —
-      \texttt{instanceof}-born argument sealing and the freeze-window memo
-      staleness MR-1; the general transport statement is the separate
-      \textsc{proved} row E-TRANSPORT
+      \textsc{violated} in three witnessed instances —
+      \texttt{instanceof}-born argument sealing, the freeze-window memo
+      staleness MR-1, and the unsealed \texttt{peekRaw} read of the
+      reflexive \texttt{TSInst} arm (L-SUB-TSINST, not memo-mediated);
+      the general transport statement is the separate \textsc{proved}
+      row E-TRANSPORT
     summary:
       - {bucket: violated-witnessed,
-         label: "the two witnessed instances of OBL-MONOTONE (sealing; MR-1)"}
+         label: "the three witnessed instances of OBL-MONOTONE (sealing;
+           MR-1; the reflexive-\\texttt{TSInst} read)"}
     owner: E
     consumers: [A, D]
-    issues: [instanceof-type-argument-sealing.md, freeze-window-stale-memo-caches.md]
+    issues: [instanceof-type-argument-sealing.md,
+             freeze-window-stale-memo-caches.md,
+             reflexive-tsinst-fastpath-unsealed-read.md]
 
   - id: OBL-RESTORE
     kind: obligation
@@ -884,8 +903,8 @@ entries:
       \textsc{open} (deep dive D): the covariant variable read applies
       \texttt{Subst::get}'s constraint-intersection loop, whose soundness
       rests on the \texttt{L-INTER-BOT} bottoms; its live strata
-      (incomparable signatures; string-spelling) leave the read unproven.
-      On L-SUB's critical path
+      (incomparable signatures; string-spelling; beyond-precision
+      num-spelling) leave the read unproven. On L-SUB's critical path
     summary:
       - {bucket: open, label: "O-GETCOV, O-GETCONTRA, O-ARRAYLIT"}
     owner: D
@@ -1124,15 +1143,22 @@ entries:
     statement: ""
     anchor: \texttt{TType::isSub} (TSInst reflexive arm)
     anchor_files: [src/TTypeSubtyping.sk]
-    status: [proved]
+    status: [violated]
     status_note: >-
-      \textsc{proved} (deep dive D): the arm returns acceptance only when
-      $u_1,u_2$ are pure \texttt{TSInst} of the same name with equal
-      argument count and each argument pair equal — syntactically, or a
-      variable resolving to the other via \texttt{peekRaw}; equal name and
-      equal arguments give $\sem{u_1}_\rho = \sem{u_2}_\rho$, so
-      $\sem{u_1}_\rho \subseteq \sem{u_2}_\rho$ (guidance-free, no growth)
-    summary: [{bucket: proved, label: "L-SUB-TSINST"}]
+      \textsc{violated} (deep dive D): the inclusion at the verdict state
+      holds for unconstrained bindings, but the arm reads an unsealed
+      \texttt{SVOpen} candidate via \texttt{peekRaw} without the covariant
+      seal the slow path performs, so a later contravariant grow widens
+      the binding and reads through aliases break — witnessed end-to-end
+      (a value typed \texttt{number} holds a string; issue draft
+      \texttt{reflexive-tsinst-fastpath-unsealed-read.md}). For
+      constrained variables the equality claim also fails as stated: the
+      occurrence denotes $\sem{t_2}_\rho \cap \bigcap\sem{C}$, not
+      $\sem{t_2}_\rho$
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-SUB-TSINST (unsealed \\texttt{peekRaw} read in the
+           reflexive \\texttt{TSInst} arm)"}
     owner: D
     consumers: []
-    issues: []
+    issues: [reflexive-tsinst-fastpath-unsealed-read.md]

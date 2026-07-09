@@ -1503,7 +1503,10 @@ accounted for by the constraint intersection in $\mathsf{get}$.
 \texttt{isSub}$(t_1, t_2)$ proceeds as:
 (0) acceptance shortcuts that return before any growth --- $t_1 = t_2$, and
 the reflexive \texttt{TSInst} arm (equal name, arguments equal after
-\texttt{peekRaw}), both guidance-free (deep dive D);
+\texttt{peekRaw}), both guidance-free; the \texttt{TSInst} arm's
+\texttt{peekRaw} reads an open candidate \emph{without sealing it},
+the unsealed-read instance of
+Obligation~\ref{obl:monotone} (deep dive D);
 (1) $\mathsf{growTVars}(t_1, t_2, \mathsf{contra})$ — grow variables of the
 to-be-grown side $t_2$ (the implementation's ``open'' side) from bound
 material in $t_1$;
@@ -1575,13 +1578,17 @@ this is Lemma~\ref{lem:never-widen}(iii); for $\SVOpen$ bindings of
 \emph{non-candidates}, unions grow the denotation and the obligation is that
 every consumer read them contravariantly (as lower bounds) until sealed.
 \emph{This obligation is \textsc{violated} in
-two witnessed instances} — the \texttt{instanceof}-born type argument
-sealed by a later covariant use, and \texttt{subst.seenSub} memos recorded
+three witnessed instances} — the \texttt{instanceof}-born type argument
+sealed by a later covariant use; \texttt{subst.seenSub} memos recorded
 on unsealed candidate bounds inside \texttt{freezeCandidates} windows
-(order-dependent acceptance). The general statement is proved by deep dive
+(order-dependent acceptance); and the reflexive \texttt{TSInst} arm of
+Definition~\ref{def:issub-arch} step (0), whose \texttt{peekRaw} is an
+exact-value read of an unsealed open candidate (not memo-mediated). The
+general statement is proved by deep dive
 E modulo exactly these residues; witnesses and fix directions:
 \path{deep-dives/issues/instanceof-type-argument-sealing.md},
-\path{deep-dives/issues/freeze-window-stale-memo-caches.md}.
+\path{deep-dives/issues/freeze-window-stale-memo-caches.md},
+\path{deep-dives/issues/reflexive-tsinst-fastpath-unsealed-read.md}.
 \end{obligation}
 
 \begin{obligation}[No Commitment on Failure (registry row

@@ -18,7 +18,7 @@ F-CALL & The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads \texttt{call{=}
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
-L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{proved} \\
+L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{violated} \\
 \bottomrule
 \end{tabular}
 \end{center}
