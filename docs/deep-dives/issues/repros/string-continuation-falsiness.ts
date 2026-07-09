@@ -1,5 +1,4 @@
 // repro for: string-literal-escapes-undecoded, falsiness variant (L-LIT(iii))
-// pin: 9108f339
 // expect: accepted  (skjs check exits 0 — the unsound acceptance)
 // A LineContinuation lexeme denotes "" (falsy) but isFalsy reads its
 // non-empty lexeme as truthy, so the else of if(x) narrows to 0 and

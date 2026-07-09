@@ -15,7 +15,7 @@ scopes it out and no tracker entry exists.
 Reproduction: [`repros/symbol-hasinstance.ts`](repros/symbol-hasinstance.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/symbol-hasinstance.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0, zero diagnostics**.
+- SKJS: **exit 0, zero diagnostics**.
 - node: prints `undefined` at type `number`.
 - tsc `--strict --target es2022`: **also exit 0** — parity confirmed.
 

@@ -20,7 +20,7 @@ is reachable.
 Reproduction: [`repros/tfun-inter-incomparable.ts`](repros/tfun-inter-incomparable.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/tfun-inter-incomparable.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0, zero diagnostics** (including the `t(h, h)`
+- SKJS: **exit 0, zero diagnostics** (including the `t(h, h)`
   call).
 - node: prints `[Function: h]` — a function value inhabits `never` and flows
   into a `number` binding.

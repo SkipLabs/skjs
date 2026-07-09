@@ -26,7 +26,7 @@ contribution. The fix below covers both.
 Reproduction: [`repros/freeze-window-stale-seensub.ts`](repros/freeze-window-stale-seensub.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/freeze-window-stale-seensub.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0, zero diagnostics**.
+- SKJS: **exit 0, zero diagnostics**.
 - Decisive order-dependence control: the identical program **without the
   priming `r0 = g(f)` call** (widen first, then a single `g(f)`) is
   **rejected** with a proper contravariance error. Adding the earlier call

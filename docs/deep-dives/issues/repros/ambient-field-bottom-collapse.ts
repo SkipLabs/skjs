@@ -1,5 +1,4 @@
 // repro for: ambient-unannotated-field-bottom (docs/deep-dives/issues)
-// pin: 9108f339
 // expect: accepted   (skjs check exits 0 — the unsound acceptance)
 // An un-annotated field on an ambient class expands to a placeholder TSInst
 // whose head-expansion collapses to bottom; bottom <: everything, so the read

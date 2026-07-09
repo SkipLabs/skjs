@@ -17,7 +17,7 @@ arguments at ⊤ (or as read-only), not as growable candidates.
 Reproduction: [`repros/instanceof-arg-sealing.ts`](repros/instanceof-arg-sealing.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/instanceof-arg-sealing.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0, zero diagnostics**. No `any` appears anywhere
+- SKJS: **exit 0, zero diagnostics**. No `any` appears anywhere
   in the program.
 - node: prints `42` — a number returned from a `string`-typed function.
 - Order dependence (mechanism confirmation): adding a second read

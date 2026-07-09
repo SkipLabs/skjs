@@ -17,7 +17,7 @@ write itself is type-incorrect and undiagnosed.
 Reproduction: [`repros/captured-local-write.ts`](repros/captured-local-write.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/captured-local-write.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339` (`make check-file-in-docker`): **exit 0, zero
+- SKJS (`make check-file-in-docker`): **exit 0, zero
   diagnostics**. Annotating the lambda (`const g: () => void = ...`) changes
   nothing.
 - node: prints `undefined` — `x` holds the number `5` in a `string`-typed

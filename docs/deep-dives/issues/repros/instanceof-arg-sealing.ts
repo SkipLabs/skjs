@@ -1,5 +1,4 @@
 // repro for: instanceof-type-argument-sealing (docs/deep-dives/issues/instanceof-type-argument-sealing.md)
-// pin: 9108f339
 // expect: accepted   (skjs check exits 0 — the unsound acceptance at the pin)
 // run: make check-file-in-docker FILE=docs/deep-dives/issues/repros/instanceof-arg-sealing.ts BIN=target/host/dev/skjs
 

@@ -1,5 +1,4 @@
 // repro for: freeze-window-stale-memo-caches (docs/deep-dives/issues/freeze-window-stale-memo-caches.md)
-// pin: 9108f339
 // expect: accepted   (skjs check exits 0 — the unsound acceptance at the pin)
 // run: make check-file-in-docker FILE=docs/deep-dives/issues/repros/freeze-window-stale-seensub.ts BIN=target/host/dev/skjs
 

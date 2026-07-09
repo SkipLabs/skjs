@@ -19,7 +19,7 @@ Reproduction: [`repros/ambient-field-bottom-collapse.ts`](repros/ambient-field-b
 FILE=docs/deep-dives/issues/repros/ambient-field-bottom-collapse.ts
 BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: exit 0. Reads `c.x` into both `string` and `never`.
+- SKJS: exit 0. Reads `c.x` into both `string` and `never`.
 - Writing `c.x = "hello"` is rejected ("not assignable to type
   `Missing_type_annotation_for_C_x`") — the write side keeps the placeholder
   opaque; only the **read** side collapses to `⊥`.

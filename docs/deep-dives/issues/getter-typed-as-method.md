@@ -28,7 +28,7 @@ Reproduction: [`repros/getter-typed-as-method.ts`](repros/getter-typed-as-method
 FILE=docs/deep-dives/issues/repros/getter-typed-as-method.ts
 BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: exit 0, zero diagnostics.
+- SKJS: exit 0, zero diagnostics.
 - Node: `TypeError: c.p is not a function`.
 - tsc `--strict`: rejects (TS6234, expression is not callable).
 

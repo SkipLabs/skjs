@@ -1,5 +1,4 @@
 // repro for: class-constructor-call-none-typeof, subtyping-arm facet (F-CALL)
-// pin: 9108f339
 // expect: accepted   (skjs check exits 0 — the unsound acceptance)
 // isSubOptTFuns accepts (Some(sig), None) — a callable is a subtype of {}.
 // Then typeof o === "function" drops the call=None branch, narrowing o to

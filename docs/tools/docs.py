@@ -409,8 +409,8 @@ def check(entries, fixes=()):
                 problems.append("repro not referenced by any issue md: %s"
                                 % f.name)
             head = f.read_text()[:400]
-            if "// expect:" not in head or "// pin:" not in head:
-                problems.append("repro missing // expect: or // pin: header: %s"
+            if "// expect:" not in head:
+                problems.append("repro missing // expect: header: %s"
                                 % f.name)
 
     # \impl anchors inside dive/main texts: leading file token must exist.

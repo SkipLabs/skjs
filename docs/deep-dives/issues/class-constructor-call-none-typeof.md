@@ -22,7 +22,7 @@ A fix here should decide the representation, not just patch this witness.
 Reproduction: [`repros/constructor-typeof-function.ts`](repros/constructor-typeof-function.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/constructor-typeof-function.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0, zero diagnostics**.
+- SKJS: **exit 0, zero diagnostics**.
 - node: prints `[class C]` — a function typed as returning `string` returns
   the class-constructor object.
 - tsc `--strict`: rejects, `TS2322: Type 'typeof C' is not assignable to

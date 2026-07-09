@@ -17,7 +17,7 @@ intersection, so equality narrowing types a runtime-reachable branch
 Reproduction: [`repros/string-escapes-injectivity.ts`](repros/string-escapes-injectivity.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/string-escapes-injectivity.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0**; only a warning (SKJS2074 "comparison is
+- SKJS: **exit 0**; only a warning (SKJS2074 "comparison is
   always false") — which is itself wrong, since the comparison is true at
   runtime.
 - node: prints `true branch, z = a typeof: string` — the string `"a"`

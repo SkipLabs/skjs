@@ -1,5 +1,4 @@
 // repro for: getter-typed-as-method (docs/deep-dives/issues)
-// pin: 9108f339
 // expect: accepted   (skjs check exits 0 — the unsound acceptance)
 // SKJS types a getter `get p(): T` as a method `p(): T` (the parser's
 // isGetSet marker is never read by the checker). So calling the getter,

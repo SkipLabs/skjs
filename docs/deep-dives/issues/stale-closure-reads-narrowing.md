@@ -18,7 +18,7 @@ accept. For this direction tsc *rejects* (it re-widens captured-and-assigned
 Reproduction: [`repros/stale-closure-read.ts`](repros/stale-closure-read.ts) — run
 `make check-file-in-docker FILE=docs/deep-dives/issues/repros/stale-closure-read.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 
-- SKJS at `9108f339`: **exit 0, zero diagnostics**.
+- SKJS: **exit 0, zero diagnostics**.
 - node: `TypeError: Cannot read properties of null (reading 'length')` —
   `x.length` is read from `null` in a position the checker typed via the
   stale `string` narrowing.
