@@ -99,6 +99,38 @@ function emptyEnumIsUninhabited(x: Empty): never {
   return x;
 }
 
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+enum Frac {
+  A = 1.5,
+  B,
+}
+
+function fractionalMember(): 1.5 {
+  // @skjs-expect-error Cannot find name
+  return Frac.A;
+}
+
+function fractionalAutoIncrement(): 2.5 {
+  // @skjs-expect-error Cannot find name
+  return Frac.B;
+}
+
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+enum Big {
+  A = 9007199254740991,
+  B,
+}
+
+function autoIncrementAtDoubleLimit(): 9007199254740992 {
+  // @skjs-expect-error Cannot find name
+  return Big.B;
+}
+
+// @skjs-expect-error enum is not supported by SKJS (ignored)
+enum BoolInit {
+  A = true,
+}
+
 declare enum DE {
   A = 0,
   B,
