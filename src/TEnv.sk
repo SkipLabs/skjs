@@ -142,11 +142,7 @@ base class TEnv{
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
-    | Enum _ ->
-      fatalError(
-        Array[(name.pos, "Enum instantiation is not yet supported by SKJS")],
-        SKJSCode(9012),
-      )
+    | en @ Enum _ -> this.enumUnionType(subst, en)
     }
   }
 
@@ -1381,6 +1377,42 @@ base class TEnv{
           TSCode(2456),
         )
       | None() ->
+        // A dotted name whose prefix resolves to an enum is a member type
+        // reference (`E.A`). The prefix is probed with a throwaway results
+        // accumulator: a non-enum prefix falls through to the normal path
+        // below, which emits the usual diagnostics.
+        (memberPrefix, memberName) = n.value.splitLast(".");
+        if (memberPrefix != "") {
+          probe = mutable TCEnvLight{
+            context => tcenvb.context,
+            results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
+          };
+          this.defMap.getAll(probe, Name(n.pos, memberPrefix), true).find(d ->
+            d is Enum _
+          ) match {
+          | Some(en @ Enum _) ->
+            if (targs.size() != 0) {
+              tcenvb.error(
+                Array[(n.pos, `Type '${n.value}' is not generic`)],
+                TSCode(2315),
+              )
+            };
+            return this.enumMemberType(en, memberName) match {
+            | Some(memberTy) -> memberTy.withPos(pos)
+            | None() ->
+              fatalError(
+                Array[
+                  (
+                    n.pos,
+                    `Namespace '${memberPrefix}' has no exported member '${memberName}'`,
+                  ),
+                ],
+                TSCode(2694),
+              )
+            }
+          | _ -> void
+          }
+        };
         // No bound-name match: treat n as a named type definition.
         tdef = this.defMap.getType(tcenvb, n);
         tparams = tdef match {

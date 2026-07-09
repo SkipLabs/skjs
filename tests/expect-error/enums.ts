@@ -1,6 +1,3 @@
-// @skjs-expect-error Qualified name access ('A') is not yet supported by SKJS
-// @skjs-expect-error Qualified name access ('B') is not yet supported by SKJS
-// @skjs-expect-error Qualified name access ('C') is not yet supported by SKJS
 enum E {
   A,
   B,
@@ -11,7 +8,6 @@ enum F {
   B,
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function memberToEnum(): E {
   return E.A;
 }
@@ -29,52 +25,50 @@ function memberToWrongLiteral(): 1 {
   return E.A;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function literalToEnum(): E {
   return 0;
 }
 
-// @skjs-expect-error Cannot find type 'E.A'
 function literalToMemberType(): E.A {
   return 0;
 }
 
-// @skjs-expect-error Cannot find type 'E.A'
 function wrongLiteralToMemberType(): E.A {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 1;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function outOfRangeLiteralToEnum(): E {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return 5;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
+// tsc accepts number -> enum (a deliberate hole kept for bit flags); SKJS
+// rejects it: an arbitrary number is not in E's value set {0, 1}.
 function numberToEnum(n: number): E {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return n;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function enumToNumber(x: E): number {
   return x;
 }
 
-// @skjs-expect-error Cannot find type 'E.A'
 function enumToMemberType(x: E): E.A {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
-// @skjs-expect-error Cannot find type 'E.B'
 function memberTypeToEnum(x: E.B): E {
   return x;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
+// tsc rejects cross-enum assignment (TS2322, nominal); SKJS accepts it:
+// sound, E and F share the runtime value set {0, 1}.
 function crossEnumMember(): F {
   return E.A;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function crossEnumWhole(x: E): F {
   return x;
 }
@@ -106,6 +100,8 @@ function assignToMember(): void {
   E.A = 0;
 }
 
+// tsc types reverse lookups as plain string; SKJS gives the precise
+// member-name literal.
 function reverseLookup(): "A" {
   return E[0];
 }
@@ -114,6 +110,8 @@ function reverseLookupUnion(i: 0 | 1): "A" | "B" {
   return E[i];
 }
 
+// tsc accepts E[n] as string; the SKJS enum object has no number index
+// signature, so reverse lookups need a literal (or member-union) key.
 function reverseLookupNonLiteral(n: number): string {
   // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
   return E[n];
@@ -135,7 +133,6 @@ function enumObjectValue(): { readonly A: 0 } {
   return E;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function narrowByEquality(x: E): 1 {
   if (x === E.A) {
     return 1;
@@ -143,7 +140,6 @@ function narrowByEquality(x: E): 1 {
   return x;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function switchOverEnum(x: E): number {
   switch (x) {
     // @skjs-expect-error A switch case expression must be a plain value, but this one may throw.
@@ -154,9 +150,9 @@ function switchOverEnum(x: E): number {
   }
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function switchUnreachableCase(x: E): number {
   switch (x) {
+    // @skjs-expect-warning This case is unreachable: its value is not in the switched type
     case 5:
       return 0;
     default:
@@ -179,12 +175,14 @@ enum Flags {
   W = 2,
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
+// The bit-flags idiom only works in tsc through its number -> enum hole
+// (Flags.R | Flags.W is typed number); type flag combinations as number.
 function bitFlagsCombination(): Flags {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Flags.R | Flags.W;
 }
 
-// @skjs-expect-error Cannot find type 'E.C'
+// @skjs-expect-error Namespace 'E' has no exported member 'C'
 function unknownMemberType(x: E.C): void {
   void x;
 }

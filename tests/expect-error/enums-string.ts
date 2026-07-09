@@ -11,18 +11,19 @@ function memberToItsLiteral(): "a" {
   return SE.A;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
+// tsc rejects literal -> string enum (nominal, outbound-only); SKJS
+// accepts it: sound, "a" is SE.A's runtime value.
 function literalToStringEnum(): SE {
   return "a";
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function wrongLiteralToStringEnum(): SE {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return "c";
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function stringToStringEnum(s: string): SE {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
@@ -40,11 +41,11 @@ function heterogeneousNumericMember(): 0 {
   return Het.N;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function heterogeneousUnion(x: Het): 0 | "s" {
   return x;
 }
 
+// tsc types Het[0] as plain string; SKJS gives the member-name literal.
 function heterogeneousReverseOnlyNumeric(): "N" {
   return Het[0];
 }

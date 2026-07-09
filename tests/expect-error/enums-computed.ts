@@ -16,11 +16,13 @@ function literalMemberInComputedEnum(): 4 {
   return G.B;
 }
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function computedEnumAcceptsAnyNumber(n: number): G {
   return n;
 }
 
+// A member with an unknown value could collide with any known one at
+// runtime, so reverse-mapping fields are omitted entirely (tsc types G[4]
+// as string).
 function computedEnumHasNoReverseMapping(): string {
   // @skjs-expect-error Property '4' does not exist on this type
   return G[4];
@@ -66,6 +68,8 @@ function qualifiedMemberReference(): 1 {
   return R.C;
 }
 
+// tsc reports a forward member reference as TS2651; SKJS types the
+// initializer as an expression, where B does not resolve.
 enum Fwd {
   // @skjs-expect-error Cannot find name
   A = B,
@@ -77,13 +81,16 @@ enum Same {
   B = 0,
 }
 
+// tsc types Same[0] as plain string; SKJS knows the runtime reverse entry
+// is the last member with that value.
 function duplicateValueReverse(): "B" {
   return Same[0];
 }
 
 enum Empty {}
 
-// @skjs-expect-error Enum instantiation is not yet supported by SKJS
+// tsc treats an empty enum as number-like; in SKJS it has no members and
+// therefore no values.
 function emptyEnumIsUninhabited(x: Empty): never {
   return x;
 }
@@ -97,6 +104,8 @@ function fractionalMember(): 1.5 {
   return Frac.A;
 }
 
+// FIXME: tsc folds fractional auto-increment precisely (1.5 + 1 = 2.5);
+// SKJS over-approximates the member to number.
 function fractionalAutoIncrement(): 2.5 {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Frac.B;
@@ -125,6 +134,8 @@ function ambientInitializedMember(): 0 {
   return DE.A;
 }
 
+// Matches tsc: an uninitialized member of a (non-const) ambient enum is
+// opaque; the declaration's implied auto-increment is not trusted.
 function ambientUninitializedMemberIsOpaque(): 1 {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return DE.B;
