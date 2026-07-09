@@ -256,10 +256,17 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     )
   }
 
+  // Intersect shared keys with f; a key whose f returns None (empty
+  // per-key intersection) is DROPPED, not treated as the zero of the whole
+  // map. The result is empty only when every shared key drops and no
+  // key is unique to one side; callers map that empty result to bottom.
+  // (An empty shared key must not zero the map: e.g. intersecting
+  // tag-keyed unions {str:"a", num:0} and {str:"a", num:1} must keep the
+  // str key rather than collapse to nothing — see STypes::inter.)
   fun mapInterOption(that: this, f: (T, T) -> ?T): ?this {
     this.mergeOption(that, ior ->
       ior match {
-      | Both(x, y) -> f(x, y).map(z -> Some(z))
+      | Both(x, y) -> Some(f(x, y))
       | _ -> Some(None())
       }
     )
