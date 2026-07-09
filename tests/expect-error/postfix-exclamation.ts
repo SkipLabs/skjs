@@ -336,7 +336,7 @@ function testArrayMapNonNull(x: number[] | null): number[] {
 }
 
 function testArrayFilterNonNull(x: number[] | null): number[] {
-  // @skjs-expect-error A parameter must have an explicit type annotation
+  // `filter` is non-generic, so `n` is contextually typed `number` (#763).
   // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.filter((n) => n > 0);
 }

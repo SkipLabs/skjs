@@ -46,11 +46,18 @@ extension class TypeChecker {
   // isRest (arrayToReadonlyArray), optional (unionUndefined), and default
   // (checkSubType) modifiers in order. Reports an error if the parameter
   // is both optional and has a default.
+  // expectedParamTypes supplies a contextual type per positional parameter
+  // (from the expected function type at a call site — see call()). It is used
+  // ONLY for a parameter that has no explicit annotation, in place of the
+  // TS7006 "must have an explicit type annotation" error. An annotated
+  // parameter always keeps its annotation. Positions with no contextual type
+  // are represented by None (or a shorter/empty array).
   fun processParams(
     tcenv: mutable TCEnv,
     params: Array<Param>,
     tParams: Array<TypeParam>,
     allowThis: Bool,
+    expectedParamTypes: Array<?TType> = Array[],
   ): Array<TType> {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
@@ -100,7 +107,16 @@ extension class TypeChecker {
         )
       | None() -> void
       };
-      paramType = this.normalize(tcenv.subst, param.requiredType());
+      paramType = param.type match {
+      | Some(ty) -> this.normalize(tcenv.subst, ty)
+      | None() ->
+        // No annotation: use the contextual type if the call site supplied
+        // one for this position, otherwise raise TS7006 via requiredType().
+        expectedParamTypes.maybeGet(i) match {
+        | Some(Some(expectedTy)) -> expectedTy
+        | _ -> this.normalize(tcenv.subst, param.requiredType())
+        }
+      };
       param.isRest.each(_ ->
         !paramType = TType::arrayToReadonlyArray(paramType)
       );

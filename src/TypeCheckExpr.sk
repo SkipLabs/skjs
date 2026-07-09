@@ -3119,6 +3119,7 @@ extension class TypeChecker {
     params: Array<Param>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
+    expectedParamTypes: Array<?TType> = Array[],
   ): TType {
     static::checkTypeParams(
       tcenv.subst,
@@ -3126,7 +3127,13 @@ extension class TypeChecker {
       OptionalTypeParamsForbidden(),
     );
     !this = this.addTParams(tcenv.subst, tparams);
-    paramTypes = this.processParams(tcenv, params, tparams, false);
+    paramTypes = this.processParams(
+      tcenv,
+      params,
+      tparams,
+      false,
+      expectedParamTypes,
+    );
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -3645,6 +3652,131 @@ extension class TypeChecker {
     }
   }
 
+  // The expected type of the argument at positional index `i` in a call to
+  // `tfun` (normal parameters, then optional parameters). None for a position
+  // covered only by a rest parameter (contextual typing of a rest-position
+  // closure is not attempted).
+  fun calleeParamTypeAt(tfun: TFun, i: Int): ?TType {
+    if (i < tfun.params.size()) {
+      Some(tfun.params[i])
+    } else {
+      oi = i - tfun.params.size();
+      if (oi < tfun.optionalParams.size()) {
+        Some(tfun.optionalParams[oi])
+      } else {
+        None()
+      }
+    }
+  }
+
+  // Given the expected type of a closure argument (a function type, possibly
+  // `fn | undefined` for an optional parameter), return the contextual type
+  // for each of the closure's parameters — used to fill in un-annotated ones.
+  // Returns the empty array (no contextual typing) unless the expected type is
+  // a single callable object (ignoring undefined/null branches) whose own call
+  // signature is non-generic, so the extracted parameter types are concrete.
+  fun expectedCallbackParamTypes(
+    tcenv: mutable TCEnv,
+    expectedFnTy: TType,
+    closureParams: Array<Param>,
+  ): Array<?TType> {
+    cbFun: ?TFun = None();
+    usable = expectedFnTy.getSTypes(tcenv.subst, this, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      ok = true;
+      for (stype in stypes.values()) {
+        stype match {
+        | obj @ TObject _ ->
+          obj.maybeGetCall(tcenv.subst, this) match {
+          | Some(
+            (_, TFuns(f, _)),
+          ) if (f.tparams.isEmpty() && cbFun is None()) ->
+            !cbFun = Some(f)
+          | _ -> !ok = false
+          }
+        | TPrimUnit(TUndefined(), _)
+        | TPrimUnit(TNull(), _) ->
+          void
+        | _ -> !ok = false
+        }
+      };
+      ok
+    };
+    (usable, cbFun) match {
+    | (true, Some(f)) ->
+      allParams = f.params.concat(f.optionalParams);
+      Array::fillBy(closureParams.size(), j -> allParams.maybeGet(j))
+    | _ -> Array[]
+    }
+  }
+
+  // Type a call argument, applying contextual typing when it is a closure with
+  // un-annotated parameters: fill those from the callee's expected parameter
+  // type at this position. Restricted to a non-generic callee (so the expected
+  // parameter types are concrete, not references to the callee's own
+  // not-yet-inferred type parameters) at an unambiguous position (before any
+  // spread argument). Everything else is typed as usual.
+  fun typeCallArg(
+    tcenv: mutable TCEnv,
+    argExpr: Expr,
+    tfuns: TFuns,
+    argPos: Int,
+    positionUnambiguous: Bool,
+    mostPrecise: Bool,
+  ): TType {
+    expectedParamTypes = if (positionUnambiguous) {
+      tfuns match {
+      | TFuns(calleeTFun, _) if (calleeTFun.tparams.isEmpty()) ->
+        this.calleeParamTypeAt(calleeTFun, argPos) match {
+        | Some(expectedFnTy) ->
+          argExpr.value match {
+          | Closure(_, ps, _, _) ->
+            this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps)
+          | Async(Expr(_, Closure(_, ps, _, _))) ->
+            this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps)
+          | _ -> Array[]
+          }
+        | None() -> Array[]
+        }
+      | _ -> Array[]
+      }
+    } else {
+      Array[]
+    };
+    if (expectedParamTypes.isEmpty()) {
+      this.expr(tcenv, argExpr, mostPrecise)
+    } else {
+      argExpr.value match {
+      | c @ Closure(tparams, ps, retTypeAstOpt, body) ->
+        this.anonFunction(
+          tcenv,
+          None(),
+          argExpr.pos,
+          c,
+          tparams,
+          ps,
+          retTypeAstOpt,
+          body,
+          expectedParamTypes,
+        )
+      | Async(Expr(cpos, c @ Closure(tparams, ps, retTypeAstOpt, body))) ->
+        this.anonFunction(
+          tcenv,
+          Some(argExpr.pos),
+          cpos,
+          c,
+          tparams,
+          ps,
+          retTypeAstOpt,
+          body,
+          expectedParamTypes,
+        )
+      | _ -> this.expr(tcenv, argExpr, mostPrecise)
+      }
+    }
+  }
+
   fun call(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -3704,7 +3836,17 @@ extension class TypeChecker {
           )
         }
       | _ ->
-        argTy = this.expr(tcenv, argExpr, mostPrecise);
+        // `args.size()` is this argument's positional index; `moreArgs is
+        // None()` means no spread has been seen yet, so the position is
+        // unambiguous and contextual typing of a closure argument is sound.
+        argTy = this.typeCallArg(
+          tcenv,
+          argExpr,
+          tfuns,
+          args.size(),
+          moreArgs is None(),
+          mostPrecise,
+        );
         moreArgs match {
         | None() -> args.push(argTy)
         | Some(ma) ->
