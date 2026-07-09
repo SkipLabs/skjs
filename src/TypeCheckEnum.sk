@@ -540,14 +540,24 @@ extension base class TEnv {
 
 extension class TypeChecker {
   // Whether `e` reads a member off an enum name (not shadowed by a local
-  // binding). Such a read is a plain value: evaluating a bare name never
-  // throws, and enum members are data properties, not accessors.
+  // binding), as `E.A` or with a literal key as `E["A"]` / `E[0]`. Such a
+  // read is a plain value: evaluating a bare name never throws, and enum
+  // members are data properties, not accessors.
   fun isEnumMemberAccess(tcenv: mutable TCEnv, e: Expr): Bool {
-    e.value match {
-    | Dot(NormalDot(), Expr(_, Var(base)), _member) ->
-      tcenv.scope.maybeGet(base) is None() &&
-        this.defMap.getAll(tcenv, base).any(d -> d is Enum _)
-    | _ -> false
+    base = e.value match {
+    | Dot(NormalDot(), Expr(_, Var(b)), _member) -> Some(b)
+    | Get(
+      Expr(_, Var(b)),
+      keyExpr,
+    ) if (this.directLiteralSType(keyExpr) is Some _) ->
+      Some(b)
+    | _ -> None()
+    };
+    base match {
+    | Some(b) ->
+      tcenv.scope.maybeGet(b) is None() &&
+        this.defMap.getAll(tcenv, b).any(d -> d is Enum _)
+    | None() -> false
     }
   }
 

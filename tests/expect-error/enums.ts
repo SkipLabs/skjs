@@ -192,7 +192,6 @@ function keyOfIncludesReverseKeys(): keyof typeof E {
 
 function switchCaseElementAccess(x: E): number {
   switch (x) {
-    // @skjs-expect-error A switch case expression must be a plain value, but this one may throw.
     case E["A"]:
       return 0;
     default:
