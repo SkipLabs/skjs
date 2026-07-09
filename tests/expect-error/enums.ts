@@ -11,23 +11,21 @@ enum F {
   B,
 }
 
+// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function memberToEnum(): E {
-  // @skjs-expect-error Cannot find name
   return E.A;
 }
 
 function memberToNumber(): number {
-  // @skjs-expect-error Cannot find name
   return E.A;
 }
 
 function memberToItsLiteral(): 0 {
-  // @skjs-expect-error Cannot find name
   return E.A;
 }
 
 function memberToWrongLiteral(): 1 {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return E.A;
 }
 
@@ -71,8 +69,8 @@ function memberTypeToEnum(x: E.B): E {
   return x;
 }
 
+// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function crossEnumMember(): F {
-  // @skjs-expect-error Cannot find name
   return E.A;
 }
 
@@ -87,7 +85,6 @@ enum Offset {
 }
 
 function autoIncrement(): 6 {
-  // @skjs-expect-error Cannot find name
   return Offset.B;
 }
 
@@ -97,52 +94,44 @@ enum Negative {
 }
 
 function negativeMember(): -1 {
-  // @skjs-expect-error Cannot find name
   return Negative.A;
 }
 
 function negativeAutoIncrement(): 0 {
-  // @skjs-expect-error Cannot find name
   return Negative.B;
 }
 
 function assignToMember(): void {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   E.A = 0;
 }
 
 function reverseLookup(): "A" {
-  // @skjs-expect-error Cannot find name
   return E[0];
 }
 
 function reverseLookupUnion(i: 0 | 1): "A" | "B" {
-  // @skjs-expect-error Cannot find name
   return E[i];
 }
 
 function reverseLookupNonLiteral(n: number): string {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
   return E[n];
 }
 
 function forwardByName(): 0 {
-  // @skjs-expect-error Cannot find name
   return E["A"];
 }
 
-// @skjs-expect-error Cannot find name 'E'
 function keyOfEnumObject(): keyof typeof E {
   return "A";
 }
 
-// @skjs-expect-error Cannot find name 'E'
 function typeofEnumObject(o: typeof E): 0 {
   return o.A;
 }
 
 function enumObjectValue(): { readonly A: 0 } {
-  // @skjs-expect-error Cannot find name
   return E;
 }
 
@@ -154,10 +143,10 @@ function narrowByEquality(x: E): 1 {
   return x;
 }
 
+// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function switchOverEnum(x: E): number {
   switch (x) {
     // @skjs-expect-error A switch case expression must be a plain value, but this one may throw.
-    // @skjs-expect-error Cannot find name
     case E.A:
       return 0;
     default:
@@ -176,12 +165,12 @@ function switchUnreachableCase(x: E): number {
 }
 
 function constructEnum(): void {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error This expression is not constructable
   new E();
 }
 
 function instanceofEnum(x: unknown): boolean {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.
   return x instanceof E;
 }
 
@@ -190,8 +179,8 @@ enum Flags {
   W = 2,
 }
 
+// @skjs-expect-error Enum instantiation is not yet supported by SKJS
 function bitFlagsCombination(): Flags {
-  // @skjs-expect-error Cannot find name
   return Flags.R | Flags.W;
 }
 

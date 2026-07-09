@@ -1708,6 +1708,7 @@ extension class TypeChecker {
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv.subst, c.name);
             break staticClass
+          | en @ Enum _ -> break this.enumStatic(en)
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
               tcenv.error(
@@ -1729,7 +1730,6 @@ extension class TypeChecker {
             | Some(ty) ->
               this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
             }
-          | _ -> void
           }
         } else {
           if (sawInterface) {

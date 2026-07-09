@@ -4,17 +4,15 @@ enum G {
 }
 
 function computedMember(): number {
-  // @skjs-expect-error Cannot find name
   return G.A;
 }
 
 function computedMemberIsNotItsRuntimeLiteral(): 1 {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return G.A;
 }
 
 function literalMemberInComputedEnum(): 4 {
-  // @skjs-expect-error Cannot find name
   return G.B;
 }
 
@@ -24,7 +22,7 @@ function computedEnumAcceptsAnyNumber(n: number): G {
 }
 
 function computedEnumHasNoReverseMapping(): string {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Property '4' does not exist on this type
   return G[4];
 }
 
@@ -51,7 +49,6 @@ const enum CE {
 }
 
 function constEnumMember(): 0 {
-  // @skjs-expect-error Cannot find name
   return CE.A;
 }
 
@@ -62,12 +59,10 @@ enum R {
 }
 
 function bareMemberReference(): 1 {
-  // @skjs-expect-error Cannot find name
   return R.B;
 }
 
 function qualifiedMemberReference(): 1 {
-  // @skjs-expect-error Cannot find name
   return R.C;
 }
 
@@ -83,7 +78,6 @@ enum Same {
 }
 
 function duplicateValueReverse(): "B" {
-  // @skjs-expect-error Cannot find name
   return Same[0];
 }
 
@@ -100,12 +94,11 @@ enum Frac {
 }
 
 function fractionalMember(): 1.5 {
-  // @skjs-expect-error Cannot find name
   return Frac.A;
 }
 
 function fractionalAutoIncrement(): 2.5 {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Frac.B;
 }
 
@@ -115,7 +108,6 @@ enum Big {
 }
 
 function autoIncrementAtDoubleLimit(): 9007199254740992 {
-  // @skjs-expect-error Cannot find name
   return Big.B;
 }
 
@@ -130,12 +122,11 @@ declare enum DE {
 }
 
 function ambientInitializedMember(): 0 {
-  // @skjs-expect-error Cannot find name
   return DE.A;
 }
 
 function ambientUninitializedMemberIsOpaque(): 1 {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return DE.B;
 }
 
@@ -145,6 +136,5 @@ declare const enum DCE {
 }
 
 function ambientConstEnumMember(): 0 {
-  // @skjs-expect-error Cannot find name
   return DCE.A;
 }

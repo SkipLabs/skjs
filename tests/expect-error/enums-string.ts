@@ -4,12 +4,10 @@ enum SE {
 }
 
 function memberToString(): string {
-  // @skjs-expect-error Cannot find name
   return SE.A;
 }
 
 function memberToItsLiteral(): "a" {
-  // @skjs-expect-error Cannot find name
   return SE.A;
 }
 
@@ -29,7 +27,7 @@ function stringToStringEnum(s: string): SE {
 }
 
 function stringEnumHasNoReverseMapping(): string {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error Property 'a' does not exist on this type
   return SE["a"];
 }
 
@@ -39,7 +37,6 @@ enum Het {
 }
 
 function heterogeneousNumericMember(): 0 {
-  // @skjs-expect-error Cannot find name
   return Het.N;
 }
 
@@ -49,6 +46,5 @@ function heterogeneousUnion(x: Het): 0 | "s" {
 }
 
 function heterogeneousReverseOnlyNumeric(): "N" {
-  // @skjs-expect-error Cannot find name
   return Het[0];
 }

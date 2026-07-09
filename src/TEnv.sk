@@ -1559,9 +1559,8 @@ base class TEnv{
           subst = Subst::mcreate(tcenvb);
           return this.newStatic(subst, varName)
         | TypeDef _ -> !sawTypeAlias = true
-        | FDVar _
-        | Enum _ ->
-          !sawValueDef = true
+        | en @ Enum _ -> return this.enumStatic(en)
+        | FDVar _ -> !sawValueDef = true
         }
       };
       if (sawInterface && !sawValueDef) {
