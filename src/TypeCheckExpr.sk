@@ -3652,23 +3652,6 @@ extension class TypeChecker {
     }
   }
 
-  // The expected type of the argument at positional index `i` in a call to
-  // `tfun` (normal parameters, then optional parameters). None for a position
-  // covered only by a rest parameter (contextual typing of a rest-position
-  // closure is not attempted).
-  fun calleeParamTypeAt(tfun: TFun, i: Int): ?TType {
-    if (i < tfun.params.size()) {
-      Some(tfun.params[i])
-    } else {
-      oi = i - tfun.params.size();
-      if (oi < tfun.optionalParams.size()) {
-        Some(tfun.optionalParams[oi])
-      } else {
-        None()
-      }
-    }
-  }
-
   // Given the expected type of a closure argument (a function type, possibly
   // `fn | undefined` for an optional parameter), return the contextual type
   // for each of the closure's parameters — used to fill in un-annotated ones.
@@ -3725,55 +3708,44 @@ extension class TypeChecker {
     positionUnambiguous: Bool,
     mostPrecise: Bool,
   ): TType {
-    expectedParamTypes = if (positionUnambiguous) {
+    expectedFnTyOpt = if (positionUnambiguous) {
       tfuns match {
       | TFuns(calleeTFun, _) if (calleeTFun.tparams.isEmpty()) ->
-        this.calleeParamTypeAt(calleeTFun, argPos) match {
-        | Some(expectedFnTy) ->
-          argExpr.value match {
-          | Closure(_, ps, _, _) ->
-            this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps)
-          | Async(Expr(_, Closure(_, ps, _, _))) ->
-            this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps)
-          | _ -> Array[]
-          }
-        | None() -> Array[]
-        }
-      | _ -> Array[]
+        tfuns.paramTypeAt(argPos)
+      | _ -> None()
       }
     } else {
-      Array[]
+      None()
     };
-    if (expectedParamTypes.isEmpty()) {
-      this.expr(tcenv, argExpr, mostPrecise)
-    } else {
-      argExpr.value match {
-      | c @ Closure(tparams, ps, retTypeAstOpt, body) ->
-        this.anonFunction(
-          tcenv,
-          None(),
-          argExpr.pos,
-          c,
-          tparams,
-          ps,
-          retTypeAstOpt,
-          body,
-          expectedParamTypes,
-        )
-      | Async(Expr(cpos, c @ Closure(tparams, ps, retTypeAstOpt, body))) ->
-        this.anonFunction(
-          tcenv,
-          Some(argExpr.pos),
-          cpos,
-          c,
-          tparams,
-          ps,
-          retTypeAstOpt,
-          body,
-          expectedParamTypes,
-        )
-      | _ -> this.expr(tcenv, argExpr, mostPrecise)
-      }
+    (expectedFnTyOpt, argExpr.value) match {
+    | (Some(expectedFnTy), c @ Closure(tparams, ps, retTypeAstOpt, body)) ->
+      this.anonFunction(
+        tcenv,
+        None(),
+        argExpr.pos,
+        c,
+        tparams,
+        ps,
+        retTypeAstOpt,
+        body,
+        this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps),
+      )
+    | (
+      Some(expectedFnTy),
+      Async(Expr(cpos, c @ Closure(tparams, ps, retTypeAstOpt, body))),
+    ) ->
+      this.anonFunction(
+        tcenv,
+        Some(argExpr.pos),
+        cpos,
+        c,
+        tparams,
+        ps,
+        retTypeAstOpt,
+        body,
+        this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps),
+      )
+    | _ -> this.expr(tcenv, argExpr, mostPrecise)
     }
   }
 
