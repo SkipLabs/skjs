@@ -1,15 +1,14 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
 import { GetLinkResource } from "./resources/GetLinkResource.js";
-import { GetLinkStoredResource } from "./resources/GetLinkStoredResource.js";
-import { LinksByOwnerResource } from "./resources/LinksByOwnerResource.js";
+import { LinkByCodeResource } from "./resources/LinkByCodeResource.js";
+import { ListMyLinksResource } from "./resources/ListMyLinksResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Link_skip_id_,
   Link_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetLinkParams,
   ListMyLinksParams,
   Link,
   User,
@@ -18,6 +17,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -30,9 +30,9 @@ interface Inputs extends NamedInputDefinitions {
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getLinkResource: ResourceClass<GraphCollections, GetLinkParams>;
-  readonly getLinkStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly linksByOwnerResource: ResourceClass<
+  readonly getLinkResource: ResourceClass<GraphCollections, Json>;
+  readonly linkByCodeResource: ResourceClass<GraphCollections, Json>;
+  readonly listMyLinksResource: ResourceClass<
     GraphCollections,
     ListMyLinksParams
   >;
@@ -46,6 +46,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -54,8 +55,8 @@ class Service implements SkipService<
     };
     this.resources = {
       getLinkResource: GetLinkResource,
-      getLinkStoredResource: GetLinkStoredResource,
-      linksByOwnerResource: LinksByOwnerResource,
+      linkByCodeResource: LinkByCodeResource,
+      listMyLinksResource: ListMyLinksResource,
       getMeResource: getMeResource,
     };
   }

@@ -1,22 +1,23 @@
-import type { LineItem_skip_id_, LineItemStored, LineItem } from "../types.js";
+import type { LineItemKey, LineItemStored } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface ListLineItemsRawResourceInputs extends SharedCollections {
-  readonly lineItems: EagerCollection<LineItem_skip_id_, LineItemStored>;
+  readonly lineItems: EagerCollection<LineItemKey, LineItemStored>;
 }
 
 export class ListLineItemsRawResource implements Resource<ListLineItemsRawResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: ListLineItemsRawResourceInputs,
     _context: Context,
-  ): EagerCollection<LineItem_skip_id_, LineItemStored> {
+  ): EagerCollection<LineItemKey, LineItemStored> {
     return inputs.lineItems;
   }
 }

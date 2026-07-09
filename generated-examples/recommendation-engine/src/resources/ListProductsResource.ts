@@ -1,9 +1,10 @@
-import { FilterProductsMapper } from "../mappers/FilterProductsMapper.js";
+import { ListProductsMapper } from "../mappers/ListProductsMapper.js";
 import type {
   Product_skip_id_,
-  Product_skip_value_,
-  ListProductsParams,
+  ProductPopularityCount,
+  ProductStored,
   Product,
+  ListProductsParams,
 } from "../types.js";
 import type {
   Resource,
@@ -13,22 +14,31 @@ import type {
 } from "@skipruntime/core";
 
 export interface ListProductsResourceInputs extends SharedCollections {
-  readonly products: EagerCollection<Product_skip_id_, Product_skip_value_>;
+  readonly popularityByProduct: EagerCollection<
+    Product_skip_id_,
+    ProductPopularityCount
+  >;
+  readonly products: EagerCollection<Product_skip_id_, ProductStored>;
 }
 
 export class ListProductsResource implements Resource<ListProductsResourceInputs> {
-  private readonly categoryId: string | null;
-  private readonly q: string | null;
+  private readonly category: string | null;
+  private readonly search: string | null;
 
   constructor(params: ListProductsParams) {
-    this.categoryId = params.categoryId ?? null;
-    this.q = params.q ?? null;
+    this.category = params.category ?? null;
+    this.search = params.search ?? null;
   }
 
   instantiate(
     inputs: ListProductsResourceInputs,
     _context: Context,
-  ): EagerCollection<Product_skip_id_, Product_skip_value_> {
-    return inputs.products.map(FilterProductsMapper, this.categoryId, this.q);
+  ): EagerCollection<Product_skip_id_, Product> {
+    return inputs.products.map(
+      ListProductsMapper,
+      inputs.popularityByProduct,
+      this.category,
+      this.search,
+    );
   }
 }

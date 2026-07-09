@@ -1,15 +1,10 @@
-import { FilterUserByIdMapper } from "../mappers/FilterUserByIdMapper.js";
-import type {
-  User_skip_id_,
-  User_skip_value_,
-  GetUserParams,
-  User,
-} from "../types.js";
+import type { User_skip_id_, User_skip_value_, User } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetUserResourceInputs extends SharedCollections {
@@ -17,16 +12,12 @@ export interface GetUserResourceInputs extends SharedCollections {
 }
 
 export class GetUserResource implements Resource<GetUserResourceInputs> {
-  private readonly userId: string;
-
-  constructor(params: GetUserParams) {
-    this.userId = params.userId;
-  }
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetUserResourceInputs,
     _context: Context,
   ): EagerCollection<User_skip_id_, User_skip_value_> {
-    return inputs.users.map(FilterUserByIdMapper, this.userId);
+    return inputs.users;
   }
 }

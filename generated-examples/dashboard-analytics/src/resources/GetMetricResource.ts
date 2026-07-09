@@ -4,6 +4,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetMetricResourceInputs extends SharedCollections {
@@ -11,7 +12,7 @@ export interface GetMetricResourceInputs extends SharedCollections {
 }
 
 export class GetMetricResource implements Resource<GetMetricResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetMetricResourceInputs,

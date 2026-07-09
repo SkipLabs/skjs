@@ -1,9 +1,11 @@
-import { FilterSkuBySearchMapper } from "../mappers/FilterSkuBySearchMapper.js";
+import { SkuByOwnerFullMapper } from "../mappers/SkuByOwnerFullMapper.js";
 import type {
   Sku_skip_id_,
   Sku_skip_value_,
-  ListSkusParams,
+  User_skip_id_,
   Sku,
+  ListSkusParams,
+  User,
 } from "../types.js";
 import type {
   Resource,
@@ -17,16 +19,16 @@ export interface ListSkusResourceInputs extends SharedCollections {
 }
 
 export class ListSkusResource implements Resource<ListSkusResourceInputs> {
-  private readonly search: string | null;
+  private readonly userId: string;
 
   constructor(params: ListSkusParams) {
-    this.search = params.search ?? null;
+    this.userId = params.userId;
   }
 
   instantiate(
     inputs: ListSkusResourceInputs,
     _context: Context,
-  ): EagerCollection<Sku_skip_id_, Sku_skip_value_> {
-    return inputs.skus.map(FilterSkuBySearchMapper, this.search);
+  ): EagerCollection<User_skip_id_, Sku> {
+    return inputs.skus.map(SkuByOwnerFullMapper, this.userId);
   }
 }

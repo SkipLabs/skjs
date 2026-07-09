@@ -1,33 +1,40 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetReferralCodeByIdResource } from "./resources/GetReferralCodeByIdResource.js";
-import { GetReferralEventByIdResource } from "./resources/GetReferralEventByIdResource.js";
-import { GetUserByIdResource } from "./resources/GetUserByIdResource.js";
-import { ListReferralCodesResource } from "./resources/ListReferralCodesResource.js";
-import { ListReferralEventsResource } from "./resources/ListReferralEventsResource.js";
-import { ReferralCodeByCodeValueResource } from "./resources/ReferralCodeByCodeValueResource.js";
-import { ReferralCodeStatsResource } from "./resources/ReferralCodeStatsResource.js";
+import { GetMyReferralStatsResource } from "./resources/GetMyReferralStatsResource.js";
+import { GetReferralCodeResource } from "./resources/GetReferralCodeResource.js";
+import { GetReferralCodeStoredResource } from "./resources/GetReferralCodeStoredResource.js";
+import { GetReferralResource } from "./resources/GetReferralResource.js";
+import { GetRewardResource } from "./resources/GetRewardResource.js";
+import { ListMyReferralCodesResource } from "./resources/ListMyReferralCodesResource.js";
+import { ListMyReferralsResource } from "./resources/ListMyReferralsResource.js";
+import { ListMyRewardsResource } from "./resources/ListMyRewardsResource.js";
+import { ListReferralsForCodeResource } from "./resources/ListReferralsForCodeResource.js";
+import { ReferralCodeByCodeStringResource } from "./resources/ReferralCodeByCodeStringResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
   ReferralCode_skip_id_,
-  ReferralCode_skip_value_,
-  ReferralEvent_skip_id_,
-  ReferralEvent_skip_value_,
+  ReferralCodeStored,
+  Referral_skip_id_,
+  Referral_skip_value_,
+  Reward_skip_id_,
+  Reward_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetReferralCodeByIdParams,
-  GetReferralEventByIdParams,
-  GetUserByIdParams,
-  ListReferralCodesParams,
-  ListReferralEventsParams,
+  GetMyReferralStatsParams,
+  ListMyReferralCodesParams,
+  ListMyReferralsParams,
+  ListMyRewardsParams,
+  ListReferralsForCodeParams,
   ReferralCode,
-  ReferralEvent,
+  Referral,
+  Reward,
   User,
 } from "./types.js";
 import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -37,41 +44,42 @@ import { InputDefinition } from "@skipruntime/core";
 interface Inputs extends NamedInputDefinitions {
   readonly referralCodes: InputDefinition<
     ReferralCode_skip_id_,
-    ReferralCode_skip_value_
+    ReferralCodeStored
   >;
-  readonly referralEvents: InputDefinition<
-    ReferralEvent_skip_id_,
-    ReferralEvent_skip_value_
-  >;
+  readonly referrals: InputDefinition<Referral_skip_id_, Referral_skip_value_>;
+  readonly rewards: InputDefinition<Reward_skip_id_, Reward_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getReferralCodeByIdResource: ResourceClass<
+  readonly getMyReferralStatsResource: ResourceClass<
     GraphCollections,
-    GetReferralCodeByIdParams
+    GetMyReferralStatsParams
   >;
-  readonly getReferralEventByIdResource: ResourceClass<
+  readonly getReferralCodeResource: ResourceClass<GraphCollections, Json>;
+  readonly getReferralCodeStoredResource: ResourceClass<GraphCollections, Json>;
+  readonly getReferralResource: ResourceClass<GraphCollections, Json>;
+  readonly getRewardResource: ResourceClass<GraphCollections, Json>;
+  readonly listMyReferralCodesResource: ResourceClass<
     GraphCollections,
-    GetReferralEventByIdParams
+    ListMyReferralCodesParams
   >;
-  readonly getUserByIdResource: ResourceClass<
+  readonly listMyReferralsResource: ResourceClass<
     GraphCollections,
-    GetUserByIdParams
+    ListMyReferralsParams
   >;
-  readonly listReferralCodesResource: ResourceClass<
+  readonly listMyRewardsResource: ResourceClass<
     GraphCollections,
-    ListReferralCodesParams
+    ListMyRewardsParams
   >;
-  readonly listReferralEventsResource: ResourceClass<
+  readonly listReferralsForCodeResource: ResourceClass<
     GraphCollections,
-    ListReferralEventsParams
+    ListReferralsForCodeParams
   >;
-  readonly referralCodeByCodeValueResource: ResourceClass<
+  readonly referralCodeByCodeStringResource: ResourceClass<
     GraphCollections,
     Json
   >;
-  readonly referralCodeStatsResource: ResourceClass<GraphCollections, Json>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -82,27 +90,31 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
       referralCodes: new InputDefinition<
         ReferralCode_skip_id_,
-        ReferralCode_skip_value_
+        ReferralCodeStored
       >([]),
-      referralEvents: new InputDefinition<
-        ReferralEvent_skip_id_,
-        ReferralEvent_skip_value_
-      >([]),
+      referrals: new InputDefinition<Referral_skip_id_, Referral_skip_value_>(
+        [],
+      ),
+      rewards: new InputDefinition<Reward_skip_id_, Reward_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getReferralCodeByIdResource: GetReferralCodeByIdResource,
-      getReferralEventByIdResource: GetReferralEventByIdResource,
-      getUserByIdResource: GetUserByIdResource,
-      listReferralCodesResource: ListReferralCodesResource,
-      listReferralEventsResource: ListReferralEventsResource,
-      referralCodeByCodeValueResource: ReferralCodeByCodeValueResource,
-      referralCodeStatsResource: ReferralCodeStatsResource,
+      getMyReferralStatsResource: GetMyReferralStatsResource,
+      getReferralCodeResource: GetReferralCodeResource,
+      getReferralCodeStoredResource: GetReferralCodeStoredResource,
+      getReferralResource: GetReferralResource,
+      getRewardResource: GetRewardResource,
+      listMyReferralCodesResource: ListMyReferralCodesResource,
+      listMyReferralsResource: ListMyReferralsResource,
+      listMyRewardsResource: ListMyRewardsResource,
+      listReferralsForCodeResource: ListReferralsForCodeResource,
+      referralCodeByCodeStringResource: ReferralCodeByCodeStringResource,
       getMeResource: getMeResource,
     };
   }

@@ -1,230 +1,201 @@
-export type ApiError = { readonly code: string; readonly message: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = { readonly code: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type ApiError_skip_id_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type GetMyNotificationParams = {
-  readonly notificationId: string;
-  readonly userId: string;
+export type GetNotificationParams = { readonly notificationId: string } & {
+  readonly [key: string]: Json | null;
 };
 
 export type IngestNotificationEventRequest = {
+  readonly actorUserId: string;
   readonly recipientUserId: string;
-  readonly snippet?: string;
   readonly targetId: string;
-  readonly targetType: TargetType;
   readonly type: NotificationType;
-};
+} & { readonly [key: string]: Json | null };
 
 export type IngestNotificationEventRequest_skip_id_ = {
+  readonly actorUserId: string;
   readonly recipientUserId: string;
-  readonly snippet?: string;
   readonly targetId: string;
-  readonly targetType: TargetType;
   readonly type: NotificationType;
-};
+} & { readonly [key: string]: Json | null };
 
 export type IngestNotificationEventRequest_skip_value_ = {
+  readonly actorUserId: string;
   readonly recipientUserId: string;
-  readonly snippet?: string;
   readonly targetId: string;
-  readonly targetType: TargetType;
   readonly type: NotificationType;
+} & { readonly [key: string]: Json | null };
+
+export type ListNotificationEventsParams = {
+  readonly notificationId: string;
+} & { readonly [key: string]: Json | null };
+
+export type MarkAllReadResult = { readonly updatedCount: number } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ListMyNotificationsParams = {
-  readonly type?: "mention" | "follow" | "like";
-  readonly unreadOnly?: boolean;
-  readonly userId: string;
+export type MarkAllReadResult_skip_id_ = { readonly updatedCount: number } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ListNotificationEventsParams = { readonly notificationId: string };
-
-export type MarkAllReadResult = { readonly updatedCount: number };
-
-export type MarkAllReadResult_skip_id_ = { readonly updatedCount: number };
-
-export type MarkAllReadResult_skip_value_ = { readonly updatedCount: number };
+export type MarkAllReadResult_skip_value_ = {
+  readonly updatedCount: number;
+} & { readonly [key: string]: Json | null };
 
 export type Notification = {
-  readonly actorCount: number;
   readonly createdAt: string;
   readonly eventCount: number;
+  readonly firstEventAt: string;
   readonly id: string;
   readonly lastEventAt: string;
   readonly readAt?: string;
   readonly recentActorUserIds: string[];
   readonly recipientUserId: string;
   readonly targetId: string;
-  readonly targetType: TargetType;
   readonly type: NotificationType;
-};
-
-export type NotificationByRecipientValue = {
-  readonly createdAt: string;
-  readonly id: string;
-  readonly lastEventAt: string;
-  readonly readAt?: string;
-  readonly recipientUserId: string;
-  readonly targetId: string;
-  readonly targetType: "user" | "post" | "comment";
-  readonly type: "mention" | "follow" | "like";
-};
+  readonly updatedAt: string;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationEvent = {
   readonly actorUserId: string;
-  readonly id: string;
+  readonly createdAt: string;
+  readonly eventId: string;
   readonly notificationId: string;
-  readonly occurredAt: string;
-  readonly snippet?: string;
+} & { readonly [key: string]: Json | null };
+
+export type NotificationEventCompositeKey = {
+  readonly eventId: string;
+  readonly notificationId: string;
+} & { readonly [key: string]: Json | null };
+
+export type NotificationEventList = { readonly events: NotificationEvent[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type NotificationEventChild = {
+export type NotificationEventList_skip_id_ = {
+  readonly events: NotificationEvent[];
+} & { readonly [key: string]: Json | null };
+
+export type NotificationEventList_skip_value_ = {
+  readonly events: NotificationEvent[];
+} & { readonly [key: string]: Json | null };
+
+export type NotificationEventStored = {
   readonly actorUserId: string;
-  readonly id: string;
-  readonly notificationId: string;
-  readonly occurredAt: string;
-  readonly snippet?: string;
-};
+  readonly createdAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type NotificationEventKey = {
-  readonly id: string;
-  readonly notificationId: string;
-};
-
-export type NotificationEventPage = {
-  readonly events: NotificationEvent[];
-  readonly limit: number;
-  readonly offset: number;
-  readonly total?: number;
-};
-
-export type NotificationEventPage_skip_id_ = {
-  readonly events: NotificationEvent[];
-  readonly limit: number;
-  readonly offset: number;
-  readonly total?: number;
-};
-
-export type NotificationEventPage_skip_value_ = {
-  readonly events: NotificationEvent[];
-  readonly limit: number;
-  readonly offset: number;
-  readonly total?: number;
-};
-
-export type NotificationEventValue = {
+export type NotificationEventStoredWithEventId = {
   readonly actorUserId: string;
-  readonly occurredAt: string;
-  readonly snippet?: string;
-};
+  readonly createdAt: string;
+  readonly eventId: string;
+} & { readonly [key: string]: Json | null };
 
 export type NotificationEvent_skip_id_ = {
-  readonly id: string;
+  readonly eventId: string;
   readonly notificationId: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type NotificationEvent_skip_value_ = {
   readonly actorUserId: string;
-  readonly occurredAt: string;
-  readonly snippet?: string;
-};
-
-export type NotificationFull = {
-  readonly actorCount: number;
   readonly createdAt: string;
-  readonly eventCount: number;
-  readonly id: string;
-  readonly lastEventAt: string;
-  readonly readAt?: string;
-  readonly recentActorUserIds: string[];
-  readonly recipientUserId: string;
-  readonly targetId: string;
-  readonly targetType: "user" | "post" | "comment";
-  readonly type: "mention" | "follow" | "like";
+} & { readonly [key: string]: Json | null };
+
+export type NotificationList = { readonly notifications: Notification[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type NotificationPage = {
-  readonly limit: number;
+export type NotificationList_skip_id_ = {
   readonly notifications: Notification[];
-  readonly offset: number;
-  readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type NotificationPage_skip_id_ = {
-  readonly limit: number;
+export type NotificationList_skip_value_ = {
   readonly notifications: Notification[];
-  readonly offset: number;
-  readonly total?: number;
-};
-
-export type NotificationPage_skip_value_ = {
-  readonly limit: number;
-  readonly notifications: Notification[];
-  readonly offset: number;
-  readonly total?: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type NotificationStored = {
   readonly createdAt: string;
+  readonly eventCount: number;
+  readonly firstEventAt: string;
   readonly lastEventAt: string;
   readonly readAt?: string;
   readonly recipientUserId: string;
   readonly targetId: string;
-  readonly targetType: "user" | "post" | "comment";
-  readonly type: "mention" | "follow" | "like";
-};
+  readonly type: NotificationType;
+  readonly updatedAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type NotificationType = "mention" | "follow" | "like";
+export type NotificationType = "MENTION" | "FOLLOW" | "LIKE";
 
-export type NotificationType_skip_id_ = "mention" | "follow" | "like";
+export type NotificationType_skip_id_ = "MENTION" | "FOLLOW" | "LIKE";
 
-export type NotificationType_skip_value_ = "mention" | "follow" | "like";
+export type NotificationType_skip_value_ = "MENTION" | "FOLLOW" | "LIKE";
 
 export type Notification_skip_id_ = string;
 
 export type Notification_skip_value_ = {
-  readonly actorCount: number;
   readonly createdAt: string;
   readonly eventCount: number;
+  readonly firstEventAt: string;
   readonly lastEventAt: string;
   readonly readAt?: string;
   readonly recentActorUserIds: string[];
   readonly recipientUserId: string;
   readonly targetId: string;
-  readonly targetType: TargetType;
   readonly type: NotificationType;
+  readonly updatedAt: string;
+} & { readonly [key: string]: Json | null };
+
+export type UnreadCount = { readonly count: number } & {
+  readonly [key: string]: Json | null;
 };
 
-export type RecipientUserId = string;
+export type UnreadTally = number;
 
-export type TargetType = "user" | "post" | "comment";
+export type UpdateMeRequest = {
+  readonly avatarUrl?: string;
+  readonly displayName?: string;
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
-export type TargetType_skip_id_ = "user" | "post" | "comment";
+export type UpdateMeRequest_skip_id_ = {
+  readonly avatarUrl?: string;
+  readonly displayName?: string;
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
-export type TargetType_skip_value_ = "user" | "post" | "comment";
+export type UpdateMeRequest_skip_value_ = {
+  readonly avatarUrl?: string;
+  readonly displayName?: string;
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
-export type UnreadCount = { readonly count: number };
+export type User = {
+  readonly avatarUrl?: string;
+  readonly createdAt?: string;
+  readonly displayName?: string;
+  readonly id: string;
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
-export type UnreadCountAccum = number;
+export type User_skip_id_ = string;
 
-export type UnreadCountParams = { readonly userId: string };
-
-export type UnreadCountValue = number;
-
-export type UnreadCount_skip_id_ = { readonly count: number };
-
-export type UnreadCount_skip_value_ = { readonly count: number };
-
-export type UpdateNotificationRequest = { readonly read: boolean };
-
-export type UpdateNotificationRequest_skip_id_ = { readonly read: boolean };
-
-export type UpdateNotificationRequest_skip_value_ = { readonly read: boolean };
+export type User_skip_value_ = {
+  readonly avatarUrl?: string;
+  readonly createdAt?: string;
+  readonly displayName?: string;
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };

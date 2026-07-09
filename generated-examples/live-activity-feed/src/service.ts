@@ -1,21 +1,25 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetActivityByIdResource } from "./resources/GetActivityByIdResource.js";
+import { FollowsByFollowerResource } from "./resources/FollowsByFollowerResource.js";
 import { ListActivitiesResource } from "./resources/ListActivitiesResource.js";
+import { ListFollowsResource } from "./resources/ListFollowsResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Activity_skip_id_,
   Activity_skip_value_,
+  Follow_skip_id_,
+  Follow_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  ListActivitiesParams,
   Activity,
+  Follow,
   User,
 } from "./types.js";
 import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -24,15 +28,14 @@ import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
   readonly activities: InputDefinition<Activity_skip_id_, Activity_skip_value_>;
+  readonly follows: InputDefinition<Follow_skip_id_, Follow_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getActivityByIdResource: ResourceClass<GraphCollections, Json>;
-  readonly listActivitiesResource: ResourceClass<
-    GraphCollections,
-    ListActivitiesParams
-  >;
+  readonly followsByFollowerResource: ResourceClass<GraphCollections, Json>;
+  readonly listActivitiesResource: ResourceClass<GraphCollections, Json>;
+  readonly listFollowsResource: ResourceClass<GraphCollections, Json>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -43,17 +46,20 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
       activities: new InputDefinition<Activity_skip_id_, Activity_skip_value_>(
         [],
       ),
+      follows: new InputDefinition<Follow_skip_id_, Follow_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getActivityByIdResource: GetActivityByIdResource,
+      followsByFollowerResource: FollowsByFollowerResource,
       listActivitiesResource: ListActivitiesResource,
+      listFollowsResource: ListFollowsResource,
       getMeResource: getMeResource,
     };
   }

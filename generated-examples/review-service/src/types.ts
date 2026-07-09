@@ -1,241 +1,289 @@
-export type ApiError = { readonly code: string; readonly message: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = { readonly code: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type ApiError_skip_id_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
   readonly code: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type AuthorIdKey = string;
+export type AuthorSubjectKey = {
+  readonly authorId: string;
+  readonly subjectId: string;
+} & { readonly [key: string]: Json | null };
 
 export type CreateReviewRequest = {
   readonly body?: string;
   readonly rating: number;
   readonly title?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateReviewRequest_skip_id_ = {
   readonly body?: string;
   readonly rating: number;
   readonly title?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateReviewRequest_skip_value_ = {
   readonly body?: string;
   readonly rating: number;
   readonly title?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateSubjectRequest = {
+  readonly category: SubjectCategory;
   readonly description?: string;
   readonly name: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateSubjectRequest_skip_id_ = {
+  readonly category: SubjectCategory;
   readonly description?: string;
   readonly name: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreateSubjectRequest_skip_value_ = {
+  readonly category: SubjectCategory;
   readonly description?: string;
   readonly name: string;
+} & { readonly [key: string]: Json | null };
+
+export type GetReviewParams = { readonly reviewId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type GetReviewForSubjectParams = {
-  readonly authorId: string;
-  readonly subjectId: string;
+export type GetSubjectParams = { readonly subjectId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type GetSubjectParams = { readonly subjectId: string };
-
-export type GetSubjectRatingSummaryParams = { readonly subjectId: string };
-
-export type GetUserByIdParams = { readonly userId: string };
-
-export type ListMyReviewsParams = { readonly userId: string };
-
-export type ListReviewsForSubjectParams = { readonly subjectId: string };
-
-export type RatingSummary = {
-  readonly averageRating: number;
-  readonly ratingHistogram: [number, number, number, number, number];
-  readonly reviewCount: number;
-  readonly subjectId: string;
+export type GetUserByIdParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type RatingSummaryAccum = {
-  readonly count: number;
-  readonly h1: number;
-  readonly h2: number;
-  readonly h3: number;
-  readonly h4: number;
-  readonly h5: number;
-  readonly sum: number;
+export type ListMyReviewsParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type RatingSummary_skip_id_ = {
-  readonly averageRating: number;
-  readonly ratingHistogram: [number, number, number, number, number];
-  readonly reviewCount: number;
-  readonly subjectId: string;
+export type ListReviewsForSubjectParams = { readonly subjectId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type RatingSummary_skip_value_ = {
-  readonly averageRating: number;
-  readonly ratingHistogram: [number, number, number, number, number];
-  readonly reviewCount: number;
-  readonly subjectId: string;
-};
+export type RatingDistribution = {
+  readonly five: number;
+  readonly four: number;
+  readonly one: number;
+  readonly three: number;
+  readonly two: number;
+} & { readonly [key: string]: Json | null };
 
-export type RatingValue = number;
+export type RatingDistribution_skip_id_ = {
+  readonly five: number;
+  readonly four: number;
+  readonly one: number;
+  readonly three: number;
+  readonly two: number;
+} & { readonly [key: string]: Json | null };
+
+export type RatingDistribution_skip_value_ = {
+  readonly five: number;
+  readonly four: number;
+  readonly one: number;
+  readonly three: number;
+  readonly two: number;
+} & { readonly [key: string]: Json | null };
 
 export type Review = {
   readonly authorId: string;
   readonly body?: string;
   readonly createdAt: string;
+  readonly id: string;
   readonly rating: number;
   readonly subjectId: string;
   readonly title?: string;
   readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type ReviewKey = {
-  readonly authorId: string;
-  readonly subjectId: string;
-};
-
-export type ReviewList = { readonly items: Review[]; readonly total: number };
+export type ReviewList = {
+  readonly reviews: Review[];
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
 export type ReviewList_skip_id_ = {
-  readonly items: Review[];
+  readonly reviews: Review[];
   readonly total: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ReviewList_skip_value_ = {
-  readonly items: Review[];
+  readonly reviews: Review[];
   readonly total: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type ReviewStored = {
-  readonly body?: string;
-  readonly createdAt: string;
-  readonly rating: number;
-  readonly title?: string;
-  readonly updatedAt?: string;
-};
-
-export type Review_skip_id_ = {
-  readonly authorId: string;
-  readonly subjectId: string;
-};
+export type Review_skip_id_ = string;
 
 export type Review_skip_value_ = {
+  readonly authorId: string;
   readonly body?: string;
   readonly createdAt: string;
   readonly rating: number;
+  readonly subjectId: string;
   readonly title?: string;
   readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type Subject = {
+  readonly averageRating: number;
+  readonly category: SubjectCategory;
   readonly createdAt: string;
   readonly createdBy: string;
   readonly description?: string;
   readonly id: string;
   readonly name: string;
+  readonly ratingDistribution: RatingDistribution;
+  readonly reviewCount: number;
   readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type SubjectIdKey = string;
+export type SubjectCategory =
+  | "PRODUCT"
+  | "SERVICE"
+  | "BOOK"
+  | "MOVIE"
+  | "RESTAURANT"
+  | "OTHER";
 
-export type SubjectList = { readonly items: Subject[]; readonly total: number };
+export type SubjectCategory_skip_id_ =
+  | "PRODUCT"
+  | "SERVICE"
+  | "BOOK"
+  | "MOVIE"
+  | "RESTAURANT"
+  | "OTHER";
+
+export type SubjectCategory_skip_value_ =
+  | "PRODUCT"
+  | "SERVICE"
+  | "BOOK"
+  | "MOVIE"
+  | "RESTAURANT"
+  | "OTHER";
+
+export type SubjectList = {
+  readonly subjects: Subject[];
+  readonly total: number;
+} & { readonly [key: string]: Json | null };
 
 export type SubjectList_skip_id_ = {
-  readonly items: Subject[];
+  readonly subjects: Subject[];
   readonly total: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type SubjectList_skip_value_ = {
-  readonly items: Subject[];
+  readonly subjects: Subject[];
   readonly total: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type Subject_skip_id_ = string;
-
-export type Subject_skip_value_ = {
+export type SubjectStored = {
+  readonly category: string;
   readonly createdAt: string;
   readonly createdBy: string;
   readonly description?: string;
   readonly name: string;
   readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
+
+export type Subject_skip_id_ = string;
+
+export type Subject_skip_value_ = {
+  readonly averageRating: number;
+  readonly category: SubjectCategory;
+  readonly createdAt: string;
+  readonly createdBy: string;
+  readonly description?: string;
+  readonly name: string;
+  readonly ratingDistribution: RatingDistribution;
+  readonly reviewCount: number;
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest = {
   readonly avatarUrl?: string;
   readonly bio?: string;
   readonly displayName?: string;
-};
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
   readonly avatarUrl?: string;
   readonly bio?: string;
   readonly displayName?: string;
-};
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
   readonly avatarUrl?: string;
   readonly bio?: string;
   readonly displayName?: string;
-};
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateReviewRequest = {
   readonly body?: string;
   readonly rating?: number;
   readonly title?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateReviewRequest_skip_id_ = {
   readonly body?: string;
   readonly rating?: number;
   readonly title?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateReviewRequest_skip_value_ = {
   readonly body?: string;
   readonly rating?: number;
   readonly title?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateSubjectRequest = {
+  readonly category?: SubjectCategory;
   readonly description?: string;
   readonly name?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateSubjectRequest_skip_id_ = {
+  readonly category?: SubjectCategory;
   readonly description?: string;
   readonly name?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateSubjectRequest_skip_value_ = {
+  readonly category?: SubjectCategory;
   readonly description?: string;
   readonly name?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User = {
   readonly avatarUrl?: string;
   readonly bio?: string;
+  readonly createdAt?: string;
   readonly displayName?: string;
   readonly id: string;
-};
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
   readonly avatarUrl?: string;
   readonly bio?: string;
+  readonly createdAt?: string;
   readonly displayName?: string;
-};
+  readonly username?: string;
+} & { readonly [key: string]: Json | null };

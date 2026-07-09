@@ -1,4 +1,10 @@
-import type { Comment_skip_id_, CommentLike, Comment } from "../types.js";
+import { FilterCommentLikesByCommentMapper } from "../mappers/FilterCommentLikesByCommentMapper.js";
+import type {
+  Comment_skip_id_,
+  CommentLike,
+  ListCommentLikesParams,
+  Comment,
+} from "../types.js";
 import type {
   Resource,
   EagerCollection,
@@ -7,19 +13,26 @@ import type {
 } from "@skipruntime/core";
 
 export interface ListCommentLikesResourceInputs extends SharedCollections {
-  readonly commentLikesByCommentId: EagerCollection<
+  readonly commentLikesByComment: EagerCollection<
     Comment_skip_id_,
     CommentLike
   >;
 }
 
 export class ListCommentLikesResource implements Resource<ListCommentLikesResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly commentId: string;
+
+  constructor(params: ListCommentLikesParams) {
+    this.commentId = params.commentId;
+  }
 
   instantiate(
     inputs: ListCommentLikesResourceInputs,
     _context: Context,
   ): EagerCollection<Comment_skip_id_, CommentLike> {
-    return inputs.commentLikesByCommentId;
+    return inputs.commentLikesByComment.map(
+      FilterCommentLikesByCommentMapper,
+      this.commentId,
+    );
   }
 }

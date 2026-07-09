@@ -8,6 +8,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetProductResourceInputs extends SharedCollections {
@@ -15,7 +16,7 @@ export interface GetProductResourceInputs extends SharedCollections {
 }
 
 export class GetProductResource implements Resource<GetProductResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetProductResourceInputs,

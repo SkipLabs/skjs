@@ -1,30 +1,23 @@
-import { MessageByRoomMapper } from "../mappers/MessageByRoomMapper.js";
-import type {
-  Message_skip_id_,
-  Message_skip_value_,
-  Room_skip_id_,
-  Message,
-  Room,
-} from "../types.js";
+import type { Room_skip_id_, Message, Room } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface ListRoomMessagesResourceInputs extends SharedCollections {
-  readonly messages: EagerCollection<Message_skip_id_, Message_skip_value_>;
+  readonly messagesByRoom: EagerCollection<Room_skip_id_, Message>;
 }
 
 export class ListRoomMessagesResource implements Resource<ListRoomMessagesResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: ListRoomMessagesResourceInputs,
     _context: Context,
   ): EagerCollection<Room_skip_id_, Message> {
-    const messagesByRoom = inputs.messages.map(MessageByRoomMapper);
-    return messagesByRoom;
+    return inputs.messagesByRoom;
   }
 }

@@ -11,6 +11,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface SubscriptionsByOwnerResourceInputs extends SharedCollections {
@@ -21,15 +22,13 @@ export interface SubscriptionsByOwnerResourceInputs extends SharedCollections {
 }
 
 export class SubscriptionsByOwnerResource implements Resource<SubscriptionsByOwnerResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: SubscriptionsByOwnerResourceInputs,
     _context: Context,
   ): EagerCollection<User_skip_id_, Subscription> {
-    const subscriptionsByOwner = inputs.subscriptions.map(
-      SubscriptionByOwnerMapper,
-    );
-    return subscriptionsByOwner;
+    const byOwner = inputs.subscriptions.map(SubscriptionByOwnerMapper);
+    return byOwner;
   }
 }

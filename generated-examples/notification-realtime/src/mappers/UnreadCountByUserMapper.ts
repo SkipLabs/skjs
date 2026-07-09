@@ -3,7 +3,7 @@ import type {
   User_skip_id_,
   User_skip_value_,
   UnreadCount,
-  UnreadMarker,
+  UnreadOne,
   User,
 } from "../types.js";
 import type {
@@ -13,30 +13,27 @@ import type {
   EagerCollection,
 } from "@skipruntime/core";
 
-// For each user entry, emit nothing when the entry's key does not equal the userId param. Otherwise consult unreadByRecipient for the values indexed by the userId param to obtain every 1-marker for the user's unread notifications. Sum the consulted values (defaulting to zero when no values are consulted). Emit one output pair whose key is the literal-zero key and whose value lists every required field of UnreadCount explicitly — count sourced from the computed sum.
+// For each user entry, consult unreadOnesByUser for the values indexed by the entry's key — each consulted value is the literal one representing one unread notification. Count the number of consulted values (equivalently, sum them since each is one) and emit one output pair whose key is the entry's key and whose value is that count. When no values are consulted (the user has no unread notifications), emit one output pair whose key is the entry's key and whose value is zero. Every user in inputs.users yields exactly one entry.
 export class UnreadCountByUserMapper implements Mapper<
   User_skip_id_,
   User_skip_value_,
-  0,
+  User_skip_id_,
   UnreadCount
 > {
   constructor(
-    private userId: string,
-    private unreadByRecipient: EagerCollection<User_skip_id_, UnreadMarker>,
+    private unreadOnesByUser: EagerCollection<User_skip_id_, UnreadOne>,
   ) {}
 
   mapEntry(
     key: User_skip_id_,
     values: Values<User_skip_value_>,
     context: Context,
-  ): Iterable<[0, UnreadCount]> {
+  ): Iterable<[User_skip_id_, UnreadCount]> {
     // > body
-    if (key !== this.userId) return [];
-    const markers = this.unreadByRecipient.getArray(this.userId);
+    const unreadValues = this.unreadOnesByUser.getArray(key);
     let count = 0;
-    for (const marker of markers) count += marker;
-    const result: UnreadCount = { count };
-    return [[0, result]];
+    for (const v of unreadValues) count += v;
+    return [[key, count]];
     // < body
   }
 }

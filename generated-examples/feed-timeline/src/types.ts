@@ -1,20 +1,18 @@
-export type ApiError = {
-  readonly code: string;
-  readonly details?: string;
-  readonly message: string;
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = { readonly code: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
 };
 
 export type ApiError_skip_id_ = {
   readonly code: string;
-  readonly details?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
   readonly code: string;
-  readonly details?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type Comment = {
   readonly authorId: string;
@@ -22,13 +20,22 @@ export type Comment = {
   readonly createdAt: string;
   readonly id: string;
   readonly postId: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type CommentList = { readonly comments: Comment[] };
+export type CommentList = {
+  readonly items: Comment[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
-export type CommentList_skip_id_ = { readonly comments: Comment[] };
+export type CommentList_skip_id_ = {
+  readonly items: Comment[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
-export type CommentList_skip_value_ = { readonly comments: Comment[] };
+export type CommentList_skip_value_ = {
+  readonly items: Comment[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
 export type Comment_skip_id_ = string;
 
@@ -37,91 +44,137 @@ export type Comment_skip_value_ = {
   readonly content: string;
   readonly createdAt: string;
   readonly postId: string;
+} & { readonly [key: string]: Json | null };
+
+export type CountAccum = number;
+
+export type CountValue = number;
+
+export type CreateCommentRequest = { readonly content: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type CreateCommentRequest = { readonly content: string };
+export type CreateCommentRequest_skip_id_ = { readonly content: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CreateCommentRequest_skip_id_ = { readonly content: string };
+export type CreateCommentRequest_skip_value_ = { readonly content: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CreateCommentRequest_skip_value_ = { readonly content: string };
+export type CreatePostRequest = { readonly content: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CreatePostRequest = { readonly content: string };
+export type CreatePostRequest_skip_id_ = { readonly content: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CreatePostRequest_skip_id_ = { readonly content: string };
+export type CreatePostRequest_skip_value_ = { readonly content: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type CreatePostRequest_skip_value_ = { readonly content: string };
-
-export type Feed = { readonly items: FeedItem[] };
-
-export type FeedItem = {
+export type FeedEvent = {
   readonly actorId: string;
   readonly commentId?: string;
-  readonly kind: FeedItemKind;
+  readonly content?: string;
+  readonly id: string;
   readonly occurredAt: string;
   readonly postId: string;
-};
+  readonly type: FeedEventType;
+} & { readonly [key: string]: Json | null };
 
-export type FeedItemKey = {
-  readonly commentId?: string;
-  readonly kind: "post" | "like" | "comment";
-  readonly postId: string;
-  readonly userId?: string;
-};
+export type FeedEventId = string;
 
-export type FeedItemKind = "post" | "like" | "comment";
+export type FeedEventType = "POST" | "LIKE" | "COMMENT";
 
-export type FeedItemKind_skip_id_ = "post" | "like" | "comment";
+export type FeedEventType_skip_id_ = "POST" | "LIKE" | "COMMENT";
 
-export type FeedItemKind_skip_value_ = "post" | "like" | "comment";
+export type FeedEventType_skip_value_ = "POST" | "LIKE" | "COMMENT";
 
-export type FeedItem_skip_id_ = {
+export type FeedEvent_skip_id_ = {
   readonly actorId: string;
   readonly commentId?: string;
-  readonly kind: FeedItemKind;
+  readonly content?: string;
+  readonly id: string;
   readonly occurredAt: string;
   readonly postId: string;
-};
+  readonly type: FeedEventType;
+} & { readonly [key: string]: Json | null };
 
-export type FeedItem_skip_value_ = {
+export type FeedEvent_skip_value_ = {
   readonly actorId: string;
   readonly commentId?: string;
-  readonly kind: FeedItemKind;
+  readonly content?: string;
+  readonly id: string;
   readonly occurredAt: string;
   readonly postId: string;
+  readonly type: FeedEventType;
+} & { readonly [key: string]: Json | null };
+
+export type FeedPage = {
+  readonly items: FeedEvent[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
+
+export type FeedPage_skip_id_ = {
+  readonly items: FeedEvent[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
+
+export type FeedPage_skip_value_ = {
+  readonly items: FeedEvent[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
+
+export type GetPostByIdParams = { readonly postId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type Feed_skip_id_ = { readonly items: FeedItem[] };
-
-export type Feed_skip_value_ = { readonly items: FeedItem[] };
-
-export type GetCommentByIdParams = { readonly commentId: string };
-
-export type GetPostByIdParams = { readonly postId: string };
+export type GetUserByIdParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type Like = {
   readonly createdAt: string;
   readonly postId: string;
   readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type LikeList = { readonly items: Like[]; readonly total?: number } & {
+  readonly [key: string]: Json | null;
 };
 
-export type LikeKey = { readonly postId: string; readonly userId: string };
+export type LikeList_skip_id_ = {
+  readonly items: Like[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
-export type LikeList = { readonly likes: Like[] };
-
-export type LikeList_skip_id_ = { readonly likes: Like[] };
-
-export type LikeList_skip_value_ = { readonly likes: Like[] };
-
-export type LikeStored = { readonly createdAt: string };
+export type LikeList_skip_value_ = {
+  readonly items: Like[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
 export type Like_skip_id_ = {
   readonly postId: string;
   readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type Like_skip_value_ = { readonly createdAt: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type Like_skip_value_ = { readonly createdAt: string };
+export type ListCommentsByPostParams = { readonly postId: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type ListPostsParams = { readonly authorId?: string };
+export type ListLikesByPostParams = { readonly postId: string } & {
+  readonly [key: string]: Json | null;
+};
+
+export type ListPostsParams = { readonly authorId?: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type Post = {
   readonly authorId: string;
@@ -131,28 +184,28 @@ export type Post = {
   readonly id: string;
   readonly likeCount: number;
   readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
+
+export type PostList = { readonly items: Post[]; readonly total?: number } & {
+  readonly [key: string]: Json | null;
 };
 
-export type PostCommentCount = number;
+export type PostList_skip_id_ = {
+  readonly items: Post[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
-export type PostCommentCountAccum = number;
-
-export type PostLikeCount = number;
-
-export type PostLikeCountAccum = number;
-
-export type PostList = { readonly posts: Post[] };
-
-export type PostList_skip_id_ = { readonly posts: Post[] };
-
-export type PostList_skip_value_ = { readonly posts: Post[] };
+export type PostList_skip_value_ = {
+  readonly items: Post[];
+  readonly total?: number;
+} & { readonly [key: string]: Json | null };
 
 export type PostStored = {
   readonly authorId: string;
   readonly content: string;
   readonly createdAt: string;
   readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type Post_skip_id_ = string;
 
@@ -163,50 +216,56 @@ export type Post_skip_value_ = {
   readonly createdAt: string;
   readonly likeCount: number;
   readonly updatedAt?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest = {
   readonly avatarUrl?: string;
   readonly bio?: string;
   readonly displayName?: string;
   readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
   readonly avatarUrl?: string;
   readonly bio?: string;
   readonly displayName?: string;
   readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
   readonly avatarUrl?: string;
   readonly bio?: string;
   readonly displayName?: string;
   readonly username?: string;
+} & { readonly [key: string]: Json | null };
+
+export type UpdatePostRequest = { readonly content?: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type UpdatePostRequest = { readonly content?: string };
+export type UpdatePostRequest_skip_id_ = { readonly content?: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type UpdatePostRequest_skip_id_ = { readonly content?: string };
-
-export type UpdatePostRequest_skip_value_ = { readonly content?: string };
+export type UpdatePostRequest_skip_value_ = { readonly content?: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type User = {
   readonly avatarUrl?: string;
   readonly bio?: string;
-  readonly createdAt?: string;
+  readonly createdAt: string;
   readonly displayName?: string;
   readonly id: string;
   readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
   readonly avatarUrl?: string;
   readonly bio?: string;
-  readonly createdAt?: string;
+  readonly createdAt: string;
   readonly displayName?: string;
   readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };

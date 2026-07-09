@@ -4,6 +4,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface getMeResourceInputs extends SharedCollections {
@@ -11,7 +12,7 @@ export interface getMeResourceInputs extends SharedCollections {
 }
 
 export class getMeResource implements Resource<getMeResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: getMeResourceInputs,

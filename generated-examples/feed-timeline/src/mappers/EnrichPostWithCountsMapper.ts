@@ -3,8 +3,7 @@ import type {
   Post_skip_id_,
   PostStored,
   Post_skip_value_,
-  PostLikeCountAccum,
-  PostCommentCountAccum,
+  CountAccum,
   Post,
 } from "../types.js";
 import type {
@@ -14,7 +13,7 @@ import type {
   EagerCollection,
 } from "@skipruntime/core";
 
-// For each post entry, consult likeCountByPost for the count values indexed by the entry's key; use the first consulted value when present, otherwise zero — this is the like count. Consult commentCountByPost for the count values indexed by the entry's key; use the first consulted value when present, otherwise zero — this is the comment count. Emit one output pair whose key is the entry's key and whose value enumerates every required field of Post_skip_value_ explicitly: authorId sourced from the entry's value's authorId field; content sourced from the entry's value's content field; createdAt sourced from the entry's value's createdAt field; likeCount set to the resolved like count; commentCount set to the resolved comment count. The optional updatedAt field is present when the entry's value's updatedAt field is present, sourced from the entry's value's updatedAt field; absent otherwise.
+// For each post entry, consult likeCountByPost for the values indexed by the entry's key (each consulted value is a CountAccum sum); if no values are consulted, treat the like count as zero, otherwise use the first consulted value. Consult commentCountByPost for the values indexed by the entry's key (each consulted value is a CountAccum sum); if no values are consulted, treat the comment count as zero, otherwise use the first consulted value. Emit one output pair whose key is the entry's key and whose value lists every required field of Post explicitly: authorId sourced from the entry's value's authorId field; content sourced from the entry's value's content field; createdAt sourced from the entry's value's createdAt field; likeCount sourced from the resolved like count; commentCount sourced from the resolved comment count. The optional updatedAt field is present when the entry's value's updatedAt field is present, sourced from the entry's value's updatedAt field; absent otherwise.
 export class EnrichPostWithCountsMapper implements Mapper<
   Post_skip_id_,
   PostStored,
@@ -22,11 +21,8 @@ export class EnrichPostWithCountsMapper implements Mapper<
   Post_skip_value_
 > {
   constructor(
-    private likeCountByPost: EagerCollection<Post_skip_id_, PostLikeCountAccum>,
-    private commentCountByPost: EagerCollection<
-      Post_skip_id_,
-      PostCommentCountAccum
-    >,
+    private likeCountByPost: EagerCollection<Post_skip_id_, CountAccum>,
+    private commentCountByPost: EagerCollection<Post_skip_id_, CountAccum>,
   ) {}
 
   mapEntry(
@@ -35,26 +31,23 @@ export class EnrichPostWithCountsMapper implements Mapper<
     context: Context,
   ): Iterable<[Post_skip_id_, Post_skip_value_]> {
     // > body
-    const entries = values.toArray();
-    const stored = entries[0];
-    if (stored === undefined) return [];
-
-    const likeCounts = this.likeCountByPost.getArray(key);
-    const likeCount = likeCounts[0] ?? 0;
-
-    const commentCounts = this.commentCountByPost.getArray(key);
-    const commentCount = commentCounts[0] ?? 0;
-
-    const out: Post_skip_value_ = {
-      authorId: stored.authorId,
-      content: stored.content,
-      createdAt: stored.createdAt,
-      likeCount,
-      commentCount,
-      ...(stored.updatedAt !== undefined && { updatedAt: stored.updatedAt }),
-    };
-
-    return [[key, out]];
+    for (const value of values.toArray()) {
+      const likeValues = this.likeCountByPost.getArray(key);
+      const likeCount = likeValues.length === 0 ? 0 : (likeValues[0] ?? 0);
+      const commentValues = this.commentCountByPost.getArray(key);
+      const commentCount =
+        commentValues.length === 0 ? 0 : (commentValues[0] ?? 0);
+      const out: Post_skip_value_ = {
+        authorId: value.authorId,
+        content: value.content,
+        createdAt: value.createdAt,
+        likeCount,
+        commentCount,
+        ...(value.updatedAt !== undefined && { updatedAt: value.updatedAt }),
+      };
+      return [[key, out]];
+    }
+    return [];
     // < body
   }
 }

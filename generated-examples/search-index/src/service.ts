@@ -1,22 +1,22 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
 import { GetPostStoredResource } from "./resources/GetPostStoredResource.js";
-import { GetSearchDocumentByPostIdResource } from "./resources/GetSearchDocumentByPostIdResource.js";
-import { GetTagStoredResource } from "./resources/GetTagStoredResource.js";
+import { ListPostTagsByPostResource } from "./resources/ListPostTagsByPostResource.js";
 import { ListPostsResource } from "./resources/ListPostsResource.js";
 import { ListTagsResource } from "./resources/ListTagsResource.js";
-import { SearchResource } from "./resources/SearchResource.js";
+import { PostTagsByTagResource } from "./resources/PostTagsByTagResource.js";
+import { SearchDocumentsResource } from "./resources/SearchDocumentsResource.js";
+import { TagByNameResource } from "./resources/TagByNameResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
+  PostTagKey,
+  PostTagStored,
   Post_skip_id_,
   PostStored,
   Tag_skip_id_,
   Tag_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  ListPostsParams,
-  ListTagsParams,
-  SearchParams,
   Post,
   Tag,
   User,
@@ -25,6 +25,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -32,6 +33,7 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
+  readonly postTags: InputDefinition<PostTagKey, PostTagStored>;
   readonly posts: InputDefinition<Post_skip_id_, PostStored>;
   readonly tags: InputDefinition<Tag_skip_id_, Tag_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
@@ -39,14 +41,12 @@ interface Inputs extends NamedInputDefinitions {
 
 interface Resources extends NamedResources<GraphCollections> {
   readonly getPostStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly getSearchDocumentByPostIdResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
-  readonly getTagStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly listPostsResource: ResourceClass<GraphCollections, ListPostsParams>;
-  readonly listTagsResource: ResourceClass<GraphCollections, ListTagsParams>;
-  readonly searchResource: ResourceClass<GraphCollections, SearchParams>;
+  readonly listPostTagsByPostResource: ResourceClass<GraphCollections, Json>;
+  readonly listPostsResource: ResourceClass<GraphCollections, Json>;
+  readonly listTagsResource: ResourceClass<GraphCollections, Json>;
+  readonly postTagsByTagResource: ResourceClass<GraphCollections, Json>;
+  readonly searchDocumentsResource: ResourceClass<GraphCollections, Json>;
+  readonly tagByNameResource: ResourceClass<GraphCollections, Json>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -57,20 +57,23 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
+      postTags: new InputDefinition<PostTagKey, PostTagStored>([]),
       posts: new InputDefinition<Post_skip_id_, PostStored>([]),
       tags: new InputDefinition<Tag_skip_id_, Tag_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
       getPostStoredResource: GetPostStoredResource,
-      getSearchDocumentByPostIdResource: GetSearchDocumentByPostIdResource,
-      getTagStoredResource: GetTagStoredResource,
+      listPostTagsByPostResource: ListPostTagsByPostResource,
       listPostsResource: ListPostsResource,
       listTagsResource: ListTagsResource,
-      searchResource: SearchResource,
+      postTagsByTagResource: PostTagsByTagResource,
+      searchDocumentsResource: SearchDocumentsResource,
+      tagByNameResource: TagByNameResource,
       getMeResource: getMeResource,
     };
   }

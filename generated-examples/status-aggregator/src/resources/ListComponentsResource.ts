@@ -1,7 +1,7 @@
-import { FilterComponentsByStatusMapper } from "../mappers/FilterComponentsByStatusMapper.js";
+import { FilterComponentByStatusMapper } from "../mappers/FilterComponentByStatusMapper.js";
 import type {
   Component_skip_id_,
-  ComponentStored,
+  Component_skip_value_,
   ComponentStatus,
   ListComponentsParams,
   Component,
@@ -14,7 +14,10 @@ import type {
 } from "@skipruntime/core";
 
 export interface ListComponentsResourceInputs extends SharedCollections {
-  readonly components: EagerCollection<Component_skip_id_, ComponentStored>;
+  readonly components: EagerCollection<
+    Component_skip_id_,
+    Component_skip_value_
+  >;
 }
 
 export class ListComponentsResource implements Resource<ListComponentsResourceInputs> {
@@ -27,7 +30,7 @@ export class ListComponentsResource implements Resource<ListComponentsResourceIn
   instantiate(
     inputs: ListComponentsResourceInputs,
     _context: Context,
-  ): EagerCollection<Component_skip_id_, ComponentStored> {
-    return inputs.components.map(FilterComponentsByStatusMapper, this.status);
+  ): EagerCollection<Component_skip_id_, Component_skip_value_> {
+    return inputs.components.map(FilterComponentByStatusMapper, this.status);
   }
 }

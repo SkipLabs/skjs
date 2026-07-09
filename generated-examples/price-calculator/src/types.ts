@@ -1,142 +1,187 @@
-export type ApiError = { readonly code?: string; readonly message: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = {
+  readonly code: string;
+  readonly details?: string;
+  readonly message: string;
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_id_ = {
-  readonly code?: string;
+  readonly code: string;
+  readonly details?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
-  readonly code?: string;
+  readonly code: string;
+  readonly details?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type CartItemInput = {
-  readonly name?: string;
-  readonly quantity: number;
-  readonly sku: string;
-  readonly unitPrice: number;
-  readonly unitWeightKg?: number;
-};
+export type AppliedPromotion = {
+  readonly discountApplied: number;
+  readonly kind: PromotionKind;
+  readonly name: string;
+  readonly promotionId: string;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
 
-export type CartItemInput_skip_id_ = {
-  readonly name?: string;
-  readonly quantity: number;
-  readonly sku: string;
-  readonly unitPrice: number;
-  readonly unitWeightKg?: number;
-};
+export type AppliedPromotion_skip_id_ = {
+  readonly discountApplied: number;
+  readonly kind: PromotionKind;
+  readonly name: string;
+  readonly promotionId: string;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
 
-export type CartItemInput_skip_value_ = {
-  readonly name?: string;
-  readonly quantity: number;
-  readonly sku: string;
-  readonly unitPrice: number;
-  readonly unitWeightKg?: number;
-};
+export type AppliedPromotion_skip_value_ = {
+  readonly discountApplied: number;
+  readonly kind: PromotionKind;
+  readonly name: string;
+  readonly promotionId: string;
+  readonly value: number;
+} & { readonly [key: string]: Json | null };
+
+export type AppliedTax = {
+  readonly ratePercent: number;
+  readonly region: string;
+  readonly taxApplied: number;
+  readonly taxRuleId: string;
+} & { readonly [key: string]: Json | null };
+
+export type AppliedTax_skip_id_ = {
+  readonly ratePercent: number;
+  readonly region: string;
+  readonly taxApplied: number;
+  readonly taxRuleId: string;
+} & { readonly [key: string]: Json | null };
+
+export type AppliedTax_skip_value_ = {
+  readonly ratePercent: number;
+  readonly region: string;
+  readonly taxApplied: number;
+  readonly taxRuleId: string;
+} & { readonly [key: string]: Json | null };
+
+export type CalculatePriceRequest = {
+  readonly basePrice: number;
+  readonly promotionIds?: string[];
+  readonly quantity?: number;
+  readonly shipping?: number;
+  readonly taxRuleIds?: string[];
+} & { readonly [key: string]: Json | null };
+
+export type CalculatePriceRequest_skip_id_ = {
+  readonly basePrice: number;
+  readonly promotionIds?: string[];
+  readonly quantity?: number;
+  readonly shipping?: number;
+  readonly taxRuleIds?: string[];
+} & { readonly [key: string]: Json | null };
+
+export type CalculatePriceRequest_skip_value_ = {
+  readonly basePrice: number;
+  readonly promotionIds?: string[];
+  readonly quantity?: number;
+  readonly shipping?: number;
+  readonly taxRuleIds?: string[];
+} & { readonly [key: string]: Json | null };
 
 export type CreatePromotionRequest = {
-  readonly active: boolean;
-  readonly code: string;
-  readonly description?: string;
+  readonly active?: boolean;
   readonly kind: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name: string;
   readonly value: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreatePromotionRequest_skip_id_ = {
-  readonly active: boolean;
-  readonly code: string;
-  readonly description?: string;
+  readonly active?: boolean;
   readonly kind: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name: string;
   readonly value: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type CreatePromotionRequest_skip_value_ = {
-  readonly active: boolean;
-  readonly code: string;
-  readonly description?: string;
+  readonly active?: boolean;
   readonly kind: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name: string;
   readonly value: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type CreateQuoteRequest = {
-  readonly items: CartItemInput[];
-  readonly promotionCode?: string;
-  readonly shippingOptionId: string;
-  readonly taxRateId: string;
-};
-
-export type CreateQuoteRequest_skip_id_ = {
-  readonly items: CartItemInput[];
-  readonly promotionCode?: string;
-  readonly shippingOptionId: string;
-  readonly taxRateId: string;
-};
-
-export type CreateQuoteRequest_skip_value_ = {
-  readonly items: CartItemInput[];
-  readonly promotionCode?: string;
-  readonly shippingOptionId: string;
-  readonly taxRateId: string;
-};
-
-export type CreateShippingOptionRequest = {
-  readonly flatFee: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name: string;
-  readonly perKgFee?: number;
-};
-
-export type CreateShippingOptionRequest_skip_id_ = {
-  readonly flatFee: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name: string;
-  readonly perKgFee?: number;
-};
-
-export type CreateShippingOptionRequest_skip_value_ = {
-  readonly flatFee: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name: string;
-  readonly perKgFee?: number;
-};
-
-export type CreateTaxRateRequest = {
-  readonly description?: string;
+export type CreateTaxRuleRequest = {
   readonly ratePercent: number;
   readonly region: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type CreateTaxRateRequest_skip_id_ = {
-  readonly description?: string;
+export type CreateTaxRuleRequest_skip_id_ = {
   readonly ratePercent: number;
   readonly region: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type CreateTaxRateRequest_skip_value_ = {
-  readonly description?: string;
+export type CreateTaxRuleRequest_skip_value_ = {
   readonly ratePercent: number;
   readonly region: string;
+} & { readonly [key: string]: Json | null };
+
+export type GetPromotionParams = { readonly promotionId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type GetQuoteLineItemsByQuoteParams = { readonly quoteId: string };
+export type GetTaxRuleParams = { readonly taxRuleId: string } & {
+  readonly [key: string]: Json | null;
+};
 
-export type ListPromotionsParams = { readonly active?: boolean };
+export type ListPromotionsParams = { readonly activeOnly?: boolean } & {
+  readonly [key: string]: Json | null;
+};
 
-export type ListTaxRatesParams = { readonly region?: string };
+export type ListTaxRulesParams = { readonly region?: string } & {
+  readonly [key: string]: Json | null;
+};
+
+export type PriceBreakdown = {
+  readonly appliedPromotions: AppliedPromotion[];
+  readonly appliedTaxes: AppliedTax[];
+  readonly discountedSubtotal: number;
+  readonly shipping: number;
+  readonly subtotal: number;
+  readonly taxAmount: number;
+  readonly total: number;
+  readonly totalDiscount: number;
+} & { readonly [key: string]: Json | null };
+
+export type PriceBreakdown_skip_id_ = {
+  readonly appliedPromotions: AppliedPromotion[];
+  readonly appliedTaxes: AppliedTax[];
+  readonly discountedSubtotal: number;
+  readonly shipping: number;
+  readonly subtotal: number;
+  readonly taxAmount: number;
+  readonly total: number;
+  readonly totalDiscount: number;
+} & { readonly [key: string]: Json | null };
+
+export type PriceBreakdown_skip_value_ = {
+  readonly appliedPromotions: AppliedPromotion[];
+  readonly appliedTaxes: AppliedTax[];
+  readonly discountedSubtotal: number;
+  readonly shipping: number;
+  readonly subtotal: number;
+  readonly taxAmount: number;
+  readonly total: number;
+  readonly totalDiscount: number;
+} & { readonly [key: string]: Json | null };
 
 export type Promotion = {
   readonly active: boolean;
-  readonly code: string;
   readonly createdAt: string;
-  readonly description?: string;
   readonly id: string;
   readonly kind: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name: string;
+  readonly ownerId: string;
+  readonly updatedAt?: string;
   readonly value: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type PromotionKind = "PERCENT" | "FIXED";
 
@@ -144,225 +189,121 @@ export type PromotionKind_skip_id_ = "PERCENT" | "FIXED";
 
 export type PromotionKind_skip_value_ = "PERCENT" | "FIXED";
 
-export type PromotionList = { readonly items: Promotion[] };
+export type PromotionList = { readonly items: Promotion[] } & {
+  readonly [key: string]: Json | null;
+};
 
-export type PromotionList_skip_id_ = { readonly items: Promotion[] };
+export type PromotionList_skip_id_ = { readonly items: Promotion[] } & {
+  readonly [key: string]: Json | null;
+};
 
-export type PromotionList_skip_value_ = { readonly items: Promotion[] };
+export type PromotionList_skip_value_ = { readonly items: Promotion[] } & {
+  readonly [key: string]: Json | null;
+};
 
 export type Promotion_skip_id_ = string;
 
 export type Promotion_skip_value_ = {
   readonly active: boolean;
-  readonly code: string;
   readonly createdAt: string;
-  readonly description?: string;
   readonly kind: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name: string;
+  readonly ownerId: string;
+  readonly updatedAt?: string;
   readonly value: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type Quote = {
-  readonly appliedPromotionId?: string;
+export type TaxRule = {
   readonly createdAt: string;
-  readonly discountAmount: number;
-  readonly discountedSubtotal: number;
   readonly id: string;
-  readonly lineItems: QuoteLineItem[];
-  readonly promotionCode?: string;
-  readonly shippingAmount: number;
-  readonly shippingOptionId: string;
-  readonly subtotal: number;
-  readonly taxAmount: number;
-  readonly taxRateId: string;
-  readonly taxableBase: number;
-  readonly total: number;
-  readonly totalWeightKg: number;
-};
-
-export type QuoteLineItem = {
-  readonly lineIndex: number;
-  readonly lineTotal: number;
-  readonly name?: string;
-  readonly quantity: number;
-  readonly quoteId: string;
-  readonly sku: string;
-  readonly unitPrice: number;
-  readonly unitWeightKg?: number;
-};
-
-export type QuoteLineItemKey = {
-  readonly lineIndex: number;
-  readonly quoteId: string;
-};
-
-export type QuoteLineItem_skip_id_ = {
-  readonly lineIndex: number;
-  readonly quoteId: string;
-};
-
-export type QuoteLineItem_skip_value_ = {
-  readonly lineTotal: number;
-  readonly name?: string;
-  readonly quantity: number;
-  readonly sku: string;
-  readonly unitPrice: number;
-  readonly unitWeightKg?: number;
-};
-
-export type QuoteList = { readonly items: Quote[] };
-
-export type QuoteList_skip_id_ = { readonly items: Quote[] };
-
-export type QuoteList_skip_value_ = { readonly items: Quote[] };
-
-export type QuoteStored = {
-  readonly appliedPromotionId?: string;
-  readonly createdAt: string;
-  readonly discountAmount: number;
-  readonly discountedSubtotal: number;
-  readonly promotionCode?: string;
-  readonly shippingAmount: number;
-  readonly shippingOptionId: string;
-  readonly subtotal: number;
-  readonly taxAmount: number;
-  readonly taxRateId: string;
-  readonly taxableBase: number;
-  readonly total: number;
-  readonly totalWeightKg: number;
-};
-
-export type Quote_skip_id_ = string;
-
-export type Quote_skip_value_ = {
-  readonly appliedPromotionId?: string;
-  readonly createdAt: string;
-  readonly discountAmount: number;
-  readonly discountedSubtotal: number;
-  readonly lineItems: QuoteLineItem[];
-  readonly promotionCode?: string;
-  readonly shippingAmount: number;
-  readonly shippingOptionId: string;
-  readonly subtotal: number;
-  readonly taxAmount: number;
-  readonly taxRateId: string;
-  readonly taxableBase: number;
-  readonly total: number;
-  readonly totalWeightKg: number;
-};
-
-export type ShippingOption = {
-  readonly createdAt: string;
-  readonly flatFee: number;
-  readonly freeAboveSubtotal?: number;
-  readonly id: string;
-  readonly name: string;
-  readonly perKgFee?: number;
-};
-
-export type ShippingOptionList = { readonly items: ShippingOption[] };
-
-export type ShippingOptionList_skip_id_ = { readonly items: ShippingOption[] };
-
-export type ShippingOptionList_skip_value_ = {
-  readonly items: ShippingOption[];
-};
-
-export type ShippingOption_skip_id_ = string;
-
-export type ShippingOption_skip_value_ = {
-  readonly createdAt: string;
-  readonly flatFee: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name: string;
-  readonly perKgFee?: number;
-};
-
-export type TaxRate = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly id: string;
+  readonly ownerId: string;
   readonly ratePercent: number;
   readonly region: string;
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
+
+export type TaxRuleList = { readonly items: TaxRule[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type TaxRateList = { readonly items: TaxRate[] };
+export type TaxRuleList_skip_id_ = { readonly items: TaxRule[] } & {
+  readonly [key: string]: Json | null;
+};
 
-export type TaxRateList_skip_id_ = { readonly items: TaxRate[] };
+export type TaxRuleList_skip_value_ = { readonly items: TaxRule[] } & {
+  readonly [key: string]: Json | null;
+};
 
-export type TaxRateList_skip_value_ = { readonly items: TaxRate[] };
+export type TaxRule_skip_id_ = string;
 
-export type TaxRate_skip_id_ = string;
-
-export type TaxRate_skip_value_ = {
+export type TaxRule_skip_value_ = {
   readonly createdAt: string;
-  readonly description?: string;
+  readonly ownerId: string;
   readonly ratePercent: number;
   readonly region: string;
-};
+  readonly updatedAt?: string;
+} & { readonly [key: string]: Json | null };
+
+export type UpdateMeRequest = {
+  readonly displayName?: string;
+  readonly email?: string;
+} & { readonly [key: string]: Json | null };
+
+export type UpdateMeRequest_skip_id_ = {
+  readonly displayName?: string;
+  readonly email?: string;
+} & { readonly [key: string]: Json | null };
+
+export type UpdateMeRequest_skip_value_ = {
+  readonly displayName?: string;
+  readonly email?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdatePromotionRequest = {
   readonly active?: boolean;
-  readonly code?: string;
-  readonly description?: string;
   readonly kind?: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name?: string;
   readonly value?: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdatePromotionRequest_skip_id_ = {
   readonly active?: boolean;
-  readonly code?: string;
-  readonly description?: string;
   readonly kind?: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name?: string;
   readonly value?: number;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdatePromotionRequest_skip_value_ = {
   readonly active?: boolean;
-  readonly code?: string;
-  readonly description?: string;
   readonly kind?: PromotionKind;
-  readonly minSubtotal?: number;
+  readonly name?: string;
   readonly value?: number;
-};
+} & { readonly [key: string]: Json | null };
 
-export type UpdateShippingOptionRequest = {
-  readonly flatFee?: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name?: string;
-  readonly perKgFee?: number;
-};
-
-export type UpdateShippingOptionRequest_skip_id_ = {
-  readonly flatFee?: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name?: string;
-  readonly perKgFee?: number;
-};
-
-export type UpdateShippingOptionRequest_skip_value_ = {
-  readonly flatFee?: number;
-  readonly freeAboveSubtotal?: number;
-  readonly name?: string;
-  readonly perKgFee?: number;
-};
-
-export type UpdateTaxRateRequest = {
-  readonly description?: string;
+export type UpdateTaxRuleRequest = {
   readonly ratePercent?: number;
   readonly region?: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type UpdateTaxRateRequest_skip_id_ = {
-  readonly description?: string;
+export type UpdateTaxRuleRequest_skip_id_ = {
   readonly ratePercent?: number;
   readonly region?: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type UpdateTaxRateRequest_skip_value_ = {
-  readonly description?: string;
+export type UpdateTaxRuleRequest_skip_value_ = {
   readonly ratePercent?: number;
   readonly region?: string;
-};
+} & { readonly [key: string]: Json | null };
+
+export type User = {
+  readonly displayName?: string;
+  readonly email?: string;
+  readonly id: string;
+} & { readonly [key: string]: Json | null };
+
+export type User_skip_id_ = string;
+
+export type User_skip_value_ = {
+  readonly displayName?: string;
+  readonly email?: string;
+} & { readonly [key: string]: Json | null };

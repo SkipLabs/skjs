@@ -1,40 +1,31 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetGroupResource } from "./resources/GetGroupResource.js";
-import { GetResourceResource } from "./resources/GetResourceResource.js";
-import { GetRoleBindingResource } from "./resources/GetRoleBindingResource.js";
-import { GetRoleResource } from "./resources/GetRoleResource.js";
-import { GetUserResource } from "./resources/GetUserResource.js";
-import { GroupMembershipsByGroupResource } from "./resources/GroupMembershipsByGroupResource.js";
-import { GroupMembershipsByUserResource } from "./resources/GroupMembershipsByUserResource.js";
+import { AclEntriesByResourceResource } from "./resources/AclEntriesByResourceResource.js";
+import { GroupsResource } from "./resources/GroupsResource.js";
+import { ListAclEntriesInternalResource } from "./resources/ListAclEntriesInternalResource.js";
+import { ListGroupMembersInternalResource } from "./resources/ListGroupMembersInternalResource.js";
 import { ListGroupMembersResource } from "./resources/ListGroupMembersResource.js";
-import { ListGroupMembershipsRawResource } from "./resources/ListGroupMembershipsRawResource.js";
-import { ListGroupsResource } from "./resources/ListGroupsResource.js";
-import { ListResourcesResource } from "./resources/ListResourcesResource.js";
-import { ListRoleBindingsResource } from "./resources/ListRoleBindingsResource.js";
-import { RoleBindingsByResourceResource } from "./resources/RoleBindingsByResourceResource.js";
-import { RoleBindingsByRoleResource } from "./resources/RoleBindingsByRoleResource.js";
+import { ListUserGroupsResource } from "./resources/ListUserGroupsResource.js";
+import { ResourcesResource } from "./resources/ResourcesResource.js";
+import { RolesResource } from "./resources/RolesResource.js";
+import { getMeResource } from "./resources/getMeResource.js";
 import type {
-  GroupMembership_skip_id_,
-  GroupMembership_skip_value_,
+  AclEntry_skip_id_,
+  AclEntry_skip_value_,
+  GroupMember_skip_id_,
+  GroupMember_skip_value_,
   Group_skip_id_,
   Group_skip_value_,
-  ProtectedResource_skip_id_,
-  ProtectedResource_skip_value_,
-  RoleBinding_skip_id_,
-  RoleBinding_skip_value_,
+  AclResource_skip_id_,
+  AclResource_skip_value_,
   Role_skip_id_,
   Role_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  ListGroupMembersParams,
-  ListGroupsParams,
-  ListResourcesParams,
-  ListRoleBindingsParams,
-  GroupMembership,
+  AclEntry,
+  GroupMember,
   Group,
-  ProtectedResource,
-  RoleBinding,
+  AclResource,
   Role,
   User,
 } from "./types.js";
@@ -42,6 +33,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -49,62 +41,36 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
-  readonly groupMemberships: InputDefinition<
-    GroupMembership_skip_id_,
-    GroupMembership_skip_value_
+  readonly aclEntries: InputDefinition<AclEntry_skip_id_, AclEntry_skip_value_>;
+  readonly groupMembers: InputDefinition<
+    GroupMember_skip_id_,
+    GroupMember_skip_value_
   >;
   readonly groups: InputDefinition<Group_skip_id_, Group_skip_value_>;
   readonly resources: InputDefinition<
-    ProtectedResource_skip_id_,
-    ProtectedResource_skip_value_
-  >;
-  readonly roleBindings: InputDefinition<
-    RoleBinding_skip_id_,
-    RoleBinding_skip_value_
+    AclResource_skip_id_,
+    AclResource_skip_value_
   >;
   readonly roles: InputDefinition<Role_skip_id_, Role_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getGroupResource: ResourceClass<GraphCollections, Json>;
-  readonly getResourceResource: ResourceClass<GraphCollections, Json>;
-  readonly getRoleBindingResource: ResourceClass<GraphCollections, Json>;
-  readonly getRoleResource: ResourceClass<GraphCollections, Json>;
-  readonly getUserResource: ResourceClass<GraphCollections, Json>;
-  readonly groupMembershipsByGroupResource: ResourceClass<
+  readonly aclEntriesByResourceResource: ResourceClass<GraphCollections, Json>;
+  readonly groupsResource: ResourceClass<GraphCollections, Json>;
+  readonly listAclEntriesInternalResource: ResourceClass<
     GraphCollections,
     Json
   >;
-  readonly groupMembershipsByUserResource: ResourceClass<
+  readonly listGroupMembersInternalResource: ResourceClass<
     GraphCollections,
     Json
   >;
-  readonly listGroupMembersResource: ResourceClass<
-    GraphCollections,
-    ListGroupMembersParams
-  >;
-  readonly listGroupMembershipsRawResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
-  readonly listGroupsResource: ResourceClass<
-    GraphCollections,
-    ListGroupsParams
-  >;
-  readonly listResourcesResource: ResourceClass<
-    GraphCollections,
-    ListResourcesParams
-  >;
-  readonly listRoleBindingsResource: ResourceClass<
-    GraphCollections,
-    ListRoleBindingsParams
-  >;
-  readonly roleBindingsByResourceResource: ResourceClass<
-    GraphCollections,
-    Json
-  >;
-  readonly roleBindingsByRoleResource: ResourceClass<GraphCollections, Json>;
+  readonly listGroupMembersResource: ResourceClass<GraphCollections, Json>;
+  readonly listUserGroupsResource: ResourceClass<GraphCollections, Json>;
+  readonly resourcesResource: ResourceClass<GraphCollections, Json>;
+  readonly rolesResource: ResourceClass<GraphCollections, Json>;
+  readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
 class Service implements SkipService<
@@ -114,40 +80,35 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
-      groupMemberships: new InputDefinition<
-        GroupMembership_skip_id_,
-        GroupMembership_skip_value_
+      aclEntries: new InputDefinition<AclEntry_skip_id_, AclEntry_skip_value_>(
+        [],
+      ),
+      groupMembers: new InputDefinition<
+        GroupMember_skip_id_,
+        GroupMember_skip_value_
       >([]),
       groups: new InputDefinition<Group_skip_id_, Group_skip_value_>([]),
       resources: new InputDefinition<
-        ProtectedResource_skip_id_,
-        ProtectedResource_skip_value_
-      >([]),
-      roleBindings: new InputDefinition<
-        RoleBinding_skip_id_,
-        RoleBinding_skip_value_
+        AclResource_skip_id_,
+        AclResource_skip_value_
       >([]),
       roles: new InputDefinition<Role_skip_id_, Role_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getGroupResource: GetGroupResource,
-      getResourceResource: GetResourceResource,
-      getRoleBindingResource: GetRoleBindingResource,
-      getRoleResource: GetRoleResource,
-      getUserResource: GetUserResource,
-      groupMembershipsByGroupResource: GroupMembershipsByGroupResource,
-      groupMembershipsByUserResource: GroupMembershipsByUserResource,
+      aclEntriesByResourceResource: AclEntriesByResourceResource,
+      groupsResource: GroupsResource,
+      listAclEntriesInternalResource: ListAclEntriesInternalResource,
+      listGroupMembersInternalResource: ListGroupMembersInternalResource,
       listGroupMembersResource: ListGroupMembersResource,
-      listGroupMembershipsRawResource: ListGroupMembershipsRawResource,
-      listGroupsResource: ListGroupsResource,
-      listResourcesResource: ListResourcesResource,
-      listRoleBindingsResource: ListRoleBindingsResource,
-      roleBindingsByResourceResource: RoleBindingsByResourceResource,
-      roleBindingsByRoleResource: RoleBindingsByRoleResource,
+      listUserGroupsResource: ListUserGroupsResource,
+      resourcesResource: ResourcesResource,
+      rolesResource: RolesResource,
+      getMeResource: getMeResource,
     };
   }
 

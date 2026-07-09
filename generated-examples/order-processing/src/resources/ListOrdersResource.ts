@@ -1,7 +1,8 @@
-import { FilterOrdersByCustomerMapper } from "../mappers/FilterOrdersByCustomerMapper.js";
+import { FilterOrderByOwnerAndStatusMapper } from "../mappers/FilterOrderByOwnerAndStatusMapper.js";
 import type {
   Order_skip_id_,
   OrderStored,
+  OrderStatus,
   ListOrdersParams,
   Order,
 } from "../types.js";
@@ -17,9 +18,11 @@ export interface ListOrdersResourceInputs extends SharedCollections {
 }
 
 export class ListOrdersResource implements Resource<ListOrdersResourceInputs> {
+  private readonly status: OrderStatus | null;
   private readonly userId: string;
 
   constructor(params: ListOrdersParams) {
+    this.status = params.status ?? null;
     this.userId = params.userId;
   }
 
@@ -27,6 +30,10 @@ export class ListOrdersResource implements Resource<ListOrdersResourceInputs> {
     inputs: ListOrdersResourceInputs,
     _context: Context,
   ): EagerCollection<Order_skip_id_, OrderStored> {
-    return inputs.orders.map(FilterOrdersByCustomerMapper, this.userId);
+    return inputs.orders.map(
+      FilterOrderByOwnerAndStatusMapper,
+      this.userId,
+      this.status,
+    );
   }
 }

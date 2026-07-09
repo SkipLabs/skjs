@@ -1,24 +1,22 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { GetInteractionResource } from "./resources/GetInteractionResource.js";
+import { GetMyInteractionResource } from "./resources/GetMyInteractionResource.js";
 import { GetProductResource } from "./resources/GetProductResource.js";
-import { InteractionsByUserResource } from "./resources/InteractionsByUserResource.js";
-import { ListCategoriesResource } from "./resources/ListCategoriesResource.js";
+import { GetProductStoredResource } from "./resources/GetProductStoredResource.js";
 import { ListMyInteractionsResource } from "./resources/ListMyInteractionsResource.js";
 import { ListProductsResource } from "./resources/ListProductsResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
-  Category_skip_id_,
-  Category_skip_value_,
   Interaction_skip_id_,
   Interaction_skip_value_,
   Product_skip_id_,
-  Product_skip_value_,
+  ProductStored,
   User_skip_id_,
   User_skip_value_,
+  GetMyInteractionParams,
+  GetProductParams,
   ListMyInteractionsParams,
   ListProductsParams,
-  Category,
   Interaction,
   Product,
   User,
@@ -27,6 +25,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -34,20 +33,24 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
-  readonly categories: InputDefinition<Category_skip_id_, Category_skip_value_>;
   readonly interactions: InputDefinition<
     Interaction_skip_id_,
     Interaction_skip_value_
   >;
-  readonly products: InputDefinition<Product_skip_id_, Product_skip_value_>;
+  readonly products: InputDefinition<Product_skip_id_, ProductStored>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getInteractionResource: ResourceClass<GraphCollections, Json>;
-  readonly getProductResource: ResourceClass<GraphCollections, Json>;
-  readonly interactionsByUserResource: ResourceClass<GraphCollections, Json>;
-  readonly listCategoriesResource: ResourceClass<GraphCollections, Json>;
+  readonly getMyInteractionResource: ResourceClass<
+    GraphCollections,
+    GetMyInteractionParams
+  >;
+  readonly getProductResource: ResourceClass<
+    GraphCollections,
+    GetProductParams
+  >;
+  readonly getProductStoredResource: ResourceClass<GraphCollections, Json>;
   readonly listMyInteractionsResource: ResourceClass<
     GraphCollections,
     ListMyInteractionsParams
@@ -66,24 +69,21 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
-      categories: new InputDefinition<Category_skip_id_, Category_skip_value_>(
-        [],
-      ),
       interactions: new InputDefinition<
         Interaction_skip_id_,
         Interaction_skip_value_
       >([]),
-      products: new InputDefinition<Product_skip_id_, Product_skip_value_>([]),
+      products: new InputDefinition<Product_skip_id_, ProductStored>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      getInteractionResource: GetInteractionResource,
+      getMyInteractionResource: GetMyInteractionResource,
       getProductResource: GetProductResource,
-      interactionsByUserResource: InteractionsByUserResource,
-      listCategoriesResource: ListCategoriesResource,
+      getProductStoredResource: GetProductStoredResource,
       listMyInteractionsResource: ListMyInteractionsResource,
       listProductsResource: ListProductsResource,
       getMeResource: getMeResource,

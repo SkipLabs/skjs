@@ -4,6 +4,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetJobResourceInputs extends SharedCollections {
@@ -11,7 +12,7 @@ export interface GetJobResourceInputs extends SharedCollections {
 }
 
 export class GetJobResource implements Resource<GetJobResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetJobResourceInputs,

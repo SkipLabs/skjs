@@ -1,16 +1,14 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { ChannelsByWorkspaceResource } from "./resources/ChannelsByWorkspaceResource.js";
 import { GetChannelResource } from "./resources/GetChannelResource.js";
 import { GetMembershipResource } from "./resources/GetMembershipResource.js";
 import { GetMessageResource } from "./resources/GetMessageResource.js";
-import { GetTaskResource } from "./resources/GetTaskResource.js";
-import { GetUserResource } from "./resources/GetUserResource.js";
 import { GetWorkspaceResource } from "./resources/GetWorkspaceResource.js";
-import { MembershipsByUserResource } from "./resources/MembershipsByUserResource.js";
-import { MembershipsByWorkspaceResource } from "./resources/MembershipsByWorkspaceResource.js";
-import { MessagesByChannelResource } from "./resources/MessagesByChannelResource.js";
-import { TasksByWorkspaceResource } from "./resources/TasksByWorkspaceResource.js";
+import { ListChannelMessagesResource } from "./resources/ListChannelMessagesResource.js";
+import { ListMyWorkspacesResource } from "./resources/ListMyWorkspacesResource.js";
+import { ListWorkspaceChannelsResource } from "./resources/ListWorkspaceChannelsResource.js";
+import { ListWorkspaceMembersResource } from "./resources/ListWorkspaceMembersResource.js";
+import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Channel_skip_id_,
   Channel_skip_value_,
@@ -18,16 +16,14 @@ import type {
   Membership_skip_value_,
   Message_skip_id_,
   Message_skip_value_,
-  Task_skip_id_,
-  Task_skip_value_,
   User_skip_id_,
   User_skip_value_,
   Workspace_skip_id_,
   Workspace_skip_value_,
+  ListMyWorkspacesParams,
   Channel,
   Membership,
   Message,
-  Task,
   User,
   Workspace,
 } from "./types.js";
@@ -35,6 +31,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -45,7 +42,6 @@ interface Inputs extends NamedInputDefinitions {
   readonly channels: InputDefinition<Channel_skip_id_, Channel_skip_value_>;
   readonly memberships: InputDefinition<MembershipKey, Membership_skip_value_>;
   readonly messages: InputDefinition<Message_skip_id_, Message_skip_value_>;
-  readonly tasks: InputDefinition<Task_skip_id_, Task_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
   readonly workspaces: InputDefinition<
     Workspace_skip_id_,
@@ -54,20 +50,18 @@ interface Inputs extends NamedInputDefinitions {
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly channelsByWorkspaceResource: ResourceClass<GraphCollections, Json>;
   readonly getChannelResource: ResourceClass<GraphCollections, Json>;
   readonly getMembershipResource: ResourceClass<GraphCollections, Json>;
   readonly getMessageResource: ResourceClass<GraphCollections, Json>;
-  readonly getTaskResource: ResourceClass<GraphCollections, Json>;
-  readonly getUserResource: ResourceClass<GraphCollections, Json>;
   readonly getWorkspaceResource: ResourceClass<GraphCollections, Json>;
-  readonly membershipsByUserResource: ResourceClass<GraphCollections, Json>;
-  readonly membershipsByWorkspaceResource: ResourceClass<
+  readonly listChannelMessagesResource: ResourceClass<GraphCollections, Json>;
+  readonly listMyWorkspacesResource: ResourceClass<
     GraphCollections,
-    Json
+    ListMyWorkspacesParams
   >;
-  readonly messagesByChannelResource: ResourceClass<GraphCollections, Json>;
-  readonly tasksByWorkspaceResource: ResourceClass<GraphCollections, Json>;
+  readonly listWorkspaceChannelsResource: ResourceClass<GraphCollections, Json>;
+  readonly listWorkspaceMembersResource: ResourceClass<GraphCollections, Json>;
+  readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
 class Service implements SkipService<
@@ -77,6 +71,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -85,7 +80,6 @@ class Service implements SkipService<
         [],
       ),
       messages: new InputDefinition<Message_skip_id_, Message_skip_value_>([]),
-      tasks: new InputDefinition<Task_skip_id_, Task_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
       workspaces: new InputDefinition<
         Workspace_skip_id_,
@@ -93,17 +87,15 @@ class Service implements SkipService<
       >([]),
     };
     this.resources = {
-      channelsByWorkspaceResource: ChannelsByWorkspaceResource,
       getChannelResource: GetChannelResource,
       getMembershipResource: GetMembershipResource,
       getMessageResource: GetMessageResource,
-      getTaskResource: GetTaskResource,
-      getUserResource: GetUserResource,
       getWorkspaceResource: GetWorkspaceResource,
-      membershipsByUserResource: MembershipsByUserResource,
-      membershipsByWorkspaceResource: MembershipsByWorkspaceResource,
-      messagesByChannelResource: MessagesByChannelResource,
-      tasksByWorkspaceResource: TasksByWorkspaceResource,
+      listChannelMessagesResource: ListChannelMessagesResource,
+      listMyWorkspacesResource: ListMyWorkspacesResource,
+      listWorkspaceChannelsResource: ListWorkspaceChannelsResource,
+      listWorkspaceMembersResource: ListWorkspaceMembersResource,
+      getMeResource: getMeResource,
     };
   }
 

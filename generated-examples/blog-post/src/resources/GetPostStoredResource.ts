@@ -1,22 +1,23 @@
-import type { Post_skip_id_, Post_skip_value_, Post } from "../types.js";
+import type { Post_skip_id_, PostStored, Post } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetPostStoredResourceInputs extends SharedCollections {
-  readonly posts: EagerCollection<Post_skip_id_, Post_skip_value_>;
+  readonly posts: EagerCollection<Post_skip_id_, PostStored>;
 }
 
 export class GetPostStoredResource implements Resource<GetPostStoredResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetPostStoredResourceInputs,
     _context: Context,
-  ): EagerCollection<Post_skip_id_, Post_skip_value_> {
+  ): EagerCollection<Post_skip_id_, PostStored> {
     return inputs.posts;
   }
 }

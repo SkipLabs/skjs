@@ -1,25 +1,23 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
+import { GetFileByHashResource } from "./resources/GetFileByHashResource.js";
 import { GetFileResource } from "./resources/GetFileResource.js";
-import { GetFileStoredResource } from "./resources/GetFileStoredResource.js";
 import { GetIndexStatsResource } from "./resources/GetIndexStatsResource.js";
-import { ListFilesResource } from "./resources/ListFilesResource.js";
+import { ListFilesByOwnerResource } from "./resources/ListFilesByOwnerResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
-  FileRecord_skip_id_,
-  FileRecord_skip_value_,
+  IndexedFile_skip_id_,
+  IndexedFile_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetFileParams,
-  GetIndexStatsParams,
-  ListFilesParams,
-  FileRecord,
+  IndexedFile,
   User,
 } from "./types.js";
 import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -27,18 +25,18 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
-  readonly files: InputDefinition<FileRecord_skip_id_, FileRecord_skip_value_>;
+  readonly files: InputDefinition<
+    IndexedFile_skip_id_,
+    IndexedFile_skip_value_
+  >;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getFileResource: ResourceClass<GraphCollections, GetFileParams>;
-  readonly getFileStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly getIndexStatsResource: ResourceClass<
-    GraphCollections,
-    GetIndexStatsParams
-  >;
-  readonly listFilesResource: ResourceClass<GraphCollections, ListFilesParams>;
+  readonly getFileByHashResource: ResourceClass<GraphCollections, Json>;
+  readonly getFileResource: ResourceClass<GraphCollections, Json>;
+  readonly getIndexStatsResource: ResourceClass<GraphCollections, Json>;
+  readonly listFilesByOwnerResource: ResourceClass<GraphCollections, Json>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -49,19 +47,20 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
-      files: new InputDefinition<FileRecord_skip_id_, FileRecord_skip_value_>(
+      files: new InputDefinition<IndexedFile_skip_id_, IndexedFile_skip_value_>(
         [],
       ),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
+      getFileByHashResource: GetFileByHashResource,
       getFileResource: GetFileResource,
-      getFileStoredResource: GetFileStoredResource,
       getIndexStatsResource: GetIndexStatsResource,
-      listFilesResource: ListFilesResource,
+      listFilesByOwnerResource: ListFilesByOwnerResource,
       getMeResource: getMeResource,
     };
   }

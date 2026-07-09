@@ -1,230 +1,164 @@
-export type ApiError = { readonly code: string; readonly message: string };
+import type { Json } from "@skipruntime/core";
+
+export type ApiError = { readonly code?: string; readonly message: string } & {
+  readonly [key: string]: Json | null;
+};
 
 export type ApiError_skip_id_ = {
-  readonly code: string;
+  readonly code?: string;
   readonly message: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type ApiError_skip_value_ = {
-  readonly code: string;
+  readonly code?: string;
   readonly message: string;
+} & { readonly [key: string]: Json | null };
+
+export type GetMyLeaderboardEntryParams = { readonly userId: string } & {
+  readonly [key: string]: Json | null;
 };
 
-export type Board = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly id: string;
-  readonly name: string;
-  readonly ownerId: string;
-  readonly scoringMode: ScoringMode;
-  readonly updatedAt?: string;
+export type Leaderboard = { readonly rows: LeaderboardEntry[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type BoardList = { readonly boards: Board[]; readonly total?: number };
-
-export type BoardList_skip_id_ = {
-  readonly boards: Board[];
-  readonly total?: number;
-};
-
-export type BoardList_skip_value_ = {
-  readonly boards: Board[];
-  readonly total?: number;
-};
-
-export type Board_skip_id_ = string;
-
-export type Board_skip_value_ = {
-  readonly createdAt: string;
-  readonly description?: string;
-  readonly name: string;
-  readonly ownerId: string;
-  readonly scoringMode: ScoringMode;
-  readonly updatedAt?: string;
-};
-
-export type CreateBoardRequest = {
-  readonly description?: string;
-  readonly name: string;
-  readonly scoringMode: ScoringMode;
-};
-
-export type CreateBoardRequest_skip_id_ = {
-  readonly description?: string;
-  readonly name: string;
-  readonly scoringMode: ScoringMode;
-};
-
-export type CreateBoardRequest_skip_value_ = {
-  readonly description?: string;
-  readonly name: string;
-  readonly scoringMode: ScoringMode;
-};
-
-export type GetBoardParams = { readonly boardId: string };
-
-export type GetBoardRankingsParams = { readonly boardId: string };
-
-export type GetMeParams = { readonly userId: string };
-
-export type GetScoreEntryParams = { readonly entryId: string };
-
-export type GetUserByIdParams = { readonly userId: string };
-
-export type ListBoardEntriesParams = {
-  readonly boardId: string;
-  readonly userId?: string;
-};
-
-export type Ranking = {
-  readonly boardId: string;
-  readonly rows: RankingRow[];
-  readonly scoringMode: ScoringMode;
-  readonly totalUsers?: number;
-};
-
-export type RankingRow = {
+export type LeaderboardEntry = {
+  readonly displayName?: string;
   readonly entryCount: number;
-  readonly lastEntryAt?: string;
+  readonly lastSubmittedAt: string;
   readonly rank: number;
-  readonly totalScore: number;
+  readonly totalPoints: number;
   readonly userId: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type RankingRow_skip_id_ = {
+export type LeaderboardEntry_skip_id_ = {
+  readonly displayName?: string;
   readonly entryCount: number;
-  readonly lastEntryAt?: string;
+  readonly lastSubmittedAt: string;
   readonly rank: number;
-  readonly totalScore: number;
+  readonly totalPoints: number;
   readonly userId: string;
-};
+} & { readonly [key: string]: Json | null };
 
-export type RankingRow_skip_value_ = {
+export type LeaderboardEntry_skip_value_ = {
+  readonly displayName?: string;
   readonly entryCount: number;
-  readonly lastEntryAt?: string;
+  readonly lastSubmittedAt: string;
   readonly rank: number;
-  readonly totalScore: number;
+  readonly totalPoints: number;
   readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type LeaderboardRow = {
+  readonly displayName?: string;
+  readonly entryCount: number;
+  readonly lastSubmittedAtMs: number;
+  readonly rank: number;
+  readonly totalPoints: number;
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type LeaderboardSortKey = {
+  readonly lastSubmittedAtMs: number;
+  readonly negTotalPoints: number;
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
+
+export type Leaderboard_skip_id_ = { readonly rows: LeaderboardEntry[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type Ranking_skip_id_ = {
-  readonly boardId: string;
-  readonly rows: RankingRow[];
-  readonly scoringMode: ScoringMode;
-  readonly totalUsers?: number;
+export type Leaderboard_skip_value_ = { readonly rows: LeaderboardEntry[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type Ranking_skip_value_ = {
-  readonly boardId: string;
-  readonly rows: RankingRow[];
-  readonly scoringMode: ScoringMode;
-  readonly totalUsers?: number;
+export type ListScoresParams = { readonly userId?: string } & {
+  readonly [key: string]: Json | null;
 };
 
 export type ScoreEntry = {
-  readonly boardId: string;
-  readonly createdAt: string;
   readonly id: string;
-  readonly note?: string;
+  readonly ownerUserId: string;
   readonly points: number;
-  readonly userId: string;
+  readonly reason?: string;
+  readonly submittedAt: string;
+} & { readonly [key: string]: Json | null };
+
+export type ScoreEntryList = { readonly entries: ScoreEntry[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ScoreEntryList = {
-  readonly entries: ScoreEntry[];
-  readonly total?: number;
+export type ScoreEntryList_skip_id_ = { readonly entries: ScoreEntry[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ScoreEntryList_skip_id_ = {
-  readonly entries: ScoreEntry[];
-  readonly total?: number;
+export type ScoreEntryList_skip_value_ = { readonly entries: ScoreEntry[] } & {
+  readonly [key: string]: Json | null;
 };
 
-export type ScoreEntryList_skip_value_ = {
-  readonly entries: ScoreEntry[];
-  readonly total?: number;
-};
+export type ScoreEntryWithEpochMs = {
+  readonly id: string;
+  readonly ownerUserId: string;
+  readonly points: number;
+  readonly reason?: string;
+  readonly submittedAtMs: number;
+} & { readonly [key: string]: Json | null };
 
 export type ScoreEntry_skip_id_ = string;
 
 export type ScoreEntry_skip_value_ = {
-  readonly boardId: string;
-  readonly createdAt: string;
-  readonly note?: string;
+  readonly ownerUserId: string;
   readonly points: number;
-  readonly userId: string;
-};
+  readonly reason?: string;
+  readonly submittedAt: string;
+} & { readonly [key: string]: Json | null };
 
-export type ScoringMode = "SUM" | "MAX" | "LATEST";
-
-export type ScoringMode_skip_id_ = "SUM" | "MAX" | "LATEST";
-
-export type ScoringMode_skip_value_ = "SUM" | "MAX" | "LATEST";
-
-export type SubmitScoreEntryRequest = {
-  readonly note?: string;
+export type SubmitScoreRequest = {
   readonly points: number;
-};
+  readonly reason?: string;
+} & { readonly [key: string]: Json | null };
 
-export type SubmitScoreEntryRequest_skip_id_ = {
-  readonly note?: string;
+export type SubmitScoreRequest_skip_id_ = {
   readonly points: number;
-};
+  readonly reason?: string;
+} & { readonly [key: string]: Json | null };
 
-export type SubmitScoreEntryRequest_skip_value_ = {
-  readonly note?: string;
+export type SubmitScoreRequest_skip_value_ = {
   readonly points: number;
-};
-
-export type UpdateBoardRequest = {
-  readonly description?: string;
-  readonly name?: string;
-  readonly scoringMode?: ScoringMode;
-};
-
-export type UpdateBoardRequest_skip_id_ = {
-  readonly description?: string;
-  readonly name?: string;
-  readonly scoringMode?: ScoringMode;
-};
-
-export type UpdateBoardRequest_skip_value_ = {
-  readonly description?: string;
-  readonly name?: string;
-  readonly scoringMode?: ScoringMode;
-};
+  readonly reason?: string;
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest = {
   readonly avatarUrl?: string;
   readonly displayName?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_id_ = {
   readonly avatarUrl?: string;
   readonly displayName?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type UpdateMeRequest_skip_value_ = {
   readonly avatarUrl?: string;
   readonly displayName?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
 
 export type User = {
   readonly avatarUrl?: string;
-  readonly createdAt?: string;
   readonly displayName?: string;
   readonly id: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };
+
+export type UserAggregate = {
+  readonly entryCount: number;
+  readonly lastSubmittedAtMs: number;
+  readonly totalPoints: number;
+  readonly userId: string;
+} & { readonly [key: string]: Json | null };
 
 export type User_skip_id_ = string;
 
 export type User_skip_value_ = {
   readonly avatarUrl?: string;
-  readonly createdAt?: string;
   readonly displayName?: string;
-  readonly username?: string;
-};
+} & { readonly [key: string]: Json | null };

@@ -1,22 +1,23 @@
-import type { Book_skip_id_, Book_skip_value_, Book } from "../types.js";
+import type { Book_skip_id_, BookStored, Book } from "../types.js";
 import type {
   Resource,
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetBookStoredResourceInputs extends SharedCollections {
-  readonly books: EagerCollection<Book_skip_id_, Book_skip_value_>;
+  readonly booksStored: EagerCollection<Book_skip_id_, BookStored>;
 }
 
 export class GetBookStoredResource implements Resource<GetBookStoredResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetBookStoredResourceInputs,
     _context: Context,
-  ): EagerCollection<Book_skip_id_, Book_skip_value_> {
-    return inputs.books;
+  ): EagerCollection<Book_skip_id_, BookStored> {
+    return inputs.booksStored;
   }
 }

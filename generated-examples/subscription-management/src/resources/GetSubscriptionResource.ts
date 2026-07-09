@@ -1,8 +1,6 @@
-import { GetSubscriptionByOwnerMapper } from "../mappers/GetSubscriptionByOwnerMapper.js";
 import type {
   Subscription_skip_id_,
   Subscription_skip_value_,
-  GetSubscriptionParams,
   Subscription,
 } from "../types.js";
 import type {
@@ -10,6 +8,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetSubscriptionResourceInputs extends SharedCollections {
@@ -20,22 +19,12 @@ export interface GetSubscriptionResourceInputs extends SharedCollections {
 }
 
 export class GetSubscriptionResource implements Resource<GetSubscriptionResourceInputs> {
-  private readonly subscriptionId: string;
-  private readonly userId: string;
-
-  constructor(params: GetSubscriptionParams) {
-    this.subscriptionId = params.subscriptionId;
-    this.userId = params.userId;
-  }
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetSubscriptionResourceInputs,
     _context: Context,
   ): EagerCollection<Subscription_skip_id_, Subscription_skip_value_> {
-    return inputs.subscriptions.map(
-      GetSubscriptionByOwnerMapper,
-      this.subscriptionId,
-      this.userId,
-    );
+    return inputs.subscriptions;
   }
 }

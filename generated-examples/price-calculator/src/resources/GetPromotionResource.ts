@@ -1,6 +1,8 @@
+import { SinglePromotionByIdMapper } from "../mappers/SinglePromotionByIdMapper.js";
 import type {
   Promotion_skip_id_,
   Promotion_skip_value_,
+  GetPromotionParams,
   Promotion,
 } from "../types.js";
 import type {
@@ -18,12 +20,16 @@ export interface GetPromotionResourceInputs extends SharedCollections {
 }
 
 export class GetPromotionResource implements Resource<GetPromotionResourceInputs> {
-  constructor(_params: {}) {}
+  private readonly promotionId: string;
+
+  constructor(params: GetPromotionParams) {
+    this.promotionId = params.promotionId;
+  }
 
   instantiate(
     inputs: GetPromotionResourceInputs,
     _context: Context,
   ): EagerCollection<Promotion_skip_id_, Promotion_skip_value_> {
-    return inputs.promotions;
+    return inputs.promotions.map(SinglePromotionByIdMapper, this.promotionId);
   }
 }

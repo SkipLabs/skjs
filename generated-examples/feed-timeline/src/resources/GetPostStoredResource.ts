@@ -4,19 +4,20 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetPostStoredResourceInputs extends SharedCollections {
-  readonly posts: EagerCollection<Post_skip_id_, PostStored>;
+  readonly postsStored: EagerCollection<Post_skip_id_, PostStored>;
 }
 
 export class GetPostStoredResource implements Resource<GetPostStoredResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetPostStoredResourceInputs,
     _context: Context,
   ): EagerCollection<Post_skip_id_, PostStored> {
-    return inputs.posts;
+    return inputs.postsStored;
   }
 }

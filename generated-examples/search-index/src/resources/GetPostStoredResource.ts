@@ -4,6 +4,7 @@ import type {
   EagerCollection,
   Context,
   SharedCollections,
+  Json,
 } from "@skipruntime/core";
 
 export interface GetPostStoredResourceInputs extends SharedCollections {
@@ -11,7 +12,7 @@ export interface GetPostStoredResourceInputs extends SharedCollections {
 }
 
 export class GetPostStoredResource implements Resource<GetPostStoredResourceInputs> {
-  constructor(_params: {}) {}
+  constructor(_params: Json) {}
 
   instantiate(
     inputs: GetPostStoredResourceInputs,

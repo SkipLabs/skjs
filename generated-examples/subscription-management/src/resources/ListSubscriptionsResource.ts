@@ -1,7 +1,8 @@
-import { FilterSubscriptionByOwnerMapper } from "../mappers/FilterSubscriptionByOwnerMapper.js";
+import { FilterSubscriptionByOwnerAndStatusMapper } from "../mappers/FilterSubscriptionByOwnerAndStatusMapper.js";
 import type {
   Subscription_skip_id_,
   Subscription_skip_value_,
+  SubscriptionStatus,
   ListSubscriptionsParams,
   Subscription,
 } from "../types.js";
@@ -20,12 +21,10 @@ export interface ListSubscriptionsResourceInputs extends SharedCollections {
 }
 
 export class ListSubscriptionsResource implements Resource<ListSubscriptionsResourceInputs> {
-  private readonly dueBefore: string | null;
-  private readonly status: string | null;
+  private readonly status: SubscriptionStatus | null;
   private readonly userId: string;
 
   constructor(params: ListSubscriptionsParams) {
-    this.dueBefore = params.dueBefore ?? null;
     this.status = params.status ?? null;
     this.userId = params.userId;
   }
@@ -35,10 +34,9 @@ export class ListSubscriptionsResource implements Resource<ListSubscriptionsReso
     _context: Context,
   ): EagerCollection<Subscription_skip_id_, Subscription_skip_value_> {
     return inputs.subscriptions.map(
-      FilterSubscriptionByOwnerMapper,
+      FilterSubscriptionByOwnerAndStatusMapper,
       this.userId,
       this.status,
-      this.dueBefore,
     );
   }
 }

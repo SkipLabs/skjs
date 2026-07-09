@@ -1,9 +1,11 @@
-import { FilterMyInteractionsMapper } from "../mappers/FilterMyInteractionsMapper.js";
+import { ListMyInteractionsMapper } from "../mappers/ListMyInteractionsMapper.js";
 import type {
+  User_skip_id_,
+  Interaction,
   Interaction_skip_id_,
   Interaction_skip_value_,
   ListMyInteractionsParams,
-  Interaction,
+  User,
 } from "../types.js";
 import type {
   Resource,
@@ -13,10 +15,7 @@ import type {
 } from "@skipruntime/core";
 
 export interface ListMyInteractionsResourceInputs extends SharedCollections {
-  readonly interactions: EagerCollection<
-    Interaction_skip_id_,
-    Interaction_skip_value_
-  >;
+  readonly interactionsByUser: EagerCollection<User_skip_id_, Interaction>;
 }
 
 export class ListMyInteractionsResource implements Resource<ListMyInteractionsResourceInputs> {
@@ -34,11 +33,11 @@ export class ListMyInteractionsResource implements Resource<ListMyInteractionsRe
     inputs: ListMyInteractionsResourceInputs,
     _context: Context,
   ): EagerCollection<Interaction_skip_id_, Interaction_skip_value_> {
-    return inputs.interactions.map(
-      FilterMyInteractionsMapper,
+    return inputs.interactionsByUser.map(
+      ListMyInteractionsMapper,
       this.userId,
-      this.type,
       this.productId,
+      this.type,
     );
   }
 }

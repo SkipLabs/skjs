@@ -1,21 +1,19 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { ActiveLoansByBookResource } from "./resources/ActiveLoansByBookResource.js";
+import { ActiveLoanCountByBookResource } from "./resources/ActiveLoanCountByBookResource.js";
 import { GetBookResource } from "./resources/GetBookResource.js";
 import { GetBookStoredResource } from "./resources/GetBookStoredResource.js";
 import { GetLoanResource } from "./resources/GetLoanResource.js";
 import { GetLoanStoredResource } from "./resources/GetLoanStoredResource.js";
-import { ListBooksResource } from "./resources/ListBooksResource.js";
+import { GetMeResource } from "./resources/GetMeResource.js";
 import { ListLoansResource } from "./resources/ListLoansResource.js";
-import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Book_skip_id_,
-  Book_skip_value_,
+  BookStored,
   Loan_skip_id_,
   Loan_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetBookParams,
   GetLoanParams,
   ListLoansParams,
   Book,
@@ -26,6 +24,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -33,20 +32,19 @@ import type {
 import { InputDefinition } from "@skipruntime/core";
 
 interface Inputs extends NamedInputDefinitions {
-  readonly books: InputDefinition<Book_skip_id_, Book_skip_value_>;
+  readonly booksStored: InputDefinition<Book_skip_id_, BookStored>;
   readonly loans: InputDefinition<Loan_skip_id_, Loan_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly activeLoansByBookResource: ResourceClass<GraphCollections, Json>;
-  readonly getBookResource: ResourceClass<GraphCollections, GetBookParams>;
+  readonly activeLoanCountByBookResource: ResourceClass<GraphCollections, Json>;
+  readonly getBookResource: ResourceClass<GraphCollections, Json>;
   readonly getBookStoredResource: ResourceClass<GraphCollections, Json>;
   readonly getLoanResource: ResourceClass<GraphCollections, GetLoanParams>;
   readonly getLoanStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly listBooksResource: ResourceClass<GraphCollections, Json>;
-  readonly listLoansResource: ResourceClass<GraphCollections, ListLoansParams>;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
+  readonly listLoansResource: ResourceClass<GraphCollections, ListLoansParams>;
 }
 
 class Service implements SkipService<
@@ -56,22 +54,22 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
-      books: new InputDefinition<Book_skip_id_, Book_skip_value_>([]),
+      booksStored: new InputDefinition<Book_skip_id_, BookStored>([]),
       loans: new InputDefinition<Loan_skip_id_, Loan_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      activeLoansByBookResource: ActiveLoansByBookResource,
+      activeLoanCountByBookResource: ActiveLoanCountByBookResource,
       getBookResource: GetBookResource,
       getBookStoredResource: GetBookStoredResource,
       getLoanResource: GetLoanResource,
       getLoanStoredResource: GetLoanStoredResource,
-      listBooksResource: ListBooksResource,
+      getMeResource: GetMeResource,
       listLoansResource: ListLoansResource,
-      getMeResource: getMeResource,
     };
   }
 

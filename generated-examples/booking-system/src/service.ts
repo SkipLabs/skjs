@@ -1,34 +1,29 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
-import { AppointmentsByResourceResource } from "./resources/AppointmentsByResourceResource.js";
+import { AppointmentsByCustomerResource } from "./resources/AppointmentsByCustomerResource.js";
+import { AppointmentsByProviderResource } from "./resources/AppointmentsByProviderResource.js";
+import { AppointmentsByServiceResource } from "./resources/AppointmentsByServiceResource.js";
 import { GetAppointmentResource } from "./resources/GetAppointmentResource.js";
-import { GetResourceResource } from "./resources/GetResourceResource.js";
-import { GetUserByIdResource } from "./resources/GetUserByIdResource.js";
-import { ListAppointmentsResource } from "./resources/ListAppointmentsResource.js";
-import { ListAvailabilityWindowsResource } from "./resources/ListAvailabilityWindowsResource.js";
-import { ListResourcesResource } from "./resources/ListResourcesResource.js";
+import { GetServiceResource } from "./resources/GetServiceResource.js";
+import { ListServicesResource } from "./resources/ListServicesResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
   Appointment_skip_id_,
   Appointment_skip_value_,
-  AvailabilityWindowKey,
-  AvailabilityWindowStored,
-  BookableResource_skip_id_,
-  BookableResource_skip_value_,
+  Service_skip_id_,
+  Service_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetUserParams,
-  ListAppointmentsParams,
-  ListAvailabilityParams,
-  ListResourcesParams,
+  ListServicesParams,
   Appointment,
-  BookableResource,
+  Service,
   User,
 } from "./types.js";
 import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -40,36 +35,25 @@ interface Inputs extends NamedInputDefinitions {
     Appointment_skip_id_,
     Appointment_skip_value_
   >;
-  readonly availabilityWindows: InputDefinition<
-    AvailabilityWindowKey,
-    AvailabilityWindowStored
-  >;
-  readonly resources: InputDefinition<
-    BookableResource_skip_id_,
-    BookableResource_skip_value_
-  >;
+  readonly services: InputDefinition<Service_skip_id_, Service_skip_value_>;
   readonly users: InputDefinition<User_skip_id_, User_skip_value_>;
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly appointmentsByResourceResource: ResourceClass<
+  readonly appointmentsByCustomerResource: ResourceClass<
     GraphCollections,
     Json
   >;
+  readonly appointmentsByProviderResource: ResourceClass<
+    GraphCollections,
+    Json
+  >;
+  readonly appointmentsByServiceResource: ResourceClass<GraphCollections, Json>;
   readonly getAppointmentResource: ResourceClass<GraphCollections, Json>;
-  readonly getResourceResource: ResourceClass<GraphCollections, Json>;
-  readonly getUserByIdResource: ResourceClass<GraphCollections, GetUserParams>;
-  readonly listAppointmentsResource: ResourceClass<
+  readonly getServiceResource: ResourceClass<GraphCollections, Json>;
+  readonly listServicesResource: ResourceClass<
     GraphCollections,
-    ListAppointmentsParams
-  >;
-  readonly listAvailabilityWindowsResource: ResourceClass<
-    GraphCollections,
-    ListAvailabilityParams
-  >;
-  readonly listResourcesResource: ResourceClass<
-    GraphCollections,
-    ListResourcesParams
+    ListServicesParams
   >;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
@@ -81,6 +65,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -88,24 +73,16 @@ class Service implements SkipService<
         Appointment_skip_id_,
         Appointment_skip_value_
       >([]),
-      availabilityWindows: new InputDefinition<
-        AvailabilityWindowKey,
-        AvailabilityWindowStored
-      >([]),
-      resources: new InputDefinition<
-        BookableResource_skip_id_,
-        BookableResource_skip_value_
-      >([]),
+      services: new InputDefinition<Service_skip_id_, Service_skip_value_>([]),
       users: new InputDefinition<User_skip_id_, User_skip_value_>([]),
     };
     this.resources = {
-      appointmentsByResourceResource: AppointmentsByResourceResource,
+      appointmentsByCustomerResource: AppointmentsByCustomerResource,
+      appointmentsByProviderResource: AppointmentsByProviderResource,
+      appointmentsByServiceResource: AppointmentsByServiceResource,
       getAppointmentResource: GetAppointmentResource,
-      getResourceResource: GetResourceResource,
-      getUserByIdResource: GetUserByIdResource,
-      listAppointmentsResource: ListAppointmentsResource,
-      listAvailabilityWindowsResource: ListAvailabilityWindowsResource,
-      listResourcesResource: ListResourcesResource,
+      getServiceResource: GetServiceResource,
+      listServicesResource: ListServicesResource,
       getMeResource: getMeResource,
     };
   }

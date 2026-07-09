@@ -1,7 +1,6 @@
-import { CommentByThreadKeyMapper } from "./mappers/CommentByThreadKeyMapper.js";
-import { CommentLikeByCommentIdMapper } from "./mappers/CommentLikeByCommentIdMapper.js";
-import { CommentLikeCountMapper } from "./mappers/CommentLikeCountMapper.js";
-import { SumReducer } from "./reducers/SumReducer.js";
+import { AssembleCommentMapper } from "./mappers/AssembleCommentMapper.js";
+import { CommentLikesByCommentMapper } from "./mappers/CommentLikesByCommentMapper.js";
+import { LikeCountByCommentMapper } from "./mappers/LikeCountByCommentMapper.js";
 import type {
   CommentLike_skip_id_,
   CommentLike,
@@ -12,8 +11,7 @@ import type {
   User_skip_id_,
   User,
   User_skip_value_,
-  ThreadKey,
-  LikeIncrement,
+  Comment_skip_value_,
 } from "./types.js";
 import type {
   EagerCollection,
@@ -36,13 +34,15 @@ export interface GraphCollections extends SharedCollections {
     CommentLike_skip_id_,
     CommentLike_skip_value_
   >;
-  readonly commentLikesByCommentId: EagerCollection<
+  readonly commentLikesByComment: EagerCollection<
     Comment_skip_id_,
     CommentLike
   >;
   readonly comments: EagerCollection<Comment_skip_id_, CommentStored>;
-  readonly commentsByThreadKey: EagerCollection<ThreadKey, Comment_skip_id_>;
-  readonly likeCountByComment: EagerCollection<Comment_skip_id_, LikeIncrement>;
+  readonly commentsAssembled: EagerCollection<
+    Comment_skip_id_,
+    Comment_skip_value_
+  >;
   readonly users: EagerCollection<User_skip_id_, User_skip_value_>;
 }
 
@@ -50,24 +50,24 @@ export function createGraph(
   inputs: InputCollections,
   _context: Context,
 ): GraphCollections {
-  const commentLikesByCommentId = inputs.commentLikes.map(
-    CommentLikeByCommentIdMapper,
+  const commentLikesByComment = inputs.commentLikes.map(
+    CommentLikesByCommentMapper,
   );
-  const commentsByThreadKey = inputs.comments.map(CommentByThreadKeyMapper);
-  const likeCountPerComment = inputs.commentLikes.map(CommentLikeCountMapper);
-  const likeCountByComment = likeCountPerComment.reduce(SumReducer);
+  const likeCountByComment = inputs.commentLikes.map(LikeCountByCommentMapper);
+  const commentsAssembled = inputs.comments.map(
+    AssembleCommentMapper,
+    likeCountByComment,
+  );
   const output_commentLikes = inputs.commentLikes;
-  const output_commentLikesByCommentId = commentLikesByCommentId;
+  const output_commentLikesByComment = commentLikesByComment;
   const output_comments = inputs.comments;
-  const output_commentsByThreadKey = commentsByThreadKey;
-  const output_likeCountByComment = likeCountByComment;
+  const output_commentsAssembled = commentsAssembled;
   const output_users = inputs.users;
   return {
     commentLikes: output_commentLikes,
-    commentLikesByCommentId: output_commentLikesByCommentId,
+    commentLikesByComment: output_commentLikesByComment,
     comments: output_comments,
-    commentsByThreadKey: output_commentsByThreadKey,
-    likeCountByComment: output_likeCountByComment,
+    commentsAssembled: output_commentsAssembled,
     users: output_users,
   };
 }

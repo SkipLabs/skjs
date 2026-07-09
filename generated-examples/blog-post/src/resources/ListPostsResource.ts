@@ -1,10 +1,12 @@
-import { ListPostsMapper } from "../mappers/ListPostsMapper.js";
+import { FilterPostsMapper } from "../mappers/FilterPostsMapper.js";
 import type {
   Post_skip_id_,
+  CommentCount,
+  PostStored,
   Post_skip_value_,
-  Post,
   PostStatus,
   ListPostsParams,
+  Post,
 } from "../types.js";
 import type {
   Resource,
@@ -14,7 +16,8 @@ import type {
 } from "@skipruntime/core";
 
 export interface ListPostsResourceInputs extends SharedCollections {
-  readonly posts: EagerCollection<Post_skip_id_, Post_skip_value_>;
+  readonly commentCountByPost: EagerCollection<Post_skip_id_, CommentCount>;
+  readonly posts: EagerCollection<Post_skip_id_, PostStored>;
 }
 
 export class ListPostsResource implements Resource<ListPostsResourceInputs> {
@@ -31,11 +34,12 @@ export class ListPostsResource implements Resource<ListPostsResourceInputs> {
   instantiate(
     inputs: ListPostsResourceInputs,
     _context: Context,
-  ): EagerCollection<Post_skip_id_, Post> {
+  ): EagerCollection<Post_skip_id_, Post_skip_value_> {
     return inputs.posts.map(
-      ListPostsMapper,
-      this.status,
+      FilterPostsMapper,
+      inputs.commentCountByPost,
       this.authorId,
+      this.status,
       this.tag,
     );
   }

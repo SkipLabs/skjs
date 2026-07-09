@@ -1,4 +1,4 @@
-import { FilterPoliciesByOwnerMapper } from "../mappers/FilterPoliciesByOwnerMapper.js";
+import { PolicyByOwnerMapper } from "../mappers/PolicyByOwnerMapper.js";
 import type {
   Policy_skip_id_,
   Policy_skip_value_,
@@ -27,6 +27,6 @@ export class ListPoliciesResource implements Resource<ListPoliciesResourceInputs
     inputs: ListPoliciesResourceInputs,
     _context: Context,
   ): EagerCollection<Policy_skip_id_, Policy_skip_value_> {
-    return inputs.policies.map(FilterPoliciesByOwnerMapper, this.userId);
+    return inputs.policies.map(PolicyByOwnerMapper, this.userId);
   }
 }

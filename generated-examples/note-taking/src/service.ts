@@ -1,7 +1,6 @@
 import type { InputCollections, GraphCollections } from "./ServiceGraph.js";
 import { createGraph } from "./ServiceGraph.js";
 import { GetNoteResource } from "./resources/GetNoteResource.js";
-import { GetNoteStoredResource } from "./resources/GetNoteStoredResource.js";
 import { ListNotesByOwnerResource } from "./resources/ListNotesByOwnerResource.js";
 import { getMeResource } from "./resources/getMeResource.js";
 import type {
@@ -9,7 +8,7 @@ import type {
   Note_skip_value_,
   User_skip_id_,
   User_skip_value_,
-  GetNoteParams,
+  ListNotesParams,
   Note,
   User,
 } from "./types.js";
@@ -17,6 +16,7 @@ import type {
   SkipService,
   ResourceClass,
   Context,
+  ExternalService,
   NamedInputDefinitions,
   NamedResources,
   Json,
@@ -29,9 +29,11 @@ interface Inputs extends NamedInputDefinitions {
 }
 
 interface Resources extends NamedResources<GraphCollections> {
-  readonly getNoteResource: ResourceClass<GraphCollections, GetNoteParams>;
-  readonly getNoteStoredResource: ResourceClass<GraphCollections, Json>;
-  readonly listNotesByOwnerResource: ResourceClass<GraphCollections, Json>;
+  readonly getNoteResource: ResourceClass<GraphCollections, Json>;
+  readonly listNotesByOwnerResource: ResourceClass<
+    GraphCollections,
+    ListNotesParams
+  >;
   readonly getMeResource: ResourceClass<GraphCollections, Json>;
 }
 
@@ -42,6 +44,7 @@ class Service implements SkipService<
 > {
   readonly inputs: Inputs;
   readonly resources: Resources;
+  externalServices: { [name: string]: ExternalService } = {};
 
   constructor() {
     this.inputs = {
@@ -50,7 +53,6 @@ class Service implements SkipService<
     };
     this.resources = {
       getNoteResource: GetNoteResource,
-      getNoteStoredResource: GetNoteStoredResource,
       listNotesByOwnerResource: ListNotesByOwnerResource,
       getMeResource: getMeResource,
     };
