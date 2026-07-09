@@ -76,6 +76,13 @@ enum Fwd {
   B = 1,
 }
 
+// FIXME: unsound — at runtime FwdQualified.B is undefined while A's
+// initializer runs, so A is undefined, not a number; tsc rejects (TS2651).
+enum FwdQualified {
+  A = FwdQualified.B,
+  B = 1,
+}
+
 enum Same {
   A = 0,
   B = 0,
