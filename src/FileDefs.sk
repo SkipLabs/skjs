@@ -166,7 +166,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
         )
       | TypeDef{name => Name(pos, _)}
       | Class{name => Name(pos, _)}
-      | Enum(_isConst, Name(pos, _), _fields)
+      | Enum(_isConst, Name(pos, _), _fields, _isAmbient)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
         tcenvb.error(
           Array[
@@ -335,7 +335,7 @@ base class FileDef {
     | TopLevelFunDef{name => FNNormal(n)} -> Some(n.pos)
     | TypeDef{name => n} -> Some(n.pos)
     | Class{name => n} -> Some(n.pos)
-    | Enum(_, n, _) -> Some(n.pos)
+    | Enum(_, n, _, _) -> Some(n.pos)
     | FDVar(_, n, _, _) -> Some(n.pos)
     | FDNamespace(_, posOpt, _) -> posOpt
     }
@@ -617,7 +617,7 @@ mutable class FileDefsState private {
     def match {
     | d @ TypeDef{name} -> this.pushDef(name, d, isExport)
     | d @ Class{name} -> this.pushDef(name, d, isExport)
-    | d @ Enum(_, name, _) -> this.pushDef(name, d, isExport)
+    | d @ Enum(_, name, _, _) -> this.pushDef(name, d, isExport)
     | Namespace(name, defs) ->
       d = FDNamespace(false, Some(name.pos), this.createSubFileDefs(defs));
       this.pushDef(name, d, isExport)

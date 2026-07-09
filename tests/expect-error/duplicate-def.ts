@@ -28,11 +28,9 @@ interface I {
   b: string;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum E {
   X,
 }
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 // @skjs-expect-error Duplicate identifier 'E'
 enum E {
   Y,
@@ -78,21 +76,18 @@ function Cf(): void {}
 class Cf {}
 
 type Et = number;
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 // @skjs-expect-error Duplicate identifier 'Et'
 enum Et {
   X,
 }
 
 function Ef(): void {}
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 // @skjs-expect-error Duplicate identifier 'Ef'
 enum Ef {
   X,
 }
 
 const Ec: number = 1;
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 // @skjs-expect-error Duplicate identifier 'Ec'
 enum Ec {
   X,

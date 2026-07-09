@@ -72,6 +72,7 @@ base class Def_ uses XXHashable {
     | TopLevelFunDef{name => FNNormal(n)} -> Some(n)
     | Class{name => n} -> Some(n)
     | TypeDef{name => n} -> Some(n)
+    | Enum(_, n, _, _) -> Some(n)
     | Export(inner) -> inner.defStableName()
     | ExportDeclare(inner) -> inner.defStableName()
     | _ -> None()
@@ -97,7 +98,12 @@ base class Exportable extends Declarable {
     tparams: Array<TypeParam>,
     bodyRef: ClassBodyRef,
   }
-  | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
+  | Enum(
+    isConst: ?PosRange,
+    name: Name,
+    fields: Array<(Name, ?Expr)>,
+    isAmbient: Bool,
+  )
   | Namespace(name: Name, Array<Def>)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
 }

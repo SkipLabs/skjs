@@ -1,4 +1,3 @@
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum G {
   A = ".".length,
   B = 4,
@@ -29,24 +28,23 @@ function computedEnumHasNoReverseMapping(): string {
   return G[4];
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum H {
   A = ".".length,
+  // @skjs-expect-error Enum member must have initializer
   B,
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum D {
   A,
+  // @skjs-expect-error Duplicate identifier 'A'
   A = 2,
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 const enum CC {
+  // @skjs-expect-error const enum member initializers must be constant expressions
   A = ".".length,
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 const enum CE {
   A,
   B,
@@ -57,7 +55,6 @@ function constEnumMember(): 0 {
   return CE.A;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum R {
   A = 1,
   B = A,
@@ -74,13 +71,12 @@ function qualifiedMemberReference(): 1 {
   return R.C;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Fwd {
+  // @skjs-expect-error Cannot find name
   A = B,
   B = 1,
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Same {
   A = 0,
   B = 0,
@@ -91,7 +87,6 @@ function duplicateValueReverse(): "B" {
   return Same[0];
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Empty {}
 
 // @skjs-expect-error Enum instantiation is not yet supported by SKJS
@@ -99,7 +94,6 @@ function emptyEnumIsUninhabited(x: Empty): never {
   return x;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Frac {
   A = 1.5,
   B,
@@ -115,7 +109,6 @@ function fractionalAutoIncrement(): 2.5 {
   return Frac.B;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Big {
   A = 9007199254740991,
   B,
@@ -126,8 +119,8 @@ function autoIncrementAtDoubleLimit(): 9007199254740992 {
   return Big.B;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum BoolInit {
+  // @skjs-expect-error Computed enum member values must be numbers
   A = true,
 }
 

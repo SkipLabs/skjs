@@ -1,13 +1,11 @@
 // @skjs-expect-error Qualified name access ('A') is not yet supported by SKJS
 // @skjs-expect-error Qualified name access ('B') is not yet supported by SKJS
 // @skjs-expect-error Qualified name access ('C') is not yet supported by SKJS
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum E {
   A,
   B,
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum F {
   A,
   B,
@@ -83,7 +81,6 @@ function crossEnumWhole(x: E): F {
   return x;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Offset {
   A = 5,
   B,
@@ -94,7 +91,6 @@ function autoIncrement(): 6 {
   return Offset.B;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Negative {
   A = -1,
   B,
@@ -189,7 +185,6 @@ function instanceofEnum(x: unknown): boolean {
   return x instanceof E;
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Flags {
   R = 1,
   W = 2,

@@ -1,4 +1,3 @@
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum SE {
   A = "a",
   B = "b",
@@ -34,7 +33,6 @@ function stringEnumHasNoReverseMapping(): string {
   return SE["a"];
 }
 
-// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Het {
   N = 0,
   S = "s",

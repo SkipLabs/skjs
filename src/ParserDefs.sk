@@ -445,6 +445,9 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
       | Some(nextTok) ->
         this.defHelper_() match {
+        // An enum in a `declare` context is ambient: its uninitialized
+        // members are opaque (see enumMembers).
+        | en @ Enum _ -> Declare(en with {isAmbient => true})
         | def @ Declarable _ -> Declare(def)
         | _ ->
           this.error(
@@ -825,7 +828,7 @@ extension class Parser {
     this.expect(TKOpenCurly());
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
-      return Enum(isConst, name, Array[]);
+      return Enum(isConst, name, Array[], false);
     };
     fields = mutable Vector<(Name, ?Expr)>[];
     loop {
@@ -855,7 +858,7 @@ extension class Parser {
         )
       }
     };
-    Enum(isConst, name, fields.toArray())
+    Enum(isConst, name, fields.toArray(), false)
   }
 
   // Parse class definitions

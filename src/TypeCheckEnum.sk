@@ -1,0 +1,282 @@
+/***************************************************************************/
+/* Enum declarations (issue #762).
+ *
+ * An enum declares both a type and a value:
+ *  - the type `E` is the union of its member types, and each member type
+ *    `E.A` is the member's number/string literal type (semantic value-set
+ *    reading: at runtime `E.A` IS its literal value);
+ *  - the value `E` is a frozen object with a readonly field per member and,
+ *    when every member value is statically known, readonly reverse-mapping
+ *    fields (numeric value -> member name) matching the runtime object.
+ *
+ * Members whose value cannot be known statically (computed initializers,
+ * ambient uninitialized members) get the full `number` type, a sound
+ * over-approximation that also reproduces tsc's opaque computed members.
+ */
+/***************************************************************************/
+
+module SKJS;
+
+// The statically-known value of an enum member.
+base class EnumMemberValue {
+  children =
+  // A single number or string literal.
+  | EMVLiteral(TPrimValue)
+  // A statically-unknown number.
+  | EMVNumber(EnumNumberReason)
+}
+
+// Why an enum member's value is a statically-unknown number.
+base class EnumNumberReason {
+  children =
+  // The initializer is not a statically-foldable expression. The declaration
+  // check types it and requires `number` (tsc TS18033/TS2474).
+  | ENRComputed()
+  // A non-ambient member without initializer whose predecessor has no known
+  // numeric value (tsc TS1061); recovered as `number`.
+  | ENRMissingInitializer()
+  // An ambient (`declare enum`, non-const) member without initializer: tsc
+  // treats these as opaque/computed, and the declaration's implied values are
+  // not trusted.
+  | ENRAmbient()
+  // Auto-increment from a non-integer or out-of-double-range predecessor;
+  // sound over-approximation (tsc folds e.g. 1.5 + 1 = 2.5 precisely).
+  | ENRImprecise()
+}
+
+class EnumMember(name: Name, value: EnumMemberValue, initializer: ?Expr)
+
+// The single canonical value string of a known numeric member, if any.
+private fun enumNumLiteralVal(v: EnumMemberValue): ?String {
+  v match {
+  | EMVLiteral(TPrimValue(TNum(), Some(lits), _)) ->
+    lits.singleElt().map(lit -> lit.val)
+  | _ -> None()
+  }
+}
+
+extension base class TEnv {
+  // Elaborate the members of an enum declaration. Pure: diagnostics for the
+  // ENRComputed/ENRMissingInitializer cases are emitted once, by checkEnum.
+  fun enumMembers(en: Enum): Array<EnumMember> {
+    // In a (non-const) ambient enum, a member without initializer is opaque
+    // ("considered computed" per tsc); `declare const enum` members are
+    // constant like in a regular enum.
+    ambientOpaque = en.isAmbient && en.isConst is None();
+    byName = mutable Map<String, EnumMemberValue>[];
+    members = mutable Vector<EnumMember>[];
+    prev: ?EnumMemberValue = None();
+    for (field in en.fields) {
+      (name, init) = field;
+      value = init match {
+      | Some(e) -> this.enumInitializerValue(en, byName, e)
+      | None() if (ambientOpaque) -> EMVNumber(ENRAmbient())
+      | None() ->
+        prev match {
+        | None() -> EMVLiteral(TPrimValue::single(TNum(), "0", name.pos))
+        | Some(prevValue) ->
+          enumNumLiteralVal(prevValue) match {
+          | Some(v) ->
+            v.toIntOption() match {
+            // n + 1 stays exactly representable in a double up to 2^53.
+            | Some(n) if (n < maxSafeJSInt) ->
+              EMVLiteral(
+                TPrimValue::single(TNum(), (n + 1).toString(), name.pos),
+              )
+            | _ -> EMVNumber(ENRImprecise())
+            }
+          | None() ->
+            prevValue match {
+            | EMVNumber(ENRAmbient()) -> EMVNumber(ENRAmbient())
+            | _ -> EMVNumber(ENRMissingInitializer())
+            }
+          }
+        }
+      };
+      // First occurrence wins for reference folding; duplicate member names
+      // are reported by checkEnum.
+      if (byName.maybeGet(name.value) is None()) {
+        byName![name.value] = value
+      };
+      members.push(EnumMember(name, value, init));
+      !prev = Some(value)
+    };
+    members.toArray()
+  }
+
+  // The value of a member initializer expression: a direct literal, a
+  // reference to an earlier member of the same enum (`B = A` or `B = E.A`),
+  // or statically unknown.
+  private fun enumInitializerValue(
+    en: Enum,
+    byName: readonly Map<String, EnumMemberValue>,
+    e: Expr,
+  ): EnumMemberValue {
+    this.directLiteralSType(e) match {
+    | Some(st @ TPrimValue(TNum(), Some _, _))
+    | Some(st @ TPrimValue(TString(), Some _, _)) ->
+      return EMVLiteral(st)
+    | _ -> void
+    };
+    memberRef = e.value match {
+    | Var(n) -> Some(n.value)
+    | Dot(
+      NormalDot(),
+      Expr(_, Var(base)),
+      fieldName,
+    ) if (base.value == en.name.value) ->
+      Some(fieldName.value)
+    | _ -> None()
+    };
+    memberRef.flatMap(m -> byName.maybeGet(m)) match {
+    | Some(v) -> v
+    | None() -> EMVNumber(ENRComputed())
+    }
+  }
+
+  // The type of one member (`E.A` in type position, and the member field's
+  // type on the enum object).
+  fun enumMemberValueType(m: EnumMember): TType {
+    m.value match {
+    | EMVLiteral(st) -> TType::single(st)
+    | EMVNumber _ -> TType::single(TPrimValue::full(TNum(), m.name.pos))
+    }
+  }
+
+  // The type named by the enum (annotation `E`): the union of its member
+  // types. An empty enum has no values.
+  fun enumUnionType(subst: mutable Subst, en: Enum): TType {
+    members = this.enumMembers(en);
+    if (members.size() == 0) {
+      return TType::bottom(en.name.pos)
+    };
+    result = this.enumMemberValueType(members[0]);
+    for (i in Range(1, members.size())) {
+      !result = TType::union(
+        subst,
+        this,
+        result,
+        this.enumMemberValueType(members[i]),
+      )
+    };
+    result
+  }
+
+  // The member type for a qualified type reference `E.<member>`, or None if
+  // there is no such member.
+  fun enumMemberType(en: Enum, memberName: String): ?TType {
+    this.enumMembers(en)
+      .find(m -> m.name.value == memberName)
+      .map(m -> this.enumMemberValueType(m))
+  }
+
+  // The type of the enum VALUE (`E` in expression position, `typeof E`): a
+  // frozen object with a readonly field per member and, when every member
+  // value is statically known, readonly reverse-mapping fields for the
+  // numeric members (later members overwrite earlier equal values, like the
+  // runtime object). If any member value is unknown, reverse fields are
+  // omitted entirely: an unknown value could collide with a known one at
+  // runtime, so no individual reverse entry is trustworthy.
+  fun enumStatic(en: Enum): TType {
+    members = this.enumMembers(en);
+    fields = mutable Map<FieldNameString, TField>[];
+    for (m in members) {
+      fields![FieldNameString(m.name.value)] = TField::create{
+        pos => m.name.pos,
+        name => m.name.value,
+        isOptional => false,
+        isReadonly => Some(m.name.pos),
+        type => this.enumMemberValueType(m),
+        access => FAPublic(),
+      }
+    };
+    if (members.all(m -> m.value is EMVLiteral _)) {
+      for (m in members) {
+        enumNumLiteralVal(m.value).each(val -> {
+          fields![FieldNameString(val)] = TField::create{
+            pos => m.name.pos,
+            name => val,
+            isOptional => false,
+            isReadonly => Some(m.name.pos),
+            type => TType::single(
+              TPrimValue::single(TString(), m.name.value, m.name.pos),
+            ),
+            access => FAPublic(),
+          }
+        })
+      }
+    };
+    TType::single(
+      TObject::createSingleBranch(
+        TFields::create{fields, isArray => Some(false)},
+        None(),
+        en.name.pos,
+      ),
+    )
+  }
+}
+
+extension class TypeChecker {
+  // Check an enum declaration: duplicate member names, members that need an
+  // initializer, and computed initializers (typed, and required to be
+  // numbers; constant expressions required in const enums).
+  fun checkEnum(tcenvl: mutable TCEnvLight, en: Enum): void {
+    seen: SortedSet<String> = SortedSet[];
+    for (field in en.fields) {
+      (name, _) = field;
+      if (seen.contains(name.value)) {
+        tcenvl.error(
+          Array[(name.pos, `Duplicate identifier '${name.value}'`)],
+          TSCode(2300),
+        )
+      };
+      !seen = seen.set(name.value)
+    };
+    for (m in this.enumMembers(en)) {
+      m.value match {
+      | EMVLiteral _
+      | EMVNumber(ENRAmbient())
+      | EMVNumber(ENRImprecise()) ->
+        void
+      | EMVNumber(ENRMissingInitializer()) ->
+        tcenvl.error(
+          Array[(m.name.pos, "Enum member must have initializer")],
+          TSCode(1061),
+        )
+      | EMVNumber(ENRComputed()) ->
+        if (en.isConst is Some _) {
+          tcenvl.error(
+            Array[
+              (
+                m.name.pos,
+                "const enum member initializers must be constant expressions",
+              ),
+            ],
+            TSCode(2474),
+          )
+        } else {
+          m.initializer.each(e ->
+            tcenvl.collectErrors(() -> {
+              subst = Subst::mcreate(tcenvl);
+              tcenv = TCEnv::mcreate(
+                subst,
+                CGNode::toplevel(m.name.pos.fileName),
+              );
+              ety = this.expr(tcenv, e, true);
+              this.checkSubType(
+                tcenv,
+                e.pos,
+                "Computed enum member values must be numbers",
+                ety,
+                TType::single(TPrimValue::full(TNum(), e.pos)),
+                TSCode(18033),
+              )
+            })
+          )
+        }
+      }
+    }
+  }
+}
+
+module end;
