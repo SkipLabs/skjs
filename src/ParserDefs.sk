@@ -445,10 +445,10 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
       | Some(nextTok) ->
         this.defHelper_() match {
-        // An enum in a `declare` context is ambient: its uninitialized
+        // Enums in a `declare` context (including nested in namespaces,
+        // modules, and global blocks) are ambient: their uninitialized
         // members are opaque (see enumMembers).
-        | en @ Enum _ -> Declare(en with {isAmbient => true})
-        | def @ Declarable _ -> Declare(def)
+        | def @ Declarable _ -> Declare(markAmbientEnumsDeclarable(def))
         | _ ->
           this.error(
             this.lex.posStart(nextTok),

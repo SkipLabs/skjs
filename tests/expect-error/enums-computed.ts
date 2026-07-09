@@ -296,5 +296,6 @@ declare namespace AmbientNS {
 }
 
 function ambientNamespaceEnumMember(x: AmbientNS.NE): 0 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }

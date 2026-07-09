@@ -108,6 +108,37 @@ base class Exportable extends Declarable {
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
 }
 
+// Mark every enum in an ambient (`declare`) subtree: uninitialized members
+// of ambient enums are opaque (see enumMembers). Recurses through the
+// declaration containers a `declare` block can nest.
+fun markAmbientEnumsExportable(d: Exportable): Exportable {
+  d match {
+  | en @ Enum _ -> en with {isAmbient => true}
+  | Namespace(n, defs) -> Namespace(n, defs.map(markAmbientEnumsDef))
+  | other -> other
+  }
+}
+
+fun markAmbientEnumsDeclarable(d: Declarable): Declarable {
+  d match {
+  | e @ Exportable _ -> markAmbientEnumsExportable(e)
+  | Module(n, defsOpt) ->
+    Module(n, defsOpt.map(defs -> defs.map(markAmbientEnumsDef)))
+  | Global(defs) -> Global(defs.map(markAmbientEnumsDef))
+  }
+}
+
+fun markAmbientEnumsDef(def: Def): Def {
+  value = def.value match {
+  | d @ Declarable _ -> markAmbientEnumsDeclarable(d)
+  | Export(inner) -> Export(markAmbientEnumsExportable(inner))
+  | Declare(inner) -> Declare(markAmbientEnumsDeclarable(inner))
+  | ExportDeclare(inner) -> ExportDeclare(markAmbientEnumsExportable(inner))
+  | other -> other
+  };
+  Def::create(def.pos, value)
+}
+
 base class ExportDefaultable extends Def_
 extension class Class extends ExportDefaultable
 extension class TopLevelFunDef extends ExportDefaultable
