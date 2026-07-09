@@ -292,7 +292,9 @@ extension class TypeChecker {
     // which would otherwise leave the case values untyped.
     for (branch in branches) {
       branch match {
-      | SwitchBranch(Case(v), _, _) -> _ = this.expr(tcenv, v, true)
+      | SwitchBranch(Case(v), _, _) ->
+        _ = this.expr(tcenv, v, true);
+        this.checkCasePlainValue(tcenv, v)
       | SwitchBranch(Default(), _, _) -> void
       }
     };

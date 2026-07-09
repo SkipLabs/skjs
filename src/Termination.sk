@@ -263,29 +263,14 @@ value class StmtTermination private {
     }
   }
 
+  // The plain-value requirement on case expressions is checked by the
+  // type-checker (checkCasePlainValue in TypeCheckStmt.sk), which can
+  // resolve names to exempt enum member reads; this pass has no defMap.
   static fun branch(tcenvb: mutable TCEnvBase, branch: SwitchBranch): this {
     branch match {
-    | SwitchBranch(case, block, _pos) ->
-      case match {
-      | Case(e) -> static::branchCase(tcenvb, e)
-      | Default() -> void
-      };
+    | SwitchBranch(_case, block, _pos) ->
       static::block(tcenvb, block).breakToFallthrough()
     }
-  }
-
-  static fun branchCase(tcenvb: mutable TCEnvBase, e: Expr): void {
-    static::expr(e).mayNonThrough().each(term ->
-      tcenvb.error(
-        Array[
-          (
-            e.pos,
-            `A switch case expression must be a plain value, but this one may ${term}.`,
-          ),
-        ],
-        SKJSCode(2055),
-      )
-    )
   }
 
   static fun binding(binding: Binding): this {

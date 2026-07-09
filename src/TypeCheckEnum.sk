@@ -217,6 +217,39 @@ extension base class TEnv {
 }
 
 extension class TypeChecker {
+  // Whether `e` reads a member off an enum name (not shadowed by a local
+  // binding). Such a read is a plain value: evaluating a bare name never
+  // throws, and enum members are data properties, not accessors.
+  fun isEnumMemberAccess(tcenv: mutable TCEnv, e: Expr): Bool {
+    e.value match {
+    | Dot(NormalDot(), Expr(_, Var(base)), _member) ->
+      tcenv.scope.maybeGet(base) is None() &&
+        this.defMap.getAll(tcenv, base).any(d -> d is Enum _)
+    | _ -> false
+    }
+  }
+
+  // A switch case expression must be a plain value (evaluating it must not
+  // observably run code): case evaluation order and `===` narrowing assume
+  // it. Enum member reads are exempt. Lives here rather than in the
+  // Termination pass so name resolution is available for the exemption.
+  fun checkCasePlainValue(tcenv: mutable TCEnv, e: Expr): void {
+    if (this.isEnumMemberAccess(tcenv, e)) {
+      return void
+    };
+    StmtTermination::expr(e).mayNonThrough().each(term ->
+      tcenv.error(
+        Array[
+          (
+            e.pos,
+            `A switch case expression must be a plain value, but this one may ${term}.`,
+          ),
+        ],
+        SKJSCode(2055),
+      )
+    )
+  }
+
   // Check an enum declaration: duplicate member names, members that need an
   // initializer, and computed initializers (typed, and required to be
   // numbers; constant expressions required in const enums).

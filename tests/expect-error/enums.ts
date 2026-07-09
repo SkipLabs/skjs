@@ -142,7 +142,6 @@ function narrowByEquality(x: E): 1 {
 
 function switchOverEnum(x: E): number {
   switch (x) {
-    // @skjs-expect-error A switch case expression must be a plain value, but this one may throw.
     case E.A:
       return 0;
     default:
