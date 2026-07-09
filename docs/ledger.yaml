@@ -1,0 +1,1133 @@
+# The soundness ledger: single source of truth for the status of every
+# assumption and proof obligation of docs/skjs-type-soundness.tex and its
+# deep-dive series. All documents render or cite this file; do not state
+# an item's status anywhere else.
+#
+# Fields per entry:
+#   id           stable name, cited as-is from all documents
+#   kind         assumption | obligation | series-assumption | series-obligation
+#   table        main | series   (which generated table renders it)
+#   short        one-line plain-LaTeX statement (no \ref; safe in any doc)
+#   statement    LaTeX for the main table's Statement cell (may use main-paper \ref)
+#   anchor       LaTeX for the main table's Anchor cell
+#   anchor_files repo paths the checker verifies exist (prefix src/ only)
+#   status       machine list, subset of [proved, assumed, open, violated]
+#   status_note  LaTeX for the main table's Status cell (may use main-paper \ref)
+#   summary      list of {bucket, label} rendered into the generated summary;
+#                buckets: proved | assumed | open | violated-witnessed | violated-derived
+#   owner        the single paper owning this row's proof/refutation
+#                (A..G, or main for axioms stated by the main paper)
+#   consumers    deep dives whose results depend on this row (the
+#                cross-paper dependency graph; the main paper consumes
+#                every row by design and is not listed)
+#   issues       files under deep-dives/issues/ (witnesses), if any
+#
+# Pinned revision: see docs/shared/pin.tex.
+
+papers:
+  - letter: A
+    file: runtime-grounding.tex
+    title: "Runtime Grounding: ECMAScript Semantics for the SKJS Value Domain"
+    scope: >-
+      Grounds the value domain and runtime predicates (tags, strict
+      equality, truthiness, callable/constructible, IsArray, instanceof)
+      in ECMAScript.
+  - letter: B
+    file: lattice-operations.tex
+    title: "Union and Intersection Soundness"
+    scope: >-
+      Stratum-by-stratum audit of union and intersection, including the
+      load-bearing bottom-implies-disjointness clause.
+  - letter: C
+    file: type-expansion.tex
+    title: "Type Expansion"
+    scope: >-
+      Expansion modeled and proved mode-scoped; the expansion cache shown
+      exact via binding-blind normalization.
+  - letter: D
+    file: subtyping-validation.tex
+    title: "Subtyping Validation Soundness"
+    scope: >-
+      The isSub architecture, its caches and coinduction, and per-stratum
+      validation soundness.
+  - letter: E
+    file: subst-state-discipline.tex
+    title: "The Substitution State Machine"
+    scope: >-
+      Monotonicity, monotone reads, clone stability, and rollback of the
+      inference substitution.
+  - letter: F
+    file: refinement-invalidation.tex
+    title: "Refinement Invalidation under Mutation"
+    scope: >-
+      Mutation versus narrowing: the layered invalidation policy, field
+      re-widening, and the captured-write hole.
+  - letter: G
+    file: literal-canonicalization.tex
+    title: "Literal Canonicalization"
+    scope: >-
+      Canonical literal forms: the fix specification for issue 655 with
+      injectivity and falsiness-exactness proofs.
+
+entries:
+  - id: L-TAG
+    kind: assumption
+    table: main
+    short: >-
+      Every runtime value carries exactly one tag consistent with its
+      static tag.
+    statement: >-
+      Every runtime value carries exactly one tag consistent with its
+      static tag (the runtime counterpart of Lemmas A0/A1, which are proved
+      only inside the model)
+    anchor: >-
+      ECMAScript language types / \texttt{typeof} (there is no SKJS code
+      generator; checked programs run on a JS engine)
+    anchor_files: []
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive A: realization map into ECMA-262 \S6.1,
+      modulo the environment assumption A-DDA)
+    summary: [{bucket: proved, label: "L-TAG"}]
+    owner: A
+    consumers: []
+    issues: []
+
+  - id: L-UNION
+    kind: assumption
+    table: main
+    short: \texttt{union} over-approximates set union (all levels).
+    statement: \texttt{union} over-approximates set union (all levels)
+    anchor: \texttt{TTypeUnion.sk}
+    anchor_files: [src/TTypeUnion.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive B — in fact exact at every stratum for the
+      membership semantics)
+    summary: [{bucket: proved, label: "L-UNION"}]
+    owner: B
+    consumers: [C, E, F]
+    issues: []
+
+  - id: L-INTER
+    kind: assumption
+    table: main
+    short: >-
+      \texttt{inter} over-approximates set intersection (the containment
+      clause).
+    statement: >-
+      \texttt{inter} over-approximates set intersection — the containment
+      clause; the $\bot \Rightarrow$ disjointness clause is the separate
+      row L-INTER-BOT
+    anchor: \texttt{TTypeInter.sk}
+    anchor_files: [src/TTypeInter.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive B) at every stratum, the instance layer
+      conditionally on TVAR-SEM
+    summary:
+      - {bucket: proved, label: "L-INTER's containment (all strata)"}
+    owner: B
+    consumers: [C, D, F, E]
+    issues: []
+
+  - id: L-INTER-BOT
+    kind: assumption
+    table: main
+    short: >-
+      A $\bot$ result from \texttt{inter} implies semantic disjointness.
+    statement: >-
+      A $\bot$ result from \texttt{inter} implies semantic disjointness —
+      the clause every branch-dropping refinement step and L-SUB's
+      covariant variable read (O-GETCOV) consume
+    anchor: \texttt{TTypeInter.sk}
+    anchor_files: [src/TTypeInter.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} (deep dive B) in two witnessed strata —
+      \texttt{STypes::inter} per-tag zeroing and \texttt{TFun::inter}
+      treating incomparable signatures as disjoint (issue drafts
+      \texttt{stypes-inter-per-tag-zeroing.md},
+      \texttt{tfun-inter-incomparable-not-disjoint.md}) — plus a third
+      stratum mediated by \#655 literal spellings; the remaining bottoms
+      are semantic and \textsc{proved}
+    summary:
+      - {bucket: violated-witnessed,
+         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (two strata)"}
+    owner: B
+    consumers: [D]
+    issues: [stypes-inter-per-tag-zeroing.md, tfun-inter-incomparable-not-disjoint.md]
+
+  - id: L-EXP
+    kind: assumption
+    table: main
+    short: >-
+      Expansion preserves or enlarges semantics (modes
+      \texttt{None}/Covariant); residual instances keep theirs.
+    statement: >-
+      Expansion preserves or enlarges semantics; residual instances keep
+      theirs
+    anchor: \texttt{TType::expand}
+    anchor_files: [src/TType.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive C) for the modes refinement uses
+      (\texttt{None}/Covariant) — and shown \emph{false} in contravariant
+      mode (unbound reads produce $\bot$), so the axiom is hereby scoped to
+      those modes; all refinement clients verified to use only them.
+      Alias-path cache reuse proved exact (binding-blind normalization);
+      residues: E-NORM, E-ARR (\textsc{assumed}), E-CLASS-SYM, E-GUARD
+      (\textsc{open}) — see deep dive C
+    summary: [{bucket: proved, label: "L-EXP (mode-scoped)"}]
+    owner: C
+    consumers: [B, D, F]
+    issues: []
+
+  - id: L-MONO
+    kind: assumption
+    table: main
+    short: >-
+      Refinement-time state evolutions preserve membership in
+      already-installed types.
+    statement: >-
+      Refinement-time state evolutions preserve membership in
+      already-installed types (Axiom~\ref{ax:mono})
+    anchor: \texttt{Subst::get}, refinement sites
+    anchor_files: [src/TTypeSubst.sk, src/TypeCheckRefine.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive E, given M1 — semantic monotonicity in
+      variable envelopes — and L-UNION); \texttt{setConstraint} is a
+      functional update, so there is no shared-state threat, and the
+      $\mathrm{range}(\Env)$ restriction is droppable (see the axiom's
+      remark)
+    summary: [{bucket: proved, label: "L-MONO"}]
+    owner: E
+    consumers: [C, F]
+    issues: []
+
+  - id: L-SEQ
+    kind: assumption
+    table: main
+    short: Type denotations used as equality RHSs are $\approx$-closed.
+    statement: Type denotations used as equality RHSs are $\approx$-closed
+    anchor: \texttt{evalVarEquality}
+    anchor_files: [src/TypeCheckRefine.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved}: by construction for literal/full primitives and
+      objects; the undefined/\texttt{void} corner is unreachable — strict
+      equality rejects \texttt{void}-typed operands before refinement
+      (empirically pinned, \S\ref{sec:r-eq})
+    summary: [{bucket: proved, label: "L-SEQ"}]
+    owner: main
+    consumers: []
+    issues: []
+
+  - id: L-SUB
+    kind: obligation
+    table: main
+    short: >-
+      \texttt{Clauses::isSub} acceptance implies semantic inclusion under
+      the current state.
+    statement: >-
+      \texttt{Clauses::isSub} acceptance implies semantic inclusion under
+      the current state
+    anchor: \texttt{TTypeSubtyping.sk}
+    anchor_files: [src/TTypeSubtyping.sk]
+    status: [open]
+    status_note: >-
+      split (deep dive D): \textsc{proved} — dispatcher architecture,
+      \texttt{tenv.seenSub} version-keying (corrected argument),
+      coinductive reduction (modulo SEM-GFP), primitives, \texttt{STypes},
+      DNF covering, object skeleton, and the field stratum's read
+      direction; conditional — field \emph{set} direction on L-MUT,
+      functions on the E-SIG signature semantics; \textsc{violated} —
+      \texttt{subst.seenSub} inside freeze windows (witnessed; issue draft
+      \texttt{freeze-window-stale-memo-caches.md}), the
+      \texttt{isSubOptTFuns} \texttt{None}-mode arm (F-CALL) and the
+      never-compared array brand (F-BRAND), both facets of the
+      \texttt{call{=}None} dichotomy
+    summary:
+      - {bucket: proved, label: "the majority strata of L-SUB"}
+      - {bucket: open, label: "L-SUB's conditional strata"}
+    owner: D
+    consumers: [E, F]
+    issues: [freeze-window-stale-memo-caches.md]
+
+  - id: A-CTOR-CALL
+    kind: assumption
+    table: main
+    short: >-
+      Class-constructor values are typed with call mode $\mathsf{None}$,
+      but constructors implement $[[\mathrm{Call}]]$.
+    statement: >-
+      Class-constructor values are typed with call mode $\mathsf{None}$,
+      but constructors implement $[[\mathrm{Call}]]$ — the refinement side
+      of the \texttt{call{=}None} dichotomy (Definition Signature Modes)
+    anchor: \texttt{newStaticObject}; \texttt{evalTypeofEquality}
+    anchor_files: [src/TypeCheckRefine.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} (witnessed: a \texttt{string}-typed function
+      returns a class at runtime through the \texttt{typeof}
+      \texttt{"function"} branch drop; deep dive A; issue draft
+      \texttt{class-constructor-call-none-typeof.md})
+    summary: [{bucket: violated-witnessed, label: "A-CTOR-CALL"}]
+    owner: A
+    consumers: [D]
+    issues: [class-constructor-call-none-typeof.md]
+
+  - id: L-TC
+    kind: assumption
+    table: main
+    short: Checked expressions inhabit their checked types.
+    statement: >-
+      Checked expressions inhabit their checked types (used for the RHS of
+      \textsc{R-Eq} and field reads)
+    anchor: \texttt{TypeCheckExpr.sk}
+    anchor_files: [src/TypeCheckExpr.sk]
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed} (axiom here; a full development would discharge it
+      by mutual induction with a preservation theorem, of which the
+      branch-soundness lemmas are the condition case)
+    summary: [{bucket: assumed, label: "L-TC (the capstone)"}]
+    owner: main
+    consumers: [A, F]
+    issues: []
+
+  - id: L-LIT
+    kind: assumption
+    table: main
+    short: >-
+      Literal spellings: (i) $\delta$ is a function; (ii) injectivity
+      modulo $\approx$ after normalization; (iii) falsiness-exactness of
+      the lexeme test.
+    statement: >-
+      Three claims about literal spellings: (i) $\delta$ is a function —
+      definitional, used by R2; (ii) \emph{injectivity modulo $\approx$}
+      after normalization — needed only for \emph{exactness} claims; (iii)
+      \emph{falsiness-exactness}: the lexeme test \texttt{isFalsy} agrees
+      with Definition~\ref{def:truthiness} — needed by the residue lemma
+    anchor: \texttt{PrimLiterals.sk}; \texttt{isZeroSpelling}
+    anchor_files: [src/PrimLiterals.sk, src/TType.sk]
+    status: [violated]
+    status_note: >-
+      (i) \textsc{proved} (definitional); (ii)/(iii) \textsc{violated} by
+      \#655: \texttt{isZeroSpelling} covers exactly 14 spellings (signed
+      decimal/hex/binary/octal zero), missing \texttt{0.0}, \texttt{0e0},
+      \texttt{00}, \texttt{0\_0}, bigint analogues, and non-\texttt{NaN}
+      spellings. Conditional on (ii): the exactness clause of
+      Theorem~\ref{thm:rmc} (precision only); on (iii): the
+      literal-filtering case of Lemma~\ref{lem:residue-sound} — with an
+      \emph{observable unsoundness witness} (\S\ref{sec:ex-655}, pinned).
+      Claim (ii) is additionally \textsc{violated} for the \emph{string}
+      kind: escape sequences are stored undecoded, witnessed end-to-end
+      (deep dive G; issue draft
+      \texttt{string-literal-escapes-undecoded.md} — outside \#655's
+      numeric/bigint scope). Claim (iii) is \emph{also} \textsc{violated}
+      for the string kind: a line-continuation lexeme denotes \texttt{""}
+      but is classified truthy (witnessed end-to-end; same issue draft).
+      All other results are unconditional
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-LIT(ii)/(iii) (\\#655 and the string escapes)"}
+    owner: G
+    consumers: [B, D]
+    issues: [string-literal-escapes-undecoded.md]
+
+  - id: L-INST
+    kind: assumption
+    table: main
+    short: >-
+      $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as
+      instantiated at the narrowing site.
+    statement: >-
+      $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as
+      instantiated at the narrowing site
+    anchor: \texttt{evalInstanceof}
+    anchor_files: [src/TypeCheckRefine.sk]
+    status: [violated]
+    status_note: >-
+      decomposed (deep dive A): conditionally \textsc{proved} modulo
+      A-HASINST — \textsc{violated}, tsc-parity (issue draft
+      \texttt{symbol-hasinstance-narrowing.md}) — and A-PROTO
+      (\textsc{assumed}, enforced for checked code by stub omissions).
+      Note that \texttt{makeTArgs} yields fresh candidates \emph{carrying
+      declared bounds} (not unconstrained variables), and their survival is
+      itself \textsc{violated} — a later covariant use seals the argument
+      (witnessed; issue draft \texttt{instanceof-type-argument-sealing.md})
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-INST's A-HASINST and fresh-argument survival"}
+    owner: A
+    consumers: []
+    issues: [symbol-hasinstance-narrowing.md, instanceof-type-argument-sealing.md]
+
+  - id: L-ISARR
+    kind: assumption
+    table: main
+    short: >-
+      $\mathsf{isArrayV}(o)$ implies
+      $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$.
+    statement: >-
+      $\mathsf{isArrayV}(o)$ implies
+      $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$
+    anchor: \texttt{evalIsArray}
+    anchor_files: [src/TypeCheckRefine.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive A: spec-level \texttt{IsArray} analysis +
+      verification that the \texttt{\_\_SKJS\_isArray} brand is stripped
+      into the \texttt{isArray} component, never a required field) modulo
+      A-PROXY
+    summary: [{bucket: proved, label: "L-ISARR"}]
+    owner: A
+    consumers: []
+    issues: []
+
+  - id: L-LOCAL
+    kind: assumption
+    table: main
+    short: >-
+      Module-level bindings are never narrowed; function-level locals are,
+      including captured ones.
+    statement: >-
+      Module-level bindings are never narrowed (they resolve through
+      \texttt{defMap}, not the scope chain, so the primitive's early return
+      fires). Function-level locals \emph{are} narrowed — including locals
+      of enclosing functions reached from inside a closure, since scope
+      lookup walks the whole chain
+    anchor: \texttt{setLocalFilterMap}; \texttt{TypeCheckScope.sk}
+    anchor_files: [src/TypeCheckRefine.sk, src/TypeCheckScope.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (by code inspection) for the module-level half; the
+      captured-local half sharpens L-PURE; a pinned test is recommended.
+      Narrowing module-level bindings is a tracked future enhancement
+      (issue \#585, blocked on immutability)
+    summary: []
+    owner: F
+    consumers: []
+    issues: []
+
+  - id: L-PURE
+    kind: assumption
+    table: main
+    short: Evaluating a condition does not mutate the narrowed locals.
+    statement: Evaluating a condition does not mutate the narrowed locals
+    anchor: "—"
+    anchor_files: []
+    status: [violated]
+    status_note: >-
+      \textsc{violated} (empirically pinned): the checker narrows across a
+      call that assigns a captured local and accepts the resulting unsound
+      program (\texttt{if (x !== null \&\& mut())} with \texttt{mut}
+      setting \texttt{x = null}) — the same unsoundness tsc accepts.
+      Tracked as issues \#597 (side-effecting call between test and use)
+      and \#599 (captured local mutated via a lambda). The one-step scoping
+      of the branch-soundness theorems (\S\ref{sec:scope}) is therefore a
+      real boundary, not caution. Deep dive F specifies the fix: a layered
+      invalidation policy (P1--P4) with a preservation lemma replacing the
+      one-step scoping
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-PURE (\\#597/\\#599) with the L-MUT instance \\#598"}
+    owner: F
+    consumers: [A]
+    issues: []
+
+  - id: L-CAPT
+    kind: assumption
+    table: main
+    short: >-
+      Assignments to captured locals are checked against the binding's
+      declared type.
+    statement: >-
+      Assignments to captured locals are checked against the binding's
+      declared type (an implicit premise of L-TC for closure bodies)
+    anchor: \texttt{Scope::set}; \texttt{TypeCheckExpr.sk} (lambda checking)
+    anchor_files: [src/TypeCheckScope.sk, src/TypeCheckExpr.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} (witnessed: a captured-local write is never checked
+      at all — arbitrary type confusion with no refinement involved;
+      distinct root cause from \#597--\#599; issue draft
+      \texttt{captured-local-writes-unchecked.md}). Sibling: closure bodies
+      read enclosing narrowings that are stale at invocation (the read-in
+      dual of \#599; issue draft
+      \texttt{stale-closure-reads-narrowing.md})
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-CAPT and its stale-read sibling"}
+    owner: F
+    consumers: []
+    issues: [captured-local-writes-unchecked.md, stale-closure-reads-narrowing.md]
+
+  - id: L-CLONE
+    kind: assumption
+    table: main
+    short: >-
+      A type computed by \texttt{inter} under a cloned substitution
+      over-approximates the intersection under the main one.
+    statement: >-
+      A type computed by \texttt{inter} under a cloned substitution
+      over-approximates the intersection when later read under the main one
+    anchor: \texttt{evalVarEquality}
+    anchor_files: [src/TypeCheckRefine.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive E, fork-state bridging, modulo the
+      fork-state form of L-INTER); the clone id-collision residue CL-1 was
+      verified \emph{unreachable} (no \texttt{gen*} call site in the
+      clone-compute-install tree) and should be guarded by the recommended
+      CI assertion
+    summary: [{bucket: proved, label: "L-CLONE"}]
+    owner: E
+    consumers: []
+    issues: []
+
+  - id: L-MUT
+    kind: assumption
+    table: main
+    short: >-
+      Field writes are governed by $\mathsf{set}$-types; get-only
+      membership is sound for snapshot reads.
+    statement: >-
+      Field writes are governed by $\mathsf{set}$-types via subtyping;
+      membership semantics (get-only) is sound for the snapshot reads
+      refinement performs
+    anchor: \texttt{TField}
+    anchor_files: [src/TType.sk]
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed}; full mutation model out of scope. The tracked
+      instance of this gap is issue \#598: field reassignment inside a
+      refined branch does not re-widen the narrowed field, invalidating
+      \textsc{R-EqField}/\textsc{R-TruthyField} results past the write.
+      Deep dive F specifies the re-widening rule (W-Field)
+    summary: [{bucket: assumed, label: "L-MUT"}]
+    owner: main
+    consumers: [D, F, A]
+    issues: []
+
+  - id: L-GETSET
+    kind: series-obligation
+    table: main
+    short: Get/set coherence of accessor fields.
+    statement: >-
+      Get/set coherence of accessor fields — the prerequisite for the sound
+      accessor variant of deep dive F's W-Field re-widening rule
+    anchor: \texttt{TField} (get/set split)
+    anchor_files: [src/TType.sk]
+    status: [open]
+    status_note: \textsc{open} (deep dive F)
+    summary: [{bucket: open, label: "L-GETSET"}]
+    owner: F
+    consumers: []
+    issues: []
+
+  # ---- Section-6 obligations of the main paper ----------------------------
+
+  - id: OBL-MONOTONE
+    kind: obligation
+    table: series
+    short: >-
+      Monotone Reads Under Growth: judgements validated under $\rho$
+      survive later legal transitions.
+    statement: ""
+    anchor: \texttt{Subst::get}; \texttt{TType::isSub}
+    anchor_files: [src/TTypeSubst.sk, src/TTypeSubtyping.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} in two witnessed instances —
+      \texttt{instanceof}-born argument sealing and the freeze-window memo
+      staleness MR-1; the general transport statement is the separate
+      \textsc{proved} row E-TRANSPORT
+    summary:
+      - {bucket: violated-witnessed,
+         label: "the two witnessed instances of OBL-MONOTONE (sealing; MR-1)"}
+    owner: E
+    consumers: [A, D]
+    issues: [instanceof-type-argument-sealing.md, freeze-window-stale-memo-caches.md]
+
+  - id: OBL-RESTORE
+    kind: obligation
+    table: series
+    short: >-
+      No Commitment on Failure: failing and exploratory paths restore all
+      relevant state.
+    statement: ""
+    anchor: \texttt{SavedSubst}; save/restore sites
+    anchor_files: [src/TTypeSubst.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive E: 14-row save/restore audit;
+      \texttt{SavedSubst} completeness; array-literal carve-out sound under
+      RB-1)
+    summary: [{bucket: proved, label: "OBL-RESTORE"}]
+    owner: E
+    consumers: [D]
+    issues: []
+
+  # ---- Series-introduced named items --------------------------------------
+
+  - id: MR-1
+    kind: series-obligation
+    table: series
+    short: >-
+      No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates}
+      may outlive growth of an open candidate readable from its left side.
+    statement: ""
+    anchor: \texttt{Subst::get} (freeze arm); \texttt{TType::isSub} memo
+    anchor_files: [src/TTypeSubst.sk, src/TTypeSubtyping.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (order-dependent acceptance;
+      deep dive E; issue draft
+      \texttt{freeze-window-stale-memo-caches.md})
+    summary: []
+    owner: E
+    consumers: [B, D]
+    issues: [freeze-window-stale-memo-caches.md]
+
+  - id: C-FREEZE-CACHE
+    kind: series-obligation
+    table: series
+    short: >-
+      Isolated attribution of \texttt{seenInter} freeze-window staleness
+      (mechanism active; shared witness with MR-1).
+    statement: ""
+    anchor: \texttt{seenInter}; \texttt{TType::inter}
+    anchor_files: [src/TTypeInter.sk]
+    status: [open]
+    status_note: >-
+      \textsc{open} for the isolated statement; mechanism demonstrated
+      active (deep dive B); the MR-1 fix covers both memos
+    summary:
+      - {bucket: open,
+         label: "the isolated \\texttt{seenInter} attribution (C-FREEZE-CACHE)"}
+    owner: B
+    consumers: []
+    issues: [freeze-window-stale-memo-caches.md]
+
+  - id: CL-1
+    kind: series-obligation
+    table: series
+    short: >-
+      No fresh variable generated on a clone occurs in a type installed
+      against the main substitution.
+    statement: ""
+    anchor: \texttt{Subst::clone}, \texttt{Subst::gen}
+    anchor_files: [src/TTypeSubst.sk]
+    status: [proved]
+    status_note: >-
+      discharged (deep dive E): unreachable — no \texttt{gen*} call site in
+      the clone-compute-install tree; guard with the recommended CI
+      assertion
+    summary: []
+    owner: E
+    consumers: []
+    issues: []
+
+  - id: M1
+    kind: series-assumption
+    table: series
+    short: >-
+      Semantic monotonicity of $\sem{\cdot}$ in variable envelopes
+      (a property of the get-only, signature-opaque semantics).
+    statement: ""
+    anchor: main paper semantics
+    anchor_files: []
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed} (deep dive E; provable by structural induction in
+      the main paper)
+    summary: []
+    owner: E
+    consumers: []
+    issues: []
+
+  - id: I-F
+    kind: series-assumption
+    table: series
+    short: >-
+      Fork-state form of L-INTER: the containments hold from a forked
+      substitution state (consumed by L-CLONE's proof).
+    statement: ""
+    anchor: \texttt{TTypeInter.sk}
+    anchor_files: [src/TTypeInter.sk]
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dives B and E); folds into L-INTER's discharge
+    summary: []
+    owner: E
+    consumers: []
+    issues: []
+
+  - id: RB-1
+    kind: series-obligation
+    table: series
+    short: >-
+      Maintenance condition: \texttt{isSub} callers discarding errors are
+      save/restore-wrapped or unreachable by uncommitted array literals.
+    statement: ""
+    anchor: \texttt{ArrayLitTyping}; \texttt{isSub} probe sites
+    anchor_files: [src/TArrayLitTyping.sk]
+    status: [open]
+    status_note: \textsc{open} maintenance condition (deep dive E); CI grep recommended
+    summary: []
+    owner: E
+    consumers: []
+    issues: []
+
+  - id: E-NORM
+    kind: series-assumption
+    table: series
+    short: >-
+      Named-type normalization is semantics-preserving (interface consumed
+      by expansion).
+    statement: ""
+    anchor: \texttt{TEnv::normalize}
+    anchor_files: [src/TEnv.sk]
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dive C)
+    summary: []
+    owner: C
+    consumers: []
+    issues: []
+
+  - id: E-ARR
+    kind: series-assumption
+    table: series
+    short: Delayed array-literal forms keep their semantics under expansion.
+    statement: ""
+    anchor: \texttt{TArrayLit}
+    anchor_files: [src/TArrayLitTyping.sk]
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dive C)
+    summary: []
+    owner: C
+    consumers: [D]
+    issues: []
+
+  - id: E-CLASS-SYM
+    kind: series-obligation
+    table: series
+    short: >-
+      The class path of expansion is binding-blind (or its binding reads
+      are harmless).
+    statement: ""
+    anchor: \texttt{newObject}/\texttt{addFields}
+    anchor_files: [src/TEnv.sk]
+    status: [open]
+    status_note: \textsc{open} (deep dive C; proof and counterexample both outstanding)
+    summary: [{bucket: open, label: "E-CLASS-SYM"}]
+    owner: C
+    consumers: []
+    issues: []
+
+  - id: E-GUARD
+    kind: series-obligation
+    table: series
+    short: >-
+      Recursion-guard identity expansions are never cached into long-lived
+      substitutions.
+    statement: ""
+    anchor: \texttt{seenExpansion}; recursion guards
+    anchor_files: [src/TTypeSubst.sk]
+    status: [open]
+    status_note: \textsc{open} (deep dive C); cache-write invariant + pinned test recommended
+    summary: [{bucket: open, label: "E-GUARD"}]
+    owner: C
+    consumers: []
+    issues: []
+
+  - id: SEM-GFP
+    kind: series-assumption
+    table: series
+    short: >-
+      The set-theoretic semantics is read as a greatest fixpoint for
+      recursive types.
+    statement: ""
+    anchor: main paper semantics
+    anchor_files: []
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed} (deep dive D; a semantics choice the main paper
+      should ratify)
+    summary: []
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: E-SIG
+    kind: series-assumption
+    table: series
+    short: >-
+      Behavioral call-soundness semantics for function signatures (required
+      for function subtyping to be a soundness statement).
+    statement: ""
+    anchor: main paper object semantics (extension)
+    anchor_files: []
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed} (deep dive D; proposed extension of the main paper's
+      object semantics)
+    summary: []
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: A-HASH
+    kind: series-assumption
+    table: series
+    short: \texttt{TType::compare} equality is trustworthy (XXHash-only fast paths).
+    statement: ""
+    anchor: \texttt{TType} hashing
+    anchor_files: [src/TType.sk]
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dive D)
+    summary: []
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: A-PROTO
+    kind: series-assumption
+    table: series
+    short: >-
+      No prototype surgery / Proxy GetPrototypeOf traps reach checked code
+      (enforced by stub omissions).
+    statement: ""
+    anchor: import-stubs
+    anchor_files: []
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dive A; enforced for checked code by stub omissions)
+    summary: []
+    owner: A
+    consumers: []
+    issues: []
+
+  - id: A-DDA
+    kind: series-assumption
+    table: series
+    short: >-
+      No [[IsHTMLDDA]] object (\texttt{document.all}) reaches checked code
+      (vacuous on Node).
+    statement: ""
+    anchor: environment
+    anchor_files: []
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dive A)
+    summary: []
+    owner: A
+    consumers: []
+    issues: []
+
+  - id: A-PROXY
+    kind: series-assumption
+    table: series
+    short: No Proxy exotic object reaches checked code.
+    statement: ""
+    anchor: environment
+    anchor_files: []
+    status: [assumed]
+    status_note: \textsc{assumed} (deep dive A)
+    summary: []
+    owner: A
+    consumers: []
+    issues: []
+
+  - id: A-HASINST
+    kind: series-assumption
+    table: series
+    short: >-
+      No non-default \texttt{Symbol.hasInstance} on narrowed
+      \texttt{instanceof} RHS classes.
+    statement: ""
+    anchor: \texttt{isInstanceofRhs}
+    anchor_files: [src/TypeCheckExpr.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, tsc-parity (deep dive A; issue draft
+      \texttt{symbol-hasinstance-narrowing.md})
+    summary: []
+    owner: A
+    consumers: []
+    issues: [symbol-hasinstance-narrowing.md]
+
+  - id: TVAR-SEM
+    kind: series-obligation
+    table: series
+    short: >-
+      Sharpened variable denotation (get-time constraint intersection as
+      definition), verified against every consumer.
+    statement: ""
+    anchor: \texttt{Subst::get}/\texttt{peek}
+    anchor_files: [src/TTypeSubst.sk]
+    status: [open]
+    status_note: \textsc{open} (deep dive B)
+    summary: [{bucket: open, label: "TVAR-SEM"}]
+    owner: B
+    consumers: [C]
+    issues: []
+
+  - id: O-GETCOV
+    kind: series-obligation
+    table: series
+    short: >-
+      Soundness of the covariant variable read in subtyping (inherits
+      L-INTER's violated $\bot$-clause).
+    statement: ""
+    anchor: \texttt{Subst::get} (covariant); \texttt{expandToClauses}
+    anchor_files: [src/TTypeSubst.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} (derived, deep dive D): the covariant variable read
+      inherits the end-to-end-witnessed \texttt{L-INTER-BOT} per-tag zeroing
+      (a candidate with two same-tag-overlapping constraints expands to
+      $\bot$, making \texttt{Clauses::isSub}($\bot$, \dots) vacuously
+      succeed). On L-SUB's critical path; closed by B's per-tag-zeroing repair
+    summary:
+      - {bucket: violated-derived, label: "the covariant variable read O-GETCOV"}
+      - {bucket: open, label: "O-GETCONTRA, O-ARRAYLIT"}
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: O-GETCONTRA
+    kind: series-obligation
+    table: series
+    short: Soundness of the contravariant variable read in subtyping.
+    statement: ""
+    anchor: \texttt{Subst::get} (contravariant)
+    anchor_files: [src/TTypeSubst.sk]
+    status: [open]
+    status_note: \textsc{open} (deep dive D)
+    summary: []
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: O-ARRAYLIT
+    kind: series-obligation
+    table: series
+    short: Soundness of the array-literal decision procedure inside subtyping.
+    statement: ""
+    anchor: \texttt{ArrayLitTyping::subtyping}
+    anchor_files: [src/TArrayLitTyping.sk]
+    status: [open]
+    status_note: \textsc{open} (deep dive D; delegated)
+    summary: []
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: F-CALL
+    kind: series-assumption
+    table: series
+    short: >-
+      The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads
+      \texttt{call{=}None} as unknown callability (vs.\ refinement's
+      definitely-not-callable).
+    statement: ""
+    anchor: \texttt{isSubOptTFuns}
+    anchor_files: [src/TTypeSubtyping.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (deep dive D): a callable assigned
+      to \texttt{\{\}} then narrowed by \texttt{typeof} to \texttt{never};
+      issue draft \texttt{class-constructor-call-none-typeof.md}
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-SUB's \\texttt{call{=}None} subtyping arm (F-CALL)"}
+    owner: D
+    consumers: []
+    issues: [class-constructor-call-none-typeof.md]
+
+  - id: F-BRAND
+    kind: series-assumption
+    table: series
+    short: >-
+      Subtyping never compares the array brand, though refinement narrows
+      on it.
+    statement: ""
+    anchor: \texttt{TFields::isSub\_}
+    anchor_files: [src/TTypeSubtyping.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} by code-level derivation (deep dive D; composite
+      witness sketch; no end-to-end run)
+    summary:
+      - {bucket: violated-derived,
+         label: "the never-compared array brand (F-BRAND)"}
+    owner: D
+    consumers: []
+    issues: []
+
+  # ---- Promoted cross-paper lemmas (registry-mediated imports) ------------
+
+  - id: SETCONSTRAINT-FUN
+    kind: series-lemma
+    table: series
+    short: >-
+      \texttt{TVar::setConstraint} is a functional update on a frozen
+      value: constraints are occurrence-level, not shared state.
+    statement: ""
+    anchor: \texttt{TVar::setConstraint}
+    anchor_files: [src/TType.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive E, by code inspection: frozen class,
+      functional update, both call sites use the return value)
+    summary: []
+    owner: E
+    consumers: [B, C]
+    issues: []
+
+  - id: E-TRANSPORT
+    kind: series-lemma
+    table: series
+    short: >-
+      Monotone-reads transport: an inclusion validated under $\rho$
+      survives later legal transitions on the same timeline, modulo MR-1.
+    statement: ""
+    anchor: \texttt{Subst} transitions
+    anchor_files: [src/TTypeSubst.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} (deep dive E, the monotone-reads theorem, given M1
+      and the MR/BR audit; residue MR-1)
+    summary: []
+    owner: E
+    consumers: [D]
+    issues: []
+
+  - id: TENV-EXPANDINTER
+    kind: series-obligation
+    table: series
+    short: >-
+      The \texttt{tenv.expandInter} mode flag is path-scoped, and both
+      intersection forms it selects (expanded and deferred
+      \texttt{unexpandedInter}) satisfy the L-INTER containment.
+    statement: ""
+    anchor: \texttt{TEnv.expandInter}; \texttt{TInter::expand}
+    anchor_files: [src/TEnv.sk, src/TTypeInter.sk]
+    status: [open]
+    status_note: >-
+      \textsc{open} — found by external review: the flag is absent from
+      deep dive E's unsaved-state inventory; path-scoping should follow
+      the frozen-TEnv threading argument, and the deferred form needs
+      deep dive B's containment coverage
+    summary: [{bucket: open, label: "TENV-EXPANDINTER"}]
+    owner: E
+    consumers: [C]
+    issues: []
+
+  - id: L-SUB-IDXNAME
+    kind: series-obligation
+    table: series
+    short: >-
+      A numeric-named field is checked against both a number and a string
+      index when the supertype has both (soundness of the width lemma's
+      numeric-named case).
+    statement: ""
+    anchor: \texttt{indexForFieldName}; \texttt{TFields::isSub\_}
+    anchor_files: [src/TType.sk, src/TTypeSubtyping.sk]
+    status: [open]
+    status_note: >-
+      \textsc{open} — found by external review: the width lemma checks a
+      numeric-named sub field against only one super index
+      (\texttt{indexForFieldName} returns a single index), while covering
+      semantics needs both; SKJS enforces neither TS2411 nor TS2413. The
+      subtyping over-acceptance is real but \emph{not} end-to-end
+      unsound at the pin — reads of numeric-string keys stay conservative
+      (\texttt{string|number}), masking it, as verified against the
+      binary; a validator-completeness gap, not a witnessed unsoundness.
+      Cited at deep dive D's width lemma as a named residual
+    summary: [{bucket: open, label: "L-SUB-IDXNAME"}]
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: A-INTERSEM
+    kind: series-assumption
+    table: series
+    short: >-
+      $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the
+      instance-layer upper bound the dispatcher's fast paths assume.
+    statement: ""
+    anchor: \texttt{TInter::expand}
+    anchor_files: [src/TTypeInter.sk]
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed} (deep dive D; the instance-layer counterpart of
+      deep dive C's \texttt{TInter} expansion — an upper bound on the
+      denotation, distinct from L-EXP's over-approximation direction)
+    summary: []
+    owner: D
+    consumers: []
+    issues: []
+
+  - id: E-GUARD-PLACEHOLDER
+    kind: series-obligation
+    table: series
+    short: >-
+      An un-annotated ambient-class field placeholder must not head-expand to
+      $\bot$ (the case E-GUARD's recursion-guard audit did not cover).
+    statement: ""
+    anchor: \texttt{instantiate} (missing-annotation return); \texttt{expandToVectors}
+    anchor_files: [src/TEnv.sk, src/TType.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (deep dive C): the
+      missing-annotation identity return fires with \texttt{seenInstantiate}
+      empty, the identity is dropped by the expansion seen-set, and the field
+      reads as $\bot$ (accepted into \texttt{never}); issue draft
+      \texttt{ambient-unannotated-field-bottom.md}. Sibling of the
+      recursion-guard E-GUARD row, which is empirically safe
+    summary:
+      - {bucket: violated-witnessed, label: "the ambient-field $\\bot$-collapse (E-GUARD-PLACEHOLDER)"}
+    owner: C
+    consumers: []
+    issues: [ambient-unannotated-field-bottom.md]
+
+  - id: ACCESSOR-METHOD
+    kind: series-obligation
+    table: series
+    short: >-
+      Accessor (\texttt{get}/\texttt{set}) members must be typed as fields,
+      not methods; today a getter is a call signature, so \texttt{c.p()}
+      type-checks and throws.
+    statement: ""
+    anchor: \texttt{isGetSet} (parser-only); member typing
+    anchor_files: [src/Ast.sk, src/ParserDefs.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (SKJS-specific; tsc rejects
+      with TS6234): the parser's \texttt{isGetSet} marker is never read by
+      the checker, so a getter \texttt{get p(): T} is typed as a method
+      \texttt{p(): T}. \texttt{c.p()} is accepted and throws at runtime
+      (\texttt{c.p} is not a function). Issue draft
+      \texttt{getter-typed-as-method.md}. Adjacent to F's accessor caveat
+      and L-GETSET, but a distinct (member-typing) hole
+    summary:
+      - {bucket: violated-witnessed, label: "accessor members typed as methods (ACCESSOR-METHOD)"}
+    owner: F
+    consumers: []
+    issues: [getter-typed-as-method.md]
+
+# Verified fixes: a tested patch that closes an issue, recorded but not
+# landed. The row stays violated at the pinned revision; this records only
+# that a fix exists and was verified (witness flips, suite green).
+fixes:
+  - issue: stypes-inter-per-tag-zeroing.md
+    patch: stypes-inter-per-tag-zeroing.patch
+    row: L-INTER-BOT
+    verified: >-
+      One line in \texttt{mapInterOption}: an empty shared key drops that
+      key instead of zeroing the whole map. The witness flips accepted to
+      rejected and the full test suite passes (no regressions). Closes the
+      \texttt{STypes} stratum of L-INTER-BOT and the root of O-GETCOV; the
+      \texttt{TFun}-incomparable stratum remains

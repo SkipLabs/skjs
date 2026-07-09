@@ -1,0 +1,1015 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+
+\newtheorem{finding}[theorem]{Finding}
+
+% Long typewriter tokens (spec names, file paths) defeat hyphenation;
+% allow a little inter-word stretch instead of overfull lines.
+\emergencystretch=2em
+
+% Macros copied from the main paper (skjs-type-soundness.tex, rev 9108f339)
+\newcommand{\ObjVal}{\mathsf{ObjVal}}
+\newcommand{\String}{\mathsf{String}}
+\newcommand{\SymVal}{\mathsf{SymVal}}
+\newcommand{\Tags}{\mathsf{Tags}}
+\newcommand{\Payload}{\mathsf{Payload}}
+\newcommand{\rtag}{\mathsf{rtag}}
+\newcommand{\tagfn}{\mathsf{tag}}
+
+% Local to this deep dive
+\newcommand{\ESVal}{\mathsf{ESVal}}
+\newcommand{\estag}{\mathsf{estag}}
+\newcommand{\realize}{\gamma}
+\newcommand{\ecma}[1]{ECMA-262 \S#1}
+\newcommand{\intm}[1]{[[#1]]}
+
+\title{Runtime Grounding:\\
+ECMAScript Semantics for the SKJS Value Domain\\
+{\large Deep Dive A for ``Refinement and Inference Growth in SKJS''}}
+\author{}
+\date{\skjspin}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The main soundness paper models the runtime as an abstract value domain
+$\Val$ equipped with predicates ($\approx$, $\mathsf{truthy}$,
+$\mathsf{callable}$, $\mathsf{constructible}$, $\mathsf{isArrayV}$,
+$P_{\mathsf{inst}}$); three of its ledger rows rest entirely on that
+domain: \textbf{L-TAG}, \textbf{L-INST}, and \textbf{L-ISARR}. This
+paper is the evidence behind their current table statuses.
+SKJS is a type checker only — there is no SKJS code generator, and checked
+programs run \emph{unmodified} on a JavaScript engine — so each of these
+rows is really a claim about ECMAScript. This deep dive supplies the
+grounding: a realization map from the model's value domain onto ECMAScript
+language values under which the model's predicates are exactly the
+pullbacks of the spec's \texttt{IsStrictlyEqual}, \texttt{ToBoolean},
+\texttt{typeof}, \texttt{IsCallable}/\texttt{IsConstructor}, and
+\texttt{IsArray}. Under it, \textbf{L-TAG} and \textbf{L-ISARR} are
+discharged (\textsc{proved}, modulo two named environment assumptions),
+and \textbf{L-INST} is decomposed into sharper named assumptions — two of
+which turn out to be \textsc{violated}, with checked-and-executed
+counterexamples produced while attempting the discharge. A third
+by-product refutes an implementation premise behind \textsc{R-Typeof}:
+class constructors implement $\intm{Call}$, but the checker types them as
+definitely-not-callable. Section~\ref{sec:status} gives the precise
+ledger edits for the main paper.
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose and Relation to the Main Paper}
+\label{sec:purpose}
+
+This document is deep dive A of the series supporting
+\emph{Refinement and Inference Growth in SKJS: a Soundness Model of the
+Type Checker} (the \emph{main paper}), pinned like it to revision
+\texttt{9108f339}. Its job is to discharge, sharpen, or refute the rows of
+the main paper's assumption ledger (its Section ``Assumptions and Proof
+Obligations'') that concern the \emph{runtime} rather than the checker:
+
+\begin{itemize}
+\item \textbf{L-TAG} — every value carries exactly one
+  tag, consistently with its static tag. \emph{SKJS emits no code}: a
+  checked program is executed, byte for byte, by an ordinary JavaScript
+  engine, so the runtime counterpart of the model's Lemmas A0/A1 is a
+  statement about ECMAScript's language types, provable from the
+  specification (Section~\ref{sec:tags}) — which is why the ledger anchors
+  this row to ECMAScript rather than to any SKJS component.
+\item \textbf{L-INST} —
+  $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type built at
+  an \texttt{instanceof} narrowing site (Section~\ref{sec:inst}).
+\item \textbf{L-ISARR} —
+  $\mathsf{isArrayV}(o)$ implies
+  $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$
+  (Section~\ref{sec:isarr}).
+\end{itemize}
+
+In addition it grounds two definitions the main paper introduces without
+external justification and then uses everywhere: the strict-equality
+relation $\approx$ (its Definition ``Strict Equality''; used by \textsc{R-Eq},
+\textsc{R-EqField}, and constant removal) and
+the per-tag truthiness table (its Definition ``Truthiness''; used by
+\textsc{R-Truthy}/\textsc{R-TruthyField} and the residue lemma). Both are
+shown to be \emph{exactly} the ECMAScript algorithms, transported along
+the realization map (Sections~\ref{sec:seq} and~\ref{sec:truthy}).
+
+Failed discharge attempts are reported as numbered
+\emph{Findings}. Three of them come with programs that the pinned checker
+accepts (verified by running \texttt{skjs check} at the pinned revision)
+and that misbehave when executed on Node: they are witnesses, not
+conjectures. All spec citations are to ECMA-262 as of the 2025 edition;
+clause \emph{numbers} drift between editions, so each citation also names
+the clause.
+
+\paragraph{Notation.}
+We reuse the main paper's notation unchanged: $\Val$, $\Tags$, $\rtag$,
+payloads $(\Payload_k)_k$, $\ObjVal$, the object interface
+($\mathsf{props}$, $\mathsf{get}$, $\mathsf{has}$, $\mathsf{callable}$,
+$\mathsf{constructible}$, $\mathsf{isArrayV}$), $\approx$,
+$\mathsf{truthy}$, and $\sem{\cdot}$. Implementation anchors
+(\textsf{impl:}~\texttt{\dots}) point into revision \texttt{9108f339}.
+
+%==========================================================================
+\section{Minimal Recap of the Modeled Runtime}
+\label{sec:recap}
+
+From the main paper's Section 2 (Runtime Model): $\Tags$ is the
+nine-element set
+\[
+\Tags = \{\mathsf{undef}, \mathsf{void}, \mathsf{null}, \mathsf{bool},
+\mathsf{num}, \mathsf{str}, \mathsf{bigint}, \mathsf{sym},
+\mathsf{obj}\},
+\]
+and $\Val = \{(k,p) \mid k \in \Tags, p \in \Payload_k\}$ with
+$\Payload_{\mathsf{num}} = \mathbb{F}$ (IEEE-754 doubles including $-0$
+and $\mathsf{NaN}$), $\Payload_{\mathsf{bigint}} = \mathbb{Z}$, and
+$\Payload_{\mathsf{undef}} = \Payload_{\mathsf{void}} = \{\star\}$. The
+$\mathsf{void}$ tag is declared there to be ``a checker fiction for the
+runtime value \texttt{undefined}''; this paper makes that statement
+precise. The relation $\approx$ is a partial equivalence
+($\mathsf{NaN}$ irreflexive, $-0 \approx 0$, the
+$\mathsf{undef}/\mathsf{void}$ pair identified);
+$\mathsf{truthy}$ is given by per-tag falsy sets; objects come with the
+abstract interface above, read as a snapshot (\textbf{L-PURE}).
+
+The three refinement rules whose soundness proofs consume the assumed
+rows are \textsc{R-Typeof} (via the $P_{\mathsf{typeof}=k}$ sets and the
+$\mathsf{constructible} \implies \mathsf{callable}$ interface fact),
+\textsc{R-Inst} (via \textbf{L-INST}), and \textsc{R-IsArray} (via
+\textbf{L-ISARR}).
+
+%==========================================================================
+\section{The Realization Map: Tags vs.\ ECMAScript Language Types}
+\label{sec:tags}
+
+ECMAScript defines exactly eight \emph{language types}: Undefined,
+Null, Boolean, String, Symbol, Number, BigInt, and Object
+(\ecma{6.1}, ``ECMAScript Language Types''). Every language value belongs
+to exactly one of them — the types are introduced as a partition of the
+value space, not as overlapping classifications. Write $\ESVal$ for the
+set of language values and $\estag(v)$ for the language type of
+$v \in \ESVal$.
+
+\begin{definition}[Realization Map]
+\label{def:gamma}
+$\realize : \Val \to \ESVal$ sends a model value to the language value it
+stands for:
+\begin{itemize}
+\item $\realize(\mathsf{undef}, \star) = \realize(\mathsf{void}, \star)
+  = \texttt{undefined}$ and $\realize(\mathsf{null}, \star) =
+  \texttt{null}$;
+\item on $\mathsf{bool}$, $\mathsf{num}$, $\mathsf{str}$,
+  $\mathsf{bigint}$: the evident payload realization — the model chose
+  its payload sets to \emph{be} the spec's value sets
+  ($\mathbb{F}$ is exactly the Number type, ``double-precision 64-bit
+  binary format IEEE 754-2019'' including $-0$ and a single
+  $\mathsf{NaN}$, \ecma{6.1.6.1}; $\mathbb{Z}$ is exactly the BigInt
+  type, \ecma{6.1.6.2}; $\String$ realizes as UTF-16 code unit
+  sequences, \ecma{6.1.4});
+\item on $\mathsf{sym}$ and $\mathsf{obj}$: a fixed bijection between the
+  abstract payload sets $\SymVal$, $\Payload'_{\mathsf{obj}}$ and the
+  runtime symbol/object identities of the executing program.
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Grounding of Tags; discharges \textbf{L-TAG}]
+\label{thm:tags}
+$\realize$ is surjective onto the language values reachable by the
+program, and:
+\begin{itemize}
+\item[(G1)] $\estag(\realize(v))$ is determined by $\rtag(v)$, via the
+  evident bijection
+  $\Tags \setminus \{\mathsf{void}\} \leftrightarrow$
+  \{Undefined, Null, Boolean, Number, String, BigInt, Symbol, Object\},
+  extended by $\mathsf{void} \mapsto$ Undefined.
+\item[(G2)] $\realize$ is injective except on the single fiber
+  $\{(\mathsf{undef},\star), (\mathsf{void},\star)\}$, whose two elements
+  realize to the same value \texttt{undefined}.
+\item[(G3)] Distinct tags other than the pair
+  $\{\mathsf{undef}, \mathsf{void}\}$ realize to disjoint sets of
+  language values.
+\end{itemize}
+Consequently the runtime counterparts of the main paper's Lemmas A0 (tag
+consistency) and A1 (tag disjointness) hold: a language value inhabits
+denotations of at most one tag, except that \texttt{undefined} inhabits
+both $\mathsf{undef}$- and $\mathsf{void}$-tagged denotations.
+\end{theorem}
+\begin{proof}
+(G1) and (G2) are immediate from Definition~\ref{def:gamma}. (G3) follows
+from (G1)+(G2) because the eight language types partition $\ESVal$
+(\ecma{6.1}). Surjectivity: every language type is covered, and the
+payload realizations are onto their value sets (bijections or identity).
+\end{proof}
+
+The residual obligation created by (G2) is that no rule of the checker
+may depend on \emph{runtime-distinguishing} the tags $\mathsf{undef}$ and
+$\mathsf{void}$ — they are indistinguishable after realization. The main
+paper already maintains this discipline explicitly: \textsc{R-EqUndef}
+and the \texttt{typeof "undefined"} case of \textsc{R-Typeof} treat the
+two tags jointly; the truthiness residue keeps $\mathsf{void}$ on both
+branches; the one corner where a single tag of the pair could be consumed
+alone is closed there by the checker's rejection of
+\texttt{void}-typed strict-equality operands. Nothing further is needed
+here.
+
+\paragraph{Anchoring.}
+There is no code generator anywhere in the pinned revision; the runtime
+is whatever engine executes the unmodified source, so the ledger's L-TAG
+row is anchored to this theorem (equivalently, to \ecma{6.1}), not to any
+SKJS component. Note the row's phrase ``consistent with its static tag''
+asks, at full strength, that checked expressions inhabit their checked
+types; that is \textbf{L-TC}, a different row, and this paper
+deliberately does not fold it back in.
+
+\subsection{The \texttt{typeof} table}
+\label{sec:typeof-table}
+
+The \texttt{typeof} operator (\ecma{13.5.3}, ``The \texttt{typeof}
+Operator'', Table ``typeof Operator Results'') maps every language value
+to a string as follows, where \emph{callable} means ``implements the
+$\intm{Call}$ internal method'':
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Language type of $v$ & \texttt{typeof} $v$ & model tag(s) \\
+\midrule
+Undefined & \texttt{"undefined"} & $\mathsf{undef}$, $\mathsf{void}$ \\
+Null & \texttt{"object"} & $\mathsf{null}$ \\
+Boolean & \texttt{"boolean"} & $\mathsf{bool}$ \\
+Number & \texttt{"number"} & $\mathsf{num}$ \\
+String & \texttt{"string"} & $\mathsf{str}$ \\
+BigInt & \texttt{"bigint"} & $\mathsf{bigint}$ \\
+Symbol & \texttt{"symbol"} & $\mathsf{sym}$ \\
+Object, not callable & \texttt{"object"} & $\mathsf{obj}$ \\
+Object, callable & \texttt{"function"} & $\mathsf{obj}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two quirks are load-bearing for the checker and both are already encoded
+in the main paper's $P_{\mathsf{typeof}=k}$ sets (its Definition
+``Evaluation of Condition Forms''):
+\texttt{typeof null === "object"} (the \texttt{null} row above; the model
+includes $\sem{\texttt{null}}$ in $P_{\mathsf{typeof}=\texttt{"object"}}$),
+and the callable/non-callable split of the Object type (the model's
+$P_{\mathsf{typeof}=\texttt{"function"}} = \{o \in \ObjVal \mid
+\mathsf{callable}(o)\}$). Granting Definition~\ref{def:callable} below
+(callable $=$ implements $\intm{Call}$), the pullback along $\realize$ of
+``\texttt{typeof} $x$ $=$ $k$'' is \emph{exactly}
+$P_{\mathsf{typeof}=k}$ for all eight operands. So the evaluation
+semantics of \textsc{R-Typeof} is grounded; the soundness of its
+narrowing given that semantics is the main paper's Lemma
+``\textsc{R-Typeof} is Branch-Sound'' and is not
+re-proved here. (Whether the checker's \emph{types} populate the callable
+split correctly is a separate question — see
+Finding~\ref{find:ctor-call}.)
+
+\paragraph{Named environment caveat (A-DDA).}
+Annex B of the spec (\ecma{B.3.6}, ``The $\intm{IsHTMLDDA}$ Internal
+Slot'') sanctions host objects — in practice the single browser object
+\texttt{document.all} — for which \texttt{typeof} returns
+\texttt{"undefined"} and \texttt{ToBoolean} returns \textsf{false}
+despite being objects. Such a value would break rows one and eight of the
+table and the truthiness grounding below. We record
+\textbf{A-DDA}: \emph{no $\intm{IsHTMLDDA}$ object flows into checked
+code}. This holds in any non-browser embedding (Node has none), and the
+pinned import stubs describe a Node-style environment
+(\texttt{process}, \texttt{fetch}/undici — no DOM).
+\impl{import-stubs/@types/skjs/index.d.ts}
+
+\subsection{Where the \texttt{void} tag fits}
+
+The checker distinguishes \texttt{void} from \texttt{undefined} to
+restrict \emph{programs} (a \texttt{void}-typed result should not be
+consumed), not to describe a runtime distinction; Theorem~\ref{thm:tags}
+(G2) is the formal statement that no runtime distinction exists. The
+grounded reading of every $\mathsf{void}$-related clause in the main
+paper is obtained by applying $\realize$: e.g.\ the cross-tag arm of
+$\approx$ (next section) is not a modeling convenience but a
+\emph{theorem forced by} $\realize(\mathsf{undef},\star) =
+\realize(\mathsf{void},\star)$.
+
+%==========================================================================
+\section{Strict Equality: $\approx$ is the Pullback of
+\texttt{IsStrictlyEqual}}
+\label{sec:seq}
+
+The spec's strict-equality algorithm (\ecma{7.2.16},
+\texttt{IsStrictlyEqual}$(x, y)$; the semantics of \texttt{===} via
+\ecma{13.11}) is:
+(1) if $\estag(x) \neq \estag(y)$, return \textsf{false};
+(2) if $x$ is a Number, return
+\texttt{Number::equal}$(x,y)$ — which returns \textsf{false} if either
+argument is $\mathsf{NaN}$, \textsf{true} if both are $+0$/$-0$ in any
+combination, and value equality otherwise (\ecma{6.1.6.1.13});
+(3) otherwise return \texttt{SameValueNonNumber}$(x,y)$ — payload
+equality per type: trivially \textsf{true} for Undefined and Null,
+mathematical-value equality for BigInt, code-unit equality for String,
+identity for Boolean/Symbol/Object (\ecma{7.2.12}).
+
+\begin{theorem}[Grounding of $\approx$]
+\label{thm:seq}
+For all $v, w \in \Val$:
+$v \approx w$ iff
+$\texttt{IsStrictlyEqual}(\realize(v), \realize(w)) = \textsf{true}$.
+\end{theorem}
+\begin{proof}
+Case on the tag pair. If $\rtag(v), \rtag(w) \in
+\{\mathsf{undef},\mathsf{void}\}$: both sides realize to
+\texttt{undefined}; step (1) passes, step (3) returns \textsf{true}; and
+$v \approx w$ by the first arm of the definition — both sides hold. If
+the tags are equal and not in the pair: realization preserves the
+language type, step (1) passes, and steps (2)/(3) compute exactly the
+payload condition of $\approx$'s second and third arms
+($\mathsf{NaN}$-irreflexivity and $-0 = 0$ from
+\texttt{Number::equal}; payload/identity equality from
+\texttt{SameValueNonNumber} — for BigInt this is mathematical equality
+and $\Payload_{\mathsf{bigint}} = \mathbb{Z}$ has no signed zero, so no
+analogue of the $-0$ clause arises). If the tags differ and are not the
+$\{\mathsf{undef},\mathsf{void}\}$ pair: by Theorem~\ref{thm:tags} (G3)
+the realizations have different language types, step (1) returns
+\textsf{false}, and $\approx$ does not relate $v, w$ — both sides fail.
+\end{proof}
+
+Every property of $\approx$ that the main paper proves or uses —
+the partial-equivalence lemma, $\mathsf{NaN} \not\approx \mathsf{NaN}$,
+the identification of the $\mathsf{undef}/\mathsf{void}$ pair — is
+therefore inherited from the spec rather than stipulated.
+
+\paragraph{Contrast: \texttt{SameValue} and \texttt{Object.is}.}
+The spec has two finer equalities: \texttt{SameValue}
+(\ecma{7.2.10}; surfaced as \texttt{Object.is}) makes $\mathsf{NaN}$
+reflexive and \emph{separates} $+0$ from $-0$; \texttt{SameValueZero}
+(\ecma{7.2.11}; used by \texttt{Array.prototype.includes},
+\texttt{Map}/\texttt{Set} keying) makes $\mathsf{NaN}$ reflexive and
+identifies the zeros. Neither is $\approx$. This matters in two
+directions: (i) the checker narrows only on \texttt{===}/\texttt{!==},
+so only \texttt{IsStrictlyEqual} needs grounding —
+\texttt{Object.is} is not even in the pinned stubs, and
+\texttt{Map}/\texttt{Set}/\texttt{includes} are opaque signatures (a subtyping-surface concern); (ii) inside \texttt{OrdinaryHasInstance} the spec
+compares prototype-chain entries with \texttt{SameValue}, but on Objects
+\texttt{SameValue} and \texttt{IsStrictlyEqual} coincide (both are
+identity), so no discrepancy reaches Section~\ref{sec:inst}.
+
+\begin{corollary}[The literal-type closure choice is forced]
+\label{cor:zero}
+The main paper defines literal-type denotations as same-tag
+$\approx$-closures, so the numeric literal type \texttt{0} denotes
+$\{+0, -0\}$. Under Theorem~\ref{thm:seq} this is the unique sound
+choice for \textsc{R-Eq}'s false branch: \texttt{x !== 0} does not
+exclude $x = -0$ at runtime ($-0$ \texttt{=== 0} is \textsf{true}), so a
+denotation of \texttt{0} omitting $-0$ would let constant removal
+subtract a value still possible. It also matches \texttt{tsc}, which has
+no $-0$ literal type: \texttt{const x: 0 = -0} is accepted there, i.e.\
+\texttt{tsc}'s literal type \texttt{0} likewise contains both zeros.
+\end{corollary}
+
+%==========================================================================
+\section{Truthiness: the Falsy Sets are \texttt{ToBoolean}}
+\label{sec:truthy}
+
+\texttt{ToBoolean} (\ecma{7.1.2}) is defined by a per-type table:
+\texttt{undefined} and \texttt{null} $\mapsto$ \textsf{false}; Boolean
+$\mapsto$ itself; Number $\mapsto$ \textsf{false} iff the value is
+$+0$, $-0$, or $\mathsf{NaN}$; String $\mapsto$ \textsf{false} iff empty;
+BigInt $\mapsto$ \textsf{false} iff $0$; Symbol $\mapsto$ \textsf{true};
+Object $\mapsto$ \textsf{true} (with the Annex-B
+$\intm{IsHTMLDDA}$ exception covered by \textbf{A-DDA}).
+
+\begin{theorem}[Grounding of Truthiness]
+\label{thm:truthy}
+Under \textbf{A-DDA}, for all $v \in \Val$:
+\[
+\mathsf{truthy}(v) = \texttt{ToBoolean}(\realize(v)).
+\]
+\end{theorem}
+\begin{proof}
+Row-by-row comparison of the main paper's Definition ``Truthiness'' with
+the table
+above, through the tag correspondence of Theorem~\ref{thm:tags}: the
+$\mathsf{undef}$, $\mathsf{void}$ rows both realize to \texttt{undefined}
+(falsy — the model marks both tags falsy, consistently); the numeric
+falsy set $\{0, -0, \mathsf{NaN}\}$, the empty string, the zero bigint,
+and the always-truthy symbol/object rows are verbatim. The comparison is
+exact and complete: neither table has a row the other lacks.
+\end{proof}
+
+This grounds the predicate. Note where the burden then sits: the residue
+lemma of the main paper (its Lemma ``Residues are Sound'') additionally
+needs the
+\emph{implementation's lexeme-level} falsiness test to agree with
+$\mathsf{truthy}$ on literal spellings — a checker-internal (not
+runtime) lexeme-level matter, which remains \textsc{violated} by the
+\#655 zero spellings, and is out of scope here.
+The runtime side contributes no further caveat.
+\impl{TType.sk / TPrimValueKind::isFalsy, SType::falsiness}
+
+%==========================================================================
+\section{Callable and Constructible}
+\label{sec:call}
+
+\begin{definition}[Grounded predicates]
+\label{def:callable}
+For $o \in \ObjVal$:
+$\mathsf{callable}(o)$ iff $\realize(o)$ implements the $\intm{Call}$
+internal method (the spec's \texttt{IsCallable}, \ecma{7.2.3});
+$\mathsf{constructible}(o)$ iff $\realize(o)$ implements
+$\intm{Construct}$ (\texttt{IsConstructor}, \ecma{7.2.4}).
+\end{definition}
+
+``Callable'' therefore means \emph{has the internal method}, not ``can be
+invoked without throwing''. This distinction is exactly what the
+\texttt{typeof} table keys on, and it is where class constructors live:
+a class constructor is an ECMAScript function object whose $\intm{Call}$
+\emph{exists but throws} — step ``If $F$.$\intm{IsClassConstructor}$ is
+\textsf{true}, throw a \texttt{TypeError}'' in the $\intm{Call}$ of
+ECMAScript function objects (\ecma{10.2.1}). Hence
+\texttt{typeof (class \{\})} $=$ \texttt{"function"}.
+
+\begin{theorem}[Interface fact:
+$\mathsf{constructible} \implies \mathsf{callable}$]
+\label{thm:ctor-call}
+For every $o \in \ObjVal$, $\mathsf{constructible}(o)$ implies
+$\mathsf{callable}(o)$.
+\end{theorem}
+\begin{proof}
+The spec states it directly in the definition of the Object type
+(\ecma{6.1.7.2}, ``Object Internal Methods and Internal Slots''):
+``every object that supports $\intm{Construct}$ must support
+$\intm{Call}$; that is, every constructor must be a function object''
+(reiterated among the invariants of the essential internal methods,
+\ecma{6.1.7.3}). It is also easy to audit exhaustively across the
+function kinds the spec defines:
+\emph{ordinary functions} — $\intm{Construct}$ is installed only on
+function objects (arrow functions and methods get $\intm{Call}$ only);
+\emph{class constructors} — both present, $\intm{Call}$ throwing
+(\ecma{10.2.1});
+\emph{bound functions} (\ecma{10.4.1}) — always have $\intm{Call}$, and
+$\intm{Construct}$ only if the bound target has it;
+\emph{Proxy exotic objects} (\ecma{10.5.12}--\S10.5.13) — a proxy has
+$\intm{Call}$ iff its target does and $\intm{Construct}$ iff its target
+does, so the implication lifts through proxies by induction on the
+target chain.
+\end{proof}
+
+This discharges the ``JS fact'' quoted in the main paper's Object
+Interface (its Definition ``Object Interface'') and used in the
+\texttt{"object"} case of its Lemma ``\textsc{R-Typeof} is Branch-Sound'':
+status \textsc{proved}.
+
+\begin{finding}[Class constructors refute the checker's
+$\mathsf{call} = \mathsf{None}$ typing; unsound \texttt{typeof}
+narrowing]
+\label{find:ctor-call}
+Attempting to ground \textsc{R-Typeof}'s object-branch treatment
+end-to-end turned up a genuine unsoundness. The checker's static-side
+object type for a class $C$ (the type of the constructor \emph{value})
+is built with a construct signature but \emph{no} call signature —
+$\mathsf{new} = \mathsf{Some}(\ldots)$,
+$\mathsf{call} = \mathsf{None}$
+(\texttt{TEnv::newStaticObject} passes \texttt{new} and omits
+\texttt{call}). Under the main paper's object semantics,
+$\mathsf{call} = \mathsf{None}$ asserts $\neg\mathsf{callable}$ of every
+member; but by Definition~\ref{def:callable} and \ecma{10.2.1} the
+runtime constructor value \emph{is} callable
+(\texttt{typeof C === "function"}). So $\sem{\texttt{typeof } C}$
+excludes the value $C$ itself — \textbf{L-TC} is violated at
+class-constructor values — and \textsc{R-Typeof}, whose narrowing is
+sound \emph{given} membership, misfires. Checked witness (accepted by
+the pinned checker, exit 0; \texttt{tsc} rejects it):
+\begin{verbatim}
+class C { a: number = 1 }
+function g(): string {
+  const F = C;
+  if (typeof F === "function") {
+    const s: string = F;   // accepted: the branch narrowed F to bottom
+    return s;
+  }
+  return "not a function";
+}
+console.log(g());          // Node prints: [class C]
+\end{verbatim}
+At runtime the true branch is taken; the checker had dropped the sole
+object member of $F$'s type (call mode $\mathsf{None}$ $\to$ drop in the
+\texttt{"function"}/true arm), leaving an uninhabited type from which
+the \texttt{string} annotation is vacuously reachable. $g()$ returns a
+class constructor as a \texttt{string}. The false branch of
+\texttt{typeof F === "object"} misfires symmetrically. The defect is not
+in \textsc{R-Typeof}'s rule (the main paper's proof is correct given
+membership) nor in the runtime facts (grounded above); it is in the
+static-side type: $\mathsf{call} = \mathsf{None}$ (``definitely not
+callable'') should be the maybe-callable mode
+$(\mathsf{true}, \sigma)$, or the \texttt{"function"} arm should treat
+$\mathsf{new} \neq \mathsf{None}$ as callable, per
+Theorem~\ref{thm:ctor-call}. Proposed ledger row:
+\textbf{A-CTOR-CALL}, status \textsc{violated}
+(Section~\ref{sec:status}); a pinned test is recommended.
+\impl{TEnv.sk / newStaticObject (call omitted);
+TypeCheckRefine.sk / evalTypeofEquality}
+\end{finding}
+
+%==========================================================================
+\section{\texttt{instanceof} and \textbf{L-INST}}
+\label{sec:inst}
+
+\subsection{The spec algorithms}
+
+Evaluation of \texttt{V instanceof T} calls
+\texttt{InstanceofOperator}$(V, T)$ (\ecma{13.10.2}):
+\begin{enumerate}
+\item if $T$ is not an Object, throw;
+\item let $h = \texttt{GetMethod}(T, \texttt{@@hasInstance})$; if $h$
+  is not \texttt{undefined}, call $h$ with receiver $T$ and argument
+  $V$, and return the \texttt{ToBoolean} of the result;
+\item otherwise, if $T$ is not callable, throw; return
+  \texttt{OrdinaryHasInstance}$(T, V)$.
+\end{enumerate}
+The default \texttt{@@hasInstance} method, on
+\texttt{Function.prototype}
+(\ecma{20.2.3.6}), exists on every function and simply runs
+\texttt{OrdinaryHasInstance}; it is non-writable and non-configurable,
+but a class can \emph{shadow} it with a static method, and any object can
+carry an own \texttt{@@hasInstance}. \texttt{OrdinaryHasInstance}$(C,O)$
+(\ecma{7.3.22}): if $C$ is a bound function, recurse on its target; if
+$O$ is not an Object, return \textsf{false}; let
+$P = \texttt{Get}(C, \texttt{"prototype"})$ (throw if not an Object);
+walk $O$'s $\intm{GetPrototypeOf}$ chain, returning \textsf{true} iff
+some entry is \texttt{SameValue}-identical to $P$.
+
+Ground $P_{\mathsf{inst}}(C) \triangleq \{v \in \Val \mid
+\texttt{InstanceofOperator}(\realize(v), \realize(C)) =
+\textsf{true}\}$; the throwing cases satisfy neither branch relation
+(main paper, Definition ``Evaluation of Condition Forms''), so they are
+vacuous for narrowing. That
+$P_{\mathsf{inst}}(C) \subseteq \ObjVal$ is immediate from step 3 of
+\texttt{OrdinaryHasInstance} — \emph{provided} evaluation reaches it,
+which step 2 does not guarantee. This is the first caveat.
+
+\subsection{What the checker builds, and the gate}
+
+\textsc{R-Inst} fires only on the true branch, and only when the RHS is a
+bare name that resolves to a class or interface \emph{definition}
+(\texttt{hasClassDef}); a merely Function-typed RHS narrows nothing.
+The instance type $T_C$ is built by \texttt{newObject} with type
+arguments from \texttt{makeTArgs} — verified at the pin:
+\texttt{makeTArgs} generates one \emph{fresh ordinary inference variable}
+(\texttt{Subst::gen}, a candidate \texttt{TVID}) per class parameter and
+attaches exactly the parameter's \emph{declared constraint}, if any
+(\texttt{tvar.setConstraint}); \texttt{Array} is special-cased to the
+single argument $\top$.
+\impl{TypeCheckRefine.sk / evalCond (InstanceOf arm), evalInstanceof}
+\impl{TEnv.sk / hasClassDef, makeTArgs, newObject}
+
+This pins the accurate discharge premise, recorded in the main paper's
+L-INST row: the chosen arguments are fresh, but \emph{not} unconstrained
+when the class declares parameter bounds
+(\texttt{class C<T extends U>}). Freshness plus declared-bounds-only is
+what actually holds — and
+declared bounds are harmless for the inclusion, because every runtime
+instance was constructed through a \texttt{new}-check that enforced them
+(under \textbf{L-TC} at construction sites).
+
+\subsection{Conditional discharge and the honest caveats}
+
+\begin{theorem}[Conditional discharge of \textbf{L-INST}]
+\label{thm:inst}
+Assume, for the class $C$ at a narrowing site:
+\begin{itemize}
+\item \textbf{A-HASINST}: no \texttt{@@hasInstance} method other than
+  the \texttt{Function.prototype} default is found on
+  $\realize(C)$ (step 2 resolves to the default);
+\item \textbf{A-PROTO}: no prototype surgery — objects with
+  $C.\texttt{prototype}$ in their chain were produced by \texttt{new} on
+  $C$ or a subclass (no \texttt{Object.create},
+  \texttt{Object.setPrototypeOf}, \texttt{Reflect}, or Proxy
+  $\intm{GetPrototypeOf}$ traps reachable), and
+  $C.\texttt{prototype}$ itself is unmodified;
+\item \textbf{L-TC} at construction: every \texttt{new}-site
+  establishes the instance object type of the constructed class
+  (fields present and typed, per the class-checking discipline).
+\end{itemize}
+Then $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}_{\rho'}$ at the
+post-instantiation state $\rho'$, reading the fresh unbound arguments'
+denotations as unconstrained-within-declared-bounds.
+\end{theorem}
+\begin{proof}[Proof sketch]
+By \textbf{A-HASINST}, membership in $P_{\mathsf{inst}}(C)$ is decided by
+\texttt{OrdinaryHasInstance}, so $v$ is an object with
+$C.\texttt{prototype}$ in its chain. By \textbf{A-PROTO}, $v$ was
+constructed by $C$ or a subclass, as some instantiation
+$C\langle \vec U \rangle$ with $\vec U$ within the declared bounds. By
+\textbf{L-TC} at the construction site, $v$ then satisfies the instance
+object type of $C\langle \vec U \rangle$: every declared field present
+with a $\vec U$-instantiated get-type, inherited fields included
+(subclass constructors must complete \texttt{super()}). Since $T_C$'s
+arguments are \emph{fresh and unbound at $\rho'$}, each field constraint
+of $T_C$ weakens to its declared bound, which $\vec U$ satisfies; so
+$v \in \sem{T_C}_{\rho'}$. Mutation after construction is governed by
+\textbf{L-MUT} exactly as for every other membership statement in the
+main paper.
+\end{proof}
+
+Each hypothesis must now be audited against the implementation. The
+audit \emph{fails} for the first, and the aftermath of the theorem
+fails for the freshness clause; both failures are pinned.
+
+\begin{finding}[\textbf{A-HASINST} is violated: SKJS accepts
+\texttt{@@hasInstance} overrides and narrows anyway]
+\label{find:hasinstance}
+The narrowing gate checks only that the RHS name has a class definition
+(\texttt{hasClassDef}); nothing rejects or inspects a static
+\texttt{[Symbol.hasInstance]} member, which SKJS class bodies \emph{can}
+declare — computed symbol-keyed members resolve into symbol fields
+(the \texttt{FNComputed} arm of \texttt{addFields}), and
+\texttt{Symbol.hasInstance} is a stubbed \texttt{unique symbol}.
+The implementation itself documents the gap
+(``Mirrors tsc's TS2359 acceptance (modulo \texttt{Symbol.hasInstance},
+which SKJS does not model)'', \texttt{isInstanceofRhs}). Checked
+witness (accepted at the pin, exit 0):
+\begin{verbatim}
+class C {
+  a: number = 1;
+  static [Symbol.hasInstance](x: unknown): boolean { return true; }
+}
+function f(x: unknown): number {
+  if (x instanceof C) { return x.a; }   // narrowed to C
+  return 0;
+}
+console.log(f("not a C"));              // Node prints: undefined
+\end{verbatim}
+At runtime step 2 of \texttt{InstanceofOperator} finds the static
+method, every value is ``an instance'', and \texttt{f} returns
+\texttt{undefined} at type \texttt{number}. Two mitigations narrow the
+blast radius: (i) the override must be declared \emph{in the checked
+program itself} on a class the same program narrows on — ambient code
+cannot smuggle one in unseen, since the stubs declare none; (ii) the
+hole is shared with \texttt{tsc}, which also narrows here (a
+boolean-returning \texttt{@@hasInstance} does not disable
+constructor-based narrowing there; only \texttt{is}-predicate returns
+change it). Cheap repairs exist: reject static
+\texttt{[Symbol.hasInstance]} declarations, or skip narrowing for
+classes that declare one (the definition is available at the gate).
+\impl{TypeCheckRefine.sk / evalCond (InstanceOf arm)}
+\impl{TEnv.sk / addFields (FNComputed), resolveComputedKeyFieldKey}
+\impl{TypeCheckExpr.sk / isInstanceofRhs (comment)}
+\end{finding}
+
+\begin{finding}[Instantiation weakness is real: fresh arguments are
+sealed by later covariant use]
+\label{find:fresh-seal}
+Theorem~\ref{thm:inst} holds \emph{at the narrowing instant}, and the
+main paper's \textsc{R-Inst} lemma correctly delegates the survival of
+membership under later substitution evolution to its
+Obligation~\emph{Monotone Reads Under Growth} — whose status there is
+\textsc{violated}, this finding being one of its two witnessed
+instances:
+a later covariant read of an unbound candidate does not seal it to
+$\top$ but to the \emph{expected type of the use}
+(the $\mathsf{grow}(t, \mathsf{cov})$/unbound $\to$
+$\mathsf{SVClosed}(t)$ transition of the main paper's Definition
+``Transitions''), so
+program \emph{uses} choose the type argument that narrowing had left
+open — the unsound direction, since no value flow justifies it. Checked
+witness (accepted at the pin, exit 0). \texttt{tsc} 5.7 also accepts
+this program, but through its declared \texttt{any} escape hatch: it
+narrows \texttt{unknown} to \texttt{Box<any>} and accepts a
+\texttt{string} and a \texttt{number} read simultaneously. SKJS's
+failure mode is different and worse — \texttt{any}-free and
+order-dependent: the first covariant use wins, and a second,
+differently-typed read is rejected pointing at the first. The witness:
+\begin{verbatim}
+class Box<T> { v: T; constructor(v: T) { this.v = v } }
+function h(x: unknown): string {
+  if (x instanceof Box) {
+    const s: string = x.v;   // seals the fresh argument to string
+    return s;
+  }
+  return "no";
+}
+console.log(h(new Box(42)));  // Node prints: 42
+\end{verbatim}
+$h$ returns \texttt{42} at type \texttt{string}. The \texttt{Array}
+special case ($\top$ argument) is immune, which suggests the repair:
+instantiate \emph{all} \texttt{instanceof} type arguments at $\top$
+(an explicit top argument — matching tsc in \emph{effect} while avoiding
+its \texttt{any} escape hatch), or mark
+narrowing-born variables as non-sealable-by-use. Until then, the
+freshness clause of \textbf{L-INST}'s discharge note is \emph{not
+sufficient}, and the violated instance of the monotonicity obligation
+should be recorded in the ledger (Section~\ref{sec:status}).
+\impl{TEnv.sk / makeTArgs; TTypeSubst.sk / Subst::grow (cov/unbound)}
+\impl{TypeCheckRefine.sk / evalInstanceof (Array $\top$ special case)}
+\end{finding}
+
+\paragraph{\textbf{A-PROTO} audit.}
+The pinned stubs omit the surgery surface deliberately: the
+\texttt{Object} statics \texttt{create}, \texttt{getPrototypeOf}, and
+\texttt{setPrototypeOf} are present only as comments marked
+``disallowed'', and neither \texttt{Proxy} nor \texttt{Reflect} is
+declared at all. A checked program therefore cannot express prototype
+surgery; what remains is the generic unchecked boundary (ambient
+\texttt{declare}d functions, \texttt{JSON.parse<T>}) through which any
+assumption, not specially this one, can be voided — that boundary is
+priced into \textbf{L-TC} already. Status: \textsc{assumed}, adequately
+enforced for checked code.
+\impl{import-stubs/@types/skjs/index.d.ts (Object statics)}
+
+\paragraph{Cross-realm objects.}
+\texttt{instanceof} is realm-sensitive: an array (or class instance)
+from another realm does not have \emph{this} realm's
+\texttt{C.prototype} in its chain, so the operator answers
+\textsf{false}. For soundness of \textsc{R-Inst} this is \emph{benign}:
+the rule narrows only the true branch, and cross-realm values make the
+test false, landing in the untouched (identity) false branch. Realms are
+purely a \emph{completeness} phenomenon for \texttt{instanceof} — the
+classical reason \texttt{Array.isArray} exists, as the next section
+exploits. No realm assumption is needed for \textbf{L-INST}; we record
+this so the ledger does not grow a vacuous row.
+
+%==========================================================================
+\section{\texttt{Array.isArray} and \textbf{L-ISARR}}
+\label{sec:isarr}
+
+\subsection{The spec side}
+
+\texttt{Array.isArray} (\ecma{23.1.2.2}) is \texttt{IsArray}
+(\ecma{7.2.2}): return \textsf{true} if the argument is an
+\emph{Array exotic object} (\ecma{10.4.2}: the objects with the special
+\texttt{length}-coupled $\intm{DefineOwnProperty}$); if it is a Proxy,
+recurse on the Proxy's target (throwing a \texttt{TypeError} if the
+proxy has been revoked); otherwise \textsf{false}. Three consequences:
+(i) the test is \emph{cross-realm-safe} — an array from any realm is an
+Array exotic object, no prototype identity involved — in contrast to
+\texttt{x instanceof Array}; (ii) it is \emph{Proxy-transparent} — a
+proxy over an array answers \textsf{true}; (iii) on a revoked proxy the
+\emph{call throws}, so by the main paper's evaluation convention neither
+branch relation holds and narrowing is vacuously sound for that case.
+Ground $\mathsf{isArrayV}(o) \triangleq \texttt{IsArray}(\realize(o))$
+(defined, non-throwing case).
+
+\subsection{The model side: how \texttt{ReadonlyArray} acquires the
+brand}
+
+\textbf{L-ISARR} claims $\mathsf{isArrayV}(o)$ implies
+$o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$. Two things could
+break this: the stub type could demand a \emph{property} real arrays do
+not have, or a declared member could fail on real arrays. The first
+danger is real on the surface: the stub spells the brand as an ordinary
+declaration,
+\begin{verbatim}
+declare interface ReadonlyArray<T> extends Iterable<T> {
+  readonly __SKJS_isArray: true;
+  ...
+}
+\end{verbatim}
+and a required field \texttt{\_\_SKJS\_isArray} would exclude every real
+runtime array (they carry no such property), making
+$\sem{\mathsf{ReadonlyArray}}$ nearly empty and \textbf{L-ISARR} false.
+The implementation avoids this by construction: \texttt{TFields::create}
+\emph{intercepts} the field named by
+\texttt{kArrayBrandFieldName = "\_\_SKJS\_isArray"}, removes it from the
+field map, and transfers its literal value (\texttt{true}/\texttt{false},
+anything else is a fatal SKJS2051) into the dedicated
+\texttt{TFields.isArray :\ ?Bool} component — the model's brand
+$\mathsf{isArr}$, whose membership semantics constrains
+$\mathsf{isArrayV}$, not $\mathsf{props}$. The brand never exists as an
+ordinary field of any type built through \texttt{TFields::create}, which
+is the path all class/interface instantiation takes
+(\texttt{TEnv::newObject}). Defaults are set soundly at the same spot:
+interfaces get $\mathsf{isArr} = \mathsf{None}$ (unknown) and classes
+get $\mathsf{Some}(\mathsf{false})$ \emph{before} the intercept — so a
+class inheriting the brand field (e.g.\ \texttt{Array} itself, tuples
+via \texttt{SKJS\_Tuple}, or a user \texttt{class D extends Array})
+still ends at $\mathsf{Some}(\mathsf{true})$, because the inherited
+brand field is in the collected map and the intercept overrides the
+default. (Object \emph{literals} take \texttt{createFromSorted}, which
+does not intercept; a user field literally named
+\texttt{\_\_SKJS\_isArray} on a literal stays an ordinary — truthfully
+present — property, which is sound.)
+\impl{TType.sk / kArrayBrandFieldName, TFields::create (brand
+intercept)}
+\impl{TEnv.sk / newObject (isArray defaults)}
+\impl{import-stubs/@types/skjs/index.d.ts / ReadonlyArray}
+
+\subsection{Discharge}
+
+\begin{theorem}[Discharge of \textbf{L-ISARR}]
+\label{thm:isarr}
+Assume \textbf{A-PROXY}: no Proxy exotic object flows into checked code.
+Then $\mathsf{isArrayV}(o)$ implies
+$o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$.
+\end{theorem}
+\begin{proof}
+Under \textbf{A-PROXY}, $\realize(o)$ is an Array exotic object of some
+realm. $\sem{\mathsf{ReadonlyArray}\langle\top\rangle}$ has a single
+object branch whose constraints we check against the object interface
+grounded as: $\mathsf{has} =$ \texttt{HasProperty} (prototype chain
+included — this matches both the \texttt{in} operator and property
+reads) and $\mathsf{get} = \intm{Get}$, snapshots per \textbf{L-PURE}.
+\begin{itemize}
+\item \emph{Brand}: $\mathsf{isArr} = \mathsf{Some}(\mathsf{true})$
+  (intercepted as above) requires $\mathsf{isArrayV}(o)$ — the
+  hypothesis.
+\item \emph{\texttt{length}}: required, get-type \texttt{number}. Every
+  Array exotic object owns a \texttt{length} whose value is a
+  non-negative Number (\ecma{10.4.2}).
+\item \emph{Numeric index} (\texttt{readonly [n: number]:\ T} at
+  $T = \top$): covers numeric-spelling keys not otherwise named; each
+  such property value lies in $\sem{\top} = \Val$. Trivially satisfied
+  (and the $\mathsf{set} = \bot$ readonly encoding is invisible to
+  membership, which is get-only).
+\item \emph{Methods} (\texttt{find}, \texttt{every}, \texttt{some},
+  \texttt{forEach}, \texttt{findIndex}, \texttt{join}, \texttt{map},
+  \texttt{filter}, \texttt{flatMap}, \texttt{reduce},
+  \texttt{reduceRight}, \texttt{slice} — the full declared list at the
+  pin, several classic members being deliberately commented out for
+  variance reasons): each is a required field whose get-type is a
+  single-branch object with a \emph{definite} call signature
+  (interface methods are built through \texttt{TObject::createCall}).
+  Membership requires presence and callability of the property value;
+  the behavioral meaning of the signature itself is opaque
+  (bundled into the subtyping surface by the main paper's object semantics).
+  Every listed name is a function-valued property of
+  \texttt{Array.prototype} in every realm (\ecma{23.1.3}), reached by
+  $\mathsf{get}$ through the instance's prototype chain; arrays from
+  other realms find their own realm's identical-by-spec
+  \texttt{Array.prototype}. (An own property shadowing a method with a
+  non-callable value would falsify this — that is ordinary property
+  mutation, priced into \textbf{L-MUT}/\textbf{L-PURE} snapshots like
+  every other field statement, not a new caveat.)
+\item \emph{\texttt{[Symbol.iterator]}} (inherited from the
+  \texttt{Iterable<T>} base): same argument; the \texttt{@@iterator}
+  method of \texttt{Array.prototype} exists in every realm, and
+  well-known symbols are \emph{shared across realms}
+  (\ecma{6.1.5.1}), so the checker's unique-symbol key denotes the same
+  runtime symbol everywhere.
+\item \emph{Extensibility}: all other properties of $o$ are
+  unconstrained by the main paper's extensible object semantics; no
+  string index is declared, so no covering constraint arises.
+\end{itemize}
+All constraints hold; $o$ inhabits the branch.
+\end{proof}
+
+On \textbf{A-PROXY}: a Proxy over an array passes \texttt{IsArray} but
+its $\intm{Get}$ trap may return arbitrary values for \texttt{length} or
+the methods, falsifying membership; hence the assumption. It is enforced
+for checked code the same way as \textbf{A-PROTO}: \texttt{Proxy} is
+absent from the pinned stubs, so no checked program can construct one,
+and the unchecked boundary is \textbf{L-TC}'s. Note the contrast worth
+keeping in the ledger note: cross-realm values, the classical failure
+mode of \texttt{instanceof Array}, are handled \emph{correctly} here —
+no realm assumption is required, thanks to \texttt{IsArray}'s
+realm-independence plus the structural (non-nominal) membership
+semantics.
+
+The mutability note of the main paper (\textsc{R-IsArray} intersects
+with \emph{Readonly}Array, never mutable \texttt{Array}) needs no
+runtime grounding: it is a precision choice about which \emph{set-types}
+to add, and set-types do not participate in membership.
+
+%==========================================================================
+\section{Status and Ledger Edits}
+\label{sec:status}
+
+``Here'' means in this deep dive.
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{4.2cm}>{\raggedright\arraybackslash}p{9.2cm}@{}}
+\toprule
+\textbf{Item} & \textbf{Where} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Item} & \textbf{Where} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{2}{r@{}}{\small\emph{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+L-TAG & Theorem~\ref{thm:tags}\\
+$\approx$ grounding & Theorem~\ref{thm:seq},
+  Corollary~\ref{cor:zero}\\
+Truthiness & Theorem~\ref{thm:truthy}\\
+ctor$\Rightarrow$call & Theorem~\ref{thm:ctor-call}\\
+\textbf{A-DDA} & \S\ref{sec:typeof-table}\\
+\textbf{A-CTOR-CALL} & Finding~\ref{find:ctor-call}\\
+L-INST & Theorem~\ref{thm:inst}\\
+\textbf{A-HASINST} & Finding~\ref{find:hasinstance}\\
+\textbf{A-PROTO} & \S\ref{sec:inst}\\
+Fresh-arg survival & Finding~\ref{find:fresh-seal}\\
+L-ISARR & Theorem~\ref{thm:isarr}\\
+\textbf{A-PROXY} & \S\ref{sec:isarr}\\
+\end{longtable}
+\endgroup
+
+\paragraph{Registry.}
+The authoritative, current statuses of every item above are maintained in
+the registry (\texttt{docs/ledger.yaml}), rendered as the main paper's
+Assumptions and Proof Obligations tables; this paper is cited there as
+evidence. The registry rows it supports:
+
+\input{../generated/rows-A}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-A}
+
+\paragraph{Method note (failed attempts).}
+Three discharge attempts failed and became the Findings above; each
+failure was converted into a checked-and-executed witness rather than a
+weakened assumption, per the series contract. One further attempt is
+worth recording as simply \emph{unnecessary}: we initially looked for a
+realm assumption for \textbf{L-INST} symmetric to the classical
+\texttt{instanceof Array} pitfall, and found that true-branch-only
+narrowing makes realms a pure completeness concern
+(\S\ref{sec:inst}), so no such row exists.
+
+%==========================================================================
+\appendix
+\section{Implementation and Specification Anchors}
+\label{app:anchors}
+
+All implementation references are to revision \texttt{9108f339}.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{@{}l@{\quad}l@{}}
+\toprule
+\textbf{This paper} & \textbf{Anchor} \\
+\midrule
+brand name & \texttt{TType.sk / kArrayBrandFieldName} \\
+brand intercept & \texttt{TType.sk / TFields::create} \\
+brand defaults & \texttt{TEnv.sk / newObject} \\
+brand stub spelling & \texttt{import-stubs/@types/skjs/index.d.ts} \\
+\textsc{R-IsArray} handler & \texttt{TypeCheckRefine.sk / evalIsArray} \\
+array-brand intersection & \texttt{TTypeInter.sk /
+  TFields::interIsArray} \\
+\textsc{R-Inst} gate + handler & \texttt{TypeCheckRefine.sk / evalCond,
+  evalInstanceof} \\
+instance type arguments & \texttt{TEnv.sk / makeTArgs};
+  \texttt{TTypeSubst.sk / Subst::gen} \\
+class-def gate & \texttt{TEnv.sk / hasClassDef} \\
+RHS validity (TS2359) & \texttt{TypeCheckExpr.sk / isInstanceofRhs} \\
+symbol-keyed class members & \texttt{TEnv.sk / addFields (FNComputed)} \\
+static-side class type & \texttt{TEnv.sk / newStaticObject} \\
+\textsc{R-Typeof} handler & \texttt{TypeCheckRefine.sk /
+  evalTypeofEquality} \\
+truthiness tables & \texttt{TType.sk / TPrimValueKind::isFalsy,
+  SType::falsiness} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Specification clauses cited (ECMA-262, 2025-edition numbering; clause
+names are stable across editions): \S6.1 language types; \S6.1.5.1
+well-known symbols; \S6.1.6.1--6.1.6.2 Number/BigInt types (and
+\texttt{Number::equal}, \S6.1.6.1.13); \S6.1.7.2--6.1.7.3 object
+internal methods and their invariants; \S7.1.2 \texttt{ToBoolean};
+\S7.2.2 \texttt{IsArray}; \S7.2.3--7.2.4 \texttt{IsCallable} and
+\texttt{IsConstructor}; \S7.2.10--7.2.12 \texttt{SameValue},
+\texttt{SameValueZero}, and \texttt{SameValueNonNumber};
+\S7.2.16 \texttt{IsStrictlyEqual}; \S7.3.22
+\texttt{OrdinaryHasInstance}; \S10.2.1 ECMAScript function
+$\intm{Call}$ (class-constructor throw); \S10.4.1 bound function exotic
+objects; \S10.4.2 Array exotic objects; \S10.5.12--10.5.13 Proxy
+$\intm{Call}$ and $\intm{Construct}$; \S13.5.3 \texttt{typeof};
+\S13.10.2 \texttt{InstanceofOperator}; \S13.11 equality operators;
+\S20.2.3.6 the \texttt{@@hasInstance} method of
+\texttt{Function.prototype}; \S23.1.2.2
+\texttt{Array.isArray}; \S23.1.3 \texttt{Array.prototype} methods;
+Annex~B \S B.3.6 $\intm{IsHTMLDDA}$.
+
+\section{Witness Protocol}
+\label{app:witness}
+
+Each Finding's program was (i) written to a temporary file in the
+repository working tree, (ii) checked with the pinned binary — the
+\texttt{make check-file-in-docker} target, passing
+\texttt{BIN=target/host/dev/skjs} — all three accepted with
+exit code 0
+and no diagnostics — and (iii) type-stripped mechanically and executed
+with Node to observe the printed value named in the Finding
+(\texttt{[class C]}, \texttt{undefined}, \texttt{42} respectively). The
+temporary files were removed afterwards; turning the witnesses into
+pinned tests is proposed in Section~\ref{sec:status} but deliberately
+not done here (this deep dive changes no file outside
+\texttt{docs/deep-dives/}).
+
+\end{document}

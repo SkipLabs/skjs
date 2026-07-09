@@ -1,0 +1,1179 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+
+\newtheorem{finding}[theorem]{Finding}
+
+% Core semantic notation (copied from the main paper)
+\newcommand{\ObjVal}{\mathsf{ObjVal}}
+\newcommand{\SType}{\mathsf{SType}}
+\newcommand{\STypes}{\mathsf{STypes}}
+\newcommand{\TType}{\mathsf{TType}}
+\newcommand{\Clauses}{\mathsf{Clauses}}
+\newcommand{\Clause}{\mathsf{Clause}}
+\newcommand{\TInst}{\mathsf{TInst}}
+\newcommand{\TInsts}{\mathsf{TInsts}}
+\newcommand{\TParam}{\mathsf{TParam}}
+\newcommand{\TFields}{\mathsf{TFields}}
+\newcommand{\TObject}{\mathsf{TObject}}
+\newcommand{\Tags}{\mathsf{Tags}}
+\newcommand{\tagfn}{\mathsf{tag}}
+\newcommand{\rtag}{\mathsf{rtag}}
+\newcommand{\clause}[2]{\langle #1 \mid #2 \rangle}
+
+% Operations under audit
+\newcommand{\union}{\mathsf{union}}
+\newcommand{\inter}{\mathsf{inter}}
+\newcommand{\Env}{\Gamma}
+\newcommand{\Payloadbool}{\{(\mathsf{bool},\mathsf{true}),
+(\mathsf{bool},\mathsf{false})\}}
+
+% Implementation anchors, as in the main paper
+% Overrides the shared \impl with a raggedright variant (long anchors).
+\renewcommand{\impl}[1]{\par\noindent{\footnotesize\raggedright
+\textsf{impl:} \texttt{#1}\par}}
+\setlength{\emergencystretch}{2em}
+
+\title{Union and Intersection in SKJS:\\
+an Audit of the Lattice Operations\\
+{\large Deep Dive B for ``Refinement and Inference Growth in SKJS''}}
+\author{}
+\date{\skjspin}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The main soundness paper assumes, as its rows \textbf{L-UNION} and
+\textbf{L-INTER}, that \texttt{TType::union} over-approximates set union,
+that \texttt{TType::inter} over-approximates set intersection, and — the
+load-bearing extra used by every branch-dropping refinement rule — that an
+intersection result of $\bot$ implies semantic disjointness. This deep dive
+audits both operations level by level against the pinned revision.
+The outcome is asymmetric. Union is \emph{proved}: every stratum
+over-approximates, and all strata that membership semantics can observe are
+in fact exact; the \texttt{seenUnion} cache is unconditionally sound because
+the union computation never reads the substitution. Intersection is
+\emph{refuted as stated}: two independent defects make \texttt{inter} return
+$\bot$ on semantically overlapping operands — a per-tag zeroing bug in
+\texttt{STypes::inter} that collapses the whole union when any one shared
+tag is empty, and the treatment of a failed call/new signature intersection
+as branch disjointness — and a third, conditional defect inherits the known
+\textbf{L-LIT}(ii) spelling violation (\#655). All three are empirically
+witnessed at the pinned revision: the checker silently narrows an inhabited
+variable to \texttt{never} in a reachable branch. Every other intersection
+stratum (units, tags, named fields, indexes under the covering semantics,
+the array brand, the instance layer) is proved sound, so the ledger row
+splits into proved strata, one conditional stratum, two violated strata,
+and one named residual obligation (the \texttt{seenInter} cache under
+candidate freezing).
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose and Ledger Rows Addressed}
+\label{sec:purpose}
+
+This document is deep dive B in the series supporting the main paper
+(\emph{Refinement and Inference Growth in SKJS}, same pinned revision). It
+addresses exactly two rows of the main paper's ``Assumptions and Proof
+Obligations'' ledger: \textbf{L-UNION} (union over-approximates set union
+at all levels), established here \emph{exact at every stratum}; and
+\textbf{L-INTER} (intersection over-approximates, with the
+$\bot$-implies-disjointness clause), which splits here into an exact
+containment and the $\bot$-clause, refuted in two strata.
+
+\noindent
+Note that the two halves of L-INTER are one property: if
+$\inter(t_1,t_2) = \bot$ while $\sem{t_1}_\rho \cap \sem{t_2}_\rho \neq
+\emptyset$, then the containment fails at that pair (nothing is in
+$\sem{\bot} = \emptyset$), and conversely. The ``$\bot$ implies
+disjointness'' phrasing is called out separately in the main paper only
+because it is the form its refinement rules consume: \textsc{R-Eq}'s
+true branch installs $\inter(\Env(x), \tau_e)$ directly, and
+\textsc{R-EqField}, \textsc{R-Inst}, and \textsc{R-IsArray} \emph{drop an
+object branch} (or the whole variable, for \textsc{R-Eq} on a
+single-member type) exactly when an intersection comes back $\bot$.
+Section~\ref{sec:findings} exhibits reachable programs where that drop is
+wrong. The audit proceeds bottom-up through the representation strata of
+the main paper's Section~3; the precise ledger edits are in
+Section~\ref{sec:status}.
+\impl{TTypeUnion.sk; TTypeInter.sk; TType.sk / STypes, Clause, Clauses,
+TFields, PrimLiterals.sk}
+
+%==========================================================================
+\section{Recap: Semantics and the Shape of the Two Operations}
+\label{sec:recap}
+
+We reuse the main paper's runtime model and denotations without change:
+values carry one of nine tags ($\rtag$); simple types are units, literal or
+full primitives, and object types with branch sets; $\sem{\cdot}$ is the
+literal-closure semantics for primitives and the extensible, get-only
+membership semantics for object branches (main paper, Section
+``Internal Type Representation''). A $\TType$ is a pair $(I, C)$ of an instance layer
+$I \in \TInsts$ and clauses $C \in \Clauses$ in DNF, with
+$\sem{(I,C)}_\rho = \sem{I}_\rho \cup \sem{C}_\rho$; a clause
+$\clause{V}{S}$ denotes $\bigcap_{v\in V}\sem{v}_\rho \cap \sem{S}_\rho$
+with $S \in \STypes \cup \{\top\}$, and $\STypes$ holds at most one
+$\SType$ per tag. All denotations are indexed by the substitution state
+$\rho$; we suppress $\rho$ when an argument is pointwise in it.
+
+\paragraph{Union's shape.}
+\texttt{TType::union} short-circuits top/bottom, then works
+\emph{structurally}: instance sets are set-unioned unexpanded, and clauses
+are merged by var-set key, colliding clauses merging their $\STypes$
+per tag (literal-set union for primitives, branch-set union for objects).
+Crucially, no arm of this computation expands an instance or reads a
+variable binding: union is a pure function of its operands' syntax.
+\impl{TTypeUnion.sk / TType::union\_, Clauses::union, STypes::union,
+TObject::union; TType.sk / TInsts::union}
+
+\paragraph{Intersection's shape.}
+\texttt{TType::inter} short-circuits top/bottom, then handles bare
+variables specially (constraint attachment or an unexpanded
+\texttt{TInter}), then \emph{expands both operands to clauses} under the
+current state (sealing variables it reads covariantly), runs two
+speculative boxed-primitive subtype checks, and finally distributes:
+pairwise clause intersection, per-tag $\STypes$ intersection, pairwise
+object-branch intersection, field/index/call/new/brand intersection inside
+a branch pair. Bottom can be produced at four depths: literal sets, the
+per-tag map, a branch pair, and the whole clause product.
+\impl{TTypeInter.sk / TType::inter\_, Clauses::inter, STypes::inter,
+TObject::inter, TFields::inter}
+
+\paragraph{Method.}
+For each stratum we state the containment against the semantics of the
+main paper, prove it or reduce it to a named assumption, and separately
+classify every $\bot$-producing site as \emph{semantic} (disjointness
+holds) or \emph{heuristic} (it does not). Claims about observable behavior
+were tested against the pinned checker binary
+(\texttt{target/host/dev/skjs} built from \texttt{9108f339}, run via
+\texttt{make check-file-in-docker}); Section~\ref{sec:findings} reproduces
+the probe programs.
+
+%==========================================================================
+\section{Union, Level by Level}
+\label{sec:union}
+
+\subsection{Literal sets and primitive members}
+
+\begin{lemma}[Literal-Set Union is Exact]
+\label{lem:lit-union}
+For literal sets $L_1, L_2$ of the same kind $k$:
+$\sem{\mathsf{prim}(k, L_1)} \cup \sem{\mathsf{prim}(k, L_2)} =
+ \sem{\mathsf{prim}(k, L_1 \cup L_2)}$,
+where $L_1 \cup L_2$ is the implementation's union of spelling sets.
+\end{lemma}
+\begin{proof}
+By the closure semantics (main paper, Definition of literal denotation),
+$\sem{\mathsf{prim}(k,L)} = \bigcup_{\ell \in L} \sem{\mathsf{prim}(k,
+\{\ell\})}$; union of spelling sets commutes with the outer union. No
+normalization or injectivity assumption is needed: even $\approx$-equivalent
+duplicate spellings only make the two sides equal unions of equal parts.
+\impl{PrimLiterals.sk / union (keyed set union of spellings)}
+\end{proof}
+
+\begin{lemma}[TPrimValue and TPrimUnit Union are Exact]
+\label{lem:prim-union}
+\texttt{TPrimValue::union} on same-kind operands returns: the full
+primitive if either side is full ($L = \top$ absorbs); otherwise the
+literal-set union, except that a boolean literal set reaching two elements
+widens to full \texttt{boolean}. Each case is semantically exact.
+Same-tag units are identical, so \texttt{STypes::union}'s unit arm
+(return the left operand) is exact.
+\end{lemma}
+\begin{proof}
+Full absorbs because $\sem{\mathsf{prim}(k,\top)} \supseteq
+\sem{\mathsf{prim}(k,L)}$ for any $L$ (every literal denotes same-tag
+values). The literal case is Lemma~\ref{lem:lit-union}. For boolean: the
+only spellings of kind \texttt{bool} are \texttt{true} and \texttt{false},
+so a two-element set already denotes all of
+$\Payloadbool$; the widening is an equality. Units: a tag determines its
+unit, and \texttt{mapUnion} pairs members of identical tags only.
+\impl{TTypeUnion.sk / TPrimValue::union; STypes::union (TPrimUnit arm)}
+\end{proof}
+
+\subsection{Object branches: set union}
+
+\begin{lemma}[Object Union is Exact]
+\label{lem:obj-union}
+$\sem{\mathsf{object}(B_1)} \cup \sem{\mathsf{object}(B_2)} =
+\sem{\mathsf{object}(B_1 \cup B_2)}$.
+\end{lemma}
+\begin{proof}
+Membership in $\mathsf{object}(B)$ is an existential over branches (main
+paper, Definition of object-type semantics), and existentials distribute
+over set union of the branch set. \texttt{TObject::union} is exactly
+$B_1 \cup B_2$; the \texttt{unexpandedType} hint is reset to \texttt{None},
+which is irrelevant to $\sem{\cdot}$ (the main paper excludes it from
+semantics). No branch is merged, so no precision or soundness question
+arises at this level.
+\impl{TTypeUnion.sk / TObject::union (branches.union)}
+\end{proof}
+
+The nontrivial object-\emph{merging} code (\texttt{TFields::union},
+\texttt{TField::union}) is \emph{not} on the $\union(t_1,t_2)$ path: it is
+a separate client used to collapse a multi-branch object into a single
+summary branch for field reads. We audit it in
+Section~\ref{sec:tfields-union} because the main paper's \textsc{R-EqField}
+proof leans on the resolved read type it produces, and L-UNION is stated
+``at all levels''.
+
+\subsection{STypes, Clause, Clauses, TInsts}
+
+\begin{lemma}[STypes Union is Exact]
+\label{lem:stypes-union}
+$\sem{S_1} \cup \sem{S_2} = \sem{\STypes\mathord{::}\union(S_1,S_2)}$.
+\end{lemma}
+\begin{proof}
+\texttt{mapUnion} keeps members whose tag appears on one side and merges
+same-tag pairs with Lemmas~\ref{lem:prim-union}
+and~\ref{lem:obj-union}. Since $\sem{S} = \bigcup_{s \in S}\sem{s}$ and
+tags partition $\Val$ (main paper, Lemma A0/A1), grouping the union by tag
+is exact, and each per-tag merge is exact.
+\impl{TTypeUnion.sk / STypes::union; InternalKeyedArrayMap.sk / mapUnion}
+\end{proof}
+
+\begin{lemma}[Clause Collision Merge is Exact]
+\label{lem:clause-union}
+For clauses with equal var-sets $V$:
+$\sem{\clause{V}{S_1}} \cup \sem{\clause{V}{S_2}} =
+ \sem{\Clause\mathord{::}\union}$, where the merge yields
+$\clause{V}{\top}$ if either operand's $\STypes$ is $\top$ and
+$\clause{V}{\STypes\mathord{::}\union(S_1,S_2)}$ otherwise.
+\end{lemma}
+\begin{proof}
+Writing $A = \bigcap_{v\in V}\sem{v}$, the left side is
+$(A \cap \sem{S_1}) \cup (A \cap \sem{S_2}) = A \cap (\sem{S_1} \cup
+\sem{S_2})$ by distributivity of $\cap$ over $\cup$; then
+Lemma~\ref{lem:stypes-union}, or $\sem{S_i} = \Val$ absorbing when a side
+is $\top$. This is the ``key-collision widening'' of the operand pair: it
+is not a widening at all semantically — the collision merge is exact.
+\impl{TTypeUnion.sk / Clause::union}
+\end{proof}
+
+\begin{lemma}[Clauses Union is Exact; Top-Collapse is Sound]
+\label{lem:clauses-union}
+$\sem{C_1} \cup \sem{C_2} = \sem{\Clauses\mathord{::}\union(C_1,C_2)}$,
+and the constructor invariant (a top clause, if present, is alone) is
+preserved.
+\end{lemma}
+\begin{proof}
+$\sem{C} = \bigcup_{c \in C}\sem{c}$; \texttt{mapUnion} keyed by var-set
+keeps unmatched clauses and merges matched ones by
+Lemma~\ref{lem:clause-union}, so the result denotes the union of all
+clause denotations on both sides. \texttt{Clauses::create} then collapses
+to $\{\clause{\emptyset}{\top}\}$ if any clause is top; this replaces the
+set with a superset ($\sem{\clause{\emptyset}{\top}} = \Val$), preserving
+the containment (and losing exactness only in the case where the union
+already contained $\Val$, so not even there).
+\impl{TTypeUnion.sk / Clauses::union; TType.sk / Clauses::create}
+\end{proof}
+
+\begin{lemma}[Instance-Layer Union is Exact]
+\label{lem:insts-union}
+$\sem{I_1}_\rho \cup \sem{I_2}_\rho = \sem{I_1 \cup I_2}_\rho$ at every
+state $\rho$.
+\end{lemma}
+\begin{proof}
+$\sem{I}_\rho = \bigcup_{i \in I}\sem{i}_\rho$ and \texttt{TInsts::union}
+is set union of unexpanded instances; no instance is rewritten, so the
+identity holds pointwise in $\rho$. This is the design point the
+implementation comments call out: union keeps variables and named
+instances side by side rather than resolving them.
+\impl{TTypeUnion.sk / TInsts::union}
+\end{proof}
+
+\subsection{The union theorem}
+
+\begin{theorem}[L-UNION, Clause and Instance Strata]
+\label{thm:union}
+For all $t_1, t_2$ and every state $\rho$:
+$\sem{t_1}_\rho \cup \sem{t_2}_\rho \subseteq
+ \sem{\union(t_1,t_2)}_\rho$.
+Moreover the containment is an equality except possibly at the top/bottom
+short-circuits (where it is an equality too: $t \vee \top = \top$,
+$t \vee \bot = t$) — i.e.\ union is semantically exact for the membership
+semantics.
+\end{theorem}
+\begin{proof}
+If either operand is top or bottom, the short-circuit returns the exact
+answer. Otherwise
+$\union(t_1,t_2) = (I_1 \cup I_2,\ \Clauses\mathord{::}\union(C_1,C_2))$
+and
+$\sem{(I,C)} = \sem{I} \cup \sem{C}$ splits the claim into
+Lemmas~\ref{lem:insts-union} and~\ref{lem:clauses-union}. The equality
+cache check \texttt{ty1 == ty2} returns \texttt{ty1}, exact. Since every
+step is either a pure set operation or one of the exact merges above, and
+none reads $\rho$, the result holds at every state uniformly — a fact we
+reuse for the cache in Section~\ref{sec:caches}.
+\impl{TTypeUnion.sk / TType::union, union\_}
+\end{proof}
+
+Two remarks. First, exactness is relative to the main paper's
+\emph{membership} semantics, in which function signatures are opaque; the
+signature bodies that \texttt{TFun::union} builds (parameters intersected
+contravariantly, returns unioned) never enter $\sem{\cdot}$ and are part
+of the subtyping surface instead — and \texttt{TFun::union} is not
+reachable from $\union(t_1,t_2)$ anyway (only from the branch-merging
+client below). Second, \texttt{unionN} of an empty sequence returns
+$\bot$, the exact empty union.
+
+\subsection{The branch-merging client: TFields::union}
+\label{sec:tfields-union}
+
+\texttt{TObject::getFields} folds a multi-branch object into one summary
+branch with \texttt{TFields::union}; the summary feeds field reads
+(\texttt{maybeGetType}), hence the resolved read types of
+\textsc{R-EqField}. The correctness statement is branch-level:
+
+\begin{lemma}[Branch Merge Over-Approximates]
+\label{lem:tfields-union}
+For object branches $b_1, b_2$:
+$\sem{b_1} \cup \sem{b_2} \subseteq
+\sem{\TFields\mathord{::}\union(b_1,b_2)}$.
+\end{lemma}
+\begin{proof}
+Let $o \in \sem{b_1}$ (the other case is symmetric); we check every
+constraint of the merged branch $b$.
+\emph{Named fields.} A field in both sides merges with get-union and
+$\mathsf{opt}_1 \vee \mathsf{opt}_2$: if $o$ has the key, its value is in
+$\mathsf{get}_1 \subseteq$ the union (Theorem~\ref{thm:union}); if absent,
+the field is required only if required on both sides, contradicting
+$o \in \sem{b_1}$ when required there — so optionality is respected. A
+field only in $b_1$: if $b_2$ has an index covering its key, the merge
+keeps it unioned with the index-as-named field, which is \emph{optional}
+(indexes carry $\mathsf{opt} = \mathsf{true}$), so the disjunct
+$o \in \sem{b_2}$ also satisfies it; if $b_2$ has no covering index, the
+field is \emph{dropped}, sound under the extensible semantics.
+\emph{Indexes.} A per-kind index survives only if both sides have one
+covering that kind (the number index may be covered by a string index,
+per the covering semantics), with get-union. Take a prop $p$ of $o$
+covered by the merged index and not named in $b$. Names in $b$ include
+every $b_1$ name that survived; a $b_1$ name is dropped only when $b_2$
+lacks a covering index — but then the merged index of that kind would not
+exist either. So $p$ is covered-and-not-named in $b_1$ as well, and
+$\mathsf{get}(o,p) \in \sem{\mathsf{idx}_1.\mathsf{get}} \subseteq$ the
+union. The final adjustment $\mathsf{idx}_{\mathsf{num}} \mathrel{:=}
+\mathsf{idx}_{\mathsf{num}} \sqcap \mathsf{idx}_{\mathsf{str}}$
+(maintaining the invariant
+$N.\mathsf{get} <: S.\mathsf{get}$) is sound because a
+numeric-kind prop of $o$ is constrained by \emph{both} the effective
+number index and the string index of $b_1$ (a string index covers numeric
+keys), so its value is in both gets, hence in their intersection —
+\emph{this} appeal is to intersection soundness at the field-type level
+and is unconditional there (Section~\ref{sec:inter-fields}).
+\emph{Call/new.} One side absent yields mode $\mathsf{Maybe}$, which
+constrains nothing; both present yields
+$\mathsf{opt}_1 \vee \mathsf{opt}_2$ over the signature union, and only
+the $\mathsf{Definite}$/$\mathsf{None}$ modes are semantically visible:
+$o$ callable per $b_1$'s $\mathsf{Definite}$ stays callable; the merged
+mode is $\mathsf{Definite}$ only if both were. Signatures are opaque.
+\emph{Brand.} Kept only when the two sides agree; otherwise
+$\mathsf{None}$ (unconstrained), a widening.
+\emph{Set-types and access.} Membership never reads $\mathsf{set}$
+(get-only semantics) — the merge intersects set-types, the correct dual
+for write-through-the-summary, but nothing here depends on it; and
+\texttt{FieldAccess::combine} is most-restrictive, which only
+\emph{restricts} programs (main paper, Definition of object semantics,
+Never/Phantom discussion).
+\impl{TTypeUnion.sk / TFields::union, TField::union, unionOptTFuns,
+unionIndex; TType.sk / TObject::getFields, FieldAccess::combine}
+\end{proof}
+
+Unlike the branch-set union of Lemma~\ref{lem:obj-union}, the merge is a
+genuine over-approximation (field gets are unioned across branches), which
+is why the implementation uses it only for reads, never as the
+representation of a union type.
+
+%==========================================================================
+\section{Intersection, Level by Level}
+\label{sec:inter}
+
+We now audit \texttt{TType::inter} in the same bottom-up order. The
+summary: the primitive stratum is exact \emph{modulo spelling injectivity}
+(\textbf{L-LIT}(ii), known violated); the per-tag assembly in
+\texttt{STypes::inter} has an outright bug; inside an object branch pair,
+fields, indexes and the brand are sound (with the brand and the
+no-shared-tag cases being the only \emph{semantic} bottoms), but the
+call/new arm converts a failed signature intersection into a branch drop,
+which is heuristic. The instance layer is sound. Throughout,
+\texttt{inter\_} expands its operands as it runs (covariant reads seal
+variables), an evolution $\rho \to \rho'$; the operands transport across
+it by \textbf{L-EXP} (expansion preserves or enlarges semantics; imported
+from deep dive C), and the containments below, being pointwise in the
+state, hold at $\rho'$.
+
+\subsection{Literal sets and primitive members}
+\label{sec:inter-prim}
+
+\begin{lemma}[Literal-Set Intersection is Exact Modulo L-LIT(ii)]
+\label{lem:lit-inter}
+Assume distinct spellings in $L_1 \cup L_2$ denote
+$\approx$-inequivalent values (\textbf{L-LIT}(ii)). Then
+$\sem{\mathsf{prim}(k,L_1)} \cap \sem{\mathsf{prim}(k,L_2)} =
+ \sem{\mathsf{prim}(k, L_1 \cap L_2)}$, with $\bot$ (\texttt{None}) when
+the spelling intersection is empty; under the assumption that bottom is
+semantic. Without the assumption, both the containment and the
+disjointness reading fail (Finding~\ref{find:spelling}).
+\end{lemma}
+\begin{proof}
+($\supseteq$ direction of the equality is immediate from
+$L_1 \cap L_2 \subseteq L_i$.) For $\subseteq$: let
+$v \approx \delta_k(\ell_1) \approx \delta_k(\ell_2)$ with
+$\ell_i \in L_i$ ($v$ is in its own $\approx$-domain since literal
+denotations exclude NaN). By transitivity
+$\delta_k(\ell_1) \approx \delta_k(\ell_2)$, so by injectivity
+$\ell_1 = \ell_2 \in L_1 \cap L_2$. The implementation intersects
+\emph{spelling} sets, so this is exactly its computation. If injectivity
+fails — the \#655 non-canonical zero spellings — two spellings of the
+same value make $L_1 \cap L_2 = \emptyset$ while the semantic
+intersection is inhabited.
+\impl{PrimLiterals.sk / inter; TTypeInter.sk / TPrimValue::inter}
+\end{proof}
+
+\begin{lemma}[TPrimValue/TPrimUnit Intersection]
+\label{lem:prim-inter}
+On the \texttt{STypes::inter} path operands always have equal kinds (the
+map is tag-keyed), and: full absorbs ($\top \cap L = L$, exact); two
+literal sets reduce to Lemma~\ref{lem:lit-inter}; same-tag units are
+equal, and returning the left one is exact. The kind-mismatch
+\texttt{None} arm is unreachable from \texttt{STypes::inter} and, where
+reachable (the \texttt{overlaps} client), is semantic by tag
+disjointness (A1).
+\impl{TTypeInter.sk / TPrimValue::inter, STypes::inter}
+\end{lemma}
+
+\subsection{The per-tag assembly: STypes::inter is wrong}
+\label{sec:inter-stypes}
+
+The correct per-tag decomposition of an intersection of unions is
+\[
+\sem{S_1} \cap \sem{S_2}
+= \bigcup_{k \in \Tags}\ \sem{S_1[k]} \cap \sem{S_2[k]},
+\]
+by tag disjointness (A1): tags present on only one side contribute
+nothing, and each shared tag contributes its per-tag intersection. The
+sound and exact assembly is therefore: intersect per shared tag,
+\emph{drop} the tags whose per-tag intersection is empty, and return
+$\bot$ iff \emph{no} tag survives.
+
+The implementation instead builds the result with
+\texttt{mapInterOption}, whose combiner treats a per-tag \texttt{None} as
+the \emph{zero} of the whole merge (\texttt{mergeOption}: any
+\texttt{None()} from the combining function aborts the map and returns
+\texttt{None} overall). Unmatched tags are correctly treated as units
+(dropped), and an all-tags-dropped result is correctly $\bot$; but a
+single \emph{shared tag with empty intersection zeroes the entire result}
+even when other tags survive.
+
+\begin{finding}[Per-Tag Zeroing: L-INTER is Violated at the STypes
+Stratum]
+\label{find:zeroing}
+For $S_1 = \{\mathsf{str}{:}\texttt{"a"},\ \mathsf{num}{:}\{0\}\}$ and
+$S_2 = \{\mathsf{str}{:}\texttt{"a"},\ \mathsf{num}{:}\{1\}\}$,
+$\STypes\mathord{::}\inter(S_1,S_2) = \bot$ while
+$\sem{S_1} \cap \sem{S_2} \supseteq \sem{\texttt{"a"}} \neq \emptyset$.
+Both halves of L-INTER fail. Empirically confirmed at the pinned
+revision (probe~1 in Section~\ref{sec:findings}): in
+\texttt{if (x === y)} with \texttt{x: "a" | 0} and \texttt{y: "a" | 1},
+the checker narrows \texttt{x} to \texttt{never} and accepts
+\texttt{const z: never = x}, yet the branch is taken at runtime with
+\texttt{x = "a"}. Type-level intersections hit the same code through
+\texttt{TInter::expand}: \texttt{("a" | 0) \& ("a" | 1)} expands to
+\texttt{never} (probe~4). Note the trigger requires a \emph{shared} tag
+to be empty; disjoint unions like
+\texttt{(0 | "a") \& (1 | true)} at distinct tags take the
+correct all-dropped path.
+\impl{TTypeInter.sk / STypes::inter; InternalKeyedArrayMap.sk /
+mapInterOption, mergeOption}
+\end{finding}
+
+The defect is local: replacing the zeroing combinator with
+``drop empty tags, bottom only if all dropped''
+(\texttt{mapInter}-with-filter semantics) restores the exact assembly,
+after which the stratum's soundness reduces to the per-tag lemmas
+(\ref{lem:prim-inter} for primitives, Section~\ref{sec:inter-object} for
+objects). All statements below about higher strata are therefore phrased
+\emph{conditionally on the corrected assembly}, so that they remain the
+correct proof obligations once the bug is fixed; the Status table keeps
+the violation visible at the L-INTER row itself.
+
+\subsection{Object branch pairs}
+\label{sec:inter-object}
+
+\texttt{TObject::inter} forms all pairwise branch intersections and
+returns $\bot$ iff \texttt{TFields::inter} is \texttt{None} on every
+pair.
+This outer shape is exactly right:
+
+\begin{lemma}[Pairwise Branch Product]
+\label{lem:obj-inter}
+If for all $b_1 \in B_1, b_2 \in B_2$ the branch-pair operation
+satisfies $\sem{b_1} \cap \sem{b_2} \subseteq \sem{\inter(b_1,b_2)}$
+(reading $\sem{\texttt{None}} = \emptyset$), then
+$\sem{\mathsf{object}(B_1)} \cap \sem{\mathsf{object}(B_2)} \subseteq
+ \sem{\TObject\mathord{::}\inter}$, and the $\bot$ result is semantic
+iff every pair's $\bot$ is.
+\end{lemma}
+\begin{proof}
+$o$ in both objects picks $b_1, b_2$ with $o \in \sem{b_1} \cap
+\sem{b_2}$; the surviving pair (or the contradiction with its dropped
+status) is immediate, since the result's branch set contains
+$\inter(b_1,b_2)$ whenever it is not \texttt{None}.
+\impl{TTypeInter.sk / TObject::inter}
+\end{proof}
+
+So the object stratum reduces entirely to one branch pair, audited
+constraint by constraint against the main paper's object semantics. Fix
+$o \in \sem{b_1} \cap \sem{b_2}$ and let $b$ be the merged branch.
+
+\paragraph{Brand (sound; semantic bottom).}
+Conflicting brands $\mathsf{Some}(\mathsf{true})$ vs
+$\mathsf{Some}(\mathsf{false})$ return \texttt{None}: semantic, since
+$\mathsf{isArrayV}(o)$ cannot be both. Otherwise the known side (if any)
+is kept, which $o$ satisfies. The same argument covers the refinement
+helper \texttt{TFields::interIsArray} used by \textsc{R-IsArray}: setting
+an unknown brand constrains $o$ only per the predicate already
+established, and its mismatch bottom is semantic.
+\impl{TTypeInter.sk / TFields::inter (isArray arms), interIsArray}
+
+\paragraph{Named fields (sound).}
+\label{sec:inter-fields}
+The field maps merge with: both sides present $\to$
+\texttt{TField::inter} (get intersected — or deferred as an unexpanded
+intersection when \texttt{expandInter} is off, which denotes the same
+intersection by the \texttt{TInter} interpretation — set unioned,
+$\mathsf{opt}_1 \wedge \mathsf{opt}_2$, access combined); present on one
+side $\to$ kept, intersected with the other side's covering index if one
+exists (\texttt{interIndex}: get intersected, optionality preserved since
+indexes are optional). Soundness for $o$: a key required on either side
+is present ($o$ satisfies that side), so
+$\mathsf{opt}_1 \wedge \mathsf{opt}_2$ is respected; when the key is
+present, its value lies in each side's applicable get-constraint — the
+named field's get on the side that names it, the index's get on a side
+that covers it without naming it (the index clause of the object
+semantics applies precisely because the key is \emph{not named there}) —
+hence in the intersection of the collected gets, recursively by L-INTER
+at the field-type level. Access combination is most-restrictive
+(\texttt{FAPhantom} absorbs into phantom, distinct-owner privates give
+\texttt{FANever}); phantoms weaken the value constraint to
+presence-only, a widening, and \texttt{FANever} remains an ordinary
+membership constraint — both restrict-only at access sites, per the main
+paper. Symbol-keyed fields are the same argument against the symbol
+index.
+\impl{TTypeInter.sk / TFields::interNamedFields, TField::inter,
+TField::interIndex; TType.sk / FieldAccess::combine}
+
+\paragraph{The set direction (membership-irrelevant; flagged).}
+\texttt{TField::inter} \emph{unions} the set-types. For the get-only
+membership semantics this is vacuous — $\sem{b}$ never reads
+$\mathsf{set}$ — so L-INTER is unaffected; that is the whole proof. The
+choice is the one that makes the merged field a subtype of both operands
+under setter contravariance (the merged branch must accept every write
+each operand accepts). But as a \emph{write-through} interface it is the
+permissive direction: a write accepted because only $b_1$'s set-type
+allows it can break $b_2$'s get-assumption on the same key. That is
+a field-write concern --- membership is snapshot (main paper, object
+semantics), writes are governed by subtyping --- so we do not count it
+against L-INTER; we flag it so the eventual mutation model audits
+\texttt{set}-union deliberately rather than inheriting it silently.
+\impl{TTypeInter.sk / TField::inter (set => TType::union)}
+
+\paragraph{Indexes (sound, via the covering semantics).}
+Per kind, one side absent keeps the other (an absent index is the
+unconstrained index, and intersecting constraints keeps the stronger
+side); both present intersect gets. Then the number index is replaced by
+$\mathsf{idx}_{\mathsf{num}} \sqcap \mathsf{idx}_{\mathsf{str}}$ when
+both survive. Soundness for $o$: take a prop $p$ of $o$ covered by a
+merged index and not named in $b$. Since $b$'s names are the union of
+the sides' names, $p$ is not named on either side, so each side's
+covering index (string indexes covering numeric-kind keys as in the main
+paper's covering semantics) constrains $\mathsf{get}(o,p)$; the merged
+get is the intersection of exactly those constraints — including the
+$N \sqcap S$ adjustment, since a numeric-kind key not named anywhere is
+covered by \emph{both} the effective number index and the string index
+of each side that has them. No index arm returns bottom.
+\impl{TTypeInter.sk / TIndexes::inter, TFields::interOptIndex}
+
+\paragraph{Call/new (unsound bottom).}
+One side absent keeps the other: sound — if $b_1$ has
+$\mathsf{call} = \mathsf{None}$ ($o$ not callable) and $b_2$ has a mode,
+the kept mode is satisfied vacuously ($\mathsf{Maybe}$) or the pair was
+semantically disjoint anyway ($\mathsf{Definite}$; any result
+over-approximates $\emptyset$, though $\bot$ would have been more
+precise). Both present: the optionality conjunction
+$\mathsf{opt}_1 \wedge \mathsf{opt}_2$ is sound ($o$ callable whenever
+either side demands it, and $\mathsf{Definite}$ results demand only what
+some side demanded). The defect is \texttt{TFuns::inter}: it intersects
+the signatures by trying \texttt{TFun::isSub} in both directions and
+returning the smaller side, and when \emph{neither} signature subsumes
+the other it returns \texttt{None} — which \texttt{TFields::inter}
+converts into dropping the whole branch pair. ``Neither is a subtype of
+the other'' is not disjointness: under the membership semantics
+signatures are opaque, and even behaviorally, one function value can
+satisfy two incomparable signatures (any overload; e.g.\ a
+\texttt{(x: unknown) => void} value inhabits both
+\texttt{(s: string) => void} and \texttt{(n: number) => void}).
+
+\begin{finding}[Signature Bottom: L-INTER is Violated at the Call/New
+Stratum]
+\label{find:tfun}
+$\inter$ of two single-branch function types with incomparable
+signatures is $\bot$ although their semantic intersection is inhabited.
+Empirically confirmed (probe~2, Section~\ref{sec:findings}): in
+\texttt{if (k === g)} with \texttt{k: (s: string) => void} and
+\texttt{g: (n: number) => void}, the checker narrows \texttt{k} to
+\texttt{never} and accepts \texttt{const z: never = k}; no
+no-overlap warning is emitted (the \texttt{overlaps} helper itself
+correctly says reference types always overlap, in direct tension with
+\texttt{TFun::inter}). The same conversion makes the type-level
+\texttt{F = ((s: string) => void) \& ((n: number) => void)} expand to
+\texttt{never} (probe~4), so nothing is assignable to \texttt{F}
+(spurious rejection — the same defect surfacing as incompleteness).
+The sound repair is to keep the branch with an overload-like or
+widened signature (even call mode $\mathsf{Definite}$ with either
+signature is membership-sound), never to drop it.
+\impl{TTypeInter.sk / TFun::inter, TFuns::inter, TFields::inter
+(call/new arms); SType::overlaps (contrast)}
+\end{finding}
+
+\subsection{Clause and Clauses intersection}
+
+\begin{lemma}[Clause Pair]
+\label{lem:clause-inter}
+$\sem{\clause{V_1}{S_1}} \cap \sem{\clause{V_2}{S_2}} \subseteq
+\sem{\clause{V_1 \cup V_2}{S_1 \sqcap S_2}}$ (with $\top$ absorbing on
+either side, kept exactly), \emph{given} the STypes-level containment;
+the \texttt{None} result inherits its status from
+\texttt{STypes::inter} — i.e.\ today it inherits
+Finding~\ref{find:zeroing}.
+\end{lemma}
+\begin{proof}
+$(\bigcap_{V_1} \cap\, \sem{S_1}) \cap (\bigcap_{V_2} \cap\, \sem{S_2})
+= \bigcap_{V_1 \cup V_2} \cap\, (\sem{S_1} \cap \sem{S_2})$, then the
+STypes containment. The $\top$ arms are the identities
+$\Val \cap X = X$.
+\impl{TTypeInter.sk / Clause::inter}
+\end{proof}
+
+\begin{lemma}[Clause Product and Collision Re-Union]
+\label{lem:clauses-inter}
+$\sem{C_1} \cap \sem{C_2} \subseteq
+\sem{\Clauses\mathord{::}\inter(C_1,C_2)}$ given
+Lemma~\ref{lem:clause-inter}'s hypothesis, and the constructor invariant
+is preserved.
+\end{lemma}
+\begin{proof}
+$\sem{C_1} \cap \sem{C_2} = \bigcup_{c_1, c_2} \sem{c_1} \cap \sem{c_2}$
+(distributivity), and each pair lands in the result: directly, or merged
+by \texttt{Clause::union} when two pairs produce the same var-set key —
+exact by Lemma~\ref{lem:clause-union}. Dropped (\texttt{None}) pairs
+contribute nothing by Lemma~\ref{lem:clause-inter}. Invariant: the
+result is built without the top-collapsing constructor, but a top clause
+$\clause{\emptyset}{\top}$ can arise only from a pair of top clauses,
+and a top clause is alone in its operand (invariant), so both operands
+were top and the result is the lone top clause. An empty product yields
+empty $\Clauses$, i.e.\ $\bot$ at the $\TType$ level — semantic iff each
+pair's bottom was.
+\impl{TTypeInter.sk / Clauses::inter}
+\end{proof}
+
+\subsection{The instance layer: TVar constraints, TInter, speculative
+returns}
+\label{sec:inter-inst}
+
+\texttt{inter\_} has five early arms before the clause product; we
+audit each.
+
+\paragraph{(i) Two unbound bare variables.}
+Returns the unexpanded intersection
+$\mathsf{TInter}\{\alpha, \beta\}$, whose interpretation \emph{is}
+$\sem{\alpha} \cap \sem{\beta}$ (the class comment's
+$\sqcap$-interpretation; its \texttt{expand} recomputes the intersection
+under the then-current state, covered by \textbf{L-EXP}). Containment is
+definitional; never $\bot$.
+\impl{TTypeInter.sk / TInter (interpretation comment), TType::unexpandedInter}
+
+\paragraph{(ii)/(iii) One bare variable, unbound or open-for-field.}
+Returns $\alpha$ with the other operand attached as a constraint:
+\texttt{TVar::setConstraint} is a \emph{functional} update — \texttt{TVar}
+is frozen, the method returns a new \texttt{TVar} value, and constraints
+are occurrence-level, not shared state (registry row SETCONSTRAINT-FUN,
+deep dive~E) — so no other occurrence of $\alpha$ changes meaning. For
+the returned occurrence, adopt the natural sharpening of the main
+paper's TVar semantics: define
+$\sem{\alpha^{\mathit{cs}}}_\rho \triangleq \sem{\alpha^{\emptyset}}_\rho
+\cap \bigcap_{c \in \mathit{cs}} \sem{c}_\rho$, matching
+\texttt{Subst::get}, which intersects the binding's expansion with the
+occurrence's constraints at every read. Then
+$\sem{\alpha^{\mathit{cs}}} \cap \sem{t} =
+\sem{\alpha^{\mathit{cs} \cup \{t\}}}$ \emph{exactly}, at every state —
+provided the get-time intersection itself over-approximates, which is
+L-INTER again, applied at read time; the circularity is benign (an
+inductive appeal at the strictly later read), but since the main paper
+states TVar semantics only as an upper bound, we record the sharpened
+definition as a named obligation for the TVar deep dive
+(Obligation~\ref{obl:tvar-sem}). Never $\bot$.
+\impl{TTypeInter.sk / inter\_ (setConstraint arms); TType.sk /
+TVar::setConstraint; TTypeSubst.sk / Subst::get (constraint loop)}
+
+\paragraph{(iv) In-flight cycle.}
+If the pair is already being intersected (\texttt{tenv.seenInter}, an
+in-flight \emph{set}, distinct from the memo cache), return the
+unexpanded intersection — same justification as (i); never $\bot$.
+
+\paragraph{(v) Speculative boxed-primitive returns.}
+When one side expands to a single primitive kind and the other to a
+single object type, the code checks
+$\mathsf{isSub}(\mathsf{Box}(k), \mathsf{object})$ and on success
+returns the \emph{primitive operand unchanged} (e.g.\
+\texttt{number \& \{toFixed: ...\} = number}). Returning either operand
+always over-approximates the intersection, so these arms are sound
+regardless of the subtype verdict, and they never produce $\bot$. (They
+do evolve the state through \texttt{isSub}'s growth; the code comments
+note only concrete types are involved, and failure paths restore — the
+clone/restore discipline of the main paper.)
+\impl{TTypeInter.sk / inter\_ (primKind/getObject arms)}
+
+\paragraph{Expansion drops nothing.}
+The clause product runs on
+\texttt{expandToClauses(subst, tenv, Covariant())}, which discards the
+first component of \texttt{expandToVectors}. We verified that component
+is populated \emph{only} when \texttt{expandTVars = None()} (variables
+pushed back unexpanded); with a variance supplied, every instance —
+\texttt{TSInst} (via the symbolically-cached expansion),
+\texttt{TInter}, \texttt{TArrayLit}, \texttt{TVar} — is rewritten into
+clauses, so the discarded vector is empty and no members are lost.
+A top expansion short-circuits to $\top$, exact for intersection's
+identity.
+\impl{TType.sk / expandToVectors, expandToClauses}
+
+\subsection{The bottom inventory}
+\label{sec:bottom-inventory}
+
+Every site where intersection can produce $\bot$ (\texttt{None} or an
+empty structure), with its verdict. ``Semantic'' means the empty result
+implies empty semantic intersection; ``derived'' means the verdict is
+inherited from the sites it aggregates.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{@{}p{4.9cm}p{5.6cm}p{3.4cm}@{}}
+\toprule
+\textbf{Site} & \textbf{When $\bot$} & \textbf{Nature of $\bot$} \\
+\midrule
+\texttt{PrimLiterals::inter} & spelling sets disjoint &
+  semantic iff L-LIT(ii); spurious under \#655
+  (Finding~\ref{find:spelling}) \\
+\texttt{TPrimValue::inter} & kind mismatch & semantic (A1); unreachable
+  from \texttt{STypes::inter} \\
+\texttt{STypes::inter}, no shared tag survives & all per-tag results
+  empty or unmatched & semantic (A1), derived \\
+\texttt{STypes::inter}, zeroing & \emph{any} shared tag empty while
+  others survive & heuristic
+  (Finding~\ref{find:zeroing}) \\
+\texttt{TFields::inter}, brand & $\mathsf{Some}(\mathsf{true})$ vs
+  $\mathsf{Some}(\mathsf{false})$ & semantic \\
+\texttt{TFields::inter}, call/new & \texttt{TFuns::inter} fails both
+  \texttt{isSub} directions & heuristic
+  (Finding~\ref{find:tfun}) \\
+\texttt{TFields::interIsArray} & brand conflict at \textsc{R-IsArray} &
+  semantic \\
+\texttt{TObject::inter} & every branch pair \texttt{None} & derived \\
+\texttt{Clause::inter} / \texttt{Clauses::inter} & STypes bottom /
+  empty product & derived \\
+\texttt{TInter::map} & a mapped component is $\bot$ & derived (client
+  utility, not on the \texttt{inter} path) \\
+\texttt{inter\_} short-circuit & an operand is $\bot$ & semantic \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Notably, \emph{fields and indexes never produce} $\bot$: two named
+fields with disjoint gets intersect to a field whose get is $\bot$ —
+a branch that no object with that key present can inhabit, but the
+branch (and, if the field is optional, its members lacking the key)
+survives. The implementation's own \texttt{overlaps} comment documents
+this deliberately (``a shared field with non-overlapping types'' is
+listed as a TODO for \emph{warning} precision, not as a bottom). So the
+only unsound bottoms are the two Findings plus the conditional literal
+stratum — but each sits on a hot refinement path.
+
+%==========================================================================
+\section{The Caches: seenUnion and seenInter}
+\label{sec:caches}
+
+Both caches live in the substitution state, keyed by the operand pair,
+while the substitution evolves between write and reuse. The question is
+whether a cached result can become an \emph{under}-approximation after
+evolution (unsoundness), as opposed to merely stale precision.
+
+\begin{theorem}[seenUnion Reuse is Unconditionally Sound]
+\label{thm:seenunion}
+A \texttt{seenUnion} entry reused at any later state $\rho'$ still
+satisfies the L-UNION containment at $\rho'$.
+\end{theorem}
+\begin{proof}
+By the proof of Theorem~\ref{thm:union}, \texttt{union\_} never reads
+$\rho$: it is a pure function of the operands' syntax, and the
+containment proved is pointwise in $\rho$ — the result type's members
+are (unions of) the very same syntactic components, so
+$\sem{t_1}_{\rho'} \cup \sem{t_2}_{\rho'} \subseteq
+\sem{\union(t_1,t_2)}_{\rho'}$ holds for every $\rho'$ with one proof.
+The cached value equals the recomputation verbatim, so reuse is the
+identity. (This is the code comment's ``TVars pass through unchanged''
+argument, made precise: state-independence of the computation plus
+state-uniformity of the theorem.) \texttt{restore} additionally rolls
+the cache back together with the bindings, which is needed only for
+precision hygiene, not soundness.
+\impl{TTypeUnion.sk / TType::union (cache and comment);
+TTypeSubst.sk / SubstState.seenUnion, restore}
+\end{proof}
+
+\subsection{seenInter: the sealing argument and its freeze exception}
+
+\texttt{seenInter} is different in kind: \texttt{inter\_} both reads and
+evolves the state. The implementation's justification (the comment on
+\texttt{TType::inter}) is a \emph{sealing} argument:
+\begin{enumerate}
+\item Bare-variable operands bypass the cache entirely (the
+  \texttt{hasTVar} guard) — exactly the arms of
+  Section~\ref{sec:inter-inst} that touch bindings without sealing.
+\item Every variable a cached computation \emph{did} read was read
+  through \texttt{expandToClauses(\ldots, Covariant())}, i.e.\
+  \texttt{Subst::get} covariantly, which seals it
+  ($\mathsf{SVOpen} \to \mathsf{SVClosed}$; fresh $\to$
+  $\mathsf{SVClosed}(\top)$); a sealed binding never changes again (main
+  paper, Lemma ``Determined Candidates Are Never Widened''(iii), which
+  holds for all identifiers), so the expansion the cache baked in equals
+  the expansion any later state would produce.
+\item Named-type expansions consulted along the way
+  (\texttt{seenExpansion}) are symbolic in their type arguments — the
+  cached body mentions the argument \emph{variables}, whose bindings are
+  re-resolved at every use — so they cannot freeze a binding either
+  (the argument documented at \texttt{SubstState.seenExpansion}).
+\item \texttt{restore} rolls back \texttt{seenInter} together with the
+  bindings, so failure-path exploration cannot leak entries into a state
+  they were not computed against; and a \texttt{clone} shares the maps
+  by value (immutable), so a clone's writes never reach the parent.
+\end{enumerate}
+This argument is correct as far as it goes, but it has one exception,
+which we found by instruction-level audit of \texttt{Subst::get}: under
+\texttt{freezeCandidates}, a covariant read of an $\mathsf{SVOpen}$
+\emph{candidate} returns the value \emph{without sealing}. An
+\texttt{inter} executed inside a constraint-admissibility check (the
+freeze window of \texttt{growTVars} — reachable, since admissibility
+calls \texttt{isSub}, whose validation intersects variable constraints
+through \texttt{Subst::get}) can therefore cache a result derived from a
+binding that remains growable after the freeze is popped; the freeze
+flag is deliberately outside \texttt{SubstState}, so no restore removes
+the entry. If the candidate later grows (a contravariant union enlarging
+its denotation), the cached intersection under-approximates the new
+$\sem{t_1} \cap \sem{t_2}$.
+
+\begin{obligation}[C-FREEZE-CACHE: seenInter Entries Written Under
+Freeze]
+\label{obl:freeze-cache}
+The mechanism is \emph{demonstrably active}: \texttt{TType::inter} is
+reached inside freeze windows with unsealed candidates (via
+\texttt{Subst::get}'s constraint-application loop), \texttt{seenInter}
+entries are written there, and an end-to-end order-dependent unsound
+acceptance exercising this path exists — shared with the sibling
+\texttt{subst.seenSub} memo (deep dive E's MR-1, \textsc{violated};
+issue draft \path{issues/freeze-window-stale-memo-caches.md}). In
+particular, two otherwise-tempting deflections are false: admissibility
+checks do \emph{not} save/restore around themselves on success paths,
+and freeze-window operand pairs do \emph{not} always carry a bare
+variable. What remains open is \emph{attribution} only: no witness
+isolates \texttt{seenInter}'s contribution from \texttt{seenSub}'s
+(every construction that reused a stale \texttt{seenInter} entry also
+reused a stale \texttt{seenSub} entry). Discharge the isolated
+statement, or apply the enforcing fix, which covers both memos: key
+\texttt{seenInter} by substitution version (as \texttt{tenv.seenSub}
+already is, after \#446 — \texttt{subst.seenSub} itself is \emph{not}
+version-keyed and shares this exposure), or skip cache \emph{writes}
+while frozen.
+\impl{TTypeSubst.sk / Subst::get (freeze arm), Subst.freezeCandidates;
+TTypeInter.sk / TType::inter (hasTVar guard, re-entrant arm)}
+\end{obligation}
+
+\begin{obligation}[TVAR-SEM: Sharpened Variable Denotation]
+\label{obl:tvar-sem}
+Adopt (in the TVar/substitution deep dive) the definition
+$\sem{\alpha^{\mathit{cs}}}_\rho = \sem{\alpha^{\emptyset}}_\rho \cap
+\bigcap_{c}\sem{c}_\rho$ and verify it against every consumer of
+\texttt{Subst::get}/\texttt{peek}; Section~\ref{sec:inter-inst}(ii)'s
+exactness claim for constraint attachment is conditional on it. The main
+paper's one-sided inequality is implied by it.
+\end{obligation}
+
+Two further hygiene points, verified benign: the re-entrant arm of
+\texttt{TType::inter} (a recursive call cached the pair first) returns
+the \emph{already-cached} result rather than the just-computed one, for
+consistency with intermediate consumers — soundness is unaffected since
+both are results of \texttt{inter\_} on the same pair; and the
+\texttt{ty1 == ty2} fast path returns \texttt{ty1}, exact for
+idempotent operands.
+
+%==========================================================================
+\section{Empirical Witnesses}
+\label{sec:findings}
+
+All probes were run against the pinned binary
+(\texttt{target/host/dev/skjs}, built from \texttt{9108f339}) via
+\texttt{make check-file-in-docker}. ``Accepted'' means zero diagnostics.
+
+\subsection{Probe 1: per-tag zeroing (Finding~\ref{find:zeroing})}
+\begin{verbatim}
+function p1(x: "a" | 0, y: "a" | 1): void {
+  if (x === y) {
+    const z: never = x;   // ACCEPTED (silently)
+    console.log(z);
+  }
+}
+\end{verbatim}
+At runtime \texttt{p1("a", "a")} takes the branch with
+\texttt{z = "a"}: a value inhabits \texttt{never}. tsc narrows
+\texttt{x} to \texttt{"a"} here. No no-overlap warning is emitted
+(correctly — \texttt{overlaps} consults the literal sets pairwise and
+finds \texttt{"a"}), which confirms the defect is in
+\texttt{STypes::inter}'s assembly, not in overlap detection.
+
+\subsection{Probe 2: signature bottom (Finding~\ref{find:tfun})}
+\begin{verbatim}
+function p2(k: (s: string) => void, g: (n: number) => void): void {
+  if (k === g) {
+    const z: never = k;   // ACCEPTED (silently)
+    console.log(z);
+  }
+}
+\end{verbatim}
+Runtime witness: \texttt{const h = (x: unknown) => \{\}} inhabits both
+parameter types; \texttt{p2(h, h)} takes the branch — and the call
+\texttt{p2(h, h)} is itself accepted by the checker, so a single accepted
+program demonstrates the unsoundness end-to-end (issue draft
+\path{issues/tfun-inter-incomparable-not-disjoint.md}). tsc flags the
+comparison itself with TS2367; either way tsc rejects the program.
+
+\subsection{Probe 3: literal spellings (Finding~\ref{find:spelling})}
+\begin{finding}[Spelling-Sensitive Disjointness]
+\label{find:spelling}
+\leavevmode
+\begin{verbatim}
+function p3(a: 0.0, b: 0): void {
+  if (a === b) {          // warning: "comparison is always false
+    const z: never = a;   //   because the operand types do not
+    console.log(z);       //   overlap" -- and z: never ACCEPTED
+  }
+}
+\end{verbatim}
+\texttt{0.0 === 0} is \emph{true} at runtime, so both the warning and
+the narrowing are wrong. This is not a new root cause: it is
+\textbf{L-LIT}(ii) (\#655) propagating through
+Lemma~\ref{lem:lit-inter} into \texttt{PrimLiterals::inter}'s bottom
+and thence into \texttt{overlaps} and the branch logic. It is recorded
+here because it is L-INTER's \emph{disjointness} reading that this
+instance breaks — a distinct consequence of \#655 from the falsiness
+one the main paper's worked example covers; the main paper's L-INTER row
+records it as the third violated stratum.
+\end{finding}
+
+\subsection{Probe 4: type-level intersections}
+\begin{verbatim}
+type C = ("a" | 0) & ("a" | 1);
+function p6(c: C): void { const z: never = c; }  // ACCEPTED: C = never
+function p7(): void { const c: C = "a"; }        // REJECTED
+type F = ((s: string) => void) & ((n: number) => void);
+function p8(f: F): void { const z: never = f; }  // ACCEPTED: F = never
+\end{verbatim}
+\texttt{p7}'s rejection shows the findings double as
+\emph{incompleteness}: \texttt{\&}-types users write become
+uninhabitable. (tsc: \texttt{C = "a"}; \texttt{F} is a callable
+overload.)
+
+\subsection{Failed proof attempts, recorded}
+For completeness, the containments we attempted and could not close,
+each of which became a Finding or Obligation rather than a theorem:
+(1) STypes-level L-INTER — refuted (Finding~\ref{find:zeroing});
+(2) call/new-level $\bot$-implies-disjoint — refuted
+(Finding~\ref{find:tfun});
+(3) literal-level $\bot$-implies-disjoint without L-LIT(ii) — refuted
+(Finding~\ref{find:spelling});
+(4) unconditional \texttt{seenInter} reuse — the sealing argument's
+freeze gap resisted proof and is Obligation~\ref{obl:freeze-cache};
+(5) exactness of constraint attachment from the main paper's one-sided
+TVar axiom alone — needs the sharpened denotation,
+Obligation~\ref{obl:tvar-sem}.
+We found \emph{no} defect in: any union stratum, the field/index/brand
+strata of intersection, the instance-layer arms, the clause product, or
+the in-flight cycle handling.
+
+%==========================================================================
+\section{Status and Ledger Edits}
+\label{sec:status}
+
+\subsection{Status by stratum}
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{longtable}{@{}p{4.6cm}p{9.4cm}@{}}
+\toprule
+\textbf{Stratum} & \textbf{Result} \\
+\midrule
+\endhead
+Union: literals, prims, units & Lemmas~\ref{lem:lit-union},
+  \ref{lem:prim-union} (exact) \\
+Union: object branch sets & Lemma~\ref{lem:obj-union} (exact) \\
+Union: STypes / Clause / Clauses / TInsts &
+  Lemmas~\ref{lem:stypes-union}--\ref{lem:insts-union},
+  Theorem~\ref{thm:union} (exact) \\
+Union: branch-merge client (\texttt{TFields::union}) &
+  Lemma~\ref{lem:tfields-union} (over-approx.) \\
+\texttt{seenUnion} cache & Theorem~\ref{thm:seenunion} (unconditional) \\
+\midrule
+Inter: units, tag dropping, no-shared-tag $\bot$ &
+  Lemma~\ref{lem:prim-inter}, A1 \\
+Inter: literal sets & Lemma~\ref{lem:lit-inter}, conditional on
+  L-LIT(ii); spurious under \#655 (Finding~\ref{find:spelling}) \\
+Inter: STypes assembly & per-tag zeroing (Finding~\ref{find:zeroing},
+  pinned probe) \\
+Inter: named fields, indexes, brand, access &
+  Section~\ref{sec:inter-object} (brand $\bot$ semantic; given
+  sub-level L-INTER) \\
+Inter: call/new & signature-failure branch drop
+  (Finding~\ref{find:tfun}, pinned probe) \\
+Inter: Clause/Clauses product & Lemmas~\ref{lem:clause-inter},
+  \ref{lem:clauses-inter} (derived) \\
+Inter: instance layer (constraints, TInter, speculative returns) &
+  Section~\ref{sec:inter-inst}; never $\bot$, conditional on
+  Obligation~\ref{obl:tvar-sem} \\
+\texttt{seenInter} cache & sealing argument + freeze gap
+  (Obligation~\ref{obl:freeze-cache}) \\
+Cloned-subst reuse of results & clone-stability, via the fork-state
+  form I$_f$ of the containments audited here \\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\subsection{Stratum outcomes}
+
+\paragraph{L-UNION.} \textsc{proved}
+(this document, Theorem~\ref{thm:union} with
+Lemmas~\ref{lem:lit-union}--\ref{lem:tfields-union} and
+Theorem~\ref{thm:seenunion} for the cache). Note field: ``exact for
+membership semantics at every stratum on the $\union(t_1,t_2)$ path;
+the branch-merge client \texttt{TFields::union} is over-approximating
+only. Signature bodies built by \texttt{TFun::union} are outside
+membership semantics and remain part of the subtyping surface.''
+
+\paragraph{L-INTER.} Established stratum by stratum:
+\begin{itemize}
+\item \textbf{L-INTER-a} (units, tags, fields, indexes, brand, clause
+  product, instance layer): \textsc{proved} (this document,
+  Sections~\ref{sec:inter-prim}--\ref{sec:inter-inst}); the instance
+  layer conditionally on \textbf{TVAR-SEM}
+  (Obligation~\ref{obl:tvar-sem}).
+\item \textbf{L-INTER-b} (literal sets): \textsc{violated} — inherits
+  \textbf{L-LIT}(ii)/\#655; witness pinned
+  (Finding~\ref{find:spelling}). Fixing \#655's normalization restores
+  \textsc{proved} via Lemma~\ref{lem:lit-inter}.
+\item \textbf{L-INTER-c} (STypes assembly): \textsc{violated} — per-tag
+  zeroing, witness pinned (Finding~\ref{find:zeroing}). Local fix:
+  drop empty tags, $\bot$ only when all drop.
+\item \textbf{L-INTER-d} (call/new): \textsc{violated} — heuristic
+  branch drop on incomparable signatures, witness pinned
+  (Finding~\ref{find:tfun}). Fix: never convert \texttt{TFuns::inter}
+  failure into \texttt{None}; keep a widened or overloaded signature.
+\item \textbf{L-INTER-e} (\texttt{seenInter} reuse): \textsc{open} —
+  Obligation~\ref{obl:freeze-cache} (C-FREEZE-CACHE).
+\end{itemize}
+Every theorem of the main paper that cites \textbf{L-INTER} — the
+branch-drop steps of \textsc{R-Eq}, \textsc{R-EqField},
+\textsc{R-Inst}, \textsc{R-IsArray}, and the equality-narrowing
+intersection itself — is affected by b--d exactly where its operands
+reach a violated stratum; the \textsc{R-IsArray} drops are unaffected
+(their bottoms are the brand and no-shared-tag cases, both semantic —
+except when the intersected array branch pair hits the call/new arm,
+which \texttt{ReadonlyArray} does not). As with the main paper's other
+\textsc{violated} entries, the violations are local to leaf strata:
+b--d are code fixes that change no statement or proof in this
+document, after which L-INTER-a--d are all \textsc{proved} and only
+the \textsc{open} obligation C-FREEZE-CACHE remains here. Each of the three witnesses should
+be wired as a
+pinned test per the main paper's maintenance discipline (probes 1--4,
+Section~\ref{sec:findings}).
+
+\paragraph{Registry.}
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence. The
+registry rows it supports:
+
+\input{../generated/rows-B}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-B}
+
+%==========================================================================
+\section{Implementation Anchor Index}
+\label{sec:anchors}
+
+Pinned to \texttt{9108f339}.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{@{}p{4.1cm}>{\raggedright\arraybackslash}p{10.3cm}@{}}
+\toprule
+\textbf{This document} & \textbf{Implementation} \\
+\midrule
+union top level, cache & \texttt{TTypeUnion.sk / TType::union,
+  union\_} \\
+literal-set ops & \texttt{PrimLiterals.sk / union, inter, diff} \\
+primitive merges & \texttt{TTypeUnion.sk / TPrimValue::union};
+  \texttt{TTypeInter.sk / TPrimValue::inter} \\
+STypes assembly & \texttt{TTypeUnion.sk / STypes::union};
+  \texttt{TTypeInter.sk / STypes::inter} \\
+map combinators & \texttt{InternalKeyedArrayMap.sk / mapUnion,
+  mapInterOption, mergeOption, mergeOpt} \\
+object branch sets & \texttt{TTypeUnion.sk / TObject::union};
+  \texttt{TTypeInter.sk / TObject::inter} \\
+branch pair & \texttt{TTypeInter.sk / TFields::inter,
+  interNamedFields, TIndexes::inter} \\
+branch merge (reads) & \texttt{TTypeUnion.sk / TFields::union};
+  \texttt{TType.sk / TObject::getFields} \\
+fields & \texttt{TTypeInter.sk / TField::inter, interIndex};
+  \texttt{TTypeUnion.sk / TField::union, unionIndex} \\
+access lattice & \texttt{TType.sk / FieldAccess::combine} \\
+call/new & \texttt{TTypeInter.sk / TFun::inter, TFuns::inter};
+  \texttt{TTypeUnion.sk / TFun::union} \\
+brand & \texttt{TTypeInter.sk / TFields::inter (isArray),
+  interIsArray} \\
+clause strata & \texttt{TTypeUnion.sk} / \texttt{TTypeInter.sk} /
+  \texttt{Clause::*}, \texttt{Clauses::*}; \texttt{TType.sk /
+  Clauses::create} \\
+instance layer & \texttt{TTypeInter.sk / TInter, inter\_ (var arms)};
+  \texttt{TType.sk / TVar::setConstraint} \\
+expansion & \texttt{TType.sk / expandToVectors, expandToClauses} \\
+caches & \texttt{TTypeSubst.sk / SubstState.seenUnion, seenInter,
+  seenExpansion, restore; Subst::clone, get, freezeCandidates} \\
+overlap warning & \texttt{TTypeInter.sk / SType::overlaps} \\
+refinement consumers & \texttt{TypeCheckRefine.sk / evalVarEquality,
+  evalFieldEqualityType, narrowField, evalIsArray, evalInstanceof} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

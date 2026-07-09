@@ -1,0 +1,1431 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{finding}[theorem]{Finding}
+\newtheorem{extension}[theorem]{Extension}
+
+% Core semantic notation (copied from the main paper)
+\newcommand{\ObjVal}{\mathsf{ObjVal}}
+\newcommand{\Tags}{\mathsf{Tags}}
+\newcommand{\tagfn}{\mathsf{tag}}
+\newcommand{\rtag}{\mathsf{rtag}}
+\newcommand{\SType}{\mathsf{SType}}
+\newcommand{\STypes}{\mathsf{STypes}}
+\newcommand{\TType}{\mathsf{TType}}
+\newcommand{\Clauses}{\mathsf{Clauses}}
+\newcommand{\Clause}{\mathsf{Clause}}
+\newcommand{\TInsts}{\mathsf{TInsts}}
+\newcommand{\TParam}{\mathsf{TParam}}
+\newcommand{\TFields}{\mathsf{TFields}}
+\newcommand{\TField}{\mathsf{TField}}
+\newcommand{\Subst}{\mathsf{Subst}}
+\newcommand{\SVOpen}{\mathsf{SVOpen}}
+\newcommand{\SVClosed}{\mathsf{SVClosed}}
+\newcommand{\clause}[2]{\langle #1 \mid #2 \rangle}
+
+
+% Local notation
+\newcommand{\issub}{\mathsf{isSub}}
+\newcommand{\STOk}{\mathsf{STOk}}
+\newcommand{\STErr}{\mathsf{STError}}
+\newcommand{\vals}{\mathsf{values}}
+\newcommand{\ver}{\mathsf{version}}
+\newcommand{\semn}[2]{\llbracket #1 \rrbracket^{#2}}
+
+\title{Deep Dive D --- Subtyping Validation Soundness:\\
+\texttt{Clauses::isSub} and Its Strata}
+\author{}
+\date{\skjspin.\\
+Companion to \emph{Refinement and Inference Growth in SKJS}.}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This deep dive addresses the largest unproved component of the main
+soundness paper: Obligation \textbf{L-SUB} (\emph{Validation Soundness}),
+the claim that acceptance by the subtyping validator implies semantic
+inclusion under the current substitution state. Part~I proves the
+architecture: the \texttt{isSub} dispatch, the two memoization caches
+(\texttt{subst.seenSub} and the version-keyed \texttt{tenv.seenSub}), the
+growth pre-passes, restore-on-failure, and the coinductive treatment of
+recursive types, which we reduce --- via a stratified-semantics theorem ---
+to \emph{one-step soundness} of the individual strata. Part~II proves the
+strata that the main paper's membership semantics supports (primitives,
+$\STypes$, the DNF clause covering, object-branch matching, the
+getter/optional/index/access rules of $\TFields$), states the
+setter directions as conditional on \textbf{L-MUT}, and gives function
+signatures the behavioral semantics the main paper lacks, proving the
+variance rules of \texttt{TFun::isSub} against it. Four findings emerge
+where the implementation is laxer than the semantics: the call/new
+\emph{mode} arm and the array-\emph{brand} omission (each composing with a
+refinement rule into a concrete unsoundness candidate), and two
+TS-compatibility acceptances in function subtyping (\texttt{this} and
+type-parameter constraint dropping). The closing status table recommends
+splitting the main paper's single \textbf{L-SUB} row into ten rows with
+individual statuses.
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose: the Row Addressed}
+\label{sec:purpose}
+
+The main paper's assumption ledger carries one row for the entire
+validator:
+
+\begin{keydef}
+\textbf{L-SUB} (Obligation ``Validation Soundness''; the main paper's
+table records the split status this paper establishes):
+\texttt{Clauses::isSub} (with its $\STypes$, object-branch, field, index,
+and function strata, including getter/setter variance and the
+\texttt{seenSub}/\texttt{tenv.seenSub} cycle caches keyed by substitution
+version) is sound in the sense of the main paper's Definition
+``Subtyping Check Architecture'': if \texttt{Clauses::isSub} accepts under
+state $\rho$, then $\sem{t_1}_\rho \subseteq \sem{t_2}_\rho$ for the
+expanded views. \emph{``This is the largest unproved component of the
+document.''}
+\end{keydef}
+
+\noindent
+This paper is the discharge attempt. The outcome, in one paragraph: the
+\emph{architecture} (caches, dispatch, coinduction) is proved outright,
+modulo two small named assumptions; the \emph{covering skeletons}
+($\STypes$, $\Clauses$, $\mathsf{TObject}$) and the \emph{read-direction}
+field rules are proved against the main paper's membership semantics; the
+\emph{write-direction} rules are proved conditional on the mutation model
+(\textbf{L-MUT}); \emph{function} subtyping is proved against a new
+behavioral signature semantics that we propose as an extension of the main
+paper's object semantics (whose opaque signatures cannot even express the
+claim); and two arms of the field stratum --- the call/new \emph{mode}
+lattice and the array \emph{brand} --- are found to be unsound relative to
+the main paper's stated semantics, each with a composite witness sketch
+involving a refinement rule whose proof in the main paper leans on exactly
+the semantic clause the subtyping arm ignores
+(Findings~\ref{find:call} and~\ref{find:brand}).
+Section~\ref{sec:status} gives the resulting ledger split.
+
+\paragraph{Relation to the rest of the series.}
+We build on three dives (exact rows in this paper's Imports table):
+Deep Dive~B (\texttt{lattice-operations.tex}) for the union/intersection
+results --- union proved exact, and the $\bot$-clause refuted (per-tag
+zeroing; incomparable signatures, \textbf{L-INTER-BOT});
+Deep Dive~C (\texttt{type-expansion.tex}) for \textbf{L-EXP} scoped to
+expansion modes \texttt{None}/\texttt{Covariant} (its theorem T-EXP),
+which explicitly delegates the \emph{contravariant} expansion read to this
+paper (\S\ref{sec:variance}); and Deep Dive~E
+(\texttt{subst-state-discipline.tex}) for the substitution state
+discipline: monotone reads and their transport theorem proved,
+with the named residue MR-1 (the freeze-window memo hazard, which lives in
+\texttt{subst.seenSub} and is \emph{inherited} here, \S\ref{sec:substseen}),
+and the refutation of the naive ``version is a state hash'' reading of the
+\texttt{tenv.seenSub} key, whose corrected argument we complete in
+\S\ref{sec:tenvseen}. All code references are to revision
+\texttt{9108f339}; the primary sources are
+\texttt{src/TTypeSubtyping.sk} (all 1830 lines audited),
+\texttt{src/TTypeSubst.sk}, and the \texttt{isSub} helpers in
+\texttt{src/TType.sk}.
+
+%==========================================================================
+\section{Minimal Recap}
+\label{sec:recap}
+
+\paragraph{Representation.}
+From the main paper (\S3): a $\TType$ is a pair $(I, C)$ of an instance
+layer $I \in \TInsts$ (type variables \texttt{TVar}, unexpanded named
+instantiations \texttt{TSInst}, unexpanded intersections \texttt{TInter},
+delayed array literals \texttt{TArrayLit}) and clauses $C \in \Clauses$, a
+DNF: a map from var-sets to clauses $\clause{V}{S}$ with
+$V \subseteq_{\mathrm{fin}} \TParam$ and $S \in \STypes \cup \{\top\}$.
+$\STypes$ is tag-indexed, at most one $\SType$ per tag; $\SType$s are
+units, literal-or-full primitives, and $\mathsf{object}(B)$ with branches
+$b \in \TFields$ carrying named string/symbol fields, per-kind indexes,
+call/new signature \emph{modes}
+($\mathsf{None} \mid (\mathit{opt}, \sigma)$), and the array brand
+$\mathsf{isArr} \in \{\mathsf{None},\mathsf{Some}(\mathsf{true}),
+\mathsf{Some}(\mathsf{false})\}$.
+Semantics ($\sem{\cdot}_\rho$, indexed by the substitution state $\rho$):
+\[
+\sem{(I,C)}_\rho = \sem{I}_\rho \cup \sem{C}_\rho, \qquad
+\sem{C}_\rho = \bigcup_{c \in C}\sem{c}_\rho, \qquad
+\sem{\clause{V}{S}}_\rho = \bigcap_{v \in V}\sem{v}_\rho \cap \sem{S}_\rho,
+\]
+with $\sem{S} = \bigcup_{s\in S}\sem{s}$ and object membership per the
+main paper's Definition ``Object-Type Semantics'': required/optional
+fields constrain values via $\mathsf{get}$-types, indexes constrain the
+props they \emph{cover} (string index covers both string- and numeric-kind
+string keys; number index covers numeric-kind keys; symbol index covers
+symbol keys), $\mathsf{call}(b)=\mathsf{None}$ entails
+$\neg\mathsf{callable}(o)$, $(\mathsf{false},\sigma)$ entails
+$\mathsf{callable}(o)$, $(\mathsf{true},\sigma)$ entails nothing, and
+$\mathsf{isArr}(b)=\mathsf{Some}(x)$ entails $\mathsf{isArrayV}(o)=x$.
+Signatures $\sigma$ are \emph{opaque} to membership --- until
+\S\ref{sec:tfun}, where we refine this.
+
+\paragraph{Check architecture.}
+The main paper's Definition ``Subtyping Check Architecture'':
+\texttt{TType::isSub}$(t_1,t_2)$ runs
+(1) $\mathsf{growTVars}(t_1,t_2,\mathsf{contra})$,
+(2) $\mathsf{growTVars}(t_2,t_1,\mathsf{cov})$,
+(3) expansion of both sides and validation by \texttt{Clauses::isSub};
+on failure the substitution is restored. The Guidance-vs-Validation
+theorem there shows that \emph{given} \textbf{L-SUB}, no imprecision of
+growth can cause unsound acceptance: growth selects the state, validation
+decides under it. This paper is about the ``validation decides'' half.
+
+\paragraph{Target statement.}
+Throughout, \emph{acceptance} means the top-level
+\texttt{TType::isSub}$(\rho, t_1, t_2)$ returning $\STOk$, and the target
+is:
+\begin{keydef}
+\textbf{L-SUB (restated).} If \texttt{TType::isSub}$(t_1,t_2)$ returns
+$\STOk$, evolving the substitution $\rho \to \rho^\ast$, then
+$\sem{t_1}_{\rho^\ast} \subseteq \sem{t_2}_{\rho^\ast}$.
+\end{keydef}
+\noindent
+Two scoping remarks. (i) The statement quantifies over the state
+\emph{produced} by the accepting run; persistence of the inclusion under
+\emph{later} evolutions is Deep Dive~E's monotone-reads theorem, not this
+paper. (ii) For types containing inference variables, $\sem{t}_\rho$
+depends on the semantics assigned to a variable occurrence; we make the
+required directional reads explicit in \S\ref{sec:variance} rather than
+burying them in the notation.
+
+\paragraph{Result vocabulary.}
+\texttt{STResult} is $\STOk$ or an $\STErr$ tree. The error hierarchy
+(roughly 600 of the file's 1830 lines) exists to \emph{render} failures;
+it never influences acceptance. We audit it only for state effects:
+\texttt{toError} renderers take the substitution and may expand types for
+printing, but every render site on the acceptance path occurs strictly
+after the verdict is fixed, and \texttt{originSuggestions} explicitly
+works on a \texttt{subst.clone()}. Rendering is therefore out of scope for
+L-SUB, with one caveat folded into the audit of
+Lemma~\ref{lem:restore}.
+\impl{TTypeSubtyping.sk / STError hierarchy, originSuggestions}
+
+%==========================================================================
+\part{Architecture and Caches (Proved)}
+
+\section{The Dispatcher and Its Acceptance Points}
+\label{sec:dispatch}
+
+\begin{definition}[Dispatch]
+\label{def:dispatch}
+\texttt{TType::isSub}$(u_1,u_2)$ is a thin wrapper: (a) if $u_1 = u_2$,
+accept; (b) if $(u_1,u_2) \in \texttt{subst.seenSub}$, accept; (c) call
+\texttt{isSub\_}, and on $\STOk$ insert $(u_1,u_2)$ into
+\texttt{subst.seenSub}. \texttt{isSub\_}$(u_1,u_2)$ in order:
+(1) if $u_2.\mathsf{isTop}()$, accept;
+(2) if $(\ver, u_1, u_2) \in \texttt{tenv.seenSub}$, accept; otherwise
+    record $(\ver, u_1, u_2)$ in the \emph{local} \texttt{tenv} copy;
+(3) if $u_1$ is a single \texttt{TInter}$(\mathit{tys})$ with
+    $u_2 \in \mathit{tys}$, accept;
+(4) if \texttt{ArrayLitTyping::subtyping} claims the pair, return its
+    verdict;
+(5) save; run the two growth pre-passes; expand $u_1$ covariantly and
+    $u_2$ contravariantly; validate with \texttt{Clauses::isSub};
+    restore on failure.
+\impl{TTypeSubtyping.sk / TType::isSub, TType::isSub\_}
+\end{definition}
+
+There are thus exactly seven ways to accept: (a), (b), (1)--(4) accepting,
+and (5) validating. We prove (a), (1), (3) here; (b) in
+\S\ref{sec:substseen}; (2) in \S\ref{sec:tenvseen} and
+\S\ref{sec:coinduction}; (5) is Part~II. (4) is \emph{delegated}:
+
+\begin{obligation}[O-ARRAYLIT: Delayed Array-Literal Subtyping]
+\label{obl:arraylit}
+\texttt{ArrayLitTyping::subtyping} decides pairs involving delayed
+array-literal forms (committing their tuple-vs-array shape) before the
+general machinery runs. Its acceptance must imply inclusion, and its
+failure paths must restore (the code saves/restores around its probes).
+Deep Dive~C's assumption \textbf{E-ARR} covers the \emph{expansion} of
+committed literals; the \emph{decision procedure} itself remains open.
+Status: \textsc{open}.
+\impl{TArrayLitTyping.sk / ArrayLitTyping::subtyping}
+\end{obligation}
+
+\begin{assumption}[A-HASH: Structural Identity via Hashing]
+\label{as:hash}
+\texttt{TType::compare} and \texttt{TType} equality are implemented as
+comparison of the 64-bit \texttt{XXHash} computed by the smart
+constructors (\texttt{TType.sk / compare}). Every set and map keyed by
+$\TType$ in this paper --- the $u_1 = u_2$ fast path, both
+\texttt{seenSub} caches, \texttt{seenExpansion} --- therefore identifies
+types up to hash collision. We assume no two distinct constructed types
+collide. This is the standard hash-consing wager; it is stated once here
+and not repeated at each use. (A collision would be a \emph{soundness}
+event: the fast path would equate distinct types.) Status:
+\textsc{assumed}.
+\end{assumption}
+
+\begin{lemma}[Fast Path, Top, and the TInter Shortcut]
+\label{lem:fastpath}
+Acceptances (a), (1), (3) are sound.
+\end{lemma}
+\begin{proof}
+(a) $u_1 = u_2$ (modulo A-HASH) gives $\sem{u_1}_\rho = \sem{u_2}_\rho$
+for any $\rho$: the denotation is a function of the term and the state,
+and no state evolution occurs on this path.
+(1) $u_2.\mathsf{isTop}()$ holds iff the clause map is the singleton top
+clause $\clause{\emptyset}{\top}$ (\texttt{Clauses::isTop}), whose
+denotation is $\Val$; note \texttt{TType::create} deletes the instance
+layer when the clauses are top, so $\sem{u_2}_\rho = \Val \supseteq$
+anything, and again no evolution occurs.
+(3) requires $\sem{\mathsf{TInter}(\mathit{tys})}_\rho \subseteq
+\sem{u_2}_\rho$ when $u_2 \in \mathit{tys}$ and $u_1$'s clause part is
+empty (\texttt{getSingleInter} demands a lone instance). An unexpanded
+intersection denotes at most the intersection of its conjuncts ---
+this is the instance-layer counterpart of Deep Dive~C's expansion
+semantics for \texttt{TInter} (its \texttt{TInter::expand} computes the
+conjunction), and we record it as the interface fact
+\emph{A-INTERSEM}: $\sem{\mathsf{TInter}(\mathit{tys})}_\rho \subseteq
+\bigcap_{t \in \mathit{tys}} \sem{t}_\rho$. Given A-INTERSEM the shortcut
+is immediate, and it performs no state write.
+\end{proof}
+
+\subsection{Restore-on-failure}
+\label{sec:restore}
+
+\begin{lemma}[Error Paths Restore]
+\label{lem:restore}
+Every function of the \texttt{isSub} family returns $\STErr$ only with
+the substitution equal to its entry state. Audit, function by function:
+\texttt{TType::isSub\_} saves before growth and restores in its single
+error arm; \texttt{Clauses::isSub}, \texttt{STypes::isSub},
+\texttt{TObject::isSub}, \texttt{TFields::isSub}, and \texttt{TFun::isSub}
+each save at entry and restore before returning any error
+(\texttt{TObject::isSub} additionally save/restores around each failed
+branch pairing); \texttt{TPrimValue::isSub} takes no substitution;
+the probes inside \texttt{growTVars} (\texttt{isCovered}, the
+constraint-admissibility loop) save/restore around every speculative
+call; \texttt{TFields::isSub\_} and \texttt{TFun::isSub\_} may leave
+partial growth behind, but both are reached only through their restoring
+wrappers. The one non-restoring mutation on an error path is the
+\texttt{tenv.seenSub} record of step (2) --- which is a write to a
+\emph{local copy} of a frozen value, not to shared state
+(Lemma~\ref{lem:pathscope}) --- and the \texttt{seenExpansion} cache
+fills inside \texttt{collectTVars}/\texttt{expandToVectors}, which
+\emph{are} rolled back by \texttt{restore} (the cache is part of
+\texttt{SubstState}) and are in any case semantics-preserving by Deep
+Dive~C. This discharges, for the subtyping family, the corresponding
+slice of the main paper's Obligation ``No Commitment on Failure''.
+\impl{TTypeSubtyping.sk / file-head INVARIANT comment; all isSub wrappers}
+\end{lemma}
+
+\subsection{The proved-pair memo: \texttt{subst.seenSub}}
+\label{sec:substseen}
+
+\begin{definition}[Memo Discipline]
+\label{def:memo}
+\texttt{subst.seenSub} is a pair set inside \texttt{SubstState}. It is
+written at exactly one site --- the wrapper's $\STOk$ path --- and is
+captured and restored by \texttt{SavedSubst} together with
+$\vals$/$\ver$/the operation caches.
+\impl{TTypeSubst.sk / SubstState.seenSub; TTypeSubtyping.sk /
+TType::isSub}
+\end{definition}
+
+\begin{theorem}[Memo Soundness]
+\label{thm:memo}
+Assume every non-memo acceptance is sound (the rest of this paper). Then
+a \texttt{subst.seenSub} hit is sound, \emph{conditional on} Deep Dive~E's
+monotone-reads theorem with its named residue MR-1.
+\end{theorem}
+\begin{proof}
+Two properties combine. \emph{Timeline consistency}: because the set is
+part of the saved state, an entry present at query time was inserted on
+the current (never-rolled-back) timeline --- entries inserted during
+exploration that failed were removed by the very \texttt{restore} that
+discarded the exploration (Lemma~\ref{lem:restore}). So the entry
+witnesses an actual accepting run $\rho_i \to \rho_i^\ast$ with
+$\sem{u_1}_{\rho_i^\ast} \subseteq \sem{u_2}_{\rho_i^\ast}$, and every
+state evolution between $\rho_i^\ast$ and the query state $\rho_q$ was a
+sequence of legal transitions on the same timeline.
+\emph{Transport}: Deep Dive~E's monotone-reads theorem (registry row
+E-TRANSPORT) carries the
+validated inclusion across those transitions. Its residue applies
+verbatim here: MR-1 is precisely the case of a memo recorded while
+\texttt{freezeCandidates} was set --- \texttt{Subst::get} then returns an
+\emph{open candidate's} bound without sealing, so the recorded inclusion
+can quote a lower bound that later grows on the $u_1$ side. We do not
+re-derive it; the memo inherits MR-1 as a conditional hypothesis. Note
+the contrast with \texttt{tenv.seenSub}: no version key is needed here
+exactly because failed timelines are rolled back and successful growth
+is what the transport theorem is about.
+\end{proof}
+
+\paragraph{The freeze-window residue.} The conditional hypothesis fails
+in the implementation: MR-1 is \textsc{violated}, witnessed end-to-end
+by an order-dependent unsound acceptance through a stale
+\texttt{seenSub} entry recorded in a freeze window (deep dive E; issue
+draft \path{issues/freeze-window-stale-memo-caches.md}). The lemma
+above therefore holds only \emph{outside} freeze windows:
+\texttt{subst.seenSub} is unsound inside them until the memo is
+version-keyed or freeze-window writes are suppressed. The rest of Part~I
+is unaffected — the proof isolates the failure to exactly this
+hypothesis.
+
+\subsection{Growth pre-passes are guidance}
+\label{sec:growth}
+
+Step (5) of Definition~\ref{def:dispatch} runs
+$\mathsf{growTVars}(u_1,u_2,\mathsf{contra})$ then
+$\mathsf{growTVars}(u_2,u_1,\mathsf{cov})$ before validating. By the main
+paper's Guidance-vs-Validation theorem, these passes require no soundness
+proof of their own: they only choose the state $\rho'$ under which
+\texttt{Clauses::isSub} decides, and the failure path restores
+(Lemma~\ref{lem:restore}). Three details of the audit are still worth
+recording, because each is a place where a reader might suspect a hidden
+acceptance. (i) The \texttt{isCovered} probes and the
+constraint-admissibility checks inside \texttt{growTVars} call
+\texttt{TType::isSub} speculatively; their verdicts influence only
+\emph{which} disjuncts are grown, never the outer verdict, and each probe
+restores. (ii) The admissibility loop runs under
+\texttt{freezeCandidates}; by the main paper's never-widen lemma this
+makes it a query on already-determined candidates --- but its
+\emph{successful} probes may insert \texttt{subst.seenSub} memos while
+frozen, which is one of the two entry points of the inherited MR-1
+hazard (Theorem~\ref{thm:memo}). (iii) The
+\texttt{constraintErr} value threaded out of growth is used only to decorate
+the error message with hints on the failure path.
+\impl{TTypeSubtyping.sk / growTVars, collectTVars, isSub\_}
+
+\section{The Cycle Cache: \texttt{tenv.seenSub} and Version Keying}
+\label{sec:tenvseen}
+
+The interesting cache is the second one. Its entry is recorded \emph{at
+entry}, before the verdict is known --- the implementation comment says
+it plainly: ``if a cycle occurs, the subtyping relation is considered
+correct (by co-induction).'' Soundness therefore needs two arguments: a
+\emph{state} argument --- a cache hit must not smuggle in a judgement
+recorded under different bindings --- proved in this section, and a
+\emph{logical} argument --- why admitting a pair before it is proved is
+sound at all --- which is \S\ref{sec:coinduction}.
+
+\subsection{The write audit: every binding write bumps the version}
+
+\begin{lemma}[Version Audit]
+\label{lem:version}
+In \texttt{TTypeSubst.sk}, every assignment to \texttt{Subst.values} is
+immediately preceded by \texttt{version += 1}, and these are the only
+version bumps besides \texttt{gen}/\texttt{genForField}/%
+\texttt{genForLiteralCommitment} (which bump without writing
+\texttt{values}) and \texttt{restore} (which sets $\ver$ and $\vals$
+jointly from a snapshot). Consequently, between two moments with no
+intervening \texttt{restore}, $\ver$ unchanged implies $\vals$ unchanged.
+\end{lemma}
+\begin{proof}
+By inspection of the four write sites: \texttt{grow} bumps at its single
+write (and its idempotent arm --- $t_2 \vee t = t_2$ --- returns
+\emph{before} both the bump and the write, a fact
+\S\ref{sec:coinduction} uses for cycle convergence); \texttt{get} bumps at
+both sealing writes (fresh-to-top and open-to-closed); no other method
+writes \texttt{values}. \texttt{TVar::setConstraint} is \emph{not} a
+binding write: as established in Deep Dive~E, it is a functional update
+producing a new \texttt{TVar} occurrence (and the new occurrence hashes
+differently, so cache keys distinguish it --- A-HASH). Callers outside the
+file (\texttt{TArrayLitTyping.sk}, \texttt{TVariadicTyping.sk},
+\texttt{TypeCheckUtils.sk}) reach \texttt{values} only through
+\texttt{grow}/\texttt{get}, per the main paper's write-site audit.
+\end{proof}
+
+\subsection{Why the naive reading fails, and what replaces it}
+\label{sec:naive}
+
+The comforting reading --- ``the key $(\ver, u_1, u_2)$ identifies the
+substitution state, so a hit replays a judgement made under the same
+bindings'' --- is \emph{false}, as Deep Dive~E established: \texttt{restore}
+rewinds the counter, so after \texttt{save} at $v$, a write to $v{+}1$,
+a restore to $v$, and a \emph{different} write to $v{+}1$, two distinct
+binding maps have carried the same version number. Version numbers are
+reused across divergent exploration branches (and \texttt{gen} even reuses
+\texttt{TVar} identifiers across them). If \texttt{tenv.seenSub} were a
+global mutable table, entries recorded on a discarded branch would remain
+reachable on the surviving branch at colliding keys, and --- worse ---
+entries recorded at entry by checks that then \emph{failed and restored}
+would be hit again at the identical rewound state, converting a rejection
+into a silent acceptance. Our first proof attempt followed the naive
+reading and foundered on exactly these two scenarios; we record that as a
+methodological finding: \emph{the version key alone proves nothing}. What
+actually makes the cache sound is a pair of structural facts about how
+\texttt{tenv} and the saved substitutions travel, proved next.
+
+\subsection{Path scoping}
+
+\begin{lemma}[Path Scoping]
+\label{lem:pathscope}
+At any moment during a top-level \texttt{TType::isSub} run, the
+\texttt{tenv.seenSub} value visible to the currently executing
+\texttt{isSub\_} invocation is exactly the ambient set of the top-level
+entry (empty in practice) plus one record
+$(\ver_A, a_1, a_2)$ for each \emph{strict ancestor} \texttt{isSub\_}
+invocation $A$ on the current call stack, recorded at $A$'s entry.
+Records made by invocations that have already returned --- successfully
+or not --- are not visible.
+\end{lemma}
+\begin{proof}
+\texttt{TEnv} is a frozen class and \texttt{tenv} is passed by value
+through every signature in the file. The record statement
+\texttt{!tenv.seenSub = tenv.seenSub.set(...)} is Skip's functional
+update of the \emph{local} binding \texttt{tenv} (contrast
+\texttt{subst.!seenSub = ...}, a true field mutation on the mutable
+\texttt{Subst}); the updated copy flows only into the callees of the
+recording invocation --- \texttt{growTVars}, \texttt{expandToClauses},
+\texttt{Clauses::isSub} and its strata --- and evaporates when that
+invocation returns. A grep-complete audit shows \texttt{isSub\_} is the
+only writer of the field in the codebase. Hence visibility is precisely
+``my ancestors' records'': each ancestor recorded into its local copy
+before descending, and no other write exists.
+\end{proof}
+
+\subsection{Record-point coherence}
+
+\begin{lemma}[Record-Point Coherence]
+\label{lem:coherence}
+Suppose an \texttt{isSub\_} invocation hits the cache:
+$(\ver_A, u_1, u_2) \in \texttt{tenv.seenSub}$ with $\ver = \ver_A$ now.
+Then $\vals$ now equals $\vals$ at the moment ancestor $A$ recorded the
+entry.
+\end{lemma}
+\begin{proof}
+Call $A$'s record moment $t_A$, with state $(\ver_A, X_A)$. Two
+sub-audits establish that every state on the current path between $t_A$
+and now with version $\ver_A$ has $\vals = X_A$.
+
+\emph{(i) Save/restore locality.} Every \texttt{SavedSubst} in the
+subtyping family is a local variable, created and consumed in the same
+invocation (Lemma~\ref{lem:restore}); none is passed down or stored.
+Therefore every \texttt{restore} executed while $A$ is pending targets a
+snapshot taken \emph{after} $t_A$ (the restoring invocation was entered
+after $A$, and its save postdates its entry). The wholesale
+snapshot/restore pairs outside the family
+(\texttt{saveAll}/\texttt{mcreateFromSaved} at the SKStore boundary,
+\texttt{clone} used by rendering and refinement) never fire inside a
+pending \texttt{isSub\_}: \texttt{clone} creates a detached substitution
+whose mutations do not touch the current one.
+
+\emph{(ii) Version floor and determinism.} By induction over the
+execution steps from $t_A$: every reachable state while $A$ is pending
+has $\ver \geq \ver_A$, and if $\ver = \ver_A$ then $\vals = X_A$.
+Writes only increase $\ver$ (Lemma~\ref{lem:version}). A restore targets
+a post-$t_A$ snapshot $(v_s, X_s)$; by the induction hypothesis applied
+at snapshot time, $v_s \geq \ver_A$, and if $v_s = \ver_A$ then
+$X_s = X_A$; restoring re-establishes exactly that pair. \texttt{gen}
+bumps without writing, preserving both claims. So at the hit,
+$\ver = \ver_A$ forces $\vals = X_A$.
+\end{proof}
+
+\noindent
+The two lemmas together repair the naive reading: cross-branch collisions
+cannot reach the cache (discarded branches' records were never visible,
+Lemma~\ref{lem:pathscope}), failed checks leave no landmine (their records
+die with their stack frame), and a genuine hit is a \emph{pending
+ancestor} re-encountered at \emph{bit-identical bindings}
+(Lemma~\ref{lem:coherence}). What the version key buys is the second
+half: without it, a descendant could hit an ancestor's record after
+intervening growth, treating a judgement-in-progress under $\rho$ as
+applicable under a strictly grown $\rho'$ --- the stale-cache regression
+class (\#446) the key was introduced to kill. What remains to justify is
+the logic of accepting a pending pair at all.
+\impl{TTypeSubtyping.sk / isSub\_ (lines 1536--1537); TEnv.sk / seenSub
+comment}
+
+\section{Coinduction over the Value Semantics}
+\label{sec:coinduction}
+
+\subsection{What the semantics of a recursive type even is}
+
+The main paper's object semantics is a system of \emph{equations}:
+$o \in \sem{b}$ is defined in terms of $\mathsf{get}(o,p) \in
+\sem{\mathsf{get}(f)}$ for field types that, for a recursive declaration
+(\texttt{type L = \{ next: L \}} via \texttt{TSInst} unfolding), mention
+$\sem{b}$ again. The main paper never says which solution it means. The
+equations are monotone --- every recursive occurrence of a denotation in
+the membership conditions is positive: field and index constraints use
+$\sem{\cdot}$ on the membership side, the call/new and brand clauses are
+atomic predicates on $o$, and nothing negates a membership --- so by
+Knaster--Tarski both a least and a greatest solution exist.
+
+\begin{assumption}[SEM-GFP: Greatest-Fixpoint Reading]
+\label{as:gfp}
+The intended denotation $\sem{\cdot}$ is the \emph{greatest} solution of
+the membership equations. Justification: JS values are coreflexive ---
+\texttt{const x = \{\}; x.next = x} builds a cyclic value that TypeScript
+and SKJS deliberately type as \texttt{L}; under the least solution
+$\sem{\texttt{L}}$ with a required \texttt{next} would contain only
+well-founded chains and the cyclic $x$ would inhabit no recursive type,
+making the checker's acceptance of such programs unsoundness rather than
+the intent. The greatest solution contains exactly the values all of
+whose finite explorations are consistent with the type. Status:
+\textsc{assumed} (a modeling decision, proposed as an erratum-level
+clarification to the main paper's Definition ``Object-Type Semantics'').
+\end{assumption}
+
+Concretely we use the standard stratification. Define
+$\semn{t}{0} = \Val$ and let $\semn{t}{n+1}$ be the main paper's
+membership conditions with every \emph{structural} recursive membership
+--- field values, index values, and (after \S\ref{sec:tfun}) signature
+argument/result memberships --- evaluated at level $n$, while tag tests,
+literal tests, callability, and brands are evaluated exactly. Unions,
+intersections, clause var-sets, and instance layers distribute through
+levels pointwise. Then $\sem{t} = \bigcap_n \semn{t}{n}$ is the greatest
+solution (the defining operator preserves the intersection of this
+decreasing chain because each value's membership at level $n{+}1$
+depends on finitely-branching conditions at level $n$; the union over
+object branches and clauses is over finite sets, so no
+non-$\omega$-continuity arises on the relevant chain).
+
+\subsection{One-step soundness, and the reduction}
+
+\begin{definition}[One-Step Soundness of a Stratum]
+\label{def:onestep}
+Let $R$ be a set of $\TType$ pairs (``the accepted pairs''). A stratum
+check is \emph{one-step sound} if, whenever it accepts a pair
+$(x_1, x_2)$ at state $\rho$ with all of its recursive
+\texttt{TType::isSub} sub-checks resolving to pairs in $R$, then for
+every $n$:
+\[
+\big(\forall (a,b) \in R.\ \sem{a}_\rho \subseteq \semn{b}{n}_\rho\big)
+\implies
+\sem{x_1}_\rho \subseteq \semn{x_2}{n+1}_\rho .
+\]
+Part~II proves each stratum one-step sound (or names the failure). For
+readability Part~II states the lemmas in the naive form ``acceptance
+implies inclusion, given inclusion at the recursive positions''; each
+proof visibly uses the recursive hypotheses only inside one layer of
+membership conditions, which is exactly the shape
+Definition~\ref{def:onestep} requires, so the stratified reading is
+obtained by re-indexing, and we do not repeat the bookkeeping.
+\end{definition}
+
+\begin{theorem}[Coinductive Reduction]
+\label{thm:coind}
+Assume A-HASH, SEM-GFP, the state discipline of
+\S\S\ref{sec:dispatch}--\ref{sec:tenvseen}, and one-step soundness of
+every stratum reachable from \texttt{Clauses::isSub}. Then \textbf{L-SUB}
+holds: a top-level accepting run $\rho \to \rho^\ast$ satisfies
+$\sem{t_1}_{\rho^\ast} \subseteq \sem{t_2}_{\rho^\ast}$.
+\end{theorem}
+\begin{proof}
+Consider the finite call tree of the accepting run and let $R$ be the set
+of pairs of all \texttt{TType::isSub} nodes that returned $\STOk$,
+\emph{each taken with the state at its verdict}. First flatten the state
+indexing: every node's verdict state precedes $\rho^\ast$ on the same
+never-restored timeline (failed excursions restored,
+Lemma~\ref{lem:restore}), so by Deep Dive~E's monotone-reads transport
+(with its MR-1 proviso) it suffices to prove each node's inclusion at its
+own verdict state; we henceforth suppress $\rho$.
+Now show $\forall n.\ \forall (a,b) \in R.\ \sem{a} \subseteq \semn{b}{n}$
+by induction on $n$. Base: $\semn{b}{0} = \Val$. Step: fix
+$(a,b) \in R$ and $v \in \sem{a}$. The node for $(a,b)$ accepted through
+one of the seven acceptance points. Fast path/top/TInter: by
+Lemma~\ref{lem:fastpath} the full inclusion $\sem{a} \subseteq \sem{b}$
+holds outright, and $\sem{b} \subseteq \semn{b}{n+1}$.
+Memo (\texttt{subst.seenSub}): by Theorem~\ref{thm:memo} the entry
+witnesses an earlier accepting node, i.e.\ another element of $R$ with
+the same pair; use its case.
+Cycle cache (\texttt{tenv.seenSub}): by
+Lemmas~\ref{lem:pathscope}/\ref{lem:coherence} the hit names a
+\emph{pending ancestor} node with the same pair and bindings; that
+ancestor either eventually accepted --- it did, since the whole run
+accepted and an ancestor of an executed node has its verdict on the
+accepting path --- so the pair is in $R$, and \emph{the induction is over
+$n$, not over the tree}: circular use of the pair at level $n$ is
+precisely what the induction hypothesis licenses.
+Delegated point (4): conditional on Obligation~\ref{obl:arraylit}.
+Validation (5): \texttt{Clauses::isSub} accepted with its recursive
+sub-checks all $\STOk$, i.e.\ with pairs in $R$; one-step soundness of
+the strata gives $v \in \semn{b}{n+1}$ from the induction hypothesis.
+Finally $\sem{a} \subseteq \bigcap_n \semn{b}{n} = \sem{b}$ by SEM-GFP,
+and instantiating at the root gives L-SUB.
+\end{proof}
+
+\noindent
+\emph{Honesty box.} Theorem~\ref{thm:coind} is genuinely conditional on:
+SEM-GFP (a semantics choice the main paper must ratify); MR-1 (inherited
+via the memo and via transport); O-ARRAYLIT; A-HASH; and one-step
+soundness of every stratum --- Part~II shows the last is where the
+substance and the violations live. Termination (that the cycle cache is
+\emph{hit} rather than the growth diverging --- convergence relies on the
+idempotent-grow early return noted in Lemma~\ref{lem:version}) is a
+liveness property, out of scope for L-SUB.
+
+%==========================================================================
+\part{The Strata}
+
+\section{Primitives: Units and \texttt{TPrimValue::isSub}}
+\label{sec:prim}
+
+\begin{definition}[Primitive Checks]
+Both checks are invoked only on same-tag pairs (an \texttt{invariant}
+guards this; the caller guarantees it, \S\ref{sec:stypes}). Units:
+accepted unconditionally. \texttt{TPrimValue::isSub}$(p_1, p_2)$ on
+literal sets: $(-, \top)$ accept; $(\top, L_2)$ reject; $(L_1, L_2)$
+accept iff every stored spelling in $L_1$ occurs in $L_2$ (string
+equality of normalized lexemes, \texttt{lits2.contains(elt.val)}).
+It touches no state.
+\impl{TTypeSubtyping.sk / TPrimValue::isSub, STypes::isSub (unit arm)}
+\end{definition}
+
+\begin{lemma}[Primitive Strata are Sound --- Unconditionally]
+\label{lem:prim}
+(i) For same-tag units $u_1, u_2$: $\sem{u_1} = \sem{u_2}$.
+(ii) $\texttt{TPrimValue::isSub}(p_1,p_2) = \STOk \implies
+\sem{p_1} \subseteq \sem{p_2}$.
+\end{lemma}
+\begin{proof}
+(i) The three unit constructors have three distinct tags
+(\textsf{undef}, \textsf{void}, \textsf{null}), so same tag forces the
+same unit and singleton denotations coincide.
+(ii) $(-,\top)$: by the main paper's A0 every $v \in \sem{p_1}$ has
+$p_1$'s tag, and $\sem{\mathsf{prim}(k,\top)}$ is the full tag set.
+$(L_1, L_2)$: let $v \in \sem{p_1}$, so $v \approx
+(\tagfn(k), \delta_k(\ell))$ for some $\ell \in L_1$; the spelling
+$\ell$ occurs in $L_2$, hence $v \in \sem{p_2}$ by the same closure
+clause. This uses only that $\delta_k$ is a \emph{function} of the
+spelling --- \textbf{L-LIT}(i), the proved part --- not injectivity: a
+duplicate value under two spellings can only cause spurious
+\emph{rejection} (a completeness matter, L-LIT territory), never
+acceptance. No
+recursive positions exist, so one-step soundness is the plain statement.
+\end{proof}
+
+This stratum is the model case for the paper's staging: fully proved,
+no conditions, no state.
+
+\section{The Union Spine: \texttt{STypes::isSub}}
+\label{sec:stypes}
+
+\begin{definition}[Tag-Aligned Covering]
+\texttt{STypes::isSub}$(S_1, S_2)$ runs \texttt{leq} over the tag-keyed
+maps: for each member $s_1 \in S_1$, if $S_2$ has no member at
+$\tagfn(s_1)$, fail (\texttt{STTooManySType}); otherwise dispatch the
+same-tag pair to the unit/\texttt{TPrimValue}/\texttt{TObject} stratum.
+Members of $S_2$ at tags absent from $S_1$ are ignored. Saves at entry,
+restores on failure.
+\impl{TTypeSubtyping.sk / STypes::isSub;
+InternalKeyedArrayMap.sk / leq, iterDiffInterDiff}
+\end{definition}
+
+\begin{lemma}[$\STypes$ Covering is Sound]
+\label{lem:stypes}
+If \texttt{STypes::isSub}$(S_1,S_2) = \STOk$ and each accepted same-tag
+pair $(s_1, s_2)$ satisfies $\sem{s_1} \subseteq \sem{s_2}$ (the
+sub-stratum obligation, one-step for objects), then
+$\sem{S_1} \subseteq \sem{S_2}$.
+\end{lemma}
+\begin{proof}
+Let $v \in \sem{S_1} = \bigcup_{s \in S_1}\sem{s}$, say $v \in \sem{s_1}$.
+By A0, $\rtag(v) = \tagfn(s_1)$. \texttt{leq} succeeded, so $S_2$ has a
+member $s_2$ at that tag --- the keyed-map structure (at most one member
+per tag, iterated by sorted key) is what makes ``the'' member
+well-defined and the \texttt{invariant} in the code unreachable-else ---
+and the sub-stratum accepted $(s_1, s_2)$, giving
+$v \in \sem{s_2} \subseteq \sem{S_2}$. Ignoring $S_2$'s extra tags is
+sound: they only enlarge the right side. One-step form: the object arm's
+hypothesis is used at level $n$, delivering $\semn{s_2}{n+1} \ni v$,
+and unit/primitive arms are exact at every level.
+\end{proof}
+
+Completeness is not claimed and indeed fails (a literal member of $S_1$
+covered by \emph{no single} same-tag member cannot borrow from other
+tags --- correct, by A1 there is nothing to borrow), but incompleteness
+is not our concern. Note the check inherits \emph{no} condition from
+Deep Dive~B's L-INTER-BOT refutation: no intersection is consumed on this
+path.
+
+\section{DNF Covering: \texttt{Clauses::isSub}}
+\label{sec:clauses}
+
+\begin{definition}[Clause Covering]
+\texttt{Clauses::isSub}$(C_1, C_2)$: for every clause
+$\clause{V_1}{S_1} \in C_1$, search $C_2$ for a clause
+$\clause{V_2}{S_2}$ with (gate) $V_2 \subseteq V_1$ --- the code's
+\texttt{inter1.vars.contains(inter2.vars)}, a superset test by the
+\texttt{ArraySet::contains} definition --- and (body) one of:
+$S_1 = S_2 = \top$: match; $S_1 \neq \top, S_2 = \top$: match;
+$S_1 = \top, S_2 \neq \top$: skip this candidate;
+both $\neq \top$: match iff \texttt{STypes::isSub}$(S_1,S_2)$ accepts.
+Accept iff every $C_1$-clause finds a match; restore on failure.
+\impl{TTypeSubtyping.sk / Clauses::isSub}
+\end{definition}
+
+\begin{lemma}[Clause Covering is Sound, Parametrically in $\TParam$]
+\label{lem:clauses}
+If \texttt{Clauses::isSub} accepts (with the $\STypes$ obligations of the
+matched pairs), then for \emph{every} interpretation
+$\iota : \TParam \to \mathcal{P}(\Val)$ of the type parameters,
+$\sem{C_1}^\iota \subseteq \sem{C_2}^\iota$ where
+$\sem{\clause{V}{S}}^\iota = \bigcap_{p \in V}\iota(p) \cap \sem{S}$.
+\end{lemma}
+\begin{proof}
+Fix $\iota$ and $v \in \sem{\clause{V_1}{S_1}}^\iota$ for some
+$C_1$-clause, and let $\clause{V_2}{S_2}$ be its match.
+Gate: $V_2 \subseteq V_1$ gives
+$\bigcap_{V_1}\iota \subseteq \bigcap_{V_2}\iota$ --- for \emph{any}
+$\iota$, which is the parametricity: the algorithm never inspects a
+parameter's meaning, so its verdict is uniform in $\iota$, and
+instantiating parameters later (generic call sites, the
+\texttt{RenameClauses} step of \S\ref{sec:tfun}) preserves the inclusion.
+Body: if $S_2 = \top$, $\sem{S_2} = \Val$ and we are done. Both concrete:
+Lemma~\ref{lem:stypes} gives $\sem{S_1} \subseteq \sem{S_2}$
+(one-step: at level $n{+}1$ via the hypotheses at $n$). The skipped case
+($S_1 = \top$, $S_2$ concrete) rejects nothing by itself; it merely
+forces another candidate, and if none exists the check fails --- sound.
+Union over $C_1$'s clauses completes it.
+\end{proof}
+
+Two deliberate incompletenesses, noted for contrast with soundness: a
+$C_1$-clause must be covered by a \emph{single} $C_2$-clause (no covering
+by unions of clauses --- e.g.\ $T \mid \texttt{string}$ on the right
+never combines its parts), and the gate demands syntactic var-set
+containment rather than any semantic entailment between parameters.
+Both only reject.
+
+\section{Object Branches: \texttt{TObject::isSub}}
+\label{sec:tobject}
+
+\begin{definition}[Branch Matching]
+\texttt{TObject::isSub}$(o_1, o_2)$: every branch
+$b_1 \in \mathsf{branches}(o_1)$ must satisfy
+\texttt{TFields::isSub}$(b_1, b_2)$ for \emph{some}
+$b_2 \in \mathsf{branches}(o_2)$; each failed pairing restores before the
+next candidate is tried, and overall failure restores to entry.
+\impl{TTypeSubtyping.sk / TObject::isSub}
+\end{definition}
+
+\begin{lemma}[Branch Matching is Sound]
+\label{lem:tobject}
+If \texttt{TObject::isSub} accepts and each accepted pairing satisfies
+$\sem{b_1} \subseteq \sem{b_2}$ (one-step, the $\TFields$ obligation),
+then $\sem{o_1} \subseteq \sem{o_2}$.
+\end{lemma}
+\begin{proof}
+Membership in an object type is existential over branches
+($o \in \sem{\mathsf{object}(B)}$ iff $o \in \sem{b}$ for some
+$b \in B$), so the $\forall\exists$ shape of the algorithm matches the
+semantics exactly: $v \in \sem{b_1}$ for some $b_1$, its matched $b_2$
+gives $v \in \sem{b_2} \subseteq \sem{o_2}$. The per-pairing
+save/restore matters for a different reason than soundness of the
+verdict: a failed $b_2$-candidate may have committed growth (its field
+checks grow inference variables); restoring keeps the surviving
+pairing's state from being polluted by the failed one --- without it the
+\emph{accepted} state $\rho^\ast$ would contain bindings from abandoned
+pairings, and while Guidance-vs-Validation says that could not falsify
+the verdict, it would degrade the solutions chosen. As with clauses, the
+single-branch covering is incomplete (no splitting a sub branch across
+super branches) but sound.
+\end{proof}
+
+\section{Fields: \texttt{TFields::isSub}}
+\label{sec:tfields}
+
+This is the widest stratum. \texttt{isSub\_} checks, in order: named
+string fields; the string index pair; the \emph{effective} number index
+pair; the symbol index pair; named symbol fields (with the symbol index
+as their covering index); the call mode; the new mode. Named-field
+pairing uses \texttt{iterDiffInterDiff} over the name-keyed maps:
+$\mathsf{Left}(f_1)$ = sub-only field, $\mathsf{Right}(f_2)$ = super-only
+field, $\mathsf{Both}(f_1,f_2)$ = shared name. Throughout this section
+$o \in \sem{b_1}$ is fixed and we must establish each conjunct of
+$o \in \sem{b_2}$ per the main paper's object semantics; recursive
+\texttt{TType::isSub} calls are the one-step positions.
+\impl{TTypeSubtyping.sk / TFields::isSub\_, isSub\_NamedFields}
+
+\subsection{Shared fields ($\mathsf{Both}$)}
+
+The code: reject if $f_1$ optional and $f_2$ required; reject if
+$\neg f_1.\mathsf{access}.\mathsf{isCompatibleWith}(f_2.\mathsf{access})$;
+reject if $f_1.\mathsf{set} = \bot$ (readonly) and
+$f_2.\mathsf{set} \neq \bot$ (skipping the recursive check to avoid a
+TVar in $f_2.\mathsf{set}$ unifying its way to spurious success --- a
+nice example of growth-avoidance \emph{for precision}, not soundness);
+otherwise require $f_2.\mathsf{set} \leq f_1.\mathsf{set}$
+(contravariant) and $f_1.\mathsf{get} \leq f_2.\mathsf{get}$ (covariant,
+against \emph{bare} $f_2.\mathsf{get}$ even when both are optional ---
+exact-optional semantics).
+
+\begin{lemma}[Shared-Field Soundness, Read Direction]
+\label{lem:both-get}
+The optionality gate, the access gate, and the covariant get check
+suffice for the \emph{field clauses} of $o \in \sem{b_2}$ at the shared
+names, given the recursive inclusions.
+\end{lemma}
+\begin{proof}
+If $f_2$ is required, the gate makes $f_1$ required, so
+$\mathsf{has}(o, \mathsf{name})$ holds and (unless phantom)
+$\mathsf{get}(o,\mathsf{name}) \in \sem{f_1.\mathsf{get}} \subseteq
+\sem{f_2.\mathsf{get}}$ by the accepted recursive pair. If $f_2$ is
+optional, its clause constrains only the case
+$\mathsf{has}(o,\mathsf{name})$; when the key is present, membership in
+$b_1$ gives the value in $\sem{f_1.\mathsf{get}}$ \emph{whether $f_1$ is
+optional or required} --- this is exactly why checking against bare
+$f_2.\mathsf{get}$ (not $f_2.\mathsf{get} \cup \texttt{undefined}$) is
+the right reading: the optional read's \texttt{| undefined} accounts for
+\emph{absence}, and absence is vacuous here. The exactness comment in
+the code records the same argument. Phantom-access $f_1$: its get is
+$\top$, so the recursive check fails against any concrete
+$f_2.\mathsf{get}$ and the pair is rejected --- restrict-only; the access
+gate independently rejects phantom-vs-declared
+(\texttt{FAPhantom} is compatible only with \texttt{FAPhantom}/%
+\texttt{FANever}), and a phantom-vs-phantom acceptance constrains only
+presence on both sides. Private fields: compatibility demands the same
+owner name and file --- nominal, strictly finer than the public case, so
+acceptance implies the same get/set checks ran; \texttt{FANever} as
+target is vacuously safe (nothing may access it; as a membership
+constraint it is an ordinary field and the get/set checks still ran).
+\impl{TType.sk / FieldAccess::isCompatibleWith}
+\end{proof}
+
+\begin{lemma}[Shared-Field Soundness, Write Direction --- Conditional]
+\label{lem:both-set}
+The contravariant set check
+($f_2.\mathsf{set} \leq f_1.\mathsf{set}$) and the readonly gate are
+\emph{not} consequences of membership: the main paper's semantics
+constrains values via get-types only, so
+Lemma~\ref{lem:both-get} already delivers $o \in \sem{b_2}$ without
+them. What they buy is the mutation model: under \textbf{L-MUT}, a write
+through the $b_2$ view is checked against $f_2.\mathsf{set}$, and the
+contravariant condition guarantees any such accepted value is also
+legal for the underlying $f_1.\mathsf{set}$, i.e.\ writes through the
+super view cannot break invariants the sub view's clients rely on
+(the readonly gate is the $\bot$ instance: no value passes
+$\leq \bot$, so a readonly field never acquires writers by subsumption).
+Status: conditional on \textbf{L-MUT} --- if the mutation model is ever
+made concrete, these checks are its proof obligations, not membership's.
+\qed
+\end{lemma}
+
+\subsection{Sub-only fields ($\mathsf{Left}$) and super-only fields
+($\mathsf{Right}$)}
+
+\begin{lemma}[Width and Optional-Absence Soundness]
+\label{lem:width}
+The $\mathsf{Left}$ and $\mathsf{Right}$ arms are sound for membership,
+given the recursive inclusions (read direction; their set-direction
+checks are conditional exactly as in Lemma~\ref{lem:both-set}).
+\end{lemma}
+\begin{proof}
+$\mathsf{Left}(f_1)$: a field only the sub declares. The super's
+membership conditions mention the name only through its \emph{indexes}:
+if $b_2$ has an index covering the name
+(\texttt{indexForFieldName}: numeric-spelling names consult the number
+index first, then the string index --- matching the covering semantics,
+under which a numeric-kind key must satisfy \emph{both} when both exist;
+registry row \texttt{L-SUB-IDXNAME}, \textsc{violated} (derived): the
+code checks against only the first-consulted index, so a numeric-named sub
+field is under-checked when the super has both a number and a string index.
+The over-acceptance is real but masked at the pin — reads of numeric-string
+keys stay conservative (\texttt{string|number}) — so it is a
+validator-completeness gap, not a witnessed unsoundness; the ``suffices''
+below therefore holds only under that masking, not in general), the code
+requires
+$f_1.\mathsf{get} \leq \mathit{idx}_2.\mathsf{get}$: then when
+$\mathsf{has}(o, \mathsf{name})$, the value lies in
+$\sem{f_1.\mathsf{get}} \subseteq \sem{\mathit{idx}_2.\mathsf{get}}$,
+which is what the index clause of $o \in \sem{b_2}$ demands of covered,
+non-named props. If $b_2$ has no covering index, the name is
+unconstrained by $b_2$ --- the semantics is extensible --- and accepting
+silently is exact. (The footnote in \texttt{TIndexesBase} about
+\texttt{"Infinity"}/\texttt{"NaN"} spellings classifying as string-kind
+is a key-\emph{kind} discrepancy against TypeScript, argued unobservable
+there; for us it only changes \emph{which} index the check runs against,
+and both candidate indexes' clauses are enforced by the index-pair
+checks, so soundness is insensitive to the classification.)
+$\mathsf{Right}(f_2)$ required: rejected --- necessary, since extensible
+membership in $b_1$ says nothing about the name's presence.
+$\mathsf{Right}(f_2)$ optional: the code demands a $b_1$ index covering
+the name with $\mathit{idx}_1.\mathsf{get} \leq f_2.\mathsf{get}$. If
+$\mathsf{has}(o,\mathsf{name})$: the name is covered by
+$\mathit{idx}_1$ and not named in $b_1$ (this is the $\mathsf{Right}$
+case), so membership in $b_1$ puts the value in
+$\sem{\mathit{idx}_1.\mathsf{get}} \subseteq \sem{f_2.\mathsf{get}}$;
+if absent, the optional clause is vacuous. Rejecting when $b_1$ has no
+covering index is again necessary: $o$ may carry the key with an
+arbitrary value. For symbol fields the same two arms run with the symbol
+index as the covering index --- same argument, one index kind.
+\end{proof}
+
+\subsection{Index pairs and the covering semantics}
+\label{sec:indexes}
+
+\begin{definition}[Index-Pair Check]
+\texttt{isSub\_IndexPair}$(\mathit{idx}_1, \mathit{idx}_2)$:
+$(-, \mathsf{None})$ accept; $(\mathsf{Some}, \mathsf{Some})$ require
+get covariant and set contravariant;
+$(\mathsf{None}, \mathsf{Some}(i_2))$ probe
+$\top \leq i_2.\mathsf{get}$ and $i_2.\mathsf{set} \leq \bot$ --- which
+fails for concrete index types and succeeds precisely when $i_2$'s
+get/set are inference variables (the \emph{synthetic} index that object
+literals carry), unifying them with $\top$/$\bot$.
+The number-kind invocation uses \emph{effective} indexes: a side lacking
+a number index falls back to its string index.
+\impl{TTypeSubtyping.sk / isSub\_IndexPair, isSub\_ (number-index match);
+TType.sk / TField::createSyntheticIndex, kSyntheticIndexName}
+\end{definition}
+
+\begin{lemma}[Index Covering Soundness]
+\label{lem:indexes}
+The three per-kind invocations establish the index clauses of
+$o \in \sem{b_2}$, given the recursive inclusions.
+\end{lemma}
+\begin{proof}
+Fix a prop $p \in \mathsf{props}(o)$ covered by an index of $b_2$ and
+not named by $b_2$'s fields; we must place $\mathsf{get}(o,p)$ in that
+index's get-denotation. If $p$ is named by $b_1$, the $\mathsf{Left}$
+arm already did (Lemma~\ref{lem:width}). Otherwise $p$ is anonymous on
+both sides and membership in $b_1$ constrains it only through $b_1$'s
+indexes. Case symbol key: the symbol pair check gives
+$\mathit{idx}^{\mathrm{sym}}_1.\mathsf{get} \leq
+\mathit{idx}^{\mathrm{sym}}_2.\mathsf{get}$, and
+$(\mathsf{None},\mathsf{Some})$ with concrete $i_2$ is rejected ---
+necessary, as $o$'s symbol props are otherwise unconstrained; with
+synthetic $i_2$, growth makes $\sem{i_2.\mathsf{get}} = \Val$ under the
+accepted state, so the clause is vacuous and acceptance exact (the
+sealed-to-$\bot$ set side makes the literal's index reject all writers
+--- restrict-only). Case string-kind key: only $b_2$'s string index
+covers $p$; the string pair check plus the same
+$(\mathsf{None},\mathsf{Some})$ analysis concludes. Case numeric-kind
+key: $p$ must satisfy \emph{every} covering index of $b_2$ --- its
+number index and its string index. For $b_2$'s string index: $p$ is
+covered on the $b_1$ side by $b_1$'s string index too (string covers
+both kinds), and the string pair check transfers it. For $b_2$'s number
+index: $o$'s constraint at $p$ from $b_1$ is its number index if
+present, else its string index --- exactly the \emph{effective} number
+index --- and the effective-pair check transfers it. The four-way match
+in \texttt{isSub\_} enumerates precisely these fallbacks (both absent:
+nothing to transfer, and if $b_2$ has only a string index the string
+pair already handled numeric-kind keys). This is the point where the
+main paper's move to the covering semantics pays off: under the older
+per-kind-partition reading, the number-under-string fallback would have
+been an unsound borrowing; under covering it is the exact transfer.
+\end{proof}
+
+\subsection{Call/new modes: a violation}
+\label{sec:modes}
+
+\begin{definition}[Mode Check]
+\texttt{isSubOptTFuns}$(m_1, m_2)$ over modes
+$\mathsf{None} \mid (\mathit{opt}, \sigma)$:
+$(-, \mathsf{None})$ accept;
+$(\mathsf{None}, (\mathsf{true},-))$ accept;
+$(\mathsf{None}, (\mathsf{false},-))$ and
+$((\mathsf{true},-), (\mathsf{false},-))$ reject;
+otherwise recurse into \texttt{TFuns::isSub} on the signatures.
+The same table serves \texttt{call} and \texttt{new}.
+\impl{TTypeSubtyping.sk / TFields::isSubOptTFuns}
+\end{definition}
+
+Under the main paper's semantics --- $\mathsf{None}$ entails
+$\neg\mathsf{callable}(o)$; $(\mathsf{false},\sigma)$ entails
+$\mathsf{callable}(o)$; $(\mathsf{true},\sigma)$ entails nothing --- the
+two rejections are semantically forced, the
+$(\mathsf{None},(\mathsf{true},-))$ acceptance is exact (no constraint on
+the right), and the signature recursion is the subject of
+\S\ref{sec:tfun}. The first arm is not sound:
+
+\begin{finding}[F-CALL: The $(-,\mathsf{None})$ Mode Arm]
+\label{find:call}
+$(\mathsf{Some}(\sigma), \mathsf{None})$ is accepted, i.e.\ a callable
+type is a subtype of a type whose mode claims \emph{definitely not
+callable}. Against the main paper's Definition ``Object-Type
+Semantics'' this is a genuine non-inclusion: a callable
+$o \in \sem{b_1}$ is excluded from $\sem{b_2}$ by the
+$\mathsf{call}(b_2) = \mathsf{None} \Rightarrow \neg\mathsf{callable}(o)$
+clause. The lax arm is TS-compatible width subtyping
+(\texttt{() => void} is assignable to \texttt{\{\}}), and it composes
+with the refinement layer into a concrete unsoundness candidate,
+because the main paper's \textsc{R-Typeof} proof \emph{uses} the violated
+clause: for \texttt{typeof x === "function"} the true branch
+\emph{drops} object branches with mode $\mathsf{None}$. Witness sketch
+(code-level derivation; no end-to-end run was performed --- wiring it as
+a pinned test is the recommended discharge):
+\begin{verbatim}
+const g: {} = () => {};          // accepted via the (-, None) arm
+if (typeof g === "function") {
+  const n: never = g;            // true branch: {}'s branch dropped,
+}                                // g : never -- yet the branch is taken
+\end{verbatim}
+The dichotomy is exact: either $\mathsf{None}$ means
+\emph{not callable} (then this subtyping arm is unsound) or it means
+\emph{unconstrained} (then \textsc{R-Typeof}'s drop --- and the
+\texttt{"object"} dual --- is unsound). No reading of $\mathsf{None}$
+validates both components. Repair options: (a) reject
+$(\mathsf{Some}, \mathsf{None})$ --- sound, breaks TS compatibility for
+function-to-\texttt{\{\}} width; (b) demote the drop in
+\textsc{R-Typeof} to mode-strengthening (treat $\mathsf{None}$ like
+$(\mathsf{true}, \top\text{-sig})$ during narrowing) and re-read
+$\mathsf{None}$ as unconstrained --- keeps TS behavior, weakens
+narrowing precision, and requires re-proving \textsc{R-Typeof}. The same
+analysis applies verbatim to \texttt{new}/\textsf{constructible}.
+Status recommendation: \textsc{violated} (semantics-relative), pinned
+test recommended. \impl{TTypeSubtyping.sk / isSubOptTFuns first arm;
+TypeCheckRefine.sk / evalTypeofEquality}
+\end{finding}
+
+\subsection{The array brand: an omission}
+
+\begin{finding}[F-BRAND: \texttt{isArray} Is Never Compared]
+\label{find:brand}
+\texttt{TFields::isSub\_} contains no comparison of the
+\texttt{isArray} fields. The brand is stripped out of the named-field
+map at construction (\texttt{TFields::create} removes
+\texttt{\_\_SKJS\_isArray} and folds it into the flag), so it is not
+checked by the named-field arms either: a branch with
+$\mathsf{isArr} = \mathsf{None}$ (or even $\mathsf{Some}(\mathsf{false})$)
+is accepted against a branch with $\mathsf{isArr} =
+\mathsf{Some}(\mathsf{true})$ whenever the structural checks pass.
+Against the main paper's brand clause
+($\mathsf{isArr}(b) = \mathsf{Some}(x) \Rightarrow \mathsf{isArrayV}(o)
+= x$) this is a non-inclusion; and as with F-CALL the violated clause is
+load-bearing elsewhere: \textsc{R-IsArray}'s \emph{false} branch drops
+branches branded $\mathsf{Some}(\mathsf{true})$, so a structural
+non-array impostor accepted at type
+\texttt{ReadonlyArray<T>} is typed \texttt{never} in the
+\texttt{else} of an \texttt{Array.isArray} test that its runtime takes.
+Exploitability is narrower than F-CALL --- the impostor must
+structurally satisfy every array member, which TS programs rarely do
+accidentally, and tsc has no brand at all, so SKJS is here no
+\emph{worse} than TS, merely less sound than its own model claims.
+Repair: compare brands in \texttt{isSub\_}
+($\mathsf{Some}(x) \leq \mathsf{Some}(x)$;
+$\mathsf{None} \not\leq \mathsf{Some}(x)$), or downgrade the brand
+clause to advisory and re-prove \textsc{R-IsArray} without the
+$\mathsf{Some}(\mathsf{true})$-drop. Status recommendation:
+\textsc{violated} (semantics-relative), pinned test recommended.
+\impl{TTypeSubtyping.sk / TFields::isSub\_ (no isArray arm);
+TType.sk / TFields::create (brand stripping)}
+\end{finding}
+
+\begin{theorem}[Field Stratum, Assembled]
+\label{thm:tfields}
+\texttt{TFields::isSub} is one-step sound for the main paper's object
+membership \emph{with the call/new-mode and brand clauses deleted},
+unconditionally in the read direction
+(Lemmas~\ref{lem:both-get}, \ref{lem:width}, \ref{lem:indexes});
+its set-direction checks are the \textbf{L-MUT} obligations
+(Lemma~\ref{lem:both-set}); the deleted clauses are exactly the
+F-CALL/F-BRAND violations, plus the sound mode arms of
+\S\ref{sec:modes} whose signature recursion is deferred to
+\S\ref{sec:tfun}. \qed
+\end{theorem}
+
+\section{Functions: \texttt{TFun::isSub} and a Behavioral Signature
+Semantics}
+\label{sec:tfun}
+
+The main paper's membership semantics treats signatures as opaque, so
+``\texttt{TFun::isSub} is sound'' is not even a proposition against it:
+no set-inclusion consequence distinguishes right from wrong variance.
+This section supplies the missing semantics --- the paper's main modeling
+contribution --- proves the implementation's rules against it, and
+proposes it as a named extension of the main paper's object semantics.
+
+\begin{extension}[E-SIG: Call-Soundness Contract]
+\label{ext:esig}
+Let $\sigma = (\overline{\tau\ \mathrm{tparams}},\ \mathit{this}^?,\
+\overline{p},\ \overline{q}^{\,\mathrm{opt}},\ r^{?\,\mathrm{rest}},\
+\mathit{ret})$. Say an argument list $\vec{a}$ \emph{conforms to}
+$\sigma$ if $|\vec{a}| \geq |\overline{p}|$ and, for every position $i$
+that $\sigma$ \emph{covers} (the required $p_i$, then optional $q_j$,
+then --- if a rest is present --- every further position at the rest
+element type), $a_i \in \sem{\sigma_i}$; positions \emph{beyond}
+$\sigma$'s coverage (possible only when $\sigma$ has no rest) are
+unconstrained. Then define $o \vDash \sigma$ iff for every instantiation
+$\theta$ of $\sigma$'s type parameters satisfying their constraints,
+every $\mathit{this}$-value $t \in \sem{\theta\,\mathit{this}}$ (any $t$
+if $\mathit{this}$ is absent), and every $\vec{a}$ conforming to
+$\theta\sigma$: if calling $o$ with $(t, \vec{a})$ returns normally, the
+result is in $\sem{\theta\,\mathit{ret}}$. The proposed refinement of
+the main paper's object semantics: replace ``signatures are opaque'' by
+--- $\mathsf{call}(b) = (\mathsf{false},\sigma)$ entails
+$\mathsf{callable}(o) \wedge o \vDash \sigma$;
+$\mathsf{call}(b) = (\mathsf{true},\sigma)$ entails
+$\mathsf{callable}(o) \Rightarrow o \vDash \sigma$; dually for
+$\mathsf{new}$ with construction. (The $\mathsf{None}$ clause is
+F-CALL's dichotomy and is ratified separately.) Two deliberate choices:
+extra trailing arguments are \emph{unconstrained but permitted} ---
+JS functions accept any arity, and the contract must quantify over them
+or arity-widening subsumption would be unsound; and only normal returns
+are constrained (exceptions untracked). In the stratified semantics of
+\S\ref{sec:coinduction}, argument memberships on the left of the
+implication are taken at full depth and the result membership at level
+$n$, keeping the operator monotone.
+\end{extension}
+
+\begin{theorem}[Signature Variance is Sound for E-SIG]
+\label{thm:tfun}
+Suppose \texttt{TFun::isSub}$(f_1, f_2)$ accepts, with its recursive
+pairs given (one-step). Then $o \vDash f_1 \Rightarrow o \vDash f_2$,
+\emph{except} through the two arms isolated as
+Findings~\ref{find:this} and~\ref{find:tparam} below.
+\end{theorem}
+\begin{proof}
+Fix $o \vDash f_1$, an instantiation $\theta$ admissible for $f_2$, a
+this-value $t$, and $\vec{a}$ conforming to $\theta f_2$; we must land
+the result in $\sem{\theta\,\mathit{ret}_2}$.
+\emph{Type parameters:} equal counts are enforced;
+\texttt{RenameClauses} identifies $f_2$'s parameters with $f_1$'s, so
+$\theta$ reads as an instantiation of the shared parameters; where both
+constraints exist, the contravariant check
+$\mathit{cstr}_2 \leq \mathit{cstr}_1$ (a recursive pair, transported by
+Lemma~\ref{lem:clauses}'s parametricity through the renaming) makes
+$\theta$ admissible for $f_1$; where neither exists, trivial; the
+$(\mathsf{Some},\mathsf{None})$ arm is Finding~\ref{find:tparam}.
+\emph{This:} where both are present, $t \in \sem{\theta\,\mathit{this}_2}
+\subseteq \sem{\theta\,\mathit{this}_1}$ contravariantly; where $f_1$
+has none, any $t$ is fine; the $(\mathsf{Some},\mathsf{None})$ arm is
+Finding~\ref{find:this}; $(\mathsf{None},\mathsf{Some})$ is rejected.
+\emph{Arguments:} we claim $\vec{a}$ conforms to $\theta f_1$. Both
+sides are first normalized by flattening tuple rests into positionals
+(\texttt{resolveSpreadToTuple}; conformance is invariant under this
+re-description of coverage, with the code's note that optionals
+preceding a flattened tuple become positionally required).
+$|\vec{a}| \geq |\overline{p}_2| \geq |\overline{p}_1|$, the latter
+enforced. For each position $i$ covered by $f_1$: if $f_2$ covers $i$,
+the pairing loops checked $\sigma_{2,i} \leq \sigma_{1,i}$
+contravariantly --- required-vs-required/optional/rest, then
+optional-vs-optional/rest, then rest-vs-rest and the
+\texttt{STRecFunOptionalSpread} arm for $f_1$-optionals reached only by
+$f_2$'s rest --- so $a_i \in \sem{\theta\sigma_{1,i}}$; if $f_2$ does
+\emph{not} cover $i$, then $f_2$ has no rest and $i$ exceeds its
+coverage, but precisely this case is closed off by the two tail checks:
+$f_1$ may have neither more coverage
+($|\overline{p}_1| + |\overline{q}_1| \leq
+|\overline{p}_2| + |\overline{q}_2|$) nor a rest when $f_2$ lacks one
+--- the two ``mysterious'' arity rejections exist exactly to keep
+$f_1$-covered-but-$f_2$-unconstrained positions from arising. Positions
+beyond $f_1$'s coverage are unconstrained by the contract. Hence the
+call is within $o$'s contract for $\theta f_1$ and a normal result lies
+in $\sem{\theta\,\mathit{ret}_1} \subseteq \sem{\theta\,\mathit{ret}_2}$
+by the covariant return pair. The \texttt{cgNodes} edge recording on
+success is a results-accumulator write, not a \texttt{SubstState} write
+--- it does not perturb Part~I's audits.
+\end{proof}
+
+\begin{finding}[F-THIS: Missing \texttt{this} on the Super Side]
+\label{find:this}
+$(\mathsf{Some}(\mathit{this}_1), \mathsf{None})$ is accepted: a
+function demanding a typed receiver may be used where the type promises
+none, and E-SIG's ``any $t$'' quantification on the $f_2$ side is then
+not covered by $f_1$'s contract. This mirrors tsc, where an
+un-annotated \texttt{this} is \texttt{any}; it is unjustified by E-SIG
+as stated. Severity: requires the sub's body to actually depend on the
+receiver type. Options: reject unless
+$\mathit{this}_1 = \top$, or weaken E-SIG's missing-\texttt{this}
+clause to ``unspecified receiver'' (giving up the guarantee tsc also
+gives up). Status recommendation: \textsc{assumed}-with-caveat
+(TS-compatibility débt), pinned test recommended.
+\impl{TTypeSubtyping.sk / TFun::isSub\_ (thisParam match, first arm)}
+\end{finding}
+
+\begin{finding}[F-TPARAM: Constraint Dropping]
+\label{find:tparam}
+$(\mathsf{Some}(\mathit{cstr}_1), \mathsf{None})$ on a type-parameter
+pair is accepted: \texttt{<T extends string>(x: T) => T} passes as
+\texttt{<T>(x: T) => T}. An $f_2$-caller may instantiate outside
+$\mathit{cstr}_1$, exercising the sub's body off its contract; E-SIG
+does not justify the arm. (The subsequent positional checks run with
+the shared parameter \emph{rigid}, so they cannot recover the gap.)
+Same severity shape as F-THIS. Status recommendation: named residual,
+pinned test recommended.
+\impl{TTypeSubtyping.sk / TFun::isSub\_ (tparam cstr match)}
+\end{finding}
+
+\noindent
+With E-SIG ratified, the mode arms of \S\ref{sec:modes} other than
+F-CALL's are also fully justified: $((\mathsf{false},\sigma_1),
+(\mathsf{true},\sigma_2))$ and the definite/definite and maybe/maybe
+diagonals all reduce to $\sigma_1 \leq \sigma_2$ under
+Theorem~\ref{thm:tfun}, and
+$((\mathsf{true},-),(\mathsf{false},-))$'s rejection is forced since
+maybe-callable does not entail callable.
+
+\section{Variance Plumbing: Why Each Side Expands the Way It Does}
+\label{sec:variance}
+
+Step (5) expands $u_1$ with \texttt{Covariant()} and $u_2$ with
+\texttt{Contravariant()}; \texttt{expandToVectors} resolves each
+\texttt{TVar} through \texttt{Subst::get} at that variance
+(covariant: seal-and-return the binding, $\top$ if fresh; contravariant:
+return the binding unsealed, $\bot$ if fresh), then applies the
+variable's constraints via \texttt{TType::inter}.
+
+\begin{lemma}[Directional Reads]
+\label{lem:variance}
+Validation is sound iff the sub-side expansion \emph{over}-approximates
+and the super-side expansion \emph{under}-approximates: from
+$\sem{u_1} \subseteq \sem{E_{\mathrm{cov}}(u_1)}$,
+$\sem{E_{\mathrm{contra}}(u_2)} \subseteq \sem{u_2}$, and
+$\sem{E_{\mathrm{cov}}(u_1)} \subseteq \sem{E_{\mathrm{contra}}(u_2)}$
+(the validated inclusion) the target follows by composition; with either
+direction flipped, the composition breaks --- e.g.\ reading a sub-side
+open variable contravariantly would validate
+$\alpha \leq \texttt{string}$ from a still-growing bound
+$\texttt{"a"}$, later falsified when $\alpha$ grows to
+$\texttt{"a"} \mid 1$; reading a fresh super-side variable covariantly
+would seal it to $\top$ and accept everything against a variable whose
+solution is not yet chosen. The implementation's assignment is the
+correct one. \qed
+\end{lemma}
+
+The two approximation facts themselves decompose as follows.
+\emph{Covariant/sub side:} Deep Dive~C's T-EXP proves expansion
+over-approximates for modes \texttt{None}/\texttt{Covariant},
+conditional on (among others) \textbf{L-INTER} --- and Deep Dive~B
+\emph{refuted} L-INTER as stated (per-tag zeroing; incomparable
+signatures return $\bot$). The exposure here is concrete: \texttt{get}'s
+constraint application $\mathsf{inter}(\mathit{binding}, \mathit{cstr})$
+can under-shoot the true intersection, shrinking the covariant expansion
+below $\sem{\alpha}$ and validating vacuously (a multiply-constrained
+variable whose constraints share a tag with empty syntactic meet
+expands toward $\bot$). We name the residue:
+
+\begin{obligation}[O-GETCOV: Covariant Reads Over-Approximate]
+\label{obl:getcov}
+$\sem{\alpha}_\rho \subseteq
+\sem{\texttt{Subst::get}(\alpha, \mathsf{cov})}_{\rho'}$. Follows from
+the instance-semantics axiom plus L-INTER; conditional today on Deep
+Dive~B's repair of the per-tag zeroing (its proposed fix restores the
+over-approximation on the get path). Status: \textsc{open}, inherited.
+\end{obligation}
+
+\begin{obligation}[O-GETCONTRA: Contravariant Reads Under-Approximate]
+\label{obl:getcontra}
+$\sem{\texttt{Subst::get}(\alpha, \mathsf{contra})}_{\rho}
+\subseteq \sem{\alpha}_{\rho}$, reading $\sem{\alpha}$ as the eventual
+committed solution: $\bot$ for fresh variables is trivially below
+anything; an $\SVOpen$ bound is below the final value because bounds
+only grow (Deep Dive~E's transitions) --- \emph{but} the constraint
+intersection applied on the way out must not \emph{enlarge} past
+$\sem{\alpha}$, which is L-INTER's other half, and the semantics of
+``eventual solution'' for variables that are never sealed needs the main
+paper to fix a convention. Deep Dive~C explicitly assigned this read to
+L-SUB; we discharge its use in Lemma~\ref{lem:variance} and leave the
+two flagged sub-claims open. Status: \textsc{open}.
+\impl{TTypeSubst.sk / Subst::get; TType.sk / expandToVectors}
+\end{obligation}
+
+%==========================================================================
+\section{Status and Recommended Ledger Edits}
+\label{sec:status}
+
+\subsection{Status by stratum}
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{longtable}{@{}p{2.9cm}p{10.5cm}@{}}
+\toprule
+\textbf{Stratum / item} & \textbf{Result here} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Stratum / item} & \textbf{Result here} \\
+\midrule
+\endhead
+\bottomrule
+\endlastfoot
+Dispatch fast paths & Lemma~\ref{lem:fastpath} \\
+Restore-on-failure & Lemma~\ref{lem:restore} (family-wide audit) \\
+\texttt{subst.seenSub} & Theorem~\ref{thm:memo} (\S\ref{sec:substseen}) \\
+\texttt{tenv.seenSub} & Lemmas~\ref{lem:version},
+  \ref{lem:pathscope}, \ref{lem:coherence}: hit $=$ pending ancestor at
+  identical bindings \\
+Coinduction & Theorem~\ref{thm:coind}: L-SUB reduces to one-step strata \\
+Growth pre-passes & guidance only (main paper theorem);
+  MR-1 entry point noted \\
+Primitives, units & Lemma~\ref{lem:prim} \\
+$\STypes$ covering & Lemma~\ref{lem:stypes} \\
+$\Clauses$ DNF + var gate & Lemma~\ref{lem:clauses}, parametric in
+  $\TParam$ \\
+\texttt{TObject} branches & Lemma~\ref{lem:tobject} \\
+Fields, read direction & Lemmas~\ref{lem:both-get}, \ref{lem:width},
+  \ref{lem:indexes} (incl.\ covering indexes, synthetic-index probes,
+  access/phantom/private) \\
+Fields, write direction & Lemma~\ref{lem:both-set} \\
+Call/new mode $(-,\mathsf{None})$ & Finding~\ref{find:call} + composite
+  witness \\
+Array brand & Finding~\ref{find:brand} + composite witness \\
+\texttt{TFun} variance & Theorem~\ref{thm:tfun} against E-SIG \\
+\texttt{this}/tparam-cstr arms & Findings~\ref{find:this},
+  \ref{find:tparam} \\
+Variance plumbing & Lemma~\ref{lem:variance};
+  Obligations~\ref{obl:getcov}, \ref{obl:getcontra} \\
+Array-literal decision & Obligation~\ref{obl:arraylit} \\
+\end{longtable}
+\endgroup
+
+\subsection{Stratum outcomes and recommendations}
+
+\begin{enumerate}
+\item \emph{The L-SUB surface decomposes as}: L-SUB-ARCH (caches, dispatch,
+  coinduction; \textsc{proved} here mod A-HASH/SEM-GFP — except the
+  \texttt{subst.seenSub} component, \textsc{violated} via the witnessed
+  MR-1 until the memo is version-keyed); L-SUB-PRIM (\textsc{proved});
+  L-SUB-DNF ($\STypes$/$\Clauses$/\texttt{TObject} skeletons;
+  \textsc{proved} modulo lower strata); L-SUB-FIELDS-GET
+  (\textsc{proved}); L-SUB-FIELDS-SET (conditional on L-MUT);
+  L-SUB-MODES (\textsc{violated}, F-CALL); L-SUB-BRAND
+  (\textsc{violated}, F-BRAND); L-SUB-FUN (\textsc{proved} against
+  E-SIG, residuals F-THIS/F-TPARAM); L-SUB-EXPVAR
+  (\textsc{open}, O-GETCOV/O-GETCONTRA); L-SUB-ARRAYLIT
+  (\textsc{open}).
+\item \emph{Recommended model extensions}: SEM-GFP (ratify the
+  greatest-fixpoint reading in Definition ``Object-Type Semantics'');
+  E-SIG (adopt Extension~\ref{ext:esig}, replacing ``signatures are
+  opaque''); A-HASH (hash-consing identity) — all three are registry
+  entries. Note that adopting E-SIG strengthens the
+  main paper's monotonicity axiom: its deflection of the contravariance
+  counterexample (``membership never inspects parameter types'') stops
+  being automatic and must cite the stratified-level bookkeeping of
+  \S\ref{sec:coinduction}.
+\item \emph{Resolve the F-CALL dichotomy explicitly}: choose a reading
+  of $\mathsf{None}$ and mark the losing component
+  (\texttt{isSubOptTFuns} arm or \textsc{R-Typeof}/\textsc{R-IsArray}
+  drops) as the defect; wire the two composite witnesses of
+  Findings~\ref{find:call}/\ref{find:brand} as pinned tests either way.
+\item \emph{Cross-reference}: the L-INTER row lists O-GETCOV as a
+  downstream dependent, so that repairing the per-tag zeroing is
+  understood to be on L-SUB's critical path, not only refinement's.
+\end{enumerate}
+
+\paragraph{Registry.}
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence. The
+registry rows it supports:
+
+\input{../generated/rows-D}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-D}
+
+\subsection{Failed-attempt log}
+
+Recorded per series policy: (i) the global ``version-as-state-hash''
+argument for \texttt{tenv.seenSub} fails (two concrete counterexample
+schemas, \S\ref{sec:naive}); the successful replacement needs the frozen
+\texttt{TEnv} threading and save/restore locality, neither of which is
+about the version at all. (ii) A membership-only proof of the field
+stratum fails at exactly two clauses (modes, brand) --- both times
+because the main paper priced those clauses into \emph{refinement}
+proofs; the failures are reported as violations rather than weakened
+into assumptions. (iii) A proof of \texttt{TFun::isSub} against the
+opaque-signature semantics is not merely hard but type-incorrect --- the
+conclusion is not expressible; hence E-SIG. (iv) An unconditional proof
+of the covariant read (O-GETCOV) fails against Deep Dive~B's L-INTER
+counterexamples; we did not find a validator-local workaround, since the
+constraint application lives inside \texttt{Subst::get}.
+
+\end{document}

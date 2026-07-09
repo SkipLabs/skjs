@@ -1,0 +1,1113 @@
+\documentclass[11pt]{article}
+
+\input{../shared/skjs-macros}
+\input{../shared/pin}
+
+\usepackage[T1]{fontenc}
+
+\emergencystretch=1.5em
+\tolerance=2000
+
+\newtheorem{finding}[theorem]{Finding}
+
+% Macros copied from the main paper (skjs-type-soundness.tex)
+\newcommand{\Pred}{\mathcal{P}(\Val)}
+\newcommand{\TType}{\mathsf{TType}}
+\newcommand{\Clauses}{\mathsf{Clauses}}
+\newcommand{\STypes}{\mathsf{STypes}}
+\newcommand{\Subst}{\mathsf{Subst}}
+\newcommand{\SVOpen}{\mathsf{SVOpen}}
+\newcommand{\SVClosed}{\mathsf{SVClosed}}
+\newcommand{\Env}{\Gamma}
+
+% Local macros
+\newcommand{\env}[2]{\mathcal{E}_{#1}(#2)}   % envelope of a variable
+\newcommand{\stle}{\sqsubseteq}              % pointwise state order
+
+\title{The Substitution State Machine: Monotonicity, Monotone Reads,
+Clone Stability, and Rollback\\
+{\large Deep dive E for ``Refinement and Inference Growth in SKJS''}}
+\author{}
+\date{\skjspin}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+The main paper models the inference substitution as a state machine;
+four of its ledger rows concern that machine's state discipline —
+axiom \textbf{L-MONO} (refinement-time monotonicity), the
+obligation \emph{Monotone Reads Under Growth}, assumption
+\textbf{L-CLONE} (clone stability), and the obligation
+\emph{No Commitment on Failure} — and this paper is the evidence behind
+their current table statuses. This deep dive completes
+the state model the main paper elides — the version counter, the four
+caches, the environment-side cycle sets, constraint attachment, and the
+candidate-freezing flag — and works the four rows as one coherent
+discipline. The load-bearing discovery is representational:
+\texttt{TVar::setConstraint} is a \emph{functional update} on a frozen
+value, not a mutation of shared state, which removes the envelope-shrinking
+threat the main paper flagged for \textbf{L-MONO} and \textbf{L-CLONE}.
+With that, \textbf{L-MONO} is proved under two stated modeling conditions;
+\emph{Monotone Reads} is proved by a read-variance audit everywhere except
+one \textsc{violated} residue, MR-1 — a freeze-window unsealed read
+memoized in \texttt{seenSub}, witnessed end-to-end by an order-dependent
+unsound acceptance (issue draft
+\path{issues/freeze-window-stale-memo-caches.md}); \textbf{L-CLONE} is
+proved conditional on a strengthened, fork-state form of \textbf{L-INTER}
+— the clone-generated-identifier hazard is verified \emph{unreachable}
+(no \texttt{gen*} call site lies in the clone-compute-install tree),
+guarded by a recommended CI assertion; and \emph{No Commitment on
+Failure} is discharged by an exhaustive save/restore audit with one
+intentional, separately-argued exception (array-literal form commitments
+persisting on failed checks). Failed proof attempts are reported as
+findings.
+\end{abstract}
+
+\tableofcontents
+
+%==========================================================================
+\section{Purpose and Rows Addressed}
+\label{sec:purpose}
+
+This document supports the ``Assumptions and Proof Obligations'' ledger of
+the main paper. It addresses four rows --- \textbf{L-MONO}, Monotone Reads
+Under Growth, \textbf{L-CLONE}, and No Commitment on Failure --- treated in
+Sections~\ref{sec:lmono}, \ref{sec:monoreads}, \ref{sec:lclone},
+and~\ref{sec:rollback}, and summarized row by row in \S\ref{sec:status}.
+
+All file and line references are against commit \texttt{9108f339}. Line
+numbers are cited as \texttt{file:line}; they identify the revision
+precisely and will drift with edits.
+
+%==========================================================================
+\section{The Complete State Model}
+\label{sec:model}
+
+The main paper's Definition ``Substitution States'' records only the
+binding map and the freeze flag. The implementation state is larger. This
+section is the reference model; everything later in the paper is proved
+against it.
+
+\subsection{Saved state: \texttt{SubstState}}
+
+\begin{definition}[Full Substitution State]
+\label{def:fullstate}
+A substitution state $\rho$ consists of the fields of the Skip class
+\texttt{SubstState} (\texttt{TTypeSubst.sk:13--49}):
+\begin{itemize}
+\item $\mathsf{values} : \mathsf{TVarID} \rightharpoonup
+  \SVOpen(\TType) \mid \SVClosed(\TType)$ — the binding map of the main
+  paper's transition table;
+\item $\mathsf{version} \in \mathbb{N}$ — a counter with two duties:
+  (a) it is incremented immediately before \emph{every} write to
+  $\mathsf{values}$ (\texttt{grow}, \texttt{TTypeSubst.sk:181};
+  \texttt{get}'s two sealing writes, \texttt{:195} and \texttt{:205}); and
+  (b) it doubles as the fresh-identifier supply — \texttt{gen},
+  \texttt{genForField}, and \texttt{genForLiteralCommitment}
+  (\texttt{:237--253}) each return \texttt{TVarID(version)} and increment.
+  Consequence: within one linear execution segment, distinct
+  $\mathsf{values}$ states have distinct versions
+  (Lemma~\ref{lem:version-values});
+\item $\mathsf{origins}$ — diagnostic provenance for variables
+  (\texttt{setOrigin}); no semantic content;
+\item four caches, all part of the saved state:
+  \begin{itemize}
+  \item $\mathsf{seenSub} \subseteq \TType \times \TType$ — a
+    \emph{success memo} for \texttt{TType::isSub}: a pair is inserted on
+    acceptance (\texttt{TTypeSubtyping.sk:1524}) and consulted before
+    re-checking (\texttt{:1521}). Not version-keyed;
+  \item $\mathsf{seenInter}, \mathsf{seenUnion} :
+    (\TType \times \TType) \rightharpoonup \TType$ — result memos for
+    \texttt{TType::inter} (\texttt{TTypeInter.sk:107--125}; pairs
+    containing a bare variable are excluded, \texttt{:105}) and
+    \texttt{TType::union} (\texttt{TTypeUnion.sk:29--32});
+  \item $\mathsf{seenExpansion} : \mathsf{TSInst} \rightharpoonup \TType$
+    — memo of one-level named-type expansion
+    (\texttt{TType.sk:629--635}); the cached body is \emph{symbolic} in
+    the type arguments (arguments occur as free variables, re-resolved at
+    every use), which is why reuse under growth is sound
+    (comment \texttt{TTypeSubst.sk:17--30}).
+  \end{itemize}
+\end{itemize}
+\texttt{save()} snapshots all seven fields into a frozen
+\texttt{SavedSubst}; \texttt{restore()} reinstates all seven
+(\texttt{TTypeSubst.sk:36--48}). Because every field is an immutable
+persistent map/set, \texttt{save} is $O(1)$ and lossless.
+\impl{TTypeSubst.sk / SubstState, SavedSubst}
+\end{definition}
+
+\subsection{Unsaved state}
+
+Three pieces of mutable or threaded state live \emph{outside}
+\texttt{SubstState}; each needs its own safety argument.
+
+\paragraph{(U1) \texttt{freezeCandidates}.}
+Declared on \texttt{Subst} itself, not on \texttt{SubstState}
+(\texttt{TTypeSubst.sk:76--89}), with an explicit comment that
+save/restore never touch it; it is push/popped around the
+constraint-admissibility check in \texttt{growTVars}
+(\texttt{TTypeSubtyping.sk:1422--1434}). Verified by inspection: those two
+lines are the \emph{only} writes to the flag in \texttt{src/}, the
+push/pop brackets a straight-line region with no early return (the
+\texttt{break} at \texttt{:1431} exits only the inner constraint loop),
+and nested checks restore the outer value via \texttt{wasFreezing}. So
+excluding it from \texttt{SavedSubst} is safe: a restore can never observe
+a torn flag, because every save/restore pair either lies entirely inside
+or entirely outside a freeze window.
+
+\paragraph{(U2) \texttt{tenv.seenSub} and \texttt{tenv.seenInter}.}
+\texttt{TEnv} is a \emph{frozen} Skip class (\texttt{TEnv.sk:12}); the
+apparent mutations \texttt{!tenv.seenSub = \ldots}
+(\texttt{TTypeSubtyping.sk:1537}) and \texttt{!tenv.seenInter = \ldots}
+(\texttt{TTypeInter.sk:157}) are functional updates of the \emph{local}
+binding, propagated only into callees that receive the updated
+\texttt{tenv}. These sets are therefore \emph{path-scoped coinduction
+hypotheses}, not caches: an entry is visible exactly in the dynamic
+extent of the recording activation and vanishes when it returns. This
+structural fact does most of the work in the \#446 argument
+(\S\ref{sec:tenv-seensub}). \texttt{tenv.seenSub} is keyed by
+$(\mathsf{version}, u_1, u_2)$ (\texttt{TEnv.sk:74});
+\texttt{tenv.seenInter} by the bare pair (\texttt{TEnv.sk:69}), which is
+safe because its only effect is to return an \emph{unexpanded}
+intersection on a cycle (\texttt{TTypeInter.sk:154--156}) — a
+representation choice, not a judgement.
+
+\paragraph{(U4) \texttt{tenv.expandInter}.}
+A mode flag on \texttt{TEnv} selecting full versus deferred
+(\texttt{unexpandedInter}) field intersection; set by
+\texttt{TInter::expand} and, like \texttt{tenv.seenSub}, threaded through
+the frozen-\texttt{TEnv} update discipline, so the setting should be
+path-scoped. This flag was found missing from this inventory by external
+review; its path-scoping and the containment coverage of the deferred
+form are the \textsc{open} registry row TENV-EXPANDINTER.
+
+\paragraph{(U3) \texttt{results} and \texttt{context}.}
+The diagnostics/callgraph accumulator \texttt{results} is shared by
+\texttt{clone()} (\texttt{TTypeSubst.sk:137--149}) and never rolled back
+(e.g.\ \texttt{recordSubtypingEdge} on \texttt{TFun::isSub} success,
+\texttt{TTypeSubtyping.sk:1614--1621}). It carries no typing state, so it
+is outside $\rho$; \S\ref{sec:lclone} flags the one place this is worth a
+remark.
+
+\subsection{Constraint attachment is a value operation}
+\label{sec:setconstraint}
+
+A natural worry about the main paper's Axiom \textbf{L-MONO} would be
+that adding a constraint to a \emph{shared} variable
+(\texttt{TVar::setConstraint}) shrinks that variable's envelope, so an
+arbitrary type mentioning it could lose members. The premise of that
+worry is false — establishing this is the single most consequential fact
+in this paper, and the axiom's remark in the main paper records it.
+
+\begin{lemma}[setConstraint is Functional]
+\label{lem:setconstraint}
+\texttt{TVar::setConstraint(ty)} does not modify any state observable by
+another type term. It returns a \emph{new} \texttt{TVar} value carrying
+the enlarged constraint set; every pre-existing occurrence of the same
+variable identifier retains its own constraint set.
+\end{lemma}
+\begin{proof}[Proof (by inspection of the pinned source)]
+\texttt{TVar} is a frozen (non-\texttt{mutable}) class and
+\texttt{setConstraint} a non-\texttt{mutable} method
+(\texttt{TType.sk:2437--2441} and \texttt{:2450--2453}):
+\begin{center}
+\texttt{fun setConstraint(ty: TType): TVar \{}\\
+\texttt{\ \ !this.constraints = this.constraints.set(ty); this \}}
+\end{center}
+In Skip, field assignment through \texttt{!this.f = e} in a frozen-class
+method is a \emph{functional record update of the local binding}
+\texttt{this}; the method must return the updated copy for the change to
+be visible at all. The same idiom appears throughout the pinned revision
+on unambiguously frozen classes
+(\texttt{STErrorDetail::ensureIntermediateDepth},
+\texttt{TTypeSubtyping.sk:40--45}; \texttt{TEnv::instantiate},
+\texttt{TEnv.sk:131}). Two corroborations: (i) \texttt{constraints}
+participates in \texttt{TVar::xxhash} (\texttt{TType.sk:2459--2468}) and
+in \texttt{Orderable} equality — a shared-mutation semantics would break
+hashing of interned type terms; (ii) both call sites use the return value
+(\texttt{TType::var(tvar.setConstraint(ty2))},
+\texttt{TTypeInter.sk:145--151}; \texttt{!tvar = tvar.setConstraint(...)},
+\texttt{TEnv.sk:314}) — a genuine mutation would make that redundant.
+\end{proof}
+
+\begin{corollary}[Occurrence-Relative Envelopes]
+\label{cor:occurrence}
+The ``constraint intersection'' step of \texttt{Subst::get}
+(\texttt{TTypeSubst.sk:218--221}) intersects the binding with the
+constraints \emph{of the occurrence being read}. A variable identifier
+therefore has no global constraint set; constraints are part of the type
+term. Refinement, intersection, or any other operation attaching a
+constraint produces a new term and cannot shrink the denotation of any
+type already installed in an environment. The state $\rho$ of
+Definition~\ref{def:fullstate} is the \emph{complete} shared mutable
+typing state.
+\end{corollary}
+
+\subsection{The extended transition table}
+
+\begin{definition}[Extended Transitions]
+\label{def:ext-transitions}
+The operations that evolve $\rho$, extending the main paper's
+Definition~6 (its rows are unchanged and not repeated):
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\footnotesize
+\begin{tabular}{@{}lll@{}}
+\toprule
+op & effect on $\rho$ & anchor \\
+\midrule
+$\mathsf{grow},\ \mathsf{get}(\mathsf{cov})$ writes &
+  per main paper; $\mathsf{version}{+}{+}$ before each write &
+  \texttt{TTypeSubst.sk:151--222} \\
+$\mathsf{gen}/\mathsf{genFor*}$ &
+  fresh id $=$ $\mathsf{version}$; $\mathsf{version}{+}{+}$; no binding &
+  \texttt{TTypeSubst.sk:237--253} \\
+cache insert & add to one of the four memo maps; no version bump &
+  \S\ref{def:fullstate} \\
+$\mathsf{setOrigin}$ & origins only & \texttt{TTypeSubst.sk:271} \\
+$\mathsf{save}/\mathsf{restore}$ & snapshot / reinstate all seven fields &
+  \texttt{TTypeSubst.sk:36--48} \\
+$\mathsf{clone}$ & fork: new \texttt{Subst}, same seven fields, shared
+  \texttt{results} & \texttt{TTypeSubst.sk:137--149} \\
+freeze push/pop & toggle \texttt{freezeCandidates} (unsaved) &
+  \texttt{TTypeSubtyping.sk:1422--1434} \\
+\bottomrule
+\end{tabular}
+\end{center}
+Verified write-site completeness: the only assignments to
+\texttt{values} in \texttt{src/} are in \texttt{grow}, \texttt{get}, and
+\texttt{restore}; the only version writes are those plus \texttt{gen*};
+external \texttt{grow} callers (\texttt{TArrayLitTyping.sk:147,352};
+\texttt{TVariadicTyping.sk:125}; \texttt{TypeCheckUtils.sk:310,321,332})
+go through the same transitions.
+\end{definition}
+
+Note that cache inserts do \emph{not} bump the version. This is sound for
+the three result memos by their own stability arguments (sealing for
+\texttt{seenInter}, \texttt{TTypeInter.sk:90--96}; symbolic arguments for
+\texttt{seenExpansion}) but it makes the version-keying of
+\texttt{tenv.seenSub} track \emph{binding} state only — exactly what the
+coinduction hypothesis depends on (\S\ref{sec:tenv-seensub}).
+
+%==========================================================================
+\section{The Order-Theoretic Core}
+\label{sec:order}
+
+All four ledger rows reduce to statements about one partial order on
+states and two lemmas about it.
+
+\begin{definition}[Envelope; State Order]
+\label{def:order}
+For a state $\rho$ and identifier $\alpha$, the \emph{envelope} is
+\[
+\env{\rho}{\alpha} =
+\begin{cases}
+\emptyset & \alpha \notin \mathrm{dom}(\rho.\mathsf{values})\\
+\sem{t}_\rho & \rho.\mathsf{values}(\alpha) \in
+  \{\SVOpen(t), \SVClosed(t)\}.
+\end{cases}
+\]
+Write $\rho \stle \rho'$ (``$\rho'$ extends $\rho$'') iff
+$\env{\rho}{\alpha} \subseteq \env{\rho'}{\alpha}$ for every $\alpha$.
+The choice $\emptyset$ for unbound variables is the modeling counterpart
+of $\mathsf{get}(\mathsf{contra})$ returning $\bot$ without writing
+(\texttt{TTypeSubst.sk:211--212}).
+\end{definition}
+
+\begin{definition}[Modeling Conditions]
+\label{def:conditions}
+\begin{itemize}
+\item[\textbf{(M1)}] \emph{Semantic monotonicity.} For every type term
+  $u$, $\sem{u}_\rho$ is monotone in the envelopes of the identifiers
+  occurring in $u$: $\rho \stle \rho'$ implies
+  $\sem{u}_\rho \subseteq \sem{u}_{\rho'}$. This holds for the main
+  paper's semantics by structural induction, because every
+  state-sensitive position is read positively: variable occurrences
+  denote $\env{\rho}{\alpha} \cap \bigcap \sem{\mathrm{cstr}}$
+  (Corollary~\ref{cor:occurrence}); field membership constrains only the
+  \emph{get} type (main paper, object semantics, which makes set
+  types opaque); call/new signatures are opaque to $\sem{\cdot}$ except
+  for the callability mode; and union/intersection/clause structure is
+  positive. The classic contravariance counterexample is deflected by
+  signature opacity, exactly as the main paper notes for \textbf{L-MONO}.
+\item[\textbf{(M2)}] \emph{Union monotonicity.} \textbf{L-UNION} at the
+  point of use: $\sem{t_2}_\rho \subseteq \sem{t_2 \vee t}_\rho$.
+\end{itemize}
+\end{definition}
+
+\begin{lemma}[All Transitions Are Monotone]
+\label{lem:trans-mono}
+Under M2, every operation of Definition~\ref{def:ext-transitions} except
+\texttt{restore} takes $\rho$ to some $\rho'$ with $\rho \stle \rho'$.
+\end{lemma}
+\begin{proof}
+Case analysis on the main paper's transition table plus
+Definition~\ref{def:ext-transitions}. Fresh bind
+($\mathrm{unbound} \to \SVOpen(t)$ or $\SVClosed(t)$): envelope grows from
+$\emptyset$. Fresh covariant get: $\mathrm{unbound} \to \SVClosed(\top)$:
+grows to $\sem{\top}$. Open union
+($\SVOpen(t_2) \to \SVOpen(t_2 \vee t)$, or
+$\SVClosed(t_2 \vee t)$ for non-candidates): grows by M2. Seal
+($\SVOpen(t) \to \SVClosed(t)$): envelope unchanged. No-op rows,
+\texttt{gen} (the new identifier is unbound before and after — its id was
+never allocated before, so no term mentions it), cache inserts,
+\texttt{setOrigin}, freeze toggles: envelopes unchanged. No transition
+removes or replaces bound material: there is no row that shrinks a bound,
+and the main paper's never-widen lemma additionally freezes
+$\SVClosed$ rows. Envelopes of \emph{other} variables are untouched by
+each write ($\mathsf{values}$ is updated pointwise), though their
+envelopes may grow transitively via M1 when their bound mentions
+$\alpha$ — still monotone.
+\end{proof}
+
+\begin{lemma}[Restore Safety]
+\label{lem:restore-safe}
+Call a computation segment \emph{well-bracketed} if every
+\texttt{restore(s)} it executes uses a snapshot \texttt{s} taken by the
+same activation (verified for all fourteen sites in
+\S\ref{sec:rollback}). Let a well-bracketed segment start at $\rho_0$ and
+execute monotone transitions and restores. Then at every moment,
+$\rho_0 \stle \rho_{\mathrm{now}}$.
+\end{lemma}
+\begin{proof}
+Induction over the event sequence. Monotone steps preserve the invariant
+by transitivity. A restore jumps to a snapshot taken earlier \emph{within
+the segment} (well-bracketing), and the invariant held when the snapshot
+was taken, so it holds after the jump.
+\end{proof}
+
+\begin{lemma}[Record-Point Coherence]
+\label{lem:version-values}
+Let a moment $m_0$ (the \emph{record point}) occur at the \emph{entry} of
+an activation $A$, with $\rho.\mathsf{version} = v$ at $m_0$, and
+consider any later moment $m$ inside $A$'s dynamic extent, under
+well-bracketing. Then (i) $\rho.\mathsf{version} \geq v$ at $m$, and (ii)
+if $\rho.\mathsf{version} = v$ at $m$, then
+$\rho.\mathsf{values} = \rho.\mathsf{values}\text{ at } m_0$.
+\end{lemma}
+\begin{proof}
+(i) The version increases at writes and \texttt{gen}, and decreases only
+at restores. Under well-bracketing, every restore executed inside $A$'s
+extent uses a snapshot saved inside $A$'s extent, hence saved \emph{after}
+$m_0$ ($m_0$ is $A$'s entry), hence with version $\geq v$. So no reachable
+restore target has version $< v$.
+(ii) By induction on the events between $m_0$ and $m$. All version-$v$
+snapshots taken in the extent are taken at moments where, by the
+induction hypothesis, \texttt{values} equals its $m_0$ state (a change
+since $m_0$ would have bumped the version above $v$, and by (i) it cannot
+have come back down except by restoring a version-$v$ snapshot, itself
+coherent by induction). A moment with version $v$ is either reached
+with no intervening \texttt{values} write since the last coherent
+version-$v$ moment, or by restoring a coherent version-$v$ snapshot.
+\end{proof}
+
+\begin{finding}[Failed proof attempt, kept for honesty]
+\label{find:version-collision}
+The naive claim ``\texttt{version} uniquely identifies \texttt{values}
+across a whole checking run'' is \emph{false}: restore rewinds the
+counter, so divergent exploration branches can reuse a version number
+with different bindings (save at $v$, grow to $v{+}1$, restore, grow
+differently to $v{+}1$). Any argument that treats the version as a global
+state hash — including a reading of the \#446 fix as one — is unsound.
+The actual safety of \texttt{tenv.seenSub} comes from the
+\emph{combination} of version-keying with path-scoping,
+Lemma~\ref{lem:tenv-inert} below.
+\end{finding}
+
+%==========================================================================
+\section{L-MONO: Refinement-Time State Monotonicity}
+\label{sec:lmono}
+
+\textbf{L-MONO} (the main paper's axiom of that name) demands: for every
+evolution
+$\rho \to \rho'$ performed while refining a condition, and every
+$u \in \mathrm{range}(\Env)$,
+$v \in \sem{u}_\rho \implies v \in \sem{u}_{\rho'}$.
+
+\subsection{Enumeration of refinement-triggered evolutions}
+\label{sec:lmono-enum}
+
+By a walk of every arm of \texttt{evalCond}
+(\texttt{TypeCheckRefine.sk:371--541}) and its handlers, the evolutions of
+the \emph{main} substitution that condition refinement can trigger are
+exactly:
+
+\begin{itemize}
+\item[\textbf{(E1)}] \emph{Covariant expansion in the refinement
+  primitive.} \texttt{setLocalFilterMap} runs
+  \texttt{mapSTypes(\ldots, Some(Covariant()), f)} on the main
+  substitution (\texttt{TypeCheckRefine.sk:615}); expansion applies
+  \texttt{subst.get(tenv, tvar, Covariant())} to every spine variable
+  (\texttt{TType.sk:639}): fresh variables seal to $\top$, open variables
+  seal at their bound. Used by \emph{every} rule that factors through the
+  primitive.
+\item[\textbf{(E2)}] \emph{Union/intersection during residue and clause
+  rebuilding.} \texttt{mapSTypes} reassembles clauses with
+  \texttt{Clauses::unionN} (\texttt{TType.sk:411}); the
+  \texttt{typeof\,==\,"object"} default builds
+  \texttt{STypes::union} on the main substitution
+  (\texttt{TypeCheckRefine.sk:273--285}). Union itself performs no
+  \texttt{get}/\texttt{grow} (verified: no such call in
+  \texttt{TTypeUnion.sk}) but recursively calls \texttt{TType::inter} on
+  field set-types (\texttt{TTypeUnion.sk:102,124}), reaching E3.
+\item[\textbf{(E3)}] \emph{Main-substitution intersections.}
+  \texttt{evalIsArray}'s true branch and \texttt{evalInstanceof} run
+  \texttt{TObject::inter} on the main substitution
+  (\texttt{TypeCheckRefine.sk:334,361}). Inside
+  \texttt{TType::inter\_}: covariant expansion of both operands
+  (\texttt{TTypeInter.sk:158--159}, seals as in E1); constraint
+  attachment on bare-variable operands
+  (\texttt{TTypeInter.sk:145--151}, a value operation by
+  Lemma~\ref{lem:setconstraint}); speculative concrete
+  \texttt{isSub} probes (\texttt{:163--188}); and
+  \texttt{TFun::inter}'s two \texttt{TFun::isSub} attempts on the main
+  substitution (\texttt{TTypeInter.sk:586--593}) — on success their
+  \texttt{growTVars} growth \emph{commits}, on failure it is restored.
+\item[\textbf{(E4)}] \emph{Fresh variable generation.}
+  \texttt{evalInstanceof} instantiates the class with fresh inference
+  arguments (\texttt{makeTArgs}, \texttt{TEnv.sk:308--323}:
+  \texttt{gen} + occurrence-level \texttt{setConstraint} +
+  \texttt{setOrigin}); \texttt{newObject} may create synthetic index
+  variables (\texttt{TType.sk:1657--1672}).
+\item[\textbf{(E5)}] \emph{Cache inserts} in all of the above.
+\end{itemize}
+
+Everything else refinement does runs on a \emph{clone}
+(\texttt{TypeCheckRefine.sk:89,99,177,197,573}) and does not evolve the
+main $\rho$ at all; those sites are \S\ref{sec:lclone}'s subject.
+
+\subsection{Discharge}
+
+\begin{theorem}[L-MONO]
+\label{thm:lmono}
+Under M1 and M2 (Definition~\ref{def:conditions}), every evolution E1--E5
+satisfies the \textbf{L-MONO} conclusion — in fact for \emph{all} type
+terms $u$, not only $\mathrm{range}(\Env)$.
+\end{theorem}
+\begin{proof}
+E1--E5 are compositions of the transitions of
+Definition~\ref{def:ext-transitions} and internal save/restore pairs
+(inside the speculative \texttt{isSub} calls of E3). All fourteen
+save/restore sites are well-bracketed (\S\ref{sec:rollback}), so
+Lemma~\ref{lem:restore-safe} applies to the whole composition:
+$\rho \stle \rho'$. M1 turns this into
+$\sem{u}_\rho \subseteq \sem{u}_{\rho'}$.
+Two of the main paper's worries dissolve: (a) the
+\texttt{setConstraint} threat is void by Lemma~\ref{lem:setconstraint} —
+no shared envelope shrinks, so the restriction to
+$\mathrm{range}(\Env)$ is not needed; (b) the E3 commits from a
+\emph{successful} speculative \texttt{TFun::isSub} are ordinary monotone
+grows, so ``exploration that succeeds and keeps its growth'' is safe,
+not merely ``exploration that fails and rolls back.''
+\end{proof}
+
+\begin{finding}[The sharpest sufficient condition is not needed]
+The task of bounding \emph{which} variables refinement may touch
+(``refinement only constrains variables introduced by the very expression
+being refined'') was pursued and abandoned: it is both false —
+\texttt{evalIsArray}/\texttt{evalInstanceof} intersect against
+$\Env(x)$'s own object branches, sealing variables shared with the whole
+definition's checking — and unnecessary, since sealing and growing are
+monotone for \emph{every} sharer. The variable-sharing pattern is
+irrelevant once Lemma~\ref{lem:setconstraint} removes the only
+non-monotone candidate operation.
+\end{finding}
+
+\paragraph{Residual dependence.} Theorem~\ref{thm:lmono} is a genuine
+discharge of \textbf{L-MONO} \emph{given the main paper's semantics}: M1
+is a property of that semantics (provable by structural induction,
+sketched in Definition~\ref{def:conditions}; it deserves a short formal
+proof when the semantics section is next revised), and M2 is
+\textbf{L-UNION}, already a ledger row. The ledger edit in
+\S\ref{sec:status} states this precisely.
+
+%==========================================================================
+\section{Monotone Reads Under Growth}
+\label{sec:monoreads}
+
+The obligation: a judgement validated under $\rho$ must still hold after
+inference evolves $\rho \to \rho'$. For $\SVClosed$ bindings this is
+never-widen(iii); the open question is $\SVOpen$ bindings, read without
+sealing by $\mathsf{get}(\mathsf{contra})$.
+
+\subsection{The invariant}
+
+\begin{definition}[Read Disciplines]
+\label{def:read-disciplines}
+\begin{itemize}
+\item[\textbf{(MR)}] \emph{Monotone-read invariant.} Every
+  contravariant (non-sealing) read is a \emph{supertype-side} read: its
+  result is used only as the right-hand side of a validation
+  $\sem{\mathrm{lhs}} \subseteq \sem{\cdot}$, so that later growth of the
+  variable only enlarges the right-hand side.
+\item[\textbf{(BR)}] \emph{Bake-requires-seal.} Every covariant read
+  whose result is embedded in a persistent artifact (a memoized result, a
+  type installed in an environment) seals the variable, so the baked
+  snapshot equals the envelope at all later states
+  (never-widen(iii)).
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Validated Judgements Are Stable]
+\label{thm:stable}
+Assume M1, MR, BR, and \textbf{L-SUB}. If \texttt{Clauses::isSub}
+accepted $\sem{u_1}_\rho \subseteq \sem{u_2}_\rho$ and
+$\rho \to \rho'$ by the transitions of
+Definition~\ref{def:ext-transitions} (no restore crossing the
+acceptance), then $\sem{u_1}_{\rho'} \subseteq \sem{u_2}_{\rho'}$.
+\end{theorem}
+\begin{proof}
+Decompose the occurrences of variables in $u_1, u_2$ by how validation
+read them. Left-side occurrences were read covariantly and are sealed on
+the success path (BR); never-widen(iii) freezes their envelopes, so
+$\sem{u_1}$ is unchanged... more precisely non-increasing only through
+frozen envelopes, hence unchanged. Right-side occurrences were read
+contravariantly (MR); their envelopes only grow
+(Lemma~\ref{lem:trans-mono}), and by M1 $\sem{u_2}$ only grows. The
+accepted inclusion is therefore preserved.
+\end{proof}
+
+\subsection{Site audit}
+\label{sec:mr-audit}
+
+Every \texttt{expandToClauses}/\texttt{expand}/\texttt{get} site with its
+variance, in the pinned revision. Expansion applies its variance uniformly
+to every \emph{spine} variable, including through \texttt{TSInst} and
+\texttt{TInter} unfolding (\texttt{TType.sk:613--657}); it does not enter
+fields or signatures, so no variance flip arises inside a single
+expansion — flips happen only where the recursion of \texttt{isSub}
+swaps sides.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{5.4cm}p{1.1cm}>{\raggedright\arraybackslash}p{6.7cm}@{}}
+\toprule
+site & var. & discipline check \\
+\midrule
+\texttt{isSub\_} lhs $u_1$ (TTypeSubtyping.sk:1556) &
+  cov & BR: seals; memo \texttt{seenSub} baked on success \\
+\texttt{isSub\_} rhs $u_2$ (:1557) &
+  contra & MR: supertype side \\
+\texttt{TFun::isSub\_} rest, \emph{sub} side (:1708) &
+  contra & MR: becomes rhs of param check
+  \texttt{isSub(p2,\,p1)} \\
+\texttt{TFun::isSub\_} rest, \emph{super} side (:1768--1773) &
+  cov & BR: lhs of param checks; sealed \\
+\texttt{TTypeInter} both operands (TTypeInter.sk:158--159) &
+  cov & BR: result memoized/installed; seal justifies
+  \texttt{seenInter} \\
+\texttt{TypeCheckUtils} truthiness reads (:19,43) &
+  cov & BR: result drives diagnostics/refinement \\
+\texttt{resolveSpreadToTuple} (TVariadicTyping.sk:53,74) &
+  contra & MR: tuple shape probe; restored when \texttt{None}
+  (:64,70,78) \\
+TEnv.sk:820,2103; TypeCheckClass.sk:55,146;
+  TypeCheckExpr.sk:1123--1124 & cov & BR \\
+\texttt{expandTVarsForPp} (TType.sk:692) & cov &
+  on a \emph{clone} (TTypePp.sk:818, TTypeSubtyping.sk:1178):
+  pretty-printing must not seal \\
+\texttt{ArrayLitTyping} probes (TArrayLitTyping.sk:175,236,394) &
+  cov & :236 clones; :175,394 seal on the live subst
+  (commitment sites) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+No site violates MR: all contravariant reads end up on the right of a
+validation. BR holds at all sites on the success path, with one
+exception, which is the section's finding.
+
+\subsection{Residual hazard: the freeze-window unsealed read}
+\label{sec:freeze-hazard}
+
+$\mathsf{get}(\mathsf{cov})$ on an open \emph{candidate} under
+\texttt{freezeCandidates} returns the bound \emph{without sealing}
+(\texttt{TTypeSubst.sk:202--203}) — a covariant read that violates BR by
+design, so that constraint admissibility checks are queries. The check
+runs full \texttt{TType::isSub(boundTy, cstr)}
+(\texttt{TTypeSubtyping.sk:1426}), whose \emph{successes} insert pairs
+into the persistent, version-\emph{unkeyed} \texttt{subst.seenSub} memo.
+
+\begin{finding}[Stale \texttt{seenSub} memo via freeze-window reads]
+\label{find:freeze-memo}
+Candidate scenario: a variable $\alpha$ (an ordinary candidate,
+$\SVOpen(t)$) occurs in \emph{both} sides of a check — e.g.\
+$u_1 = \mathrm{Box}\langle\alpha\rangle$ and $u_2$ mentions a constrained
+variable whose constraint check validates
+$\mathrm{isSub}(u_1, \mathrm{cstr})$ under freeze, reading $\alpha$ at
+$t$ \emph{unsealed} and memoizing $(u_1, \mathrm{cstr}) \in
+\mathsf{seenSub}$. After the freeze pops, \texttt{growUncovered} may
+contravariantly grow the same $\alpha$ (it is no longer protected) to
+$t \vee s$. The memo now asserts an inclusion validated with the smaller
+$\sem{u_1}$; a later syntactically-identical query hits it
+(\texttt{TTypeSubtyping.sk:1521}) without re-validation. The eventual
+covariant expansion of $u_1$ seals $\alpha$ at $t \vee s$ — \emph{after}
+the memo was recorded. The discipline itself cannot close this gap: the
+memo survives on the enclosing check's success path, and nothing re-keys
+it by version. Mitigations narrow the window without closing it (memos
+recorded under a speculative subtree are erased by its restore, since
+$\mathsf{seenSub}$ is in \texttt{SubstState}; the scenario needs the
+same open candidate reachable from both sides plus an exact term-level
+re-query). The gap is real: an end-to-end witness exists — an
+order-dependent unsound acceptance in which \emph{adding} an earlier call
+to a generic function (validating its constraint under freeze against the
+still-open candidate, and memoizing the success) flips a correct
+contravariance rejection of the post-widening call into an acceptance,
+so a \texttt{number}-typed binding holds \texttt{"s"} at runtime.
+MR-1 (\S\ref{sec:status}) is therefore \textsc{violated}. Fix: key
+\texttt{subst.seenSub} by version, or suppress memo insertion while
+\texttt{freezeCandidates} is set; the same fix should cover
+\texttt{seenInter}, which the witness also exercises. Issue draft:
+\path{issues/freeze-window-stale-memo-caches.md}; a pinned test is
+recommended.
+\end{finding}
+
+Theorem~\ref{thm:stable} discharges the obligation
+\emph{conditional on} MR-1 and on \textbf{L-SUB}, and the audit above
+discharges its MR/BR premises for every other site; since MR-1 fails, the
+obligation stands \textsc{violated} exactly at the freeze-window memo and
+\textsc{proved} everywhere else.
+
+%==========================================================================
+\section{L-CLONE: Clone--Compute--Install}
+\label{sec:lclone}
+
+\subsection{The pattern and what is actually lost}
+
+\texttt{evalVarEquality} computes
+$u = \mathsf{inter}(\Env(x), \tau_e)$ under \texttt{subst.clone()} and
+installs $u$ into the scope, discarding the clone
+(\texttt{TypeCheckRefine.sk:87--94}); likewise \texttt{removeConstant}
+(\texttt{:96--106}), \texttt{evalFieldEqualityType}
+(\texttt{:176--201}), and \texttt{evalFieldTruthiness}
+(\texttt{:571--576}). \texttt{clone()} forks all seven
+\texttt{SubstState} fields (immutable maps, so the fork is a true
+snapshot) and shares only \texttt{results} and \texttt{context}
+(\texttt{TTypeSubst.sk:137--149}).
+
+Write $\rho_f$ for the fork state ($=$ the main state at the clone),
+$\rho_c$ for the clone state when \texttt{inter} returns, and $\rho''$
+for any later main state. What the clone loses at discard, classified by
+what \texttt{inter} can do:
+
+\begin{itemize}
+\item[\textbf{(C1)}] \emph{Constraint attachments}
+  (\texttt{TTypeInter.sk:145--151}). By
+  Lemma~\ref{lem:setconstraint} these never touched the clone's state at
+  all: the constraint lives in the returned occurrence inside $u$, which
+  is installed. \emph{Nothing is lost.} A natural conjecture
+  (``if constraints live in the returned type, clone-discard may be
+  benign for constraints but not for value bindings'') is confirmed on
+  its first half.
+\item[\textbf{(C2)}] \emph{Seals} from covariant expansion
+  (\texttt{TTypeInter.sk:158--159}): the expansion replaces the spine
+  occurrence by the read value in $u$ — fresh variables bake $\top$,
+  open variables bake their fork-state bound $t$ — but the seal itself
+  dies with the clone; on the main substitution the variable stays
+  open/unbound and may later grow or seal differently.
+\item[\textbf{(C3)}] \emph{Grows and commitments} from speculative
+  subtyping inside \texttt{inter}: \texttt{TFun::inter} runs
+  \texttt{TFun::isSub} both ways on the clone
+  (\texttt{TTypeInter.sk:586--593}), committing growth on success;
+  \texttt{ArrayLitTyping} may commit a literal's form variable on the
+  clone. All lost at discard, while $u$ may mention the affected
+  variables.
+\item[\textbf{(C4)}] \emph{Fresh generations} on the clone (expansion of
+  a cold \texttt{TSInst} can reach \texttt{tenv.instantiate} and, through
+  class setup, \texttt{gen}-sites such as synthetic index fields,
+  \texttt{TType.sk:1657--1672}). The clone's version counter advances
+  privately; the main counter does not.
+\end{itemize}
+
+\subsection{Over-approximation: the positive result}
+
+\begin{theorem}[Clone Stability]
+\label{thm:lclone}
+Assume M1, M2, and the fork-state form of \textbf{L-INTER}:
+\begin{itemize}
+\item[\textbf{(I$_f$)}] $\sem{t_1}_{\rho_f} \cap \sem{t_2}_{\rho_f}
+  \subseteq \sem{u}_{\rho''}$ \emph{for every $\rho'' \sqsupseteq
+  \rho_f$}, where $u = \mathsf{inter}$ computed by a well-bracketed run
+  from $\rho_f$.
+\end{itemize}
+Then \textbf{L-CLONE} holds: the installed $u$ over-approximates the
+fork-state intersection under the main substitution at install time and
+at all later states. Moreover I$_f$ follows from the ordinary
+\textbf{L-INTER} plus M1 for every value whose membership does not
+depend on clone-side state that $u$ bakes or mentions; the two ways such
+dependence can arise are exactly C2/C3 occurrences and C4 identifiers,
+analyzed below.
+\end{theorem}
+\begin{proof}[Proof sketch]
+The clone evolves monotonically from $\rho_f$
+(Lemma~\ref{lem:trans-mono} + Lemma~\ref{lem:restore-safe}):
+$\rho_f \stle \rho_c$. The main substitution also evolves monotonically:
+$\rho_f \stle \rho''$. Ordinary \textbf{L-INTER} gives containment in
+$\sem{u}_{\rho_c}$; the gap is that $\rho_c$ and $\rho''$ are
+\emph{incomparable} (divergent branches of $\rho_f$), so M1 cannot bridge
+them directly — this was the first failed proof attempt, and the reason
+\textbf{L-CLONE} cannot be reduced to \textbf{L-INTER} + M1 alone.
+The bridge is per-occurrence: (C2) material \emph{baked} into $u$ is the
+clone-state envelope of the variable at read time, which by monotonicity
+of the clone run is $\supseteq$ its fork-state envelope; baked material
+is state-independent thereafter, so reading $u$ under $\rho''$ yields at
+least what reading it with fork-state envelopes would — and the
+fork-state intersection is contained in that by \textbf{L-INTER}
+\emph{evaluated at} $\rho_f$. (C1) occurrences carry their constraints
+with them and denote
+$\env{\rho''}{\alpha} \cap \bigcap\sem{\mathrm{cstr}}$, which by
+$\rho_f \stle \rho''$ contains the fork-state value — the intersection
+semantics is exact here. (C3) growth affects $u$ only through signature
+positions (\texttt{TFun::inter} returns one of the two function terms,
+whose parameter/return types may mention clone-grown variables), and
+signatures are opaque to $\sem{\cdot}$ — the main paper's
+signature-opacity deflection applies verbatim. Field-get positions reach
+\texttt{inter} recursively and fall under C1/C2. What the sketch does
+\emph{not} cover is C4, next.
+\end{proof}
+
+\subsection{Clone-escaped fresh identifiers: an unreachable hazard}
+
+\begin{finding}[Identifier collision between clone and main is
+unreachable]
+\label{find:clone-gen}
+Fresh identifiers are drawn from the \emph{version counter}
+(\texttt{TTypeSubst.sk:237--253}), and a clone forks the counter: if a
+clone ever generated a variable (C4), its id would equal the id the
+\emph{main} substitution assigns to its own next generation, and a
+clone-generated occurrence escaping into the installed $u$ in a
+semantically visible position (a field get type — synthetic index fields
+qualify, \texttt{TType.sk:1657--1672}) would, once the main substitution
+binds the colliding id, silently read an unrelated variable's envelope.
+Nothing in Theorem~\ref{thm:lclone}'s bridge would cover that: the
+occurrence's denotation would not be monotone from fork state. The hazard
+is settled by a reachability audit: of all ten \texttt{gen*} call sites,
+\emph{none} lies in the clone-compute-install call tree
+(\texttt{inter} / \texttt{removeConstant} / \texttt{expand} /
+\texttt{instantiate} / \texttt{normalize} / \texttt{newObject} /
+\texttt{addFields}); in particular the two
+\texttt{createSyntheticIndex} generators have exactly two callers, both
+in the object-literal branch of expression typing, which runs on the
+\emph{main} substitution — never under a refinement clone. So no
+clone-side fresh identifier is ever generated during
+clone-compute-install, no collision can occur, and CL-1
+(\S\ref{sec:status}) is \emph{discharged}. The discharge rests on a
+code invariant that should be guarded: assert (and CI-check) that
+clone-side runs of \texttt{inter} never call \texttt{gen*}; drawing ids
+from a counter shared by reference would remove the hazard class
+altogether.
+\end{finding}
+
+\paragraph{Shared \texttt{results}.} Clone-side speculative
+\texttt{TFun::isSub} successes record subtyping edges into the shared
+accumulator even when the exploration is discarded
+(\texttt{TTypeSubtyping.sk:1614--1621}). This does not touch typing
+state; it can only over-connect the callgraph consumed by later phases.
+Out of scope for type soundness, recorded here so the boundary is
+explicit.
+
+%==========================================================================
+\section{No Commitment on Failure: the Rollback Audit}
+\label{sec:rollback}
+
+The governing contract is stated at the top of the subtyping module
+(\texttt{TTypeSubtyping.sk:4--7}): \emph{every \texttt{isSub} function
+must guarantee that when it returns \texttt{STError}, the subst is
+unchanged}. This section verifies it, pairs every save with its restores,
+and documents the one place the letter of the contract is violated by
+design.
+
+\subsection{Exhaustive save/restore pairing}
+
+All \texttt{save}/\texttt{restore} sites in the pinned revision
+(\texttt{grep} over \texttt{src/}), each verified well-bracketed
+(restore uses the same activation's snapshot; no early exit escapes the
+pair):
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\small
+\begin{tabular}{@{}p{0.5cm}>{\raggedright\arraybackslash}p{7.4cm}>{\raggedright\arraybackslash}p{5.4cm}@{}}
+\toprule
+\# & site (save; restore) & restore condition \\
+\midrule
+1 & \texttt{TFields::isSub} (\texttt{TTypeSubtyping.sk:796; 798}) &
+  on \texttt{STError} \\
+2 & \texttt{STypes::isSub} (\texttt{:1100; 1127}) & on failure \\
+3 & \texttt{Clauses::isSub} (\texttt{:1140; 1160}) &
+  on overall failure (clause with no matching partner) \\
+4 & \texttt{TObject::isSub} outer (\texttt{:1810; 1822}) &
+  on overall failure \\
+5 & \texttt{TObject::isSub} per branch pair (\texttt{:1814; 1819}) &
+  after each failed pairing, before trying the next \\
+6 & \texttt{TType::isSub\_} (\texttt{:1550; 1576}) &
+  on validation failure (growth persists on success, intentionally) \\
+7 & \texttt{growTVars} per-variable (\texttt{:1407; 1438}) &
+  on constraint-check failure \\
+8 & \texttt{isCovered} probes (\texttt{:1345; 1356}) &
+  after \emph{every} probe, hit or miss \\
+9 & \texttt{TFun::isSub} (\texttt{:1609; 1612}) & on \texttt{STError} \\
+10 & \texttt{ArrayLit} tuple commit (\texttt{TArrayLitTyping.sk:402;
+  416}) & on element-check failure (case 2c) \\
+11 & \texttt{resolveSpreadToTuple} (\texttt{TVariadicTyping.sk:51;
+  64,70,78}) & on every \texttt{None} path \\
+12 & \texttt{inferRestTypeVar} (\texttt{TVariadicTyping.sk:124; 130}) &
+  on constraint failure (error also reported) \\
+13 & \texttt{satisfies} (\texttt{TypeCheckExpr.sk:2508; 2517}) &
+  \emph{unconditionally} — \texttt{satisfies} must not commit inference \\
+14 & clone-as-rollback: \texttt{TEnv.sk:222},
+  \texttt{TypeCheckRefine.sk} (5 sites), \texttt{TypeCheckExpr.sk}
+  (6 sites), pretty-printer & discard instead of restore \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three structural corollaries. (i) Well-bracketing holds at all sites, so
+Lemmas~\ref{lem:restore-safe} and~\ref{lem:version-values} apply
+globally. (ii) \texttt{SavedSubst} captures \emph{all} mutable typing
+state (Definition~\ref{def:fullstate}); the two exclusions are
+\texttt{freezeCandidates} — safe by its own push/pop bracketing, U1 —
+and \texttt{tenv.seenSub} — safe by \S\ref{sec:tenv-seensub}. In
+particular a rollback also erases \texttt{seenSub}/\texttt{seenInter}/%
+\texttt{seenUnion}/\texttt{seenExpansion} entries recorded in the failed
+subtree, so no stale \emph{success} memo survives a rollback. (iii)
+Because no environment binding is written between any save and its
+restore (refinement installs happen strictly after the operations
+return), a restore reinstates a state under which every installed type
+was already satisfied — rollback needs no analogue of \textbf{L-MONO}.
+
+\subsection{The intentional exception: array-literal commitments}
+\label{sec:arraylit-exception}
+
+\texttt{ArrayLitTyping::subtyping} runs at the top of
+\texttt{TType::isSub\_} \emph{before} the save at \texttt{:1550}
+(\texttt{TTypeSubtyping.sk:1545}). Its cases 1 and 2b commit the
+literal's form variable and then return the result of a subsequent
+check \emph{even when that check fails}
+(\texttt{TArrayLitTyping.sk:334--341, 368--392}): the commitment
+persists on an \texttt{STError} return, violating the module contract's
+letter. This is deliberate (``irreversible'', \texttt{:140}); case 2c by
+contrast restores the commitment on failure (row 10).
+
+\begin{lemma}[The carve-out is sound for accepted programs]
+\label{lem:arraylit-carveout}
+A commitment persisting on a failed check cannot cause unsound
+acceptance, provided every caller that \emph{discards} an
+\texttt{STError} (uses \texttt{isSub} as a probe) either wraps the call
+in save/restore or cannot reach an uncommitted array literal.
+\end{lemma}
+\begin{proof}[Proof, with caller audit]
+On a non-discarded failure the program is rejected — the committed type
+may be wrong for the runtime value (case 2b commits to
+\texttt{Array<expected>} even when the elements fail against
+\texttt{expected}), but no judgement about an accepted program uses it.
+The risk is a discarded failure. Probe callers: \texttt{isCovered}
+(row 8) restores around every probe; \texttt{growTVars} constraint checks
+(row 7) restore on failure; the speculative probes inside
+\texttt{inter\_} (\texttt{TTypeInter.sk:163--188}) and
+\texttt{SType::overlaps} (\texttt{:392--393}) compare a boxed-primitive
+instance against a single \texttt{SType} — neither side is a bare
+uncommitted \texttt{TArrayLit}, which is the only trigger shape
+(\texttt{getSingleArrayLitUncommitted} requires a sole
+\texttt{TArrayLit} inst, \texttt{TArrayLitTyping.sk:68--82});
+\texttt{TFun::inter}'s two attempts run under \texttt{TFun::isSub}'s own
+save/restore (row 9), which was taken \emph{before} the inner
+\texttt{isSub\_} ran, hence before the commitment — a failed first
+attempt rolls the commitment back. The constraint probe at
+\texttt{TEnv.sk:222} runs on a clone (row 14).
+\end{proof}
+
+This audit is complete for the pinned revision but fragile — any new
+\texttt{isSub}-as-probe without a save/restore wrapper re-opens it.
+Sub-obligation RB-1 in \S\ref{sec:status} records the maintenance
+condition.
+
+\subsection{\texttt{tenv.seenSub}: the \#446 argument, made precise}
+\label{sec:tenv-seensub}
+
+\texttt{tenv.seenSub} is the coinduction set of \texttt{isSub\_}: on
+entry, if $(\mathsf{version}, u_1, u_2)$ is present the check succeeds by
+coinductive hypothesis; otherwise the triple is recorded and threaded
+into the recursive calls (\texttt{TTypeSubtyping.sk:1536--1537}). It is
+not part of \texttt{SubstState}, and no rollback ever touches it. Its
+safety rests on two independent mechanisms:
+
+\begin{lemma}[Version-Keyed Hypotheses Are Inert or Exact]
+\label{lem:tenv-inert}
+A lookup that hits an entry $(v, u_1, u_2)$ observes
+$\mathsf{values}$ identical to the recorder's state at record time.
+Consequently a hypothesis is either consulted under exactly the binding
+state it was made in, or (after any growth, seal, or fresh generation,
+each of which bumps the version) it is \emph{inert} — present but
+unmatchable.
+\end{lemma}
+\begin{proof}
+Two mechanisms. \emph{Path-scoping} (U2, \S\ref{sec:model}):
+\texttt{TEnv} is frozen, so the entry is visible only in the dynamic
+extent of the recording activation — entries never leak across sibling
+explorations or survive returns, which already rules out the
+cross-branch collision of Finding~\ref{find:version-collision}.
+\emph{Record-point coherence}: the record happens at the activation's
+entry, so Lemma~\ref{lem:version-values} applies to every lookup in the
+extent: version $= v$ implies \texttt{values} equal to record time.
+(The lemma's premise — restores in the extent use snapshots from the
+extent — is row-by-row verified in \S\ref{sec:rollback}.)
+\end{proof}
+
+This is the precise content of the \#446 regression class and its guard:
+without the version key, a rolled-back exploration's hypothesis could be
+consulted under different bindings \emph{within the same extent} (probe
+loops, rows 7--8, restore and re-grow inside one \texttt{isSub\_}
+activation); the version key makes exactly those entries inert. The
+prerequisite ``version is bumped on every \texttt{values} write'' is
+verified at all three write sites (\texttt{TTypeSubst.sk:181,195,205});
+note \texttt{gen*} bumps too, which additionally protects hypotheses
+against fresh-variable aliasing inside an extent.
+
+By contrast, \texttt{subst.seenSub} — the success memo, \emph{not}
+version-keyed — is protected against rollback staleness by living inside
+\texttt{SubstState} (corollary (ii) above), and against growth staleness
+by Theorem~\ref{thm:stable}; it is the memo that inherits the MR-1
+hazard (Finding~\ref{find:freeze-memo}).
+
+%==========================================================================
+\section{Status Table and Ledger Edits}
+\label{sec:status}
+
+Named sub-obligations introduced by this paper:
+
+\begin{itemize}
+\item[\textbf{MR-1}] No \texttt{subst.seenSub} memo recorded while
+  \texttt{freezeCandidates} is set may outlive subsequent growth of an
+  open candidate readable from its left-hand side
+  (Finding~\ref{find:freeze-memo}). Status: \textsc{violated}, witnessed
+  end-to-end (issue draft
+  \path{issues/freeze-window-stale-memo-caches.md}). Fix options:
+  version-key the memo, or skip memo insertion under freeze; either must
+  also cover \texttt{seenInter}. Pinned test recommended.
+\item[\textbf{CL-1}] No fresh variable generated on a clone may occur in
+  a type installed against the main substitution
+  (Finding~\ref{find:clone-gen}). Status: discharged — the property
+  holds, verified unreachable by the \texttt{gen*} call-site audit;
+  guard the underlying invariant with the recommended CI assertion
+  (\texttt{gen*} unreachable under clones used by refinement).
+\item[\textbf{RB-1}] Maintenance condition: every \texttt{isSub} caller
+  that discards \texttt{STError} must wrap the call in save/restore or
+  be unreachable by uncommitted array literals
+  (Lemma~\ref{lem:arraylit-carveout}); a CI grep for new probe sites is
+  the cheap enforcement.
+\item[\textbf{M1}] Semantic monotonicity of $\sem{\cdot}$ in variable
+  envelopes (Definition~\ref{def:conditions}) — a property of the main
+  paper's semantics, provable by structural induction; should be added
+  there as a lemma rather than assumed here.
+\end{itemize}
+
+What this paper establishes, row by row:
+
+\begingroup
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.2cm}>{\raggedright\arraybackslash}p{9.4cm}@{}}
+\toprule
+\textbf{Row} & \textbf{Established here} \\
+\midrule
+L-MONO & Theorem~\ref{thm:lmono}, conditional on M1
+  and L-UNION; the \texttt{setConstraint} threat is void
+  (Lemma~\ref{lem:setconstraint}) and the $\mathrm{range}(\Env)$
+  restriction is droppable \\
+Obl.\ Monotone Reads & general statement via
+  Theorem~\ref{thm:stable} (given M1 + the MR/BR audit,
+  \S\ref{sec:mr-audit}); the residue MR-1 is witnessed
+  (Finding~\ref{find:freeze-memo}) \\
+L-CLONE & Theorem~\ref{thm:lclone} given I$_f$
+  (fork-state L-INTER; registry row I-F); the id-collision hazard CL-1
+  discharged as
+  unreachable (Finding~\ref{find:clone-gen}), CI-assertion guard
+  recommended \\
+Obl.\ No Commitment on Failure & 14-row save/restore
+  audit (\S\ref{sec:rollback}; \texttt{SavedSubst} completeness;
+  \texttt{freezeCandidates} and \texttt{tenv.seenSub} exclusions
+  justified, Lemma~\ref{lem:tenv-inert}); array-literal commitments
+  persist on failure by design, sound by
+  Lemma~\ref{lem:arraylit-carveout} under RB-1 \\
+\bottomrule
+\end{tabular}
+\endgroup
+
+\paragraph{Registry.}
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence. The
+registry rows it supports:
+
+\input{../generated/rows-E}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-E}
+
+\paragraph{Summary.} Three of the four rows close (L-MONO; No
+Commitment on Failure, with a documented carve-out; L-CLONE modulo
+I$_f$, its id-collision hazard verified unreachable and guarded by a CI
+assertion). The fourth — Monotone Reads — is \textsc{proved} at every
+audited site except its one sharp residue, MR-1, which is
+\textsc{violated} with an end-to-end witness (issue draft
+\path{issues/freeze-window-stale-memo-caches.md}); the fix
+(version-keying or freeze-window write suppression) must cover both
+\texttt{seenSub} and \texttt{seenInter}.
+
+%==========================================================================
+\appendix
+\section{Implementation Anchors}
+
+Pinned to \texttt{9108f339}.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.8cm}@{\quad}>{\raggedright\arraybackslash}p{9.8cm}@{}}
+\toprule
+\textbf{Model} & \textbf{Implementation} \\
+\midrule
+$\rho$ (seven fields) & \texttt{SubstState} (TTypeSubst.sk:13--49) \\
+snapshot / reinstate & \texttt{SavedSubst}, \texttt{save},
+  \texttt{restore} (TTypeSubst.sk:36--74) \\
+transitions & \texttt{Subst::grow/get} (TTypeSubst.sk:151--222) \\
+fresh ids from version & \texttt{gen/genForField/genForLiteralCommitment}
+  (TTypeSubst.sk:237--253) \\
+$\mathsf{freeze}$ (unsaved) & \texttt{Subst.freezeCandidates}
+  (TTypeSubst.sk:76--89); push/pop TTypeSubtyping.sk:1422--1434 \\
+clone fork & \texttt{Subst::clone} (TTypeSubst.sk:137--149) \\
+occurrence constraints & \texttt{TVar}, \texttt{setConstraint}
+  (TType.sk:2437--2469) \\
+success memo & \texttt{subst.seenSub}
+  (TTypeSubtyping.sk:1521,1524) \\
+coinduction hypotheses & \texttt{tenv.seenSub} (TEnv.sk:74;
+  TTypeSubtyping.sk:1536--1537); \texttt{tenv.seenInter}
+  (TEnv.sk:69; TTypeInter.sk:154--157) \\
+result memos & \texttt{seenInter/seenUnion/seenExpansion}
+  (TTypeInter.sk:107--125; TTypeUnion.sk:29--32; TType.sk:629--635) \\
+uniform-variance expansion & \texttt{expandToVectors}
+  (TType.sk:613--657) \\
+validation spine & \texttt{isSub\_/growTVars/isCovered}
+  (TTypeSubtyping.sk:1318--1579) \\
+clone-compute-install & \texttt{evalVarEquality} etc.\
+  (TypeCheckRefine.sk:87--106,176--201,571--576) \\
+main-subst refinement ops & \texttt{setLocalFilterMap}
+  (TypeCheckRefine.sk:615); \texttt{evalIsArray/evalInstanceof}
+  (TypeCheckRefine.sk:334,361) \\
+form commitments & \texttt{ArrayLitTyping}
+  (TArrayLitTyping.sk:140--148,326--432) \\
+external grow callers & TArrayLitTyping.sk:147,352;
+  TVariadicTyping.sk:125; TypeCheckUtils.sk:310,321,332 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
