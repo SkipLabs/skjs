@@ -158,3 +158,138 @@ declare const enum DCE {
 function ambientConstEnumMember(): 0 {
   return DCE.A;
 }
+
+enum Shifted {
+  R = 1,
+  // @skjs-expect-error This operator requires a numeric operand
+  W = R << 1,
+}
+
+function shiftedMember(): 2 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return Shifted.W;
+}
+
+const enum ConstShifted {
+  R = 1,
+  // @skjs-expect-error const enum member initializers must be constant expressions
+  W = R << 1,
+}
+
+function constShiftedMember(): 2 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return ConstShifted.W;
+}
+
+enum Arith {
+  A = 1,
+  // @skjs-expect-error Cannot find name
+  B = A + 1,
+}
+
+function arithMember(): 2 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return Arith.B;
+}
+
+enum ComputedRef {
+  A = ".".length,
+  // @skjs-expect-error Cannot find name
+  B = A,
+}
+
+function computedRefMember(): number {
+  return ComputedRef.B;
+}
+
+enum StrConcat {
+  // @skjs-expect-error Computed enum member values must be numbers
+  A = "a" + "b",
+}
+
+function strConcatMember(): "ab" {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return StrConcat.A;
+}
+
+enum FwdElement {
+  A = FwdElement["B"],
+  B = 1,
+}
+
+enum CrossEarlier {
+  A = Shifted.R,
+}
+
+function crossEarlierMember(): 1 {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return CrossEarlier.A;
+}
+
+enum CrossLater {
+  A = CrossLaterTarget.B,
+}
+
+enum CrossLaterTarget {
+  B = 1,
+}
+
+function crossLaterMember(): number {
+  return CrossLater.A;
+}
+
+enum FracTail {
+  A = 1.5,
+  B,
+  // @skjs-expect-error Enum member must have initializer
+  C,
+}
+
+function fracTailMember(): number {
+  return FracTail.C;
+}
+
+enum BeyondDouble {
+  A = 9007199254740992,
+  B,
+}
+
+function beyondDoubleMember(): number {
+  return BeyondDouble.B;
+}
+
+enum SpelledBig {
+  A = 0x20000000000001,
+}
+
+function spelledBigCanonicalReverse(): string {
+  // @skjs-expect-error Property '9007199254740994' does not exist on this type
+  return SpelledBig[9007199254740994];
+}
+
+function duplicateNameMemberType(): D.A {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return D.A;
+}
+
+function switchDuplicateValueCase(x: Same): number {
+  switch (x) {
+    case Same.A:
+      return 0;
+    // @skjs-expect-warning This case is unreachable: its value is not in the switched type
+    case Same.B:
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+declare namespace AmbientNS {
+  enum NE {
+    A,
+  }
+}
+
+function ambientNamespaceEnumMember(x: AmbientNS.NE): 0 {
+  return x;
+}

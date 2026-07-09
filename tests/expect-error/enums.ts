@@ -185,3 +185,29 @@ function bitFlagsCombination(): Flags {
 function unknownMemberType(x: E.C): void {
   void x;
 }
+
+function keyOfIncludesReverseKeys(): keyof typeof E {
+  return 0;
+}
+
+function switchCaseElementAccess(x: E): number {
+  switch (x) {
+    // @skjs-expect-error A switch case expression must be a plain value, but this one may throw.
+    case E["A"]:
+      return 0;
+    default:
+      return 1;
+  }
+}
+
+declare function pickCase(): number;
+
+function switchCaseMayThrow(n: number): number {
+  switch (n) {
+    // @skjs-expect-error A switch case expression must be a plain value, but this one may throw.
+    case pickCase():
+      return 0;
+    default:
+      return 1;
+  }
+}
