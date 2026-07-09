@@ -151,6 +151,7 @@ function ambientUninitializedMemberIsOpaque(): 1 {
 }
 
 declare enum AmbientComputed {
+  // @skjs-expect-error In ambient enum declarations member initializer must be constant expression
   A = ".".length,
 }
 

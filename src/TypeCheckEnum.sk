@@ -602,6 +602,16 @@ extension class TypeChecker {
             ],
             TSCode(2474),
           )
+        } else if (en.isAmbient) {
+          tcenvl.error(
+            Array[
+              (
+                m.name.pos,
+                "In ambient enum declarations member initializer must be constant expression",
+              ),
+            ],
+            TSCode(1066),
+          )
         } else {
           m.initializer.each(e ->
             tcenvl.collectErrors(() -> {
