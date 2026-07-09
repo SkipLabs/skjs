@@ -17,8 +17,12 @@ function passThrough(x: AmbientWithUntyped): AmbientWithUntyped {
   return x;
 }
 
-// Two instantiations of a generic ambient class are incompatible
-// because the placeholder's targs differ.
+// Two instantiations of a generic ambient class are incompatible when a
+// real (annotated) field's type depends on the type argument: here `value: T`
+// differs (string vs number). The un-annotated `secret` placeholder is the
+// same opaque atom for both instantiations (its identity ignores the type
+// arguments — see sharedPlaceholderAtom below), so it is not what drives the
+// incompatibility.
 declare class Box<T> {
   secret;
   value: T;
@@ -38,13 +42,14 @@ class RegularPublicNoType {
   x;
 }
 
-// Reading an un-annotated ambient field into a concrete type should be
-// rejected: the field's type is opaque, not a concrete type. It is currently
-// accepted because the placeholder collapses to `never` (bottom), a subtype
-// of everything (issue #775). tsc treats the field as `any` and accepts this
-// read too (it reports the missing annotation at the declaration, TS7008).
+// Reading an un-annotated ambient field into a concrete type is rejected:
+// the placeholder head-expands to an opaque atom, not to `never` (bottom).
+// Before #775 it collapsed to `never` — a subtype of everything — so the read
+// was unsoundly accepted into any type. tsc treats the field as `any` and
+// accepts this read (it reports the missing annotation at the declaration,
+// TS7008); SKJS is sound and rejects it.
 function readUntypedFieldIntoConcrete(x: AmbientWithUntyped): void {
-  // TODO(#775): should be rejected — the placeholder currently reads as `never`.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const s: string = x.pub;
 }
 
