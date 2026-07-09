@@ -37,3 +37,38 @@ class RegularPublicNoType {
   // @skjs-expect-error Member 'x' must have an explicit type annotation
   x;
 }
+
+// Reading an un-annotated ambient field into a concrete type should be
+// rejected: the field's type is opaque, not a concrete type. It is currently
+// accepted because the placeholder collapses to `never` (bottom), a subtype
+// of everything (issue #775). tsc treats the field as `any` and accepts this
+// read too (it reports the missing annotation at the declaration, TS7008).
+function readUntypedFieldIntoConcrete(x: AmbientWithUntyped): void {
+  // TODO(#775): should be rejected — the placeholder currently reads as `never`.
+  const s: string = x.pub;
+}
+
+// Reading the field where its own (opaque) type or a wider `unknown` is
+// expected stays accepted: the field is opaque, not unusable.
+function readUntypedFieldAsUnknown(x: AmbientWithUntyped): unknown {
+  return x.pub;
+}
+
+// The write side is rejected: nothing concrete is a subtype of the opaque
+// placeholder.
+function writeUntypedField(x: AmbientWithUntyped): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
+  x.pub = "hello";
+}
+
+// The placeholder ignores the class's type arguments, so two instantiations
+// of a generic ambient class whose only differing field is un-annotated are
+// mutually assignable — matching tsc, which sees the field as structurally
+// identical across instantiations.
+declare class OnlySecret<T> {
+  secret;
+}
+declare function onlySecret<T>(): OnlySecret<T>;
+function sharedPlaceholderAtom(): OnlySecret<number> {
+  return onlySecret<string>();
+}
