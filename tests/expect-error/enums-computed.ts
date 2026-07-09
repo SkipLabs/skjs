@@ -268,6 +268,7 @@ function spelledBigCanonicalReverse(): string {
 }
 
 function spelledBigSpelledReverse(): "A" {
+  // @skjs-expect-error Property '0x20000000000001' does not exist on this type
   return SpelledBig[0x20000000000001];
 }
 

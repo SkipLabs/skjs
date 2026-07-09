@@ -500,7 +500,19 @@ extension base class TEnv {
         access => FAPublic(),
       }
     };
-    if (members.all(m -> m.value is EMVLiteral _)) {
+    // Reverse fields also need every numeric value in canonical form: a
+    // spelled imprecise literal (e.g. 0x20000000000001, beyond 2^53) does
+    // not name its runtime key String(Number(x)), and could collide with a
+    // canonical member's key, so no individual entry would be trustworthy.
+    reverseTrustworthy =
+      members.all(m -> m.value is EMVLiteral _) &&
+      members.all(m ->
+        enumNumLiteralVal(m.value) match {
+        | Some(v) -> isJSNumericString(v)
+        | None() -> true
+        }
+      );
+    if (reverseTrustworthy) {
       for (m in members) {
         enumNumLiteralVal(m.value).each(val -> {
           fields![FieldNameString(val)] = TField::create{
