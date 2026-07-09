@@ -161,40 +161,33 @@ function ambientConstEnumMember(): 0 {
 
 enum Shifted {
   R = 1,
-  // @skjs-expect-error This operator requires a numeric operand
   W = R << 1,
 }
 
 function shiftedMember(): 2 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Shifted.W;
 }
 
 const enum ConstShifted {
   R = 1,
-  // @skjs-expect-error const enum member initializers must be constant expressions
   W = R << 1,
 }
 
 function constShiftedMember(): 2 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return ConstShifted.W;
 }
 
 enum Arith {
   A = 1,
-  // @skjs-expect-error Cannot find name
   B = A + 1,
 }
 
 function arithMember(): 2 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return Arith.B;
 }
 
 enum ComputedRef {
   A = ".".length,
-  // @skjs-expect-error Cannot find name
   B = A,
 }
 
@@ -203,16 +196,15 @@ function computedRefMember(): number {
 }
 
 enum StrConcat {
-  // @skjs-expect-error Computed enum member values must be numbers
   A = "a" + "b",
 }
 
 function strConcatMember(): "ab" {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return StrConcat.A;
 }
 
 enum FwdElement {
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = FwdElement["B"],
   B = 1,
 }
@@ -222,11 +214,11 @@ enum CrossEarlier {
 }
 
 function crossEarlierMember(): 1 {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return CrossEarlier.A;
 }
 
 enum CrossLater {
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = CrossLaterTarget.B,
 }
 
@@ -268,7 +260,6 @@ function spelledBigCanonicalReverse(): string {
 }
 
 function duplicateNameMemberType(): D.A {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return D.A;
 }
 

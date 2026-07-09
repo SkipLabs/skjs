@@ -1397,7 +1397,7 @@ base class TEnv{
                 TSCode(2315),
               )
             };
-            return this.enumMemberType(en, memberName) match {
+            return this.enumMemberType(tcenvb, en, memberName) match {
             | Some(memberTy) -> memberTy.withPos(pos)
             | None() ->
               fatalError(
@@ -1591,7 +1591,7 @@ base class TEnv{
           subst = Subst::mcreate(tcenvb);
           return this.newStatic(subst, varName)
         | TypeDef _ -> !sawTypeAlias = true
-        | en @ Enum _ -> return this.enumStatic(en)
+        | en @ Enum _ -> return this.enumStatic(tcenvb, en)
         | FDVar _ -> !sawValueDef = true
         }
       };

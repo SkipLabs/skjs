@@ -1708,7 +1708,7 @@ extension class TypeChecker {
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv.subst, c.name);
             break staticClass
-          | en @ Enum _ -> break this.enumStatic(en)
+          | en @ Enum _ -> break this.enumStatic(tcenv, en)
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
               tcenv.error(
