@@ -199,7 +199,8 @@ type ObjWithUnion = {
 };
 
 function testUnionInObject(): void {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // Accepted via ownership transfer: the fresh literal's field setter
+  // obligation is waived (the annotation governs the value afterwards).
   const obj: ObjWithUnion = {
     fn: returnString,
   };
