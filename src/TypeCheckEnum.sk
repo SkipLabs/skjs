@@ -42,6 +42,12 @@ base class EnumNumberReason {
   // Auto-increment from a non-integer or out-of-double-range predecessor;
   // sound over-approximation (tsc folds e.g. 1.5 + 1 = 2.5 precisely).
   | ENRImprecise()
+  // A qualified reference to the enum's own member that is not declared
+  // EARLIER (`A = E.B` with B later, `A = E.A`): at runtime the member read
+  // yields undefined while the initializer runs, so it must be rejected
+  // (tsc TS2651). Typing it as an expression would unsoundly see the
+  // completed enum object.
+  | ENRSelfForwardReference()
 }
 
 class EnumMember(name: Name, value: EnumMemberValue, initializer: ?Expr)
@@ -118,19 +124,24 @@ extension base class TEnv {
       return EMVLiteral(st)
     | _ -> void
     };
-    memberRef = e.value match {
-    | Var(n) -> Some(n.value)
+    e.value match {
+    | Var(n) ->
+      byName.maybeGet(n.value) match {
+      | Some(v) -> v
+      // A bare forward reference falls to the computed path, where the
+      // expression check reports the unresolved name.
+      | None() -> EMVNumber(ENRComputed())
+      }
     | Dot(
       NormalDot(),
       Expr(_, Var(base)),
       fieldName,
     ) if (base.value == en.name.value) ->
-      Some(fieldName.value)
-    | _ -> None()
-    };
-    memberRef.flatMap(m -> byName.maybeGet(m)) match {
-    | Some(v) -> v
-    | None() -> EMVNumber(ENRComputed())
+      byName.maybeGet(fieldName.value) match {
+      | Some(v) -> v
+      | None() -> EMVNumber(ENRSelfForwardReference())
+      }
+    | _ -> EMVNumber(ENRComputed())
     }
   }
 
@@ -271,6 +282,16 @@ extension class TypeChecker {
       | EMVNumber(ENRAmbient())
       | EMVNumber(ENRImprecise()) ->
         void
+      | EMVNumber(ENRSelfForwardReference()) ->
+        tcenvl.error(
+          Array[
+            (
+              m.name.pos,
+              "A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums",
+            ),
+          ],
+          TSCode(2651),
+        )
       | EMVNumber(ENRMissingInitializer()) ->
         tcenvl.error(
           Array[(m.name.pos, "Enum member must have initializer")],

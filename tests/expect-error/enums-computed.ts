@@ -76,9 +76,11 @@ enum Fwd {
   B = 1,
 }
 
-// FIXME: unsound — at runtime FwdQualified.B is undefined while A's
-// initializer runs, so A is undefined, not a number; tsc rejects (TS2651).
+// A qualified forward reference is rejected like tsc (TS2651): at runtime
+// FwdQualified.B is undefined while A's initializer runs, so typing it as
+// an expression (which sees the completed enum object) would be unsound.
 enum FwdQualified {
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = FwdQualified.B,
   B = 1,
 }
