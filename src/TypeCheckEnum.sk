@@ -1,0 +1,717 @@
+/***************************************************************************/
+/* Enum declarations (issue #762).
+ *
+ * An enum declares both a type and a value:
+ *  - the type `E` is the union of its member types, and each member type
+ *    `E.A` is the member's number/string literal type (semantic value-set
+ *    reading: at runtime `E.A` IS its literal value);
+ *  - the value `E` is a frozen object with a readonly field per member and,
+ *    when every member value is statically known, readonly reverse-mapping
+ *    fields (numeric value -> member name) matching the runtime object.
+ *
+ * Members whose value cannot be known statically (computed initializers,
+ * ambient uninitialized members) get the full `number` type, a sound
+ * over-approximation that also reproduces tsc's opaque computed members.
+ */
+/***************************************************************************/
+
+module SKJS;
+
+// The statically-known value of an enum member.
+base class EnumMemberValue {
+  children =
+  // A single number or string literal.
+  | EMVLiteral(TPrimValue)
+  // A statically-unknown number.
+  | EMVNumber(EnumNumberReason)
+}
+
+// Why an enum member's value is a statically-unknown number.
+base class EnumNumberReason {
+  children =
+  // The initializer is not a constant expression. The declaration check
+  // types it and requires `number` (tsc TS18033/TS2474).
+  | ENRComputed()
+  // A non-ambient member without initializer whose predecessor has no known
+  // numeric value (tsc TS1061); recovered as `number`.
+  | ENRMissingInitializer()
+  // An ambient (`declare enum`, non-const) member without initializer: tsc
+  // treats these as opaque/computed, and the declaration's implied values are
+  // not trusted.
+  | ENRAmbient()
+  // Auto-increment from a non-integer or out-of-double-range predecessor;
+  // sound over-approximation (tsc folds e.g. 1.5 + 1 = 2.5 precisely).
+  | ENRImprecise()
+  // A constant expression whose numeric value is not tracked precisely
+  // (references to unknown-valued members, fractional or out-of-range
+  // arithmetic). Certainly a number at runtime; no diagnostics.
+  | ENRConstUnknown()
+  // A member reference that reads a not-yet-initialized member (`A = E.B`
+  // with B later, `A = E.A`, a member of a same-file enum declared after
+  // this one, or a cyclic cross-enum chain): at runtime the read yields
+  // undefined while the initializer runs, so it must be rejected (tsc
+  // TS2651). Typing it as an expression would unsoundly see the completed
+  // enum object.
+  | ENRSelfForwardReference()
+}
+
+class EnumMember(name: Name, value: EnumMemberValue, initializer: ?Expr)
+
+// Result of constant-folding an enum member initializer expression.
+base class EnumFold {
+  children =
+  // A number with this canonical literal value.
+  | EFNum(String)
+  // A string with this literal value.
+  | EFStr(String)
+  // Certainly a number, value not tracked precisely.
+  | EFNumUnknown()
+  // Reads a not-yet-initialized enum member (see ENRSelfForwardReference).
+  | EFForwardRef()
+  // Not a constant expression.
+  | EFNotConst()
+}
+
+// JS ToInt32 of an integer already exact in a double.
+private fun enumToInt32(x: Int): Int {
+  u = enumToUint32(x);
+  if (u >= 2147483648) u - 4294967296 else u
+}
+
+// JS ToUint32 of an integer already exact in a double.
+private fun enumToUint32(x: Int): Int {
+  m = x % 4294967296;
+  if (m < 0) m + 4294967296 else m
+}
+
+private fun enumAbs(x: Int): Int {
+  if (x < 0) -x else x
+}
+
+// Floor division (JS `>>` sign-extends, i.e. floors).
+private fun enumFloorDiv(a: Int, b: Int): Int {
+  q = a / b;
+  if (a % b != 0 && (a < 0) != (b < 0)) q - 1 else q
+}
+
+// The single canonical value string of a known numeric member, if any.
+private fun enumNumLiteralVal(v: EnumMemberValue): ?String {
+  v match {
+  | EMVLiteral(TPrimValue(TNum(), Some(lits), _)) ->
+    lits.singleElt().map(lit -> lit.val)
+  | _ -> None()
+  }
+}
+
+private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
+  v match {
+  | EMVLiteral(TPrimValue(TNum(), Some(lits), _)) ->
+    lits.singleElt() match {
+    | Some(lit) -> EFNum(lit.val)
+    | None() -> EFNumUnknown()
+    }
+  | EMVLiteral(TPrimValue(TString(), Some(lits), _)) ->
+    lits.singleElt() match {
+    | Some(lit) -> EFStr(lit.val)
+    | None() -> EFNumUnknown()
+    }
+  | EMVLiteral _ -> EFNotConst()
+  | EMVNumber _ -> EFNumUnknown()
+  }
+}
+
+// An exactly-folded integer result if it stays double-safe, else unknown.
+private fun enumNumOrUnknown(r: Int): EnumFold {
+  if (enumAbs(r) <= maxSafeJSInt) EFNum(r.toString()) else EFNumUnknown()
+}
+
+// Exact integer folding within the double-safe range; everything else
+// (fractional operands, overflow, inexact division) soundly widens to an
+// unknown number.
+private fun enumFoldNumericBinop(
+  op: AssignableBinaryOperator,
+  aVal: String,
+  bVal: String,
+): EnumFold {
+  (aVal.toIntOption(), bVal.toIntOption()) match {
+  | (
+    Some(a),
+    Some(b),
+  ) if (enumAbs(a) <= maxSafeJSInt && enumAbs(b) <= maxSafeJSInt) ->
+    op match {
+    | BOAddition() -> enumNumOrUnknown(a + b)
+    | BOSubtraction() -> enumNumOrUnknown(a - b)
+    | BOMultiplication() ->
+      if (b != 0 && enumAbs(a) > maxSafeJSInt / enumAbs(b)) {
+        EFNumUnknown()
+      } else {
+        enumNumOrUnknown(a * b)
+      }
+    | BODivision() ->
+      if (b != 0 && a % b == 0) EFNum((a / b).toString()) else EFNumUnknown()
+    | BORemainder() ->
+      // JS % on integers truncates toward zero, like Int remainder.
+      if (b != 0) EFNum((a % b).toString()) else EFNumUnknown()
+    | BOExponentiation() ->
+      if (b < 0 || b > 60) {
+        EFNumUnknown()
+      } else {
+        r = 1;
+        overflow = false;
+        for (_step in Range(0, b)) {
+          if (a != 0 && enumAbs(r) > maxSafeJSInt / enumAbs(a)) {
+            !overflow = true;
+            break void
+          };
+          !r = r * a
+        };
+        if (overflow || enumAbs(r) > maxSafeJSInt) {
+          EFNumUnknown()
+        } else {
+          EFNum(r.toString())
+        }
+      }
+    | BOLeftShift() ->
+      c = enumToUint32(b).and(31);
+      EFNum(enumToInt32(enumToInt32(a).shl(c)).toString())
+    | BOSignedRightShift() ->
+      c = enumToUint32(b).and(31);
+      one = 1;
+      EFNum(enumFloorDiv(enumToInt32(a), one.shl(c)).toString())
+    | BOZeroFilledRightShift() ->
+      c = enumToUint32(b).and(31);
+      one = 1;
+      EFNum((enumToUint32(a) / one.shl(c)).toString())
+    | BOBitwiseAnd() -> EFNum(enumToInt32(a).and(enumToInt32(b)).toString())
+    | BOBitwiseOr() -> EFNum(enumToInt32(a).or(enumToInt32(b)).toString())
+    | BOBitwiseXor() -> EFNum(enumToInt32(a).xor(enumToInt32(b)).toString())
+    | BONullishCoalescing()
+    | LazyLogicalOperator _ ->
+      EFNotConst()
+    }
+  | _ -> EFNumUnknown()
+  }
+}
+
+extension base class TEnv {
+  // Elaborate the members of an enum declaration. Pure: diagnostics for the
+  // ENRComputed/ENRMissingInitializer cases are emitted once, by checkEnum.
+  // `visiting` carries the declaration positions of the enums currently
+  // being elaborated, to break cyclic cross-enum member references.
+  fun enumMembers(
+    tcenvb: mutable TCEnvBase,
+    en: Enum,
+    visiting: SortedSet<PosRange> = SortedSet[],
+  ): Array<EnumMember> {
+    // In a (non-const) ambient enum, a member without initializer is opaque
+    // ("considered computed" per tsc); `declare const enum` members are
+    // constant like in a regular enum.
+    ambientOpaque = en.isAmbient && en.isConst is None();
+    byName = mutable Map<String, EnumMemberValue>[];
+    members = mutable Vector<EnumMember>[];
+    prev: ?EnumMemberValue = None();
+    for (field in en.fields) {
+      (name, init) = field;
+      value = init match {
+      | Some(e) -> this.enumInitializerValue(tcenvb, en, byName, visiting, e)
+      | None() if (ambientOpaque) -> EMVNumber(ENRAmbient())
+      | None() ->
+        prev match {
+        | None() -> EMVLiteral(TPrimValue::single(TNum(), "0", name.pos))
+        | Some(prevValue) ->
+          enumNumLiteralVal(prevValue) match {
+          | Some(v) ->
+            v.toIntOption() match {
+            // n + 1 stays exactly representable in a double up to 2^53.
+            | Some(n) if (n < maxSafeJSInt) ->
+              EMVLiteral(
+                TPrimValue::single(TNum(), (n + 1).toString(), name.pos),
+              )
+            | _ -> EMVNumber(ENRImprecise())
+            }
+          | None() ->
+            prevValue match {
+            | EMVNumber(ENRAmbient()) -> EMVNumber(ENRAmbient())
+            // The predecessor is certainly a number, just untracked
+            // (fractional/out-of-range/constant-reference): the increment is
+            // a number too, and tsc accepts it (it folds these precisely).
+            | EMVNumber(ENRImprecise())
+            | EMVNumber(ENRConstUnknown()) ->
+              EMVNumber(ENRImprecise())
+            | _ -> EMVNumber(ENRMissingInitializer())
+            }
+          }
+        }
+      };
+      // Runtime last-write-wins: a reference to a duplicated name reads the
+      // latest preceding definition. Duplicates are reported by checkEnum.
+      byName![name.value] = value;
+      members.push(EnumMember(name, value, init));
+      !prev = Some(value)
+    };
+    members.toArray()
+  }
+
+  // The value of a member initializer expression, by constant folding.
+  private fun enumInitializerValue(
+    tcenvb: mutable TCEnvBase,
+    en: Enum,
+    byName: readonly Map<String, EnumMemberValue>,
+    visiting: SortedSet<PosRange>,
+    e: Expr,
+  ): EnumMemberValue {
+    this.enumFold(tcenvb, en, byName, visiting, e) match {
+    | EFNum(v) -> EMVLiteral(TPrimValue::single(TNum(), v, e.pos))
+    | EFStr(s) -> EMVLiteral(TPrimValue::single(TString(), s, e.pos))
+    | EFNumUnknown() -> EMVNumber(ENRConstUnknown())
+    | EFForwardRef() -> EMVNumber(ENRSelfForwardReference())
+    | EFNotConst() -> EMVNumber(ENRComputed())
+    }
+  }
+
+  // Constant-fold an enum member initializer expression: literals, unary
+  // +/-/~, binary arithmetic/bitwise operators and string concatenation
+  // over constants, and references to already-initialized enum members
+  // (bare `A`, qualified `E.A`, element access `E["A"]`, and members of
+  // other enums that are provably initialized first: same-file enums
+  // declared earlier, or imported ones). Integer arithmetic folds exactly
+  // within the double-safe range; anything fractional or out of range
+  // stays a plain (sound) `number`.
+  private fun enumFold(
+    tcenvb: mutable TCEnvBase,
+    en: Enum,
+    byName: readonly Map<String, EnumMemberValue>,
+    visiting: SortedSet<PosRange>,
+    e: Expr,
+  ): EnumFold {
+    e.value match {
+    | Number(n) -> EFNum(n)
+    | EString(s) -> EFStr(s)
+    | Unop(uop @ NumericUnaryOperator _, sub) ->
+      this.enumFold(tcenvb, en, byName, visiting, sub) match {
+      | EFNum(v) ->
+        uop match {
+        | UOPlus() -> EFNum(v)
+        | UOMinus() -> EFNum(negateJSNumberLiteral(v))
+        | UOTild() ->
+          v.toIntOption() match {
+          | Some(n) -> EFNum(enumToInt32(-(enumToInt32(n) + 1)).toString())
+          | None() -> EFNumUnknown()
+          }
+        }
+      | EFNumUnknown() -> EFNumUnknown()
+      | fwd @ EFForwardRef() -> fwd
+      | EFStr _
+      | EFNotConst() ->
+        EFNotConst()
+      }
+    | Binop(op @ AssignableBinaryOperator _, e1, e2) ->
+      this.enumFoldBinop(
+        op,
+        this.enumFold(tcenvb, en, byName, visiting, e1),
+        this.enumFold(tcenvb, en, byName, visiting, e2),
+      )
+    | Var(n) ->
+      byName.maybeGet(n.value) match {
+      | Some(v) -> enumFoldOfMemberValue(v)
+      | None() ->
+        // The enum's member scope shadows the outer scope (like tsc), so a
+        // bare name matching any sibling — including one declared later, or
+        // this member itself — is a member reference that reads an
+        // uninitialized value at runtime. Only a name that is not a member
+        // falls through to the outer-scope resolution done by the computed
+        // path.
+        if (en.fields.any(f -> f.i0.value == n.value)) {
+          EFForwardRef()
+        } else {
+          EFNotConst()
+        }
+      }
+    | Dot(NormalDot(), Expr(_, Var(base)), fieldName) ->
+      this.enumFoldMemberRef(
+        tcenvb,
+        en,
+        byName,
+        visiting,
+        base,
+        fieldName.value,
+      )
+    | Get(Expr(_, Var(base)), keyExpr) ->
+      keyExpr.value match {
+      | EString(key) ->
+        this.enumFoldMemberRef(tcenvb, en, byName, visiting, base, key)
+      | _ -> EFNotConst()
+      }
+    | _ -> EFNotConst()
+    }
+  }
+
+  // A reference `<base>.<member>` (or `<base>["member"]`) to an enum member
+  // in initializer position.
+  private fun enumFoldMemberRef(
+    tcenvb: mutable TCEnvBase,
+    en: Enum,
+    byName: readonly Map<String, EnumMemberValue>,
+    visiting: SortedSet<PosRange>,
+    base: Name,
+    memberName: String,
+  ): EnumFold {
+    if (base.value == en.name.value) {
+      return byName.maybeGet(memberName) match {
+      | Some(v) -> enumFoldOfMemberValue(v)
+      | None() -> EFForwardRef()
+      }
+    };
+    // Resolve the base speculatively, to decide whether this reference is a
+    // cross-enum member reference at all. A throwaway `probe` accumulator is
+    // used rather than `tcenvb` for two reasons:
+    //  - We must not attach diagnostics here. A base that does not resolve, or
+    //    resolves to a non-enum, is not our concern: the reference then falls
+    //    to the computed path, whose expression check (checkEnum's ENRComputed
+    //    arm) emits the authoritative diagnostic. Reporting through `tcenvb`
+    //    would duplicate or mis-attribute it.
+    //  - errorHandling must be keep-going: this fold runs from contexts that
+    //    must not abort (e.g. type normalization), and in default mode a
+    //    resolution error inside getAll would throw a fatal ErrorExn. Keep-
+    //    going collects any such error into the discarded accumulator instead.
+    probe = mutable TCEnvLight{
+      context => tcenvb.context,
+      results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
+    };
+    this.defMap.getAll(probe, base, true).find(d -> d is Enum _) match {
+    | Some(other @ Enum _) ->
+      otherPos = other.name.pos;
+      enPos = en.name.pos;
+      if (visiting.contains(otherPos)) {
+        // A cyclic cross-enum reference, reached only on a back edge while
+        // folding an ancestor enum's members to read one value. The member
+        // that is syntactically forward (references a later-declared enum) is
+        // rejected by the position check below when its own enum is checked;
+        // on the back edge we cannot tell whether THIS reference is that
+        // offending one, and tsc accepts a back-edge reference to an
+        // already-declared enum, so we treat it as an untracked number rather
+        // than assert a forward reference. (This value is only ever consumed
+        // through enumFoldOfMemberValue, which collapses it to the same
+        // unknown number regardless.)
+        return EFNumUnknown()
+      };
+      if (otherPos.fileName == enPos.fileName) {
+        if (otherPos.symbol != enPos.symbol) {
+          // Nested declaration contexts cannot be ordered by position;
+          // fall back to the computed path.
+          return EFNotConst()
+        };
+        if (otherPos.relStart.value > enPos.relStart.value) {
+          // Declared after this enum in the same file: its members are
+          // not initialized yet when this initializer runs.
+          return EFForwardRef()
+        }
+      };
+      // Same-file earlier declaration, or another module (evaluated before
+      // its importer).
+      otherMembers = this.enumMembers(tcenvb, other, visiting.set(enPos));
+      found: ?EnumMember = None();
+      for (m in otherMembers) {
+        if (m.name.value == memberName) {
+          !found = Some(m)
+        }
+      };
+      found match {
+      | Some(m) -> enumFoldOfMemberValue(m.value)
+      | None() -> EFNotConst()
+      }
+    | _ -> EFNotConst()
+    }
+  }
+
+  private fun enumFoldBinop(
+    op: AssignableBinaryOperator,
+    lhs: EnumFold,
+    rhs: EnumFold,
+  ): EnumFold {
+    (lhs, rhs) match {
+    | (fwd @ EFForwardRef(), _)
+    | (_, fwd @ EFForwardRef()) ->
+      fwd
+    | (EFNotConst(), _)
+    | (_, EFNotConst()) ->
+      EFNotConst()
+    | (EFStr(a), EFStr(b)) ->
+      op match {
+      | BOAddition() -> EFStr(a + b)
+      | _ -> EFNotConst()
+      }
+    // JS string concatenation with a number renders the canonical form.
+    | (EFStr(a), EFNum(b)) ->
+      op match {
+      | BOAddition() -> EFStr(a + b)
+      | _ -> EFNotConst()
+      }
+    | (EFNum(a), EFStr(b)) ->
+      op match {
+      | BOAddition() -> EFStr(a + b)
+      | _ -> EFNotConst()
+      }
+    | (EFStr _, EFNumUnknown())
+    | (EFNumUnknown(), EFStr _) ->
+      EFNotConst()
+    | (EFNumUnknown(), EFNum _)
+    | (EFNum _, EFNumUnknown())
+    | (EFNumUnknown(), EFNumUnknown()) ->
+      EFNumUnknown()
+    | (EFNum(a), EFNum(b)) -> enumFoldNumericBinop(op, a, b)
+    }
+  }
+
+  // The primitive value type of one member: its number/string literal, or a
+  // full `number` for a member whose value is not statically tracked.
+  static fun enumMemberPrim(m: EnumMember): TPrimValue {
+    m.value match {
+    | EMVLiteral(st) -> st
+    | EMVNumber _ -> TPrimValue::full(TNum(), m.name.pos)
+    }
+  }
+
+  // The type of one member (`E.A` in type position, and the member field's
+  // type on the enum object).
+  static fun enumMemberValueType(m: EnumMember): TType {
+    TType::single(static::enumMemberPrim(m))
+  }
+
+  // The type named by the enum (annotation `E`): the union of its member
+  // types. An empty enum has no values. Members are only numbers or strings,
+  // so the union is built directly from the numeric literal set (`None` once
+  // any member is a full/untracked number, collapsing the numeric part to
+  // `number`) and the string literal set, rather than going through the
+  // general TType::union machinery.
+  fun enumUnionType(subst: mutable Subst, en: Enum): TType {
+    pos = en.name.pos;
+    numbers: ?SortedSet<String> = Some(SortedSet[]);
+    strings = SortedSet<String>[];
+    for (m in this.enumMembers(subst, en)) {
+      static::enumMemberPrim(m) match {
+      | TPrimValue(TNum(), Some(lits), _) ->
+        numbers.each(nums -> {
+          for (lit in lits.values()) {
+            !nums = nums.set(lit.val)
+          };
+          !numbers = Some(nums)
+        })
+      | TPrimValue(TNum(), None(), _) -> !numbers = None()
+      | TPrimValue(TString(), Some(lits), _) ->
+        for (lit in lits.values()) {
+          !strings = strings.set(lit.val)
+        }
+      | _ -> void
+      }
+    };
+    stypes = mutable Vector<SType>[];
+    numbers match {
+    | None() -> stypes.push(TPrimValue::full(TNum(), pos))
+    | Some(nums) ->
+      PrimLiterals::ofSet(nums, pos).each(lits ->
+        stypes.push(TPrimValue(TNum(), Some(lits), pos))
+      )
+    };
+    PrimLiterals::ofSet(strings, pos).each(lits ->
+      stypes.push(TPrimValue(TString(), Some(lits), pos))
+    );
+    if (stypes.isEmpty()) {
+      return TType::bottom(pos)
+    };
+    result = TType::single(stypes[0]);
+    // Only a heterogeneous enum (numeric and string members) reaches the body
+    // of this loop, joining the two parts with a single union.
+    for (i in Range(1, stypes.size())) {
+      !result = TType::union(subst, this, result, TType::single(stypes[i]))
+    };
+    result
+  }
+
+  // The member type for a qualified type reference `E.<member>`, or None if
+  // there is no such member.
+  fun enumMemberType(
+    tcenvb: mutable TCEnvBase,
+    en: Enum,
+    memberName: String,
+  ): ?TType {
+    // Runtime last-write-wins for duplicated names (reported separately).
+    found: ?EnumMember = None();
+    for (m in this.enumMembers(tcenvb, en)) {
+      if (m.name.value == memberName) {
+        !found = Some(m)
+      }
+    };
+    found.map(m -> static::enumMemberValueType(m))
+  }
+
+  // The type of the enum VALUE (`E` in expression position, `typeof E`): a
+  // frozen object with a readonly field per member and, when every member
+  // value is statically known, readonly reverse-mapping fields for the
+  // numeric members (later members overwrite earlier equal values, like the
+  // runtime object). If any member value is unknown, reverse fields are
+  // omitted entirely: an unknown value could collide with a known one at
+  // runtime, so no individual reverse entry is trustworthy.
+  fun enumStatic(tcenvb: mutable TCEnvBase, en: Enum): TType {
+    members = this.enumMembers(tcenvb, en);
+    fields = mutable Map<FieldNameString, TField>[];
+    for (m in members) {
+      fields![FieldNameString(m.name.value)] = TField::create{
+        pos => m.name.pos,
+        name => m.name.value,
+        isOptional => false,
+        isReadonly => Some(m.name.pos),
+        type => static::enumMemberValueType(m),
+        access => FAPublic(),
+      }
+    };
+    // Reverse fields also need every numeric value in canonical form: a
+    // spelled imprecise literal (e.g. 0x20000000000001, beyond 2^53) does
+    // not name its runtime key String(Number(x)), and could collide with a
+    // canonical member's key, so no individual entry would be trustworthy.
+    reverseTrustworthy =
+      members.all(m -> m.value is EMVLiteral _) &&
+      members.all(m ->
+        enumNumLiteralVal(m.value) match {
+        | Some(v) -> isJSNumericString(v)
+        | None() -> true
+        }
+      );
+    if (reverseTrustworthy) {
+      for (m in members) {
+        enumNumLiteralVal(m.value).each(val -> {
+          fields![FieldNameString(val)] = TField::create{
+            pos => m.name.pos,
+            name => val,
+            isOptional => false,
+            isReadonly => Some(m.name.pos),
+            type => TType::single(
+              TPrimValue::single(TString(), m.name.value, m.name.pos),
+            ),
+            access => FAPublic(),
+          }
+        })
+      }
+    };
+    TType::single(
+      TObject::createSingleBranch(
+        TFields::create{fields, isArray => Some(false)},
+        None(),
+        en.name.pos,
+      ),
+    )
+  }
+}
+
+extension class TypeChecker {
+  // Check an enum declaration: duplicate member names, members that need an
+  // initializer, and computed initializers (typed, and required to be
+  // numbers; constant expressions required in const enums).
+  fun checkEnum(tcenvl: mutable TCEnvLight, en: Enum): void {
+    seen: SortedSet<String> = SortedSet[];
+    for (field in en.fields) {
+      (name, _) = field;
+      if (seen.contains(name.value)) {
+        tcenvl.error(
+          Array[(name.pos, `Duplicate identifier '${name.value}'`)],
+          TSCode(2300),
+        )
+      };
+      !seen = seen.set(name.value)
+    };
+    members = this.enumMembers(tcenvl, en);
+    // Warn on a member whose direct-literal value duplicates an earlier
+    // member's numeric value: the runtime reverse mapping (`E[value]`) then
+    // resolves to the later member, shadowing the earlier one — usually a
+    // copy-paste mistake. A member-reference initializer (`B = A`) is an
+    // intentional alias and is not flagged (matching no-duplicate-enum-values).
+    seenValues = mutable Map<String, PosRange>[];
+    for (m in members) {
+      enumNumLiteralVal(m.value).each(val -> {
+        seenValues.maybeGet(val) match {
+        | Some(earlierPos) ->
+          isLiteralInit = m.initializer.flatMap(e ->
+            this.directLiteralSType(e)
+          ) is Some _;
+          if (isLiteralInit) {
+            tcenvl.warning(
+              Array[
+                (m.name.pos, `Duplicate enum member value ${val}`),
+                (earlierPos, "The value is first assigned here"),
+              ],
+              ESLintCode("@typescript-eslint/no-duplicate-enum-values"),
+            )
+          }
+        | None() -> seenValues![val] = m.name.pos
+        }
+      })
+    };
+    for (m in members) {
+      m.value match {
+      | EMVLiteral _
+      | EMVNumber(ENRAmbient())
+      | EMVNumber(ENRImprecise())
+      | EMVNumber(ENRConstUnknown()) ->
+        void
+      | EMVNumber(ENRSelfForwardReference()) ->
+        tcenvl.error(
+          Array[
+            (
+              m.name.pos,
+              "A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums",
+            ),
+          ],
+          TSCode(2651),
+        )
+      | EMVNumber(ENRMissingInitializer()) ->
+        tcenvl.error(
+          Array[(m.name.pos, "Enum member must have initializer")],
+          TSCode(1061),
+        )
+      | EMVNumber(ENRComputed()) ->
+        if (en.isConst is Some _) {
+          tcenvl.error(
+            Array[
+              (
+                m.name.pos,
+                "const enum member initializers must be constant expressions",
+              ),
+            ],
+            TSCode(2474),
+          )
+        } else if (en.isAmbient) {
+          tcenvl.error(
+            Array[
+              (
+                m.name.pos,
+                "In ambient enum declarations member initializer must be constant expression",
+              ),
+            ],
+            TSCode(1066),
+          )
+        } else {
+          m.initializer.each(e ->
+            tcenvl.collectErrors(() -> {
+              subst = Subst::mcreate(tcenvl);
+              tcenv = TCEnv::mcreate(
+                subst,
+                CGNode::toplevel(m.name.pos.fileName),
+              );
+              ety = this.expr(tcenv, e, true);
+              this.checkSubType(
+                tcenv,
+                e.pos,
+                "Computed enum member values must be numbers",
+                ety,
+                TType::single(TPrimValue::full(TNum(), e.pos)),
+                TSCode(18033),
+              )
+            })
+          )
+        }
+      }
+    }
+  }
+}
+
+module end;

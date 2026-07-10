@@ -292,7 +292,43 @@ extension class TypeChecker {
     // which would otherwise leave the case values untyped.
     for (branch in branches) {
       branch match {
-      | SwitchBranch(Case(v), _, _) -> _ = this.expr(tcenv, v, true)
+      | SwitchBranch(Case(v), _, _) ->
+        _ = this.expr(tcenv, v, true);
+        // A switch case must be a plain value, so that case-evaluation order
+        // and `===` narrowing are sound. Enum member reads (`E.A`, `E["A"]`,
+        // `E[0]` on an unshadowed enum name) are plain data-property reads and
+        // exempt — a bare name never throws and enum members are not accessors;
+        // every other case must be provably non-throwing. This lives here
+        // rather than in the Termination pass because the exemption needs name
+        // resolution, which that pass has no defMap for.
+        enumMemberBase = v.value match {
+        | Dot(NormalDot(), Expr(_, Var(b)), _) -> Some(b)
+        | Get(
+          Expr(_, Var(b)),
+          key,
+        ) if (this.directLiteralSType(key) is Some _) ->
+          Some(b)
+        | _ -> None()
+        };
+        isEnumMember = enumMemberBase match {
+        | Some(b) ->
+          tcenv.scope.maybeGet(b) is None() &&
+            this.defMap.getAll(tcenv, b).any(d -> d is Enum _)
+        | None() -> false
+        };
+        if (!isEnumMember) {
+          StmtTermination::expr(v).mayNonThrough().each(term ->
+            tcenv.error(
+              Array[
+                (
+                  v.pos,
+                  `A switch case expression must be a plain value, but this one may ${term}.`,
+                ),
+              ],
+              SKJSCode(2055),
+            )
+          )
+        }
       | SwitchBranch(Default(), _, _) -> void
       }
     };
@@ -305,41 +341,65 @@ extension class TypeChecker {
       /* branches.size() > 1 from the caller */
       return branches[branches.size() - 1] is SwitchBranch(Default(), _, _)
     };
+    // Kept for truthful unreachability reasons: a case value can be
+    // unreachable because it is not in the switched type at all, or because
+    // an earlier case (e.g. an alias enum member with the same value) already
+    // handled it. As each value is handled it moves from `cases` into
+    // `handledBy` (which also records the handling case's position, to point
+    // at it in the latter warning), so a value still in the switched type is
+    // in exactly one of the two.
+    handledBy = mutable Map<String, PosRange>[];
     for (branch in branches) {
-      if (cases.isEmpty()) {
-        tcenv.warning(
-          Array[
-            (
-              branch.pos,
-              "This case is unreachable: its value is not in the switched type",
-            ),
-          ],
-          SKJSCode(2014),
-        );
-        break void
-      };
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
         this.lookupExprType(tcenv, v)
           .getSTypes(tcenv.subst, this, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
-          if (!cases.containsKey(staticValue)) {
-            tcenv.warning(
-              Array[
-                (
-                  pos,
-                  "This case is unreachable: its value is not in the switched type",
-                ),
-              ],
-              SKJSCode(2014),
-            )
+          if (cases.containsKey(staticValue)) {
+            cases.remove(staticValue);
+            handledBy![staticValue] = pos
           } else {
-            cases.remove(staticValue)
+            handledBy.maybeGet(staticValue) match {
+            | Some(earlierPos) ->
+              tcenv.warning(
+                Array[
+                  (
+                    pos,
+                    "This case is unreachable: its value is already handled by an earlier case",
+                  ),
+                  (earlierPos, "The value is first handled here"),
+                ],
+                SKJSCode(2014),
+              )
+            | None() ->
+              tcenv.warning(
+                Array[
+                  (
+                    pos,
+                    "This case is unreachable: its value is not in the switched type",
+                  ),
+                ],
+                SKJSCode(2014),
+              )
+            }
           }
         | None() -> void
         }
-      | SwitchBranch(Default(), _stmts, _pos) -> cases.clear()
+      | SwitchBranch(Default(), _stmts, pos) ->
+        if (cases.isEmpty()) {
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                "This 'default' case is unreachable: all values of the switched type are already handled",
+              ),
+            ],
+            SKJSCode(2014),
+          )
+        } else {
+          cases.clear()
+        }
       }
     };
     if (!cases.isEmpty()) {

@@ -115,6 +115,9 @@ extension class TypeChecker {
       // (`Id<number>` for `type Id<P extends string>`) escapes detection.
       subst = Subst::mcreate(tcenvl);
       this.funDef(subst, None(), fd, fd.cgNode.fromSome())
+    | Declare(en @ Enum _)
+    | ExportDeclare(en @ Enum _) ->
+      this.checkEnum(tcenvl, en)
     | Declare _
     | ExportDeclare _ ->
       void
@@ -126,7 +129,7 @@ extension class TypeChecker {
       void
     | Import _ -> void
     | c @ Class _ -> this.class_(tcenvl, c)
-    | Enum _ -> tcenvl.notSupported(def.pos, "enum")
+    | en @ Enum _ -> this.checkEnum(tcenvl, en)
     | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
     | td @ TypeDef _ -> this.typeDef(tcenvl, td)
     }

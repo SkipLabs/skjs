@@ -108,7 +108,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     | None() -> void
     };
     fileName = path.pos.fileName;
-    tmp = this.getPath(tcenvb, fileName, path.value, typeOnly);
+    tmp = this.getPath(tcenvb, fileName, path.value, typeOnly, path.pos);
     result = mutable Vector[];
     for (elt in tmp) {
       elt match {
@@ -133,6 +133,9 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     fileName: FPath,
     path: String,
     typeOnly: Bool,
+    // Span of the whole qualified reference, for diagnostics that must point
+    // at the use site rather than at a resolved definition.
+    refPos: PosRange,
   ): readonly Vector<FileDef> {
     defs: readonly Vector<FileDef> = Vector[
       FDNamespace(false, None(), this.getFileDefs(tcenvb, fileName)),
@@ -140,7 +143,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
       dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
-      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly)
+      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly, refPos)
     };
     defs
   }
@@ -150,28 +153,28 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     defs: readonly Vector<FileDef>,
     name: String,
     typeOnly: Bool,
+    refPos: PosRange,
   ): readonly Vector<FileDef> {
     result = mutable Vector[];
     for (d in defs) {
       d match {
-      | TopLevelFunDef{name => fdName} ->
+      // A member of an enum, in type position (`E.A`): resolve it to an
+      // EnumMemberDef. The member type itself is built by TEnv, which owns the
+      // member folding; here we only need the enum and the member name. In
+      // value position the enum value object handles the access, so this stays
+      // an unsupported qualified access there.
+      | en @ Enum _ if (typeOnly) ->
+        result.push(EnumMemberDef(en, Name(refPos, name)))
+      | TopLevelFunDef _
+      | TypeDef _
+      | Class _
+      | Enum _
+      | FDVar _
+      | EnumMemberDef _ ->
         tcenvb.error(
           Array[
             (
-              fdName.getPos(),
-              `Qualified name access ('${name}') is not yet supported by SKJS`,
-            ),
-          ],
-          SKJSCode(9003),
-        )
-      | TypeDef{name => Name(pos, _)}
-      | Class{name => Name(pos, _)}
-      | Enum(_isConst, Name(pos, _), _fields)
-      | FDVar(_kind, Name(pos, _), _type, _value) ->
-        tcenvb.error(
-          Array[
-            (
-              pos,
+              refPos,
               `Qualified name access ('${name}') is not yet supported by SKJS`,
             ),
           ],
@@ -335,9 +338,10 @@ base class FileDef {
     | TopLevelFunDef{name => FNNormal(n)} -> Some(n.pos)
     | TypeDef{name => n} -> Some(n.pos)
     | Class{name => n} -> Some(n.pos)
-    | Enum(_, n, _) -> Some(n.pos)
+    | Enum(_, n, _, _) -> Some(n.pos)
     | FDVar(_, n, _, _) -> Some(n.pos)
     | FDNamespace(_, posOpt, _) -> posOpt
+    | EnumMemberDef(_, member) -> Some(member.pos)
     }
   }
 }
@@ -362,6 +366,12 @@ base class TypeOnlyDef extends FileDefElt
 extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
 extension class Enum extends TypeOnlyDef
+
+// A qualified reference `E.A` to a member of an enum, synthesized by `dot`
+// when resolving a dotted type name whose head is an enum (never stored in
+// the defMap). The referenced member type is built by TEnv, which owns the
+// member folding; here we only carry the enum and the member name.
+class EnumMemberDef(en: Enum, member: Name) extends TypeOnlyDef uses XXHashable
 
 value class Imported{
   typeOnly: Bool,
@@ -390,7 +400,8 @@ value class DeclSpaces private {private val: Bool, private typ: Bool} {
     | FDNamespace _ ->
       static::value
     | TypeDef _
-    | Class{kind => CKInterface()} ->
+    | Class{kind => CKInterface()}
+    | EnumMemberDef _ ->
       static::type
     | Class{kind => CKClass()}
     | Class{kind => CKAbstract()}
@@ -617,7 +628,7 @@ mutable class FileDefsState private {
     def match {
     | d @ TypeDef{name} -> this.pushDef(name, d, isExport)
     | d @ Class{name} -> this.pushDef(name, d, isExport)
-    | d @ Enum(_, name, _) -> this.pushDef(name, d, isExport)
+    | d @ Enum(_, name, _, _) -> this.pushDef(name, d, isExport)
     | Namespace(name, defs) ->
       d = FDNamespace(false, Some(name.pos), this.createSubFileDefs(defs));
       this.pushDef(name, d, isExport)
