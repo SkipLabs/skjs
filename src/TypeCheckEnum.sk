@@ -479,35 +479,51 @@ extension base class TEnv {
   }
 
   // The type named by the enum (annotation `E`): the union of its member
-  // types. An empty enum has no values. All member types are primitive value
-  // types, so the union is built by merging same-kind literal sets directly,
-  // rather than going through the general TType::union machinery.
+  // types. An empty enum has no values. Members are only numbers or strings,
+  // so the union is built directly from the numeric literal set (`None` once
+  // any member is a full/untracked number, collapsing the numeric part to
+  // `number`) and the string literal set, rather than going through the
+  // general TType::union machinery.
   fun enumUnionType(subst: mutable Subst, en: Enum): TType {
-    members = this.enumMembers(subst, en);
-    // `parts` holds at most one entry per kind (numeric members, plus string
-    // members in a heterogeneous enum), in first-appearance order.
-    parts = mutable Vector<TPrimValue>[];
-    for (m in members) {
-      pv = static::enumMemberPrim(m);
-      mergedAt: ?Int = None();
-      for (i in Range(0, parts.size())) {
-        if (parts[i].kind == pv.kind) {
-          !mergedAt = Some(i)
+    pos = en.name.pos;
+    numbers: ?SortedSet<String> = Some(SortedSet[]);
+    strings = SortedSet<String>[];
+    for (m in this.enumMembers(subst, en)) {
+      static::enumMemberPrim(m) match {
+      | TPrimValue(TNum(), Some(lits), _) ->
+        numbers.each(nums -> {
+          for (lit in lits.values()) {
+            !nums = nums.set(lit.val)
+          };
+          !numbers = Some(nums)
+        })
+      | TPrimValue(TNum(), None(), _) -> !numbers = None()
+      | TPrimValue(TString(), Some(lits), _) ->
+        for (lit in lits.values()) {
+          !strings = strings.set(lit.val)
         }
-      };
-      mergedAt match {
-      | Some(i) -> parts![i] = TPrimValue::union(parts[i], pv)
-      | None() -> parts.push(pv)
+      | _ -> void
       }
     };
-    if (parts.isEmpty()) {
-      return TType::bottom(en.name.pos)
+    stypes = mutable Vector<SType>[];
+    numbers match {
+    | None() -> stypes.push(TPrimValue::full(TNum(), pos))
+    | Some(nums) ->
+      PrimLiterals::ofSet(nums, pos).each(lits ->
+        stypes.push(TPrimValue(TNum(), Some(lits), pos))
+      )
     };
-    result = TType::single(parts[0]);
-    // Only a heterogeneous enum (mixed numeric/string members) reaches the
-    // body of this loop, joining the per-kind parts with a single union each.
-    for (i in Range(1, parts.size())) {
-      !result = TType::union(subst, this, result, TType::single(parts[i]))
+    PrimLiterals::ofSet(strings, pos).each(lits ->
+      stypes.push(TPrimValue(TString(), Some(lits), pos))
+    );
+    if (stypes.isEmpty()) {
+      return TType::bottom(pos)
+    };
+    result = TType::single(stypes[0]);
+    // Only a heterogeneous enum (numeric and string members) reaches the body
+    // of this loop, joining the two parts with a single union.
+    for (i in Range(1, stypes.size())) {
+      !result = TType::union(subst, this, result, TType::single(stypes[i]))
     };
     result
   }
