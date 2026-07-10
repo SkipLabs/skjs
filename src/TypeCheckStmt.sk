@@ -359,27 +359,30 @@ extension class TypeChecker {
           if (cases.containsKey(staticValue)) {
             cases.remove(staticValue);
             handledBy![staticValue] = pos
-          } else if (handledBy.containsKey(staticValue)) {
-            messages = mutable Vector[
-              (
-                pos,
-                "This case is unreachable: its value is already handled by an earlier case",
-              ),
-            ];
-            handledBy.maybeGet(staticValue).each(earlierPos ->
-              messages.push((earlierPos, "The value is first handled here"))
-            );
-            tcenv.warning(messages.toArray(), SKJSCode(2014))
           } else {
-            tcenv.warning(
-              Array[
-                (
-                  pos,
-                  "This case is unreachable: its value is not in the switched type",
-                ),
-              ],
-              SKJSCode(2014),
-            )
+            handledBy.maybeGet(staticValue) match {
+            | Some(earlierPos) ->
+              tcenv.warning(
+                Array[
+                  (
+                    pos,
+                    "This case is unreachable: its value is already handled by an earlier case",
+                  ),
+                  (earlierPos, "The value is first handled here"),
+                ],
+                SKJSCode(2014),
+              )
+            | None() ->
+              tcenv.warning(
+                Array[
+                  (
+                    pos,
+                    "This case is unreachable: its value is not in the switched type",
+                  ),
+                ],
+                SKJSCode(2014),
+              )
+            }
           }
         | None() -> void
         }
