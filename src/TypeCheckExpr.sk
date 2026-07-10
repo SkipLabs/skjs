@@ -762,6 +762,19 @@ extension class TypeChecker {
         (ty, false)
       }
     | Some(e) ->
+      // Second-view index gate (see the `Some(annotAst)` arm below). Capture
+      // BEFORE `this.expr`, because reading a `Var` flips a tracked local
+      // object's growth state LOCanGrow -> LOUsed: is this initializer a
+      // by-reference view of an already-used, or loop-escaping, tracked local?
+      (viewSrcTracked, viewSrcUsed, viewSrcThroughLoop) = e.value match {
+      | Var(local) ->
+        tcenv.localObjectState(local) match {
+        | Some(LOUsed _) -> (true, true, tcenv.scope.isThroughLoop(local))
+        | Some(_) -> (true, false, tcenv.scope.isThroughLoop(local))
+        | None() -> (false, false, false)
+        }
+      | _ -> (false, false, false)
+      };
       ty = this.expr(tcenv, e, kind is BKConst());
       // Wrap null/undefined initializers in a bound TVar so the variable
       // can be widened later (e.g., `let x = null; x = 1`).
@@ -778,16 +791,64 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        this.checkSubType(
-          tcenv,
-          annotAst.pos,
-          "Type of value is not assignable to the variable's type annotation",
-          ty,
-          annot,
-          TSCode(2322),
-        );
+        if (
+          viewSrcTracked &&
+          (viewSrcUsed || viewSrcThroughLoop) &&
+          this.annotHasIndex(tcenv, annot)
+        ) {
+          // A fresh object literal's implicit-index capability is a
+          // single-consumption grant. A SECOND by-reference view (or a view
+          // that escapes a loop) of the same tracked local at an
+          // index-signature type would alias the local under an incompatible
+          // index capability — the aliasing type-confusion pinned by the
+          // testAlias* / testViewInsideLoop / testThroughLoopViewThenPreciseRead
+          // witnesses. Reject at the view site. We SKIP (not fail) the subtype
+          // check so its setter direction cannot widen the local's own fields,
+          // keeping a later precise read of the local sound.
+          tcenv.error(
+            Array[
+              (
+                annotAst.pos,
+                "Type of value is not assignable to the variable's type annotation",
+              ),
+            ],
+            TSCode(2322),
+          );
+        } else {
+          this.checkSubType(
+            tcenv,
+            annotAst.pos,
+            "Type of value is not assignable to the variable's type annotation",
+            ty,
+            annot,
+            TSCode(2322),
+          );
+        };
         (annot, true)
       }
+    }
+  }
+
+  // True when `annot` is an object type (every branch) carrying a real index
+  // signature — the shape whose implicit/synthetic-index acceptance a second
+  // by-reference view of a tracked local object would unsoundly re-grant.
+  // Conservative: a non-object type, Top, or a union with any branch lacking a
+  // real index returns false (no gate; the ordinary subtype check runs).
+  fun annotHasIndex(tcenv: mutable TCEnv, annot: TType): Bool {
+    annot.getSTypes(tcenv.subst, this, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      anyBranch = false;
+      allIndexObjects = true;
+      for (stype in stypes) {
+        !anyBranch = true;
+        stype match {
+        | obj @ TObject _ ->
+          if (!obj.hasNonSyntheticIndex()) !allIndexObjects = false
+        | _ -> !allIndexObjects = false
+        }
+      };
+      anyBranch && allIndexObjects
     }
   }
 
