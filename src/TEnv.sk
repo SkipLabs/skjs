@@ -143,6 +143,10 @@ base class TEnv{
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
     | en @ Enum _ -> this.enumUnionType(subst, en)
+    // Enum-member types (`E.A`) are resolved directly in normalize and never
+    // wrapped in a TInst, so instantiate never receives one.
+    | EnumMemberDef _ ->
+      invariant_violation("enum member types are not instantiated")
     }
   }
 
@@ -255,7 +259,8 @@ base class TEnv{
     tdef match {
     | ca @ Class _ -> ca
     | TypeDef _
-    | Enum _ ->
+    | Enum _
+    | EnumMemberDef _ ->
       fatalError(
         Array[(className.pos, "A class name was expected here")],
         SKJSCode(2022),
@@ -1377,48 +1382,37 @@ base class TEnv{
           TSCode(2456),
         )
       | None() ->
-        // A dotted name whose prefix resolves to an enum is a member type
-        // reference (`E.A`). The prefix is probed with a throwaway results
-        // accumulator: a non-enum prefix falls through to the normal path
-        // below, which emits the usual diagnostics.
-        (memberPrefix, memberName) = n.value.splitLast(".");
-        if (memberPrefix != "") {
-          probe = mutable TCEnvLight{
-            context => tcenvb.context,
-            results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
-          };
-          this.defMap.getAll(probe, Name(n.pos, memberPrefix), true).find(d ->
-            d is Enum _
-          ) match {
-          | Some(en @ Enum _) ->
-            if (targs.size() != 0) {
-              tcenvb.error(
-                Array[(n.pos, `Type '${n.value}' is not generic`)],
-                TSCode(2315),
-              )
-            };
-            return this.enumMemberType(tcenvb, en, memberName) match {
-            | Some(memberTy) -> memberTy.withPos(pos)
-            | None() ->
-              fatalError(
-                Array[
-                  (
-                    n.pos,
-                    `Namespace '${memberPrefix}' has no exported member '${memberName}'`,
-                  ),
-                ],
-                TSCode(2694),
-              )
-            }
-          | _ -> void
-          }
-        };
-        // No bound-name match: treat n as a named type definition.
+        // No bound-name match: treat n as a named type definition. A dotted
+        // name whose head is an enum (`E.A`) resolves to an EnumMemberDef.
         tdef = this.defMap.getType(tcenvb, n);
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
         | Class{tparams} -> tparams
         | Enum _ -> Array[]
+        | EnumMemberDef(en, member) ->
+          // A qualified enum-member type reference (`E.A`). Build the member
+          // type here — the defMap resolved the name, TEnv owns the folding.
+          if (targs.size() != 0) {
+            tcenvb.error(
+              Array[(n.pos, `Type '${n.value}' is not generic`)],
+              TSCode(2315),
+            )
+          };
+          return this.enumMemberType(tcenvb, en, member.value) match {
+          | Some(memberTy) -> memberTy.withPos(pos)
+          | None() ->
+            fatalError(
+              Array[
+                (
+                  n.pos,
+                  `Namespace '${en.name.value}' has no exported member '${
+                    member.value
+                  }'`,
+                ),
+              ],
+              TSCode(2694),
+            )
+          }
         };
         arityOk = !(
           targs.size() > tparams.size() ||
@@ -1593,6 +1587,9 @@ base class TEnv{
         | TypeDef _ -> !sawTypeAlias = true
         | en @ Enum _ -> return this.enumStatic(tcenvb, en)
         | FDVar _ -> !sawValueDef = true
+        // EnumMemberDef is only synthesized in type position, never returned
+        // by a value-position (typeOnly=false) lookup.
+        | EnumMemberDef _ -> void
         }
       };
       if (sawInterface && !sawValueDef) {

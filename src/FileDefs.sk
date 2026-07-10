@@ -164,10 +164,18 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
           ],
           SKJSCode(9003),
         )
+      // A member of an enum, in type position (`E.A`): resolve it to an
+      // EnumMemberDef. The member type itself is built by TEnv, which owns the
+      // member folding; here we only need the enum and the member name. In
+      // value position the enum value object handles the access, so this stays
+      // an unsupported qualified access there.
+      | en @ Enum _ if (typeOnly) ->
+        result.push(EnumMemberDef(en, Name(en.name.pos, name)))
       | TypeDef{name => Name(pos, _)}
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields, _isAmbient)
-      | FDVar(_kind, Name(pos, _), _type, _value) ->
+      | FDVar(_kind, Name(pos, _), _type, _value)
+      | EnumMemberDef(Enum(_, Name(pos, _), _, _), _) ->
         tcenvb.error(
           Array[
             (
@@ -338,6 +346,7 @@ base class FileDef {
     | Enum(_, n, _, _) -> Some(n.pos)
     | FDVar(_, n, _, _) -> Some(n.pos)
     | FDNamespace(_, posOpt, _) -> posOpt
+    | EnumMemberDef(_, member) -> Some(member.pos)
     }
   }
 }
@@ -362,6 +371,12 @@ base class TypeOnlyDef extends FileDefElt
 extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
 extension class Enum extends TypeOnlyDef
+
+// A qualified reference `E.A` to a member of an enum, synthesized by `dot`
+// when resolving a dotted type name whose head is an enum (never stored in
+// the defMap). The referenced member type is built by TEnv, which owns the
+// member folding; here we only carry the enum and the member name.
+class EnumMemberDef(en: Enum, member: Name) extends TypeOnlyDef uses XXHashable
 
 value class Imported{
   typeOnly: Bool,
@@ -390,7 +405,8 @@ value class DeclSpaces private {private val: Bool, private typ: Bool} {
     | FDNamespace _ ->
       static::value
     | TypeDef _
-    | Class{kind => CKInterface()} ->
+    | Class{kind => CKInterface()}
+    | EnumMemberDef _ ->
       static::type
     | Class{kind => CKClass()}
     | Class{kind => CKAbstract()}
