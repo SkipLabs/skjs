@@ -1,0 +1,35 @@
+module SKJSTests;
+
+// Pins TypePp's paren-elision for intersection members
+// (compositeNeedsParens): members that read as a single atom print bare,
+// while anything that reads as a union is parenthesized. Intersections are
+// expanded away on most diagnostic paths, so this behavior is pinned at the
+// unit level on a hand-built TInter.
+
+fun renderType(ty: SKJS.TType): String {
+  SKJS.rawPrettyPrint(false, pp -> pp.type(0, SKJS.Margin{}, ty))
+}
+
+fun namedInst(name: String): SKJS.TType {
+  SKJS.TType::inst(SKJS.Name(SKJS.PosRange::none, name), SKJS.TArgs(Array[]))
+}
+
+fun numberLiteralUnion(): SKJS.TType {
+  pos = SKJS.PosRange::none;
+  lits = SKJS.PrimLiterals::ofSet(SortedSet["1", "2"], pos).fromSome();
+  SKJS.TType::single(SKJS.TPrimValue(SKJS.TNum(), Some(lits), pos))
+}
+
+@test
+fun testInterAtomMembersUnparenthesized(): void {
+  ty = SKJS.TType::unexpandedInter(namedInst("A"), namedInst("B"));
+  SKTest.expectEq("A & B", renderType(ty));
+}
+
+@test
+fun testInterUnionMemberParenthesized(): void {
+  ty = SKJS.TType::unexpandedInter(numberLiteralUnion(), namedInst("A"));
+  SKTest.expectEq("A & (1 | 2)", renderType(ty));
+}
+
+module end;

@@ -139,7 +139,7 @@ function fromObjectField(): void {
   // @skjs-expect-error-line2 Type '"hello"'
   // @skjs-expect-error-line3 is not assignable to type 'number'
   // @skjs-expect-error-line4 Consider adding a type annotation, e.g., number | "hello"
-  // @skjs-expect-error-line5 Consider adding explicit type arguments, e.g., <{ x: number } | { x: "hello" }>
+  // @skjs-expect-error-line5 Consider adding explicit type arguments, e.g., <{ x: number; } | { x: "hello"; }>
   c.push({ x: "hello" });
 }
 

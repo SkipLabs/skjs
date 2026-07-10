@@ -349,6 +349,22 @@ mutable class TypePp{
     )
   }
 
+  // The lone non-optional call or constructor signature (isNew, tfun) that
+  // makes `fields` render as a bare function/constructor type instead of a
+  // braced object, if any. Single source of truth for that shape: used by
+  // both the renderer (TypePp::object) and the parenthesization decision
+  // (TypePp::stypeNeedsParens).
+  static fun bareSignature(fields: TFields): ?(Bool, TFun) {
+    if (!fields.fields.isEmpty() || fields.hasNonSyntheticIndex()) {
+      return None()
+    };
+    (fields.call, fields.new) match {
+    | (Some((false, TFuns(tfun, _pos))), None()) -> Some((false, tfun))
+    | (None(), Some((false, TFuns(tfun, _pos)))) -> Some((true, tfun))
+    | _ -> None()
+    }
+  }
+
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
     // A tuple-shaped object prints as the tuple it denotes when the
     // shorthand hides nothing: besides its positional fields, a tuple
@@ -364,18 +380,11 @@ mutable class TypePp{
       | None() -> void
       }
     };
-    (
-      fields.fields.isEmpty(),
-      !fields.hasNonSyntheticIndex(),
-      fields.call,
-      fields.new,
-    ) match {
-    | (true, true, Some((false, TFuns(tfun, _pos))), None()) ->
+    TypePp::bareSignature(fields) match {
+    | Some((isNew, tfun)) ->
+      if (isNew) this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
-    | (true, true, None(), Some((false, TFuns(tfun, _pos)))) ->
-      this.out(level, margin, "new ");
-      this.tfun(level, margin, (false, tfun))
-    | _ ->
+    | None() ->
       this.out(level, margin, "{");
       this.branch(
         level,
@@ -430,7 +439,7 @@ mutable class TypePp{
         this.out(level, margin, escapedName);
         this.out(level, margin, "(): ");
         this.type(level, margin, field.get);
-        this.out(level, margin, ", set ");
+        this.out(level, margin, "; set ");
         this.out(level, margin, escapedName);
         this.out(level, margin, "(v: ");
         this.type(level, margin, field.set);
@@ -441,6 +450,9 @@ mutable class TypePp{
         this.out(level, margin, ": ");
         this.type(level, margin, field.get);
       };
+      // tsc terminates every member, including the last (`{ foo: string; }`);
+      // only the inter-member whitespace needs the lookahead.
+      this.out(level, margin, ";");
       if (
         i != fieldArray.size() - 1 ||
         !symbolFieldArray.isEmpty() ||
@@ -448,7 +460,6 @@ mutable class TypePp{
         fields.call.isSome() ||
         fields.new.isSome()
       ) {
-        this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         };
@@ -465,13 +476,13 @@ mutable class TypePp{
       };
       this.out(level, margin, ": ");
       this.type(level, margin, field.get);
+      this.out(level, margin, ";");
       if (
         i != symbolFieldArray.size() - 1 ||
         hasIndexes ||
         fields.call.isSome() ||
         fields.new.isSome()
       ) {
-        this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         };
@@ -480,8 +491,8 @@ mutable class TypePp{
     hasMore = fields.call.isSome() || fields.new.isSome();
     stringIdx.each(index -> {
       this.indexField(level, margin, "string", index);
+      this.out(level, margin, ";");
       if (numberIdx.isSome() || symbolIdx.isSome() || hasMore) {
-        this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
@@ -489,8 +500,8 @@ mutable class TypePp{
     });
     numberIdx.each(index -> {
       this.indexField(level, margin, "number", index);
+      this.out(level, margin, ";");
       if (symbolIdx.isSome() || hasMore) {
-        this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
@@ -498,8 +509,8 @@ mutable class TypePp{
     });
     symbolIdx.each(index -> {
       this.indexField(level, margin, "symbol", index);
+      this.out(level, margin, ";");
       if (hasMore) {
-        this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
@@ -510,8 +521,8 @@ mutable class TypePp{
     | Some((opt, TFuns(tfun, _pos))) ->
       if (opt) this.out(level, margin, "?");
       this.tfun(level, margin, (true, tfun));
+      this.out(level, margin, ";");
       if (fields.new.isSome()) {
-        this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
@@ -522,7 +533,8 @@ mutable class TypePp{
     | Some((opt, TFuns(tfun, _pos))) ->
       if (opt) this.out(level, margin, "?");
       this.out(level, margin, "new ");
-      this.tfun(level, margin, (true, tfun))
+      this.tfun(level, margin, (true, tfun));
+      this.out(level, margin, ";")
     }
   }
 
@@ -535,11 +547,11 @@ mutable class TypePp{
     if (index.set.isBottom()) {
       this.out(level, margin, "readonly ")
     };
-    this.out(level, margin, "[ ");
+    this.out(level, margin, "[");
     this.out(level, margin, TypePp::escapeName(index.name.value));
     this.out(level, margin, ": ");
     this.out(level, margin, keyKind);
-    this.out(level, margin, " ]: ");
+    this.out(level, margin, "]: ");
     this.type(level, margin, index.get);
     if (!index.set.isBottom() && index.get != index.set) {
       this.out(level, margin, " (set: ");
@@ -712,9 +724,10 @@ mutable class TypePp{
           | TInter(tys) ->
             j = 0;
             for (ity in tys) {
-              pp.out(level, margin, "(");
+              needsParens = pp.compositeNeedsParens(ity);
+              if (needsParens) pp.out(level, margin, "(");
               pp.type(level, margin, ity);
-              pp.out(level, margin, ")");
+              if (needsParens) pp.out(level, margin, ")");
               if (j < tys.size() - 1) pp.out(level, margin, " & ");
               !j = j + 1;
             }
@@ -742,7 +755,10 @@ mutable class TypePp{
           | TInter(tys) ->
             i = 0;
             for (ity in tys) {
+              needsParens = pp.compositeNeedsParens(ity);
+              if (needsParens) pp.out(level, margin, "(");
               pp.type(level, margin, ity);
+              if (needsParens) pp.out(level, margin, ")");
               if (i < tys.size() - 1) pp.out(level, margin, " & ");
               !i = i + 1;
             }
@@ -751,6 +767,67 @@ mutable class TypePp{
         }
       },
     );
+  }
+
+  // Whether `ty` must be parenthesized when embedded in an intersection
+  // rendering, mirroring tsc: parens go around anything that does not read
+  // as a single atom — unions (`(A | B) & C`), bare function/constructor
+  // types (`(() => void) & D`), constrained or substituted type variables
+  // (`('x extends C) & D`), and nested intersections.
+  private mutable fun compositeNeedsParens(ty: TType): Bool {
+    aty = this.applyType(ty);
+    if (aty.isTop() || aty.isBottom()) return false;
+    clausesCount = aty.clauses.size();
+    if (clausesCount + aty.insts.size() > 1) return true;
+    if (clausesCount == 1) {
+      for (clause in aty.clauses) {
+        stypesCount = clause.stypes match {
+        | None() -> 0
+        | Some(sts) -> sts.size()
+        };
+        if (clause.vars.size() + stypesCount > 1) return true;
+        clause.stypes match {
+        | Some(sts) ->
+          for (sty in sts) {
+            if (TypePp::stypeNeedsParens(sty)) return true
+          }
+        | None() -> void
+        }
+      }
+    } else {
+      // clausesCount is 0 here and clausesCount + insts.size() <= 1, with
+      // empty-both already excluded by isBottom, so exactly one inst
+      // reaches this loop.
+      for (inst in aty.insts) {
+        return inst match {
+        | TInter _ -> true
+        | tvar @ TVar _ ->
+          // A substituted tvar renders as `'0 = T` (see TypePp::tvar),
+          // which is not a single atom either.
+          !tvar.constraints.isEmpty() ||
+            this.substValues.maybeGet(tvar.id).isSome()
+        | TArrayLit _
+        | TSInst _ ->
+          false
+        }
+      }
+    };
+    false
+  }
+
+  private static fun stypeNeedsParens(sty: SType): Bool {
+    sty match {
+    | TObject(_, Some(_), _) -> false
+    | obj @ TObject _ ->
+      branches = obj.getBranches();
+      if (branches.size() != 1) true else {
+        TypePp::bareSignature(branches[0]).isSome()
+      }
+    | TPrimValue(_, Some(arr), _) -> arr.size() > 1
+    | TPrimValue(_, None(), _)
+    | TPrimUnit _ ->
+      false
+    }
   }
 
   mutable fun inst(level: Int, margin: Margin, inst: TSInst): void {

@@ -20,7 +20,7 @@ digraph "fn:count" {
 }
 
 digraph "fn:describe" {
-  label="({x: x, y: y}: {x:number,y:number}, label: string|undefined): number";
+  label="({x: x, y: y}: {x:number;y:number;}, label: string|undefined): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lconst sum: number = (x + y)\lreturn sum\l"];

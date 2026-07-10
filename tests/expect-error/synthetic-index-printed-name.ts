@@ -11,5 +11,5 @@ function emptyObject(): void {
 }
 
 function objectWithField(): void {
-  __SKJS_show({ x: 1 }, `{ x: '0 }`);
+  __SKJS_show({ x: 1 }, `{ x: '0; }`);
 }

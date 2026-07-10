@@ -578,8 +578,8 @@ function namedFieldTypeToStringIndex(x: { a: number }): {
   [k: string]: number;
 } {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  // @skjs-expect-error-line2 Type '{ a: number }'
-  // @skjs-expect-error-line3 is not assignable to type '{ [ k: string ]: number }'
+  // @skjs-expect-error-line2 Type '{ a: number; }'
+  // @skjs-expect-error-line3 is not assignable to type '{ [k: string]: number; }'
   // @skjs-expect-error-line4 Missing index signature 'k' in source type
   return x;
 }
