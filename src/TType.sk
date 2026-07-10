@@ -875,7 +875,7 @@ class TObject private (
     if (branches.isEmpty()) None() else Some(this with {branches})
   }
 
-  fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
+  fun mapCall(f: (?TFuns) -> ??TFuns): ?TObject {
     this.mapOpt(fields -> fields.mapCall(f))
   }
 
@@ -1077,16 +1077,14 @@ class TObject private (
     result
   }
 
-  fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
-    result: ?(Bool, TFuns) = None();
+  fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?TFuns {
+    result: ?TFuns = None();
     for (fields in this.branches) {
       (fields, result) match {
       | (TFields{call => None()}, _) -> return None()
       | (TFields{call => first @ Some _}, None()) -> !result = first
-      | (TFields{call => Some((opt2, tFuns2))}, Some((opt1, tFuns1))) ->
-        !result = Some(
-          (opt1 || opt2, TFuns::union(subst, tenv, tFuns1, tFuns2)),
-        )
+      | (TFields{call => Some(tFuns2)}, Some(tFuns1)) ->
+        !result = Some(TFuns::union(subst, tenv, tFuns1, tFuns2))
       }
     };
     result
@@ -1096,7 +1094,7 @@ class TObject private (
     tys = mutable Vector[];
     for (fields in this.branches) {
       fields match {
-      | TFields{call => Some((_, TFuns(fun_, _)))} -> tys.push(fun_.retType)
+      | TFields{call => Some(TFuns(fun_, _))} -> tys.push(fun_.retType)
       | TFields{call => None()} -> return None()
       }
     };
@@ -1119,16 +1117,14 @@ class TObject private (
     Some(TType::unionN(subst, tenv, pos, tys))
   }
 
-  fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
-    result: ?(Bool, TFuns) = None();
+  fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?TFuns {
+    result: ?TFuns = None();
     for (fields in this.branches) {
       (fields, result) match {
       | (TFields{new => None()}, _) -> return None()
       | (TFields{new => first @ Some _}, None()) -> !result = first
-      | (TFields{new => Some((opt2, tFuns2))}, Some((opt1, tFuns1))) ->
-        !result = Some(
-          (opt1 || opt2, TFuns::union(subst, tenv, tFuns1, tFuns2)),
-        )
+      | (TFields{new => Some(tFuns2)}, Some(tFuns1)) ->
+        !result = Some(TFuns::union(subst, tenv, tFuns1, tFuns2))
       }
     };
     result
@@ -1306,7 +1302,7 @@ private fun maybeGetFirstCallParam(
   ) match {
   | Some(obj @ TObject(_, _, _)) ->
     obj.maybeGetCall(subst, tenv) match {
-    | Some((_, tFuns)) ->
+    | Some(tFuns) ->
       fun_ = tFuns.fun_;
       fun_.params.maybeGet(0) match {
       | p @ Some _ -> p
@@ -2035,8 +2031,8 @@ class TFields protected {
     FieldNameString,
     TField,
   > = InternalKeyedArrayMap::empty(),
-  new: ?(/* optional */ Bool, TFuns) = None(),
-  call: ?(/* optional */ Bool, TFuns) = None(),
+  new: ?TFuns = None(),
+  call: ?TFuns = None(),
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
@@ -2060,8 +2056,8 @@ class TFields protected {
       stringIndex => tIndexes.stringIndex,
       numberIndex => tIndexes.numberIndex,
       symbolIndex => tIndexes.symbolIndex,
-      new => new.map(tFuns ~> (false, tFuns)),
-      call => call.map(tFuns ~> (false, tFuns)),
+      new,
+      call,
       isArray,
     }
   }
@@ -2156,13 +2152,13 @@ class TFields protected {
       stringIndex => this.stringIndex.map(fField),
       numberIndex => this.numberIndex.map(fField),
       symbolIndex => this.symbolIndex.map(fField),
-      new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
-      call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
+      new => this.new.map(fTFuns),
+      call => this.call.map(fTFuns),
       isArray => this.isArray,
     }
   }
 
-  fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TFields {
+  fun mapCall(f: (?TFuns) -> ??TFuns): ?TFields {
     f(this.call).map(call -> this with {call})
   }
 
