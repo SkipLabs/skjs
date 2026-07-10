@@ -437,7 +437,7 @@ extension base class TEnv {
 
   // The type of one member (`E.A` in type position, and the member field's
   // type on the enum object).
-  fun enumMemberValueType(m: EnumMember): TType {
+  static fun enumMemberValueType(m: EnumMember): TType {
     m.value match {
     | EMVLiteral(st) -> TType::single(st)
     | EMVNumber _ -> TType::single(TPrimValue::full(TNum(), m.name.pos))
@@ -451,13 +451,13 @@ extension base class TEnv {
     if (members.size() == 0) {
       return TType::bottom(en.name.pos)
     };
-    result = this.enumMemberValueType(members[0]);
+    result = static::enumMemberValueType(members[0]);
     for (i in Range(1, members.size())) {
       !result = TType::union(
         subst,
         this,
         result,
-        this.enumMemberValueType(members[i]),
+        static::enumMemberValueType(members[i]),
       )
     };
     result
@@ -477,7 +477,7 @@ extension base class TEnv {
         !found = Some(m)
       }
     };
-    found.map(m -> this.enumMemberValueType(m))
+    found.map(m -> static::enumMemberValueType(m))
   }
 
   // The type of the enum VALUE (`E` in expression position, `typeof E`): a
@@ -496,7 +496,7 @@ extension base class TEnv {
         name => m.name.value,
         isOptional => false,
         isReadonly => Some(m.name.pos),
-        type => this.enumMemberValueType(m),
+        type => static::enumMemberValueType(m),
         access => FAPublic(),
       }
     };
