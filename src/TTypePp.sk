@@ -382,8 +382,12 @@ mutable class TypePp{
       return None()
     };
     (fields.call, fields.new) match {
-    | (Some(TFuns(tfun, _pos)), None()) -> Some((false, tfun))
-    | (None(), Some(TFuns(tfun, _pos))) -> Some((true, tfun))
+    | (CPresent(TFuns(tfun, _pos)), CAbsent())
+    | (CPresent(TFuns(tfun, _pos)), CUnknown()) ->
+      Some((false, tfun))
+    | (CAbsent(), CPresent(TFuns(tfun, _pos)))
+    | (CUnknown(), CPresent(TFuns(tfun, _pos))) ->
+      Some((true, tfun))
     | _ -> None()
     }
   }
@@ -515,15 +519,19 @@ mutable class TypePp{
       this.out(level, margin, ";")
     });
     fields.call match {
-    | None() -> void
-    | Some(TFuns(tfun, _pos)) ->
+    | CAbsent()
+    | CUnknown() ->
+      void
+    | CPresent(TFuns(tfun, _pos)) ->
       this.beginMember(level, margin, multiLine);
       this.tfun(level, margin, (true, tfun));
       this.out(level, margin, ";")
     };
     fields.new match {
-    | None() -> void
-    | Some(TFuns(tfun, _pos)) ->
+    | CAbsent()
+    | CUnknown() ->
+      void
+    | CPresent(TFuns(tfun, _pos)) ->
       this.beginMember(level, margin, multiLine);
       this.out(level, margin, "new ");
       this.tfun(level, margin, (true, tfun));

@@ -121,6 +121,10 @@ class ObjectSpreadState{
       fields => this.fields,
       symbolFields => this.symbolFields,
       tIndexes,
+      // An object literal (or spread result) is a plain object: never
+      // callable or constructible.
+      call => CAbsent(),
+      new => CAbsent(),
       isArray => Some(false),
     }
   }

@@ -262,8 +262,10 @@ extension class TypeChecker {
         | tObj @ TObject _ ->
           tObj.mapCall(call ->
             call match {
-            | Some _ -> if (target) None() else Some(call)
-            | None() -> if (target) Some(call) else None()
+            | CPresent _ -> if (target) None() else Some(call)
+            | CAbsent()
+            | CUnknown() ->
+              if (target) Some(call) else None()
             }
           )
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
@@ -288,8 +290,10 @@ extension class TypeChecker {
         | tObj @ TObject _ ->
           tObj.mapCall(call ->
             call match {
-            | Some _ -> if (target) Some(call) else None()
-            | None() -> if (target) None() else Some(call)
+            | CPresent _ -> if (target) Some(call) else None()
+            | CAbsent()
+            | CUnknown() ->
+              if (target) None() else Some(call)
             }
           )
         | _ -> if (target) None() else Some(x)

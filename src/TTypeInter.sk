@@ -494,23 +494,31 @@ extension class TFields {
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
     call = (fields1.call, fields2.call) match {
-    | (None(), call)
-    | (call, None()) ->
+    | (CUnknown(), call)
+    | (call, CUnknown()) ->
       call
-    | (Some(call1), Some(call2)) ->
+    // Legacy: a definitely-absent mode still meets a signature like top.
+    | (CAbsent(), call)
+    | (call, CAbsent()) ->
+      call
+    | (CPresent(call1), CPresent(call2)) ->
       TFuns::inter(subst, tenv, call1, call2) match {
       | None() -> return None()
-      | f @ Some _ -> f
+      | Some(f) -> CPresent(f)
       }
     };
     new = (fields1.new, fields2.new) match {
-    | (None(), new)
-    | (new, None()) ->
+    | (CUnknown(), new)
+    | (new, CUnknown()) ->
       new
-    | (Some(new1), Some(new2)) ->
+    // Legacy: a definitely-absent mode still meets a signature like top.
+    | (CAbsent(), new)
+    | (new, CAbsent()) ->
+      new
+    | (CPresent(new1), CPresent(new2)) ->
       TFuns::inter(subst, tenv, new1, new2) match {
       | None() -> return None()
-      | f @ Some _ -> f
+      | Some(f) -> CPresent(f)
       }
     };
     Some(

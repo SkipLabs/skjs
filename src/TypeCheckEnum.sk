@@ -595,7 +595,13 @@ extension base class TEnv {
     };
     TType::single(
       TObject::createSingleBranch(
-        TFields::create{fields, isArray => Some(false)},
+        TFields::create{
+          fields,
+          // The runtime enum object is a plain object: never callable.
+          call => CAbsent(),
+          new => CAbsent(),
+          isArray => Some(false),
+        },
         None(),
         en.name.pos,
       ),
