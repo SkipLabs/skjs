@@ -98,6 +98,15 @@ base class Exportable extends Declarable {
     tparams: Array<TypeParam>,
     bodyRef: ClassBodyRef,
   }
+  // `isAmbient` records whether the enum is under a `declare` — its
+  // uninitialized members are then opaque (see enumMembers). Unlike other
+  // ambient declarations, which read this off the surviving `Declare` wrapper
+  // in checkDef_, an enum needs it during type ELABORATION: the enum node is
+  // its own defMap entry (FileDefs) and is reached from enumStatic/enumMembers
+  // via defMap.getAll, long after FileDefs.processDefs strips the wrapper. It
+  // also must propagate into enums nested in `declare namespace`/`module`/
+  // `global`, which carry no wrapper of their own — hence the parse-time
+  // markAmbientEnums pass below rather than a wrapper check at the use site.
   | Enum(
     isConst: ?PosRange,
     name: Name,
