@@ -1208,6 +1208,23 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
   fun mapFuns(f: TFun -> TFun): TFuns {
     TFuns(f(this.fun_), this.pos)
   }
+
+  // The declared type of the positional parameter at index i (counting the
+  // required parameters first, then the optional ones), or None if i is beyond
+  // them (i.e. only covered by the rest/spread parameter).
+  fun paramTypeAt(i: Int): ?TType {
+    f = this.fun_;
+    if (i < f.params.size()) {
+      Some(f.params[i])
+    } else {
+      oi = i - f.params.size();
+      if (oi < f.optionalParams.size()) {
+        Some(f.optionalParams[oi])
+      } else {
+        None()
+      }
+    }
+  }
 }
 
 class TFun(
