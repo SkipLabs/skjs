@@ -476,21 +476,25 @@ extension class TFields {
     };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
+    // effective*: a closed operand's implicit `never` collapses a field present
+    // only in the OTHER operand — inter(closed({a}), {a, b: string}) is
+    // closed({a, b: never}), not closed({a, b: string}). Growth EXTENDS rather
+    // than intersects, so it strips the marker first (assignLocalObjectByKeys).
     fields = TFields::interNamedFields(
       subst,
       tenv,
       fields1.fields,
       fields2.fields,
-      name -> fields1.indexForFieldName(name.value),
-      name -> fields2.indexForFieldName(name.value),
+      name -> fields1.effectiveIndexForFieldName(name.value),
+      name -> fields2.effectiveIndexForFieldName(name.value),
     );
     symbolFields = TFields::interNamedFields(
       subst,
       tenv,
       fields1.symbolFields,
       fields2.symbolFields,
-      _ -> fields1.symbolIndex,
-      _ -> fields2.symbolIndex,
+      _ -> fields1.effectiveSymbolIndex(),
+      _ -> fields2.effectiveSymbolIndex(),
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
     call = (fields1.call, fields2.call) match {
@@ -523,6 +527,13 @@ extension class TFields {
         call,
         new,
         isArray,
+        // Closedness is restrictive: the intersection is a closed literal if
+        // EITHER operand is (a value in both has no excess keys). Carries the
+        // literal's pos through the ownership-transfer retype.
+        closedLiteralPos => fields1.closedLiteralPos match {
+        | p @ Some _ -> p
+        | None() -> fields2.closedLiteralPos
+        },
       },
     )
   }

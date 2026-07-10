@@ -87,6 +87,15 @@ mutable class Subst private {
   // of SubstState, so save/restore never touch it; it is push/popped around
   // the check.
   mutable freezeCandidates: Bool = false,
+  // Ownership-transfer mode for closed object literals: while set, the subtype
+  // checker waives the setter obligations of ELIGIBLE closed-literal markers
+  // (see TypeChecker::checkSubTypeView). Deliberately NOT part of SubstState:
+  // save/restore (e.g. around `satisfies`) must not toggle it.
+  mutable transferMode: Bool = false,
+  // Marker positions eligible for waiving in the current transfer check: only
+  // the markers of the fresh literal being transferred (collected by
+  // collectEligibleMarkers), never markers of escaped values.
+  mutable transferEligible: SortedSet<PosRange> = SortedSet[],
 } extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
@@ -145,6 +154,8 @@ mutable class Subst private {
       version => this.version,
       values => this.values,
       origins => this.origins,
+      transferMode => this.transferMode,
+      transferEligible => this.transferEligible,
     }
   }
 

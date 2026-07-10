@@ -148,13 +148,18 @@ extension class TypeChecker {
         savedScope = tcenv.scope;
         paramScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = paramScope;
-        this.checkSubType(
+        // Transfer-transparent, no retype: a default binds no growable local
+        // in the enclosing scope (see demoteToFresh).
+        vi = this.viewInfoFor(tcenv, defaultExpr);
+        defaultTy = this.expr(tcenv, defaultExpr, true);
+        this.checkSubTypeView(
           tcenv,
           defaultExpr.pos,
           "Type of default value is not assignable to the parameter's type",
-          this.expr(tcenv, defaultExpr, true),
+          defaultTy,
           paramType,
           TSCode(2322),
+          demoteToFresh(vi),
         );
         tcenv.!scope = savedScope
       };

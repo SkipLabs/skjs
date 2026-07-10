@@ -1135,14 +1135,14 @@ class TObject private (
   // TField::unionIndex (get unioned, set intersected). None if any branch
   // lacks it: a general/index key is only resolvable when every disjunct can
   // serve it. Mirrors maybeGetCall/maybeGetNew's all-branches shape.
-  fun maybeGetNonSyntheticIndexForKeyKind(
+  fun maybeGetIndexForKeyKind(
     subst: mutable Subst,
     tenv: TEnv,
     kind: TPrimValueKind,
   ): ?TField {
     indexes: mutable Vector<TField> = mutable Vector[];
     for (fields in this.branches) {
-      fields.nonSyntheticIndexForKeyKind(kind) match {
+      fields.indexForKeyKind(kind) match {
       | None() -> return None()
       | Some(idx) -> indexes.push(idx)
       }
@@ -1158,26 +1158,24 @@ class TObject private (
 
   // True when some index kind can serve every branch (a number key may fall
   // back to a string index), i.e. the union carries an index usable here.
-  fun hasNonSyntheticIndex(): Bool {
-    this.hasNonSyntheticIndexForKeyKind(TString()) ||
-      this.hasNonSyntheticIndexForKeyKind(TNum()) ||
-      this.hasNonSyntheticIndexForKeyKind(TSymbol())
+  fun hasIndex(): Bool {
+    this.hasIndexForKeyKind(TString()) ||
+      this.hasIndexForKeyKind(TNum()) ||
+      this.hasIndexForKeyKind(TSymbol())
   }
 
   // True when every branch accepts a non-synthetic index for `kind`
-  fun hasNonSyntheticIndexForKeyKind(kind: TPrimValueKind): Bool {
-    this.branches.all(fields ->
-      fields.nonSyntheticIndexForKeyKind(kind).isSome()
-    )
+  fun hasIndexForKeyKind(kind: TPrimValueKind): Bool {
+    this.branches.all(fields -> fields.indexForKeyKind(kind).isSome())
   }
 
   // Human-readable list of the index key kinds every branch carries directly
   // (string/number/symbol), used in the "wrong index kind" diagnostic.
-  fun nonSyntheticIndexKeyKindsString(): String {
+  fun indexKeyKindsString(): String {
     parts: mutable Vector<String> = mutable Vector[];
-    if (this.hasNonSyntheticIndexForKeyKind(TString())) parts.push("string");
-    if (this.hasNonSyntheticIndexForKeyKind(TNum())) parts.push("number");
-    if (this.hasNonSyntheticIndexForKeyKind(TSymbol())) parts.push("symbol");
+    if (this.hasIndexForKeyKind(TString())) parts.push("string");
+    if (this.hasIndexForKeyKind(TNum())) parts.push("number");
+    if (this.hasIndexForKeyKind(TSymbol())) parts.push("symbol");
     parts.join(" | ")
   }
 
@@ -1758,31 +1756,27 @@ class TField{
     }
   }
 
-  // Create a synthetic index field with separate get/set TVars.
-  // Used for object literal indexes that should be transparent to the
-  // setter direction of subtyping (see kSyntheticIndexName).
-  static fun createSyntheticIndex(subst: mutable Subst, pos: PosRange): TField {
-    getTvar = subst.gen(pos);
-    subst.setOrigin(getTvar, FromSyntheticIndex(pos));
-    get = TType::var(getTvar);
-    setTvar = subst.gen(pos);
-    subst.setOrigin(setTvar, FromSyntheticIndex(pos));
-    set = TType::var(setTvar);
+  // Synthesize the closed-literal `readonly [k]: never` index for a closed
+  // object literal (TFields.closedLiteralPos = Some(pos)). Built ON DEMAND
+  // during subtyping (effectiveStringIndex / effectiveSymbolIndex) and never
+  // stored, so it never reaches printing or field resolution. Its `pos` is the
+  // ownership-transfer eligibility key; transfer mode waives its setter
+  // obligation. It mints no TVar — the get/set are a fixed `never` (bottom).
+  static fun createClosedIndex(pos: PosRange): TField {
     TField{
       pos,
-      name => FieldNameString(kSyntheticIndexName),
+      name => FieldNameString(kClosedLiteralIndexName),
       isOptional => true,
-      get,
-      set,
+      get => TType::bottom(pos),
+      set => TType::bottom(pos),
       access => FAPublic(),
     }
   }
 
-  // True if this field is the synthetic index created for object literals
-  // (see kSyntheticIndexName). Used to keep the internal name out of
-  // user-visible output while still letting it participate in subtyping.
-  fun isSynthetic(): Bool {
-    this.name.value == kSyntheticIndexName
+  // True if this field is a synthesized closed-literal index (see
+  // createClosedIndex). Used by transferWaived to recognize the marker.
+  fun isClosedLiteralIndex(): Bool {
+    this.name.value == kClosedLiteralIndexName
   }
 
   // Create a virtual field from an index, renamed for use in union.
@@ -1882,22 +1876,11 @@ const kArrayBrandFieldName: String = "__SKJS_isArray";
 // classes; the placeholder lets ambient declarations (where class_
 // doesn't run) round-trip. See TEnv::addFields and TEnv::instantiate.
 const kMissingTypeAnnotationPrefix: String = "Missing_type_annotation_for_";
-// Synthetic index signatures on object literals.
-//
-// Object literals like `{ x: 1, y: 2 }` get fresh type variables as string
-// and symbol index signatures. This allows them to be assigned to indexed
-// types like `{ [k: string]: number }` via normal subtyping: the TVar
-// unifies with the target index's value type.
-//
-// These synthetic indexes are named __SKJS_internal_index to distinguish them
-// from user-declared indexes. They must be:
-// - Visible to subtyping (indexForFieldName, isSub_IndexPair) so that object
-//   literals can satisfy indexed type constraints.
-// - Invisible to field resolution (hasNonSyntheticIndex,
-//   nonSyntheticIndexForKeyKind, nonSyntheticIndexKeyKindsString) so that
-//   `obj.z` on `{ x: 1 }` still reports "Unbound field" rather than resolving
-//   through the synthetic index.
-const kSyntheticIndexName: String = "__SKJS_internal_index";
+
+// Marker name for the synthesized closed-literal index (see createClosedIndex).
+// Never stored on a TFields (closedness is closedLiteralPos), so it only ever
+// appears transiently inside subtyping and never leaks into printed types.
+const kClosedLiteralIndexName: String = "__SKJS_internal_closed_index";
 
 base class TIndexesBase protected {
   // At most one index per key kind: string, number, symbol.
@@ -1991,6 +1974,13 @@ class TFields protected {
   call: ?(/* optional */ Bool, TFuns) = None(),
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
+  // Some(pos) marks these fields as a fresh CLOSED object literal: every index
+  // kind it does not declare is implicitly `never`. The marker is NOT stored as
+  // a real index; it is synthesized on demand only during subtyping
+  // (effectiveStringIndex / effectiveSymbolIndex), so it never pollutes field
+  // resolution, printing, or growth. The pos is the ownership-transfer
+  // eligibility identity. None = not a closed literal.
+  closedLiteralPos: ?PosRange = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
@@ -2003,6 +1993,7 @@ class TFields protected {
     new: ?TFuns = None(),
     call: ?TFuns = None(),
     isArray: ?Bool = None(),
+    closedLiteralPos: ?PosRange = None(),
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(fields),
@@ -2015,6 +2006,7 @@ class TFields protected {
       new => new.map(tFuns ~> (false, tFuns)),
       call => call.map(tFuns ~> (false, tFuns)),
       isArray,
+      closedLiteralPos,
     }
   }
 
@@ -2024,12 +2016,14 @@ class TFields protected {
     symbolFields: SortedMap<FieldNameString, TField> = SortedMap[],
     tIndexes: TIndexesBase = TIndexes::empty,
     isArray: ?Bool = None(),
+    closedLiteralPos: ?PosRange = None(),
   }: TFields {
     TFields::createFromSortedIterator{
       fields => fields.values(),
       symbolFields => symbolFields.values(),
       tIndexes,
       isArray,
+      closedLiteralPos,
     }
   }
 
@@ -2093,10 +2087,85 @@ class TFields protected {
     TFields{symbolFields => InternalKeyedArrayMap::single(field)}
   }
 
+  // The string index AS SEEN BY SUBTYPING: the declared string index, or — for
+  // a closed object literal that declares none — a synthesized `never` index.
+  // This is the only place the closed-literal marker materializes; reads,
+  // printing, and growth use the raw `stringIndex` slot (None for a literal).
+  fun effectiveStringIndex(): ?TField {
+    this.stringIndex match {
+    | s @ Some _ -> s
+    | None() -> this.closedLiteralPos.map(p -> TField::createClosedIndex(p))
+    }
+  }
+
+  // The symbol index as seen by subtyping (see effectiveStringIndex).
+  fun effectiveSymbolIndex(): ?TField {
+    this.symbolIndex match {
+    | s @ Some _ -> s
+    | None() -> this.closedLiteralPos.map(p -> TField::createClosedIndex(p))
+    }
+  }
+
+  // indexForFieldName for subtyping: resolves a closed literal's missing index
+  // to the synthesized `never` (the number kind has no marker, so it falls
+  // back to the effective string index — matching the declared-index rule).
+  fun effectiveIndexForFieldName(name: String): ?TField {
+    if (isJSNumericString(name) && this.numberIndex.isSome()) {
+      this.numberIndex
+    } else {
+      this.effectiveStringIndex()
+    }
+  }
+
+  // Drop the closed-literal marker (used when a fresh literal is stored into a
+  // field, or before growth's intersection merges in a new field).
+  fun clearClosedLiteral(): TFields {
+    this.withClosedLiteralPos(None())
+  }
+
+  // Set the closed-literal marker (used by growth to restore it after the
+  // intersection mechanism merges in a new field).
+  fun withClosedLiteralPos(pos: ?PosRange): TFields {
+    this with {closedLiteralPos => pos}
+  }
+
+  // Declared (real) index signatures only. A closed literal's implicit `never`
+  // index is NOT a declared index — it materializes only in subtyping — so
+  // these reads never see it.
+  fun hasIndex(): Bool {
+    this.stringIndex.isSome() ||
+      this.numberIndex.isSome() ||
+      this.symbolIndex.isSome()
+  }
+
+  // Find a declared index that accepts the given key kind (number falls back to
+  // string, since JS coerces number keys to strings).
+  fun indexForKeyKind(kind: TPrimValueKind): ?TField {
+    kind match {
+    | TString() -> this.stringIndex
+    | TNum() ->
+      this.numberIndex match {
+      | Some _ -> this.numberIndex
+      | None() -> this.stringIndex
+      }
+    | TSymbol() -> this.symbolIndex
+    | _ -> None()
+    }
+  }
+
+  // Human-readable string of supported index key kinds (e.g. "number").
+  fun indexKeyKindsString(): String {
+    parts: mutable Vector<String> = mutable Vector[];
+    if (this.stringIndex.isSome()) parts.push("string");
+    if (this.numberIndex.isSome()) parts.push("number");
+    if (this.symbolIndex.isSome()) parts.push("symbol");
+    parts.join(" | ")
+  }
+
   fun isEmpty(): Bool {
     this.fields.isEmpty() &&
       this.symbolFields.isEmpty() &&
-      !this.hasNonSyntheticIndex() &&
+      !this.hasIndex() &&
       this.new.isNone() &&
       this.call.isNone()
   }
@@ -2111,6 +2180,7 @@ class TFields protected {
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       isArray => this.isArray,
+      closedLiteralPos => this.closedLiteralPos,
     }
   }
 
@@ -2153,34 +2223,6 @@ class TFields protected {
     }
   }
 
-  private static fun nonSynthetic(index: ?TField): ?TField {
-    index.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
-  }
-
-  fun hasNonSyntheticIndex(): Bool {
-    TFields::nonSynthetic(this.stringIndex).isSome() ||
-      TFields::nonSynthetic(this.numberIndex).isSome() ||
-      TFields::nonSynthetic(this.symbolIndex).isSome()
-  }
-
-  // Find an index that accepts the given key kind.
-  // For number keys, try numberIndex first, then fall back to stringIndex
-  // (since JS coerces number keys to strings).
-  // Excludes synthetic indexes (used only for subtyping object literals).
-  fun nonSyntheticIndexForKeyKind(kind: TPrimValueKind): ?TField {
-    idx = kind match {
-    | TString() -> this.stringIndex
-    | TNum() ->
-      this.numberIndex match {
-      | Some _ -> this.numberIndex
-      | None() -> this.stringIndex
-      }
-    | TSymbol() -> this.symbolIndex
-    | _ -> None()
-    };
-    TFields::nonSynthetic(idx)
-  }
-
   // Named fields that a general (non-literal) key of `kind` could resolve to
   // at runtime. Used by element access (`x[k]`) to keep the result sound when
   // the key isn't a known literal: such a key may land on a declared field
@@ -2215,10 +2257,10 @@ class TFields protected {
     this.maybeGet(name) match {
     | some @ Some _ -> some
     | None() ->
-      this.indexForFieldName(name).flatMap(idx ->
-        if (idx.isSynthetic()) None() else {
-          Some(idx.asNamed(FieldNameString(name)))
-        }
+      // indexForFieldName reads the raw slot (never a closed-literal marker,
+      // which is synthesized only in subtyping), so nothing to filter here.
+      this.indexForFieldName(name).map(idx ->
+        idx.asNamed(FieldNameString(name))
       )
     }
   }
@@ -2330,7 +2372,7 @@ class TFields protected {
     | FKSymbol(_, uniqueId) ->
       this.maybeGetSymbol(uniqueId) match {
       | some @ Some _ -> some
-      | None() -> this.nonSyntheticIndexForKeyKind(TSymbol())
+      | None() -> this.indexForKeyKind(TSymbol())
       }
     }
   }
@@ -2568,7 +2610,6 @@ base class TVarOrigin {
   | FromNullLiteral(PosRange)
   | FromUndefinedLiteral(PosRange)
   | FromObjectField(PosRange)
-  | FromSyntheticIndex(PosRange)
   | FromArrayElement(PosRange)
   | FromUntypedVar(PosRange)
 }

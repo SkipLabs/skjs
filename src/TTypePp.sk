@@ -113,8 +113,8 @@ fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
 
 mutable class TypePp{
   compact: Bool,
-  // Mirrors --verbose: when true, internal-only details (synthetic index
-  // name; see kSyntheticIndexName) are kept in the printed output for
+  // Mirrors --verbose: when true, internal-only details (the qualified
+  // type-parameter id; see tparamName) are kept in the printed output for
   // debugging instead of being filtered out.
   verbose: Bool = false,
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
@@ -368,7 +368,7 @@ mutable class TypePp{
     };
     (
       fields.fields.isEmpty(),
-      !fields.hasNonSyntheticIndex(),
+      !fields.hasIndex(),
       fields.call,
       fields.new,
     ) match {
@@ -406,17 +406,12 @@ mutable class TypePp{
   ): void {
     fieldArray = fields.fields;
     symbolFieldArray = fields.symbolFields;
-    // Hide synthetic indexes (kSyntheticIndexName): they exist to make
-    // object literals satisfy indexed-type constraints during subtyping
-    // and must not appear in user-visible printed types. Kept under
-    // --verbose for debugging.
-    hideSynthetic: ((?TField) -> ?TField) = idx ->
-      if (this.verbose) idx else {
-        idx.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
-      };
-    stringIdx = hideSynthetic(fields.stringIndex);
-    numberIdx = hideSynthetic(fields.numberIndex);
-    symbolIdx = hideSynthetic(fields.symbolIndex);
+    // A closed object literal's implicit `never` index is never stored in the
+    // index slots (it materializes only in subtyping), so the declared slots
+    // print directly with nothing to hide.
+    stringIdx = fields.stringIndex;
+    numberIdx = fields.numberIndex;
+    symbolIdx = fields.symbolIndex;
     hasIndexes = stringIdx.isSome() || numberIdx.isSome() || symbolIdx.isSome();
     for (i => field in fieldArray) {
       fieldName = field.name.value;

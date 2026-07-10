@@ -109,19 +109,27 @@ class ObjectSpreadState{
   // Finish a branch: add the synthetic string/symbol index type variables that
   // let a fresh object literal be assigned to indexed types via subtyping (they
   // are invisible to field resolution), then build the TFields.
-  fun toTFields(subst: mutable Subst, pos: PosRange): TFields {
+  fun toTFields(_subst: mutable Subst, pos: PosRange): TFields {
     tIndexes = this.tIndexes;
-    if (tIndexes.stringIndex.isNone()) {
-      !tIndexes.stringIndex = Some(TField::createSyntheticIndex(subst, pos))
-    };
-    if (tIndexes.symbolIndex.isNone()) {
-      !tIndexes.symbolIndex = Some(TField::createSyntheticIndex(subst, pos))
+    // A branch with an undeclared index kind is a CLOSED object literal: every
+    // undeclared kind is implicitly `never`, materialized on demand during
+    // subtyping (no stored index). Per-slot, not whole-literal: this keeps a
+    // spread of only-closed sources closed (#754) while the over-cap degrade —
+    // which fills both slots with an open Top index — stays open.
+    closedLiteralPos = if (
+      tIndexes.stringIndex.isNone() ||
+      tIndexes.symbolIndex.isNone()
+    ) {
+      Some(pos)
+    } else {
+      None()
     };
     TFields::createFromSorted{
       fields => this.fields,
       symbolFields => this.symbolFields,
       tIndexes,
       isArray => Some(false),
+      closedLiteralPos,
     }
   }
 
@@ -146,6 +154,7 @@ class ObjectSpreadState{
       branch.fields,
       name -> branch.indexForFieldName(name),
       name -> state.tIndexes.indexForFieldName(name),
+      branch.closedLiteralPos.isSome(),
       pos,
     );
     newSymbolFields = static::mergeFieldMap(
@@ -155,6 +164,7 @@ class ObjectSpreadState{
       branch.symbolFields,
       _ -> branch.symbolIndex,
       _ -> state.tIndexes.symbolIndex,
+      branch.closedLiteralPos.isSome(),
       pos,
     );
     if (
@@ -165,14 +175,18 @@ class ObjectSpreadState{
         "Spread with existing number index but no string index",
       );
     };
-    // A synthetic index is a subtyping artifact on a closed object literal,
-    // not a real property bag, so it contributes nothing to the spread; an
-    // absent index on a (named) source may still hide excess properties, so
-    // that widens to Top. See mergeFieldMap and the index merges below.
+    // A closed object literal contributes nothing to the spread (its implicit
+    // `never` index is a subtyping artifact, not a real property bag); an
+    // absent index on a (named) open source may still hide excess properties,
+    // so that widens to Top. See mergeFieldMap and the index merges below.
     spreadStrIdx = branch.stringIndex match {
-    | Some(f) if (!f.isSynthetic()) -> f.get
-    | Some(_) -> TType::bottom(pos)
-    | None() -> TType::top(pos)
+    | Some(f) -> f.get
+    | None() ->
+      if (branch.closedLiteralPos.isSome()) {
+        TType::bottom(pos)
+      } else {
+        TType::top(pos)
+      }
     };
     mergedNumberIndex = (
       state.tIndexes.numberIndex,
@@ -210,35 +224,38 @@ class ObjectSpreadState{
         },
       )
     };
-    // A synthetic string/symbol index (an object-literal subtyping artifact)
-    // must not merge into the accumulated index: the literal is closed, so it
-    // adds no real index. Keep the existing index unchanged in that case,
-    // rather than routing the literal's shared synthetic get-tvar into the
-    // result (which chained spreads could then drive to a contradiction). A
-    // real index still merges; an absent index still widens to an open Top
-    // index via mergeSpreadIndex.
-    mergedStringIndex = branch.stringIndex match {
-    | Some(f) if (f.isSynthetic()) -> state.tIndexes.stringIndex
-    | branchStringIndex ->
+    // A closed object literal (undeclared slot + closedLiteralPos) adds no real
+    // index, so it must not merge into the accumulated index: keep the existing
+    // index unchanged. A real index still merges; an absent index on an open
+    // source still widens to an open Top index via mergeSpreadIndex.
+    mergedStringIndex = if (
+      branch.stringIndex.isNone() &&
+      branch.closedLiteralPos.isSome()
+    ) {
+      state.tIndexes.stringIndex
+    } else {
       Some(
         static::mergeSpreadIndex(
           subst,
           tenv,
           state.tIndexes.stringIndex,
-          branchStringIndex,
+          branch.stringIndex,
           pos,
         ),
       )
     };
-    mergedSymbolIndex = branch.symbolIndex match {
-    | Some(f) if (f.isSynthetic()) -> state.tIndexes.symbolIndex
-    | branchSymbolIndex ->
+    mergedSymbolIndex = if (
+      branch.symbolIndex.isNone() &&
+      branch.closedLiteralPos.isSome()
+    ) {
+      state.tIndexes.symbolIndex
+    } else {
       Some(
         static::mergeSpreadIndex(
           subst,
           tenv,
           state.tIndexes.symbolIndex,
-          branchSymbolIndex,
+          branch.symbolIndex,
           pos,
         ),
       )
@@ -267,6 +284,7 @@ class ObjectSpreadState{
     branchFields: InternalKeyedArrayMap<FieldNameString, TField>,
     branchIndexFor: String -> ?TField,
     stateIndexFor: String -> ?TField,
+    branchClosed: Bool,
     pos: PosRange,
   ): SortedMap<FieldNameString, TField> {
     newFields = SortedMap<FieldNameString, TField>[];
@@ -286,18 +304,12 @@ class ObjectSpreadState{
         | Some(sf) -> sf.get
         | None() ->
           branchIndexFor(existingField.name.value) match {
-          // A synthetic index is a subtyping artifact on an object literal
-          // (added so `{x:1}` can satisfy `{[k:string]:number}`), not a real
-          // runtime property bag. Spreading a closed object literal that
-          // lacks this field contributes nothing to it, so keep the existing
-          // field type — do NOT union in the synthetic index's get. Merging
-          // it would couple unrelated siblings through the literal's shared
-          // synthetic get-tvar and drive them to a spurious contradiction.
-          | Some(idx) if (!idx.isSynthetic()) -> idx.get
-          | Some(_) -> existingField.get
-          // No index at all: a named-field source may still carry an untyped
-          // excess property here via width subtyping, so widen to Top.
-          | None() -> TType::top(pos)
+          | Some(idx) -> idx.get
+          // No index at all. A closed object literal provably lacks this key,
+          // so it contributes nothing — keep the existing field type. A named
+          // (open) source may still carry an untyped excess property here via
+          // width subtyping, so widen to Top.
+          | None() -> if (branchClosed) existingField.get else TType::top(pos)
           }
         };
         mergedGet = TType::union(subst, tenv, existingField.get, spreadGet);
@@ -762,6 +774,9 @@ extension class TypeChecker {
         (ty, false)
       }
     | Some(e) ->
+      // Captured before evaluating e — evaluating a Var flips its local-object
+      // state to LOUsed, which is what makes the transfer right unique.
+      vi = this.viewInfoFor(tcenv, e);
       ty = this.expr(tcenv, e, kind is BKConst());
       // Wrap null/undefined initializers in a bound TVar so the variable
       // can be widened later (e.g., `let x = null; x = 1`).
@@ -778,13 +793,14 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        this.checkSubType(
+        this.checkSubTypeView(
           tcenv,
           annotAst.pos,
           "Type of value is not assignable to the variable's type annotation",
           ty,
           annot,
           TSCode(2322),
+          vi,
         );
         (annot, true)
       }
@@ -1040,11 +1056,7 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            obj.maybeGetNonSyntheticIndexForKeyKind(
-              tcenv.subst,
-              this,
-              TSymbol(),
-            ) match {
+            obj.maybeGetIndexForKeyKind(tcenv.subst, this, TSymbol()) match {
             | None() ->
               // Unique symbols naming no declared field, or a general symbol,
               // with no symbol index to resolve through.
@@ -1148,7 +1160,7 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            matchedIndex = obj.maybeGetNonSyntheticIndexForKeyKind(
+            matchedIndex = obj.maybeGetIndexForKeyKind(
               tcenv.subst,
               this,
               remainingIdxSType.kind,
@@ -1164,15 +1176,11 @@ extension class TypeChecker {
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
-                obj.maybeGetNonSyntheticIndexForKeyKind(
-                  tcenv.subst,
-                  this,
-                  TNum(),
-                )
+                obj.maybeGetIndexForKeyKind(tcenv.subst, this, TNum())
               | _ -> None()
               }
             };
-            if (matchedIndex.isNone() && obj.hasNonSyntheticIndex()) {
+            if (matchedIndex.isNone() && obj.hasIndex()) {
               // Object has indexes but not for this key kind. The access is
               // fundamentally invalid; we can't substitute an unrelated-kind
               // index value without manufacturing a cascade of dependent
@@ -1182,7 +1190,7 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected ${obj.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected ${obj.indexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
@@ -2612,7 +2620,7 @@ extension class TypeChecker {
             // all-branches index matches the old branch-merge). TODO: refine.
             !canBeFalse =
               canBeFalse ||
-              obj.hasNonSyntheticIndex() ||
+              obj.hasIndex() ||
               obj.getBranches().any(branchFields -> {
                 (fields, symbolFields) = branchFields match {
                 | TFields{fields, symbolFields} -> (fields, symbolFields)
@@ -2780,27 +2788,34 @@ extension class TypeChecker {
       )
     | As(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
+      // Transfer-transparent, no retype: a cast binds no name (see demoteToFresh).
+      vi = this.viewInfoFor(tcenv, subExpr);
       inferredTy = this.expr(tcenv, subExpr, true);
-      this.checkSubType(
+      this.checkSubTypeView(
         tcenv,
         pos,
         "This 'as' cast is unsound: the source type is not assignable to the target type",
         inferredTy,
         annot,
         SKJSCode(2003),
+        demoteToFresh(vi),
       );
       annot
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
+      // Transfer-transparent, but never retype: the subst is restored and no
+      // value of the annotation type escapes (see demoteToFresh).
+      vi = this.viewInfoFor(tcenv, subExpr);
       inferredTy = this.expr(tcenv, subExpr, true);
       savedSubst = tcenv.subst.save();
-      this.checkSubType(
+      this.checkSubTypeView(
         tcenv,
         pos,
         "Type does not satisfy the expected type",
         inferredTy,
         annot,
         TSCode(1360),
+        demoteToFresh(vi),
       );
       tcenv.subst.restore(savedSubst);
       inferredTy
@@ -3347,14 +3362,17 @@ extension class TypeChecker {
       )
     | _ ->
       ty1 = this.expr(tcenv, e1, false, true);
+      // Captured before evaluating e2 (see checkSubTypeView).
+      vi = this.viewInfoFor(tcenv, e2);
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      this.checkSubType(
+      this.checkSubTypeView(
         tcenv,
         e2.pos,
         "Type is not assignable to the assignment target's type",
         ty2,
         ty1,
         TSCode(2322),
+        vi,
       );
       ty1
     }
@@ -3439,9 +3457,13 @@ extension class TypeChecker {
     local: Name,
     keyExpr: Expr,
     keyType: TType,
-    fieldType: TType,
+    fieldType0: TType,
     fieldKeys: Array<FieldKey>,
   ): TType {
+    // Shed the closed-literal marker from a fresh-literal value being stored:
+    // the stored value is no longer a transferable fresh literal and must not
+    // act as a closed `super` (its implicit `never` index) in later checks.
+    fieldType = this.stripClosedLiteralIndex(tcenv, fieldType0);
     isOptional = fieldKeys.size() > 1;
     used = tcenv.localObjectState(local) match {
     | Some(LOCanGrow(bound)) ->
@@ -3537,8 +3559,17 @@ extension class TypeChecker {
           };
           // The added fields are absent from the branch, so the intersection
           // just inserts them; None (an isArray/signature clash) drops the
-          // branch, mirroring TObject::inter.
-          TFields::inter(tcenv.subst, this, branch, newFields)
+          // branch, mirroring TObject::inter. Growth EXTENDS the key set, but
+          // inter treats a closed branch's undeclared keys as `never` (which
+          // would zero the new field), so strip the marker for the merge and
+          // restore it — the grown branch is still a closed literal.
+          objClosedPos = branch.closedLiteralPos;
+          TFields::inter(
+            tcenv.subst,
+            this,
+            branch.clearClosedLiteral(),
+            newFields,
+          ).map(m -> m.withClosedLiteralPos(objClosedPos))
         }
       });
       if (needsGrowth) {
@@ -3564,21 +3595,27 @@ extension class TypeChecker {
             Array[(local.pos, "Cannot add a field to an object inside a loop")],
             SKJSCode(2069),
           )
-        };
-        newTy = grownObj match {
-        | Some(o) -> TType::single(o)
-        | None() -> TType::bottom(objPos)
-        };
-        tcenv.scope.set(local, newTy, (x, y) -> {
-          this.checkSubType(
-            tcenv,
-            fieldType.pos,
-            "Type is not assignable to the property's type",
-            x,
-            y,
-            TSCode(2322),
-          )
-        })
+          // Skip the rebind: Scope::set's loop-widening callback would compare
+          // the grown type against the closed loop-carried original and add a
+          // second, misleading error (its implicit `never` index — a closed
+          // literal has no growable TVar to absorb it). The growth is already
+          // diagnosed above.
+        } else {
+          newTy = grownObj match {
+          | Some(o) -> TType::single(o)
+          | None() -> TType::bottom(objPos)
+          };
+          tcenv.scope.set(local, newTy, (x, y) -> {
+            this.checkSubType(
+              tcenv,
+              fieldType.pos,
+              "Type is not assignable to the property's type",
+              x,
+              y,
+              TSCode(2322),
+            )
+          })
+        }
       }
     | _ ->
       tcenv.error(
@@ -3654,6 +3691,11 @@ extension class TypeChecker {
     mostPrecise: Bool,
   ): TType {
     args = mutable Vector<TType>[];
+    // ViewInfo captured BEFORE evaluating each positional arg (parallel to
+    // `args`), so a fresh-literal argument is checked in ownership-transfer
+    // mode against its parameter. Spread-supplied elements are never fresh
+    // literals in this position, so they get VINone.
+    viewInfos = mutable Vector<ViewInfo>[];
     moreArgs: ?TType = None();
 
     for (argExpr in argExprs) {
@@ -3665,6 +3707,7 @@ extension class TypeChecker {
           stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
           | Some(tupElts) ->
             args.extend(tupElts);
+            for (_ in tupElts) viewInfos.push(VINone());
             continue
           | None() -> void
           }
@@ -3704,9 +3747,12 @@ extension class TypeChecker {
           )
         }
       | _ ->
+        vi = this.viewInfoFor(tcenv, argExpr);
         argTy = this.expr(tcenv, argExpr, mostPrecise);
         moreArgs match {
-        | None() -> args.push(argTy)
+        | None() ->
+          args.push(argTy);
+          viewInfos.push(vi)
         | Some(ma) ->
           !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
         }
@@ -3832,33 +3878,42 @@ extension class TypeChecker {
             );
             break void
           } else {
-            this.checkSubType(
+            this.checkSubTypeView(
               tcenv,
               pos,
               "Argument is not assignable to the parameter's type",
               args[i],
               tfun.params[i],
               TSCode(2345),
+              // A fresh-literal argument transfers to the callee: the parameter
+              // governs it, so its setter obligations are waived. Never retype
+              // (VITransfer demoted to the no-retype VITransfer(None)) — a value
+              // passed to a call does not become a named local.
+              viewInfos.maybeGet(i).map(demoteToFresh).default(VINone()),
             )
           }
         };
         for (j in Range(0, tfun.optionalParams.size())) {
           i = tfun.params.size() + j;
-          arg = if (i < args.size()) {
-            args[i]
+          (arg, vi) = if (i < args.size()) {
+            (
+              args[i],
+              viewInfos.maybeGet(i).map(demoteToFresh).default(VINone()),
+            )
           } else {
             moreArgs match {
             | None() -> break void
-            | Some(ma) -> ma
+            | Some(ma) -> (ma, VINone())
             }
           };
-          this.checkSubType(
+          this.checkSubTypeView(
             tcenv,
             pos,
             "Argument is not assignable to the parameter's type",
             arg,
             tfun.optionalParams[j],
             TSCode(2345),
+            vi,
           )
         };
         if (tcenv.subst.version == version) {

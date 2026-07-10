@@ -604,6 +604,53 @@ base class FieldMismatchKind uses Equality {
   }
 }
 
+// True if `f` is a closed-literal marker index whose setter obligations are
+// waived by the current ownership-transfer check: the value being checked is
+// fresh (its type is replaced by the target), so granting the target write
+// access to keys the marker forbids is sound. Gated on the eligibility set —
+// only the transferred literal's own markers qualify, never markers of
+// escaped values reached through the target's structure.
+private fun transferWaived(subst: readonly Subst, f: TField): Bool {
+  subst.transferMode &&
+    f.isClosedLiteralIndex() &&
+    subst.transferEligible.contains(f.pos)
+}
+
+// True if these are the fields of the fresh literal being transferred: marked
+// closed AND its marker is in the eligibility set. The literal's own field
+// setters then impose no obligations either (same ownership argument as
+// transferWaived: the value is fresh, the new owner gets write rights).
+private fun transferWaivedFields(
+  subst: readonly Subst,
+  fields1: TFields,
+): Bool {
+  subst.transferMode &&
+    (fields1
+      .effectiveStringIndex()
+      .map(f -> transferWaived(subst, f))
+      .default(false) ||
+      fields1
+        .effectiveSymbolIndex()
+        .map(f -> transferWaived(subst, f))
+        .default(false))
+}
+
+// Display label for an index field in subtyping diagnostics. The internal
+// literal-index markers (synthetic / closed-literal) must not leak their
+// internal names into messages.
+private fun indexFieldLabel(
+  f: TField,
+  kindWord: String,
+  capitalize: Bool = false,
+): String {
+  label = if (f.isClosedLiteralIndex()) {
+    "the object literal's implicit closed index"
+  } else {
+    `${kindWord} '${f.name.value}'`
+  };
+  if (capitalize) label.uppercaseFirst() else label
+}
+
 base class STErrorOnTFields(
   fields1: TFields,
   fields2: TFields,
@@ -628,9 +675,9 @@ base class STErrorOnTFields(
   ): List<(PosRange, String)> {
     showTypes =
       !this.fields1.fields.isEmpty() ||
-      this.fields1.hasNonSyntheticIndex() ||
+      this.fields1.hasIndex() ||
       !this.fields2.fields.isEmpty() ||
-      this.fields2.hasNonSyntheticIndex() ||
+      this.fields2.hasIndex() ||
       (
         this.fields1.new,
         this.fields1.call,
@@ -669,12 +716,16 @@ base class STErrorOnTFields(
     | STRecFieldsIndexValue(err, index1, index2, kind, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Value type of index field '${index1.name.value}'`),
+          (
+            index1.pos,
+            `Value type of ${indexFieldLabel(index1, "index field")}`,
+          ),
           (
             index2.pos,
-            `is not assignable to value type of index field '${
-              index2.name.value
-            }'`,
+            `is not assignable to value type of ${indexFieldLabel(
+              index2,
+              "index field",
+            )}`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -692,7 +743,10 @@ base class STErrorOnTFields(
         List[
           (
             index2.pos,
-            `Missing index signature '${index2.name.value}' in source type`,
+            `Missing ${indexFieldLabel(
+              index2,
+              "index signature",
+            )} in source type`,
           ),
         ],
         None(),
@@ -703,7 +757,7 @@ base class STErrorOnTFields(
           (field1.pos, `Field '${field1.name.value}'`),
           (
             index2.pos,
-            `is not assignable to index field '${index2.name.value}'`,
+            `is not assignable to ${indexFieldLabel(index2, "index field")}`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -712,7 +766,7 @@ base class STErrorOnTFields(
     | STRecFieldsIndexField(err, index1, field2, kind, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Index field '${index1.name.value}'`),
+          (index1.pos, indexFieldLabel(index1, "index field", true)),
           (field2.pos, `is not assignable to field '${field2.name.value}'`),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -811,6 +865,13 @@ extension class TFields {
   ): STResult<TFields> {
     (idx1, idx2) match {
     | (_, None()) -> STOk()
+    // A closed-literal marker as the SUPER index is an inference-context
+    // placeholder — object literals are never annotations, so a closed literal
+    // only ever reaches a super position through inference (a committed
+    // container/recursive element). Accept any sub against it, matching main's
+    // growable synthetic-index TVar, whose super position absorbed. A real
+    // closed constraint never appears as a super.
+    | (_, Some(index2)) if (index2.isClosedLiteralIndex()) -> STOk()
     | (Some(index1), Some(index2)) ->
       TType::isSub(subst, tenv, index1.get, index2.get) match {
       | err @ STErrorOnTType _ ->
@@ -823,17 +884,25 @@ extension class TFields {
           fields2,
         )
       | STOk() ->
-        TType::isSub(subst, tenv, index2.set, index1.set) match {
-        | err @ STErrorOnTType _ ->
-          STRecFieldsIndexValue(
-            err,
-            index1,
-            index2,
-            FMKSetter(),
-            fields1,
-            fields2,
-          )
-        | STOk() -> STOk()
+        // Ownership transfer: the fresh literal's marker imposes no setter
+        // obligation on the new owner (main's synthetic-index TVar absorbed
+        // this automatically; the flag's fixed `never` needs the explicit
+        // waiver).
+        if (transferWaived(subst, index1)) {
+          STOk()
+        } else {
+          TType::isSub(subst, tenv, index2.set, index1.set) match {
+          | err @ STErrorOnTType _ ->
+            STRecFieldsIndexValue(
+              err,
+              index1,
+              index2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          | STOk() -> STOk()
+          }
         }
       }
     | (None(), Some(index2)) ->
@@ -882,17 +951,20 @@ extension class TFields {
               fields2,
             )
           | STOk() ->
-            TType::isSub(subst, tenv, idx2.set, f1.set) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsFieldIndex(
-                err,
-                f1,
-                idx2,
-                FMKSetter(),
-                fields1,
-                fields2,
-              )
-            | STOk() -> void
+            // Ownership transfer waives a fresh literal's extra-field setter.
+            if (!transferWaivedFields(subst, fields1)) {
+              TType::isSub(subst, tenv, idx2.set, f1.set) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsFieldIndex(
+                  err,
+                  f1,
+                  idx2,
+                  FMKSetter(),
+                  fields1,
+                  fields2,
+                )
+              | STOk() -> void
+              }
             }
           }
         }
@@ -900,18 +972,20 @@ extension class TFields {
         if (!f2.isOptional) {
           return STRecFieldsMissingField(f2, fields1, fields2)
         };
-        // A synthetic index marks a closed object literal (or a spread of
+        // A closed-literal marker means a closed object literal (or a spread of
         // closed literals): it provably has no own key at f2.name, so omitting
         // the optional field f2 is sound — an absent key reads as undefined,
         // which an optional field permits. Its value only exists to grow
         // against index-signature targets, and spread distribution may have
         // committed it to a sibling field's type, so it must not be required to
         // satisfy f2 (that spuriously rejects a closed `{ b: string }` branch
-        // against `{ b?: string; c?: number }`). A real index (an open object,
-        // whose excess keys could hide an incompatible f2) is still checked.
+        // against `{ b?: string; c?: number }` — #754). A real index (an open
+        // object, whose excess keys could hide an incompatible f2) is still
+        // checked; a fresh literal's setter obligation there is waived when the
+        // transfer is in progress.
         indexFor(fields1, f2.name) match {
         | None() -> return STRecFieldsMissingField(f2, fields1, fields2)
-        | Some(idx1) if (idx1.isSynthetic()) -> void
+        | Some(idx1) if (idx1.isClosedLiteralIndex()) -> void
         | Some(idx1) ->
           TType::isSub(subst, tenv, idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
@@ -924,17 +998,19 @@ extension class TFields {
               fields2,
             )
           | STOk() ->
-            TType::isSub(subst, tenv, f2.set, idx1.set) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsIndexField(
-                err,
-                idx1,
-                f2,
-                FMKSetter(),
-                fields1,
-                fields2,
-              )
-            | STOk() -> void
+            if (!transferWaived(subst, idx1)) {
+              TType::isSub(subst, tenv, f2.set, idx1.set) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsIndexField(
+                  err,
+                  idx1,
+                  f2,
+                  FMKSetter(),
+                  fields1,
+                  fields2,
+                )
+              | STOk() -> void
+              }
             }
           }
         }
@@ -945,22 +1021,33 @@ extension class TFields {
         if (!f1.access.isCompatibleWith(f2.access)) {
           return STRecFieldsFieldAccess(f1, f2, fields1, fields2)
         };
-        // Readonly field cannot satisfy a mutable field: skip the setter isSub
-        // to avoid spurious success from TVar inference.
-        if (f1.set.isBottom() && !f2.set.isBottom()) {
-          return STRecFieldsField(None(), f1, f2, FMKSetter(), fields1, fields2)
-        };
-        TType::isSub(subst, tenv, f2.set, f1.set) match {
-        | STOk() -> void
-        | err @ STErrorOnTType _ ->
-          return STRecFieldsField(
-            Some(err),
-            f1,
-            f2,
-            FMKSetter(),
-            fields1,
-            fields2,
-          )
+        // Ownership transfer waives a fresh literal's field setter (both the
+        // readonly guard and the setter isSub), since the value is fresh.
+        if (!transferWaivedFields(subst, fields1)) {
+          // Readonly field cannot satisfy a mutable field: skip the setter isSub
+          // to avoid spurious success from TVar inference.
+          if (f1.set.isBottom() && !f2.set.isBottom()) {
+            return STRecFieldsField(
+              None(),
+              f1,
+              f2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          };
+          TType::isSub(subst, tenv, f2.set, f1.set) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(
+              Some(err),
+              f1,
+              f2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          }
         };
         // Exact optional semantics: `f?: T` promises that a PRESENT key
         // holds a T. The sub's field describes present values, so it must
@@ -997,7 +1084,7 @@ extension class TFields {
       tenv,
       fields1.fields,
       fields2.fields,
-      (fs, name) -> fs.indexForFieldName(name.value),
+      (fs, name) -> fs.effectiveIndexForFieldName(name.value),
       fields1,
       fields2,
     ) match {
@@ -1006,11 +1093,12 @@ extension class TFields {
     };
     // Per-kind index checks: for each kind, if super has an index,
     // sub must also have a compatible index (or named fields that satisfy it).
+    // effective* materializes a closed literal's implicit `never` index here.
     TFields::isSub_IndexPair(
       subst,
       tenv,
-      fields1.stringIndex,
-      fields2.stringIndex,
+      fields1.effectiveStringIndex(),
+      fields2.effectiveStringIndex(),
       fields1,
       fields2,
     ) match {
@@ -1021,9 +1109,9 @@ extension class TFields {
     // since string index covers numeric keys.
     (
       fields1.numberIndex,
-      fields1.stringIndex,
+      fields1.effectiveStringIndex(),
       fields2.numberIndex,
-      fields2.stringIndex,
+      fields2.effectiveStringIndex(),
     ) match {
     | (None(), _, None(), _) -> void
     | (effectiveNum1 @ Some _, _, None(), effectiveNum2)
@@ -1044,8 +1132,8 @@ extension class TFields {
     TFields::isSub_IndexPair(
       subst,
       tenv,
-      fields1.symbolIndex,
-      fields2.symbolIndex,
+      fields1.effectiveSymbolIndex(),
+      fields2.effectiveSymbolIndex(),
       fields1,
       fields2,
     ) match {
@@ -1058,7 +1146,7 @@ extension class TFields {
       tenv,
       fields1.symbolFields,
       fields2.symbolFields,
-      (fs, _) -> fs.symbolIndex,
+      (fs, _) -> fs.effectiveSymbolIndex(),
       fields1,
       fields2,
     ) match {
@@ -1242,8 +1330,7 @@ extension class TType {
         | Some(FromUndefinedLiteral(pos))
         | Some(FromUntypedVar(pos))
         | Some(FromObjectField(pos))
-        | Some(FromArrayElement(pos))
-        | Some(FromSyntheticIndex(pos)) ->
+        | Some(FromArrayElement(pos)) ->
           !hints = List.Cons(
             (pos, `Consider adding a type annotation, e.g., ${widerStr}`),
             hints,
@@ -1587,7 +1674,9 @@ extension class TType {
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
     res = TType::isSub_(subst, tenv, u1, u2);
-    if (res is STOk()) {
+    // Do NOT cache a success proven under ownership transfer: its waivers do
+    // not hold for a later plain check of the same pair.
+    if (res is STOk() && !subst.transferMode) {
       subst.!seenSub = subst.seenSub.set(pair);
     };
     res
@@ -1600,8 +1689,11 @@ extension class TType {
     u2: TType,
   ): STResult<TType> {
     if (u2.isTop()) return STOk();
-    if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
-    !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
+    // Key the coinductive hypothesis by transfer mode: a hypothesis proven with
+    // setter obligations waived must not discharge a cycle reached in plain mode.
+    key = (subst.version, subst.transferMode, u1, u2);
+    if (tenv.seenSub.contains(key)) return STOk();
+    !tenv.seenSub = tenv.seenSub.set(key);
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {

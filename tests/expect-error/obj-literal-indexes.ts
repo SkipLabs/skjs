@@ -40,11 +40,6 @@ function testMixedTypesIndex(): void {
 // literal's use (or the first view of an unannotated local object) is an
 // OWNERSHIP TRANSFER that waives the literal's setter obligations, so a
 // fresh literal satisfies these closed types.
-//
-// This file is the behavioral BASELINE for the closed-object-literal redesign
-// (PR #678): it is annotated for CURRENT main behavior and is green on main.
-// `TODO(#678)` markers flag the cases the redesign changes; the feature commits
-// flip those annotations.
 // ============================================================================
 
 // Accepted: the fresh literal `{}` is transferred to the annotation; the
@@ -95,7 +90,7 @@ function testEmptyVsReadonlyOptionalNumberNeverIndex(): void {
 function testAliasMutableOptionalThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: boolean } = t;
 }
 
@@ -106,7 +101,7 @@ function testAliasMutableOptionalThenIndex(): void {
 function testAliasReadonlyOptionalThenIndex(): void {
   const t = {};
   const f: { readonly a?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: boolean } = t;
 }
 
@@ -127,7 +122,7 @@ function testAliasMutableOptionalThenOptional(): void {
 function testAliasNeverIndexThenMutableOptional(): void {
   const t = {};
   const b: { [k: string]: never } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: { a?: number } = t;
 }
 
@@ -149,9 +144,9 @@ function testAliasTwoReadonlyOptionals(): void {
 function testAliasWidenedGrantThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const h: { a?: number | string } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const i: { [k: string]: number } = t;
 }
 
@@ -175,7 +170,7 @@ function testEmptyVsMutableSymbolOptionalNeverIndex(): void {
 function testAliasMutableSymbolOptionalThenIndex(): void {
   const t = {};
   const f: { [sk]?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [s: symbol]: string } = t;
 }
 
@@ -225,7 +220,7 @@ function testSameViewInBranchThenAfter(c: boolean): void {
   if (c) {
     const f: { [k: string]: number } = t;
   }
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: number } = t;
 }
 
@@ -236,7 +231,7 @@ function testSameViewInBranchThenAfter(c: boolean): void {
 function testViewInsideLoop(): void {
   const t = {};
   for (const i of [1, 2]) {
-    // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const f: { [k: string]: number } = t;
   }
 }
@@ -268,14 +263,10 @@ function testEmbeddedLocalThenContainerView(): void {
 function testThroughLoopViewThenPreciseRead(): void {
   const t = { x: 1 };
   for (const i of [1, 2]) {
-    // TODO(#678): main accepts this view (redesign rejects it, keeping `t` precise).
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const f: { [k: string]: number } = t;
     f.x = 99;
   }
-  // TODO(#678): on main the accepted loop view above widens `t`, so this precise
-  // read fails; the redesign rejects the view and keeps `t` precise, so the error
-  // below goes away.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: 1 = t.x;
 }
 
@@ -299,9 +290,6 @@ function testFreshLiteralToInferredJsonGeneric(): void {
 // the literal argument's setter obligations against the instantiated parameter
 // type; it does not bypass the type-argument constraint check.
 function testFreshLiteralToExplicitJsonGeneric(): void {
-  // TODO(#678): main also emits the argument-assignability error below; the
-  // redesign's ownership transfer suppresses it, leaving only the constraint error.
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error Type argument does not satisfy the constraint
   const r = processJsonRec<{ name: string }>({ name: "test" });
 }
@@ -311,6 +299,6 @@ function testFreshLiteralToExplicitJsonGeneric(): void {
 declare function idObj<T>(x: T): T;
 function testEscapedInferredLiteralStaysClosed(): void {
   const r = idObj({ x: 1 });
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const v: { [k: string]: number } = r;
 }

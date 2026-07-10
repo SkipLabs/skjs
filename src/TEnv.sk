@@ -70,8 +70,11 @@ base class TEnv{
 
   // This field keeps track of the subtyping relations that we are in
   // the process of checking. If a cycle occurs, the subtyping
-  // relation is considered correct (by co-induction).
-  seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
+  // relation is considered correct (by co-induction). The Bool is the
+  // ownership-transfer mode (subst.transferMode) at the time of the check:
+  // transfer mode waives setter obligations, so a hypothesis established under
+  // it must not discharge a cycle reached in plain mode.
+  seenSub: SortedSet<(Int, Bool, TType, TType)> = SortedSet[],
 
   // Controls whether field inter/union operations fully expand intersections.
   // When false (default), defers via unexpandedInter to avoid infinite expansion
@@ -93,9 +96,8 @@ base class TEnv{
   instantiateAt: ?PosRange = None(),
 
   // Mirrors the `--verbose` CLI flag. Read by the pretty-printer to opt out
-  // of hiding internal-only details: the synthetic index name on object
-  // literals (see kSyntheticIndexName and TypePp::fields) and the qualified
-  // type-parameter id, name:counter:file-hash (see TypePp::tparamName).
+  // of hiding internal-only details: the qualified type-parameter id,
+  // name:counter:file-hash (see TypePp::tparamName).
   verbose: Bool = false,
 } {
   // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
@@ -920,7 +922,7 @@ base class TEnv{
           )
         };
         pushIndex = (index: ?TField, keyKinds: IndexKeyKinds) ->
-          index.each(f -> if (!f.isSynthetic()) indexes.push((keyKinds, f)));
+          index.each(f -> indexes.push((keyKinds, f)));
         pushIndex(
           tfields.stringIndex,
           IndexKeyKinds::create{

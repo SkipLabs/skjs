@@ -1,5 +1,25 @@
 module SKJS;
 
+// See TypeChecker::viewInfoFor / checkSubTypeView.
+base class ViewInfo {
+  children =
+  | VINone()
+  // Ownership-transfer check. None = a fresh literal expression (transparent
+  // check, nothing to retype). Some(n) = the first view of the unannotated
+  // local n (transparent check, then retype n to the accumulated intersection).
+  | VITransfer(?Name)
+}
+
+// Demote a transfer view to the no-retype form (a fresh literal): used where
+// transfer transparency applies but no named local should be retyped — a call
+// argument, a non-async return, an `as`/`satisfies`.
+fun demoteToFresh(vi: ViewInfo): ViewInfo {
+  vi match {
+  | VITransfer _ -> VITransfer(None())
+  | x -> x
+  }
+}
+
 extension class TypeChecker {
   // tsc's TS1062, reported wherever an awaited-type computation
   // (TType::maybeAwaited) hits a then-callback cycle.
@@ -82,6 +102,229 @@ extension class TypeChecker {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
       tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err, code)
+    }
+  }
+
+  // How the checked expression relates to the type it is checked against
+  // (its "view"):
+  // - VITransfer(None): a fresh literal expression; the check is an ownership
+  //   transfer (the value's only type afterwards is the view type).
+  // - VITransfer(Some(n)): the FIRST view of the unannotated local object n;
+  //   an ownership transfer after which n is retyped to the accumulation.
+  // - VINone: plain subtyping.
+  // Must be captured BEFORE evaluating the expression — evaluating a Var
+  // flips its local-object state to LOUsed, which is what makes the
+  // transfer right unique.
+  fun viewInfoFor(tcenv: mutable TCEnv, e: Expr): ViewInfo {
+    e.value match {
+    | Object _ -> VITransfer(None())
+    | EArray _ -> VITransfer(None())
+    | Var(n) if (n.value != "this") ->
+      tcenv.localObjectState(n) match {
+      | Some(LOCanGrow _) -> VITransfer(Some(n))
+      | _ -> VINone()
+      }
+    | _ -> VINone()
+    }
+  }
+
+  // Collect the positions of the closed-literal marker indexes that belong
+  // to the FRESH value being transferred. Only these markers are eligible
+  // for setter waiving during the transfer check. The walk descends into a
+  // field get (or array element) ONLY through a bare one-hop
+  // FromObjectField / FromArrayElement bound TVar — that wrapper is the
+  // freshness-provenance signal (literal field values get wrapped, embedded
+  // variables do not), so the markers of an embedded, separately-typed
+  // value are never eligible.
+  fun collectEligibleMarkers(
+    tcenv: mutable TCEnv,
+    ty: TType,
+  ): SortedSet<PosRange> {
+    subst = tcenv.subst;
+    eligible = mutable Vector<PosRange>[];
+    seenTys = mutable Vector<TType>[];
+    walkTy: (TType -> void) = _ -> void;
+    walkWrapperTVar: (TVar -> void) = _ -> void;
+
+    expandIfWrapper: (TType -> void) = innerTy -> {
+      // Bare single-inst TVar of wrapper origin: expand to its bound.
+      if (innerTy.clauses.isEmpty()) {
+        insts = innerTy.insts.values().collect(Array);
+        if (insts.size() == 1) {
+          insts[0] match {
+          | tvar @ TVar _ -> walkWrapperTVar(tvar)
+          | _ -> void
+          }
+        }
+      }
+    };
+
+    !walkWrapperTVar = tvar -> {
+      subst.getOrigin(tvar) match {
+      | Some(FromObjectField _)
+      | Some(FromArrayElement _) ->
+        subst.peekRaw(tvar) match {
+        | Some(raw) -> walkTy(raw)
+        | None() -> void
+        }
+      | _ -> void
+      }
+    };
+
+    !walkTy = t -> {
+      if (seenTys.contains(t)) return void;
+      seenTys.push(t);
+      for (clause in t.clauses.values()) {
+        clause.stypes match {
+        | None() -> void
+        | Some(stypes) ->
+          for (stype in stypes.values()) {
+            stype match {
+            | obj @ TObject _ ->
+              _ = obj.map(fs -> {
+                fs.closedLiteralPos match {
+                | Some(p) ->
+                  eligible.push(p);
+                  // Nested fresh literals sit behind wrapper TVars in the
+                  // field gets of this fresh literal.
+                  _ = fs.map(
+                    fd -> {
+                      expandIfWrapper(fd.get);
+                      fd
+                    },
+                    funs -> funs,
+                  )
+                | None() -> void
+                };
+                fs
+              })
+            | _ -> void
+            }
+          }
+        }
+      };
+      for (inst in t.insts.values()) {
+        inst match {
+        | tvar @ TVar _ -> walkWrapperTVar(tvar)
+        | TArrayLit(tvar, tupleElts, _freshElts) ->
+          walkWrapperTVar(tvar);
+          // Fresh object-literal elements live in tupleElts behind
+          // FromArrayElement wrapper TVars; freshElts only records primitive
+          // literal types (directLiteralSType), which carry no marker.
+          for (e in tupleElts) expandIfWrapper(e)
+        | _ -> void
+        }
+      }
+    };
+    walkTy(ty);
+    result = SortedSet<PosRange>[];
+    for (p in eligible) !result = result.set(p);
+    result
+  }
+
+  // Run a subtype check as an OWNERSHIP TRANSFER: the eligible closed-literal
+  // markers of ty1 impose no setter obligations (the value is fresh; its
+  // type is replaced by the target). Set/reset of the mode brackets exactly
+  // this one check; the flag lives on Subst (not SubstState) so inner
+  // save/restore cannot toggle it.
+  fun checkSubTypeTransfer(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty1: TType,
+    ty2: TType,
+    code: ErrorCode,
+  ): void {
+    prevMode = tcenv.subst.transferMode;
+    prevEligible = tcenv.subst.transferEligible;
+    tcenv.subst.!transferEligible = this.collectEligibleMarkers(tcenv, ty1);
+    tcenv.subst.!transferMode = true;
+    this.checkSubType(tcenv, pos, msg, ty1, ty2, code);
+    tcenv.subst.!transferMode = prevMode;
+    tcenv.subst.!transferEligible = prevEligible
+  }
+
+  // checkSubType for expression-against-view positions.
+  fun checkSubTypeView(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty1: TType,
+    ty2: TType,
+    code: ErrorCode,
+    view: ViewInfo,
+  ): void {
+    view match {
+    | VINone() -> this.checkSubType(tcenv, pos, msg, ty1, ty2, code)
+    // Fresh literal: transparent check, nothing to retype.
+    | VITransfer(None()) ->
+      this.checkSubTypeTransfer(tcenv, pos, msg, ty1, ty2, code)
+    | VITransfer(Some(n)) ->
+      if (tcenv.scope.isThroughLoop(n)) {
+        // A local declared outside a loop cannot be retyped from inside it,
+        // so the granted view would go unrecorded — a later write through
+        // the view would invalidate the local's still-precise type. Check
+        // plain instead (conservative; declare the local inside the loop or
+        // annotate it to get the view).
+        this.checkSubType(tcenv, pos, msg, ty1, ty2, code)
+      } else {
+        this.checkSubTypeTransfer(tcenv, pos, msg, ty1, ty2, code);
+        // Ownership transfer: retype the local to the INTERSECTION of its
+        // current type and the view type, so later views are plain-checked
+        // against the accumulation of every view taken so far (not just the
+        // latest). The view is the first inter argument so its real field and
+        // index names/positions win the tiebreak: an index the view commits
+        // de-markers that position, so a later index view of the same local is
+        // plain-checked and rejected (testDualIndexedAssignment); meanwhile the
+        // literal's closed marker survives wherever the view names no index, so
+        // disjoint-key views of an existing-field literal compose without one
+        // consuming the others (objCounterExample). Each view also lands as a
+        // real named field, which keeps the aliasing witnesses rejected: real
+        // fields are never waived, so a mutable view of a key an earlier
+        // (readonly) view fixed fails the setter leg. Clone the subst so inter's
+        // unifications do not leak into the main one. Retype even when the check
+        // failed: the accumulated type governs from here on, avoiding cascades.
+        retyped = TType::inter(tcenv.subst.clone(), this, ty2, ty1);
+        tcenv.scope.set(n, retyped, (x, y) ->
+          this.checkSubType(tcenv, pos, msg, x, y, code)
+        )
+      }
+    }
+  }
+
+  // Clear the closed-literal marker from a fresh-literal value being stored
+  // into a field (see assignLocalObjectByKeys). Operates only on a concrete
+  // single-object type, NEVER expanding a TVar / type parameter to its bound
+  // (so `this.field = paramOfTypeT` keeps type T). Without this, the stored
+  // value would remain a closed literal and act as a closed `super` (its
+  // implicit `never` index) in later field-type checks.
+  fun stripClosedLiteralIndex(_tcenv: mutable TCEnv, ty: TType): TType {
+    if (!ty.insts.isEmpty()) return ty;
+    clausesArr = ty.clauses.values().collect(Array);
+    if (clausesArr.size() != 1) return ty;
+    clause = clausesArr[0];
+    if (!clause.vars.isEmpty()) return ty;
+    clause.stypes.flatMap(stypes -> stypes.singleElt()) match {
+    | Some(obj @ TObject _) ->
+      TType::single(obj.map(fs -> fs.clearClosedLiteral()))
+    | _ -> ty
+    }
+  }
+
+  // Strip a fresh-literal argument's closed marker when the parameter is a bare
+  // unbound inference variable: the value is committed to inference as an
+  // element (main's synthetic-index TVar behaved open in that position), so it
+  // must not later act as a closed `super`. A concrete or object-shaped
+  // parameter keeps the marker (needed for the ownership-transfer waiver).
+  fun stripClosedForInferenceParam(
+    tcenv: mutable TCEnv,
+    argTy: TType,
+    paramTy: TType,
+  ): TType {
+    paramTy.getSingleVar() match {
+    | Some(tvar) if (tcenv.subst.isUnbound(tvar)) ->
+      this.stripClosedLiteralIndex(tcenv, argTy)
+    | _ -> argTy
     }
   }
 
