@@ -1377,6 +1377,38 @@ base class TPrimValueKind uses XXHashable, Orderable {
     }
   }
 
+  // Renders `literal` (a value as stored in PrimLiterals for this kind) as
+  // TypeScript source syntax, matching tsc's error messages: string literals
+  // double-quoted with escapes, all other kinds bare (`1`, `true`, `1n`).
+  // Symbol literals are internal ids, not values; callers render those via
+  // TypePp::displayUniqueSymbolId instead.
+  fun renderLiteral(literal: String): String {
+    this match {
+    | TString() ->
+      chars = mutable Vector['"'];
+      for (c in literal) {
+        c match {
+        | '\\' | '"' ->
+          chars.push('\\');
+          chars.push(c)
+        | '\n' ->
+          chars.push('\\');
+          chars.push('n')
+        | '\r' ->
+          chars.push('\\');
+          chars.push('r')
+        | '\t' ->
+          chars.push('\\');
+          chars.push('t')
+        | _ -> chars.push(c)
+        }
+      };
+      chars.push('"');
+      String::fromChars(chars.toArray())
+    | _ -> literal
+    }
+  }
+
   // Whether `literal` (a value as stored in PrimLiterals for this kind) is
   // one of JavaScript's falsy values: `false`, `0`/`NaN`, `0n`, `""`.
   // Symbols are always truthy. Numeric and bigint literal names are

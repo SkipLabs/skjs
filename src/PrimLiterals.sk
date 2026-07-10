@@ -71,11 +71,8 @@ class PrimLiterals private (
     if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }
 
-  fun toStringList(quotes: Bool = false): String {
-    this.inner.values()
-      .map(lit -> if (quotes) `'${lit.val}'` else lit.val)
-      .collect(Array)
-      .join(" | ")
+  fun toStringList(): String {
+    this.inner.values().map(lit -> lit.val).collect(Array).join(" | ")
   }
 
   fun toString(): String {

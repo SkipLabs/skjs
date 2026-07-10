@@ -27,8 +27,8 @@ function variableLiteralKey(): void {
 // A non-matching literal key is rejected.
 function mismatchedLiteralKey(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type '1'
-  // @skjs-expect-error-line3 is not assignable to type '0'
+  // @skjs-expect-error-line2 Type 1
+  // @skjs-expect-error-line3 is not assignable to type 0
   // @skjs-expect-error-line4 Value '1' is missing
   update<0, { value: number }>("counter", [[1, [{ value: 1 }]]]);
 }
@@ -67,15 +67,15 @@ function unaryMinusBigintElement(): void {
 declare function takeBig(xs: Array<1n>): void;
 function unaryPlusBigintElement(): void {
   // @skjs-expect-error Operator '+' cannot be applied to type 'bigint'
-  // @skjs-expect-error-line2 This has type '1n'
+  // @skjs-expect-error-line2 This has type 1n
   takeBig([+1n]);
 }
 
 // A mismatched string literal is still rejected.
 function mismatchedStringElement(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 Type 'other' | 'priority' | 'urgent'
-  // @skjs-expect-error-line3 is not assignable to type 'priority' | 'urgent'
+  // @skjs-expect-error-line2 Type "other" | "priority" | "urgent"
+  // @skjs-expect-error-line3 is not assignable to type "priority" | "urgent"
   // @skjs-expect-error-line4 Value 'other' is missing
   const tags: ("urgent" | "priority")[] = ["urgent", "other"];
 }
@@ -88,8 +88,8 @@ function constraintSatisfied(): void {
 }
 function constraintViolated(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type '5'
-  // @skjs-expect-error-line3 is not assignable to type '0' | '1'
+  // @skjs-expect-error-line2 Type 5
+  // @skjs-expect-error-line3 is not assignable to type 0 | 1
   let r: 0 | 1 = pick([[5, 1]]);
 }
 
@@ -103,6 +103,6 @@ declare function pickBoth<K extends 0 | 1>(
 function firstCommitmentPinning(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Full type number
-  // @skjs-expect-error-line3 is not assignable to specific type '0'
+  // @skjs-expect-error-line3 is not assignable to specific type 0
   let r: 0 | 1 = pickBoth([[0, "a"]], 1);
 }

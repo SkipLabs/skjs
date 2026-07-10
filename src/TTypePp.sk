@@ -215,8 +215,13 @@ mutable class TypePp{
         .collect(Array)
         .join(" | ");
       this.out(level, margin, rendered)
-    | TPrimValue(_, Some(arr), _) ->
-      this.out(level, margin, arr.toStringList(true))
+    | TPrimValue(k, Some(arr), _) ->
+      rendered = arr
+        .values()
+        .map(lit -> k.renderLiteral(lit.val))
+        .collect(Array)
+        .join(" | ");
+      this.out(level, margin, rendered)
     }
   }
 

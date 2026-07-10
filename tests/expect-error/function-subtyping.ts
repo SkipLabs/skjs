@@ -53,6 +53,9 @@ function testParamContravarianceMultiple(): void {
 function testParamCovarianceFails(): void {
   const acceptsDog: (d: Dog) => void = (_d: Dog) => {};
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type { name: string }
+  // @skjs-expect-error-line3 is not assignable to type { breed: string, name: string }
+  // @skjs-expect-error-line4 The field 'breed' is missing
   // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type Animal must be assignable to source parameter type Dog
   const needsAnimalAcceptor: (a: Animal) => void = acceptsDog;
 }
@@ -209,6 +212,9 @@ function testFunctionInObject(): void {
     fn: (_a: Animal) => ({ name: "Fido", breed: "Lab" }),
   };
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type { name: string }
+  // @skjs-expect-error-line3 is not assignable to type { breed: string, name: string }
+  // @skjs-expect-error-line4 The field 'breed' is missing
   // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type Animal must be assignable to source parameter type Dog
   // @skjs-expect-error-line6 This would not be an error if this field were readonly
   const obj2: { fn: (d: Dog) => Animal } = obj1;
@@ -218,6 +224,9 @@ function testFunctionInObject(): void {
 function testHigherOrderFunction(): void {
   const hof: (f: (a: Animal) => Dog) => number = (_f: (a: Animal) => Dog) => 42;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type { name: string }
+  // @skjs-expect-error-line3 is not assignable to type { breed: string, name: string }
+  // @skjs-expect-error-line4 The field 'breed' is missing
   // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type Animal must be assignable to source parameter type Dog
   const target: (f: (d: Dog) => Animal) => number = hof;
 }
