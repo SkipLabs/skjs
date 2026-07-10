@@ -23,6 +23,26 @@ function customHasInstance(x: unknown): number {
   return 0;
 }
 
+// The symmetric case: a custom `[Symbol.hasInstance]` can return `false` for a
+// real instance, so a `HasInstanceFalse` value can reach the `else` branch at
+// runtime. SKJS never narrows the `instanceof` else-branch (for any class), so
+// `x` keeps type `HasInstanceFalse` there and `x.a` is sound. tsc unsoundly
+// narrows the else-branch to `never` and rejects `x.a`, so SKJS is soundly more
+// permissive here (issue #776).
+class HasInstanceFalse {
+  a: number = 1;
+  static [Symbol.hasInstance](_x: unknown): boolean {
+    return false;
+  }
+}
+
+function hasInstanceFalseElse(x: HasInstanceFalse): number {
+  if (x instanceof HasInstanceFalse) {
+    return x.a;
+  }
+  return x.a;
+}
+
 // A custom `static [Symbol.hasInstance]` inherited from a base class is used by
 // `instanceof` on the subclass too, so narrowing is suppressed there as well.
 class BaseHasInstance {
