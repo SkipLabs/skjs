@@ -124,18 +124,34 @@ mutable class TypePp{
 
   mutable fun render(f: mutable TypePp -> void): String {
     f(this);
-    strings = this.buffer.reversed();
-    if (this.compact) {
-      !strings = strings.map(str ~> {
-        String::fromChars(
-          str
-            .getIter()
-            .filter(c ~> c != '\t' && c != '\n' && c != ' ')
-            .collect(Array),
-        )
-      })
+    joined = "".join(this.buffer.reversed());
+    if (!this.compact) return joined;
+    // Compact mode strips layout characters, but a space separating two
+    // word characters is load-bearing (`readonly number[]`, `T extends C`)
+    // — dropping it would merge the tokens.
+    chars = joined.getIter().collect(Array);
+    kept = mutable Vector[];
+    for (i => c in chars) {
+      if (c == '\t' || c == '\n') continue;
+      if (c == ' ') {
+        separatesWords =
+          i > 0 &&
+          i < chars.size() - 1 &&
+          TypePp::isWordChar(chars[i - 1]) &&
+          TypePp::isWordChar(chars[i + 1]);
+        if (!separatesWords) continue
+      };
+      kept.push(c)
     };
-    "".join(strings)
+    String::fromChars(kept.toArray())
+  }
+
+  private static fun isWordChar(c: Char): Bool {
+    (c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      (c >= '0' && c <= '9') ||
+      c == '_' ||
+      c == '$'
   }
 
   mutable fun out(level: Int, margin: Margin, str: String): void {
@@ -769,11 +785,12 @@ mutable class TypePp{
     );
   }
 
-  // Whether `ty` must be parenthesized when embedded in an intersection
-  // rendering, mirroring tsc: parens go around anything that does not read
-  // as a single atom — unions (`(A | B) & C`), bare function/constructor
-  // types (`(() => void) & D`), constrained or substituted type variables
-  // (`('x extends C) & D`), and nested intersections.
+  // Whether `ty` must be parenthesized when embedded in a composite
+  // rendering (an intersection member; an array-shorthand element),
+  // mirroring tsc: parens go around anything that does not read as a
+  // single atom — unions (`(A | B) & C`, `(A | B)[]`), bare
+  // function/constructor types (`(() => void)[]`), constrained or
+  // substituted type variables, and nested intersections.
   private mutable fun compositeNeedsParens(ty: TType): Bool {
     aty = this.applyType(ty);
     if (aty.isTop() || aty.isBottom()) return false;
@@ -837,6 +854,22 @@ mutable class TypePp{
       this.tuple(level, margin, inst.targs.targs);
       return void
     | None() -> void
+    };
+    // Arrays print in tsc's shorthand: `T[]` and `readonly T[]`, with
+    // composite element types parenthesized (`(A | B)[]`).
+    name = inst.name.value;
+    if (
+      (name == "Array" || name == "ReadonlyArray") &&
+      inst.targs.targs.size() == 1
+    ) {
+      if (name == "ReadonlyArray") this.out(level, margin, "readonly ");
+      elt = inst.targs.targs[0];
+      needsParens = this.compositeNeedsParens(elt);
+      if (needsParens) this.out(level, margin, "(");
+      this.type(level, margin, elt);
+      if (needsParens) this.out(level, margin, ")");
+      this.out(level, margin, "[]");
+      return void
     };
     this.out(level, margin, inst.name.value);
     targs = inst.targs;

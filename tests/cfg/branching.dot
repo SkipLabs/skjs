@@ -23,7 +23,7 @@ digraph "fn:classify" {
 }
 
 digraph "fn:sumArray" {
-  label="(xs: Array<number>): number";
+  label="(xs: number[]): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\llet total: number = 0\lconst x: number\ljump BB_3\l"];

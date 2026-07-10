@@ -1,10 +1,11 @@
 module SKJSTests;
 
-// Pins TypePp's paren-elision for intersection members
-// (compositeNeedsParens): members that read as a single atom print bare,
-// while anything that reads as a union is parenthesized. Intersections are
-// expanded away on most diagnostic paths, so this behavior is pinned at the
-// unit level on a hand-built TInter.
+// Pins TypePp's paren-elision for composite renderings
+// (compositeNeedsParens): intersection members and array-shorthand
+// elements that read as a single atom print bare, while anything that
+// reads as a union is parenthesized. Intersections are expanded away on
+// most diagnostic paths, so this behavior is pinned at the unit level on
+// hand-built types.
 
 fun renderType(ty: SKJS.TType): String {
   SKJS.rawPrettyPrint(false, pp -> pp.type(0, SKJS.Margin{}, ty))
@@ -30,6 +31,28 @@ fun testInterAtomMembersUnparenthesized(): void {
 fun testInterUnionMemberParenthesized(): void {
   ty = SKJS.TType::unexpandedInter(numberLiteralUnion(), namedInst("A"));
   SKTest.expectEq("A & (1 | 2)", renderType(ty));
+}
+
+fun arrayOf(name: String, elt: SKJS.TType): SKJS.TType {
+  SKJS.TType::inst(SKJS.Name(SKJS.PosRange::none, name), SKJS.TArgs(Array[elt]))
+}
+
+@test
+fun testArrayShorthandAtomElement(): void {
+  ty = arrayOf("Array", namedInst("A"));
+  SKTest.expectEq("A[]", renderType(ty));
+}
+
+@test
+fun testArrayShorthandUnionElementParenthesized(): void {
+  ty = arrayOf("Array", numberLiteralUnion());
+  SKTest.expectEq("(1 | 2)[]", renderType(ty));
+}
+
+@test
+fun testReadonlyArrayShorthand(): void {
+  ty = arrayOf("ReadonlyArray", namedInst("A"));
+  SKTest.expectEq("readonly A[]", renderType(ty));
 }
 
 module end;
