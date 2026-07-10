@@ -3663,34 +3663,31 @@ extension class TypeChecker {
     expectedFnTy: TType,
     closureParams: Array<Param>,
   ): Array<?TType> {
-    cbFun: ?TFun = None();
-    usable = expectedFnTy.getSTypes(tcenv.subst, this, Covariant()) match {
-    | None() -> false
-    | Some(stypes) ->
-      ok = true;
-      for (stype in stypes.values()) {
-        stype match {
-        | obj @ TObject _ ->
-          obj.maybeGetCall(tcenv.subst, this) match {
-          | Some(
-            (_, TFuns(f, _)),
-          ) if (f.tparams.isEmpty() && cbFun is None()) ->
-            !cbFun = Some(f)
-          | _ -> !ok = false
-          }
-        | TPrimUnit(TUndefined(), _)
-        | TPrimUnit(TNull(), _) ->
-          void
-        | _ -> !ok = false
-        }
-      };
-      ok
+    stypes = expectedFnTy.getSTypes(tcenv.subst, this, Covariant()) match {
+    | Some(s) -> s
+    | None() -> return Array[]
     };
-    (usable, cbFun) match {
-    | (true, Some(f)) ->
-      allParams = f.params.concat(f.optionalParams);
-      Array::fillBy(closureParams.size(), j -> allParams.maybeGet(j))
-    | _ -> Array[]
+    cbFuns: ?TFuns = None();
+    for (stype in stypes.values()) {
+      stype match {
+      | obj @ TObject _ ->
+        obj.maybeGetCall(tcenv.subst, this) match {
+        | Some(
+          (_, tfuns @ TFuns(f, _)),
+        ) if (f.tparams.isEmpty() && cbFuns is None()) ->
+          !cbFuns = Some(tfuns)
+        | _ -> return Array[]
+        }
+      | TPrimUnit(TUndefined(), _)
+      | TPrimUnit(TNull(), _) ->
+        void
+      | _ -> return Array[]
+      }
+    };
+    cbFuns match {
+    | Some(tfuns) ->
+      Array::fillBy(closureParams.size(), j -> tfuns.paramTypeAt(j))
+    | None() -> Array[]
     }
   }
 
