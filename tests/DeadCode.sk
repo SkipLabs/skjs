@@ -42,7 +42,7 @@ fun validateDeadCode(
   checkResult.cfgs.each((cgNode, cfg) -> {
     !cfgs = cfgs.set(cgNode, cfg with {name => cgNode.id.descriptor()})
   });
-  actual = serializeDeadCode(cfgs);
+  actual = serializeDeadCode(cfgs, checkResult.callgraph);
 
   expectationPath = deadCodeExpectationPath(fileName);
   update match {
@@ -100,13 +100,18 @@ fun testDeadCode(): void {
 
 // Deterministic dead-code report over a set of CFGs: one line per function
 // (sorted by name), listing its dead block ids in block order.
-fun serializeDeadCode(cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>): String {
+fun serializeDeadCode(
+  cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
+  callgraph: SortedMap<SKJS.CGNode, Array<SKJS.CGNode>>,
+): String {
+  deadByNode = SKJS.deadBlocks(cfgs, callgraph);
   lines = cfgs
-    .values()
+    .items()
     .collect(Array)
-    .sortedBy(cfg ~> cfg.name)
-    .map(cfg -> {
-      dead = SKJS.deadBlocks(cfg);
+    .sortedBy(kv ~> kv.i1.name)
+    .map(kv -> {
+      (node, cfg) = kv;
+      dead = deadByNode.maybeGet(node).default(SortedSet[]);
       ids = mutable Vector<String>[];
       for (block in cfg.blocks.values()) {
         if (dead.contains(block.id)) {

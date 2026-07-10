@@ -9,9 +9,9 @@ base class Liveness {
 }
 
 // Reachability / dead-code analysis. Liveness propagates unchanged along every
-// edge (the transfers are the identity), so with `analyzeForward` the entry
-// starts `Live` and the reachable blocks are exactly the keys present in the
-// resulting map; dead blocks are the rest (see `deadBlocks`).
+// edge (the transfers are the identity, ignoring calls), so a block is reachable
+// exactly when the solver assigns it a state; dead blocks are the rest (see
+// `deadBlocks`).
 class LivenessDomain() uses AbstractDomain<Liveness> {
   fun bottom(): Liveness {
     Dead()
@@ -34,11 +34,19 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
     }
   }
 
-  fun transfer(_instrs: Array<CFGInstr>, s: Liveness): Liveness {
+  fun transfer(
+    _instrs: Array<CFGInstr>,
+    s: Liveness,
+    _interproc: (Callsite, Liveness) -> Liveness,
+  ): Liveness {
     s
   }
 
-  fun transferExn(_block: CFGBlock, s: Liveness): Liveness {
+  fun transferExn(
+    _block: CFGBlock,
+    s: Liveness,
+    _interproc: (Callsite, Liveness) -> Liveness,
+  ): Liveness {
     s
   }
 
@@ -46,24 +54,48 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
     _term: BBTerminator,
     s: Liveness,
     _label: CFGENormalLabel,
+    _interproc: (Callsite, Liveness) -> Liveness,
   ): Liveness {
     s
   }
 }
 
-// The blocks of `cfg` that hold unreachable source — i.e. dead code. Runs the
-// liveness analysis and returns every block absent from the fixpoint (excluding
-// the structural `normalExit`/`exnExit` sentinels)
-fun deadBlocks(cfg: CFG): SortedSet<CFGBlockId> {
-  live = analyzeForward(cfg, LivenessDomain());
-  dead = SortedSet<CFGBlockId>[];
-  for (block in cfg.blocks.values()) {
-    isSentinel = block.id == cfg.normalExit || block.id == cfg.exnExit;
-    if (!isSentinel && !live.containsKey(block.id)) {
-      !dead = dead.set(block.id)
-    }
+// The dead (unreachable) blocks of every function in `cfgs`. Runs the
+// inter-procedural liveness solver with every function as an entrypoint — so a
+// block is judged reachable relative to its own function's entry — and
+// `callgraph` resolving call/return edges between them. For each function it
+// returns every block absent from the fixpoint (excluding the structural
+// `normalExit`/`exnExit` sentinels).
+fun deadBlocks(
+  cfgs: SortedMap<CGNode, CFG>,
+  callgraph: SortedMap<CGNode, Array<CGNode>>,
+): SortedMap<CGNode, SortedSet<CFGBlockId>> {
+  solver = mutable Interproc{
+    cfgs,
+    callgraph,
+    domain => LivenessDomain(),
+    ctx_policy => ContextInsensitive(),
   };
-  dead
+  solver.analyzeForward(cfgs.keys().collect(Array));
+  isLive = (node: CGNode, blk: CFGBlockId) -> {
+    (solver.invariant_map.maybeGet(
+      Loc{node, blk, ctx => void},
+    ) : ?Liveness) is Some(Live())
+  };
+
+  result = SortedMap<CGNode, SortedSet<CFGBlockId>>[];
+  for (kv in cfgs.items()) {
+    (node, cfg) = kv;
+    dead = SortedSet<CFGBlockId>[];
+    for (block in cfg.blocks.values()) {
+      isSentinel = block.id == cfg.normalExit || block.id == cfg.exnExit;
+      if (!isSentinel && !isLive(node, block.id)) {
+        !dead = dead.set(block.id)
+      }
+    };
+    !result = result.set(node, dead)
+  };
+  result
 }
 
 module end;
