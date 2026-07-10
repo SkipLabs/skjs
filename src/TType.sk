@@ -194,6 +194,28 @@ class TType private {
     }
   }
 
+  // The head-expanded form of the missing-annotation placeholder synthesized
+  // for an un-annotated field of an ambient class (see addFields and
+  // TEnv::instantiate). It is an opaque type parameter — a clause whose only
+  // content is a synthetic `TParam` — so it behaves like an atom that is a
+  // subtype of nothing but itself and `unknown`, and that nothing but itself
+  // is a subtype of. Reading such a field into a concrete type is therefore
+  // rejected on both sides, instead of the expansion collapsing to `never`
+  // (bottom) and being silently accepted into any target (issue #775).
+  //
+  // The identity is derived from the placeholder's name (which already
+  // encodes the class and field names) and its declaration file, not from
+  // the class's type arguments: two instantiations of a generic ambient class
+  // whose only differing field is the placeholder are structurally identical
+  // at runtime, and tsc treats them as mutually assignable, so they share one
+  // atom here.
+  static fun missingAnnotationPlaceholder(name: Name): TType {
+    TType::fromTParam(
+      name.pos,
+      TParam(name.value, name.pos.fileName, Id::createSynthetic(name.value)),
+    )
+  }
+
   // Remove a single primitive constant from a type's clauses. Used for:
   //   - Object field defaults: (fieldType \ undefined) | default
   //   - Array destructuring defaults: same pattern

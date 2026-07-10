@@ -211,6 +211,11 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Workaround**: Declare signatures like `function handler(value: string | number): Result { ... }` and annotate callback parameters, adding `: T` return annotations where needed for clarity.
 - **Verified by**: `tests/expect-error/function-args.ts`, `tests/expect-error/anonymous-function-annotations.ts`, `tests/expect-error/function-type-omitted-param-annotation.ts`, `tests/expect-error/function-type-parameter-names.ts`, and `tests/expect-error/missing-return-type.ts`.
 
+### 16b. Un-annotated Class Fields Are Opaque (Ambient Classes)
+- **Rule**: Every class field needs an explicit type annotation. A non-ambient class field without one is an error (`Member 'x' must have an explicit type annotation`). An **ambient** class (`declare class`) may omit the annotation — its bodies are never checked — but the field then has an **opaque** type: it is a subtype of nothing but itself and `unknown`, and no concrete value is a subtype of it. So both **reading** such a field into a concrete type and **writing** a concrete value into it are rejected. This is stricter than tsc, which treats the field as implicit `any` and reports the missing annotation (TS7008) at the declaration instead.
+- **Soundness**: The field's runtime type is genuinely unknown, so it must not read as `never` — bottom is a subtype of everything, which would let the read flow into *any* type, including `never` (the unsoundness fixed in #775) — nor as `unknown` on the write side, which would accept any write. Two un-annotated fields with the same class and field name share one opaque atom, even across generic instantiations (`C<number>` vs `C<string>`), matching tsc's structural treatment: an un-annotated field cannot reference the class's type parameters, so the instantiations are structurally identical.
+- **Verified by**: `tests/expect-error/declared-class-fields.ts`.
+
 ### 17. The `any` Type is Not Supported
 - **CRITICAL RULE**: NEVER use the `any` type in SKJS code
 - **Explanation**: The `any` type is not implemented in the SKJS type checker

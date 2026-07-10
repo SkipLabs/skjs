@@ -114,13 +114,16 @@ base class TEnv{
     targs: TArgs,
   ): TType {
     // Synthetic placeholder for a class field with no type annotation
-    // (see addFields). It has no defMap entry — keep it unexpanded so
-    // it stays opaque under subtype comparison and pretty-prints as the
-    // synthetic name. Two instantiations of the same generic class with
-    // different type arguments produce TInsts with different targs,
-    // which compare as incompatible.
+    // (see addFields). It has no defMap entry, so it head-expands to an
+    // opaque type parameter: a subtype of nothing but itself and `unknown`,
+    // with nothing but itself a subtype of it. Returning the identity inst
+    // here instead would let the expansion worklist's seen-set dedup drop
+    // the re-emitted inst, collapsing the field to `never` (bottom) so a
+    // read is unsoundly accepted into any target type (issue #775). The
+    // unexpanded field type stays a TInst named for the missing annotation,
+    // so error messages and `__SKJS_show` still surface that name.
     if (name.value.startsWith(kMissingTypeAnnotationPrefix)) {
-      return TType::inst(name, targs);
+      return TType::missingAnnotationPlaceholder(name);
     };
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
