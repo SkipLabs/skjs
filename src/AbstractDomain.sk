@@ -31,12 +31,21 @@ trait AbstractDomain<S> {
     this.join(l, r)
   }
 
-  readonly fun transfer(instrs: Array<CFGInstr>, s: S): S;
-  readonly fun transferExn(block: CFGBlock, s: S): S;
+  readonly fun transfer(
+    instrs: Array<CFGInstr>,
+    s: S,
+    call: (site: Callsite, s: S) -> S,
+  ): S;
+  readonly fun transferExn(
+    block: CFGBlock,
+    s: S,
+    call: (site: Callsite, s: S) -> S,
+  ): S;
   readonly fun transferTerminator(
     term: BBTerminator,
     s: S,
     label: CFGENormalLabel,
+    call: (site: Callsite, s: S) -> S,
   ): S;
 }
 

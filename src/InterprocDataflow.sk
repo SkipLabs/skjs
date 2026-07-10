@@ -1,0 +1,244 @@
+// Forward inter-procedural worklist solver
+module SKJS;
+
+// A context-abstracted program location
+private class Loc<Ctx: Orderable>{
+  ctx: Ctx,
+  node: CGNode,
+  blk: CFGBlockId,
+} uses Orderable {
+  fun compare(other: Loc<Ctx>): Order {
+    this.node.compare(other.node) match {
+    | EQ() ->
+      this.blk.compare(other.blk) match {
+      | EQ() -> this.ctx.compare(other.ctx)
+      | ord -> ord
+      }
+    | ord -> ord
+    }
+  }
+}
+
+trait AbstractContext<C: Orderable> {
+  readonly fun init(): C;
+  readonly fun call(curr: C, callsite: Callsite): C;
+  readonly fun eq(c1: C, c2: C): Bool;
+}
+
+base class Callsite uses Orderable {
+  children =
+  | CSCall(Call, PosRange)
+  | CSNew(New, PosRange)
+
+  private fun pos(): PosRange {
+    this match {
+    | CSCall(_, pos)
+    | CSNew(_, pos) ->
+      pos
+    }
+  }
+  fun compare(other: Callsite): Order {
+    this.pos().compare(other.pos())
+  }
+}
+
+class ContextInsensitive() uses AbstractContext<void> {
+  fun init(): void {
+    void
+  }
+  fun call(_curr: void, _: Callsite): void {
+    void
+  }
+  fun eq(_c1: void, _c2: void): Bool {
+    true
+  }
+}
+class OneCFA() uses AbstractContext<?Callsite> {
+  fun init(): ?Callsite {
+    None()
+  }
+  fun call(_curr: ?Callsite, call: Callsite): ?Callsite {
+    Some(call)
+  }
+  fun eq(c1: ?Callsite, c2: ?Callsite): Bool {
+    (c1, c2) match {
+    | (None(), None()) -> true
+    | (Some(x), Some(y)) -> x.compare(y) is EQ()
+    | (_, _) -> false
+    }
+  }
+}
+
+mutable class Interproc<
+  State,
+  Ctx: Orderable,
+  D: AbstractDomain<State>,
+  C: AbstractContext<Ctx>,
+>{
+  cfgs: SortedMap<CGNode, CFG>,
+  callgraph: SortedMap<CGNode, Array<CGNode>>,
+  domain: D,
+  ctx_policy: C,
+  mutable invariant_map: SortedMap<Loc<Ctx>, State> = SortedMap[],
+  private worklist: mutable Vector<Loc<Ctx>> = mutable Vector[],
+  // Map from a callee entry loc to the caller locs that must be re-analyzed
+  // when the callee's return state grows.
+  private mutable callers: SortedMap<
+    Loc<Ctx>,
+    mutable Vector<Loc<Ctx>>,
+  > = SortedMap[],
+} {
+  mutable fun analyzeForward(entrypoints: Sequence<CGNode>): void {
+    for (entrypoint in entrypoints) {
+      this.cfgs.maybeGet(entrypoint) match {
+      | Some(cfg) ->
+        entry_loc = Loc{
+          ctx => this.ctx_policy.init(),
+          node => entrypoint,
+          blk => cfg.entry,
+        };
+        // Seed each entrypoint's entry block with the initial state.
+        this.updateState(entry_loc, this.domain.init(), false)
+      | None() -> void
+      }
+    };
+
+    while (!this.worklist.isEmpty()) {
+      loc = this.worklist.pop();
+      cfg = this.cfgs.get(loc.node);
+      block = cfg.blocks.get(loc.blk);
+      pre = this.invariant_map.maybeGet(loc).default(this.domain.bottom());
+      // The callback threads inter-procedural call/return edges through the
+      // transfer functions (see `interprocCallback`).
+      callback = this.interprocCallback(loc);
+      // Block body only; the terminator is modeled per outgoing edge below.
+      post = this.domain.transfer(block.instrs, pre, callback);
+      for ((label, target) in cfg.successors(block)) {
+        edgeState = label match {
+        | CFGEException() -> this.domain.transferExn(block, pre, callback)
+        | normal @ CFGENormalLabel _ ->
+          this.domain.transferTerminator(
+            block.terminator,
+            post,
+            normal,
+            callback,
+          )
+        };
+        this.updateState(
+          loc with {blk => target},
+          edgeState,
+          cfg.isBackEdge(loc.blk, target),
+        )
+      };
+      // When a function's normal-exit state grows, callers must re-observe the
+      // (possibly larger) return state, so re-enqueue them.
+      if (loc.blk == cfg.normalExit) {
+        this.callers.maybeGet(loc with {blk => cfg.entry}) match {
+        | Some(callerLocs) ->
+          callerLocs.each(caller -> this.worklist.push(caller))
+        | None() -> void
+        }
+      }
+    }
+  }
+
+  private mutable fun updateState(
+    loc: Loc<Ctx>,
+    incoming: State,
+    is_back_edge: Bool,
+  ): void {
+    old = this.invariant_map.maybeGet(loc).default(this.domain.bottom());
+
+    merged = if (is_back_edge) {
+      this.domain.widen(old, incoming)
+    } else {
+      this.domain.join(old, incoming)
+    };
+
+    if (!this.domain.leq(merged, old)) {
+      this.!invariant_map = this.invariant_map.set(loc, merged);
+      this.worklist.push(loc)
+    }
+  }
+
+  private mutable fun interprocCallback(
+    caller: Loc<Ctx>,
+  ): (site: Callsite, caller_st: State) -> State {
+    (site, caller_st) -> {
+      callee_ctx = this.ctx_policy.call(caller.ctx, site);
+      ret = this.domain.bottom();
+      for (callee in this.resolveCallees(caller.node, site)) {
+        cfg = this.cfgs.maybeGet(callee) match {
+        | Some(cfg) -> cfg
+        | None() -> internal_error(`No CFG available for ${callee}`)
+        };
+        entry = Loc{ctx => callee_ctx, node => callee, blk => cfg.entry};
+        exit = Loc{ctx => callee_ctx, node => callee, blk => cfg.normalExit};
+
+        // Record the callee->caller dependency so the caller is re-analyzed
+        // when the callee's return state grows.
+        this.callers.maybeGet(entry) match {
+        | None() ->
+          this.!callers = this.callers.set(entry, mutable Vector[caller])
+        | Some(callers) -> callers.push(caller)
+        };
+
+        // Propagate the call state into the callee entry, enqueuing the
+        // callee iff this callsite widens its entry state.
+        this.updateState(entry, caller_st, false);
+
+        this.invariant_map.maybeGet(exit) match {
+        | Some(st) -> !ret = this.domain.join(ret, st)
+        | None() -> void
+        }
+      };
+      ret
+    }
+  }
+
+  // Narrow `this.callgraph` using function/method/constructor names; fall back
+  // to all callees of the caller when not possible
+  readonly fun resolveCallees(
+    caller: CGNode,
+    site: Callsite,
+  ): Sequence<CGNode> {
+    callees = this.callgraph.maybeGet(caller).default(Array[]);
+    matched = site match {
+    | CSCall(Call(fn, _, _), _) ->
+      fn.value match {
+      | Var(name) ->
+        callees.filter(n ->
+          n.id match {
+          | TopLevelFunction(nm, _) -> nm.getName() == name.value
+          | AnonymousFunDef(fd) -> fd.name.getName() == name.value
+          | _ -> false
+          }
+        )
+      | Dot(_, _, method) ->
+        callees.filter(n ->
+          n.id match {
+          | Method(nm, _, _) -> nm.getName() == method.value
+          | _ -> false
+          }
+        )
+      | _ ->
+        callees // opaque callee expression
+      }
+    | CSNew(New(cls, _, _), _) ->
+      cls.value match {
+      | Var(name) ->
+        callees.filter(n ->
+          n.id match {
+          | Constructor(cn, _) -> cn.value == name.value
+          | _ -> false
+          }
+        )
+      | _ ->
+        callees // opaque constructor expression
+      }
+    };
+    if (matched.isEmpty()) callees else matched;
+  }
+}
+
+module end;
