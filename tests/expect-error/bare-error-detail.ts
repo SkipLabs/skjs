@@ -32,6 +32,15 @@ function nonTupleOperand(): void {
   const r = fk(5);
 }
 
+// FIXME: Numeric literal 1 and string literal "1" are distinct types, but
+// primitive-literal rendering quotes both identically, obscuring the mismatch.
+function indistinguishableLiteralKinds(x: 1): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 Type '1'
+  // @skjs-expect-error-line3 is not assignable to type '1'
+  const y: "1" = x;
+}
+
 // An intersection with an extra member: the object form shows `foo` -- the
 // member the failure is actually about -- and must keep doing so.
 declare function hx<K extends [0, 1] & { foo: string }>(x: K): K;
