@@ -8,6 +8,7 @@ function testDualIndexedAssignment(): void {
   const a = {};
   const b: { [k: string]: number } = a;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
   const c: { [k: string]: boolean } = a;
 }
 
@@ -98,6 +99,7 @@ function testAliasMutableOptionalThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: boolean } = t;
 }
 
@@ -110,6 +112,7 @@ function testAliasReadonlyOptionalThenIndex(): void {
   const t = {};
   const f: { readonly a?: number } = t;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: boolean } = t;
 }
 
@@ -153,6 +156,7 @@ function testAliasWidenedGrantThenIndex(): void {
   // TODO(#678): still accepted — named-named same-key widening needs per-key recording.
   const h: { a?: number | string } = t;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
   const i: { [k: string]: number } = t;
 }
 
@@ -179,6 +183,7 @@ function testAliasMutableSymbolOptionalThenIndex(): void {
   const t = {};
   const f: { [sk]?: number } = t;
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [s: symbol]: string } = t;
 }
 
@@ -192,6 +197,23 @@ function testAliasMutableSymbolOptionalThenIndex(): void {
 // on a literal RHS, only on a by-reference view of a tracked local).
 function testFreshLiteralToMutableIndex(): void {
   const a: { [k: string]: number } = { x: 1, y: 2 };
+}
+
+// Conservative over-rejection (a documented limitation of the gate, not a
+// soundness requirement). The gate keys on LOUsed, which cannot distinguish a
+// benign read from a capability-granting view: any prior use of `t` — here just
+// passing it to a function — trips the gate, so the later index view is rejected
+// even though this single index view alone would be sound (cf.
+// testDualIndexedAssignment, where the first index view is accepted). tsc
+// accepts this; SKJS rejects it, consistent with its sound-stricter-than-tsc
+// stance.
+declare function readOnce<T>(x: T): void;
+function testBenignReadThenIndexViewOverRejects(): void {
+  const t = {};
+  readOnce(t);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
+  const g: { [k: string]: number } = t;
 }
 
 // Must stay accepted: nested fresh literal against a nested-index annotation.
@@ -223,13 +245,14 @@ function testArrayOfLiteralsToArrayOfIndexed(): void {
 // Same index view inside a branch and again after it: the in-branch view `f` is
 // a first view and stays accepted, but it marks `t` used, so the post-branch
 // view `g` is rejected by the second-view index gate. Conservative (it rejects
-// even the identical repeat), but sound.
+// even the identical repeat), but sound. TODO(#1056).
 function testSameViewInBranchThenAfter(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [k: string]: number } = t;
   }
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line2 But this object has already been used here
   const g: { [k: string]: number } = t;
 }
 
@@ -237,10 +260,12 @@ function testSameViewInBranchThenAfter(c: boolean): void {
 // second-view index gate's through-loop arm — the loop body could grant the
 // index view on every iteration while the local keeps its own type, so the view
 // is an unrecordable aliasing hazard. Declare the local inside the loop instead.
+// TODO(#1057): build a soundness-breaking witness or keep this as a general rule.
 function testViewInsideLoop(): void {
   const t = {};
   for (const i of [1, 2]) {
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    // @skjs-expect-error-line2 But this object is declared outside the loop
     const f: { [k: string]: number } = t;
   }
 }
@@ -272,6 +297,7 @@ function testThroughLoopViewThenPreciseRead(): void {
   const t = { x: 1 };
   for (const i of [1, 2]) {
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    // @skjs-expect-error-line2 But this object is declared outside the loop
     const f: { [k: string]: number } = t;
     f.x = 99;
   }
