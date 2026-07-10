@@ -67,3 +67,27 @@ function paramReassignNarrowsInLambda(): void {
     const z: number = p;
   };
 }
+
+// The check applies to every captured write, not only the first: an earlier
+// write that localizes the variable inside the lambda must not hide a later
+// wrong-typed one.
+// FIXME: tsc rejects the second write (TS2322) but SKJS currently accepts it (#769).
+function capturedWriteWrongTypeAfterLocalWrite(): void {
+  let x: string = "a";
+  const g = () => {
+    x = "b";
+    x = 5;
+  };
+  g();
+}
+
+// A default-parameter initializer of an arrow captures enclosing locals just
+// like the body does, so a wrong-typed write there is checked the same way.
+// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it (#769).
+function capturedWriteInDefaultParam(): void {
+  let x: string = "a";
+  const g = (y: number = (x = 5)): void => {
+    void y;
+  };
+  g();
+}
