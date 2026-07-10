@@ -343,10 +343,11 @@ extension class TypeChecker {
     };
     // Kept for truthful unreachability reasons: a case value can be
     // unreachable because it is not in the switched type at all, or because
-    // an earlier case (e.g. an alias enum member with the same value)
-    // already handled it. `handledBy` records the position of the case that
-    // first handled each value, to point at it in the latter warning.
-    originalValues = SortedSet::createFromIterator(cases.keys());
+    // an earlier case (e.g. an alias enum member with the same value) already
+    // handled it. As each value is handled it moves from `cases` into
+    // `handledBy` (which also records the handling case's position, to point
+    // at it in the latter warning), so a value still in the switched type is
+    // in exactly one of the two.
     handledBy = mutable Map<String, PosRange>[];
     for (branch in branches) {
       branch match {
@@ -358,7 +359,7 @@ extension class TypeChecker {
           if (cases.containsKey(staticValue)) {
             cases.remove(staticValue);
             handledBy![staticValue] = pos
-          } else if (originalValues.contains(staticValue)) {
+          } else if (handledBy.containsKey(staticValue)) {
             messages = mutable Vector[
               (
                 pos,
