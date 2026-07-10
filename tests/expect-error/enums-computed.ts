@@ -362,3 +362,23 @@ enum ScopeSelfBare {
 function scopeSelfBareMember(): number {
   return ScopeSelfBare.A;
 }
+
+// A cyclic cross-enum reference: the syntactically-forward member (declared
+// first, referencing a later enum) is rejected (tsc TS2651); the back edge
+// reads an already-declared enum, so it is an untracked number, like tsc.
+enum Cyclic1 {
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
+  A = Cyclic2.B,
+}
+
+enum Cyclic2 {
+  B = Cyclic1.A,
+}
+
+function cyclic1Member(): number {
+  return Cyclic1.A;
+}
+
+function cyclic2Member(): number {
+  return Cyclic2.B;
+}

@@ -373,9 +373,17 @@ extension base class TEnv {
       otherPos = other.name.pos;
       enPos = en.name.pos;
       if (visiting.contains(otherPos)) {
-        // A cyclic cross-enum reference chain: at least one side reads an
-        // uninitialized member at runtime.
-        return EFForwardRef()
+        // A cyclic cross-enum reference, reached only on a back edge while
+        // folding an ancestor enum's members to read one value. The member
+        // that is syntactically forward (references a later-declared enum) is
+        // rejected by the position check below when its own enum is checked;
+        // on the back edge we cannot tell whether THIS reference is that
+        // offending one, and tsc accepts a back-edge reference to an
+        // already-declared enum, so we treat it as an untracked number rather
+        // than assert a forward reference. (This value is only ever consumed
+        // through enumFoldOfMemberValue, which collapses it to the same
+        // unknown number regardless.)
+        return EFNumUnknown()
       };
       if (otherPos.fileName == enPos.fileName) {
         if (otherPos.symbol != enPos.symbol) {
