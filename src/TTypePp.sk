@@ -21,6 +21,11 @@ mutable base class TypePpState private {
   mutable cols: Int = 0,
   mutable buffer: List<String> = List[],
   mutable expandingTVars: SortedSet<TVarID> = SortedSet[],
+  // Set by beginMember for the innermost renderObjectMembers call (which
+  // saves and restores it around nested objects), so "did this object print
+  // any member" is recorded by the emission path itself. Lives in the
+  // backtrackable state because branch() may roll emissions back.
+  mutable emittedMember: Bool = false,
 } {
   readonly fun chill(): SavedTypePp {
     SavedTypePp::create(this)
@@ -30,6 +35,7 @@ mutable base class TypePpState private {
     this.!cols = saved.cols;
     this.!buffer = saved.buffer;
     this.!expandingTVars = saved.expandingTVars;
+    this.!emittedMember = saved.emittedMember;
   }
 }
 
@@ -39,6 +45,7 @@ mutable class SavedTypePp private {} extends TypePpState {
       cols => state.cols,
       buffer => state.buffer,
       expandingTVars => state.expandingTVars,
+      emittedMember => state.emittedMember,
     }
   }
 }
@@ -406,13 +413,17 @@ mutable class TypePp{
         level,
         margin,
         (pp, level, margin) ~> {
-          pp.out(level, margin, " ");
-          pp.fields(level, margin, fields, false);
-          pp.out(level, margin, " }");
+          // Every member emits its own leading space, so an empty object
+          // naturally prints as tsc's `{}` and a non-empty one needs only
+          // the closing pad (`{ foo: string; }`).
+          if (pp.renderObjectMembers(level, margin, fields, false)) {
+            pp.out(level, margin, " }")
+          } else {
+            pp.out(level, margin, "}")
+          }
         },
         (pp, level, prevMargin, margin) -> {
-          pp.newLine();
-          pp.fields(level, margin, fields, true);
+          _ = pp.renderObjectMembers(level, margin, fields, true);
           pp.newLine();
           pp.out(level, prevMargin, "}");
           pp.newLine();
@@ -421,12 +432,18 @@ mutable class TypePp{
     }
   }
 
-  mutable fun fields(
+  // Renders the members of an object type, each opened by beginMember (its
+  // leading space, or fresh line in multiLine mode) and terminated with ";"
+  // like tsc. Returns whether any member was printed — recorded by
+  // beginMember itself — so the caller can close an empty object as `{}`.
+  mutable fun renderObjectMembers(
     level: Int,
     margin: Margin,
     fields: TFields,
     multiLine: Bool,
-  ): void {
+  ): Bool {
+    savedEmitted = this.emittedMember;
+    this.!emittedMember = false;
     fieldArray = fields.fields;
     symbolFieldArray = fields.symbolFields;
     // Hide synthetic indexes (kSyntheticIndexName): they exist to make
@@ -440,8 +457,8 @@ mutable class TypePp{
     stringIdx = hideSynthetic(fields.stringIndex);
     numberIdx = hideSynthetic(fields.numberIndex);
     symbolIdx = hideSynthetic(fields.symbolIndex);
-    hasIndexes = stringIdx.isSome() || numberIdx.isSome() || symbolIdx.isSome();
-    for (i => field in fieldArray) {
+    for (field in fieldArray) {
+      this.beginMember(level, margin, multiLine);
       fieldName = field.name.value;
       escapedName = TypePp::escapeName(fieldName);
       if (field.set.isBottom()) {
@@ -466,22 +483,10 @@ mutable class TypePp{
         this.out(level, margin, ": ");
         this.type(level, margin, field.get);
       };
-      // tsc terminates every member, including the last (`{ foo: string; }`);
-      // only the inter-member whitespace needs the lookahead.
-      this.out(level, margin, ";");
-      if (
-        i != fieldArray.size() - 1 ||
-        !symbolFieldArray.isEmpty() ||
-        hasIndexes ||
-        fields.call.isSome() ||
-        fields.new.isSome()
-      ) {
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        };
-      }
+      this.out(level, margin, ";")
     };
-    for (i => field in symbolFieldArray) {
+    for (field in symbolFieldArray) {
+      this.beginMember(level, margin, multiLine);
       this.out(
         level,
         margin,
@@ -492,66 +497,55 @@ mutable class TypePp{
       };
       this.out(level, margin, ": ");
       this.type(level, margin, field.get);
-      this.out(level, margin, ";");
-      if (
-        i != symbolFieldArray.size() - 1 ||
-        hasIndexes ||
-        fields.call.isSome() ||
-        fields.new.isSome()
-      ) {
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        };
-      }
+      this.out(level, margin, ";")
     };
-    hasMore = fields.call.isSome() || fields.new.isSome();
     stringIdx.each(index -> {
+      this.beginMember(level, margin, multiLine);
       this.indexField(level, margin, "string", index);
-      this.out(level, margin, ";");
-      if (numberIdx.isSome() || symbolIdx.isSome() || hasMore) {
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     });
     numberIdx.each(index -> {
+      this.beginMember(level, margin, multiLine);
       this.indexField(level, margin, "number", index);
-      this.out(level, margin, ";");
-      if (symbolIdx.isSome() || hasMore) {
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     });
     symbolIdx.each(index -> {
+      this.beginMember(level, margin, multiLine);
       this.indexField(level, margin, "symbol", index);
-      this.out(level, margin, ";");
-      if (hasMore) {
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     });
     fields.call match {
     | None() -> void
     | Some((opt, TFuns(tfun, _pos))) ->
+      this.beginMember(level, margin, multiLine);
       if (opt) this.out(level, margin, "?");
       this.tfun(level, margin, (true, tfun));
-      this.out(level, margin, ";");
-      if (fields.new.isSome()) {
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     };
     fields.new match {
     | None() -> void
     | Some((opt, TFuns(tfun, _pos))) ->
+      this.beginMember(level, margin, multiLine);
       if (opt) this.out(level, margin, "?");
       this.out(level, margin, "new ");
       this.tfun(level, margin, (true, tfun));
       this.out(level, margin, ";")
-    }
+    };
+    printed = this.emittedMember;
+    this.!emittedMember = savedEmitted;
+    printed
+  }
+
+  // Opens an object member: emits its leading separator (every member,
+  // including the first, gets one — a space single-line, a fresh line
+  // multi-line) and records that the enclosing object is non-empty.
+  private mutable fun beginMember(
+    level: Int,
+    margin: Margin,
+    multiLine: Bool,
+  ): void {
+    this.!emittedMember = true;
+    if (multiLine) this.newLine() else this.out(level, margin, " ")
   }
 
   mutable fun indexField(

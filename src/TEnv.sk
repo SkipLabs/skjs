@@ -94,8 +94,9 @@ base class TEnv{
 
   // Mirrors the `--verbose` CLI flag. Read by the pretty-printer to opt out
   // of hiding internal-only details: the synthetic index name on object
-  // literals (see kSyntheticIndexName and TypePp::fields) and the qualified
-  // type-parameter id, name:counter:file-hash (see TypePp::tparamName).
+  // literals (see kSyntheticIndexName and TypePp::renderObjectMembers) and
+  // the qualified type-parameter id, name:counter:file-hash (see
+  // TypePp::tparamName).
   verbose: Bool = false,
 } {
   // Renders a type for embedding in diagnostic prose, quoted per tsc's
