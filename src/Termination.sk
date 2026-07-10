@@ -263,9 +263,9 @@ value class StmtTermination private {
     }
   }
 
-  // The plain-value requirement on case expressions is checked by the
-  // type-checker (checkCasePlainValue in TypeCheckStmt.sk), which can
-  // resolve names to exempt enum member reads; this pass has no defMap.
+  // The plain-value requirement on case expressions is checked inline in
+  // switchCheckExhaustiveness (TypeCheckStmt.sk), which can resolve names to
+  // exempt enum member reads; this pass has no defMap.
   static fun branch(tcenvb: mutable TCEnvBase, branch: SwitchBranch): this {
     branch match {
     | SwitchBranch(_case, block, _pos) ->

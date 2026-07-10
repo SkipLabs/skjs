@@ -294,7 +294,41 @@ extension class TypeChecker {
       branch match {
       | SwitchBranch(Case(v), _, _) ->
         _ = this.expr(tcenv, v, true);
-        this.checkCasePlainValue(tcenv, v)
+        // A switch case must be a plain value, so that case-evaluation order
+        // and `===` narrowing are sound. Enum member reads (`E.A`, `E["A"]`,
+        // `E[0]` on an unshadowed enum name) are plain data-property reads and
+        // exempt — a bare name never throws and enum members are not accessors;
+        // every other case must be provably non-throwing. This lives here
+        // rather than in the Termination pass because the exemption needs name
+        // resolution, which that pass has no defMap for.
+        enumMemberBase = v.value match {
+        | Dot(NormalDot(), Expr(_, Var(b)), _) -> Some(b)
+        | Get(
+          Expr(_, Var(b)),
+          key,
+        ) if (this.directLiteralSType(key) is Some _) ->
+          Some(b)
+        | _ -> None()
+        };
+        isEnumMember = enumMemberBase match {
+        | Some(b) ->
+          tcenv.scope.maybeGet(b) is None() &&
+            this.defMap.getAll(tcenv, b).any(d -> d is Enum _)
+        | None() -> false
+        };
+        if (!isEnumMember) {
+          StmtTermination::expr(v).mayNonThrough().each(term ->
+            tcenv.error(
+              Array[
+                (
+                  v.pos,
+                  `A switch case expression must be a plain value, but this one may ${term}.`,
+                ),
+              ],
+              SKJSCode(2055),
+            )
+          )
+        }
       | SwitchBranch(Default(), _, _) -> void
       }
     };

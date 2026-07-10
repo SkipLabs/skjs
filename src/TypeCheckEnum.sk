@@ -588,49 +588,6 @@ extension base class TEnv {
 }
 
 extension class TypeChecker {
-  // Whether `e` reads a member off an enum name (not shadowed by a local
-  // binding), as `E.A` or with a literal key as `E["A"]` / `E[0]`. Such a
-  // read is a plain value: evaluating a bare name never throws, and enum
-  // members are data properties, not accessors.
-  fun isEnumMemberAccess(tcenv: mutable TCEnv, e: Expr): Bool {
-    base = e.value match {
-    | Dot(NormalDot(), Expr(_, Var(b)), _member) -> Some(b)
-    | Get(
-      Expr(_, Var(b)),
-      keyExpr,
-    ) if (this.directLiteralSType(keyExpr) is Some _) ->
-      Some(b)
-    | _ -> None()
-    };
-    base match {
-    | Some(b) ->
-      tcenv.scope.maybeGet(b) is None() &&
-        this.defMap.getAll(tcenv, b).any(d -> d is Enum _)
-    | None() -> false
-    }
-  }
-
-  // A switch case expression must be a plain value (evaluating it must not
-  // observably run code): case evaluation order and `===` narrowing assume
-  // it. Enum member reads are exempt. Lives here rather than in the
-  // Termination pass so name resolution is available for the exemption.
-  fun checkCasePlainValue(tcenv: mutable TCEnv, e: Expr): void {
-    if (this.isEnumMemberAccess(tcenv, e)) {
-      return void
-    };
-    StmtTermination::expr(e).mayNonThrough().each(term ->
-      tcenv.error(
-        Array[
-          (
-            e.pos,
-            `A switch case expression must be a plain value, but this one may ${term}.`,
-          ),
-        ],
-        SKJSCode(2055),
-      )
-    )
-  }
-
   // Check an enum declaration: duplicate member names, members that need an
   // initializer, and computed initializers (typed, and required to be
   // numbers; constant expressions required in const enums).
