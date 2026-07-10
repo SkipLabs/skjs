@@ -253,7 +253,7 @@ function numberKeyOnStringIndex(x: StringIndex): number | undefined {
 }
 
 function stringKeyOnNumberIndex(x: NumberIndex): void {
-  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
   const v = x["name"];
 }
 
@@ -578,8 +578,8 @@ function namedFieldTypeToStringIndex(x: { a: number }): {
   [k: string]: number;
 } {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  // @skjs-expect-error-line2 Type { a: number }
-  // @skjs-expect-error-line3 is not assignable to type { [ k: string ]: number }
+  // @skjs-expect-error-line2 Type '{ a: number }'
+  // @skjs-expect-error-line3 is not assignable to type '{ [ k: string ]: number }'
   // @skjs-expect-error-line4 Missing index signature 'k' in source type
   return x;
 }

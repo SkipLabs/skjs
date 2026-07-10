@@ -114,9 +114,9 @@ const uniqueB: unique symbol = Symbol("b");
 // unique symbol A is not assignable to unique symbol B
 function testDistinctTypes(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 Type typeof uniqueB
-  // @skjs-expect-error-line3 is not assignable to type typeof uniqueA
-  // @skjs-expect-error-line4 Value typeof uniqueB is missing
+  // @skjs-expect-error-line2 Type 'typeof uniqueB'
+  // @skjs-expect-error-line3 is not assignable to type 'typeof uniqueA'
+  // @skjs-expect-error-line4 Value 'typeof uniqueB' is missing
   const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
 }
 
@@ -136,8 +136,8 @@ function testCovariance(us: unique symbol): symbol {
 // symbol is not assignable to unique symbol
 function testContravariance(s: symbol): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not assignable to specific type typeof uniqueA
+  // @skjs-expect-error-line2 Full type 'symbol'
+  // @skjs-expect-error-line3 is not assignable to specific type 'typeof uniqueA'
   const us: typeof uniqueA = s; // symbol → unique symbol should fail
 }
 
@@ -382,8 +382,8 @@ function testSpreadInArrayLiteral(): void {
 // symbol is not assignable to a class static unique symbol
 function testClassSymContravariance(s: symbol): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not assignable to specific type typeof MyClass.classSym
+  // @skjs-expect-error-line2 Full type 'symbol'
+  // @skjs-expect-error-line3 is not assignable to specific type 'typeof MyClass.classSym'
   const c: typeof MyClass.classSym = s;
 }
 
@@ -395,8 +395,8 @@ declare const anonObj: { readonly prop: unique symbol };
 
 function testAnonUniqueSymbol(s: symbol): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-  // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not assignable to specific type unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)
+  // @skjs-expect-error-line2 Full type 'symbol'
+  // @skjs-expect-error-line3 is not assignable to specific type 'unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)'
   const c: typeof anonObj.prop = s;
 }
 

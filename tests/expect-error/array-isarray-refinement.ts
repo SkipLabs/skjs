@@ -284,7 +284,7 @@ function testTupleNegative(x: [number, string] | number): number {
 function testObjectLiteralEliminatedInPositiveBranch(): number {
   const x = { length: 42, push(elt: number): void {} };
   if (Array.isArray(x)) {
-    // @skjs-expect-error Cannot access a property on type never
+    // @skjs-expect-error Cannot access a property on type 'never'
     return x.length;
   } else {
     return x.length;
@@ -306,7 +306,7 @@ class NumHolder<T> {
 // positive Array.isArray branch.
 function testClassInstanceNotArray(x: NumHolder<number>): number {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Cannot access a property on type never
+    // @skjs-expect-error Cannot access a property on type 'never'
     return x.value;
   } else {
     return x.value;
@@ -320,7 +320,7 @@ function testClassInstanceNotArray(x: NumHolder<number>): number {
 // Array.isArray should not widen ReadonlyArray to mutable Array.
 function testReadonlyArrayPreserved(x: readonly number[] | string): void {
   if (Array.isArray(x)) {
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
     x.push(1);
   }
 }

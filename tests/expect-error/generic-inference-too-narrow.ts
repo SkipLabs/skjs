@@ -136,8 +136,8 @@ function fromObjectField(): void {
   // tsc infers Container<unknown> for the bare new Container() and rejects this line; SKJS's delayed TVar typing soundly accepts
   takeContainerObj(c);
   // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type "hello"
-  // @skjs-expect-error-line3 is not assignable to type number
+  // @skjs-expect-error-line2 Type '"hello"'
+  // @skjs-expect-error-line3 is not assignable to type 'number'
   // @skjs-expect-error-line4 Consider adding a type annotation, e.g., number | "hello"
   // @skjs-expect-error-line5 Consider adding explicit type arguments, e.g., <{ x: number } | { x: "hello" }>
   c.push({ x: "hello" });

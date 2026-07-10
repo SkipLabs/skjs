@@ -51,7 +51,7 @@ function testWithIndexSignature(): void {
 // String-keyed access on a number-only index is rejected.
 function testWithNumericIndexSignature(): void {
   let obj: { [key: number]: string } = {};
-  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
   obj.x = "hello";
 }
 

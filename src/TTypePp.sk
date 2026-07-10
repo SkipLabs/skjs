@@ -208,17 +208,10 @@ mutable class TypePp{
       }
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
-    | TPrimValue(TSymbol(), Some(arr), _) ->
-      rendered = arr
-        .values()
-        .map(lit -> TypePp::displayUniqueSymbolId(lit.val))
-        .collect(Array)
-        .join(" | ");
-      this.out(level, margin, rendered)
     | TPrimValue(k, Some(arr), _) ->
       rendered = arr
         .values()
-        .map(lit -> k.renderLiteral(lit.val))
+        .map(lit -> TypePp::renderPrimLiteral(k, lit.val))
         .collect(Array)
         .join(" | ");
       this.out(level, margin, rendered)
@@ -555,6 +548,43 @@ mutable class TypePp{
     }
   }
 
+  // Renders a primitive literal (a value as stored in PrimLiterals for
+  // `kind`) as TypeScript source syntax, matching tsc's error messages:
+  // string literals double-quoted with escapes, all other kinds bare (`1`,
+  // `true`, `1n`); symbol literals are internal ids and render via
+  // displayUniqueSymbolId. The `\n`/`\r`/`\t` escape arms are load-bearing:
+  // TypePp::out rejects raw control characters, and template-literal string
+  // values are stored raw (ParserExpr). Values from quoted string literals
+  // are stored with their source escapes un-decoded (see unquoteString's
+  // TODO), so they render with those escapes as written.
+  static fun renderPrimLiteral(kind: TPrimValueKind, literal: String): String {
+    kind match {
+    | TSymbol() -> TypePp::displayUniqueSymbolId(literal)
+    | TString() ->
+      chars = mutable Vector['"'];
+      for (c in literal) {
+        c match {
+        | '\\' | '"' ->
+          chars.push('\\');
+          chars.push(c)
+        | '\n' ->
+          chars.push('\\');
+          chars.push('n')
+        | '\r' ->
+          chars.push('\\');
+          chars.push('r')
+        | '\t' ->
+          chars.push('\\');
+          chars.push('t')
+        | _ -> chars.push(c)
+        }
+      };
+      chars.push('"');
+      String::fromChars(chars.toArray())
+    | _ -> literal
+    }
+  }
+
   static fun escapeName(name: String): String {
     chars = mutable Vector[];
     for (c in name) {
@@ -795,6 +825,18 @@ mutable class TypePp{
       this.out(level, margin, nameColon + id)
     }
   }
+}
+
+// Wraps a rendered type for embedding in a diagnostic message, following
+// tsc's convention (`Type 'X' is not assignable to type 'Y'`). Multi-line
+// renderings stay unquoted: quotes around an indented block read badly, and
+// tsc never produces one (it truncates instead). Every diagnostic that
+// mentions a type in prose must quote it — TEnv::ppType does so already;
+// non-ppType renderings go through this helper — except messages that embed
+// a type as pastable code (e.g. the "Consider adding a type annotation,
+// e.g., ..." hints).
+fun quoteRenderedType(rendered: String): String {
+  if (rendered.contains("\n")) rendered else `'${rendered}'`
 }
 
 fun rawPrettyPrint(

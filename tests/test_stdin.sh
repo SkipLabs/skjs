@@ -65,7 +65,7 @@ expect_not_contains() {
 ########################################################################
 out=$(printf '//// a.ts\nconst x: number = "bad";\n' | run_stdin)
 expect_contains "singleFileTypeError" \
-  "Type \"bad\"" "$out"
+  "Type '\"bad\"'" "$out"
 expect_contains "singleFilePathInError" \
   "$TMPDIR/a.ts" "$out"
 
@@ -77,7 +77,7 @@ out=$(
     | run_stdin
 )
 expect_contains "multiFileImportTypeError" \
-  "is not assignable to type string" "$out"
+  "is not assignable to type 'string'" "$out"
 expect_contains "multiFileErrorPath" \
   "$TMPDIR/b.ts" "$out"
 
@@ -94,7 +94,7 @@ out=$(
     | run_stdin
 )
 expect_contains "overlayShadowsDisk" \
-  "Type \"stdin-wins\"" "$out"
+  "Type '\"stdin-wins\"'" "$out"
 
 ########################################################################
 # Negative: non-comment line before first marker
@@ -122,7 +122,7 @@ out=$(
     | run_stdin_in "$TSPROJ"
 )
 expect_contains "tsconfigOverlay" \
-  "Type \"tsproj-bad\"" "$out"
+  "Type '\"tsproj-bad\"'" "$out"
 
 ########################################################################
 # Preamble with only comments and blank lines is accepted
@@ -145,7 +145,7 @@ out=$(
 expect_contains "warningKeptBeforeFatalError" \
   "This '?.' is unnecessary" "$out"
 expect_contains "fatalErrorAfterWarning" \
-  "is not assignable to type string" "$out"
+  "is not assignable to type 'string'" "$out"
 
 ########################################################################
 # Summary

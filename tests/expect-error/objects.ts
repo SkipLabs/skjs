@@ -51,7 +51,7 @@ function testMixedObjectNormalFieldIncorrectIndexing(obj: tIndex2): boolean {
 function testMixedObjectNormalFieldIncorrectIndexingType(
   obj: tIndex2,
 ): boolean | string | undefined {
-  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
   return obj.missing;
 }
 

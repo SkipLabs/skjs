@@ -168,8 +168,13 @@ base class STErrorOnSType(
     | None() -> void
     };
     List[
-      (sType1.pos, `Type ${sType1.toString(subst, tenv)}`),
-      (pos2, `is not assignable to type ${sTypes2.toString(subst, tenv)}`),
+      (sType1.pos, `Type ${quoteRenderedType(sType1.toString(subst, tenv))}`),
+      (
+        pos2,
+        `is not assignable to type ${quoteRenderedType(
+          sTypes2.toString(subst, tenv),
+        )}`,
+      ),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 
@@ -191,20 +196,31 @@ base class STErrorOnTPrimValue(
   ): List<(PosRange, String)>
   | STPrimValueFullSpecific(prim1, prim2, suggestReadonly) ->
     List[
-      (prim1.pos, `Full type ${prim1.toString(subst, tenv)}`),
+      (
+        prim1.pos,
+        `Full type ${quoteRenderedType(prim1.toString(subst, tenv))}`,
+      ),
       (
         prim2.pos,
-        `is not assignable to specific type ${prim2.toString(subst, tenv)}`,
+        `is not assignable to specific type ${quoteRenderedType(
+          prim2.toString(subst, tenv),
+        )}`,
       ),
     ].concat(STError::readonlyHint(suggestReadonly))
   | STPrimMissingValue(elt, prim1, prim2, suggestReadonly) ->
-    displayVal = prim1.kind match {
-    | TSymbol() -> TypePp::displayUniqueSymbolId(elt.val)
-    | _ -> `'${elt.val}'`
-    };
+    // Render the missing value the same way it appears in the quoted type
+    // pair above it (e.g. `Value '"other"' is missing`).
+    displayVal = quoteRenderedType(
+      TypePp::renderPrimLiteral(prim1.kind, elt.val),
+    );
     List[
-      (prim1.pos, `Type ${prim1.toString(subst, tenv)}`),
-      (prim2.pos, `is not assignable to type ${prim2.toString(subst, tenv)}`),
+      (prim1.pos, `Type ${quoteRenderedType(prim1.toString(subst, tenv))}`),
+      (
+        prim2.pos,
+        `is not assignable to type ${quoteRenderedType(
+          prim2.toString(subst, tenv),
+        )}`,
+      ),
       (elt.pos, `Value ${displayVal} is missing`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
@@ -237,11 +253,16 @@ base class STErrorOnObject(
           );
           if (detail.maxIntermediateDepth > 0) {
             List.Cons(
-              (o1.pos, `Type ${fields1.toString(subst, tenv)}`),
+              (
+                o1.pos,
+                `Type ${quoteRenderedType(fields1.toString(subst, tenv))}`,
+              ),
               List.Cons(
                 (
                   o2.pos,
-                  `is not assignable to type ${fields2.toString(subst, tenv)}`,
+                  `is not assignable to type ${quoteRenderedType(
+                    fields2.toString(subst, tenv),
+                  )}`,
                 ),
                 msgs,
               ),
@@ -257,15 +278,25 @@ base class STErrorOnObject(
     if (detail.maxIntermediateDepth > 0) {
       if (msgs.isEmpty()) {
         !msgs = List[
-          (o1.pos, `Type ${fields1.toString(subst, tenv)}`),
-          (o2.pos, `is not assignable to ${o2.toString(subst, tenv)}`),
+          (o1.pos, `Type ${quoteRenderedType(fields1.toString(subst, tenv))}`),
+          (
+            o2.pos,
+            `is not assignable to ${quoteRenderedType(
+              o2.toString(subst, tenv),
+            )}`,
+          ),
         ];
       };
       if (o1.getBranches().size() > 1 != o2.getBranches().size() > 1) {
         !msgs = List.Cons(
-          (o1.pos, `Type ${o1.toString(subst, tenv)}`),
+          (o1.pos, `Type ${quoteRenderedType(o1.toString(subst, tenv))}`),
           List.Cons(
-            (o2.pos, `is not assignable to ${o2.toString(subst, tenv)}`),
+            (
+              o2.pos,
+              `is not assignable to ${quoteRenderedType(
+                o2.toString(subst, tenv),
+              )}`,
+            ),
             msgs,
           ),
         )
@@ -301,11 +332,13 @@ base class STErrorOnSTypes(
       );
       if (detail.maxIntermediateDepth > 0) {
         List.Cons(
-          (pos1, `Type ${sTypes1.toString(subst, tenv)}`),
+          (pos1, `Type ${quoteRenderedType(sTypes1.toString(subst, tenv))}`),
           List.Cons(
             (
               pos2,
-              `is not assignable to type ${sTypes2.toString(subst, tenv)}`,
+              `is not assignable to type ${quoteRenderedType(
+                sTypes2.toString(subst, tenv),
+              )}`,
             ),
             msgs,
           ),
@@ -346,11 +379,16 @@ base class STErrorOnClauses(
           );
           if (detail.maxIntermediateDepth > 0) {
             List.Cons(
-              (pos1, `Type ${clause1.toString(subst, tenv)}`),
+              (
+                pos1,
+                `Type ${quoteRenderedType(clause1.toString(subst, tenv))}`,
+              ),
               List.Cons(
                 (
                   pos2,
-                  `is not assignable to type ${clause2.toString(subst, tenv)}`,
+                  `is not assignable to type ${quoteRenderedType(
+                    clause2.toString(subst, tenv),
+                  )}`,
                 ),
                 msgs,
               ),
@@ -366,11 +404,13 @@ base class STErrorOnClauses(
     if (detail.maxIntermediateDepth > 0) {
       if (msgs.isEmpty() || clauses2.clauses.size() > errs.size()) {
         !msgs = List.Cons(
-          (pos1, `Type ${clause1.toString(subst, tenv)}`),
+          (pos1, `Type ${quoteRenderedType(clause1.toString(subst, tenv))}`),
           List.Cons(
             (
               pos2,
-              `is not assignable to type ${clauses2.toString(subst, tenv)}`,
+              `is not assignable to type ${quoteRenderedType(
+                clauses2.toString(subst, tenv),
+              )}`,
             ),
             msgs,
           ),
@@ -378,11 +418,13 @@ base class STErrorOnClauses(
       };
       if (clauses1.clauses.size() > 1) {
         !msgs = List.Cons(
-          (pos1, `Type ${clauses1.toString(subst, tenv)}`),
+          (pos1, `Type ${quoteRenderedType(clauses1.toString(subst, tenv))}`),
           List.Cons(
             (
               pos2,
-              `is not assignable to type ${clauses2.toString(subst, tenv)}`,
+              `is not assignable to type ${quoteRenderedType(
+                clauses2.toString(subst, tenv),
+              )}`,
             ),
             msgs,
           ),
@@ -417,8 +459,8 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       // fall back to the top-level type pair regardless of the detail
       // budget: an error must never print bare with no explanation.
       if (detail.maxRecTypeDepth > 0 || msgs.isEmpty()) {
-        ty1Str = prettyPrintType(false, ty1, subst, tenv);
-        ty2Str = prettyPrintType(false, ty2, subst, tenv);
+        ty1Str = quoteRenderedType(prettyPrintType(false, ty1, subst, tenv));
+        ty2Str = quoteRenderedType(prettyPrintType(false, ty2, subst, tenv));
         List.Cons(
           (ty1.pos, `Type ${ty1Str}`),
           List.Cons((ty2.pos, `is not assignable to type ${ty2Str}`), msgs),
@@ -438,8 +480,8 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       // the clause comparison can report no pairs at all, and an error must
       // never print bare with no explanation.
       if (msgs.isEmpty()) {
-        ty1Str = prettyPrintType(false, ty1, subst, tenv);
-        ty2Str = prettyPrintType(false, ty2, subst, tenv);
+        ty1Str = quoteRenderedType(prettyPrintType(false, ty1, subst, tenv));
+        ty2Str = quoteRenderedType(prettyPrintType(false, ty2, subst, tenv));
         List[
           (ty1.pos, `Type ${ty1Str}`),
           (ty2.pos, `is not assignable to type ${ty2Str}`),
@@ -502,7 +544,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | STTypeParameterMismatch(_f1, _f2) ->
       (None(), List[(pos1, "Their number of type parameters differ")], None())
     | STInvalidSpread(rest, _f1, _f2) ->
-      restStr = prettyPrintType(false, rest, subst, tenv);
+      restStr = quoteRenderedType(prettyPrintType(false, rest, subst, tenv));
       (
         None(),
         List[(pos1, `Invalid type for a rest parameter: ${restStr}`)],
@@ -525,8 +567,12 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
       // err records the failed contravariant check `target param <: source
       // param`, so err.ty1/err.ty2 are the exact parameter types compared
       // (after rest/tuple flattening in TFun::isSub_).
-      targetStr = prettyPrintType(false, err.ty1, subst, tenv);
-      sourceStr = prettyPrintType(false, err.ty2, subst, tenv);
+      targetStr = quoteRenderedType(
+        prettyPrintType(false, err.ty1, subst, tenv),
+      );
+      sourceStr = quoteRenderedType(
+        prettyPrintType(false, err.ty2, subst, tenv),
+      );
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
@@ -579,11 +625,16 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | None() -> void
     };
     List.Cons(
-      (pos1, `Function type ${this.f1.toString(subst, tenv)}`),
+      (
+        pos1,
+        `Function type ${quoteRenderedType(this.f1.toString(subst, tenv))}`,
+      ),
       List.Cons(
         (
           pos2,
-          `is not assignable to function type ${this.f2.toString(subst, tenv)}`,
+          `is not assignable to function type ${quoteRenderedType(
+            this.f2.toString(subst, tenv),
+          )}`,
         ),
         msgs,
       ),
@@ -757,11 +808,13 @@ base class STErrorOnTFields(
         !msgs = recMsgs.concat(msgs)
       };
       List.Cons(
-        (pos1, `Type ${this.fields1.toString(subst, tenv)}`),
+        (pos1, `Type ${quoteRenderedType(this.fields1.toString(subst, tenv))}`),
         List.Cons(
           (
             pos2,
-            `is not assignable to type ${this.fields2.toString(subst, tenv)}`,
+            `is not assignable to type ${quoteRenderedType(
+              this.fields2.toString(subst, tenv),
+            )}`,
           ),
           msgs,
         ),
@@ -1195,6 +1248,9 @@ extension class TType {
         sealedType = rawSealed.expandTVarsForPp(clonedSubst, tenv);
         expandedU1 = u1.expandTVarsForPp(clonedSubst, tenv);
         widerType = TType::union(clonedSubst, tenv, sealedType, expandedU1);
+        // The hints below embed the type as code the user could paste into
+        // an annotation, not as prose, so it is deliberately NOT wrapped in
+        // quoteRenderedType.
         widerStr = widerType.toString(clonedSubst, tenv);
         clonedSubst.getOrigin(tvar) match {
         | Some(FromGenericInst(pos, allTVars))
