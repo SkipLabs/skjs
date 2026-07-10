@@ -299,3 +299,66 @@ function ambientNamespaceEnumMember(x: AmbientNS.NE): 0 {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
+
+// A bare name with no sibling member of that name resolves to the outer
+// scope, like tsc.
+const enumScopeOuter = 5;
+
+enum ScopeOuterConst {
+  A = enumScopeOuter,
+  C = 2,
+}
+
+function scopeOuterConstMember(): number {
+  return ScopeOuterConst.A;
+}
+
+function enumScopeFn(): number {
+  return 1;
+}
+
+enum ScopeOuterFn {
+  A = enumScopeFn(),
+}
+
+function scopeOuterFnMember(): number {
+  return ScopeOuterFn.A;
+}
+
+// FIXME: a bare reference to a later sibling reads undefined at runtime; tsc
+// reports TS2651. SKJS currently only consults earlier members and reports
+// the outer-scope lookup failure instead.
+enum ScopeBareForward {
+  // @skjs-expect-error Cannot find name
+  A = ScopeLater,
+  ScopeLater = 1,
+}
+
+function scopeBareForwardMember(): number {
+  return ScopeBareForward.A;
+}
+
+// FIXME: unsound — the member `scopeShadowed` shadows the outer const, so at
+// runtime A reads the not-yet-initialized member (undefined); tsc reports
+// TS2651. SKJS currently resolves the bare name to the outer const.
+const scopeShadowed = 5;
+
+enum ScopeShadowSibling {
+  A = scopeShadowed,
+  scopeShadowed = 1,
+}
+
+function scopeShadowMember(): number {
+  return ScopeShadowSibling.A;
+}
+
+// FIXME: a bare self reference reads undefined at runtime; tsc reports
+// TS2565. SKJS reports the outer-scope lookup failure instead.
+enum ScopeSelfBare {
+  // @skjs-expect-error Cannot find name
+  A = A,
+}
+
+function scopeSelfBareMember(): number {
+  return ScopeSelfBare.A;
+}
