@@ -1166,9 +1166,19 @@ extension class TFields {
   ): ?STResult<TFuns> {
     (m1, m2) match {
     | (_, CUnknown()) -> Some(STOk())
-    // Legacy: anything is accepted against a definitely-absent mode, reading
-    // CAbsent like top on the supertype side.
-    | (_, CAbsent()) -> Some(STOk())
+    | (CAbsent(), CAbsent()) -> Some(STOk())
+    // Lax by design: TS structural assignability lets any plain object type
+    // flow into a class-instance type ({a: number} -> C), so an
+    // unknown-callability source is accepted against a definitely-absent
+    // mode. CAbsent therefore stays a brand-like approximation (like
+    // isArray): a callable can still be laundered through an intermediate
+    // structural type. A *known* callable is rejected below.
+    | (CUnknown(), CAbsent()) -> Some(STOk())
+    // A callable (or constructible) value is not assignable where the mode
+    // claims definitely-absent: typeof narrowing relies on that claim to
+    // drop such branches, so admitting a known callable here would let
+    // `typeof x === "function"` narrow a taken branch to never.
+    | (CPresent _, CAbsent()) -> None()
     | (CAbsent(), CPresent _)
     | (CUnknown(), CPresent _) ->
       None()

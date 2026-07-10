@@ -497,10 +497,11 @@ extension class TFields {
     | (CUnknown(), call)
     | (call, CUnknown()) ->
       call
-    // Legacy: a definitely-absent mode still meets a signature like top.
-    | (CAbsent(), call)
-    | (call, CAbsent()) ->
-      call
+    | (CAbsent(), CAbsent()) -> CAbsent()
+    // Callable meets definitely-not-callable: uninhabited, drop the branch.
+    | (CAbsent(), CPresent _)
+    | (CPresent _, CAbsent()) ->
+      return None()
     | (CPresent(call1), CPresent(call2)) ->
       TFuns::inter(subst, tenv, call1, call2) match {
       | None() -> return None()
@@ -511,10 +512,11 @@ extension class TFields {
     | (CUnknown(), new)
     | (new, CUnknown()) ->
       new
-    // Legacy: a definitely-absent mode still meets a signature like top.
-    | (CAbsent(), new)
-    | (new, CAbsent()) ->
-      new
+    | (CAbsent(), CAbsent()) -> CAbsent()
+    // Constructible meets definitely-not-constructible: uninhabited.
+    | (CAbsent(), CPresent _)
+    | (CPresent _, CAbsent()) ->
+      return None()
     | (CPresent(new1), CPresent(new2)) ->
       TFuns::inter(subst, tenv, new1, new2) match {
       | None() -> return None()

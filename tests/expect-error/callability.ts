@@ -153,11 +153,14 @@ function testReadonlyArrayTypeofFunction(xs: readonly number[]): void {
 // Assignability of functions to class-instance types
 ///////////////////////////////////////////////////////////////////////////////
 
-// A function is currently assignable to an empty class-instance type (tsc
-// also accepts). This is the direct inflow that makes the class-instance
-// never-narrowing above unsound: testInstanceTypeofFunction's reasoning only
-// holds if known-callable values cannot flow into instance-typed slots.
+// A known-callable value is not assignable to a class-instance type, even an
+// empty one: class instances claim definitely-not-callable, and typeof
+// narrowing relies on that claim (testInstanceTypeofFunction above). tsc
+// accepts this (and then unsoundly narrows the instance type to never in the
+// typeof-"function" branch the function makes reachable); SKJS is stricter
+// and sound here.
 function testFnToEmptyClass(f: () => void): Empty {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
