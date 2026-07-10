@@ -22,26 +22,25 @@ interface Iface {
 // Class-constructor values under typeof (issue #774)
 ///////////////////////////////////////////////////////////////////////////////
 
-// FIXME: A class-constructor value is typeof "function" at runtime, but SKJS
-// drops it from the true branch (narrows F to never), so the unsound
-// assignment below is accepted. tsc rejects it (TS2322). Issue #774.
+// A class-constructor value is typeof "function" at runtime (through its
+// construct signature), so the true branch keeps F (#774).
 function testCtorTypeofFunction(): string {
   const F = C;
   if (typeof F === "function") {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const s: string = F;
     return s;
   }
   return "not a function";
 }
 
-// FIXME: The dual bug: `typeof F === "object"` is always false for a
-// constructor value, so at runtime the else branch is taken — but SKJS
-// narrows F to never there and accepts the never-assignment. tsc keeps F as
-// `typeof C` in the else branch and rejects. Issue #774.
+// The dual: `typeof F === "object"` is always false for a constructor value
+// (it is typeof "function"), so the else branch keeps F (#774).
 function testCtorTypeofObjectElse(): void {
   const F = C;
   if (typeof F === "object") {
   } else {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = F;
   }
 }
@@ -71,11 +70,11 @@ function testCtorToNewSig(): { new (): C } {
   return C;
 }
 
-// FIXME: A `{ new (): C }`-typed value is constructible, hence typeof
-// "function" at runtime, but SKJS drops it from the true branch. tsc keeps it
-// (narrows to `new () => C`) and rejects the never-assignment.
+// A `{ new (): C }`-typed value is constructible, hence typeof "function" at
+// runtime, so the true branch keeps it.
 function testNewSigTypeofFunction(o: { new (): C }): void {
   if (typeof o === "function") {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = o;
   }
 }

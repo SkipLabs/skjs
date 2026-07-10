@@ -875,10 +875,6 @@ class TObject private (
     if (branches.isEmpty()) None() else Some(this with {branches})
   }
 
-  fun mapCall(f: Callability -> ?Callability): ?TObject {
-    this.mapOpt(fields -> fields.mapCall(f))
-  }
-
   fun filterFields(f: TField -> Bool): TObject {
     this.map(fields -> fields.filterFields(f))
   }
@@ -2217,10 +2213,6 @@ class TFields protected {
       call => this.call.mapSig(fTFuns),
       isArray => this.isArray,
     }
-  }
-
-  fun mapCall(f: Callability -> ?Callability): ?TFields {
-    f(this.call).map(call -> this with {call})
   }
 
   fun filterFields(f: TField -> Bool): TFields {
