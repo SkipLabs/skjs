@@ -194,6 +194,22 @@ function testFreshLiteralToMutableIndex(): void {
   const a: { [k: string]: number } = { x: 1, y: 2 };
 }
 
+// Conservative over-rejection (a documented limitation of the gate, not a
+// soundness requirement). The gate keys on LOUsed, which cannot distinguish a
+// benign read from a capability-granting view: any prior use of `t` — here just
+// passing it to a function — trips the gate, so the later index view is rejected
+// even though this single index view alone would be sound (cf.
+// testDualIndexedAssignment, where the first index view is accepted). tsc
+// accepts this; SKJS rejects it, consistent with its sound-stricter-than-tsc
+// stance.
+declare function readOnce<T>(x: T): void;
+function testBenignReadThenIndexViewOverRejects(): void {
+  const t = {};
+  readOnce(t);
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const g: { [k: string]: number } = t;
+}
+
 // Must stay accepted: nested fresh literal against a nested-index annotation.
 function testNestedFreshLiteralToIndex(): void {
   const x: { inner: { [j: string]: number } } = { inner: { a: 1 } };
