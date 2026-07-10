@@ -3705,37 +3705,36 @@ extension class TypeChecker {
     positionUnambiguous: Bool,
     mostPrecise: Bool,
   ): TType {
-    expectedFnTyOpt = if (positionUnambiguous) {
+    if (positionUnambiguous) {
       tfuns match {
       | TFuns(calleeTFun, _) if (calleeTFun.tparams.isEmpty()) ->
-        tfuns.paramTypeAt(argPos)
-      | _ -> None()
+        argExpr match {
+        | Expr(closurePos, c @ Closure(tparams, ps, retTyAstOpt, body))
+        | Expr(
+          _,
+          Async(Expr(closurePos, c @ Closure(tparams, ps, retTyAstOpt, body))),
+        ) ->
+          tfuns.paramTypeAt(argPos) match {
+          | Some(expectedFnTy) ->
+            return this.anonFunction(
+              tcenv,
+              if (argExpr.value is Async _) Some(argExpr.pos) else None(),
+              closurePos,
+              c,
+              tparams,
+              ps,
+              retTyAstOpt,
+              body,
+              this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps),
+            )
+          | None() -> void
+          }
+        | _ -> void
+        }
+      | _ -> void
       }
-    } else {
-      None()
     };
-    // Unwrap an optional async wrapper so a plain `x => …` and an
-    // `async x => …` closure are reached through the same arm; `closureExpr`
-    // then carries the closure's own position in both cases.
-    closureExpr = argExpr.value match {
-    | Async(inner) -> inner
-    | _ -> argExpr
-    };
-    (expectedFnTyOpt, closureExpr.value) match {
-    | (Some(expectedFnTy), c @ Closure(tparams, ps, retTypeAstOpt, body)) ->
-      this.anonFunction(
-        tcenv,
-        if (argExpr.value is Async _) Some(argExpr.pos) else None(),
-        closureExpr.pos,
-        c,
-        tparams,
-        ps,
-        retTypeAstOpt,
-        body,
-        this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps),
-      )
-    | _ -> this.expr(tcenv, argExpr, mostPrecise)
-    }
+    this.expr(tcenv, argExpr, mostPrecise)
   }
 
   fun call(
