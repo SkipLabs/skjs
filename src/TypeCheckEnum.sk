@@ -435,30 +435,51 @@ extension base class TEnv {
     }
   }
 
-  // The type of one member (`E.A` in type position, and the member field's
-  // type on the enum object).
-  static fun enumMemberValueType(m: EnumMember): TType {
+  // The primitive value type of one member: its number/string literal, or a
+  // full `number` for a member whose value is not statically tracked.
+  static fun enumMemberPrim(m: EnumMember): TPrimValue {
     m.value match {
-    | EMVLiteral(st) -> TType::single(st)
-    | EMVNumber _ -> TType::single(TPrimValue::full(TNum(), m.name.pos))
+    | EMVLiteral(st) -> st
+    | EMVNumber _ -> TPrimValue::full(TNum(), m.name.pos)
     }
   }
 
+  // The type of one member (`E.A` in type position, and the member field's
+  // type on the enum object).
+  static fun enumMemberValueType(m: EnumMember): TType {
+    TType::single(static::enumMemberPrim(m))
+  }
+
   // The type named by the enum (annotation `E`): the union of its member
-  // types. An empty enum has no values.
+  // types. An empty enum has no values. All member types are primitive value
+  // types, so the union is built by merging same-kind literal sets directly,
+  // rather than going through the general TType::union machinery.
   fun enumUnionType(subst: mutable Subst, en: Enum): TType {
     members = this.enumMembers(subst, en);
-    if (members.size() == 0) {
+    // `parts` holds at most one entry per kind (numeric members, plus string
+    // members in a heterogeneous enum), in first-appearance order.
+    parts = mutable Vector<TPrimValue>[];
+    for (m in members) {
+      pv = static::enumMemberPrim(m);
+      mergedAt: ?Int = None();
+      for (i in Range(0, parts.size())) {
+        if (parts[i].kind == pv.kind) {
+          !mergedAt = Some(i)
+        }
+      };
+      mergedAt match {
+      | Some(i) -> parts![i] = TPrimValue::union(parts[i], pv)
+      | None() -> parts.push(pv)
+      }
+    };
+    if (parts.isEmpty()) {
       return TType::bottom(en.name.pos)
     };
-    result = static::enumMemberValueType(members[0]);
-    for (i in Range(1, members.size())) {
-      !result = TType::union(
-        subst,
-        this,
-        result,
-        static::enumMemberValueType(members[i]),
-      )
+    result = TType::single(parts[0]);
+    // Only a heterogeneous enum (mixed numeric/string members) reaches the
+    // body of this loop, joining the per-kind parts with a single union each.
+    for (i in Range(1, parts.size())) {
+      !result = TType::union(subst, this, result, TType::single(parts[i]))
     };
     result
   }
