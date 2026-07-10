@@ -362,8 +362,18 @@ extension base class TEnv {
       | None() -> EFForwardRef()
       }
     };
-    // Resolve the base quietly: a non-enum base is not a member reference
-    // and falls to the computed path with its usual diagnostics.
+    // Resolve the base speculatively, to decide whether this reference is a
+    // cross-enum member reference at all. A throwaway `probe` accumulator is
+    // used rather than `tcenvb` for two reasons:
+    //  - We must not attach diagnostics here. A base that does not resolve, or
+    //    resolves to a non-enum, is not our concern: the reference then falls
+    //    to the computed path, whose expression check (checkEnum's ENRComputed
+    //    arm) emits the authoritative diagnostic. Reporting through `tcenvb`
+    //    would duplicate or mis-attribute it.
+    //  - errorHandling must be keep-going: this fold runs from contexts that
+    //    must not abort (e.g. type normalization), and in default mode a
+    //    resolution error inside getAll would throw a fatal ErrorExn. Keep-
+    //    going collects any such error into the discarded accumulator instead.
     probe = mutable TCEnvLight{
       context => tcenvb.context,
       results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
