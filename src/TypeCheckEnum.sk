@@ -603,7 +603,34 @@ extension class TypeChecker {
       };
       !seen = seen.set(name.value)
     };
-    for (m in this.enumMembers(tcenvl, en)) {
+    members = this.enumMembers(tcenvl, en);
+    // Warn on a member whose direct-literal value duplicates an earlier
+    // member's numeric value: the runtime reverse mapping (`E[value]`) then
+    // resolves to the later member, shadowing the earlier one — usually a
+    // copy-paste mistake. A member-reference initializer (`B = A`) is an
+    // intentional alias and is not flagged (matching no-duplicate-enum-values).
+    seenValues = mutable Map<String, PosRange>[];
+    for (m in members) {
+      enumNumLiteralVal(m.value).each(val -> {
+        seenValues.maybeGet(val) match {
+        | Some(earlierPos) ->
+          isLiteralInit = m.initializer.flatMap(e ->
+            this.directLiteralSType(e)
+          ) is Some _;
+          if (isLiteralInit) {
+            tcenvl.warning(
+              Array[
+                (m.name.pos, `Duplicate enum member value ${val}`),
+                (earlierPos, "The value is first assigned here"),
+              ],
+              ESLintCode("@typescript-eslint/no-duplicate-enum-values"),
+            )
+          }
+        | None() -> seenValues![val] = m.name.pos
+        }
+      })
+    };
+    for (m in members) {
       m.value match {
       | EMVLiteral _
       | EMVNumber(ENRAmbient())

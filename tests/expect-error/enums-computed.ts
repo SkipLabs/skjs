@@ -87,6 +87,7 @@ enum FwdQualified {
 
 enum Same {
   A = 0,
+  // @skjs-expect-warning Duplicate enum member value 0
   B = 0,
 }
 
@@ -388,6 +389,7 @@ function cyclic2Member(): number {
 enum DupValue {
   A = 1,
   B = 2,
+  // @skjs-expect-warning Duplicate enum member value 1
   C = 1,
 }
 
