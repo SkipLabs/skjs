@@ -3714,27 +3714,19 @@ extension class TypeChecker {
     } else {
       None()
     };
-    (expectedFnTyOpt, argExpr.value) match {
+    // Unwrap an optional async wrapper so a plain `x => …` and an
+    // `async x => …` closure are reached through the same arm; `closureExpr`
+    // then carries the closure's own position in both cases.
+    closureExpr = argExpr.value match {
+    | Async(inner) -> inner
+    | _ -> argExpr
+    };
+    (expectedFnTyOpt, closureExpr.value) match {
     | (Some(expectedFnTy), c @ Closure(tparams, ps, retTypeAstOpt, body)) ->
       this.anonFunction(
         tcenv,
-        None(),
-        argExpr.pos,
-        c,
-        tparams,
-        ps,
-        retTypeAstOpt,
-        body,
-        this.expectedCallbackParamTypes(tcenv, expectedFnTy, ps),
-      )
-    | (
-      Some(expectedFnTy),
-      Async(Expr(cpos, c @ Closure(tparams, ps, retTypeAstOpt, body))),
-    ) ->
-      this.anonFunction(
-        tcenv,
-        Some(argExpr.pos),
-        cpos,
+        if (argExpr.value is Async _) Some(argExpr.pos) else None(),
+        closureExpr.pos,
         c,
         tparams,
         ps,
