@@ -108,7 +108,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     | None() -> void
     };
     fileName = path.pos.fileName;
-    tmp = this.getPath(tcenvb, fileName, path.value, typeOnly);
+    tmp = this.getPath(tcenvb, fileName, path.value, typeOnly, path.pos);
     result = mutable Vector[];
     for (elt in tmp) {
       elt match {
@@ -133,6 +133,9 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     fileName: FPath,
     path: String,
     typeOnly: Bool,
+    // Span of the whole qualified reference, for diagnostics that must point
+    // at the use site rather than at a resolved definition.
+    refPos: PosRange,
   ): readonly Vector<FileDef> {
     defs: readonly Vector<FileDef> = Vector[
       FDNamespace(false, None(), this.getFileDefs(tcenvb, fileName)),
@@ -140,7 +143,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
       dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
-      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly)
+      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly, refPos)
     };
     defs
   }
@@ -150,36 +153,28 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     defs: readonly Vector<FileDef>,
     name: String,
     typeOnly: Bool,
+    refPos: PosRange,
   ): readonly Vector<FileDef> {
     result = mutable Vector[];
     for (d in defs) {
       d match {
-      | TopLevelFunDef{name => fdName} ->
-        tcenvb.error(
-          Array[
-            (
-              fdName.getPos(),
-              `Qualified name access ('${name}') is not yet supported by SKJS`,
-            ),
-          ],
-          SKJSCode(9003),
-        )
       // A member of an enum, in type position (`E.A`): resolve it to an
       // EnumMemberDef. The member type itself is built by TEnv, which owns the
       // member folding; here we only need the enum and the member name. In
       // value position the enum value object handles the access, so this stays
       // an unsupported qualified access there.
       | en @ Enum _ if (typeOnly) ->
-        result.push(EnumMemberDef(en, Name(en.name.pos, name)))
-      | TypeDef{name => Name(pos, _)}
-      | Class{name => Name(pos, _)}
-      | Enum(_isConst, Name(pos, _), _fields, _isAmbient)
-      | FDVar(_kind, Name(pos, _), _type, _value)
-      | EnumMemberDef(Enum(_, Name(pos, _), _, _), _) ->
+        result.push(EnumMemberDef(en, Name(refPos, name)))
+      | TopLevelFunDef _
+      | TypeDef _
+      | Class _
+      | Enum _
+      | FDVar _
+      | EnumMemberDef _ ->
         tcenvb.error(
           Array[
             (
-              pos,
+              refPos,
               `Qualified name access ('${name}') is not yet supported by SKJS`,
             ),
           ],
