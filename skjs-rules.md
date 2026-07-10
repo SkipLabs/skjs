@@ -335,6 +335,26 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   ```
 - **Verified by**: `tests/expect-error/isarray-readonly.ts`
 
+### 27c. `instanceof` Narrowing Is Suppressed for Custom `Symbol.hasInstance` (Stricter than TypeScript)
+- **Rule**: `x instanceof C` narrows `x` to `C` only when `C` uses the default `instanceof` membership test. If `C` declares a `static [Symbol.hasInstance]` (directly or inherited), narrowing is suppressed and `x` keeps its prior type
+- **TypeScript difference**: `static [Symbol.hasInstance]` overrides `instanceof` at runtime — the method decides membership and may return `true` for values that are not `C` (or `false` for values that are). So `x instanceof C` being `true` no longer implies `x` is a `C`, and narrowing to `C` is unsound. tsc narrows anyway (TypeScript is unsound here too — see issue #776)
+- **SKJS enforcement**: `rhsDeclaresHasInstance` checks the RHS value's static side (`typeof C`) for a `[Symbol.hasInstance]` symbol field; when present, `evalCond` skips `evalInstanceof`. An *instance-level* `[Symbol.hasInstance]` lives on the prototype, not the constructor, so it does not affect `instanceof` and does not suppress narrowing
+- **Examples**:
+  ```typescript
+  class C {
+    a: number = 1;
+    static [Symbol.hasInstance](_x: unknown): boolean {
+      return true;
+    }
+  }
+  function f(x: unknown): void {
+    if (x instanceof C) {
+      x.a; // Error in SKJS (x is still unknown), allowed in TypeScript
+    }
+  }
+  ```
+- **Verified by**: `tests/expect-error/instanceof-hasinstance.ts`
+
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
 - **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)

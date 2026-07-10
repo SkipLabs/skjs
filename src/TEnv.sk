@@ -1644,21 +1644,28 @@ base class TEnv{
     }
   }
 
-  // Resolve Symbol.iterator's unique ID via synthetic expression
-  fun getSymbolIteratorUniqueId(subst: mutable Subst, pos: PosRange): ?String {
+  // Resolve a well-known Symbol's unique ID (e.g. `Symbol.iterator`,
+  // `Symbol.hasInstance`) via a synthetic `Symbol.<prop>` expression.
+  fun getWellKnownSymbolUniqueId(
+    subst: mutable Subst,
+    pos: PosRange,
+    prop: String,
+  ): ?String {
     symbolExpr = Expr(pos, Var(Name(pos, "Symbol")));
-    iteratorExpr = Expr(
-      pos,
-      Dot(NormalDot(), symbolExpr, Name(pos, "iterator")),
-    );
-    iteratorSymType = this.typeOfExpr(subst, iteratorExpr);
-    iteratorSymType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
+    symExpr = Expr(pos, Dot(NormalDot(), symbolExpr, Name(pos, prop)));
+    symType = this.typeOfExpr(subst, symExpr);
+    symType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
       lits.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
+  }
+
+  // Resolve Symbol.iterator's unique ID via synthetic expression
+  fun getSymbolIteratorUniqueId(subst: mutable Subst, pos: PosRange): ?String {
+    this.getWellKnownSymbolUniqueId(subst, pos, "iterator")
   }
 
   fun resolveIndexKeyKinds(
