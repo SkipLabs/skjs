@@ -382,3 +382,34 @@ function cyclic1Member(): number {
 function cyclic2Member(): number {
   return Cyclic2.B;
 }
+
+// A later member reusing an earlier member's numeric value shadows its
+// reverse mapping at runtime; warn at the declaration.
+enum DupValue {
+  A = 1,
+  B = 2,
+  C = 1,
+}
+
+function dupValueMember(): 1 {
+  return DupValue.C;
+}
+
+enum NoDupValue {
+  A = 1,
+  B = 2,
+}
+
+function noDupValueMember(): 2 {
+  return NoDupValue.B;
+}
+
+// Duplicate string values have no reverse mapping to shadow, so no warning.
+enum DupStringValue {
+  A = "x",
+  B = "x",
+}
+
+function dupStringMember(): "x" {
+  return DupStringValue.B;
+}
