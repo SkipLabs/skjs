@@ -358,6 +358,30 @@ class InvalidNumericLiteral() extends ParsingKind {
   }
   const code: ErrorCode = SKJSCode(1008);
 }
+class OctalEscapeNotAllowed() extends ParsingKind {
+  fun toString(): String {
+    "Octal escape sequences are not allowed"
+  }
+  const code: ErrorCode = TSCode(1487);
+}
+class NonOctalDecimalEscape(digit: Char) extends ParsingKind {
+  fun toString(): String {
+    "Escape sequence '\\" + this.digit.toString() + "' is not allowed"
+  }
+  const code: ErrorCode = TSCode(1488);
+}
+class ExtendedUnicodeEscapeOutOfRange() extends ParsingKind {
+  fun toString(): String {
+    "An extended Unicode escape value must be between 0x0 and 0x10FFFF inclusive"
+  }
+  const code: ErrorCode = TSCode(1198);
+}
+class UnrepresentableSurrogateEscape() extends ParsingKind {
+  fun toString(): String {
+    "Unpaired surrogate escape sequences are not supported"
+  }
+  const code: ErrorCode = SKJSCode(9033);
+}
 class ExpectedStr(str: String) extends ParsingKind {
   fun toString(): String {
     `${this.str} expected`

@@ -574,31 +574,22 @@ mutable class TypePp{
   // `kind`) as TypeScript source syntax, matching tsc's error messages:
   // string literals double-quoted with escapes, all other kinds bare (`1`,
   // `true`, `1n`); symbol literals are internal ids and render via
-  // displayUniqueSymbolId. The `\n`/`\r`/`\t` escape arms are load-bearing:
-  // TypePp::out rejects raw control characters, and template-literal string
-  // values are stored raw (ParserExpr). Values from quoted string literals
-  // are stored with their source escapes un-decoded (see unquoteString's
-  // TODO), so they render with those escapes as written.
+  // displayUniqueSymbolId. Quoted string literal values are stored decoded
+  // (equal to their runtime value; see decodeJSStringLiteral) and template
+  // literal values are stored raw (ParserExpr), so either way a value may
+  // hold control characters; appendControlEscape re-escapes them (its
+  // `\n`/`\r`/`\t` arms are load-bearing: TypePp::out rejects those raw).
   static fun renderPrimLiteral(kind: TPrimValueKind, literal: String): String {
     kind match {
     | TSymbol() -> TypePp::displayUniqueSymbolId(literal)
     | TString() ->
       chars = mutable Vector['"'];
       for (c in literal) {
-        c match {
-        | '\\' | '"' ->
+        if (c == '\\' || c == '"') {
           chars.push('\\');
           chars.push(c)
-        | '\n' ->
-          chars.push('\\');
-          chars.push('n')
-        | '\r' ->
-          chars.push('\\');
-          chars.push('r')
-        | '\t' ->
-          chars.push('\\');
-          chars.push('t')
-        | _ -> chars.push(c)
+        } else if (!TypePp::appendControlEscape(chars, c)) {
+          chars.push(c)
         }
       };
       chars.push('"');
@@ -610,10 +601,70 @@ mutable class TypePp{
   static fun escapeName(name: String): String {
     chars = mutable Vector[];
     for (c in name) {
-      if (c == '"') chars.push('\\');
-      chars.push(c)
+      if (c == '"') {
+        chars.push('\\');
+        chars.push(c)
+      } else if (!TypePp::appendControlEscape(chars, c)) {
+        chars.push(c)
+      }
     };
     String::fromChars(chars.toArray())
+  }
+
+  // Appends the display escape for a control character to `chars`, returning
+  // true if `c` was a control character (and was escaped), false otherwise
+  // (the caller emits `c` unchanged). Named escapes for the common control
+  // characters, `\xHH` for the rest of C0 and DEL. Escaping `\n`/`\r`/`\t` is
+  // required: TypePp::out rejects those raw. The others avoid emitting raw
+  // control bytes into diagnostics, matching tsc.
+  static fun appendControlEscape(chars: mutable Vector<Char>, c: Char): Bool {
+    c match {
+    | '\n' ->
+      chars.push('\\');
+      chars.push('n');
+      true
+    | '\r' ->
+      chars.push('\\');
+      chars.push('r');
+      true
+    | '\t' ->
+      chars.push('\\');
+      chars.push('t');
+      true
+    | '\b' ->
+      chars.push('\\');
+      chars.push('b');
+      true
+    | '\f' ->
+      chars.push('\\');
+      chars.push('f');
+      true
+    | '\v' ->
+      chars.push('\\');
+      chars.push('v');
+      true
+    | '\0' ->
+      chars.push('\\');
+      chars.push('0');
+      true
+    | _ ->
+      code = c.code();
+      if (code < 0x20 || code == 0x7F) {
+        chars.push('\\');
+        chars.push('x');
+        chars.push(TypePp::hexDigit(code / 16));
+        chars.push(TypePp::hexDigit(code % 16));
+        true
+      } else {
+        false
+      }
+    }
+  }
+
+  static fun hexDigit(n: Int): Char {
+    if (n < 10) Char::fromCode('0'.code() + n) else {
+      Char::fromCode('a'.code() + (n - 10))
+    }
   }
 
   // Decodes a unique-symbol identifier into a user-facing display string.

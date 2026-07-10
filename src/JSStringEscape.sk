@@ -1,0 +1,192 @@
+/***************************************************************************/
+/* JS string literal escape decoding.                                      */
+/*                                                                         */
+/* decodeJSStringLiteral: converts the body of an ECMAScript StringLiteral */
+/* (the characters between the quotes, quotes already stripped) into its   */
+/* runtime String Value, per ECMA-262 sec 12.9.4.2: escape sequences are   */
+/* decoded and LineContinuations are elided.                               */
+/*                                                                         */
+/* This canonicalizes string literal TYPES so two spellings of one value   */
+/* ("a" and "\x61") are the same literal type, and so falsiness matches    */
+/* runtime (a line-continuation string has value "", which is falsy).      */
+/* Issue #771; string-kind sibling of the numeric normalization in         */
+/* JSNumericString.sk (#655).                                              */
+/*                                                                         */
+/* Strict-mode-invalid forms are rejected rather than guessed, mirroring   */
+/* validateJSNumericLiteral and matching tsc under --strict: legacy octal  */
+/* and \8 / \9, malformed \x / \u / \u{}, and \u{} values above 0x10FFFF.  */
+/* Lone (unpaired) surrogates are also rejected: tsc keeps them as UTF-16  */
+/* code units, but a Skip Char is a Unicode code point and cannot hold a   */
+/* surrogate, so rejecting is the sound choice (stricter than tsc).        */
+/* CRLF line continuations are out of scope: the lexer rejects a newline   */
+/* after the CR before decoding runs (see Lexer string scanning).          */
+/***************************************************************************/
+
+module SKJS;
+
+// Decodes the body of a string literal (with the surrounding quotes already
+// stripped). Returns Success(value) or Failure(kind) with the parse error to
+// report.
+fun decodeJSStringLiteral(body: String): Result<String, ParsingKind> {
+  // Fast path: nothing to decode when there is no backslash.
+  if (!body.contains("\\")) return Success(body);
+  chars = body.chars().toArray();
+  n = chars.size();
+  out = mutable Vector<Char>[];
+  i = 0;
+  while (i < n) {
+    c = chars[i];
+    if (c != '\\') {
+      out.push(c);
+      !i = i + 1
+    } else {
+      // c is a backslash; the lexer always pairs it with a following char, so
+      // i + 1 < n holds and chars[i + 1] is the escaped character.
+      !i = i + 1;
+      e = chars[i];
+      e match {
+      | 'n' ->
+        out.push('\n');
+        !i = i + 1
+      | 't' ->
+        out.push('\t');
+        !i = i + 1
+      | 'r' ->
+        out.push('\r');
+        !i = i + 1
+      | 'b' ->
+        out.push('\b');
+        !i = i + 1
+      | 'f' ->
+        out.push('\f');
+        !i = i + 1
+      | 'v' ->
+        out.push('\v');
+        !i = i + 1
+      | '0' ->
+        // \0 is NUL, but \0 followed by a decimal digit is a legacy octal /
+        // NonOctalDecimal escape, which is a strict-mode syntax error.
+        if (i + 1 < n && isDecimalDigit(chars[i + 1])) {
+          return Failure(OctalEscapeNotAllowed())
+        };
+        out.push('\0');
+        !i = i + 1
+      | '1' | '2' | '3' | '4' | '5' | '6' | '7' ->
+        return Failure(OctalEscapeNotAllowed())
+      | '8' | '9' -> return Failure(NonOctalDecimalEscape(e))
+      | 'x' ->
+        // Exactly two hex digits; the value 0x00..0xFF is always a valid Char.
+        if (
+          i + 2 < n &&
+          Chars.isHexDigit(chars[i + 1]) &&
+          Chars.isHexDigit(chars[i + 2])
+        ) {
+          code =
+            Chars.hexDigitToInt(chars[i + 1]) * 16 +
+            Chars.hexDigitToInt(chars[i + 2]);
+          out.push(Char::fromCode(code));
+          !i = i + 3
+        } else {
+          return Failure(HexDigitExpected())
+        }
+      | 'u' ->
+        decodeUnicodeEscape(chars, i, out) match {
+        | Success(next) -> !i = next
+        | Failure(kind) -> return Failure(kind)
+        }
+      | '\n' ->
+        // LineContinuation: a bare LF is elided.
+        !i = i + 1
+      | '\r' ->
+        // LineContinuation: CR, and a following LF, are elided.
+        !i = i + 1;
+        if (i < n && chars[i] == '\n') !i = i + 1
+      | _ if (e.code() == 0x2028 || e.code() == 0x2029) ->
+        // LineContinuation: LINE SEPARATOR / PARAGRAPH SEPARATOR are elided.
+        !i = i + 1
+      | _ ->
+        // NonEscapeCharacter, including the SingleEscapeCharacters \' \" \\
+        // \` \/ : the value is the escaped character itself.
+        out.push(e);
+        !i = i + 1
+      }
+    }
+  };
+  Success(String::fromChars(out.toArray()))
+}
+
+// Decodes a \u escape whose 'u' is at index `i`. Appends the decoded code point
+// to `out` and returns the index just past the escape, or a Failure. Handles
+// \uHHHH (combining a high+low surrogate pair) and \u{H..}.
+private fun decodeUnicodeEscape(
+  chars: Array<Char>,
+  i: Int,
+  out: mutable Vector<Char>,
+): Result<Int, ParsingKind> {
+  n = chars.size();
+  if (i + 1 < n && chars[i + 1] == '{') {
+    // \u{H..}: one to six hex digits, value <= 0x10FFFF, not a surrogate.
+    j = i + 2;
+    value = 0;
+    count = 0;
+    while (j < n && chars[j] != '}') {
+      if (!Chars.isHexDigit(chars[j])) return Failure(HexDigitExpected());
+      !value = value * 16 + Chars.hexDigitToInt(chars[j]);
+      if (value > 0x10FFFF) return Failure(ExtendedUnicodeEscapeOutOfRange());
+      !count = count + 1;
+      !j = j + 1
+    };
+    // j >= n means no closing '}'; count == 0 means empty \u{}.
+    if (count == 0 || j >= n) return Failure(HexDigitExpected());
+    if (!Char::isValidCharCodePoint(value)) {
+      return Failure(UnrepresentableSurrogateEscape())
+    };
+    out.push(Char::fromCode(value));
+    Success(j + 1)
+  } else {
+    read4HexDigits(chars, i + 1) match {
+    | None() -> Failure(HexDigitExpected())
+    | Some(hi) ->
+      if (hi >= 0xD800 && hi <= 0xDBFF) {
+        // High surrogate: must be followed by a \uLLLL low surrogate.
+        lowStart = i + 5;
+        if (
+          lowStart + 1 < n &&
+          chars[lowStart] == '\\' &&
+          chars[lowStart + 1] == 'u'
+        ) {
+          read4HexDigits(chars, lowStart + 2) match {
+          | Some(lo) if (lo >= 0xDC00 && lo <= 0xDFFF) ->
+            cp = 0x10000 + (hi - 0xD800) * 0x400 + (lo - 0xDC00);
+            out.push(Char::fromCode(cp));
+            Success(lowStart + 6)
+          | _ -> Failure(UnrepresentableSurrogateEscape())
+          }
+        } else {
+          Failure(UnrepresentableSurrogateEscape())
+        }
+      } else if (hi >= 0xDC00 && hi <= 0xDFFF) {
+        // Lone low surrogate.
+        Failure(UnrepresentableSurrogateEscape())
+      } else {
+        // BMP scalar value: always a valid Char.
+        out.push(Char::fromCode(hi));
+        Success(i + 5)
+      }
+    }
+  }
+}
+
+// Reads exactly four hex digits starting at `start`, returning their value, or
+// None if there are not four hex digits there.
+private fun read4HexDigits(chars: Array<Char>, start: Int): ?Int {
+  if (start + 3 >= chars.size()) return None();
+  value = 0;
+  for (k in Range(start, start + 4)) {
+    if (!Chars.isHexDigit(chars[k])) return None();
+    !value = value * 16 + Chars.hexDigitToInt(chars[k])
+  };
+  Some(value)
+}
+
+module end;
