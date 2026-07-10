@@ -75,9 +75,9 @@ function f3(): void {
 EOF
 
 out=$(run_check --init)
-expect_markers "initComputesAllFunctions" "'f1'
-'f2'
-'f3'" "$out"
+expect_markers "initComputesAllFunctions" "\"f1\"
+\"f2\"
+\"f3\"" "$out"
 
 out=$(run_check --data)
 expect_markers "noChangeNotRecomputed" "" "$out"
@@ -145,7 +145,7 @@ function f3(): void {
 EOF
 
 out=$(run_check --data)
-expect_markers "bodyChangeRecomputesOnlyThatFunction" "'f2'" "$out"
+expect_markers "bodyChangeRecomputesOnlyThatFunction" "\"f2\"" "$out"
 
 ########################################################################
 # Change f1 body → only f1 recomputed
@@ -169,7 +169,7 @@ function f3(): void {
 EOF
 
 out=$(run_check --data)
-expect_markers "anotherBodyChangeRecomputesOnlyThatFunction" "'f1'" "$out"
+expect_markers "anotherBodyChangeRecomputesOnlyThatFunction" "\"f1\"" "$out"
 
 ########################################################################
 # Class method body change → class recomputed
@@ -191,9 +191,9 @@ function f1(): void {
 EOF
 
 out=$(run_check --init)
-expect_markers "initClassAndFunction" "'C1.m1'
-'C1.m2'
-'f1'" "$out"
+expect_markers "initClassAndFunction" "\"C1.m1\"
+\"C1.m2\"
+\"f1\"" "$out"
 
 out=$(run_check --data)
 expect_markers "classNoChangeNotRecomputed" "" "$out"
@@ -215,8 +215,8 @@ function f1(): void {
 EOF
 
 out=$(run_check --data)
-expect_markers "methodBodyChangeRecomputesClass" "'C1.m1'
-'C1.m2'" "$out"
+expect_markers "methodBodyChangeRecomputesClass" "\"C1.m1\"
+\"C1.m2\"" "$out"
 
 ########################################################################
 # Signature change propagates to dependents
@@ -238,9 +238,9 @@ function f3(): void {
 EOF
 
 out=$(run_check --init)
-expect_markers "initWithDependentFunctions" "'f1'
-'f2'
-'f3'" "$out"
+expect_markers "initWithDependentFunctions" "\"f1\"
+\"f2\"
+\"f3\"" "$out"
 
 # Change f1's return type (signature change)
 cat > "$FILE" <<'EOF'
@@ -258,8 +258,8 @@ function f3(): void {
 EOF
 
 out=$(run_check --data)
-expect_markers "signatureChangeRecomputesDependents" "'f1'
-'f2'" "$out"
+expect_markers "signatureChangeRecomputesDependents" "\"f1\"
+\"f2\"" "$out"
 
 ########################################################################
 # Two independent classes
@@ -280,8 +280,8 @@ class B {
 EOF
 
 out=$(run_check --init)
-expect_markers "initTwoClasses" "'A.foo'
-'B.bar'" "$out"
+expect_markers "initTwoClasses" "\"A.foo\"
+\"B.bar\"" "$out"
 
 # Change only B
 cat > "$FILE" <<'EOF'
@@ -299,7 +299,7 @@ class B {
 EOF
 
 out=$(run_check --data)
-expect_markers "independentClassChangeRecomputesOnlyThatClass" "'B.bar'" "$out"
+expect_markers "independentClassChangeRecomputesOnlyThatClass" "\"B.bar\"" "$out"
 
 ########################################################################
 # Multi-file: function body change
@@ -327,9 +327,9 @@ function independent(): void {
 EOF
 
 out=$(run_check --init "$FOO" "$BAR")
-expect_markers "multiFileInit" "'helper'
-'user'
-'independent'" "$out"
+expect_markers "multiFileInit" "\"helper\"
+\"user\"
+\"independent\"" "$out"
 
 out=$(run_check --data "$FOO" "$BAR")
 expect_markers "multiFileNoChangeNotRecomputed" "" "$out"
@@ -343,7 +343,7 @@ export function helper(): number {
 EOF
 
 out=$(run_check --data "$FOO" "$BAR")
-expect_markers "multiFileBodyChangeDoesNotPropagate" "'helper'" "$out"
+expect_markers "multiFileBodyChangeDoesNotPropagate" "\"helper\"" "$out"
 
 ########################################################################
 # Multi-file: signature change propagates across files
@@ -358,8 +358,8 @@ export function helper(): string {
 EOF
 
 out=$(run_check --data "$FOO" "$BAR")
-expect_markers "multiFileSignatureChangePropagates" "'helper'
-'user'" "$out"
+expect_markers "multiFileSignatureChangePropagates" "\"helper\"
+\"user\"" "$out"
 
 ########################################################################
 # Multi-file: class body vs signature
@@ -391,10 +391,10 @@ function independent(): void {
 EOF
 
 out=$(run_check --init "$FOO" "$BAR")
-expect_markers "multiFileClassInit" "'Foo.getValue'
-'Foo.getName'
-'useFoo'
-'independent'" "$out"
+expect_markers "multiFileClassInit" "\"Foo.getValue\"
+\"Foo.getName\"
+\"useFoo\"
+\"independent\"" "$out"
 
 out=$(run_check --data "$FOO" "$BAR")
 expect_markers "multiFileClassNoChangeNotRecomputed" "" "$out"
@@ -414,9 +414,9 @@ export class Foo {
 EOF
 
 out=$(run_check --data "$FOO" "$BAR")
-expect_markers "multiFileClassBodyChangePropagates" "'Foo.getValue'
-'Foo.getName'
-'useFoo'" "$out"
+expect_markers "multiFileClassBodyChangePropagates" "\"Foo.getValue\"
+\"Foo.getName\"
+\"useFoo\"" "$out"
 
 ########################################################################
 # Multi-file: consumer change doesn't affect provider
@@ -437,7 +437,7 @@ function independent(): void {
 EOF
 
 out=$(run_check --data "$FOO" "$BAR")
-expect_markers "multiFileConsumerChangeDoesNotAffectProvider" "'useFoo'" "$out"
+expect_markers "multiFileConsumerChangeDoesNotAffectProvider" "\"useFoo\"" "$out"
 
 ########################################################################
 # Multi-file: shared dependency (3 files)
@@ -473,10 +473,10 @@ function standalone(): void {
 EOF
 
 out=$(run_check --init "$TYPES" "$A" "$B")
-expect_markers "multiFileSharedDepInit" "'getNum'
-'useNum'
-'useNum2'
-'standalone'" "$out"
+expect_markers "multiFileSharedDepInit" "\"getNum\"
+\"useNum\"
+\"useNum2\"
+\"standalone\"" "$out"
 
 out=$(run_check --data "$TYPES" "$A" "$B")
 expect_markers "multiFileSharedDepNoChangeNotRecomputed" "" "$out"
@@ -490,7 +490,7 @@ export function getNum(): number {
 EOF
 
 out=$(run_check --data "$TYPES" "$A" "$B")
-expect_markers "multiFileSharedDepBodyChangeDoesNotPropagate" "'getNum'" "$out"
+expect_markers "multiFileSharedDepBodyChangeDoesNotPropagate" "\"getNum\"" "$out"
 
 # Change shared dep signature
 cat > "$TYPES" <<'EOF'
@@ -501,9 +501,9 @@ export function getNum(): string {
 EOF
 
 out=$(run_check --data "$TYPES" "$A" "$B")
-expect_markers "multiFileSharedDepSignatureChangePropagates" "'getNum'
-'useNum'
-'useNum2'" "$out"
+expect_markers "multiFileSharedDepSignatureChangePropagates" "\"getNum\"
+\"useNum\"
+\"useNum2\"" "$out"
 
 ########################################################################
 # Summary

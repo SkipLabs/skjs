@@ -23,7 +23,7 @@ function mutableUnion(a: number[] | number): void {
 // unsoundly allows push.
 function mutableTuple(a: [number, string]): void {
   if (Array.isArray(a)) {
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
     a.push(1);
   }
 }
@@ -42,7 +42,7 @@ function readonlyArray(a: ReadonlyArray<number>): void {
   if (Array.isArray(a)) {
     // tsc unsoundly narrows ReadonlyArray to any[] and accepts; SKJS keeps it
     // readonly and rejects.
-    // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
+    // @skjs-expect-error This index key is not assignable to the index signature: expected 'number', got 'string'
     a.push(1);
   }
 }

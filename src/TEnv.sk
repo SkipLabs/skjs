@@ -94,13 +94,16 @@ base class TEnv{
 
   // Mirrors the `--verbose` CLI flag. Read by the pretty-printer to opt out
   // of hiding internal-only details: the synthetic index name on object
-  // literals (see kSyntheticIndexName and TypePp::fields) and the qualified
-  // type-parameter id, name:counter:file-hash (see TypePp::tparamName).
+  // literals (see kSyntheticIndexName and TypePp::renderObjectMembers) and
+  // the qualified type-parameter id, name:counter:file-hash (see
+  // TypePp::tparamName).
   verbose: Bool = false,
 } {
-  // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
+  // Renders a type for embedding in diagnostic prose, quoted per tsc's
+  // `Type 'X'` convention (see quoteRenderedType). For a raw rendering
+  // (non-diagnostic contexts) call prettyPrintType directly.
   fun ppType(tcenv: mutable TCEnv, ty: TType): String {
-    prettyPrintType(false, ty, tcenv.subst, this)
+    quoteRenderedType(prettyPrintType(false, ty, tcenv.subst, this))
   }
 
   // Given a type name and type arguments, first retrieves the type
@@ -232,15 +235,14 @@ base class TEnv{
               (pos, "Type argument does not satisfy the constraint"),
               (
                 tArg.pos,
-                `This is of type: ${prettyPrintType(false, tArg, subst, this)}`,
+                `This is of type: ${quoteRenderedType(
+                  prettyPrintType(false, tArg, subst, this),
+                )}`,
               ),
               (
                 cstr.pos,
-                `It does not satisfy the constraint: ${prettyPrintType(
-                  false,
-                  cstrTy,
-                  subst,
-                  this,
+                `It does not satisfy the constraint: ${quoteRenderedType(
+                  prettyPrintType(false, cstrTy, subst, this),
                 )}`,
               ),
             ],
@@ -1621,11 +1623,8 @@ base class TEnv{
           Array[
             (
               propertyName.pos,
-              `Cannot access a property on non-object type ${prettyPrintType(
-                false,
-                baseType,
-                subst,
-                this,
+              `Cannot access a property on non-object type ${quoteRenderedType(
+                prettyPrintType(false, baseType, subst, this),
               )}`,
             ),
           ],

@@ -9,7 +9,7 @@ digraph "fn:add" {
 }
 
 digraph "fn:count" {
-  label="(first: number, rest: ReadonlyArray<number>): number";
+  label="(first: number, rest: readonly number[]): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lreturn (rest.length + 1)\l"];
@@ -20,7 +20,7 @@ digraph "fn:count" {
 }
 
 digraph "fn:describe" {
-  label="({x: x, y: y}: {x:number,y:number}, label: string|undefined): number";
+  label="({x: x, y: y}: {x:number;y:number;}, label: string|undefined): number";
   labelloc=t;
   node [shape=box, fontname="monospace"];
   BB_0 [label="BB_0:\lconst sum: number = (x + y)\lreturn sum\l"];

@@ -31,10 +31,10 @@ interface ObjBox<T extends JsonObject> {
   get(): T;
 }
 // @skjs-expect-error Type argument does not satisfy the constraint
-// @skjs-expect-error-line2 This is of type: Named
-// @skjs-expect-error-line3 It does not satisfy the constraint: JsonObject
-// @skjs-expect-error-line4 Type { readonly a: string }
-// @skjs-expect-error-line5 is not assignable to type { readonly [ key: string ]: null | Json }
+// @skjs-expect-error-line2 This is of type: 'Named'
+// @skjs-expect-error-line3 It does not satisfy the constraint: 'JsonObject'
+// @skjs-expect-error-line4 Type '{ readonly a: string; }'
+// @skjs-expect-error-line5 is not assignable to type '{ readonly [key: string]: null | Json; }'
 // @skjs-expect-error-line6 Missing index signature 'key' in source type
 export class ObjC implements ObjBox<Named> {
   get(): Named {

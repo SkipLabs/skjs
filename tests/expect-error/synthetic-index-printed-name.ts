@@ -7,9 +7,9 @@
 // indexes carry an internal name that should never appear in printed output.
 
 function emptyObject(): void {
-  __SKJS_show({}, `{  }`);
+  __SKJS_show({}, `{}`);
 }
 
 function objectWithField(): void {
-  __SKJS_show({ x: 1 }, `{ x: '0 }`);
+  __SKJS_show({ x: 1 }, `{ x: '0; }`);
 }

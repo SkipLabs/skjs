@@ -1182,9 +1182,9 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected ${obj.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected '${obj.nonSyntheticIndexKeyKindsString()}', got '${
                       remainingIdxSType.kind
-                    }`,
+                    }'`,
                   ),
                 ],
                 TSCode(2345),
@@ -1202,7 +1202,7 @@ extension class TypeChecker {
                     ),
                     (
                       idxPos,
-                      `Index has non-literal type ${remainingIdxSType.kind}`,
+                      `Index has non-literal type '${remainingIdxSType.kind}'`,
                     ),
                     (objectPos, "But object has no index field"),
                   ],
@@ -1270,7 +1270,7 @@ extension class TypeChecker {
             (pos, "Property access is not allowed on this type"),
             (
               idxType.pos,
-              "This is a " + this.ppType(tcenv, TType::single(stype)),
+              "This has type " + this.ppType(tcenv, TType::single(stype)),
             ),
           ],
           TSCode(2339),
@@ -2315,10 +2315,10 @@ extension class TypeChecker {
             Array[
               (
                 pos,
-                `Operator '+' cannot be applied to type '${this.ppType(
+                `Operator '+' cannot be applied to type ${this.ppType(
                   tcenv,
                   res,
-                )}'`,
+                )}`,
               ),
               (subExpr.pos, `This has type ${this.ppType(tcenv, ty)}`),
             ],
@@ -2467,7 +2467,7 @@ extension class TypeChecker {
                   pos,
                   "A comparison operand must be a string, number, bigint, or boolean",
                 ),
-                (e1.pos, `This is a ${this.ppType(tcenv, ty)}`),
+                (e1.pos, `This has type ${this.ppType(tcenv, ty)}`),
               ],
               SKJSCode(2070),
             );
@@ -2481,8 +2481,8 @@ extension class TypeChecker {
           tcenv.error(
             Array[
               (pos, "Both operands of a comparison must have the same type"),
-              (e1.pos, `This is a ${k1}`),
-              (e2.pos, `This is a ${k2}`),
+              (e1.pos, `This has type '${k1}'`),
+              (e2.pos, `This has type '${k2}'`),
             ],
             SKJSCode(2070),
           )
@@ -2584,7 +2584,7 @@ extension class TypeChecker {
               pos,
               "The right-hand side of an 'in' expression must be an object",
             ),
-            (e2.pos, "This has type unknown"),
+            (e2.pos, "This has type 'unknown'"),
           ],
           TSCode(2361),
         )
@@ -2986,7 +2986,7 @@ extension class TypeChecker {
             tcenv.error(
               Array[
                 (pos, "This constant expression could have been simplified"),
-                (subE.pos, `This has type ${lit.val}`),
+                (subE.pos, `This has type '${lit.val}'`),
               ],
               SKJSCode(2060),
             );

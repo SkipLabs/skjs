@@ -21,6 +21,11 @@ mutable base class TypePpState private {
   mutable cols: Int = 0,
   mutable buffer: List<String> = List[],
   mutable expandingTVars: SortedSet<TVarID> = SortedSet[],
+  // Set by beginMember for the innermost renderObjectMembers call (which
+  // saves and restores it around nested objects), so "did this object print
+  // any member" is recorded by the emission path itself. Lives in the
+  // backtrackable state because branch() may roll emissions back.
+  mutable emittedMember: Bool = false,
 } {
   readonly fun chill(): SavedTypePp {
     SavedTypePp::create(this)
@@ -30,6 +35,7 @@ mutable base class TypePpState private {
     this.!cols = saved.cols;
     this.!buffer = saved.buffer;
     this.!expandingTVars = saved.expandingTVars;
+    this.!emittedMember = saved.emittedMember;
   }
 }
 
@@ -39,6 +45,7 @@ mutable class SavedTypePp private {} extends TypePpState {
       cols => state.cols,
       buffer => state.buffer,
       expandingTVars => state.expandingTVars,
+      emittedMember => state.emittedMember,
     }
   }
 }
@@ -124,18 +131,34 @@ mutable class TypePp{
 
   mutable fun render(f: mutable TypePp -> void): String {
     f(this);
-    strings = this.buffer.reversed();
-    if (this.compact) {
-      !strings = strings.map(str ~> {
-        String::fromChars(
-          str
-            .getIter()
-            .filter(c ~> c != '\t' && c != '\n' && c != ' ')
-            .collect(Array),
-        )
-      })
+    joined = "".join(this.buffer.reversed());
+    if (!this.compact) return joined;
+    // Compact mode strips layout characters, but a space separating two
+    // word characters is load-bearing (`readonly number[]`, `T extends C`)
+    // — dropping it would merge the tokens.
+    chars = joined.getIter().collect(Array);
+    kept = mutable Vector[];
+    for (i => c in chars) {
+      if (c == '\t' || c == '\n') continue;
+      if (c == ' ') {
+        separatesWords =
+          i > 0 &&
+          i < chars.size() - 1 &&
+          TypePp::isWordChar(chars[i - 1]) &&
+          TypePp::isWordChar(chars[i + 1]);
+        if (!separatesWords) continue
+      };
+      kept.push(c)
     };
-    "".join(strings)
+    String::fromChars(kept.toArray())
+  }
+
+  private static fun isWordChar(c: Char): Bool {
+    (c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      (c >= '0' && c <= '9') ||
+      c == '_' ||
+      c == '$'
   }
 
   mutable fun out(level: Int, margin: Margin, str: String): void {
@@ -208,15 +231,13 @@ mutable class TypePp{
       }
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
-    | TPrimValue(TSymbol(), Some(arr), _) ->
+    | TPrimValue(k, Some(arr), _) ->
       rendered = arr
         .values()
-        .map(lit -> TypePp::displayUniqueSymbolId(lit.val))
+        .map(lit -> TypePp::renderPrimLiteral(k, lit.val))
         .collect(Array)
         .join(" | ");
       this.out(level, margin, rendered)
-    | TPrimValue(_, Some(arr), _) ->
-      this.out(level, margin, arr.toStringList(true))
     }
   }
 
@@ -351,6 +372,22 @@ mutable class TypePp{
     )
   }
 
+  // The lone non-optional call or constructor signature (isNew, tfun) that
+  // makes `fields` render as a bare function/constructor type instead of a
+  // braced object, if any. Single source of truth for that shape: used by
+  // both the renderer (TypePp::object) and the parenthesization decision
+  // (TypePp::stypeNeedsParens).
+  static fun bareSignature(fields: TFields): ?(Bool, TFun) {
+    if (!fields.fields.isEmpty() || fields.hasNonSyntheticIndex()) {
+      return None()
+    };
+    (fields.call, fields.new) match {
+    | (Some((false, TFuns(tfun, _pos))), None()) -> Some((false, tfun))
+    | (None(), Some((false, TFuns(tfun, _pos)))) -> Some((true, tfun))
+    | _ -> None()
+    }
+  }
+
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
     // A tuple-shaped object prints as the tuple it denotes when the
     // shorthand hides nothing: besides its positional fields, a tuple
@@ -366,30 +403,27 @@ mutable class TypePp{
       | None() -> void
       }
     };
-    (
-      fields.fields.isEmpty(),
-      !fields.hasNonSyntheticIndex(),
-      fields.call,
-      fields.new,
-    ) match {
-    | (true, true, Some((false, TFuns(tfun, _pos))), None()) ->
+    TypePp::bareSignature(fields) match {
+    | Some((isNew, tfun)) ->
+      if (isNew) this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
-    | (true, true, None(), Some((false, TFuns(tfun, _pos)))) ->
-      this.out(level, margin, "new ");
-      this.tfun(level, margin, (false, tfun))
-    | _ ->
+    | None() ->
       this.out(level, margin, "{");
       this.branch(
         level,
         margin,
         (pp, level, margin) ~> {
-          pp.out(level, margin, " ");
-          pp.fields(level, margin, fields, false);
-          pp.out(level, margin, " }");
+          // Every member emits its own leading space, so an empty object
+          // naturally prints as tsc's `{}` and a non-empty one needs only
+          // the closing pad (`{ foo: string; }`).
+          if (pp.renderObjectMembers(level, margin, fields, false)) {
+            pp.out(level, margin, " }")
+          } else {
+            pp.out(level, margin, "}")
+          }
         },
         (pp, level, prevMargin, margin) -> {
-          pp.newLine();
-          pp.fields(level, margin, fields, true);
+          _ = pp.renderObjectMembers(level, margin, fields, true);
           pp.newLine();
           pp.out(level, prevMargin, "}");
           pp.newLine();
@@ -398,12 +432,18 @@ mutable class TypePp{
     }
   }
 
-  mutable fun fields(
+  // Renders the members of an object type, each opened by beginMember (its
+  // leading space, or fresh line in multiLine mode) and terminated with ";"
+  // like tsc. Returns whether any member was printed — recorded by
+  // beginMember itself — so the caller can close an empty object as `{}`.
+  mutable fun renderObjectMembers(
     level: Int,
     margin: Margin,
     fields: TFields,
     multiLine: Bool,
-  ): void {
+  ): Bool {
+    savedEmitted = this.emittedMember;
+    this.!emittedMember = false;
     fieldArray = fields.fields;
     symbolFieldArray = fields.symbolFields;
     // Hide synthetic indexes (kSyntheticIndexName): they exist to make
@@ -417,8 +457,8 @@ mutable class TypePp{
     stringIdx = hideSynthetic(fields.stringIndex);
     numberIdx = hideSynthetic(fields.numberIndex);
     symbolIdx = hideSynthetic(fields.symbolIndex);
-    hasIndexes = stringIdx.isSome() || numberIdx.isSome() || symbolIdx.isSome();
-    for (i => field in fieldArray) {
+    for (field in fieldArray) {
+      this.beginMember(level, margin, multiLine);
       fieldName = field.name.value;
       escapedName = TypePp::escapeName(fieldName);
       if (field.set.isBottom()) {
@@ -432,7 +472,7 @@ mutable class TypePp{
         this.out(level, margin, escapedName);
         this.out(level, margin, "(): ");
         this.type(level, margin, field.get);
-        this.out(level, margin, ", set ");
+        this.out(level, margin, "; set ");
         this.out(level, margin, escapedName);
         this.out(level, margin, "(v: ");
         this.type(level, margin, field.set);
@@ -443,20 +483,10 @@ mutable class TypePp{
         this.out(level, margin, ": ");
         this.type(level, margin, field.get);
       };
-      if (
-        i != fieldArray.size() - 1 ||
-        !symbolFieldArray.isEmpty() ||
-        hasIndexes ||
-        fields.call.isSome() ||
-        fields.new.isSome()
-      ) {
-        this.out(level, margin, ",");
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        };
-      }
+      this.out(level, margin, ";")
     };
-    for (i => field in symbolFieldArray) {
+    for (field in symbolFieldArray) {
+      this.beginMember(level, margin, multiLine);
       this.out(
         level,
         margin,
@@ -467,65 +497,55 @@ mutable class TypePp{
       };
       this.out(level, margin, ": ");
       this.type(level, margin, field.get);
-      if (
-        i != symbolFieldArray.size() - 1 ||
-        hasIndexes ||
-        fields.call.isSome() ||
-        fields.new.isSome()
-      ) {
-        this.out(level, margin, ",");
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        };
-      }
+      this.out(level, margin, ";")
     };
-    hasMore = fields.call.isSome() || fields.new.isSome();
     stringIdx.each(index -> {
+      this.beginMember(level, margin, multiLine);
       this.indexField(level, margin, "string", index);
-      if (numberIdx.isSome() || symbolIdx.isSome() || hasMore) {
-        this.out(level, margin, ",");
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     });
     numberIdx.each(index -> {
+      this.beginMember(level, margin, multiLine);
       this.indexField(level, margin, "number", index);
-      if (symbolIdx.isSome() || hasMore) {
-        this.out(level, margin, ",");
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     });
     symbolIdx.each(index -> {
+      this.beginMember(level, margin, multiLine);
       this.indexField(level, margin, "symbol", index);
-      if (hasMore) {
-        this.out(level, margin, ",");
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     });
     fields.call match {
     | None() -> void
     | Some((opt, TFuns(tfun, _pos))) ->
+      this.beginMember(level, margin, multiLine);
       if (opt) this.out(level, margin, "?");
       this.tfun(level, margin, (true, tfun));
-      if (fields.new.isSome()) {
-        this.out(level, margin, ",");
-        if (multiLine) this.newLine() else {
-          this.out(level, margin, " ")
-        }
-      }
+      this.out(level, margin, ";")
     };
     fields.new match {
     | None() -> void
     | Some((opt, TFuns(tfun, _pos))) ->
+      this.beginMember(level, margin, multiLine);
       if (opt) this.out(level, margin, "?");
       this.out(level, margin, "new ");
-      this.tfun(level, margin, (true, tfun))
-    }
+      this.tfun(level, margin, (true, tfun));
+      this.out(level, margin, ";")
+    };
+    printed = this.emittedMember;
+    this.!emittedMember = savedEmitted;
+    printed
+  }
+
+  // Opens an object member: emits its leading separator (every member,
+  // including the first, gets one — a space single-line, a fresh line
+  // multi-line) and records that the enclosing object is non-empty.
+  private mutable fun beginMember(
+    level: Int,
+    margin: Margin,
+    multiLine: Bool,
+  ): void {
+    this.!emittedMember = true;
+    if (multiLine) this.newLine() else this.out(level, margin, " ")
   }
 
   mutable fun indexField(
@@ -537,16 +557,53 @@ mutable class TypePp{
     if (index.set.isBottom()) {
       this.out(level, margin, "readonly ")
     };
-    this.out(level, margin, "[ ");
+    this.out(level, margin, "[");
     this.out(level, margin, TypePp::escapeName(index.name.value));
     this.out(level, margin, ": ");
     this.out(level, margin, keyKind);
-    this.out(level, margin, " ]: ");
+    this.out(level, margin, "]: ");
     this.type(level, margin, index.get);
     if (!index.set.isBottom() && index.get != index.set) {
       this.out(level, margin, " (set: ");
       this.type(level, margin, index.set);
       this.out(level, margin, ")");
+    }
+  }
+
+  // Renders a primitive literal (a value as stored in PrimLiterals for
+  // `kind`) as TypeScript source syntax, matching tsc's error messages:
+  // string literals double-quoted with escapes, all other kinds bare (`1`,
+  // `true`, `1n`); symbol literals are internal ids and render via
+  // displayUniqueSymbolId. The `\n`/`\r`/`\t` escape arms are load-bearing:
+  // TypePp::out rejects raw control characters, and template-literal string
+  // values are stored raw (ParserExpr). Values from quoted string literals
+  // are stored with their source escapes un-decoded (see unquoteString's
+  // TODO), so they render with those escapes as written.
+  static fun renderPrimLiteral(kind: TPrimValueKind, literal: String): String {
+    kind match {
+    | TSymbol() -> TypePp::displayUniqueSymbolId(literal)
+    | TString() ->
+      chars = mutable Vector['"'];
+      for (c in literal) {
+        c match {
+        | '\\' | '"' ->
+          chars.push('\\');
+          chars.push(c)
+        | '\n' ->
+          chars.push('\\');
+          chars.push('n')
+        | '\r' ->
+          chars.push('\\');
+          chars.push('r')
+        | '\t' ->
+          chars.push('\\');
+          chars.push('t')
+        | _ -> chars.push(c)
+        }
+      };
+      chars.push('"');
+      String::fromChars(chars.toArray())
+    | _ -> literal
     }
   }
 
@@ -677,9 +734,10 @@ mutable class TypePp{
           | TInter(tys) ->
             j = 0;
             for (ity in tys) {
-              pp.out(level, margin, "(");
+              needsParens = pp.compositeNeedsParens(ity);
+              if (needsParens) pp.out(level, margin, "(");
               pp.type(level, margin, ity);
-              pp.out(level, margin, ")");
+              if (needsParens) pp.out(level, margin, ")");
               if (j < tys.size() - 1) pp.out(level, margin, " & ");
               !j = j + 1;
             }
@@ -707,7 +765,10 @@ mutable class TypePp{
           | TInter(tys) ->
             i = 0;
             for (ity in tys) {
+              needsParens = pp.compositeNeedsParens(ity);
+              if (needsParens) pp.out(level, margin, "(");
               pp.type(level, margin, ity);
+              if (needsParens) pp.out(level, margin, ")");
               if (i < tys.size() - 1) pp.out(level, margin, " & ");
               !i = i + 1;
             }
@@ -718,6 +779,68 @@ mutable class TypePp{
     );
   }
 
+  // Whether `ty` must be parenthesized when embedded in a composite
+  // rendering (an intersection member; an array-shorthand element),
+  // mirroring tsc: parens go around anything that does not read as a
+  // single atom — unions (`(A | B) & C`, `(A | B)[]`), bare
+  // function/constructor types (`(() => void)[]`), constrained or
+  // substituted type variables, and nested intersections.
+  private mutable fun compositeNeedsParens(ty: TType): Bool {
+    aty = this.applyType(ty);
+    if (aty.isTop() || aty.isBottom()) return false;
+    clausesCount = aty.clauses.size();
+    if (clausesCount + aty.insts.size() > 1) return true;
+    if (clausesCount == 1) {
+      for (clause in aty.clauses) {
+        stypesCount = clause.stypes match {
+        | None() -> 0
+        | Some(sts) -> sts.size()
+        };
+        if (clause.vars.size() + stypesCount > 1) return true;
+        clause.stypes match {
+        | Some(sts) ->
+          for (sty in sts) {
+            if (TypePp::stypeNeedsParens(sty)) return true
+          }
+        | None() -> void
+        }
+      }
+    } else {
+      // clausesCount is 0 here and clausesCount + insts.size() <= 1, with
+      // empty-both already excluded by isBottom, so exactly one inst
+      // reaches this loop.
+      for (inst in aty.insts) {
+        return inst match {
+        | TInter _ -> true
+        | tvar @ TVar _ ->
+          // A substituted tvar renders as `'0 = T` (see TypePp::tvar),
+          // which is not a single atom either.
+          !tvar.constraints.isEmpty() ||
+            this.substValues.maybeGet(tvar.id).isSome()
+        | TArrayLit _
+        | TSInst _ ->
+          false
+        }
+      }
+    };
+    false
+  }
+
+  private static fun stypeNeedsParens(sty: SType): Bool {
+    sty match {
+    | TObject(_, Some(_), _) -> false
+    | obj @ TObject _ ->
+      branches = obj.getBranches();
+      if (branches.size() != 1) true else {
+        TypePp::bareSignature(branches[0]).isSome()
+      }
+    | TPrimValue(_, Some(arr), _) -> arr.size() > 1
+    | TPrimValue(_, None(), _)
+    | TPrimUnit _ ->
+      false
+    }
+  }
+
   mutable fun inst(level: Int, margin: Margin, inst: TSInst): void {
     tupleKind(inst.name.value) match {
     | Some(kind) ->
@@ -725,6 +848,22 @@ mutable class TypePp{
       this.tuple(level, margin, inst.targs.targs);
       return void
     | None() -> void
+    };
+    // Arrays print in tsc's shorthand: `T[]` and `readonly T[]`, with
+    // composite element types parenthesized (`(A | B)[]`).
+    name = inst.name.value;
+    if (
+      (name == "Array" || name == "ReadonlyArray") &&
+      inst.targs.targs.size() == 1
+    ) {
+      if (name == "ReadonlyArray") this.out(level, margin, "readonly ");
+      elt = inst.targs.targs[0];
+      needsParens = this.compositeNeedsParens(elt);
+      if (needsParens) this.out(level, margin, "(");
+      this.type(level, margin, elt);
+      if (needsParens) this.out(level, margin, ")");
+      this.out(level, margin, "[]");
+      return void
     };
     this.out(level, margin, inst.name.value);
     targs = inst.targs;
@@ -790,6 +929,18 @@ mutable class TypePp{
       this.out(level, margin, nameColon + id)
     }
   }
+}
+
+// Wraps a rendered type for embedding in a diagnostic message, following
+// tsc's convention (`Type 'X' is not assignable to type 'Y'`). Multi-line
+// renderings stay unquoted: quotes around an indented block read badly, and
+// tsc never produces one (it truncates instead). Every diagnostic that
+// mentions a type in prose must quote it — TEnv::ppType does so already;
+// non-ppType renderings go through this helper — except messages that embed
+// a type as pastable code (e.g. the "Consider adding a type annotation,
+// e.g., ..." hints).
+fun quoteRenderedType(rendered: String): String {
+  if (rendered.contains("\n")) rendered else `'${rendered}'`
 }
 
 fun rawPrettyPrint(

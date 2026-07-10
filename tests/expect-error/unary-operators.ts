@@ -61,7 +61,7 @@ function mixedUnionPlus(x: string | bigint): void {
 // type 'T').
 function genericPlus<T extends bigint>(x: T): void {
   // @skjs-expect-error Operator '+' cannot be applied to type 'T extends bigint'
-  // @skjs-expect-error-line2 This has type T extends bigint
+  // @skjs-expect-error-line2 This has type 'T extends bigint'
   const y = +x;
 }
 
@@ -70,7 +70,7 @@ function genericPlus<T extends bigint>(x: T): void {
 // precise operand type.
 function literalMixedPlus(x: "a" | bigint): void {
   // @skjs-expect-error Operator '+' cannot be applied to type 'bigint | string'
-  // @skjs-expect-error-line2 This has type bigint | 'a'
+  // @skjs-expect-error-line2 This has type 'bigint | "a"'
   const y = +x;
 }
 

@@ -7,7 +7,7 @@
 declare function isString(x: unknown): x is string;
 export function typePredicateNarrowing(x: unknown): number {
   if (isString(x)) {
-    // @skjs-expect-error Cannot access a property on type unknown
+    // @skjs-expect-error Cannot access a property on type 'unknown'
     return x.length;
   }
   return 0;

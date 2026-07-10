@@ -145,12 +145,12 @@ function invalidLogicalOr<T>(value: void | T): T {
 }
 
 function invalidPropertyAccess<T>(value: void | T): string {
-  // @ts-expect-error Cannot access a property on type void | T
+  // @ts-expect-error Cannot access a property on type 'void | T'
   return value.toString();
 }
 
 function invalidOptionalChaining<T>(value: void | T): string {
-  // @ts-expect-error Cannot access a property on type void | T
+  // @ts-expect-error Cannot access a property on type 'void | T'
   return value?.toString();
 }
 
@@ -160,7 +160,7 @@ function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
 }
 
 function invalidArrayAccess<T>(value: void | T): T {
-  // @ts-expect-error Cannot access a property on type void | T
+  // @ts-expect-error Cannot access a property on type 'void | T'
   return value[0];
 }
 

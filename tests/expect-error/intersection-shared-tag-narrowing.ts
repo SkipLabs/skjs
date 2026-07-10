@@ -7,8 +7,8 @@
 function t(x: "a" | 0, y: "a" | 1): void {
   if (x === y) {
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-    // @skjs-expect-error-line2 Type 'a'
-    // @skjs-expect-error-line3 is not assignable to type never
+    // @skjs-expect-error-line2 Type '"a"'
+    // @skjs-expect-error-line3 is not assignable to type 'never'
     const z: never = x;
     console.log(z);
   }
