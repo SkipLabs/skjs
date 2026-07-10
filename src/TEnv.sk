@@ -2287,9 +2287,17 @@ base class TEnv{
                 !symbols = symbols.set(symbolField.name.value);
               }
             };
-            if (fields.stringIndex.isSome()) !allStrings = true;
-            if (fields.numberIndex.isSome()) !allNumbers = true;
-            if (fields.symbolIndex.isSome()) !allSymbols = true;
+            // A never-valued index (get = bottom, e.g. from Closed<T>) proves
+            // its keys absent, so it widens keyof by nothing.
+            fields.stringIndex.each(idx ->
+              if (!idx.get.isBottom()) !allStrings = true
+            );
+            fields.numberIndex.each(idx ->
+              if (!idx.get.isBottom()) !allNumbers = true
+            );
+            fields.symbolIndex.each(idx ->
+              if (!idx.get.isBottom()) !allSymbols = true
+            );
           }
         | prim @ TPrimValue _ ->
           obj = this.newObject(subst, prim.asClassName(), Array[]);

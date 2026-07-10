@@ -1050,7 +1050,7 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            obj.maybeGetNonSyntheticIndexForKeyKind(
+            obj.maybeGetAccessibleIndexForKeyKind(
               tcenv.subst,
               this,
               TSymbol(),
@@ -1158,7 +1158,7 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            matchedIndex = obj.maybeGetNonSyntheticIndexForKeyKind(
+            matchedIndex = obj.maybeGetAccessibleIndexForKeyKind(
               tcenv.subst,
               this,
               remainingIdxSType.kind,
@@ -1174,15 +1174,11 @@ extension class TypeChecker {
                 _,
               ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
-                obj.maybeGetNonSyntheticIndexForKeyKind(
-                  tcenv.subst,
-                  this,
-                  TNum(),
-                )
+                obj.maybeGetAccessibleIndexForKeyKind(tcenv.subst, this, TNum())
               | _ -> None()
               }
             };
-            if (matchedIndex.isNone() && obj.hasNonSyntheticIndex()) {
+            if (matchedIndex.isNone() && obj.hasAccessibleIndex()) {
               // Object has indexes but not for this key kind. The access is
               // fundamentally invalid; we can't substitute an unrelated-kind
               // index value without manufacturing a cascade of dependent
@@ -1192,7 +1188,7 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `This index key is not assignable to the index signature: expected '${obj.nonSyntheticIndexKeyKindsString()}', got '${
+                    `This index key is not assignable to the index signature: expected '${obj.accessibleIndexKeyKindsString()}', got '${
                       remainingIdxSType.kind
                     }'`,
                   ),
@@ -2596,7 +2592,7 @@ extension class TypeChecker {
             // all-branches index matches the old branch-merge). TODO: refine.
             !canBeFalse =
               canBeFalse ||
-              obj.hasNonSyntheticIndex() ||
+              obj.hasAccessibleIndex() ||
               obj.getBranches().any(branchFields -> {
                 (fields, symbolFields) = branchFields match {
                 | TFields{fields, symbolFields} -> (fields, symbolFields)

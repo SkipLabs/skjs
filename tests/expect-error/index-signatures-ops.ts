@@ -21,8 +21,12 @@ function testUnionAccess(x: StrIdxUnion): number | string | undefined {
 
 type StrIdxInter = StrIdx & StrIdxStr;
 
-// number & string = never, so access gives never | undefined = undefined
+// number & string = never: the intersected index proves no string key can
+// hold any value, so it contributes no members (same rule as Closed<T>'s
+// never indexes) and the access is rejected rather than silently typing
+// undefined. tsc types this access as a silent never.
 function testInterAccess(x: StrIdxInter): undefined {
+  // @skjs-expect-error Property 'key' does not exist on this type
   return x["key"];
 }
 
