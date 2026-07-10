@@ -1378,6 +1378,14 @@ base class TEnv{
         )
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
+    | TAInst(Name(closedPos, "Closed"), targs) if (targs.size() == 1) ->
+      // Closed<T> (SKJS extension): closes an object type — every key not
+      // named in T is provably absent. The 1-ary application is intercepted
+      // BEFORE name resolution, so the recommended tsc-compat declaration
+      // `type Closed<T> = T` (identity for tsc) keeps this meaning in SKJS.
+      // Other arities fall through to ordinary resolution.
+      inner = this.normalize(tcenvb, targs[0]);
+      this.closeObjectType(tcenvb, closedPos, inner)
     | TAInst(n, targs) ->
       // Resolve via lexical bindings (see `bindings` field doc).
       this.bindings.maybeGet(n.value) match {
@@ -2252,6 +2260,80 @@ base class TEnv{
 
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
+  // Closed<T> (SKJS extension): close an object type by setting its string
+  // and symbol index slots to `never`. SKJS index signatures are residual —
+  // they cover exactly the keys not named in the type — so the never indexes
+  // state that every unnamed key is provably absent (number keys fall back to
+  // the string index, so no number slot is needed). `never` is TType::bottom,
+  // making the index's set bottom as well: a readonly and a mutable never
+  // index are the same field, so no readonly modifier is involved.
+  //
+  // T must expand to a plain object type without index signatures (a
+  // synthetic literal index is not a declared index: it is cleared and
+  // replaced). Anything else errors and recovers with T itself — the tsc
+  // reading of the recommended compat declaration `type Closed<T> = T`.
+  private fun closeObjectType(
+    tcenvb: mutable TCEnvBase,
+    closedPos: PosRange,
+    inner: TType,
+  ): TType {
+    subst = Subst::mcreate(tcenvb);
+    hasDeclaredIndex = (idx: ?TField) ->
+      idx match {
+      | Some(i) -> !i.isSynthetic()
+      | None() -> false
+      };
+    inner.expand(subst, this, Some(Covariant())).clauses.getObject() match {
+    | Some(obj) if (obj.getBranches().all(b -> b.isArray != Some(true))) ->
+      if (
+        obj.getBranches().any(b ->
+          hasDeclaredIndex(b.stringIndex) ||
+            hasDeclaredIndex(b.numberIndex) ||
+            hasDeclaredIndex(b.symbolIndex)
+        )
+      ) {
+        tcenvb.error(
+          Array[
+            (
+              closedPos,
+              "Closed<T> requires an object type without index signatures",
+            ),
+          ],
+          SKJSCode(9033),
+        );
+        inner
+      } else {
+        neverIndex = (name: String) ->
+          TField::create{
+            pos => closedPos,
+            name,
+            isOptional => true,
+            isReadonly => None(),
+            type => TType::bottom(closedPos),
+            access => FAPublic(),
+          };
+        closed = obj.map(b ->
+          b.withNeverIndexes(neverIndex("k"), neverIndex("s"))
+        );
+        TType::single(closed)
+      }
+    | Some _ ->
+      tcenvb.error(
+        Array[
+          (closedPos, "Closed<T> is not supported on array or tuple types"),
+        ],
+        SKJSCode(9033),
+      );
+      inner
+    | None() ->
+      tcenvb.error(
+        Array[(closedPos, "Closed<T> requires a statically known object type")],
+        SKJSCode(9033),
+      );
+      inner
+    }
+  }
+
   fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
     clauses = ty.expandToClauses(subst, this, Covariant());
     if (

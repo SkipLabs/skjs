@@ -2334,6 +2334,17 @@ class TFields protected {
     }
   }
 
+  // Closed<T> support: replace every index slot with the given never indexes
+  // (clearing any synthetic literal index, including the number slot — number
+  // keys then fall back to the never string index).
+  fun withNeverIndexes(stringIdx: TField, symbolIdx: TField): TFields {
+    this with {
+      stringIndex => Some(stringIdx),
+      numberIndex => None(),
+      symbolIndex => Some(symbolIdx),
+    }
+  }
+
   fun maybeGet(fieldName: String): ?TField {
     this.fields.maybeGet(FieldNameString(fieldName))
   }
