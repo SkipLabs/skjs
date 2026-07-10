@@ -1069,6 +1069,20 @@ extension class TypeChecker {
         (ty, isInitialized)
       }
     | Some(e) ->
+      // Second-view index gate (see the `Some(annotAst)` arm below). Capture
+      // BEFORE `this.expr`, because reading a `Var` flips a tracked local
+      // object's growth state LOCanGrow -> LOUsed: is this initializer a
+      // by-reference view of an already-used, or loop-escaping, tracked local?
+      (viewSrcTracked, viewSrcUsedPos, viewSrcThroughLoop) = e.value match {
+      | Var(local) ->
+        tcenv.localObjectState(local) match {
+        | Some(LOUsed(usedPos)) ->
+          (true, Some(usedPos), tcenv.scope.isThroughLoop(local))
+        | Some(_) -> (true, None(), tcenv.scope.isThroughLoop(local))
+        | None() -> (false, None(), false)
+        }
+      | _ -> (false, None(), false)
+      };
       ty = this.expr(tcenv, e, kind is BKConst());
       // Wrap null/undefined initializers in a bound TVar so the variable
       // can be widened later (e.g., `let x = null; x = 1`).
@@ -1088,16 +1102,83 @@ extension class TypeChecker {
         annot = this.normalize(tcenv, annotAst);
         aliasType = this.stableAliasExprType(tcenv, e, ty);
         !annot = this.preserveCopyProvenance(tcenv.subst, aliasType, annot);
-        this.checkSubType(
-          tcenv,
-          annotAst.pos,
-          "Type of value is not assignable to the variable's type annotation",
-          aliasType,
-          annot,
-          TSCode(2322),
-        );
+        if (
+          viewSrcTracked &&
+          (viewSrcUsedPos is Some(_) || viewSrcThroughLoop) &&
+          this.annotHasIndex(tcenv, annot)
+        ) {
+          // A fresh object literal's implicit-index capability is a
+          // single-consumption grant. A SECOND by-reference view (or a view
+          // that escapes a loop) of the same tracked local at an
+          // index-signature type would alias the local under an incompatible
+          // index capability — the aliasing type-confusion pinned by the
+          // testAlias* / testViewInsideLoop / testThroughLoopViewThenPreciseRead
+          // witnesses. Reject at the view site. We SKIP (not fail) the subtype
+          // check so its setter direction cannot widen the local's own fields,
+          // keeping a later precise read of the local sound. The diagnostic's
+          // second line points at the first use (or, for the through-loop arm,
+          // the declaration) so the user sees why the view is rejected.
+          (viewSrcPos, viewSrcMsg) = e.value match {
+          | Var(local) ->
+            viewSrcUsedPos match {
+            | Some(usedPos) ->
+              (usedPos, "But this object has already been used here")
+            | None() ->
+              (
+                tcenv.scope.bindingPos(local).default(local.pos),
+                "But this object is declared outside the loop",
+              )
+            }
+          | _ -> (e.pos, "But this object has already been used here")
+          };
+          tcenv.error(
+            Array[
+              (
+                annotAst.pos,
+                "Type of value is not assignable to the variable's type annotation",
+              ),
+              (viewSrcPos, viewSrcMsg),
+            ],
+            TSCode(2322),
+          );
+        } else {
+          this.checkSubType(
+            tcenv,
+            annotAst.pos,
+            "Type of value is not assignable to the variable's type annotation",
+            aliasType,
+            annot,
+            TSCode(2322),
+          );
+        };
         (annot, true)
       }
+    }
+  }
+
+  // True when `annot` is an object type (every branch) carrying a real index
+  // signature — the shape whose implicit/synthetic-index acceptance a second
+  // by-reference view of a tracked local object would unsoundly re-grant.
+  // Conservative: a non-object type, Top, or a union with any branch lacking a
+  // real index returns false (no gate; the ordinary subtype check runs).
+  fun annotHasIndex(tcenv: mutable TCEnv, annot: TType): Bool {
+    annot.getSTypes(tcenv.subst, this, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      anyBranch = false;
+      allIndexObjects = true;
+      for (stype in stypes) {
+        !anyBranch = true;
+        stype match {
+        | obj @ TObject _ ->
+          // hasAccessibleIndex: every branch carries a real (non-synthetic)
+          // index whose read type is not bottom (renamed from
+          // hasNonSyntheticIndex on main).
+          if (!obj.hasAccessibleIndex()) !allIndexObjects = false
+        | _ -> !allIndexObjects = false
+        }
+      };
+      anyBranch && allIndexObjects
     }
   }
 

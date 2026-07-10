@@ -36,18 +36,20 @@ function testMixedTypesIndex(): void {
 // encoding `{ ...; [k: string]: never; [s: symbol]: never }`). These super
 // types are TS2411-illegal in tsc; SKJS uses residual index semantics (an
 // index covers only the keys not named in the type — skjs-rules.md "Index
-// Signatures"). A no-spread object literal is a closed object; a fresh
-// literal's use (or the first view of an unannotated local object) is an
-// OWNERSHIP TRANSFER that waives the literal's setter obligations, so a
-// fresh literal satisfies these closed types.
+// Signatures"). A no-spread object literal is a closed object; main accepts a
+// fresh, single-view object literal against these closed/residual-index types
+// via its existing subtyping (the implicit index of a fresh literal).
 //
-// This file is the behavioral BASELINE for the closed-object-literal redesign
-// (PR #678): it is annotated for CURRENT main behavior and is green on main.
-// `TODO(#678)` markers flag the cases the redesign changes; the feature commits
-// flip those annotations.
+// The SECOND-VIEW INDEX GATE (this PR) additionally rejects the aliasing hazard
+// where an already-used — or loop-escaping — unannotated local object is viewed
+// AGAIN at an index-signature type: that second view grants a conflicting index
+// capability over a value another view already constrained, so a write through
+// one alias is observed at the wrong type through the other. Cases it does not
+// cover (named-named same-key widening, generic-escaped index) keep `TODO(#678)`
+// markers for the closed-object-literal redesign / a per-key extension.
 // ============================================================================
 
-// Accepted: the fresh literal `{}` is transferred to the annotation; the
+// Accepted: the fresh literal `{}` satisfies the annotation directly — the
 // never index has no keys to reject and the optional `a?` is absent.
 function testEmptyVsReadonlyOptionalNeverIndex(): void {
   const x: { readonly a?: number; [k: string]: never; [s: symbol]: never } = {};
@@ -67,8 +69,8 @@ function testExcessVsNeverIndex(): void {
   };
 }
 
-// Accepted: ownership transfer waives the never-index setter obligation for
-// the fresh literal; the annotation governs the value afterwards.
+// Accepted: a fresh single-view literal `{}` has no keys, so the never index
+// has nothing to reject; the annotation governs the value afterwards.
 function testEmptyVsMutableOptionalNeverIndex(): void {
   const x: { a?: number; [k: string]: never; [s: symbol]: never } = {};
 }
@@ -79,8 +81,8 @@ function testEmptyVsReadonlyOptionalNumberIndex(): void {
   const x: { readonly a?: string; [k: string]: number } = {};
 }
 
-// Accepted: the number-index leg reuses the literal's closed string index,
-// whose obligations the transfer waives.
+// Accepted: a fresh single-view literal `{}` has no keys for the number index
+// to constrain.
 function testEmptyVsReadonlyOptionalNumberNeverIndex(): void {
   const x: {
     readonly a?: number;
@@ -95,63 +97,62 @@ function testEmptyVsReadonlyOptionalNumberNeverIndex(): void {
 function testAliasMutableOptionalThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: boolean } = t;
 }
 
-// Readonly view then mutable-index view of the same local: the first view
-// transfers `t` to `{ readonly a?: number }`, so the second is plain-checked
-// and rejected — a named-field type with no index of its own is not an
-// index type.
+// Readonly view then mutable-index view of the same local: the first view uses
+// `t`; the second, an index view of the now-used local, is rejected by the
+// second-view index gate — a boolean index over the same keys `f` reads as
+// number would let a write through one alias be read at the wrong type through
+// the other.
 function testAliasReadonlyOptionalThenIndex(): void {
   const t = {};
   const f: { readonly a?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: boolean } = t;
 }
 
-// Accepted: after f retypes `t`, g's optional `b` is satisfied by the closed
-// marker (provably absent — #754's unconditional optional-omission). The two
-// views grant writes to disjoint keys (f only `a`, g only `b`), so there is no
-// aliasing hazard — sound to accept, and consistent with main's spread #754.
+// Accepted: two named optional views of disjoint keys (`f` only `a`, `g` only
+// `b`). Neither targets an index type, so the second-view gate never fires, and
+// disjoint keys mean there is no aliasing hazard — sound to accept.
 function testAliasMutableOptionalThenOptional(): void {
   const t = {};
   const f: { a?: number } = t;
   const g: { b?: string } = t;
 }
 
-// b transfers `t` to `{ [k: string]: never }`; c is then plain-checked and
-// rejected — the mutable optional `a?` would let c write a number where b's
-// never index forbids it. (This was an UNSOUND acceptance before the
-// redesign: nothing recorded c's write grant.)
+// `b` views `t` at a never index; `c` then writes `a: number` where `b`'s never
+// index forbids any inhabited value — unsound. NOT caught by the second-view
+// index gate: `c`'s target is a named optional, not an index, so the gate does
+// not fire; catching it needs per-key recording of `b`'s grant.
 function testAliasNeverIndexThenMutableOptional(): void {
   const t = {};
   const b: { [k: string]: never } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // TODO(#678): still accepted — needs per-key recording of the prior never-index view.
   const c: { a?: number } = t;
 }
 
-// Two readonly optional views: accepted. f retypes `t` to the intersection
-// `{ readonly a?: number; [closed] }`, keeping the literal's closed marker
-// where f names no index; g's optional `b` is then satisfied by that marker
-// with no setter obligation (g is readonly). Both views are pure reads of
-// disjoint keys, so there is no aliasing hazard — sound to accept.
+// Two readonly optional views of disjoint keys: accepted. Neither targets an
+// index type (the gate never fires) and both are pure reads of disjoint keys,
+// so there is no aliasing hazard — sound to accept.
 function testAliasTwoReadonlyOptionals(): void {
   const t = {};
   const f: { readonly a?: number } = t;
   const g: { readonly b?: string } = t;
 }
 
-// f transfers `t` to `{ a?: number }`; h then fails the setter direction
-// (`number | string` is not writable where f reads `number`) and i fails
-// the named-field-no-index rule. (This was an UNSOUND all-accept before the
-// redesign: h could write a string that i read as number.)
+// `f` grants a mutable `a?: number`. The index view `i` of the now-used local
+// is rejected by the second-view index gate. The widened same-key named view
+// `h` is NOT caught — both `f` and `h` are named views with no index, so the
+// gate (which keys on index-typed views) does not fire; distinguishing `h` from
+// a sound disjoint-key view needs per-key recording, so it stays TODO(#678).
 function testAliasWidenedGrantThenIndex(): void {
   const t = {};
   const f: { a?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // TODO(#678): still accepted — named-named same-key widening needs per-key recording.
   const h: { a?: number | string } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const i: { [k: string]: number } = t;
 }
 
@@ -165,27 +166,30 @@ function testEmptyVsReadonlySymbolOptionalNeverIndex(): void {
   } = {};
 }
 
-// Accepted, uniformly with testEmptyVsMutableOptionalNeverIndex: single-view
-// ownership transfer waives the mutable optional symbol field's setter
-// obligation against the never symbol index.
+// Accepted, uniformly with testEmptyVsMutableOptionalNeverIndex: a fresh
+// single-view literal `{}` has no symbol keys for the never symbol index to
+// reject.
 function testEmptyVsMutableSymbolOptionalNeverIndex(): void {
   const x: { [sk]?: number; [k: string]: never; [s: symbol]: never } = {};
 }
 
+// Symbol analog: after the symbol-optional view uses `t`, the symbol-index view
+// `g` is rejected by the second-view index gate.
 function testAliasMutableSymbolOptionalThenIndex(): void {
   const t = {};
   const f: { [sk]?: number } = t;
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [s: symbol]: string } = t;
 }
 
 // ============================================================================
-// Pins for behaviors the closed-literal redesign must preserve or knowingly
-// change (probes beyond the optional-field matrix).
+// Probes beyond the optional-field matrix: fresh-literal / local-object index
+// views the second-view gate must preserve or knowingly change.
 // ============================================================================
 
-// Fresh literal to a MUTABLE indexed annotation: accepted via ownership
-// transfer (the one capability the old synthetic-index TVars existed for).
+// Fresh literal to a MUTABLE indexed annotation: accepted — a fresh single-view
+// object literal keeps main's implicit index (the second-view gate never fires
+// on a literal RHS, only on a by-reference view of a tracked local).
 function testFreshLiteralToMutableIndex(): void {
   const a: { [k: string]: number } = { x: 1, y: 2 };
 }
@@ -209,45 +213,44 @@ function testSpreadLiteralToIndex(src: { b: boolean }): void {
   const x: { [k: string]: boolean } = { ...src };
 }
 
-// Array of fresh literals to Array<indexed>: accepted — an array literal is
-// a transfer site too, and its fresh elements (behind FromArrayElement
-// wrappers) are eligible for the transfer's waivers.
+// Array of fresh literals to Array<indexed>: accepted — each element is a fresh
+// single-view object literal, not a by-reference view of a tracked local, so
+// the second-view gate never fires.
 function testArrayOfLiteralsToArrayOfIndexed(): void {
   const arr: Array<{ [k: string]: number }> = [{ x: 1 }];
 }
 
-// Same mutable view inside a branch and again after it: the in-branch
-// transfer merges with the closed type at the join, so the post-branch view
-// is plain-checked and rejected. Known conservative limitation; revisit
-// with a shared-cell extension if the ergonomics matter.
+// Same index view inside a branch and again after it: the in-branch view `f` is
+// a first view and stays accepted, but it marks `t` used, so the post-branch
+// view `g` is rejected by the second-view index gate. Conservative (it rejects
+// even the identical repeat), but sound.
 function testSameViewInBranchThenAfter(c: boolean): void {
   const t = {};
   if (c) {
     const f: { [k: string]: number } = t;
   }
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const g: { [k: string]: number } = t;
 }
 
-// View of an outside-declared local inside a loop: rejected. The local
-// cannot be retyped from inside the loop, so the granted view would go
-// unrecorded — the check runs plain and the closed literal does not satisfy
-// a mutable index. Declare the local inside the loop or annotate it.
+// Index view of an outside-declared local inside a loop: rejected by the
+// second-view index gate's through-loop arm — the loop body could grant the
+// index view on every iteration while the local keeps its own type, so the view
+// is an unrecordable aliasing hazard. Declare the local inside the loop instead.
 function testViewInsideLoop(): void {
   const t = {};
   for (const i of [1, 2]) {
-    // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const f: { [k: string]: number } = t;
   }
 }
 
 // ============================================================================
-// Aliasing soundness witnesses: a granted view must be recorded somewhere.
-// Under ownership transfer both stay rejected by construction: an embedded
-// local's markers are not eligible at the container's transfer (only values
-// behind freshness wrappers are), and through-loop views are plain-checked
-// because the local cannot be retyped. Any literal-typing design must keep
-// BOTH rejected.
+// Aliasing soundness witnesses that any literal-typing design must keep
+// rejected: an embedded local viewed through its container, and a through-loop
+// view of an outside-declared local. The second-view index gate rejects the
+// through-loop case directly; the embedded-container case is rejected by the
+// ordinary mutable-field subtype check.
 // ============================================================================
 
 // An embedded local keeps its own precise binding: if a view of the
@@ -261,43 +264,39 @@ function testEmbeddedLocalThenContainerView(): void {
   const z: 1 = e.x;
 }
 
-// A view granted inside a loop cannot be recorded by retyping (the local is
-// declared outside), so the view itself is rejected — otherwise the write
-// through it would invalidate the precise post-loop read (f.x = 99;
-// t.x : 1 holding 99).
+// An index view inside a loop of an outside-declared local is rejected by the
+// second-view gate's through-loop arm. Because the gate SKIPS the subtype check
+// (rather than failing it), the setter direction never widens `t.x`, so the
+// precise post-loop read `t.x : 1` stays sound.
 function testThroughLoopViewThenPreciseRead(): void {
   const t = { x: 1 };
   for (const i of [1, 2]) {
-    // TODO(#678): main accepts this view (redesign rejects it, keeping `t` precise).
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const f: { [k: string]: number } = t;
     f.x = 99;
   }
-  // TODO(#678): on main the accepted loop view above widens `t`, so this precise
-  // read fails; the redesign rejects the view and keeps `t` precise, so the error
-  // below goes away.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: 1 = t.x;
 }
 
 // ============================================================================
-// Transfer-into-inference pins: a fresh literal instantiating a generic.
+// Fresh literal instantiating a generic (unaffected by the second-view gate,
+// which only fires on annotated by-reference views of a tracked local).
 // ============================================================================
 
 type JsonRec = { [key: string]: JsonRec } | number | string;
 declare function processJsonRec<T extends JsonRec>(x: T): T;
 
-// Accepted with an INFERRED type argument: the raw marked literal type grows
-// into the inference TVar; the markers stay strict (closed) in later plain
-// checks, so no write capability leaks.
+// Accepted with an INFERRED type argument: the literal instantiates the type
+// parameter; there is no by-reference index view of a tracked local, so the
+// second-view gate does not apply.
 function testFreshLiteralToInferredJsonGeneric(): void {
   const r = processJsonRec({ name: "test", nested: { value: 42 } });
 }
 
 // Rejected with an EXPLICIT type argument: the explicit `{ name: string }` is
 // checked directly against the constraint `T extends JsonRec` (TS2344), and a
-// named object type is not a subtype of JsonRec. Ownership transfer only waives
-// the literal argument's setter obligations against the instantiated parameter
-// type; it does not bypass the type-argument constraint check.
+// named object type is not a subtype of JsonRec. This is unrelated to the
+// second-view index gate.
 function testFreshLiteralToExplicitJsonGeneric(): void {
   // TODO(#678): main also emits the argument-assignability error below; the
   // redesign's ownership transfer suppresses it, leaving only the constraint error.
@@ -306,11 +305,14 @@ function testFreshLiteralToExplicitJsonGeneric(): void {
   const r = processJsonRec<{ name: string }>({ name: "test" });
 }
 
-// The value escaping through the generic stays CLOSED: a later mutable index
-// view of the result is a plain check and rejects.
+// A fresh literal escaping through a generic keeps main's implicit index, so a
+// later index view of the result is still accepted. NOT caught by the
+// second-view gate: `r` is a call result, not a tracked local object, so the
+// gate never fires; catching it needs a separate escape-seal at the inference
+// grow site.
 declare function idObj<T>(x: T): T;
 function testEscapedInferredLiteralStaysClosed(): void {
   const r = idObj({ x: 1 });
-  // TODO(#678): main accepts this; the closed-object-literal redesign rejects it.
+  // TODO(#678): still accepted — needs an escape-seal at the generic grow site.
   const v: { [k: string]: number } = r;
 }
