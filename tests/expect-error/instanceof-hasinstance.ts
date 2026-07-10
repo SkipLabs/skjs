@@ -17,6 +17,7 @@ class WithHasInstance {
 
 function customHasInstance(x: unknown): number {
   if (x instanceof WithHasInstance) {
+    // @skjs-expect-error Cannot access a property on type 'unknown'
     return x.a;
   }
   return 0;
@@ -35,6 +36,7 @@ class DerivedHasInstance extends BaseHasInstance {
 
 function inheritedHasInstance(x: unknown): number {
   if (x instanceof DerivedHasInstance) {
+    // @skjs-expect-error Cannot access a property on type 'unknown'
     return x.b;
   }
   return 0;

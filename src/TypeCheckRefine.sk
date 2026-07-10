@@ -364,6 +364,36 @@ extension class TypeChecker {
     this.setLocalFilterMap(tcenv, local, Some(STypes::single(obj)), filterMap)
   }
 
+  // True when the `instanceof` RHS value (a class's static side, `typeof C`)
+  // declares a `[Symbol.hasInstance]` member, directly or inherited. Such a
+  // class overrides the default `instanceof` membership test, so `x instanceof
+  // C` no longer implies `x` is a `C` -- the method decides membership and may
+  // accept non-instances or reject instances. Narrowing must therefore be
+  // suppressed (issue #776); tsc narrows there anyway, unsoundly.
+  fun rhsDeclaresHasInstance(tcenv: mutable TCEnv, rhs: Expr): Bool {
+    this.getWellKnownSymbolUniqueId(tcenv.subst, rhs.pos, "hasInstance") match {
+    | None() -> false
+    | Some(uniqueId) ->
+      this.lookupExprType(tcenv, rhs).getSTypes(
+        tcenv.subst,
+        this,
+        Covariant(),
+      ) match {
+      | None() -> false
+      | Some(stypes) ->
+        stypes.any(stype ->
+          stype match {
+          | obj @ TObject _ ->
+            obj.getBranches().any(fields ->
+              fields.maybeGetSymbol(uniqueId).isSome()
+            )
+          | _ -> false
+          }
+        )
+      }
+    }
+  }
+
   // Entry point for type narrowing from a conditional expression.
   // Dispatches on the condition shape (===, !==, typeof, instanceof,
   // Array.isArray, `in`, &&, ||, !) and narrows `tcenv` accordingly.
@@ -389,11 +419,19 @@ extension class TypeChecker {
       | _ -> void
       }
 
-    | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
+    | InstanceOf(
+      Expr(_, Var(local)),
+      rhs @ Expr(_, Var(className)),
+    ) if (target) ->
       // Only a class/interface RHS can drive narrowing; a Function-like value
       // (e.g. a `typeof Class` const) is a valid RHS but has no class def to
-      // build an instance type from, so it narrows nothing.
-      if (this.hasClassDef(tcenv, className)) {
+      // build an instance type from, so it narrows nothing. A class with a
+      // custom `static [Symbol.hasInstance]` narrows nothing either: it
+      // overrides the runtime membership test (issue #776).
+      if (
+        this.hasClassDef(tcenv, className) &&
+        !this.rhsDeclaresHasInstance(tcenv, rhs)
+      ) {
         this.evalInstanceof(tcenv, local, className)
       }
 
