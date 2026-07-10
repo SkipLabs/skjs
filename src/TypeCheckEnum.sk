@@ -120,6 +120,11 @@ private fun enumFoldOfMemberValue(v: EnumMemberValue): EnumFold {
   }
 }
 
+// An exactly-folded integer result if it stays double-safe, else unknown.
+private fun enumNumOrUnknown(r: Int): EnumFold {
+  if (enumAbs(r) <= maxSafeJSInt) EFNum(r.toString()) else EFNumUnknown()
+}
+
 // Exact integer folding within the double-safe range; everything else
 // (fractional operands, overflow, inexact division) soundly widens to an
 // unknown number.
@@ -134,19 +139,13 @@ private fun enumFoldNumericBinop(
     Some(b),
   ) if (enumAbs(a) <= maxSafeJSInt && enumAbs(b) <= maxSafeJSInt) ->
     op match {
-    | BOAddition()
-    | BOSubtraction() ->
-      r = op match {
-      | BOAddition() -> a + b
-      | _ -> a - b
-      };
-      if (enumAbs(r) <= maxSafeJSInt) EFNum(r.toString()) else EFNumUnknown()
+    | BOAddition() -> enumNumOrUnknown(a + b)
+    | BOSubtraction() -> enumNumOrUnknown(a - b)
     | BOMultiplication() ->
       if (b != 0 && enumAbs(a) > maxSafeJSInt / enumAbs(b)) {
         EFNumUnknown()
       } else {
-        r = a * b;
-        if (enumAbs(r) <= maxSafeJSInt) EFNum(r.toString()) else EFNumUnknown()
+        enumNumOrUnknown(a * b)
       }
     | BODivision() ->
       if (b != 0 && a % b == 0) EFNum((a / b).toString()) else EFNumUnknown()
@@ -302,7 +301,9 @@ extension base class TEnv {
         }
       | EFNumUnknown() -> EFNumUnknown()
       | fwd @ EFForwardRef() -> fwd
-      | _ -> EFNotConst()
+      | EFStr _
+      | EFNotConst() ->
+        EFNotConst()
       }
     | Binop(op @ AssignableBinaryOperator _, e1, e2) ->
       this.enumFoldBinop(
