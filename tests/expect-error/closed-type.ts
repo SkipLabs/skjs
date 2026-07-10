@@ -7,9 +7,6 @@
 // SKJS gives the name its closed semantics (the builtin takes precedence for
 // the 1-ary application).
 //
-// This file is the tests-first BASELINE: it is annotated for CURRENT main
-// behavior, where the alias is a plain identity alias. `TODO(Closed)` marks
-// the lines the feature flips.
 type Closed<T> = T;
 
 type Json = number | string | boolean | null | { readonly [k: string]: Json };
@@ -21,9 +18,6 @@ type Json = number | string | boolean | null | { readonly [k: string]: Json };
 
 function testClosedIntoJson(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };
-  // TODO(Closed): the identity alias leaves x open, so this rejects today;
-  // the Closed builtin removes the error below.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const j: Json = x;
 }
 
@@ -32,9 +26,6 @@ function testNestedClosedIntoJson(): void {
     readonly a: number;
     readonly nested: Closed<{ readonly b: string }>;
   }> = { a: 1, nested: { b: "s" } };
-  // TODO(Closed): the identity alias leaves x open, so this rejects today;
-  // the Closed builtin removes the error below.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const j: Json = x;
 }
 
@@ -50,13 +41,10 @@ function testOpenIntoJsonStaysRejected(): void {
 // Index-signature supertypes.
 // ============================================================================
 
-// Closed into a READONLY index: accepted once Closed is real (never getter
-// under a readonly index imposes nothing).
+// Closed into a READONLY index: accepted (the never getter under a readonly
+// index imposes nothing).
 function testClosedIntoReadonlyIndex(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };
-  // TODO(Closed): the identity alias leaves x open, so this rejects today;
-  // the Closed builtin removes the error below.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const m: { readonly [k: string]: number } = x;
 }
 
@@ -72,11 +60,10 @@ function testClosedIntoMutableIndex(): void {
 // Closedness of values: excess properties and unnamed keys.
 // ============================================================================
 
-// Excess property in a literal against a Closed annotation: SKJS's identity
-// alias accepts the width today (tsc rejects via its fresh-literal excess
-// check, TS2353); the closed never index rejects it.
+// Excess property in a literal against a Closed annotation: rejected by the
+// closed never index (tsc also rejects, via its fresh-literal excess check).
 function testExcessPropertyVsClosed(): void {
-  // TODO(Closed): SKJS accepts the excess `b` today; Closed rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: Closed<{ a?: number }> = { a: 1, b: 2 };
 }
 
@@ -111,27 +98,30 @@ function testKeyofClosed(): void {
 }
 
 // ============================================================================
-// Validation: Closed<T> requires a plain object type without index
-// signatures. On main the identity alias accepts everything below.
+// Validation: Closed<T> requires a statically known object type without
+// declared index signatures.
 // ============================================================================
 
 function testClosedOfPrimitive(): void {
-  // TODO(Closed): identity alias accepts; Closed requires an object type.
+  // @skjs-expect-error Closed<T> requires a statically known object type
   const n: Closed<number> = 1;
 }
 
 function testClosedOfIndexedObject(): void {
-  // TODO(Closed): identity alias accepts; Closed requires no existing index.
+  // @skjs-expect-error Closed<T> requires an object type without index signatures
   const i: Closed<{ [k: string]: number }> = { a: 1 };
 }
 
-function testClosedOfUnion(): void {
-  // TODO(Closed): identity alias accepts; Closed requires a single object type.
+// A union of object types distributes: each branch is closed independently.
+function testClosedOfUnionDistributes(): void {
   const u: Closed<{ a: number } | { b: string }> = { a: 1 };
+  const j: Json = u;
 }
 
-function testClosedOfTypeParameter<T>(x: Closed<T>): T {
-  // TODO(Closed): identity alias accepts; Closed requires a statically known
-  // object type, so an abstract type parameter is rejected.
+// An abstract type parameter is not a statically known object type.
+function testClosedOfTypeParameter<T>(
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  x: Closed<T>,
+): T {
   return x;
 }
