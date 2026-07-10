@@ -314,9 +314,18 @@ extension base class TEnv {
     | Var(n) ->
       byName.maybeGet(n.value) match {
       | Some(v) -> enumFoldOfMemberValue(v)
-      // A bare forward reference falls to the computed path, where the
-      // expression check reports the unresolved name.
-      | None() -> EFNotConst()
+      | None() ->
+        // The enum's member scope shadows the outer scope (like tsc), so a
+        // bare name matching any sibling — including one declared later, or
+        // this member itself — is a member reference that reads an
+        // uninitialized value at runtime. Only a name that is not a member
+        // falls through to the outer-scope resolution done by the computed
+        // path.
+        if (en.fields.any(f -> f.i0.value == n.value)) {
+          EFForwardRef()
+        } else {
+          EFNotConst()
+        }
       }
     | Dot(NormalDot(), Expr(_, Var(base)), fieldName) ->
       this.enumFoldMemberRef(

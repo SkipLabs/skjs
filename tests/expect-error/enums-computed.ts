@@ -71,7 +71,7 @@ function qualifiedMemberReference(): 1 {
 // tsc reports a forward member reference as TS2651; SKJS types the
 // initializer as an expression, where B does not resolve.
 enum Fwd {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = B,
   B = 1,
 }
@@ -325,11 +325,10 @@ function scopeOuterFnMember(): number {
   return ScopeOuterFn.A;
 }
 
-// FIXME: a bare reference to a later sibling reads undefined at runtime; tsc
-// reports TS2651. SKJS currently only consults earlier members and reports
-// the outer-scope lookup failure instead.
+// A bare reference to a later sibling reads undefined at runtime; the member
+// scope shadows the outer scope, so this is a forward reference (tsc TS2651).
 enum ScopeBareForward {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = ScopeLater,
   ScopeLater = 1,
 }
@@ -338,12 +337,13 @@ function scopeBareForwardMember(): number {
   return ScopeBareForward.A;
 }
 
-// FIXME: unsound — the member `scopeShadowed` shadows the outer const, so at
-// runtime A reads the not-yet-initialized member (undefined); tsc reports
-// TS2651. SKJS currently resolves the bare name to the outer const.
+// The member `scopeShadowed` shadows the outer const, so A reads the
+// not-yet-initialized member (undefined) at runtime, not the outer 5 (tsc
+// TS2651).
 const scopeShadowed = 5;
 
 enum ScopeShadowSibling {
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = scopeShadowed,
   scopeShadowed = 1,
 }
@@ -352,10 +352,10 @@ function scopeShadowMember(): number {
   return ScopeShadowSibling.A;
 }
 
-// FIXME: a bare self reference reads undefined at runtime; tsc reports
-// TS2565. SKJS reports the outer-scope lookup failure instead.
+// A bare self reference reads undefined at runtime (tsc reports TS2565 here;
+// SKJS reuses its forward-reference diagnostic).
 enum ScopeSelfBare {
-  // @skjs-expect-error Cannot find name
+  // @skjs-expect-error A member initializer in a enum declaration cannot reference members declared after it, including members defined in other enums
   A = A,
 }
 
