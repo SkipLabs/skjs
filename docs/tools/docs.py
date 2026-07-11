@@ -158,7 +158,8 @@ def gen(entries, papers=(), fixes=()):
     # rows-X: rows the paper OWNS (provides the proof/refutation for).
     # imports-X: rows the paper CONSUMES (its review contract: each is an
     # axiom for the reviewer, with the registry's canonical statement).
-    for letter in "ABCDEFG":
+    letters = "".join(pp["letter"] for pp in papers) or "ABCDEFG"
+    for letter in letters:
         rows = [e for e in entries if e.get("owner") == letter]
         out = [warn]
         out.append(r"\begin{center}")
@@ -253,8 +254,9 @@ def gen(entries, papers=(), fixes=()):
     print("gen: wrote %d generated files + series map" % (3 + 14 + 1))
 
 
-def check(entries, fixes=()):
+def check(entries, fixes=(), papers=()):
     problems = []
+    letters = {pp["letter"] for pp in papers} or set("ABCDEFG")
 
     ids = [e["id"] for e in entries]
     if len(ids) != len(set(ids)):
@@ -277,12 +279,12 @@ def check(entries, fixes=()):
         if fx["row"] not in id_set:
             problems.append("fix references unknown row: %s" % fx["row"])
 
-    OWNERS = set("ABCDEFG") | {"main"}
+    OWNERS = letters | {"main"}
     for e in entries:
         if e.get("owner") not in OWNERS:
             problems.append("ledger %s: bad owner %r" % (e["id"], e.get("owner")))
         for c in e.get("consumers") or []:
-            if c not in set("ABCDEFG"):
+            if c not in letters:
                 problems.append("ledger %s: bad consumer %r" % (e["id"], c))
             if c == e.get("owner"):
                 problems.append("ledger %s: owner listed as consumer" % e["id"])
@@ -538,7 +540,8 @@ def main():
     if mode in ("gen", "build", "all"):
         gen(entries, data.get("papers") or [], data.get("fixes") or [])
     if mode in ("check", "all"):
-        ok = check(entries, data.get("fixes") or []) and ok
+        ok = check(entries, data.get("fixes") or [],
+                   data.get("papers") or []) and ok
     if mode in ("build", "all"):
         ok = build() and ok
     if mode == "repro":

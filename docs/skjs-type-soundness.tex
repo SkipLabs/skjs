@@ -461,8 +461,38 @@ owners meet: accessing it is a static error, but as a membership constraint
 it is an ordinary field). Note that membership constrains values via
 $\mathsf{get}$-types only; the $\mathsf{set}$ component governs which writes
 the checker accepts and participates in soundness through subtyping and
-mutation, not through membership (assumption \textbf{L-MUT}).
+mutation, not through membership (assumption \textbf{L-MUT}). That
+governance has a second named facet, cross-view coherence: a checked
+write through one mutable view preserves the membership guarantees of
+every live alias of the same runtime object (\textbf{L-MUT-ALIAS}) —
+which holds only while every mutable view's $\mathsf{set}$-types stay at
+or below the object's actual write capability.
+For recursive declarations the membership conditions recurse — a field's
+$\sem{\mathsf{get}(f)}$ can mention $\sem{b}$ again — and every recursive
+occurrence is positive, so least and greatest solutions exist
+(Knaster--Tarski); $\sem{\cdot}$ is the \emph{greatest} solution, the
+reading under which a cyclic value (\texttt{const x = \{\}; x.next = x})
+inhabits its recursive type. This choice is registry row \textbf{SEM-GFP}.
 \impl{TType.sk / TObject (interpretation comment), TFields}
+\end{definition}
+
+\begin{definition}[Write Authorization]
+\label{def:write-auth}
+A view $b$ (an object branch, as recorded for a local or a field)
+\emph{authorizes} the write of value $v$ at key $p$ iff
+$v \in \sem{\mathsf{setty}(b,p)}$, where $\mathsf{setty}(b,p)$ is the
+resolved $\mathsf{set}$-type of $p$ in $b$: the intersection
+$\bigsqcap f.\mathsf{set}$ of a named field $f$, else the covering
+index's $\mathsf{set}$-type; a readonly field ($\mathsf{set} = \bot$)
+authorizes nothing. The checker realizes this definition at assignment
+sites — the right-hand side is checked against $\mathsf{setty}$ by
+subtyping (\textbf{L-SUB}) — and writes mediated by method calls are
+covered by the signature semantics (E-SIG), not by $\mathsf{setty}$.
+This is the corpus's definition of a view's write surface, registry row
+\textbf{SET-SEM}; \textbf{L-MUT-ALIAS} is the coherence property over
+it.
+\impl{TType.sk / TFields::resolveFieldType (isLValue);
+TypeCheckExpr.sk / assign}
 \end{definition}
 
 \subsection{The union spine}
@@ -488,11 +518,32 @@ instantiations (\texttt{TSInst}), unexpanded intersections (\texttt{TInter}),
 and delayed array-literal forms (\texttt{TArrayLit}). $\TInsts$ is a finite
 set of instances with $\sem{I}_\rho = \bigcup_{i \in I}\sem{i}_\rho$. Instance
 semantics is \emph{parametrized by a substitution state} $\rho$
-(Section~\ref{sec:inference}); for a type variable,
-$\sem{\alpha}_\rho \subseteq \sem{\rho(\alpha)}_\rho \cap
-\bigcap_{c \in \mathsf{cstr}(\alpha)}\sem{c}_\rho$ when $\rho$ binds
-$\alpha$. Named instances and intersections satisfy the expansion axiom
-\textbf{L-EXP}.
+(Section~\ref{sec:inference}).  The denotation of a type-variable occurrence
+$\alpha^{cs}$ (identifier $\alpha$ carrying the occurrence-level constraint
+set $cs$) is
+\[
+  \sem{\alpha^{cs}}_\rho = \mathcal E_\rho(\alpha) \cap
+    \bigcap_{c\in cs}\sem{c}_\rho,
+  \qquad
+  \mathcal E_\rho(\alpha) =
+  \begin{cases}
+    \emptyset & \alpha\notin\operatorname{dom}(\rho),\\
+    \sem{t}_\rho & \rho(\alpha)\in
+      \{\SVOpen(t),\SVClosed(t)\}.
+  \end{cases}
+\]
+A binding type $t$ may itself mention type variables, so this equation
+joins the recursive membership conditions of
+Definition~\ref{def:object-semantics}; every recursive occurrence is
+positive, and the solution is the greatest one (registry row
+SEM-GFP). An unbound \texttt{TVar} thus denotes an empty inference lower
+bound, and \texttt{TVar} is the model's only variable kind — the model
+has no rigid or skolem variables. Constraints belong to
+occurrences because \texttt{TVar::setConstraint} is functional;
+\texttt{Subst::get} realizes the displayed intersection when the
+occurrence is read. This equation is the corpus's definition of
+\texttt{TVar} denotation, registry row \textbf{TVAR-SEM}. Named
+instances and intersections satisfy the expansion axiom \textbf{L-EXP}.
 \impl{TType.sk / TInst, TVar, TSInst, TArrayLit; TTypeInter.sk / TInter}
 \end{definition}
 
@@ -1578,15 +1629,13 @@ this is Lemma~\ref{lem:never-widen}(iii); for $\SVOpen$ bindings of
 \emph{non-candidates}, unions grow the denotation and the obligation is that
 every consumer read them contravariantly (as lower bounds) until sealed.
 \emph{This obligation is \textsc{violated} in
-three witnessed instances} — the \texttt{instanceof}-born type argument
-sealed by a later covariant use; \texttt{subst.seenSub} memos recorded
+two witnessed instances} — \texttt{subst.seenSub} memos recorded
 on unsealed candidate bounds inside \texttt{freezeCandidates} windows
-(order-dependent acceptance); and the reflexive \texttt{TSInst} arm of
+(order-dependent acceptance), and the reflexive \texttt{TSInst} arm of
 Definition~\ref{def:issub-arch} step (0), whose \texttt{peekRaw} is an
 exact-value read of an unsealed open candidate (not memo-mediated). The
 general statement is proved by deep dive
 E modulo exactly these residues; witnesses and fix directions:
-\path{deep-dives/issues/instanceof-type-argument-sealing.md},
 \path{deep-dives/issues/freeze-window-stale-memo-caches.md},
 \path{deep-dives/issues/reflexive-tsinst-fastpath-unsealed-read.md}.
 \end{obligation}

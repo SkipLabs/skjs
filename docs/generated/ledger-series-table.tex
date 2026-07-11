@@ -29,14 +29,16 @@ E-NORM & Named-type normalization is semantics-preserving (interface consumed by
 E-ARR & Delayed array-literal forms keep their semantics under expansion. & \textsc{assumed} \\
 E-CLASS-SYM & The class path of expansion is binding-blind (or its binding reads are harmless). & \textsc{open} \\
 E-GUARD & Recursion-guard identity expansions are never cached into long-lived substitutions. & \textsc{open} \\
-SEM-GFP & The set-theoretic semantics is read as a greatest fixpoint for recursive types. & \textsc{assumed} \\
+SEM-GFP & The set-theoretic semantics is the greatest solution of the recursive membership equations. & \textsc{proved} \\
 E-SIG & Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement). & \textsc{assumed} \\
 A-HASH & \texttt{TType::compare} equality is trustworthy (XXHash-only fast paths). & \textsc{assumed} \\
 A-PROTO & No prototype surgery / Proxy GetPrototypeOf traps reach checked code (enforced by stub omissions). & \textsc{assumed} \\
 A-DDA & No [[IsHTMLDDA]] object (\texttt{document.all}) reaches checked code (vacuous on Node). & \textsc{assumed} \\
 A-PROXY & No Proxy exotic object reaches checked code. & \textsc{assumed} \\
 A-HASINST & No non-default \texttt{Symbol.hasInstance} on narrowed \texttt{instanceof} RHS classes. & \textsc{violated} \\
-TVAR-SEM & Sharpened variable denotation (get-time constraint intersection as definition), verified against every consumer. & \textsc{open} \\
+TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty. & \textsc{proved} \\
+SET-SEM & A view authorizes exactly the writes its resolved $\mathsf{set}$-types accept; a readonly field authorizes nothing. & \textsc{proved} \\
+L-SUB-FIELDS-SET & \texttt{isSub}'s field arms preserve write capability downward: acceptance implies each target field's $\mathsf{set}$-type is below the source's, and readonly fields acquire no writers. & \textsc{open} \\
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
@@ -57,7 +59,7 @@ L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same n
 Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get}; \texttt{TType::isSub}}\par
 \nopagebreak
-\textsc{violated} in three witnessed instances — \texttt{instanceof}-born argument sealing, the freeze-window memo staleness MR-1, and the unsealed \texttt{peekRaw} read of the reflexive \texttt{TSInst} arm (L-SUB-TSINST, not memo-mediated); the general transport statement is the separate \textsc{proved} row E-TRANSPORT
+\textsc{violated} in two witnessed instances — the freeze-window memo staleness MR-1 and the unsealed \texttt{peekRaw} read of the reflexive \texttt{TSInst} arm (L-SUB-TSINST, not memo-mediated); the general transport statement is the separate \textsc{proved} row E-TRANSPORT
 
 \medskip\par\noindent\textbf{OBL-RESTORE}\quad(\textsc{proved})\\*[0.15em]
 No Commitment on Failure: failing and exploratory paths restore all relevant state.\\*[0.15em]
@@ -125,11 +127,11 @@ Recursion-guard identity expansions are never cached into long-lived substitutio
 \nopagebreak
 \textsc{open} (deep dive C); cache-write invariant + pinned test recommended
 
-\medskip\par\noindent\textbf{SEM-GFP}\quad(\textsc{assumed})\\*[0.15em]
-The set-theoretic semantics is read as a greatest fixpoint for recursive types.\\*[0.15em]
-{\small\emph{Anchor:} main paper semantics}\par
+\medskip\par\noindent\textbf{SEM-GFP}\quad(\textsc{proved})\\*[0.15em]
+Greatest-fixpoint reading: $\sem{\cdot}$ is the greatest solution of the recursive membership equations.\\*[0.15em]
+{\small\emph{Anchor:} main paper object semantics}\par
 \nopagebreak
-\textsc{assumed} (deep dive D; a semantics choice the main paper should ratify)
+\textsc{proved} by definition in the main paper (every recursive occurrence in the membership conditions is positive, so the greatest solution exists); deep dive D supplies the stratified characterization used by the coinductive reduction
 
 \medskip\par\noindent\textbf{E-SIG}\quad(\textsc{assumed})\\*[0.15em]
 Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement).\\*[0.15em]
@@ -167,11 +169,23 @@ No non-default \texttt{Symbol.hasInstance} on narrowed \texttt{instanceof} RHS c
 \nopagebreak
 \textsc{violated}, tsc-parity (deep dive A; issue draft \path{symbol-hasinstance-narrowing.md})
 
-\medskip\par\noindent\textbf{TVAR-SEM}\quad(\textsc{open})\\*[0.15em]
-Sharpened variable denotation (get-time constraint intersection as definition), verified against every consumer.\\*[0.15em]
+\medskip\par\noindent\textbf{TVAR-SEM}\quad(\textsc{proved})\\*[0.15em]
+Canonical \texttt{TVar} denotation: an occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get}/\texttt{peek}}\par
 \nopagebreak
-\textsc{open} (deep dive B)
+\textsc{proved} by definition in the main paper and matched to \texttt{Subst::get}: missing bindings read as bottom contravariantly and seal to top before a covariant expansion; occurrence constraints are intersected after either read
+
+\medskip\par\noindent\textbf{SET-SEM}\quad(\textsc{proved})\\*[0.15em]
+Write authorization: a view authorizes the write of $v$ at key $p$ iff $v$ inhabits the resolved $\mathsf{set}$-type of $p$ (intersected named-field $\mathsf{set}$-types, else the covering index's); readonly ($\mathsf{set}=\bot$) authorizes nothing; call-mediated writes are E-SIG's\\*[0.15em]
+{\small\emph{Anchor:} \path{TFields::resolveFieldType} (\texttt{isLValue})}\par
+\nopagebreak
+\textsc{proved} by definition in the main paper and matched to the checker's write path: assignment checks the right-hand side against the resolved $\mathsf{set}$-type by subtyping
+
+\medskip\par\noindent\textbf{L-SUB-FIELDS-SET}\quad(\textsc{open})\\*[0.15em]
+Write-capability preservation: field acceptance requires $f_2.\mathsf{set} \leq f_1.\mathsf{set}$ (contravariant) and the readonly gate, so under SET-SEM an admitted view authorizes only writes the source view authorizes\\*[0.15em]
+{\small\emph{Anchor:} \texttt{TFields::isSub\_}}\par
+\nopagebreak
+\textsc{open} (conditional): the syntactic checks are verified at every field arm (deep dive D, write-direction lemma); the SET-SEM containment they induce is conditional on the recursive \texttt{isSub} verdicts, exactly as the read direction is inside L-SUB
 
 \medskip\par\noindent\textbf{O-GETCOV}\quad(\textsc{open})\\*[0.15em]
 Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause).\\*[0.15em]

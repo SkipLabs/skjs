@@ -599,27 +599,24 @@ The main paper's object semantics is a system of \emph{equations}:
 $o \in \sem{b}$ is defined in terms of $\mathsf{get}(o,p) \in
 \sem{\mathsf{get}(f)}$ for field types that, for a recursive declaration
 (\texttt{type L = \{ next: L \}} via \texttt{TSInst} unfolding), mention
-$\sem{b}$ again. The main paper never says which solution it means. The
+$\sem{b}$ again. The
 equations are monotone --- every recursive occurrence of a denotation in
 the membership conditions is positive: field and index constraints use
 $\sem{\cdot}$ on the membership side, the call/new and brand clauses are
 atomic predicates on $o$, and nothing negates a membership --- so by
-Knaster--Tarski both a least and a greatest solution exist.
+Knaster--Tarski both a least and a greatest solution exist, and the main
+paper's definition takes the greatest one (registry row SEM-GFP, which
+this paper consumes).
 
-\begin{assumption}[SEM-GFP: Greatest-Fixpoint Reading]
+\begin{definition}[SEM-GFP: Greatest-Fixpoint Reading (main-paper recap)]
 \label{as:gfp}
-The intended denotation $\sem{\cdot}$ is the \emph{greatest} solution of
-the membership equations. Justification: JS values are coreflexive ---
-\texttt{const x = \{\}; x.next = x} builds a cyclic value that TypeScript
-and SKJS deliberately type as \texttt{L}; under the least solution
-$\sem{\texttt{L}}$ with a required \texttt{next} would contain only
-well-founded chains and the cyclic $x$ would inhabit no recursive type,
-making the checker's acceptance of such programs unsoundness rather than
-the intent. The greatest solution contains exactly the values all of
-whose finite explorations are consistent with the type. Status:
-\textsc{assumed} (a modeling decision, proposed as an erratum-level
-clarification to the main paper's Definition ``Object-Type Semantics'').
-\end{assumption}
+The denotation $\sem{\cdot}$ is the \emph{greatest} solution of
+the membership equations. This is the reading under which cyclic values
+inhabit recursive types: \texttt{const x = \{\}; x.next = x} builds a
+cyclic value that TypeScript and SKJS deliberately type as \texttt{L},
+and the greatest solution contains exactly the values all of whose
+finite explorations are consistent with the type.
+\end{definition}
 
 Concretely we use the standard stratification. Define
 $\semn{t}{0} = \Val$ and let $\semn{t}{n+1}$ be the main paper's
@@ -709,7 +706,7 @@ and instantiating at the root gives L-SUB.
 
 \noindent
 \emph{Honesty box.} Theorem~\ref{thm:coind} is genuinely conditional on:
-SEM-GFP (a semantics choice the main paper must ratify); MR-1 (inherited
+MR-1 (inherited
 via the memo and via transport); O-ARRAYLIT; A-HASH; and one-step
 soundness of every stratum --- Part~II shows the last is where the
 substance and the violations live. Termination (that the cycle cache is
@@ -944,7 +941,8 @@ constraint it is an ordinary field and the get/set checks still ran).
 \impl{TType.sk / FieldAccess::isCompatibleWith}
 \end{proof}
 
-\begin{lemma}[Shared-Field Soundness, Write Direction --- Conditional]
+\begin{lemma}[Shared-Field Soundness, Write Direction --- Conditional
+(registry row L-SUB-FIELDS-SET)]
 \label{lem:both-set}
 The contravariant set check
 ($f_2.\mathsf{set} \leq f_1.\mathsf{set}$) and the readonly gate are
@@ -1104,15 +1102,10 @@ clause. The lax arm is TS-compatible width subtyping
 with the refinement layer into a concrete unsoundness candidate,
 because the main paper's \textsc{R-Typeof} proof \emph{uses} the violated
 clause: for \texttt{typeof x === "function"} the true branch
-\emph{drops} object branches with mode $\mathsf{None}$. Witness sketch
-(code-level derivation; no end-to-end run was performed --- wiring it as
-a pinned test is the recommended discharge):
-\begin{verbatim}
-const g: {} = () => {};          // accepted via the (-, None) arm
-if (typeof g === "function") {
-  const n: never = g;            // true branch: {}'s branch dropped,
-}                                // g : never -- yet the branch is taken
-\end{verbatim}
+\emph{drops} object branches with mode $\mathsf{None}$, so a function
+value admitted into \texttt{\{\}} through the lax arm is narrowed to
+\texttt{never} in a branch the program takes (executed witness: issue
+draft \path{issues/class-constructor-call-none-typeof.md}).
 The dichotomy is exact: either $\mathsf{None}$ means
 \emph{not callable} (then this subtyping arm is unsound) or it means
 \emph{unconstrained} (then \textsc{R-Typeof}'s drop --- and the
@@ -1125,8 +1118,7 @@ $(\mathsf{true}, \top\text{-sig})$ during narrowing) and re-read
 $\mathsf{None}$ as unconstrained --- keeps TS behavior, weakens
 narrowing precision, and requires re-proving \textsc{R-Typeof}. The same
 analysis applies verbatim to \texttt{new}/\textsf{constructible}.
-Status recommendation: \textsc{violated} (semantics-relative), pinned
-test recommended. \impl{TTypeSubtyping.sk / isSubOptTFuns first arm;
+\impl{TTypeSubtyping.sk / isSubOptTFuns first arm;
 TypeCheckRefine.sk / evalTypeofEquality}
 \end{finding}
 
@@ -1158,8 +1150,7 @@ Repair: compare brands in \texttt{isSub\_}
 ($\mathsf{Some}(x) \leq \mathsf{Some}(x)$;
 $\mathsf{None} \not\leq \mathsf{Some}(x)$), or downgrade the brand
 clause to advisory and re-prove \textsc{R-IsArray} without the
-$\mathsf{Some}(\mathsf{true})$-drop. Status recommendation:
-\textsc{violated} (semantics-relative), pinned test recommended.
+$\mathsf{Some}(\mathsf{true})$-drop.
 \impl{TTypeSubtyping.sk / TFields::isSub\_ (no isArray arm);
 TType.sk / TFields::create (brand stripping)}
 \end{finding}
@@ -1429,7 +1420,7 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
 
 \begin{enumerate}
 \item \emph{The L-SUB surface decomposes as}: L-SUB-ARCH (caches, dispatch,
-  coinduction; \textsc{proved} here mod A-HASH/SEM-GFP — except the
+  coinduction; \textsc{proved} here mod A-HASH — except the
   \texttt{subst.seenSub} component, \textsc{violated} via the witnessed
   MR-1 until the memo is version-keyed); L-SUB-PRIM (\textsc{proved});
   L-SUB-DNF ($\STypes$/$\Clauses$/\texttt{TObject} skeletons;
@@ -1440,10 +1431,9 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   E-SIG, residuals F-THIS/F-TPARAM); L-SUB-EXPVAR
   (\textsc{open}, O-GETCOV/O-GETCONTRA); L-SUB-ARRAYLIT
   (\textsc{open}).
-\item \emph{Recommended model extensions}: SEM-GFP (ratify the
-  greatest-fixpoint reading in Definition ``Object-Type Semantics'');
+\item \emph{Recommended model extensions}:
   E-SIG (adopt Extension~\ref{ext:esig}, replacing ``signatures are
-  opaque''); A-HASH (hash-consing identity) — all three are registry
+  opaque''); A-HASH (hash-consing identity) — both are registry
   entries. Note that adopting E-SIG strengthens the
   main paper's monotonicity axiom: its deflection of the contravariance
   counterexample (``membership never inspects parameter types'') stops

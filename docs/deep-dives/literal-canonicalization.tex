@@ -840,19 +840,10 @@ spells the same value in hex; \texttt{1e309} and \texttt{2e309} are both
 \texttt{Infinity} --- so injectivity (ii) fails, and through
 \texttt{PrimLiterals::inter}'s lexeme intersection
 (Corollary~\ref{cor:setops}'s parenthetical) equality narrowing types a
-reachable branch \texttt{never}:
-\begin{verbatim}
-function t(x: 9007199254740993 | "q",
-           y: 9007199254740992 | "r"): void {
-  if (x === y) {          // true at runtime: both are 2^53
-    const z: never = x;   // ACCEPTED
-    const s: string = z;  // a number flows into string
-    console.log(s);
-  }
-}
-t(9007199254740993, 9007199254740992);
-\end{verbatim}
-accepted with zero diagnostics, branch live at runtime. Falsiness (iii)
+reachable branch \texttt{never}: with the two $2^{53}$ spellings, an
+accepted \texttt{===}-true branch is live at runtime and a number flows
+into \texttt{string} (executed witness: issue draft
+\path{issues/beyond-precision-numeric-literals.md}). Falsiness (iii)
 fails on the same residue: the normalizer rewrites a longhand
 $10^{-400}$ decimal to the lexeme \texttt{"1e-400"}, whose IEEE value
 underflows to $+0$ --- falsy at runtime, yet \texttt{isFalsy}

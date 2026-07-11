@@ -1,61 +1,136 @@
-# Unsound: `instanceof` narrowing's fresh type argument is sealed by the first covariant use
+# Unsound: generic `instanceof` narrowing installs an empty inference argument
 
 Proposed labels: `soundness`, `bug`, `narrowing`, `inference`.
 
-## Summary
+## Finding
 
-Narrowing `x instanceof Box` instantiates `Box` with a fresh inference
-variable as the type argument. That variable is then *sealed by the first
-covariant use* in the branch (`grow(cov)` on unbound → `SVClosed`), so the
-narrowed type commits to whatever type the first read demanded — order-
-dependent and unsound. The `instanceof Array` special case (argument fixed
-to ⊤) is immune, which indicates the fix: instantiate narrowing-born
-arguments at ⊤ (or as read-only), not as growable candidates.
+The true branch of `x instanceof C` establishes that the runtime value is an
+instance of `C` at some type arguments within the class's declared bounds. In
+the soundness model this is the existential instance type
 
-## Minimal reproduction (self-contained)
+```text
+T_C^exists = union over U within the declared bounds of C<U>.
+```
 
-Reproduction: [`repros/instanceof-arg-sealing.ts`](repros/instanceof-arg-sealing.ts) — run
-`make check-file-in-docker FILE=docs/deep-dives/issues/repros/instanceof-arg-sealing.ts BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
+The implementation does not install that type. For a generic class it builds
+`T_C = C<a>` with a fresh, unbound inference variable `a`. Canonical
+`TVAR-SEM` gives an unbound variable the empty envelope. Consequently the
+bridge required by registry row `L-INST`,
 
-- SKJS: **exit 0, zero diagnostics**. No `any` appears anywhere
-  in the program.
-- node: prints `42` — a number returned from a `string`-typed function.
-- Order dependence (mechanism confirmation): adding a second read
-  `const n: number = x.v` after the first makes SKJS reject with the error
-  pointing at the *earlier* line — the first covariant use seals the
-  argument.
-- tsc `--strict` (5.7): **also accepts** — but by narrowing `unknown` to
-  `Box<any>`, i.e. through its declared `any` escape hatch (both a `string`
-  and a `number` read are accepted simultaneously). SKJS's failure is
-  `any`-free and order-dependent, which is a different and worse failure
-  mode; matching tsc would mean an explicit top/`any` argument, not a sealed
-  one.
+```text
+sem(T_C^exists) is contained in sem(T_C),
+```
 
-## Root cause
+is false: a runtime `C<number>` instance belongs to the existential type,
+but for a class with a parameter-typed field it does not belong to `C<a>`
+while `a` is unbound. The same instance witnesses the failure of `L-INST`
+itself — a value the runtime predicate accepts is outside the installed
+type — so `L-INST` fails when the branch type is installed, before the
+branch body is checked.
 
-`evalInstanceof` builds the instance type via `makeTArgs` → fresh inference
-candidates carrying declared bounds (`src/TypeCheckRefine.sk:352-365`); a
-later covariant `Subst::get`/`grow` seals the unbound candidate to the first
-expected type (`src/TTypeSubst.sk:188-208`). `instanceof Array` hardcodes
-`[top]` and is immune.
+The branch body turns this invalid installed type into an accepted program
+with a runtime type error. Its first covariant use may bind the fresh variable
+from the expected type of that use. No runtime value flow justifies that
+choice: the program context is allowed to choose the type argument of an
+object that already exists.
 
-## Relation to existing issues/PRs
+## Witness
 
-Checked: #697/PR #702 (instanceof RHS constructibility), PRs #713/#721/#740
-(candidate-widening discipline — different write path). The local
-`tests/expect-error/instanceof-rhs.ts` file exercises RHS validity and
-accepted construct/function RHS forms, but it does not inspect the type
-arguments minted by successful narrowing. Not previously tracked.
+Reproduction:
+[`repros/instanceof-arg-sealing.ts`](repros/instanceof-arg-sealing.ts).
+Run:
 
-## Suggested fix
+```sh
+make check-file-in-docker \
+  FILE=docs/deep-dives/issues/repros/instanceof-arg-sealing.ts \
+  BIN=target/host/dev/skjs
+```
 
-Instantiate `instanceof`-born type arguments at ⊤ (as the `Array` case
-already does), or mark them read-only so covariant contact cannot seal them.
+The essential program is:
 
-## Provenance
+```ts
+class Box<T> {
+  v: T;
+  constructor(v: T) {
+    this.v = v;
+  }
+}
 
-Deep dive A (`docs/deep-dives/runtime-grounding.tex`, finding 11);
-adversarially verified with runtime execution 2026-07-05; tsc's behavior
-(accepts via `Box<any>`) confirmed in the same pass. Main-paper obligation
-affected: Monotone Reads Under Growth (this
-is a witnessed violation instance).
+function h(x: unknown): string {
+  if (x instanceof Box) {
+    const s: string = x.v;
+    return s;
+  }
+  return "no";
+}
+
+console.log(h(new Box(42)));
+```
+
+- SKJS accepts with no diagnostics and no use of `any`.
+- At runtime `x` is a `Box<number>` and `x.v` is the number `42`.
+- The expected type of `s` causes the unbound argument to be closed as
+  `string`, so the checker accepts the read and the `string` return.
+- Node prints `42`: a number has crossed a checked `string` boundary.
+
+This directly falsifies type soundness at the corpus's capstone `L-TC`
+(checked expressions inhabit their checked types): the accepted function is
+declared to return `string`, but returns a number. It also demonstrates that
+the failed `L-INST` bridge is operationally reachable rather than merely an
+overly strong proof premise.
+
+As a mechanism check, adding `const n: number = x.v` after the string read
+makes SKJS reject and report the earlier read. The first expected type has
+already closed the shared argument as `string`, confirming that contextual
+use, rather than runtime evidence, selected the argument.
+
+## Implementation correspondence
+
+- `evalInstanceof` constructs the narrowed object using `makeTArgs`
+  (`src/TypeCheckRefine.sk`).
+- `makeTArgs` creates one fresh candidate per class parameter and attaches
+  its declared constraint (`src/TEnv.sk`).
+- A covariant `grow` on an unbound candidate installs the expected type as an
+  `SVClosed` binding (`src/TTypeSubst.sk`).
+
+These operations implement ordinary inference variables. They do not
+represent the fixed but hidden type arguments justified by the runtime
+`instanceof` result.
+
+The `instanceof Array` path is immune to this finding: `evalInstanceof`
+special-cases `Array` to the closed argument `top`
+(`src/TypeCheckRefine.sk`), so no unbound inference variable is installed.
+(The separate `Array.isArray` narrowing intersects with
+`ReadonlyArray<unknown>`.) The Array path has a distinct exposure of its
+own — the installed view is the mutable `Array<top>`, so writes through it
+are accepted at `top` — tracked as
+[`instanceof-array-mutable-top-view.md`](instanceof-array-mutable-top-view.md).
+
+## Sound repair shape
+
+The precise representation is a rigid/existential witness whose identity is
+fixed by the runtime object and cannot be bound by ordinary expected-type
+propagation. The checker may expose safe observations of that hidden type,
+but cannot manufacture values of it or redefine it from a use site.
+
+Substituting `top` for every argument also discharges the `L-INST` bridge —
+membership constrains values through get-types, which only weaken at `top` —
+but it licenses branch-local writes and parameter-typed method calls at
+`top` against an object whose actual argument is narrower, relocating the
+exposure to mutation and calls; without a read-only or variance-aware view
+it is not a sound repair. A conservative alternative is to suppress generic
+`instanceof` narrowing, or to expose only class structure independent of the
+hidden parameters.
+
+## Corpus location
+
+Deep dive A (`docs/deep-dives/runtime-grounding.tex`) owns `L-INST` and proves
+the runtime containment into `T_C^exists` under its stated hypotheses
+(`A-HASINST` — violated separately, see `symbol-hasinstance-narrowing.md` —
+`A-PROTO`, and `L-TC` at construction sites). This finding refutes the
+remaining bridge from `T_C^exists` to the fresh-`TVar` type installed by
+`evalInstanceof`. Registry row affected: `L-INST` (`violated`).
+
+TypeScript also accepts the witness by narrowing to `Box<any>`, but that is a
+separate, explicit `any` escape hatch. SKJS's counterexample is `any`-free and
+depends on inference order.

@@ -35,6 +35,7 @@ L-PURE & Evaluating a condition does not mutate the narrowed locals. & \textsc{v
 L-CAPT & Assignments to captured locals are checked against the binding's declared type. & \textsc{violated} \\
 L-CLONE & A type computed by \texttt{inter} under a cloned substitution over-approximates the intersection under the main one. & \textsc{proved} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & \textsc{assumed} \\
+L-MUT-ALIAS & A checked write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & \textsc{violated} \\
 L-GETSET & Get/set coherence of accessor fields. & \textsc{open} \\
 \end{longtable}
 \endgroup
@@ -55,7 +56,7 @@ Every runtime value carries exactly one tag consistent with its static tag (the 
 \texttt{inter} over-approximates set intersection — the containment clause; the $\bot \Rightarrow$ disjointness clause is the separate row L-INTER-BOT\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeInter.sk}}\par
 \nopagebreak
-\textsc{proved} (deep dive B) at every stratum, the instance layer conditionally on TVAR-SEM
+\textsc{proved} (deep dive B) at every stratum, using the canonical TVAR-SEM definition for the instance layer
 
 \medskip\par\noindent\textbf{L-INTER-BOT}\quad(\textsc{violated})\\*[0.15em]
 A $\bot$ result from \texttt{inter} implies semantic disjointness — the clause every branch-dropping refinement step and L-SUB's covariant variable read (O-GETCOV) consume\\*[0.15em]
@@ -85,7 +86,7 @@ Type denotations used as equality RHSs are $\approx$-closed\\*[0.15em]
 \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeSubtyping.sk}}\par
 \nopagebreak
-split (deep dive D): \textsc{proved} — dispatcher architecture, \texttt{tenv.seenSub} version-keying (corrected argument), coinductive reduction (modulo SEM-GFP), primitives, \texttt{STypes}, DNF covering, object skeleton, and the field stratum's read direction; conditional — field \emph{set} direction on L-MUT, functions on the E-SIG signature semantics; \textsc{violated} — \texttt{subst.seenSub} inside freeze windows (witnessed; issue draft \path{freeze-window-stale-memo-caches.md}), the \texttt{isSubOptTFuns} \texttt{None}-mode arm (F-CALL) and the never-compared array brand (F-BRAND), both facets of the \texttt{call{=}None} dichotomy
+split (deep dive D): \textsc{proved} — dispatcher architecture, \texttt{tenv.seenSub} version-keying (corrected argument), coinductive reduction (via SEM-GFP), primitives, \texttt{STypes}, DNF covering, object skeleton, and the field stratum's read direction; conditional — field \emph{set} direction on L-MUT, functions on the E-SIG signature semantics; \textsc{violated} — \texttt{subst.seenSub} inside freeze windows (witnessed; issue draft \path{freeze-window-stale-memo-caches.md}), the \texttt{isSubOptTFuns} \texttt{None}-mode arm (F-CALL) and the never-compared array brand (F-BRAND), both facets of the \texttt{call{=}None} dichotomy
 
 \medskip\par\noindent\textbf{A-CTOR-CALL}\quad(\textsc{violated})\\*[0.15em]
 Class-constructor values are typed with call mode $\mathsf{None}$, but constructors implement $[[\mathrm{Call}]]$ — the refinement side of the \texttt{call{=}None} dichotomy (Definition Signature Modes)\\*[0.15em]
@@ -109,7 +110,7 @@ Three claims about literal spellings: (i) $\delta$ is a function — definitiona
 $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalInstanceof}}\par
 \nopagebreak
-decomposed (deep dive A): conditionally \textsc{proved} modulo A-HASINST — \textsc{violated}, tsc-parity (issue draft \path{symbol-hasinstance-narrowing.md}) — and A-PROTO (\textsc{assumed}, enforced for checked code by stub omissions). Note that \texttt{makeTArgs} yields fresh candidates \emph{carrying declared bounds} (not unconstrained variables), and their survival is itself \textsc{violated} — a later covariant use seals the argument (witnessed; issue draft \path{instanceof-type-argument-sealing.md})
+decomposed (deep dive A): conditionally \textsc{proved} modulo A-HASINST — \textsc{violated}, tsc-parity (issue draft \path{symbol-hasinstance-narrowing.md}) — and A-PROTO (\textsc{assumed}, enforced for checked code by stub omissions). Note that \texttt{makeTArgs} yields fresh unbound inference candidates; under canonical TVAR-SEM they denote empty lower envelopes, so L-INST fails when the narrowed type is installed, and a later covariant use exposes the failure by sealing the argument from context (witnessed; issue draft \path{instanceof-type-argument-sealing.md})
 
 \medskip\par\noindent\textbf{L-ISARR}\quad(\textsc{proved})\\*[0.15em]
 $\mathsf{isArrayV}(o)$ implies $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$\\*[0.15em]
@@ -145,7 +146,13 @@ A type computed by \texttt{inter} under a cloned substitution over-approximates 
 Field writes are governed by $\mathsf{set}$-types via subtyping; membership semantics (get-only) is sound for the snapshot reads refinement performs\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TField}}\par
 \nopagebreak
-\textsc{assumed}; full mutation model out of scope. The tracked instance of this gap is issue \#598: field reassignment inside a refined branch does not re-widen the narrowed field, invalidating \textsc{R-EqField}/\textsc{R-TruthyField} results past the write. Deep dive F specifies the re-widening rule (W-Field)
+\textsc{assumed}; full mutation model out of scope. The tracked instance is issue \#598: field reassignment inside a refined branch does not re-widen the narrowed field, invalidating \textsc{R-EqField}/\textsc{R-TruthyField} results past the write; deep dive F specifies the re-widening rule (W-Field)
+
+\medskip\par\noindent\textbf{L-MUT-ALIAS}\quad(\textsc{violated})\\*[0.15em]
+Cross-view mutation coherence: a checked write through one mutable view preserves the membership guarantees of every live alias of the same runtime object\\*[0.15em]
+{\small\emph{Anchor:} \texttt{evalInstanceof}; indexed writes}\par
+\nopagebreak
+\textsc{violated} (deep dive H) at two witnessed sites — minted views (\texttt{instanceof Array}; issue draft \path{instanceof-array-mutable-top-view.md}) and narrowing-admitted aliases (issue draft \path{narrowed-alias-stale-write.md}); declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
 
 \medskip\par\noindent\textbf{L-GETSET}\quad(\textsc{open})\\*[0.15em]
 Get/set coherence of accessor fields — the prerequisite for the sound accessor variant of deep dive F's W-Field re-widening rule\\*[0.15em]

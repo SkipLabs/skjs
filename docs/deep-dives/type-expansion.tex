@@ -150,13 +150,10 @@ For a substitution state $\rho$ (Definition~\ref{def:subst-recap}):
   the set of runtime values of the originating array-literal expression —
   related to expansion only through assumption \textbf{E-ARR} below.
 \end{itemize}
-(V2) is the main paper's
-$\sem{\alpha}_\rho \subseteq \sem{\rho(\alpha)} \cap
-\bigcap_{c}\sem{c}$ (stated there for bound $\alpha$); (V1) extends the
-constraint containment to \emph{unbound} occurrences — that is the
-sharpened variable denotation of registry row TVAR-SEM (\textsc{open},
-owner B), which this paper therefore imports: the covariant-variable
-cases below are conditional on it.
+(V1)/(V2) are the main paper's canonical variable denotation, registry row
+TVAR-SEM: a bound occurrence denotes its envelope intersected with its
+occurrence constraints, and an unbound occurrence denotes $\emptyset$.
+This paper imports that definition.
 \end{definition}
 
 \subsection{The substitution state, condensed}

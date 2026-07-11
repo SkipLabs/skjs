@@ -68,6 +68,13 @@ papers:
     scope: >-
       Canonical literal forms: injectivity and falsiness-exactness of the
       lexeme tests over the parser's canonical literals.
+  - letter: H
+    file: view-coherence.tex
+    title: "View Coherence: the Write Surface of Installed Types"
+    scope: >-
+      The write-authorization surface of every view the checker admits or
+      installs — subtyping-admitted, narrowing-admitted, and minted views —
+      audited for cross-view coherence (L-MUT-ALIAS).
 
 entries:
   - id: L-TAG
@@ -106,7 +113,7 @@ entries:
       membership semantics)
     summary: [{bucket: proved, label: "L-UNION"}]
     owner: B
-    consumers: [C, E, F]
+    consumers: [C, E, F, H]
     issues: []
 
   - id: L-INTER
@@ -123,8 +130,8 @@ entries:
     anchor_files: [src/TTypeInter.sk]
     status: [proved]
     status_note: >-
-      \textsc{proved} (deep dive B) at every stratum, the instance layer
-      conditionally on TVAR-SEM
+      \textsc{proved} (deep dive B) at every stratum, using the canonical
+      TVAR-SEM definition for the instance layer
     summary:
       - {bucket: proved, label: "L-INTER's containment (all strata)"}
     owner: B
@@ -244,7 +251,7 @@ entries:
     status_note: >-
       split (deep dive D): \textsc{proved} — dispatcher architecture,
       \texttt{tenv.seenSub} version-keying (corrected argument),
-      coinductive reduction (modulo SEM-GFP), primitives, \texttt{STypes},
+      coinductive reduction (via SEM-GFP), primitives, \texttt{STypes},
       DNF covering, object skeleton, and the field stratum's read
       direction; conditional — field \emph{set} direction on L-MUT,
       functions on the E-SIG signature semantics; \textsc{violated} —
@@ -257,7 +264,7 @@ entries:
       - {bucket: proved, label: "the majority strata of L-SUB"}
       - {bucket: open, label: "L-SUB's conditional strata"}
     owner: D
-    consumers: [E, F]
+    consumers: [E, F, H]
     issues: [freeze-window-stale-memo-caches.md]
 
   - id: A-CTOR-CALL
@@ -365,13 +372,14 @@ entries:
       A-HASINST — \textsc{violated}, tsc-parity (issue draft
       \texttt{symbol-hasinstance-narrowing.md}) — and A-PROTO
       (\textsc{assumed}, enforced for checked code by stub omissions).
-      Note that \texttt{makeTArgs} yields fresh candidates \emph{carrying
-      declared bounds} (not unconstrained variables), and their survival is
-      itself \textsc{violated} — a later covariant use seals the argument
-      (witnessed; issue draft \texttt{instanceof-type-argument-sealing.md})
+      Note that \texttt{makeTArgs} yields fresh unbound inference candidates;
+      under canonical TVAR-SEM they denote empty lower envelopes, so L-INST
+      fails when the narrowed type is installed, and a later covariant use
+      exposes the failure by sealing the argument from context (witnessed;
+      issue draft \texttt{instanceof-type-argument-sealing.md})
     summary:
       - {bucket: violated-witnessed,
-         label: "L-INST's A-HASINST and fresh-argument survival"}
+         label: "L-INST's A-HASINST and fresh-argument representation"}
     owner: A
     consumers: []
     issues: [symbol-hasinstance-narrowing.md, instanceof-type-argument-sealing.md]
@@ -514,14 +522,45 @@ entries:
     status: [assumed]
     status_note: >-
       \textsc{assumed}; full mutation model out of scope. The tracked
-      instance of this gap is issue \#598: field reassignment inside a
-      refined branch does not re-widen the narrowed field, invalidating
-      \textsc{R-EqField}/\textsc{R-TruthyField} results past the write.
-      Deep dive F specifies the re-widening rule (W-Field)
-    summary: [{bucket: assumed, label: "L-MUT"}]
+      instance is issue \#598: field reassignment
+      inside a refined branch does not re-widen the narrowed field,
+      invalidating \textsc{R-EqField}/\textsc{R-TruthyField} results past
+      the write; deep dive F specifies the re-widening rule (W-Field)
+    summary:
+      - {bucket: assumed, label: "L-MUT"}
     owner: main
-    consumers: [D, F, A]
+    consumers: [D, F, A, H]
     issues: []
+
+  - id: L-MUT-ALIAS
+    kind: assumption
+    table: main
+    short: >-
+      A checked write through one mutable view preserves the membership
+      guarantees of every live alias of the same runtime object.
+    statement: >-
+      Cross-view mutation coherence: a checked write through one mutable
+      view preserves the membership guarantees of every live alias of the
+      same runtime object
+    anchor: \texttt{evalInstanceof}; indexed writes
+    anchor_files: [src/TypeCheckRefine.sk, src/TypeCheckExpr.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} (deep dive H) at two witnessed sites — minted
+      views (\texttt{instanceof Array}; issue draft
+      \texttt{instanceof-array-mutable-top-view.md}) and
+      narrowing-admitted aliases (issue draft
+      \texttt{narrowed-alias-stale-write.md}); declaration-only aliasing
+      is coherent, conditional on L-SUB-FIELDS-SET
+    summary:
+      - {bucket: violated-witnessed,
+         label: "cross-view mutation coherence L-MUT-ALIAS (minted
+           \\texttt{Array}$\\langle\\top\\rangle$ views;
+           narrowing-admitted aliases)"}
+    owner: H
+    consumers: [A, F]
+    issues: [instanceof-array-mutable-top-view.md,
+             narrowed-alias-stale-write.md]
 
   - id: L-GETSET
     kind: series-obligation
@@ -536,7 +575,7 @@ entries:
     status_note: \textsc{open} (deep dive F)
     summary: [{bucket: open, label: "L-GETSET"}]
     owner: F
-    consumers: []
+    consumers: [H]
     issues: []
 
   # ---- Section-6 obligations of the main paper ----------------------------
@@ -552,20 +591,18 @@ entries:
     anchor_files: [src/TTypeSubst.sk, src/TTypeSubtyping.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} in three witnessed instances —
-      \texttt{instanceof}-born argument sealing, the freeze-window memo
-      staleness MR-1, and the unsealed \texttt{peekRaw} read of the
-      reflexive \texttt{TSInst} arm (L-SUB-TSINST, not memo-mediated);
-      the general transport statement is the separate \textsc{proved}
-      row E-TRANSPORT
+      \textsc{violated} in two witnessed instances —
+      the freeze-window memo staleness MR-1 and the unsealed \texttt{peekRaw}
+      read of the reflexive \texttt{TSInst} arm (L-SUB-TSINST, not
+      memo-mediated); the general transport statement is the separate
+      \textsc{proved} row E-TRANSPORT
     summary:
       - {bucket: violated-witnessed,
-         label: "the three witnessed instances of OBL-MONOTONE (sealing;
-           MR-1; the reflexive-\\texttt{TSInst} read)"}
+         label: "the two witnessed instances of
+           OBL-MONOTONE (MR-1; the reflexive-\\texttt{TSInst} read)"}
     owner: E
     consumers: [A, D]
-    issues: [instanceof-type-argument-sealing.md,
-             freeze-window-stale-memo-caches.md,
+    issues: [freeze-window-stale-memo-caches.md,
              reflexive-tsinst-fastpath-unsealed-read.md]
 
   - id: OBL-RESTORE
@@ -760,21 +797,25 @@ entries:
     issues: []
 
   - id: SEM-GFP
-    kind: series-assumption
+    kind: series-lemma
     table: series
     short: >-
-      The set-theoretic semantics is read as a greatest fixpoint for
-      recursive types.
-    statement: ""
-    anchor: main paper semantics
+      The set-theoretic semantics is the greatest solution of the
+      recursive membership equations.
+    statement: >-
+      Greatest-fixpoint reading: $\sem{\cdot}$ is the greatest solution
+      of the recursive membership equations.
+    anchor: main paper object semantics
     anchor_files: []
-    status: [assumed]
+    status: [proved]
     status_note: >-
-      \textsc{assumed} (deep dive D; a semantics choice the main paper
-      should ratify)
-    summary: []
-    owner: D
-    consumers: []
+      \textsc{proved} by definition in the main paper (every recursive
+      occurrence in the membership conditions is positive, so the greatest
+      solution exists); deep dive D supplies the stratified
+      characterization used by the coinductive reduction
+    summary: [{bucket: proved, label: "SEM-GFP"}]
+    owner: main
+    consumers: [D]
     issues: []
 
   - id: E-SIG
@@ -792,7 +833,7 @@ entries:
       object semantics)
     summary: []
     owner: D
-    consumers: []
+    consumers: [H]
     issues: []
 
   - id: A-HASH
@@ -874,19 +915,77 @@ entries:
     issues: [symbol-hasinstance-narrowing.md]
 
   - id: TVAR-SEM
-    kind: series-obligation
+    kind: series-lemma
     table: series
     short: >-
-      Sharpened variable denotation (get-time constraint intersection as
-      definition), verified against every consumer.
-    statement: ""
+      A type-variable occurrence denotes its substitution envelope
+      intersected with its occurrence constraints; an unbound envelope is
+      empty.
+    statement: >-
+      Canonical \texttt{TVar} denotation: an occurrence denotes its
+      substitution envelope intersected with its occurrence constraints;
+      an unbound envelope is empty.
     anchor: \texttt{Subst::get}/\texttt{peek}
     anchor_files: [src/TTypeSubst.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} by definition in the main paper and matched to
+      \texttt{Subst::get}: missing bindings read as bottom contravariantly
+      and seal to top before a covariant expansion; occurrence constraints
+      are intersected after either read
+    summary: [{bucket: proved, label: "TVAR-SEM"}]
+    owner: main
+    consumers: [A, B, C, E, H]
+    issues: []
+
+  - id: SET-SEM
+    kind: series-lemma
+    table: series
+    short: >-
+      A view authorizes exactly the writes its resolved
+      $\mathsf{set}$-types accept; a readonly field authorizes nothing.
+    statement: >-
+      Write authorization: a view authorizes the write of $v$ at key $p$
+      iff $v$ inhabits the resolved $\mathsf{set}$-type of $p$
+      (intersected named-field $\mathsf{set}$-types, else the covering
+      index's); readonly ($\mathsf{set}=\bot$) authorizes nothing;
+      call-mediated writes are E-SIG's
+    anchor: \texttt{TFields::resolveFieldType} (\texttt{isLValue})
+    anchor_files: [src/TType.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved} by definition in the main paper and matched to the
+      checker's write path: assignment checks the right-hand side against
+      the resolved $\mathsf{set}$-type by subtyping
+    summary: [{bucket: proved, label: "SET-SEM"}]
+    owner: main
+    consumers: [H]
+    issues: []
+
+  - id: L-SUB-FIELDS-SET
+    kind: series-lemma
+    table: series
+    short: >-
+      \texttt{isSub}'s field arms preserve write capability downward:
+      acceptance implies each target field's $\mathsf{set}$-type is below
+      the source's, and readonly fields acquire no writers.
+    statement: >-
+      Write-capability preservation: field acceptance requires
+      $f_2.\mathsf{set} \leq f_1.\mathsf{set}$ (contravariant) and the
+      readonly gate, so under SET-SEM an admitted view authorizes only
+      writes the source view authorizes
+    anchor: \texttt{TFields::isSub\_}
+    anchor_files: [src/TTypeSubtyping.sk]
     status: [open]
-    status_note: \textsc{open} (deep dive B)
-    summary: [{bucket: open, label: "TVAR-SEM"}]
-    owner: B
-    consumers: [C]
+    status_note: >-
+      \textsc{open} (conditional): the syntactic checks are verified at
+      every field arm (deep dive D, write-direction lemma); the SET-SEM
+      containment they induce is conditional on the recursive
+      \texttt{isSub} verdicts, exactly as the read direction is inside
+      L-SUB
+    summary: []
+    owner: D
+    consumers: [H]
     issues: []
 
   - id: O-GETCOV

@@ -571,13 +571,15 @@ with $v \in \sem{\tau_{\rm RHS}}$ and $o = \sigma_L(x)$, then
 $\sigma' \models_\rho U(\Env)$ for the W-Field update $U$ — provided $f$
 is data-backed in $o$ \emph{and} no other local's recorded type views the
 same object through a wider $\mathsf{set}$-type for $f$ (cross-alias
-get/set coherence). The latter hypothesis is not discharged here: a
-declared alias \texttt{const y:\ \{f:\ number\} = x} after narrowing
-\texttt{x} admits a legal write \texttt{o.f := null} that $U$ leaves
-unrecorded on $y$ — a hole shared with tsc (property covariance) and
-strictly stronger than Obligation~\ref{obl:getset}; absent a coherence
-invariant, the ``\textsc{proved} for data fields'' trajectory is a
-tsc-parity residue, not an unconditional discharge.
+get/set coherence — registry row \textbf{L-MUT-ALIAS}). The latter
+hypothesis fails at the pin: the alias
+\texttt{const y:\ \{f:\ number\} = x} \emph{is admitted} after narrowing
+and the legal write \texttt{o.f := null} through \texttt{x} is
+unrecorded on $y$ (mechanism, executed witness, and tsc comparison:
+issue draft \path{issues/narrowed-alias-stale-write.md}). The
+hypothesis is strictly stronger than Obligation~\ref{obl:getset}; its
+site-by-site grading — including the minted views that need no declared
+alias at all — is deep dive H's.
 \end{lemma}
 \begin{proof}
 Only $x$'s entry changes and only $o$'s $f$-property changed in
@@ -695,8 +697,14 @@ L-PURE & Fix specified: Policy P1--P4. Lemma~\ref{lem:preservation}
   closure-body read and event-model residues remain \\
 L-MUT & \#598 has a specified re-widening rule (W-Field, adequate by
   Lemma~\ref{lem:rewiden-sound} for data fields); accessor residue
-  gated on get/set coherence (Obligation~\ref{obl:getset}). &
-  data fields discharged once W-Field lands \\
+  gated on get/set coherence (Obligation~\ref{obl:getset}); the
+  cross-view facet is the separate row L-MUT-ALIAS, witnessed via
+  \texttt{instanceof Array} and via narrowing-admitted aliases, both
+  outside W-Field's reach (issue drafts
+  \texttt{instanceof-array-mutable-top-view.md},
+  \texttt{narrowed-alias-stale-write.md}; graded in deep dive H). &
+  data fields discharged once W-Field lands; L-MUT-ALIAS needs its
+  own fix (\texttt{ReadonlyArray}) \\
 L-LOCAL & The captured-local half made precise: closure bodies read
   enclosing narrowings valid at creation, not invocation
   (Finding~\ref{find:stale-read}); P3 blocks inflow for

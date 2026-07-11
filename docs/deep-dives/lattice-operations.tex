@@ -86,8 +86,9 @@ union at all levels), established here \emph{exact at every stratum};
 \textbf{L-INTER} (the containment clause of intersection); and
 \textbf{L-INTER-BOT} (the $\bot$-implies-disjointness clause), which
 splits here into an exact containment and the $\bot$-clause, refuted in
-three strata. It also owns the cache obligation C-FREEZE-CACHE and the
-variable-denotation obligation TVAR-SEM, both raised by its proofs.
+three strata. It also owns the cache obligation C-FREEZE-CACHE; its
+proofs consume the canonical variable-denotation row TVAR-SEM (owner:
+main paper).
 
 \noindent
 Note that the two halves of L-INTER are one property: if
@@ -153,9 +154,9 @@ main paper, prove it or reduce it to a named assumption, and separately
 classify every $\bot$-producing site as \emph{semantic} (disjointness
 holds) or \emph{heuristic} (it does not). Claims about observable behavior
 were tested against the pinned checker binary
-(\texttt{target/host/dev/skjs} built from \texttt{\skjspinhash}, run via
-\texttt{make check-file-in-docker}); Section~\ref{sec:findings} reproduces
-the probe programs.
+(\texttt{target/host/dev/skjs}, run via
+\texttt{make check-file-in-docker}); the probe protocol and pointers to
+the executed witnesses are Section~\ref{sec:findings}.
 
 %==========================================================================
 \section{Union, Level by Level}
@@ -567,8 +568,8 @@ permissive direction: a write accepted because only $b_1$'s set-type
 allows it can break $b_2$'s get-assumption on the same key. That is
 a field-write concern --- membership is snapshot (main paper, object
 semantics), writes are governed by subtyping --- so we do not count it
-against L-INTER; we flag it so the eventual mutation model audits
-\texttt{set}-union deliberately rather than inheriting it silently.
+against L-INTER; deep dive H audits this direction against the
+write-authorization semantics.
 \impl{TTypeInter.sk / TField::inter (set => TType::union)}
 
 \paragraph{Indexes (sound, via the covering semantics).}
@@ -692,9 +693,9 @@ Returns $\alpha$ with the other operand attached as a constraint:
 is frozen, the method returns a new \texttt{TVar} value, and constraints
 are occurrence-level, not shared state (registry row SETCONSTRAINT-FUN,
 deep dive~E) — so no other occurrence of $\alpha$ changes meaning. For
-the returned occurrence, adopt the natural sharpening of the main
-paper's TVar semantics: define
-$\sem{\alpha^{\mathit{cs}}}_\rho \triangleq \sem{\alpha^{\emptyset}}_\rho
+the returned occurrence, the main paper's canonical TVAR-SEM definition
+states
+$\sem{\alpha^{\mathit{cs}}}_\rho = \sem{\alpha^{\emptyset}}_\rho
 \cap \bigcap_{c \in \mathit{cs}} \sem{c}_\rho$, matching
 \texttt{Subst::get}, which intersects the binding's expansion with the
 occurrence's constraints at every read. Then
@@ -702,10 +703,7 @@ $\sem{\alpha^{\mathit{cs}}} \cap \sem{t} =
 \sem{\alpha^{\mathit{cs} \cup \{t\}}}$ \emph{exactly}, at every state —
 provided the get-time intersection itself over-approximates, which is
 L-INTER again, applied at read time; the circularity is benign (an
-inductive appeal at the strictly later read), but since the main paper
-states TVar semantics only as an upper bound, we record the sharpened
-definition as a named obligation for the TVar deep dive
-(Obligation~\ref{obl:tvar-sem}). Never $\bot$.
+inductive appeal at the strictly later read). Never $\bot$.
 \impl{TTypeInter.sk / inter\_ (setConstraint arms); TType.sk /
 TVar::setConstraint; TTypeSubst.sk / Subst::get (constraint loop)}
 
@@ -890,15 +888,16 @@ while frozen.
 TTypeInter.sk / TType::inter (hasTVar guard, re-entrant arm)}
 \end{obligation}
 
-\begin{obligation}[TVAR-SEM: Sharpened Variable Denotation]
-\label{obl:tvar-sem}
-Adopt (in the TVar/substitution deep dive) the definition
+\begin{lemma}[Constraint Attachment is Exact under TVAR-SEM]
+\label{lem:tvar-sem}
+By the main paper's canonical variable denotation (registry row
+\textbf{TVAR-SEM}),
 $\sem{\alpha^{\mathit{cs}}}_\rho = \sem{\alpha^{\emptyset}}_\rho \cap
-\bigcap_{c}\sem{c}_\rho$ and verify it against every consumer of
-\texttt{Subst::get}/\texttt{peek}; Section~\ref{sec:inter-inst}(ii)'s
-exactness claim for constraint attachment is conditional on it. The main
-paper's one-sided inequality is implied by it.
-\end{obligation}
+\bigcap_{c}\sem{c}_\rho$, with
+$\sem{\alpha^{\emptyset}}_\rho=\emptyset$ when $\alpha$ is unbound.
+Therefore Section~\ref{sec:inter-inst}(ii)'s constraint-attachment result
+is exact.
+\end{lemma}
 
 Two further hygiene points, verified benign: the re-entrant arm of
 \texttt{TType::inter} (a recursive call cached the pair first) returns
@@ -913,39 +912,23 @@ idempotent operands.
 \label{sec:findings}
 
 All probes were run against the pinned binary
-(\texttt{target/host/dev/skjs}, built from \texttt{\skjspinhash}) via
+(\texttt{target/host/dev/skjs}) via
 \texttt{make check-file-in-docker}. ``Accepted'' means zero diagnostics.
 
 \subsection{Probe 2: signature bottom (Finding~\ref{find:tfun})}
-\begin{verbatim}
-function p2(k: (s: string) => void, g: (n: number) => void): void {
-  if (k === g) {
-    const z: never = k;   // ACCEPTED (silently)
-    console.log(z);
-  }
-}
-\end{verbatim}
-Runtime witness: \texttt{const h = (x: unknown) => \{\}} inhabits both
-parameter types; \texttt{p2(h, h)} takes the branch — and the call
-\texttt{p2(h, h)} is itself accepted by the checker, so a single accepted
-program demonstrates the unsoundness end-to-end (issue draft
-\path{issues/tfun-inter-incomparable-not-disjoint.md}). tsc flags the
-comparison itself with TS2367; either way tsc rejects the program.
+\texttt{if (k === g)} on incomparable signature types narrows \texttt{k}
+to \texttt{never} in a branch a single accepted program takes at
+runtime; the end-to-end witness and the tsc comparison are issue draft
+\path{issues/tfun-inter-incomparable-not-disjoint.md}.
 
 \subsection{Probe 3: literal spellings (Finding~\ref{find:spelling})}
 \begin{finding}[Spelling-Sensitive Disjointness]
 \label{find:spelling}
-\leavevmode
-\begin{verbatim}
-function p3(a: "\x61", b: "a"): void {
-  if (a === b) {          // warning: "comparison is always false
-    const z: never = a;   //   because the operand types do not
-    console.log(z);       //   overlap" -- and z: never ACCEPTED
-  }
-}
-\end{verbatim}
-\texttt{"\textbackslash x61" === "a"} is \emph{true} at runtime (both
-denote \texttt{"a"}), so both the warning and the narrowing are wrong.
+With \texttt{a: "\textbackslash x61"} and \texttt{b: "a"}, the checker
+warns that \texttt{a === b} never holds and narrows the true branch to
+\texttt{never} — yet the comparison is \emph{true} at runtime (both
+spellings denote \texttt{"a"}), so both the warning and the narrowing
+are wrong; the executed witness is with the issue draft cited below.
 This is not a new root cause: it is the \emph{string}-kind
 \textbf{L-LIT}(ii) violation (escape sequences stored undecoded, issue
 draft \path{issues/string-literal-escapes-undecoded.md}) propagating
@@ -957,21 +940,12 @@ numeric spellings do not trigger it: the parser normalizes them, so
 numeric spellings do trigger it, through the same lemma: spellings that
 alias one double are kept distinct (the num-kind \textbf{L-LIT}(ii)
 violation, issue draft
-\path{issues/beyond-precision-numeric-literals.md}), so their lexeme
+\path{issues/beyond-precision-numeric-literals.md}, which carries the
+executed witness: two $2^{53}$ spellings make an accepted
+\texttt{===}-true branch live at runtime with a spurious \texttt{never},
+and a number flows into \texttt{string}), so their lexeme
 intersection is empty while their value sets coincide.
-\begin{verbatim}
-function t(x: 9007199254740993 | "q",
-           y: 9007199254740992 | "r"): void {
-  if (x === y) {          // both num spellings are the double 2^53
-    const z: never = x;   //   -- ACCEPTED, and t's call below makes
-    const s: string = z;  //   the branch live: a number inhabits
-    console.log(s);       //   never and flows into string
-  }
-}
-t(9007199254740993, 9007199254740992);
-\end{verbatim}
-The program is accepted with zero diagnostics and the branch executes at
-runtime. The comparison \emph{lint} knows the runtime truth —
+The comparison \emph{lint} knows the runtime truth —
 \texttt{checkComparisonOverlap} is silenced for imprecise pairs by
 \texttt{hasImpreciseNumberLiteral}
 (\texttt{TypeCheckExpr.sk:1448-1458}), its comment citing this very pair
@@ -1000,11 +974,8 @@ each of which became a Finding or Obligation rather than a theorem:
 (2) literal-level $\bot$-implies-disjoint without the string-kind and
 beyond-precision num-kind L-LIT(ii) — refuted, both kinds
 (Finding~\ref{find:spelling});
-(4) unconditional \texttt{seenInter} reuse — the sealing argument's
-freeze gap resisted proof and is Obligation~\ref{obl:freeze-cache};
-(5) exactness of constraint attachment from the main paper's one-sided
-TVar axiom alone — needs the sharpened denotation,
-Obligation~\ref{obl:tvar-sem}.
+(3) unconditional \texttt{seenInter} reuse — the sealing argument's
+freeze gap resisted proof and is Obligation~\ref{obl:freeze-cache}.
 We found \emph{no} defect in: any union stratum, the field/index/brand
 strata of intersection, the instance-layer arms, the clause product, or
 the in-flight cycle handling.
@@ -1048,8 +1019,8 @@ Inter: call/new & signature-failure branch drop
 Inter: Clause/Clauses product & Lemmas~\ref{lem:clause-inter},
   \ref{lem:clauses-inter} (derived) \\
 Inter: instance layer (constraints, TInter, speculative returns) &
-  Section~\ref{sec:inter-inst}; never $\bot$, conditional on
-  Obligation~\ref{obl:tvar-sem} \\
+  Section~\ref{sec:inter-inst}; never $\bot$, via TVAR-SEM
+  (Lemma~\ref{lem:tvar-sem}) \\
 \texttt{seenInter} cache & sealing argument + freeze gap
   (Obligation~\ref{obl:freeze-cache}) \\
 Cloned-subst reuse of results & clone-stability, via the fork-state
@@ -1074,8 +1045,8 @@ membership semantics and remain part of the subtyping surface.''
 \item \textbf{L-INTER-a} (units, tags, fields, indexes, brand, clause
   product, instance layer): \textsc{proved} (this document,
   Sections~\ref{sec:inter-prim}--\ref{sec:inter-inst}); the instance
-  layer conditionally on \textbf{TVAR-SEM}
-  (Obligation~\ref{obl:tvar-sem}).
+  layer using \textbf{TVAR-SEM}
+  (Lemma~\ref{lem:tvar-sem}).
 \item \textbf{L-INTER-b} (literal sets): \textsc{violated} for the
   \emph{string} kind — inherits \textbf{L-LIT}(ii) undecoded escapes —
   and for \emph{beyond-precision} numeric spellings, which alias one
@@ -1104,10 +1075,8 @@ which \texttt{ReadonlyArray} does not). As with the main paper's other
 \textsc{violated} entries, the violations are local to leaf strata:
 b--d are code fixes that change no statement or proof in this
 document, after which L-INTER-a--d are all \textsc{proved} and only
-the \textsc{open} obligation C-FREEZE-CACHE remains here. Each of the three witnesses should
-be wired as a
-pinned test per the main paper's maintenance discipline (probes 1--4,
-Section~\ref{sec:findings}).
+the \textsc{open} obligation C-FREEZE-CACHE remains here. Each violated stratum carries a pinned end-to-end repro with its issue
+draft under \path{issues/repros/}, asserted by the registry tooling.
 
 \paragraph{Registry.}
 The authoritative, current statuses are maintained in the registry

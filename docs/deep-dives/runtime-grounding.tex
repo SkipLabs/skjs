@@ -101,9 +101,9 @@ shown to be \emph{exactly} the ECMAScript algorithms, transported along
 the realization map (Sections~\ref{sec:seq} and~\ref{sec:truthy}).
 
 Failed discharge attempts are reported as numbered
-\emph{Findings}. Three of them come with programs that the pinned checker
-accepts (verified by running \texttt{skjs check} at the pinned revision)
-and that misbehave when executed on Node: they are witnesses, not
+\emph{Findings}. Three of them carry executed witnesses — programs the
+pinned checker accepts that misbehave on Node, each held with its issue
+draft and pinned repro under \path{issues/}: they are witnesses, not
 conjectures. All spec citations are to ECMA-262 as of the 2025 edition;
 clause \emph{numbers} drift between editions, so each citation also names
 the clause.
@@ -484,25 +484,12 @@ runtime constructor value \emph{is} callable
 (\texttt{typeof C === "function"}). So $\sem{\texttt{typeof } C}$
 excludes the value $C$ itself — \textbf{L-TC} is violated at
 class-constructor values — and \textsc{R-Typeof}, whose narrowing is
-sound \emph{given} membership, misfires. Checked witness (accepted by
-the pinned checker, exit 0; \texttt{tsc} rejects it):
-\begin{verbatim}
-class C { a: number = 1 }
-function g(): string {
-  const F = C;
-  if (typeof F === "function") {
-    const s: string = F;   // accepted: the branch narrowed F to bottom
-    return s;
-  }
-  return "not a function";
-}
-console.log(g());          // Node prints: [class C]
-\end{verbatim}
-At runtime the true branch is taken; the checker had dropped the sole
-object member of $F$'s type (call mode $\mathsf{None}$ $\to$ drop in the
-\texttt{"function"}/true arm), leaving an uninhabited type from which
-the \texttt{string} annotation is vacuously reachable. $g()$ returns a
-class constructor as a \texttt{string}. The false branch of
+sound \emph{given} membership, misfires: the \texttt{"function"}/true
+arm drops the sole object member of a class-constructor value's type
+(call mode $\mathsf{None}$), leaving an uninhabited type from which any
+annotation is vacuously reachable, and the branch is taken at runtime.
+Executed witness (tsc rejects the program): issue draft
+\path{issues/class-constructor-call-none-typeof.md}. The false branch of
 \texttt{typeof F === "object"} misfires symmetrically. The defect is not
 in \textsc{R-Typeof}'s rule (the main paper's proof is correct given
 membership) nor in the runtime facts (grounded above); it is in the
@@ -569,18 +556,14 @@ single argument $\top$.
 \impl{TypeCheckRefine.sk / evalCond (InstanceOf arm), evalInstanceof}
 \impl{TEnv.sk / hasClassDef, makeTArgs, newObject}
 
-This pins the accurate discharge premise, recorded in the main paper's
-L-INST row: the chosen arguments are fresh, but \emph{not} unconstrained
-when the class declares parameter bounds
-(\texttt{class C<T extends U>}). Freshness plus declared-bounds-only is
-what actually holds — and
-declared bounds are harmless for the inclusion, because every runtime
-instance was constructed through a \texttt{new}-check that enforced them
-(under \textbf{L-TC} at construction sites).
+This pins the representation used by the implementation, and canonical
+TVAR-SEM pins its denotation: until a binding is installed, each fresh
+argument denotes the empty set, and the attached declared constraint
+intersects with that empty envelope.
 
 \subsection{Conditional discharge and the honest caveats}
 
-\begin{theorem}[Conditional discharge of \textbf{L-INST}]
+\begin{theorem}[Existential discharge of \textbf{L-INST}]
 \label{thm:inst}
 Assume, for the class $C$ at a narrowing site:
 \begin{itemize}
@@ -597,9 +580,12 @@ Assume, for the class $C$ at a narrowing site:
   establishes the instance object type of the constructed class
   (fields present and typed, per the class-checking discipline).
 \end{itemize}
-Then $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}_{\rho'}$ at the
-post-instantiation state $\rho'$, reading the fresh unbound arguments'
-denotations as unconstrained-within-declared-bounds.
+Let $T_C^{\exists}$ be the existential instance type, with
+$\sem{T_C^{\exists}}_{\rho'} = \bigcup_{\vec U}
+\sem{C\langle\vec U\rangle}_{\rho'}$, the union over argument tuples
+$\vec U$ within the declared bounds. Then
+$P_{\mathsf{inst}}(C) \subseteq \sem{T_C^{\exists}}_{\rho'}$ at the
+post-instantiation state $\rho'$.
 \end{theorem}
 \begin{proof}[Proof sketch]
 By \textbf{A-HASINST}, membership in $P_{\mathsf{inst}}(C)$ is decided by
@@ -610,17 +596,20 @@ $C\langle \vec U \rangle$ with $\vec U$ within the declared bounds. By
 \textbf{L-TC} at the construction site, $v$ then satisfies the instance
 object type of $C\langle \vec U \rangle$: every declared field present
 with a $\vec U$-instantiated get-type, inherited fields included
-(subclass constructors must complete \texttt{super()}). Since $T_C$'s
-arguments are \emph{fresh and unbound at $\rho'$}, each field constraint
-of $T_C$ weakens to its declared bound, which $\vec U$ satisfies; so
-$v \in \sem{T_C}_{\rho'}$. Mutation after construction is governed by
+(subclass constructors must complete \texttt{super()}). $\vec U$ is
+within the declared bounds, so its disjunct of $T_C^{\exists}$ contains
+$v$ and $v \in \sem{T_C^{\exists}}_{\rho'}$. Mutation after construction is governed by
 \textbf{L-MUT} exactly as for every other membership statement in the
 main paper.
 \end{proof}
 
-Each hypothesis must now be audited against the implementation. The
-audit \emph{fails} for the first, and the aftermath of the theorem
-fails for the freshness clause; both failures are pinned.
+\textbf{L-INST} itself is stated for the implementation's $T_C$, so the
+theorem discharges it exactly when
+$\sem{T_C^{\exists}}_{\rho'} \subseteq \sem{T_C}_{\rho'}$ — the bridge
+from the existential type to the installed representation. Each
+hypothesis and the bridge must now be audited against the implementation.
+The audit fails for A-HASINST and for the bridge; both failures are
+pinned.
 
 \begin{finding}[\textbf{A-HASINST} is violated: SKJS accepts
 \texttt{@@hasInstance} overrides and narrows anyway]
@@ -633,31 +622,16 @@ declare — computed symbol-keyed members resolve into symbol fields
 \texttt{Symbol.hasInstance} is a stubbed \texttt{unique symbol}.
 The implementation itself documents the gap
 (``Mirrors tsc's TS2359 acceptance (modulo \texttt{Symbol.hasInstance},
-which SKJS does not model)'', \texttt{isInstanceofRhs}). Checked
-witness (accepted at the pin, exit 0):
-\begin{verbatim}
-class C {
-  a: number = 1;
-  static [Symbol.hasInstance](x: unknown): boolean { return true; }
-}
-function f(x: unknown): number {
-  if (x instanceof C) { return x.a; }   // narrowed to C
-  return 0;
-}
-console.log(f("not a C"));              // Node prints: undefined
-\end{verbatim}
-At runtime step 2 of \texttt{InstanceofOperator} finds the static
-method, every value is ``an instance'', and \texttt{f} returns
-\texttt{undefined} at type \texttt{number}. Two mitigations narrow the
-blast radius: (i) the override must be declared \emph{in the checked
-program itself} on a class the same program narrows on — ambient code
-cannot smuggle one in unseen, since the stubs declare none; (ii) the
-hole is shared with \texttt{tsc}, which also narrows here (a
-boolean-returning \texttt{@@hasInstance} does not disable
-constructor-based narrowing there; only \texttt{is}-predicate returns
-change it). Cheap repairs exist: reject static
-\texttt{[Symbol.hasInstance]} declarations, or skip narrowing for
-classes that declare one (the definition is available at the gate).
+which SKJS does not model)'', \texttt{isInstanceofRhs}). At runtime,
+step 2 of \texttt{InstanceofOperator} finds a program-declared static
+override, every value is ``an instance'', and the narrowed read
+produces a value outside its checked type; the executed witness, the
+tsc-parity confirmation, and the repair directions are issue draft
+\path{issues/symbol-hasinstance-narrowing.md}. One mitigation is
+structural and belongs to this grounding: the override must be declared
+\emph{in the checked program itself} on a class the same program
+narrows on — ambient code cannot smuggle one in unseen, since the stubs
+declare none.
 \impl{TypeCheckRefine.sk / evalCond (InstanceOf arm)}
 \impl{TEnv.sk / addFields (FNComputed), resolveComputedKeyFieldKey}
 \impl{TypeCheckExpr.sk / isInstanceofRhs (comment)}
@@ -666,46 +640,31 @@ classes that declare one (the definition is available at the gate).
 \begin{finding}[Instantiation weakness is real: fresh arguments are
 sealed by later covariant use]
 \label{find:fresh-seal}
-Theorem~\ref{thm:inst} holds \emph{at the narrowing instant}, and the
-main paper's \textsc{R-Inst} lemma correctly delegates the survival of
-membership under later substitution evolution to its
-Obligation~\emph{Monotone Reads Under Growth} — whose status there is
-\textsc{violated}, this finding being one of its two witnessed
-instances:
+The bridge $\sem{T_C^{\exists}}_{\rho'} \subseteq \sem{T_C}_{\rho'}$
+fails for the concrete fresh-\texttt{TVar} representation: by the main
+paper's canonical TVAR-SEM definition, an unbound argument denotes an
+empty inference lower bound, so for a class with a parameter-typed field
+no constructed instance is in $\sem{T_C}_{\rho'}$, and \textbf{L-INST}
+fails at the narrowing instant. A later use exposes the failure
+operationally:
 a later covariant read of an unbound candidate does not seal it to
 $\top$ but to the \emph{expected type of the use}
 (the $\mathsf{grow}(t, \mathsf{cov})$/unbound $\to$
 $\mathsf{SVClosed}(t)$ transition of the main paper's Definition
 ``Transitions''), so
 program \emph{uses} choose the type argument that narrowing had left
-open — the unsound direction, since no value flow justifies it. Checked
-witness (accepted at the pin, exit 0). \texttt{tsc} 5.7 also accepts
-this program, but through its declared \texttt{any} escape hatch: it
-narrows \texttt{unknown} to \texttt{Box<any>} and accepts a
-\texttt{string} and a \texttt{number} read simultaneously. SKJS's
-failure mode is different and worse — \texttt{any}-free and
-order-dependent: the first covariant use wins, and a second,
-differently-typed read is rejected pointing at the first. The witness:
-\begin{verbatim}
-class Box<T> { v: T; constructor(v: T) { this.v = v } }
-function h(x: unknown): string {
-  if (x instanceof Box) {
-    const s: string = x.v;   // seals the fresh argument to string
-    return s;
-  }
-  return "no";
-}
-console.log(h(new Box(42)));  // Node prints: 42
-\end{verbatim}
-$h$ returns \texttt{42} at type \texttt{string}. The \texttt{Array}
-special case ($\top$ argument) is immune, which suggests the repair:
-instantiate \emph{all} \texttt{instanceof} type arguments at $\top$
-(an explicit top argument — matching tsc in \emph{effect} while avoiding
-its \texttt{any} escape hatch), or mark
-narrowing-born variables as non-sealable-by-use. Until then, the
-freshness clause of \textbf{L-INST}'s discharge note is \emph{not
-sufficient}, and the violated instance of the monotonicity obligation
-should be recorded in the ledger (Section~\ref{sec:status}).
+open — the unsound direction, since no value flow justifies it. The
+executed witness (a \texttt{string} read seals \texttt{Box}'s fresh
+argument; a number then crosses a checked \texttt{string} boundary),
+the tsc comparison, and the order-dependence protocol are issue draft
+\path{issues/instanceof-type-argument-sealing.md}. The \texttt{Array}
+special case is immune to this finding — its argument is the closed
+$\top$, so no unbound variable is installed — while the minted view's
+\emph{write} surface is the separately witnessed row
+\textbf{L-MUT-ALIAS}, graded, with the general $\top$-substitution
+question, by deep dive H. A precise repair needs a distinct
+rigid/existential witness kind; until then, \textbf{L-INST} fails at
+installation.
 \impl{TEnv.sk / makeTArgs; TTypeSubst.sk / Subst::grow (cov/unbound)}
 \impl{TypeCheckRefine.sk / evalInstanceof (Array $\top$ special case)}
 \end{finding}

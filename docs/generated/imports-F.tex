@@ -14,6 +14,7 @@ L-MONO & Refinement-time state evolutions preserve membership in already-install
 L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state. & D & \textsc{open} \\
 L-TC & Checked expressions inhabit their checked types. & main & \textsc{assumed} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & main & \textsc{assumed} \\
+L-MUT-ALIAS & A checked write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & H & \textsc{violated} \\
 \bottomrule
 \end{tabular}
 \end{center}
