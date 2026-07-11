@@ -29,12 +29,14 @@ type — so `L-INST` fails when the branch type is installed, before the
 branch body is checked.
 
 The branch body turns this invalid installed type into an accepted program
-with a runtime type error. Its first covariant use may bind the fresh variable
-from the expected type of that use. No runtime value flow justifies that
-choice: the program context is allowed to choose the type argument of an
-object that already exists.
+with a runtime type error, in both data directions. A read: the first
+covariant use binds the fresh variable from the expected type of that use.
+A write: the check of the right-hand side against the unbound variable in a
+parameter-typed field's set-type binds it instead of rejecting. In both
+cases the program context chooses the type argument of an object that
+already exists; no runtime value flow justifies the choice.
 
-## Witness
+## Read-side witness (sealing)
 
 Reproduction:
 [`repros/instanceof-arg-sealing.ts`](repros/instanceof-arg-sealing.ts).
@@ -84,6 +86,46 @@ makes SKJS reject and report the earlier read. The first expected type has
 already closed the shared argument as `string`, confirming that contextual
 use, rather than runtime evidence, selected the argument.
 
+## Write-side witness (binding)
+
+Reproduction:
+[`repros/instanceof-arg-write-binding.ts`](repros/instanceof-arg-write-binding.ts).
+Run:
+
+```sh
+make check-file-in-docker \
+  FILE=docs/deep-dives/issues/repros/instanceof-arg-write-binding.ts \
+  BIN=target/host/dev/skjs
+```
+
+With the same `Box`:
+
+```ts
+function w(a: Box<number>): number {
+  const x: unknown = a;
+
+  if (x instanceof Box) {
+    x.v = "s"; // binds the fresh argument to string
+  }
+
+  return a.v;
+}
+
+console.log(w(new Box(1)));
+```
+
+- SKJS accepts with no diagnostics; Node prints `s` — the `number`-typed
+  `w` returns a string, corrupting the sibling `Box<number>` view.
+- Mechanism check: appending `const n: number = x.v` after the write makes
+  SKJS reject with "Type string [the write's RHS] is not assignable to
+  type number" — the write installed `string` as the argument. The first
+  write wins, order-dependently, mirroring the read side.
+- tsc (strict) also accepts, again via `Box<any>`.
+
+Because the corrupted view is a sibling, the write side is also a
+cross-view mutation-coherence violation (registry row `L-MUT-ALIAS`),
+graded as the generic minted-view site by deep dive H.
+
 ## Implementation correspondence
 
 - `evalInstanceof` constructs the narrowed object using `makeTArgs`
@@ -91,7 +133,10 @@ use, rather than runtime evidence, selected the argument.
 - `makeTArgs` creates one fresh candidate per class parameter and attaches
   its declared constraint (`src/TEnv.sk`).
 - A covariant `grow` on an unbound candidate installs the expected type as an
-  `SVClosed` binding (`src/TTypeSubst.sk`).
+  `SVClosed` binding (`src/TTypeSubst.sk`) — the read side.
+- A write resolves the field's set-type to the unbound candidate
+  (`src/TType.sk`, `TFields::resolveFieldType` with `isLValue`), and the
+  right-hand-side check grows it instead of failing — the write side.
 
 These operations implement ordinary inference variables. They do not
 represent the fixed but hidden type arguments justified by the runtime
@@ -129,7 +174,10 @@ the runtime containment into `T_C^exists` under its stated hypotheses
 (`A-HASINST` — violated separately, see `symbol-hasinstance-narrowing.md` —
 `A-PROTO`, and `L-TC` at construction sites). This finding refutes the
 remaining bridge from `T_C^exists` to the fresh-`TVar` type installed by
-`evalInstanceof`. Registry row affected: `L-INST` (`violated`).
+`evalInstanceof`. Registry rows affected: `L-INST` (`violated`; the
+installation failure and its read-side exposure) and `L-MUT-ALIAS`
+(`violated`; the write-side exposure, one of deep dive H's minted-view
+witnesses).
 
 TypeScript also accepts the witness by narrowing to `Box<any>`, but that is a
 separate, explicit `any` escape hatch. SKJS's counterexample is `any`-free and

@@ -9,6 +9,7 @@
 \midrule
 L-UNION & \texttt{union} over-approximates set union (all levels). & B & \textsc{proved} \\
 L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state. & D & \textsc{open} \\
+L-INST & $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site. & A & \textsc{violated} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & main & \textsc{assumed} \\
 L-GETSET & Get/set coherence of accessor fields. & F & \textsc{open} \\
 E-SIG & Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement). & D & \textsc{assumed} \\

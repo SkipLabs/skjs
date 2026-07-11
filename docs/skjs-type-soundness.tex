@@ -463,10 +463,12 @@ $\mathsf{get}$-types only; the $\mathsf{set}$ component governs which writes
 the checker accepts and participates in soundness through subtyping and
 mutation, not through membership (assumption \textbf{L-MUT}). That
 governance has a second named facet, cross-view coherence: a checked
-write through one mutable view preserves the membership guarantees of
-every live alias of the same runtime object (\textbf{L-MUT-ALIAS}) —
-which holds only while every mutable view's $\mathsf{set}$-types stay at
-or below the object's actual write capability.
+field or index write through one mutable view preserves the membership
+guarantees of every live alias of the same runtime object
+(\textbf{L-MUT-ALIAS}; its call-mediated counterpart is the row
+L-MUT-ALIAS-CALL) — which holds only while every mutable view's
+$\mathsf{set}$-types stay at or below the object's actual write
+capability.
 For recursive declarations the membership conditions recurse — a field's
 $\sem{\mathsf{get}(f)}$ can mention $\sem{b}$ again — and every recursive
 occurrence is positive, so least and greatest solutions exist
@@ -483,8 +485,14 @@ A view $b$ (an object branch, as recorded for a local or a field)
 $v \in \sem{\mathsf{setty}(b,p)}$, where $\mathsf{setty}(b,p)$ is the
 resolved $\mathsf{set}$-type of $p$ in $b$: the intersection
 $\bigsqcap f.\mathsf{set}$ of a named field $f$, else the covering
-index's $\mathsf{set}$-type; a readonly field ($\mathsf{set} = \bot$)
-authorizes nothing. The checker realizes this definition at assignment
+index's $\mathsf{set}$-type resolved as at lvalue sites (the number
+index falling back to the string index); $\mathsf{setty}(b,p) = \bot$
+when $p$ has no writable field or covering index, and for a readonly
+field ($\mathsf{set} = \bot$) — either way $b$ authorizes nothing at
+$p$. Optionality does not weaken authorization: an accepted write makes
+$p$ present, and the stored value must satisfy the field's get-clause of
+Definition~\ref{def:object-semantics}. The checker realizes this
+definition at assignment
 sites — the right-hand side is checked against $\mathsf{setty}$ by
 subtyping (\textbf{L-SUB}) — and writes mediated by method calls are
 covered by the signature semantics (E-SIG), not by $\mathsf{setty}$.

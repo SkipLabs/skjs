@@ -17,13 +17,19 @@ alias.
 Field narrowing manufactures exactly the non-self-consistent sources that
 defeat this. `R-EqField`-style narrowing updates the field's get-type only;
 the set-type keeps the declared width. The narrowed object then passes the
-admission gate into a strictly narrower view — the covariant get check sees
-the narrowed get, the contravariant set check passes against the untouched
-wide set — and the source retains a write capability (`set` strictly above
-`get`) that the alias's view cannot survive. One legal write through the
-source falsifies the alias's membership; a later read typed through the
-alias yields a value outside its checked type, falsifying the capstone
-`L-TC`.
+admission gate — the covariant get check sees the narrowed get, the
+contravariant set check passes against the untouched wide set — and the
+resulting pair of views is incoherent in **both directions**:
+
+- *forward*: the source retains a write capability (`set` strictly above
+  `get`) that a strictly narrower admitted view cannot survive — one legal
+  write through the source falsifies the alias's membership;
+- *reverse*: any admitted view whose set-type exceeds the source's
+  narrowed get (already a same-type alias suffices) accepts a legal write
+  that falsifies the source's own narrowing.
+
+Either way, a later read typed through the falsified view yields a value
+outside its checked type, falsifying the capstone `L-TC`.
 
 ## Witness
 
@@ -68,6 +74,26 @@ console.log(w({ f: 1 }));
   the type of `x`, so the alias assignment fails TS2322. SKJS narrows the
   whole object type, which is what reaches the gate. Not a parity hole.
 
+The reverse direction
+([`repros/narrowed-alias-stale-write-reverse.ts`](repros/narrowed-alias-stale-write-reverse.ts))
+needs no narrower alias at all — a same-type alias is trivially admitted,
+and the write goes through *it* while the *source's* narrowing goes stale:
+
+```ts
+function w(x: { f: number | null }): number {
+  if (x.f !== null) {
+    const y: { f: number | null } = x;
+    y.f = null;  // legal for y
+    return x.f;  // stale: x's narrowed view promises number
+  }
+  return 0;
+}
+```
+
+Also accepted at the pin; Node prints `null`. (tsc accepts this shape too
+— it does not connect `y`'s write back to `x.f`'s narrowing — so the
+reverse direction, unlike the forward one, is tsc-parity.)
+
 ## Implementation correspondence
 
 - Field narrowing installs a get-narrowed object type; the field's
@@ -87,16 +113,25 @@ revoke.
 
 ## Sound repair shape
 
-At admission of a field whose source get-type is strictly below its
-set-type (a narrowed field), additionally require the source's set-type
-below the target's get-type. Declared data fields have equal get and set,
-so declaration-only programs are unaffected; the check fails exactly on
-the incoherent pairs (here: `number | null ≤ number` fails). An
-alternative is the invalidation route of deep dive F: extend the W-Field /
-P4 discipline so a write through any view updates the flow entries of
-every same-object local, including declared-typed ones — heavier, and
-needed anyway for aliases created before narrowing. The admission-time
-check is the narrower fix for this witness.
+The coherence property is symmetric, so a sound admission-time repair
+must restore it in both directions. When a source field's get-type sits
+strictly below its set-type (a narrowed field), admitting a mutable alias
+requires **both** cross containments: the source's set-type below the
+target's get-type (blocks the forward witness) **and** the target's
+set-type below the source's get-type (blocks the reverse witness — for a
+readonly target this direction is vacuous). Equivalently: a mutable alias
+may be exported from a narrowed source only if the pair is pairwise
+coherent, which for self-consistent (declared) sources is exactly the
+existing gate — declaration-only programs are unaffected. A one-sided
+check is not a repair: it compensates for one consequence of the source's
+self-inconsistency while leaving the other exposed.
+
+Alternatives: re-widen (drop) the source's narrowing when a mutable alias
+is exported, restoring self-consistency before the pair exists; or the
+invalidation route of deep dive F — extend the W-Field / P4 discipline so
+a write through any view updates the flow entries of every same-object
+local, including declared-typed ones — heavier, and needed anyway for
+aliases created before narrowing.
 
 ## Corpus location
 
@@ -105,7 +140,9 @@ grades this as the narrowing-admission site (the minted-view site is
 [`instanceof-array-mutable-top-view.md`](instanceof-array-mutable-top-view.md)).
 It shares its root with issue #598 — get-only narrowing breaks
 write-self-consistency — but exploits it through an admitted alias rather
-than through the narrowed view itself, so deep dive F's W-Field rule (which
-repairs #598 by re-widening the written view) does not repair it: the write
-goes through `x`, and no update to `x`'s entry mends `y`'s. Registry row
+than through the narrowed view itself, in either direction, so deep dive
+F's W-Field rule (which repairs #598 by re-widening the written view) does
+not repair the forward shape (the write goes through `x`, and no update to
+`x`'s entry mends `y`'s); the reverse shape is the same-function alias case
+F's extended W-Field/P4 discipline is specified to havoc. Registry row
 affected: `L-MUT-ALIAS` (`violated`).

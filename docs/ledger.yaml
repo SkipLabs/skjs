@@ -381,7 +381,7 @@ entries:
       - {bucket: violated-witnessed,
          label: "L-INST's A-HASINST and fresh-argument representation"}
     owner: A
-    consumers: []
+    consumers: [H]
     issues: [symbol-hasinstance-narrowing.md, instanceof-type-argument-sealing.md]
 
   - id: L-ISARR
@@ -536,31 +536,87 @@ entries:
     kind: assumption
     table: main
     short: >-
-      A checked write through one mutable view preserves the membership
-      guarantees of every live alias of the same runtime object.
+      A checked field or index write through one mutable view preserves
+      the membership guarantees of every live alias of the same runtime
+      object.
     statement: >-
-      Cross-view mutation coherence: a checked write through one mutable
-      view preserves the membership guarantees of every live alias of the
-      same runtime object
+      Cross-view mutation coherence, direct writes: a checked field or
+      index write through one mutable view preserves the membership
+      guarantees of every live alias of the same runtime object;
+      call-mediated mutation is the separate row L-MUT-ALIAS-CALL
     anchor: \texttt{evalInstanceof}; indexed writes
     anchor_files: [src/TypeCheckRefine.sk, src/TypeCheckExpr.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive H) at two witnessed sites — minted
-      views (\texttt{instanceof Array}; issue draft
-      \texttt{instanceof-array-mutable-top-view.md}) and
-      narrowing-admitted aliases (issue draft
+      \textsc{violated} (deep dive H) at three witnessed sites — the two
+      minted \texttt{instanceof} arms (issue drafts
+      \texttt{instanceof-array-mutable-top-view.md},
+      \texttt{instanceof-type-argument-sealing.md}, write side) and
+      narrowing-admitted aliases, in both directions (issue draft
       \texttt{narrowed-alias-stale-write.md}); declaration-only aliasing
       is coherent, conditional on L-SUB-FIELDS-SET
     summary:
       - {bucket: violated-witnessed,
          label: "cross-view mutation coherence L-MUT-ALIAS (minted
-           \\texttt{Array}$\\langle\\top\\rangle$ views;
-           narrowing-admitted aliases)"}
+           \\texttt{instanceof} views; narrowing-admitted aliases)"}
     owner: H
     consumers: [A, F]
     issues: [instanceof-array-mutable-top-view.md,
+             instanceof-type-argument-sealing.md,
              narrowed-alias-stale-write.md]
+
+  - id: L-MUT-ALIAS-CALL
+    kind: series-obligation
+    table: series
+    short: >-
+      Call-mediated mutation (setter-shaped methods, \texttt{push})
+      through one view preserves the membership guarantees of every live
+      alias.
+    statement: >-
+      Cross-view mutation coherence, call-mediated facet: a checked
+      method call through one view preserves every live alias's
+      membership; needs a receiver-effect strengthening of E-SIG, which
+      as stated concerns behavioral signature semantics only
+    anchor: method calls on narrowed receivers
+    anchor_files: [src/TypeCheckExpr.sk]
+    status: [open]
+    status_note: >-
+      \textsc{open} (deep dive H): the minted
+      \texttt{Array}$\langle\top\rangle$ view exposes the same
+      incoherence through \texttt{push} as through the graded index
+      write, but no signature semantics with receiver-heap effects exists
+      to grade it against
+    summary: []
+    owner: H
+    consumers: []
+    issues: []
+
+  - id: V-INTER-SET
+    kind: series-obligation
+    table: series
+    short: >-
+      Reachability of an incoherent live pair through the intersection's
+      permissive $\mathsf{set}$-union, independent of the already
+      violated admission and minting sites.
+    statement: >-
+      \texttt{TField::inter} unions $\mathsf{set}$-types; the open
+      question is whether an incoherent live pair is reachable through
+      it on a route not already graded by the narrowing-admission or
+      minted-view sites
+    anchor: \texttt{TField::inter} (set arm)
+    anchor_files: [src/TTypeInter.sk]
+    status: [open]
+    status_note: >-
+      \textsc{open} (deep dive H): the mechanism is established;
+      every declared route probed is blocked by the admission gate
+      (the union widens the target's $\mathsf{set}$, making admission
+      harder), and refinement-installed intersections reduce to the
+      graded sites; ambient-declared intersection types enter through
+      the stub trust boundary
+    summary: []
+    owner: H
+    consumers: []
+    issues: []
 
   - id: L-GETSET
     kind: series-obligation
@@ -948,8 +1004,9 @@ entries:
       Write authorization: a view authorizes the write of $v$ at key $p$
       iff $v$ inhabits the resolved $\mathsf{set}$-type of $p$
       (intersected named-field $\mathsf{set}$-types, else the covering
-      index's); readonly ($\mathsf{set}=\bot$) authorizes nothing;
-      call-mediated writes are E-SIG's
+      index's, resolved as at lvalue sites); readonly
+      ($\mathsf{set}=\bot$) and keys with no writable field or index
+      authorize nothing; call-mediated writes are E-SIG's
     anchor: \texttt{TFields::resolveFieldType} (\texttt{isLValue})
     anchor_files: [src/TType.sk]
     status: [proved]

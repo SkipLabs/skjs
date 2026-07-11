@@ -27,24 +27,26 @@ each view a second surface — the writes its $\mathsf{set}$-types accept
 — and \textbf{L-MUT-ALIAS} states the coherence property over it: a
 checked write through one view preserves the membership guarantees of
 every live alias of the same runtime object. This deep dive audits that
-property site by site, over every way the checker gives a program a
-view: subtyping admission, refinement installation, and outright
-minting. The audit isolates two mechanisms that together imply
+property site by site over the checker's view-creation families —
+subtyping admission, refinement installation, and outright minting —
+with an inventory funneling the remaining creation forms into these
+families or explicitly out of scope. The audit isolates two mechanisms that together imply
 coherence — the admission gate's downward write-capability preservation
 (D's row L-SUB-FIELDS-SET) and \emph{write-self-consistency} of the
 source ($\mathsf{set}$-types below $\mathsf{get}$-types) — and shows the
 checker enforces the first while refinement destroys the second.
 Declaration-only aliasing is coherent: the
 covariant field upcast, the mutable-array upcast, and the narrowing
-subclass override are all rejected, each stricter than tsc. Two sites
-are refuted with executed witnesses: narrowing-admitted aliases (a
-get-narrowed object passes the gate into a narrower view, then a legal
-write through the original goes stale on the alias) and the minted
-mutable \texttt{Array}$\langle\top\rangle$ view of \texttt{instanceof
-Array} narrowing. The generic \texttt{instanceof} arm shares the
-rigid-witness defect of deep dive A's finding on the write side; the
-intersection's permissive $\mathsf{set}$-union is mechanism without a
-found route. Fix directions accompany each verdict.
+subclass override are all rejected, each stricter than tsc. Three
+sites are refuted with executed witnesses: narrowing-admitted aliases
+(a get-narrowed object passes the gate into a narrower view, then a
+legal write through the original goes stale on the alias) and both
+minted-view arms of \texttt{instanceof} narrowing — the mutable
+\texttt{Array}$\langle\top\rangle$ view, and the generic arm, where a
+write \emph{binds} the fresh unbound argument instead of being
+rejected. The intersection's permissive $\mathsf{set}$-union is
+mechanism without a found route. Fix directions accompany each
+verdict.
 \end{abstract}
 
 \tableofcontents
@@ -67,7 +69,11 @@ policy, the W-Field re-widening rule)? This paper is spatial: is the
 \emph{set of simultaneously live views} of one object coherent at the
 moment a view is created? The two compose into the write-preservation
 clause of an eventual heap-level soundness statement: this paper for
-coherence at creation, F for preservation afterwards.
+coherence at creation, F for preservation afterwards. That composition
+is itself a capstone obligation, not a fact assumed here: every
+F-graded transition must be shown to preserve this paper's relational
+coherence invariant, and aliases created before a narrowing straddle
+the two axes.
 
 \impl{TTypeSubtyping.sk / TFields::isSub\_; TypeCheckRefine.sk /
 narrowField, evalInstanceof; TType.sk / TFields::resolveFieldType}
@@ -85,13 +91,24 @@ covering index's $\mathsf{set}$-type, and readonly
 definition at assignment sites by checking the right-hand side against
 $\setty$ with \texttt{isSub} — so every verdict below is conditional on
 \textbf{L-SUB} exactly where a subtype check decides it. Writes mediated
-by method calls (a setter-shaped method, \texttt{push}) are the province
-of the signature semantics \textbf{E-SIG} and are out of scope here;
-where a minted view widens \emph{method parameter} types the exposure is
-noted but not graded.
+by method calls (a setter-shaped method, \texttt{push}) are the
+call-mediated facet, split out as this paper's open row
+\textbf{L-MUT-ALIAS-CALL}: the signature semantics \textbf{E-SIG}, as
+stated, concerns behavioral call soundness and does not by itself
+deliver receiver-heap preservation across aliases, so the facet cannot
+be graded until a receiver-effect strengthening exists — the minted
+\texttt{Array}$\langle\top\rangle$ view exposes the same incoherence
+through \texttt{push} as through the index write graded below.
 
 Write $\getty(b,p)$ for the resolved get-type ($f.\mathsf{get}$, or the
-covering index's). Throughout, a \emph{view} of a runtime object $o$ is
+covering index's). Both resolvers are total: $\setty(b,p) = \bot$ when
+no writable field or index covers $p$ (the view authorizes nothing
+there), and $\getty(b,p) = \top$ when $b$ does not constrain $p$ (the
+extensible semantics constrains mentioned keys only). Optionality does
+not enter: an accepted write makes the key present, and the get-clause
+then applies. Where several constraints apply, both resolve exactly as
+the implementation's lvalue read does. Throughout, a \emph{view} of a
+runtime object $o$ is
 an object branch recorded in some scope entry (a local's flow type, a
 field's type) through which checked code can reach $o$; a view is
 \emph{live} while such an entry exists.
@@ -136,7 +153,12 @@ write through $y$: $v \in \sem{\setty(y,p)} \subseteq \sem{\setty(x,p)}
 \sem{\getty(y,p)}$ — both views' clauses hold. A write through $x$:
 $v \in \sem{\setty(x,p)} \subseteq \sem{\getty(x,p)} \subseteq
 \sem{\getty(y,p)}$ — likewise. Coherence extends along chains of
-admissions from one self-consistent root by the same computation.
+admissions from one self-consistent root by the same computation. Where
+$p$ resolves through an index rather than a named field, the appeal is
+to the index arms' get/set checks; deep dive D records their
+set-direction as conditional exactly like the named-field arms', and the
+index-signature control probe of Section~\ref{sec:declared} pins the
+contravariant rejection empirically.
 \end{proof}
 
 \begin{corollary}[Declaration-Only Aliasing is Coherent]
@@ -159,14 +181,46 @@ views).
 The same split re-derives deep dive F's \#598 with no new machinery: a
 write \emph{through the narrowed view itself} is authorized by the wide
 $\setty$ and lands outside the narrowed $\getty$ — self-inconsistency
-exploited through one view; F's W-Field rule re-widens the written
-view's get and restores its self-consistency at the write. The residue
-this paper grades is the two-view case, which W-Field on the written
-view cannot mend.
+exploited through one view. Deep dive F specifies a re-widening rule
+(W-Field) for the written view; by construction it updates only that
+view (orientation, not an imported result), so the two-view cases
+graded here are outside its reach in the forward direction.
 
 %==========================================================================
 \section{Site Audit}
 \label{sec:audit}
+
+\subsection{Installation inventory}
+\label{sec:inventory}
+
+The audit covers three view-creation families; the remaining ways a
+program comes to hold a view funnel into them or out of scope, as
+follows. \emph{Admission} (Section~\ref{sec:declared}): local
+initialization and re-assignment, argument passing, return passing,
+storing a reference into an object field, and array/tuple element
+storage — each checks the incoming value against the declared target
+type with \texttt{isSub} at its \texttt{TypeCheckExpr} site, so each
+is an admission edge. \emph{Refinement installation}
+(Section~\ref{sec:narrowing}) and \emph{minting}
+(Section~\ref{sec:minted}): the R-rules. \emph{No aliasing created}:
+destructuring and spread copy values into fresh objects; an object
+literal checked against a contextual type is a single view at birth,
+aliased only through later admissions. \emph{Same entry, other axis}:
+closure capture shares the captured entry rather than creating a view —
+deep dive F's territory. \emph{Class construction and inheritance}:
+field initialization is admission against the declared field type, and
+the override gate is pinned by the probe of
+Section~\ref{sec:declared}. \emph{Generic instantiation}: a call to a
+generic function admits arguments against the instantiated signature
+(admission); inference-minted argument views are the generic
+\texttt{instanceof} site's mechanism, graded there. \emph{Trust
+boundary}: ambient (stub-declared) values enter with their declared
+types unchecked — part of the corpus-wide stub trust, like every other
+ambient fact, and the one entry point for declared intersection views
+(Section~\ref{sec:inter-set}). The funneling of the admission families
+to \texttt{isSub} is an implementation claim reviewers should check at
+the named sites; it is asserted from those call sites, not proved.
+\impl{TypeCheckExpr.sk / assign, call/return checking}
 
 \subsection{Declared admission: the gate holds, stricter than tsc}
 \label{sec:declared}
@@ -191,6 +245,10 @@ Corollary~\ref{cor:declared}'s premises are enforced:
   string} is rejected (``incorrectly extends its base class''). tsc
   accepts; the override would mint an incoherent pair at every
   \texttt{E}-to-\texttt{D} upcast.
+\item \emph{Index-signature admission, rejected.} \texttt{\{f:
+  number\}} into \texttt{\{[k: string]: number | string\}} fails the
+  same contravariant check on the index's $\mathsf{set}$-type — the
+  gate covers $\setty$'s index resolution, not only named fields.
 \end{itemize}
 
 Verdict: for declaration-derived views, the admission gate discharges
@@ -210,26 +268,32 @@ cannot see it: admission checks the covariant get against the
 \emph{narrowed} get and the contravariant set against the
 \emph{declared} set, so both pass.
 
-\begin{finding}[A get-narrowed source is admitted; a legal write through
-it goes stale on the alias]
+\begin{finding}[A get-narrowed source is admitted; the pair is
+incoherent in both directions]
 \label{find:narrowed-alias}
-A get-narrowed object is admitted into a strictly narrower view, and a
-write legal for the source's declared $\mathsf{set}$-type falsifies the
-alias's get clause — the failure needs only the source to be writable,
-not the alias (a readonly target is admitted and goes stale the same
-way). Executed witness, readonly variant, and tsc comparison: issue
-draft \path{issues/narrowed-alias-stale-write.md}. The admission-time
-repair restores Lemma~\ref{lem:admission}'s hypothesis exactly where it
-fails: when a source field's get-type sits strictly below its set-type,
-additionally require the source's set below the target's get — declared
-fields are unaffected.
+A get-narrowed object is admitted, and the resulting pair fails
+Definition~\ref{def:coherence} both ways. Forward: a write legal for
+the source's declared $\mathsf{set}$-type falsifies the admitted
+alias's get clause — the alias need not even be writable (a readonly
+target goes stale the same way). Reverse: a write legal for the
+admitted alias — a same-type alias suffices — falsifies the source's
+own narrowing. Executed witnesses for both directions, the readonly
+variant, and the tsc comparison: issue draft
+\path{issues/narrowed-alias-stale-write.md}. An admission-time repair
+must restore the full symmetric coherence of
+Definition~\ref{def:coherence}, not one consequence of the source's
+self-inconsistency: for a source field whose get-type sits strictly
+below its set-type, require \emph{both} cross containments — source
+set below target get, and target set below source get (vacuous for a
+readonly target). Self-consistent declared sources satisfy both through
+the existing gate, so declared programs are unaffected; a one-sided
+check leaves the reverse direction exposed.
 \impl{TypeCheckRefine.sk / narrowField (withGet);
 TTypeSubtyping.sk / TFields::isSub\_ (shared arm);
 TType.sk / TFields::resolveFieldType (isLValue)}
 \end{finding}
 
-\subsection{Minted views: refuted at \texttt{instanceof Array};
-shared-root at the generic arm}
+\subsection{Minted views: refuted at both \texttt{instanceof} arms}
 \label{sec:minted}
 
 A \emph{minted} view is installed by a refinement rule without any
@@ -249,20 +313,25 @@ write surface, self-consistent for free.
 \impl{TypeCheckRefine.sk / evalInstanceof (Array arm), evalIsArray
 (ReadonlyArray contrast)}
 
-\paragraph{Generic \texttt{instanceof} (shared root, not separately
-witnessed).}
+\begin{finding}[Generic \texttt{instanceof}: a write binds the fresh
+argument]
+\label{find:generic-write}
 For a generic class the minted view's field set-types mention the fresh
 unbound arguments of \texttt{makeTArgs}. Under canonical
-\textbf{TVAR-SEM} an unbound argument denotes $\emptyset$ — so the
-minted view authorizes no writes, vacuously coherent as installed — but
-a write's \texttt{isSub} check against an unbound candidate can
-\emph{bind} it to the right-hand side's type, manufacturing write
+\textbf{TVAR-SEM} an unbound argument denotes $\emptyset$ — the minted
+view authorizes no writes, vacuously coherent as installed — but a
+write's check against the unbound candidate \emph{binds} it to the
+right-hand side's type instead of rejecting, manufacturing write
 authorization from the program context the same way covariant reads
-manufacture read guarantees. This is the representation defect of issue
-draft \path{issues/instanceof-type-argument-sealing.md} surfacing on the
-write side; the rigid-witness repair there covers both sides, and this
-paper adds no separate witness.
-\impl{TEnv.sk / makeTArgs; TTypeSubst.sk / Subst::grow}
+manufacture read guarantees. This is deep dive A's \textbf{L-INST}
+representation defect surfacing on the write surface; the executed
+witness with its first-write-wins mechanism confirmation is the
+write-side section of issue draft
+\path{issues/instanceof-type-argument-sealing.md}, and the
+rigid-witness repair recorded there covers both sides.
+\impl{TEnv.sk / makeTArgs; TTypeSubst.sk / Subst::grow;
+TType.sk / TFields::resolveFieldType (isLValue)}
+\end{finding}
 
 \paragraph{Other refinement rules.}
 \textsc{R-Eq}, \textsc{R-EqField}, \textsc{R-IsArray}, and \textsc{R-In}
@@ -296,11 +365,15 @@ live pair through it:
   that inhabits two views with genuinely different set-types at one key
   requires an admission or a mint that Sections~\ref{sec:declared}
   and~\ref{sec:narrowing}--\ref{sec:minted} already grade.
+\item \emph{By ambient declaration}: a stub-declared intersection-typed
+  value enters with no checked admission — the stub trust boundary of
+  Section~\ref{sec:inventory}, not a checked-code route.
 \end{itemize}
 
 Verdict: no independent defect established; the direction stays
-guarded by the admission gate on every route found. Recorded as the
-open residue of L-MUT-ALIAS — a sound repair for
+guarded by the admission gate on every route found. Because this facet's
+grade differs from the witnessed sites', it is its own open registry row
+\textbf{V-INTER-SET} — a sound repair for
 Finding~\ref{find:narrowed-alias} should keep it in view, since
 narrowing-installed intersections are exactly where the union becomes
 reachable without a gate.
@@ -324,25 +397,29 @@ identity, are the open row \textbf{L-GETSET} and are not graded here.
 
 \paragraph{Verdict for L-MUT-ALIAS.} The row's status is rendered from
 the registry below; the evidence this paper contributes decomposes site
-by site — two witnessed refutations, one shared-root defect, one
-residue:
+by site — three witnessed refutations, with the open facets split into
+their own rows:
 \begin{itemize}
-\item narrowing-admitted aliases: refuted, witnessed
+\item narrowing-admitted aliases: refuted, witnessed in both directions
   (Finding~\ref{find:narrowed-alias});
 \item minted \texttt{instanceof Array} view: refuted, witnessed
   (Section~\ref{sec:minted});
-\item generic \texttt{instanceof} write-side binding: shared root with
-  the rigid-witness representation defect, no separate witness
-  (Section~\ref{sec:minted});
+\item generic \texttt{instanceof} write-side binding: refuted,
+  witnessed; shares its root — and its repair — with the rigid-witness
+  representation defect (Finding~\ref{find:generic-write});
 \item the intersection $\mathsf{set}$-union: mechanism present, no
-  reachable incoherent pair found (Section~\ref{sec:inter-set});
-  remains a residue.
+  reachable incoherent pair found — the open row \textbf{V-INTER-SET}
+  (Section~\ref{sec:inter-set});
+\item call-mediated mutation: ungradeable until E-SIG acquires receiver
+  effects — the open row \textbf{L-MUT-ALIAS-CALL}
+  (Section~\ref{sec:recap}).
 \end{itemize}
 Declaration-only aliasing is coherent by Corollary~\ref{cor:declared},
 conditional on \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET}, with the three
 rejection probes of Section~\ref{sec:declared} pinning the gate's
-behavior; each refuted site carries its fix direction where it is
-graded.
+behavior (with the index-signature control extending them to
+$\setty$'s index resolution); each refuted site carries its fix
+direction where it is graded.
 
 \paragraph{Registry.}
 The authoritative statuses are maintained in the registry

@@ -17,6 +17,8 @@
 \endfoot
 \bottomrule
 \endlastfoot
+L-MUT-ALIAS-CALL & Call-mediated mutation (setter-shaped methods, \texttt{push}) through one view preserves the membership guarantees of every live alias. & \textsc{open} \\
+V-INTER-SET & Reachability of an incoherent live pair through the intersection's permissive $\mathsf{set}$-union, independent of the already violated admission and minting sites. & \textsc{open} \\
 OBL-MONOTONE & Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions. & \textsc{violated} \\
 OBL-RESTORE & No Commitment on Failure: failing and exploratory paths restore all relevant state. & \textsc{proved} \\
 MR-1 & No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outlive growth of an open candidate readable from its left side. & \textsc{violated} \\
@@ -55,6 +57,18 @@ L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same n
 \end{longtable}
 \endgroup
 \paragraph{Details.}\leavevmode
+\medskip\par\noindent\textbf{L-MUT-ALIAS-CALL}\quad(\textsc{open})\\*[0.15em]
+Cross-view mutation coherence, call-mediated facet: a checked method call through one view preserves every live alias's membership; needs a receiver-effect strengthening of E-SIG, which as stated concerns behavioral signature semantics only\\*[0.15em]
+{\small\emph{Anchor:} method calls on narrowed receivers}\par
+\nopagebreak
+\textsc{open} (deep dive H): the minted \texttt{Array}$\langle\top\rangle$ view exposes the same incoherence through \texttt{push} as through the graded index write, but no signature semantics with receiver-heap effects exists to grade it against
+
+\medskip\par\noindent\textbf{V-INTER-SET}\quad(\textsc{open})\\*[0.15em]
+\texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already graded by the narrowing-admission or minted-view sites\\*[0.15em]
+{\small\emph{Anchor:} \texttt{TField::inter} (set arm)}\par
+\nopagebreak
+\textsc{open} (deep dive H): the mechanism is established; every declared route probed is blocked by the admission gate (the union widens the target's $\mathsf{set}$, making admission harder), and refinement-installed intersections reduce to the graded sites; ambient-declared intersection types enter through the stub trust boundary
+
 \medskip\par\noindent\textbf{OBL-MONOTONE}\quad(\textsc{violated})\\*[0.15em]
 Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get}; \texttt{TType::isSub}}\par
@@ -176,7 +190,7 @@ Canonical \texttt{TVar} denotation: an occurrence denotes its substitution envel
 \textsc{proved} by definition in the main paper and matched to \texttt{Subst::get}: missing bindings read as bottom contravariantly and seal to top before a covariant expansion; occurrence constraints are intersected after either read
 
 \medskip\par\noindent\textbf{SET-SEM}\quad(\textsc{proved})\\*[0.15em]
-Write authorization: a view authorizes the write of $v$ at key $p$ iff $v$ inhabits the resolved $\mathsf{set}$-type of $p$ (intersected named-field $\mathsf{set}$-types, else the covering index's); readonly ($\mathsf{set}=\bot$) authorizes nothing; call-mediated writes are E-SIG's\\*[0.15em]
+Write authorization: a view authorizes the write of $v$ at key $p$ iff $v$ inhabits the resolved $\mathsf{set}$-type of $p$ (intersected named-field $\mathsf{set}$-types, else the covering index's, resolved as at lvalue sites); readonly ($\mathsf{set}=\bot$) and keys with no writable field or index authorize nothing; call-mediated writes are E-SIG's\\*[0.15em]
 {\small\emph{Anchor:} \path{TFields::resolveFieldType} (\texttt{isLValue})}\par
 \nopagebreak
 \textsc{proved} by definition in the main paper and matched to the checker's write path: assignment checks the right-hand side against the resolved $\mathsf{set}$-type by subtyping

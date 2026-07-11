@@ -35,7 +35,7 @@ L-PURE & Evaluating a condition does not mutate the narrowed locals. & \textsc{v
 L-CAPT & Assignments to captured locals are checked against the binding's declared type. & \textsc{violated} \\
 L-CLONE & A type computed by \texttt{inter} under a cloned substitution over-approximates the intersection under the main one. & \textsc{proved} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & \textsc{assumed} \\
-L-MUT-ALIAS & A checked write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & \textsc{violated} \\
+L-MUT-ALIAS & A checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & \textsc{violated} \\
 L-GETSET & Get/set coherence of accessor fields. & \textsc{open} \\
 \end{longtable}
 \endgroup
@@ -149,10 +149,10 @@ Field writes are governed by $\mathsf{set}$-types via subtyping; membership sema
 \textsc{assumed}; full mutation model out of scope. The tracked instance is issue \#598: field reassignment inside a refined branch does not re-widen the narrowed field, invalidating \textsc{R-EqField}/\textsc{R-TruthyField} results past the write; deep dive F specifies the re-widening rule (W-Field)
 
 \medskip\par\noindent\textbf{L-MUT-ALIAS}\quad(\textsc{violated})\\*[0.15em]
-Cross-view mutation coherence: a checked write through one mutable view preserves the membership guarantees of every live alias of the same runtime object\\*[0.15em]
+Cross-view mutation coherence, direct writes: a checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object; call-mediated mutation is the separate row L-MUT-ALIAS-CALL\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalInstanceof}; indexed writes}\par
 \nopagebreak
-\textsc{violated} (deep dive H) at two witnessed sites — minted views (\texttt{instanceof Array}; issue draft \path{instanceof-array-mutable-top-view.md}) and narrowing-admitted aliases (issue draft \path{narrowed-alias-stale-write.md}); declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
+\textsc{violated} (deep dive H) at three witnessed sites — the two minted \texttt{instanceof} arms (issue drafts \path{instanceof-array-mutable-top-view.md}, \path{instanceof-type-argument-sealing.md}, write side) and narrowing-admitted aliases, in both directions (issue draft \path{narrowed-alias-stale-write.md}); declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
 
 \medskip\par\noindent\textbf{L-GETSET}\quad(\textsc{open})\\*[0.15em]
 Get/set coherence of accessor fields — the prerequisite for the sound accessor variant of deep dive F's W-Field re-widening rule\\*[0.15em]
