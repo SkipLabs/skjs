@@ -167,28 +167,27 @@ function testClosedOfTypeParameter<T>(
   return x;
 }
 
-// A CONSTRAINED type parameter is abstract too. Today the constraint is
-// silently closed instead (the parameter types as Closed<constraint>), which
-// surfaces only as a downstream mismatch on the return.
+// A CONSTRAINED type parameter is abstract too: rejected at the parameter
+// (NOT silently closing the constraint).
 function testClosedOfConstrainedTypeParameter<T extends { a: number }>(
-  // TODO(Closed): should reject here — Closed<T> requires a statically known
-  // object type — instead of closing the constraint.
+  // @skjs-expect-error Closed<T> requires a statically known object type
   x: Closed<T>,
 ): T {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
-// A generic alias wrapping Closed: today the abstract body is rejected at the
-// DECLARATION, making wrappers impossible.
-// TODO(Closed): defer validation of an abstract T during type-definition
-// validation and validate at instantiation instead, so the wrapper works.
-// @skjs-expect-error Closed<T> requires a statically known object type
+// A generic alias wrapping Closed: validation of the abstract body is
+// deferred during type-definition validation and performed at each concrete
+// instantiation instead, so wrappers work.
 type FreezeWrapper<T> = Closed<T>;
 
-// Instantiation with a concrete object already works (the alias body is
-// re-normalized with T bound), so only the declaration-time error is spurious.
 function testClosedAliasWrapperConcrete(): void {
   const x: FreezeWrapper<{ readonly a: number }> = { a: 1 };
   const j: Json = x;
+}
+
+// A bad concrete instantiation of the wrapper reports at the USE site.
+function testClosedAliasWrapperBadInstantiation(): void {
+  // @skjs-expect-error Closed<T> requires a statically known object type
+  const n: FreezeWrapper<number> = 1;
 }
