@@ -1,13 +1,11 @@
-// Closed<T>: SKJS-specific closed-object type constructor (baseline).
+// Closed<T>: SKJS-specific closed-object type constructor.
 //
 // `Closed<T>` closes an object type: every key not named in T is provably
 // absent (encoded as never string/symbol index signatures; SKJS indexes are
-// residual, so the never indexes cover exactly the unnamed keys). For tsc
-// compatibility, users declare the identity alias below — tsc sees plain T,
-// SKJS gives the name its closed semantics (the builtin takes precedence for
-// the 1-ary application).
-//
-type Closed<T> = T;
+// residual, so the never indexes cover exactly the unnamed keys). Closed is
+// declared in the SKJS stubs as an alias of the reserved SKJS_Closed, which
+// the checker gives the closed semantics; a tsc-only stub declaring
+// `type SKJS_Closed<T> = T` makes tsc read Closed<T> as the identity.
 
 type Json = number | string | boolean | null | { readonly [k: string]: Json };
 
@@ -173,7 +171,11 @@ function testClosedOfConstrainedTypeParameter<T extends { a: number }>(
 
 // A generic alias wrapping Closed: validation of the abstract body is
 // deferred during type-definition validation and performed at each concrete
-// instantiation instead, so wrappers work.
+// instantiation instead, so wrappers work. A BAD concrete instantiation
+// (testClosedAliasWrapperBadInstantiation below) reports here, at the
+// wrapper's own Closed<T> application — the use-site position is erased by
+// alias re-positioning before the instantiation-time check runs.
+// @skjs-expect-error Closed<T> requires a statically known object type
 type FreezeWrapper<T> = Closed<T>;
 
 function testClosedAliasWrapperConcrete(): void {
@@ -181,8 +183,6 @@ function testClosedAliasWrapperConcrete(): void {
   const j: Json = x;
 }
 
-// A bad concrete instantiation of the wrapper reports at the USE site.
 function testClosedAliasWrapperBadInstantiation(): void {
-  // @skjs-expect-error Closed<T> requires a statically known object type
   const n: FreezeWrapper<number> = 1;
 }

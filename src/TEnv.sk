@@ -1378,12 +1378,13 @@ base class TEnv{
         )
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
-    | TAInst(Name(closedPos, "Closed"), targs) if (targs.size() == 1) ->
-      // Closed<T> (SKJS extension): closes an object type — every key not
-      // named in T is provably absent. The 1-ary application is intercepted
-      // BEFORE name resolution, so the recommended tsc-compat declaration
-      // `type Closed<T> = T` (identity for tsc) keeps this meaning in SKJS.
-      // Other arities fall through to ordinary resolution.
+    | TAInst(Name(closedPos, "SKJS_Closed"), targs) if (targs.size() == 1) ->
+      // SKJS_Closed<T>: the closed-object operator — every key not named in
+      // T is provably absent. The SKJS_-prefixed name is reserved for the
+      // checker and intercepted BEFORE name resolution; user code writes
+      // Closed<T>, a plain stub alias for it (import-stubs/@types/skjs). For
+      // tsc compatibility a tsc-only stub declares the identity
+      // `type SKJS_Closed<T> = T`. Other arities resolve ordinarily.
       inner = this.normalize(tcenvb, targs[0]);
       this.closeObjectType(tcenvb, closedPos, inner)
     | TAInst(n, targs) ->
@@ -2271,8 +2272,11 @@ base class TEnv{
     inner: TType,
   ): TType {
     subst = Subst::mcreate(tcenvb);
-    // Inside a generic alias instantiation, anchor errors at the USE site
-    // (`instantiateAt`), not at the alias body's `Closed` token.
+    // Errors anchor at the instantiation site when there is one (for the
+    // stub-alias route that is the innermost alias application: a direct
+    // Closed<...> use anchors at the use site; a wrapper alias anchors at the
+    // wrapper's own Closed<T> application — the use-site position is erased
+    // by alias re-positioning before reaching this depth).
     errPos = this.instantiateAt.default(closedPos);
     hasDeclaredIndex = (idx: ?TField) ->
       idx match {
