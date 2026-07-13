@@ -1,0 +1,48 @@
+module SKJSTests;
+
+// A backslash as the final character of an unterminated string literal must not
+// push the lexer past end-of-input. When it does (pos + 2 with nothing left to
+// escape), the reported error position lands one character past the buffer, and
+// rendering it panics with "Out of bounds" instead of reporting an unterminated
+// string. Follow-up to the string-escape decoding work (#771).
+//
+// The test inspects the reported error position directly rather than rendering
+// it, so it captures the overshoot without triggering the panic. Pinned here to
+// the pre-fix overshoot; the fix caps the position and flips the assertion.
+@test
+fun testTrailingBackslashDoesNotOvershoot(): void {
+  for (q in Array["\"", "'", "`"]) {
+    content = "type T = " + q + "\\";
+    size = content.chars().size();
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    errOpt = try {
+      _ = parser.toplevelDefs();
+      None()
+    } catch {
+    | SKJS.ErrorExn(err) -> Some(err)
+    | exn -> throw exn
+    };
+    errOpt match {
+    | Some(le @ SKJS.LexingError _) ->
+      le.pos match {
+      | SKJS.EPChar(_, p) ->
+        SKTest.expectTrue(
+          p.value > size,
+          `${content}: expected the pre-fix overshoot (pos ${
+            p.value
+          } > size ${size})`,
+        )
+      | _ -> SKTest.expectTrue(false, `${content}: expected an EPChar position`)
+      }
+    | _ ->
+      SKTest.expectTrue(
+        false,
+        `${content}: expected an unterminated-string LexingError`,
+      )
+    }
+  }
+}
+
+module end;
