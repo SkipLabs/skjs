@@ -87,6 +87,47 @@ function testNamedFieldStaysWritable(): void {
   x.a = 2;
 }
 
+declare const sym: unique symbol;
+
+// Reading an unnamed symbol key: rejected (provably absent).
+function testReadUnnamedSymbolKey(): void {
+  const x: Closed<{ readonly a: number }> = { a: 1 };
+  // @skjs-expect-error This symbol property does not exist on the object
+  const v = x[sym];
+}
+
+// ============================================================================
+// satisfies: Closed works as the expected type; the value keeps its precise
+// literal type.
+// ============================================================================
+
+function testSatisfiesClosed(): void {
+  const x = { a: 1 } satisfies Closed<{ readonly a: number }>;
+  // tsc (identity alias) widens x.a to number here; SKJS keeps the literal 1.
+  const one: 1 = x.a;
+}
+
+function testSatisfiesClosedExcess(): void {
+  // @skjs-expect-error Type does not satisfy the expected type
+  const x = { a: 1, b: 2 } satisfies Closed<{ readonly a: number }>;
+}
+
+// ============================================================================
+// Interop: Object.keys/values/entries on a Closed value.
+// ============================================================================
+
+function testObjectKeysValuesEntriesOnClosed(): void {
+  const x: Closed<{ readonly a: number }> = { a: 1 };
+  const ks = Object.keys(x);
+  // TODO(Closed): the values/entries stub parameters use a MUTABLE string
+  // index, which a closed argument cannot satisfy; the parameters should be
+  // readonly-indexed (they never write through the argument).
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const vals = Object.values(x);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const ents = Object.entries(x);
+}
+
 // ============================================================================
 // keyof: Closed<T> adds no keys — keyof Closed<T> = keyof T.
 // ============================================================================
@@ -124,4 +165,30 @@ function testClosedOfTypeParameter<T>(
   x: Closed<T>,
 ): T {
   return x;
+}
+
+// A CONSTRAINED type parameter is abstract too. Today the constraint is
+// silently closed instead (the parameter types as Closed<constraint>), which
+// surfaces only as a downstream mismatch on the return.
+function testClosedOfConstrainedTypeParameter<T extends { a: number }>(
+  // TODO(Closed): should reject here — Closed<T> requires a statically known
+  // object type — instead of closing the constraint.
+  x: Closed<T>,
+): T {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return x;
+}
+
+// A generic alias wrapping Closed: today the abstract body is rejected at the
+// DECLARATION, making wrappers impossible.
+// TODO(Closed): defer validation of an abstract T during type-definition
+// validation and validate at instantiation instead, so the wrapper works.
+// @skjs-expect-error Closed<T> requires a statically known object type
+type FreezeWrapper<T> = Closed<T>;
+
+// Instantiation with a concrete object already works (the alias body is
+// re-normalized with T bound), so only the declaration-time error is spurious.
+function testClosedAliasWrapperConcrete(): void {
+  const x: FreezeWrapper<{ readonly a: number }> = { a: 1 };
+  const j: Json = x;
 }
