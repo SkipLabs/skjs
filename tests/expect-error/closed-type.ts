@@ -119,12 +119,7 @@ function testSatisfiesClosedExcess(): void {
 function testObjectKeysValuesEntriesOnClosed(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };
   const ks = Object.keys(x);
-  // TODO(Closed): the values/entries stub parameters use a MUTABLE string
-  // index, which a closed argument cannot satisfy; the parameters should be
-  // readonly-indexed (they never write through the argument).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const vals = Object.values(x);
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const ents = Object.entries(x);
 }
 
