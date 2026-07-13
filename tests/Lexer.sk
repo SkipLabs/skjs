@@ -74,8 +74,7 @@ fun testCrlfLineContinuation(): void {
 // must lex cleanly. The number scanner read `contents[pos]` without a bounds
 // check, so after the final digit it indexed one past the buffer and threw
 // OutOfBounds — a crash on a realistic input (a file ending in a number with no
-// newline). Pinned here to that crash; the fix adds the guard and flips the
-// assertion.
+// newline). The scanner now stops at end-of-input like the identifier scanner.
 @test
 fun testNumberAtEofDoesNotCrash(): void {
   threw = false;
@@ -89,9 +88,9 @@ fun testNumberAtEofDoesNotCrash(): void {
     | _ -> !threw = true
     }
   };
-  SKTest.expectTrue(
+  SKTest.expectFalse(
     threw,
-    "a numeric literal at end-of-file currently crashes the lexer",
+    "a numeric literal at end-of-file must lex without crashing",
   )
 }
 
