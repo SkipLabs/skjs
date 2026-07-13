@@ -460,6 +460,37 @@ extension class TFields {
     )
   }
 
+  // Meet of two callability modes (shared by the call and new arms of
+  // TFields::inter); None drops the whole branch as uninhabited. `isArray`
+  // is the branch's merged array brand: for array-branded branches
+  // definitely-absent is runtime-hard — array exotic objects implement
+  // neither [[Call]] nor [[Construct]] — so a signature meeting CAbsent is
+  // uninhabited. Elsewhere CAbsent is a brand-like approximation, not a
+  // proof of uninhabitation (structural width subtyping can launder
+  // callables into class-instance types, see isSubCallability), so the
+  // signature is kept rather than collapsing an inhabited intersection —
+  // hybrid (() => void) & C types, and instanceof narrowing of a callable
+  // against a class — to never.
+  private static fun interCallability(
+    subst: mutable Subst,
+    tenv: TEnv,
+    m1: Callability,
+    m2: Callability,
+    isArray: ?Bool,
+  ): ?Callability {
+    (m1, m2) match {
+    | (CUnknown(), m)
+    | (m, CUnknown()) ->
+      Some(m)
+    | (CAbsent(), CAbsent()) -> Some(CAbsent())
+    | (CAbsent(), p @ CPresent _)
+    | (p @ CPresent _, CAbsent()) ->
+      if (isArray == Some(true)) None() else Some(p)
+    | (CPresent(f1), CPresent(f2)) ->
+      TFuns::inter(subst, tenv, f1, f2).map(f -> CPresent(f))
+    }
+  }
+
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -493,43 +524,25 @@ extension class TFields {
       _ -> fields2.symbolIndex,
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
-    call = (fields1.call, fields2.call) match {
-    | (CUnknown(), call)
-    | (call, CUnknown()) ->
-      call
-    | (CAbsent(), CAbsent()) -> CAbsent()
-    // Callable meets definitely-not-callable. For array-branded branches the
-    // claim is runtime-hard — array exotic objects never implement [[Call]]
-    // — so the intersection is uninhabited and the branch drops. Elsewhere
-    // CAbsent is a brand-like approximation, not a proof of uninhabitation
-    // (structural width subtyping can launder callables into class-instance
-    // types, see isSubCallability), so the signature is kept rather than
-    // collapsing an inhabited intersection — hybrid (() => void) & C types,
-    // and instanceof narrowing of a callable against a class — to never.
-    | (CAbsent(), p @ CPresent _)
-    | (p @ CPresent _, CAbsent()) ->
-      if (isArray == Some(true)) return None() else p
-    | (CPresent(call1), CPresent(call2)) ->
-      TFuns::inter(subst, tenv, call1, call2) match {
-      | None() -> return None()
-      | Some(f) -> CPresent(f)
-      }
+    call = TFields::interCallability(
+      subst,
+      tenv,
+      fields1.call,
+      fields2.call,
+      isArray,
+    ) match {
+    | None() -> return None()
+    | Some(m) -> m
     };
-    new = (fields1.new, fields2.new) match {
-    | (CUnknown(), new)
-    | (new, CUnknown()) ->
-      new
-    | (CAbsent(), CAbsent()) -> CAbsent()
-    // Constructible meets definitely-not-constructible: same rule as the
-    // call arm above (arrays are not constructible either).
-    | (CAbsent(), p @ CPresent _)
-    | (p @ CPresent _, CAbsent()) ->
-      if (isArray == Some(true)) return None() else p
-    | (CPresent(new1), CPresent(new2)) ->
-      TFuns::inter(subst, tenv, new1, new2) match {
-      | None() -> return None()
-      | Some(f) -> CPresent(f)
-      }
+    new = TFields::interCallability(
+      subst,
+      tenv,
+      fields1.new,
+      fields2.new,
+      isArray,
+    ) match {
+    | None() -> return None()
+    | Some(m) -> m
     };
     Some(
       TFields{
