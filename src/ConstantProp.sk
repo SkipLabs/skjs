@@ -1,0 +1,122 @@
+module SKJS;
+
+base class CPVal uses Equality {
+  children =
+  | CPVBot()
+  | CPVNumber(x: Float)
+  | CPVString(x: String)
+  | CPVBool(x: Bool)
+  | CPVUndefined()
+  | CPVNull()
+  | CPVTop()
+
+  static fun join(l: CPVal, r: CPVal): CPVal {
+    (l, r) match {
+    | (CPVBot(), other)
+    | (other, CPVBot()) ->
+      other
+    | (CPVNumber(x), CPVNumber(y)) -> if (x == y) CPVNumber(x) else CPVTop()
+    | (CPVString(x), CPVString(y)) -> if (x == y) CPVString(x) else CPVTop()
+    | (CPVBool(x), CPVBool(y)) -> if (x == y) CPVBool(x) else CPVTop()
+    | (CPVUndefined(), CPVUndefined()) -> CPVUndefined()
+    | (CPVNull(), CPVNull()) -> CPVNull()
+    | _ -> CPVTop()
+    }
+  }
+  static fun leq(l: CPVal, r: CPVal): Bool {
+    (l, r) match {
+    | (_, CPVTop())
+    | (CPVBot(), _)
+    | (CPVUndefined(), CPVUndefined())
+    | (CPVNull(), CPVNull()) ->
+      true
+    | (CPVNumber(x), CPVNumber(y)) -> x == y
+    | (CPVString(x), CPVString(y)) -> x == y
+    | (CPVBool(x), CPVBool(y)) -> x == y
+    | _ -> false
+    }
+  }
+}
+
+// Missing keys are interpreted as un-constrained; top is thus represented by an empty env
+base class CPEnv {
+  children =
+  | CPEBot()
+  | CPEEnv(env: SortedMap<String, CPVal>)
+}
+
+base class ConstantProp uses AbstractDomain<CPEnv> {
+  fun bottom(): CPEnv {
+    CPEBot()
+  }
+  fun init(): CPEnv {
+    CPEEnv(SortedMap[])
+  }
+
+  // point-wise, dropping any resulting k |-> \top bindings
+  fun join(l: CPEnv, r: CPEnv): CPEnv {
+    l match {
+    | CPEBot() -> r
+    | CPEEnv(l_env) ->
+      r match {
+      | CPEBot() -> l
+      | CPEEnv(r_env) ->
+        point_join = (_k, v1_opt, v2_opt) -> {
+          v1_opt match {
+          | None() -> None()
+          | Some(v1) ->
+            v2_opt match {
+            | None() -> None()
+            | Some(v2) ->
+              CPVal::join(v1, v2) match {
+              | CPVTop() -> None()
+              | x -> Some(x)
+              }
+            }
+          }
+        };
+        CPEEnv(l_env.mergeWith(r_env, point_join))
+      }
+    }
+  }
+
+  // l <= r IFF:
+  // \forall k |-> v_r in r . \exists k |-> v_l in l . v_l <= v_r
+  fun leq(l: CPEnv, r: CPEnv): Bool {
+    l match {
+    | CPEBot() -> true
+    | CPEEnv(l_env) ->
+      r match {
+      | CPEBot() -> false
+      | CPEEnv(r_env) ->
+        r_env.all((k, v_r) -> {
+          l_env.maybeGet(k) match {
+          | None() -> false
+          | Some(v_l) -> CPVal::leq(v_l, v_r)
+          }
+        })
+      }
+    }
+  }
+  fun transfer(
+    instrs: Array<CFGInstr>,
+    env: CPEnv,
+    interproc: (Callsite, CPEnv) -> CPEnv,
+  ): CPEnv {
+    void
+  }
+
+  private fun transferInstr(
+    interproc: (Callsite, CPEnv) -> CPEnv,
+  ): (CFGInstr, CPEnv) -> CPEnv {
+    (instr, env) -> {
+      instr match {
+      | CFGIBind(kind, pat, ty, init) -> invariant_violation("todo")
+      | CFGIAssign(target, value) -> invariant_violation("todo")
+      | CFGIExpr(expr) -> invariant_violation("todo")
+      }
+    }
+  }
+}
+
+module end;
