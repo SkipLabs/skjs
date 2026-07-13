@@ -44,9 +44,9 @@ fun testTrailingBackslashDoesNotOvershoot(): void {
 }
 
 // A LineContinuation may use a CRLF line terminator (`\` + CR + LF), which
-// ECMAScript elides to nothing. The lexer consumed `\`+CR and then hit the LF,
-// raising NewLineInString. Pinned here to that pre-fix rejection; the fix makes
-// the scanner consume the LF too so the continuation lexes cleanly.
+// ECMAScript elides to nothing. The scanner consumes the LF as part of the
+// continuation, so `"x\<CR><LF>y"` lexes cleanly as one string token rather
+// than raising NewLineInString.
 @test
 fun testCrlfLineContinuation(): void {
   bs = "\\";
@@ -64,9 +64,9 @@ fun testCrlfLineContinuation(): void {
   | SKJS.ErrorExn(_) -> true
   | exn -> throw exn
   };
-  SKTest.expectTrue(
+  SKTest.expectFalse(
     threw,
-    "a CRLF line continuation is currently rejected by the lexer",
+    "a CRLF line continuation should lex as one string token",
   )
 }
 

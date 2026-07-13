@@ -64,13 +64,24 @@ mutable class Lexer private {
     String::fromChars(this.contents.slice(tok.posStart.value, tok.posEnd.value))
   }
 
-  // Advances past a backslash escape inside a string literal. A trailing
-  // backslash (the final character, with nothing to escape) would otherwise
-  // push pos two past the buffer; capping at end-of-input keeps the reported
-  // error position in bounds so an unterminated string renders instead of
-  // panicking with "Out of bounds".
+  // Advances past a backslash escape inside a string literal. A backslash
+  // before a CRLF is a line continuation: consume the LF as well, so the
+  // scanner does not mistake it for a raw newline ending the string. A
+  // trailing backslash (the final character, with nothing to escape) would
+  // otherwise push pos two past the buffer; capping at end-of-input keeps the
+  // reported error position in bounds so an unterminated string renders
+  // instead of panicking with "Out of bounds".
   readonly fun skipStringEscape(pos: Int): Int {
-    min(pos + 2, this.contents.size())
+    size = this.contents.size();
+    if (
+      pos + 2 < size &&
+      this.contents[pos + 1] == '\r' &&
+      this.contents[pos + 2] == '\n'
+    ) {
+      pos + 3
+    } else {
+      min(pos + 2, size)
+    }
   }
 
   // Returns true if the current token is equal to the string.
