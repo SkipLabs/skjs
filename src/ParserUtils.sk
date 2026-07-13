@@ -42,8 +42,7 @@ extension class Parser {
   }
 
   readonly fun unquoteString(tok: Token): String {
-    // TODO: handle escaped sequences
-    tok.kind match {
+    body = tok.kind match {
     | TKQuote() ->
       this.lex.getTokenRawStringContent(tok).stripPrefix("'").stripSuffix("'")
     | TKDoubleQuote() ->
@@ -53,6 +52,10 @@ extension class Parser {
         this.lex.posStart(tok),
         ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
       )
+    };
+    decodeJSStringLiteral(body) match {
+    | Success(decoded) -> decoded
+    | Failure(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
     }
   }
 
