@@ -762,14 +762,28 @@ base class STErrorOnTFields(
       // nothing beyond "the source has no index", so it is dropped.
       (
         List.Nil(),
-        List[
-          (
-            index2.pos,
-            `Missing index signature '${TypePp::escapeName(
-              index2.name.value,
-            )}' in source type`,
-          ),
-        ],
+        if (index2.get.isBottom()) {
+          // A never-valued target index means the target is a CLOSED object
+          // type (e.g. Closed<T>): the real objection is that the open source
+          // may carry unknown extra keys, not a missing signature per se.
+          List[
+            (
+              index2.pos,
+              "The target is a closed object type: every unnamed key is " +
+                "provably absent, but the source is an open object type " +
+                "that may have unknown extra keys",
+            ),
+          ]
+        } else {
+          List[
+            (
+              index2.pos,
+              `Missing index signature '${TypePp::escapeName(
+                index2.name.value,
+              )}' in source type`,
+            ),
+          ]
+        },
         None(),
       )
     | STRecFieldsFieldIndex(err, field1, index2, kind, _fields1, _fields2) ->

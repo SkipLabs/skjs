@@ -65,6 +65,14 @@ function testExcessPropertyVsClosed(): void {
   const x: Closed<{ a?: number }> = { a: 1, b: 2 };
 }
 
+// An OPEN object value into a Closed target: rejected — the value may carry
+// unknown extra keys (width subtyping); the diagnostic explains the target
+// is closed rather than reporting a missing index signature.
+function testOpenIntoClosedRejected(x: { readonly a: number }): void {
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const c: Closed<{ readonly a: number }> = x;
+}
+
 // Reading an unnamed key: rejected (the key is provably absent).
 function testReadUnnamedKey(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };

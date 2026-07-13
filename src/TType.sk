@@ -1011,6 +1011,23 @@ class TObject private (
         }
       }
     );
+    // Distinguish a key that is not declared on an OPEN type from one on a
+    // CLOSED type (a never-valued index, e.g. Closed<T>): there the key is
+    // provably absent, not merely undeclared.
+    isBottomIdx = (idx: ?TField) ->
+      idx match {
+      | Some(i) -> i.get.isBottom()
+      | None() -> false
+      };
+    closedNote = if (
+      branches.any(b ->
+        isBottomIdx(b.stringIndex) || isBottomIdx(b.symbolIndex)
+      )
+    ) {
+      "\nThe object type is closed: its unnamed keys are provably absent"
+    } else {
+      ""
+    };
     fatalError(
       Array[
         (
@@ -1022,7 +1039,8 @@ class TObject private (
         (
           pos,
           "Possible options are:\n" +
-            names.toArray().map(n -> TypePp::escapeName(n.value)).join("\n"),
+            names.toArray().map(n -> TypePp::escapeName(n.value)).join("\n") +
+            closedNote,
         ),
       ],
       TSCode(2339),
