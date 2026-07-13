@@ -64,6 +64,15 @@ mutable class Lexer private {
     String::fromChars(this.contents.slice(tok.posStart.value, tok.posEnd.value))
   }
 
+  // Advances past a backslash escape inside a string literal. A trailing
+  // backslash (the final character, with nothing to escape) would otherwise
+  // push pos two past the buffer; capping at end-of-input keeps the reported
+  // error position in bounds so an unterminated string renders instead of
+  // panicking with "Out of bounds".
+  readonly fun skipStringEscape(pos: Int): Int {
+    min(pos + 2, this.contents.size())
+  }
+
   // Returns true if the current token is equal to the string.
   readonly fun isEq(str: String): Bool {
     this.peek() match {
@@ -245,7 +254,7 @@ mutable class Lexer private {
         c = this.contents[pos];
         if (c == '\n') this.error(pos, NewLineInString());
         if (c == '\\') {
-          !pos = pos + 2;
+          !pos = this.skipStringEscape(pos);
           continue
         };
         if (c == '\'') {
@@ -265,7 +274,7 @@ mutable class Lexer private {
         c = this.contents[pos];
         if (c == '\n') this.error(pos, NewLineInString());
         if (c == '\\') {
-          !pos = pos + 2;
+          !pos = this.skipStringEscape(pos);
           continue
         };
         if (c == '"') {
@@ -284,7 +293,7 @@ mutable class Lexer private {
         };
         c = this.contents[pos];
         if (c == '\\') {
-          !pos = pos + 2;
+          !pos = this.skipStringEscape(pos);
           continue
         };
         if (c == '$') {
