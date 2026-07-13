@@ -268,7 +268,20 @@ extension class TypeChecker {
             isFunction =
               tFields.call is CPresent _ ||
               tFields.new is CPresent _;
-            if (isFunction != target) Some(tFields) else None()
+            notFunction = tFields.call is CAbsent() && tFields.new is CAbsent();
+            if (target) {
+              // typeof "object" implies no [[Call]]: surviving branches are
+              // definitely neither callable nor constructible.
+              if (isFunction) None() else {
+                Some(tFields.strengthenNotFunction())
+              }
+            } else {
+              // Not "object": the value is a primitive or a function. A
+              // branch that is provably neither callable nor constructible
+              // cannot reach here, but an unknown-callability branch can: a
+              // function stored in a {}-typed local takes this branch.
+              if (notFunction) None() else Some(tFields)
+            }
           })
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
@@ -295,7 +308,20 @@ extension class TypeChecker {
             isFunction =
               tFields.call is CPresent _ ||
               tFields.new is CPresent _;
-            if (isFunction == target) Some(tFields) else None()
+            notFunction = tFields.call is CAbsent() && tFields.new is CAbsent();
+            if (target) {
+              // Keep any branch that may be callable: a structural object
+              // type admits callable inhabitants (a function carrying the
+              // right properties), so only provably non-callable branches
+              // (class instances, arrays, object literals) narrow away.
+              // Unknown callability stays unknown — such a branch is still
+              // not invocable without a call signature.
+              if (notFunction) None() else Some(tFields)
+            } else {
+              if (isFunction) None() else {
+                Some(tFields.strengthenNotFunction())
+              }
+            }
           })
         | _ -> if (target) None() else Some(x)
         };

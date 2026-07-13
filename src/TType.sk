@@ -2202,6 +2202,13 @@ class TFields protected {
       !(this.call is CPresent _)
   }
 
+  // The branch as refined by a runtime test proving its value is not typeof
+  // "function": callability and constructibility strengthen to
+  // definitely-absent.
+  fun strengthenNotFunction(): TFields {
+    this with {call => CAbsent(), new => CAbsent()}
+  }
+
   fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {
     TFields{
       fields => this.fields.mapKeyed(fField),

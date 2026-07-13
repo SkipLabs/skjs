@@ -83,21 +83,21 @@ function testNewSigTypeofFunction(o: { new (): C }): void {
 // Unknown callability: structural object types admit callable inhabitants
 ///////////////////////////////////////////////////////////////////////////////
 
-// FIXME: `{}` admits callable inhabitants (`const o: {} = () => {}` is
-// accepted right below), so narrowing it to never in the "function" branch is
-// unsound. tsc keeps it (as Function) and rejects the never-assignment.
+// `{}` admits callable inhabitants (`const o: {} = () => {}` is accepted
+// right below), so the "function" branch keeps it (tsc keeps it as Function).
 function testEmptyTypeofFunction(o: {}): void {
   if (typeof o === "function") {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = o;
   }
 }
 
-// FIXME: The dual: a function stored in a `{}`-typed variable makes the else
-// branch of `typeof o === "object"` reachable, but SKJS narrows o to never
-// there. tsc keeps `{}` and rejects the never-assignment.
+// The dual: a function stored in a `{}`-typed variable makes the else branch
+// of `typeof o === "object"` reachable, so o survives there.
 function testEmptyTypeofObjectElse(o: {}): void {
   if (typeof o === "object") {
   } else {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = o;
   }
 }
@@ -108,18 +108,21 @@ function testFnToEmptyObject(f: () => void): {} {
 }
 
 // A function with matching extra properties inhabits `{ a: number }`
-// (e.g. Object.assign(function () {}, { a: 1 })), so narrowing the true
-// branch to never claims emptiness of an inhabited branch. tsc shares this
-// unsoundness (it also narrows to never here); SKJS currently matches it.
+// (e.g. Object.assign(function () {}, { a: 1 })), so the true branch keeps
+// the type. Stricter than tsc, which unsoundly narrows to never here — the
+// value above then flows through a branch tsc claims is unreachable.
 function testPropsTypeofFunction(o: { a: number }): void {
   if (typeof o === "function") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = o;
   }
 }
 
-// Same for interface types: nothing prevents a callable inhabitant.
+// Same for interface types: nothing prevents a callable inhabitant (tsc
+// unsoundly narrows to never).
 function testInterfaceTypeofFunction(o: Iface): void {
   if (typeof o === "function") {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = o;
   }
 }
@@ -185,12 +188,15 @@ function testHybridIntersection(h: (() => void) & { a: number }): number {
   return h.a;
 }
 
-// Union of a callable and a plain object type: SKJS currently drops the
-// object arm in the "function" branch (like tsc), so the call typechecks.
-// This is unsound — a function with an `a` property inhabits the second arm
-// with an unrelated signature — but it is pinned here as current behavior.
+// Union of a callable and a plain object type: the "function" branch keeps
+// the object arm (whose call signature is unknown), so the call is rejected.
+// Stricter than tsc, which drops the arm and allows x() — unsound, since a
+// function with an `a` property inhabits the second arm with an unrelated
+// signature (e.g. Object.assign(function (): number { return 0; }, {a: 1})
+// would be called as () => string).
 function testUnionCallbackCall(x: (() => string) | { a: number }): void {
   if (typeof x === "function") {
+    // @skjs-expect-error This expression is not callable
     const s: string = x();
   }
 }
