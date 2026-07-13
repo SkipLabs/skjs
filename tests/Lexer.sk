@@ -7,8 +7,8 @@ module SKJSTests;
 // string. Follow-up to the string-escape decoding work (#771).
 //
 // The test inspects the reported error position directly rather than rendering
-// it, so it captures the overshoot without triggering the panic. Pinned here to
-// the pre-fix overshoot; the fix caps the position and flips the assertion.
+// it, so it stays robust regardless of how the position is displayed: the fix
+// keeps the position within [0, size], where before it overshot to size + 1.
 @test
 fun testTrailingBackslashDoesNotOvershoot(): void {
   for (q in Array["\"", "'", "`"]) {
@@ -29,10 +29,8 @@ fun testTrailingBackslashDoesNotOvershoot(): void {
       le.pos match {
       | SKJS.EPChar(_, p) ->
         SKTest.expectTrue(
-          p.value > size,
-          `${content}: expected the pre-fix overshoot (pos ${
-            p.value
-          } > size ${size})`,
+          p.value <= size,
+          `${content}: error position ${p.value} must stay within size ${size}`,
         )
       | _ -> SKTest.expectTrue(false, `${content}: expected an EPChar position`)
       }
