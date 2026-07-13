@@ -2202,11 +2202,30 @@ class TFields protected {
       !(this.call is CPresent _)
   }
 
-  // The branch as refined by a runtime test proving its value is not typeof
-  // "function": callability and constructibility strengthen to
-  // definitely-absent.
-  fun strengthenNotFunction(): TFields {
-    this with {call => CAbsent(), new => CAbsent()}
+  // Narrows this branch by the outcome of a runtime typeof-"function" test
+  // (shared by the "function" and "object" cases of evalTypeofEquality). A
+  // branch is typeof "function" when it is callable or constructible: every
+  // constructible value implements [[Call]] (see Callability), so a
+  // class-constructor value is typeof "function" through its construct
+  // signature alone.
+  //
+  // wantFunction=true keeps the branch unless it is provably neither
+  // callable nor constructible (class instances, arrays, object literals);
+  // unknown callability survives — a structural object type admits callable
+  // inhabitants (a function carrying the right properties) — but stays
+  // unknown, so the branch is still not invocable without a call signature.
+  // wantFunction=false keeps the branch unless it is definitely a function,
+  // strengthening its modes to definitely-absent. None drops the branch.
+  fun narrowByTypeofFunction(wantFunction: Bool): ?TFields {
+    isFunction = this.call is CPresent _ || this.new is CPresent _;
+    notFunction = this.call is CAbsent() && this.new is CAbsent();
+    if (wantFunction) {
+      if (notFunction) None() else Some(this)
+    } else if (isFunction) {
+      None()
+    } else {
+      Some(this with {call => CAbsent(), new => CAbsent()})
+    }
   }
 
   fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {

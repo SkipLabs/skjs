@@ -257,32 +257,13 @@ extension class TypeChecker {
       default = None();
       this.setLocal(tcenv, local, default, filter)
     | "object" ->
+      // An object branch is typeof "object" iff it is not typeof "function"
+      // (see TFields::narrowByTypeofFunction); null joins the true branch
+      // below.
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapOpt(tFields -> {
-            // A branch is typeof "function" when it is callable or
-            // constructible: every constructible value implements [[Call]]
-            // (ECMA-262 10.2.1), so a class-constructor value is typeof
-            // "function" through its construct signature alone.
-            isFunction =
-              tFields.call is CPresent _ ||
-              tFields.new is CPresent _;
-            notFunction = tFields.call is CAbsent() && tFields.new is CAbsent();
-            if (target) {
-              // typeof "object" implies no [[Call]]: surviving branches are
-              // definitely neither callable nor constructible.
-              if (isFunction) None() else {
-                Some(tFields.strengthenNotFunction())
-              }
-            } else {
-              // Not "object": the value is a primitive or a function. A
-              // branch that is provably neither callable nor constructible
-              // cannot reach here, but an unknown-callability branch can: a
-              // function stored in a {}-typed local takes this branch.
-              if (notFunction) None() else Some(tFields)
-            }
-          })
+          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(!target))
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
@@ -303,26 +284,7 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapOpt(tFields -> {
-            // See the "object" case: constructible implies typeof "function".
-            isFunction =
-              tFields.call is CPresent _ ||
-              tFields.new is CPresent _;
-            notFunction = tFields.call is CAbsent() && tFields.new is CAbsent();
-            if (target) {
-              // Keep any branch that may be callable: a structural object
-              // type admits callable inhabitants (a function carrying the
-              // right properties), so only provably non-callable branches
-              // (class instances, arrays, object literals) narrow away.
-              // Unknown callability stays unknown — such a branch is still
-              // not invocable without a call signature.
-              if (notFunction) None() else Some(tFields)
-            } else {
-              if (isFunction) None() else {
-                Some(tFields.strengthenNotFunction())
-              }
-            }
-          })
+          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(target))
         | _ -> if (target) None() else Some(x)
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMap)
