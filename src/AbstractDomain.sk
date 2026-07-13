@@ -34,18 +34,14 @@ trait AbstractDomain<S> {
   readonly fun transfer(
     instrs: Array<CFGInstr>,
     s: S,
-    call: (site: Callsite, s: S) -> S,
+    call: (Callsite, S) -> S,
   ): S;
-  readonly fun transferExn(
-    block: CFGBlock,
-    s: S,
-    call: (site: Callsite, s: S) -> S,
-  ): S;
+  readonly fun transferExn(block: CFGBlock, s: S, call: (Callsite, S) -> S): S;
   readonly fun transferTerminator(
     term: BBTerminator,
     s: S,
     label: CFGENormalLabel,
-    call: (site: Callsite, s: S) -> S,
+    call: (Callsite, S) -> S,
   ): S;
 }
 
