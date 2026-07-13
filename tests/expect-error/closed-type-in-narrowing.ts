@@ -5,8 +5,7 @@
 function testInAbsentKeyAlwaysFalse(x: Closed<{ a: number }>): void {
   // @skjs-expect-error This condition is always false
   if ("b" in x) {
-    // TODO(#802): the branch is unreachable; x should narrow to never.
-    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    // The branch is unreachable: x narrows to never.
     const n: never = x;
   }
 }
