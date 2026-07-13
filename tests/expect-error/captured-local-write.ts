@@ -6,21 +6,21 @@
 // type-incorrect, not merely a refinement that goes stale (#769).
 
 // A captured local declared `string`, written a `number` inside the lambda.
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it (#769).
 function capturedWriteWrongType(): void {
   let x: string = "a";
   const g = () => {
+    // @ts-expect-error Type is not assignable to the variable's type
     x = 5;
   };
   g();
 }
 
 // The same violation across two nested lambda boundaries.
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it (#769).
 function capturedWriteWrongTypeNested(): void {
   let x: string = "a";
   const g = () => {
     const h = () => {
+      // @ts-expect-error Type is not assignable to the variable's type
       x = 5;
     };
     h();
@@ -71,11 +71,11 @@ function paramReassignNarrowsInLambda(): void {
 // The check applies to every captured write, not only the first: an earlier
 // write that localizes the variable inside the lambda must not hide a later
 // wrong-typed one.
-// FIXME: tsc rejects the second write (TS2322) but SKJS currently accepts it (#769).
 function capturedWriteWrongTypeAfterLocalWrite(): void {
   let x: string = "a";
   const g = () => {
     x = "b";
+    // @ts-expect-error Type is not assignable to the variable's type
     x = 5;
   };
   g();
@@ -83,9 +83,9 @@ function capturedWriteWrongTypeAfterLocalWrite(): void {
 
 // A default-parameter initializer of an arrow captures enclosing locals just
 // like the body does, so a wrong-typed write there is checked the same way.
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it (#769).
 function capturedWriteInDefaultParam(): void {
   let x: string = "a";
+  // @ts-expect-error Type is not assignable to the variable's type
   const g = (y: number = (x = 5)): void => {
     void y;
   };

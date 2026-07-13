@@ -3126,7 +3126,7 @@ extension class TypeChecker {
     tcenv.recordCalls(CGNodes::singleton(callingContext));
     savedScope = tcenv.scope;
     savedCallingContext = tcenv.callingContext;
-    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
+    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
     tcenv.!callingContext = callingContext;
 
     this.bindParams(tcenv, params, paramTypes);

@@ -162,7 +162,10 @@ extension class TypeChecker {
           )
         };
         savedScope = tcenv.scope;
-        paramScope = tcenv.mcreateSubScope{isLoop => false};
+        // The default initializer can only reference enclosing-frame names
+        // (sibling params are bound later), so mark this as a function boundary:
+        // a write to a captured local here is checked against its declared type.
+        paramScope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
         tcenv.!scope = paramScope;
         this.checkSubType(
           tcenv,
