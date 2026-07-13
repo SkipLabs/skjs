@@ -464,8 +464,8 @@ base class TEnv{
         new => CPresent(new),
         // A class constructor implements [[Call]] (typeof C === "function"),
         // but invoking it without `new` always throws, so it is not
-        // invocable. Its typeof-"function"-ness flows from the construct
-        // signature (constructible implies callable, ECMA-262 10.2.1).
+        // invocable; its typeof-"function"-ness flows from the construct
+        // signature (see Callability).
         call => CAbsent(),
         isArray => Some(false),
       },
