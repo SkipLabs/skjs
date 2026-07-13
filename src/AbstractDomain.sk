@@ -21,6 +21,13 @@ module SKJS;
 //     exceptional successor).
 //   - `transferTerminator` over-approximates terminator semantics for the
 //     normal outgoing edge carrying the provided `label`.
+//
+// And w.r.t. interprocedural call/return semantics:
+//   - `call` abstracts the callee entry state given a caller state, callsite,
+//   - and formal parameters
+//   - `ret` abstracts the caller return state, given the callsite state and
+//     callee exit state
+//   - `callOpaque` over-approximatesthe semantics of a call to an opaque callee
 trait AbstractDomain<S> {
   readonly fun bottom(): S;
   readonly fun init(): S;
@@ -43,6 +50,14 @@ trait AbstractDomain<S> {
     label: CFGENormalLabel,
     call: (Callsite, S) -> S,
   ): S;
+
+  readonly fun call(
+    callerState: S,
+    site: Callsite,
+    params: Array<(Pattern, TType)>,
+  ): S;
+  readonly fun callOpaque(callerState: S, site: Callsite): S;
+  readonly fun ret(callerState: S, calleeState: S, site: Callsite): S;
 }
 
 module end;
