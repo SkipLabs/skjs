@@ -1015,8 +1015,17 @@ class TObject private (
     );
     fatalError(
       Array[
-        (pos, `Property '${fieldName}' does not exist on this type`),
-        (pos, "Possible options are:\n" + names.toArray().join("\n")),
+        (
+          pos,
+          `Property '${TypePp::escapeName(
+            fieldName,
+          )}' does not exist on this type`,
+        ),
+        (
+          pos,
+          "Possible options are:\n" +
+            names.toArray().map(n -> TypePp::escapeName(n.value)).join("\n"),
+        ),
       ],
       TSCode(2339),
     )
@@ -2377,11 +2386,18 @@ class TFields protected {
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
     fatalError(
       Array[
-        (pos, `Property '${fieldName}' does not exist on this type`),
+        (
+          pos,
+          `Property '${TypePp::escapeName(
+            fieldName,
+          )}' does not exist on this type`,
+        ),
         (
           pos,
           "Possible options are:\n" +
-            this.fields.toArray().map(x -> x.name).join("\n"),
+            this.fields.toArray()
+              .map(x -> TypePp::escapeName(x.name.value))
+              .join("\n"),
         ),
       ],
       TSCode(2339),
