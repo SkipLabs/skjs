@@ -702,7 +702,12 @@ base class STErrorOnTFields(
     | STRecFieldsMissingField(field, _fields1, _fields2) ->
       (
         List.Nil(),
-        List[(field.pos, `The field '${field.name.value}' is missing`)],
+        List[
+          (
+            field.pos,
+            `The field '${TypePp::escapeName(field.name.value)}' is missing`,
+          ),
+        ],
         None(),
       )
     | STRecFieldsCall(Some(err), _fields1, _fields2) ->
@@ -720,12 +725,17 @@ base class STErrorOnTFields(
     | STRecFieldsIndexValue(err, index1, index2, kind, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Value type of index field '${index1.name.value}'`),
+          (
+            index1.pos,
+            `Value type of index field '${TypePp::escapeName(
+              index1.name.value,
+            )}'`,
+          ),
           (
             index2.pos,
-            `is not assignable to value type of index field '${
-              index2.name.value
-            }'`,
+            `is not assignable to value type of index field '${TypePp::escapeName(
+              index2.name.value,
+            )}'`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -743,7 +753,9 @@ base class STErrorOnTFields(
         List[
           (
             index2.pos,
-            `Missing index signature '${index2.name.value}' in source type`,
+            `Missing index signature '${TypePp::escapeName(
+              index2.name.value,
+            )}' in source type`,
           ),
         ],
         None(),
@@ -751,10 +763,12 @@ base class STErrorOnTFields(
     | STRecFieldsFieldIndex(err, field1, index2, kind, _fields1, _fields2) ->
       (
         List[
-          (field1.pos, `Field '${field1.name.value}'`),
+          (field1.pos, `Field '${TypePp::escapeName(field1.name.value)}'`),
           (
             index2.pos,
-            `is not assignable to index field '${index2.name.value}'`,
+            `is not assignable to index field '${TypePp::escapeName(
+              index2.name.value,
+            )}'`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -763,8 +777,16 @@ base class STErrorOnTFields(
     | STRecFieldsIndexField(err, index1, field2, kind, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Index field '${index1.name.value}'`),
-          (field2.pos, `is not assignable to field '${field2.name.value}'`),
+          (
+            index1.pos,
+            `Index field '${TypePp::escapeName(index1.name.value)}'`,
+          ),
+          (
+            field2.pos,
+            `is not assignable to field '${TypePp::escapeName(
+              field2.name.value,
+            )}'`,
+          ),
         ],
         err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(field2.pos),
@@ -772,12 +794,17 @@ base class STErrorOnTFields(
     | STRecFieldsField(err, field1, field2, kind, _fields1, _fields2) ->
       msg = kind match {
       | FMKSetter() if (field1.set.isBottom()) ->
-        `Field '${
-          field1.name.value
-        }' is readonly and cannot be used where a mutable field is expected`
+        `Field '${TypePp::escapeName(
+          field1.name.value,
+        )}' is readonly and cannot be used where a mutable field is expected`
       | FMKSetter() ->
-        `Their field '${field1.name.value}' have incompatible set types`
-      | FMKGetter() -> `Their field '${field1.name.value}' are not compatible`
+        `Their field '${TypePp::escapeName(
+          field1.name.value,
+        )}' have incompatible set types`
+      | FMKGetter() ->
+        `Their field '${TypePp::escapeName(
+          field1.name.value,
+        )}' are not compatible`
       };
       (
         List[(field1.pos, msg)],
@@ -790,9 +817,9 @@ base class STErrorOnTFields(
         List[
           (
             field1.pos,
-            `Field '${
-              field1.name.value
-            }' has incompatible accessibility with the target type`,
+            `Field '${TypePp::escapeName(
+              field1.name.value,
+            )}' has incompatible accessibility with the target type`,
           ),
           (field2.pos, "Target declaration is here"),
         ],
