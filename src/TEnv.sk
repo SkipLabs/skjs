@@ -2253,13 +2253,6 @@ base class TEnv{
     tFields
   }
 
-  /* Over-approximates keyof ty
-     Though keyof should be treated symbolically because it is a decreasing
-     function of types.
-     In particular, do not use keyof to check that a key is valid.
-
-     Try to keep in synch with TypeChecker#get in TypeCheckExpr
-  */
   // Closed<T> (SKJS extension): close an object type by setting its string
   // and symbol index slots to `never`. SKJS index signatures are residual —
   // they cover exactly the keys not named in the type — so the never indexes
@@ -2268,8 +2261,8 @@ base class TEnv{
   // making the index's set bottom as well: a readonly and a mutable never
   // index are the same field, so no readonly modifier is involved.
   //
-  // T must expand to a plain object type without index signatures (a
-  // synthetic literal index is not a declared index: it is cleared and
+  // T must expand to a statically known object type without index signatures
+  // (a synthetic literal index is not a declared index: it is cleared and
   // replaced). Anything else errors and recovers with T itself — the tsc
   // reading of the recommended compat declaration `type Closed<T> = T`.
   private fun closeObjectType(
@@ -2278,12 +2271,34 @@ base class TEnv{
     inner: TType,
   ): TType {
     subst = Subst::mcreate(tcenvb);
+    // Inside a generic alias instantiation, anchor errors at the USE site
+    // (`instantiateAt`), not at the alias body's `Closed` token.
+    errPos = this.instantiateAt.default(closedPos);
     hasDeclaredIndex = (idx: ?TField) ->
       idx match {
       | Some(i) -> !i.isSynthetic()
       | None() -> false
       };
-    inner.expand(subst, this, Some(Covariant())).clauses.getObject() match {
+    expanded = inner.expand(subst, this, Some(Covariant()));
+    // An abstract type parameter expands to a clause with non-empty vars —
+    // possibly WITH the constraint's stypes (fromTParamWithConstraint), which
+    // Clauses::getObject would happily return: without this guard, Closed<T>
+    // for `T extends { a: number }` would silently close the CONSTRAINT.
+    // Like mapped types with an abstract key (see createTFields), an abstract
+    // T is deferred during type-definition validation (a generic alias body
+    // is re-validated at each concrete instantiation) and rejected anywhere
+    // else (e.g. a generic function signature, normalized once), reporting at
+    // the instantiation site when there is one.
+    if (expanded.clauses.any(clause -> !clause.vars.isEmpty())) {
+      if (!this.inTypeDefValidation) {
+        tcenvb.error(
+          Array[(errPos, "Closed<T> requires a statically known object type")],
+          SKJSCode(9033),
+        )
+      };
+      return inner
+    };
+    expanded.clauses.getObject() match {
     | Some(obj) if (obj.getBranches().all(b -> b.isArray != Some(true))) ->
       if (
         obj.getBranches().any(b ->
@@ -2295,7 +2310,7 @@ base class TEnv{
         tcenvb.error(
           Array[
             (
-              closedPos,
+              errPos,
               "Closed<T> requires an object type without index signatures",
             ),
           ],
@@ -2319,21 +2334,26 @@ base class TEnv{
       }
     | Some _ ->
       tcenvb.error(
-        Array[
-          (closedPos, "Closed<T> is not supported on array or tuple types"),
-        ],
+        Array[(errPos, "Closed<T> is not supported on array or tuple types")],
         SKJSCode(9033),
       );
       inner
     | None() ->
       tcenvb.error(
-        Array[(closedPos, "Closed<T> requires a statically known object type")],
+        Array[(errPos, "Closed<T> requires a statically known object type")],
         SKJSCode(9033),
       );
       inner
     }
   }
 
+  /* Over-approximates keyof ty
+     Though keyof should be treated symbolically because it is a decreasing
+     function of types.
+     In particular, do not use keyof to check that a key is valid.
+
+     Try to keep in synch with TypeChecker#get in TypeCheckExpr
+  */
   fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
     clauses = ty.expandToClauses(subst, this, Covariant());
     if (
