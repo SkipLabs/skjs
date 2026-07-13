@@ -284,21 +284,22 @@ function testArrayCallableIntersection(h: (() => void) & number[]): void {
   const n: never = h;
 }
 
-// FIXME: A hybrid intersection with a class-instance type collapses to never
-// (callable meets the instance's definitely-not-callable mode), yet it is
-// inhabited — Object.assign(function () {}, { a: 1 }) satisfies both sides
-// structurally. tsc keeps `(() => void) & C`, accepts that inhabitant, and
-// lets it be called.
+// A hybrid intersection with a class-instance type stays inhabited —
+// Object.assign(function () {}, { a: 1 }) satisfies both sides structurally
+// (the instance's definitely-not-callable mode is a brand-like
+// approximation, not a proof). Matches tsc's `(() => void) & C`.
 function testHybridClassIntersection(h: (() => void) & C): void {
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const n: never = h;
 }
 
-// FIXME: instanceof narrowing intersects with the class-instance type, so a
-// callable narrows to never in the true branch — but the branch is reachable
+// instanceof narrowing intersects with the class-instance type; the callable
+// keeps its signature — the branch is reachable
 // (Object.setPrototypeOf(f, C.prototype) makes `f instanceof C` true for a
-// callable f). tsc narrows to `(() => void) & C` and keeps it callable.
+// callable f). Matches tsc's `(() => void) & C`.
 function testInstanceofCallable(f: () => void): void {
   if (f instanceof C) {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: never = f;
   }
 }
