@@ -58,6 +58,33 @@ function testCtorNew(): C {
   return new F();
 }
 
+// A constructor value is typeof "function", so the "object" true branch
+// excludes it entirely.
+function testCtorTypeofObjectTrue(): void {
+  const F = C;
+  if (typeof F === "object") {
+    const n: never = F;
+  }
+}
+
+// ... and so does the else branch of typeof === "function".
+function testCtorTypeofFunctionElse(): void {
+  const F = C;
+  if (typeof F === "function") {
+  } else {
+    const n: never = F;
+  }
+}
+
+// A union of a constructible and a callable arm: both are typeof "function",
+// so the true branch keeps both and the else branch is empty.
+function testCtorFnUnionTypeof(x: { new (): C } | (() => void)): void {
+  if (typeof x === "function") {
+  } else {
+    const n: never = x;
+  }
+}
+
 // A construct signature does not provide a call signature: tsc rejects with
 // TS2322 ("provides no match for the signature").
 function testCtorToFnRejected(): () => C {
@@ -83,8 +110,8 @@ function testNewSigTypeofFunction(o: { new (): C }): void {
 // Unknown callability: structural object types admit callable inhabitants
 ///////////////////////////////////////////////////////////////////////////////
 
-// `{}` admits callable inhabitants (`const o: {} = () => {}` is accepted
-// right below), so the "function" branch keeps it (tsc keeps it as Function).
+// `{}` admits callable inhabitants (testFnToEmptyObject below), so the
+// "function" branch keeps it (tsc keeps it as Function).
 function testEmptyTypeofFunction(o: {}): void {
   if (typeof o === "function") {
     // @ts-expect-error Type of value is not assignable to the variable's type annotation
@@ -127,6 +154,30 @@ function testInterfaceTypeofFunction(o: Iface): void {
   }
 }
 
+// The `object` keyword also admits callable inhabitants (functions are
+// objects), so the "function" branch keeps it.
+function testObjectKeywordTypeofFunction(o: object): void {
+  if (typeof o === "function") {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
+    const n: never = o;
+  }
+}
+
+// Once the "function" check fails, an unknown-callability branch strengthens
+// to definitely-not-callable, so a subsequent "object" else drops it: after
+// both tests fail nothing of `{}` remains. (The residual `never` ignores
+// primitive inhabitants of `{}` — a pre-existing approximation, cf. #674 —
+// tsc keeps `{}` here.)
+function testStrengthenedAfterFunctionElse(o: {}): void {
+  if (typeof o === "function") {
+  } else {
+    if (typeof o === "object") {
+    } else {
+      const n: never = o;
+    }
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Definite non-callability: class instances and arrays keep precise narrowing
 ///////////////////////////////////////////////////////////////////////////////
@@ -149,6 +200,44 @@ function testArrayTypeofFunction(xs: number[]): void {
 function testReadonlyArrayTypeofFunction(xs: readonly number[]): void {
   if (typeof xs === "function") {
     const n: never = xs;
+  }
+}
+
+function testTupleTypeofFunction(t: [number, string]): void {
+  if (typeof t === "function") {
+    const n: never = t;
+  }
+}
+
+// Values built by object-literal syntax (including spreads) are plain
+// objects: never callable.
+function testLiteralTypeofFunction(): void {
+  const o = { a: 1 };
+  if (typeof o === "function") {
+    const n: never = o;
+  }
+}
+
+function testSpreadTypeofFunction(f: () => void): void {
+  // Spreading copies own enumerable properties only; the result is a plain
+  // object even when the source is a function. (tsc types the spread as `{}`
+  // and cannot prove the branch empty; SKJS can, soundly.)
+  const o = { ...f };
+  if (typeof o === "function") {
+    const n: never = o;
+  }
+}
+
+// The runtime enum object is a plain object: never callable.
+enum En {
+  A,
+  B,
+}
+
+function testEnumObjectTypeofFunction(): void {
+  const e = En;
+  if (typeof e === "function") {
+    const n: never = e;
   }
 }
 
@@ -186,6 +275,25 @@ function testLiteralToClass(): C {
 function testHybridIntersection(h: (() => void) & { a: number }): number {
   h();
   return h.a;
+}
+
+// FIXME: A hybrid intersection with a class-instance type collapses to never
+// (callable meets the instance's definitely-not-callable mode), yet it is
+// inhabited — Object.assign(function () {}, { a: 1 }) satisfies both sides
+// structurally. tsc keeps `(() => void) & C`, accepts that inhabitant, and
+// lets it be called.
+function testHybridClassIntersection(h: (() => void) & C): void {
+  const n: never = h;
+}
+
+// FIXME: instanceof narrowing intersects with the class-instance type, so a
+// callable narrows to never in the true branch — but the branch is reachable
+// (Object.setPrototypeOf(f, C.prototype) makes `f instanceof C` true for a
+// callable f). tsc narrows to `(() => void) & C` and keeps it callable.
+function testInstanceofCallable(f: () => void): void {
+  if (f instanceof C) {
+    const n: never = f;
+  }
 }
 
 // Union of a callable and a plain object type: the "function" branch keeps
