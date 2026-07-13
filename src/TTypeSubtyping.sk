@@ -693,10 +693,24 @@ base class STErrorOnTFields(
         (bareCall(this.fields1) && bareCall(this.fields2)));
     detailForRec = if (showTypes) detail.decreaseIntermediate() else detail;
     (recMsgs, msgs, suggestReadonly) = this match {
-    | STRecFieldsCall(None(), _fields1, _fields2) ->
-      (List.Nil(), List[(pos1, "Missing call signature")], None())
-    | STRecFieldsNew(None(), _fields1, _fields2) ->
-      (List.Nil(), List[(pos1, "Missing constructor signature")], None())
+    // The mode check rejects in two directions: the source lacks a call
+    // signature the target requires, or the source's call signature is
+    // forbidden by a definitely-non-callable target (e.g. a class-instance
+    // type).
+    | STRecFieldsCall(None(), fields1, fields2) ->
+      msg = if (fields1.call is CPresent _ && fields2.call is CAbsent()) {
+        "Unexpected call signature"
+      } else {
+        "Missing call signature"
+      };
+      (List.Nil(), List[(pos1, msg)], None())
+    | STRecFieldsNew(None(), fields1, fields2) ->
+      msg = if (fields1.new is CPresent _ && fields2.new is CAbsent()) {
+        "Unexpected constructor signature"
+      } else {
+        "Missing constructor signature"
+      };
+      (List.Nil(), List[(pos1, msg)], None())
     | STRecFieldsMissingField(field, _fields1, _fields2) ->
       (
         List.Nil(),
