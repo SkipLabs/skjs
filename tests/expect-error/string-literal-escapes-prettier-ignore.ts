@@ -46,6 +46,16 @@ function surrogatePairEscape(): void {
   const a: "😀" = "\uD83D\uDE00";
 }
 
+function tabEscape(): void {
+  // \t and \x09 are both U+0009.
+  const a: "\t" = "\x09";
+}
+
+function backspaceEscape(): void {
+  // \b and \x08 are both U+0008.
+  const a: "\b" = "\x08";
+}
+
 // Negative control: genuinely distinct values stay a type error after decoding.
 function distinctValuesStillError(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
