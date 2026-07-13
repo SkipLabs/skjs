@@ -277,6 +277,13 @@ function testHybridIntersection(h: (() => void) & { a: number }): number {
   return h.a;
 }
 
+// An intersection of a callable and an array type is uninhabited: array
+// exotic objects never implement [[Call]], so the branch drops and the type
+// is never. (tsc keeps `(() => void) & number[]` structurally.)
+function testArrayCallableIntersection(h: (() => void) & number[]): void {
+  const n: never = h;
+}
+
 // FIXME: A hybrid intersection with a class-instance type collapses to never
 // (callable meets the instance's definitely-not-callable mode), yet it is
 // inhabited — Object.assign(function () {}, { a: 1 }) satisfies both sides
