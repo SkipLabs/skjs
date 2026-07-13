@@ -1357,114 +1357,23 @@ base class TEnv{
         )
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
-    | TAInst(Name(closedPos, "Closed"), targs) if (targs.size() == 1) ->
+    | TAInst(
+      closedName @ Name(closedPos, "Closed"),
+      targs,
+    ) if (targs.size() == 1) ->
       // Closed<T> (SKJS extension): closes an object type — every key not
-      // named in T is provably absent. The 1-ary application is intercepted
-      // BEFORE name resolution, so the recommended tsc-compat declaration
-      // `type Closed<T> = T` (identity for tsc) keeps this meaning in SKJS.
-      // Other arities fall through to ordinary resolution.
-      inner = this.normalize(tcenvb, targs[0]);
-      this.closeObjectType(tcenvb, closedPos, inner)
-    | TAInst(n, targs) ->
-      // Resolve via lexical bindings (see `bindings` field doc).
-      this.bindings.maybeGet(n.value) match {
-      | Some(boundTy) ->
-        // If n resolves to a bound type parameter, n<targs> is invalid
-        // (example: class C<T> { value: T<number> }).
-        if (targs.size() != 0) {
-          tcenvb.error(
-            Array[
-              (
-                n.pos,
-                `Type parameter '${
-                  n.value
-                }' is not generic and cannot have type arguments`,
-              ),
-            ],
-            TSCode(2315),
-          )
-        };
-        boundTy.withPos(pos)
-
-      | None() if (this.forbiddenInsts.contains(n.value)) ->
-        fatalError(
-          Array[(n.pos, `Type '${n.value}' circularly references itself`)],
-          TSCode(2456),
-        )
-      | None() ->
-        // No bound-name match: treat n as a named type definition. A dotted
-        // name whose head is an enum (`E.A`) resolves to an EnumMemberDef.
-        tdef = this.defMap.getType(tcenvb, n);
-        tparams = tdef match {
-        | TypeDef{tdefParams} -> tdefParams
-        | Class{tparams} -> tparams
-        | Enum _ -> Array[]
-        | EnumMemberDef(en, member) ->
-          // A qualified enum-member type reference (`E.A`). Build the member
-          // type here — the defMap resolved the name, TEnv owns the folding.
-          if (targs.size() != 0) {
-            tcenvb.error(
-              Array[(n.pos, `Type '${n.value}' is not generic`)],
-              TSCode(2315),
-            )
-          };
-          return this.enumMemberType(tcenvb, en, member.value) match {
-          | Some(memberTy) -> memberTy.withPos(pos)
-          | None() ->
-            fatalError(
-              Array[
-                (
-                  n.pos,
-                  `Namespace '${en.name.value}' has no exported member '${
-                    member.value
-                  }'`,
-                ),
-              ],
-              TSCode(2694),
-            )
-          }
-        };
-        arityOk = !(
-          targs.size() > tparams.size() ||
-          (targs.size() < tparams.size() &&
-            tparams[targs.size()].default is None())
-        );
-        if (!arityOk) {
-          tcenvb.error(
-            Array[
-              (
-                n.pos,
-                `Expected ${tparams.size()} type arguments, but got ${targs.size()}`,
-              ),
-            ],
-            TSCode(2707),
-          )
-        };
-
-        if (this.seenInstantiate.contains(n.value)) {
-          !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
-        };
-        normTargs = targs.map(x -> this.normalize(tcenvb, x));
-        // Check the type arguments against the parameters' constraints at the
-        // reference site, the same obligation enforced when the definition is
-        // expanded (see instantiateTParams), but without expanding the body.
-        // Without this, a violating argument in a reference that is never
-        // expanded — an unused ambient declaration, an interface field, an
-        // unused parameter type — escapes the expansion-time check entirely
-        // and skjs accepts a reference TypeScript rejects (TS2344). The check
-        // runs on a throwaway subst so its discarded bindings and clone growth
-        // never touch the live substitution. Guarded on arityOk so a wrong
-        // count is reported once (as TS2707) rather than also here.
-        if (arityOk) {
-          _ = this.instantiateTParams(
-            Subst::mcreate(tcenvb),
-            n.pos,
-            normTargs,
-            tparams,
-          )
-        };
-        TType::inst(n, TArgs(normTargs))
+      // named in T is provably absent. Recognition is by the IDENTITY-ALIAS
+      // shape: `type Closed<T> = T` — the recommended tsc-compat declaration,
+      // shipped in the SKJS stubs — is the closed-object operator (see
+      // closedIsBuiltin); any other declaration named Closed, and other
+      // arities, resolve ordinarily.
+      if (this.closedIsBuiltin(tcenvb, closedName)) {
+        inner = this.normalize(tcenvb, targs[0]);
+        this.closeObjectType(tcenvb, closedPos, inner)
+      } else {
+        this.normalizeInst(tcenvb, pos, closedName, targs)
       }
+    | TAInst(n, targs) -> this.normalizeInst(tcenvb, pos, n, targs)
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
       TType::union(
@@ -2228,6 +2137,144 @@ base class TEnv{
       call,
     };
     tFields
+  }
+
+  // Body of normalize's general TAInst arm, extracted so the Closed arm can
+  // delegate a non-builtin `Closed<...>` reference to ordinary resolution.
+  private fun normalizeInst(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    n: Name,
+    targs: Array<Type>,
+  ): TType {
+    // Resolve via lexical bindings (see `bindings` field doc).
+    this.bindings.maybeGet(n.value) match {
+    | Some(boundTy) ->
+      // If n resolves to a bound type parameter, n<targs> is invalid
+      // (example: class C<T> { value: T<number> }).
+      if (targs.size() != 0) {
+        tcenvb.error(
+          Array[
+            (
+              n.pos,
+              `Type parameter '${
+                n.value
+              }' is not generic and cannot have type arguments`,
+            ),
+          ],
+          TSCode(2315),
+        )
+      };
+      boundTy.withPos(pos)
+
+    | None() if (this.forbiddenInsts.contains(n.value)) ->
+      fatalError(
+        Array[(n.pos, `Type '${n.value}' circularly references itself`)],
+        TSCode(2456),
+      )
+    | None() ->
+      // No bound-name match: treat n as a named type definition. A dotted
+      // name whose head is an enum (`E.A`) resolves to an EnumMemberDef.
+      tdef = this.defMap.getType(tcenvb, n);
+      tparams = tdef match {
+      | TypeDef{tdefParams} -> tdefParams
+      | Class{tparams} -> tparams
+      | Enum _ -> Array[]
+      | EnumMemberDef(en, member) ->
+        // A qualified enum-member type reference (`E.A`). Build the member
+        // type here — the defMap resolved the name, TEnv owns the folding.
+        if (targs.size() != 0) {
+          tcenvb.error(
+            Array[(n.pos, `Type '${n.value}' is not generic`)],
+            TSCode(2315),
+          )
+        };
+        return this.enumMemberType(tcenvb, en, member.value) match {
+        | Some(memberTy) -> memberTy.withPos(pos)
+        | None() ->
+          fatalError(
+            Array[
+              (
+                n.pos,
+                `Namespace '${en.name.value}' has no exported member '${
+                  member.value
+                }'`,
+              ),
+            ],
+            TSCode(2694),
+          )
+        }
+      };
+      arityOk = !(
+        targs.size() > tparams.size() ||
+        (targs.size() < tparams.size() &&
+          tparams[targs.size()].default is None())
+      );
+      if (!arityOk) {
+        tcenvb.error(
+          Array[
+            (
+              n.pos,
+              `Expected ${tparams.size()} type arguments, but got ${targs.size()}`,
+            ),
+          ],
+          TSCode(2707),
+        )
+      };
+
+      if (this.seenInstantiate.contains(n.value)) {
+        !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
+      };
+      normTargs = targs.map(x -> this.normalize(tcenvb, x));
+      // Check the type arguments against the parameters' constraints at the
+      // reference site, the same obligation enforced when the definition is
+      // expanded (see instantiateTParams), but without expanding the body.
+      // Without this, a violating argument in a reference that is never
+      // expanded — an unused ambient declaration, an interface field, an
+      // unused parameter type — escapes the expansion-time check entirely
+      // and skjs accepts a reference TypeScript rejects (TS2344). The check
+      // runs on a throwaway subst so its discarded bindings and clone growth
+      // never touch the live substitution. Guarded on arityOk so a wrong
+      // count is reported once (as TS2707) rather than also here.
+      if (arityOk) {
+        _ = this.instantiateTParams(
+          Subst::mcreate(tcenvb),
+          n.pos,
+          normTargs,
+          tparams,
+        )
+      };
+      TType::inst(n, TArgs(normTargs))
+    }
+  }
+
+  // Whether a `Closed<...>` reference means the builtin closed-object
+  // operator. The operator IS the identity alias: a resolution of the name
+  // to `type Closed<T> = T` — the recommended tsc-compat declaration (tsc
+  // sees plain T), shipped in the SKJS stubs so it works with no user
+  // declaration. A lexically bound Closed (a type parameter) or a resolution
+  // to any OTHER declaration named Closed keeps its ordinary meaning; an
+  // unresolvable name (no stubs loaded) still means the builtin.
+  private fun closedIsBuiltin(tcenvb: mutable TCEnvBase, name: Name): Bool {
+    if (this.bindings.maybeGet(name.value).isSome()) return false;
+    for (def in this.defMap.getAll(tcenvb, name, true)) {
+      def match {
+      | td @ TypeDef{tdefParams} ->
+        // Mirror getType: the first TypeOnlyDef is what resolution would
+        // pick; decide from it.
+        return tdefParams.size() == 1 &&
+          this.getTypeDefBody(tcenvb.context, td).value match {
+          | TAInst(Name(_, bodyName), bodyArgs) ->
+            bodyArgs.isEmpty() && bodyName == tdefParams[0].name.value
+          | _ -> false
+          }
+      | Class _
+      | Enum _ ->
+        return false
+      | _ -> void
+      }
+    };
+    true
   }
 
   // Closed<T> (SKJS extension): close an object type by setting its string

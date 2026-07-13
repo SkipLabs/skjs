@@ -277,6 +277,15 @@ declare const Symbol: {
   readonly unscopables: unique symbol;
 };
 
+// Closed<T> (SKJS extension): closes an object type — every key not named in
+// T is provably absent. For tsc this is the identity alias; SKJS recognizes
+// exactly this identity-alias shape named Closed as the closed-object
+// operator (see skjs-rules.md "Closed<T>"). A Closed object type is
+// assignable to readonly index-signature supertypes (e.g. Json-style types),
+// excess properties are rejected, unnamed-key access is an error, and
+// keyof Closed<T> = keyof T.
+type Closed<T> = T;
+
 declare class Object {
   // Existing methods
   static keys(obj: object): Array<string>;

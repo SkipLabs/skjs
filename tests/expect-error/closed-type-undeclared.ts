@@ -1,7 +1,7 @@
-// Closed<T> used WITHOUT the tsc-compat identity alias: the builtin works with
-// no declaration at all. (tsc rejects this whole file with TS2304 "Cannot find
-// name 'Closed'" — this is the SKJS-only surface; declare `type Closed<T> = T`
-// for tsc compatibility, as closed-type.ts does.)
+// Closed<T> used without any LOCAL declaration: the identity alias shipped in
+// the SKJS stubs (import-stubs/@types/skjs) resolves it, so the operator works
+// out of the box. (tsc also accepts when configured to see the same stubs; a
+// local `type Closed<T> = T` as in closed-type.ts works too.)
 
 function testUndeclaredClosedAnnotation(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };
