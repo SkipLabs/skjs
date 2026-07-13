@@ -1028,13 +1028,20 @@ base class TEnv{
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
-        return this.findConstructorMethod(
-          subst,
-          visitedClasses,
-          parentName,
-          tparams,
-          paramTArgs.map(targ -> this.normalize(subst, targ)),
-        )
+        // A type-alias base cannot contribute a constructor (a call/construct
+        // signature on an alias base is rejected by addFieldsFromAliasBase),
+        // so skip it instead of resolving it as a class — recursing would
+        // fatal "Cannot find name" on the alias (#798). Mirrors the
+        // hasClassDef guard in addFields' extends walk.
+        if (this.hasClassDef(subst, parentName)) {
+          return this.findConstructorMethod(
+            subst,
+            visitedClasses,
+            parentName,
+            tparams,
+            paramTArgs.map(targ -> this.normalize(subst, targ)),
+          )
+        }
       | _ ->
         subst.error(
           Array[
