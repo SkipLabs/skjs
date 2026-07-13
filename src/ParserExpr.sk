@@ -621,8 +621,16 @@ extension class Parser {
     rawContent = this.lex.getTokenRawStringContent(tok);
 
     if (!rawContent.contains("${")) {
-      // Simple template literal without interpolation
-      return EString(rawContent.stripPrefix("`").stripSuffix("`"))
+      // Simple template literal without interpolation: decode escapes like a
+      // quoted string so its literal type equals the runtime value (#810).
+      // Template literal *types* are unsupported, so there is no value/type
+      // asymmetry; interpolated templates are typed as `string`, so their
+      // parts are not decoded here.
+      body = rawContent.stripPrefix("`").stripSuffix("`");
+      return decodeJSStringLiteral(body) match {
+      | Success(decoded) -> EString(decoded)
+      | Failure(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
+      }
     };
 
     // Parse template literal with interpolation by manipulating lexer position
