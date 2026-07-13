@@ -659,6 +659,10 @@ extension class TypeChecker {
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
+                // The key is absent, so a default is the ONLY thing that can
+                // fire at runtime — it is not useless (#799). The 2339 error
+                // below already covers the misuse.
+                !defaultIsUseless = None();
                 tcenv.error(
                   Array[
                     (
