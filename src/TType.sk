@@ -903,7 +903,9 @@ class TObject private (
   // this object type is callable as a function. Cheaper than getFields, which
   // unions all branches; used for the always-truthy-function check (TS2774).
   fun hasCallSignature(): Bool {
-    this.branches.all(fields -> fields.call is CPresent _)
+    this.branches.all(fields ->
+      fields.call is CPresent _ || fields.call is CFunction()
+    )
   }
 
   // True when every branch carries a call or construct signature, i.e. this
@@ -912,7 +914,9 @@ class TObject private (
   // function and a class still qualifies. Used for the `instanceof` RHS check.
   fun isFunctionLike(): Bool {
     this.branches.all(fields ->
-      fields.call is CPresent _ || fields.new is CPresent _
+      fields.call is CPresent _ ||
+        fields.call is CFunction() ||
+        fields.new is CPresent _
     )
   }
 
@@ -1098,7 +1102,11 @@ class TObject private (
     for (fields in this.branches) {
       (fields, result) match {
       | (TFields{call => CAbsent()}, _)
-      | (TFields{call => CUnknown()}, _) ->
+      | (TFields{call => CUnknown()}, _)
+      // Provable callability without a signature (the Function type) is
+      // deliberately not invocable: there is no signature to check the
+      // call against.
+      | (TFields{call => CFunction()}, _) ->
         return None()
       | (TFields{call => CPresent(first)}, None()) -> !result = Some(first)
       | (TFields{call => CPresent(tFuns2)}, Some(tFuns1)) ->
@@ -1114,7 +1122,8 @@ class TObject private (
       fields match {
       | TFields{call => CPresent(TFuns(fun_, _))} -> tys.push(fun_.retType)
       | TFields{call => CAbsent()}
-      | TFields{call => CUnknown()} ->
+      | TFields{call => CUnknown()}
+      | TFields{call => CFunction()} ->
         return None()
       }
     };
@@ -1142,7 +1151,8 @@ class TObject private (
     for (fields in this.branches) {
       (fields, result) match {
       | (TFields{new => CAbsent()}, _)
-      | (TFields{new => CUnknown()}, _) ->
+      | (TFields{new => CUnknown()}, _)
+      | (TFields{new => CFunction()}, _) ->
         return None()
       | (TFields{new => CPresent(first)}, None()) -> !result = Some(first)
       | (TFields{new => CPresent(tFuns2)}, Some(tFuns1)) ->
@@ -2051,18 +2061,25 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
 }
 
 // The callability of an object type's members — or, for the `new` mode,
-// their constructibility. A three-point lattice:
+// their constructibility. A four-point lattice, ordered
+// CPresent(sig) <= CFunction <= CUnknown and CAbsent <= CUnknown:
 //
 //  - CPresent(sig): every member can be invoked (constructed) with signature
 //    `sig`. Such values implement [[Call]] ([[Construct]]), so `typeof`
 //    yields "function" for them; every constructible value also implements
 //    [[Call]] (ECMA-262 10.2.1), so new = CPresent alone already implies
 //    typeof "function".
-//  - CAbsent(): no member can be usefully invoked (constructed). A branch
-//    with call = CAbsent AND new = CAbsent contains no typeof-"function"
-//    values. A class-constructor value has call = CAbsent (invoking it
-//    without `new` always throws) together with new = CPresent, so it is
-//    still typeof "function" through its construct signature.
+//  - CFunction(): every member implements [[Call]] ([[Construct]]) but no
+//    signature is known, so the member is not invocable (constructible) —
+//    what TypeScript's `Function` type denotes, kept sound: maybeGetCall
+//    still requires CPresent. Used for the call mode of class-constructor
+//    values (their [[Call]] always throws, so there is no signature to
+//    offer), of construct-signature-bearing types (constructible implies
+//    [[Call]]), and for the result of a runtime typeof-"function" proof on
+//    an unknown-callability branch. A positive brand: nothing launders into
+//    it (CUnknown is not a subtype of CFunction).
+//  - CAbsent(): no member implements [[Call]] ([[Construct]]). A branch
+//    with call = CAbsent contains no typeof-"function" values.
 //  - CUnknown(): no constraint (top). The mode of structural object types
 //    ({}, interfaces, object type annotations), whose width subtyping admits
 //    callable inhabitants — e.g. `const o: {} = () => {}`.
@@ -2075,6 +2092,7 @@ base class Callability uses XXHashable, Orderable {
   children =
   | CAbsent()
   | CUnknown()
+  | CFunction()
   | CPresent(sig: TFuns)
 
   static fun fromSig(sig: ?TFuns): Callability {
@@ -2224,7 +2242,9 @@ class TFields protected {
       this.symbolFields.isEmpty() &&
       !this.hasNonSyntheticIndex() &&
       !(this.new is CPresent _) &&
-      !(this.call is CPresent _)
+      !(this.new is CFunction()) &&
+      !(this.call is CPresent _) &&
+      !(this.call is CFunction())
   }
 
   // Narrows this branch by the outcome of a runtime typeof-"function" test

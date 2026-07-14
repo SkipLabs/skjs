@@ -484,8 +484,18 @@ extension class TFields {
       Some(m)
     | (CAbsent(), CAbsent()) -> Some(CAbsent())
     | (CAbsent(), p @ CPresent _)
-    | (p @ CPresent _, CAbsent()) ->
+    | (p @ CPresent _, CAbsent())
+    // Proven-callable meets definitely-not-callable: same brand-aware rule
+    // as the CPresent arm above.
+    | (CAbsent(), p @ CFunction())
+    | (p @ CFunction(), CAbsent()) ->
       if (isArray == Some(true)) None() else Some(p)
+    // A known signature is strictly more precise than bare provable
+    // callability.
+    | (CFunction(), p @ CPresent _)
+    | (p @ CPresent _, CFunction()) ->
+      Some(p)
+    | (CFunction(), CFunction()) -> Some(CFunction())
     | (CPresent(f1), CPresent(f2)) ->
       TFuns::inter(subst, tenv, f1, f2).map(f -> CPresent(f))
     }

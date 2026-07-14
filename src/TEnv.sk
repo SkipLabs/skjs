@@ -933,7 +933,11 @@ base class TEnv{
         // A call/construct signature on the base is representable here only as
         // a named member, so it cannot flow through the field maps; reject
         // rather than silently drop it.
-        if (tfields.call is CPresent _ || tfields.new is CPresent _) {
+        if (
+          tfields.call is CPresent _ ||
+          tfields.call is CFunction() ||
+          tfields.new is CPresent _
+        ) {
           subst.notSupported(
             extend.pos,
             "extending a type alias that has a call or construct signature",

@@ -383,10 +383,14 @@ mutable class TypePp{
     };
     (fields.call, fields.new) match {
     | (CPresent(TFuns(tfun, _pos)), CAbsent())
-    | (CPresent(TFuns(tfun, _pos)), CUnknown()) ->
+    | (CPresent(TFuns(tfun, _pos)), CUnknown())
+    | (CPresent(TFuns(tfun, _pos)), CFunction()) ->
       Some((false, tfun))
     | (CAbsent(), CPresent(TFuns(tfun, _pos)))
-    | (CUnknown(), CPresent(TFuns(tfun, _pos))) ->
+    | (CUnknown(), CPresent(TFuns(tfun, _pos)))
+    // A construct signature next to provable-but-signatureless callability
+    // still renders bare: the [[Call]] evidence IS the construct signature.
+    | (CFunction(), CPresent(TFuns(tfun, _pos))) ->
       Some((true, tfun))
     | _ -> None()
     }
@@ -520,7 +524,10 @@ mutable class TypePp{
     });
     fields.call match {
     | CAbsent()
-    | CUnknown() ->
+    | CUnknown()
+    // Provable callability has no signature to print; a fieldless branch
+    // renders as `Function` via TypePp::object instead.
+    | CFunction() ->
       void
     | CPresent(TFuns(tfun, _pos)) ->
       this.beginMember(level, margin, multiLine);
@@ -529,7 +536,8 @@ mutable class TypePp{
     };
     fields.new match {
     | CAbsent()
-    | CUnknown() ->
+    | CUnknown()
+    | CFunction() ->
       void
     | CPresent(TFuns(tfun, _pos)) ->
       this.beginMember(level, margin, multiLine);
