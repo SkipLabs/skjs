@@ -1,0 +1,40 @@
+name: arm64 test
+
+# The release workflow builds a linux/arm64 binary but nothing ever runs the
+# test suite on arm64. Exercise the full suite on arm64 for pushes to main and
+# for release tags, so an arch-specific regression cannot ship unnoticed.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions: {}
+
+concurrency:
+  group: arm64-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-arm64:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: skiplabs/skip:latest
+    env:
+      SKIP_CAPACITY: 8G
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Clone Skip repository
+        run: |
+          git clone --depth=1 --shallow-submodules --recurse-submodules \
+            https://github.com/SkipLabs/skip ../skip
+
+      - name: Test
+        run: make test
