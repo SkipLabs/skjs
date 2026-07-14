@@ -2086,15 +2086,18 @@ extension class TypeChecker {
           | _ -> None()
           }
         );
-      calleeMode = calleeObj.map(obj -> obj.callMode(tcenv.subst, this));
+      (calleeMode, calleePartialSig) = calleeObj
+        .map(obj -> obj.callMode(tcenv.subst, this))
+        .default((CUnknown(), None()));
       tfuns = calleeMode match {
-      | Some(CPresent(tfuns)) -> tfuns
+      | CPresent(tfuns) -> tfuns
       | _ ->
         // Pick the honest detail: a constructible value or a Function-typed
         // value IS a function at runtime — what fails is the missing `new`
         // or the unknown signature, not function-ness.
-        calleeNewMode = calleeObj.map(obj -> obj.newMode(tcenv.subst, this));
-        provablyConstructible = calleeNewMode match {
+        provablyConstructible = calleeObj.map(obj ->
+          obj.newMode(tcenv.subst, this).i0
+        ) match {
         | Some(CPresent _)
         | Some(CFunction()) ->
           true
@@ -2105,18 +2108,15 @@ extension class TypeChecker {
             tcenv,
             fty,
           )} is constructable: did you mean to include 'new'?`
-        } else if (calleeMode == Some(CFunction())) {
+        } else if (calleeMode == CFunction()) {
           // Every branch proves [[Call]] either way; the phrasing follows
           // what the printed type shows. All-CFunction branches render
           // callable (Function and its extensions), so "is callable" reads
           // right; a mixed join means some arm prints as a plain object (a
           // typeof-narrowed union arm), where "is callable" would look
-          // wrong to the reader — hedge with "may".
-          selfEvident = calleeObj
-            .map(obj ->
-              obj.getBranches().all(fields -> fields.call is CFunction())
-            )
-            .default(false);
+          // wrong to the reader — hedge with "may". All-CFunction is
+          // exactly a CFunction mode with no partial signature.
+          selfEvident = calleePartialSig is None();
           if (selfEvident) {
             `Type ${this.ppType(
               tcenv,
@@ -2139,9 +2139,7 @@ extension class TypeChecker {
         // the (sound) error non-fatally and continue at their union — the
         // type tsc infers after (unsoundly) dropping the signature-less
         // arms — so the rest of the definition still gets checked.
-        calleeObj.flatMap(obj ->
-          obj.maybeGetPartialCall(tcenv.subst, this)
-        ) match {
+        calleePartialSig match {
         | Some(partial) ->
           tcenv.error(errorArgs, TSCode(2349));
           partial
