@@ -1,0 +1,27 @@
+{
+  "name": "skjs",
+  "version": "0.0.0",
+  "description": "Sound-oriented TypeScript typechecker. Placeholder to reserve the name; the runnable npx wrapper ships with the open-source launch.",
+  "license": "MIT",
+  "homepage": "https://github.com/SkipLabs/skjs#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SkipLabs/skjs.git",
+    "directory": "npm"
+  },
+  "bugs": {
+    "url": "https://github.com/SkipLabs/skjs/issues"
+  },
+  "keywords": [
+    "typescript",
+    "typechecker",
+    "type-checker",
+    "sound",
+    "static-analysis",
+    "skjs",
+    "skiplabs"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
