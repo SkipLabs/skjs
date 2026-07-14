@@ -108,6 +108,14 @@ jobs:
           BINARY="artifacts/skjs_${GITHUB_REF_NAME}_linux_${{ matrix.arch }}"
           chmod +x "$BINARY"
           "$BINARY" --version
+          # A shipped binary must accept a known-good program...
+          "$BINARY" check --import-stubs import-stubs .github/release-smoke/good.ts
+          # ...and reject a known-bad one. A binary that accepts it must not ship.
+          if "$BINARY" check --import-stubs import-stubs .github/release-smoke/bad.ts; then
+            echo "FAIL: bad fixture type-checked clean on ${{ matrix.arch }}"
+            exit 1
+          fi
+          echo "Real-check smoke passed on ${{ matrix.arch }}"
 
       - name: Upload arch artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
