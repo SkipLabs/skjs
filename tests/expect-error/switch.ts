@@ -28,20 +28,18 @@ function defaultClauseNotLast(x: number): void {
   }
 }
 
-// FIXME: a `case` following a non-last `default` is wrongly flagged
-// unreachable. JS matches a `case` by value regardless of `default`'s position
-// (falling to `default` only when no `case` matches), so `case 1`/`case 2` are
-// reachable; only the `default` is unreachable here, since the cases cover all
-// of 1 | 2. Pinned to the current (incorrect) behavior; fixed in the next commit.
+// A `case` following a non-last `default` is still reachable: JS matches a
+// `case` by value regardless of `default`'s position (falling to `default` only
+// when no `case` matches), so `case 1`/`case 2` must not be flagged unreachable.
+// The `default` itself is unreachable here, since the cases cover all of 1 | 2.
 function caseAfterDefaultReachable(x: 1 | 2): void {
   // @skjs-expect-warning The 'default' clause should be the last branch of a switch
   switch (x) {
+    // @skjs-expect-warning This 'default' case is unreachable: all values of the switched type are already handled
     default:
       return;
-    // @skjs-expect-warning This case is unreachable: its value is not in the switched type
     case 1:
       return;
-    // @skjs-expect-warning This case is unreachable: its value is not in the switched type
     case 2:
       return;
   }
