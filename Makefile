@@ -14,10 +14,11 @@ JUNITXML_FLAGS=$(if $(JUNITXML),--junitxml $(JUNITXML))
 .PHONY: test
 test:
 	skargo test $(JUNITXML_FLAGS)
-	./tests/test_incremental.sh
-	./tests/test_affected_files.sh
-	./tests/test_stdin.sh
-	./tests/test_config_change.sh
+	parallel --halt now,fail=1 ::: \
+		./tests/test_incremental.sh \
+		./tests/test_affected_files.sh \
+		./tests/test_stdin.sh \
+		./tests/test_config_change.sh
 
 # Run only the CFG expectation tests (UPDATE_EXPECT=1 to regenerate expectations)
 .PHONY: test-cfg
