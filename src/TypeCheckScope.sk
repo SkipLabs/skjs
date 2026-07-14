@@ -4,7 +4,12 @@
 
 module SKJS;
 
-value class LocalRef(type: TType, isInitialized: Bool)
+// `type` is the binding's current (flow-narrowed) type; `declaredType` is the
+// type it was declared with, preserved across narrowing writes so a write that
+// escapes the current frame — through a loop or into an enclosing-function
+// capture — can be checked against the declared type rather than a transient
+// narrowing (see `Scope::set`).
+value class LocalRef(type: TType, declaredType: TType, isInitialized: Bool)
 
 class NameRef(name: String, ref: LocalRef) uses Projectable<String> {
   fun project(): String {
@@ -15,6 +20,11 @@ class NameRef(name: String, ref: LocalRef) uses Projectable<String> {
 mutable class Scope{
   id: Int,
   private isLoop: Bool,
+  // A function boundary (a lambda body or an arrow's default-parameter
+  // initializer). A write to a binding declared beyond such a boundary is a
+  // capture: the lambda may run at any later time, so the write cannot narrow
+  // and must be checked against the declared type (see `isThroughFunction`).
+  private isFunction: Bool = false,
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
@@ -79,13 +89,37 @@ mutable class Scope{
       )
     };
     this.!locals[name.value] = name;
-    this.!refs[name.value] = LocalRef(ty, isInitialized)
+    this.!refs[name.value] = LocalRef(ty, ty, isInitialized)
   }
 
   readonly fun isThroughLoop(name: Name): Bool {
     this.maybeGetRef(name.value) match {
     | None() -> false
     | Some((isThroughLoop, _)) -> isThroughLoop
+    }
+  }
+
+  // Whether `name` is captured from an enclosing function: its binding lives
+  // beyond a function boundary crossed on the way up. This walks the
+  // declaration (`locals`) chain rather than the narrowing (`refs`) chain, so
+  // it stays correct even when an earlier in-lambda write has already shadowed
+  // the binding with a narrowing in an inner frame.
+  readonly fun isThroughFunction(name: Name): Bool {
+    this.isThroughFunctionHelper(false, name)
+  }
+
+  readonly private fun isThroughFunctionHelper(
+    throughFunction: Bool,
+    name: Name,
+  ): Bool {
+    if (this.locals.containsKey(name.value)) {
+      throughFunction
+    } else {
+      this.up match {
+      | None() -> false
+      | Some(up) ->
+        up.isThroughFunctionHelper(this.isFunction || throughFunction, name)
+      }
     }
   }
 
@@ -133,10 +167,25 @@ mutable class Scope{
       )
     | Some(x) -> x
     };
-    if (throughLoop) {
+    // A write that escapes the current function (a captured enclosing-function
+    // local written from inside a lambda) may run at an arbitrary later time,
+    // so its narrowing cannot be trusted: check the written value against the
+    // binding's declared type. A write that only crosses a loop frame keeps the
+    // existing check against the loop-entry type. The narrowing is still
+    // recorded for reads later in the same frame, but the declared type is
+    // carried through so a subsequent escaping write is checked too.
+    if (this.isThroughFunction(name)) {
+      // An unannotated `let x = null`/`undefined` (or a bare type parameter)
+      // has an unresolved type variable as its declared type and widens on
+      // assignment like TS's evolving `any`, so an escaping write is always
+      // allowed. Only a resolved declared type constrains the write.
+      if (upRef.declaredType.getSingleVar().isNone()) {
+        isSubType(ty, upRef.declaredType);
+      }
+    } else if (throughLoop) {
       isSubType(ty, upRef.type);
     };
-    this.!refs[name.value] = LocalRef(ty, true);
+    this.!refs[name.value] = LocalRef(ty, upRef.declaredType, true);
   }
 
   readonly fun escapingRefs(): mutable Iterator<NameRef> {
@@ -164,11 +213,13 @@ mutable class Scope{
         (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
         this.!refs[nameRef.name] = LocalRef(
           TType::union(subst, tenv, upRef.type, nameRef.ref.type),
+          upRef.declaredType,
           upRef.isInitialized,
         )
       | Both(nameRef1, nameRef2) ->
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
+          nameRef1.ref.declaredType,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
         )
       }
@@ -187,6 +238,7 @@ mutable class Scope{
       (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, upRef.type, nameRef.ref.type),
+        upRef.declaredType,
         upRef.isInitialized,
       )
     }

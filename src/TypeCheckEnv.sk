@@ -172,8 +172,11 @@ mutable class TCEnv private {
     this.scope.popReplace(scope);
   }
 
-  mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
-    mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
+  mutable fun mcreateSubScope{
+    isLoop: Bool,
+    isFunction: Bool = false,
+  }: mutable Scope {
+    mutable Scope{id => this.next(), isLoop, isFunction, up => Some(this.scope)}
   }
 
   // localObjects is keyed by declaration position (Scope::bindingPos); these
