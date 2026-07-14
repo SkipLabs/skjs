@@ -247,6 +247,13 @@ extension class TypeChecker {
     };
 
     if (!isStringifiable) {
+      // TODO(errors-vs-warnings): consider downgrading this to `tcenv.warning`.
+      // `restrict-template-expressions` is a lint/hygiene rule — tsc does not
+      // reject a non-stringifiable template expression, and interpolating any
+      // value is runtime-sound (JS coerces it via `String()`), so this is a
+      // style concern rather than a soundness error. Left as an error pending a
+      // decision on the desired strictness (see the errors-vs-warnings section
+      // of skjs-rules.md).
       tcenv.error(
         Array[
           (
