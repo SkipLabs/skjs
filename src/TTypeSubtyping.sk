@@ -698,14 +698,30 @@ base class STErrorOnTFields(
     // forbidden by a definitely-non-callable target (e.g. a class-instance
     // type).
     | STRecFieldsCall(None(), fields1, fields2) ->
-      msg = if (fields1.call is CPresent _ && fields2.call is CAbsent()) {
-        "Unexpected call signature"
+      msg = if (
+        (fields1.call is CPresent _ || fields1.call is CFunction()) &&
+        fields2.call is CAbsent()
+      ) {
+        // When the source's [[Call]] evidence is its construct signature (a
+        // constructor value's call mode is CFunction), name the constructor
+        // signature: that is what the user wrote.
+        if (
+          fields1.call is CFunction() &&
+          (fields1.new is CPresent _ || fields1.new is CFunction())
+        ) {
+          "Unexpected constructor signature"
+        } else {
+          "Unexpected call signature"
+        }
       } else {
         "Missing call signature"
       };
       (List.Nil(), List[(pos1, msg)], None())
     | STRecFieldsNew(None(), fields1, fields2) ->
-      msg = if (fields1.new is CPresent _ && fields2.new is CAbsent()) {
+      msg = if (
+        (fields1.new is CPresent _ || fields1.new is CFunction()) &&
+        fields2.new is CAbsent()
+      ) {
         "Unexpected constructor signature"
       } else {
         "Missing constructor signature"
@@ -1200,13 +1216,28 @@ extension class TFields {
     // unknown-callability source is accepted against a definitely-absent
     // mode. CAbsent therefore stays a brand-like approximation (like
     // isArray): a callable can still be laundered through an intermediate
-    // structural type. A *known* callable is rejected below.
+    // structural type (in two steps even a Function-typed value:
+    // Function -> {} -> C). A *known* callable is rejected below.
     | (CUnknown(), CAbsent()) -> Some(STOk())
     // A callable (or constructible) value is not assignable where the mode
     // claims definitely-absent: typeof narrowing relies on that claim to
     // drop such branches, so admitting a known callable here would let
     // `typeof x === "function"` narrow a taken branch to never.
-    | (CPresent _, CAbsent()) -> None()
+    | (CPresent _, CAbsent())
+    | (CFunction(), CAbsent()) ->
+      None()
+    // Provable callability (the Function type) accepts exactly the sources
+    // that themselves prove [[Call]]: a signature, or another Function.
+    // CUnknown is not a subtype of CFunction, so the brand stays positive —
+    // nothing launders into it.
+    | (CPresent _, CFunction())
+    | (CFunction(), CFunction()) ->
+      Some(STOk())
+    | (CAbsent(), CFunction())
+    | (CUnknown(), CFunction()) ->
+      None()
+    // A bare Function offers no signature to satisfy one.
+    | (CFunction(), CPresent _) -> None()
     | (CAbsent(), CPresent _)
     | (CUnknown(), CPresent _) ->
       None()

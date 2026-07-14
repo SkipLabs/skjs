@@ -50,6 +50,7 @@ function testCtorTypeofObjectElse(): void {
 function testCtorNotInvocable(): void {
   const F = C;
   // @ts-expect-error This expression is not callable
+  // @skjs-expect-error-line2 Type 'C' is constructable: did you mean to include 'new'?
   F();
 }
 
@@ -178,6 +179,48 @@ function testStrengthenedAfterFunctionElse(o: {}): void {
   }
 }
 
+// Once the "function" check succeeds, callability is proven and recorded
+// (#805), so a nested "object" check drops the branch: nothing of `{}`
+// remains. Matches tsc ({} -> Function -> never).
+function testProvenCallableThenObject(o: {}): void {
+  if (typeof o === "function") {
+    if (typeof o === "object") {
+      const n: never = o;
+    }
+  }
+}
+
+// Same through a repeated "function" check: the inner else is unreachable.
+function testProvenCallableThenFunctionElse(o: {}): void {
+  if (typeof o === "function") {
+    if (typeof o === "function") {
+    } else {
+      const n: never = o;
+    }
+  }
+}
+
+// A value proven callable by typeof is a valid instanceof right-hand side
+// (tsc agrees: o narrows to Function).
+function testProvenCallableInstanceofRhs(o: {}, x: unknown): void {
+  if (typeof o === "function") {
+    if (x instanceof o) {
+    }
+  }
+}
+
+// A value proven callable by typeof still reports the generic truthiness
+// restriction, deliberately not the always-true diagnostic: TS2774 is the
+// forgot-to-call heuristic, and provable callability without a signature is
+// not invocable, so it cannot be a forgotten call.
+function testProvenCallableTruthiness(o: {}): void {
+  if (typeof o === "function") {
+    // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+    if (o) {
+    }
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Definite non-callability: class instances and arrays keep precise narrowing
 ///////////////////////////////////////////////////////////////////////////////
@@ -266,6 +309,37 @@ function testLiteralToClass(): C {
   return { a: 1 };
 }
 
+// Constructible values are typeof "function", so they are not assignable to
+// class-instance types either (tsc accepts both, structurally; sound-stricter
+// like testFnToEmptyClass).
+function testNewSigToEmptyClass(o: { new (): C }): Empty {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return o;
+}
+
+function testCtorToEmptyClass(): Empty {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return C;
+}
+
+// A constructor value in a condition reports the generic truthiness
+// restriction, deliberately not the always-true diagnostic: TS2774 is the
+// forgot-to-call heuristic, and a constructor value is not invocable, so it
+// cannot be a forgotten call — tsc likewise reports nothing here.
+function testCtorTruthiness(): void {
+  const F = C;
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  if (F) {
+  }
+}
+
+// Same for construct-signature values.
+function testNewSigTruthiness(o: { new (): C }): void {
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  if (o) {
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Callable objects with properties
 ///////////////////////////////////////////////////////////////////////////////
@@ -313,6 +387,29 @@ function testInstanceofCallable(f: () => void): void {
 function testUnionCallbackCall(x: (() => string) | { a: number }): void {
   if (typeof x === "function") {
     // @skjs-expect-error This expression is not callable
+    // @skjs-expect-error-line2 Type '() => string | { a: number; }' may be callable, but its signature is unknown
     const s: string = x();
+  }
+}
+
+// The call error is recoverable: checking continues at the known arms'
+// signature (() => string — what tsc infers after dropping the object
+// arm), so the recovered value and the code below it are still checked.
+function testUnionCallRecoveryContinues(
+  x: (() => string) | { a: number },
+): void {
+  if (typeof x === "function") {
+    // @skjs-expect-error This expression is not callable
+    const s: string = x();
+    const n: number = s.length;
+  }
+}
+
+// ... and the recovered return type really flows: string, not number.
+function testUnionCallRecoveredType(x: (() => string) | { a: number }): void {
+  if (typeof x === "function") {
+    // @skjs-expect-error This expression is not callable
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    const n: number = x();
   }
 }

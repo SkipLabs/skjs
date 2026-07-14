@@ -149,6 +149,7 @@ extension class TypeChecker {
                 tfields = obj.getBranches()[0];
                 if (
                   !(tfields.call is CPresent _) &&
+                  !(tfields.call is CFunction()) &&
                   !(tfields.new is CPresent _)
                 ) {
                   tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));

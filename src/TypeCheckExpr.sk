@@ -2078,21 +2078,73 @@ extension class TypeChecker {
     | Call(f, targs, args) ->
       tcenv.markForInImpure(pos);
       fty = this.expr(tcenv, f, mostPrecise);
-      tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
-        stypes.singleElt() match {
-        | Some(obj @ TObject _) -> obj.maybeGetCall(tcenv.subst, this)
-        | _ -> None()
+      calleeObj = fty
+        .getSTypes(tcenv.subst, this, Covariant())
+        .flatMap(stypes ->
+          stypes.singleElt() match {
+          | Some(obj @ TObject _) -> Some(obj)
+          | _ -> None()
+          }
+        );
+      (calleeMode, calleePartialSig) = calleeObj
+        .map(obj -> obj.callMode(tcenv.subst, this))
+        .default((CUnknown(), None()));
+      tfuns = calleeMode match {
+      | CPresent(tfuns) -> tfuns
+      | _ ->
+        // Pick the honest detail: a constructible value or a Function-typed
+        // value IS a function at runtime — what fails is the missing `new`
+        // or the unknown signature, not function-ness.
+        provablyConstructible = calleeObj.map(obj ->
+          obj.newMode(tcenv.subst, this).i0
+        ) match {
+        | Some(CPresent _)
+        | Some(CFunction()) ->
+          true
+        | _ -> false
+        };
+        detail = if (provablyConstructible) {
+          `Type ${this.ppType(
+            tcenv,
+            fty,
+          )} is constructable: did you mean to include 'new'?`
+        } else if (calleeMode == CFunction()) {
+          // Every branch proves [[Call]] either way; the phrasing follows
+          // what the printed type shows. All-CFunction branches render
+          // callable (Function and its extensions), so "is callable" reads
+          // right; a mixed join means some arm prints as a plain object (a
+          // typeof-narrowed union arm), where "is callable" would look
+          // wrong to the reader — hedge with "may". All-CFunction is
+          // exactly a CFunction mode with no partial signature.
+          selfEvident = calleePartialSig is None();
+          if (selfEvident) {
+            `Type ${this.ppType(
+              tcenv,
+              fty,
+            )} is callable, but its signature is unknown`
+          } else {
+            `Type ${this.ppType(
+              tcenv,
+              fty,
+            )} may be callable, but its signature is unknown`
+          }
+        } else {
+          `Type ${this.ppType(tcenv, fty)} is not a function`
+        };
+        errorArgs = Array[
+          (pos, "This expression is not callable"),
+          (fty.pos, detail),
+        ];
+        // Recovery typing: when some arms do offer a call signature, report
+        // the (sound) error non-fatally and continue at their union — the
+        // type tsc infers after (unsoundly) dropping the signature-less
+        // arms — so the rest of the definition still gets checked.
+        calleePartialSig match {
+        | Some(partial) ->
+          tcenv.error(errorArgs, TSCode(2349));
+          partial
+        | None() -> fatalError(errorArgs, TSCode(2349))
         }
-      ) match {
-      | Some(tfuns) -> tfuns
-      | None() ->
-        fatalError(
-          Array[
-            (pos, "This expression is not callable"),
-            (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
-          ],
-          TSCode(2349),
-        )
       };
       rty = this.call(
         tcenv,
