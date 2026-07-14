@@ -292,7 +292,21 @@ extension class TypeChecker {
           tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(target, target))
         | _ -> if (target) None() else Some(x)
         };
-      this.setLocalFilterMap(tcenv, local, None(), filterMap)
+      // Symbolic clauses (type parameters, unknown) carry no concrete
+      // branches to filter; the true branch intersects them with Function
+      // instead: T narrows to T & Function and unknown to Function,
+      // matching tsc. The else branch stays unrefined — expressing "T minus
+      // functions" needs a complement type (#806).
+      default = if (target) {
+        Some(
+          STypes::single(
+            this.newObject(tcenv.subst, Name(local.pos, "Function"), Array[]),
+          ),
+        )
+      } else {
+        None()
+      };
+      this.setLocalFilterMap(tcenv, local, default, filterMap)
     | _ ->
       tcenv.error(
         Array[

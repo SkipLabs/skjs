@@ -114,22 +114,19 @@ function testFunctionTruthiness(f: Function): void {
   }
 }
 
-// FIXME(#806): a type parameter is not narrowed by typeof === "function":
-// the true branch keeps x at T, so the runtime proof is unusable. tsc
-// narrows to T & Function and accepts the return.
+// A type parameter narrows to T & Function in the typeof-"function" true
+// branch (matching tsc), so the runtime proof is usable. The else branch
+// stays at T — "T minus functions" needs a complement type (#806).
 function testTParamTypeofFunction<T>(x: T): Function {
   if (typeof x === "function") {
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
   return () => {};
 }
 
-// FIXME(#806): same for unknown — the true branch keeps x at unknown. tsc
-// narrows to Function.
+// unknown narrows to Function (matching tsc).
 function testUnknownTypeofFunction(x: unknown): Function {
   if (typeof x === "function") {
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
   return () => {};
