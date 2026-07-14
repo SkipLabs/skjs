@@ -1128,6 +1128,28 @@ class TObject private (
     }
   }
 
+  // Union of the call signatures the branches DO offer, ignoring branches
+  // without one. Not a sound signature for the whole object — recovery
+  // typing only: after the not-callable error is reported, checking
+  // continues at the type tsc infers (tsc unsoundly drops the
+  // signature-less arms).
+  fun maybeGetPartialCall(subst: mutable Subst, tenv: TEnv): ?TFuns {
+    result: ?TFuns = None();
+    for (fields in this.branches) {
+      fields.call match {
+      | CPresent(tFuns) ->
+        !result = Some(
+          result match {
+          | None() -> tFuns
+          | Some(acc) -> TFuns::union(subst, tenv, acc, tFuns)
+          },
+        )
+      | _ -> void
+      }
+    };
+    result
+  }
+
   fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
     tys = mutable Vector[];
     for (fields in this.branches) {

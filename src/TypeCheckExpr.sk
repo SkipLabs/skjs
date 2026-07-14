@@ -2131,10 +2131,22 @@ extension class TypeChecker {
         } else {
           `Type ${this.ppType(tcenv, fty)} is not a function`
         };
-        fatalError(
-          Array[(pos, "This expression is not callable"), (fty.pos, detail)],
-          TSCode(2349),
-        )
+        errorArgs = Array[
+          (pos, "This expression is not callable"),
+          (fty.pos, detail),
+        ];
+        // Recovery typing: when some arms do offer a call signature, report
+        // the (sound) error non-fatally and continue at their union — the
+        // type tsc infers after (unsoundly) dropping the signature-less
+        // arms — so the rest of the definition still gets checked.
+        calleeObj.flatMap(obj ->
+          obj.maybeGetPartialCall(tcenv.subst, this)
+        ) match {
+        | Some(partial) ->
+          tcenv.error(errorArgs, TSCode(2349));
+          partial
+        | None() -> fatalError(errorArgs, TSCode(2349))
+        }
       };
       rty = this.call(
         tcenv,
