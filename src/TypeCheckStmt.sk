@@ -49,6 +49,10 @@ extension class TypeChecker {
 
     | Bind(bkind, bindings) ->
       if (bkind is BKVar()) {
+        // `var` stays an error rather than a warning: unlike `let`/`const` it is
+        // function-scoped and hoisted, which SKJS's block-scoped narrow-on-write
+        // typing does not yet model. Supporting it soundly is tracked in
+        // SkipLabs/skjs#841.
         tcenv.error(
           Array[(st.pos, "Unexpected 'var'; use 'let' or 'const' instead")],
           ESLintCode("no-var"),
