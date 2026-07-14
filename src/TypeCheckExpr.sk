@@ -2944,16 +2944,21 @@ extension class TypeChecker {
         }
       };
       if (!hasThenable) {
-        fatalError(
+        // `await` of a non-thenable yields the value itself (the runtime and
+        // tsc pass it through), so this is a lint concern (`await-thenable`,
+        // where SKJS is deliberately stricter than tsc), not a soundness error.
+        // Warn and recover with the operand type.
+        tcenv.warning(
           Array[
             (pos, "'await' can only be applied to a Promise"),
             (aeType.pos, "This is not a promise"),
           ],
           ESLintCode("@typescript-eslint/await-thenable"),
-        )
+        );
+        aeType
       } else {
         if (hasNonThenable) {
-          tcenv.error(
+          tcenv.warning(
             Array[
               (pos, "'await' can only be applied to a Promise"),
               (aeType.pos, "This is not always a promise"),

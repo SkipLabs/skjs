@@ -57,7 +57,7 @@ async function testAwaitPartialPromise(
   n: number,
 ): Promise<number> {
   const x = b ? p : n;
-  // @skjs-expect-error 'await' can only be applied to a Promise
+  // @skjs-expect-warning 'await' can only be applied to a Promise
   return await x;
 }
 
@@ -69,7 +69,7 @@ async function testAwaitPartialPromiseMismatch(
   const x = b ? p : s;
   // The continuation type is number | string, so the return mismatch is
   // also reported.
-  // @skjs-expect-error 'await' can only be applied to a Promise
+  // @skjs-expect-warning 'await' can only be applied to a Promise
   // @ts-expect-error Type of returned value is not assignable to the function's return type
   return await x;
 }
@@ -81,7 +81,7 @@ async function testAwaitPartialThenableObject(
 ): Promise<number> {
   const x = b ? p : o;
   // The continuation type is number | { a: number }, like tsc's.
-  // @skjs-expect-error 'await' can only be applied to a Promise
+  // @skjs-expect-warning 'await' can only be applied to a Promise
   // @ts-expect-error Type of returned value is not assignable to the function's return type
   return await x;
 }
@@ -100,12 +100,12 @@ async function testAwaitThenable(t: PromiseLike<number>): Promise<number> {
 // Error: awaiting a non-thenable value. (tsc lets `await` pass non-thenables
 // through; SKJS intentionally rejects, like @typescript-eslint/await-thenable.)
 async function testAwaitNumber(n: number): Promise<number> {
-  // @skjs-expect-error 'await' can only be applied to a Promise
+  // @skjs-expect-warning 'await' can only be applied to a Promise
   return await n;
 }
 
 async function testAwaitPlainObject(o: { a: number }): Promise<number> {
-  // @skjs-expect-error 'await' can only be applied to a Promise
+  // @skjs-expect-warning 'await' can only be applied to a Promise
   const r = await o;
   return r.a;
 }
