@@ -114,6 +114,24 @@ function testFunctionTruthiness(f: Function): void {
   }
 }
 
+// A type parameter narrows to T & Function in the typeof-"function" true
+// branch (matching tsc), so the runtime proof is usable. The else branch
+// stays at T — "T minus functions" needs a complement type (#806).
+function testTParamTypeofFunction<T>(x: T): Function {
+  if (typeof x === "function") {
+    return x;
+  }
+  return () => {};
+}
+
+// unknown narrows to Function (matching tsc).
+function testUnknownTypeofFunction(x: unknown): Function {
+  if (typeof x === "function") {
+    return x;
+  }
+  return () => {};
+}
+
 // An interface extending Function inherits provable callability, and a
 // plain function satisfies it structurally.
 interface Callback extends Function {}
