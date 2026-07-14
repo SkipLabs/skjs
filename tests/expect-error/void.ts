@@ -44,7 +44,7 @@ const x5: undefined = returningVoid()["bla"];
 // @skjs-expect-error A comparison operand must be a string, number, bigint, or boolean
 const x6: boolean = returningVoid() < returningVoid();
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x7: boolean = returningVoid() === returningVoid();
 
 type t = void | undefined; // We may want an error here (see #76)
@@ -64,16 +64,16 @@ const x8: string | undefined = returningVoid()?.toString();
 // @ts-expect-error Property access is not allowed on this type
 const x9: string | undefined = returningVoidOrNumber()?.toString();
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x10: number | void = returningVoid() ?? 0;
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x11: number | void = returningVoidOrNumber() ?? 0;
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x12: number | void = returningVoidOrUndefined() ?? 0;
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
@@ -95,7 +95,7 @@ function unsafeInTypescript(
   b: boolean,
   returningVoid: () => void,
 ): string | void {
-  // @skjs-expect-error An expression of type 'void' cannot be used here
+  // @skjs-expect-warning An expression of type 'void' cannot be used here
   return (b ? null : returningVoid()) ?? "a";
 }
 // @skjs-expect-error Argument is not assignable to the parameter's type
@@ -134,7 +134,7 @@ const result: void = callGenericVoidFunction("test");
 type VoidOrT<T> = void | T;
 
 function invalidNullishCoalescing<T>(value: void | T): void | T | null {
-  // @skjs-expect-error An expression of type 'void' cannot be used here
+  // @skjs-expect-warning An expression of type 'void' cannot be used here
   return value ?? null;
 }
 
@@ -170,7 +170,7 @@ function invalidFunctionCall<T>(value: void | T): T {
 }
 
 function validVoidUnionUsage<T>(value: void | T): boolean {
-  // @skjs-expect-error An expression of type 'void' cannot be used here
+  // @skjs-expect-warning An expression of type 'void' cannot be used here
   return value === value;
 }
 
@@ -191,16 +191,16 @@ class VoidGenericClass<T> implements VoidGenericInterface<T> {
   }
 }
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x18: boolean = typeof returningVoid() === "undefined";
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x19: boolean = typeof returningVoidOrNull() === "undefined";
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x20: boolean = returningVoid() === undefined;
 
-// @skjs-expect-error An expression of type 'void' cannot be used here
+// @skjs-expect-warning An expression of type 'void' cannot be used here
 const x21: boolean = returningVoidOrNull() === null;
 
 // @ts-expect-error Operator '+' cannot be applied to these types

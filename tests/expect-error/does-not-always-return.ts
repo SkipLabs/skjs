@@ -9,7 +9,7 @@ function doesNotAlwaysReturnAValue(b: boolean): boolean {
 
 // @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function doesNotAlwaysReturnAValue2(i: 1 | 2 | 3): boolean {
-  // @skjs-expect-error Switch is not exhaustive; the following cases are unhandled
+  // @skjs-expect-warning Switch is not exhaustive; the following cases are unhandled
   switch (i) {
     case 1:
       return true;
