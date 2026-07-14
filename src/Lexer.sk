@@ -84,6 +84,92 @@ mutable class Lexer private {
     }
   }
 
+  // Scans a backtick template body starting at `pos` (just past the opening
+  // backtick) and returns the index just past the closing backtick. It skips
+  // interpolations `${...}` — and the strings, templates, comments, and braces
+  // nested within them — as well as backslash escapes, so that a stray
+  // backtick, brace, or dollar inside an interpolation is not mistaken for
+  // template structure. Errors (unterminated) at end-of-input.
+  readonly fun scanTemplateBody(pos: Int): Int {
+    n = this.contents.size();
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '\\') {
+        !pos = this.skipStringEscape(pos)
+      } else if (c == '`') {
+        return pos + 1
+      } else if (c == '$' && pos + 1 < n && this.contents[pos + 1] == '{') {
+        !pos = this.scanInterpolation(pos + 1)
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
+  // Scans a template interpolation starting at `pos` (the '{' after '$') and
+  // returns the index just past the matching '}'. Skips nested strings,
+  // templates, comments, and braces so their contents are not miscounted.
+  // Errors (unterminated) at end-of-input.
+  readonly fun scanInterpolation(pos: Int): Int {
+    n = this.contents.size();
+    depth = 0;
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '{') {
+        !depth = depth + 1;
+        !pos = pos + 1
+      } else if (c == '}') {
+        !depth = depth - 1;
+        !pos = pos + 1;
+        if (depth == 0) return pos
+      } else if (c == '\'' || c == '"') {
+        !pos = this.scanStringLiteral(pos)
+      } else if (c == '`') {
+        !pos = this.scanTemplateBody(pos + 1)
+      } else if (c == '/' && pos + 1 < n && this.contents[pos + 1] == '/') {
+        // Line comment: skip to the next line terminator.
+        !pos = pos + 2;
+        while (pos < n && this.contents[pos] != '\n') !pos = pos + 1
+      } else if (c == '/' && pos + 1 < n && this.contents[pos + 1] == '*') {
+        // Block comment: skip to the closing '*/'.
+        !pos = pos + 2;
+        while (
+          pos + 1 < n &&
+          !(this.contents[pos] == '*' && this.contents[pos + 1] == '/')
+        ) {
+          !pos = pos + 1
+        };
+        !pos = min(pos + 2, n)
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
+  // Scans a single- or double-quoted string starting at `pos` (the opening
+  // quote) and returns the index just past the matching quote, honoring
+  // backslash escapes. This is only used to find the extent of a string inside
+  // a template interpolation; the string's contents are re-lexed and validated
+  // when the interpolation expression itself is parsed. Errors at end-of-input.
+  readonly fun scanStringLiteral(pos: Int): Int {
+    n = this.contents.size();
+    quote = this.contents[pos];
+    !pos = pos + 1;
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '\\') {
+        !pos = this.skipStringEscape(pos)
+      } else if (c == quote) {
+        return pos + 1
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
   // Returns true if the current token is equal to the string.
   readonly fun isEq(str: String): Bool {
     this.peek() match {
@@ -297,50 +383,7 @@ mutable class Lexer private {
       mkToken(TKDoubleQuote())
 
     | '`' ->
-      !pos = pos + 1;
-      loop {
-        if (pos >= this.contents.size()) {
-          this.error(pos, UnterminatedString());
-        };
-        c = this.contents[pos];
-        if (c == '\\') {
-          !pos = this.skipStringEscape(pos);
-          continue
-        };
-        if (c == '$') {
-          !pos = pos + 1;
-          if (pos >= this.contents.size()) {
-            this.error(pos, UnterminatedString());
-          };
-          if (this.contents[pos] == '{') {
-            count = 0;
-            loop {
-              if (pos >= this.contents.size()) {
-                this.error(pos, UnterminatedString());
-              };
-              if (this.contents[pos] == '{') {
-                !count = count + 1;
-                !pos = pos + 1;
-                continue
-              };
-              if (this.contents[pos] == '}') {
-                !count = count - 1;
-                if (count == 0) break void;
-                !pos = pos + 1;
-                continue;
-              };
-              !pos = pos + 1;
-            }
-          } else {
-            continue
-          };
-        };
-        if (c == '`') {
-          !pos = pos + 1;
-          break void;
-        };
-        !pos = pos + 1;
-      };
+      !pos = this.scanTemplateBody(pos + 1);
       mkToken(TKBackTick())
 
     | '.' ->

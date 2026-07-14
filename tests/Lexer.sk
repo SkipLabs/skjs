@@ -97,8 +97,8 @@ fun testNumberAtEofDoesNotCrash(): void {
 // A brace inside a string argument of a template interpolation must not be
 // counted as a structural brace. The pre-fix lexer brace-matcher did not skip
 // string literals, so the `{` in `${"{"}` over-counted the depth, the scan ran
-// to end-of-input, and it threw Unterminated. Pinned here to that failure; the
-// fix skips strings/templates/comments inside interpolations. (#820)
+// to end-of-input, and it threw Unterminated. The interpolation scanner now
+// skips strings/templates/comments, so the template lexes as one token. (#820)
 @test
 fun testTemplateBraceInStringArgLexesCleanly(): void {
   bt = "`";
@@ -124,9 +124,9 @@ fun testTemplateBraceInStringArgLexesCleanly(): void {
   | SKJS.ErrorExn(_) -> true
   | exn -> throw exn
   };
-  SKTest.expectTrue(
+  SKTest.expectFalse(
     threw,
-    "a brace in a string arg currently makes the lexer scan to end-of-input",
+    "a brace in a string arg must lex as one template token",
   )
 }
 
