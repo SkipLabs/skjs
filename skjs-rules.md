@@ -1,6 +1,6 @@
 # SKJS TypeScript Subset Rules
 
-This document describes the rules and restrictions of the SKJS type checker, which implements a sound subset of TypeScript.
+This document describes the rules and restrictions of the SKJS type checker, which aims to implement a sound subset of TypeScript.
 
 ## Diagnostics: errors vs warnings
 

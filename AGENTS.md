@@ -1,6 +1,6 @@
 # SKJS
 
-TypeScript type checker implemented in the Skip language. It checks a sound subset of TypeScript — programs that pass SKJS will not fail at runtime for type reasons.
+TypeScript type checker implemented in the Skip language. It aims to check a sound subset of TypeScript — rejecting programs that would fail at runtime for type reasons. Soundness is the goal rather than a finished guarantee: some unsound programs are still accepted today.
 
 - **`.sk` files** in `src/` are the checker implementation (Skip language)
 - **`.sk` files** in `tests/` are the test harness

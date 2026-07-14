@@ -1,6 +1,6 @@
 # skjs
 
-SKJS is a typechecker for a dialect of TypeScript that reject programs that would fail at runtime for type reasons and restricts the type system to tractable constructs (see `skjs-rules.md`).
+SKJS is a typechecker for a dialect of TypeScript. Its goal is soundness — rejecting programs that would fail at runtime for type reasons — while restricting the type system to tractable constructs (see `skjs-rules.md`). Soundness is what SKJS aims for rather than a finished guarantee: some unsound programs are still accepted today, and known gaps are tracked as issues.
 
 ## Building & Testing
 
