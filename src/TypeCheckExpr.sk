@@ -1668,6 +1668,16 @@ extension class TypeChecker {
           SKJSCode(9999),
         )
       };
+      e.value match {
+      | AsConst(sub) ->
+        // Composite literals first: no "unnecessary" error — freezing an
+        // object/array literal is meaningful even in a const binding.
+        this.maybeAsConstType(tcenv, sub) match {
+        | Some(ty) -> return ty
+        | None() -> void
+        }
+      | _ -> void
+      };
       this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return TType::single(ty)
       | None() -> void
@@ -1732,9 +1742,18 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
+              value.flatMap(e ->
+                (e.value match {
+                | AsConst(sub) -> this.maybeAsConstType(tcenv, sub)
+                | _ -> None()
+                }) match {
+                | some @ Some _ -> some
+                | None() ->
+                  this.asConstExpr(tcenv, e).map(st -> TType::single(st))
+                }
+              ) match {
               | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
-              | Some(ty) -> TType::single(ty)
+              | Some(ty) -> ty
               }
             | Some(ty) ->
               this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
@@ -2927,6 +2946,10 @@ extension class TypeChecker {
 
       TType::union(tcenv.subst, this, left, right)
     | AsConst(subExpr) ->
+      this.maybeAsConstType(tcenv, subExpr) match {
+      | Some(compositeTy) -> return compositeTy
+      | None() -> void
+      };
       this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> TType::single(ty)
       | None() ->
@@ -2985,6 +3008,103 @@ extension class TypeChecker {
   // fresh array literal elements).
   fun freshLiteralType(e: Expr): ?TType {
     this.directLiteralSType(e).map(stype -> TType::single(stype))
+  }
+
+  // `as const` on a composite literal (#801): the deeply-frozen type. An
+  // object literal becomes a CLOSED object — readonly literal-pinned fields
+  // plus never string/symbol indexes (every unnamed key provably absent) —
+  // and an array literal a readonly tuple. Nested object/array literals
+  // freeze recursively; any other value (identifier, call, ...) types
+  // normally and only the FIELD is readonly, matching tsc. None for
+  // non-composite expressions (the primitive path stays in asConstExpr).
+  private fun maybeAsConstType(tcenv: mutable TCEnv, e: Expr): ?TType {
+    pos = e.pos;
+    e.value match {
+    | Object(efields) ->
+      fieldsMap: SortedMap<FieldNameString, TField> = SortedMap[];
+      for (field in efields) {
+        field match {
+        | FDNormal(name, v) ->
+          fd = TField::create{
+            pos => name.pos,
+            name => name.value,
+            isOptional => false,
+            isReadonly => Some(name.pos),
+            type => this.asConstFieldValue(tcenv, v),
+            access => FAPublic(),
+          };
+          !fieldsMap = fieldsMap.set(fd.name, fd)
+        | FDComputed(key, _) ->
+          tcenv.error(
+            Array[
+              (key.pos, "Computed keys are not yet supported with 'as const'"),
+            ],
+            SKJSCode(9034),
+          )
+        | FDSpread(spread) ->
+          tcenv.error(
+            Array[
+              (
+                spread.pos,
+                "Spread is not supported with 'as const': the spread source may have unknown keys, so the result cannot be proven closed",
+              ),
+            ],
+            SKJSCode(9034),
+          )
+        | FDMethod _ ->
+          tcenv.error(
+            Array[(pos, "Methods are not yet supported with 'as const'")],
+            SKJSCode(9034),
+          )
+        }
+      };
+      Some(
+        TType::single(
+          TObject::createSingleBranch(
+            TFields::createFromSorted{
+              fields => fieldsMap,
+              isArray => Some(false),
+            }.withNeverIndexes(
+              TField::createNeverIndex("k", pos),
+              TField::createNeverIndex("s", pos),
+            ),
+            None(),
+            pos,
+          ),
+        ),
+      )
+    | EArray(elts) ->
+      Some(
+        TType::tuple(
+          pos,
+          elts.map(el -> this.asConstFieldValue(tcenv, el)),
+          true,
+        ),
+      )
+    | _ -> None()
+    }
+  }
+
+  // The type of a field/element value under an enclosing `as const`.
+  private fun asConstFieldValue(tcenv: mutable TCEnv, e: Expr): TType {
+    this.maybeAsConstType(tcenv, e) match {
+    | Some(ty) -> ty
+    | None() ->
+      e.value match {
+      | AsConst(sub) ->
+        // Redundant inner assertion: the enclosing as-const already freezes.
+        tcenv.error(
+          Array[(sub.pos, "This 'as const' is unnecessary")],
+          SKJSCode(2044),
+        );
+        this.asConstFieldValue(tcenv, sub)
+      | _ ->
+        this.asConstExpr(tcenv, e) match {
+        | Some(stype) -> TType::single(stype)
+        | None() -> this.expr(tcenv, e, true)
+        }
+      }
+    }
   }
 
   /* Typechecks expression e as const */
