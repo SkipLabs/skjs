@@ -356,6 +356,13 @@ extension class TypeChecker {
     // at it in the latter warning), so a value still in the switched type is
     // in exactly one of the two.
     handledBy = mutable Map<String, PosRange>[];
+    // A `default` covers exactly the values matched by no `case`, before or
+    // after it in source order, so its reachability depends on the full set of
+    // cases. Remember its position and evaluate it after every case has been
+    // processed: evaluating it inline would let a non-last `default` wrongly
+    // pre-empt the cases that follow it (clearing them from `cases`, which then
+    // mis-flags them "not in the switched type").
+    defaultPos: ?PosRange = None();
     for (branch in branches) {
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
@@ -393,21 +400,25 @@ extension class TypeChecker {
           }
         | None() -> void
         }
-      | SwitchBranch(Default(), _stmts, pos) ->
-        if (cases.isEmpty()) {
-          tcenv.warning(
-            Array[
-              (
-                pos,
-                "This 'default' case is unreachable: all values of the switched type are already handled",
-              ),
-            ],
-            SKJSCode(2014),
-          )
-        } else {
-          cases.clear()
-        }
+      | SwitchBranch(Default(), _stmts, pos) -> !defaultPos = Some(pos)
       }
+    };
+    defaultPos match {
+    | Some(pos) ->
+      if (cases.isEmpty()) {
+        tcenv.warning(
+          Array[
+            (
+              pos,
+              "This 'default' case is unreachable: all values of the switched type are already handled",
+            ),
+          ],
+          SKJSCode(2014),
+        )
+      } else {
+        cases.clear()
+      }
+    | None() -> void
     };
     if (!cases.isEmpty()) {
       missingCases = Vector::mcreateFromIterator(
