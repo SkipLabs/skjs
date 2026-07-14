@@ -1858,6 +1858,21 @@ class TField{
     this.name.value == kSyntheticIndexName
   }
 
+  // The never index: get = set = bottom. On a residual index this states
+  // that every covered (unnamed) key is provably absent — the closed-object
+  // encoding used by Closed<T> and as-const literals. Since never IS bottom,
+  // readonly/mutable never indexes are the same field.
+  static fun createNeverIndex(name: String, pos: PosRange): TField {
+    TField::create{
+      pos,
+      name,
+      isOptional => true,
+      isReadonly => None(),
+      type => TType::bottom(pos),
+      access => FAPublic(),
+    }
+  }
+
   // Create a virtual field from an index, renamed for use in union.
   // Indexes are already optional (isOptional = true).
   fun asNamed(name: FieldNameString): TField {
