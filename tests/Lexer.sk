@@ -70,4 +70,28 @@ fun testCrlfLineContinuation(): void {
   )
 }
 
+// A numeric literal that ends exactly at end-of-file (no trailing character)
+// must lex cleanly. The number scanner read `contents[pos]` without a bounds
+// check, so after the final digit it indexed one past the buffer and threw
+// OutOfBounds — a crash on a realistic input (a file ending in a number with no
+// newline). The scanner now stops at end-of-input like the identifier scanner.
+@test
+fun testNumberAtEofDoesNotCrash(): void {
+  threw = false;
+  for (content in Array["type A = 5", "type B = 0x1f", "type C = 1.5e3"]) {
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    try {
+      _ = parser.toplevelDefs()
+    } catch {
+    | _ -> !threw = true
+    }
+  };
+  SKTest.expectFalse(
+    threw,
+    "a numeric literal at end-of-file must lex without crashing",
+  )
+}
+
 module end;

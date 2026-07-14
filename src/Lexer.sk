@@ -407,6 +407,7 @@ mutable class Lexer private {
         pos + 1 < this.contents.size() &&
         (this.contents[pos + 1] == 'x' || this.contents[pos + 1] == 'X');
       loop {
+        if (pos >= this.contents.size()) break void;
         l = this.contents[pos];
         if (
           l >= '0' && l <= '9' ||
