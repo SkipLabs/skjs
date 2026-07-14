@@ -414,7 +414,12 @@ extension class TypeChecker {
         cases.items().map(x -> (x.i1, x.i0)),
       );
       missingCases.sortBy(x ~> x.i1);
-      tcenv.error(
+      // A non-exhaustive switch is a lint concern, not a soundness error: tsc
+      // does not require exhaustiveness, and SKJS does not rely on it — this
+      // verdict is discarded (`_exhaustive`), and reachability/termination is
+      // decided separately and syntactically (a switch is exhaustive-for-
+      // termination only with a literal `default`). So report it as a warning.
+      tcenv.warning(
         Array[
           (
             e.pos,
