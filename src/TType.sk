@@ -2273,14 +2273,29 @@ class TFields protected {
   // unknown, so the branch is still not invocable without a call signature.
   // wantFunction=false keeps the branch unless it is definitely a function,
   // strengthening its modes to definitely-absent. None drops the branch.
-  fun narrowByTypeofFunction(wantFunction: Bool): ?TFields {
+  // `provenCallable` distinguishes the two callers that keep the
+  // function side: the typeof-"function" TRUE branch has a runtime proof
+  // of [[Call]], so a surviving unknown mode strengthens to CFunction;
+  // the "object" FALSE branch does not (its value may be a primitive
+  // inhabitant of the branch, e.g. a string in `{ length: number }`), so
+  // unknown stays unknown there.
+  fun narrowByTypeofFunction(
+    wantFunction: Bool,
+    provenCallable: Bool = false,
+  ): ?TFields {
     // The call mode alone decides typeof-"function"-ness: construction
     // maintains call >= CFunction whenever a construct signature exists
     // (see createFromSortedIterator), and call = CAbsent means no [[Call]].
     isFunction = this.call is CPresent _ || this.call is CFunction();
     notFunction = this.call is CAbsent();
     if (wantFunction) {
-      if (notFunction) None() else Some(this)
+      if (notFunction) {
+        None()
+      } else if (provenCallable && this.call is CUnknown()) {
+        Some(this with {call => CFunction()})
+      } else {
+        Some(this)
+      }
     } else if (isFunction) {
       None()
     } else {

@@ -284,7 +284,9 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(target))
+          // In the true branch the runtime test proves [[Call]], so the
+          // narrowing may strengthen unknown callability (provenCallable).
+          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(target, target))
         | _ -> if (target) None() else Some(x)
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMap)

@@ -178,44 +178,40 @@ function testStrengthenedAfterFunctionElse(o: {}): void {
   }
 }
 
-// FIXME: The converse strengthening is missing (#805): once the "function"
-// check succeeds, callability is proven, but the branch stays unknown — so a
-// nested "object" check still keeps it. tsc narrows `{}` to Function, then
-// to never here.
+// Once the "function" check succeeds, callability is proven and recorded
+// (#805), so a nested "object" check drops the branch: nothing of `{}`
+// remains. Matches tsc ({} -> Function -> never).
 function testProvenCallableThenObject(o: {}): void {
   if (typeof o === "function") {
     if (typeof o === "object") {
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const n: never = o;
     }
   }
 }
 
-// FIXME: Same gap through a repeated "function" check (#805): the else of the
-// inner check is unreachable, but the unstrengthened branch survives it.
+// Same through a repeated "function" check: the inner else is unreachable.
 function testProvenCallableThenFunctionElse(o: {}): void {
   if (typeof o === "function") {
     if (typeof o === "function") {
     } else {
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const n: never = o;
     }
   }
 }
 
-// FIXME: A value proven callable by typeof should be a valid instanceof
-// right-hand side (#805); tsc accepts (o: Function).
+// A value proven callable by typeof is a valid instanceof right-hand side
+// (tsc agrees: o narrows to Function).
 function testProvenCallableInstanceofRhs(o: {}, x: unknown): void {
   if (typeof o === "function") {
-    // @skjs-expect-error The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.
     if (x instanceof o) {
     }
   }
 }
 
-// FIXME: A value proven callable by typeof is always truthy; once callability
-// is recorded (#805) this should report the always-true diagnostic instead of
-// the generic truthiness restriction.
+// A value proven callable by typeof still reports the generic truthiness
+// restriction, deliberately not the always-true diagnostic: TS2774 is the
+// forgot-to-call heuristic, and provable callability without a signature is
+// not invocable, so it cannot be a forgotten call.
 function testProvenCallableTruthiness(o: {}): void {
   if (typeof o === "function") {
     // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
