@@ -1357,7 +1357,11 @@ extension class TypeChecker {
     isValid = true;
     if (hasVoid) {
       !isValid = false;
-      tcenv.error(
+      // Using a `void`-typed value here (`??`/`!` operand) is a hygiene lint,
+      // not a soundness error: it is runtime-sound and tsc permits it. Report a
+      // warning. `isValid` stays false so the follow-on null-strip check is
+      // still suppressed.
+      tcenv.warning(
         Array[
           (pos, "An expression of type 'void' cannot be used here"),
           (e.pos, `This expression has type ${this.ppType(tcenv, ty)}`),
@@ -1407,7 +1411,9 @@ extension class TypeChecker {
   ): TType {
     ty = this.expr(tcenv, e, mostPrecise);
     if (this.nonTopContainsVoid(tcenv, ty)) {
-      tcenv.error(
+      // Same hygiene lint as in `exprWithoutNullish`: a `void`-typed operand of
+      // `===`/`typeof` is runtime-sound and tsc-permissive, so it warns.
+      tcenv.warning(
         Array[
           (pos, "An expression of type 'void' cannot be used here"),
           (e.pos, `This expression has type ${this.ppType(tcenv, ty)}`),
