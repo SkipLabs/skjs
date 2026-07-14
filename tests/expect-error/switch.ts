@@ -17,3 +17,13 @@ function switchUsePreciseTyping2(): void {
       return;
   }
 }
+
+function defaultClauseNotLast(x: number): void {
+  // @skjs-expect-error The 'default' clause must be the last branch of a switch
+  switch (x) {
+    default:
+      return;
+    case 1:
+      return;
+  }
+}
