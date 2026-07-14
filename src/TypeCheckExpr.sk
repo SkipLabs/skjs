@@ -2688,7 +2688,13 @@ extension class TypeChecker {
             SKJSCode(2049),
           )
         | _ ->
-          tcenv.error(
+          // The `in` result is statically known (always true or always false),
+          // but the expression is well-typed and evaluating it is sound — this
+          // is the `no-unnecessary-condition` lint rule, so report it as a
+          // warning (matching the other sites for that rule) rather than a
+          // build-failing error. (The `(false, false)` arm above stays an error:
+          // it signals contradictory operand types, not a redundant condition.)
+          tcenv.warning(
             Array[(pos, `This condition is always ${canBeTrue}`)],
             ESLintCode("@typescript-eslint/no-unnecessary-condition"),
           )

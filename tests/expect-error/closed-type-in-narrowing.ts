@@ -3,7 +3,7 @@
 // is unreachable.
 
 function testInAbsentKeyAlwaysFalse(x: Closed<{ a: number }>): void {
-  // @skjs-expect-error This condition is always false
+  // @skjs-expect-warning This condition is always false
   if ("b" in x) {
     // The branch is unreachable: x narrows to never.
     const n: never = x;
@@ -13,7 +13,7 @@ function testInAbsentKeyAlwaysFalse(x: Closed<{ a: number }>): void {
 // A required key on a closed single-branch type: always true (already works
 // via the never-aware accessible-index check).
 function testInPresentKeyAlwaysTrue(x: Closed<{ a: number }>): void {
-  // @skjs-expect-error This condition is always true
+  // @skjs-expect-warning This condition is always true
   if ("a" in x) {
     const v = x.a;
   }

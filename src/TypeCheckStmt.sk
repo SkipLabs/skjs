@@ -49,6 +49,10 @@ extension class TypeChecker {
 
     | Bind(bkind, bindings) ->
       if (bkind is BKVar()) {
+        // `var` stays an error rather than a warning: unlike `let`/`const` it is
+        // function-scoped and hoisted, which SKJS's block-scoped narrow-on-write
+        // typing does not yet model. Supporting it soundly is tracked in
+        // SkipLabs/skjs#841.
         tcenv.error(
           Array[(st.pos, "Unexpected 'var'; use 'let' or 'const' instead")],
           ESLintCode("no-var"),
@@ -258,9 +262,12 @@ extension class TypeChecker {
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
     | SwitchBranch(Default(), block, _) ->
-      tcenv.error(
+      // A `default` clause that is not last is a lint concern, not a soundness
+      // error: at runtime `default` is only taken when no `case` matches, so its
+      // position never changes which branch runs. tsc does not reject it.
+      tcenv.warning(
         Array[
-          (e.pos, "The 'default' clause must be the last branch of a switch"),
+          (e.pos, "The 'default' clause should be the last branch of a switch"),
         ],
         ESLintCode("default-case-last"),
       );
