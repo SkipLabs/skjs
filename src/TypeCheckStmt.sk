@@ -243,6 +243,28 @@ extension class TypeChecker {
         SKJSCode(2011),
       )
     };
+    // A switch may contain at most one `default` clause; a second one is a
+    // JavaScript SyntaxError (tsc reports TS1113). Reject every `default` after
+    // the first.
+    seenDefault = false;
+    for (branch in branches) {
+      branch match {
+      | SwitchBranch(Default(), _, pos) ->
+        if (seenDefault) {
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "A 'default' clause cannot appear more than once in a 'switch' statement",
+              ),
+            ],
+            TSCode(1113),
+          )
+        };
+        !seenDefault = true
+      | SwitchBranch(Case(_), _, _) -> void
+      }
+    };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = (pos, block) -> {
       term = StmtTermination::block(tcenv, block);
