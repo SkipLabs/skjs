@@ -1,0 +1,96 @@
+module SKJSTests;
+
+// Pins the verbose (--verbose) rendering of object callability modes.
+// Verbose mode is the debugging view: it should expose the call/new
+// Callability states that the normal rendering elides.
+
+fun renderVerbose(ty: SKJS.TType): String {
+  SKJS.rawPrettyPrint(
+    false,
+    pp -> pp.type(0, SKJS.Margin{}, ty),
+    SortedMap[],
+    true,
+  )
+}
+
+fun renderNormal(ty: SKJS.TType): String {
+  SKJS.rawPrettyPrint(false, pp -> pp.type(0, SKJS.Margin{}, ty))
+}
+
+fun objectOf(fields: SKJS.TFields): SKJS.TType {
+  SKJS.TType::single(
+    SKJS.TObject::createSingleBranch(fields, None(), SKJS.PosRange::none),
+  )
+}
+
+fun nullaryFn(retName: String): SKJS.TFuns {
+  ret = SKJS.TType::inst(
+    SKJS.Name(SKJS.PosRange::none, retName),
+    SKJS.TArgs(Array[]),
+  );
+  SKJS.TFuns::singleFun(
+    SKJS.TFun(
+      Array[],
+      None(),
+      Array[],
+      Array[],
+      None(),
+      ret,
+      SKJS.CGNodes(SortedSet::create()),
+    ),
+    SKJS.PosRange::none,
+  )
+}
+
+@test
+fun testVerboseUnknownModes(): void {
+  ty = objectOf(SKJS.TFields::create{});
+  SKTest.expectEq("{}", renderVerbose(ty));
+}
+
+@test
+fun testVerboseAbsentModes(): void {
+  ty = objectOf(
+    SKJS.TFields::create{call => SKJS.CAbsent(), new => SKJS.CAbsent()},
+  );
+  SKTest.expectEq("{}", renderVerbose(ty));
+}
+
+@test
+fun testVerboseFunctionMode(): void {
+  ty = objectOf(SKJS.TFields::create{call => SKJS.CFunction()});
+  SKTest.expectEq("Function", renderVerbose(ty));
+}
+
+@test
+fun testVerboseCallSignature(): void {
+  ty = objectOf(
+    SKJS.TFields::create{call => SKJS.CPresent(nullaryFn("A"))},
+  );
+  SKTest.expectEq("() => A", renderVerbose(ty));
+}
+
+@test
+fun testVerboseNewSignature(): void {
+  // The construction funnel lifts the call mode to CFunction next to a
+  // construct signature (constructible implies [[Call]]).
+  ty = objectOf(
+    SKJS.TFields::create{new => SKJS.CPresent(nullaryFn("A"))},
+  );
+  SKTest.expectEq("new () => A", renderVerbose(ty));
+}
+
+// The normal (non-verbose) renderings stay mode-free.
+@test
+fun testNormalUnknownModes(): void {
+  ty = objectOf(SKJS.TFields::create{});
+  SKTest.expectEq("{}", renderNormal(ty));
+}
+
+@test
+fun testNormalFunctionMode(): void {
+  ty = objectOf(SKJS.TFields::create{call => SKJS.CFunction()});
+  SKTest.expectEq("Function", renderNormal(ty));
+}
+
+module end;
