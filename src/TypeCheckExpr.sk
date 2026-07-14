@@ -2101,13 +2101,28 @@ extension class TypeChecker {
             fty,
           )} is constructable: did you mean to include 'new'?`
         } else if (calleeMode == Some(CFunction())) {
-          // "may": the branches prove [[Call]], but the printed type does
-          // not show that (a narrowed union arm reads as a plain object),
-          // so an "is callable" claim would look wrong to the reader.
-          `Type ${this.ppType(
-            tcenv,
-            fty,
-          )} may be callable, but its signature is unknown`
+          // Every branch proves [[Call]] either way; the phrasing follows
+          // what the printed type shows. All-CFunction branches render
+          // callable (Function and its extensions), so "is callable" reads
+          // right; a mixed join means some arm prints as a plain object (a
+          // typeof-narrowed union arm), where "is callable" would look
+          // wrong to the reader — hedge with "may".
+          selfEvident = calleeObj
+            .map(obj ->
+              obj.getBranches().all(fields -> fields.call is CFunction())
+            )
+            .default(false);
+          if (selfEvident) {
+            `Type ${this.ppType(
+              tcenv,
+              fty,
+            )} is callable, but its signature is unknown`
+          } else {
+            `Type ${this.ppType(
+              tcenv,
+              fty,
+            )} may be callable, but its signature is unknown`
+          }
         } else {
           `Type ${this.ppType(tcenv, fty)} is not a function`
         };
