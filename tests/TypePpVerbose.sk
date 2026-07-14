@@ -45,7 +45,10 @@ fun nullaryFn(retName: String): SKJS.TFuns {
 @test
 fun testVerboseUnknownModes(): void {
   ty = objectOf(SKJS.TFields::create{});
-  SKTest.expectEq("{}", renderVerbose(ty));
+  SKTest.expectEq(
+    "{ [[call]]: CUnknown; [[new]]: CUnknown; }",
+    renderVerbose(ty),
+  );
 }
 
 @test
@@ -53,31 +56,33 @@ fun testVerboseAbsentModes(): void {
   ty = objectOf(
     SKJS.TFields::create{call => SKJS.CAbsent(), new => SKJS.CAbsent()},
   );
-  SKTest.expectEq("{}", renderVerbose(ty));
+  SKTest.expectEq(
+    "{ [[call]]: CAbsent; [[new]]: CAbsent; }",
+    renderVerbose(ty),
+  );
 }
 
 @test
 fun testVerboseFunctionMode(): void {
   ty = objectOf(SKJS.TFields::create{call => SKJS.CFunction()});
-  SKTest.expectEq("Function", renderVerbose(ty));
+  SKTest.expectEq(
+    "{ [[call]]: CFunction; [[new]]: CUnknown; }",
+    renderVerbose(ty),
+  );
 }
 
 @test
 fun testVerboseCallSignature(): void {
-  ty = objectOf(
-    SKJS.TFields::create{call => SKJS.CPresent(nullaryFn("A"))},
-  );
-  SKTest.expectEq("() => A", renderVerbose(ty));
+  ty = objectOf(SKJS.TFields::create{call => SKJS.CPresent(nullaryFn("A"))});
+  SKTest.expectEq("{ (): A; [[new]]: CUnknown; }", renderVerbose(ty));
 }
 
 @test
 fun testVerboseNewSignature(): void {
   // The construction funnel lifts the call mode to CFunction next to a
   // construct signature (constructible implies [[Call]]).
-  ty = objectOf(
-    SKJS.TFields::create{new => SKJS.CPresent(nullaryFn("A"))},
-  );
-  SKTest.expectEq("new () => A", renderVerbose(ty));
+  ty = objectOf(SKJS.TFields::create{new => SKJS.CPresent(nullaryFn("A"))});
+  SKTest.expectEq("{ new (): A; [[call]]: CFunction; }", renderVerbose(ty));
 }
 
 // The normal (non-verbose) renderings stay mode-free.

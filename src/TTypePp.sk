@@ -413,8 +413,10 @@ mutable class TypePp{
     };
     // A memberless branch whose only content is provable callability is the
     // Function type; print it by name (narrowed values have no nominal inst
-    // to name them).
+    // to name them). Under --verbose the object form shows the raw modes
+    // instead, like the shorthands above and below.
     if (
+      !this.verbose &&
       fields.fields.isEmpty() &&
       fields.symbolFields.isEmpty() &&
       !fields.hasNonSyntheticIndex() &&
@@ -423,7 +425,7 @@ mutable class TypePp{
     ) {
       return this.out(level, margin, "Function")
     };
-    TypePp::bareSignature(fields) match {
+    (if (this.verbose) None() else TypePp::bareSignature(fields)) match {
     | Some((isNew, tfun)) ->
       if (isNew) this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
@@ -557,9 +559,34 @@ mutable class TypePp{
       this.tfun(level, margin, (true, tfun));
       this.out(level, margin, ";")
     };
+    // The debugging view: expose the raw callability modes that the normal
+    // rendering elides. CPresent needs no line — its signature member above
+    // already identifies it.
+    if (this.verbose) {
+      this.verboseMode(level, margin, multiLine, "[[call]]", fields.call);
+      this.verboseMode(level, margin, multiLine, "[[new]]", fields.new)
+    };
     printed = this.emittedMember;
     this.!emittedMember = savedEmitted;
     printed
+  }
+
+  private mutable fun verboseMode(
+    level: Int,
+    margin: Margin,
+    multiLine: Bool,
+    label: String,
+    mode: Callability,
+  ): void {
+    name = mode match {
+    | CPresent _ -> return void
+    | CAbsent() -> "CAbsent"
+    | CUnknown() -> "CUnknown"
+    | CFunction() -> "CFunction"
+    };
+    this.beginMember(level, margin, multiLine);
+    this.out(level, margin, `${label}: ${name}`);
+    this.out(level, margin, ";")
   }
 
   // Opens an object member: emits its leading separator (every member,
