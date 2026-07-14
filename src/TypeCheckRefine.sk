@@ -454,19 +454,25 @@ extension class TypeChecker {
           | None() -> Some(stype)
           | Some(key) ->
             if (target) {
-              Some(
-                tObj.map(tf ->
-                  tf.maybeGetField(key) match {
-                  | Some(existing) ->
+              tObj.mapOpt(tf ->
+                tf.maybeGetField(key) match {
+                | Some(existing) ->
+                  Some(
                     if (existing.isOptional) {
                       tf.updateFieldByKey(key, fd ~> fd.withIsOptional(false))
                     } else {
                       tf
-                    }
-                  | None() ->
-                    fieldToAdd = tf.nonSyntheticIndexForKeyKind(
-                      key.toPrimValueKind(),
-                    ) match {
+                    },
+                  )
+                | None() ->
+                  tf.nonSyntheticIndexForKeyKind(key.toPrimValueKind()) match {
+                  | Some(indexField) if (indexField.get.isBottom()) ->
+                    // A never-valued index (e.g. Closed<T>) proves the key
+                    // absent: this branch cannot produce `true`, so it is
+                    // pruned instead of materializing a required never field.
+                    None()
+                  | indexOpt ->
+                    fieldToAdd = indexOpt match {
                     | Some(indexField) ->
                       TField{
                         pos => e1.pos,
@@ -491,13 +497,15 @@ extension class TypeChecker {
                         access => FAPhantom(e.pos),
                       }
                     };
-                    (if (key is FKSymbol _) {
-                      tf.addSymbolField(fieldToAdd)
-                    } else {
-                      tf.addField(fieldToAdd)
-                    }).default(tf)
+                    Some(
+                      (if (key is FKSymbol _) {
+                        tf.addSymbolField(fieldToAdd)
+                      } else {
+                        tf.addField(fieldToAdd)
+                      }).default(tf),
+                    )
                   }
-                ),
+                }
               )
             } else {
               tObj.mapOpt(tFields ->

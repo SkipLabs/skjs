@@ -2585,7 +2585,52 @@ extension class TypeChecker {
             !canBeTrue = true;
             !canBeFalse = true
           | obj @ TObject(_, _, _pos) ->
-            !canBeTrue = true; // object types are open
+            // Object types are open under width subtyping, so an unnamed key
+            // may exist at runtime and `true` stays reachable — UNLESS the
+            // key is provably absent: not a named field and covered by a
+            // never-valued index (e.g. Closed<T>), which states no such key
+            // can hold a value. Unknown key sets (both None) and broad keys
+            // stay conservatively reachable.
+            !canBeTrue =
+              canBeTrue ||
+              (fieldsOpt.isNone() && symFieldsOpt.isNone()) ||
+              obj.getBranches().any(branchFields -> {
+                (fields, symbolFields) = branchFields match {
+                | TFields{fields, symbolFields} -> (fields, symbolFields)
+                };
+                (fieldsOpt match {
+                | None() -> false
+                | Some(None()) ->
+                  true // broad type, could be any key
+                | Some(Some(fieldsToCheck)) ->
+                  fieldsToCheck.values().any(fieldToCheck ->
+                    fields
+                      .maybeGet(FieldNameString(fieldToCheck.val))
+                      .isSome() ||
+                      branchFields.indexForFieldName(fieldToCheck.val) match {
+                      | Some(idx) -> !idx.get.isBottom()
+                      | None() ->
+                        true // open: the key may exist at runtime
+                      }
+                  )
+                }) ||
+                  (symFieldsOpt match {
+                  | None() -> false
+                  | Some(None()) ->
+                    true // broad symbol, could be any key
+                  | Some(Some(symFieldsToCheck)) ->
+                    symFieldsToCheck.values().any(symToCheck ->
+                      symbolFields
+                        .maybeGet(FieldNameString(symToCheck.val))
+                        .isSome() ||
+                        branchFields.symbolIndex match {
+                        | Some(idx) -> !idx.get.isBottom()
+                        | None() ->
+                          true // open: the key may exist at runtime
+                        }
+                    )
+                  })
+              });
             // `k in (A | B)` can be false when some branch can lack k — k is
             // absent or optional in that branch. A shared index contributes
             // conservatively, the same way it did on a single object (the
