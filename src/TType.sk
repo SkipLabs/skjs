@@ -1162,11 +1162,14 @@ class TObject private (
     merged.map(fd -> (fd, allBranches))
   }
 
-  // Non-synthetic index for `kind` shared by every branch, combined via
+  // ACCESSIBLE index for `kind` shared by every branch, combined via
   // TField::unionIndex (get unioned, set intersected). None if any branch
   // lacks it: a general/index key is only resolvable when every disjunct can
   // serve it. Mirrors maybeGetCall/maybeGetNew's all-branches shape.
-  fun maybeGetNonSyntheticIndexForKeyKind(
+  // "Accessible" = usable for member access: non-synthetic AND not
+  // never-valued (a never index, e.g. from Closed<T>, proves its keys absent
+  // and serves no access). Subtyping keeps consulting the raw slots.
+  fun maybeGetAccessibleIndexForKeyKind(
     subst: mutable Subst,
     tenv: TEnv,
     kind: TPrimValueKind,
@@ -1174,8 +1177,8 @@ class TObject private (
     indexes: mutable Vector<TField> = mutable Vector[];
     for (fields in this.branches) {
       fields.nonSyntheticIndexForKeyKind(kind) match {
-      | None() -> return None()
-      | Some(idx) -> indexes.push(idx)
+      | Some(idx) if (!idx.get.isBottom()) -> indexes.push(idx)
+      | _ -> return None()
       }
     };
     indexesIt = indexes.values();
@@ -1188,27 +1191,31 @@ class TObject private (
   }
 
   // True when some index kind can serve every branch (a number key may fall
-  // back to a string index), i.e. the union carries an index usable here.
-  fun hasNonSyntheticIndex(): Bool {
-    this.hasNonSyntheticIndexForKeyKind(TString()) ||
-      this.hasNonSyntheticIndexForKeyKind(TNum()) ||
-      this.hasNonSyntheticIndexForKeyKind(TSymbol())
+  // back to a string index), i.e. the union carries an index usable here
+  // (see maybeGetAccessibleIndexForKeyKind for "accessible").
+  fun hasAccessibleIndex(): Bool {
+    this.hasAccessibleIndexForKeyKind(TString()) ||
+      this.hasAccessibleIndexForKeyKind(TNum()) ||
+      this.hasAccessibleIndexForKeyKind(TSymbol())
   }
 
   // True when every branch accepts a non-synthetic index for `kind`
-  fun hasNonSyntheticIndexForKeyKind(kind: TPrimValueKind): Bool {
+  fun hasAccessibleIndexForKeyKind(kind: TPrimValueKind): Bool {
     this.branches.all(fields ->
-      fields.nonSyntheticIndexForKeyKind(kind).isSome()
+      fields.nonSyntheticIndexForKeyKind(kind) match {
+      | Some(idx) -> !idx.get.isBottom()
+      | None() -> false
+      }
     )
   }
 
   // Human-readable list of the index key kinds every branch carries directly
   // (string/number/symbol), used in the "wrong index kind" diagnostic.
-  fun nonSyntheticIndexKeyKindsString(): String {
+  fun accessibleIndexKeyKindsString(): String {
     parts: mutable Vector<String> = mutable Vector[];
-    if (this.hasNonSyntheticIndexForKeyKind(TString())) parts.push("string");
-    if (this.hasNonSyntheticIndexForKeyKind(TNum())) parts.push("number");
-    if (this.hasNonSyntheticIndexForKeyKind(TSymbol())) parts.push("symbol");
+    if (this.hasAccessibleIndexForKeyKind(TString())) parts.push("string");
+    if (this.hasAccessibleIndexForKeyKind(TNum())) parts.push("number");
+    if (this.hasAccessibleIndexForKeyKind(TSymbol())) parts.push("symbol");
     parts.join(" | ")
   }
 
@@ -2327,19 +2334,37 @@ class TFields protected {
     }
   }
 
+  // Closed<T> support: set the string and symbol index slots to the given
+  // never indexes (replacing any synthetic literal index). The number slot is
+  // kept as declared — only a synthetic one is cleared, letting number keys
+  // fall back to the never string index.
+  fun withNeverIndexes(stringIdx: TField, symbolIdx: TField): TFields {
+    numberIndex = this.numberIndex match {
+    | Some(i) if (i.isSynthetic()) -> None()
+    | keep -> keep
+    };
+    this with {
+      stringIndex => Some(stringIdx),
+      numberIndex,
+      symbolIndex => Some(symbolIdx),
+    }
+  }
+
   fun maybeGet(fieldName: String): ?TField {
     this.fields.maybeGet(FieldNameString(fieldName))
   }
 
   // Resolve a literal property key in this branch: its named field, or (failing
   // that) its covering non-synthetic index as an optional named field. None
-  // when the branch has neither.
+  // when the branch has neither. A never-valued index (get = bottom, e.g. from
+  // Closed<T>) proves the key ABSENT, so it contributes no member: the access
+  // falls through to the caller's not-found path instead of typing as never.
   fun maybeFieldOrIndex(name: String): ?TField {
     this.maybeGet(name) match {
     | some @ Some _ -> some
     | None() ->
       this.indexForFieldName(name).flatMap(idx ->
-        if (idx.isSynthetic()) None() else {
+        if (idx.isSynthetic() || idx.get.isBottom()) None() else {
           Some(idx.asNamed(FieldNameString(name)))
         }
       )
@@ -2446,14 +2471,20 @@ class TFields protected {
   // Like maybeGetField, but falls back to a covering non-synthetic index when
   // the key is not a named field: the write then targets the index, not a new
   // field. Returns the resolved field/index (its `set` is the write type), or
-  // None when the key is neither a named field nor index-covered.
+  // None when the key is neither a named field nor index-covered. As in
+  // maybeFieldOrIndex, a never-valued index proves the key absent and
+  // contributes nothing.
   fun maybeGetFieldOrIndex(key: FieldKey): ?TField {
     key match {
     | FKName(name, _) -> this.maybeFieldOrIndex(name.value)
     | FKSymbol(_, uniqueId) ->
       this.maybeGetSymbol(uniqueId) match {
       | some @ Some _ -> some
-      | None() -> this.nonSyntheticIndexForKeyKind(TSymbol())
+      | None() ->
+        this.nonSyntheticIndexForKeyKind(TSymbol()) match {
+        | Some(idx) if (!idx.get.isBottom()) -> Some(idx)
+        | _ -> None()
+        }
       }
     }
   }

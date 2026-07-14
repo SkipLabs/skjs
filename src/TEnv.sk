@@ -1378,6 +1378,15 @@ base class TEnv{
         )
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
+    | TAInst(Name(closedPos, "SKJS_Closed"), targs) if (targs.size() == 1) ->
+      // SKJS_Closed<T>: the closed-object operator — every key not named in
+      // T is provably absent. The SKJS_-prefixed name is reserved for the
+      // checker and intercepted BEFORE name resolution; user code writes
+      // Closed<T>, a plain stub alias for it (import-stubs/@types/skjs). For
+      // tsc compatibility a tsc-only stub declares the identity
+      // `type SKJS_Closed<T> = T`. Other arities resolve ordinarily.
+      inner = this.normalize(tcenvb, targs[0]);
+      this.closeObjectType(tcenvb, closedPos, inner)
     | TAInst(n, targs) ->
       // Resolve via lexical bindings (see `bindings` field doc).
       this.bindings.maybeGet(n.value) match {
@@ -2245,6 +2254,103 @@ base class TEnv{
     tFields
   }
 
+  // Closed<T> (SKJS extension): close an object type by setting its string
+  // and symbol index slots to `never`. SKJS index signatures are residual —
+  // they cover exactly the keys not named in the type — so the never indexes
+  // state that every unnamed key is provably absent (number keys fall back to
+  // the string index, so no number slot is needed). `never` is TType::bottom,
+  // making the index's set bottom as well: a readonly and a mutable never
+  // index are the same field, so no readonly modifier is involved.
+  //
+  // T must expand to a statically known object type without index signatures
+  // (a synthetic literal index is not a declared index: it is cleared and
+  // replaced). Anything else errors and recovers with T itself — the tsc
+  // reading of the recommended compat declaration `type Closed<T> = T`.
+  private fun closeObjectType(
+    tcenvb: mutable TCEnvBase,
+    closedPos: PosRange,
+    inner: TType,
+  ): TType {
+    subst = Subst::mcreate(tcenvb);
+    // Errors anchor at the instantiation site when there is one (for the
+    // stub-alias route that is the innermost alias application: a direct
+    // Closed<...> use anchors at the use site; a wrapper alias anchors at the
+    // wrapper's own Closed<T> application — the use-site position is erased
+    // by alias re-positioning before reaching this depth).
+    errPos = this.instantiateAt.default(closedPos);
+    hasDeclaredIndex = (idx: ?TField) ->
+      idx match {
+      | Some(i) -> !i.isSynthetic()
+      | None() -> false
+      };
+    expanded = inner.expand(subst, this, Some(Covariant()));
+    // An abstract type parameter expands to a clause with non-empty vars —
+    // possibly WITH the constraint's stypes (fromTParamWithConstraint), which
+    // Clauses::getObject would happily return: without this guard, Closed<T>
+    // for `T extends { a: number }` would silently close the CONSTRAINT.
+    // Like mapped types with an abstract key (see createTFields), an abstract
+    // T is deferred during type-definition validation (a generic alias body
+    // is re-validated at each concrete instantiation) and rejected anywhere
+    // else (e.g. a generic function signature, normalized once), reporting at
+    // the instantiation site when there is one.
+    if (expanded.clauses.any(clause -> !clause.vars.isEmpty())) {
+      if (!this.inTypeDefValidation) {
+        tcenvb.error(
+          Array[(errPos, "Closed<T> requires a statically known object type")],
+          SKJSCode(9033),
+        )
+      };
+      return inner
+    };
+    expanded.clauses.getObject() match {
+    | Some(obj) if (obj.getBranches().all(b -> b.isArray != Some(true))) ->
+      if (
+        obj.getBranches().any(b ->
+          hasDeclaredIndex(b.stringIndex) ||
+            hasDeclaredIndex(b.numberIndex) ||
+            hasDeclaredIndex(b.symbolIndex)
+        )
+      ) {
+        tcenvb.error(
+          Array[
+            (
+              errPos,
+              "Closed<T> requires an object type without index signatures",
+            ),
+          ],
+          SKJSCode(9033),
+        );
+        inner
+      } else {
+        neverIndex = (name: String) ->
+          TField::create{
+            pos => closedPos,
+            name,
+            isOptional => true,
+            isReadonly => None(),
+            type => TType::bottom(closedPos),
+            access => FAPublic(),
+          };
+        closed = obj.map(b ->
+          b.withNeverIndexes(neverIndex("k"), neverIndex("s"))
+        );
+        TType::single(closed)
+      }
+    | Some _ ->
+      tcenvb.error(
+        Array[(errPos, "Closed<T> is not supported on array or tuple types")],
+        SKJSCode(9033),
+      );
+      inner
+    | None() ->
+      tcenvb.error(
+        Array[(errPos, "Closed<T> requires a statically known object type")],
+        SKJSCode(9033),
+      );
+      inner
+    }
+  }
+
   /* Over-approximates keyof ty
      Though keyof should be treated symbolically because it is a decreasing
      function of types.
@@ -2287,9 +2393,17 @@ base class TEnv{
                 !symbols = symbols.set(symbolField.name.value);
               }
             };
-            if (fields.stringIndex.isSome()) !allStrings = true;
-            if (fields.numberIndex.isSome()) !allNumbers = true;
-            if (fields.symbolIndex.isSome()) !allSymbols = true;
+            // A never-valued index (get = bottom, e.g. from Closed<T>) proves
+            // its keys absent, so it widens keyof by nothing.
+            fields.stringIndex.each(idx ->
+              if (!idx.get.isBottom()) !allStrings = true
+            );
+            fields.numberIndex.each(idx ->
+              if (!idx.get.isBottom()) !allNumbers = true
+            );
+            fields.symbolIndex.each(idx ->
+              if (!idx.get.isBottom()) !allSymbols = true
+            );
           }
         | prim @ TPrimValue _ ->
           obj = this.newObject(subst, prim.asClassName(), Array[]);
