@@ -1962,6 +1962,10 @@ value class FieldNameString(
 }
 
 const kArrayBrandFieldName: String = "__SKJS_isArray";
+// Brand field marking a type as provably callable with an unknown signature
+// (the `Function` interface stub); folded into call = CFunction by
+// TFields::create, like the array brand above.
+const kFunctionBrandFieldName: String = "__SKJS_isFunction";
 // Prefix on the synthetic TInst name used as a placeholder for a class
 // field declared without a type annotation. The class_ check still
 // reports "Type annotation expected" at declaration time for non-ambient
@@ -2224,6 +2228,39 @@ class TFields protected {
           SKJSCode(2051),
         )
       | brandIsArray @ Some _ -> !isArray = brandIsArray
+      }
+    | None() -> void
+    };
+    functionBrandKey = FieldNameString(kFunctionBrandFieldName);
+    fields.maybeGet(functionBrandKey) match {
+    | Some(brandField) ->
+      fields.remove(functionBrandKey);
+      isTrue = brandField.get.getSingleConstant() match {
+      | Some(TPrimValue(TBool(), Some(lits), _)) ->
+        lits.singleElt() match {
+        | Some(PrimLiteral(_pos, "true")) -> true
+        | _ -> false
+        }
+      | _ -> false
+      };
+      if (!isTrue) {
+        fatalError(
+          Array[
+            (
+              brandField.get.pos,
+              `Brand field ${kFunctionBrandFieldName} must be 'true', but got ${rawPrettyPrint(
+                false,
+                pp -> pp.type(0, Margin{}, brandField.get),
+              )}`,
+            ),
+          ],
+          SKJSCode(2051),
+        )
+      };
+      // Only lift an unconstrained mode: a declared call signature is
+      // strictly more precise than the brand.
+      if (call is CUnknown()) {
+        !call = CFunction()
       }
     | None() -> void
     };

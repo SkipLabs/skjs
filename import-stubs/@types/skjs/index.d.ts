@@ -17,6 +17,16 @@ declare interface ArrayLike<T> {
   readonly [n: number]: T;
 }
 
+/* The type of values that provably implement [[Call]] without a known
+ * signature: plain functions and class-constructor values are assignable to
+ * it; it is deliberately not invocable (calling requires a known signature —
+ * stricter than tsc, which allows the call at an implicit any). The brand
+ * field folds into the checker's CFunction callability mode and never
+ * appears as a real property. */
+declare interface Function {
+  readonly __SKJS_isFunction: true;
+}
+
 declare interface ReadonlyArray<T> extends Iterable<T> {
   readonly __SKJS_isArray: true;
   readonly length: number;

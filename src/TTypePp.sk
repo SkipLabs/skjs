@@ -411,6 +411,18 @@ mutable class TypePp{
       | None() -> void
       }
     };
+    // A memberless branch whose only content is provable callability is the
+    // Function type; print it by name (narrowed values have no nominal inst
+    // to name them).
+    if (
+      fields.fields.isEmpty() &&
+      fields.symbolFields.isEmpty() &&
+      !fields.hasNonSyntheticIndex() &&
+      fields.call is CFunction() &&
+      !(fields.new is CPresent _)
+    ) {
+      return this.out(level, margin, "Function")
+    };
     TypePp::bareSignature(fields) match {
     | Some((isNew, tfun)) ->
       if (isNew) this.out(level, margin, "new ");

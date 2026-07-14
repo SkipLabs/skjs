@@ -2,75 +2,88 @@
 // The global `Function` type: definitely callable, unknown signature
 // (issue #805).
 //
-// FIXME: `Function` is not declared by the import stubs yet; every reference
-// below currently fails to resolve. tsc resolves all of them. The pins flip
-// to real assertions once the stub and its Callability state land.
+// `Function` proves its inhabitants implement [[Call]] without offering a
+// signature, so it accepts exactly the values that prove callability
+// (functions, class constructors, construct-signature values) and is itself
+// not invocable.
 ///////////////////////////////////////////////////////////////////////////////
 
 class C {
   a: number = 1;
 }
 
+class Empty {}
+
 // A plain function is assignable to Function.
-// @skjs-expect-error Cannot find type 'Function'
 function testFnToFunction(f: () => void): Function {
   return f;
 }
 
 // A class-constructor value is assignable to Function (it implements
 // [[Call]] even though invoking it without `new` throws).
-// @skjs-expect-error Cannot find type 'Function'
 function testCtorToFunction(): Function {
   return C;
 }
 
 // A construct-signature value is assignable to Function.
-// @skjs-expect-error Cannot find type 'Function'
 function testNewSigToFunction(o: { new (): C }): Function {
   return o;
 }
 
-// An unknown-callability object is NOT assignable to Function (tsc rejects
-// with TS2740).
-// @skjs-expect-error Cannot find type 'Function'
+// An unknown-callability object is NOT assignable to Function: nothing
+// launders into the positive brand (tsc rejects too, TS2740).
 function testEmptyToFunction(o: {}): Function {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return o;
 }
 
 // A class instance is NOT assignable to Function.
-// @skjs-expect-error Cannot find type 'Function'
 function testInstanceToFunction(c: C): Function {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return c;
 }
 
+// Neither is an array.
+function testArrayToFunction(xs: number[]): Function {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return xs;
+}
+
 // Function is assignable to the empty object type.
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionToEmpty(f: Function): {} {
   return f;
 }
 
 // Function is not assignable to a specific call signature.
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionToFn(f: Function): () => void {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return f;
+}
+
+// Function is not assignable to a class-instance type. Stricter than tsc,
+// which accepts the empty-instance target structurally and then unsoundly
+// narrows it to never in the typeof-"function" branch a stored function
+// makes reachable.
+function testFunctionToEmptyClass(f: Function): Empty {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 
 // A Function-typed value is not invocable: its signature is unknown, so a
 // call cannot be checked. Stricter than tsc, which allows the call at an
 // implicit any type.
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionNotInvocable(f: Function): void {
+  // @skjs-expect-error This expression is not callable
   f();
 }
 
 // ... and not constructible (tsc agrees, TS2351).
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionNotConstructable(f: Function): void {
+  // @ts-expect-error This expression is not constructable
   const x = new f();
 }
 
 // typeof narrowing: Function is definitely typeof "function".
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionTypeofFunction(f: Function): void {
   if (typeof f === "function") {
   } else {
@@ -78,7 +91,6 @@ function testFunctionTypeofFunction(f: Function): void {
   }
 }
 
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionTypeofObject(f: Function): void {
   if (typeof f === "object") {
     const n: never = f;
@@ -86,15 +98,23 @@ function testFunctionTypeofObject(f: Function): void {
 }
 
 // A Function-typed value is a valid instanceof right-hand side.
-// @skjs-expect-error Cannot find type 'Function'
 function testFunctionInstanceofRhs(f: Function, x: unknown): void {
   if (x instanceof f) {
   }
 }
 
+// A Function-typed condition reports the generic truthiness restriction,
+// deliberately not the always-true diagnostic: TS2774 is the forgot-to-call
+// heuristic, and a Function value is not invocable, so it cannot be a
+// forgotten call.
+function testFunctionTruthiness(f: Function): void {
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  if (f) {
+  }
+}
+
 // An interface extending Function inherits provable callability, and a
 // plain function satisfies it structurally.
-// @skjs-expect-error Cannot find type 'Function'
 interface Callback extends Function {}
 
 function testFnToCallbackInterface(g: () => number): Callback {
