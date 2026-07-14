@@ -184,7 +184,7 @@ function testBlockArrowReturnPromise(
 // `then` is a required field of every Promise, so the check is always true
 // (tsc does not report this).
 function testIn(p: Promise<number>): boolean {
-  // @skjs-expect-error This condition is always true
+  // @skjs-expect-warning This condition is always true
   return "then" in p;
 }
 

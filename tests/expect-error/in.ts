@@ -1,10 +1,10 @@
 function literalInRecordAlwaysTrue(x: { f: number }): boolean {
-  // @skjs-expect-error This condition is always true
+  // @skjs-expect-warning This condition is always true
   return "f" in x;
 }
 
 function refineLiteralInRecordAlwaysTrue(x: { f: number }): number {
-  // @skjs-expect-error This condition is always true
+  // @skjs-expect-warning This condition is always true
   if ("f" in x) {
     return x.f;
   } else {
@@ -189,7 +189,7 @@ function unionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): boolean {
-  // @skjs-expect-error This condition is always true
+  // @skjs-expect-warning This condition is always true
   return s in x;
 }
 
@@ -197,7 +197,7 @@ function refineUnionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): number {
-  // @skjs-expect-error This condition is always true
+  // @skjs-expect-warning This condition is always true
   if (s in x) {
     return x[s];
   } else {
