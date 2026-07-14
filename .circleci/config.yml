@@ -12,6 +12,23 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Skip build for docs-only changes
+          command: |
+            # Best-effort, fail-OPEN: only skip when the change is provably
+            # docs-only. main always builds; if the base cannot be determined
+            # (e.g. no common history in a shallow clone) we build rather than
+            # risk skipping a real change.
+            if [ "$CIRCLE_BRANCH" = "main" ]; then exit 0; fi
+            git fetch --quiet --depth=200 origin main 2>/dev/null || exit 0
+            base=$(git merge-base HEAD FETCH_HEAD 2>/dev/null) || exit 0
+            changed=$(git diff --name-only "$base" HEAD 2>/dev/null) || exit 0
+            [ -z "$changed" ] && exit 0
+            nondocs=$(printf '%s\n' "$changed" | grep -vE '^(docs/.*|.*\.md|LICENSE)$' || true)
+            if [ -n "$nondocs" ]; then exit 0; fi
+            echo "Docs-only change; skipping build. Changed files:"
+            echo "$changed"
+            circleci-agent step halt
+      - run:
           name: Check code is formatted
           command: |
             make check-fmt
