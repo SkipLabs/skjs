@@ -10,10 +10,12 @@ For each release at `vX.Y.Z`:
 
 | Asset | Description |
 | --- | --- |
-| `skjs_vX.Y.Z_linux_amd64` | The release binary |
-| `skjs_vX.Y.Z_linux_amd64.json` | Build metadata (commit, run id, timestamp, workflow URL) |
+| `skjs_vX.Y.Z_linux_amd64` | The release binary (x86-64) |
+| `skjs_vX.Y.Z_linux_amd64.json` | Build metadata for the amd64 binary (commit, run id, timestamp, workflow URL) |
+| `skjs_vX.Y.Z_linux_arm64` | The release binary (arm64) |
+| `skjs_vX.Y.Z_linux_arm64.json` | Build metadata for the arm64 binary |
 | `import-stubs.tgz` | Stub type declarations bundled with the release |
-| `SHA256SUMS` | Checksums covering the three files above |
+| `SHA256SUMS` | Checksums covering all of the files above |
 
 GitHub also auto-attaches `Source code (zip)` and `Source code (tar.gz)` snapshots of the tagged commit.
 
@@ -62,9 +64,23 @@ curl -L \
 
 ### Verifying
 
+`SHA256SUMS` lists every release asset, so `-c` reports the ones you didn't download as missing — use `--ignore-missing` to check only what you have:
+
 ```bash
-sha256sum -c SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
 ```
+
+## Using a downloaded binary
+
+Make the binary executable and unpack the type stubs next to it:
+
+```bash
+chmod +x skjs_*_linux_amd64
+mkdir import-stubs && tar -xzf import-stubs.tgz -C import-stubs
+./skjs_*_linux_amd64 check --import-stubs ./import-stubs path/to/file.ts
+```
+
+The binary is self-contained except for these stubs, so `skjs check` needs `--import-stubs <dir>`. The `skjs run` subcommand additionally requires [Bun](https://bun.sh) on `PATH`.
 
 ## Local builds
 
@@ -91,9 +107,9 @@ CircleCI no longer publishes any binaries — it's only used for testing on bran
 
 ## Platform support
 
-Currently published: **linux/amd64**.
+Currently published: **linux/amd64** and **linux/arm64**.
 
-Adding macOS or arm64 means extending the matrix in [.github/workflows/release.yml](../.github/workflows/release.yml) and ensuring the Skip toolchain image supports the target.
+Adding macOS (or other targets) means extending the matrix in [.github/workflows/release.yml](../.github/workflows/release.yml) and ensuring the Skip toolchain image supports the target.
 
 ## Troubleshooting
 
