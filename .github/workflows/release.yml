@@ -13,7 +13,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Verify tag matches Skargo.toml version
         run: |
@@ -32,7 +32,7 @@ jobs:
           ls -la artifacts/
 
       - name: Upload import-stubs artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: skjs-import-stubs
           path: artifacts/
@@ -59,7 +59,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Clone Skip repository
         run: |
@@ -104,7 +104,7 @@ jobs:
           "$BINARY" --version
 
       - name: Upload arch artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: skjs-linux-${{ matrix.arch }}
           path: artifacts/
@@ -121,7 +121,7 @@ jobs:
         shell: bash
     steps:
       - name: Download all release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: downloaded
           pattern: skjs-*
@@ -147,7 +147,7 @@ jobs:
           ls -la artifacts/
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           name: skjs ${{ github.ref_name }}
           generate_release_notes: true
