@@ -114,6 +114,27 @@ function testFunctionTruthiness(f: Function): void {
   }
 }
 
+// FIXME(#806): a type parameter is not narrowed by typeof === "function":
+// the true branch keeps x at T, so the runtime proof is unusable. tsc
+// narrows to T & Function and accepts the return.
+function testTParamTypeofFunction<T>(x: T): Function {
+  if (typeof x === "function") {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    return x;
+  }
+  return () => {};
+}
+
+// FIXME(#806): same for unknown — the true branch keeps x at unknown. tsc
+// narrows to Function.
+function testUnknownTypeofFunction(x: unknown): Function {
+  if (typeof x === "function") {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    return x;
+  }
+  return () => {};
+}
+
 // An interface extending Function inherits provable callability, and a
 // plain function satisfies it structurally.
 interface Callback extends Function {}
