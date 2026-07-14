@@ -2,6 +2,23 @@
 
 SKJS is a typechecker for a dialect of TypeScript. Its goal is soundness — rejecting programs that would fail at runtime for type reasons — while restricting the type system to tractable constructs (see `skjs-rules.md`). Soundness is what SKJS aims for rather than a finished guarantee: some unsound programs are still accepted today, and known gaps are tracked as issues.
 
+## Quickstart
+
+Grab a released binary, unpack the bundled type stubs, and check a file:
+
+```bash
+# Download the latest linux/amd64 build + type stubs
+gh release download --repo SkipLabs/skjs \
+  --pattern 'skjs_*_linux_amd64' --pattern 'import-stubs.tgz'
+chmod +x skjs_*_linux_amd64
+mkdir import-stubs && tar -xzf import-stubs.tgz -C import-stubs
+
+# Check a TypeScript file
+./skjs_*_linux_amd64 check --import-stubs ./import-stubs path/to/file.ts
+```
+
+See [docs/binary-distribution.md](docs/binary-distribution.md) for arm64 builds, checksums, and other install details.
+
 ## Building & Testing
 
 Requires the [Skip repository](https://github.com/SkipLabs/skip) checked out as a sibling directory (`../skip`).
