@@ -94,4 +94,69 @@ fun testNumberAtEofDoesNotCrash(): void {
   )
 }
 
+// In expression context the lexer emits template *chunk* tokens; a brace inside
+// a string argument of an interpolation is handled by the ordinary expression
+// parse (the chunk stops at `${`), so this lexes and parses cleanly rather than
+// scanning to end-of-input. (#820)
+@test
+fun testTemplateBraceInStringArgLexesCleanly(): void {
+  bt = "`";
+  q = "\"";
+  // function f() { const s = `${"{"}`; }
+  content =
+    "function f() { const s = " +
+    bt +
+    "${" +
+    q +
+    "{" +
+    q +
+    "}" +
+    bt +
+    "; }";
+  fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+  lexer = SKJS.Lexer::mcreate(fileName, content);
+  parser = mutable SKJS.Parser(lexer);
+  threw = try {
+    _ = parser.toplevelDefs();
+    false
+  } catch {
+  | SKJS.ErrorExn(_) -> true
+  | exn -> throw exn
+  };
+  SKTest.expectFalse(threw, "a brace in a string arg must lex/parse cleanly")
+}
+
+// A backslash as the final character of a template chunk (expression context)
+// must report an in-bounds unterminated error, not overshoot the buffer — the
+// analogue of testTrailingBackslashDoesNotOvershoot for scanTemplateChunk.
+@test
+fun testTemplateChunkTrailingBackslash(): void {
+  bt = "`";
+  bs = "\\";
+  content = "const a = " + bt + bs; // const a = `\   (unterminated, backslash last)
+  size = content.chars().size();
+  fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+  lexer = SKJS.Lexer::mcreate(fileName, content);
+  parser = mutable SKJS.Parser(lexer);
+  errOpt = try {
+    _ = parser.toplevelDefs();
+    None()
+  } catch {
+  | SKJS.ErrorExn(err) -> Some(err)
+  | exn -> throw exn
+  };
+  errOpt match {
+  | Some(le @ SKJS.LexingError _) ->
+    le.pos match {
+    | SKJS.EPChar(_, p) ->
+      SKTest.expectTrue(
+        p.value <= size,
+        `error position ${p.value} must stay within size ${size}`,
+      )
+    | _ -> SKTest.expectTrue(false, "expected an EPChar position")
+    }
+  | _ -> SKTest.expectTrue(false, "expected an unterminated-template error")
+  }
+}
+
 module end;

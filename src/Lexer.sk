@@ -84,6 +84,160 @@ mutable class Lexer private {
     }
   }
 
+  // --- Template literals ---------------------------------------------------
+  //
+  // In EXPRESSION context templates are lexed incrementally as chunk tokens
+  // (Head/Middle/Tail/NoSubstitution) via `scanTemplateChunk`, and the parser
+  // parses each interpolation with the normal expression parser (see
+  // Parser.parseTemplateLiteral). In TYPE context, where template literal types
+  // are unsupported, the whole template is still swallowed as one `TKBackTick`
+  // token whose extent is found by `scanTemplateBody` below.
+
+  // Scans raw template text from `start`, honoring backslash escapes (so `\${`
+  // and `` \` `` are literal), and stops at the first UNescaped boundary:
+  // returns (true, index-past-backtick) at a closing backtick, or
+  // (false, index-past-"${") at an interpolation start. Errors (unterminated) at
+  // end-of-input. This is the single-chunk scanner used in expression context.
+  readonly fun scanTemplateChunk(start: Int): (Bool, Int) {
+    n = this.contents.size();
+    pos = start;
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '\\') {
+        !pos = this.skipStringEscape(pos)
+      } else if (c == '`') {
+        return (true, pos + 1)
+      } else if (c == '$' && pos + 1 < n && this.contents[pos + 1] == '{') {
+        return (false, pos + 2)
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
+  // Called by the parser right after it has consumed the `}` that closes a
+  // template interpolation (so `this.pos` is the index just past that `}`, with
+  // any whitespace/comments before the `}` already handled by peek/expect).
+  // Scans the next raw chunk and returns a TKTemplateTail (stopped at the
+  // closing backtick) or TKTemplateMiddle (stopped at the next `${`); advances
+  // `pos`/`lastTok`. The returned token spans from just past `}` to the boundary
+  // (it does not include the `}`).
+  mutable fun nextTemplateContinuation(): Token {
+    start = this.pos;
+    (hitBacktick, endPos) = this.scanTemplateChunk(start);
+    tok = Token(
+      if (hitBacktick) TKTemplateTail() else TKTemplateMiddle(),
+      Pos(start),
+      Pos(endPos),
+    );
+    this.!pos = endPos;
+    this.!lastTok = Some(tok);
+    tok
+  }
+
+  // Returns the literal text of a template chunk token, stripping the
+  // delimiters that its extent includes (opening backtick, `${`, closing
+  // backtick), leaving the raw source text of that chunk (escapes not decoded).
+  readonly fun templateChunkRawText(tok: Token): String {
+    (s, e) = tok.kind match {
+    | TKTemplateHead() -> (tok.posStart.value + 1, tok.posEnd.value - 2)
+    | TKTemplateMiddle() -> (tok.posStart.value, tok.posEnd.value - 2)
+    | TKTemplateTail() -> (tok.posStart.value, tok.posEnd.value - 1)
+    | TKNoSubstitutionTemplate() ->
+      (tok.posStart.value + 1, tok.posEnd.value - 1)
+    | _ ->
+      invariant_violation("templateChunkRawText: not a template chunk token")
+    };
+    String::fromChars(this.contents.slice(s, e))
+  }
+
+  // Scans a whole template literal body starting at `pos` (just past the opening
+  // backtick) and returns the index just past the closing backtick. Skips
+  // interpolations `${...}` — and the strings, templates, comments, and braces
+  // nested within them — as well as backslash escapes, so a stray backtick,
+  // brace, or dollar inside an interpolation is not mistaken for template
+  // structure. Used only in TYPE context (template literal types are
+  // unsupported, so the interior is never parsed). Errors (unterminated) at EOF.
+  readonly fun scanTemplateBody(pos: Int): Int {
+    n = this.contents.size();
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '\\') {
+        !pos = this.skipStringEscape(pos)
+      } else if (c == '`') {
+        return pos + 1
+      } else if (c == '$' && pos + 1 < n && this.contents[pos + 1] == '{') {
+        !pos = this.scanInterpolation(pos + 1)
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
+  // Scans a template interpolation starting at `pos` (the '{' after '$') and
+  // returns the index just past the matching '}'. Skips nested strings,
+  // templates, comments, and braces so their contents are not miscounted.
+  // Errors (unterminated) at end-of-input.
+  readonly fun scanInterpolation(pos: Int): Int {
+    n = this.contents.size();
+    depth = 0;
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '{') {
+        !depth = depth + 1;
+        !pos = pos + 1
+      } else if (c == '}') {
+        !depth = depth - 1;
+        !pos = pos + 1;
+        if (depth == 0) return pos
+      } else if (c == '\'' || c == '"') {
+        !pos = this.scanStringLiteral(pos)
+      } else if (c == '`') {
+        !pos = this.scanTemplateBody(pos + 1)
+      } else if (c == '/' && pos + 1 < n && this.contents[pos + 1] == '/') {
+        // Line comment: skip to the next line terminator.
+        !pos = pos + 2;
+        while (pos < n && this.contents[pos] != '\n') !pos = pos + 1
+      } else if (c == '/' && pos + 1 < n && this.contents[pos + 1] == '*') {
+        // Block comment: skip to the closing '*/'.
+        !pos = pos + 2;
+        while (
+          pos + 1 < n &&
+          !(this.contents[pos] == '*' && this.contents[pos + 1] == '/')
+        ) {
+          !pos = pos + 1
+        };
+        !pos = min(pos + 2, n)
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
+  // Scans a single- or double-quoted string starting at `pos` (the opening
+  // quote) and returns the index just past the matching quote, honoring
+  // backslash escapes. Used only to find the extent of a string inside a
+  // template interpolation in type context. Errors at end-of-input.
+  readonly fun scanStringLiteral(pos: Int): Int {
+    n = this.contents.size();
+    quote = this.contents[pos];
+    !pos = pos + 1;
+    while (pos < n) {
+      c = this.contents[pos];
+      if (c == '\\') {
+        !pos = this.skipStringEscape(pos)
+      } else if (c == quote) {
+        return pos + 1
+      } else {
+        !pos = pos + 1
+      }
+    };
+    this.error(n, UnterminatedString())
+  }
+
   // Returns true if the current token is equal to the string.
   readonly fun isEq(str: String): Bool {
     this.peek() match {
@@ -297,51 +451,20 @@ mutable class Lexer private {
       mkToken(TKDoubleQuote())
 
     | '`' ->
-      !pos = pos + 1;
-      loop {
-        if (pos >= this.contents.size()) {
-          this.error(pos, UnterminatedString());
-        };
-        c = this.contents[pos];
-        if (c == '\\') {
-          !pos = this.skipStringEscape(pos);
-          continue
-        };
-        if (c == '$') {
-          !pos = pos + 1;
-          if (pos >= this.contents.size()) {
-            this.error(pos, UnterminatedString());
-          };
-          if (this.contents[pos] == '{') {
-            count = 0;
-            loop {
-              if (pos >= this.contents.size()) {
-                this.error(pos, UnterminatedString());
-              };
-              if (this.contents[pos] == '{') {
-                !count = count + 1;
-                !pos = pos + 1;
-                continue
-              };
-              if (this.contents[pos] == '}') {
-                !count = count - 1;
-                if (count == 0) break void;
-                !pos = pos + 1;
-                continue;
-              };
-              !pos = pos + 1;
-            }
-          } else {
-            continue
-          };
-        };
-        if (c == '`') {
-          !pos = pos + 1;
-          break void;
-        };
-        !pos = pos + 1;
-      };
-      mkToken(TKBackTick())
+      if (this.inType) {
+        // Type context: template literal types are unsupported, so swallow the
+        // whole template (interpolations and all) as one raw token.
+        !pos = this.scanTemplateBody(pos + 1);
+        mkToken(TKBackTick())
+      } else {
+        // Expression context: emit only the first chunk. The parser parses each
+        // interpolation and requests continuations (Middle/Tail).
+        (hitBacktick, endPos) = this.scanTemplateChunk(pos + 1);
+        !pos = endPos;
+        mkToken(
+          if (hitBacktick) TKNoSubstitutionTemplate() else TKTemplateHead(),
+        )
+      }
 
     | '.' ->
       !pos = pos + 1;

@@ -13,6 +13,10 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKAdditionAssignment()
   | TKAssignment()
   | TKBackTick()
+  | TKNoSubstitutionTemplate()
+  | TKTemplateHead()
+  | TKTemplateMiddle()
+  | TKTemplateTail()
   | TKBigInt()
   | TKBitwiseAnd()
   | TKBitwiseAndAssignment()
@@ -80,6 +84,10 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKAdditionAssignment() -> "+="
   | TKAssignment() -> "="
   | TKBackTick() -> "`"
+  | TKNoSubstitutionTemplate() -> "a template literal"
+  | TKTemplateHead() -> "`...${"
+  | TKTemplateMiddle() -> "}...${"
+  | TKTemplateTail() -> "}...`"
   | TKBigInt() -> "a bigint"
   | TKBitwiseAnd() -> "&"
   | TKBitwiseAndAssignment() -> "&="
