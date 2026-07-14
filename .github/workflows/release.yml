@@ -5,9 +5,13 @@ on:
     tags:
       - 'v*'
 
+permissions: {}
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
@@ -41,6 +45,8 @@ jobs:
 
   build:
     needs: verify
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
