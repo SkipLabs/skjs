@@ -325,10 +325,10 @@ function testCtorToEmptyClass(): Empty {
   return C;
 }
 
-// FIXME: A constructor value is always truthy; once its provable
-// callability is recorded (#805) this should report the always-true
-// diagnostic instead of the generic truthiness restriction (tsc reports
-// nothing here).
+// A constructor value in a condition reports the generic truthiness
+// restriction, deliberately not the always-true diagnostic: TS2774 is the
+// forgot-to-call heuristic, and a constructor value is not invocable, so it
+// cannot be a forgotten call — tsc likewise reports nothing here.
 function testCtorTruthiness(): void {
   const F = C;
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
@@ -336,7 +336,7 @@ function testCtorTruthiness(): void {
   }
 }
 
-// FIXME: Same for construct-signature values (#805).
+// Same for construct-signature values.
 function testNewSigTruthiness(o: { new (): C }): void {
   // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
   if (o) {

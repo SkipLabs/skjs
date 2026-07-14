@@ -903,9 +903,12 @@ class TObject private (
   // this object type is callable as a function. Cheaper than getFields, which
   // unions all branches; used for the always-truthy-function check (TS2774).
   fun hasCallSignature(): Bool {
-    this.branches.all(fields ->
-      fields.call is CPresent _ || fields.call is CFunction()
-    )
+    // CPresent only, deliberately: this feeds the always-truthy-function
+    // check (TS2774), tsc's forgot-to-call heuristic — `if (fn)` where
+    // `fn()` was meant. A CFunction value (constructor, Function) is not
+    // invocable, so it cannot be mis-called, and tsc likewise stays silent
+    // on it (`truthiness: typescript` mode is tsc parity).
+    this.branches.all(fields -> fields.call is CPresent _)
   }
 
   // True when every branch carries a call or construct signature, i.e. this
@@ -2144,6 +2147,15 @@ class TFields protected {
       if (call is CUnknown()) !call = CAbsent();
       if (new is CUnknown()) !new = CAbsent();
     };
+    // Constructible implies [[Call]] (ECMA-262 10.2.1): a construct
+    // signature proves the call mode is at least CFunction. This invariant
+    // is what lets typeof-"function" narrowing read the call mode alone
+    // (TFields::narrowByTypeofFunction); TFields::inter preserves it
+    // pairwise (the meet never invents a constructible mode from CUnknown
+    // inputs).
+    if ((new is CPresent _ || new is CFunction()) && call is CUnknown()) {
+      !call = CFunction();
+    };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(fields),
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
@@ -2262,8 +2274,11 @@ class TFields protected {
   // wantFunction=false keeps the branch unless it is definitely a function,
   // strengthening its modes to definitely-absent. None drops the branch.
   fun narrowByTypeofFunction(wantFunction: Bool): ?TFields {
-    isFunction = this.call is CPresent _ || this.new is CPresent _;
-    notFunction = this.call is CAbsent() && this.new is CAbsent();
+    // The call mode alone decides typeof-"function"-ness: construction
+    // maintains call >= CFunction whenever a construct signature exists
+    // (see createFromSortedIterator), and call = CAbsent means no [[Call]].
+    isFunction = this.call is CPresent _ || this.call is CFunction();
+    notFunction = this.call is CAbsent();
     if (wantFunction) {
       if (notFunction) None() else Some(this)
     } else if (isFunction) {
