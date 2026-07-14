@@ -178,6 +178,52 @@ function testStrengthenedAfterFunctionElse(o: {}): void {
   }
 }
 
+// FIXME: The converse strengthening is missing (#805): once the "function"
+// check succeeds, callability is proven, but the branch stays unknown — so a
+// nested "object" check still keeps it. tsc narrows `{}` to Function, then
+// to never here.
+function testProvenCallableThenObject(o: {}): void {
+  if (typeof o === "function") {
+    if (typeof o === "object") {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const n: never = o;
+    }
+  }
+}
+
+// FIXME: Same gap through a repeated "function" check (#805): the else of the
+// inner check is unreachable, but the unstrengthened branch survives it.
+function testProvenCallableThenFunctionElse(o: {}): void {
+  if (typeof o === "function") {
+    if (typeof o === "function") {
+    } else {
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const n: never = o;
+    }
+  }
+}
+
+// FIXME: A value proven callable by typeof should be a valid instanceof
+// right-hand side (#805); tsc accepts (o: Function).
+function testProvenCallableInstanceofRhs(o: {}, x: unknown): void {
+  if (typeof o === "function") {
+    // @skjs-expect-error The right-hand side of an 'instanceof' expression must be either of type 'any', a class, function, or other type assignable to the 'Function' interface type, or an object type with a 'Symbol.hasInstance' method.
+    if (x instanceof o) {
+    }
+  }
+}
+
+// FIXME: A value proven callable by typeof is always truthy; once callability
+// is recorded (#805) this should report the always-true diagnostic instead of
+// the generic truthiness restriction.
+function testProvenCallableTruthiness(o: {}): void {
+  if (typeof o === "function") {
+    // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+    if (o) {
+    }
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Definite non-callability: class instances and arrays keep precise narrowing
 ///////////////////////////////////////////////////////////////////////////////
@@ -264,6 +310,37 @@ function testStructuralToClass(o: { a: number }): C {
 
 function testLiteralToClass(): C {
   return { a: 1 };
+}
+
+// Constructible values are typeof "function", so they are not assignable to
+// class-instance types either (tsc accepts both, structurally; sound-stricter
+// like testFnToEmptyClass).
+function testNewSigToEmptyClass(o: { new (): C }): Empty {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return o;
+}
+
+function testCtorToEmptyClass(): Empty {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return C;
+}
+
+// FIXME: A constructor value is always truthy; once its provable
+// callability is recorded (#805) this should report the always-true
+// diagnostic instead of the generic truthiness restriction (tsc reports
+// nothing here).
+function testCtorTruthiness(): void {
+  const F = C;
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  if (F) {
+  }
+}
+
+// FIXME: Same for construct-signature values (#805).
+function testNewSigTruthiness(o: { new (): C }): void {
+  // @skjs-expect-error A condition is expected to be of type boolean or a type with a single falsy value
+  if (o) {
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
