@@ -147,7 +147,10 @@ extension class TypeChecker {
                 .clauses.getObject() match {
               | Some(obj) if (obj.getBranches().size() == 1) ->
                 tfields = obj.getBranches()[0];
-                if (tfields.call.isNone() && tfields.new.isNone()) {
+                if (
+                  !(tfields.call is CPresent _) &&
+                  !(tfields.new is CPresent _)
+                ) {
                   tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
                   this.checkSubType(
                     tcenv,

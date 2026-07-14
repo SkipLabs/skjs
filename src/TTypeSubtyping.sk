@@ -677,28 +677,40 @@ base class STErrorOnTFields(
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)> {
+    // Hide the enclosing object types when both sides are a bare call (or
+    // bare construct) signature: the signature mismatch itself is the whole
+    // story.
+    bareNew = (fields: TFields) ->
+      fields.new is CPresent _ && !(fields.call is CPresent _);
+    bareCall = (fields: TFields) ->
+      fields.call is CPresent _ && !(fields.new is CPresent _);
     showTypes =
       !this.fields1.fields.isEmpty() ||
       this.fields1.hasNonSyntheticIndex() ||
       !this.fields2.fields.isEmpty() ||
       this.fields2.hasNonSyntheticIndex() ||
-      (
-        this.fields1.new,
-        this.fields1.call,
-        this.fields2.new,
-        this.fields2.call,
-      ) match {
-      | (Some((false, _)), None(), Some((false, _)), None())
-      | (None(), Some((false, _)), None(), Some((false, _))) ->
-        false
-      | _ -> true
-      };
+      !((bareNew(this.fields1) && bareNew(this.fields2)) ||
+        (bareCall(this.fields1) && bareCall(this.fields2)));
     detailForRec = if (showTypes) detail.decreaseIntermediate() else detail;
     (recMsgs, msgs, suggestReadonly) = this match {
-    | STRecFieldsCall(None(), _fields1, _fields2) ->
-      (List.Nil(), List[(pos1, "Missing call signature")], None())
-    | STRecFieldsNew(None(), _fields1, _fields2) ->
-      (List.Nil(), List[(pos1, "Missing constructor signature")], None())
+    // The mode check rejects in two directions: the source lacks a call
+    // signature the target requires, or the source's call signature is
+    // forbidden by a definitely-non-callable target (e.g. a class-instance
+    // type).
+    | STRecFieldsCall(None(), fields1, fields2) ->
+      msg = if (fields1.call is CPresent _ && fields2.call is CAbsent()) {
+        "Unexpected call signature"
+      } else {
+        "Missing call signature"
+      };
+      (List.Nil(), List[(pos1, msg)], None())
+    | STRecFieldsNew(None(), fields1, fields2) ->
+      msg = if (fields1.new is CPresent _ && fields2.new is CAbsent()) {
+        "Unexpected constructor signature"
+      } else {
+        "Missing constructor signature"
+      };
+      (List.Nil(), List[(pos1, msg)], None())
     | STRecFieldsMissingField(field, _fields1, _fields2) ->
       (
         List.Nil(),
@@ -1145,13 +1157,13 @@ extension class TFields {
     | err @ STError _ -> return err
     | STOk() -> void
     };
-    TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
+    TFields::isSubCallability(subst, tenv, fields1.call, fields2.call) match {
     | None() -> return STRecFieldsCall(None(), fields1, fields2)
     | Some(STOk()) -> void
     | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsCall(Some(err), fields1, fields2)
     };
-    TFields::isSubOptTFuns(subst, tenv, fields1.new, fields2.new) match {
+    TFields::isSubCallability(subst, tenv, fields1.new, fields2.new) match {
     | None() -> return STRecFieldsNew(None(), fields1, fields2)
     | Some(STOk()) -> void
     | Some(err @ STErrorOnTFuns _) ->
@@ -1160,20 +1172,31 @@ extension class TFields {
     STOk()
   }
 
-  static fun isSubOptTFuns(
+  static fun isSubCallability(
     subst: mutable Subst,
     tenv: TEnv,
-    f1opt: ?(Bool, TFuns),
-    f2opt: ?(Bool, TFuns),
+    m1: Callability,
+    m2: Callability,
   ): ?STResult<TFuns> {
-    (f1opt, f2opt) match {
-    | (_, None())
-    | (None(), Some((true, _))) ->
-      Some(STOk())
-    | (None(), Some((false, _)))
-    | (Some((true, _)), Some((false, _))) ->
+    (m1, m2) match {
+    | (_, CUnknown()) -> Some(STOk())
+    | (CAbsent(), CAbsent()) -> Some(STOk())
+    // Lax by design: TS structural assignability lets any plain object type
+    // flow into a class-instance type ({a: number} -> C), so an
+    // unknown-callability source is accepted against a definitely-absent
+    // mode. CAbsent therefore stays a brand-like approximation (like
+    // isArray): a callable can still be laundered through an intermediate
+    // structural type. A *known* callable is rejected below.
+    | (CUnknown(), CAbsent()) -> Some(STOk())
+    // A callable (or constructible) value is not assignable where the mode
+    // claims definitely-absent: typeof narrowing relies on that claim to
+    // drop such branches, so admitting a known callable here would let
+    // `typeof x === "function"` narrow a taken branch to never.
+    | (CPresent _, CAbsent()) -> None()
+    | (CAbsent(), CPresent _)
+    | (CUnknown(), CPresent _) ->
       None()
-    | (Some((_opt1, call1)), Some((_opt2, call2))) ->
+    | (CPresent(call1), CPresent(call2)) ->
       Some(TFuns::isSub(subst, tenv, call1, call2))
     }
   }
@@ -1579,7 +1602,7 @@ extension class TType {
             }
           };
           (openFields.call, boundFields.call) match {
-          | (Some((_, openFuns)), Some((_, boundFuns))) ->
+          | (CPresent(openFuns), CPresent(boundFuns)) ->
             // Function return type only. TFun::isSub_ checks params before
             // return, so any TVar that appears in both would otherwise see only
             // its param-side bound when the param checks run -- the return-side
@@ -1599,7 +1622,7 @@ extension class TType {
           | _ -> void
           };
           (openFields.new, boundFields.new) match {
-          | (Some((_, openFuns)), Some((_, boundFuns))) ->
+          | (CPresent(openFuns), CPresent(boundFuns)) ->
             // Constructor signatures: same return-first rationale as call
             // signatures above. The constructed instance type is the return,
             // and TVars nested there (e.g. `new <A>(x: T): Container<A>`) need

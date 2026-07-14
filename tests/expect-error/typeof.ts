@@ -187,8 +187,13 @@ function testFunctionRefinement(x: (() => number) | string): () => number {
   }
 }
 
+// The object arm survives the "function" branch: a function with an `a`
+// property inhabits it (Object.assign(function () {}, { a: 1 })). Stricter
+// than tsc, which unsoundly drops the arm. See
+// tests/expect-error/callability.ts.
 function testFunctionVsObject(x: (() => void) | { a: number }): () => void {
   if (typeof x === "function") {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return () => {};
@@ -228,11 +233,13 @@ function testCallableObject(x: CallableObject | string): CallableObject {
   }
 }
 
-// Callable vs regular object
+// Callable vs regular object: like testFunctionVsObject, the object arm may
+// be callable, so it survives the "function" branch (tsc unsoundly drops it).
 function testCallableVsObject(x: { (n: number): number } | { field: number }): {
   (n: number): number;
 } {
   if (typeof x === "function") {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return (n: number) => n;
@@ -251,6 +258,14 @@ function testComplexUnion(
   } else if (typeof x === "function") {
     return 0;
   } else {
+    // The { a: number } arm survives both checks: in the "object" else it
+    // may still be a callable inhabitant, and once the "function" check
+    // fails too it strengthens to not-callable but is not dropped — SKJS
+    // does not track that its named field rules out every primitive.
+    // Stricter than tsc, whose "object"-else drop is unsound for
+    // primitive-inhabited object types like { length: number }. Checking
+    // "function" before "object" narrows fully (testOverlappingTypeof).
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }
@@ -745,6 +760,9 @@ function testDestructuring(x: { a: number; b: string } | number): number {
     const { a } = x;
     return a;
   } else {
+    // The object arm survives the "object" else (it may be a callable
+    // inhabitant, which is typeof "function") — see testComplexUnion.
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }

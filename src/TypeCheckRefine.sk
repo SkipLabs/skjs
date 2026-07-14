@@ -257,16 +257,13 @@ extension class TypeChecker {
       default = None();
       this.setLocal(tcenv, local, default, filter)
     | "object" ->
+      // An object branch is typeof "object" iff it is not typeof "function"
+      // (see TFields::narrowByTypeofFunction); null joins the true branch
+      // below.
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> Some(if (target) None() else Some((false, f)))
-            | Some((false, _)) -> if (target) None() else Some(call)
-            | None() -> if (target) Some(call) else None()
-            }
-          )
+          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(!target))
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
@@ -287,13 +284,7 @@ extension class TypeChecker {
       filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> Some(if (target) Some((false, f)) else None())
-            | Some((false, _)) -> if (target) Some(call) else None()
-            | None() -> if (target) None() else Some(call)
-            }
-          )
+          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(target))
         | _ -> if (target) None() else Some(x)
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMap)

@@ -372,7 +372,7 @@ mutable class TypePp{
     )
   }
 
-  // The lone non-optional call or constructor signature (isNew, tfun) that
+  // The lone call or constructor signature (isNew, tfun) that
   // makes `fields` render as a bare function/constructor type instead of a
   // braced object, if any. Single source of truth for that shape: used by
   // both the renderer (TypePp::object) and the parenthesization decision
@@ -382,8 +382,12 @@ mutable class TypePp{
       return None()
     };
     (fields.call, fields.new) match {
-    | (Some((false, TFuns(tfun, _pos))), None()) -> Some((false, tfun))
-    | (None(), Some((false, TFuns(tfun, _pos)))) -> Some((true, tfun))
+    | (CPresent(TFuns(tfun, _pos)), CAbsent())
+    | (CPresent(TFuns(tfun, _pos)), CUnknown()) ->
+      Some((false, tfun))
+    | (CAbsent(), CPresent(TFuns(tfun, _pos)))
+    | (CUnknown(), CPresent(TFuns(tfun, _pos))) ->
+      Some((true, tfun))
     | _ -> None()
     }
   }
@@ -515,18 +519,20 @@ mutable class TypePp{
       this.out(level, margin, ";")
     });
     fields.call match {
-    | None() -> void
-    | Some((opt, TFuns(tfun, _pos))) ->
+    | CAbsent()
+    | CUnknown() ->
+      void
+    | CPresent(TFuns(tfun, _pos)) ->
       this.beginMember(level, margin, multiLine);
-      if (opt) this.out(level, margin, "?");
       this.tfun(level, margin, (true, tfun));
       this.out(level, margin, ";")
     };
     fields.new match {
-    | None() -> void
-    | Some((opt, TFuns(tfun, _pos))) ->
+    | CAbsent()
+    | CUnknown() ->
+      void
+    | CPresent(TFuns(tfun, _pos)) ->
       this.beginMember(level, margin, multiLine);
-      if (opt) this.out(level, margin, "?");
       this.out(level, margin, "new ");
       this.tfun(level, margin, (true, tfun));
       this.out(level, margin, ";")

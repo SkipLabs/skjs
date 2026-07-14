@@ -410,9 +410,18 @@ base class TEnv{
     | CKClass() ->
       Some(false) /* Unless overridden by brand field */
     };
+    // Class instances are never callable or constructible; interfaces are
+    // structural, so their callability is unconstrained (a function with the
+    // right members inhabits them). Mirrors the isArray brand above.
+    (call, new) = c.kind match {
+    | CKInterface() -> (CUnknown(), CUnknown())
+    | CKAbstract()
+    | CKClass() ->
+      (CAbsent(), CAbsent())
+    };
     tIndexes = TIndexes::create(subst, this, indexes);
     TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, tIndexes, isArray},
+      TFields::create{fields, symbolFields, tIndexes, call, new, isArray},
       Some(TSInst(className, TArgs(targs))),
       className.pos,
     )
@@ -452,7 +461,12 @@ base class TEnv{
         fields,
         symbolFields,
         tIndexes,
-        new => Some(new),
+        new => CPresent(new),
+        // A class constructor implements [[Call]] (typeof C === "function"),
+        // but invoking it without `new` always throws, so it is not
+        // invocable; its typeof-"function"-ness flows from the construct
+        // signature (see Callability).
+        call => CAbsent(),
         isArray => Some(false),
       },
       Some(TSInst(className, TArgs(targs))),
@@ -919,7 +933,7 @@ base class TEnv{
         // A call/construct signature on the base is representable here only as
         // a named member, so it cannot flow through the field maps; reject
         // rather than silently drop it.
-        if (tfields.call.isSome() || tfields.new.isSome()) {
+        if (tfields.call is CPresent _ || tfields.new is CPresent _) {
           subst.notSupported(
             extend.pos,
             "extending a type alias that has a call or construct signature",
@@ -2218,8 +2232,8 @@ base class TEnv{
       fields => fieldsMap,
       symbolFields,
       tIndexes,
-      new,
-      call,
+      new => Callability::fromSig(new),
+      call => Callability::fromSig(call),
     };
     tFields
   }

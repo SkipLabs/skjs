@@ -121,6 +121,10 @@ class ObjectSpreadState{
       fields => this.fields,
       symbolFields => this.symbolFields,
       tIndexes,
+      // An object literal (or spread result) is a plain object: never
+      // callable or constructible.
+      call => CAbsent(),
+      new => CAbsent(),
       isArray => Some(false),
     }
   }
@@ -2080,20 +2084,7 @@ extension class TypeChecker {
         | _ -> None()
         }
       ) match {
-      | Some((optional, tfuns)) ->
-        if (optional) {
-          tcenv.error(
-            Array[
-              (pos, "This expression is not callable"),
-              (
-                fty.pos,
-                `Type ${this.ppType(tcenv, fty)} may not be a function`,
-              ),
-            ],
-            TSCode(2349),
-          )
-        };
-        tfuns
+      | Some(tfuns) -> tfuns
       | None() ->
         fatalError(
           Array[
@@ -2171,23 +2162,7 @@ extension class TypeChecker {
         ) match {
         | Some(obj @ TObject _) ->
           obj.maybeGetNew(tcenv.subst, this) match {
-          | Some((optional, f)) ->
-            if (optional) {
-              tcenv.error(
-                Array[
-                  (pos, "This expression is not constructable"),
-                  (
-                    obj.pos,
-                    `${this.ppType(
-                      tcenv,
-                      subExprTy,
-                    )} may not have a constructor`,
-                  ),
-                ],
-                TSCode(2351),
-              )
-            };
-            this.call(tcenv, pos, f, tArgs, args, mostPrecise)
+          | Some(f) -> this.call(tcenv, pos, f, tArgs, args, mostPrecise)
           | None() ->
             fatalError(
               Array[
@@ -3640,7 +3615,7 @@ extension class TypeChecker {
       | obj @ TObject _ ->
         obj.maybeGetCall(tcenv.subst, this) match {
         | Some(
-          (_, tfuns @ TFuns(f, _)),
+          tfuns @ TFuns(f, _),
         ) if (f.tparams.isEmpty() && cbFuns is None()) ->
           !cbFuns = Some(tfuns)
         | _ -> return Array[]
