@@ -2093,9 +2093,14 @@ extension class TypeChecker {
         // Pick the honest detail: a constructible value or a Function-typed
         // value IS a function at runtime — what fails is the missing `new`
         // or the unknown signature, not function-ness.
-        detail = if (
-          calleeObj.flatMap(obj -> obj.maybeGetNew(tcenv.subst, this)).isSome()
-        ) {
+        calleeNewMode = calleeObj.map(obj -> obj.newMode(tcenv.subst, this));
+        provablyConstructible = calleeNewMode match {
+        | Some(CPresent _)
+        | Some(CFunction()) ->
+          true
+        | _ -> false
+        };
+        detail = if (provablyConstructible) {
           `Type ${this.ppType(
             tcenv,
             fty,

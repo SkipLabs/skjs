@@ -1158,20 +1158,27 @@ class TObject private (
     Some(TType::unionN(subst, tenv, pos, tys))
   }
 
-  fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?TFuns {
-    result: ?TFuns = None();
+  // The object-level construct mode: the join of the branch modes, like
+  // callMode.
+  fun newMode(subst: mutable Subst, tenv: TEnv): Callability {
+    result: ?Callability = None();
     for (fields in this.branches) {
-      (fields, result) match {
-      | (TFields{new => CAbsent()}, _)
-      | (TFields{new => CUnknown()}, _)
-      | (TFields{new => CFunction()}, _) ->
-        return None()
-      | (TFields{new => CPresent(first)}, None()) -> !result = Some(first)
-      | (TFields{new => CPresent(tFuns2)}, Some(tFuns1)) ->
-        !result = Some(TFuns::union(subst, tenv, tFuns1, tFuns2))
-      }
+      !result = Some(
+        result match {
+        | None() -> fields.new
+        | Some(acc) -> Callability::join(subst, tenv, acc, fields.new)
+        },
+      )
     };
-    result
+    // An empty branch set claims nothing.
+    result.default(CUnknown())
+  }
+
+  fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?TFuns {
+    this.newMode(subst, tenv) match {
+    | CPresent(tFuns) -> Some(tFuns)
+    | _ -> None()
+    }
   }
 
   // Resolve a literal property key against this (possibly multi-branch) object,
