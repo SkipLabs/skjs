@@ -911,15 +911,6 @@ class TObject private (
     this.branches.all(fields -> fields.call is CPresent _)
   }
 
-  // True when every branch proves [[Call]] (a signature or CFunction): the
-  // value is certainly a function even when maybeGetCall cannot produce a
-  // signature to invoke it with. Used to pick the call-site diagnostic.
-  fun isProvablyCallable(): Bool {
-    this.branches.all(fields ->
-      fields.call is CPresent _ || fields.call is CFunction()
-    )
-  }
-
   // True when every branch carries a call or construct signature, i.e. this
   // object type is Function-like (assignable to `Function`). Unlike
   // maybeGetCall/maybeGetNew, branches may mix the two, so a union of a
@@ -1109,23 +1100,32 @@ class TObject private (
     result
   }
 
-  fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?TFuns {
-    result: ?TFuns = None();
+  // The object-level call mode: the join of the branch modes, i.e. the
+  // weakest claim every branch supports. CPresent means the whole object is
+  // invocable at the unioned signature; CFunction means every branch proves
+  // [[Call]] but at least one offers no signature.
+  fun callMode(subst: mutable Subst, tenv: TEnv): Callability {
+    result: ?Callability = None();
     for (fields in this.branches) {
-      (fields, result) match {
-      | (TFields{call => CAbsent()}, _)
-      | (TFields{call => CUnknown()}, _)
-      // Provable callability without a signature (the Function type) is
-      // deliberately not invocable: there is no signature to check the
-      // call against.
-      | (TFields{call => CFunction()}, _) ->
-        return None()
-      | (TFields{call => CPresent(first)}, None()) -> !result = Some(first)
-      | (TFields{call => CPresent(tFuns2)}, Some(tFuns1)) ->
-        !result = Some(TFuns::union(subst, tenv, tFuns1, tFuns2))
-      }
+      !result = Some(
+        result match {
+        | None() -> fields.call
+        | Some(acc) -> Callability::join(subst, tenv, acc, fields.call)
+        },
+      )
     };
-    result
+    // An empty branch set claims nothing.
+    result.default(CUnknown())
+  }
+
+  fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?TFuns {
+    // Provable callability without a signature (CFunction, the Function
+    // type) is deliberately not invocable: there is no signature to check
+    // the call against.
+    this.callMode(subst, tenv) match {
+    | CPresent(tFuns) -> Some(tFuns)
+    | _ -> None()
+    }
   }
 
   fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
@@ -2122,6 +2122,35 @@ base class Callability uses XXHashable, Orderable {
     this match {
     | CPresent(sig) -> CPresent(f(sig))
     | x -> x
+    }
+  }
+
+  // Least upper bound: the weakest claim both modes support. Signatures
+  // join by union; a signature joins with bare provable callability to
+  // CFunction; a proof joins with definitely-absent to CUnknown (they share
+  // no claim below top). The dual of TFields::interCallability's meet.
+  static fun join(
+    subst: mutable Subst,
+    tenv: TEnv,
+    m1: Callability,
+    m2: Callability,
+  ): Callability {
+    (m1, m2) match {
+    | (CUnknown(), _)
+    | (_, CUnknown()) ->
+      CUnknown()
+    | (CAbsent(), CAbsent()) -> CAbsent()
+    | (CAbsent(), CPresent _)
+    | (CAbsent(), CFunction())
+    | (CPresent _, CAbsent())
+    | (CFunction(), CAbsent()) ->
+      CUnknown()
+    | (CFunction(), CFunction())
+    | (CFunction(), CPresent _)
+    | (CPresent _, CFunction()) ->
+      CFunction()
+    | (CPresent(f1), CPresent(f2)) ->
+      CPresent(TFuns::union(subst, tenv, f1, f2))
     }
   }
 }

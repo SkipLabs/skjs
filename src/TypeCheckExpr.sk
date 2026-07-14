@@ -2086,34 +2086,30 @@ extension class TypeChecker {
           | _ -> None()
           }
         );
-      tfuns = calleeObj.flatMap(obj ->
-        obj.maybeGetCall(tcenv.subst, this)
-      ) match {
-      | Some(tfuns) -> tfuns
-      | None() ->
+      calleeMode = calleeObj.map(obj -> obj.callMode(tcenv.subst, this));
+      tfuns = calleeMode match {
+      | Some(CPresent(tfuns)) -> tfuns
+      | _ ->
         // Pick the honest detail: a constructible value or a Function-typed
         // value IS a function at runtime — what fails is the missing `new`
         // or the unknown signature, not function-ness.
-        notAFunction = `Type ${this.ppType(tcenv, fty)} is not a function`;
-        detail = calleeObj match {
-        | Some(obj) ->
-          if (obj.maybeGetNew(tcenv.subst, this).isSome()) {
-            `Type ${this.ppType(
-              tcenv,
-              fty,
-            )} is constructable: did you mean to include 'new'?`
-          } else if (obj.isProvablyCallable()) {
-            // "may": the branches prove [[Call]], but the printed type does
-            // not show that (a narrowed union arm reads as a plain object),
-            // so an "is callable" claim would look wrong to the reader.
-            `Type ${this.ppType(
-              tcenv,
-              fty,
-            )} may be callable, but its signature is unknown`
-          } else {
-            notAFunction
-          }
-        | None() -> notAFunction
+        detail = if (
+          calleeObj.flatMap(obj -> obj.maybeGetNew(tcenv.subst, this)).isSome()
+        ) {
+          `Type ${this.ppType(
+            tcenv,
+            fty,
+          )} is constructable: did you mean to include 'new'?`
+        } else if (calleeMode == Some(CFunction())) {
+          // "may": the branches prove [[Call]], but the printed type does
+          // not show that (a narrowed union arm reads as a plain object),
+          // so an "is callable" claim would look wrong to the reader.
+          `Type ${this.ppType(
+            tcenv,
+            fty,
+          )} may be callable, but its signature is unknown`
+        } else {
+          `Type ${this.ppType(tcenv, fty)} is not a function`
         };
         fatalError(
           Array[(pos, "This expression is not callable"), (fty.pos, detail)],
