@@ -267,7 +267,7 @@ extension class TypeChecker {
       // position never changes which branch runs. tsc does not reject it.
       tcenv.warning(
         Array[
-          (e.pos, "The 'default' clause must be the last branch of a switch"),
+          (e.pos, "The 'default' clause should be the last branch of a switch"),
         ],
         ESLintCode("default-case-last"),
       );
