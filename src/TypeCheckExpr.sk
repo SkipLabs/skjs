@@ -2103,10 +2103,13 @@ extension class TypeChecker {
               fty,
             )} is constructable: did you mean to include 'new'?`
           } else if (obj.isProvablyCallable()) {
+            // "may": the branches prove [[Call]], but the printed type does
+            // not show that (a narrowed union arm reads as a plain object),
+            // so an "is callable" claim would look wrong to the reader.
             `Type ${this.ppType(
               tcenv,
               fty,
-            )} is callable, but its signature is unknown`
+            )} may be callable, but its signature is unknown`
           } else {
             notAFunction
           }

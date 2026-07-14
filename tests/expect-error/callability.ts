@@ -387,7 +387,7 @@ function testInstanceofCallable(f: () => void): void {
 function testUnionCallbackCall(x: (() => string) | { a: number }): void {
   if (typeof x === "function") {
     // @skjs-expect-error This expression is not callable
-    // @skjs-expect-error-line2 Type '() => string | { a: number; }' is callable, but its signature is unknown
+    // @skjs-expect-error-line2 Type '() => string | { a: number; }' may be callable, but its signature is unknown
     const s: string = x();
   }
 }

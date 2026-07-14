@@ -74,7 +74,7 @@ function testFunctionToEmptyClass(f: Function): Empty {
 // implicit any type.
 function testFunctionNotInvocable(f: Function): void {
   // @skjs-expect-error This expression is not callable
-  // @skjs-expect-error-line2 Type 'Function' is callable, but its signature is unknown
+  // @skjs-expect-error-line2 Type 'Function' may be callable, but its signature is unknown
   f();
 }
 
