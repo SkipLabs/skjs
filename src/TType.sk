@@ -2318,7 +2318,7 @@ class TFields protected {
   // unknown stays unknown there.
   fun narrowByTypeofFunction(
     wantFunction: Bool,
-    provenCallable: Bool = false,
+    provenCallable: Bool,
   ): ?TFields {
     // The call mode alone decides typeof-"function"-ness: construction
     // maintains call >= CFunction whenever a construct signature exists
