@@ -391,3 +391,28 @@ function testUnionCallbackCall(x: (() => string) | { a: number }): void {
     const s: string = x();
   }
 }
+
+// FIXME: The call error is fatal, so nothing after it is checked; once it
+// recovers at the known arms' signature (() => string — what tsc infers
+// after dropping the object arm), the recovered value and the code below
+// it get checked.
+function testUnionCallRecoveryContinues(
+  x: (() => string) | { a: number },
+): void {
+  if (typeof x === "function") {
+    // @skjs-expect-error This expression is not callable
+    const s: string = x();
+    const n: number = s.length;
+  }
+}
+
+// FIXME: Same, with a use that must fail once the recovered type flows: the
+// recovered return type is string, not number.
+function testUnionCallRecoveredType(
+  x: (() => string) | { a: number },
+): void {
+  if (typeof x === "function") {
+    // @skjs-expect-error This expression is not callable
+    const n: number = x();
+  }
+}
