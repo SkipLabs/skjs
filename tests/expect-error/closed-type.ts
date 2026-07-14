@@ -70,6 +70,7 @@ function testExcessPropertyVsClosed(): void {
 // is closed rather than reporting a missing index signature.
 function testOpenIntoClosedRejected(x: { readonly a: number }): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // @skjs-expect-error-line4 The target is a closed object type: every unnamed key is provably absent, but the source is an open object type that may have unknown extra keys
   const c: Closed<{ readonly a: number }> = x;
 }
 
@@ -77,6 +78,7 @@ function testOpenIntoClosedRejected(x: { readonly a: number }): void {
 function testReadUnnamedKey(): void {
   const x: Closed<{ readonly a: number }> = { a: 1 };
   // @skjs-expect-error Property 'b' does not exist on this type
+  // @skjs-expect-error-line3 The object type is closed: its unnamed keys are provably absent
   const v = x.b;
 }
 

@@ -1019,32 +1019,32 @@ class TObject private (
       | Some(i) -> i.get.isBottom()
       | None() -> false
       };
-    closedNote = if (
+    msgs = mutable Vector[
+      (
+        pos,
+        `Property '${TypePp::escapeName(
+          fieldName,
+        )}' does not exist on this type`,
+      ),
+      (
+        pos,
+        "Possible options are:\n" +
+          names.toArray().map(n -> TypePp::escapeName(n.value)).join("\n"),
+      ),
+    ];
+    if (
       branches.any(b ->
         isBottomIdx(b.stringIndex) || isBottomIdx(b.symbolIndex)
       )
     ) {
-      "\nThe object type is closed: its unnamed keys are provably absent"
-    } else {
-      ""
+      msgs.push(
+        (
+          pos,
+          "The object type is closed: its unnamed keys are provably absent",
+        ),
+      )
     };
-    fatalError(
-      Array[
-        (
-          pos,
-          `Property '${TypePp::escapeName(
-            fieldName,
-          )}' does not exist on this type`,
-        ),
-        (
-          pos,
-          "Possible options are:\n" +
-            names.toArray().map(n -> TypePp::escapeName(n.value)).join("\n") +
-            closedNote,
-        ),
-      ],
-      TSCode(2339),
-    )
+    fatalError(msgs.toArray(), TSCode(2339))
   }
 
   fun maybeGetSymbolType(
