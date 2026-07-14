@@ -266,9 +266,7 @@ extension class TypeChecker {
           // Never provenCallable here: even when this branch implies the
           // value is not typeof "object", it may be a primitive inhabitant
           // of the branch rather than a callable object.
-          tObj.mapOpt(tFields ->
-            tFields.narrowByTypeofFunction(!target, false)
-          )
+          tObj.mapOpt(tFields -> tFields.narrowByTypeofFunction(!target, false))
         | TPrimUnit(TNull(), _) -> if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };

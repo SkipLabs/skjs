@@ -2078,19 +2078,42 @@ extension class TypeChecker {
     | Call(f, targs, args) ->
       tcenv.markForInImpure(pos);
       fty = this.expr(tcenv, f, mostPrecise);
-      tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
-        stypes.singleElt() match {
-        | Some(obj @ TObject _) -> obj.maybeGetCall(tcenv.subst, this)
-        | _ -> None()
-        }
+      calleeObj = fty
+        .getSTypes(tcenv.subst, this, Covariant())
+        .flatMap(stypes ->
+          stypes.singleElt() match {
+          | Some(obj @ TObject _) -> Some(obj)
+          | _ -> None()
+          }
+        );
+      tfuns = calleeObj.flatMap(obj ->
+        obj.maybeGetCall(tcenv.subst, this)
       ) match {
       | Some(tfuns) -> tfuns
       | None() ->
+        // Pick the honest detail: a constructible value or a Function-typed
+        // value IS a function at runtime — what fails is the missing `new`
+        // or the unknown signature, not function-ness.
+        notAFunction = `Type ${this.ppType(tcenv, fty)} is not a function`;
+        detail = calleeObj match {
+        | Some(obj) ->
+          if (obj.maybeGetNew(tcenv.subst, this).isSome()) {
+            `Type ${this.ppType(
+              tcenv,
+              fty,
+            )} is constructable: did you mean to include 'new'?`
+          } else if (obj.isProvablyCallable()) {
+            `Type ${this.ppType(
+              tcenv,
+              fty,
+            )} is callable, but its signature is unknown`
+          } else {
+            notAFunction
+          }
+        | None() -> notAFunction
+        };
         fatalError(
-          Array[
-            (pos, "This expression is not callable"),
-            (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
-          ],
+          Array[(pos, "This expression is not callable"), (fty.pos, detail)],
           TSCode(2349),
         )
       };

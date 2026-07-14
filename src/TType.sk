@@ -911,6 +911,15 @@ class TObject private (
     this.branches.all(fields -> fields.call is CPresent _)
   }
 
+  // True when every branch proves [[Call]] (a signature or CFunction): the
+  // value is certainly a function even when maybeGetCall cannot produce a
+  // signature to invoke it with. Used to pick the call-site diagnostic.
+  fun isProvablyCallable(): Bool {
+    this.branches.all(fields ->
+      fields.call is CPresent _ || fields.call is CFunction()
+    )
+  }
+
   // True when every branch carries a call or construct signature, i.e. this
   // object type is Function-like (assignable to `Function`). Unlike
   // maybeGetCall/maybeGetNew, branches may mix the two, so a union of a

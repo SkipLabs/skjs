@@ -50,7 +50,7 @@ function testCtorTypeofObjectElse(): void {
 function testCtorNotInvocable(): void {
   const F = C;
   // @ts-expect-error This expression is not callable
-  // @skjs-expect-error-line2 Type 'C' is not a function
+  // @skjs-expect-error-line2 Type 'C' is constructable: did you mean to include 'new'?
   F();
 }
 
@@ -387,7 +387,7 @@ function testInstanceofCallable(f: () => void): void {
 function testUnionCallbackCall(x: (() => string) | { a: number }): void {
   if (typeof x === "function") {
     // @skjs-expect-error This expression is not callable
-    // @skjs-expect-error-line2 Type '() => string | { a: number; }' is not a function
+    // @skjs-expect-error-line2 Type '() => string | { a: number; }' is callable, but its signature is unknown
     const s: string = x();
   }
 }
