@@ -82,6 +82,34 @@ function breakingBranchMerged(x: number, a: "a", b: "b", c: "c"): void {
   const z: "c" = y;
 }
 
+// Every branch returns, so none of them is a path out and the merge is handed
+// no scopes at all. The only way to reach the code below is matching no clause,
+// which leaves `y` exactly as it was — so it stays "a" rather than widening.
+function allBranchesTerminal(x: number, a: "a", b: "b", c: "c"): void {
+  let y: "a" | "b" | "c" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      y = b;
+      return;
+    case 2:
+      y = c;
+      return;
+  }
+  const z: "a" = y;
+}
+
+// ... and with a `default` there is no untouched path either, so the merge gets
+// nothing at all to do and the code after the switch is unreachable.
+function allBranchesTerminalWithDefault(x: number): number {
+  switch (x) {
+    case 1:
+      return 1;
+    default:
+      return 2;
+  }
+}
+
 // A binding not assigned in the first branch already merges correctly (it takes
 // `merge`'s Left/Right arm, which accumulates through the parent scope).
 function notAssignedInFirstBranch(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
