@@ -437,6 +437,21 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Known gaps**: `const enum` values may be used like regular enum objects (`const o = CE`, `CE[0]`); tsc restricts const enums to member access (TS2475) because its default emit inlines them — FIXME if SKJS ever targets inlining emit. String-literal member names (`enum E { "a b" = 1 }`, legal TS) are a parse error (deliberate, PR #293).
 - **Verified by**: `tests/expect-error/enums.ts`, `tests/expect-error/enums-string.ts`, `tests/expect-error/enums-computed.ts`
 
+### 30. Writes Are Checked Against an Explicit Annotation Only
+
+An explicit type annotation is a hard constraint: every write to the binding must satisfy the declared type.
+
+```ts
+let x: string = "a";
+x = 5; // Error: Type is not assignable to the variable's type
+```
+
+- A parameter's type is an annotation too, so reassigning a parameter is checked the same way.
+- A write *within* the declared type is accepted and still narrows the binding for later reads in the same frame: after `let x: string | number = "a"; x = 5;`, `x` is a `number`.
+- **More permissive than TypeScript (sound)**: without an annotation the inferred type *evolves* on assignment, so `let x = "a"; x = 5;` is accepted and `x` becomes a `number`, where tsc pins `let x = "a"` to `string` and rejects the write. This stays sound because reads see the written type, so any misuse is still caught where the value is read. A bare `let x = null`/`undefined` evolves the same way (TypeScript's evolving `any`).
+- A write that escapes the current frame — across a loop iteration, or into a captured enclosing-function local from inside a lambda — is checked against the declared type even when the binding is un-annotated, because the narrowing cannot be trusted there (SkipLabs/skjs#769).
+- **Verified by**: `tests/expect-error/annotated-write-enforcement.ts`, `tests/expect-error/captured-local-write.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes

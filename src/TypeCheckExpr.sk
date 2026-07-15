@@ -436,6 +436,7 @@ extension class TypeChecker {
     kind: BindKind,
     pat: Pattern,
     type: TType,
+    isAnnotated: Bool,
     isInitialized: Bool,
     isLocalObject: Bool,
   ): void {
@@ -447,7 +448,7 @@ extension class TypeChecker {
         // bindings get distinct entries (no stale reuse).
         tcenv.localObjects![local.pos] = LOCanGrow(None())
       };
-      tcenv.scope.bind(tcenv, local, type, isInitialized)
+      tcenv.scope.bind(tcenv, local, type, isAnnotated, isInitialized)
     | PArray(arrPat, rest) ->
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
       stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
@@ -503,9 +504,25 @@ extension class TypeChecker {
             } else {
               eltType
             };
-            this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
+            this.bind(
+              tcenv,
+              kind,
+              eltPat,
+              boundType,
+              isAnnotated,
+              isInitialized,
+              false,
+            )
           | Some((eltPat, None())) ->
-            this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
+            this.bind(
+              tcenv,
+              kind,
+              eltPat,
+              tyl[i],
+              isAnnotated,
+              isInitialized,
+              false,
+            )
           };
         };
         sizeOk = rest match {
@@ -539,6 +556,7 @@ extension class TypeChecker {
             kind,
             Pattern(restName.pos, PVar(restName)),
             restType,
+            isAnnotated,
             isInitialized,
             false,
           )
@@ -572,7 +590,15 @@ extension class TypeChecker {
                 TType::removeUndefined(tcenv.subst, this, eltType),
                 defaultType,
               );
-              this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
+              this.bind(
+                tcenv,
+                kind,
+                eltPat,
+                boundType,
+                isAnnotated,
+                isInitialized,
+                false,
+              )
             | Some((eltPat, None())) ->
               optionalEltType = TType::unionUndefined(
                 tcenv.subst,
@@ -585,6 +611,7 @@ extension class TypeChecker {
                 kind,
                 eltPat,
                 optionalEltType,
+                isAnnotated,
                 isInitialized,
                 false,
               )
@@ -601,6 +628,7 @@ extension class TypeChecker {
               kind,
               Pattern(restName.pos, PVar(restName)),
               restType,
+              isAnnotated,
               isInitialized,
               false,
             )
@@ -724,7 +752,15 @@ extension class TypeChecker {
                 SKJSCode(2063),
               )
             };
-            this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
+            this.bind(
+              tcenv,
+              kind,
+              fieldPat,
+              typeForField,
+              isAnnotated,
+              isInitialized,
+              false,
+            )
           };
           rest.each(name ->
             this.bind(
@@ -732,6 +768,7 @@ extension class TypeChecker {
               kind,
               Pattern(name.pos, PVar(name)),
               TType::single(typeForRest),
+              isAnnotated,
               isInitialized,
               false,
             )

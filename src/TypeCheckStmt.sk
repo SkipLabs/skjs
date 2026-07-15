@@ -74,7 +74,15 @@ extension class TypeChecker {
           binding.type.isNone() &&
           binding.value is Some(Expr(_, Object _));
         tcenv.!exprTypes[(binding.pat.pos, false, true)] = ty;
-        this.bind(tcenv, bkind, binding.pat, ty, isInitialized, isLocalObject)
+        this.bind(
+          tcenv,
+          bkind,
+          binding.pat,
+          ty,
+          binding.type.isSome(),
+          isInitialized,
+          isLocalObject,
+        )
       }
 
     | If(e, block1, block2opt) ->
@@ -195,7 +203,7 @@ extension class TypeChecker {
           | None() -> TType::top(pat.pos)
           };
           tcenv.!exprTypes[(pat.pos, false, true)] = errorType;
-          this.bind(tcenv, BKLet(), pat, errorType, true, false)
+          this.bind(tcenv, BKLet(), pat, errorType, false, true, false)
         | None() -> void
         };
         for (stmt in catchBlock) {
@@ -501,7 +509,15 @@ extension class TypeChecker {
       };
       for (binding in bindings) {
         tcenv.!exprTypes[(binding.pat.pos, false, true)] = varType;
-        this.bind(tcenv, kind, binding.pat, varType, true, false)
+        this.bind(
+          tcenv,
+          kind,
+          binding.pat,
+          varType,
+          binding.type.isSome(),
+          true,
+          false,
+        )
       }
     | _ ->
       tcenv.error(

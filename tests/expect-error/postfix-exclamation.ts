@@ -692,8 +692,8 @@ function testInterfaceIncompatibility(x: TestInterface | null): {
 // Using ! in assignment to wrong type
 function testAssignmentToWrongType(x: number | null): string {
   let y: string;
-  // TODO: Type 'number' is not assignable to type 'string'
   // @skjs-expect-error The non-null assertion operator '!' is not allowed
+  // @ts-expect-error Type is not assignable to the variable's type
   y = x!;
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return y;

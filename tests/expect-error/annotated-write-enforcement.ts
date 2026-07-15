@@ -3,17 +3,16 @@
 // inferred type that instead evolves on assignment, so a same-frame write only
 // narrows it and any misuse is caught where the value is read.
 
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it, narrowing
-// `x` to number instead of enforcing the annotation.
 function annotatedWriteMustSatisfyAnnotation(): void {
   let x: string = "a";
+  // @ts-expect-error Type is not assignable to the variable's type
   x = 5;
 }
 
 // A parameter's type is an annotation too, so reassigning it is checked.
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it.
 function annotatedParamWriteIsChecked(): void {
   const g = (p: string) => {
+    // @ts-expect-error Type is not assignable to the variable's type
     p = 5;
   };
 }
