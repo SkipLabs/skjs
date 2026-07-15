@@ -1,7 +1,10 @@
 // Template literal types. A template has no type of its own: it reduces either
 // to the finite set of strings it can produce, or to `string`. The accepted
-// cases below assert the reduced type in both directions, so they pin the exact
-// type and not merely the absence of an error.
+// cases assert the reduced type in BOTH directions, so they pin the exact type
+// rather than merely the absence of an error. Where the expected type has more
+// than one member, the reverse direction takes it as a parameter: assigning one
+// literal would only pin that one member, and would still pass if the reduction
+// had dropped the others.
 
 // --- Templates with no live hole: reduce to a single string literal type ---
 
@@ -47,8 +50,15 @@ function nested(x: Nested): "abcde" {
 // --- Holes over finite types: distribute into a literal union ---
 
 type UnionHole = `${"a" | "b"}-${"x" | "y"}`;
-function unionHole(x: UnionHole): "a-x" | "a-y" | "b-x" | "b-y" {
-  const back: UnionHole = "b-y";
+// Both directions over the whole set: `return x` pins UnionHole <: the union,
+// and the `y` parameter pins the union <: UnionHole. A single `const back =
+// "b-y"` would only pin one member, and would pass even if the cross-product
+// had dropped the other three.
+function unionHole(
+  x: UnionHole,
+  y: "a-x" | "a-y" | "b-x" | "b-y",
+): "a-x" | "a-y" | "b-x" | "b-y" {
+  const back: UnionHole = y;
   return x;
 }
 
@@ -59,8 +69,8 @@ function unionHoleIsExact(): void {
 }
 
 type BooleanHole = `${boolean}`;
-function booleanHole(x: BooleanHole): "false" | "true" {
-  const back: BooleanHole = "true";
+function booleanHole(x: BooleanHole, y: "false" | "true"): "false" | "true" {
+  const back: BooleanHole = y;
   return x;
 }
 
@@ -85,14 +95,14 @@ function neverHole(x: NeverHole): never {
 // --- Degenerate string holes: reduce to the `string` primitive itself ---
 
 type BareString = `${string}`;
-function bareString(x: BareString): string {
-  const back: BareString = "anything at all";
+function bareString(x: BareString, y: string): string {
+  const back: BareString = y;
   return x;
 }
 
 type TwoBareStrings = `${string}${string}`;
-function twoBareStrings(x: TwoBareStrings): string {
-  const back: TwoBareStrings = "anything at all";
+function twoBareStrings(x: TwoBareStrings, y: string): string {
+  const back: TwoBareStrings = y;
   return x;
 }
 
@@ -110,6 +120,37 @@ type BigIntHole = `${bigint}`;
 // An abstract type parameter has no known values at the definition.
 // @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type Deferred<T extends string> = `a${T}b`;
+
+// --- Unions inside one hole ---
+
+// `string` absorbs any sibling that is still a string, so this IS `string`.
+// FIXME: rejected; the hole classifier gives up on the `number` sibling before
+// the `string` one can absorb it.
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+type StringAbsorbsNumber = `${string | number}`;
+
+// A sibling that may not be interpolated outranks an irreducible one, as in tsc.
+// FIXME: reported as irreducible instead of as a constraint violation.
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+type SymbolBeatsNumberInHole = `${number | symbol}`;
+
+// --- Number literal holes whose spelling does not pin down one double ---
+
+// A radix literal past 2^53 keeps its source spelling, so this names a string
+// no runtime value can produce (it should be "9007199254740992").
+// FIXME: accepted with an impossible type.
+type RadixPastPrecision = `${0x20000000000001}`;
+function radixPastPrecision(x: RadixPastPrecision): "0x20000000000001" {
+  return x;
+}
+
+// A decimal spelling past double precision is kept verbatim, likewise naming a
+// string no runtime value can produce (it should be "9007199254740992").
+// FIXME: accepted with an impossible type.
+type DecimalPastPrecision = `${9007199254740993}`;
+function decimalPastPrecision(x: DecimalPastPrecision): "9007199254740993" {
+  return x;
+}
 
 // --- Holes whose type may not be interpolated at all ---
 
