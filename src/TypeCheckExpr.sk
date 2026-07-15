@@ -1793,10 +1793,40 @@ extension class TypeChecker {
           // as a generic callback argument, whose return type does drive
           // type-parameter inference and so must keep its precise type (e.g.
           // `p.then(n => n.toString())`, `p.catch(() => 0)`).
+          //
+          // A plain variable reference needs it too: its type may have been
+          // narrowed below the declared field type (`let r: List<T>` narrowed
+          // to the non-null branch, then `{ head: x, tail: r }`), and a
+          // function value referenced by name is no different from one written
+          // inline. The freshness argument above does NOT carry over — the
+          // variable is a live alias of the stored object — but growth is
+          // still sound because it never replaces the field's type: Subst::grow
+          // unions the bounds, so the variable's type remains a lower bound
+          // that is checked against the declared field type with the full
+          // invariant-interior subtyping. Only the fresh slot's own setter
+          // obligation is discharged; the slot admits no interior write the
+          // alias's own type does not already permit (pinned by
+          // tests/expect-error/obj-literal-var-field-growth.ts).
+          // Two variables must NOT grow, though:
+          //   - a tracked local object, whose own precise binding stays
+          //     observable: growing the field would widen the view of it that
+          //     the container hands out, and a write through that view would
+          //     corrupt the narrower type the local is still read at (see
+          //     tests/expect-error/obj-literal-indexes.ts).
+          //   - one that already stands for a type variable, which would be
+          //     wrapped twice: the inner variable then grows to the outer
+          //     one's bound and loses the literal it was solved to (#520, see
+          //     tests/expect-error/tvar-widening-in-constraint-check.ts).
           if (
             y.value is Object _ ||
             y.value is Closure _ ||
             y.value is Async(Expr(_, Closure _)) ||
+            (y.value match {
+            | Var(n) ->
+              tcenv.localObjectState(n).isNone() &&
+                ttype.getSingleVar().isNone()
+            | _ -> false
+            }) ||
             ttype.isConcretePrimitive()
           ) {
             !growableFieldOrigin = Some(FromObjectField(y.pos))
