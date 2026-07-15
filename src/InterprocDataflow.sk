@@ -142,6 +142,25 @@ mutable class Interproc<
     }
   }
 
+  // The analysis result: for each function, the abstract state at the entry of
+  // every block the analysis reached (joined across contexts). A block absent
+  // from the inner map was never reached. This is the public view of
+  // `invariant_map`, which is keyed by the module-private `Loc`.
+  readonly fun blockStates(): SortedMap<CGNode, SortedMap<CFGBlockId, State>> {
+    this.invariant_map.items().reduce(
+      (acc, kv) -> {
+        (loc, st) = kv;
+        inner = acc.maybeGet(loc.node).default(SortedMap[]);
+        merged = inner.maybeGet(loc.blk) match {
+        | None() -> st
+        | Some(prev) -> this.domain.join(prev, st)
+        };
+        acc.set(loc.node, inner.set(loc.blk, merged))
+      },
+      SortedMap[],
+    )
+  }
+
   private mutable fun updateState(
     loc: Loc<Ctx>,
     incoming: State,

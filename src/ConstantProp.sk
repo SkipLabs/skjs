@@ -49,7 +49,7 @@ base class CPEnv {
   | CPEEnv(env: SortedMap<String, CPVal>, ret: CPVal)
 }
 
-base class ConstantProp uses AbstractDomain<CPEnv> {
+class ConstantProp() uses AbstractDomain<CPEnv> {
   fun bottom(): CPEnv {
     CPEBot()
   }
@@ -792,57 +792,6 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
       SortedSet[]
     }
   }
-}
-
-// The default (context-insensitive) constant-propagation domain.
-class ConstantPropDomain() extends ConstantProp {}
-
-// Run constant propagation over `cfgs`, resolving calls through `callgraph`,
-// seeding each function in `entrypoints` with its entry state (unknown, i.e.
-// `Top`, arguments — an entrypoint is reached from outside the analyzed program)
-// and every other function purely from its callers. Returns, per function, the
-// abstract state at each block's entry; a block absent from the inner map was
-// never reached.
-//
-// Seed only true entrypoints: a function that is also seeded here has its formal
-// parameters joined with `Top`, which discards the values bound by `call`
-// at its call sites (sound, but it defeats interprocedural precision).
-fun runConstantProp(
-  cfgs: SortedMap<CGNode, CFG>,
-  callgraph: SortedMap<CGNode, Array<CGNode>>,
-  entrypoints: Sequence<CGNode>,
-): SortedMap<CGNode, SortedMap<CFGBlockId, CPEnv>> {
-  // Explicit type arguments: inferring `State` from a domain that reaches
-  // `AbstractDomain<CPEnv>` only through the `ConstantProp` base class leaves it
-  // unresolved.
-  solver = mutable Interproc<
-    CPEnv,
-    void,
-    ConstantPropDomain,
-    ContextInsensitive,
-  >{
-    cfgs,
-    callgraph,
-    domain => ConstantPropDomain(),
-    ctx_policy => ContextInsensitive(),
-  };
-  solver.analyzeForward(entrypoints);
-
-  result = SortedMap<CGNode, SortedMap<CFGBlockId, CPEnv>>[];
-  for (kv in cfgs.items()) {
-    (node, cfg) = kv;
-    perBlock = SortedMap<CFGBlockId, CPEnv>[];
-    for (blkId in cfg.blocks.keys()) {
-      (solver.invariant_map.maybeGet(
-        Loc{node, blk => blkId, ctx => void},
-      ) : ?CPEnv) match {
-      | Some(st) -> !perBlock = perBlock.set(blkId, st)
-      | None() -> void
-      }
-    };
-    !result = result.set(node, perBlock)
-  };
-  result
 }
 
 module end;

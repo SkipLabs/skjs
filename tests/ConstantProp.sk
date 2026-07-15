@@ -134,6 +134,10 @@ fun serializeConstantProp(
   cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
   callgraph: SortedMap<SKJS.CGNode, Array<SKJS.CGNode>>,
 ): String {
+  // Seed only true entrypoints (here: every top-level `main`): a function also
+  // seeded here would have its formals joined with `Top`, discarding the values
+  // `call` binds at its call sites — sound, but it defeats interprocedural
+  // precision. Every other function is analyzed purely from its callers.
   entrypoints = cfgs
     .keys()
     .filter(n ->
@@ -143,7 +147,21 @@ fun serializeConstantProp(
       }
     )
     .collect(Array);
-  invByNode = SKJS.runConstantProp(cfgs, callgraph, entrypoints);
+  // Explicit type arguments: inferring `State` for a domain that reaches
+  // `AbstractDomain<CPEnv>` only via a supertype leaves it unresolved.
+  solver = mutable SKJS.Interproc<
+    SKJS.CPEnv,
+    void,
+    SKJS.ConstantProp,
+    SKJS.ContextInsensitive,
+  >{
+    cfgs,
+    callgraph,
+    domain => SKJS.ConstantProp(),
+    ctx_policy => SKJS.ContextInsensitive(),
+  };
+  solver.analyzeForward(entrypoints);
+  invByNode = solver.blockStates();
 
   stanzas = cfgs
     .items()
