@@ -1599,23 +1599,25 @@ base class TEnv{
   ): TType {
     invariant(strings.size() == types.size() + 1);
     subst = Subst::mcreate(tcenvb);
-    holes = types.map(ty ->
-      this.templateHole(subst, this.normalize(tcenvb, ty))
-    );
+    holeTypes = types.map(ty -> this.normalize(tcenvb, ty));
+    holes = holeTypes.map(ty -> this.templateHole(subst, ty));
 
     // A hole whose type may not be interpolated at all is an error, as in tsc,
     // and takes precedence over any reduction. Checking continues as `string`,
     // the type every template has once its holes are stringified.
-    notStringifiable = types.zip(holes).filter(p ->
+    notStringifiable = types.zip(holeTypes).zip(holes).filter(p ->
       p.i1 is THNotStringifiable _
     );
     if (!notStringifiable.isEmpty()) {
       for (p in notStringifiable) {
+        (ty, holeType) = p.i0;
         tcenvb.error(
           Array[
             (
-              p.i0.pos,
-              "Type of this interpolation is not assignable to type 'string | number | bigint | boolean | null | undefined'",
+              ty.pos,
+              `Type ${quoteRenderedType(
+                prettyPrintType(false, holeType, subst, this),
+              )} is not assignable to type 'string | number | bigint | boolean | null | undefined'`,
             ),
           ],
           TSCode(2322),
