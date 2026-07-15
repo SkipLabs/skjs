@@ -67,13 +67,27 @@ function restTargetOfTupleAccepted(): void {
 // nothing aliases it at a fixed arity and it may be read as a growable array.
 // (An existing tuple stays un-assignable to an array — see
 // restDoesNotLetATupleBecomeAnArray.)
-// FIXME: SKJS types the rest as a committed tuple and rejects this write; tsc
-// accepts it (SkipLabs/skjs#877).
 function restTargetOfTupleAsArrayAccepted(): void {
   let x: number = 0;
   let r: number[] = [];
-  // @skjs-expect-error Type is not assignable to the variable's type
   [x, ...r] = [1, 2, 3];
+  void r;
+}
+
+// The rest's elements are still checked, whichever shape the target asks for.
+function restTargetElementsAreChecked(): void {
+  let x: number = 0;
+  let r: string[] = [];
+  // @ts-expect-error Type is not assignable to the variable's type
+  [x, ...r] = [1, 2, 3];
+  void r;
+}
+
+// A rest that takes nothing is an empty array.
+function emptyRestTargetAccepted(): void {
+  let x: number = 0;
+  let r: number[] = [];
+  [x, ...r] = [1];
   void r;
 }
 
