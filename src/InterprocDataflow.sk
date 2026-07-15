@@ -166,33 +166,47 @@ mutable class Interproc<
   ): (site: Callsite, caller_st: State) -> State {
     (site, caller_st) -> {
       callee_ctx = this.ctx_policy.call(caller.ctx, site);
-      ret = this.domain.bottom();
-      for (callee in this.resolveCallees(caller.node, site)) {
-        cfg = this.cfgs.maybeGet(callee) match {
-        | Some(cfg) -> cfg
-        | None() -> internal_error(`No CFG available for ${callee}`)
-        };
-        entry = Loc{ctx => callee_ctx, node => callee, blk => cfg.entry};
-        exit = Loc{ctx => callee_ctx, node => callee, blk => cfg.normalExit};
-
-        // Record the callee->caller dependency so the caller is re-analyzed
-        // when the callee's return state grows.
-        this.callers.maybeGet(entry) match {
-        | None() ->
-          this.!callers = this.callers.set(entry, mutable Vector[caller])
-        | Some(callers) -> callers.push(caller)
-        };
-
-        // Propagate the call state into the callee entry, enqueuing the
-        // callee iff this callsite widens its entry state.
-        this.updateState(entry, caller_st, false);
-
-        this.invariant_map.maybeGet(exit) match {
-        | Some(st) -> !ret = this.domain.join(ret, st)
-        | None() -> void
-        }
+      // calleeExit is joined across all possible callees
+      calleeExit = this.domain.bottom();
+      callees = this.resolveCallees(caller.node, site);
+      if (callees.isEmpty()) {
+        // Treat callsite with no resolvable callees as opaque
+        !calleeExit = this.domain.callOpaque(caller_st, site)
       };
-      ret
+      for (callee in callees) {
+        this.cfgs.maybeGet(callee) match {
+        | None() ->
+          !calleeExit = this.domain.join(
+            calleeExit,
+            this.domain.callOpaque(caller_st, site),
+          )
+        | Some(cfg) ->
+          entry = Loc{ctx => callee_ctx, node => callee, blk => cfg.entry};
+          exit = Loc{ctx => callee_ctx, node => callee, blk => cfg.normalExit};
+
+          // Record the callee->caller dependency so the caller is re-analyzed
+          // when the callee's return state grows.
+          this.callers.maybeGet(entry) match {
+          | None() ->
+            this.!callers = this.callers.set(entry, mutable Vector[caller])
+          | Some(callers) -> callers.push(caller)
+          };
+
+          // Analyze the callee entry with its formals bound to actual
+          // arguments, enqueuing the callee iff this widens its entry state.
+          this.updateState(
+            entry,
+            this.domain.call(caller_st, site, cfg.params),
+            false,
+          );
+
+          this.invariant_map.maybeGet(exit) match {
+          | Some(st) -> !calleeExit = this.domain.join(calleeExit, st)
+          | None() -> void
+          }
+        };
+      };
+      this.domain.ret(caller_st, calleeExit, site);
     }
   }
 
