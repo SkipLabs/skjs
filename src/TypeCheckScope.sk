@@ -194,6 +194,77 @@ mutable class Scope{
       .map(x -> NameRef(x.i0, x.i1))
   }
 
+  // The value this scope left the outer binding `name` at, or None when the
+  // scope does not touch it (so the binding keeps whatever the parent holds).
+  readonly fun escapingRef(name: String): ?LocalRef {
+    if (this.locals.containsKey(name)) {
+      None()
+    } else {
+      this.refs.maybeGet(name)
+    }
+  }
+
+  // Merge sibling subscopes into `this`. Every scope must be a direct subscope.
+  //
+  // A binding ends up as the union over every path that can reach this point:
+  // per scope, the value that scope left it at, or the parent's value when the
+  // scope does not touch it. `untouchedPath` adds one further path that touches
+  // nothing — a `switch` with no `default` may match no clause at all, leaving
+  // every binding exactly as it was.
+  //
+  // This is the N-way form of `merge`, and it is not the same as folding `merge`
+  // pairwise: for a binding escaping both of its scopes, the two-scope form
+  // *replaces* the parent's value rather than accumulating into it, so each fold
+  // step would discard the previous one.
+  mutable fun mergeN(
+    subst: mutable Subst,
+    tenv: TEnv,
+    scopes: Sequence<readonly Scope>,
+    untouchedPath: Bool,
+  ): void {
+    for (scope in scopes) {
+      if (scope.up.fromSome().id != this.id) {
+        internal_error("scope up id mismatch")
+      }
+    };
+    names = SortedSet[];
+    for (scope in scopes) {
+      for (nameRef in scope.escapingRefs()) {
+        !names = names.set(nameRef.name)
+      }
+    };
+    for (name in names) {
+      (_, upRef) = this.maybeGetRef(name).fromSome();
+      // Every path that leaves the binding alone — a scope that does not touch
+      // it, or the untouched path — contributes the same parent value, so it is
+      // unioned in once rather than once per such path.
+      untouched = untouchedPath;
+      tyOpt: ?TType = None();
+      isInitialized = true;
+      for (scope in scopes) {
+        scope.escapingRef(name) match {
+        | Some(ref) ->
+          !tyOpt = Some(
+            tyOpt match {
+            | None() -> ref.type
+            | Some(ty) -> TType::union(subst, tenv, ty, ref.type)
+            },
+          );
+          !isInitialized = isInitialized && ref.isInitialized
+        | None() -> !untouched = true
+        }
+      };
+      // `name` is here because it escapes at least one scope, so the fold above
+      // ran at least once.
+      ty = tyOpt.fromSome();
+      if (untouched) {
+        !ty = TType::union(subst, tenv, ty, upRef.type);
+        !isInitialized = isInitialized && upRef.isInitialized
+      };
+      this.!refs[name] = LocalRef(ty, upRef.declaredType, isInitialized)
+    }
+  }
+
   mutable fun merge(
     subst: mutable Subst,
     tenv: TEnv,

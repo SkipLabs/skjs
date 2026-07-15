@@ -278,23 +278,29 @@ extension class TypeChecker {
         )
       }
     };
-    scope = branches[0] match {
-    | SwitchBranch(Case(v), block, pos) ->
-      checkBreak(pos, block);
-      cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-      this.block(tcenv, block, Some((cond, true)))
-    | SwitchBranch(Default(), block, _) ->
-      // A `default` clause that is not last is a lint concern, not a soundness
-      // error: at runtime `default` is only taken when no `case` matches, so its
-      // position never changes which branch runs. tsc does not reject it.
-      tcenv.warning(
-        Array[
-          (e.pos, "The 'default' clause should be the last branch of a switch"),
-        ],
-        ESLintCode("default-case-last"),
-      );
-      this.block(tcenv, block, None())
-    };
+    scopes = mutable Vector<readonly Scope>[];
+    scopes.push(
+      branches[0] match {
+      | SwitchBranch(Case(v), block, pos) ->
+        checkBreak(pos, block);
+        cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+        this.block(tcenv, block, Some((cond, true)))
+      | SwitchBranch(Default(), block, _) ->
+        // A `default` clause that is not last is a lint concern, not a soundness
+        // error: at runtime `default` is only taken when no `case` matches, so its
+        // position never changes which branch runs. tsc does not reject it.
+        tcenv.warning(
+          Array[
+            (
+              e.pos,
+              "The 'default' clause should be the last branch of a switch",
+            ),
+          ],
+          ESLintCode("default-case-last"),
+        );
+        this.block(tcenv, block, None())
+      },
+    );
     for (i in Range(1, branches.size())) {
       cond = branches[i] match {
       | SwitchBranch(Case(v), block, pos) ->
@@ -302,9 +308,21 @@ extension class TypeChecker {
         Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
       | SwitchBranch(Default(), _, _) -> None()
       };
-      scopeBranch = this.block(tcenv, branches[i].block, cond);
-      tcenv.mergeScope(this, scope, scopeBranch)
-    }
+      scopes.push(this.block(tcenv, branches[i].block, cond))
+    };
+    // Every branch is a path out of the switch, so they must all be merged at
+    // once: folding the two-scope `merge` pairwise against a fixed first branch
+    // discards every branch in between, leaving only the first and the last.
+    //
+    // Without a `default` there is one more path — matching no clause at all,
+    // which leaves every binding at its pre-switch value. (Exhaustiveness is
+    // taken syntactically here: a switch that covers its scrutinee's type
+    // without a `default` still counts this path, which only widens. See
+    // SkipLabs/skjs#863.)
+    hasDefault = branches.any(branch ~>
+      branch is SwitchBranch(Default(), _, _)
+    );
+    tcenv.mergeScopes(this, scopes.toArray(), !hasDefault)
   }
 
   fun switchCheckExhaustiveness(
