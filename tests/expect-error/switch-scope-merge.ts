@@ -52,6 +52,36 @@ function withDefaultStaysPrecise(x: number, a: "a", b: "b", c: "c"): void {
   const z: "b" | "c" = y;
 }
 
+// A branch that always returns never reaches the code after the switch, so it
+// is not one of the paths merged into it: `y` is exactly "c" here.
+function returningBranchNotMerged(x: number, a: "a", b: "b", c: "c"): void {
+  let y: "a" | "b" | "c" = a;
+  switch (x) {
+    case 1:
+      y = b;
+      return;
+    default:
+      y = c;
+      break;
+  }
+  const z: "c" = y;
+}
+
+// ... but a branch that merely breaks is a path out, and still counts.
+function breakingBranchMerged(x: number, a: "a", b: "b", c: "c"): void {
+  let y: "a" | "b" | "c" = a;
+  switch (x) {
+    case 1:
+      y = b;
+      break;
+    default:
+      y = c;
+      break;
+  }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const z: "c" = y;
+}
+
 // A binding not assigned in the first branch already merges correctly (it takes
 // `merge`'s Left/Right arm, which accumulates through the parent scope).
 function notAssignedInFirstBranch(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
