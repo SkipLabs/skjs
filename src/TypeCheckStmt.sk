@@ -313,7 +313,16 @@ extension class TypeChecker {
     // Every branch is a path out of the switch, so they must all be merged at
     // once: folding the two-scope `merge` pairwise against a fixed first branch
     // discards every branch in between, leaving only the first and the last.
-    tcenv.mergeScopes(this, scopes.toArray())
+    //
+    // Without a `default` there is one more path — matching no clause at all,
+    // which leaves every binding at its pre-switch value. (Exhaustiveness is
+    // taken syntactically here: a switch that covers its scrutinee's type
+    // without a `default` still counts this path, which only widens. See
+    // SkipLabs/skjs#863.)
+    hasDefault = branches.any(branch ~>
+      branch is SwitchBranch(Default(), _, _)
+    );
+    tcenv.mergeScopes(this, scopes.toArray(), !hasDefault)
   }
 
   fun switchCheckExhaustiveness(

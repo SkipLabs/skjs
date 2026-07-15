@@ -206,8 +206,11 @@ mutable class Scope{
 
   // Merge sibling subscopes into `this`. Every scope must be a direct subscope.
   //
-  // A binding ends up as the union over every scope: the value that scope left
-  // it at, or the parent's value when the scope does not touch it.
+  // A binding ends up as the union over every path that can reach this point:
+  // per scope, the value that scope left it at, or the parent's value when the
+  // scope does not touch it. `untouchedPath` adds one further path that touches
+  // nothing — a `switch` with no `default` may match no clause at all, leaving
+  // every binding exactly as it was.
   //
   // This is the N-way form of `merge`, and it is not the same as folding `merge`
   // pairwise: for a binding escaping both of its scopes, the two-scope form
@@ -217,6 +220,7 @@ mutable class Scope{
     subst: mutable Subst,
     tenv: TEnv,
     scopes: Sequence<readonly Scope>,
+    untouchedPath: Bool,
   ): void {
     for (scope in scopes) {
       if (scope.up.fromSome().id != this.id) {
@@ -231,8 +235,9 @@ mutable class Scope{
     };
     for (name in names) {
       (_, upRef) = this.maybeGetRef(name).fromSome();
-      tyOpt: ?TType = None();
-      isInitialized = true;
+      // The untouched path leaves the binding at the parent's value.
+      tyOpt: ?TType = if (untouchedPath) Some(upRef.type) else None();
+      isInitialized = !untouchedPath || upRef.isInitialized;
       for (scope in scopes) {
         ref = scope.escapingRef(name) match {
         | Some(r) -> r
