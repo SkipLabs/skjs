@@ -524,16 +524,27 @@ fun updateFileAnnotations(
     errors = actualErrorsByLine.maybeGet(lineNum).default(SortedSet[]);
     warnings = actualWarningsByLine.maybeGet(lineNum).default(SortedSet[]);
     if (errors.size() != 0 || warnings.size() != 0) {
-      actualLineNAnnotationsOpt = actualLineNAnnotationsByLine.maybeGet(
-        lineNum,
-      );
-      actualLineNAnnotations = actualLineNAnnotationsOpt.default(Map[]);
-      hasLineNData = actualLineNAnnotationsOpt is Some(_);
-      existingHasLineN = existingGroups
+      actualLineNAnnotations = actualLineNAnnotationsByLine
         .maybeGet(lineNum)
-        .map(g -> g.annotations.any(a -> a.lineN != 1))
-        .default(false);
-      shouldEmitLineN = hasLineNData && existingHasLineN;
+        .default(Map[]);
+      // The updater never invents a -lineN: only the N values the author
+      // already pinned are considered. Pinning e.g. -line4 must not drag in
+      // the -line2/-line3 continuations of the same error.
+      existingLineNs = existingGroups
+        .maybeGet(lineNum)
+        .map(g ->
+          SortedSet::createFromItems(
+            g.annotations.filter(a -> a.lineN != 1).map(a -> a.lineN),
+          )
+        )
+        .default(SortedSet[]);
+      // Refresh the text of pinned Ns and drop pinned Ns whose continuation
+      // line no longer exists. Map iteration (and so `Map::filter`) is
+      // insertion-ordered, and `getLineNAnnotationsFromError` inserts N
+      // ascending, so `emitLineNAnnotations` still emits in increasing N.
+      pinnedLineNAnnotations = actualLineNAnnotations.filter((n, _) ->
+        existingLineNs.contains(n)
+      );
       // Check if existing annotations already match — preserve original order
       existingMatch = if (update is UMUpdate()) {
         existingGroups.maybeGet(lineNum) match {
@@ -555,8 +566,7 @@ fun updateFileAnnotations(
           if (
             existingErrMsgs == errors &&
             existingWarnMsgs == warnings &&
-            (!existingHasLineN ||
-              lineNAnnotations.chill() == actualLineNAnnotations)
+            lineNAnnotations.chill() == pinnedLineNAnnotations
           ) {
             Some(g)
           } else {
@@ -649,9 +659,7 @@ fun updateFileAnnotations(
         | _ -> void
         };
         // Emit error -lineN continuations after all line-1 error annotations
-        if (shouldEmitLineN) {
-          emitLineNAnnotations(errorLines, groupIndent, actualLineNAnnotations)
-        };
+        emitLineNAnnotations(errorLines, groupIndent, pinnedLineNAnnotations);
         // Phase W1: existing @skjs-expect-warning still in warnings
         emittedW = SortedSet[];
         if (!(update is UMFullRewrite())) {

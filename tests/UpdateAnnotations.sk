@@ -606,6 +606,118 @@ fun testUpdateFileAnnotations(): void {
     "Multiple errors without lineN data",
   );
 
+  // 30. A group pinning only -line4 keeps -line2/-line3 unpinned
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line4 The target is closed",
+          "testFoo();",
+        ],
+      ),
+      Map[3 => SortedSet["Invalid call"]],
+      noFull,
+      UMUpdate(),
+      Map[
+        3 => Map[
+          2 => "Type 'A'",
+          3 => "is not assignable to type 'B'",
+          4 => "The target is closed",
+        ],
+      ],
+    ),
+    None(),
+    "lineN gap pin keeps its unpinned continuations unpinned",
+  );
+
+  // 31. A group pinning only -line2 keeps the continuations below it unpinned
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 Type 'A'",
+          "testFoo();",
+        ],
+      ),
+      Map[3 => SortedSet["Invalid call"]],
+      noFull,
+      UMUpdate(),
+      Map[
+        3 => Map[
+          2 => "Type 'A'",
+          3 => "is not assignable to type 'B'",
+          4 => "Value 'A' is missing",
+        ],
+      ],
+    ),
+    None(),
+    "lineN prefix pin keeps the continuations below it unpinned",
+  );
+
+  // 32. Refreshing pinned -lineN texts leaves the gap between them unpinned
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 Old A",
+          "// @skjs-expect-error-line4 Old C",
+          "testFoo();",
+        ],
+      ),
+      Map[4 => SortedSet["Invalid call"]],
+      Map["Invalid call" => "Invalid call"],
+      UMUpdate(),
+      Map[4 => Map[2 => "New A", 3 => "New B", 4 => "New C"]],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 New A",
+          "// @skjs-expect-error-line4 New C",
+          "testFoo();",
+        ],
+      ),
+    ),
+    "refreshed lineN pins keep the gap between them unpinned",
+  );
+
+  // 33. UMFullMessages rewrites the pinned texts without pinning more lines
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line4 The target is closed",
+          "testFoo();",
+        ],
+      ),
+      Map[3 => SortedSet["Invalid call"]],
+      Map["Invalid call" => "Invalid call full"],
+      UMFullMessages(),
+      Map[
+        3 => Map[
+          2 => "Type 'A'",
+          3 => "is not assignable to type 'B'",
+          4 => "The target is closed",
+        ],
+      ],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call full",
+          "// @skjs-expect-error-line4 The target is closed",
+          "testFoo();",
+        ],
+      ),
+    ),
+    "lineN gap pin keeps continuations unpinned under UMFullMessages",
+  );
+
   // Warning: new warning appears (no existing annotation)
   SKTest.expectEq(
     updateFileAnnotations(
