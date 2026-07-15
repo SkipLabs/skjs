@@ -235,25 +235,33 @@ mutable class Scope{
     };
     for (name in names) {
       (_, upRef) = this.maybeGetRef(name).fromSome();
-      // The untouched path leaves the binding at the parent's value.
-      tyOpt: ?TType = if (untouchedPath) Some(upRef.type) else None();
-      isInitialized = !untouchedPath || upRef.isInitialized;
+      // Every path that leaves the binding alone — a scope that does not touch
+      // it, or the untouched path — contributes the same parent value, so it is
+      // unioned in once rather than once per such path.
+      untouched = untouchedPath;
+      tyOpt: ?TType = None();
+      isInitialized = true;
       for (scope in scopes) {
-        ref = scope.escapingRef(name) match {
-        | Some(r) -> r
-        | None() -> upRef
-        };
-        !tyOpt = Some(
-          tyOpt match {
-          | None() -> ref.type
-          | Some(ty) -> TType::union(subst, tenv, ty, ref.type)
-          },
-        );
-        !isInitialized = isInitialized && ref.isInitialized
+        scope.escapingRef(name) match {
+        | Some(ref) ->
+          !tyOpt = Some(
+            tyOpt match {
+            | None() -> ref.type
+            | Some(ty) -> TType::union(subst, tenv, ty, ref.type)
+            },
+          );
+          !isInitialized = isInitialized && ref.isInitialized
+        | None() -> !untouched = true
+        }
       };
-      tyOpt.each(ty -> {
-        this.!refs[name] = LocalRef(ty, upRef.declaredType, isInitialized)
-      })
+      // `name` is here because it escapes at least one scope, so the fold above
+      // ran at least once.
+      ty = tyOpt.fromSome();
+      if (untouched) {
+        !ty = TType::union(subst, tenv, ty, upRef.type);
+        !isInitialized = isInitialized && upRef.isInitialized
+      };
+      this.!refs[name] = LocalRef(ty, upRef.declaredType, isInitialized)
     }
   }
 
