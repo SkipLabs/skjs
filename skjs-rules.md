@@ -248,7 +248,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Type Safety**: interpolated expressions must be `string`, `number`, `bigint`, `boolean`, `null`, or `undefined` (the `@typescript-eslint/restrict-template-expressions` rule; objects and arrays are rejected even when they have a `toString()`)
 - **Escapes are validated**: an invalid escape sequence anywhere in a template (octal `\1`, `\8`/`\9`, malformed `\x`/`\u`) is a syntax error, exactly like quoted strings; a template with no interpolation is decoded, so its literal type equals its runtime value (`` `\x61` `` is the type `"a"`)
 - **Syntax is strict after the expression**: the interpolation must be a single expression followed by `}`. Trailing tokens are rejected with `'}' expected` — `` `${a b}` `` matches tsc; `` `${a, b}` `` is also rejected because skjs has no comma operator (stricter than tsc)
-- **Known divergence**: an *interpolated* template is typed `string`; tsc infers a template-literal type over literal substitutions (`` `a${1}b` `` is `"a1b"` in tsc). Template literal *types* (`` type T = `${string}` ``) are not supported
+- **Known divergence**: an *interpolated* template *expression* is typed `string`; tsc infers a template-literal type over literal substitutions (`` `a${1}b` `` is `"a1b"` in tsc). Template literal *types* are supported separately — see rule 18b
 - **Example**:
   ```typescript
   // ✓ CORRECT - template literals work with complex expressions and multiline
@@ -256,6 +256,32 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   const multiline: string = `Line 1: ${name}
   Line 2: ${age}`;
   ```
+
+### 18b. Template Literal Types (Partially Supported)
+- **Rule**: a template literal type has no type of its own. It **reduces** to a type that already exists in the string domain: either the finite set of strings it can produce (a string literal union) or the `string` primitive itself. Every reduction below is identical to tsc's, not merely assignable to it
+- **Reduced** (all supported):
+  - **No live hole** → one string literal, with escapes cooked: `` `abc` `` and `` `a${"b"}c` `` are the type `"abc"`; `` `\x61` `` is `"a"`
+  - **Finite holes distribute** into the cross-product: `` `${"a" | "b"}-${"x" | "y"}` `` is `"a-x" | "a-y" | "b-x" | "b-y"`
+  - **`boolean`, `null`, `undefined`** fold into their literals: `` `${boolean}` `` is `"false" | "true"`; `` `${null}` `` is `"null"`
+  - **`never` absorbs**: `` `x${never}y` `` is `never`, since no string can be built
+  - **Bare `string` holes with no text** are `string` itself, not a pattern over it: `` `${string}` `` and `` `${string}${string}` `` are both exactly `string`
+  - Number and bigint literal holes stringify with ECMAScript semantics, not source text: `` `${1e21}` `` is `"1e+21"`, `` `${0xff}` `` is `"255"`, `` `${1n}` `` is `"1"`
+- **Not supported (error)**: a hole with unboundedly many values where the surrounding text still matters — `` `a${string}b` ``, `` `${number}` ``, `` `${bigint}` ``, or an abstract type parameter (`` type W<T> = `a${T}b` ``). Such a type is an infinite but *partial* set of strings; SKJS represents a string type as either the whole primitive or a finite literal set, with nothing in between, so this needs a pattern representation it does not have. Rejecting is sound — it never widens the annotation to `string`, which would silently accept `` const x: `a${string}` = "zzz" ``
+- **Hole constraint**: as in tsc, a hole must be `string`, `number`, `bigint`, `boolean`, `null`, or `undefined`. `object`, `symbol`, `unknown`, `void` and function types are rejected (TS2322). Any type *parses* in a hole — the restriction is a typecheck rule, not a syntactic one — and the constraint is checked before reduction, so `` `${object}${number}` `` reports the object, not the irreducible sibling
+- **Size limit**: the cross-product is refused past tsc's own union-size limit of 100,000 members, reported as TS2590, and is guarded before it is materialized
+- **Not supported**: the case intrinsics (`Uppercase`, `Lowercase`, `Capitalize`, `Uncapitalize`) — they are a separate feature that operates on plain string literal types
+- **Example**:
+  ```typescript
+  // ✓ CORRECT - reduces to a literal union
+  type Corner = `${"top" | "bottom"}-${"left" | "right"}`; // "top-left" | ... (4 members)
+  type Handler = `on${"Click" | "Hover"}`;                 // "onClick" | "onHover"
+  const c: Corner = "top-left";
+
+  // ✗ Error - an infinite, partial set of strings
+  // type Hex = `#${string}`;
+  // type Px = `${number}px`;
+  ```
+- **Verified by**: `tests/expect-error/template-literal-types.ts`
 
 ### 19. Boolean Literal Type Casting Not Supported
 - **Rule**: Casting boolean values to literal boolean types is not supported
@@ -422,7 +448,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Rule**: String literals are decoded to their runtime String Value at parse time, so different spellings of the same value are the same literal type: `"\x61"` = `"\u{61}"` = `"a"`, `"\n"` = `"\x0a"`, `"\0"` = `"\x00"`, `"\a"` (a NonEscapeCharacter) = `"a"`, and a surrogate pair (`"\uD83D\uDE00"`) = the astral code point (`"\u{1f600}"`). A LineContinuation (backslash + line terminator) is elided, so its value is `""` (empty, hence falsy). This applies to literal types, string values, object field names, and module specifiers.
 - **Matches TypeScript**: tsc keys string literal types by their decoded String Value, so escaped and plain spellings collapse to one type.
 - **Invalid forms are syntax errors**: legacy octal (`"\1"`, `"\0"` followed by a digit) and NonOctalDecimal (`"\8"`, `"\9"`) escapes, truncated `\x`/`\u`, and out-of-range `\u{110000}` are parse errors matching tsc (TS1487/TS1488/TS1125/TS1198).
-- **Stricter than TypeScript (soundness-required)**: a lone (unpaired) surrogate escape (`"\uD800"`) is rejected. tsc keeps it as a lone UTF-16 code unit, but a Skip `Char` is a Unicode code point and cannot represent a surrogate, so decoding it is impossible and rejecting is the sound choice. (Template literal types are still stored undecoded, a separate pre-existing gap.)
+- **Stricter than TypeScript (soundness-required)**: a lone (unpaired) surrogate escape (`"\uD800"`) is rejected. tsc keeps it as a lone UTF-16 code unit, but a Skip `Char` is a Unicode code point and cannot represent a surrogate, so decoding it is impossible and rejecting is the sound choice. Template literal types are decoded the same way (see rule 18b), so `` `\x61` `` is the type `"a"`.
 - **Verified by**: `tests/expect-error/string-literal-escapes-prettier-ignore.ts`, `tests/expect-error/string-literal-line-continuation-prettier-ignore.ts`, `tests/expect-error/string-escape-*-prettier-ignore.ts`
 
 ### 31. Enums (Value-Set Semantics)
