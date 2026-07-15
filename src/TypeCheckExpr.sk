@@ -3557,13 +3557,27 @@ extension class TypeChecker {
         this.assignElement(tcenv, elt, eltType, mostPrecise)
       };
       restInner.each(inner -> {
+        // Destructuring a rest allocates a fresh array, so nothing aliases it
+        // at the tuple's arity: it can be read as a growable array just as well
+        // as a tuple. Type it the way an array literal is typed — delayed, so
+        // it commits to whichever the target asks for — rather than as a
+        // committed tuple, which only an equally-shaped tuple could accept. An
+        // *existing* tuple stays un-assignable to an array, since writing
+        // through the array view would break its arity.
         start = min(targets.size(), tyl.size());
-        this.assignTarget(
-          tcenv,
-          inner,
-          TType::tuple(inner.pos, tyl.slice(start), false),
-          mostPrecise,
-        )
+        restElts = tyl.slice(start);
+        restType = if (restElts.isEmpty()) {
+          eltTvar = this.newTVar(tcenv, inner.pos, FromEmptyArray(inner.pos));
+          TType::inst(Name(inner.pos, "Array"), TArgs(Array[eltTvar]))
+        } else {
+          ArrayLitTyping::typeFromLiteral(
+            tcenv,
+            inner.pos,
+            restElts,
+            restElts.map(_ -> None()),
+          )
+        };
+        this.assignTarget(tcenv, inner, restType, mostPrecise)
       })
     | None() ->
       stypes.flatMap(s ~> s.singleElt()) match {

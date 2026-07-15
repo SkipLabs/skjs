@@ -54,13 +54,50 @@ function swapAccepted(): void {
   [p, q] = [q, p];
 }
 
-// A rest target takes the remaining elements: the rest of a tuple is a tuple,
-// as it is when a declaration destructures one.
+// A rest target takes the remaining elements: the rest of a tuple can be read
+// as a tuple.
 function restTargetOfTupleAccepted(): void {
   let x: number = 0;
   let r: [number, number] = [0, 0];
   [x, ...r] = [1, 2, 3];
   void r;
+}
+
+// ...and equally as an array: destructuring a rest allocates a fresh array, so
+// nothing aliases it at a fixed arity and it may be read as a growable array.
+// (An existing tuple stays un-assignable to an array — see
+// restDoesNotLetATupleBecomeAnArray.)
+function restTargetOfTupleAsArrayAccepted(): void {
+  let x: number = 0;
+  let r: number[] = [];
+  [x, ...r] = [1, 2, 3];
+  void r;
+}
+
+// The rest's elements are still checked, whichever shape the target asks for.
+function restTargetElementsAreChecked(): void {
+  let x: number = 0;
+  let r: string[] = [];
+  // @ts-expect-error Type is not assignable to the variable's type
+  [x, ...r] = [1, 2, 3];
+  void r;
+}
+
+// A rest that takes nothing is an empty array.
+function emptyRestTargetAccepted(): void {
+  let x: number = 0;
+  let r: number[] = [];
+  [x, ...r] = [1];
+  void r;
+}
+
+// The aliasing case this must not regress: an existing tuple is not an array,
+// because writing through the array view would break the tuple's arity.
+function restDoesNotLetATupleBecomeAnArray(): void {
+  const tup: [number, number] = [1, 2];
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const a: number[] = tup;
+  void a;
 }
 
 // Destructuring anything else iterable takes the iterator's element type, and
