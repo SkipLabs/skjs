@@ -294,7 +294,7 @@ extension class TypeChecker {
       | SwitchBranch(Case(v), block, pos) ->
         checkBreak(pos, block);
         Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
-      | SwitchBranch(Default(), _, _) ->
+      | SwitchBranch(Default(), _, pos) ->
         if (i != branches.size() - 1) {
           // A `default` clause that is not last is a lint concern, not a
           // soundness error: at runtime `default` is only taken when no `case`
@@ -303,7 +303,7 @@ extension class TypeChecker {
           tcenv.warning(
             Array[
               (
-                e.pos,
+                pos,
                 "The 'default' clause should be the last branch of a switch",
               ),
             ],

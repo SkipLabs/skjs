@@ -3,10 +3,10 @@
 // filename. SKJS rejects the second `default`. The first one is not last
 // either, so it also draws the `default-case-last` warning.
 function duplicateDefault(x: number): void {
-  // @skjs-expect-warning The 'default' clause should be the last branch of a switch
   switch (x) {
     case 1:
       return;
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
     default:
       return;
     case 2:
