@@ -3475,6 +3475,13 @@ extension class TypeChecker {
         e2,
         mostPrecise,
       )
+    | EArray(elements) ->
+      // `[a, b] = e` writes each target the way the equivalent single
+      // assignment would. The whole expression evaluates to the right-hand
+      // side, which is also what the CFG reads back for the left-hand side.
+      ty2 = this.expr(tcenv, e2, mostPrecise);
+      this.assignArray(tcenv, pos, elements, ty2, mostPrecise);
+      ty2
     | _ ->
       ty1 = this.expr(tcenv, e1, false, true);
       ty2 = this.expr(tcenv, e2, mostPrecise);
@@ -3487,6 +3494,186 @@ extension class TypeChecker {
         TSCode(2322),
       );
       ty1
+    }
+  }
+
+  // Split a destructuring pattern's elements into the positional targets and
+  // the trailing rest target, if any.
+  private fun splitRest(
+    tcenv: mutable TCEnv,
+    elements: Array<Expr>,
+  ): (Array<Expr>, ?Expr) {
+    restInner: ?Expr = None();
+    targets = mutable Vector[];
+    for (i => elt in elements) {
+      elt.value match {
+      | Spread(inner) ->
+        if (i == elements.size() - 1) {
+          !restInner = Some(inner)
+        } else {
+          tcenv.error(
+            Array[
+              (
+                elt.pos,
+                "A rest element must be last in a destructuring pattern",
+              ),
+            ],
+            TSCode(2462),
+          )
+        }
+      | _ -> targets.push(elt)
+      }
+    };
+    (targets.toArray(), restInner)
+  }
+
+  /*
+   * Assigns the elements of `rhsType` to an array-destructuring pattern.
+   *
+   * The element types are derived the way `bind` derives them for a
+   * destructuring declaration: per index from a tuple, or the iterator's
+   * element type (widened with `undefined`, since the source may be shorter)
+   * from anything else iterable. A target beyond the end of a tuple reads
+   * `undefined` at runtime and is typed that way, which the target's own check
+   * then reports — no separate arity diagnostic.
+   */
+  private fun assignArray(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    elements: Array<Expr>,
+    rhsType: TType,
+    mostPrecise: Bool,
+  ): void {
+    (targets, restInner) = this.splitRest(tcenv, elements);
+    stypes = rhsType.getSTypes(tcenv.subst, this, Covariant());
+    stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
+    | Some(tyl) ->
+      for (i => elt in targets) {
+        eltType = if (i < tyl.size()) {
+          tyl[i]
+        } else {
+          TType::single(TPrimUnit(TUndefined(), elt.pos))
+        };
+        this.assignElement(tcenv, elt, eltType, mostPrecise)
+      };
+      restInner.each(inner -> {
+        start = min(targets.size(), tyl.size());
+        this.assignTarget(
+          tcenv,
+          inner,
+          TType::tuple(inner.pos, tyl.slice(start), false),
+          mostPrecise,
+        )
+      })
+    | None() ->
+      stypes.flatMap(s ~> s.singleElt()) match {
+      | Some(obj @ TObject _) ->
+        baseElt = this.getIteratorElementType(tcenv.subst, obj, pos) match {
+        | Some(t) -> t
+        | None() ->
+          fatalError(
+            Array[
+              (pos, "Cannot use array-destructuring on a non-iterable type"),
+              (
+                rhsType.pos,
+                `This is not iterable, it is ${this.ppType(tcenv, rhsType)}`,
+              ),
+            ],
+            TSCode(2461),
+          )
+        };
+        for (elt in targets) {
+          this.assignElement(
+            tcenv,
+            elt,
+            TType::unionUndefined(tcenv.subst, this, baseElt, elt.pos),
+            mostPrecise,
+          )
+        };
+        restInner.each(inner ->
+          this.assignTarget(
+            tcenv,
+            inner,
+            TType::inst(Name(inner.pos, "Array"), TArgs(Array[baseElt])),
+            mostPrecise,
+          )
+        )
+      | _ ->
+        fatalError(
+          Array[
+            (pos, "Cannot use array-destructuring on this type"),
+            (
+              rhsType.pos,
+              `This is not a tuple, it is ${this.ppType(tcenv, rhsType)}`,
+            ),
+          ],
+          TSCode(2461),
+        )
+      }
+    }
+  }
+
+  // Assign one destructured element, applying its default first: `[x = d]`
+  // parses as an assignment inside the pattern, and the default replaces the
+  // element only when it is absent, exactly as in a declaration.
+  private fun assignElement(
+    tcenv: mutable TCEnv,
+    elt: Expr,
+    eltType: TType,
+    mostPrecise: Bool,
+  ): void {
+    (target, targetType) = elt.value match {
+    | Binop(BOAssignment(), lhs, defaultExpr) ->
+      defaultType = this.expr(tcenv, defaultExpr, false);
+      (
+        lhs,
+        TType::union(
+          tcenv.subst,
+          this,
+          TType::removeUndefined(tcenv.subst, this, eltType),
+          defaultType,
+        ),
+      )
+    | _ -> (elt, eltType)
+    };
+    this.assignTarget(tcenv, target, targetType, mostPrecise)
+  }
+
+  // Write `valueType` to one destructuring target, routing it through the same
+  // path the equivalent single assignment uses: a variable is narrowed and
+  // checked by `Scope::set`, a property or index is checked against the type it
+  // can be set to, and a nested pattern destructures in turn.
+  private fun assignTarget(
+    tcenv: mutable TCEnv,
+    target: Expr,
+    valueType: TType,
+    mostPrecise: Bool,
+  ): void {
+    this.checkLValue(tcenv, target);
+    target.value match {
+    | Var(n) ->
+      tcenv.scope.set(n, valueType, (x, y) ->
+        this.checkSubType(
+          tcenv,
+          target.pos,
+          "Type is not assignable to the variable's type",
+          x,
+          y,
+          TSCode(2322),
+        )
+      )
+    | EArray(nested) ->
+      this.assignArray(tcenv, target.pos, nested, valueType, mostPrecise)
+    | _ ->
+      ty1 = this.expr(tcenv, target, false, true);
+      this.checkSubType(
+        tcenv,
+        target.pos,
+        "Type is not assignable to the assignment target's type",
+        valueType,
+        ty1,
+        TSCode(2322),
+      )
     }
   }
 
