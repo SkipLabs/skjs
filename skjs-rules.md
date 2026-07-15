@@ -237,14 +237,18 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   ```
 
 ### 18. Template Literal Strings ✅
-- **Rule**: Template literals with backticks and string interpolation are fully supported
+- **Rule**: Template literals with backticks and string interpolation are fully supported. Interpolation expressions are parsed inline as first-class expressions (nested templates, strings, and comments inside `${...}` all work), fully typechecked, with diagnostics positioned on the offending expression.
 - **Syntax**: Use backticks `` ` `` with `${expression}` for interpolation
 - **Features**: 
   - Basic template literals: `` `Hello World` ``
   - String interpolation: `` `Hello ${name}` ``
   - Complex expressions: `` `Result: ${value.toString()}, Sum: ${a + b}` ``
   - Multiline templates with interpolation
-- **Type Safety**: Interpolated expressions must be convertible to string (primitives, objects with toString(), etc.)
+  - Escaped `` \` ``, `\$`, and `\${` are literal text, not delimiters
+- **Type Safety**: interpolated expressions must be `string`, `number`, `bigint`, `boolean`, `null`, or `undefined` (the `@typescript-eslint/restrict-template-expressions` rule; objects and arrays are rejected even when they have a `toString()`)
+- **Escapes are validated**: an invalid escape sequence anywhere in a template (octal `\1`, `\8`/`\9`, malformed `\x`/`\u`) is a syntax error, exactly like quoted strings; a template with no interpolation is decoded, so its literal type equals its runtime value (`` `\x61` `` is the type `"a"`)
+- **Syntax is strict after the expression**: the interpolation must be a single expression followed by `}`. Trailing tokens are rejected with `'}' expected` — `` `${a b}` `` matches tsc; `` `${a, b}` `` is also rejected because skjs has no comma operator (stricter than tsc)
+- **Known divergence**: an *interpolated* template is typed `string`; tsc infers a template-literal type over literal substitutions (`` `a${1}b` `` is `"a1b"` in tsc). Template literal *types* (`` type T = `${string}` ``) are not supported
 - **Example**:
   ```typescript
   // ✓ CORRECT - template literals work with complex expressions and multiline
@@ -713,8 +717,8 @@ import { add } from './math_utils.ts';   // Wrong extension
 
 ### Template Literal Patterns
 ```typescript
-// Avoid - non-stringifiable objects (will cause type errors)
-// const badTemplate: string = `Object: ${someComplexObject}`; // Error if object lacks toString()
+// Avoid - object/array interpolations (rejected even when they have toString())
+// const badTemplate: string = `Object: ${someComplexObject}`; // restrict-template-expressions error
 ```
 
 ### Null/Undefined Comparison Patterns
