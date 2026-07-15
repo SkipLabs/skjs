@@ -1703,15 +1703,22 @@ base class TEnv{
     // Top: `unknown` (which tsc rejects here) or `any`.
     | None() -> THNotStringifiable()
     | Some((insts, clauses)) ->
-      // A residual named or type-variable type is not resolved to values here.
-      if (!insts.isEmpty()) return THIrreducible();
       values = mutable Vector<String>[];
+      // A hole is a union, so its members are accumulated and judged together
+      // rather than returned on: the verdicts do not commute. `string` absorbs
+      // an unbounded sibling (`${string | number}` IS `string`), and a sibling
+      // that may not be interpolated at all outranks both (`${number | symbol}`
+      // is a constraint error, not an unsupported one), so returning on the
+      // first unbounded member would decide by stype order.
+      notStringifiable = false;
       bareString = false;
+      // A residual named or type-variable type resolves to no values here.
+      irreducible = !insts.isEmpty();
       for (clause in clauses) {
         // An abstract type parameter, as in `type Wrap<T> = \`a${T}b\``.
-        if (!clause.vars.isEmpty()) return THIrreducible();
+        if (!clause.vars.isEmpty()) !irreducible = true;
         clause.stypes match {
-        | None() -> return THIrreducible()
+        | None() -> !irreducible = true
         | Some(stypes) ->
           for (stype in stypes) {
             stype match {
@@ -1723,30 +1730,33 @@ base class TEnv{
               // form at parse time (see rule 30), so both are used verbatim.
               for (lit in lits.values()) values.push(lit.val)
             | TPrimValue(TBigInt(), Some(lits), _) ->
-              // Stored with the `n` suffix that the runtime string lacks.
+              // Exact at any magnitude, unlike a number: only the `n` suffix,
+              // which the runtime string lacks, has to come off.
               for (lit in lits.values()) values.push(lit.val.stripSuffix("n"))
             | TPrimValue(TBool(), None(), _) ->
               // `boolean` is the saturated two-literal set, which union
               // normalizes to None().
               values.push("false");
               values.push("true")
-            | TPrimValue(TString(), None(), _) ->
-              !bareString = true;
-              values.clear()
+            | TPrimValue(TString(), None(), _) -> !bareString = true
             | TPrimValue(TNum(), None(), _)
             | TPrimValue(TBigInt(), None(), _) ->
-              return THIrreducible()
+              !irreducible = true
             | TPrimUnit(TNull(), _) -> values.push("null")
             | TPrimUnit(TUndefined(), _) -> values.push("undefined")
-            | _ -> return THNotStringifiable()
+            | _ -> !notStringifiable = true
             }
           }
         }
       };
-      if (bareString) {
-        // `string` absorbs anything else the hole could be, so a hole that is
-        // `string` at all is `string`.
+      if (notStringifiable) {
+        THNotStringifiable()
+      } else if (bareString) {
+        // Every string is in `string`, so a hole that is `string` at all is
+        // `string`, whatever else it also is.
         THBareString()
+      } else if (irreducible) {
+        THIrreducible()
       } else {
         THFinite(SortedSet::createFromItems(values))
       }

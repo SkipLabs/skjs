@@ -124,14 +124,14 @@ type Deferred<T extends string> = `a${T}b`;
 // --- Unions inside one hole ---
 
 // `string` absorbs any sibling that is still a string, so this IS `string`.
-// FIXME: rejected; the hole classifier gives up on the `number` sibling before
-// the `string` one can absorb it.
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type StringAbsorbsNumber = `${string | number}`;
+function stringAbsorbsNumber(x: StringAbsorbsNumber, y: string): string {
+  const back: StringAbsorbsNumber = y;
+  return x;
+}
 
 // A sibling that may not be interpolated outranks an irreducible one, as in tsc.
-// FIXME: reported as irreducible instead of as a constraint violation.
-// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
+// @skjs-expect-error Type of this interpolation is not assignable to type 'string | number | bigint | boolean | null | undefined'
 type SymbolBeatsNumberInHole = `${number | symbol}`;
 
 // --- Number literal holes whose spelling does not pin down one double ---
