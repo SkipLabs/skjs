@@ -11,34 +11,46 @@
 // bottom of this file legal.
 
 // Direct self-reference.
+// @skjs-expect-error Type alias 'R' circularly references itself
 type R = R;
 
 // Mutual recursion through bare references.
+// @skjs-expect-error Type alias 'A' circularly references itself
 type A = B;
+// @skjs-expect-error Type alias 'B' circularly references itself
 type B = A;
 
 // Union and intersection members are immediate.
+// @skjs-expect-error Type alias 'U' circularly references itself
 type U = U | string;
+// @skjs-expect-error Type alias 'I' circularly references itself
 type I = I & { a: string };
 
 // `keyof` forces its operand to resolve.
+// @skjs-expect-error Type alias 'K' circularly references itself
 type K = keyof K;
 
 // Every edge of this cycle is a bare union member, so all three are circular.
+// @skjs-expect-error Type alias 'C1' circularly references itself
 type C1 = C2 | string;
+// @skjs-expect-error Type alias 'C2' circularly references itself
 type C2 = C3 | string;
+// @skjs-expect-error Type alias 'C3' circularly references itself
 type C3 = C1 | string;
 
 // A cycle that does not pass through the alias under test does not make it
 // circular: resolving `X` reaches the circular `Y`, but `X` is not itself on
 // the cycle. tsc reports `Y` and `Z` here and leaves `X` alone.
 type X = Y;
+// @skjs-expect-error Type alias 'Y' circularly references itself
 type Y = Z;
+// @skjs-expect-error Type alias 'Z' circularly references itself
 type Z = Y;
 
 // The type arguments of an alias reference are immediate even when the alias
 // ignores them, because instantiating an alias resolves its arguments first.
 type Ignore<T> = number;
+// @skjs-expect-error Type alias 'ArgCycle' circularly references itself
 type ArgCycle = Ignore<ArgCycle>;
 
 // The alias is reported once at its declaration; uses of it are not reported

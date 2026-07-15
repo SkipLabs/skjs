@@ -278,6 +278,28 @@ base class TEnv{
     this.defMap.getAll(tcenvb, name).any(def -> def is Class _)
   }
 
+  // The type alias `name` denotes, or None() when it denotes something else (a
+  // class, an interface, an enum) or does not resolve at all.
+  //
+  // Resolution runs against a throwaway `probe` accumulator rather than the
+  // caller's, for the same two reasons enumFoldOfCrossEnumRef uses one: this
+  // is a speculative lookup, and a name that does not resolve — or resolves to
+  // something that is not an alias — is not its concern, so attaching a
+  // diagnostic here would duplicate or mis-attribute the authoritative one;
+  // and getAll raises a fatal ErrorExn in the default error-handling mode,
+  // which must not abort the caller. Keep-going collects any such error into
+  // the discarded accumulator instead.
+  fun maybeGetTypeDef(context: mutable SKStore.Context, name: Name): ?TypeDef {
+    probe = mutable TCEnvLight{
+      context,
+      results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
+    };
+    this.defMap.getAll(probe, name, true).find(def -> def is TypeDef _) match {
+    | Some(td @ TypeDef _) -> Some(td)
+    | _ -> None()
+    }
+  }
+
   fun getClassFields(
     context: mutable SKStore.Context,
     c: Class,
