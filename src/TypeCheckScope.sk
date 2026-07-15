@@ -8,8 +8,15 @@ module SKJS;
 // type it was declared with, preserved across narrowing writes so a write that
 // escapes the current frame — through a loop or into an enclosing-function
 // capture — can be checked against the declared type rather than a transient
-// narrowing (see `Scope::set`).
-value class LocalRef(type: TType, declaredType: TType, isInitialized: Bool)
+// narrowing (see `Scope::set`). `isAnnotated` records whether the binding had an
+// explicit type annotation: an annotation is a hard constraint that every write
+// must satisfy, whereas an un-annotated binding's inferred type evolves on write.
+value class LocalRef(
+  type: TType,
+  declaredType: TType,
+  isAnnotated: Bool,
+  isInitialized: Bool,
+)
 
 class NameRef(name: String, ref: LocalRef) uses Projectable<String> {
   fun project(): String {
@@ -75,6 +82,7 @@ mutable class Scope{
     tcenvb: mutable TCEnvBase,
     name: Name,
     ty: TType,
+    isAnnotated: Bool,
     isInitialized: Bool,
   ): void {
     this.maybeGetLocal(name) match {
@@ -89,7 +97,7 @@ mutable class Scope{
       )
     };
     this.!locals[name.value] = name;
-    this.!refs[name.value] = LocalRef(ty, ty, isInitialized)
+    this.!refs[name.value] = LocalRef(ty, ty, isAnnotated, isInitialized)
   }
 
   readonly fun isThroughLoop(name: Name): Bool {
@@ -167,25 +175,32 @@ mutable class Scope{
       )
     | Some(x) -> x
     };
-    // A write that escapes the current function (a captured enclosing-function
-    // local written from inside a lambda) may run at an arbitrary later time,
-    // so its narrowing cannot be trusted: check the written value against the
-    // binding's declared type. A write that only crosses a loop frame keeps the
-    // existing check against the loop-entry type. The narrowing is still
-    // recorded for reads later in the same frame, but the declared type is
-    // carried through so a subsequent escaping write is checked too.
-    if (this.isThroughFunction(name)) {
-      // An unannotated `let x = null`/`undefined` (or a bare type parameter)
-      // has an unresolved type variable as its declared type and widens on
-      // assignment like TS's evolving `any`, so an escaping write is always
-      // allowed. Only a resolved declared type constrains the write.
+    if (upRef.isAnnotated) {
+      // An explicit type annotation is a hard constraint: every write must
+      // satisfy the declared type, wherever it happens. The value still narrows
+      // the binding for later reads in this frame, but it may not escape the
+      // annotation.
+      isSubType(ty, upRef.declaredType);
+    } else if (this.isThroughFunction(name)) {
+      // An un-annotated binding's inferred type evolves on same-frame writes,
+      // but a write that escapes the current function (a captured
+      // enclosing-function local written from inside a lambda) may run at an
+      // arbitrary later time, so its narrowing cannot be trusted: check it
+      // against the (widened) inferred type. A bare `let x = null`/`undefined`
+      // has an unresolved type variable as its type and widens like TS's
+      // evolving `any`, so such an escaping write is always allowed.
       if (upRef.declaredType.getSingleVar().isNone()) {
         isSubType(ty, upRef.declaredType);
       }
     } else if (throughLoop) {
       isSubType(ty, upRef.type);
     };
-    this.!refs[name.value] = LocalRef(ty, upRef.declaredType, true);
+    this.!refs[name.value] = LocalRef(
+      ty,
+      upRef.declaredType,
+      upRef.isAnnotated,
+      true,
+    );
   }
 
   readonly fun escapingRefs(): mutable Iterator<NameRef> {
@@ -261,7 +276,12 @@ mutable class Scope{
         !ty = TType::union(subst, tenv, ty, upRef.type);
         !isInitialized = isInitialized && upRef.isInitialized
       };
-      this.!refs[name] = LocalRef(ty, upRef.declaredType, isInitialized)
+      this.!refs[name] = LocalRef(
+        ty,
+        upRef.declaredType,
+        upRef.isAnnotated,
+        isInitialized,
+      )
     }
   }
 
@@ -285,12 +305,19 @@ mutable class Scope{
         this.!refs[nameRef.name] = LocalRef(
           TType::union(subst, tenv, upRef.type, nameRef.ref.type),
           upRef.declaredType,
+          upRef.isAnnotated,
           upRef.isInitialized,
         )
       | Both(nameRef1, nameRef2) ->
+        // Only the narrowed type and the initialization state differ between
+        // the branches. How the binding was declared does not: both branches
+        // narrow the same binding, so take it from the binding itself rather
+        // than from one arbitrary branch.
+        (_, upRef) = this.maybeGetRef(nameRef1.name).fromSome();
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
-          nameRef1.ref.declaredType,
+          upRef.declaredType,
+          upRef.isAnnotated,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
         )
       }
@@ -310,6 +337,7 @@ mutable class Scope{
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, upRef.type, nameRef.ref.type),
         upRef.declaredType,
+        upRef.isAnnotated,
         upRef.isInitialized,
       )
     }

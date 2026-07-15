@@ -19,7 +19,7 @@ extension class TypeChecker {
     | Some(thisType) -> thisType
     };
     !this.bindings["this"] = thisType;
-    tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true);
+    tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true);
     !this = this.addTParams(subst, sig.tparams);
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
     this.bindParams(tcenv, sig.params, paramTypes);
@@ -38,7 +38,7 @@ extension class TypeChecker {
     paramTypes: Array<TType>,
   ): void {
     for (i => param in params) {
-      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
+      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, true, false)
     }
   }
 
