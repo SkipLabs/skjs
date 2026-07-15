@@ -68,6 +68,9 @@ class WithCb<T> {
 // Read side: an expected type must not determine the skolem parameter.
 function rejectConcreteRead(x: unknown): string {
   if (x instanceof Box) {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'string'
     const s: string = x.v;
     return s;
   }
@@ -78,6 +81,9 @@ function rejectConcreteRead(x: unknown): string {
 function rejectConcreteWrite(a: Box<number>): number {
   const x: unknown = a;
   if (x instanceof Box) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'string'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
     x.v = "s";
   }
   return a.v;
@@ -87,6 +93,9 @@ function rejectConcreteWrite(a: Box<number>): number {
 function nestedConcreteRead(x: unknown): string {
   if (x instanceof Box) {
     if (x instanceof Box) {
+      // @skjs-expect-error Type of returned value is not assignable to the function's return type
+      // @skjs-expect-error-line2 Type 'T'
+      // @skjs-expect-error-line3 is not assignable to type 'string'
       return x.v;
     }
   }
@@ -96,6 +105,9 @@ function nestedConcreteRead(x: unknown): string {
 // Method arguments are the write side too.
 function rejectMethodWrite(x: unknown): void {
   if (x instanceof Cell) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type 'number'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
     x.put(3);
   }
 }
@@ -103,6 +115,9 @@ function rejectMethodWrite(x: unknown): void {
 // Checks of two objects introduce distinct skolems, so values cannot cross.
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
     x.v = y.v;
   }
 }
@@ -110,6 +125,9 @@ function crossExchange(x: unknown, y: unknown): void {
 // One check introduces a distinct skolem for each class type parameter.
 function pairArgumentsDistinct(x: unknown): void {
   if (x instanceof Pair) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'B'
+    // @skjs-expect-error-line3 is not assignable to type 'A'
     x.left = x.right;
   }
 }
@@ -117,6 +135,9 @@ function pairArgumentsDistinct(x: unknown): void {
 // A declared bound does not license writes below it.
 function boundedWrite(x: unknown): void {
   if (x instanceof Tagged) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'string'
+    // @skjs-expect-error-line3 is not assignable to type 'T extends string'
     x.tag = "a";
   }
 }
@@ -125,6 +146,10 @@ function boundedWrite(x: unknown): void {
 declare function takesBoxString(b: Box<string>): void;
 function concreteAdmission(x: unknown): void {
   if (x instanceof Box) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type 'string'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line4 This would not be an error if this field were readonly
     takesBoxString(x);
   }
 }
@@ -132,6 +157,9 @@ function concreteAdmission(x: unknown): void {
 // Generic subclasses preserve hidden type arguments the same way.
 function subclassWrite(x: unknown): void {
   if (x instanceof SubBox) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'string'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
     x.v = "s";
   }
 }
@@ -181,6 +209,9 @@ function unionScrutinee(x: Box<number> | string): number {
 // a shared field must not make either hidden type argument escape.
 function crossClassRead(x: unknown): string {
   if (x instanceof Box && x instanceof Crate) {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'string'
     return x.v;
   }
   return "";
@@ -210,6 +241,9 @@ function unionRoundTrip(x: unknown): void {
 // A hidden type argument does not escape its bound through generic identity.
 function hiddenTypeNoEscape(x: unknown): string {
   if (x instanceof Box) {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'string'
     return ident(x.v);
   }
   return "";
@@ -229,6 +263,9 @@ function sharedReadOnly(u: unknown, w: unknown): number {
 function arrayWrite(a: Array<number>): number {
   const x: unknown = a;
   if (x instanceof Array) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'string'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
     x[0] = "s";
   }
   return a.length;
@@ -238,6 +275,9 @@ function arrayWrite(a: Array<number>): number {
 function arrayPush(a: Array<number>): number {
   const x: unknown = a;
   if (x instanceof Array) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type 'string'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
     x.push("s");
   }
   return a.length;
@@ -273,6 +313,11 @@ function separateArrayParams(u: unknown, w: unknown): number {
 declare function sharedLen<T>(a: Array<T>, b: Array<T>): number;
 function rejectSharedArrayElement(u: unknown, w: unknown): number {
   if (u instanceof Array && w instanceof Array) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <T | T>
+    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'T' must be assignable to source parameter type 'T'
     return sharedLen(u, w);
   }
   return 0;

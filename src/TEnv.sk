@@ -506,6 +506,23 @@ base class TEnv{
     }
   }
 
+  // Fresh skolem type arguments for `instanceof` narrowing. Each represents a
+  // type argument fixed by the runtime object but hidden from the program.
+  fun makeSkolemTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
+    tparams = this.getClass(tcenv, className).tparams;
+    tparams.map(tparam -> {
+      cstr = tparam.constraint.map(c -> this.normalize(tcenv, c));
+      // Represent the skolem as a synthetic TParam, preserving its identity
+      // and declared upper bound through expansion.
+      TType::fromTParamWithConstraint(
+        tcenv.subst,
+        this,
+        className.pos,
+        tcenv.subst.genSkolemTParam(className.pos, tparam.name.value, cstr),
+      )
+    })
+  }
+
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
     tparams = this.getClass(tcenv, className).tparams;
     allTVars = tparams

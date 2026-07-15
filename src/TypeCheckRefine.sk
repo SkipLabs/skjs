@@ -360,18 +360,46 @@ extension class TypeChecker {
 
   // Narrows `local` based on `local instanceof className`
   fun evalInstanceof(tcenv: mutable TCEnv, local: Name, className: Name): void {
-    tArgs = if (className.value == "Array") {
-      Array[TType::top(className.pos)]
-    } else {
-      this.makeTArgs(tcenv, className)
-    };
-    obj = this.newObject(tcenv.subst, className, tArgs);
+    skolemObj = this.newObject(
+      tcenv.subst,
+      className,
+      this.makeSkolemTArgs(tcenv, className),
+    );
     filterMap = stype ->
       stype match {
-      | tObj @ TObject _ -> TObject::inter(tcenv.subst, this, tObj, obj)
+      | tObj @ TObject _ ->
+        // Preserve a branch that already satisfies the `instanceof` test.
+        // Intersecting it with fresh skolems would lose known type arguments.
+        // Probe with inference variables, then roll back their growth.
+        alreadyMatches = {
+          saved = tcenv.subst.save();
+          probeObj = this.newObject(
+            tcenv.subst,
+            className,
+            this.makeTArgs(tcenv, className),
+          );
+          matches = TType::isSub(
+            tcenv.subst,
+            this,
+            TType::single(tObj),
+            TType::single(probeObj),
+          ) is STOk();
+          tcenv.subst.restore(saved);
+          matches
+        };
+        if (alreadyMatches) {
+          Some(tObj)
+        } else {
+          TObject::inter(tcenv.subst, this, tObj, skolemObj)
+        }
       | _ -> None()
       };
-    this.setLocalFilterMap(tcenv, local, Some(STypes::single(obj)), filterMap)
+    this.setLocalFilterMap(
+      tcenv,
+      local,
+      Some(STypes::single(skolemObj)),
+      filterMap,
+    )
   }
 
   // True when the `instanceof` RHS value (a class's static side, `typeof C`)
