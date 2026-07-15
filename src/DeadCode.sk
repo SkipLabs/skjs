@@ -58,6 +58,30 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
   ): Liveness {
     s
   }
+
+  // Liveness ignores calls (the transfers never invoke the callback), so these
+  // are only here to satisfy the trait: a reachable caller reaches its callees,
+  // and an opaque call leaves reachability unchanged.
+  fun call(
+    s: Liveness,
+    _site: Callsite,
+    _params: Array<(Pattern, TType)>,
+  ): Liveness {
+    s
+  }
+
+  fun callOpaque(s: Liveness, _site: Callsite): Liveness {
+    s
+  }
+
+  // The caller continues past the call exactly when the callee returns.
+  fun ret(
+    _callerState: Liveness,
+    calleeState: Liveness,
+    _site: Callsite,
+  ): Liveness {
+    calleeState
+  }
 }
 
 // The dead (unreachable) blocks of every function in `cfgs`. Runs the
