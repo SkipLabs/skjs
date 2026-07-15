@@ -647,7 +647,9 @@ class Type(pos: PosRange, value: Type_) uses XXHashable
 base class Type_ uses XXHashable {
   children =
   | TAStringLiteral(String)
-  | TATemplate(String)
+  // A template literal type: `strings` is the cooked text around the holes,
+  // `types` the interpolated types. strings.size() == types.size() + 1.
+  | TATemplate(Array<String>, Array<Type>)
   | TANumLiteral(String)
   | TABigIntLiteral(String)
   | TAPrim(TPrimKind)

@@ -12,7 +12,6 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKAddition()
   | TKAdditionAssignment()
   | TKAssignment()
-  | TKBackTick()
   | TKNoSubstitutionTemplate()
   | TKTemplateHead()
   | TKTemplateMiddle()
@@ -83,7 +82,6 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKAddition() -> "+"
   | TKAdditionAssignment() -> "+="
   | TKAssignment() -> "="
-  | TKBackTick() -> "`"
   | TKNoSubstitutionTemplate() -> "a template literal"
   | TKTemplateHead() -> "`...${"
   | TKTemplateMiddle() -> "}...${"
