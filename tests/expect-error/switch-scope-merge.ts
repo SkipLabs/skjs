@@ -2,10 +2,9 @@
 // reach that point: each branch, plus — when there is no `default` — matching
 // no clause at all, which leaves the binding untouched.
 
-// FIXME: the middle branch is dropped from the merge, so `y` is typed
-// "a" | "c" even though it is "b" when x === 2. Pinned to the current
-// (unsound) behavior; fixed in a later commit.
-function middleBranchDropped(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
+// Every branch contributes to the merge, including the ones in between: `y` is
+// "b" when x === 2, so it is not "a" | "c" here.
+function middleBranchNotDropped(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
   let y: "a" | "b" | "c" = a;
   switch (x) {
     case 1:
@@ -18,6 +17,7 @@ function middleBranchDropped(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
       y = c;
       break;
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "a" | "c" = y;
 }
 
