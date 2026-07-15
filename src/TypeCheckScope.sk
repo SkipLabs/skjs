@@ -309,10 +309,15 @@ mutable class Scope{
           upRef.isInitialized,
         )
       | Both(nameRef1, nameRef2) ->
+        // Only the narrowed type and the initialization state differ between
+        // the branches. How the binding was declared does not: both branches
+        // narrow the same binding, so take it from the binding itself rather
+        // than from one arbitrary branch.
+        (_, upRef) = this.maybeGetRef(nameRef1.name).fromSome();
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
-          nameRef1.ref.declaredType,
-          nameRef1.ref.isAnnotated,
+          upRef.declaredType,
+          upRef.isAnnotated,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
         )
       }
