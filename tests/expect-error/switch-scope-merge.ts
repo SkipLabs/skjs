@@ -52,6 +52,24 @@ function withDefaultStaysPrecise(x: number, a: "a", b: "b", c: "c"): void {
   const z: "b" | "c" = y;
 }
 
+// FIXME: a branch that always returns never reaches the code after the switch,
+// so it should not contribute to the merge — `y` is "c" here. `If` drops such
+// branches (isTerminalBlock); the switch does not, so `y` is widened to
+// "b" | "c". Pinned to the current (imprecise but sound) behavior.
+function returningBranchStillMerged(x: number, a: "a", b: "b", c: "c"): void {
+  let y: "a" | "b" | "c" = a;
+  switch (x) {
+    case 1:
+      y = b;
+      return;
+    default:
+      y = c;
+      break;
+  }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const z: "c" = y;
+}
+
 // A binding not assigned in the first branch already merges correctly (it takes
 // `merge`'s Left/Right arm, which accumulates through the parent scope).
 function notAssignedInFirstBranch(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
