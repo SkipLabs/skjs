@@ -1723,12 +1723,23 @@ base class TEnv{
           for (stype in stypes) {
             stype match {
             | TPrimValue(TString(), Some(lits), _)
-            | TPrimValue(TNum(), Some(lits), _)
             | TPrimValue(TBool(), Some(lits), _) ->
-              // A string literal's value is already cooked, and a number
-              // literal's is already normalized to its ECMAScript String()
-              // form at parse time (see rule 30), so both are used verbatim.
+              // A string literal's value is already cooked, and a boolean's is
+              // its runtime spelling, so both are used verbatim.
               for (lit in lits.values()) values.push(lit.val)
+            | TPrimValue(TNum(), Some(lits), _) ->
+              for (lit in lits.values()) {
+                // A number literal's name is its ECMAScript String() form only
+                // when the spelling pins down one double. The normalizer leaves
+                // a beyond-precision spelling alone and keeps a radix literal
+                // past 2^53 in source form (see rule 30), and neither names a
+                // string any runtime value produces.
+                if (isPreciseJSNumberLiteral(lit.val)) {
+                  values.push(lit.val)
+                } else {
+                  !irreducible = true
+                }
+              }
             | TPrimValue(TBigInt(), Some(lits), _) ->
               // Exact at any magnitude, unlike a number: only the `n` suffix,
               // which the runtime string lacks, has to come off.

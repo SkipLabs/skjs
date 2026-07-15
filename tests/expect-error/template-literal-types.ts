@@ -136,19 +136,21 @@ type SymbolBeatsNumberInHole = `${number | symbol}`;
 
 // --- Number literal holes whose spelling does not pin down one double ---
 
-// A radix literal past 2^53 keeps its source spelling, so this names a string
-// no runtime value can produce (it should be "9007199254740992").
-// FIXME: accepted with an impossible type.
+// A spelling that does not pin down one double is rejected rather than guessed
+// at: the normalizer keeps a radix literal past 2^53 in source form, and its
+// name is not a string any runtime value produces. (tsc reduces this to
+// "9007199254740992"; SKJS rejects instead of naming an impossible string.)
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type RadixPastPrecision = `${0x20000000000001}`;
-function radixPastPrecision(x: RadixPastPrecision): "0x20000000000001" {
-  return x;
-}
 
-// A decimal spelling past double precision is kept verbatim, likewise naming a
-// string no runtime value can produce (it should be "9007199254740992").
-// FIXME: accepted with an impossible type.
+// Likewise a beyond-precision decimal, which the normalizer keeps verbatim.
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type DecimalPastPrecision = `${9007199254740993}`;
-function decimalPastPrecision(x: DecimalPastPrecision): "9007199254740993" {
+
+// A spelling that DOES pin down one double still reduces.
+type PreciseExponent = `${1e100}`;
+function preciseExponent(x: PreciseExponent): "1e+100" {
+  const back: PreciseExponent = "1e+100";
   return x;
 }
 
