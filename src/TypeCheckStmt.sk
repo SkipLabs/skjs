@@ -246,22 +246,24 @@ extension class TypeChecker {
     // A switch may contain at most one `default` clause; a second one is a
     // JavaScript SyntaxError (tsc reports TS1113). Reject every `default` after
     // the first.
-    seenDefault = false;
+    seenDefault: ?PosRange = None();
     for (branch in branches) {
       branch match {
       | SwitchBranch(Default(), _, pos) ->
-        if (seenDefault) {
+        seenDefault match {
+        | Some(firstDefaultPos) ->
           tcenv.error(
             Array[
               (
                 pos,
                 "A 'default' clause cannot appear more than once in a 'switch' statement",
               ),
+              (firstDefaultPos, "First 'default' clause was here"),
             ],
             TSCode(1113),
           )
-        };
-        !seenDefault = true
+        | None() -> !seenDefault = Some(pos)
+        }
       | SwitchBranch(Case(_), _, _) -> void
       }
     };

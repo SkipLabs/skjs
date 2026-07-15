@@ -10,6 +10,7 @@ function duplicateDefault(x: number): void {
     case 2:
       return;
     // @skjs-expect-error A 'default' clause cannot appear more than once in a 'switch' statement
+    // @skjs-expect-error-line2 First 'default' clause was here
     default:
       return;
   }
