@@ -1,0 +1,12 @@
+fn:add:
+  return: 5.0
+  BB_0: {a=2.0, b=3.0}
+fn:main:
+  return: 15.0
+  BB_0: {}
+fn:pick:
+  return: 10.0
+  BB_0: {c=true}
+  BB_3: {c=true}
+  BB_4: unreachable
+  BB_5: unreachable

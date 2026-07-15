@@ -1,0 +1,179 @@
+// Expectation tests for interprocedural constant propagation over typed CFGs.
+//
+// Each tests/constprop/*.ts fixture has a sibling *.constprop file holding the
+// expected `serializeConstantProp` output (CFG names are CGNode descriptors so
+// expected files stay machine-independent). Regenerate with UPDATE_EXPECT=1.
+//
+// The analysis is seeded at every top-level function named `main`; other
+// functions are analyzed only as they are called, so their entry state shows
+// the arguments bound by their callers.
+module SKJSTests;
+
+fun constPropExpectationPath(fileName: SKJS.FAbsolute): String {
+  fileName.toString().stripSuffix(".ts") + ".constprop"
+}
+
+fun validateConstantProp(
+  context: mutable SKStore.Context,
+  checker: SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+  update: UpdateMode,
+): Array<SKTest.ExpectationError> {
+  fileName = checkResult.fileName.toAbsolute(checker.files.rootMap);
+  // The checked-files map also visits builtins/stubs; only fixture files have
+  // expectation *.constprop.
+  if (!fileName.toString().contains("/tests/constprop/")) {
+    return Array[]
+  };
+
+  if (checkResult.parseError is Some _ || checkResult.errors.size() > 0) {
+    errs = checkResult.parseError match {
+    | None() -> checkResult.errors
+    | Some(parseError) -> checkResult.errors.concat(Array[parseError])
+    };
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: constant-prop test fixtures must typecheck cleanly`,
+        "no errors",
+        checker.errorsToString(context, errs),
+      ),
+    ]
+  };
+
+  // Rename CFGs from CGNode strings (which embed absolute paths) to
+  // machine-independent descriptors.
+  cfgs = SortedMap[];
+  checkResult.cfgs.each((cgNode, cfg) -> {
+    !cfgs = cfgs.set(cgNode, cfg with {name => cgNode.id.descriptor()})
+  });
+  actual = serializeConstantProp(cfgs, checkResult.callgraph);
+
+  expectationPath = constPropExpectationPath(fileName);
+  update match {
+  | UMDoUpdate _ ->
+    existing = if (FileSystem.exists(expectationPath)) {
+      FileSystem.readTextFile(expectationPath)
+    } else {
+      ""
+    };
+    if (actual != existing) {
+      FileSystem.writeTextFile(expectationPath, actual);
+      print_string(`Updated: ${expectationPath}\n`)
+    };
+    Array[]
+  | UMValidateOnly() ->
+    if (!FileSystem.exists(expectationPath)) {
+      return Array[
+        SKTest.ExpectationError(
+          `${fileName}: missing constant-prop expectation file`,
+          expectationPath,
+          "not found (run with UPDATE_EXPECT=1 to create)",
+        ),
+      ]
+    };
+    expected = FileSystem.readTextFile(expectationPath);
+    if (actual != expected) {
+      Array[
+        SKTest.ExpectationError(
+          `${fileName}: constant-prop output differs from ${expectationPath} (run with UPDATE_EXPECT=1 to update)`,
+          expected,
+          actual,
+        ),
+      ]
+    } else {
+      Array[]
+    }
+  }
+}
+
+@test
+fun testConstantProp(): void {
+  dir = Path.resolve("./tests/constprop/");
+  srcFiles = FileSystem.readDirectory(dir).filterMap(f ->
+    if (SKJS.isTsFile(f)) Some(Path.join(dir, f)) else None()
+  );
+  invariant(!srcFiles.isEmpty(), "No constant-prop test fixtures found");
+  testFiles(
+    srcFiles,
+    Array["./import-stubs"],
+    validateConstantProp,
+    UpdateMode::fromEnv(),
+    true,
+  )
+}
+
+// Render a single abstract value.
+fun renderCPVal(v: SKJS.CPVal): String {
+  v match {
+  | SKJS.CPVBot() -> "bot"
+  | SKJS.CPVTop() -> "top"
+  | SKJS.CPVNumber(x) -> x.toString()
+  | SKJS.CPVString(s) -> "\"" + s + "\""
+  | SKJS.CPVBool(b) -> b.toString()
+  | SKJS.CPVNull() -> "null"
+  | SKJS.CPVUndefined() -> "undefined"
+  }
+}
+
+// Render a block's abstract state as its (sorted) variable bindings.
+fun renderCPEnv(st: SKJS.CPEnv): String {
+  st match {
+  | SKJS.CPEBot() -> "unreachable"
+  | SKJS.CPEEnv(env, _ret) ->
+    parts = env.items().collect(Array).map(kv ->
+      kv.i0 + "=" + renderCPVal(kv.i1)
+    );
+    "{" + ", ".join(parts) + "}"
+  }
+}
+
+// Deterministic constant-propagation report: one stanza per function (sorted by
+// name) with its abstract return value and the entry state of each non-sentinel
+// block (in block order).
+fun serializeConstantProp(
+  cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
+  callgraph: SortedMap<SKJS.CGNode, Array<SKJS.CGNode>>,
+): String {
+  entrypoints = cfgs
+    .keys()
+    .filter(n ->
+      n.id match {
+      | SKJS.TopLevelFunction(nm, _) -> nm.getName() == "main"
+      | _ -> false
+      }
+    )
+    .collect(Array);
+  invByNode = SKJS.runConstantProp(cfgs, callgraph, entrypoints);
+
+  stanzas = cfgs
+    .items()
+    .collect(Array)
+    .sortedBy(kv ~> kv.i1.name)
+    .map(kv -> {
+      (node, cfg) = kv;
+      perBlock = invByNode.maybeGet(node).default(SortedMap[]);
+      retStr = perBlock.maybeGet(cfg.normalExit) match {
+      | None() -> "unreachable"
+      | Some(st) ->
+        st match {
+        | SKJS.CPEBot() -> "unreachable"
+        | SKJS.CPEEnv(_, ret) -> renderCPVal(ret)
+        }
+      };
+      body = mutable Vector<String>[`  return: ${retStr}`];
+      for (block in cfg.blocks.values()) {
+        isSentinel = block.id == cfg.normalExit || block.id == cfg.exnExit;
+        if (!isSentinel) {
+          stStr = perBlock.maybeGet(block.id) match {
+          | None() -> "unreachable"
+          | Some(st) -> renderCPEnv(st)
+          };
+          body.push(`  ${block.id}: ${stStr}`)
+        }
+      };
+      `${cfg.name}:\n` + "\n".join(body.toArray())
+    });
+  "\n".join(stanzas) + "\n"
+}
+
+module end;

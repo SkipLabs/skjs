@@ -1,0 +1,6 @@
+ctor:Point:
+  return: undefined
+  BB_0: {a=3.0, b=4.0}
+fn:main:
+  return: 0.0
+  BB_0: {}

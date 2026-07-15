@@ -1,0 +1,15 @@
+fn:fact:
+  return: top
+  BB_0: {n=5.0}
+  BB_3: unreachable
+  BB_4: {n=5.0}
+  BB_5: {n=5.0}
+fn:loopConst:
+  return: 7.0
+  BB_0: {}
+  BB_3: {}
+  BB_4: {}
+  BB_5: {}
+fn:main:
+  return: 7.0
+  BB_0: {}
