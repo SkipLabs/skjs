@@ -637,14 +637,10 @@ extension class Parser {
         expressions.push(this.expr(0));
         // The interpolation expression must be followed by its closing `}`.
         this.expect(TKCloseCurly());
+        // A continuation is a Middle (another `${` follows) or the Tail.
         contTok = this.lex.nextTemplateContinuation();
         parts.push(this.validateTemplatePart(contTok));
-        contTok.kind match {
-        | TKTemplateTail() -> break void
-        | TKTemplateMiddle() -> void
-        | _ ->
-          invariant_violation("template continuation must be middle or tail")
-        }
+        if (contTok.kind is TKTemplateTail _) break void
       };
       TemplateLiteral(parts.toArray(), expressions.toArray())
     | _ ->
