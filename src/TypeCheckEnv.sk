@@ -164,9 +164,15 @@ mutable class TCEnv private {
     this.scope.merge(this.subst, tenv, scope1, scope2);
   }
 
-  // Merge any number of sibling subscopes at once. See `Scope::mergeN`.
-  mutable fun mergeScopes(tenv: TEnv, scopes: Sequence<readonly Scope>): void {
-    this.scope.mergeN(this.subst, tenv, scopes);
+  // Merge any number of sibling subscopes at once. `untouchedPath` adds a path
+  // that leaves every binding alone (a `switch` with no `default` may match no
+  // clause). See `Scope::mergeN`.
+  mutable fun mergeScopes(
+    tenv: TEnv,
+    scopes: Sequence<readonly Scope>,
+    untouchedPath: Bool,
+  ): void {
+    this.scope.mergeN(this.subst, tenv, scopes, untouchedPath);
   }
 
   mutable fun popScope(tenv: TEnv, scope: readonly Scope): void {

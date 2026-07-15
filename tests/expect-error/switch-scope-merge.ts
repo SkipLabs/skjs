@@ -21,10 +21,9 @@ function middleBranchNotDropped(x: 1 | 2 | 3, a: "a", b: "b", c: "c"): void {
   const z: "a" | "c" = y;
 }
 
-// FIXME: with no `default` the switch can match no clause at all, leaving `y`
-// as "a", but that path is dropped from the merge. Pinned to the current
-// (unsound) behavior; fixed in a later commit.
-function noMatchPathDropped(x: number, a: "a", b: "b", c: "c"): void {
+// With no `default` the switch can match no clause at all, which leaves `y` at
+// "a": that path counts too, so `y` is not "b" | "c" here.
+function noMatchPathCounts(x: number, a: "a", b: "b", c: "c"): void {
   let y: "a" | "b" | "c" = a;
   switch (x) {
     case 1:
@@ -34,6 +33,7 @@ function noMatchPathDropped(x: number, a: "a", b: "b", c: "c"): void {
       y = c;
       break;
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "b" | "c" = y;
 }
 
