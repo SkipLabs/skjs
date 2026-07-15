@@ -1798,7 +1798,16 @@ extension class TypeChecker {
           // narrowed below the declared field type (`let r: List<T>` narrowed
           // to the non-null branch, then `{ head: x, tail: r }`), and a
           // function value referenced by name is no different from one written
-          // inline. Two variables must NOT grow, though:
+          // inline. The freshness argument above does NOT carry over — the
+          // variable is a live alias of the stored object — but growth is
+          // still sound because it never replaces the field's type: Subst::grow
+          // unions the bounds, so the variable's type remains a lower bound
+          // that is checked against the declared field type with the full
+          // invariant-interior subtyping. Only the fresh slot's own setter
+          // obligation is discharged; the slot admits no interior write the
+          // alias's own type does not already permit (pinned by
+          // tests/expect-error/obj-literal-var-field-growth.ts).
+          // Two variables must NOT grow, though:
           //   - a tracked local object, whose own precise binding stays
           //     observable: growing the field would widen the view of it that
           //     the container hands out, and a write through that view would
