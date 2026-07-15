@@ -52,3 +52,15 @@ function testMixedCases(x: string): number {
       return 0;
   }
 }
+
+// A case with statements that falls into a following clause is a fallthrough
+// error: only an empty case (label grouping) and the last clause are exempt.
+function testNonEmptyFallthrough(x: number): void {
+  switch (x) {
+    case 1:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      const y: number = 1;
+    case 2:
+      break;
+  }
+}
