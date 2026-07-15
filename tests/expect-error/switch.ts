@@ -28,6 +28,20 @@ function defaultClauseNotLast(x: number): void {
   }
 }
 
+// FIXME: a `default` between two cases is not last either, but only a *leading*
+// `default` is flagged today. Pinned to the current behavior (no warning);
+// fixed in a later commit.
+function defaultClauseInTheMiddle(x: number): void {
+  switch (x) {
+    case 1:
+      return;
+    default:
+      return;
+    case 2:
+      return;
+  }
+}
+
 // A `case` following a non-last `default` is still reachable: JS matches a
 // `case` by value regardless of `default`'s position (falling to `default` only
 // when no `case` matches), so `case 1`/`case 2` must not be flagged unreachable.
