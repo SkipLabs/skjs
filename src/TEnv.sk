@@ -1586,8 +1586,10 @@ base class TEnv{
   // finite set of strings (then it IS that literal union) or it names the whole
   // `string` primitive.
   //
-  // Not reduced, and rejected: a hole with unboundedly many values in a position
-  // where the surrounding text still matters (`\`a${string}b\``, `\`${number}\``).
+  // Not reduced, and rejected: a `number` or `bigint` hole, or an abstract one,
+  // whatever surrounds it (`\`${number}\``); and a bare `string` hole when the
+  // template has text of its own (`\`a${string}b\``), the text being what stops
+  // it from simply being `string`.
   // Such a type is an infinite but partial set of strings, which needs a pattern
   // representation SKJS does not have -- TPrimValue holds either the whole
   // primitive or a finite literal set, and nothing in between.
