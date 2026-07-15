@@ -301,7 +301,7 @@ extension class TypeChecker {
         typeDef,
         this.getTypeDefBody(tcenvl.context, typeDef),
         static::tparamNames(typeDef.tdefParams),
-        SortedSet[],
+        mutable Set[],
       )
     ) {
       tcenvl.error(
@@ -326,16 +326,25 @@ extension class TypeChecker {
   //
   // `shadowed` holds the type parameters in scope at `ty`, which hide an alias
   // of the same name — in `type Bar<Foo> = Foo`, the body is the parameter,
-  // not the alias `Foo`. `visited` holds the aliases already being followed,
-  // so that a cycle which never reaches `target` terminates rather than
-  // looping. The walk is purely syntactic — it never instantiates — so it
-  // terminates even on bodies whose expansion would not.
+  // not the alias `Foo`.
+  //
+  // `visited` records the alias bodies already explored, which both stops a
+  // cycle that never reaches `target` from looping and keeps the walk linear.
+  // It is shared across the whole walk rather than threaded down each path:
+  // whether `target` is reachable from an alias does not depend on the path
+  // taken to reach that alias, so an alias whose body has already been
+  // explored without finding `target` cannot find it on a second visit. Per
+  // path, the same body is re-explored once per path that reaches it, which is
+  // exponential on a chain of alias unions (`type A0 = A1 | A1; ...`).
+  //
+  // The walk is purely syntactic — it never instantiates — so it terminates
+  // even on bodies whose expansion would not.
   private fun requiresTypeDef(
     context: mutable SKStore.Context,
     target: TypeDef,
     ty: Type,
     shadowed: SortedSet<String>,
-    visited: SortedSet<TypeDefBodyRef>,
+    visited: mutable Set<TypeDefBodyRef>,
   ): Bool {
     ty.value match {
     | TAUnion(ty1, ty2)
@@ -362,13 +371,13 @@ extension class TypeChecker {
             targs.any(targ ->
               this.requiresTypeDef(context, target, targ, shadowed, visited)
             ) ||
-              (!visited.contains(td.bodyRef) &&
+              (visited.maybeInsert(td.bodyRef) &&
                 this.requiresTypeDef(
                   context,
                   target,
                   this.getTypeDefBody(context, td),
                   static::tparamNames(td.tdefParams),
-                  visited.set(td.bodyRef),
+                  visited,
                 ))
           }
         // Not an alias: a class or interface reference defers its arguments,
