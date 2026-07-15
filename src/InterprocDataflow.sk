@@ -241,12 +241,17 @@ mutable class Interproc<
     | CSNew(New(cls, _, _), _) ->
       cls.value match {
       | Var(name) ->
-        callees.filter(n ->
-          n.id match {
-          | Constructor(cn, _) -> cn.value == name.value
-          | _ -> false
-          }
-        )
+        // The call graph records a `new` under a method node, but the
+        // constructor's CFG is keyed by a `Constructor` node, so resolve it by
+        // class name directly against the analyzed CFGs.
+        this.cfgs.keys()
+          .filter(n ->
+            n.id match {
+            | Constructor(cn, _) -> cn.value == name.value
+            | _ -> false
+            }
+          )
+          .collect(Array)
       | _ ->
         callees // opaque constructor expression
       }
