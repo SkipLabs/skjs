@@ -1,11 +1,13 @@
-// Test switch statements with empty cases
+// Test switch statements with empty cases.
+//
+// An empty case is the idiomatic way to group labels (`case 1: case 2:`), and
+// the last clause falls out of the switch rather than into another clause, so
+// neither is a fallthrough error — matching tsc's `noFallthroughCasesInSwitch`.
 
 function testSimpleEmpty(x: number): void {
   switch (x) {
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case 1:
     case 2:
-      // @skjs-expect-error Fallthrough case in switch; add a 'break'
       const y: number = 1;
   }
 }
@@ -13,12 +15,10 @@ function testSimpleEmpty(x: number): void {
 // @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function testEmptyCases(x: number): string {
   switch (x) {
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case 1:
     // Empty case - falls through
     case 2:
       return "one or two";
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case 3:
     // Empty case
     default:
@@ -28,11 +28,8 @@ function testEmptyCases(x: number): string {
 
 function testAllEmptyCases(x: number): void {
   switch (x) {
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case 1:
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case 2:
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case 3:
     default:
   }
@@ -43,7 +40,6 @@ function testMixedCases(x: string): number {
   switch (x) {
     case "a":
       return 1;
-    // @skjs-expect-error Fallthrough case in switch; add a 'break'
     case "b":
     // Empty
     case "c":

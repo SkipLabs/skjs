@@ -273,6 +273,12 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
 - **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
+### 20b. Switch Fallthrough Requires an Explicit Exit
+- **Rule**: A `case` clause that has statements and can complete normally must exit explicitly (`break` / `return` / `throw` / `continue`) when another clause follows it. SKJS enforces this unconditionally; tsc only does so under `noFallthroughCasesInSwitch`.
+- **Exempt**: an **empty** case may fall through — it is the idiomatic way to group labels (`case "a": case "b": …`) — and so may the **last** clause, which falls out of the switch rather than into another clause. Both exemptions match `noFallthroughCasesInSwitch`.
+- **Error**: "Fallthrough case in switch; add a 'break'" (TS7029), reported on the clause's last statement.
+- **Verified by**: `tests/expect-error/switch-empty-cases.ts`.
+
 ### 21. Promises and async/await
 - **`Promise<T>` is a plain object type** declared in the builtin stubs with `then`/`catch`/`finally` methods, so promises follow the same structural typing as every other object (`in`, `keyof`, width subtyping, payload covariance all behave normally). The signatures are simplified relative to TypeScript: `then<U>(onfulfilled: (value: T) => U | PromiseLike<U>): Promise<U>` takes exactly one required callback — there is no `onrejected` second argument and the callback is not optional. The stubs also declare `PromiseLike<T>` (the minimal thenable shape, as in lib.es5), and `Promise<T> <: PromiseLike<T>` holds.
 - **The `Promise` value** exposes the constructor (`new Promise<T>(executor)`, executor required) and the statics `Promise.resolve`, `Promise.reject`, and `Promise.all` (simplified: `all<T>(values: ReadonlyArray<Promise<T>>): Promise<Array<T>>` — no tuple/mixed-iterable form). Other statics (`race`, `any`, `allSettled`, ...) are not available.

@@ -266,21 +266,30 @@ extension class TypeChecker {
       }
     };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
-    checkBreak = (pos, block) -> {
-      term = StmtTermination::block(tcenv, block);
-      if (term.mayFallthrough) {
-        if (block.size() != 0) {
-          !pos = block[block.size() - 1].pos;
-        };
-        tcenv.error(
-          Array[(pos, "Fallthrough case in switch; add a 'break'")],
-          TSCode(7029),
-        )
+    // A case clause falls through only when it has statements that can complete
+    // normally *and* there is a following clause to fall into. An empty case is
+    // the idiomatic way to group labels (`case 1: case 2:`) and the last clause
+    // falls out of the switch rather than into another clause, so both are
+    // exempt — matching tsc's `noFallthroughCasesInSwitch`.
+    checkBreak = (block, isLast) -> {
+      if (!isLast && block.size() != 0) {
+        term = StmtTermination::block(tcenv, block);
+        if (term.mayFallthrough) {
+          tcenv.error(
+            Array[
+              (
+                block[block.size() - 1].pos,
+                "Fallthrough case in switch; add a 'break'",
+              ),
+            ],
+            TSCode(7029),
+          )
+        }
       }
     };
     scope = branches[0] match {
-    | SwitchBranch(Case(v), block, pos) ->
-      checkBreak(pos, block);
+    | SwitchBranch(Case(v), block, _) ->
+      checkBreak(block, branches.size() == 1);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
     | SwitchBranch(Default(), block, _) ->
@@ -297,8 +306,8 @@ extension class TypeChecker {
     };
     for (i in Range(1, branches.size())) {
       cond = branches[i] match {
-      | SwitchBranch(Case(v), block, pos) ->
-        checkBreak(pos, block);
+      | SwitchBranch(Case(v), block, _) ->
+        checkBreak(block, i == branches.size() - 1);
         Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
       | SwitchBranch(Default(), _, _) -> None()
       };
