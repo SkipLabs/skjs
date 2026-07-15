@@ -38,11 +38,15 @@ base class CPVal uses Equality {
   }
 }
 
-// Missing keys are interpreted as un-constrained; top is thus represented by an empty env
+// A reachable state binds local variables to abstract values (missing keys are
+// un-constrained, i.e. `Top`) and carries `ret`, the abstract value the
+// function returns along paths that reach this point — accumulated by `return`
+// terminators and read back at call sites. `ret` starts at `undefined`, so a
+// function that falls off its end returns `undefined`.
 base class CPEnv {
   children =
   | CPEBot()
-  | CPEEnv(env: SortedMap<String, CPVal>)
+  | CPEEnv(env: SortedMap<String, CPVal>, ret: CPVal)
 }
 
 base class ConstantProp uses AbstractDomain<CPEnv> {
@@ -50,17 +54,17 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
     CPEBot()
   }
   fun init(): CPEnv {
-    CPEEnv(SortedMap[])
+    CPEEnv(SortedMap[], CPVUndefined())
   }
 
   // point-wise, dropping any resulting k |-> \top bindings
   fun join(l: CPEnv, r: CPEnv): CPEnv {
     l match {
     | CPEBot() -> r
-    | CPEEnv(l_env) ->
+    | CPEEnv(l_env, l_ret) ->
       r match {
       | CPEBot() -> l
-      | CPEEnv(r_env) ->
+      | CPEEnv(r_env, r_ret) ->
         point_join = (_k, v1_opt, v2_opt) -> {
           v1_opt match {
           | None() -> None()
@@ -75,57 +79,59 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
             }
           }
         };
-        CPEEnv(l_env.mergeWith(r_env, point_join))
+        CPEEnv(l_env.mergeWith(r_env, point_join), CPVal::join(l_ret, r_ret))
       }
     }
   }
 
-  // l <= r IFF:
+  // l <= r IFF
+  // l.ret <= r.ret AND
   // \forall k |-> v_r in r . \exists k |-> v_l in l . v_l <= v_r
   fun leq(l: CPEnv, r: CPEnv): Bool {
     l match {
     | CPEBot() -> true
-    | CPEEnv(l_env) ->
+    | CPEEnv(l_env, l_ret) ->
       r match {
       | CPEBot() -> false
-      | CPEEnv(r_env) ->
-        r_env.all((k, v_r) -> {
-          l_env.maybeGet(k) match {
-          | None() -> false
-          | Some(v_l) -> CPVal::leq(v_l, v_r)
-          }
-        })
+      | CPEEnv(r_env, r_ret) ->
+        CPVal::leq(l_ret, r_ret) &&
+          r_env.all((k, v_r) -> {
+            l_env.maybeGet(k) match {
+            | None() -> false
+            | Some(v_l) -> CPVal::leq(v_l, v_r)
+            }
+          })
       }
     }
   }
   // Transfer the block body by threading each instruction's transfer over the
   // instruction sequence.
   //
-  // This is a purely intraprocedural constant propagation: the `interproc`
-  // callback is unused and calls are treated as opaque (their result is `Top`),
-  // because `CPEnv` models only local-variable bindings and has no
-  // representation for argument passing or return values. It is sound under the
-  // assumption that a tracked local is never reassigned "at a distance" — i.e.
-  // through a closure that captures it — since such a write is invisible in the
-  // instruction stream. Every *syntactically* visible write (assignments,
-  // compound assignments, and `++`/`--`, including ones nested inside a larger
-  // expression) is handled precisely by invalidating the affected variables.
+  // Calls are handled interprocedurally: a call as the initializer/right-hand
+  // side of a bind/assignment, in statement position, or as a `return` value is
+  // resolved through `interproc` (formals bound to actuals by `call`, the
+  // callee's return value read back from its exit state). Calls nested inside a
+  // larger expression (e.g. `f(a) + 1`) are not yet resolved and evaluate to
+  // `Top`. The analysis is otherwise intraprocedural and sound under the
+  // assumption that a tracked local is never reassigned "at a distance" through
+  // a closure that captures it; every syntactically visible write (assignments,
+  // compound assignments, `++`/`--`, including nested ones) is invalidated.
   fun transfer(
     instrs: Array<CFGInstr>,
     env: CPEnv,
-    _interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> CPEnv,
   ): CPEnv {
-    result = env;
-    for (instr in instrs) {
-      !result = this.transferInstr(instr, result)
-    };
-    result
+    instrs.foldl((acc, instr) -> this.transferInstr(instr, acc, interproc), env)
   }
 
-  private fun transferInstr(instr: CFGInstr, state: CPEnv): CPEnv {
+  private fun transferInstr(
+    instr: CFGInstr,
+    state: CPEnv,
+    interproc: (Callsite, CPEnv) -> CPEnv,
+  ): CPEnv {
     state match {
     | CPEBot() -> CPEBot()
-    | CPEEnv(env) ->
+    | CPEEnv(env, ret) ->
       instr match {
       | CFGIBind(_kind, pat, _ty, initOpt) ->
         // Evaluate the initializer in the pre-state, then invalidate any
@@ -134,38 +140,53 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
         | None() -> env
         | Some(te) -> this.dropVars(env, this.assignedVars(te.expr))
         };
-        pat.value match {
-        | PVar(name) ->
-          // A binding with no initializer introduces `undefined`.
-          v = initOpt match {
-          | None() -> CPVUndefined()
-          | Some(te) -> this.evalExpr(env, te.expr)
-          };
-          CPEEnv(this.setVar(env1, name.value, v))
-        | _ ->
-          // Destructuring binding: the components are not tracked, so every
-          // bound name becomes unconstrained.
-          CPEEnv(this.dropVars(env1, this.patternVars(pat)))
+        initOpt match {
+        // A binding with no initializer introduces `undefined`.
+        | None() ->
+          pat.value match {
+          | PVar(name) ->
+            CPEEnv(this.setVar(env1, name.value, CPVUndefined()), ret)
+          | _ -> CPEEnv(this.dropVars(env1, this.patternVars(pat)), ret)
+          }
+        | Some(te) ->
+          this.evalOperand(env, te.expr, interproc) match {
+          // A non-returning call initializer makes this point unreachable.
+          | None() -> CPEBot()
+          | Some(v) ->
+            pat.value match {
+            | PVar(name) -> CPEEnv(this.setVar(env1, name.value, v), ret)
+            | _ ->
+              // Destructuring binding: components are not tracked.
+              CPEEnv(this.dropVars(env1, this.patternVars(pat)), ret)
+            }
+          }
         }
       | CFGIAssign(target, value) ->
-        v = this.evalExpr(env, value.expr);
-        // Invalidate side-effecting writes in both operands (e.g. a computed
-        // target `a[i++]` or a nested assignment in the value).
-        env1 = this.dropVars(
-          this.dropVars(env, this.assignedVars(value.expr)),
-          this.assignedVars(target.expr),
-        );
-        target.expr.value match {
-        | Var(name) -> CPEEnv(this.setVar(env1, name.value, v))
-        | _ ->
-          // Complex target (property write or destructuring). A property write
-          // touches no tracked local; destructuring writes are invalidated.
-          CPEEnv(this.dropVars(env1, this.lvalueVars(target.expr)))
+        this.evalOperand(env, value.expr, interproc) match {
+        | None() -> CPEBot()
+        | Some(v) ->
+          // Invalidate side-effecting writes in both operands (e.g. a computed
+          // target `a[i++]` or a nested assignment in the value).
+          env1 = this.dropVars(
+            this.dropVars(env, this.assignedVars(value.expr)),
+            this.assignedVars(target.expr),
+          );
+          target.expr.value match {
+          | Var(name) -> CPEEnv(this.setVar(env1, name.value, v), ret)
+          | _ ->
+            // Complex target (property write or destructuring). A property
+            // write touches no tracked local; destructuring writes are dropped.
+            CPEEnv(this.dropVars(env1, this.lvalueVars(target.expr)), ret)
+          }
         }
       | CFGIExpr(te) ->
         // Statement-position expression evaluated for effect; its value is
-        // discarded, but any variable it writes must be invalidated.
-        CPEEnv(this.dropVars(env, this.assignedVars(te.expr)))
+        // discarded, but a non-returning call makes the point unreachable and
+        // any variable the expression writes must be invalidated.
+        this.evalOperand(env, te.expr, interproc) match {
+        | None() -> CPEBot()
+        | Some(_) -> CPEEnv(this.dropVars(env, this.assignedVars(te.expr)), ret)
+        }
       }
     }
   }
@@ -182,12 +203,12 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
   ): CPEnv {
     s match {
     | CPEBot() -> CPEBot()
-    | CPEEnv(env) ->
+    | CPEEnv(env, ret) ->
       modified = block.instrs.reduce(
         (acc, instr) -> acc.union(this.instrModifiedVars(instr)),
         this.terminatorModifiedVars(block.terminator),
       );
-      CPEEnv(this.dropVars(env, modified))
+      CPEEnv(this.dropVars(env, modified), ret)
     }
   }
 
@@ -195,11 +216,11 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
     term: BBTerminator,
     s: CPEnv,
     label: CFGENormalLabel,
-    _interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> CPEnv,
   ): CPEnv {
     s match {
     | CPEBot() -> CPEBot()
-    | CPEEnv(env) ->
+    | CPEEnv(env, ret) ->
       term match {
       | CFGTBranch(cond, _, _) ->
         // Invalidate writes in the condition, then prune the edge that a known
@@ -209,14 +230,14 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
         | Some(true) ->
           label match {
           | CFGEFalse() -> CPEBot()
-          | _ -> CPEEnv(env1)
+          | _ -> CPEEnv(env1, ret)
           }
         | Some(false) ->
           label match {
           | CFGETrue() -> CPEBot()
-          | _ -> CPEEnv(env1)
+          | _ -> CPEEnv(env1, ret)
           }
-        | None() -> CPEEnv(env1)
+        | None() -> CPEEnv(env1, ret)
         }
       | CFGTSwitch(scrutinee, branches, _default) ->
         env1 = this.dropVars(env, this.assignedVars(scrutinee.expr));
@@ -229,7 +250,7 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
             this.strictEq(sv, cav) match {
             | Some(false) ->
               CPEBot() // this case can never be selected
-            | Some(true) -> CPEEnv(env1)
+            | Some(true) -> CPEEnv(env1, ret)
             | None() ->
               // Reaching this case implies `scrutinee === caseValue`. When the
               // case is a known constant and the scrutinee is a bare,
@@ -241,24 +262,131 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
                 this.isConcrete(cav) &&
                 this.lookupVar(env1, name.value) is CPVTop()
               ) ->
-                CPEEnv(this.setVar(env1, name.value, cav))
-              | _ -> CPEEnv(env1)
+                CPEEnv(this.setVar(env1, name.value, cav), ret)
+              | _ -> CPEEnv(env1, ret)
               }
             }
-          | Default() -> CPEEnv(env1)
+          | Default() -> CPEEnv(env1, ret)
           }
-        | CFGEDefault()
+        | CFGEDefault() ->
+          // The default is taken only when no case matches, so it is
+          // unreachable once some case is a definite match.
+          someMatch = branches.any(b ->
+            b.i0 match {
+            | Case(ce) ->
+              this.strictEq(sv, this.evalExpr(env1, ce)) is Some(true)
+            | Default() -> false
+            }
+          );
+          if (someMatch) CPEBot() else CPEEnv(env1, ret)
         | CFGENormal()
         | CFGETrue()
         | CFGEFalse() ->
-          CPEEnv(env1)
+          CPEEnv(env1, ret)
+        }
+      // A `return` carries the function's result along the normal edge: record
+      // it in `ret` for callers to read from the callee's exit state.
+      | CFGTReturn(valueOpt) ->
+        valueOpt match {
+        | None() -> CPEEnv(env, CPVUndefined())
+        | Some(te) ->
+          env1 = this.dropVars(env, this.assignedVars(te.expr));
+          this.evalOperand(env, te.expr, interproc) match {
+          // `return f()` where `f` does not return here: this path is pending.
+          | None() -> CPEBot()
+          | Some(v) -> CPEEnv(env1, v)
+          }
         }
       | CFGTJump _
-      | CFGTReturn _
       | CFGTThrow _
       | CFGTUnreachable() ->
         s
       }
+    }
+  }
+
+  // -- Interprocedural calls ------------------------------------------------
+
+  // Evaluate an instruction / return operand. A bare call or `new` is resolved
+  // through the `interproc` callback; `None` signals that no callee returns here
+  // yet, so the program point is unreachable until a returning summary exists.
+  // This is what keeps the fixpoint monotone as callee summaries grow from
+  // bottom. Every other expression evaluates abstractly and always yields `Some`
+  // (a call nested inside it folds to `Top`).
+  private fun evalOperand(
+    env: SortedMap<String, CPVal>,
+    e: Expr,
+    interproc: (Callsite, CPEnv) -> CPEnv,
+  ): ?CPVal {
+    e.value match {
+    | call @ Call _ ->
+      interproc(CSCall(call, e.pos), CPEEnv(env, CPVUndefined())) match {
+      | CPEBot() -> None()
+      | CPEEnv(_callee_env, ret) -> Some(ret)
+      }
+    | ctor @ New _ ->
+      interproc(CSNew(ctor, e.pos), CPEEnv(env, CPVUndefined())) match {
+      | CPEBot() -> None()
+      | CPEEnv(_, _) -> Some(CPVTop())
+      }
+    | _ -> Some(this.evalExpr(env, e))
+    }
+  }
+
+  // Build a callee's entry frame: a fresh environment with each simple formal
+  // bound to the abstract value of the corresponding actual (evaluated in the
+  // caller's env), and `ret` seeded to `undefined`. Destructured or surplus
+  // formals are left unconstrained; a call nested in an argument folds to `Top`.
+  fun call(
+    callerState: CPEnv,
+    site: Callsite,
+    params: Array<(Pattern, TType)>,
+  ): CPEnv {
+    callerState match {
+    | CPEBot() -> CPEBot()
+    | CPEEnv(callerEnv, _ret) ->
+      args = site match {
+      | CSCall(Call(_, _, a), _) -> a
+      | CSNew(New(_, _, a), _) -> a
+      };
+      n = if (params.size() < args.size()) params.size() else args.size();
+      entryEnv = SortedMap<String, CPVal>[];
+      for (i in Range(0, n)) {
+        params[i].i0.value match {
+        | PVar(name) ->
+          !entryEnv = this.setVar(
+            entryEnv,
+            name.value,
+            this.evalExpr(callerEnv, args[i]),
+          )
+        | _ -> void
+        }
+      };
+      CPEEnv(entryEnv, CPVUndefined())
+    }
+  }
+
+  // An unanalyzable callee (no CFG: imported / ambient) may return any value and
+  // execution continues, so its result is `Top`. The env is irrelevant — a
+  // caller reads only `ret`.
+  fun callOpaque(_callerState: CPEnv, _site: Callsite): CPEnv {
+    CPEEnv(SortedMap[], CPVTop())
+  }
+
+  // Fold a callee's exit state back into the caller at a callsite. The call does
+  // not mutate the caller's locals, so the caller's environment is preserved;
+  // the callee's return value (its exit `ret`) is surfaced in `ret` for the call
+  // site to read as the call's result value. A bottom callee state — the callee
+  // has not returned here (pending or non-returning) — leaves the caller's
+  // continuation unreachable, which keeps the fixpoint monotone as callee
+  // summaries grow from bottom.
+  fun ret(callerState: CPEnv, calleeState: CPEnv, _site: Callsite): CPEnv {
+    (callerState, calleeState) match {
+    | (CPEBot(), _)
+    | (_, CPEBot()) ->
+      CPEBot()
+    | (CPEEnv(callerEnv, _callerRet), CPEEnv(_calleeEnv, calleeRet)) ->
+      CPEEnv(callerEnv, calleeRet)
     }
   }
 
@@ -396,9 +524,7 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
       }
     | BOAssignment()
     | BOOpAssignment(_) ->
-      // Value of a nested assignment expression. Not folded: `Top` keeps
-      // evaluation sound in the presence of intra-expression writes (the write
-      // itself is invalidated via `assignedVars`).
+      // `Top` is conservative but sound in the presence of sub-expression assignments
       CPVTop()
     | _ ->
       // Every remaining operator evaluates both operands unconditionally, so it
@@ -423,7 +549,7 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
       (l, r) match {
       | (CPVNumber(x), CPVNumber(y)) -> CPVNumber(x + y)
       | (CPVString(x), CPVString(y)) -> CPVString(x + y)
-      // Mixed operands trigger coercion; not folded.
+      // Mixed operands trigger coercion
       | _ -> CPVTop()
       }
     | BOSubtraction() -> this.numBinop(l, r, (x, y) -> x - y)
@@ -666,6 +792,57 @@ base class ConstantProp uses AbstractDomain<CPEnv> {
       SortedSet[]
     }
   }
+}
+
+// The default (context-insensitive) constant-propagation domain.
+class ConstantPropDomain() extends ConstantProp {}
+
+// Run constant propagation over `cfgs`, resolving calls through `callgraph`,
+// seeding each function in `entrypoints` with its entry state (unknown, i.e.
+// `Top`, arguments — an entrypoint is reached from outside the analyzed program)
+// and every other function purely from its callers. Returns, per function, the
+// abstract state at each block's entry; a block absent from the inner map was
+// never reached.
+//
+// Seed only true entrypoints: a function that is also seeded here has its formal
+// parameters joined with `Top`, which discards the values bound by `call`
+// at its call sites (sound, but it defeats interprocedural precision).
+fun runConstantProp(
+  cfgs: SortedMap<CGNode, CFG>,
+  callgraph: SortedMap<CGNode, Array<CGNode>>,
+  entrypoints: Sequence<CGNode>,
+): SortedMap<CGNode, SortedMap<CFGBlockId, CPEnv>> {
+  // Explicit type arguments: inferring `State` from a domain that reaches
+  // `AbstractDomain<CPEnv>` only through the `ConstantProp` base class leaves it
+  // unresolved.
+  solver = mutable Interproc<
+    CPEnv,
+    void,
+    ConstantPropDomain,
+    ContextInsensitive,
+  >{
+    cfgs,
+    callgraph,
+    domain => ConstantPropDomain(),
+    ctx_policy => ContextInsensitive(),
+  };
+  solver.analyzeForward(entrypoints);
+
+  result = SortedMap<CGNode, SortedMap<CFGBlockId, CPEnv>>[];
+  for (kv in cfgs.items()) {
+    (node, cfg) = kv;
+    perBlock = SortedMap<CFGBlockId, CPEnv>[];
+    for (blkId in cfg.blocks.keys()) {
+      (solver.invariant_map.maybeGet(
+        Loc{node, blk => blkId, ctx => void},
+      ) : ?CPEnv) match {
+      | Some(st) -> !perBlock = perBlock.set(blkId, st)
+      | None() -> void
+      }
+    };
+    !result = result.set(node, perBlock)
+  };
+  result
 }
 
 module end;
