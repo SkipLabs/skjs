@@ -437,7 +437,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Known gaps**: `const enum` values may be used like regular enum objects (`const o = CE`, `CE[0]`); tsc restricts const enums to member access (TS2475) because its default emit inlines them — FIXME if SKJS ever targets inlining emit. String-literal member names (`enum E { "a b" = 1 }`, legal TS) are a parse error (deliberate, PR #293).
 - **Verified by**: `tests/expect-error/enums.ts`, `tests/expect-error/enums-string.ts`, `tests/expect-error/enums-computed.ts`
 
-### 30. Writes Are Checked Against an Explicit Annotation Only
+### 31. Writes Are Checked Against an Explicit Annotation Only
 
 An explicit type annotation is a hard constraint: every write to the binding must satisfy the declared type.
 
@@ -450,6 +450,7 @@ x = 5; // Error: Type is not assignable to the variable's type
 - A write *within* the declared type is accepted and still narrows the binding for later reads in the same frame: after `let x: string | number = "a"; x = 5;`, `x` is a `number`.
 - **More permissive than TypeScript (sound)**: without an annotation the inferred type *evolves* on assignment, so `let x = "a"; x = 5;` is accepted and `x` becomes a `number`, where tsc pins `let x = "a"` to `string` and rejects the write. This stays sound because reads see the written type, so any misuse is still caught where the value is read. A bare `let x = null`/`undefined` evolves the same way (TypeScript's evolving `any`).
 - A write that escapes the current frame — across a loop iteration, or into a captured enclosing-function local from inside a lambda — is checked against the declared type even when the binding is un-annotated, because the narrowing cannot be trusted there (SkipLabs/skjs#769).
+- An **array-destructuring assignment** writes each of its targets the same way, so all of the above applies per target (SkipLabs/skjs#839): `[x] = [5]` behaves exactly like `x = 5`, `[o.f] = [5]` like `o.f = 5`, and a target captured by a lambda is checked like any other captured write. Element types are derived as they are for a destructuring declaration: per index from a tuple (a target past the end reads `undefined`), or the iterator's element type widened with `undefined` from anything else iterable, with the rest target taking a tuple slice or an `Array<T>` respectively. Object-destructuring assignment (`({ a: x } = e)`) remains unsupported.
 - **Verified by**: `tests/expect-error/annotated-write-enforcement.ts`, `tests/expect-error/captured-local-write.ts`
 
 ## Coding Guidelines for SKJS

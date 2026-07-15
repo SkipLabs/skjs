@@ -4,36 +4,35 @@
 // the type it can be set to. Element types come from the right-hand side the
 // same way a destructuring declaration derives them.
 
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it: the
-// destructuring target is not checked against its declared type at all.
 function annotatedTargetIsChecked(): void {
   let x: string = "a";
+  // @ts-expect-error Type is not assignable to the variable's type
   [x] = [5];
 }
 
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it.
 function propertyTargetIsChecked(o: { f: string }): void {
+  // @ts-expect-error Type is not assignable to the assignment target's type
   [o.f] = [5];
 }
 
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it.
 function indexTargetIsChecked(a: string[]): void {
+  // @ts-expect-error Type is not assignable to the assignment target's type
   [a[0]] = [5];
 }
 
 // A nested pattern destructures the element type in turn.
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it.
 function nestedTargetIsChecked(): void {
   let x: string = "a";
+  // @ts-expect-error Type is not assignable to the variable's type
   [[x]] = [[5]];
 }
 
 // A captured target goes through the same write path, so the lambda's write is
 // checked against the declared type like any other captured write.
-// FIXME: tsc rejects this write (TS2322) but SKJS currently accepts it.
 function capturedTargetIsChecked(): void {
   let x: string = "a";
   const g = () => {
+    // @ts-expect-error Type is not assignable to the variable's type
     [x] = [5];
   };
   void g;
@@ -55,11 +54,22 @@ function swapAccepted(): void {
   [p, q] = [q, p];
 }
 
-// A rest target takes the remaining elements.
-function restTargetAccepted(): void {
+// A rest target takes the remaining elements: the rest of a tuple is a tuple,
+// as it is when a declaration destructures one.
+function restTargetOfTupleAccepted(): void {
   let x: number = 0;
-  let r: number[] = [];
+  let r: [number, number] = [0, 0];
   [x, ...r] = [1, 2, 3];
+  void r;
+}
+
+// Destructuring anything else iterable takes the iterator's element type, and
+// the rest is an array of it. An element may be missing, so it is widened with
+// `undefined` — the same rule a declaration uses.
+function restTargetOfArrayAccepted(src: number[]): void {
+  let x: number | undefined = 0;
+  let r: number[] = [];
+  [x, ...r] = src;
   void r;
 }
 
@@ -70,9 +80,6 @@ function restTargetAccepted(): void {
 function inferredTargetEvolves(): void {
   let x = "a";
   [x] = [5];
-  // FIXME: the destructuring write does not narrow `x`, so it is still a
-  // string here; a single `x = 5` would have evolved it to a number.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = x;
   void n;
 }
