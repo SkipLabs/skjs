@@ -60,3 +60,38 @@ function testNonEmptyFallthrough(x: number): void {
       break;
   }
 }
+
+// A block reached by falling through empty cases runs under the disjunction of
+// every label leading into it, so it narrows to their union: reaching this body
+// means `x === 1 || x === 2`, not just `x === 2`.
+function testGroupNarrowsToUnion(x: 1 | 2): void {
+  switch (x) {
+    case 1:
+    case 2:
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const y: 2 = x;
+      break;
+  }
+}
+
+function testGroupNarrowsToUnionAccepted(x: 1 | 2 | 3): void {
+  switch (x) {
+    case 1:
+    case 2:
+      const z: 1 | 2 = x;
+      break;
+    default:
+      break;
+  }
+}
+
+// A `default` in the group makes the body reachable for any unmatched value,
+// which no disjunction of labels describes, so the labels do not narrow it.
+function testGroupWithDefaultDoesNotNarrow(x: 1 | 2): void {
+  switch (x) {
+    case 1:
+    default:
+      const w: 1 | 2 = x;
+      break;
+  }
+}

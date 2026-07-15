@@ -287,11 +287,44 @@ extension class TypeChecker {
         }
       }
     };
+    // A clause with an empty body falls into the next one, so a block runs under
+    // the disjunction of every label that leads into it: `case 1: case 2: body`
+    // reaches `body` when `x === 1 || x === 2`, and narrowing it with `x === 2`
+    // alone would be unsound. A `default` among those labels makes the block
+    // reachable for any unmatched value, which no disjunction of labels
+    // describes, so such a group gets no narrowing at all.
+    conds = mutable Vector<?(Expr, Bool)>[];
+    pending: ?Expr = None();
+    pendingDefault = false;
+    for (branch in branches) {
+      branch match {
+      | SwitchBranch(Case(v), block, _) ->
+        eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+        group = pending match {
+        | None() -> eq
+        | Some(p) -> Expr(e.pos, (Binop(BOLogicalOr(), p, eq)))
+        };
+        conds.push(if (pendingDefault) None() else Some((group, true)));
+        if (block.size() == 0) {
+          !pending = Some(group)
+        } else {
+          !pending = None();
+          !pendingDefault = false
+        }
+      | SwitchBranch(Default(), block, _) ->
+        conds.push(None());
+        if (block.size() == 0) {
+          !pendingDefault = true
+        } else {
+          !pending = None();
+          !pendingDefault = false
+        }
+      }
+    };
     scope = branches[0] match {
-    | SwitchBranch(Case(v), block, _) ->
+    | SwitchBranch(Case(_), block, _) ->
       checkBreak(block, branches.size() == 1);
-      cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-      this.block(tcenv, block, Some((cond, true)))
+      this.block(tcenv, block, conds[0])
     | SwitchBranch(Default(), block, _) ->
       // A `default` clause that is not last is a lint concern, not a soundness
       // error: at runtime `default` is only taken when no `case` matches, so its
@@ -302,16 +335,15 @@ extension class TypeChecker {
         ],
         ESLintCode("default-case-last"),
       );
-      this.block(tcenv, block, None())
+      this.block(tcenv, block, conds[0])
     };
     for (i in Range(1, branches.size())) {
-      cond = branches[i] match {
-      | SwitchBranch(Case(v), block, _) ->
-        checkBreak(block, i == branches.size() - 1);
-        Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
-      | SwitchBranch(Default(), _, _) -> None()
+      branches[i] match {
+      | SwitchBranch(Case(_), block, _) ->
+        checkBreak(block, i == branches.size() - 1)
+      | SwitchBranch(Default(), _, _) -> void
       };
-      scopeBranch = this.block(tcenv, branches[i].block, cond);
+      scopeBranch = this.block(tcenv, branches[i].block, conds[i]);
       tcenv.mergeScope(this, scope, scopeBranch)
     }
   }
