@@ -52,16 +52,28 @@ function withDefaultStaysPrecise(x: number, a: "a", b: "b", c: "c"): void {
   const z: "b" | "c" = y;
 }
 
-// FIXME: a branch that always returns never reaches the code after the switch,
-// so it should not contribute to the merge — `y` is "c" here. `If` drops such
-// branches (isTerminalBlock); the switch does not, so `y` is widened to
-// "b" | "c". Pinned to the current (imprecise but sound) behavior.
-function returningBranchStillMerged(x: number, a: "a", b: "b", c: "c"): void {
+// A branch that always returns never reaches the code after the switch, so it
+// is not one of the paths merged into it: `y` is exactly "c" here.
+function returningBranchNotMerged(x: number, a: "a", b: "b", c: "c"): void {
   let y: "a" | "b" | "c" = a;
   switch (x) {
     case 1:
       y = b;
       return;
+    default:
+      y = c;
+      break;
+  }
+  const z: "c" = y;
+}
+
+// ... but a branch that merely breaks is a path out, and still counts.
+function breakingBranchMerged(x: number, a: "a", b: "b", c: "c"): void {
+  let y: "a" | "b" | "c" = a;
+  switch (x) {
+    case 1:
+      y = b;
+      break;
     default:
       y = c;
       break;

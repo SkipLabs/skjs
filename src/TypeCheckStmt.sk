@@ -288,6 +288,10 @@ extension class TypeChecker {
         )
       }
     };
+    // A branch that always returns or throws never reaches the code after the
+    // switch, so its scope is not one of the paths out and is left out of the
+    // merge (`If` does the same, via `isTerminalBlock`). The block is still
+    // checked either way — only its scope is dropped.
     scopes = mutable Vector<readonly Scope>[];
     for (i in Range(0, branches.size())) {
       cond = branches[i] match {
@@ -312,11 +316,12 @@ extension class TypeChecker {
         };
         None()
       };
-      scopes.push(this.block(tcenv, branches[i].block, cond))
+      scopeBranch = this.block(tcenv, branches[i].block, cond);
+      if (!isTerminalBlock(tcenv, branches[i].block)) scopes.push(scopeBranch)
     };
-    // Every branch is a path out of the switch, so they must all be merged at
-    // once: folding the two-scope `merge` pairwise against a fixed first branch
-    // discards every branch in between, leaving only the first and the last.
+    // Each remaining branch is a path out of the switch, so they must all be
+    // merged at once: folding the two-scope `merge` pairwise against a fixed
+    // first branch discards every branch in between, leaving only first and last.
     //
     // Without a `default` there is one more path — matching no clause at all,
     // which leaves every binding at its pre-switch value. (Exhaustiveness is
