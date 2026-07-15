@@ -85,6 +85,15 @@ type ArrInst = Array<ArrInst>;
 type Box<T> = { v: T };
 type Deferred = { next: Box<Deferred> };
 
+// `keyof` resolves its operand, but not the operand's members, so the object
+// below defers and this names `KeyOfObj` without requiring it.
+type KeyOfObj = keyof { a: KeyOfObj };
+
+// A type parameter hides an alias of the same name: the body of `Shadowed` is
+// its own parameter, not the alias `Target`. `Target` is just `string`.
+type Target = Shadowed<string>;
+type Shadowed<Target> = Target;
+
 // The recursion runs through the object member, not the union itself.
 type List<T> = null | { head: T; tail: List<T> };
 
