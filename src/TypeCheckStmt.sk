@@ -289,34 +289,28 @@ extension class TypeChecker {
       }
     };
     scopes = mutable Vector<readonly Scope>[];
-    scopes.push(
-      branches[0] match {
-      | SwitchBranch(Case(v), block, pos) ->
-        checkBreak(pos, block);
-        cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-        this.block(tcenv, block, Some((cond, true)))
-      | SwitchBranch(Default(), block, _) ->
-        // A `default` clause that is not last is a lint concern, not a soundness
-        // error: at runtime `default` is only taken when no `case` matches, so its
-        // position never changes which branch runs. tsc does not reject it.
-        tcenv.warning(
-          Array[
-            (
-              e.pos,
-              "The 'default' clause should be the last branch of a switch",
-            ),
-          ],
-          ESLintCode("default-case-last"),
-        );
-        this.block(tcenv, block, None())
-      },
-    );
-    for (i in Range(1, branches.size())) {
+    for (i in Range(0, branches.size())) {
       cond = branches[i] match {
       | SwitchBranch(Case(v), block, pos) ->
         checkBreak(pos, block);
         Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
-      | SwitchBranch(Default(), _, _) -> None()
+      | SwitchBranch(Default(), _, _) ->
+        if (i == 0) {
+          // A `default` clause that is not last is a lint concern, not a
+          // soundness error: at runtime `default` is only taken when no `case`
+          // matches, so its position never changes which branch runs. tsc does
+          // not reject it.
+          tcenv.warning(
+            Array[
+              (
+                e.pos,
+                "The 'default' clause should be the last branch of a switch",
+              ),
+            ],
+            ESLintCode("default-case-last"),
+          )
+        };
+        None()
       };
       scopes.push(this.block(tcenv, branches[i].block, cond))
     };
