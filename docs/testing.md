@@ -81,6 +81,8 @@ UPDATE_EXPECT=3 make test-in-docker   # Full rewrite + reorder alphabetically
 
 This rewrites annotations in `tests/expect-error/` and `examples/src/` to match actual diagnostics, preserving the `@ts-expect-error` vs `@skjs-expect-error` prefix. New errors get `@skjs-expect-error` and new warnings get `@skjs-expect-warning` (errors are emitted before warnings on a given line). Run `make test-in-docker` afterward to verify.
 
+A `@skjs-expect-error-lineN` annotation asserts the Nth message line of an error whose first line is pinned by the `@skjs-expect-error` above it, so a group can pin whichever continuation lines the test is about and ignore the rest. Which ones those are is the test author's choice, so no level ever adds one: the updater refreshes the text of the `-lineN` annotations already present and drops those whose message line is gone, but never pins a line you did not pin yourself.
+
 ## Regression and Edge Cases
 
 **Testing syntax restrictions**:
