@@ -295,7 +295,7 @@ extension class TypeChecker {
         checkBreak(pos, block);
         Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
       | SwitchBranch(Default(), _, _) ->
-        if (i == 0) {
+        if (i != branches.size() - 1) {
           // A `default` clause that is not last is a lint concern, not a
           // soundness error: at runtime `default` is only taken when no `case`
           // matches, so its position never changes which branch runs. tsc does

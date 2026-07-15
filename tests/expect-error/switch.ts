@@ -28,10 +28,10 @@ function defaultClauseNotLast(x: number): void {
   }
 }
 
-// FIXME: a `default` between two cases is not last either, but only a *leading*
-// `default` is flagged today. Pinned to the current behavior (no warning);
-// fixed in a later commit.
+// A `default` between two cases is not last either, so it is flagged just like
+// a leading one.
 function defaultClauseInTheMiddle(x: number): void {
+  // @skjs-expect-warning The 'default' clause should be the last branch of a switch
   switch (x) {
     case 1:
       return;
