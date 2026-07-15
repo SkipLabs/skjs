@@ -12,6 +12,31 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Skip build for docs-only changes
+          command: |
+            # Skip the build when a feature branch's diff against main touches
+            # only documentation (docs/, any *.md, LICENSE). main always builds.
+            #
+            # This job always runs and halts *green*, so the required
+            # `ci/circleci: build` check is still reported: docs-only PRs stay
+            # mergeable, while code PRs keep a real build gate.
+            #
+            # Fail safe: every uncertain path below exits 0 and builds. We never
+            # skip a change we could not prove is documentation-only.
+            if [ "$CIRCLE_BRANCH" = "main" ]; then exit 0; fi
+            # Guarantee full history so the merge base is exact. --unshallow
+            # errors on an already-complete clone, hence the `|| true`.
+            git fetch --quiet --unshallow origin 2>/dev/null || true
+            if ! git fetch --quiet origin main; then exit 0; fi
+            if ! base=$(git merge-base HEAD FETCH_HEAD); then exit 0; fi
+            if ! changed=$(git diff --name-only "$base" HEAD); then exit 0; fi
+            if [ -z "$changed" ]; then exit 0; fi
+            nondocs=$(printf '%s\n' "$changed" | grep -vE '^(docs/.*|.*\.md|LICENSE)$' || true)
+            if [ -n "$nondocs" ]; then exit 0; fi
+            echo "Docs-only change vs main; skipping build. Changed files:"
+            echo "$changed"
+            circleci-agent step halt
+      - run:
           name: Check code is formatted
           command: |
             make check-fmt
