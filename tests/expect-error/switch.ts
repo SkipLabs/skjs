@@ -19,11 +19,25 @@ function switchUsePreciseTyping2(): void {
 }
 
 function defaultClauseNotLast(x: number): void {
-  // @skjs-expect-warning The 'default' clause should be the last branch of a switch
   switch (x) {
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
     default:
       return;
     case 1:
+      return;
+  }
+}
+
+// A `default` between two cases is not last either, so it is flagged just like
+// a leading one.
+function defaultClauseInTheMiddle(x: number): void {
+  switch (x) {
+    case 1:
+      return;
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
+    default:
+      return;
+    case 2:
       return;
   }
 }
@@ -33,9 +47,9 @@ function defaultClauseNotLast(x: number): void {
 // when no `case` matches), so `case 1`/`case 2` must not be flagged unreachable.
 // The `default` itself is unreachable here, since the cases cover all of 1 | 2.
 function caseAfterDefaultReachable(x: 1 | 2): void {
-  // @skjs-expect-warning The 'default' clause should be the last branch of a switch
   switch (x) {
     // @skjs-expect-warning This 'default' case is unreachable: all values of the switched type are already handled
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
     default:
       return;
     case 1:
