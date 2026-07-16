@@ -666,13 +666,14 @@ class TType private {
     while (!todo.isEmpty()) {
       inst = todo.pop();
       tyDef = inst match {
-      | tsinst @ TSInst(name, targs) ->
+      | TSInst(name, targs) ->
         // Expand once and cache; reuse is sound because the cached body is
         // symbolic in the type arguments (see seenExpansion in TTypeSubst.sk).
-        subst.seenExpansion.maybeGet(tsinst) match {
+        key = expansionCacheKey(name, targs);
+        subst.seenExpansion.maybeGet(key) match {
         | None() ->
           expandedType = tenv.instantiate(subst, subst, name, targs);
-          subst.!seenExpansion[tsinst] = expandedType;
+          subst.!seenExpansion[key] = expandedType;
           expandedType
         | Some(expandedType) -> expandedType
         }
@@ -2942,6 +2943,27 @@ class TArrayLit(
 /* Unexpanded named type */
 // possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst {}
+
+// The key under which an expansion of `name<targs>` is cached. Not a TSInst: a
+// TSInst holds a `Name`, which carries a source position and orders by it, so a
+// TSInst key would give every syntactic occurrence its own entry and the cache
+// would never hit across two references to the same type -- which is what makes
+// it a cache. Identity here is the definition, not the mention, so the key is
+// the name text and the arguments; `instantiate`'s own recursion guard likewise
+// treats `name.value` as what identifies a definition.
+//
+// The name alone is not a globally-unique definition identity -- two modules can
+// each define a `T` -- which is why this is not yet triggerable but wants a
+// module qualifier; see #889.
+//
+// Type arguments still order by position, so a cached expansion is only reused
+// across mentions spelled with the same argument positions; the common case,
+// and the one that compounds, is a type with no arguments.
+value class ExpansionKey(name: String, targs: TArgs) uses XXHashable, Orderable
+
+fun expansionCacheKey(name: Name, targs: TArgs): ExpansionKey {
+  ExpansionKey(name.value, targs)
+}
 
 class TArgs(targs: Array<TType>) uses XXHashable, Hashable, Orderable
 

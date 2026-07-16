@@ -28,7 +28,7 @@ mutable base class SubstState private {
   // expanding, `keyof`, approximates an abstract or unresolved operand
   // identically (string | number) whether or not the variable is bound, so even
   // there the cached value cannot diverge from a fresh recomputation.
-  mutable seenExpansion: SortedMap<TSInst, TType>,
+  mutable seenExpansion: SortedMap<ExpansionKey, TType>,
   mutable version: Int,
   mutable values: SortedMap<TVarID, SubstValue>,
   mutable origins: SortedMap<TVarID, TVarOrigin>,
