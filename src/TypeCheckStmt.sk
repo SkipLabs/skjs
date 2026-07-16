@@ -234,10 +234,19 @@ extension class TypeChecker {
     branches: Array<SwitchBranch>,
   ): void {
     if (branches.size() == 0) {
-      tcenv.error(
+      // An empty switch evaluates the scrutinee and does nothing else, which is
+      // sound and which tsc accepts silently. Pointless, so still worth saying,
+      // but a lint concern rather than an error — like the single-branch switch
+      // just below.
+      //
+      // Report it before checking the scrutinee, not after: the scrutinee is
+      // real code that reports its own errors, and one of those can abort the
+      // definition, which would take this warning with it.
+      tcenv.warning(
         Array[(e.pos, "A switch statement must have at least one case")],
         SKJSCode(2010),
       );
+      _ = this.expr(tcenv, e, true);
       return void
     };
     if (branches.size() == 1) {

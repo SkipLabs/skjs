@@ -150,11 +150,19 @@ value class StmtTermination private {
     | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
     | Switch(e, branches) ->
       static::expr(e).thenk(() -> {
-        branchesTerm = static::or(branches, b -> static::branch(tcenvb, b));
-        switchIsExhaustive = branches.any(branch ~>
-          branch is SwitchBranch(Default(), _, _)
-        ); // Unless exhaustiveness is proven differently?
-        if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
+        if (branches.isEmpty()) {
+          // A switch with no clauses runs none of them: it evaluates the
+          // scrutinee and falls through. `or` has no answer to give over no
+          // branches, so say it here. (`TypeChecker::switch` separately reports
+          // the empty switch; this only describes how it ends.)
+          static::skip
+        } else {
+          branchesTerm = static::or(branches, b -> static::branch(tcenvb, b));
+          switchIsExhaustive = branches.any(branch ~>
+            branch is SwitchBranch(Default(), _, _)
+          ); // Unless exhaustiveness is proven differently?
+          if (switchIsExhaustive) branchesTerm else branchesTerm.maybe()
+        }
       })
     | Block(block) -> static::block(tcenvb, block)
     | Try(tryBlock, catchClause, finallyBlock) ->
