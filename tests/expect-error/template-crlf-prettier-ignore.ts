@@ -25,6 +25,34 @@ function loneCrInType(x: `ab`): "a\nb" {
   return x;
 }
 
+// --- Every line terminator in the text normalizes, not just the first ---
+
+function severalTerminators(x: `a
+b
+c`): "a\nb\nc" {
+  return x;
+}
+
+// A CR and a CRLF are two terminators, so this is two line feeds -- which also
+// pins the order: the CRLF has to be taken before the lone CR.
+function crThenCrlf(x: `a
+b`): "a\n\nb" {
+  return x;
+}
+
+// --- <LS> and <PS> are line terminators whose TV is themselves ---
+
+// Normalizing these would be the natural over-generalization: ECMA-262 lists
+// them as LineTerminators right beside <CR> and <LF>, but sec 12.9.6 gives each
+// a TV of itself. Their bytes are as load-bearing here as the CRs above.
+function lineSeparatorKeepsItself(x: `a b`): "a\u2028b" {
+  return x;
+}
+
+function paragraphSeparatorKeepsItself(x: `a b`): "a\u2029b" {
+  return x;
+}
+
 // --- An ESCAPE is not a raw line terminator and must NOT be normalized ---
 
 function carriageReturnEscape(x: `a\rb`): "a\rb" {
