@@ -1,11 +1,13 @@
-// A switch with no clauses parses fine but runs nothing, so SKJS rejects it.
+// A switch with no clauses evaluates the scrutinee and does nothing else. That
+// is sound, and tsc accepts it silently, so it is a lint concern rather than an
+// error — pointless code, not wrong code.
 //
-// This used to crash the checker instead: the termination pass folded the
-// branches with an `or` that has no answer over an empty sequence, and it runs
-// before the check below ever gets to report anything (SkipLabs/skjs#890). The
-// diagnostic was therefore unreachable and untestable until now.
+// It used to crash the checker instead: the termination pass folded the branches
+// with an `or` that has no answer over an empty sequence, and it runs before the
+// check below ever gets to report anything (SkipLabs/skjs#890). The diagnostic
+// was therefore unreachable and untestable until then.
 function emptySwitch(x: number): void {
-  // @skjs-expect-error A switch statement must have at least one case
+  // @skjs-expect-warning A switch statement must have at least one case
   switch (x) {
   }
 }
