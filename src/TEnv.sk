@@ -163,6 +163,22 @@ base class TEnv{
     subst = Subst::mcreate(tcenvb, baseSubst);
     tdef match {
     | ta @ TypeDef{tdefParams} ->
+      // An alias that requires itself denotes nothing, and unfolding it need
+      // not terminate: `type P<T> = Q<T>; type Q<T> = P<Q<T>>` rewrites to a
+      // strictly bigger instantiation on every turn, so no instantiation ever
+      // repeats for a caller's seen-set to catch — expandToVectors loops and
+      // collectTVars recurses until the stack is gone (issue #883). The guard
+      // above cannot see this: it is keyed by name, and `this` is a value, so
+      // the name it records is visible only to the unfolding below it, not to
+      // the caller that unfolds the type handed back.
+      //
+      // Hand back the unexpanded instantiation, exactly as the guard above
+      // does. It costs nothing that was not already lost — with no clauses it
+      // is the empty type either way — and the alias is reported at its own
+      // declaration (TS2456, issue #874).
+      if (this.isCircularTypeDef(tcenvb.context, ta)) {
+        return TType::inst(name, targs);
+      };
       !this = this.instantiateTParams(subst, name.pos, targs.targs, tdefParams);
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))

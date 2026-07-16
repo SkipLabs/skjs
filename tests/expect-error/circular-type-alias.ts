@@ -60,6 +60,24 @@ function useR(x: R): number {
   return x;
 }
 
+// Unfolding this pair rewrites to a strictly bigger instantiation on every
+// turn — `P<string>`, `Q<string>`, `P<Q<string>>`, `Q<Q<string>>`, and so on —
+// so no instantiation ever repeats for an expansion's seen-set to catch. Until
+// the alias was left unexpanded, checking the use below never terminated
+// (issue #883), so this case pins termination as much as it pins the reports.
+// @skjs-expect-error Type alias 'P' circularly references itself
+type P<T> = Q<T>;
+// @skjs-expect-error Type alias 'Q' circularly references itself
+type Q<T> = P<Q<T>>;
+
+// The use is accepted, as it is for `R` above and for tsc. tsc does also report
+// TS2315 on each `P`/`Q` reference in this pair, because its own recovery makes
+// a circular alias an error type, which takes no type arguments; SKJS keeps the
+// instantiation instead, and reports the cycle only where it is declared.
+function useP(x: P<string>): number {
+  return x;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Legal recursion: every cycle below passes through a deferred position.
 /////////////////////////////////////////////////////////////////////////////
