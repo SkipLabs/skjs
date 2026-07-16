@@ -251,31 +251,32 @@ extension class TypeChecker {
         SKJSCode(2011),
       )
     };
-    // A switch may contain at most one `default` clause; a second one is a
-    // JavaScript SyntaxError (tsc reports TS1113). Reject every `default` after
-    // the first.
-    seenDefault: ?PosRange = None();
-    for (branch in branches) {
-      branch match {
-      | SwitchBranch(Default(), _, pos) ->
-        seenDefault match {
-        | Some(firstDefaultPos) ->
-          tcenv.error(
-            Array[
-              (
-                pos,
-                "A 'default' clause cannot appear more than once in a 'switch' statement",
-              ),
-              (firstDefaultPos, "First 'default' clause was here"),
-            ],
-            TSCode(1113),
-          )
-        | None() -> !seenDefault = Some(pos)
-        }
-      | SwitchBranch(Case(_), _, _) -> void
-      }
+    condType = this.expr(tcenv, e, true);
+    // The values the scrutinee can take, when they are enumerable. Otherwise
+    // (e.g. a general `boolean`) there is no value set to judge reachability or
+    // exhaustiveness against, and `casesKnown` turns both off; an empty `cases`
+    // cannot stand in for that, since it reads as "everything is handled".
+    (cases, casesKnown) = condType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TPrimValue(_, Some(lits), _)) ->
+      (Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos))), true)
+    | _ -> (mutable Map<String, PosRange>[], false)
     };
-    this.switchCheckExhaustiveness(tcenv, e, branches);
+    // Kept for truthful unreachability reasons: a case value can be
+    // unreachable because it is not in the switched type at all, or because
+    // an earlier case (e.g. an alias enum member with the same value) already
+    // handled it. As each value is handled it moves from `cases` into
+    // `handledBy` (which also records the handling case's position, to point
+    // at it in the latter warning), so a value still in the switched type is
+    // in exactly one of the two.
+    handledBy = mutable Map<String, PosRange>[];
+    // Two `default` positions, which differ only in a switch that has more than
+    // one (already an error): the first names the clause a duplicate conflicts
+    // with, and answers whether the switch has a `default` at all; the last is
+    // the one reported unreachable below.
+    seenDefault: ?PosRange = None();
+    lastDefaultPos: ?PosRange = None();
     // A branch that always returns or throws never reaches the code after the
     // switch, so its scope is not one of the paths out and is left out of the
     // merge (`If` does the same, via `isTerminalBlock`). The block is still
@@ -286,72 +287,12 @@ extension class TypeChecker {
       // How the block ends answers both questions asked of it below: whether it
       // falls through into the next clause, and whether it is a path out of the
       // switch at all.
-      term = StmtTermination::block(tcenv, block);
+      blockTerm = StmtTermination::block(tcenv, block);
       cond = branches[i] match {
       | SwitchBranch(Case(v), _, pos) ->
-        if (term.mayFallthrough) {
-          fallthroughPos = if (block.size() != 0) {
-            block[block.size() - 1].pos
-          } else {
-            pos
-          };
-          tcenv.error(
-            Array[
-              (fallthroughPos, "Fallthrough case in switch; add a 'break'"),
-            ],
-            TSCode(7029),
-          )
-        };
-        Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
-      | SwitchBranch(Default(), _, pos) ->
-        if (i != branches.size() - 1) {
-          // A `default` clause that is not last is a lint concern, not a
-          // soundness error: at runtime `default` is only taken when no `case`
-          // matches, so its position never changes which branch runs. tsc does
-          // not reject it.
-          tcenv.warning(
-            Array[
-              (
-                pos,
-                "The 'default' clause should be the last branch of a switch",
-              ),
-            ],
-            ESLintCode("default-case-last"),
-          )
-        };
-        None()
-      };
-      scopeBranch = this.block(tcenv, block, cond);
-      if (!term.isTerminal()) scopes.push(scopeBranch)
-    };
-    // Each remaining branch is a path out of the switch, so they must all be
-    // merged at once: folding the two-scope `merge` pairwise against a fixed
-    // first branch discards every branch in between, leaving only first and last.
-    //
-    // Without a `default` there is one more path — matching no clause at all,
-    // which leaves every binding at its pre-switch value. (Exhaustiveness is
-    // taken syntactically here: a switch that covers its scrutinee's type
-    // without a `default` still counts this path, which only widens. See
-    // SkipLabs/skjs#863.)
-    tcenv.mergeScopes(this, scopes.toArray(), seenDefault is None())
-  }
-
-  fun switchCheckExhaustiveness(
-    tcenv: mutable TCEnv,
-    e: Expr,
-    branches: Array<SwitchBranch>,
-  ): void {
-    condType = this.expr(tcenv, e, true);
-    // Typecheck every case value exactly once, up front. The exhaustiveness
-    // logic below and the per-branch `scrutinee === case` narrowing (which
-    // looks up the already-computed type via `lookupExprType`) both reuse it.
-    // Doing it here is necessary because the exhaustiveness check returns early
-    // when the scrutinee has no enumerable literals (e.g. a general `boolean`),
-    // which would otherwise leave the case values untyped.
-    for (branch in branches) {
-      branch match {
-      | SwitchBranch(Case(v), _, _) ->
-        _ = this.expr(tcenv, v, true);
+        // Type the case value before checking the block: the narrowing below
+        // reads its type back out of the expression cache rather than typing it.
+        condVType = this.expr(tcenv, v, true);
         // A switch case must be a plain value, so that case-evaluation order
         // and `===` narrowing are sound. Enum member reads (`E.A`, `E["A"]`,
         // `E[0]` on an unshadowed enum name) are plain data-property reads and
@@ -386,113 +327,151 @@ extension class TypeChecker {
               SKJSCode(2055),
             )
           )
-        }
-      | SwitchBranch(Default(), _, _) -> void
-      }
+        };
+        if (casesKnown) {
+          condVType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+            stypes.staticValue()
+          ) match {
+          | Some(staticValue) ->
+            if (cases.containsKey(staticValue)) {
+              cases.remove(staticValue);
+              handledBy![staticValue] = pos
+            } else {
+              handledBy.maybeGet(staticValue) match {
+              | Some(earlierPos) ->
+                tcenv.warning(
+                  Array[
+                    (
+                      pos,
+                      "This case is unreachable: its value is already handled by an earlier case",
+                    ),
+                    (earlierPos, "The value is first handled here"),
+                  ],
+                  SKJSCode(2014),
+                )
+              | None() ->
+                tcenv.warning(
+                  Array[
+                    (
+                      pos,
+                      "This case is unreachable: its value is not in the switched type",
+                    ),
+                  ],
+                  SKJSCode(2014),
+                )
+              }
+            }
+          | None() -> void
+          }
+        };
+        if (blockTerm.mayFallthrough) {
+          fallthroughPos = if (block.size() != 0) {
+            block[block.size() - 1].pos
+          } else {
+            pos
+          };
+          tcenv.error(
+            Array[
+              (fallthroughPos, "Fallthrough case in switch; add a 'break'"),
+            ],
+            TSCode(7029),
+          )
+        };
+        Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
+      | SwitchBranch(Default(), _, pos) ->
+        // A switch may contain at most one `default` clause; a second one is a
+        // JavaScript SyntaxError (tsc reports TS1113). Reject every `default`
+        // after the first.
+        seenDefault match {
+        | Some(firstDefaultPos) ->
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "A 'default' clause cannot appear more than once in a 'switch' statement",
+              ),
+              (firstDefaultPos, "First 'default' clause was here"),
+            ],
+            TSCode(1113),
+          )
+        | None() -> !seenDefault = Some(pos)
+        };
+        !lastDefaultPos = Some(pos);
+        if (i != branches.size() - 1) {
+          // A `default` clause that is not last is a lint concern, not a
+          // soundness error: at runtime `default` is only taken when no `case`
+          // matches, so its position never changes which branch runs. tsc does
+          // not reject it.
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                "The 'default' clause should be the last branch of a switch",
+              ),
+            ],
+            ESLintCode("default-case-last"),
+          )
+        };
+        None()
+      };
+      scopeBranch = this.block(tcenv, block, cond);
+      if (!blockTerm.isTerminal()) scopes.push(scopeBranch)
     };
-    cases = condType
-      .getSTypes(tcenv.subst, this, Covariant())
-      .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TPrimValue(_, Some(lits), _)) ->
-      Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos)))
-    | _ ->
-      // The scrutinee has no enumerable literals (e.g. a general `boolean`), so
-      // there is no value set to judge reachability or exhaustiveness against.
-      return void
-    };
-    // Kept for truthful unreachability reasons: a case value can be
-    // unreachable because it is not in the switched type at all, or because
-    // an earlier case (e.g. an alias enum member with the same value) already
-    // handled it. As each value is handled it moves from `cases` into
-    // `handledBy` (which also records the handling case's position, to point
-    // at it in the latter warning), so a value still in the switched type is
-    // in exactly one of the two.
-    handledBy = mutable Map<String, PosRange>[];
     // A `default` covers exactly the values matched by no `case`, before or
     // after it in source order, so its reachability depends on the full set of
-    // cases. Remember its position and evaluate it after every case has been
-    // processed: evaluating it inline would let a non-last `default` wrongly
-    // pre-empt the cases that follow it (clearing them from `cases`, which then
-    // mis-flags them "not in the switched type").
-    defaultPos: ?PosRange = None();
-    for (branch in branches) {
-      branch match {
-      | SwitchBranch(Case(v), _, pos) ->
-        this.lookupExprType(tcenv, v)
-          .getSTypes(tcenv.subst, this, Covariant())
-          .flatMap(stypes ~> stypes.staticValue()) match {
-        | Some(staticValue) ->
-          if (cases.containsKey(staticValue)) {
-            cases.remove(staticValue);
-            handledBy![staticValue] = pos
-          } else {
-            handledBy.maybeGet(staticValue) match {
-            | Some(earlierPos) ->
-              tcenv.warning(
-                Array[
-                  (
-                    pos,
-                    "This case is unreachable: its value is already handled by an earlier case",
-                  ),
-                  (earlierPos, "The value is first handled here"),
-                ],
-                SKJSCode(2014),
-              )
-            | None() ->
-              tcenv.warning(
-                Array[
-                  (
-                    pos,
-                    "This case is unreachable: its value is not in the switched type",
-                  ),
-                ],
-                SKJSCode(2014),
-              )
-            }
-          }
-        | None() -> void
+    // cases and is settled only now: judging it inline would let a non-last
+    // `default` wrongly pre-empt the cases that follow it (clearing them from
+    // `cases`, which then mis-flags them "not in the switched type").
+    if (casesKnown) {
+      lastDefaultPos match {
+      | Some(pos) ->
+        if (cases.isEmpty()) {
+          tcenv.warning(
+            Array[
+              (
+                pos,
+                "This 'default' case is unreachable: all values of the switched type are already handled",
+              ),
+            ],
+            SKJSCode(2014),
+          )
+        } else {
+          cases.clear()
         }
-      | SwitchBranch(Default(), _stmts, pos) -> !defaultPos = Some(pos)
-      }
-    };
-    defaultPos match {
-    | Some(pos) ->
-      if (cases.isEmpty()) {
+      | None() -> void
+      };
+      if (!cases.isEmpty()) {
+        missingCases = Vector::mcreateFromIterator(
+          cases.items().map(x -> (x.i1, x.i0)),
+        );
+        missingCases.sortBy(x ~> x.i1);
+        // A non-exhaustive switch is a lint concern, not a soundness error: tsc
+        // does not require exhaustiveness, and SKJS does not rely on this
+        // verdict — reachability/termination is decided separately and
+        // syntactically (a switch is exhaustive-for-termination only with a
+        // literal `default`), as is the scope merge's untouched path below.
+        // Deriving those from the verdict instead is SkipLabs/skjs#863.
         tcenv.warning(
           Array[
             (
-              pos,
-              "This 'default' case is unreachable: all values of the switched type are already handled",
+              e.pos,
+              "Switch is not exhaustive; the following cases are unhandled",
             ),
-          ],
-          SKJSCode(2014),
+          ].concat(missingCases.toArray()),
+          ESLintCode("@typescript-eslint/switch-exhaustiveness-check"),
         )
-      } else {
-        cases.clear()
       }
-    | None() -> void
     };
-    if (!cases.isEmpty()) {
-      missingCases = Vector::mcreateFromIterator(
-        cases.items().map(x -> (x.i1, x.i0)),
-      );
-      missingCases.sortBy(x ~> x.i1);
-      // A non-exhaustive switch is a lint concern, not a soundness error: tsc
-      // does not require exhaustiveness, and SKJS does not rely on this verdict
-      // — reachability/termination is decided separately and syntactically (a
-      // switch is exhaustive-for-termination only with a literal `default`), as
-      // is the scope merge's untouched path. So report it as a warning.
-      // Deriving those from the verdict instead is SkipLabs/skjs#863.
-      tcenv.warning(
-        Array[
-          (
-            e.pos,
-            "Switch is not exhaustive; the following cases are unhandled",
-          ),
-        ].concat(missingCases.toArray()),
-        ESLintCode("@typescript-eslint/switch-exhaustiveness-check"),
-      );
-    }
+    // Each remaining branch is a path out of the switch, so they must all be
+    // merged at once: folding the two-scope `merge` pairwise against a fixed
+    // first branch discards every branch in between, leaving only first and last.
+    //
+    // Without a `default` there is one more path — matching no clause at all,
+    // which leaves every binding at its pre-switch value. (Exhaustiveness is
+    // taken syntactically here: a switch that covers its scrutinee's type
+    // without a `default` still counts this path, which only widens. See
+    // SkipLabs/skjs#863.)
+    tcenv.mergeScopes(this, scopes.toArray(), seenDefault is None())
   }
 
   fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
