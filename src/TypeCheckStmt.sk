@@ -373,15 +373,23 @@ extension class TypeChecker {
           | None() -> void
           }
         };
-        if (blockTerm.mayFallthrough) {
-          fallthroughPos = if (block.size() != 0) {
-            block[block.size() - 1].pos
-          } else {
-            pos
-          };
+        // Falling *through* means running one clause's statements and then
+        // running the next clause's too. An empty clause has none to run — it
+        // is how several labels are given one body — and the last clause has
+        // nothing to fall into, so neither is a fallthrough. tsc's
+        // `noFallthroughCasesInSwitch` exempts both for the same reason; SKJS
+        // applies the rule unconditionally, but to the same cases.
+        if (
+          blockTerm.mayFallthrough &&
+          block.size() != 0 &&
+          i != branches.size() - 1
+        ) {
           tcenv.error(
             Array[
-              (fallthroughPos, "Fallthrough case in switch; add a 'break'"),
+              (
+                block[block.size() - 1].pos,
+                "Fallthrough case in switch; add a 'break'",
+              ),
             ],
             TSCode(7029),
           )

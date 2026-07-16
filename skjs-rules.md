@@ -305,6 +305,14 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
 - **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
+### 20b. Switch Clauses Must Not Fall Through
+
+- **Rule**: A `case`/`default` clause that has statements and can complete normally must exit explicitly (`break` / `return` / `throw` / `continue`) when another clause follows it. SKJS enforces this unconditionally; `tsc` only does under `noFallthroughCasesInSwitch`.
+- **Exempt**: an **empty** clause, which is how several labels are given one body (`case "a": case "b": …`), and the **last** clause, which has nothing to fall into. Falling *through* means running one clause's statements and then the next clause's too — neither of these does that. `noFallthroughCasesInSwitch` exempts both for the same reason.
+- **Termination**: an empty clause takes the termination of the clause it falls into, so `case "a": case "b": return 1;` returns on every path. A clause that `break`s leaves the switch instead, so grouping labels in front of it does not make the switch return.
+- **Error**: "Fallthrough case in switch; add a 'break'" (TS7029), reported on the clause's last statement.
+- **Verified by**: `tests/expect-error/switch-empty-cases.ts`.
+
 ### 21. Promises and async/await
 - **`Promise<T>` is a plain object type** declared in the builtin stubs with `then`/`catch`/`finally` methods, so promises follow the same structural typing as every other object (`in`, `keyof`, width subtyping, payload covariance all behave normally). The signatures are simplified relative to TypeScript: `then<U>(onfulfilled: (value: T) => U | PromiseLike<U>): Promise<U>` takes exactly one required callback — there is no `onrejected` second argument and the callback is not optional. The stubs also declare `PromiseLike<T>` (the minimal thenable shape, as in lib.es5), and `Promise<T> <: PromiseLike<T>` holds.
 - **The `Promise` value** exposes the constructor (`new Promise<T>(executor)`, executor required) and the statics `Promise.resolve`, `Promise.reject`, and `Promise.all` (simplified: `all<T>(values: ReadonlyArray<Promise<T>>): Promise<Array<T>>` — no tuple/mixed-iterable form). Other statics (`race`, `any`, `allSettled`, ...) are not available.
