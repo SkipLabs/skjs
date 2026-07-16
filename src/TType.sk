@@ -2944,18 +2944,25 @@ class TArrayLit(
 // possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst {}
 
-// The key under which an expansion of `name<targs>` is cached. A `Name` carries
-// its source position and orders by it, so keying by the TSInst itself gives
-// every syntactic occurrence its own key and the cache never hits across two
-// references to the same type -- which is what makes it a cache. Identity here
-// is the definition, not the mention: `instantiate`'s own recursion guard
-// likewise treats `name.value` as what identifies a definition.
+// The key under which an expansion of `name<targs>` is cached. Not a TSInst: a
+// TSInst holds a `Name`, which carries a source position and orders by it, so a
+// TSInst key would give every syntactic occurrence its own entry and the cache
+// would never hit across two references to the same type -- which is what makes
+// it a cache. Identity here is the definition, not the mention, so the key is
+// the name text and the arguments; `instantiate`'s own recursion guard likewise
+// treats `name.value` as what identifies a definition.
+//
+// The name alone is not a globally-unique definition identity -- two modules can
+// each define a `T` -- which is why this is not yet triggerable but wants a
+// module qualifier; see #889.
 //
 // Type arguments still order by position, so a cached expansion is only reused
 // across mentions spelled with the same argument positions; the common case,
 // and the one that compounds, is a type with no arguments.
-fun expansionCacheKey(name: Name, targs: TArgs): TSInst {
-  TSInst(Name(PosRange::none, name.value), targs)
+value class ExpansionKey(name: String, targs: TArgs) uses XXHashable, Orderable
+
+fun expansionCacheKey(name: Name, targs: TArgs): ExpansionKey {
+  ExpansionKey(name.value, targs)
 }
 
 class TArgs(targs: Array<TType>) uses XXHashable, Hashable, Orderable
