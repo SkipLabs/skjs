@@ -328,10 +328,7 @@ extension class TypeChecker {
     // taken syntactically here: a switch that covers its scrutinee's type
     // without a `default` still counts this path, which only widens. See
     // SkipLabs/skjs#863.)
-    hasDefault = branches.any(branch ~>
-      branch is SwitchBranch(Default(), _, _)
-    );
-    tcenv.mergeScopes(this, scopes.toArray(), !hasDefault)
+    tcenv.mergeScopes(this, scopes.toArray(), seenDefault is None())
   }
 
   fun switchCheckExhaustiveness(
