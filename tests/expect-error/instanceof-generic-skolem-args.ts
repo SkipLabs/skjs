@@ -341,6 +341,66 @@ function rejectSharedArrayElement(u: unknown, w: unknown): number {
   return 0;
 }
 
+// Pure queries are rejected too when the parameter names the hidden argument.
+// `Map.get`/`Set.has`/`Array.includes` cannot corrupt anything -- a wrong-typed
+// key just returns undefined/false -- but their declared parameter is the
+// hidden type, and no value the program can produce has it. There is no way to
+// recover them either: `x as Map<unknown, unknown>` is itself rejected as an
+// unsound cast, in both single and double-cast form. tsc accepts all of these
+// through `Map<any, any>` / `any[]`; SKJS is stricter here, not wrong, but the
+// cost is real and belongs on the record rather than in the gap between
+// `arrayRead`'s two element-independent reads. See issue #904.
+function queryRejectedMapGet(x: unknown): void {
+  if (x instanceof Map) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type '"k"'
+    // @skjs-expect-error-line3 is not assignable to type 'K'
+    const v: unknown = x.get("k");
+  }
+}
+
+function queryRejectedSetHas(x: unknown): boolean {
+  if (x instanceof Set) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type '"k"'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
+    return x.has("k");
+  }
+  return false;
+}
+
+function queryRejectedArrayIncludes(x: unknown): boolean {
+  if (x instanceof Array) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type '"k"'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
+    return x.includes("k");
+  }
+  return false;
+}
+
+// Returning a narrowed array at its top instantiation is rejected for the same
+// reason the covariant mutable upcast `Array<number>` -> `Array<unknown>` is.
+// Unlike the queries above this one has a workaround: annotate the return as
+// `ReadonlyArray<unknown>` (pinned green below).
+function toArrayMutable(x: unknown): unknown[] {
+  if (x instanceof Array) {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    // @skjs-expect-error-line2 Type 'unknown'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'unknown' must be assignable to source parameter type 'T'
+    return x;
+  }
+  return [];
+}
+
+function toArrayReadonly(x: unknown): ReadonlyArray<unknown> {
+  if (x instanceof Array) {
+    return x;
+  }
+  return [];
+}
+
 /* -------------------------------------------------------------------------
  * Known holes: accepted today, unsound at runtime.
  *
