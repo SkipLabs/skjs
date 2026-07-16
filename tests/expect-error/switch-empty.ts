@@ -2,10 +2,10 @@
 // is sound, and tsc accepts it silently, so it is a lint concern rather than an
 // error — pointless code, not wrong code.
 //
-// It used to crash the checker instead: the termination pass folded the branches
-// with an `or` that has no answer over an empty sequence, and it runs before the
-// check below ever gets to report anything (SkipLabs/skjs#890). The diagnostic
-// was therefore unreachable and untestable until then.
+// It used to crash the checker instead: the termination pass reduced the
+// branches to one answer and had none to give over no branches, and it runs
+// before the check below ever gets to report anything (SkipLabs/skjs#890). The
+// diagnostic was therefore unreachable and untestable until then.
 function emptySwitch(x: number): void {
   // @skjs-expect-warning A switch statement must have at least one case
   switch (x) {
