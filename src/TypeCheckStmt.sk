@@ -275,7 +275,7 @@ extension class TypeChecker {
       | SwitchBranch(Case(_), _, _) -> void
       }
     };
-    _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
+    this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = (pos, block) -> {
       term = StmtTermination::block(tcenv, block);
       if (term.mayFallthrough) {
@@ -338,7 +338,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
-  ): Bool {
+  ): void {
     condType = this.expr(tcenv, e, true);
     // Typecheck every case value exactly once, up front. The exhaustiveness
     // logic below and the per-branch `scrutinee === case` narrowing (which
@@ -394,8 +394,9 @@ extension class TypeChecker {
     | Some(TPrimValue(_, Some(lits), _)) ->
       Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos)))
     | _ ->
-      /* branches.size() > 1 from the caller */
-      return branches[branches.size() - 1] is SwitchBranch(Default(), _, _)
+      // The scrutinee has no enumerable literals (e.g. a general `boolean`), so
+      // there is no value set to judge reachability or exhaustiveness against.
+      return void
     };
     // Kept for truthful unreachability reasons: a case value can be
     // unreachable because it is not in the switched type at all, or because
@@ -475,10 +476,11 @@ extension class TypeChecker {
       );
       missingCases.sortBy(x ~> x.i1);
       // A non-exhaustive switch is a lint concern, not a soundness error: tsc
-      // does not require exhaustiveness, and SKJS does not rely on it — this
-      // verdict is discarded (`_exhaustive`), and reachability/termination is
-      // decided separately and syntactically (a switch is exhaustive-for-
-      // termination only with a literal `default`). So report it as a warning.
+      // does not require exhaustiveness, and SKJS does not rely on this verdict
+      // — reachability/termination is decided separately and syntactically (a
+      // switch is exhaustive-for-termination only with a literal `default`), as
+      // is the scope merge's untouched path. So report it as a warning.
+      // Deriving those from the verdict instead is SkipLabs/skjs#863.
       tcenv.warning(
         Array[
           (
@@ -488,8 +490,7 @@ extension class TypeChecker {
         ].concat(missingCases.toArray()),
         ESLintCode("@typescript-eslint/switch-exhaustiveness-check"),
       );
-    };
-    true
+    }
   }
 
   fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
