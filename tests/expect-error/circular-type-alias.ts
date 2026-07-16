@@ -94,6 +94,18 @@ type KeyOfObj = keyof { a: KeyOfObj };
 type Target = Shadowed<string>;
 type Shadowed<Target> = Target;
 
+// A name declared as both an interface and an alias is a duplicate identifier,
+// and the reference resolves to the first declaration — the interface — just
+// as it does everywhere else. The body of `Dup` is therefore that interface, a
+// deferred reference, so the alias is not circular on top of being a
+// duplicate.
+interface Dup {
+  a: string;
+}
+// @skjs-expect-error Duplicate identifier 'Dup'
+// @skjs-expect-error Type alias 'Dup' circularly references itself
+type Dup = Dup;
+
 // The recursion runs through the object member, not the union itself.
 type List<T> = null | { head: T; tail: List<T> };
 
