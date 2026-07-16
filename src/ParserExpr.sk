@@ -625,11 +625,7 @@ extension class Parser {
     | TKNoSubstitutionTemplate() ->
       // No interpolation: decode the escapes so the literal type equals the
       // runtime value (#810); an invalid escape (e.g. octal) is an error.
-      body = this.lex.templateChunkRawText(tok);
-      decodeJSStringLiteral(body) match {
-      | Success(decoded) -> EString(decoded)
-      | Failure(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)
-      }
+      EString(this.cookTemplatePart(tok))
     | TKTemplateHead() ->
       parts = mutable Vector<String>[this.validateTemplatePart(tok)];
       expressions = mutable Vector<Expr>[];

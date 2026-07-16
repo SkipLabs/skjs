@@ -86,18 +86,22 @@ mutable class Lexer private {
 
   // --- Template literals ---------------------------------------------------
   //
-  // In EXPRESSION context templates are lexed incrementally as chunk tokens
-  // (Head/Middle/Tail/NoSubstitution) via `scanTemplateChunk`, and the parser
-  // parses each interpolation with the normal expression parser (see
-  // Parser.parseTemplateLiteral). In TYPE context, where template literal types
-  // are unsupported, the whole template is still swallowed as one `TKBackTick`
-  // token whose extent is found by `scanTemplateBody` below.
+  // Templates are lexed incrementally as chunk tokens (Head/Middle/Tail/
+  // NoSubstitution) via `scanTemplateChunk`, and the parser parses each
+  // interpolation with the normal parser and asks for the next chunk. This is
+  // mode-independent: expression context parses each interpolation as an
+  // expression (Parser.parseTemplateLiteral), type context as a type
+  // (Parser.parseTemplateType).
+  //
+  // `scanTemplateBody` below finds the extent of a WHOLE template without
+  // parsing it, which incremental lexing cannot do. It is what blind
+  // token-scanning lookahead uses to step over a template (see `skipTemplate`).
 
   // Scans raw template text from `start`, honoring backslash escapes (so `\${`
   // and `` \` `` are literal), and stops at the first UNescaped boundary:
   // returns (true, index-past-backtick) at a closing backtick, or
   // (false, index-past-"${") at an interpolation start. Errors (unterminated) at
-  // end-of-input. This is the single-chunk scanner used in expression context.
+  // end-of-input. This is the single-chunk scanner.
   readonly fun scanTemplateChunk(start: Int): (Bool, Int) {
     n = this.contents.size();
     pos = start;
@@ -152,13 +156,23 @@ mutable class Lexer private {
     String::fromChars(this.contents.slice(s, e))
   }
 
+  // Repositions past the end of the template that `tok` (a Head chunk) opens,
+  // without parsing its interpolations. Blind token-scanning lookahead must use
+  // this rather than lexing on: resuming inside an interpolation would treat the
+  // template's own closing backtick as the START of a new template and scan to
+  // end-of-input, and interpolated parens would corrupt paren counting.
+  // A NoSubstitution chunk spans its whole template already and needs no skip.
+  mutable fun skipTemplate(tok: Token): void {
+    this.!pos = this.scanTemplateBody(tok.posStart.value + 1)
+  }
+
   // Scans a whole template literal body starting at `pos` (just past the opening
   // backtick) and returns the index just past the closing backtick. Skips
   // interpolations `${...}` — and the strings, templates, comments, and braces
   // nested within them — as well as backslash escapes, so a stray backtick,
   // brace, or dollar inside an interpolation is not mistaken for template
-  // structure. Used only in TYPE context (template literal types are
-  // unsupported, so the interior is never parsed). Errors (unterminated) at EOF.
+  // structure. This is extent-finding only; the interior is never parsed from
+  // here. Errors (unterminated) at EOF.
   readonly fun scanTemplateBody(pos: Int): Int {
     n = this.contents.size();
     while (pos < n) {
@@ -451,20 +465,12 @@ mutable class Lexer private {
       mkToken(TKDoubleQuote())
 
     | '`' ->
-      if (this.inType) {
-        // Type context: template literal types are unsupported, so swallow the
-        // whole template (interpolations and all) as one raw token.
-        !pos = this.scanTemplateBody(pos + 1);
-        mkToken(TKBackTick())
-      } else {
-        // Expression context: emit only the first chunk. The parser parses each
-        // interpolation and requests continuations (Middle/Tail).
-        (hitBacktick, endPos) = this.scanTemplateChunk(pos + 1);
-        !pos = endPos;
-        mkToken(
-          if (hitBacktick) TKNoSubstitutionTemplate() else TKTemplateHead(),
-        )
-      }
+      // Emit only the first chunk; the parser parses each interpolation and
+      // requests continuations (Middle/Tail). This is mode-independent: a
+      // template is lexed the same way in expression and type context.
+      (hitBacktick, endPos) = this.scanTemplateChunk(pos + 1);
+      !pos = endPos;
+      mkToken(if (hitBacktick) TKNoSubstitutionTemplate() else TKTemplateHead())
 
     | '.' ->
       !pos = pos + 1;

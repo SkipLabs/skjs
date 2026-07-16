@@ -9,6 +9,28 @@ module SKJS;
 
 value class CstrType(cstr: ?TFuns, tArgs: Array<TType>)
 
+// The number of members past which a template literal type's expansion is
+// refused rather than materialized. Matches tsc's union-size limit, which it
+// reports as TS2590 (verified: 99,999 members are accepted, 100,000 are not).
+// Distinct from kMaxObjectBranches, which bounds object branches, not unions.
+const kMaxTemplateUnionSize: Int = 100000;
+
+// What a template literal type's interpolation contributes to the strings the
+// template can produce.
+base class TemplateHole {
+  children =
+  // Finitely many values, listed. Empty means the hole is `never`.
+  | THFinite(SortedSet<String>)
+  // Exactly `string`. Unbounded, but a template that is nothing but bare string
+  // holes still reduces -- to `string` itself.
+  | THBareString()
+  // Unboundedly many values (`number`, `bigint`, an abstract type parameter):
+  // representing the result needs a pattern type SKJS does not have.
+  | THIrreducible()
+  // A type that may not be interpolated at all (object, symbol, void, unknown).
+  | THNotStringifiable()
+}
+
 base class TEnv{
   // The defMap associates an AST to a type name.
   defMap: IDefMap,
@@ -1262,11 +1284,6 @@ base class TEnv{
         Array[(pos, "The 'infer' keyword is not yet supported by SKJS")],
         SKJSCode(9017),
       )
-    | TATemplate _ ->
-      fatalError(
-        Array[(pos, "Template literal types are not yet supported by SKJS")],
-        SKJSCode(9018),
-      )
     | TAImport _ ->
       fatalError(
         Array[(pos, "'import(...)' type syntax is not yet supported by SKJS")],
@@ -1330,6 +1347,8 @@ base class TEnv{
         ],
         SKJSCode(9020),
       )
+    | TATemplate(strings, types) ->
+      this.normalizeTemplate(tcenvb, pos, strings, types)
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
@@ -1558,6 +1577,203 @@ base class TEnv{
           ],
           SKJSCode(9021),
         )
+      }
+    }
+  }
+
+  // Reduces a template literal type, as tsc does, to a type in the existing
+  // string domain. A template has no type of its own here: it either names a
+  // finite set of strings (then it IS that literal union) or it names the whole
+  // `string` primitive.
+  //
+  // Not reduced, and rejected: a `number` or `bigint` hole, or an abstract one,
+  // whatever surrounds it (`\`${number}\``); and a bare `string` hole when the
+  // template has text of its own (`\`a${string}b\``), the text being what stops
+  // it from simply being `string`.
+  // Such a type is an infinite but partial set of strings, which needs a pattern
+  // representation SKJS does not have -- TPrimValue holds either the whole
+  // primitive or a finite literal set, and nothing in between.
+  private fun normalizeTemplate(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    strings: Array<String>,
+    types: Array<Type>,
+  ): TType {
+    invariant(strings.size() == types.size() + 1);
+    subst = Subst::mcreate(tcenvb);
+    holeTypes = types.map(ty -> this.normalize(tcenvb, ty));
+    holes = holeTypes.map(ty -> this.templateHole(subst, ty));
+
+    // A hole whose type may not be interpolated at all is an error, as in tsc,
+    // and takes precedence over any reduction. Checking continues as `string`,
+    // the type every template has once its holes are stringified.
+    notStringifiable = types.zip(holeTypes).zip(holes).filter(p ->
+      p.i1 is THNotStringifiable _
+    );
+    if (!notStringifiable.isEmpty()) {
+      for (p in notStringifiable) {
+        (ty, holeType) = p.i0;
+        tcenvb.error(
+          Array[
+            (
+              ty.pos,
+              `Type ${quoteRenderedType(
+                prettyPrintType(false, holeType, subst, this),
+              )} is not assignable to type 'string | number | bigint | boolean | null | undefined'`,
+            ),
+          ],
+          TSCode(2322),
+        )
+      };
+      return TType::single(TPrimValue(TString(), None(), pos))
+    };
+
+    // `never` has no values, so a template containing it has none either: no
+    // string can be built. It absorbs, exactly as in tsc.
+    if (
+      holes.any(h ->
+        h match {
+        | THFinite(vs) -> vs.isEmpty()
+        | _ -> false
+        }
+      )
+    ) {
+      return TType::bottom(pos)
+    };
+
+    // `\`${string}\`` (and any all-bare-string template with no text of its own)
+    // is not a pattern over `string` -- it IS `string`, and tsc treats the two as
+    // the same type.
+    if (
+      strings.all(s -> s == "") &&
+      !holes.isEmpty() &&
+      holes.all(h -> h is THBareString _)
+    ) {
+      return TType::single(TPrimValue(TString(), None(), pos))
+    };
+
+    values = mutable Vector<String>[strings[0]];
+    for (i in Range(0, holes.size())) {
+      holes[i] match {
+      | THFinite(holeValues) ->
+        // Guard before materializing: the product is multiplicative, so an
+        // unguarded expansion can exhaust memory on a type tsc rejects cleanly.
+        if (values.size() * holeValues.size() >= kMaxTemplateUnionSize) {
+          tcenvb.error(
+            Array[
+              (
+                pos,
+                "Expression produces a union type that is too complex to represent",
+              ),
+            ],
+            TSCode(2590),
+          );
+          return TType::single(TPrimValue(TString(), None(), pos))
+        };
+        next = mutable Vector<String>[];
+        for (prefix in values) {
+          for (v in holeValues) {
+            next.push(prefix + v + strings[i + 1])
+          }
+        };
+        !values = next
+      | THBareString()
+      | THIrreducible() ->
+        fatalError(
+          Array[
+            (
+              types[i].pos,
+              "Template literal types are only supported when every interpolation has finitely many values, which this one does not",
+            ),
+          ],
+          SKJSCode(9018),
+        )
+      | THNotStringifiable() -> invariant_violation("reported above")
+      }
+    };
+
+    PrimLiterals::ofSet(SortedSet::createFromItems(values), pos) match {
+    | Some(lits) -> TType::single(TPrimValue(TString(), Some(lits), pos))
+    // Unreachable: `values` starts non-empty and only grows, and an empty hole
+    // is handled by the `never` case above. Guarded because an empty literal set
+    // would silently mean the WHOLE `string` primitive, not `never`.
+    | None() -> TType::bottom(pos)
+    }
+  }
+
+  // Classifies the strings a template hole's type can produce at runtime.
+  private fun templateHole(subst: mutable Subst, hole: TType): TemplateHole {
+    hole.expandToVectors(subst, this, None()) match {
+    // Top: `unknown` (which tsc rejects here) or `any`.
+    | None() -> THNotStringifiable()
+    | Some((insts, clauses)) ->
+      values = mutable Vector<String>[];
+      // A hole is a union, so its members are accumulated and judged together
+      // rather than returned on: the verdicts do not commute. `string` absorbs
+      // an unbounded sibling (`${string | number}` IS `string`), and a sibling
+      // that may not be interpolated at all outranks both (`${number | symbol}`
+      // is a constraint error, not an unsupported one), so returning on the
+      // first unbounded member would decide by stype order.
+      notStringifiable = false;
+      bareString = false;
+      // A residual named or type-variable type resolves to no values here.
+      irreducible = !insts.isEmpty();
+      for (clause in clauses) {
+        // An abstract type parameter, as in `type Wrap<T> = \`a${T}b\``.
+        if (!clause.vars.isEmpty()) !irreducible = true;
+        clause.stypes match {
+        | None() -> !irreducible = true
+        | Some(stypes) ->
+          for (stype in stypes) {
+            stype match {
+            | TPrimValue(TString(), Some(lits), _)
+            | TPrimValue(TBool(), Some(lits), _) ->
+              // A string literal's value is already cooked, and a boolean's is
+              // its runtime spelling, so both are used verbatim.
+              for (lit in lits.values()) values.push(lit.val)
+            | TPrimValue(TNum(), Some(lits), _) ->
+              for (lit in lits.values()) {
+                // A number literal's name is its ECMAScript String() form only
+                // when the spelling pins down one double. The normalizer leaves
+                // a beyond-precision spelling alone and keeps a radix literal
+                // past 2^53 in source form (see rule 30), and neither names a
+                // string any runtime value produces.
+                if (isPreciseJSNumberLiteral(lit.val)) {
+                  values.push(lit.val)
+                } else {
+                  !irreducible = true
+                }
+              }
+            | TPrimValue(TBigInt(), Some(lits), _) ->
+              // Exact at any magnitude, unlike a number: only the `n` suffix,
+              // which the runtime string lacks, has to come off.
+              for (lit in lits.values()) values.push(lit.val.stripSuffix("n"))
+            | TPrimValue(TBool(), None(), _) ->
+              // `boolean` is the saturated two-literal set, which union
+              // normalizes to None().
+              values.push("false");
+              values.push("true")
+            | TPrimValue(TString(), None(), _) -> !bareString = true
+            | TPrimValue(TNum(), None(), _)
+            | TPrimValue(TBigInt(), None(), _) ->
+              !irreducible = true
+            | TPrimUnit(TNull(), _) -> values.push("null")
+            | TPrimUnit(TUndefined(), _) -> values.push("undefined")
+            | _ -> !notStringifiable = true
+            }
+          }
+        }
+      };
+      if (notStringifiable) {
+        THNotStringifiable()
+      } else if (bareString) {
+        // Every string is in `string`, so a hole that is `string` at all is
+        // `string`, whatever else it also is.
+        THBareString()
+      } else if (irreducible) {
+        THIrreducible()
+      } else {
+        THFinite(SortedSet::createFromItems(values))
       }
     }
   }

@@ -159,4 +159,34 @@ fun testTemplateChunkTrailingBackslash(): void {
   }
 }
 
+// A template type inside a parenthesized type must not derail `isTypeFunParams`,
+// the parser's only blind token-scanning lookahead. It counts parens by lexing
+// tokens, so it must step over a template whole (Lexer.skipTemplate): lexing on
+// would resume inside the interpolation and treat the template's own closing
+// backtick as the start of a NEW template, scanning to end-of-input — and an
+// interpolation containing parens would corrupt the count. The error thrown
+// would escape lookAhead, which does not catch ErrorExn.
+@test
+fun testTemplateTypeInParenthesizedTypeLexesCleanly(): void {
+  bt = "`";
+  for (hole in Array["string", "(q: string) => void"]) {
+    // type T = (x: `a${<hole>}b`) => void;
+    content = `type T = (x: ${bt}a$\{${hole}}b${bt}) => void;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectFalse(
+      threw,
+      `${content}: a template type in a parenthesized type must parse cleanly`,
+    )
+  }
+}
+
 module end;

@@ -62,10 +62,9 @@ extension class Parser {
     | TKQuote()
     | TKDoubleQuote() ->
       TAStringLiteral(this.unquoteString(tok))
-    | TKBackTick() ->
-      TATemplate(
-        /* TODO: parse type template */ this.lex.getTokenRawStringContent(tok),
-      )
+    | TKNoSubstitutionTemplate()
+    | TKTemplateHead() ->
+      this.parseTemplateType(tok)
     | TKBigInt() -> TABigIntLiteral(this.getBigInt(tok))
     | TKNumber() -> TANumLiteral(this.getNumber(tok))
     | TKLessThan() ->
@@ -246,7 +245,7 @@ extension class Parser {
           Array[
             TKQuote(),
             TKDoubleQuote(),
-            TKBackTick(),
+            TKNoSubstitutionTemplate(),
             TKLessThan(),
             TKOpenSquare(),
             TKOpenParen(),
@@ -343,6 +342,29 @@ extension class Parser {
     }
   }
 
+  // Parses a template literal type from its first chunk: the interpolated types
+  // are parsed inline (so nested templates, strings and braces inside a hole are
+  // handled by ordinary recursion), and the text around them is cooked, matching
+  // how a quoted string literal type is formed. Any type parses in a hole; the
+  // restriction to stringifiable types is a typecheck obligation, not a
+  // syntactic one, as in tsc.
+  mutable fun parseTemplateType(tok: Token): Type_ {
+    strings = mutable Vector<String>[this.cookTemplatePart(tok)];
+    types = mutable Vector<Type>[];
+    if (tok.kind is TKTemplateHead _) {
+      loop {
+        types.push(this.type(0));
+        // The interpolated type must be followed by its closing `}`.
+        this.expect(TKCloseCurly());
+        // A continuation is a Middle (another `${` follows) or the Tail.
+        contTok = this.lex.nextTemplateContinuation();
+        strings.push(this.cookTemplatePart(contTok));
+        if (contTok.kind is TKTemplateTail _) break void
+      }
+    };
+    TATemplate(strings.toArray(), types.toArray())
+  }
+
   // Parse closure type after (
   mutable fun typeFun{tParams: Array<TypeParam>}: TAFun {
     params = this.typeFunParams();
@@ -361,15 +383,23 @@ extension class Parser {
     this.lex.lookAhead(() -> {
       countParen = 1;
       loop {
-        this.lex.next().map(x -> x.kind) match {
+        this.lex.next() match {
         | None() -> return false
-        | Some(TKOpenParen()) -> !countParen = countParen + 1
-        | Some(TKCloseParen()) ->
-          !countParen = countParen - 1;
-          if (countParen == 0) {
-            return this.lex.peekKind() is Some(TKClosure())
+        | Some(tok) ->
+          tok.kind match {
+          | TKOpenParen() -> !countParen = countParen + 1
+          | TKCloseParen() ->
+            !countParen = countParen - 1;
+            if (countParen == 0) {
+              return this.lex.peekKind() is Some(TKClosure())
+            }
+          // Step over a template whole: its interpolations are not tokens to
+          // count. Lexing on would restart a template scan at the closing
+          // backtick, and an interpolated `(q: string) => void` would throw the
+          // paren count off.
+          | TKTemplateHead() -> this.lex.skipTemplate(tok)
+          | _ -> void
           }
-        | Some _ -> continue
         }
       }
     })
