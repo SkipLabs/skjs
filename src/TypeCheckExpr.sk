@@ -817,7 +817,19 @@ extension class TypeChecker {
         )
       | Some(annotAst) ->
         ty = this.normalize(tcenv, annotAst);
-        (ty, false)
+        // A binding with no initializer reads as `undefined` until assigned
+        // (true at runtime regardless of let/const/var — const's missing
+        // initializer is already reported above). If the declared type
+        // accepts `undefined`, that read is a genuine member of the type, so
+        // exempt it from the used-before-assigned check (TS2454's carve-out).
+        undefinedTy = TType::single(TPrimUnit(TUndefined(), pos));
+        isInitialized = TType::isSub(
+          tcenv.subst.clone(),
+          this,
+          undefinedTy,
+          ty,
+        ) is STOk();
+        (ty, isInitialized)
       }
     | Some(e) ->
       ty = this.expr(tcenv, e, kind is BKConst());
