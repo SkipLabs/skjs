@@ -385,6 +385,14 @@ extension class TypeChecker {
         | None() -> false
         }
       }
+    // Every remaining annotation defers, and a new one is far likelier to
+    // defer than not: naming a type inside an object, array, tuple, or
+    // signature does not resolve it. Three exceptions are immediate in tsc and
+    // silent here only because SKJS rejects them before circularity could
+    // matter — `TAGet` (`type R = R["x"]`), `TAExtendsQuestion`
+    // (`type R = R extends string ? 1 : 2`) and `TAImport` are all "not yet
+    // supported". Whichever of them lands first should be given an arm above
+    // rather than left to this one.
     | _ -> false
     }
   }
