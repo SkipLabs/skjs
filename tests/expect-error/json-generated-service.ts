@@ -1,12 +1,15 @@
 // A minimal slice of the code skipper generates for a reactive service, in the
-// form it emits after the json-index-sig change ("Emit a string index signature
-// on generated object types"): every generated value/key object type is
-// intersected with `{ readonly [key: string]: Json | null }` so it is a sound
-// `Json` subtype.
+// form it emits after wrapping generated value/key object types in `Closed<T>`
+// (skipper's earlier approach — intersecting with an explicit
+// `{ readonly [key: string]: Json | null }` index signature, skipper#1217 —
+// fixed the same `Json`-subtyping gap but the wider inferred shape broke
+// unrelated real-`tsc` inference, e.g. `deepFreeze<T>`, see skipper#1239.
+// `Closed<T>` is the identity under `tsc` and gets skjs's closed-object
+// treatment — a sound `Json` subtype without widening the type).
 //
 // That change is necessary but NOT sufficient on its own. It fixes the VALUE
-// side — the indexed `Value` satisfies the `K/V extends Json` bounds, so the
-// generated `Mapper` below is accepted. The generated `Resource<GraphCollections>`
+// side — the `Closed`-wrapped `Value` satisfies the `K/V extends Json` bounds,
+// so the generated `Mapper` below is accepted. The generated `Resource<GraphCollections>`
 // would be REJECTED by a `NamedCollections`-style API, where `Resource<C>` is
 // parameterized by `C extends { [name: string]: EagerCollection<Json, Json> }`:
 // `EagerCollection<K, V>` is contravariant in K (`getArray(key: K)`), so a
@@ -27,16 +30,15 @@
 import type {
   Context,
   EagerCollection,
-  Json,
   Mapper,
   Resource,
   SharedCollections,
   Values,
 } from "@skipruntime/core";
 
-// Generated key/value types, in the post-json-index-sig form.
+// Generated key/value types, in the Closed<T>-wrapped form.
 type Id = string;
-type Value = { readonly n: number } & { readonly [key: string]: Json | null };
+type Value = Closed<{ readonly n: number }>;
 
 // A generated collection-record interface extending SharedCollections:
 // each named field is an EagerCollection, satisfying the index sig constraint
