@@ -35,9 +35,12 @@ module SKJS;
 // continuation is unaffected either way, since the decoder elides a backslash
 // before an LF exactly as it does before a CRLF.
 //
-// Quoted strings need none of this: a raw line terminator in one is already a
-// lexing error, so a template is the only literal whose value can contain a
-// line terminator it did not escape.
+// Quoted strings do not go through here: a raw LF in one is a lexing error
+// ("string literals cannot span multiple lines"), so an unescaped line
+// terminator is a template's problem. A lone CR is the exception, and SKJS
+// wrongly accepts it there rather than rejecting the string as unterminated
+// (#901) -- a lexing gap, not a decoding one, so it is not fixed by normalizing
+// here.
 fun normalizeTemplateLineTerminators(raw: String): String {
   // Fast path: a template usually has no carriage return at all.
   if (!raw.contains("\r")) return raw;
