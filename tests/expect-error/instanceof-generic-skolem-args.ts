@@ -256,7 +256,8 @@ function unionRoundTrip(x: unknown): void {
   }
 }
 
-// A hidden type argument does not escape its bound through generic identity.
+// A hidden type argument does not become its bound by passing through generic
+// identity: `A := T` and `T` is not `string`, so the return is rejected.
 function hiddenTypeNoEscape(x: unknown): string {
   if (x instanceof Box) {
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
