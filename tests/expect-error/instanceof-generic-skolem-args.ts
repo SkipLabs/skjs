@@ -413,8 +413,8 @@ function toArrayReadonly(x: unknown): ReadonlyArray<unknown> {
  * each contains a write that corrupts an object at runtime (marked
  * `UNSOUND`). They are pinned here as accepted so that when a fix lands,
  * this suite fails loudly and the cases get flipped to expect-error
- * annotations. See the commit message of the change introducing skolem
- * narrowing for the analysis and the prototyped (unlanded) fixes.
+ * annotations. Issue #903 tracks the class, with the analysis and the
+ * prototyped (unlanded) fixes.
  * ----------------------------------------------------------------------- */
 
 declare function makeList<T>(): T[];
@@ -471,6 +471,28 @@ function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
     p.v = q.v; // UNSOUND: accepted, writes string into Box<number>
   }
   return a.v;
+}
+
+// Hole 3a — the same pooling with nothing declared at all: no makeList, no
+// closure, just the ordinary "filter a heterogeneous array" idiom. This is the
+// shape that matters for judging the residual risk, because it is what a
+// developer writes first. Note the inversion it creates: annotating the
+// container (`const ys: Box<unknown>[] = []`) is REJECTED -- soundly, Box is
+// invariant in T -- while leaving it inferred is accepted and unsound, so the
+// natural response to that error is to delete the annotation and land here.
+function holePureIdiom(items: unknown[]): number {
+  const ys = [];
+  for (const x of items) {
+    if (x instanceof Box) {
+      ys.push(x);
+    }
+  }
+  const p = ys[0];
+  const q = ys[1];
+  if (p && q) {
+    p.v = q.v; // UNSOUND: accepted, exchanges elements of distinct hidden types
+  }
+  return ys.length;
 }
 
 // Hole 3 — loop bodies, no closure needed. The body is checked once, so all
