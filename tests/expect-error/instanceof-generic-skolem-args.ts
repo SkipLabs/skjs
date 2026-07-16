@@ -205,6 +205,24 @@ function unionScrutinee(x: Box<number> | string): number {
   return 0;
 }
 
+// An object arm that does not already satisfy the test survives as
+// `arm & Box<T>` -- width subtyping lets a `{ a: number }` value carry a `v`
+// and be a Box -- so reading `v` across the union is `string | T`, not
+// `string`. The skolem is what keeps the arms apart: with one shared inference
+// variable the matching arm sealed it to `string`, and the other arm then also
+// claimed its hidden argument was `string`, which is #772 in union form (a
+// `Box<number>` inhabiting `{ a: number }` returned its number as a string).
+// tsc drops the arm entirely and answers `string`; SKJS cannot, and must not.
+function unionObjectArm(o: { a: number } | Box<string>): string {
+  if (o instanceof Box) {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    // @skjs-expect-error-line2 Type 'string | T'
+    // @skjs-expect-error-line3 is not assignable to type 'string'
+    return o.v;
+  }
+  return "";
+}
+
 // Checks against two different generic classes introduce independent skolems;
 // a shared field must not make either hidden type argument escape.
 function crossClassRead(x: unknown): string {
