@@ -118,6 +118,36 @@ extension class TypeChecker {
     | Declare(en @ Enum _)
     | ExportDeclare(en @ Enum _) ->
       this.checkEnum(tcenvl, en)
+    | Declare(c @ Class _)
+    | ExportDeclare(c @ Class _) ->
+      // An ambient class declaration has no method bodies, but its member
+      // types still need normalizing so that reference-site constraint checks
+      // fire at the declaration site (the same gap as unused declare functions,
+      // which the TopLevelFunDef arm above closes). Without this, a constraint
+      // violation in a declared class member escapes whenever the class is
+      // never used and normalization is never triggered lazily.
+      subst = Subst::mcreate(tcenvl);
+      static::checkTypeParams(tcenvl, c.tparams, OptionalTypeParamsForbidden());
+      !this = this.addTParams(subst, c.tparams);
+      for (field in this.getClassFields(tcenvl.context, c)) {
+        field match {
+        | ClassFieldValue{type => Some(ty)} -> _ = this.normalize(subst, ty)
+        | ClassFieldValue{type => None()} -> void
+        | fd @ ClassFieldMethod _ ->
+          // Skip constructors: they have no return type annotation by design,
+          // so funDef would always emit "must have an explicit return type".
+          if (fd.name is FNNormal(Name(_, "constructor"))) {
+            void
+          } else {
+            // Pass thisTypeOpt = None() so FDBNone() does not trigger
+            // "Method implementation is missing" (ambient methods have no body).
+            cgNode = CGNode::create(Method(fd.name, c.name, fd.isStatic()));
+            tcenvl.collectErrors(() -> {
+              this.funDef(subst, None(), fd, cgNode)
+            })
+          }
+        }
+      }
     | Declare _
     | ExportDeclare _ ->
       void
