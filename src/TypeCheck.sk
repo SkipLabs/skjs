@@ -39,12 +39,17 @@ class TypeChecker{
 }
 
 /***************************************************************************/
-/* Returns true if a statement always is "terminal", meaning if
-/* evaluating this statements terminates the function. */
+/* Returns true if a block never falls through to the code positioned right
+/* after it: every path ends in return, throw, break, continue, or an
+/* infinite loop. Used by `If` narrowing to decide whether a branch's scope
+/* is a live path out of the `if` (and so must be merged with the other
+/* branch's) or is unreachable from there — a `continue`/`break` branch
+/* diverges just as surely as a `return`/`throw` one, it just diverges to
+/* an enclosing loop or switch instead of out of the function. */
 /***************************************************************************/
 
 fun isTerminalBlock(tcenvb: mutable TCEnvBase, bl: Array<Stmt>): Bool {
-  StmtTermination::block(tcenvb, bl).isTerminal()
+  !StmtTermination::block(tcenvb, bl).mayFallthrough
 }
 
 module end;
