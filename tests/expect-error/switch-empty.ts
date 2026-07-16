@@ -11,3 +11,19 @@ function emptySwitch(x: number): void {
   switch (x) {
   }
 }
+
+// Having no clauses says nothing about the scrutinee, which is real code and
+// still reports its own errors.
+function emptySwitchOverUnknownName(): void {
+  // @skjs-expect-error Cannot find name
+  // @skjs-expect-warning A switch statement must have at least one case
+  switch (nope) {
+  }
+}
+
+function emptySwitchOverBadProperty(o: { a: number }): void {
+  // @skjs-expect-error Property 'nosuch' does not exist on this type
+  // @skjs-expect-warning A switch statement must have at least one case
+  switch (o.nosuch) {
+  }
+}
