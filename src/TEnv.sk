@@ -294,7 +294,15 @@ base class TEnv{
       context,
       results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
     };
-    this.defMap.getAll(probe, name, true).find(def -> def is TypeDef _) match {
+    // Take the first definition and report it only if it is an alias, rather
+    // than searching past a class or an enum for an alias behind it: `getType`
+    // resolves the name to that same first definition, so searching on would
+    // let a caller reason about one definition while the checker uses another.
+    // With both an `interface Foo {}` and a `type Foo = Foo` in one file — a
+    // duplicate identifier, and reported as one — the alias is the second
+    // definition, and finding it here would call `Foo` circular while
+    // normalize resolves `Foo` to the interface.
+    this.defMap.getAll(probe, name, true).maybeGet(0) match {
     | Some(td @ TypeDef _) -> Some(td)
     | _ -> None()
     }

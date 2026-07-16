@@ -103,7 +103,6 @@ interface Dup {
   a: string;
 }
 // @skjs-expect-error Duplicate identifier 'Dup'
-// @skjs-expect-error Type alias 'Dup' circularly references itself
 type Dup = Dup;
 
 // The recursion runs through the object member, not the union itself.
