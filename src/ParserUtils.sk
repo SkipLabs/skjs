@@ -41,11 +41,11 @@ extension class Parser {
     }
   }
 
-  // Returns the cooked text of a template chunk: escapes are decoded, so the
-  // text equals the runtime string, and an invalid escape is an error — exactly
-  // as for a quoted string literal.
+  // Returns the cooked text of a template chunk: escapes are decoded and line
+  // terminators normalized, so the text equals the runtime string, and an
+  // invalid escape is an error — exactly as for a quoted string literal.
   readonly fun cookTemplatePart(tok: Token): String {
-    raw = this.lex.templateChunkRawText(tok);
+    raw = normalizeTemplateLineTerminators(this.lex.templateChunkRawText(tok));
     decodeJSStringLiteral(raw) match {
     | Success(decoded) -> decoded
     | Failure(kind) -> this.error(EPRange(this.lex.posRange(tok)), kind)

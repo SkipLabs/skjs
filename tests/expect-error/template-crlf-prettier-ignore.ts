@@ -11,14 +11,10 @@
 
 function crlfInType(x: `a
 b`): "a\nb" {
-  // FIXME: cooked as \r\n, naming a string no runtime value produces.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 function crlfInExpr(): "a\nb" {
-  // FIXME: same, via a no-substitution template expression.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return `a
 b`;
 }
@@ -26,8 +22,6 @@ b`;
 // --- A lone raw CR is also the value <LF> ---
 
 function loneCrInType(x: `ab`): "a\nb" {
-  // FIXME: cooked as \r.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 

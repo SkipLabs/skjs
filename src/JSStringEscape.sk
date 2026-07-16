@@ -24,6 +24,26 @@
 
 module SKJS;
 
+// Normalizes the line terminators of a template's raw text to the spelling its
+// TV uses (ECMA-262 sec 12.9.6): a <CR><LF>, or a lone <CR>, is the single
+// character <LF>. <LS> and <PS> are line terminators too, but their TV is
+// themselves, so they are left alone.
+//
+// Runs on the RAW text, before escapes are decoded, so the only thing it can
+// rewrite is a line terminator the source spells literally: `\r` and `\x0D` are
+// backslash sequences, not carriage returns, and still decode to one. A line
+// continuation is unaffected either way, since the decoder elides a backslash
+// before an LF exactly as it does before a CRLF.
+//
+// Quoted strings need none of this: a raw line terminator in one is already a
+// lexing error, so a template is the only literal whose value can contain a
+// line terminator it did not escape.
+fun normalizeTemplateLineTerminators(raw: String): String {
+  // Fast path: a template usually has no carriage return at all.
+  if (!raw.contains("\r")) return raw;
+  raw.replace("\r\n", "\n").replace("\r", "\n")
+}
+
 // Decodes the body of a string literal (with the surrounding quotes already
 // stripped). Returns Success(value) or Failure(kind) with the parse error to
 // report.
