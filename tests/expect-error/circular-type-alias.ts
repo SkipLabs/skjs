@@ -78,6 +78,16 @@ function useP(x: P<string>): number {
   return x;
 }
 
+// A circular alias denotes nothing even where a union member is perfectly
+// good: `U` above requires itself to know what it denotes, so `string` never
+// makes it inhabited. Leaving it unexpanded is what makes that uniform — while
+// it was unfolded, the empty type was the identity of the union and `U`
+// resolved to `string`, drawing a second, cascading error here that tsc does
+// not report, while the intersection `I` collapsed to nothing.
+function useU(x: U): number {
+  return x;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Legal recursion: every cycle below passes through a deferred position.
 /////////////////////////////////////////////////////////////////////////////
