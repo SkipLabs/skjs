@@ -10,7 +10,8 @@ function testSimpleEmpty(x: number): void {
   }
 }
 
-// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
+// Every path returns: an empty case falls into the next clause, and both of
+// those return.
 function testEmptyCases(x: number): string {
   switch (x) {
     // @skjs-expect-error Fallthrough case in switch; add a 'break'
@@ -38,7 +39,6 @@ function testAllEmptyCases(x: number): void {
   }
 }
 
-// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function testMixedCases(x: string): number {
   switch (x) {
     case "a":
@@ -48,6 +48,20 @@ function testMixedCases(x: string): number {
     // Empty
     case "c":
       return 2;
+    default:
+      return 0;
+  }
+}
+
+// A clause that breaks leaves the switch rather than continuing into the next
+// one, so grouping labels in front of it does not make the switch return.
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
+function testGroupedLabelsThatBreak(x: string): number {
+  switch (x) {
+    // @skjs-expect-error Fallthrough case in switch; add a 'break'
+    case "a":
+    case "b":
+      break;
     default:
       return 0;
   }
