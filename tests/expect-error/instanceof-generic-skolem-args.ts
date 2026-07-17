@@ -342,6 +342,29 @@ function rejectSharedArrayElement(u: unknown, w: unknown): number {
   return 0;
 }
 
+// A multi-branch object: a union of inline object types is ONE TObject holding
+// a set of TFields branches (STypes is keyed by tag, so all object arms merge),
+// unlike `Box<string> | Box<number>`, whose arms stay unexpanded instances in
+// separate clauses. Both branches here already satisfy the test, so narrowing
+// should be the identity -- but the probe runs once for the whole object, and
+// no single `Box<T>` covers both `{ v: string }` and `{ v: number }`, so it
+// fails and both branches are intersected with the skolem anyway. That widens
+// each setter to `string | T` / `number | T`, and the write below -- rejected
+// without the narrowing, since the setter is `string & number` -- is accepted
+// after it. `instanceof` must not hand back a write the declared type refused.
+function multiBranchWriteNoNarrow(o: { v: string } | { v: number }): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
+  // @skjs-expect-error-line2 Type 'number | string'
+  // @skjs-expect-error-line3 is not assignable to type 'number & string'
+  o.v = o.v;
+}
+
+function multiBranchWriteAfterNarrow(o: { v: string } | { v: number }): void {
+  if (o instanceof Box) {
+    o.v = o.v; // accepted today: the skolem widened both setters
+  }
+}
+
 // Pure queries are rejected too when the parameter names the hidden argument.
 // `Map.get`/`Set.has`/`Array.includes` cannot corrupt anything -- a wrong-typed
 // key just returns undefined/false -- but their declared parameter is the
