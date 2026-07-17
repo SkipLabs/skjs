@@ -333,4 +333,41 @@ fun testLineCommentEndsAtEveryLineTerminator(): void {
   }
 }
 
+// A `#!` hashbang is only a hashbang at the very start of the file (a leading
+// byte order mark aside); tsc rejects one anywhere else (TS18026), and `#`
+// otherwise begins a private name. The scanner fired the hashbang branch on any
+// `#!` it reached and silently dropped the rest of that line (#823).
+//
+// Every case carries a `)(` after the `#!`, which is a parse error unless it is
+// swallowed. So a case parses cleanly exactly when its `#!` was treated as a
+// hashbang -- which makes the harness able to see the difference at every
+// position, including that a byte order mark before the `#!` still counts as
+// the start while whitespace does not.
+@test
+fun testHashbangOnlyAtFileStart(): void {
+  lf = Char::fromCode(10).toString();
+  bom = Char::fromCode(0xFEFF).toString();
+  // (source, whether it should parse cleanly = whether the `#!` is a hashbang)
+  cases = Array[
+    (`#! )( ${lf}const x = 1;`, true),
+    (`${bom}#! )( ${lf}const x = 1;`, true),
+    (`const x = 1;${lf}#! )( ${lf}const y = 2;`, false),
+    (` #! )( ${lf}const x = 1;`, false),
+  ];
+  for (case in cases) {
+    (content, shouldParse) = case;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(!threw, shouldParse, content)
+  }
+}
+
 module end;
