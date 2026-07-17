@@ -248,4 +248,89 @@ fun testLineAndParagraphSeparatorsAreAllowedInStrings(): void {
   }
 }
 
+// ECMA-262 sec 12.2: WhiteSpace is <TAB>, <VT>, <FF>, <ZWNBSP> and every
+// Unicode Space_Separator (Zs) -- <SP> and <NBSP> among them -- and sec 12.3
+// adds the LineTerminators <LF>, <CR>, <LS> and <PS>. Any of them may sit
+// between two tokens.
+//
+// The sets are the ones node itself reports, which excludes two characters worth
+// naming: U+180E was Zs before Unicode 6.3 and is not whitespace now, and U+200B
+// (zero width space) never was, despite its name.
+@test
+fun testEveryJSWhiteSpaceSeparatesTokens(): void {
+  codes = Array[
+    0x09,
+    0x0B,
+    0x0C,
+    0x20,
+    0xA0,
+    0x1680,
+    0x2000,
+    0x200A,
+    0x2028,
+    0x2029,
+    0x202F,
+    0x205F,
+    0x3000,
+    0xFEFF,
+    0x0A,
+    0x0D,
+  ];
+  for (code in codes) {
+    ws = Char::fromCode(code).toString();
+    content = `const a${ws}= 1;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectFalse(threw, `U+${code} between two tokens`)
+  };
+  // The other half of the rule: these two look like whitespace and are not, so
+  // they stay invalid characters. U+180E was Space_Separator until Unicode 6.3,
+  // and U+200B is called a zero width space but never was one; node rejects
+  // both between tokens.
+  for (code in Array[0x180E, 0x200B]) {
+    notWs = Char::fromCode(code).toString();
+    content = `const a${notWs}= 1;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectTrue(threw, `U+${code} is not whitespace`)
+  }
+}
+
+// A line comment runs to the next LineTerminator, which is any of <LF>, <CR>,
+// <LS> and <PS> -- not <LF> alone. Reading only <LF> let a comment ended by any
+// of the others swallow the code after it, so a real error was silently
+// accepted: that half hid bugs rather than inventing them.
+@test
+fun testLineCommentEndsAtEveryLineTerminator(): void {
+  for (code in Array[0x0A, 0x0D, 0x2028, 0x2029]) {
+    term = Char::fromCode(code).toString();
+    content = `// a comment${term}const a = 1;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    defs = parser.toplevelDefs();
+    SKTest.expectEq(
+      defs.size(),
+      1,
+      `U+${code} after a line comment: the const that follows it`,
+    )
+  }
+}
+
 module end;

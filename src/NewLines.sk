@@ -11,7 +11,7 @@ module SKJS;
 class NewLinesFile(newLines: Array<Int>) extends SKStore.File
 
 // The index of the character each line ends on, followed by the length of the
-// content. A position's line is found by binary searching this, and its column
+// content. A line ends at any line terminator (see isJSLineTerminator). A position's line is found by binary searching this, and its column
 // by subtracting the previous entry (see PositionResolver::lineCol), so an entry
 // is the index of a line terminator's LAST character.
 fun computeNewLines(content: String): Array<Int> {
@@ -26,7 +26,7 @@ fun computeNewLines(content: String): Array<Int> {
       // entering the <CR> instead would start the next line at column 2.
       if (i + 1 < n && chars[i + 1] == '\n') !i = i + 1;
       newLines.push(i)
-    } else if (c == '\n' || c.code() == 0x2028 || c.code() == 0x2029) {
+    } else if (isJSLineTerminator(c)) {
       newLines.push(i)
     };
     !i = i + 1

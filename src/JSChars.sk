@@ -1,0 +1,43 @@
+/***************************************************************************/
+/* The ECMAScript source character classes (ECMA-262 sec 12.2 and 12.3).   */
+/*                                                                         */
+/* Identifiers are not here: those need the Unicode ID_Start/ID_Continue   */
+/* tables, which SKJS does not carry, so it is still ASCII-only there      */
+/* (#822).                                                                 */
+/***************************************************************************/
+
+module SKJS;
+
+// LineTerminator. These end a line, and so also a line comment, and are what
+// the line table counts (see computeNewLines). <LS>/<PS> are line terminators
+// but not whitespace; a string literal may hold them, unlike <LF>/<CR>.
+fun isJSLineTerminator(c: Char): Bool {
+  c == '\n' || c == '\r' || c.code() == 0x2028 || c.code() == 0x2029
+}
+
+// WhiteSpace: <TAB>, <VT>, <FF>, <ZWNBSP>, and every Unicode Space_Separator
+// (Zs), which is where <SP> and <NBSP> come from. Deliberately excludes two
+// characters that look like they belong: U+180E was Zs until Unicode 6.3, and
+// U+200B (zero width space) never was, despite the name -- node treats neither
+// as whitespace.
+fun isJSWhiteSpace(c: Char): Bool {
+  code = c.code();
+  code == 0x09 || // <TAB>
+    code == 0x0B || // <VT>
+    code == 0x0C || // <FF>
+    code == 0xFEFF || // <ZWNBSP>, the byte order mark
+    isJSSpaceSeparator(code)
+}
+
+// Unicode Space_Separator (Zs).
+fun isJSSpaceSeparator(code: Int): Bool {
+  code == 0x20 || // <SP>
+    code == 0xA0 || // <NBSP>
+    code == 0x1680 ||
+    (code >= 0x2000 && code <= 0x200A) ||
+    code == 0x202F ||
+    code == 0x205F ||
+    code == 0x3000
+}
+
+module end;

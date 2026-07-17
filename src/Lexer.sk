@@ -346,10 +346,7 @@ mutable class Lexer private {
     loop {
       if (start >= this.contents.size()) return None();
       this.contents[start] match {
-      | '\r' | '\t' | ' ' | '\n' ->
-        !start = start + 1;
-        continue
-      | c if (c.code() == 65279) ->
+      | c if (isJSWhiteSpace(c) || isJSLineTerminator(c)) ->
         !start = start + 1;
         continue
       | '#' if (
@@ -359,7 +356,7 @@ mutable class Lexer private {
         !start = start + 1;
         loop {
           if (start >= this.contents.size()) return None();
-          if (this.contents[start] == '\n') {
+          if (isJSLineTerminator(this.contents[start])) {
             !start = start + 1;
             break void;
           };
@@ -372,7 +369,7 @@ mutable class Lexer private {
         !start = start + 1;
         loop {
           if (start >= this.contents.size()) return None();
-          if (this.contents[start] == '\n') {
+          if (isJSLineTerminator(this.contents[start])) {
             !start = start + 1;
             break void;
           };
