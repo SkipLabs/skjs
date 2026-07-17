@@ -431,7 +431,9 @@ mutable class Lexer private {
           this.error(pos, UnterminatedString())
         };
         c = this.contents[pos];
-        if (c == '\n') this.error(pos, NewLineInString());
+        // A string's body excludes LineTerminators. <LS>/<PS> are the
+        // exception: ES2019 admits them into string literals.
+        if (c == '\n' || c == '\r') this.error(pos, NewLineInString());
         if (c == '\\') {
           !pos = this.skipStringEscape(pos);
           continue
@@ -451,7 +453,9 @@ mutable class Lexer private {
           this.error(pos, UnterminatedString());
         };
         c = this.contents[pos];
-        if (c == '\n') this.error(pos, NewLineInString());
+        // A string's body excludes LineTerminators. <LS>/<PS> are the
+        // exception: ES2019 admits them into string literals.
+        if (c == '\n' || c == '\r') this.error(pos, NewLineInString());
         if (c == '\\') {
           !pos = this.skipStringEscape(pos);
           continue

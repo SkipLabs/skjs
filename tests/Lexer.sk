@@ -213,10 +213,9 @@ fun testLoneCarriageReturnInStringIsRejected(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    // FIXME(#901): accepted; a lone <CR> should end the string as unterminated.
-    SKTest.expectFalse(
+    SKTest.expectTrue(
       threw,
-      `${q}: a lone carriage return in a string is currently accepted`,
+      `${q}: a lone carriage return must end the string as unterminated`,
     )
   }
 }
