@@ -2,8 +2,7 @@ module SKJSTests;
 
 base class ReferenceError{line: Int} {
   fun validate(
-    subst: mutable SKJS.Subst,
-    tenv: SKJS.TEnv,
+    context: mutable SKStore.Context,
     fileName: SKJS.FPath,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError;
@@ -90,8 +89,7 @@ class ExpectError{
   expectedLineNAnnotations: Map<Int, String>,
 } extends ReferenceError {
   fun validate(
-    subst: mutable SKJS.Subst,
-    tenv: SKJS.TEnv,
+    context: mutable SKStore.Context,
     fileName: SKJS.FPath,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
@@ -124,7 +122,7 @@ class ExpectError{
           ),
         )
       };
-      allMsgs = getErrorMessages(subst, tenv, errors.first());
+      allMsgs = getErrorMessages(context, errors.first());
       for ((n, expectedForN) in this.expectedLineNAnnotations.items()) {
         actualForN = if (n < 1 || n > allMsgs.size()) "" else {
           allMsgs[n - 1].trimMessage(true)
@@ -210,14 +208,20 @@ fun errorToFullMessage(error: SKJS.Error): String {
 
 // Returns all message lines for one error. For SubtypingError this includes the
 // primary messages followed by the expanded stErr detail lines.
+//
+// The continuation lines are rendered through the subst and tenv the error
+// carries, exactly as SubtypingError::toErrorMessage does. Rendering them
+// through a freshly created subst instead would leave every inference variable
+// in the stored types unbound, printing `unknown` where the user sees the type
+// the variable was grown to (#899).
 fun getErrorMessages(
-  subst: mutable SKJS.Subst,
-  tenv: SKJS.TEnv,
+  context: mutable SKStore.Context,
   error: SKJS.Error,
 ): Array<String> {
   error match {
   | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
-  | SKJS.SubtypingError(_, _, messages, e, _) ->
+  | SKJS.SubtypingError(savedSubst, tenv, messages, e, _) ->
+    subst = SKJS.Subst::mcreateFromSaved(context, savedSubst);
     stErrMsgs = e
       .toError(subst, tenv, SKJS.STErrorDetail::default)
       .toArray()
@@ -228,12 +232,11 @@ fun getErrorMessages(
 }
 
 fun getLineNAnnotationsFromError(
-  subst: mutable SKJS.Subst,
-  tenv: SKJS.TEnv,
+  context: mutable SKStore.Context,
   error: SKJS.Error,
 ): Map<Int, String> {
   result = mutable Map[];
-  allMsgs = getErrorMessages(subst, tenv, error);
+  allMsgs = getErrorMessages(context, error);
   for (lineIdx => lineText in allMsgs) {
     n = lineIdx + 1;
     if (n == 1) continue;
@@ -761,8 +764,7 @@ class TSConformanceReferenceError{
   extraMessages: Array<String>,
 } extends ReferenceError {
   fun validate(
-    _subst: mutable SKJS.Subst,
-    _tenv: SKJS.TEnv,
+    _context: mutable SKStore.Context,
     _fileName: SKJS.FPath,
     _errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {

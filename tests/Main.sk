@@ -47,11 +47,6 @@ fun validateReferenceErrors<R: ReferenceError>(
   allActualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): Array<SKTest.ExpectationError> {
-  tenv = checker.checker;
-  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
-  tcenvb = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(tcenvb);
-
   referenceErrorOpt = referenceErrors.next();
 
   linedActualErrors = getLinedErrors(
@@ -73,7 +68,7 @@ fun validateReferenceErrors<R: ReferenceError>(
       Some(ref @ ReferenceError{line => expectedLine}),
     ) if (actualLine == expectedLine) ->
       ref
-        .validate(subst, tenv, fileName, actualErrors)
+        .validate(context, fileName, actualErrors)
         .each(expectationErrors.push);
       !i = i + 1;
       if (
@@ -139,10 +134,6 @@ fun doUpdateExpectErrorComments(
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
   linedWarnings = getLinedErrors(context, checker, fileName, actualWarnings);
-  tenv = checker.checker;
-  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
-  tcenvb = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(tcenvb);
   errorsByLine = mutable Map[];
   warningsByLine = mutable Map[];
   fullMessages = mutable Map[];
@@ -152,7 +143,7 @@ fun doUpdateExpectErrorComments(
       err = lineErrs.i1.first();
       actualLineNAnnotationsByLine.set(
         lineErrs.i0,
-        getLineNAnnotationsFromError(subst, tenv, err),
+        getLineNAnnotationsFromError(context, err),
       )
     };
     trimmedMsgs = SortedSet[];

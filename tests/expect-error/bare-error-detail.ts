@@ -18,7 +18,7 @@ function id2<T, U>(x: T): U {
 declare function g2<K extends [0, 1]>(x: K): K;
 function tupleConstraint(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type '[unknown, unknown]'
+  // @skjs-expect-error-line2 Type '[0, 1]'
   // @skjs-expect-error-line3 is not assignable to type '[0, 1]'
   const r = g2([0, 1]);
 }
@@ -57,7 +57,7 @@ function extraMemberShown(): void {
 declare function gr<K extends readonly [0, 1]>(x: K): K;
 function readonlyTupleConstraint(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type '[unknown, unknown]'
+  // @skjs-expect-error-line2 Type '[0, 2]'
   // @skjs-expect-error-line3 is not assignable to type 'readonly [0, 1]'
   const r = gr([0, 2]);
 }
