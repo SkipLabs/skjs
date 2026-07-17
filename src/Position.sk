@@ -114,7 +114,12 @@ class PositionResolver{
       0,
       this.newLines.size() - 1,
     );
-    if (idx <= 0 || idx >= this.newLines[idx]) {
+    // Only line 1 needs the early answer: every later line measures its column
+    // from the previous entry. A second guard, `idx >= newLines[idx]`, used to
+    // stand here and was wrong -- the table is strictly increasing from at least
+    // 0, so it fired exactly when everything up to idx was a one-character
+    // terminator, and put a position inside a leading run on line 1.
+    if (idx <= 0) {
       return LineCol{line => 1, col => pos.value + 1}
     };
     LineCol{line => idx + 1, col => pos.value - this.newLines[idx - 1]}

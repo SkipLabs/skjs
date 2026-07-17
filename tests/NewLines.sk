@@ -55,11 +55,10 @@ fun testLineColAtALeadingTerminator(): void {
     newLines => SKJS.computeNewLines(content),
     symbols => Map[],
   };
-  // FIXME(#901): reported as line 1, column 2.
   // The <LS> is the second character, and it ends line 2.
   SKTest.expectEq(
     resolver.lineCol(SKJS.Pos(1)),
-    SKJS.LineCol{line => 1, col => 2},
+    SKJS.LineCol{line => 2, col => 1},
     "the <LS> that ends line 2",
   );
   // The first character of line 3, just past the <LS>. This one is already
