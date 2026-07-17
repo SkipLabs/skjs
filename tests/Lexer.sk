@@ -189,4 +189,63 @@ fun testTemplateTypeInParenthesizedTypeLexesCleanly(): void {
   }
 }
 
+// A string literal's body excludes LineTerminators, and a lone <CR> is one, so
+// a string holding a raw one is unterminated -- tsc reports TS1002 and node will
+// not parse the file. The scanner reads only <LF> as ending a line, so SKJS
+// accepts it.
+//
+// Tested here rather than as an expect-error fixture for two reasons: the CR has
+// to survive as a byte, and once a <CR> ends a line the fixture could not put the
+// error on the last non-empty line, which that harness requires of a parse error.
+@test
+fun testLoneCarriageReturnInStringIsRejected(): void {
+  cr = Char::fromCode(13).toString();
+  for (q in Array["\"", "'"]) {
+    // function f(): void { const s = "a<CR>b"; }
+    content = `function f(): void { const s = ${q}a${cr}b${q}; }`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectTrue(
+      threw,
+      `${q}: a lone carriage return must end the string as unterminated`,
+    )
+  }
+}
+
+// The other half of the same rule: <LS> and <PS> are LineTerminators too, but
+// ES2019's JSON-superset change admits them into a string literal, so they are
+// content there rather than the end of it. node parses this and tsc accepts it.
+// Folding them in with <LF>/<CR> is the obvious way to get the rule wrong, and
+// it would turn valid programs into parse errors.
+@test
+fun testLineAndParagraphSeparatorsAreAllowedInStrings(): void {
+  for (sep in Array[Char::fromCode(0x2028), Char::fromCode(0x2029)]) {
+    for (q in Array["\"", "'"]) {
+      content = `function f(): void { const s = ${q}a${sep}b${q}; }`;
+      fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+      lexer = SKJS.Lexer::mcreate(fileName, content);
+      parser = mutable SKJS.Parser(lexer);
+      threw = try {
+        _ = parser.toplevelDefs();
+        false
+      } catch {
+      | SKJS.ErrorExn(_) -> true
+      | exn -> throw exn
+      };
+      SKTest.expectFalse(
+        threw,
+        `${q}: U+${sep.code()} is content in a string, not the end of it`,
+      )
+    }
+  }
+}
+
 module end;

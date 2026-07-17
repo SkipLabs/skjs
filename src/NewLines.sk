@@ -10,6 +10,31 @@ module SKJS;
 
 class NewLinesFile(newLines: Array<Int>) extends SKStore.File
 
+// The index of the character each line ends on, followed by the length of the
+// content. A position's line is found by binary searching this, and its column
+// by subtracting the previous entry (see PositionResolver::lineCol), so an entry
+// is the index of a line terminator's LAST character.
+fun computeNewLines(content: String): Array<Int> {
+  chars = content.chars().toArray();
+  n = chars.size();
+  newLines = mutable Vector[];
+  i = 0;
+  while (i < n) {
+    c = chars[i];
+    if (c == '\r') {
+      // A <CR><LF> is one terminator, and the line has to end on its <LF>:
+      // entering the <CR> instead would start the next line at column 2.
+      if (i + 1 < n && chars[i + 1] == '\n') !i = i + 1;
+      newLines.push(i)
+    } else if (c == '\n' || c.code() == 0x2028 || c.code() == 0x2029) {
+      newLines.push(i)
+    };
+    !i = i + 1
+  };
+  newLines.push(n);
+  newLines.toArray()
+}
+
 fun makeNewLinesDir(
   context: mutable SKStore.Context,
   files: SKStore.EHandle<FPath, SKStore.StringFile>,
@@ -21,14 +46,7 @@ fun makeNewLinesDir(
     SKStore.DirName::create("/skjs/newlines/"),
     (context, _self, key) ~> {
       content = files.get(context, key).value;
-      newLines = mutable Vector[];
-      i = 0;
-      for (c in content) {
-        if (c == '\n') newLines.push(i);
-        !i = i + 1;
-      };
-      newLines.push(i);
-      Array[NewLinesFile(newLines.toArray())]
+      Array[NewLinesFile(computeNewLines(content))]
     },
   )
 }

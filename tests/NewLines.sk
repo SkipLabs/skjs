@@ -1,0 +1,73 @@
+module SKJSTests;
+
+// A line ends at each LineTerminator: <LF>, <CR>, <LS> (U+2028) and <PS>
+// (U+2029), with a <CR><LF> counting once. The table holds the index of each
+// terminator's LAST character, then the length of the content, and a position's
+// column is its offset minus the previous entry (PositionResolver::lineCol), so
+// a <CR><LF> has to be entered at its <LF> or the next line starts at column 2.
+@test
+fun testComputeNewLines(): void {
+  cr = Char::fromCode(13).toString();
+  lf = Char::fromCode(10).toString();
+  ls = Char::fromCode(0x2028).toString();
+  ps = Char::fromCode(0x2029).toString();
+  // (content, expected entries excluding the trailing length sentinel)
+  cases = Array[
+    ("ab", Array[]),
+    (`a${lf}b`, Array[1]),
+    (`a${cr}b`, Array[1]),
+    // One entry, at the <LF>: counting the <CR> too would start the next line
+    // at column 2, and is the obvious way to get the lone-<CR> case wrong.
+    (`a${cr}${lf}b`, Array[2]),
+    (`a${ls}b`, Array[1]),
+    (`a${ps}b`, Array[1]),
+    // A <CR> then a <CR><LF> is two terminators, not three.
+    (`a${cr}${cr}${lf}b`, Array[1, 3]),
+    (`a${lf}${lf}b`, Array[1, 2]),
+  ];
+  for (case in cases) {
+    (content, expected) = case;
+    actual = SKJS.computeNewLines(content);
+    size = content.chars().size();
+    SKTest.expectEq(
+      actual,
+      expected.concat(Array[size]),
+      `computeNewLines(${inspect(content)})`,
+    )
+  }
+}
+
+// A file that opens with a run of one-character line terminators. The position
+// of a diagnostic anchored on one of them (today, the invalid-character error a
+// raw <LS> raises, #822) has to be that terminator's own line and column.
+//
+// lineCol guards line 1 with `idx <= 0 || idx >= newLines[idx]`, and the second
+// half is wrong: newLines is strictly increasing from at least 0, so
+// newLines[idx] >= idx always, making it true exactly when newLines[idx] == idx
+// -- that is, when everything up to idx is a one-character terminator.
+@test
+fun testLineColAtALeadingTerminator(): void {
+  lf = Char::fromCode(10).toString();
+  ls = Char::fromCode(0x2028).toString();
+  content = `${lf}${ls}export const a = 1;${lf}`;
+  resolver = SKJS.PositionResolver{
+    absFileName => SKJS.FAbsolute::nil,
+    newLines => SKJS.computeNewLines(content),
+    symbols => Map[],
+  };
+  // The <LS> is the second character, and it ends line 2.
+  SKTest.expectEq(
+    resolver.lineCol(SKJS.Pos(1)),
+    SKJS.LineCol{line => 2, col => 1},
+    "the <LS> that ends line 2",
+  );
+  // The first character of line 3, just past the <LS>. This one is already
+  // right: the guard only misfires on the terminator itself.
+  SKTest.expectEq(
+    resolver.lineCol(SKJS.Pos(2)),
+    SKJS.LineCol{line => 3, col => 1},
+    "the first character after the <LS>",
+  )
+}
+
+module end;
