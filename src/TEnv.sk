@@ -509,16 +509,28 @@ base class TEnv{
   // Fresh skolem type arguments for `instanceof` narrowing. Each represents a
   // type argument fixed by the runtime object but hidden from the program.
   fun makeSkolemTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
-    tparams = this.getClass(tcenv, className).tparams;
-    tparams.map(tparam -> {
-      cstr = tparam.constraint.map(c -> this.normalize(tcenv, c));
+    this.makeSkolemTArgsOf(
+      tcenv.subst,
+      this.getClass(tcenv, className),
+      className,
+    )
+  }
+
+  // makeSkolemTArgs against a class the caller has already resolved.
+  fun makeSkolemTArgsOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+  ): Array<TType> {
+    c.tparams.map(tparam -> {
+      cstr = tparam.constraint.map(x -> this.normalize(subst, x));
       // Represent the skolem as a synthetic TParam, preserving its identity
       // and declared upper bound through expansion.
       TType::fromTParamWithConstraint(
-        tcenv.subst,
+        subst,
         this,
         className.pos,
-        tcenv.subst.genSkolemTParam(className.pos, tparam.name.value, cstr),
+        subst.genSkolemTParam(className.pos, tparam.name.value, cstr),
       )
     })
   }
@@ -531,8 +543,16 @@ base class TEnv{
   // inference variables in a throwaway `Subst::clone` -- getClass and
   // normalize both take a TCEnvBase, which Subst is.
   fun makeTArgsIn(subst: mutable Subst, className: Name): Array<TType> {
-    tparams = this.getClass(subst, className).tparams;
-    allTVars = tparams
+    this.makeTArgsOf(subst, this.getClass(subst, className), className)
+  }
+
+  // makeTArgs against a class the caller has already resolved.
+  fun makeTArgsOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+  ): Array<TType> {
+    allTVars = c.tparams
       .map(tparam -> {
         tvar = subst.gen(className.pos);
         tparam.constraint.each(cstr ->
@@ -587,7 +607,25 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
-    c = this.getClass(subst, className);
+    this.newObjectOf(
+      subst,
+      this.getClass(subst, className),
+      className,
+      targs,
+      filter,
+    )
+  }
+
+  // newObject against a class the caller has already resolved. A caller that
+  // also needs the class's tparams (to build `targs` with makeTArgsOf or
+  // makeSkolemTArgsOf) would otherwise resolve the same name twice.
+  fun newObjectOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
+  ): TObject {
     if (c.tparams.size() != targs.size()) {
       subst.error(
         Array[

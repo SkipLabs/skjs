@@ -360,20 +360,26 @@ extension class TypeChecker {
 
   // Narrows `local` based on `local instanceof className`
   fun evalInstanceof(tcenv: mutable TCEnv, local: Name, className: Name): void {
-    skolemObj = this.newObject(
+    // Resolve the class once: both views below need its tparams to build their
+    // type arguments and then need the class again to build the object, and
+    // the name-taking entry points would each resolve it afresh.
+    c = this.getClass(tcenv.subst, className);
+    skolemObj = this.newObjectOf(
       tcenv.subst,
+      c,
       className,
-      this.makeSkolemTArgs(tcenv, className),
+      this.makeSkolemTArgsOf(tcenv.subst, c, className),
     );
     // The probe that the preservation check below matches branches against,
     // built once. Its inference variables are minted in a throwaway clone, so
     // the real substitution never sees them and there is nothing to roll back;
     // each branch re-clones it, so one branch's inference cannot reach another.
     probeSubst = tcenv.subst.clone();
-    probeObj = this.newObject(
+    probeObj = this.newObjectOf(
       probeSubst,
+      c,
       className,
-      this.makeTArgsIn(probeSubst, className),
+      this.makeTArgsOf(probeSubst, c, className),
     );
     filterMap = stype ->
       stype match {
