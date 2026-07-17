@@ -92,13 +92,17 @@ extension class TypeChecker {
                 )
               }
             };
-            superCstr = this.newConstructor(
+            // parentClass is already resolved above; pass it on rather than
+            // resolving the same name twice more.
+            superCstr = this.newConstructorOf(
               subst,
+              parentClass,
               parentName,
               parentTArgs.map(ty -> this.normalize(subst, ty)),
             );
-            super = this.new(
+            super = this.newOf(
               subst,
+              parentClass,
               parentName,
               parentTArgs.map(ty -> this.normalize(subst, ty)),
             );

@@ -87,6 +87,10 @@ mutable class Subst private {
   // of SubstState, so save/restore never touch it; it is push/popped around
   // the check.
   mutable freezeCandidates: Bool = false,
+  // Fresh ids for skolem type parameters. This counter is separate from the
+  // version and from SubstState because restore rewinds the version; reusing an
+  // id on a restored timeline would merge two distinct hidden type arguments.
+  mutable nextSkolemId: Int = 0,
 } extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
@@ -145,6 +149,12 @@ mutable class Subst private {
       version => this.version,
       values => this.values,
       origins => this.origins,
+      // A skolem minted inside a clone would not advance the parent's
+      // counter, so the parent could later mint a distinct hidden type
+      // argument with the same id, silently merging the two. No caller mints
+      // skolems speculatively, so poison the counter: genSkolemTParam fails
+      // hard on it the moment that changes.
+      nextSkolemId => -1,
     }
   }
 
@@ -238,6 +248,27 @@ mutable class Subst private {
     id = this.version;
     this.!version = this.version + 1;
     TVar::create(pos, TVarID::create(id))
+  }
+
+  mutable fun genSkolemTParam(
+    pos: PosRange,
+    name: String,
+    cstr: ?TType,
+  ): TParamWithConstraint {
+    invariant(
+      this.nextSkolemId >= 0,
+      "A skolem must not be minted in a cloned Subst: its id could collide " +
+        "with one the parent mints later, merging two distinct hidden type " +
+        "arguments",
+    );
+    id = this.nextSkolemId;
+    this.!nextSkolemId = this.nextSkolemId + 1;
+    TParamWithConstraint(
+      name,
+      pos.fileName,
+      Id::createSynthetic(`skolem:${id}`),
+      cstr,
+    )
   }
 
   mutable fun genForField(pos: PosRange): TVar {

@@ -337,6 +337,13 @@ mutable class Lexer private {
     this.posRange2(tok, this.lastTok.fromSome())
   }
 
+  // A `#!` is a hashbang only at the very start of the file. A leading byte
+  // order mark does not count against that (tsc strips it first), but anything
+  // else does, including whitespace. Elsewhere a `#` begins a private name.
+  readonly fun atHashbangStart(pos: Int): Bool {
+    pos == 0 || (pos == 1 && this.contents[0].code() == 0xFEFF)
+  }
+
   // This is the method containing the main logic of the lexer. Note
   // that we are skipping whitespaces and comments before running the
   // actual logic.
@@ -351,7 +358,8 @@ mutable class Lexer private {
         continue
       | '#' if (
         start + 1 < this.contents.size() &&
-        this.contents[start + 1] == '!'
+        this.contents[start + 1] == '!' &&
+        this.atHashbangStart(start)
       ) ->
         !start = start + 1;
         loop {

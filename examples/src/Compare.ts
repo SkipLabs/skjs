@@ -27,11 +27,33 @@ function compare<T>(a: T, b: T): number {
   throw "Unsupported types";
 }
 
-function compareArrays<T>(a: Array<T>, b: Array<T>): number {
+function compareArrays<A, B>(a: Array<A>, b: Array<B>): number {
   if (a.length !== b.length) return a.length < b.length ? -1 : 1;
   for (let i = 0; i < a.length; i++) {
     const result = compare(a[i], b[i]);
     if (result !== 0) return result;
+  }
+  return 0;
+}
+
+// A single type parameter over both arrays is rightly rejected when the
+// arrays were narrowed by separate `instanceof` checks: one T claims their
+// elements are exchangeable (Array<T> carries write capability), which two
+// independent runtime facts do not establish. The hidden element types are not
+// known to be equal; splitting the parameter (above) says exactly what this
+// function does and is accepted.
+function compareArraysSharedElement<T>(a: Array<T>, b: Array<T>): number {
+  return compareArrays(a, b);
+}
+
+function rejectedSharedElementCompare(a: unknown, b: unknown): number {
+  if (a instanceof Array && b instanceof Array) {
+    // @skjs-expect-error Argument is not assignable to the parameter's type
+    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <T | T>
+    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'T' must be assignable to source parameter type 'T'
+    return compareArraysSharedElement(a, b);
   }
   return 0;
 }

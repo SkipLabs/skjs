@@ -411,6 +411,29 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **SKJS enforcement**: `Callability` four-state (`CPresent`/`CFunction`/`CAbsent`/`CUnknown`) on `TFields.call`/`.new`; `evalTypeofEquality` narrows per branch on the call mode; `isSubCallability` rejects `CPresent/CFunction <= CAbsent` and `CUnknown/CAbsent <= CFunction` while keeping `CUnknown <= CAbsent` for TS structural compatibility (`{ a: number } -> C`), so `CAbsent` remains a brand-like approximation, like `isArray` in 27b (two-step laundering `Function -> {} -> C` remains, documented)
 - **Verified by**: `tests/expect-error/callability.ts`, `tests/expect-error/function-type.ts`
 
+### 27e. `instanceof` Narrowing Binds Hidden Type Arguments Rigidly (Stricter than TypeScript)
+- **Rule**: `x instanceof C` for a generic `C` proves only that the runtime object *has* some type arguments — not which. Each hidden argument is bound to a fresh rigid witness (a synthetic type parameter), not to an inference variable. Reads observe the argument's declared bound; writes require the exact hidden type, so no expected type, write, or call-site inference can choose it. A branch of `x` that already satisfies the test keeps its own precise arguments — the witness is only introduced where the argument is genuinely unknown
+- **TypeScript difference**: tsc narrows through its `any` escape hatch (`x instanceof Box` gives `Box<any>`, `x instanceof Array` gives `any[]`), so a read at any type and a write of any value are both accepted. SKJS's narrowing is `any`-free, so the unknown argument must be represented rather than erased; the cost is that operations naming the argument in an input position are rejected (issues #772, #791)
+- **SKJS enforcement**: `evalInstanceof` mints one witness per class type parameter via `makeSkolemTArgs` and intersects it into each branch that does not already satisfy the test. Witness identity is per type-check, not per source site, so two independently narrowed objects never share one
+- **Consequences**: a write below the declared bound is rejected (`x.tag = "a"` for `Tagged<T extends string>`), as is admission at a concrete instantiation (`takesBoxString(x)`), while round trips through the same occurrence are accepted (`cell.put(cell.take())`). The same applies to `instanceof Array`: element writes are rejected, element-independent reads (`x[0]`, `x.length`) are not. Operations whose parameter names the hidden argument are rejected even when they are pure queries — `Map.get`/`Map.has`/`Set.has`/`Array.includes`/`Array.indexOf` — and there is no cast that recovers them, since `x as Map<unknown, unknown>` is itself rejected as unsound. Returning a narrowed value at its top instantiation (`function toArray(x: unknown): unknown[]`) is rejected for the same reason the covariant mutable upcast `Array<number>` → `Array<unknown>` is; annotate the return as `ReadonlyArray<unknown>`, or make the field `readonly`, to accept it
+- **Known limitation**: a witness stands for the hidden argument of whichever object each *runtime execution* narrows, but is minted once per type-check. Any channel that lets a witness-typed value outlive one execution — an inferred closure result, a captured container of inferred element type, or a loop body — pools distinct hidden arguments under one identity and admits a cross-object write. Such programs are still accepted today; see `tests/expect-error/instanceof-generic-skolem-args.ts` ("Known holes") and issue #903
+- **Example**:
+  ```typescript
+  class Box<T> {
+    v: T;
+    constructor(v: T) {
+      this.v = v;
+    }
+  }
+  function f(x: unknown): void {
+    if (x instanceof Box) {
+      const u: unknown = x.v; // OK: reads observe the declared bound
+      x.v = "s"; // Error in SKJS (the hidden argument is not known to be string), allowed in TypeScript
+    }
+  }
+  ```
+- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`
+
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
 - **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)
