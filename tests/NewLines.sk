@@ -15,17 +15,14 @@ fun testComputeNewLines(): void {
   cases = Array[
     ("ab", Array[]),
     (`a${lf}b`, Array[1]),
-    // FIXME(#901): a lone <CR> ends a line; expected Array[1].
-    (`a${cr}b`, Array[]),
-    // A <CR><LF> already lands here correctly, but only incidentally: its <LF>
-    // is what gets counted, and counting the <CR> as well would be the obvious
-    // way to get the lone-<CR> case wrong.
+    (`a${cr}b`, Array[1]),
+    // One entry, at the <LF>: counting the <CR> too would start the next line
+    // at column 2, and is the obvious way to get the lone-<CR> case wrong.
     (`a${cr}${lf}b`, Array[2]),
-    // FIXME(#901): <LS>/<PS> end a line; expected Array[1].
-    (`a${ls}b`, Array[]),
-    (`a${ps}b`, Array[]),
-    // FIXME(#901): a <CR> then a <CR><LF> is two terminators; expected [1, 3].
-    (`a${cr}${cr}${lf}b`, Array[3]),
+    (`a${ls}b`, Array[1]),
+    (`a${ps}b`, Array[1]),
+    // A <CR> then a <CR><LF> is two terminators, not three.
+    (`a${cr}${cr}${lf}b`, Array[1, 3]),
     (`a${lf}${lf}b`, Array[1, 2]),
   ];
   for (case in cases) {
