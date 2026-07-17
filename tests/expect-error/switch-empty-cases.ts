@@ -53,6 +53,23 @@ function testMixedCases(x: string): number {
   }
 }
 
+// Chaining an empty clause is what lets a switch count as always returning, so
+// a block ending in one is terminal — and what follows an `if` around it keeps
+// the else branch's narrowing rather than merging both.
+function terminalSwitchNarrowsAfterIf(x: string, n: number | string): void {
+  if (typeof n === "string") {
+    switch (x) {
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      case "a":
+      case "b":
+        return;
+      default:
+        return;
+    }
+  }
+  const m: number = n;
+}
+
 // A clause that breaks leaves the switch rather than continuing into the next
 // one, so grouping labels in front of it does not make the switch return.
 // @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
