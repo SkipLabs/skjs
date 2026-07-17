@@ -147,33 +147,37 @@ value class StmtTermination private {
       static::expr(e).thenk(() -> {
         if (branches.isEmpty()) {
           // A switch with no clauses runs none of them: it evaluates the
-          // scrutinee and falls through. `or` has no answer to give over no
-          // branches, so say it here. (`TypeChecker::switch` separately reports
-          // the empty switch; this only describes how it ends.)
+          // scrutinee and falls through. The chain below is seeded from the
+          // last clause, so it has none to start from here.
+          // (`TypeChecker::switch` separately reports the empty switch; this
+          // only describes how it ends.)
           static::skip
         } else {
           // Entering at a clause runs its block and, if that completes
           // normally, falls into the next one; only the last falls out of the
           // switch. So a clause's outcome is its block followed by the clauses
-          // after it, and the switch's is the union over the clause entered at.
-          // Judging each block on its own instead would make an empty clause —
-          // how labels are grouped — look like it falls out of the switch
-          // rather than into its neighbour.
+          // after it. Judging each block on its own instead would make an empty
+          // clause — how labels are grouped — look like it falls out of the
+          // switch rather than into its neighbour.
           blockTerms = mutable Vector<StmtTermination>[];
           for (branch in branches) {
             blockTerms.push(static::block(tcenvb, branch.block))
           };
-          // Chain the *raw* blocks: `break` becomes a fallthrough only once, at
-          // the end. Converting it per clause first would make a clause that
+          // Chain from the last clause back. Every clause but the last is taken
+          // as `maybe`, because the switch is entered at whichever clause
+          // matches: chaining them as they are would stop at the first one that
+          // cannot complete normally and never reach the clauses after it, as
+          // though the switch could only ever be entered at the first.
+          //
+          // The blocks are chained raw, and `break` becomes a fallthrough once,
+          // at the end. Converting it per clause first would make a clause that
           // breaks look like it continues into the next one, when it leaves the
           // switch entirely.
           i = blockTerms.size() - 1;
-          entry = blockTerms[i];
-          branchesTerm = entry;
+          branchesTerm = blockTerms[i];
           while (i > 0) {
             !i = i - 1;
-            !entry = blockTerms[i].then(entry);
-            !branchesTerm = branchesTerm / entry
+            !branchesTerm = blockTerms[i].maybe().then(branchesTerm)
           };
           !branchesTerm = branchesTerm.breakToFallthrough();
           switchIsExhaustive = branches.any(branch ~>
