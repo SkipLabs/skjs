@@ -37,4 +37,38 @@ fun testComputeNewLines(): void {
   }
 }
 
+// A file that opens with a run of one-character line terminators. The position
+// of a diagnostic anchored on one of them (today, the invalid-character error a
+// raw <LS> raises, #822) has to be that terminator's own line and column.
+//
+// lineCol guards line 1 with `idx <= 0 || idx >= newLines[idx]`, and the second
+// half is wrong: newLines is strictly increasing from at least 0, so
+// newLines[idx] >= idx always, making it true exactly when newLines[idx] == idx
+// -- that is, when everything up to idx is a one-character terminator.
+@test
+fun testLineColAtALeadingTerminator(): void {
+  lf = Char::fromCode(10).toString();
+  ls = Char::fromCode(0x2028).toString();
+  content = `${lf}${ls}export const a = 1;${lf}`;
+  resolver = SKJS.PositionResolver{
+    absFileName => SKJS.FAbsolute::nil,
+    newLines => SKJS.computeNewLines(content),
+    symbols => Map[],
+  };
+  // FIXME(#901): reported as line 1, column 2.
+  // The <LS> is the second character, and it ends line 2.
+  SKTest.expectEq(
+    resolver.lineCol(SKJS.Pos(1)),
+    SKJS.LineCol{line => 1, col => 2},
+    "the <LS> that ends line 2",
+  );
+  // The first character of line 3, just past the <LS>. This one is already
+  // right: the guard only misfires on the terminator itself.
+  SKTest.expectEq(
+    resolver.lineCol(SKJS.Pos(2)),
+    SKJS.LineCol{line => 3, col => 1},
+    "the first character after the <LS>",
+  )
+}
+
 module end;
