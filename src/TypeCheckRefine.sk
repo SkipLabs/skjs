@@ -361,21 +361,17 @@ extension class TypeChecker {
   // Narrows `local` based on `local instanceof className`
   fun evalInstanceof(tcenv: mutable TCEnv, local: Name, className: Name): void {
     // Resolve the class once: both views below need its tparams to build their
-    // type arguments and then need the class again to build the object, and
+    // type arguments and then need the class again to build the fields, and
     // the name-taking entry points would each resolve it afresh.
     c = this.getClass(tcenv.subst, className);
-    skolemObj = this.newObjectOf(
-      tcenv.subst,
-      c,
-      className,
-      this.makeSkolemTArgsOf(tcenv.subst, c, className),
-    );
-    // The probe that the preservation check below matches branches against,
-    // built once. Its inference variables are minted in a throwaway clone, so
-    // the real substitution never sees them and there is nothing to roll back;
+    skolemTArgs = this.makeSkolemTArgsOf(tcenv.subst, c, className);
+    skolemFields = this.newFieldsOf(tcenv.subst, c, className, skolemTArgs);
+    // The fields the preservation check below matches branches against, built
+    // once. Their inference variables are minted in a throwaway clone, so the
+    // real substitution never sees them and there is nothing to roll back;
     // each branch re-clones it, so one branch's inference cannot reach another.
     probeSubst = tcenv.subst.clone();
-    probeObj = this.newObjectOf(
+    probeFields = this.newFieldsOf(
       probeSubst,
       c,
       className,
@@ -397,23 +393,20 @@ extension class TypeChecker {
         branches = mutable Vector[];
         rewritten = false;
         for (fields in tObj.getBranches()) {
-          alreadyMatches = probeObj.getBranches().any(probeFields ->
+          if (
             TFields::isSub(
               probeSubst.clone(),
               this,
               fields,
               probeFields,
             ) is STOk _
-          );
-          if (alreadyMatches) {
+          ) {
             branches.push(fields)
           } else {
             !rewritten = true;
-            for (skolemFields in skolemObj.getBranches()) {
-              TFields::inter(tcenv.subst, this, fields, skolemFields) match {
-              | None() -> void
-              | Some(interFields) -> branches.push(interFields)
-              }
+            TFields::inter(tcenv.subst, this, fields, skolemFields) match {
+            | None() -> void
+            | Some(interFields) -> branches.push(interFields)
             }
           }
         };
@@ -431,7 +424,11 @@ extension class TypeChecker {
     this.setLocalFilterMap(
       tcenv,
       local,
-      Some(STypes::single(skolemObj)),
+      Some(
+        STypes::single(
+          this.objectOfFields(skolemFields, className, skolemTArgs),
+        ),
+      ),
       filterMap,
     )
   }

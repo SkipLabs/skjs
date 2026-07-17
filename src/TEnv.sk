@@ -651,6 +651,39 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
+    this.objectOfFields(
+      this.newFieldsOf(subst, c, className, targs, filter),
+      className,
+      targs,
+    )
+  }
+
+  // The single-branch object a class instantiation denotes, from fields the
+  // caller already built. Keeps the unexpanded instance, so the type still
+  // prints as `C<targs>` rather than structurally.
+  fun objectOfFields(
+    fields: TFields,
+    className: Name,
+    targs: Array<TType>,
+  ): TObject {
+    TObject::createSingleBranch(
+      fields,
+      Some(TSInst(className, TArgs(targs))),
+      className.pos,
+    )
+  }
+
+  // The fields of a class instantiation. A class instantiation is always one
+  // branch, so a caller doing per-branch work (`TFields::isSub`,
+  // `TFields::inter`) wants this rather than a TObject it has to unwrap --
+  // and the signature, not a comment, is then what says there is one branch.
+  fun newFieldsOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
+  ): TFields {
     if (c.tparams.size() != targs.size()) {
       subst.error(
         Array[
@@ -702,11 +735,7 @@ base class TEnv{
       (CAbsent(), CAbsent())
     };
     tIndexes = TIndexes::create(subst, this, indexes);
-    TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, tIndexes, call, new, isArray},
-      Some(TSInst(className, TArgs(targs))),
-      className.pos,
-    )
+    TFields::create{fields, symbolFields, tIndexes, call, new, isArray}
   }
 
   fun newStatic(subst: mutable Subst, className: Name): TType {
