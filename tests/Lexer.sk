@@ -290,6 +290,25 @@ fun testEveryJSWhiteSpaceSeparatesTokens(): void {
     | exn -> throw exn
     };
     SKTest.expectFalse(threw, `U+${code} between two tokens`)
+  };
+  // The other half of the rule: these two look like whitespace and are not, so
+  // they stay invalid characters. U+180E was Space_Separator until Unicode 6.3,
+  // and U+200B is called a zero width space but never was one; node rejects
+  // both between tokens.
+  for (code in Array[0x180E, 0x200B]) {
+    notWs = Char::fromCode(code).toString();
+    content = `const a${notWs}= 1;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectTrue(threw, `U+${code} is not whitespace`)
   }
 }
 
