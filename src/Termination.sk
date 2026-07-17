@@ -116,11 +116,6 @@ value class StmtTermination private {
   static fun seq<T>(s: Sequence<T>, f: T -> this): this {
     static::it(s.iterator(), f)
   }
-  static fun or<T>(s: Sequence<T>, f: T -> this): this {
-    if (s.isEmpty()) internal_error("sequence should not be empty");
-    s.reduce((acc, x) -> acc / f(x), static{})
-  }
-
   static fun stmt(tcenvb: mutable TCEnvBase, st: Stmt): this {
     st.value match {
     | StmtEmpty() -> static::skip
@@ -150,19 +145,37 @@ value class StmtTermination private {
     | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
     | Switch(e, branches) ->
       static::expr(e).thenk(() -> {
-        if (branches.isEmpty()) {
-          // A switch with no clauses runs none of them: it evaluates the
-          // scrutinee and falls through. `or` has no answer to give over no
-          // branches, so say it here. (`TypeChecker::switch` separately reports
-          // the empty switch; this only describes how it ends.)
-          static::skip
-        } else {
-          branchesTerm = static::or(branches, b -> static::branch(tcenvb, b));
-          switchIsExhaustive = branches.any(branch ~>
-            branch is SwitchBranch(Default(), _, _)
-          ); // Unless exhaustiveness is proven differently?
-          if (switchIsExhaustive) branchesTerm else branchesTerm.maybe()
-        }
+        // Each clause may fall into the next, and only the last falls out of
+        // the switch. Judging each block on its own instead would make an empty
+        // clause, which is how labels are grouped, look like it falls out
+        // rather than into its neighbour.
+        //
+        // What has been chained so far is taken as `maybe` before continuing,
+        // which is what keeps the chain going: the switch is entered at
+        // whichever clause matches, so chaining the clauses as they are would
+        // stop at the first that cannot complete normally and never reach the
+        // ones after it — as though the switch could only ever be entered at
+        // its first clause. The clause chained last is left as it is, being the
+        // one that decides whether the switch falls out.
+        //
+        // Starting from `skip` costs nothing — it is what a clause chains onto
+        // unchanged — and it is also the answer for a switch with no clauses at
+        // all, which runs none of them and falls through. (`TypeChecker::switch`
+        // separately reports that switch; this only describes how it ends.)
+        branchesTerm = static::skip;
+        for (branch in branches) {
+          !branchesTerm = branchesTerm
+            .maybe()
+            .then(static::block(tcenvb, branch.block))
+        };
+        // `break` becomes a fallthrough once, on the whole switch. Converting it
+        // per clause would make a clause that breaks look like it continues into
+        // the next one, when it leaves the switch entirely.
+        !branchesTerm = branchesTerm.breakToFallthrough();
+        switchIsExhaustive = branches.any(branch ~>
+          branch is SwitchBranch(Default(), _, _)
+        ); // Unless exhaustiveness is proven differently?
+        if (switchIsExhaustive) branchesTerm else branchesTerm.maybe()
       })
     | Block(block) -> static::block(tcenvb, block)
     | Try(tryBlock, catchClause, finallyBlock) ->
@@ -268,16 +281,6 @@ value class StmtTermination private {
     | FDComputed(keyExpr, valueExpr) ->
       static::expr(keyExpr).then(static::expr(valueExpr))
     | FDMethod _ -> static::skip
-    }
-  }
-
-  // The plain-value requirement on case expressions is checked inline in
-  // switchCheckExhaustiveness (TypeCheckStmt.sk), which can resolve names to
-  // exempt enum member reads; this pass has no defMap.
-  static fun branch(tcenvb: mutable TCEnvBase, branch: SwitchBranch): this {
-    branch match {
-    | SwitchBranch(_case, block, _pos) ->
-      static::block(tcenvb, block).breakToFallthrough()
     }
   }
 
