@@ -44,7 +44,23 @@ module SKJS;
 fun normalizeTemplateLineTerminators(raw: String): String {
   // Fast path: a template usually has no carriage return at all.
   if (!raw.contains("\r")) return raw;
-  raw.replace("\r\n", "\n").replace("\r", "\n")
+  chars = raw.chars().toArray();
+  n = chars.size();
+  out = mutable Vector<Char>[];
+  i = 0;
+  while (i < n) {
+    c = chars[i];
+    if (c != '\r') {
+      out.push(c);
+      !i = i + 1
+    } else {
+      out.push('\n');
+      // A CR and an LF after it are one terminator, not two, so the LF is
+      // consumed here rather than emitted again on the next turn.
+      !i = if (i + 1 < n && chars[i + 1] == '\n') i + 2 else i + 1
+    }
+  };
+  String::fromChars(out.toArray())
 }
 
 // Decodes the body of a string literal (with the surrounding quotes already
