@@ -78,6 +78,11 @@ mutable class Scope{
     this.maybeGetRefHelper(false, name)
   }
 
+  // The current view of `name` from this scope: the nearest ref walking up.
+  readonly fun lookupRef(name: String): ?LocalRef {
+    this.maybeGetRef(name).map(x -> x.i1)
+  }
+
   mutable fun bind(
     tcenvb: mutable TCEnvBase,
     name: Name,

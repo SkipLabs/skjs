@@ -99,10 +99,9 @@ function breakGuardNarrowsInSwitch(x: number, v: string | undefined): void {
   }
 }
 
-// FIXME(#907): a branch that WRITES and then breaks re-joins the flow after
-// the enclosing switch with the write live, so dropping its scope loses it:
-// f(1, true, ...) reaches z with y === "b" in a variable typed "a". Pinned to
-// the current (unsound) acceptance; flipped by the refinement guard.
+// A branch that WRITES and then breaks re-joins the flow after the enclosing
+// switch with the write live, so its scope cannot be dropped: f(1, true, ...)
+// reaches z with y === "b", and the merge keeps that possibility.
 function writeThenBreakOutOfSwitch(
   x: number,
   c: boolean,
@@ -121,11 +120,12 @@ function writeThenBreakOutOfSwitch(
     default:
       break;
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "a" = y;
 }
 
-// FIXME(#907): same through a loop — the continue re-joins at the loop
-// header, and the loop can then exit with y === "b".
+// Same through a loop — the continue re-joins at the loop header, and the
+// loop can then exit with y === "b".
 function writeThenContinueInLoop(c: () => boolean, a: "a", b: "b"): void {
   let y: "a" | "b" = a;
   y = a;
@@ -135,5 +135,6 @@ function writeThenContinueInLoop(c: () => boolean, a: "a", b: "b"): void {
       continue;
     }
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "a" = y;
 }

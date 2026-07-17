@@ -90,7 +90,10 @@ extension class TypeChecker {
       this.checkBool(tcenv, e);
       scope1 = this.block(tcenv, block1, Some((e, true)));
       scope2 = this.block(tcenv, block2, Some((e, false)));
-      (isTerminalBlock(tcenv, block1), isTerminalBlock(tcenv, block2)) match {
+      (
+        this.ifBranchDiverges(tcenv, block1, scope1),
+        this.ifBranchDiverges(tcenv, block2, scope2),
+      ) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
@@ -228,6 +231,43 @@ extension class TypeChecker {
     }
   }
 
+  // Whether an `if` branch is excluded from the merge after the `if`: control
+  // cannot fall out of it, and dropping its scope loses nothing. A branch that
+  // returns, throws, or loops forever never re-joins the function's flow. A
+  // branch that breaks or continues does re-join it — after the enclosing
+  // switch, or at the loop's header or exit — carrying whatever it wrote, so
+  // it can only be dropped when everything it did to outer bindings refines
+  // what the code around the `if` already knows: narrowing the tested value
+  // is exactly that, writing a new value is not.
+  fun ifBranchDiverges(
+    tcenv: mutable TCEnv,
+    block: Array<Stmt>,
+    scope: readonly Scope,
+  ): Bool {
+    term = StmtTermination::block(tcenv, block);
+    if (term.mayFallthrough) {
+      false
+    } else if (!term.mayBreak && !term.mayContinue) {
+      true
+    } else {
+      // A probe, not a type assignment: cloned so it cannot grow type
+      // variables (same pattern as the comparison-overlap checks).
+      subst = tcenv.subst.clone();
+      refines = true;
+      for (nameRef in scope.escapingRefs()) {
+        tcenv.scope.lookupRef(nameRef.name) match {
+        | Some(outer) ->
+          TType::isSub(subst, this, nameRef.ref.type, outer.type) match {
+          | STOk() -> void
+          | STErrorOnTType _ -> !refines = false
+          }
+        | None() -> !refines = false
+        }
+      };
+      refines
+    }
+  }
+
   fun switch(
     tcenv: mutable TCEnv,
     e: Expr,
@@ -288,8 +328,8 @@ extension class TypeChecker {
     lastDefaultPos: ?PosRange = None();
     // A branch that always returns or throws never reaches the code after the
     // switch, so its scope is not one of the paths out and is left out of the
-    // merge (`If` does the same, via `isTerminalBlock`). The block is still
-    // checked either way — only its scope is dropped.
+    // merge (`If` narrowing makes the same call, via `ifBranchDiverges`). The
+    // block is still checked either way — only its scope is dropped.
     scopes = mutable Vector<readonly Scope>[];
     for (i in Range(0, branches.size())) {
       block = branches[i].block;
