@@ -15,6 +15,9 @@ function id2<T, U>(x: T): U {
 // FIXME: TypeScript accepts this call (K = [0, 1]); the array literal
 // commits to the widened tuple before the constraint check (case 2a'), so
 // SKJS rejects it.
+// FIXME: both sides below print as '[0, 1]', so the message cannot explain
+// the rejection -- the rendered source is not the type the check rejected
+// (#914). The pair is pinned as-is: it is what a user sees.
 declare function g2<K extends [0, 1]>(x: K): K;
 function tupleConstraint(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
