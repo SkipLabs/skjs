@@ -355,7 +355,7 @@ fun testHashbangOnlyAtFileStart(): void {
     (` #! )( ${lf}const x = 1;`, false),
   ];
   for (case in cases) {
-    (content, _shouldParse) = case;
+    (content, shouldParse) = case;
     fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
     lexer = SKJS.Lexer::mcreate(fileName, content);
     parser = mutable SKJS.Parser(lexer);
@@ -366,9 +366,7 @@ fun testHashbangOnlyAtFileStart(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    // FIXME(#823): a `#!` anywhere is a hashbang, so the `)(` is always
-    // swallowed and every case parses cleanly.
-    SKTest.expectFalse(threw, `${content}: currently accepted`)
+    SKTest.expectEq(!threw, shouldParse, content)
   }
 }
 
