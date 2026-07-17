@@ -40,6 +40,17 @@ b`): "a\n\nb" {
   return x;
 }
 
+// --- A chunk after an interpolation cooks like the first one ---
+
+// A template type's continuation chunks go through the same cooking as its
+// head, so a terminator in one normalizes too. (An interpolated template
+// EXPRESSION is typed `string` and never cooks its parts -- see
+// Parser::validateTemplatePart -- so there is nothing to pin for it.)
+function terminatorAfterHole(x: `a${"x"}b
+c`): "axb\nc" {
+  return x;
+}
+
 // --- <LS> and <PS> are line terminators whose TV is themselves ---
 
 // Normalizing these would be the natural over-generalization: ECMA-262 lists
