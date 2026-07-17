@@ -189,4 +189,36 @@ fun testTemplateTypeInParenthesizedTypeLexesCleanly(): void {
   }
 }
 
+// A string literal's body excludes LineTerminators, and a lone <CR> is one, so
+// a string holding a raw one is unterminated -- tsc reports TS1002 and node will
+// not parse the file. The scanner reads only <LF> as ending a line, so SKJS
+// accepts it.
+//
+// Tested here rather than as an expect-error fixture for two reasons: the CR has
+// to survive as a byte, and once a <CR> ends a line the fixture could not put the
+// error on the last non-empty line, which that harness requires of a parse error.
+@test
+fun testLoneCarriageReturnInStringIsRejected(): void {
+  cr = Char::fromCode(13).toString();
+  for (q in Array["\"", "'"]) {
+    // function f(): void { const s = "a<CR>b"; }
+    content = `function f(): void { const s = ${q}a${cr}b${q}; }`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    // FIXME(#901): accepted; a lone <CR> should end the string as unterminated.
+    SKTest.expectFalse(
+      threw,
+      `${q}: a lone carriage return in a string is currently accepted`,
+    )
+  }
+}
+
 module end;
