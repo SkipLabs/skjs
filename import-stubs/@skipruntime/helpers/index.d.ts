@@ -68,7 +68,7 @@ export declare function fetchJSON<V extends Json>(
     body?: Json;
     timeout?: number;
   },
-): Promise<[V | null, Headers]>;
+): Promise<[V | null, { [header: string]: string }]>;
 
 export declare class Sum implements Reducer<number, number> {
   initial: number;
