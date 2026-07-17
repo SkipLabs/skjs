@@ -291,6 +291,15 @@ extension class TypeChecker {
     // merge (`If` does the same, via `isTerminalBlock`). The block is still
     // checked either way — only its scope is dropped.
     scopes = mutable Vector<readonly Scope>[];
+    // A block reached by falling through empty clauses runs whenever any of
+    // their labels matches, so it is narrowed by their disjunction, not just its
+    // own label — refining `case 1: case 2: <body>` to `2` alone would be
+    // unsound, since the body also runs when the scrutinee is `1`. `fallenInto`
+    // accumulates those labels; an empty `default` among them makes the block
+    // reachable for any unmatched value, which no disjunction of labels
+    // describes, so the group is then narrowed by nothing at all.
+    fallenInto: ?Expr = None();
+    fallenIntoDefault = false;
     for (i in Range(0, branches.size())) {
       block = branches[i].block;
       // How the block ends answers both questions asked of it below: whether it
@@ -394,7 +403,19 @@ extension class TypeChecker {
             TSCode(7029),
           )
         };
-        Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
+        eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+        reachedBy = fallenInto match {
+        | None() -> eq
+        | Some(prev) -> Expr(e.pos, (Binop(BOLogicalOr(), prev, eq)))
+        };
+        cond = if (fallenIntoDefault) None() else Some((reachedBy, true));
+        if (block.size() == 0) {
+          !fallenInto = Some(reachedBy)
+        } else {
+          !fallenInto = None();
+          !fallenIntoDefault = false
+        };
+        cond
       | SwitchBranch(Default(), _, pos) ->
         // A switch may contain at most one `default` clause; a second one is a
         // JavaScript SyntaxError (tsc reports TS1113). Reject every `default`
@@ -428,6 +449,12 @@ extension class TypeChecker {
             ],
             ESLintCode("default-case-last"),
           )
+        };
+        if (block.size() == 0) {
+          !fallenIntoDefault = true
+        } else {
+          !fallenInto = None();
+          !fallenIntoDefault = false
         };
         None()
       };

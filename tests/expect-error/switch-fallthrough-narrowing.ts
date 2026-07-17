@@ -3,28 +3,27 @@
 // body, it runs whenever any of their labels matches, so it must be narrowed to
 // their union — not just its own label.
 
-// FIXME: reaching this body means `x === 1 || x === 2`, so `x` is `1 | 2` here,
-// not `2`. It is currently narrowed to `2` alone, which is unsound: this returns
-// `1` from a function typed `2` when called with `1`. Pinned to the current
-// (incorrect) behavior; fixed in the next commit.
+// Reaching this body means `x === 1 || x === 2`, so `x` is `1 | 2` here, not
+// `2`: this would return `1` from a function typed `2` when called with `1`.
 function narrowsToUnionNotLastLabel(x: 1 | 2): 2 {
   switch (x) {
     case 1:
     case 2:
+      // @skjs-expect-error Type of returned value is not assignable to the function's return type
       return x;
   }
   return 2;
 }
 
-// FIXME: an empty `default` before a case makes that case's body reachable for
-// any unmatched value too, so `x` is not narrowed to `1` here. It currently is,
-// which is unsound (the body runs for `x === 2` by falling through `default`).
-// Pinned to the current (incorrect) behavior; fixed in the next commit.
+// An empty `default` before a case makes that case's body reachable for any
+// unmatched value too (the body runs for `x === 2` by falling through
+// `default`), so `x` is not narrowed to `1` here.
 function emptyDefaultFirstDoesNotNarrow(x: 1 | 2): void {
   switch (x) {
     // @skjs-expect-warning The 'default' clause should be the last branch of a switch
     default:
     case 1:
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const y: 1 = x;
       break;
   }
