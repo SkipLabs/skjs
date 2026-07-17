@@ -84,3 +84,56 @@ function bothBranchesTerminalStaysConservative(): number {
   }
   return 0;
 }
+
+// A write-free break guard narrows like the continue guard does: the branch
+// only refines what is already known about v, so only the fall-through
+// path's narrowing survives.
+function breakGuardNarrowsInSwitch(x: number, v: string | undefined): void {
+  switch (x) {
+    case 1:
+      if (v === undefined) break;
+      const s: string = v;
+      break;
+    default:
+      break;
+  }
+}
+
+// FIXME(#907): a branch that WRITES and then breaks re-joins the flow after
+// the enclosing switch with the write live, so dropping its scope loses it:
+// f(1, true, ...) reaches z with y === "b" in a variable typed "a". Pinned to
+// the current (unsound) acceptance; flipped by the refinement guard.
+function writeThenBreakOutOfSwitch(
+  x: number,
+  c: boolean,
+  a: "a",
+  b: "b",
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      if (c) {
+        y = b;
+        break;
+      }
+      break;
+    default:
+      break;
+  }
+  const z: "a" = y;
+}
+
+// FIXME(#907): same through a loop — the continue re-joins at the loop
+// header, and the loop can then exit with y === "b".
+function writeThenContinueInLoop(c: () => boolean, a: "a", b: "b"): void {
+  let y: "a" | "b" = a;
+  y = a;
+  while (c()) {
+    if (c()) {
+      y = b;
+      continue;
+    }
+  }
+  const z: "a" = y;
+}
