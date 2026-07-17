@@ -297,43 +297,16 @@ extension class TypeChecker {
   }
 
   // Reports a type alias whose own definition requires resolving itself
-  // (TS2456, issue #874). Such an alias denotes nothing: `instantiate` breaks
-  // the recursion by handing back an unexpandable self-reference, which
-  // contributes no clauses and so *is* the empty type. `type R = R` then
-  // silently satisfies every annotation, and an ambient `declare` can assert a
-  // value into it, so the mistake has to be caught at the declaration.
-  //
-  // A reference is *immediate* when computing the alias's own type forces the
-  // referenced type to be computed too: the body itself, either side of a
-  // union or intersection, the operand of `keyof`, and the type arguments of a
-  // reference to another alias — instantiating an alias resolves its arguments
-  // before substituting them, so `type Y = Box<Y>` is circular even though
-  // `type Box<T> = { v: T }` never uses `T` immediately, and even where the
-  // alias ignores the argument outright.
-  //
-  // Every other position is *deferred*: an object member, array element, tuple
-  // element, or function parameter/return names the alias without resolving
-  // it, which is what keeps `type List<T> = null | { head: T; tail: List<T> }`
-  // legal. The type arguments of a class or interface reference are deferred
-  // for the same reason, which is what separates `type Arr = Array<Arr>`
-  // (legal) from `type Y = Box<Y>` (circular).
-  //
-  // Only a cycle that comes back to the alias under test is reported: in
-  // `type X = Y; type Y = Z; type Z = Y;` resolving `X` reaches the circular
-  // `Y`, but `X` is not itself on the cycle, and tsc reports only `Y` and `Z`.
+  // (TS2456, issue #874). Such an alias denotes nothing: its expansion is
+  // never chased (see expandToVectors), so it contributes no clauses and is
+  // the empty type. `type R = R` then silently satisfies every annotation, and
+  // an ambient `declare` can assert a value into it, so the mistake has to be
+  // caught at the declaration. TEnv::isCircularTypeDef defines what counts.
   private fun checkCircularTypeDef(
     tcenvl: mutable TCEnvLight,
     typeDef: TypeDef,
   ): void {
-    if (
-      this.requiresTypeDef(
-        tcenvl.context,
-        typeDef,
-        this.getTypeDefBody(tcenvl.context, typeDef),
-        static::tparamNames(typeDef.tdefParams),
-        mutable Set[],
-      )
-    ) {
+    if (this.isCircularTypeDef(tcenvl.context, typeDef)) {
       tcenvl.error(
         Array[
           (
@@ -344,91 +317,6 @@ extension class TypeChecker {
         TSCode(2456),
       )
     }
-  }
-
-  // Whether computing `ty` immediately requires the type alias `target`.
-  //
-  // Every name is resolved through the defMap, in the scope of the file that
-  // wrote it, and compared to `target` by definition rather than by name: the
-  // same name denotes different aliases in different files (`Json` is declared
-  // in four of them), so matching on the name alone would report an alias that
-  // merely forwards to a same-named one elsewhere as circular.
-  //
-  // `shadowed` holds the type parameters in scope at `ty`, which hide an alias
-  // of the same name — in `type Bar<Foo> = Foo`, the body is the parameter,
-  // not the alias `Foo`.
-  //
-  // `visited` records the alias bodies already explored, which both stops a
-  // cycle that never reaches `target` from looping and keeps the walk linear.
-  // It is shared across the whole walk rather than threaded down each path:
-  // whether `target` is reachable from an alias does not depend on the path
-  // taken to reach that alias, so an alias whose body has already been
-  // explored without finding `target` cannot find it on a second visit. Per
-  // path, the same body is re-explored once per path that reaches it, which is
-  // exponential on a chain of alias unions (`type A0 = A1 | A1; ...`).
-  //
-  // The walk is purely syntactic — it never instantiates — so it terminates
-  // even on bodies whose expansion would not.
-  private fun requiresTypeDef(
-    context: mutable SKStore.Context,
-    target: TypeDef,
-    ty: Type,
-    shadowed: SortedSet<String>,
-    visited: mutable Set<TypeDefBodyRef>,
-  ): Bool {
-    ty.value match {
-    | TAUnion(ty1, ty2)
-    | TAInter(ty1, ty2) ->
-      this.requiresTypeDef(context, target, ty1, shadowed, visited) ||
-        this.requiresTypeDef(context, target, ty2, shadowed, visited)
-    // `keyof T` needs T's keys, so T is resolved. Its *members* are not, which
-    // is why `type K = keyof { a: K }` stays legal: the object below defers.
-    | TAKeyOf(operand) ->
-      this.requiresTypeDef(context, target, operand, shadowed, visited)
-    | TAInst(n, targs) ->
-      if (shadowed.contains(n.value)) {
-        // A type parameter of the alias being walked, not the alias itself.
-        false
-      } else {
-        this.maybeGetTypeDef(context, n) match {
-        | Some(td) ->
-          if (td.bodyRef == target.bodyRef) {
-            true
-          } else {
-            // The arguments are written in the current scope, so they keep
-            // `shadowed`; the body is read in the callee's, so it takes the
-            // callee's parameters instead.
-            targs.any(targ ->
-              this.requiresTypeDef(context, target, targ, shadowed, visited)
-            ) ||
-              (visited.maybeInsert(td.bodyRef) &&
-                this.requiresTypeDef(
-                  context,
-                  target,
-                  this.getTypeDefBody(context, td),
-                  static::tparamNames(td.tdefParams),
-                  visited,
-                ))
-          }
-        // Not an alias: a class or interface reference defers its arguments,
-        // and a name that does not resolve is normalize's to report.
-        | None() -> false
-        }
-      }
-    // Every remaining annotation defers, and a new one is far likelier to
-    // defer than not: naming a type inside an object, array, tuple, or
-    // signature does not resolve it. Three exceptions are immediate in tsc and
-    // silent here only because SKJS rejects them before circularity could
-    // matter — `TAGet` (`type R = R["x"]`), `TAExtendsQuestion`
-    // (`type R = R extends string ? 1 : 2`) and `TAImport` are all "not yet
-    // supported". Whichever of them lands first should be given an arm above
-    // rather than left to this one.
-    | _ -> false
-    }
-  }
-
-  private static fun tparamNames(tparams: Array<TypeParam>): SortedSet<String> {
-    tparams.reduce((names, tparam) -> names.set(tparam.name.value), SortedSet[])
   }
 
   static fun checkTypeParams(
