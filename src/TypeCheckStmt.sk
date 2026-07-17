@@ -253,18 +253,17 @@ extension class TypeChecker {
       // A probe, not a type assignment: cloned so it cannot grow type
       // variables (same pattern as the comparison-overlap checks).
       subst = tcenv.subst.clone();
-      refines = true;
       for (nameRef in scope.escapingRefs()) {
-        tcenv.scope.lookupRef(nameRef.name) match {
-        | Some(outer) ->
-          TType::isSub(subst, this, nameRef.ref.type, outer.type) match {
-          | STOk() -> void
-          | STErrorOnTType _ -> !refines = false
-          }
-        | None() -> !refines = false
+        outer = tcenv.scope.lookupRef(nameRef.name) match {
+        | Some(o) -> o
+        | None() -> return false
+        };
+        TType::isSub(subst, this, nameRef.ref.type, outer.type) match {
+        | STOk() -> void
+        | STErrorOnTType _ -> return false
         }
       };
-      refines
+      true
     }
   }
 
