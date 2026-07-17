@@ -346,10 +346,7 @@ mutable class Lexer private {
     loop {
       if (start >= this.contents.size()) return None();
       this.contents[start] match {
-      | '\r' | '\t' | ' ' | '\n' ->
-        !start = start + 1;
-        continue
-      | c if (c.code() == 65279) ->
+      | c if (isJSWhiteSpace(c) || isJSLineTerminator(c)) ->
         !start = start + 1;
         continue
       | '#' if (
