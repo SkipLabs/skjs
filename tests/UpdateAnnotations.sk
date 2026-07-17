@@ -882,17 +882,13 @@ fun testLineNValidation(): void {
       errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
     },
   );
-  checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
-  tenv = checker.checker;
-  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
-  tcenvb = mutable SKJS.TCEnvLight{context, results};
-  subst = SKJS.Subst::mcreate(tcenvb);
+  _checker = SKJS.Checker::create{context, fs, files}.fromSuccess();
   ref = findExpectErrors(
     lines(Array["// @skjs-expect-error-line2 Hint only", "testFoo();"]),
   )[0];
   fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
   emptyErrors: Array<SKJS.Error> = Array[];
-  ref.validate(subst, tenv, fileName, emptyErrors) match {
+  ref.validate(context, fileName, emptyErrors) match {
   | Some(err) ->
     SKTest.expectEq(
       err.getMessage(),
@@ -912,7 +908,7 @@ fun testLineNValidation(): void {
   warnRef = findExpectErrors(
     lines(Array["// @skjs-expect-warning Useless thing", "testFoo();"]),
   )[0];
-  warnRef.validate(subst, tenv, fileName, emptyErrors) match {
+  warnRef.validate(context, fileName, emptyErrors) match {
   | Some(err) ->
     SKTest.expectTrue(
       err.getMessage().contains("Wrong warning message(s)"),
