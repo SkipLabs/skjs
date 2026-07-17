@@ -573,7 +573,18 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
-    obj = this.newObject(subst, className, targs, filter);
+    this.newOf(subst, this.getClass(subst, className), className, targs, filter)
+  }
+
+  // new against a class the caller has already resolved.
+  fun newOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
+  ): TType {
+    obj = this.newObjectOf(subst, c, className, targs, filter);
     TType::single(obj)
   }
 
@@ -582,7 +593,21 @@ base class TEnv{
     className: Name,
     targs: Array<TType>,
   ): CstrType {
-    c = this.getClass(subst, className);
+    this.newConstructorOf(
+      subst,
+      this.getClass(subst, className),
+      className,
+      targs,
+    )
+  }
+
+  // newConstructor against a class the caller has already resolved.
+  fun newConstructorOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+  ): CstrType {
     if (c.tparams.size() != targs.size()) {
       subst.error(
         Array[

@@ -2274,12 +2274,15 @@ extension class TypeChecker {
       };
       classNameOpt match {
       | Some(className) ->
+        // Resolve once: the tparams (for the implicit type arguments), the
+        // constructor, and the instance all come from the same class.
+        c = this.getClass(tcenv.subst, className);
         if (targsAst.size() == 0) {
-          !tArgs = this.makeTArgs(tcenv, className)
+          !tArgs = this.makeTArgsOf(tcenv.subst, c, className)
         };
-        cstr = this.newConstructor(tcenv.subst, className, tArgs);
+        cstr = this.newConstructorOf(tcenv.subst, c, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
-        this.new(tcenv.subst, className, tArgs)
+        this.newOf(tcenv.subst, c, className, tArgs)
       | None() ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
