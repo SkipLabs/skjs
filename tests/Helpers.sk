@@ -275,10 +275,22 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
   lastCommentLine = -2;
   chars = contents.chars().toArray();
   pos = 0;
-  // Do not trust the lexer's newLinesMap, as a way to double-check it
+  // Do not trust the lexer's newLinesMap, as a way to double-check it. Which
+  // means counting the same line terminators it does, independently: <LF>,
+  // <CR>, <CR><LF> (once), and <LS>/<PS> -- see SKJS.computeNewLines.
   lineNumber = 1;
   while (pos < chars.size()) {
-    if (chars[pos] == '\n') {
+    if (chars[pos] == '\r') {
+      // A <CR><LF> ends one line, so its <LF> is consumed with the <CR>.
+      if (pos + 1 < chars.size() && chars[pos + 1] == '\n') {
+        !pos = pos + 1
+      };
+      !lineNumber = lineNumber + 1;
+    } else if (
+      chars[pos] == '\n' ||
+      chars[pos].code() == 0x2028 ||
+      chars[pos].code() == 0x2029
+    ) {
       !lineNumber = lineNumber + 1;
     };
     if (chars[pos] == '@') {

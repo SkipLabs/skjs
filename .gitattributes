@@ -3,3 +3,7 @@
 # would rewrite the CRs it is built around, and the cases would pass while
 # testing nothing, so git must leave them alone.
 tests/expect-error/template-crlf-prettier-ignore.ts -text
+
+# The <LS> inside the string literal is what this pins, so its bytes must
+# survive checkout and commit untouched.
+tests/expect-error/string-line-separator-prettier-ignore.ts -text
