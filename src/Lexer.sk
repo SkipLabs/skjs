@@ -356,7 +356,7 @@ mutable class Lexer private {
         !start = start + 1;
         loop {
           if (start >= this.contents.size()) return None();
-          if (this.contents[start] == '\n') {
+          if (isJSLineTerminator(this.contents[start])) {
             !start = start + 1;
             break void;
           };
@@ -369,7 +369,7 @@ mutable class Lexer private {
         !start = start + 1;
         loop {
           if (start >= this.contents.size()) return None();
-          if (this.contents[start] == '\n') {
+          if (isJSLineTerminator(this.contents[start])) {
             !start = start + 1;
             break void;
           };
