@@ -1,0 +1,5 @@
+# This fixture's bytes are the test: it pins that a raw <CR><LF> or <CR> inside a
+# template is the value <LF> (ECMA-262 sec 12.9.6). Normalizing its line endings
+# would rewrite the CRs it is built around, and the cases would pass while
+# testing nothing, so git must leave them alone.
+tests/expect-error/template-crlf-prettier-ignore.ts -text

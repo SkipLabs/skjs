@@ -24,6 +24,45 @@
 
 module SKJS;
 
+// Normalizes the line terminators of a template's raw text to the spelling its
+// TV uses (ECMA-262 sec 12.9.6): a <CR><LF>, or a lone <CR>, is the single
+// character <LF>. <LS> and <PS> are line terminators too, but their TV is
+// themselves, so they are left alone.
+//
+// Runs on the RAW text, before escapes are decoded, so the only thing it can
+// rewrite is a line terminator the source spells literally: `\r` and `\x0D` are
+// backslash sequences, not carriage returns, and still decode to one. A line
+// continuation is unaffected either way, since the decoder elides a backslash
+// before an LF exactly as it does before a CRLF.
+//
+// Quoted strings do not go through here: a raw LF in one is a lexing error
+// ("string literals cannot span multiple lines"), so an unescaped line
+// terminator is a template's problem. A lone CR is the exception, and SKJS
+// wrongly accepts it there rather than rejecting the string as unterminated
+// (#901) -- a lexing gap, not a decoding one, so it is not fixed by normalizing
+// here.
+fun normalizeTemplateLineTerminators(raw: String): String {
+  // Fast path: a template usually has no carriage return at all.
+  if (!raw.contains("\r")) return raw;
+  chars = raw.chars().toArray();
+  n = chars.size();
+  out = mutable Vector<Char>[];
+  i = 0;
+  while (i < n) {
+    c = chars[i];
+    if (c != '\r') {
+      out.push(c);
+      !i = i + 1
+    } else {
+      out.push('\n');
+      // A CR and an LF after it are one terminator, not two, so the LF is
+      // consumed here rather than emitted again on the next turn.
+      !i = if (i + 1 < n && chars[i + 1] == '\n') i + 2 else i + 1
+    }
+  };
+  String::fromChars(out.toArray())
+}
+
 // Decodes the body of a string literal (with the surrounding quotes already
 // stripped). Returns Success(value) or Failure(kind) with the parse error to
 // report.

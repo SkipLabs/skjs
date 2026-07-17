@@ -646,8 +646,16 @@ extension class Parser {
 
   // Returns the raw source text of a template chunk, after validating its escape
   // sequences (an invalid escape such as an octal or malformed `\x` is an error,
-  // matching quoted strings and simple templates). The text is kept raw — an
-  // interpolated template is typed `string`, so the cooked value is not needed.
+  // matching quoted strings and simple templates).
+  //
+  // Unlike cookTemplatePart, the text is neither decoded nor line-terminator
+  // normalized, because it is never a value: an interpolated template is typed
+  // `string` without its parts being read (see TypeCheckExpr), and the only
+  // thing that consumes them is the source-like rendering in CFG debug output.
+  // Both futures that would give them a value need the same treatment as a
+  // cooked chunk: a template literal type inferred over the substitutions (what
+  // tsc does, see rule 18), and String.raw, whose TRV normalizes line
+  // terminators just as TV does (`\` sequences are what TRV keeps, not CRs).
   mutable fun validateTemplatePart(tok: Token): String {
     raw = this.lex.templateChunkRawText(tok);
     decodeJSStringLiteral(raw) match {

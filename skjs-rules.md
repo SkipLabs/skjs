@@ -247,6 +247,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   - Escaped `` \` ``, `\$`, and `\${` are literal text, not delimiters
 - **Type Safety**: interpolated expressions must be `string`, `number`, `bigint`, `boolean`, `null`, or `undefined` (the `@typescript-eslint/restrict-template-expressions` rule; objects and arrays are rejected even when they have a `toString()`)
 - **Escapes are validated**: an invalid escape sequence anywhere in a template (octal `\1`, `\8`/`\9`, malformed `\x`/`\u`) is a syntax error, exactly like quoted strings; a template with no interpolation is decoded, so its literal type equals its runtime value (`` `\x61` `` is the type `"a"`)
+- **Line terminators are normalized**, as ECMA-262 requires of a template's value: a raw `<CR><LF>` or lone `<CR>` in the source is the single character `<LF>`, so a template spanning a line break has the same type whether the file is checked out LF or CRLF. `<LS>`/`<PS>` keep themselves, and an *escaped* carriage return (`\r`, `\x0D`) is not a line terminator and stays one
 - **Syntax is strict after the expression**: the interpolation must be a single expression followed by `}`. Trailing tokens are rejected with `'}' expected` — `` `${a b}` `` matches tsc; `` `${a, b}` `` is also rejected because skjs has no comma operator (stricter than tsc)
 - **Known divergence**: an *interpolated* template *expression* is typed `string`; tsc infers a template-literal type over literal substitutions (`` `a${1}b` `` is `"a1b"` in tsc). Template literal *types* are supported separately — see rule 18b
 - **Example**:
@@ -260,7 +261,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 ### 18b. Template Literal Types (Partially Supported)
 - **Rule**: a template literal type has no type of its own. It **reduces** to a type that already exists in the string domain: either the finite set of strings it can produce (a string literal union) or the `string` primitive itself. Every reduction below is identical to tsc's, not merely assignable to it
 - **Reduced** (all supported):
-  - **No live hole** → one string literal, with escapes cooked: `` `abc` `` and `` `a${"b"}c` `` are the type `"abc"`; `` `\x61` `` is `"a"`
+  - **No live hole** → one string literal, cooked exactly as an expression template is (rule 18: escapes decoded, line terminators normalized): `` `abc` `` and `` `a${"b"}c` `` are the type `"abc"`; `` `\x61` `` is `"a"`
   - **Finite holes distribute** into the cross-product: `` `${"a" | "b"}-${"x" | "y"}` `` is `"a-x" | "a-y" | "b-x" | "b-y"`
   - **`boolean`, `null`, `undefined`** fold into their literals: `` `${boolean}` `` is `"false" | "true"`; `` `${null}` `` is `"null"`
   - **`never` absorbs**: `` `x${never}y` `` is `never`, since no string can be built
