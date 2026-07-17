@@ -346,12 +346,11 @@ function rejectSharedArrayElement(u: unknown, w: unknown): number {
 // a set of TFields branches (STypes is keyed by tag, so all object arms merge),
 // unlike `Box<string> | Box<number>`, whose arms stay unexpanded instances in
 // separate clauses. Both branches here already satisfy the test, so narrowing
-// should be the identity -- but the probe runs once for the whole object, and
-// no single `Box<T>` covers both `{ v: string }` and `{ v: number }`, so it
-// fails and both branches are intersected with the skolem anyway. That widens
-// each setter to `string | T` / `number | T`, and the write below -- rejected
-// without the narrowing, since the setter is `string & number` -- is accepted
-// after it. `instanceof` must not hand back a write the declared type refused.
+// is the identity and the write is rejected either way. That holds only
+// because the probe runs per branch: no single `Box<T>` covers both
+// `{ v: string }` and `{ v: number }`, so an object-wide probe would fail and
+// intersect both branches with the skolem, widening each setter to
+// `string | T` / `number | T` and admitting a write the declared type refused.
 function multiBranchWriteNoNarrow(o: { v: string } | { v: number }): void {
   // @skjs-expect-error Type is not assignable to the assignment target's type
   // @skjs-expect-error-line2 Type 'number | string'
@@ -361,7 +360,10 @@ function multiBranchWriteNoNarrow(o: { v: string } | { v: number }): void {
 
 function multiBranchWriteAfterNarrow(o: { v: string } | { v: number }): void {
   if (o instanceof Box) {
-    o.v = o.v; // accepted today: the skolem widened both setters
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'number | string'
+    // @skjs-expect-error-line3 is not assignable to type 'number & string'
+    o.v = o.v;
   }
 }
 
