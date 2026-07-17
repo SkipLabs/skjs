@@ -248,4 +248,76 @@ fun testLineAndParagraphSeparatorsAreAllowedInStrings(): void {
   }
 }
 
+// ECMA-262 sec 12.2: WhiteSpace is <TAB>, <VT>, <FF>, <ZWNBSP> and every
+// Unicode Space_Separator (Zs) -- <SP> and <NBSP> among them -- and sec 12.3
+// adds the LineTerminators <LF>, <CR>, <LS> and <PS>. Any of them may sit
+// between two tokens. The lexer knows only <TAB>, <SP>, <LF>, <CR> and the BOM,
+// so it rejects programs node runs and tsc accepts.
+//
+// The sets are the ones node itself reports, which excludes two characters worth
+// naming: U+180E was Zs before Unicode 6.3 and is not whitespace now, and U+200B
+// (zero width space) never was, despite its name.
+@test
+fun testEveryJSWhiteSpaceSeparatesTokens(): void {
+  codes = Array[
+    0x09,
+    0x0B,
+    0x0C,
+    0x20,
+    0xA0,
+    0x1680,
+    0x2000,
+    0x200A,
+    0x2028,
+    0x2029,
+    0x202F,
+    0x205F,
+    0x3000,
+    0xFEFF,
+    0x0A,
+    0x0D,
+  ];
+  for (code in codes) {
+    ws = Char::fromCode(code).toString();
+    content = `const a${ws}= 1;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    // FIXME(#822): everything but <TAB> <SP> <LF> <CR> and the BOM is rejected.
+    expected = !Array[0x09, 0x20, 0x0A, 0x0D, 0xFEFF].contains(code);
+    SKTest.expectEq(threw, expected, `U+${code} between two tokens`)
+  }
+}
+
+// A line comment runs to the next LineTerminator, which is any of <LF>, <CR>,
+// <LS> and <PS> -- not <LF> alone. Reading only <LF> means a comment ended by
+// any of the others swallows the code after it, so a real error is silently
+// accepted. Unlike the whitespace half above, this one hides bugs rather than
+// inventing them.
+@test
+fun testLineCommentEndsAtEveryLineTerminator(): void {
+  for (code in Array[0x0A, 0x0D, 0x2028, 0x2029]) {
+    term = Char::fromCode(code).toString();
+    content = `// a comment${term}const a = 1;`;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    defs = parser.toplevelDefs();
+    // FIXME(#822): only <LF> ends the comment; the others swallow the const.
+    expected = if (code == 0x0A) 1 else 0;
+    SKTest.expectEq(
+      defs.size(),
+      expected,
+      `U+${code} after a line comment: the const that follows it`,
+    )
+  }
+}
+
 module end;
