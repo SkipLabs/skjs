@@ -342,23 +342,46 @@ function rejectSharedArrayElement(u: unknown, w: unknown): number {
   return 0;
 }
 
-// A multi-branch object: a union of inline object types is ONE TObject holding
-// a set of TFields branches (STypes is keyed by tag, so all object arms merge),
-// unlike `Box<string> | Box<number>`, whose arms stay unexpanded instances in
-// separate clauses. Both branches here already satisfy the test, so narrowing
-// is the identity and the write is rejected either way. That holds only
-// because the probe runs per branch: no single `Box<T>` covers both
-// `{ v: string }` and `{ v: number }`, so an object-wide probe would fail and
-// intersect both branches with the skolem, widening each setter to
-// `string | T` / `number | T` and admitting a write the declared type refused.
-function multiBranchWriteNoNarrow(o: { v: string } | { v: number }): void {
+// Narrowing a value that is already a Box must be the identity, and must not
+// depend on how its type was spelled. These two functions take the same type
+// written two ways: `Box<string> | Box<number>` keeps its arms as unexpanded
+// instances in separate clauses, while `{ v: string } | { v: number }` is ONE
+// TObject holding two TFields branches (STypes is keyed by tag, so every
+// object arm merges into one).
+//
+// The write is rejected before the narrowing in both -- the setter is
+// `string & number`, so no value can be written -- and must stay rejected
+// after it. Accepting `o.v = o.v` would be harmless in itself (it is a
+// self-assignment, and the value came from this same object); what must not
+// happen is the two spellings disagreeing. They did: the preservation check
+// ran once for the whole TObject, no single `Box<T>` covers both branches, so
+// the inline spelling failed the check, had both branches intersected with the
+// skolem, and came back with setters widened to `string | T` / `number | T` --
+// admitting the write that the instance spelling refused.
+function multiBranchInstsWriteBefore(o: Box<string> | Box<number>): void {
   // @skjs-expect-error Type is not assignable to the assignment target's type
   // @skjs-expect-error-line2 Type 'number | string'
   // @skjs-expect-error-line3 is not assignable to type 'number & string'
   o.v = o.v;
 }
 
-function multiBranchWriteAfterNarrow(o: { v: string } | { v: number }): void {
+function multiBranchInstsWriteAfter(o: Box<string> | Box<number>): void {
+  if (o instanceof Box) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'number | string'
+    // @skjs-expect-error-line3 is not assignable to type 'number & string'
+    o.v = o.v;
+  }
+}
+
+function multiBranchInlineWriteBefore(o: { v: string } | { v: number }): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
+  // @skjs-expect-error-line2 Type 'number | string'
+  // @skjs-expect-error-line3 is not assignable to type 'number & string'
+  o.v = o.v;
+}
+
+function multiBranchInlineWriteAfter(o: { v: string } | { v: number }): void {
   if (o instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
     // @skjs-expect-error-line2 Type 'number | string'
