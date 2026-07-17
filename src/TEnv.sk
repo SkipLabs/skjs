@@ -524,18 +524,25 @@ base class TEnv{
   }
 
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
-    tparams = this.getClass(tcenv, className).tparams;
+    this.makeTArgsIn(tcenv.subst, className)
+  }
+
+  // makeTArgs against an explicit substitution. Lets a caller mint the
+  // inference variables in a throwaway `Subst::clone` -- getClass and
+  // normalize both take a TCEnvBase, which Subst is.
+  fun makeTArgsIn(subst: mutable Subst, className: Name): Array<TType> {
+    tparams = this.getClass(subst, className).tparams;
     allTVars = tparams
       .map(tparam -> {
-        tvar = tcenv.subst.gen(className.pos);
+        tvar = subst.gen(className.pos);
         tparam.constraint.each(cstr ->
-          !tvar = tvar.setConstraint(this.normalize(tcenv, cstr))
+          !tvar = tvar.setConstraint(this.normalize(subst, cstr))
         );
         tvar
       })
       .collect(Array);
     allTVars.map(tvar -> {
-      tcenv.subst.setOrigin(tvar, FromGenericInst(className.pos, allTVars));
+      subst.setOrigin(tvar, FromGenericInst(className.pos, allTVars));
       TType::var(tvar)
     })
   }

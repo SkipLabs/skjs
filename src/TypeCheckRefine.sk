@@ -359,35 +359,21 @@ extension class TypeChecker {
   }
 
   // Narrows `local` based on `local instanceof className`
-  // True when `obj` already satisfies `obj instanceof className` at some
-  // instantiation, i.e. some type arguments make it a `className`. Probes with
-  // inference variables, then rolls back their growth.
-  private fun instanceofAlreadyMatches(
-    tcenv: mutable TCEnv,
-    className: Name,
-    obj: TObject,
-  ): Bool {
-    saved = tcenv.subst.save();
-    probeObj = this.newObject(
-      tcenv.subst,
-      className,
-      this.makeTArgs(tcenv, className),
-    );
-    matches = TType::isSub(
-      tcenv.subst,
-      this,
-      TType::single(obj),
-      TType::single(probeObj),
-    ) is STOk();
-    tcenv.subst.restore(saved);
-    matches
-  }
-
   fun evalInstanceof(tcenv: mutable TCEnv, local: Name, className: Name): void {
     skolemObj = this.newObject(
       tcenv.subst,
       className,
       this.makeSkolemTArgs(tcenv, className),
+    );
+    // The probe that the preservation check below matches branches against,
+    // built once. Its inference variables are minted in a throwaway clone, so
+    // the real substitution never sees them and there is nothing to roll back;
+    // each branch re-clones it, so one branch's inference cannot reach another.
+    probeSubst = tcenv.subst.clone();
+    probeObj = this.newObject(
+      probeSubst,
+      className,
+      this.makeTArgsIn(probeSubst, className),
     );
     filterMap = stype ->
       stype match {
@@ -395,29 +381,33 @@ extension class TypeChecker {
         // Preserve each branch that already satisfies the `instanceof` test:
         // intersecting it with fresh skolems would lose known type arguments.
         //
-        // The probe is per branch, not per object. A `TObject` is a union of
+        // The check is per branch, not per object. A `TObject` is a union of
         // branches, so one probe instantiation would have to cover all of them
         // at once: `{ v: string } | { v: number }` is compatible with
-        // `Box<string> | Box<number>`, not with any single `Box<τ>`, so an
-        // object-wide probe fails and discards precise arguments the branches
-        // do have -- including when every branch matches. Per branch, each gets
-        // its own probe and keeps its own arguments.
+        // `Box<string> | Box<number>`, not with any single `Box<t>`, so an
+        // object-wide check fails and discards precise arguments the branches
+        // do have -- including when every branch matches. Per branch, each is
+        // matched on its own and keeps its own arguments.
         branches = mutable Vector[];
         rewritten = false;
         for (fields in tObj.getBranches()) {
-          branchObj = TObject::createSingleBranch(
-            fields,
-            tObj.unexpandedType,
-            tObj.pos,
+          alreadyMatches = probeObj.getBranches().any(probeFields ->
+            TFields::isSub(
+              probeSubst.clone(),
+              this,
+              fields,
+              probeFields,
+            ) is STOk _
           );
-          if (this.instanceofAlreadyMatches(tcenv, className, branchObj)) {
+          if (alreadyMatches) {
             branches.push(fields)
           } else {
             !rewritten = true;
-            TObject::inter(tcenv.subst, this, branchObj, skolemObj) match {
-            | None() -> void
-            | Some(interObj) ->
-              interObj.getBranches().each(b -> branches.push(b))
+            for (skolemFields in skolemObj.getBranches()) {
+              TFields::inter(tcenv.subst, this, fields, skolemFields) match {
+              | None() -> void
+              | Some(interFields) -> branches.push(interFields)
+              }
             }
           }
         };
