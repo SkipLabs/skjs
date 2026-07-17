@@ -506,19 +506,63 @@ base class TEnv{
     }
   }
 
+  // Fresh skolem type arguments for `instanceof` narrowing. Each represents a
+  // type argument fixed by the runtime object but hidden from the program.
+  fun makeSkolemTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
+    this.makeSkolemTArgsOf(
+      tcenv.subst,
+      this.getClass(tcenv, className),
+      className,
+    )
+  }
+
+  // makeSkolemTArgs against a class the caller has already resolved.
+  fun makeSkolemTArgsOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+  ): Array<TType> {
+    c.tparams.map(tparam -> {
+      cstr = tparam.constraint.map(x -> this.normalize(subst, x));
+      // Represent the skolem as a synthetic TParam, preserving its identity
+      // and declared upper bound through expansion.
+      TType::fromTParamWithConstraint(
+        subst,
+        this,
+        className.pos,
+        subst.genSkolemTParam(className.pos, tparam.name.value, cstr),
+      )
+    })
+  }
+
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
-    tparams = this.getClass(tcenv, className).tparams;
-    allTVars = tparams
+    this.makeTArgsIn(tcenv.subst, className)
+  }
+
+  // makeTArgs against an explicit substitution. Lets a caller mint the
+  // inference variables in a throwaway `Subst::clone` -- getClass and
+  // normalize both take a TCEnvBase, which Subst is.
+  fun makeTArgsIn(subst: mutable Subst, className: Name): Array<TType> {
+    this.makeTArgsOf(subst, this.getClass(subst, className), className)
+  }
+
+  // makeTArgs against a class the caller has already resolved.
+  fun makeTArgsOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+  ): Array<TType> {
+    allTVars = c.tparams
       .map(tparam -> {
-        tvar = tcenv.subst.gen(className.pos);
+        tvar = subst.gen(className.pos);
         tparam.constraint.each(cstr ->
-          !tvar = tvar.setConstraint(this.normalize(tcenv, cstr))
+          !tvar = tvar.setConstraint(this.normalize(subst, cstr))
         );
         tvar
       })
       .collect(Array);
     allTVars.map(tvar -> {
-      tcenv.subst.setOrigin(tvar, FromGenericInst(className.pos, allTVars));
+      subst.setOrigin(tvar, FromGenericInst(className.pos, allTVars));
       TType::var(tvar)
     })
   }
@@ -529,7 +573,18 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
-    obj = this.newObject(subst, className, targs, filter);
+    this.newOf(subst, this.getClass(subst, className), className, targs, filter)
+  }
+
+  // new against a class the caller has already resolved.
+  fun newOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
+  ): TType {
+    obj = this.newObjectOf(subst, c, className, targs, filter);
     TType::single(obj)
   }
 
@@ -538,7 +593,21 @@ base class TEnv{
     className: Name,
     targs: Array<TType>,
   ): CstrType {
-    c = this.getClass(subst, className);
+    this.newConstructorOf(
+      subst,
+      this.getClass(subst, className),
+      className,
+      targs,
+    )
+  }
+
+  // newConstructor against a class the caller has already resolved.
+  fun newConstructorOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+  ): CstrType {
     if (c.tparams.size() != targs.size()) {
       subst.error(
         Array[
@@ -563,7 +632,58 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
-    c = this.getClass(subst, className);
+    this.newObjectOf(
+      subst,
+      this.getClass(subst, className),
+      className,
+      targs,
+      filter,
+    )
+  }
+
+  // newObject against a class the caller has already resolved. A caller that
+  // also needs the class's tparams (to build `targs` with makeTArgsOf or
+  // makeSkolemTArgsOf) would otherwise resolve the same name twice.
+  fun newObjectOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
+  ): TObject {
+    this.objectOfFields(
+      this.newFieldsOf(subst, c, className, targs, filter),
+      className,
+      targs,
+    )
+  }
+
+  // The single-branch object a class instantiation denotes, from fields the
+  // caller already built. Keeps the unexpanded instance, so the type still
+  // prints as `C<targs>` rather than structurally.
+  fun objectOfFields(
+    fields: TFields,
+    className: Name,
+    targs: Array<TType>,
+  ): TObject {
+    TObject::createSingleBranch(
+      fields,
+      Some(TSInst(className, TArgs(targs))),
+      className.pos,
+    )
+  }
+
+  // The fields of a class instantiation. A class instantiation is always one
+  // branch, so a caller doing per-branch work (`TFields::isSub`,
+  // `TFields::inter`) wants this rather than a TObject it has to unwrap --
+  // and the signature, not a comment, is then what says there is one branch.
+  fun newFieldsOf(
+    subst: mutable Subst,
+    c: Class,
+    className: Name,
+    targs: Array<TType>,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
+  ): TFields {
     if (c.tparams.size() != targs.size()) {
       subst.error(
         Array[
@@ -615,11 +735,7 @@ base class TEnv{
       (CAbsent(), CAbsent())
     };
     tIndexes = TIndexes::create(subst, this, indexes);
-    TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, tIndexes, call, new, isArray},
-      Some(TSInst(className, TArgs(targs))),
-      className.pos,
-    )
+    TFields::create{fields, symbolFields, tIndexes, call, new, isArray}
   }
 
   fun newStatic(subst: mutable Subst, className: Name): TType {
