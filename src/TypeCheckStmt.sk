@@ -270,6 +270,17 @@ extension class TypeChecker {
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(lits), _)) ->
       (Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos))), true)
+    | Some(TPrimValue(TBool _, None(), pos)) ->
+      // A boolean carries no literals when it can be either, so listing its
+      // values means naming them: unlike a `number` or a `string`, there are
+      // only the two. (A boolean that can be only one keeps that literal, and is
+      // read above.)
+      (
+        Map::mcreateFromIterator(
+          Array[("true", pos), ("false", pos)].iterator(),
+        ),
+        true,
+      )
     | _ -> (mutable Map<String, PosRange>[], false)
     };
     // Kept for truthful unreachability reasons: a case value can be

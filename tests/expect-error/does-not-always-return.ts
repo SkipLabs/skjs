@@ -1,6 +1,7 @@
 // @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function doesNotAlwaysReturnAValue(b: boolean): boolean {
   // @skjs-expect-warning This switch has a single branch; use an 'if' statement instead
+  // @skjs-expect-warning Switch is not exhaustive; the following cases are unhandled
   switch (b) {
     case true:
       return true;
