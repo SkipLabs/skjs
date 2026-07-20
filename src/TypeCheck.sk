@@ -25,6 +25,10 @@ class TypeChecker{
   // the `&&`/`||`/`!`/ternary sites (TypeCheckExpr.sk), and narrowing
   // (TypeCheckRefine.sk). See issue #654.
   truthiness: Truthiness = Truthiness::default,
+  // Whether a switch clause that falls into another is an error (TS7029,
+  // tsconfig `noFallthroughCasesInSwitch`). Read in `switch` (TypeCheckStmt.sk);
+  // the narrowing of the clause fallen into does not depend on it.
+  noFallthroughCasesInSwitch: Bool = true,
 } extends TEnv {
   // Apply the run's tracked config (see Config.sk). Persisted-dir closures
   // capture a TypeChecker from init time; they must call this with a fresh
@@ -33,6 +37,7 @@ class TypeChecker{
     this with {
       errorHandling => config.errorHandling,
       truthiness => config.compilerOptions.truthiness,
+      noFallthroughCasesInSwitch => config.compilerOptions.noFallthroughCasesInSwitch,
       verbose => config.verbose,
     }
   }

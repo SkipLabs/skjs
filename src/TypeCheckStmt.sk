@@ -394,9 +394,14 @@ extension class TypeChecker {
         // running the next clause's too. An empty clause has none to run — it
         // is how several labels are given one body — and the last clause has
         // nothing to fall into, so neither is a fallthrough. tsc's
-        // `noFallthroughCasesInSwitch` exempts both for the same reason; SKJS
-        // applies the rule unconditionally, but to the same cases.
+        // `noFallthroughCasesInSwitch` exempts both for the same reason.
+        //
+        // Whether the rest is an error is that option's to say. SKJS turns it on
+        // where tsc leaves it off, but a switch that asks for the fallthrough
+        // gets it: only the diagnostic is withheld, never the narrowing of the
+        // clause fallen into, which is what keeps the fallthrough sound.
         if (
+          this.noFallthroughCasesInSwitch &&
           blockTerm.mayFallthrough &&
           block.size() != 0 &&
           i != branches.size() - 1
