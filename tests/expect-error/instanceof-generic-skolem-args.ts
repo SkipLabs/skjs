@@ -116,8 +116,8 @@ function rejectMethodWrite(x: unknown): void {
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'T'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line2 Type 'T#1'
+    // @skjs-expect-error-line3 is not assignable to type 'T#2'
     x.v = y.v;
   }
 }
@@ -333,9 +333,9 @@ declare function sharedLen<T>(a: Array<T>, b: Array<T>): number;
 function rejectSharedArrayElement(u: unknown, w: unknown): number {
   if (u instanceof Array && w instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
-    // @skjs-expect-error-line2 Type 'T'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
-    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'T' must be assignable to source parameter type 'T'
+    // @skjs-expect-error-line2 Type 'T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'T#1'
+    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'T#2' must be assignable to source parameter type 'T#1'
     return sharedLen(u, w);
   }
   return 0;
