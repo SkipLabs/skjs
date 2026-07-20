@@ -302,12 +302,30 @@ extension class TypeChecker {
     // disjunction of labels describes, so the group is then narrowed by nothing.
     fallenInto: ?Expr = None();
     fallenIntoDefault = false;
-    // `default` runs only for a value no `case` matched, so its body can be
-    // narrowed by that: the conjunction of `scrutinee !== <label>` over the
-    // cases. Only the cases seen so far are included, which is all of them for a
-    // `default` that is last, and for one that is not leaves the body wider than
-    // it has to be — sound, and that switch is already warned about.
+    // `default` runs only for a value no `case` matched, so its body is narrowed
+    // by that: the conjunction of `scrutinee !== <label>` over the cases. Every
+    // case counts, including any written after the `default` — where the clauses
+    // sit says nothing about which values reach it.
+    //
+    // Which is why the labels are typed here rather than as each clause is
+    // reached below: a condition can only be refined once the types of what it
+    // compares are known, so a `default` could otherwise only rule out the cases
+    // that happened to precede it.
     noCaseMatched: ?Expr = None();
+    for (branch in branches) {
+      branch match {
+      | SwitchBranch(Case(v), _, _) ->
+        _ = this.expr(tcenv, v, true);
+        ne = Expr(e.pos, (Binop(BOStrictInequality(), e, v)));
+        !noCaseMatched = Some(
+          noCaseMatched match {
+          | None() -> ne
+          | Some(acc) -> Expr(e.pos, (Binop(BOLogicalAnd(), acc, ne)))
+          },
+        )
+      | SwitchBranch(Default(), _, _) -> void
+      }
+    };
     for (i in Range(0, branches.size())) {
       block = branches[i].block;
       // How the block ends answers both questions asked of it below: whether it
@@ -316,9 +334,9 @@ extension class TypeChecker {
       blockTerm = StmtTermination::block(tcenv, block);
       cond = branches[i] match {
       | SwitchBranch(Case(v), _, pos) ->
-        // Type the case value before checking the block: the narrowing below
-        // reads its type back out of the expression cache rather than typing it.
-        condVType = this.expr(tcenv, v, true);
+        // Typed with the other labels above, along with everything that reads a
+        // label's type: this and the narrowing of the block below.
+        condVType = this.lookupExprType(tcenv, v);
         // A switch case must be a plain value, so that case-evaluation order
         // and `===` narrowing are sound. Enum member reads (`E.A`, `E["A"]`,
         // `E[0]` on an unshadowed enum name) are plain data-property reads and
@@ -417,13 +435,6 @@ extension class TypeChecker {
           )
         };
         eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-        ne = Expr(e.pos, (Binop(BOStrictInequality(), e, v)));
-        !noCaseMatched = Some(
-          noCaseMatched match {
-          | None() -> ne
-          | Some(acc) -> Expr(e.pos, (Binop(BOLogicalAnd(), acc, ne)))
-          },
-        );
         reachedBy = fallenInto match {
         | None() -> eq
         | Some(prev) -> Expr(e.pos, (Binop(BOLogicalOr(), prev, eq)))
