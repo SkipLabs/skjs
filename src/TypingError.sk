@@ -209,6 +209,20 @@ class SubtypingError(
   stErr: STErrorOnTType,
   code: ErrorCode,
 ) extends TypingError {
+  // The expanded detail lines for this error, at the given detail level.
+  //
+  // Both the CLI and the test harness render through here. They must: an
+  // error's user-visible text is defined by this function, and a harness that
+  // rebuilt it would be free to validate annotations against text no user ever
+  // sees (#899).
+  fun renderDetail(
+    context: mutable SKStore.Context,
+    detail: STErrorDetail,
+  ): Array<(PosRange, String)> {
+    subst = Subst::mcreateFromSaved(context, this.savedSubst);
+    this.stErr.toError(subst, this.tenv, detail).toArray()
+  }
+
   fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
@@ -239,9 +253,7 @@ class SubtypingError(
     | ErrorDetailHide() -> return Array[]
     | ErrorDetailMinimal() -> void
     | detail @ STErrorDetail _ ->
-      e = this.stErr;
-      subst = Subst::mcreateFromSaved(context, this.savedSubst);
-      !messages = messages.concat(e.toError(subst, this.tenv, detail).toArray())
+      !messages = messages.concat(this.renderDetail(context, detail))
     };
 
     static::resolveMessages(messages, context, rootMap, newLinesMap, symbolsMap)
