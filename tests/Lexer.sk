@@ -406,4 +406,59 @@ fun testLeadingDotNumber(): void {
   }
 }
 
+// ECMA-262 sec 12.7 defines an identifier's characters by the Unicode
+// properties ID_Start and ID_Continue, so an accented, Greek or CJK name is an
+// ordinary one. The scanner classified identifier characters as ASCII only,
+// rejecting each of those as an invalid character (#822).
+//
+// The negatives matter as much as the positives: being non-ASCII does not make
+// a character a name. Emoji are Symbol and so is a math minus, while a middle
+// dot and a zero width non-joiner continue a name but cannot start one. tsc
+// rejects all four spellings below.
+@test
+fun testUnicodeIdentifiers(): void {
+  ch = code -> Char::fromCode(code).toString();
+  eacute = ch(0xE9);
+  alpha = ch(0x3B1);
+  cyrillic = ch(0x43F);
+  cjk = ch(0x5909) + ch(0x6570);
+  zwnj = ch(0x200C);
+  middot = ch(0xB7);
+  emoji = ch(0x1F600);
+  minus = ch(0x2212);
+  // (declaration, whether it should parse)
+  cases = Array[
+    (`const caf${eacute} = 1;`, true),
+    (`const ${alpha} = 1;`, true),
+    (`const ${cyrillic} = 1;`, true),
+    (`const ${cjk} = 1;`, true),
+    (`const a${zwnj}b = 1;`, true),
+    (`const a${middot}b = 1;`, true),
+    ("const $x = 1;", true),
+    ("const _y = 1;", true),
+    // Not identifier characters in any position.
+    (`const ${emoji} = 1;`, false),
+    (`const ${minus}x = 1;`, false),
+    // ID_Continue, but not ID_Start.
+    (`const ${middot}x = 1;`, false),
+    (`const ${zwnj}x = 1;`, false),
+  ];
+  for (case in cases) {
+    (content, _shouldParse) = case;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    // FIXME(#822): every non-ASCII character is an invalid one, so the six
+    // that should be names are rejected along with the four that should not.
+    expected = !content.chars().all(c -> c.code() < 0x80);
+    SKTest.expectEq(threw, expected, content)
+  }
+}
 module end;
