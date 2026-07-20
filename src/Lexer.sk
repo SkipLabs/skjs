@@ -337,6 +337,51 @@ mutable class Lexer private {
     this.posRange2(tok, this.lastTok.fromSome())
   }
 
+  // Scans a numeric literal from `pos` to its end and returns that end. The run
+  // is taken permissively -- a second dot or a stray hex letter is consumed here
+  // and rejected later by validateJSNumericLiteral -- which is also what lets a
+  // leading-dot literal start the scan on its dot.
+  readonly fun scanNumberEnd(pos: Int, isHex: Bool): Int {
+    loop {
+      if (pos >= this.contents.size()) break void;
+      l = this.contents[pos];
+      if (
+        l >= '0' && l <= '9' ||
+        l == 'E' ||
+        l == 'e' ||
+        l == '.' ||
+        l == 'x' ||
+        l == 'X' ||
+        l == 'b' ||
+        l == 'B' ||
+        l == 'o' ||
+        l == 'O' ||
+        l == '_' ||
+        l >= 'a' && l <= 'f' ||
+        l >= 'A' && l <= 'F'
+      ) {
+        !pos = pos + 1;
+        continue
+      };
+      // An ES ExponentPart may carry a sign (1e+3, 1e-3): consume a
+      // '+'/'-' right after 'e'/'E' when a digit follows. Not in hex
+      // literals, where 'e'/'E' is a digit and `0x1e+2` is an addition.
+      if (
+        !isHex &&
+        (l == '+' || l == '-') &&
+        (this.contents[pos - 1] == 'e' || this.contents[pos - 1] == 'E') &&
+        pos + 1 < this.contents.size() &&
+        this.contents[pos + 1] >= '0' &&
+        this.contents[pos + 1] <= '9'
+      ) {
+        !pos = pos + 1;
+        continue
+      };
+      break void;
+    };
+    pos
+  }
+
   // A `#!` is a hashbang only at the very start of the file. A leading byte
   // order mark does not count against that (tsc strips it first), but anything
   // else does, including whitespace. Elsewhere a `#` begins a private name.
@@ -481,6 +526,18 @@ mutable class Lexer private {
       !pos = endPos;
       mkToken(if (hitBacktick) TKNoSubstitutionTemplate() else TKTemplateHead())
 
+    | '.' if (
+      pos + 1 < this.contents.size() &&
+      this.contents[pos + 1] >= '0' &&
+      this.contents[pos + 1] <= '9'
+    ) ->
+      // A digit after the dot begins a NumericLiteral: `.5` is `0.5`. The scan
+      // starts at the dot, consuming it as it would the one in `5.5`, so the
+      // token covers the whole literal. A leading dot is never hex, and a
+      // BigInt has no fractional part, so no `n` suffix is taken here.
+      !pos = this.scanNumberEnd(pos, false);
+      mkToken(TKNumber())
+
     | '.' ->
       !pos = pos + 1;
       if (
@@ -544,43 +601,7 @@ mutable class Lexer private {
         c == '0' &&
         pos + 1 < this.contents.size() &&
         (this.contents[pos + 1] == 'x' || this.contents[pos + 1] == 'X');
-      loop {
-        if (pos >= this.contents.size()) break void;
-        l = this.contents[pos];
-        if (
-          l >= '0' && l <= '9' ||
-          l == 'E' ||
-          l == 'e' ||
-          l == '.' ||
-          l == 'x' ||
-          l == 'X' ||
-          l == 'b' ||
-          l == 'B' ||
-          l == 'o' ||
-          l == 'O' ||
-          l == '_' ||
-          l >= 'a' && l <= 'f' ||
-          l >= 'A' && l <= 'F'
-        ) {
-          !pos = pos + 1;
-          continue
-        };
-        // An ES ExponentPart may carry a sign (1e+3, 1e-3): consume a
-        // '+'/'-' right after 'e'/'E' when a digit follows. Not in hex
-        // literals, where 'e'/'E' is a digit and `0x1e+2` is an addition.
-        if (
-          !isHex &&
-          (l == '+' || l == '-') &&
-          (this.contents[pos - 1] == 'e' || this.contents[pos - 1] == 'E') &&
-          pos + 1 < this.contents.size() &&
-          this.contents[pos + 1] >= '0' &&
-          this.contents[pos + 1] <= '9'
-        ) {
-          !pos = pos + 1;
-          continue
-        };
-        break void;
-      };
+      !pos = this.scanNumberEnd(pos, isHex);
       if (pos < this.contents.size() && this.contents[pos] == 'n') {
         !pos = pos + 1;
         mkToken(TKBigInt())
