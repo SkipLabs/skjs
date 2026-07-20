@@ -116,8 +116,8 @@ function rejectMethodWrite(x: unknown): void {
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'T#1'
-    // @skjs-expect-error-line3 is not assignable to type 'T#2'
+    // @skjs-expect-error-line2 Type 'T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'T#1'
     x.v = y.v;
   }
 }
