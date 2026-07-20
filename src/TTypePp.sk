@@ -17,6 +17,83 @@ value class Margin{
   str: String = "",
 }
 
+// Records the type-parameter names the printer actually emitted while
+// rendering one diagnostic, with the Id each name stood for.
+//
+// Two different Ids emitted under one name is what makes a message read as a
+// tautology ("Type 'T' is not assignable to type 'T'"): the qualified id that
+// would tell them apart is deliberately not user-visible (see tparamName).
+// Keying on what was PRINTED, rather than on a predicate over the type, is
+// what makes this reliable -- the printed string is produced after tvar
+// expansion and with constraints folded in, so a predicate evaluated on the
+// type before rendering is answering a question about a different object.
+mutable class PpNames{
+  private emitted: mutable Vector<(String, Id)> = mutable Vector[],
+  // Empty while collecting; freeze() fills it in, and only then does suffix()
+  // return anything.
+  private mutable ordinals: SortedMap<Id, Int> = SortedMap[],
+} {
+  mutable fun record(name: String, id: Id): void {
+    this.emitted.push((name, id))
+  }
+
+  // True when a name was emitted that has no spelling in source (see
+  // Id::isSynthetic), so a hint embedding this rendering as pastable code
+  // would be suggesting something the program cannot write.
+  readonly fun hasUnwritable(): Bool {
+    for (pair in this.emitted) {
+      if (pair.i1.isSynthetic()) return true
+    };
+    false
+  }
+
+  // The distinct Ids emitted under each name that stood for more than one,
+  // in emission order.
+  readonly fun collisions(): SortedMap<String, Array<Id>> {
+    byName = mutable Map<String, mutable Vector<Id>>[];
+    for (pair in this.emitted) {
+      ids = byName.maybeGet(pair.i0) match {
+      | Some(v) -> v
+      | None() ->
+        v = mutable Vector<Id>[];
+        byName![pair.i0] = v;
+        v
+      };
+      if (!ids.contains(pair.i1)) ids.push(pair.i1)
+    };
+    result = SortedMap<String, Array<Id>>[];
+    for (name => ids in byName) {
+      if (ids.size() > 1) !result = result.set(name, ids.toArray())
+    };
+    result
+  }
+
+  // Assign each colliding Id its 1-based ordinal, after which suffix() marks
+  // them apart. Ids that do not collide keep the bare name.
+  mutable fun freeze(): void {
+    next = this.ordinals;
+    for (name => ids in this.collisions()) {
+      _ = name;
+      for (i => id in ids) {
+        !next = next.set(id, i + 1)
+      }
+    };
+    this.!ordinals = next
+  }
+
+  readonly fun suffix(id: Id): String {
+    this.ordinals.maybeGet(id) match {
+    | Some(n) -> `#${n}`
+    | None() -> ""
+    }
+  }
+
+  // Start a fresh render, keeping the ordinals computed by freeze().
+  mutable fun beginRender(): void {
+    this.emitted.clear()
+  }
+}
+
 mutable base class TypePpState private {
   mutable cols: Int = 0,
   mutable buffer: List<String> = List[],
@@ -26,6 +103,14 @@ mutable base class TypePpState private {
   // any member" is recorded by the emission path itself. Lives in the
   // backtrackable state because branch() may roll emissions back.
   mutable emittedMember: Bool = false,
+  // The type-parameter names emitted so far, with the Id each stood for.
+  // Lives in the backtrackable state for the same reason as emittedMember: a
+  // name rolled back by branch() never reached the output, so reporting it as
+  // printed could claim a collision the reader cannot see. Defensive rather
+  // than witnessed -- no type in the suite currently truncates away a name
+  // that would collide -- but it costs nothing and the alternative is a note
+  // that disagrees with the text above it.
+  mutable emittedTParams: List<(String, Id)> = List[],
 } {
   readonly fun chill(): SavedTypePp {
     SavedTypePp::create(this)
@@ -36,6 +121,7 @@ mutable base class TypePpState private {
     this.!buffer = saved.buffer;
     this.!expandingTVars = saved.expandingTVars;
     this.!emittedMember = saved.emittedMember;
+    this.!emittedTParams = saved.emittedTParams;
   }
 }
 
@@ -46,6 +132,7 @@ mutable class SavedTypePp private {} extends TypePpState {
       buffer => state.buffer,
       expandingTVars => state.expandingTVars,
       emittedMember => state.emittedMember,
+      emittedTParams => state.emittedTParams,
     }
   }
 }
@@ -120,6 +207,10 @@ fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
 
 mutable class TypePp{
   compact: Bool,
+  // Where emitted type-parameter names are reported, when rendering a
+  // diagnostic. None on every other path, which makes the whole mechanism
+  // inert outside error rendering.
+  names: ?mutable PpNames = None(),
   // Mirrors --verbose: when true, internal-only details (synthetic index
   // name; see kSyntheticIndexName) are kept in the printed output for
   // debugging instead of being filtered out.
@@ -131,6 +222,13 @@ mutable class TypePp{
 
   mutable fun render(f: mutable TypePp -> void): String {
     f(this);
+    // Only emissions that survived branch() are reported: a name rolled back
+    // never reached the output.
+    this.names.each(sink -> {
+      for (pair in this.emittedTParams.reversed()) {
+        sink.record(pair.i0, pair.i1)
+      }
+    });
     joined = "".join(this.buffer.reversed());
     if (!this.compact) return joined;
     // Compact mode strips layout characters, but a space separating two
@@ -1017,6 +1115,7 @@ mutable class TypePp{
     name: String,
     id: Id,
   ): void {
+    this.!emittedTParams = List.Cons((name, id), this.emittedTParams);
     // The qualified id (name:counter:file-hash) disambiguates same-named type
     // parameters but is not user-readable; like synthetic indexes above, it
     // must not appear in user-visible printed types and is kept under
@@ -1068,8 +1167,26 @@ fun prettyPrint(
     compact,
     verbose => tenv.verbose,
     applyType => ty -> ty.expandTVarsForPp(subst, tenv),
+    names => subst.ppNames,
   };
   pp.render(f)
+}
+
+// Renders a type for embedding in a hint as code the user could paste.
+// None when the rendering emitted a name with no spelling in source (a
+// checker-minted type parameter): such a hint cannot be followed, so its
+// caller should say nothing rather than something unusable.
+fun prettyPrintPastableType(
+  compact: Bool,
+  ty: TType,
+  subst: mutable Subst,
+  tenv: TEnv,
+): ?String {
+  probe = mutable PpNames{};
+  !subst = subst.clone();
+  subst.!ppNames = Some(probe);
+  rendered = prettyPrintType(compact, ty, subst, tenv);
+  if (probe.hasUnwritable()) None() else Some(rendered)
 }
 
 fun prettyPrintType(
