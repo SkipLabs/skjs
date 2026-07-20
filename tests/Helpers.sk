@@ -209,23 +209,21 @@ fun errorToFullMessage(error: SKJS.Error): String {
 // Returns all message lines for one error. For SubtypingError this includes the
 // primary messages followed by the expanded stErr detail lines.
 //
-// The continuation lines are rendered through the subst and tenv the error
-// carries, exactly as SubtypingError::toErrorMessage does. Rendering them
-// through a freshly created subst instead would leave every inference variable
-// in the stored types unbound, printing `unknown` where the user sees the type
-// the variable was grown to (#899).
+// The continuation lines come from SubtypingError::renderDetail, the same
+// function the CLI renders through, so an annotation is a record of text a
+// user actually sees. Rebuilding the rendering here instead would be free to
+// drift from it -- it once did, leaving every inference variable unbound and
+// printing `unknown` where the user sees the type it was grown to (#899).
 fun getErrorMessages(
   context: mutable SKStore.Context,
   error: SKJS.Error,
 ): Array<String> {
   error match {
   | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
-  | SKJS.SubtypingError(savedSubst, tenv, messages, e, _) ->
-    subst = SKJS.Subst::mcreateFromSaved(context, savedSubst);
-    stErrMsgs = e
-      .toError(subst, tenv, SKJS.STErrorDetail::default)
-      .toArray()
-      .map(m -> m.i1);
+  | err @ SKJS.SubtypingError(_, _, messages, _, _) ->
+    stErrMsgs = err.renderDetail(context, SKJS.STErrorDetail::default).map(m ->
+      m.i1
+    );
     messages.map(m -> m.i1).concat(stErrMsgs)
   | SKJS.NamingError(messages, _) -> messages.map(m -> m.i1)
   }
