@@ -70,3 +70,21 @@ function defaultOverNonLiteral(x: string): void {
       break;
   }
 }
+
+// FIXME: where the clauses sit says nothing about which values reach the
+// `default`, so a case written after it rules its value out just as much. Cases
+// after the `default` are currently not ruled out. Pinned to the current
+// (imprecise) behavior; fixed in the next commit.
+function defaultBeforeItsCases(x: 1 | 2 | 3): void {
+  switch (x) {
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
+    default:
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const y: 3 = x;
+      break;
+    case 1:
+      break;
+    case 2:
+      break;
+  }
+}
