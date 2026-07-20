@@ -435,6 +435,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
     }
   }
   ```
+- **Diagnostics**: a hidden argument prints as `C#P` — the class it belongs to and the parameter it stands for, e.g. `Box#T` — rather than the bare `T` the class declared. It has no name in source, so the printed one is free to say where it came from, and `#` cannot appear in a type reference, so it cannot be mistaken for something writable
 - **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`
 
 ### 28. Object Spread Soundness (Stricter than TypeScript)
