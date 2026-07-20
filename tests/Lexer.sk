@@ -379,10 +379,9 @@ fun testHashbangOnlyAtFileStart(): void {
 fun testLeadingDotNumber(): void {
   // (source, first token's kind, that token's text)
   cases = Array[
-    // FIXME(#821): should lex as one number, "a number" / ".5".
-    (".5", ".", "."),
-    // FIXME(#821): should lex as one number, "a number" / ".5e3".
-    (".5e3", ".", "."),
+    (".5", "a number", ".5"),
+    (".5e3", "a number", ".5e3"),
+    (".5e+3", "a number", ".5e+3"),
     // Not a digit after the dot: still a dot.
     (".a", ".", "."),
     ("...a", "...", "..."),
