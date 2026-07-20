@@ -513,6 +513,11 @@ extension class TypeChecker {
     // cases and is settled only now: judging it inline would let a non-last
     // `default` wrongly pre-empt the cases that follow it (clearing them from
     // `cases`, which then mis-flags them "not in the switched type").
+    // Whether the cases alone leave no value unmatched — read before the
+    // `default` below clears what is left, which would make the two
+    // indistinguishable.
+    casesLeaveNothing = casesKnown && cases.isEmpty();
+    if (casesLeaveNothing) tcenv.recordExhaustiveSwitch(e.pos);
     if (casesKnown) {
       lastDefaultPos match {
       | Some(pos) ->
@@ -557,12 +562,15 @@ extension class TypeChecker {
     // merged at once: folding the two-scope `merge` pairwise against a fixed
     // first branch discards every branch in between, leaving only first and last.
     //
-    // Without a `default` there is one more path — matching no clause at all,
-    // which leaves every binding at its pre-switch value. (Exhaustiveness is
-    // taken syntactically here: a switch that covers its scrutinee's type
-    // without a `default` still counts this path, which only widens. See
-    // SkipLabs/skjs#863.)
-    tcenv.mergeScopes(this, scopes.toArray(), seenDefault is None())
+    // Unless some clause always runs, there is one more path — matching none of
+    // them, which leaves every binding at its pre-switch value. A `default`
+    // always runs when nothing else did; so do the cases, when between them they
+    // leave no value unmatched.
+    tcenv.mergeScopes(
+      this,
+      scopes.toArray(),
+      seenDefault is None() && !casesLeaveNothing,
+    )
   }
 
   fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {

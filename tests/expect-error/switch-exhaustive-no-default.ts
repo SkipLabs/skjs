@@ -2,10 +2,8 @@
 // one with a `default` does — so it neither escapes to the code after it nor
 // leaves a binding at its pre-switch value.
 
-// FIXME: every value of `1 | 2` is handled and every clause returns, so this
-// returns on every path. Only a `default` is currently taken to guarantee that.
-// Pinned to the current (imprecise) behavior; refined in the next commit.
-// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
+// Every value of `1 | 2` is handled and every clause returns, so this returns on
+// every path.
 function exhaustiveWithoutDefault(x: 1 | 2): boolean {
   switch (x) {
     case 1:
@@ -15,8 +13,8 @@ function exhaustiveWithoutDefault(x: 1 | 2): boolean {
   }
 }
 
-// FIXME: `y` is assigned by every clause that can be taken, so it is never left
-// at "a" here. Pinned to the current (imprecise) behavior.
+// `y` is assigned by every clause that can be taken, so it is never left at "a"
+// here.
 function exhaustiveLeavesNoBindingUntouched(
   x: 1 | 2,
   a: "a",
@@ -32,7 +30,6 @@ function exhaustiveLeavesNoBindingUntouched(
       y = c;
       break;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "b" | "c" = y;
 }
 
