@@ -154,11 +154,11 @@ mutable class TypePp{
   }
 
   private static fun isWordChar(c: Char): Bool {
-    (c >= 'a' && c <= 'z') ||
-      (c >= 'A' && c <= 'Z') ||
-      (c >= '0' && c <= '9') ||
-      c == '_' ||
-      c == '$'
+    // Word characters are identifier characters, and identifiers are no longer
+    // ASCII-only: `readonly Δ[]` needs its space exactly as `readonly A[]`
+    // does, or the compact render merges keyword and name into what the lexer
+    // itself reads as one identifier.
+    isJSIdentifierPart(c)
   }
 
   mutable fun out(level: Int, margin: Margin, str: String): void {
