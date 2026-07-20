@@ -56,10 +56,10 @@ def ranges(pred):
 
 
 def emit(name, rs):
+    # One value per line: skfmt's stable form, so a regeneration is
+    # byte-identical to the checked-in file and a diff shows only real changes.
     flat = [x for r in rs for x in r]
-    lines, per = [], 8
-    for i in range(0, len(flat), per):
-        lines.append("  " + ", ".join(f"0x{v:X}" for v in flat[i : i + per]) + ",")
+    lines = [f"  0x{v:X}," for v in flat]
     return (
         f"// {len(rs)} ranges, as [start, end] pairs sorted by start.\n"
         f"const {name}: Array<Int> = Array[\n" + "\n".join(lines) + "\n];\n"
