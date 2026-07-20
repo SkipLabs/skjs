@@ -42,10 +42,12 @@ export class ObjC implements ObjBox<Named> {
   }
 }
 
-// The sound workaround — and the shape a value/key-type generator should emit:
-// intersecting an explicit index signature in makes the named type a `Json`
-// subtype, because every field is itself JSON-shaped (recursively). Accepted
-// under the same constraint that rejects the bare type above.
+// A sound workaround: intersecting an explicit index signature in makes the
+// named type a `Json` subtype, because every field is itself JSON-shaped
+// (recursively). Accepted under the same constraint that rejects the bare
+// type above. This is skipper's original approach (skipper#1217) — it works,
+// but the wider inferred shape breaks unrelated real-`tsc` inference like
+// `deepFreeze<T>` (skipper#1239), which `Closed<T>` below does not.
 type Indexed = { readonly a: string } & { readonly [key: string]: Json | null };
 function indexedIsJson(x: Indexed): Json {
   return x;
@@ -59,5 +61,24 @@ type IndexedRealistic = {
   };
 } & { readonly [key: string]: Json | null };
 function indexedRealisticIsJson(x: IndexedRealistic): Json {
+  return x;
+}
+
+// The preferred sound workaround, and the shape a value/key-type generator
+// now emits (skipper's generator switched to this — see skipper#1239): wrap
+// the named type in `Closed<T>` instead of intersecting an index signature.
+// `Closed<T>` is the identity under `tsc` (no widening, no `deepFreeze<T>`
+// breakage) and a sound `Json` subtype under skjs.
+type ClosedNamed = Closed<{ readonly a: string }>;
+function closedIsJson(x: ClosedNamed): Json {
+  return x;
+}
+type ClosedRealistic = Closed<{
+  readonly title: string;
+  readonly email?: string;
+  readonly dueDate?: number | null;
+  readonly meta: Closed<{ readonly tag: string }>;
+}>;
+function closedRealisticIsJson(x: ClosedRealistic): Json {
   return x;
 }
