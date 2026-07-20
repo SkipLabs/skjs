@@ -2831,17 +2831,11 @@ base class TEnv{
         );
         inner
       } else {
-        neverIndex = (name: String) ->
-          TField::create{
-            pos => closedPos,
-            name,
-            isOptional => true,
-            isReadonly => None(),
-            type => TType::bottom(closedPos),
-            access => FAPublic(),
-          };
         closed = obj.map(b ->
-          b.withNeverIndexes(neverIndex("k"), neverIndex("s"))
+          b.withNeverIndexes(
+            TField::createNeverIndex("k", closedPos),
+            TField::createNeverIndex("s", closedPos),
+          )
         );
         TType::single(closed)
       }
