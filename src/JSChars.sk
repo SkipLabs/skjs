@@ -1,9 +1,8 @@
 /***************************************************************************/
 /* The ECMAScript source character classes (ECMA-262 sec 12.2 and 12.3).   */
 /*                                                                         */
-/* Identifiers are not here: those need the Unicode ID_Start/ID_Continue   */
-/* tables, which SKJS does not carry, so it is still ASCII-only there      */
-/* (#822).                                                                 */
+/* Identifiers are not here either: their character classes are the       */
+/* generated ID_Start/ID_Continue tables in JSIdentifierChars.sk.          */
 /***************************************************************************/
 
 module SKJS;
