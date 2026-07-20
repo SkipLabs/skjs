@@ -65,3 +65,18 @@ function defaultDoesNotNarrowToCaseLabel(x: 1 | 2): void {
       break;
   }
 }
+
+// A clause with statements falls into the next one just as an empty one does,
+// so this body is reached when `x` is `1` too and is not `2` alone. (The
+// fallthrough is also reported, since this switch does not turn that off.)
+function nonEmptyClauseFallsThrough(x: 1 | 2, log: (s: string) => void): void {
+  switch (x) {
+    case 1:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      log("one");
+    case 2:
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const y: 2 = x;
+      break;
+  }
+}

@@ -28,8 +28,7 @@ module SKJS;
 //
 // ALWAYS-ON — SKJS always performs these checks.
 //   Warn if explicitly set to false. Silent if absent or true.
-//     noImplicitReturns, noFallthroughCasesInSwitch,
-//     noUncheckedIndexedAccess
+//     noImplicitReturns, noUncheckedIndexedAccess
 //
 // NOT YET SUPPORTED — recognized but not yet implemented.
 //   Warn if enabled (value is ignored). Silent if absent or false.
@@ -276,6 +275,9 @@ class TsCompilerOptions{
   allowImportingTsExtensions: Bool = false,
   lib: Array<String> = Array[],
   truthiness: Truthiness = Truthiness::default,
+  // Whether a clause that falls into another is an error (TS7029). SKJS
+  // defaults it on, where tsc defaults it off, and honours it either way.
+  noFallthroughCasesInSwitch: Bool = true,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -710,6 +712,10 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       .maybeGetBool("allowImportingTsExtensions")
       .default(false);
 
+    noFallthroughCasesInSwitch = co
+      .maybeGetBool("noFallthroughCasesInSwitch")
+      .default(true);
+
     truthiness = co.maybeGetString("truthiness") match {
     | None() -> Truthiness::default
     | Some(v) ->
@@ -766,6 +772,7 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       allowImportingTsExtensions,
       lib,
       truthiness,
+      noFallthroughCasesInSwitch,
     }
   | None() ->
     diags.push(
@@ -867,7 +874,6 @@ const restrictedOptions: Array<String> = Array[
 
 const alwaysOnOptions: Array<String> = Array[
   "noImplicitReturns",
-  "noFallthroughCasesInSwitch",
   "noUncheckedIndexedAccess",
 ];
 
