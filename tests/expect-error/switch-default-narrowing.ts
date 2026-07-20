@@ -1,9 +1,7 @@
 // A `default` runs only for a value that no `case` matched, so its body can be
 // narrowed by that: the scrutinee is the switched type minus every case label.
 
-// FIXME: reaching this body means `x` is neither 1 nor 2, so it is `3`. It is
-// currently not narrowed at all. Pinned to the current (imprecise) behavior;
-// refined in the next commit.
+// Reaching this body means `x` is neither 1 nor 2, so it is `3`.
 function defaultIsTheComplement(x: 1 | 2 | 3): void {
   switch (x) {
     case 1:
@@ -11,20 +9,17 @@ function defaultIsTheComplement(x: 1 | 2 | 3): void {
     case 2:
       break;
     default:
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const y: 3 = x;
       break;
   }
 }
 
-// FIXME: same with one case ruled out — `x` is `2 | 3` here. Pinned to the
-// current (imprecise) behavior; refined in the next commit.
+// Same with one case ruled out — `x` is `2 | 3` here.
 function defaultRulesOutOneCase(x: 1 | 2 | 3): void {
   switch (x) {
     case 1:
       break;
     default:
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const y: 2 | 3 = x;
       break;
   }
