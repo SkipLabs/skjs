@@ -337,6 +337,16 @@ mutable class Lexer private {
     this.posRange2(tok, this.lastTok.fromSome())
   }
 
+  // ECMA-262 sec 12.9.3: the source character immediately following a
+  // NumericLiteral may not be an IdentifierStart -- `2z` is a syntax error,
+  // not the tokens `2` and `z`. (A following digit cannot happen: the scan
+  // consumed it.)
+  readonly fun checkNoIdentifierAfterNumber(pos: Int): void {
+    if (pos < this.contents.size() && isJSIdentifierStart(this.contents[pos])) {
+      this.error(pos, IdentifierAfterNumber())
+    }
+  }
+
   // Scans a numeric literal from `pos` to its end and returns that end. The run
   // is taken permissively -- a second dot or a stray hex letter is consumed here
   // and rejected later by validateJSNumericLiteral -- which is also what lets a
@@ -536,6 +546,7 @@ mutable class Lexer private {
       // token covers the whole literal. A leading dot is never hex, and a
       // BigInt has no fractional part, so no `n` suffix is taken here.
       !pos = this.scanNumberEnd(pos, false);
+      this.checkNoIdentifierAfterNumber(pos);
       mkToken(TKNumber())
 
     | '.' ->
@@ -589,12 +600,10 @@ mutable class Lexer private {
         pos + 1 < this.contents.size() &&
         (this.contents[pos + 1] == 'x' || this.contents[pos + 1] == 'X');
       !pos = this.scanNumberEnd(pos, isHex);
-      if (pos < this.contents.size() && this.contents[pos] == 'n') {
-        !pos = pos + 1;
-        mkToken(TKBigInt())
-      } else {
-        mkToken(TKNumber())
-      }
+      isBigInt = pos < this.contents.size() && this.contents[pos] == 'n';
+      if (isBigInt) !pos = pos + 1;
+      this.checkNoIdentifierAfterNumber(pos);
+      mkToken(if (isBigInt) TKBigInt() else TKNumber())
 
     | '~' ->
       !pos = pos + 1;

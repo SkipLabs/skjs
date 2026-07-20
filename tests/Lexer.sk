@@ -468,8 +468,8 @@ fun testUnicodeIdentifiers(): void {
 // ECMA-262 sec 12.9.3: the source character immediately following a
 // NumericLiteral may not be an IdentifierStart -- `2z` is a SyntaxError in every
 // engine (tsc: TS1351), not the two tokens `2` and `z`. The scanner emits the
-// number and lets the identifier begin, so such programs lex cleanly and only
-// fail later, if at all (with a declared name they typecheck clean).
+// number and let the identifier begin, so such programs lexed cleanly and only
+// failed later, if at all (with a declared name they typechecked clean).
 @test
 fun testNumberThenIdentifier(): void {
   eacute = Char::fromCode(0xE9).toString();
@@ -489,8 +489,7 @@ fun testNumberThenIdentifier(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    // FIXME: the number and the identifier lex as two adjacent tokens.
-    SKTest.expectFalse(threw, `${src}: currently lexes cleanly`)
+    SKTest.expectTrue(threw, `${src}: an identifier may not follow a number`)
   }
 }
 
