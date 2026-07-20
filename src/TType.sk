@@ -3071,6 +3071,14 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
     Id(`synthetic:${id}`)
   }
 
+  // A synthetic id belongs to a type the checker minted rather than one the
+  // program declared -- a hidden type argument from `instanceof` narrowing, an
+  // ambient field's missing-annotation placeholder. Such a type has no name in
+  // source, so a diagnostic must never suggest writing it.
+  fun isSynthetic(): Bool {
+    this.id.startsWith("synthetic:")
+  }
+
   fun toString(): String {
     this.id
   }
