@@ -275,12 +275,7 @@ extension class TypeChecker {
       // values means naming them: unlike a `number` or a `string`, there are
       // only the two. (A boolean that can be only one keeps that literal, and is
       // read above.)
-      (
-        Map::mcreateFromIterator(
-          Array[("true", pos), ("false", pos)].iterator(),
-        ),
-        true,
-      )
+      (mutable Map["true" => pos, "false" => pos], true)
     | _ -> (mutable Map<String, PosRange>[], false)
     };
     // Kept for truthful unreachability reasons: a case value can be
