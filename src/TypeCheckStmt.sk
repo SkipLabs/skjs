@@ -345,6 +345,36 @@ extension class TypeChecker {
       // falls through into the next clause, and whether it is a path out of the
       // switch at all.
       blockTerm = StmtTermination::block(tcenv, block);
+      // Falling *through* means running one clause's statements and then
+      // running the next clause's too. An empty clause has none to run — it is
+      // how several labels are given one body — and the last clause has nothing
+      // to fall into, so neither is a fallthrough. tsc's
+      // `noFallthroughCasesInSwitch` exempts both for the same reason.
+      //
+      // What kind of clause it is does not enter into it: a `default` runs its
+      // statements and falls into the clause after it exactly as a `case` does,
+      // and tsc reports it the same way.
+      //
+      // Whether the rest is an error is that option's to say. SKJS turns it on
+      // where tsc leaves it off, but a switch that asks for the fallthrough
+      // gets it: only the diagnostic is withheld, never the typing of the
+      // clause fallen into, which is what keeps the fallthrough sound.
+      if (
+        this.noFallthroughCasesInSwitch &&
+        blockTerm.mayFallthrough &&
+        block.size() != 0 &&
+        i != branches.size() - 1
+      ) {
+        tcenv.error(
+          Array[
+            (
+              block[block.size() - 1].pos,
+              "Fallthrough case in switch; add a 'break'",
+            ),
+          ],
+          TSCode(7029),
+        )
+      };
       cond = branches[i] match {
       | SwitchBranch(Case(v), _, pos) ->
         // Typed with the other labels above, along with everything that reads a
@@ -420,32 +450,6 @@ extension class TypeChecker {
             }
           | None() -> void
           }
-        };
-        // Falling *through* means running one clause's statements and then
-        // running the next clause's too. An empty clause has none to run — it
-        // is how several labels are given one body — and the last clause has
-        // nothing to fall into, so neither is a fallthrough. tsc's
-        // `noFallthroughCasesInSwitch` exempts both for the same reason.
-        //
-        // Whether the rest is an error is that option's to say. SKJS turns it on
-        // where tsc leaves it off, but a switch that asks for the fallthrough
-        // gets it: only the diagnostic is withheld, never the narrowing of the
-        // clause fallen into, which is what keeps the fallthrough sound.
-        if (
-          this.noFallthroughCasesInSwitch &&
-          blockTerm.mayFallthrough &&
-          block.size() != 0 &&
-          i != branches.size() - 1
-        ) {
-          tcenv.error(
-            Array[
-              (
-                block[block.size() - 1].pos,
-                "Fallthrough case in switch; add a 'break'",
-              ),
-            ],
-            TSCode(7029),
-          )
         };
         eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
         reachedBy = fallenInto match {
