@@ -26,8 +26,8 @@ class Tagged<T extends string> {
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'Box#T#1'
-    // @skjs-expect-error-line3 is not assignable to type 'Box#T#2'
+    // @skjs-expect-error-line2 Type 'Box#T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T#1'
     // @skjs-expect-error-line4 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     x.v = y.v;
   }
@@ -37,8 +37,8 @@ function crossExchange(x: unknown, y: unknown): void {
 function crossTagged(x: unknown, y: unknown): void {
   if (x instanceof Tagged && y instanceof Tagged) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'Tagged#T#1 extends string'
-    // @skjs-expect-error-line3 is not assignable to type 'Tagged#T#2 extends string'
+    // @skjs-expect-error-line2 Type 'Tagged#T#2 extends string'
+    // @skjs-expect-error-line3 is not assignable to type 'Tagged#T#1 extends string'
     // @skjs-expect-error-line4 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     x.tag = y.tag;
   }
@@ -61,6 +61,28 @@ function sharedArrays(u: unknown, w: unknown): number {
   return 0;
 }
 
+// A parameter keeps its number across every message that disambiguates it.
+// These two assign in opposite directions between the same pair, so the
+// numbers have to swap between the messages -- numbering by where a name
+// landed in the sentence would print both errors identically.
+function swapDirectionA(x: unknown, y: unknown): void {
+  if (x instanceof Box && y instanceof Box) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'Box#T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T#1'
+    x.v = y.v;
+  }
+}
+
+function swapDirectionB(x: unknown, y: unknown): void {
+  if (x instanceof Box && y instanceof Box) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'Box#T#1'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T#2'
+    y.v = x.v;
+  }
+}
+
 // Plain source shadowing, no `instanceof` involved: the method's own `T` hides
 // the class's. This is the case tsc reports as TS2719.
 class Shadow<T> {
@@ -70,8 +92,8 @@ class Shadow<T> {
   }
   set<T>(x: T): void {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'T#1'
-    // @skjs-expect-error-line3 is not assignable to type 'T#2'
+    // @skjs-expect-error-line2 Type 'T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'T#1'
     // @skjs-expect-error-line4 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     this.v = x;
   }
