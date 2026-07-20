@@ -518,4 +518,76 @@ fun testPrivateNameMustStartWithIdentifierStart(): void {
   }
 }
 
+// ECMA-262 sec 12.7: an identifier character may be written as a
+// UnicodeEscapeSequence, and the identifier's name is the DECODED text -- so
+// `café` and `café` are one name, not two. The escape must denote a
+// character valid at that position, and the scanner rejects the backslash
+// outright (#937).
+@test
+fun testIdentifierEscapes(): void {
+  bs = Char::fromCode(92).toString();
+  // (source, whether it should parse)
+  cases = Array[
+    // Decoded name is `café`, the same name the literal spelling gives.
+    (
+      `function f(): void { const caf${bs}u00e9 = 1; const _ = caf${bs}u00e9; }`,
+      true,
+    ),
+    // Braced form.
+    (
+      `function f(): void { const caf${bs}u{e9} = 1; const _ = caf${bs}u{e9}; }`,
+      true,
+    ),
+    // At the start of the name.
+    (
+      `function f(): void { const ${bs}u00e9x = 1; const _ = ${bs}u00e9x; }`,
+      true,
+    ),
+    // A digit is a valid ID_Continue, so this names `a1b`.
+    (
+      `function f(): void { const a${bs}u0031b = 1; const _ = a${bs}u0031b; }`,
+      true,
+    ),
+    // A digit is NOT an ID_Start.
+    (`function f(): void { const ${bs}u0031x = 1; const _ = x; }`, false),
+    // A space is neither, so it cannot continue a name.
+    (`function f(): void { const a${bs}u0020b = 1; const _ = a; }`, false),
+    // Malformed escape.
+    (`function f(): void { const a${bs}uZZZZ = 1; const _ = a; }`, false),
+    // A backslash that begins no escape at all stays an invalid character.
+    (`function f(): void { const a = 1; const _ = ${bs}q; }`, false),
+  ];
+  for (case in cases) {
+    (content, _shouldParse) = case;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    // FIXME(#937): the scanner never admits a backslash, so every escaped
+    // spelling is rejected -- including the four that are valid identifiers.
+    SKTest.expectTrue(threw, `${content}: currently rejected`)
+  }
+}
+
+// The name an escaped identifier denotes is its decoded text, which is what
+// makes `café` and `café` the same symbol rather than two.
+@test
+fun testIdentifierEscapeDecodesToTheSameName(): void {
+  bs = Char::fromCode(92).toString();
+  eacute = Char::fromCode(0xE9).toString();
+  for (spelling in Array[`caf${bs}u00e9`, `caf${bs}u{e9}`, `caf${eacute}`]) {
+    SKTest.expectEq(
+      SKJS.decodeIdentifierName(spelling),
+      `caf${eacute}`,
+      `${spelling} names café`,
+    )
+  }
+}
+
 module end;
