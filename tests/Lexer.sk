@@ -409,7 +409,8 @@ fun testLeadingDotNumber(): void {
 // ECMA-262 sec 12.7 defines an identifier's characters by the Unicode
 // properties ID_Start and ID_Continue, so an accented, Greek or CJK name is an
 // ordinary one. The scanner classified identifier characters as ASCII only,
-// rejecting each of those as an invalid character (#822).
+// rejecting each of those as an invalid character (#822); it now asks the
+// generated ID_Start/ID_Continue tables.
 //
 // The negatives matter as much as the positives: being non-ASCII does not make
 // a character a name. Emoji are Symbol and so is a math minus, while a middle
@@ -444,7 +445,7 @@ fun testUnicodeIdentifiers(): void {
     (`const ${zwnj}x = 1;`, false),
   ];
   for (case in cases) {
-    (content, _shouldParse) = case;
+    (content, shouldParse) = case;
     fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
     lexer = SKJS.Lexer::mcreate(fileName, content);
     parser = mutable SKJS.Parser(lexer);
@@ -455,10 +456,7 @@ fun testUnicodeIdentifiers(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    // FIXME(#822): every non-ASCII character is an invalid one, so the six
-    // that should be names are rejected along with the four that should not.
-    expected = !content.chars().all(c -> c.code() < 0x80);
-    SKTest.expectEq(threw, expected, content)
+    SKTest.expectEq(!threw, shouldParse, content)
   }
 }
 module end;

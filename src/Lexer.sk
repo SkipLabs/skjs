@@ -571,24 +571,11 @@ mutable class Lexer private {
       !pos = pos + 1;
       mkToken(TKGreaterThan())
 
-    | c if (
-      c >= 'a' && c <= 'z' ||
-      c >= 'A' && c <= 'Z' ||
-      c == '_' ||
-      c == '$' ||
-      c == '#'
-    ) ->
+    | c if (isJSIdentifierStart(c) || c == '#') ->
       !pos = pos + 1;
       loop {
         if (pos >= this.contents.size()) break void;
-        l = this.contents[pos];
-        if (
-          l >= 'a' && l <= 'z' ||
-          l >= 'A' && l <= 'Z' ||
-          l == '_' ||
-          l == '$' ||
-          l >= '0' && l <= '9'
-        ) {
+        if (isJSIdentifierPart(this.contents[pos])) {
           !pos = pos + 1;
           continue
         };
