@@ -93,9 +93,7 @@ function fallthroughCarriesItsWrites(x: 1 | 2, a: "a", b: "b"): void {
       // @skjs-expect-error Fallthrough case in switch; add a 'break'
       y = b;
     case 2:
-      // Pins today's behaviour, which is unsound: `y` is `"b"` here whenever
-      // the fallthrough is what reached this body, so annotating it `"a"` must
-      // be rejected. The next commit rejects it.
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const y2: "a" = y;
       break;
   }

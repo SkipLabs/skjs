@@ -308,6 +308,13 @@ extension class TypeChecker {
     // disjunction of labels describes, so the group is then narrowed by nothing.
     fallenInto: ?Expr = None();
     fallenIntoDefault = false;
+    // Which labels reach a block is only half of what falling into it means:
+    // the clause fallen from has also *run*, so the writes it made are already
+    // in effect. `fallenFrom` carries its scope to the block below, which
+    // starts from what either entry leaves behind (see `block`'s parameter of
+    // the same name). Without it a body would be typed as if the switch had
+    // been entered at its own label, which the write may well contradict.
+    fallenFrom: ?readonly Scope = None();
     // `default` runs only for a value no `case` matched, so its body is narrowed
     // by that: the conjunction of `scrutinee !== <label>` over the cases. Every
     // case counts, including any written after the `default` — where the clauses
@@ -511,8 +518,12 @@ extension class TypeChecker {
         };
         cond
       };
-      scopeBranch = this.block(tcenv, block, cond);
-      if (!blockTerm.isTerminal()) scopes.push(scopeBranch)
+      scopeBranch = this.block(tcenv, block, cond, fallenFrom);
+      if (!blockTerm.isTerminal()) scopes.push(scopeBranch);
+      // The same condition the labels above are carried under, for the same
+      // reason: this clause falls into the next exactly when its block can
+      // complete normally.
+      !fallenFrom = if (blockTerm.mayFallthrough) Some(scopeBranch) else None()
     };
     // A `default` covers exactly the values matched by no `case`, before or
     // after it in source order, so its reachability depends on the full set of
