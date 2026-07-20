@@ -392,6 +392,23 @@ mutable class Lexer private {
     pos
   }
 
+  // The identifier character at `pos`, escaped or not, with the index just past
+  // it -- provided it satisfies `ok`. An escape must denote a character valid at
+  // its position, exactly as the literal spelling must (ECMA-262 sec 12.7).
+  readonly fun identifierCharAt(pos: Int, ok: Char -> Bool): ?Int {
+    if (pos >= this.contents.size()) return None();
+    c = this.contents[pos];
+    if (c != '\\') {
+      return if (ok(c)) Some(pos + 1) else None()
+    };
+    decodeIdentifierEscape(this.contents, pos) match {
+    | None() -> None()
+    | Some(escape) ->
+      (decoded, next) = escape;
+      if (ok(decoded)) Some(next) else None()
+    }
+  }
+
   // A `#!` is a hashbang only at the very start of the file. A leading byte
   // order mark does not count against that (tsc strips it first), but anything
   // else does, including whitespace. Elsewhere a `#` begins a private name.
@@ -582,22 +599,36 @@ mutable class Lexer private {
       !pos = pos + 1;
       mkToken(TKGreaterThan())
 
-    | c if (isJSIdentifierStart(c) || c == '#') ->
-      !pos = pos + 1;
+    | c if (
+      isJSIdentifierStart(c) ||
+      c == '#' ||
+      this.identifierCharAt(pos, isJSIdentifierStart).isSome()
+    ) ->
       // A private name is `#` followed by an IdentifierName, so the character
       // after the `#` must be an IdentifierStart: `#1` and `#·x` are invalid
       // (tsc: TS1127), and the continue loop below must not begin on them.
-      if (
-        c == '#' &&
-        !(pos < this.contents.size() && isJSIdentifierStart(this.contents[pos]))
-      ) {
-        this.error(start, UnknownCharacter('#'))
+      if (c == '#') {
+        !pos = pos + 1;
+        this.identifierCharAt(pos, isJSIdentifierStart) match {
+        | Some(next) -> !pos = next
+        | None() -> this.error(start, UnknownCharacter('#'))
+        }
+      } else {
+        // The start character itself may be written as an escape.
+        !pos = this.identifierCharAt(pos, isJSIdentifierStart).fromSome()
       };
       loop {
-        if (pos >= this.contents.size()) break void;
-        if (isJSIdentifierPart(this.contents[pos])) {
-          !pos = pos + 1;
+        this.identifierCharAt(pos, isJSIdentifierPart) match {
+        | Some(next) ->
+          !pos = next;
           continue
+        | None() -> void
+        };
+        // A backslash here began an escape that does not denote a character
+        // able to continue the name; it is not the end of the identifier but
+        // an invalid character, as tsc reports it (TS1127).
+        if (pos < this.contents.size() && this.contents[pos] == '\\') {
+          this.error(pos, UnknownCharacter('\\'))
         };
         break void;
       };

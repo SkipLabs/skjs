@@ -11,7 +11,9 @@ extension class Parser {
 
   readonly fun getVar(tok: Token): String {
     if (tok.kind is TKVar()) {
-      this.lex.getTokenRawStringContent(tok)
+      // The name is the identifier's decoded text, so an escaped spelling and
+      // its literal twin are one name (ECMA-262 sec 12.7).
+      decodeIdentifierName(this.lex.getTokenRawStringContent(tok))
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
     }
