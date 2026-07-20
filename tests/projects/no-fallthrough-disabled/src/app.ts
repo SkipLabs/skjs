@@ -38,3 +38,19 @@ export function unionIsAccepted(x: 1 | 2, log: (s: string) => void): void {
       break;
   }
 }
+
+// Allowing the fallthrough does not change what it does: `case 1`'s write is in
+// effect in the body it falls into, where `y` is `"b"` and not the `"a"` the
+// switch was entered with. Pins today's behaviour, which is unsound — and
+// silently so here, with no fallthrough diagnostic to hint at it.
+export function fallthroughCarriesItsWrites(x: 1 | 2, a: "a", b: "b"): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      y = b;
+    case 2:
+      const y2: "a" = y;
+      break;
+  }
+}
