@@ -70,3 +70,32 @@ function defaultOverNonLiteral(x: string): void {
       break;
   }
 }
+
+// Where the clauses sit says nothing about which values reach the `default`, so
+// a case written after it rules its value out just as much as one before it.
+function defaultBeforeItsCases(x: 1 | 2 | 3): void {
+  switch (x) {
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
+    default:
+      const y: 3 = x;
+      break;
+    case 1:
+      break;
+    case 2:
+      break;
+  }
+}
+
+// Ruling out cases from both sides of the `default`.
+function defaultBetweenItsCases(x: 1 | 2 | 3): void {
+  switch (x) {
+    case 1:
+      break;
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
+    default:
+      const y: 3 = x;
+      break;
+    case 2:
+      break;
+  }
+}
