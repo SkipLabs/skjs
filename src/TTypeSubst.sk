@@ -91,6 +91,14 @@ mutable class Subst private {
   // version and from SubstState because restore rewinds the version; reusing an
   // id on a restored timeline would merge two distinct hidden type arguments.
   mutable nextSkolemId: Int = 0,
+  // Where the pretty-printer reports the type-parameter names it emits, set
+  // for the length of one diagnostic's rendering (see PpNames). Unlike
+  // nextSkolemId below, a clone SHARES this rather than being cut off from
+  // it: prettyPrintType renders through a clone, so a copy would lose exactly
+  // the emissions it exists to collect. That is safe because it is a record
+  // of output only -- nothing reads it back into typing, and save/restore
+  // never touch it.
+  mutable ppNames: ?mutable PpNames = None(),
 } extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
@@ -155,6 +163,7 @@ mutable class Subst private {
       // skolems speculatively, so poison the counter: genSkolemTParam fails
       // hard on it the moment that changes.
       nextSkolemId => -1,
+      ppNames => this.ppNames,
     }
   }
 
