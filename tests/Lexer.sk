@@ -495,8 +495,8 @@ fun testNumberThenIdentifier(): void {
 
 // A private name is `#` followed by an IdentifierName, so its first character
 // must be an IdentifierStart: tsc rejects `#1` and `#·x` (TS1127). The scanner
-// runs its identifier-continue loop directly after `#`, so continue-only
-// characters -- digits, a middle dot, combining marks -- can begin one.
+// used to run its identifier-continue loop directly after `#`, so continue-only
+// characters -- digits, a middle dot, combining marks -- could begin one.
 @test
 fun testPrivateNameMustStartWithIdentifierStart(): void {
   middot = Char::fromCode(0xB7).toString();
@@ -514,8 +514,7 @@ fun testPrivateNameMustStartWithIdentifierStart(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    // FIXME: accepted; the continue loop runs straight after the `#`.
-    SKTest.expectFalse(threw, `${src}: currently accepted`)
+    SKTest.expectTrue(threw, `${src}: a private name needs an IdentifierStart`)
   }
 }
 

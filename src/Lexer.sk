@@ -584,6 +584,15 @@ mutable class Lexer private {
 
     | c if (isJSIdentifierStart(c) || c == '#') ->
       !pos = pos + 1;
+      // A private name is `#` followed by an IdentifierName, so the character
+      // after the `#` must be an IdentifierStart: `#1` and `#·x` are invalid
+      // (tsc: TS1127), and the continue loop below must not begin on them.
+      if (
+        c == '#' &&
+        !(pos < this.contents.size() && isJSIdentifierStart(this.contents[pos]))
+      ) {
+        this.error(start, UnknownCharacter('#'))
+      };
       loop {
         if (pos >= this.contents.size()) break void;
         if (isJSIdentifierPart(this.contents[pos])) {
