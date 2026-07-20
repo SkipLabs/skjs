@@ -10,10 +10,8 @@ function id2<T, U>(x: T): U {
   return x;
 }
 
-// This call checks, so it renders no pair at all. It used to report
-// `Type '[0, 1]' is not assignable to type '[0, 1]'` -- a pair that could not
-// explain its own rejection, because the rendered source was not the type the
-// check rejected (#914). See tuple-constraint-literal.ts for the behaviour.
+// A literal matching a tuple constraint checks, so it renders no pair at all
+// (#914; behaviour pinned in tuple-constraint-literal.ts).
 declare function g2<K extends [0, 1]>(x: K): K;
 function tupleConstraint(): void {
   const r = g2([0, 1]);
