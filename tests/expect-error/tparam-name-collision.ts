@@ -26,8 +26,9 @@ class Tagged<T extends string> {
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'Box#T'
-    // @skjs-expect-error-line3 is not assignable to type 'Box#T'
+    // @skjs-expect-error-line2 Type 'Box#T#1'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T#2'
+    // @skjs-expect-error-line4 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     x.v = y.v;
   }
 }
@@ -36,8 +37,9 @@ function crossExchange(x: unknown, y: unknown): void {
 function crossTagged(x: unknown, y: unknown): void {
   if (x instanceof Tagged && y instanceof Tagged) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'Tagged#T extends string'
-    // @skjs-expect-error-line3 is not assignable to type 'Tagged#T extends string'
+    // @skjs-expect-error-line2 Type 'Tagged#T#1 extends string'
+    // @skjs-expect-error-line3 is not assignable to type 'Tagged#T#2 extends string'
+    // @skjs-expect-error-line4 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     x.tag = y.tag;
   }
 }
@@ -50,9 +52,10 @@ declare function sharedLen<T>(a: Array<T>, b: Array<T>): number;
 function sharedArrays(u: unknown, w: unknown): number {
   if (u instanceof Array && w instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
-    // @skjs-expect-error-line2 Type 'Array#T'
-    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
-    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'Array#T' must be assignable to source parameter type 'Array#T'
+    // @skjs-expect-error-line2 Type 'Array#T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T#1'
+    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'Array#T#2' must be assignable to source parameter type 'Array#T#1'
+    // @skjs-expect-error-line5 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     return sharedLen(u, w);
   }
   return 0;
@@ -67,8 +70,9 @@ class Shadow<T> {
   }
   set<T>(x: T): void {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'T'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line2 Type 'T#1'
+    // @skjs-expect-error-line3 is not assignable to type 'T#2'
+    // @skjs-expect-error-line4 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     this.v = x;
   }
 }

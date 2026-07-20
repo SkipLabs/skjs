@@ -437,8 +437,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
     }
   }
   ```
-- **Diagnostics**: a hidden argument prints as `C#P` — the class it belongs to and the parameter it stands for, e.g. `Box#T` — rather than the bare `T` the class declared. It has no name in source, so the printed one is free to say where it came from, and `#` cannot appear in a type reference, so it cannot be mistaken for something writable
-- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`
+- **Diagnostics**: a hidden argument prints as `C#P` — the class it belongs to and the parameter it stands for, e.g. `Box#T` — rather than the bare `T` the class declared, so a message naming two of them usually distinguishes them by itself (`Box#T` against `Crate#T`, `Pair#A` against `Pair#B`). When two still print alike — two narrowings of the same class, or a shadowed name the program declared — they are numbered `#1`/`#2` in the message that mentions both, ordered by identity so a parameter keeps its number, followed by a line saying the names collide. All of this is display-only: `#` cannot appear in a type reference, and none of it reaches a suggestion offered as code to paste — a suggestion that would have to name a hidden argument is dropped instead, since the program has no way to write one. `--verbose` prints the qualified ids and none of it
+- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`, `tests/expect-error/tparam-name-collision.ts`
 
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
