@@ -1,0 +1,52 @@
+module SKJSTests;
+
+// The generated identifier tables are data, and this pins them to their
+// contract: well-formed (flat [start, end] pairs, strictly increasing,
+// non-overlapping) and correct on the characters whose membership the
+// implementation reasons about elsewhere. The spot checks keep a regeneration
+// honest: a wrong Unicode vintage or a mis-derived set moves at least one.
+@test
+fun testIdentifierTableWellFormed(): void {
+  for (ranges in Array[SKJS.idStartRanges, SKJS.idContinueRanges]) {
+    SKTest.expectEq(ranges.size() % 2, 0, "flat [start, end] pairs");
+    i = 0;
+    prevEnd = -1;
+    while (i < ranges.size()) {
+      lo = ranges[i];
+      hi = ranges[i + 1];
+      SKTest.expectTrue(lo <= hi, `range ${lo}..${hi} is ordered`);
+      SKTest.expectTrue(lo > prevEnd, `range ${lo}.. starts after ${prevEnd}`);
+      !prevEnd = hi;
+      !i = i + 2;
+    }
+  }
+}
+
+@test
+fun testIdentifierTableMembership(): void {
+  ch = code -> Char::fromCode(code);
+  // U+2E2F VERTICAL TILDE is Lm but Pattern_Syntax, so ID_Start and
+  // ID_Continue exclude it -- the one letter-category character they remove.
+  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0x2E2F)), "U+2E2F start");
+  SKTest.expectFalse(SKJS.isJSIdentifierPart(ch(0x2E2F)), "U+2E2F continue");
+  // Unicode 15.1 (tsc's vintage): CJK Extension I and the katakana middle dots.
+  SKTest.expectTrue(SKJS.isJSIdentifierStart(ch(0x2EBF0)), "U+2EBF0 start");
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x30FB)), "U+30FB continue");
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0xFF65)), "U+FF65 continue");
+  // Permanent: the joiners continue a name and never start one.
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x200C)), "ZWNJ continues");
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x200D)), "ZWJ continues");
+  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0x200C)), "ZWNJ cannot start");
+  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0x200D)), "ZWJ cannot start");
+  // Permanent: continue-only middle dot; look-alikes that are not names.
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0xB7)), "U+B7 continues");
+  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0xB7)), "U+B7 cannot start");
+  SKTest.expectFalse(
+    SKJS.isJSIdentifierPart(ch(0x180E)),
+    "U+180E is not Zs anymore, nor a name",
+  );
+  SKTest.expectFalse(SKJS.isJSIdentifierPart(ch(0x200B)), "U+200B never was");
+  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0x1F600)), "emoji are Symbol");
+}
+
+module end;

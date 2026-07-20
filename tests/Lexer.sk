@@ -406,4 +406,116 @@ fun testLeadingDotNumber(): void {
   }
 }
 
+// ECMA-262 sec 12.7 defines an identifier's characters by the Unicode
+// properties ID_Start and ID_Continue, so an accented, Greek or CJK name is an
+// ordinary one. The scanner classified identifier characters as ASCII only,
+// rejecting each of those as an invalid character (#822); it now asks the
+// generated ID_Start/ID_Continue tables.
+//
+// The negatives matter as much as the positives: being non-ASCII does not make
+// a character a name. Emoji are Symbol and so is a math minus, while a middle
+// dot and a zero width non-joiner continue a name but cannot start one. tsc
+// rejects all four spellings below.
+@test
+fun testUnicodeIdentifiers(): void {
+  ch = code -> Char::fromCode(code).toString();
+  eacute = ch(0xE9);
+  alpha = ch(0x3B1);
+  cyrillic = ch(0x43F);
+  cjk = ch(0x5909) + ch(0x6570);
+  zwnj = ch(0x200C);
+  middot = ch(0xB7);
+  emoji = ch(0x1F600);
+  minus = ch(0x2212);
+  // (declaration, whether it should parse)
+  zwj = ch(0x200D);
+  cases = Array[
+    (`const caf${eacute} = 1;`, true),
+    // Both joiners continue a name (ECMAScript's additions to ID_Continue) --
+    // and each is pinned, because dropping either from the generated table
+    // would pass every other case here.
+    (`const a${zwj}b = 1; const _ = a${zwj}b;`, true),
+    (`const ${alpha} = 1;`, true),
+    (`const ${cyrillic} = 1;`, true),
+    (`const ${cjk} = 1;`, true),
+    (`const a${zwnj}b = 1;`, true),
+    (`const a${middot}b = 1;`, true),
+    ("const $x = 1;", true),
+    ("const _y = 1;", true),
+    // Not identifier characters in any position.
+    (`const ${emoji} = 1;`, false),
+    (`const ${minus}x = 1;`, false),
+    // ID_Continue, but not ID_Start.
+    (`const ${middot}x = 1;`, false),
+    (`const ${zwnj}x = 1;`, false),
+  ];
+  for (case in cases) {
+    (content, shouldParse) = case;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectEq(!threw, shouldParse, content)
+  }
+}
+
+// ECMA-262 sec 12.9.3: the source character immediately following a
+// NumericLiteral may not be an IdentifierStart -- `2z` is a SyntaxError in every
+// engine (tsc: TS1351), not the two tokens `2` and `z`. The scanner emits the
+// number and let the identifier begin, so such programs lexed cleanly and only
+// failed later, if at all (with a declared name they typechecked clean).
+@test
+fun testNumberThenIdentifier(): void {
+  eacute = Char::fromCode(0xE9).toString();
+  for (src in Array[
+    "function g(): void { const y = 2z; const _ = y; }",
+    `function g(): void { const y = 2${eacute}; const _ = y; }`,
+    `function g(): void { const y = 0x1fn${eacute}; const _ = y; }`,
+    `function g(): void { const y = .5${eacute}; const _ = y; }`,
+  ]) {
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, src);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectTrue(threw, `${src}: an identifier may not follow a number`)
+  }
+}
+
+// A private name is `#` followed by an IdentifierName, so its first character
+// must be an IdentifierStart: tsc rejects `#1` and `#·x` (TS1127). The scanner
+// used to run its identifier-continue loop directly after `#`, so continue-only
+// characters -- digits, a middle dot, combining marks -- could begin one.
+@test
+fun testPrivateNameMustStartWithIdentifierStart(): void {
+  middot = Char::fromCode(0xB7).toString();
+  for (src in Array[
+    `class C { #${middot}x: number = 1; get(): number { return this.#${middot}x; } }`,
+    "class C { #1: number = 2; get(): number { return this.#1; } }",
+  ]) {
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, src);
+    parser = mutable SKJS.Parser(lexer);
+    threw = try {
+      _ = parser.toplevelDefs();
+      false
+    } catch {
+    | SKJS.ErrorExn(_) -> true
+    | exn -> throw exn
+    };
+    SKTest.expectTrue(threw, `${src}: a private name needs an IdentifierStart`)
+  }
+}
+
 module end;

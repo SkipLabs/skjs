@@ -189,6 +189,12 @@ class UnknownCharacter(char: Char) extends LexingKind {
   }
   const code: ErrorCode = TSCode(1127);
 }
+class IdentifierAfterNumber() extends LexingKind {
+  fun toString(): String {
+    `An identifier or keyword cannot immediately follow a numeric literal`
+  }
+  const code: ErrorCode = TSCode(1351);
+}
 class UnknownOperator(str: String) extends LexingKind {
   fun toString(): String {
     `Unknown operator '${this.str}'`
