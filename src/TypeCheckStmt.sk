@@ -300,6 +300,12 @@ extension class TypeChecker {
     // describes, so the group is then narrowed by nothing at all.
     fallenInto: ?Expr = None();
     fallenIntoDefault = false;
+    // `default` runs only for a value no `case` matched, so its body can be
+    // narrowed by that: the conjunction of `scrutinee !== <label>` over the
+    // cases. Only the cases seen so far are included, which is all of them for a
+    // `default` that is last, and for one that is not leaves the body wider than
+    // it has to be — sound, and that switch is already warned about.
+    noCaseMatched: ?Expr = None();
     for (i in Range(0, branches.size())) {
       block = branches[i].block;
       // How the block ends answers both questions asked of it below: whether it
@@ -404,6 +410,13 @@ extension class TypeChecker {
           )
         };
         eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+        ne = Expr(e.pos, (Binop(BOStrictInequality(), e, v)));
+        !noCaseMatched = Some(
+          noCaseMatched match {
+          | None() -> ne
+          | Some(acc) -> Expr(e.pos, (Binop(BOLogicalAnd(), acc, ne)))
+          },
+        );
         reachedBy = fallenInto match {
         | None() -> eq
         | Some(prev) -> Expr(e.pos, (Binop(BOLogicalOr(), prev, eq)))
@@ -450,13 +463,29 @@ extension class TypeChecker {
             ESLintCode("default-case-last"),
           )
         };
+        cond = noCaseMatched match {
+        // No case to rule out: the `default` runs whatever the scrutinee is.
+        | None() -> None()
+        | Some(noCase) ->
+          // Empty clauses falling in bring their own labels, which the body is
+          // reached by just as much as by matching no case at all.
+          Some(
+            (
+              fallenInto match {
+              | None() -> noCase
+              | Some(prev) -> Expr(e.pos, (Binop(BOLogicalOr(), noCase, prev)))
+              },
+              true,
+            ),
+          )
+        };
         if (block.size() == 0) {
           !fallenIntoDefault = true
         } else {
           !fallenInto = None();
           !fallenIntoDefault = false
         };
-        None()
+        cond
       };
       scopeBranch = this.block(tcenv, block, cond);
       if (!blockTerm.isTerminal()) scopes.push(scopeBranch)
