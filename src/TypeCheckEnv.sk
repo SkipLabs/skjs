@@ -7,7 +7,25 @@ module SKJS;
 mutable base class TCEnvBase private {
   context: mutable SKStore.Context,
   results: mutable TCResultsAcc,
+  // Switches whose cases cover every value the scrutinee can take, keyed by the
+  // scrutinee's position. Only the type-checker can tell — it is the one that
+  // knows the scrutinee's type — but the termination pass needs the answer, so
+  // it is left here on the way past. A switch is absent until its clauses have
+  // been checked, so asking early gets `false`, which is the conservative
+  // answer: the switch is assumed to be escapable.
+  mutable exhaustiveSwitches: SortedSet<PosRange> = SortedSet[],
 } {
+  // Record that this switch's cases leave no value unmatched.
+  mutable fun recordExhaustiveSwitch(scrutinee: PosRange): void {
+    this.!exhaustiveSwitches = this.exhaustiveSwitches.set(scrutinee)
+  }
+
+  // Whether this switch's cases were found to leave no value unmatched. False
+  // before its clauses have been checked.
+  readonly fun isExhaustiveSwitch(scrutinee: PosRange): Bool {
+    this.exhaustiveSwitches.contains(scrutinee)
+  }
+
   mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
     this.results.recordClassHierarchy{child, parent}
   }

@@ -172,9 +172,15 @@ value class StmtTermination private {
         // per clause would make a clause that breaks look like it continues into
         // the next one, when it leaves the switch entirely.
         !branchesTerm = branchesTerm.breakToFallthrough();
-        switchIsExhaustive = branches.any(branch ~>
-          branch is SwitchBranch(Default(), _, _)
-        ); // Unless exhaustiveness is proven differently?
+        // Some clause always runs when there is a `default`, and equally when
+        // the cases leave no value unmatched — which only the type-checker can
+        // tell, and leaves on the way past for this. It has not checked the
+        // clauses yet the first time a switch is walked, so this reads false
+        // then and the switch is taken to be escapable; the walk that decides
+        // whether a function returns happens afterwards, and gets the answer.
+        switchIsExhaustive =
+          branches.any(branch ~> branch is SwitchBranch(Default(), _, _)) ||
+          tcenvb.isExhaustiveSwitch(e.pos);
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe()
       })
     | Block(block) -> static::block(tcenvb, block)
