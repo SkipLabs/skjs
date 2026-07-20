@@ -65,3 +65,18 @@ function defaultDoesNotNarrowToCaseLabel(x: 1 | 2): void {
       break;
   }
 }
+
+// FIXME: a clause with statements falls into the next one just as an empty one
+// does, so this body is reached when `x` is `1` too and is not `2` alone. Only
+// the fallthrough itself is reported; the narrowing is still the last label.
+// Pinned to the current (incorrect) behavior; fixed in the next commit.
+function nonEmptyClauseFallsThrough(x: 1 | 2, log: (s: string) => void): void {
+  switch (x) {
+    case 1:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      log("one");
+    case 2:
+      const y: 2 = x;
+      break;
+  }
+}
