@@ -335,8 +335,7 @@ function rejectSharedArrayElement(u: unknown, w: unknown): number {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type 'Array#T'
     // @skjs-expect-error-line3 is not assignable to type 'Array#T'
-    // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <Array#T | Array#T>
-    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'Array#T' must be assignable to source parameter type 'Array#T'
+    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'Array#T' must be assignable to source parameter type 'Array#T'
     return sharedLen(u, w);
   }
   return 0;

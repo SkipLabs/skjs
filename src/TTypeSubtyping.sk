@@ -1345,32 +1345,49 @@ extension class TType {
         widerType = TType::union(clonedSubst, tenv, sealedType, expandedU1);
         // The hints below embed the type as code the user could paste into
         // an annotation, not as prose, so it is deliberately NOT wrapped in
-        // quoteRenderedType.
-        widerStr = widerType.toString(clonedSubst, tenv);
+        // quoteRenderedType. That is also why the rendering may come back
+        // None: a type the checker minted has no spelling to paste, and a
+        // hint naming one cannot be followed (issue #919).
+        widerStr = prettyPrintPastableType(
+          false,
+          widerType,
+          clonedSubst,
+          tenv,
+        ) match {
+        | Some(str) -> str
+        | None() -> continue
+        };
         clonedSubst.getOrigin(tvar) match {
         | Some(FromGenericInst(pos, allTVars))
         | Some(FromGenericCall(pos, allTVars)) ->
+          // Every argument in the suggestion has to be writable too, not
+          // just the one that failed.
           targs = allTVars.map(tv -> {
             if (tv.id == tvar.id) {
-              widerStr
+              Some(widerStr)
             } else {
               clonedSubst.peekRaw(tv) match {
               | Some(ty) ->
-                ty
-                  .expandTVarsForPp(clonedSubst, tenv)
-                  .toString(clonedSubst, tenv)
-              | None() -> "unknown"
+                prettyPrintPastableType(
+                  false,
+                  ty.expandTVarsForPp(clonedSubst, tenv),
+                  clonedSubst,
+                  tenv,
+                )
+              | None() -> Some("unknown")
               }
             }
           });
-          targsStr = targs.join(", ");
-          !hints = List.Cons(
-            (
-              pos,
-              `Consider adding explicit type arguments, e.g., <${targsStr}>`,
-            ),
-            hints,
-          )
+          if (targs.all(t -> t.isSome())) {
+            targsStr = targs.map(t -> t.fromSome()).join(", ");
+            !hints = List.Cons(
+              (
+                pos,
+                `Consider adding explicit type arguments, e.g., <${targsStr}>`,
+              ),
+              hints,
+            )
+          }
         | Some(FromEmptyArray(pos))
         | Some(FromArrayLiteral(pos)) ->
           !hints = List.Cons(
