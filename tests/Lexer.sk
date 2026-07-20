@@ -370,4 +370,41 @@ fun testHashbangOnlyAtFileStart(): void {
   }
 }
 
+// A `.` that a digit follows begins a NumericLiteral (`.5` is `0.5`), which the
+// scanner never checked for: it always produced a `.`, so `.5` failed to parse
+// where tsc accepts it (#821). `...` and a `.` that no digit follows are
+// unaffected, and so is a trailing dot (`5.`), which the number scan already
+// consumed.
+@test
+fun testLeadingDotNumber(): void {
+  // (source, first token's kind, that token's text)
+  cases = Array[
+    // FIXME(#821): should lex as one number, "a number" / ".5".
+    (".5", ".", "."),
+    // FIXME(#821): should lex as one number, "a number" / ".5e3".
+    (".5e3", ".", "."),
+    // Not a digit after the dot: still a dot.
+    (".a", ".", "."),
+    ("...a", "...", "..."),
+    // Already handled by the number scan, which consumes a trailing dot.
+    ("5.", "a number", "5."),
+    ("5.5", "a number", "5.5"),
+  ];
+  for (case in cases) {
+    (content, expectedKind, expectedText) = case;
+    fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
+    lexer = SKJS.Lexer::mcreate(fileName, content);
+    lexer.next() match {
+    | None() -> SKTest.expectTrue(false, `${content}: no token at all`)
+    | Some(tok) ->
+      SKTest.expectEq(tok.kind.toString(), expectedKind, `${content}: kind`);
+      SKTest.expectEq(
+        lexer.getTokenRawStringContent(tok),
+        expectedText,
+        `${content}: text`,
+      )
+    }
+  }
+}
+
 module end;
