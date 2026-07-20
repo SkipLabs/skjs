@@ -11,22 +11,12 @@
 // Exact match: tsc infers K = [0, 1].
 declare function exact<K extends [0, 1]>(x: K): K;
 function exactMatch(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = exact([0, 1]);
 }
 
 // Contextual widening: the literal's `5` satisfies the constraint's `number`.
 declare function widen<K extends [0, number]>(x: K): K;
 function widenedElement(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = widen([0, 5]);
 }
 
@@ -39,11 +29,6 @@ function sameValueElements(): void {
 // More than two positions.
 declare function three<K extends [0, 1, 2]>(x: K): K;
 function threePositions(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = three([0, 1, 2]);
 }
 
@@ -56,21 +41,11 @@ function unionConstraintPosition(): void {
 // readonly tuple constraints take the same path.
 declare function roExact<K extends readonly [0, 1]>(x: K): K;
 function readonlyExactMatch(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = roExact([0, 1]);
 }
 
 declare function roWiden<K extends readonly [0, number]>(x: K): K;
 function readonlyWidenedElement(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = roWiden([0, 5]);
 }
 
@@ -78,11 +53,6 @@ function readonlyWidenedElement(): void {
 // positions.
 declare function nest<K extends [[0, 1], [2, 3]]>(x: K): K;
 function nestedTuples(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest([
     [0, 1],
     [2, 3],
@@ -93,11 +63,6 @@ function nestedTuples(): void {
 // constraint's positions, so two equal tuples agree.
 declare function two<K extends [0, 1]>(a: K, b: K): K;
 function twoParametersAgree(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = two([0, 1], [0, 1]);
 }
 
@@ -145,15 +110,7 @@ function arrayConstraintWidens(): void {
 // narrower annotation is still rejected.
 declare function flow<K extends [0, 1]>(x: K): K;
 function resultFlowsToAnnotation(): void {
-  // FIXME: TypeScript accepts this call. Committing the whole tuple and then
-  // checking it against the constrained variable seals every element
-  // commitment variable to the union of all tuple positions, so the
-  // constraint check fails on a literal that matches it (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const ok: [0, 1] = flow([0, 1]);
-  // FIXME: the call itself is rejected for the same reason as above; only the
-  // annotation mismatch below it should survive (#914, #672).
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const bad: [1, 0] = flow([0, 1]);
 }

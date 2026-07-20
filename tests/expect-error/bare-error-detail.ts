@@ -10,23 +10,18 @@ function id2<T, U>(x: T): U {
   return x;
 }
 
-// K's expanded constraint renders as the tuple it denotes, not as the
-// object form listing every array method.
-// FIXME: TypeScript accepts this call (K = [0, 1]); the array literal
-// commits to the widened tuple before the constraint check (case 2a'), so
-// SKJS rejects it.
-// FIXME: both sides below print as '[0, 1]', so the message cannot explain
-// the rejection -- the rendered source is not the type the check rejected
-// (#914). The pair is pinned as-is: it is what a user sees.
+// This call checks, so it renders no pair at all. It used to report
+// `Type '[0, 1]' is not assignable to type '[0, 1]'` -- a pair that could not
+// explain its own rejection, because the rendered source was not the type the
+// check rejected (#914). See tuple-constraint-literal.ts for the behaviour.
 declare function g2<K extends [0, 1]>(x: K): K;
 function tupleConstraint(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type '[0, 1]'
-  // @skjs-expect-error-line3 is not assignable to type '[0, 1]'
   const r = g2([0, 1]);
 }
 
-// A genuinely mismatched operand gets the readable pair.
+// A genuinely mismatched operand gets the readable pair, and K's expanded
+// constraint renders as the tuple it denotes rather than the object form
+// listing every array method.
 declare function fk<K extends [0, 1]>(x: K): K;
 function nonTupleOperand(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type

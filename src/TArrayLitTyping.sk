@@ -63,6 +63,11 @@
 
 module SKJS;
 
+// How far into a tuple type's element types the faithfulness probe recurses
+// before giving up. Small on purpose: nesting this deep is rare, and giving up
+// only forgoes the element-wise fast path.
+const kProjectionDepth: Int = 4;
+
 class ArrayLitTyping() {
   // Returns the single uncommitted ArrayLit in ty, or None if none/committed/multiple.
   static private fun getSingleArrayLitUncommitted(
@@ -321,6 +326,173 @@ class ArrayLitTyping() {
     }
   }
 
+  // Commits the literal to a concrete tuple target's element types
+  // (contextual widening) and verifies each literal element subtypes its
+  // target position, restoring the substitution on the first element that
+  // fails. Shared by case 2c (a direct tuple target) and case 2a' (a
+  // tuple-shaped generic constraint).
+  //
+  // Checking element-by-element is what keeps the two cases correct: a
+  // whole-tuple `TType::isSub([<elt tvars>], target)` would first run the
+  // structural pre-seed in growTVars, which pairs a tuple's position-unioning
+  // methods (`pop(): T0 | T1 | ...`, `at`, `find`, ...) against the literal's
+  // and grows EVERY element commitment tvar from that whole union -- sealing
+  // each sibling to `T0 | T1 | ...`. That conflation made `g2([0, 1])`
+  // (`K extends [0, 1]`) seal both elements to `0 | 1`, fail `0 | 1 <: 0`, and
+  // reject a call tsc accepts, rendering an unexplained `[0, 1]` / `[0, 1]`
+  // pair once the contaminating seals rolled back (#914, #672).
+  static private fun checkTupleTarget(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+    targetElts: Array<TType>,
+  ): STResult<TType> {
+    savedSubst = subst.save();
+    committedTy = TType::tuple(arrLit.tvar.pos, targetElts, false);
+    ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
+    for (i in Range(0, targetElts.size())) {
+      eltTy = ArrayLitTyping::effectiveElt(
+        subst,
+        tenv,
+        arrLit,
+        i,
+        targetElts[i],
+      );
+      TType::isSub(subst, tenv, eltTy, targetElts[i]) match {
+      | STOk() -> void
+      | err @ STError _ ->
+        subst.restore(savedSubst);
+        return err
+      }
+    };
+    STOk()
+  }
+
+  // Returns the element types of a tuple-shaped constraint that the literal may
+  // be checked against position by position, or None.
+  //
+  // `TObject::asTuple` is a LOSSY projection of a constraint. It position-unions
+  // the arms of a union of tuples -- `[0, 1] | [2, 3]` projects to
+  // `[0 | 2, 1 | 3]`, which admits the cross-product `[0, 3]` that neither arm
+  // does -- and it drops every non-positional member of an intersection --
+  // `[0, 1] & { foo: string }` projects to `[0, 1]`, which admits a literal with
+  // no `foo`, whose `foo` is then callable but absent at runtime. It also cannot
+  // see through a constraint that is itself an abstract type parameter. Checking
+  // a literal against any of those projections accepts values the real
+  // constraint rejects.
+  //
+  // So the projection is used only when it is FAITHFUL: the tuple it produced
+  // must itself be a subtype of every constraint. When it is not, the caller
+  // falls back to checking the literal against the whole constrained variable,
+  // which sees the union arms, the intersection members, and the type parameter.
+  // The probe is conflation-free -- the candidate is built from the constraint's
+  // own concrete element types, never from the literal's commitment variables --
+  // and it runs on a clone, so a rejected probe leaves no bounds behind.
+  // True when a tuple built from `elts` really does satisfy every `target`, i.e.
+  // when projecting those targets to `elts` lost nothing that matters.
+  //
+  // `TObject::asTuple` is a LOSSY projection of a type. It position-unions the
+  // arms of a union of tuples -- `[0, 1] | [2, 3]` projects to `[0 | 2, 1 | 3]`,
+  // which admits the cross-product `[0, 3]` that neither arm does -- and it
+  // drops every non-positional member of an intersection -- `[0, 1] & { foo:
+  // string }` projects to `[0, 1]`, which admits a literal whose `foo` is then
+  // readable but absent at runtime. It also cannot see through a target that is
+  // an abstract type parameter. Checking a literal against such a projection
+  // accepts values the real target rejects, so every caller must gate on this.
+  //
+  // The probe is conflation-free -- the candidate is built from the target's own
+  // concrete element types, never from the literal's commitment variables, so it
+  // cannot trip the position-unioning pre-seed -- and it runs on a clone, so a
+  // rejected probe leaves no bounds behind.
+  static private fun projectionIsFaithful(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    elts: Array<TType>,
+    targets: Array<TType>,
+  ): Bool {
+    candidate = TType::tuple(pos, elts, false);
+    probe = subst.clone();
+    if (
+      !targets.all(target ->
+        TType::isSub(probe, tenv, candidate, target) is STOk()
+      )
+    ) {
+      return false
+    };
+    // The check above only clears the OUTERMOST projection. Each element is
+    // then handed to a nested subtype check that projects it the same lossy
+    // way, so an element that is itself a union of tuples, or a tuple
+    // intersected with extra members, reopens the hole one level down:
+    // `[[0, 1] & { foo: string }]` clears the outer probe trivially -- it is
+    // compared against itself -- while still admitting `[[0, 1]]`, whose `foo`
+    // is then readable but absent at runtime. Require every element to be
+    // faithfully projectable too.
+    elts.all(elt ->
+      ArrayLitTyping::faithfullyProjectable(subst, tenv, elt, kProjectionDepth)
+    )
+  }
+
+  // True when `ty` is not tuple-shaped at all (so `asTuple` never flattens it),
+  // or when its own tuple projection is faithful all the way down. Bounded: a
+  // tuple type can be recursive, and past the bound this answers false, which
+  // only ever costs the fast path, never soundness.
+  static private fun faithfullyProjectable(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+    depth: Int,
+  ): Bool {
+    if (depth <= 0) return false;
+    ty.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
+      sTypes.getSingleTuple(subst, tenv)
+    ) match {
+    | None() -> true
+    | Some(innerElts) ->
+      candidate = TType::tuple(ty.pos, innerElts, false);
+      probe = subst.clone();
+      TType::isSub(probe, tenv, candidate, ty) is STOk() &&
+        innerElts.all(inner ->
+          ArrayLitTyping::faithfullyProjectable(subst, tenv, inner, depth - 1)
+        )
+    }
+  }
+
+  static private fun faithfulTupleConstraint(
+    subst: mutable Subst,
+    tenv: TEnv,
+    constraints: SortedSet<TType>,
+    arity: Int,
+    pos: PosRange,
+  ): ?Array<TType> {
+    projected: ?Array<TType> = None();
+    for (cstr in constraints) {
+      if (projected.isNone()) {
+        cstr.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
+          sTypes.getSingleTuple(subst, tenv)
+        ) match {
+        | Some(elts) if (elts.size() == arity) -> !projected = Some(elts)
+        | _ -> void
+        }
+      }
+    };
+    projected.flatMap(elts -> {
+      if (
+        ArrayLitTyping::projectionIsFaithful(
+          subst,
+          tenv,
+          pos,
+          elts,
+          constraints.collect(Array),
+        )
+      ) {
+        Some(elts)
+      } else {
+        None()
+      }
+    })
+  }
+
   // Handles subtyping when u1 or u2 contains ArrayLit<α, elts>.
   // Each branch commits the literal to tuple or array based on context.
   static fun subtyping(
@@ -353,7 +525,73 @@ class ArrayLitTyping() {
         return Some(STOk())
       // Case 2a': constrained type variable → commit based on constraint type
       | Some(tvar) ->
-        // If constraints contain a tuple, commit to Tuple; otherwise commit to Array
+        // A tuple-shaped constraint of matching arity: check the literal
+        // element-by-element against the constraint's tuple (as case 2c does
+        // for a direct tuple target) and bind the variable to it. This avoids
+        // committing to a tuple of the raw element tvars and running a
+        // whole-tuple isSub, whose structural pre-seed conflates sibling
+        // positions -- see checkTupleTarget (#914, #672). Arrays keep the
+        // isSub path below: growing every element to the shared element type
+        // is exactly the widening the array case needs.
+        ArrayLitTyping::faithfulTupleConstraint(
+          subst,
+          tenv,
+          tvar.constraints,
+          arrLit.tupleElts.size(),
+          arrLit.tvar.pos,
+        ) match {
+        | Some(targetElts) ->
+          // Freeze the constraint's own inference candidates for the element
+          // checks. A constraint can name a variable that is still open --
+          // `<B, K extends [B]>` called as `viaK("a", [1])` -- and an unfrozen
+          // element check would GROW B to `1 | "a"` and accept, instead of
+          // checking `1` against the `"a"` B was already inferred to be (tsc
+          // rejects that call). Freezing makes the element check a query about
+          // the constraint as it currently stands; when it needs to move a
+          // candidate it fails and the whole-tuple path below, which resolves
+          // the interaction, takes over. The literal's own commitment
+          // variables are not candidates, so they still commit normally. The
+          // flag is push/popped so the binding of `tvar` below -- and any
+          // enclosing check -- is unaffected.
+          wasFreezing = subst.freezeCandidates;
+          subst.!freezeCandidates = true;
+          eltResult = ArrayLitTyping::checkTupleTarget(
+            subst,
+            tenv,
+            arrLit,
+            targetElts,
+          );
+          subst.!freezeCandidates = wasFreezing;
+          eltResult match {
+          | STOk() ->
+            committedTy = TType::tuple(arrLit.tvar.pos, targetElts, false);
+            subst.grow(tenv, tvar, committedTy, Contravariant());
+            return Some(STOk())
+          | STError _ ->
+            // Not necessarily a rejection: the element check runs frozen, so
+            // it also fails when deciding would have required moving one of
+            // the constraint's inference candidates. Falling through to the
+            // whole-tuple check below is therefore load-bearing and not just
+            // cosmetic -- that path is unfrozen and resolves those cases.
+            //
+            // It is also the better diagnostic when the literal really is
+            // wrong: the per-element error names a single position, and the
+            // failing element check covariantly seals that element's tvar
+            // with the target it was checked against, so the pair renders as
+            // their union rather than the element that was rejected (the same
+            // contamination as #914, one level down). The whole-tuple check
+            // names both tuples instead, which is what baseline printed.
+            //
+            // checkTupleTarget has already restored the substitution, so the
+            // fall-through starts from a clean state.
+            void
+          }
+        | None() -> void
+        };
+        // Either no matching tuple constraint (an array or intersection
+        // constraint, or an arity mismatch), or a tuple constraint the
+        // element-wise check rejected: commit to Tuple or Array by constraint
+        // shape and check against the whole constrained variable.
         committedTy = if (
           ArrayLitTyping::constraintsContainTuple(subst, tenv, tvar.constraints)
         ) {
@@ -399,25 +637,9 @@ class ArrayLitTyping() {
         // TS widens `[1, "x"]` to `[number, string]` when the target is a
         // mutable tuple; we do the same by committing to the target elements
         // and then verifying each literal element subtypes its target.
-        savedSubst = subst.save();
-        committedTy = TType::tuple(arrLit.tvar.pos, targetElts, false);
-        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
-        for (i in Range(0, targetElts.size())) {
-          eltTy = ArrayLitTyping::effectiveElt(
-            subst,
-            tenv,
-            arrLit,
-            i,
-            targetElts[i],
-          );
-          TType::isSub(subst, tenv, eltTy, targetElts[i]) match {
-          | STOk() -> void
-          | err @ STError _ ->
-            subst.restore(savedSubst);
-            return Some(err)
-          }
-        };
-        return Some(STOk())
+        return Some(
+          ArrayLitTyping::checkTupleTarget(subst, tenv, arrLit, targetElts),
+        )
       | Some(_) ->
         // Arity mismatch: don't commit — let subsequent use sites commit
         // against their own targets. Fall through so the caller sees this
