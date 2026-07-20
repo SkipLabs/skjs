@@ -25,15 +25,14 @@ fun testIdentifierTableWellFormed(): void {
 @test
 fun testIdentifierTableMembership(): void {
   ch = code -> Char::fromCode(code);
-  // FIXME: U+2E2F VERTICAL TILDE is Lm but Pattern_Syntax, so real ID_Start
-  // and ID_Continue exclude it; the generator skips the subtraction.
-  SKTest.expectTrue(SKJS.isJSIdentifierStart(ch(0x2E2F)), "U+2E2F start");
-  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x2E2F)), "U+2E2F continue");
-  // FIXME: Unicode 15.1 (tsc's vintage) additions, absent from the 15.0 tables:
-  // CJK Extension I and the two katakana middle dots.
-  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0x2EBF0)), "U+2EBF0 start");
-  SKTest.expectFalse(SKJS.isJSIdentifierPart(ch(0x30FB)), "U+30FB continue");
-  SKTest.expectFalse(SKJS.isJSIdentifierPart(ch(0xFF65)), "U+FF65 continue");
+  // U+2E2F VERTICAL TILDE is Lm but Pattern_Syntax, so ID_Start and
+  // ID_Continue exclude it -- the one letter-category character they remove.
+  SKTest.expectFalse(SKJS.isJSIdentifierStart(ch(0x2E2F)), "U+2E2F start");
+  SKTest.expectFalse(SKJS.isJSIdentifierPart(ch(0x2E2F)), "U+2E2F continue");
+  // Unicode 15.1 (tsc's vintage): CJK Extension I and the katakana middle dots.
+  SKTest.expectTrue(SKJS.isJSIdentifierStart(ch(0x2EBF0)), "U+2EBF0 start");
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x30FB)), "U+30FB continue");
+  SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0xFF65)), "U+FF65 continue");
   // Permanent: the joiners continue a name and never start one.
   SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x200C)), "ZWNJ continues");
   SKTest.expectTrue(SKJS.isJSIdentifierPart(ch(0x200D)), "ZWJ continues");

@@ -1,57 +1,82 @@
 #!/usr/bin/env python3
-"""Regenerates src/JSIdentifierChars.sk from Python's Unicode database.
+"""Regenerates src/JSIdentifierChars.sk from the Unicode Character Database.
 
 ECMA-262 sec 12.7 defines an identifier's characters by the Unicode properties
-ID_Start and ID_Continue. Those are derived properties, so they are computed
-here the way UAX #31 defines them rather than read from a table:
+ID_Start and ID_Continue. Those are read from DerivedCoreProperties.txt of a
+PINNED Unicode version rather than derived from Python's unicodedata: the
+derived file already applies the whole UAX #31 recipe (category union,
+Other_ID_Start/Other_ID_Continue, and the Pattern_Syntax/Pattern_White_Space
+subtraction that removes U+2E2F), and pinning keeps the accepted language a
+deliberate choice instead of whatever UCD the host Python ships.
 
-  ID_Start    = L* + Nl + Other_ID_Start   - Pattern_Syntax - Pattern_White_Space
-  ID_Continue = ID_Start + Mn + Mc + Nd + Pc + Other_ID_Continue - (same)
+The pin is Unicode 15.1.0 -- the vintage TypeScript 6.0.3's scanner uses -- so
+the identifier surface matches tsc character for character. To move to a newer
+Unicode, update UCD_VERSION and UCD_SHA256 together and regenerate.
 
-plus the two ECMAScript additions to each: `$` and `_` may start an identifier,
-and ZWNJ/ZWJ may continue one.
+ECMAScript's own additions on top of the properties: `$` and `_` may start a
+name (ASCII, handled in the emitted fast paths) and the joiners ZWNJ/ZWJ may
+continue one (emitted into the continue table).
 
-Run after a Unicode upgrade:  python3 scripts/generate-identifier-tables.py
+Run: python3 scripts/generate-identifier-tables.py   (from the repo root; it
+downloads the UCD file into ~/.cache/skjs-ucd/ once and verifies its sha256).
 """
-import unicodedata
+import hashlib
+import pathlib
+import sys
+import urllib.request
 
-# UAX #44 property lists that are not derivable from the general category.
-OTHER_ID_START = {0x1885, 0x1886, 0x2118, 0x212E, 0x309B, 0x309C}
-OTHER_ID_CONTINUE = {0x00B7, 0x0387, 0x19DA} | set(range(0x1369, 0x1372))
-START_CATS = {"Lu", "Ll", "Lt", "Lm", "Lo", "Nl"}
-CONT_CATS = START_CATS | {"Mn", "Mc", "Nd", "Pc"}
+UCD_VERSION = "15.1.0"
+UCD_SHA256 = "f55d0db69123431a7317868725b1fcbf1eab6b265d756d1bd7f0f6d9f9ee108b"
+UCD_URL = f"https://www.unicode.org/Public/{UCD_VERSION}/ucd/DerivedCoreProperties.txt"
 
-
-def is_start(c):
-    return c in OTHER_ID_START or unicodedata.category(chr(c)) in START_CATS
-
-
-def is_continue(c):
-    return (
-        is_start(c)
-        or c in OTHER_ID_CONTINUE
-        or unicodedata.category(chr(c)) in CONT_CATS
-        or c in (0x200C, 0x200D)
-    )
+# ECMAScript additions to ID_Continue (sec 12.7: IdentifierPartChar includes
+# <ZWNJ> and <ZWJ>). `$` and `_` are ASCII and live in the emitted fast paths.
+ES_CONTINUE_ADDITIONS = {0x200C, 0x200D}
 
 
-def ranges(pred):
-    """Contiguous ranges above ASCII; the ASCII half is a fast path in Skip."""
-    out, run = [], None
-    for c in range(0x80, 0x110000):
-        if 0xD800 <= c <= 0xDFFF:  # surrogates are never identifier characters
-            if run is not None:
-                out.append((run, c - 1))
-                run = None
+def ucd_text():
+    cache = pathlib.Path.home() / ".cache" / "skjs-ucd" / f"DerivedCoreProperties-{UCD_VERSION}.txt"
+    if not cache.exists():
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        print(f"downloading {UCD_URL}")
+        cache.write_bytes(urllib.request.urlopen(UCD_URL).read())
+    data = cache.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != UCD_SHA256:
+        sys.exit(f"{cache}: sha256 {digest} does not match the pinned {UCD_SHA256}")
+    return data.decode("utf-8")
+
+
+def property_codepoints(text, prop):
+    """The code points listed for `prop`, as a set."""
+    out = set()
+    for line in text.splitlines():
+        line = line.split("#", 1)[0]
+        if ";" not in line:
             continue
-        if pred(c):
-            if run is None:
-                run = c
-        elif run is not None:
-            out.append((run, c - 1))
-            run = None
-    if run is not None:
-        out.append((run, 0x10FFFF))
+        rng, name = (part.strip() for part in line.split(";", 1))
+        if name != prop:
+            continue
+        lo, _, hi = rng.partition("..")
+        out.update(range(int(lo, 16), int(hi or lo, 16) + 1))
+    return out
+
+
+def ranges(codes):
+    """Contiguous [start, end] ranges above ASCII; ASCII is a fast path in Skip."""
+    out, run_start, prev = [], None, None
+    for c in sorted(codes):
+        if c < 0x80:
+            continue
+        if run_start is None:
+            run_start = prev = c
+        elif c == prev + 1:
+            prev = c
+        else:
+            out.append((run_start, prev))
+            run_start = prev = c
+    if run_start is not None:
+        out.append((run_start, prev))
     return out
 
 
@@ -66,14 +91,17 @@ def emit(name, rs):
     )
 
 
-start_ranges = ranges(is_start)
-cont_ranges = ranges(is_continue)
+text = ucd_text()
+start_ranges = ranges(property_codepoints(text, "ID_Start"))
+cont_ranges = ranges(property_codepoints(text, "ID_Continue") | ES_CONTINUE_ADDITIONS)
 
 body = f'''/***************************************************************************/
 /* Unicode identifier characters (ECMA-262 sec 12.7, UAX #31).             */
 /*                                                                         */
-/* GENERATED by scripts/generate-identifier-tables.py from Unicode {unicodedata.unidata_version}.   */
-/* Do not edit by hand; rerun the generator after a Unicode upgrade.       */
+/* GENERATED by scripts/generate-identifier-tables.py from the ID_Start    */
+/* and ID_Continue properties of Unicode {UCD_VERSION} -- the vintage TypeScript  */
+/* 6.0.3 uses, so the identifier surface matches tsc character for         */
+/* character. Do not edit by hand; rerun the generator to change it.       */
 /***************************************************************************/
 
 module SKJS;
@@ -109,7 +137,8 @@ fun isJSIdentifierStart(c: Char): Bool {{
 }}
 
 // May this character continue one? ECMAScript adds `$`, `_` and the two
-// joiners (ZWNJ, ZWJ) to Unicode's ID_Continue.
+// joiners (ZWNJ, ZWJ); the joiners are baked into idContinueRanges by the
+// generator, so the table is the whole non-ASCII answer.
 fun isJSIdentifierPart(c: Char): Bool {{
   code = c.code();
   if (code < 0x80) {{
@@ -125,5 +154,5 @@ fun isJSIdentifierPart(c: Char): Bool {{
 
 module end;
 '''
-open("src/JSIdentifierChars.sk", "w").write(body)
+pathlib.Path("src/JSIdentifierChars.sk").write_text(body)
 print(f"wrote src/JSIdentifierChars.sk: {len(start_ranges)} start / {len(cont_ranges)} continue ranges")
