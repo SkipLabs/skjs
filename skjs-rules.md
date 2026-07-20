@@ -488,6 +488,15 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Stricter than TypeScript (soundness-required)**: a lone (unpaired) surrogate escape (`"\uD800"`) is rejected. tsc keeps it as a lone UTF-16 code unit, but a Skip `Char` is a Unicode code point and cannot represent a surrogate, so decoding it is impossible and rejecting is the sound choice. Template literal types are decoded the same way (see rule 18b), so `` `\x61` `` is the type `"a"`.
 - **Verified by**: `tests/expect-error/string-literal-escapes-prettier-ignore.ts`, `tests/expect-error/string-literal-line-continuation-prettier-ignore.ts`, `tests/expect-error/string-escape-*-prettier-ignore.ts`
 
+### 30c. Identifier Characters ✅
+- **Rule**: an identifier's characters are the Unicode properties **ID_Start** and **ID_Continue** (ECMA-262 sec 12.7), from a table pinned to **Unicode 15.1** — the vintage tsc 6.0.3's scanner uses — so the accepted set matches tsc character for character (verified exhaustively over the whole code space). `café`, `α`, `переменная`, `変数` and CJK Extension I names are ordinary identifiers, property names included
+- **ECMAScript's additions**: `$` and `_` may start a name; the joiners `<ZWNJ>`/`<ZWJ>` may continue one
+- **Continue-only characters cannot start a name**: a middle dot (`a·b` ✓, `·x` ✗), the joiners, digits, combining marks. Look-alikes that are not identifier characters at all stay invalid: emoji, a math minus (U+2212), U+180E, U+200B
+- **A private name needs an IdentifierStart after its `#`**: `#x` and `#a·b` are fine; `#1` and `#·x` are invalid (TS1127), as in tsc
+- **An identifier may not immediately follow a numeric literal** (sec 12.9.3): `2z`, `2é`, `1né` are syntax errors (TS1351), not two adjacent tokens
+- **Known restriction (stricter than tsc)**: a Unicode **escape** in an identifier (`caf\u00e9`) is rejected — only the literal spelling is supported (#937)
+- **Verified by**: `tests/expect-error/unicode-identifiers.ts`, `tests/Lexer.sk`, `tests/JSIdentifierChars.sk`
+
 ### 31. Enums (Value-Set Semantics)
 
 - **Rule**: An enum member's type is its number/string literal type, and the type `E` is the union of its member types (SkipLabs/skjs#762). The value `E` is a frozen object: a readonly field per member plus, when every member value is statically known (and every numeric value is in canonical form), readonly reverse-mapping fields (`E[0]` has the precise member-name literal type; the last member wins for duplicate values, in both expression and type position, matching the runtime object). `const enum` checks like a regular enum. Narrowing (`x === E.A`) and switch exhaustiveness work off the literal machinery, and enum member reads (`case E.A:`, `case E["A"]:`) are valid switch case expressions.
