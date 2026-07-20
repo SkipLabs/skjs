@@ -92,6 +92,15 @@ mutable class PpNames{
   mutable fun beginRender(): void {
     this.emitted.clear()
   }
+
+  // The line explaining a disambiguated rendering. Says outright that the
+  // suffixes are display-only: `#` cannot appear in a type reference, so a
+  // pasted `T#1` fails at the parser rather than quietly meaning something
+  // else, but the reader should not have to discover that.
+  static fun collisionNote(): String {
+    "Two different types with this name exist, but they are unrelated; " +
+      "the '#' suffixes are display-only and cannot be written in source"
+  }
 }
 
 mutable base class TypePpState private {
@@ -1122,6 +1131,12 @@ mutable class TypePp{
     // --verbose for debugging.
     if (!this.verbose) {
       this.out(level, margin, name);
+      // Marked apart only on a second pass, once the first established that
+      // this name stood for more than one parameter in this message.
+      this.names.each(sink -> {
+        suffix = sink.suffix(id);
+        if (suffix != "") this.out(level, margin, suffix)
+      });
       return void
     };
     idStr = id.toString();

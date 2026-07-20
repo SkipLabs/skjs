@@ -434,7 +434,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
     }
   }
   ```
-- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`
+- **Diagnostics**: two type parameters that print under one name (two hidden arguments, or a shadowed name) are numbered `T#1`/`T#2` in the message that mentions both, followed by a line saying the names collide. The suffixes are display-only — `#` cannot appear in a type reference — and never appear in a suggestion offered as code to paste; a suggestion that would have to name a hidden argument is dropped instead, since the program has no way to write one. `--verbose` prints the qualified ids and neither
+- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`, `tests/expect-error/tparam-name-collision.ts`
 
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
