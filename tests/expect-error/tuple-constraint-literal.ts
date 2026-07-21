@@ -62,6 +62,19 @@ function nestedTuples(): void {
   ]);
 }
 
+// ...at any nesting depth.
+declare function nest3<K extends [[[0]]]>(x: K): K;
+function nestedTuplesDepth3(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest3([[[0]]]);
+}
+
+declare function nest5<K extends [[[[[0]]]]]>(x: K): K;
+function nestedTuplesDepth5(): void {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  const r = nest5([[[[[0]]]]]);
+}
+
 // The same variable used for two parameters: two equal tuples agree.
 declare function two<K extends [0, 1]>(a: K, b: K): K;
 function twoParametersAgree(): void {
