@@ -1,9 +1,9 @@
-// Recursion: the fixpoint must terminate. `fact`'s recursive call is nested
-// inside `n * ...`, which folds to `top` and is not resolved interprocedurally,
-// so `fact` is only ever seen with `n = 5` (from `main`); its base case is thus
-// pruned (5 <= 0 is false) and its summary is `top`. `loopConst`'s recursive
-// call is a bare `return` operand, so it *is* resolved: `n` widens to `top`,
-// both branches stay live, and every path returns 7, so it converges to 7.
+// Recursion: the fixpoint must terminate. Both recursive calls are resolved
+// interprocedurally, even `fact`'s, which is nested inside `n * ...` (nested
+// calls are resolved through `evalExpr`). So each function's parameter `n`
+// widens to `top` across the recursion, both branches stay live, and the base
+// case is reachable. `fact` multiplies by a recursively-`top` result, so its
+// summary is `top`; `loopConst` returns 7 on every path, so it converges to 7.
 
 function fact(n: number): number {
   if (n <= 0) {
