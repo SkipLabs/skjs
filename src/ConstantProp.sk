@@ -310,9 +310,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   // Evaluate an instruction / return operand. A bare call or `new` is resolved
   // through the `interproc` callback; `None` signals that no callee returns here
   // yet, so the program point is unreachable until a returning summary exists.
-  // This is what keeps the fixpoint monotone as callee summaries grow from
-  // bottom. Every other expression evaluates abstractly and always yields `Some`
-  // (a call nested inside it folds to `Top`).
+  // Every other expression always yields `Some` abstract value
   private fun evalOperand(
     env: SortedMap<String, CPVal>,
     e: Expr,
@@ -336,7 +334,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   // Build a callee's entry frame: a fresh environment with each simple formal
   // bound to the abstract value of the corresponding actual (evaluated in the
   // caller's env), and `ret` seeded to `undefined`. Destructured or surplus
-  // formals are left unconstrained; a call nested in an argument folds to `Top`.
+  // formals are left unconstrained; a call nested in an argument evals to `Top`.
   fun call(
     callerState: CPEnv,
     site: Callsite,
@@ -373,8 +371,8 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     CPEEnv(SortedMap[], CPVTop())
   }
 
-  // Fold a callee's exit state back into the caller at a callsite. The call does
-  // not mutate the caller's locals, so the caller's environment is preserved;
+  // Propagate a callee's exit state back into the caller at a callsite. The call
+  // does not mutate the caller's locals, so the caller's environment is preserved;
   // the callee's return value (its exit `ret`) is surfaced in `ret` for the call
   // site to read as the call's result value. A bottom callee state — the callee
   // has not returned here (pending or non-returning) — leaves the caller's
@@ -427,10 +425,9 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   // -- Abstract expression evaluation ---------------------------------------
 
   // Over-approximate the value of `e` in `env`, returning `Top` whenever the
-  // result cannot be pinned to a single constant. Only side-effect-free folds
-  // are performed; a nested assignment evaluates to `Top` (see `evalBinop`),
-  // which poisons any enclosing fold so a later read of the written variable is
-  // never folded to a stale value.
+  // result cannot be pinned to a single constant. Nested assignments evaluate to
+  // `Top` (see `evalBinop`), which poisons any enclosing constant evaluation so
+  // a later read of the written variable never gets a stale value.
   private fun evalExpr(env: SortedMap<String, CPVal>, e: Expr): CPVal {
     e.value match {
     | Number(s) ->
@@ -485,7 +482,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
       | CPVNumber(x) -> CPVNumber(x)
       | _ -> CPVTop()
       }
-    // Bitwise not applies `ToInt32` coercion; not folded.
+    // Bitwise not applies `ToInt32` coercion; abstract to top
     | UOTild() -> CPVTop()
     }
   }
@@ -527,8 +524,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
       // `Top` is conservative but sound in the presence of sub-expression assignments
       CPVTop()
     | _ ->
-      // Every remaining operator evaluates both operands unconditionally, so it
-      // is correct to eagerly evaluate them and delegate the fold.
+      // Every remaining operator evaluates both operands unconditionally
       this.evalStrictBinop(op, this.evalExpr(env, e1), this.evalExpr(env, e2))
     }
   }
@@ -554,16 +550,14 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
       }
     | BOSubtraction() -> this.numBinop(l, r, (x, y) -> x - y)
     | BOMultiplication() -> this.numBinop(l, r, (x, y) -> x * y)
-    // Division by zero yields IEEE `inf`/`nan` rather than trapping, so this is
-    // safe to fold.
+    // Division by zero yields IEEE `inf`/`nan` rather than trapping
     | BODivision() -> this.numBinop(l, r, (x, y) -> x / y)
     | BOLessThan() -> this.numCmp(l, r, (x, y) -> x < y)
     | BOLessThanOrEqual() -> this.numCmp(l, r, (x, y) -> x <= y)
     | BOGreaterThan() -> this.numCmp(l, r, (x, y) -> x > y)
     | BOGreaterThanOrEqual() -> this.numCmp(l, r, (x, y) -> x >= y)
     | _ ->
-      // Remainder, exponentiation, bit/shift ops, and the operators handled by
-      // `evalBinop` are not folded. `Top` is sound for any operator.
+      // Remainder, exponentiation, bit/shift ops, etc. not handled yet.
       CPVTop()
     }
   }
