@@ -1718,8 +1718,8 @@ extension class TypeChecker {
           SKJSCode(9999),
         )
       };
-      this.asConstExpr(tcenv, e) match {
-      | Some(ty) -> return TType::single(ty)
+      this.asConstExpr(tcenv, e, false) match {
+      | Some(ty) -> return ty
       | None() -> void
       }
     };
@@ -1782,9 +1782,9 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
+              value.flatMap(e -> this.asConstExpr(tcenv, e, false)) match {
               | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
-              | Some(ty) -> TType::single(ty)
+              | Some(ty) -> ty
               }
             | Some(ty) ->
               this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
@@ -3073,8 +3073,8 @@ extension class TypeChecker {
 
       TType::union(tcenv.subst, this, left, right)
     | AsConst(subExpr) ->
-      this.asConstExpr(tcenv, subExpr) match {
-      | Some(ty) -> TType::single(ty)
+      this.asConstExpr(tcenv, subExpr, true) match {
+      | Some(ty) -> ty
       | None() ->
         tcenv.error(
           Array[
@@ -3133,8 +3133,19 @@ extension class TypeChecker {
     this.directLiteralSType(e).map(stype -> TType::single(stype))
   }
 
-  /* Typechecks expression e as const */
-  fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?SType {
+  /* Typechecks expression e as const.
+   *
+   * Returns a full TType (not a single SType) so that an array literal can
+   * produce a readonly tuple, which SKJS represents as a synthetic-class
+   * instance rather than a single SType.
+   *
+   * `underAsConst` is true when e sits inside an `as const` region (the
+   * operand of an `as const`, or an element of such an array). It gates the
+   * one place where a const assertion changes a composite literal's type: an
+   * array literal becomes a readonly tuple only under `as const`; a bare array
+   * literal in a most-precise context stays a mutable (delayed) tuple and is
+   * left to the normal array-literal typing by returning None. */
+  fun asConstExpr(tcenv: mutable TCEnv, e: Expr, underAsConst: Bool): ?TType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
@@ -3147,13 +3158,49 @@ extension class TypeChecker {
         Array[(subExpr.pos, "This 'as const' is unnecessary")],
         SKJSCode(2044),
       );
-      this.asConstExpr(tcenv, subExpr)
-    | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
-    | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
+      this.asConstExpr(tcenv, subExpr, true)
+    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
+    | Var(Name(_, "undefined")) ->
+      Some(TType::single(TPrimUnit(TUndefined(), pos)))
+    | EArray(elts) if (underAsConst && elts.all(x -> !(x.value is Spread _))) ->
+      // `[e0, e1, ...] as const` is a readonly tuple whose element types are
+      // the elements' own `as const` types: a literal element keeps its
+      // literal type and a nested array literal becomes a nested readonly
+      // tuple (asConstExpr with underAsConst still set), while any other
+      // element keeps its most-precise type. Spread elements are not yet
+      // supported and fall through to the None arm below.
+      Some(
+        TType::tuple(
+          pos,
+          elts.map(elt ->
+            // Only a nested array literal is const-typed here (into a nested
+            // readonly tuple); every other element gets its most-precise type.
+            // That path already routes a literal -- and a redundant
+            // element-level `as const` -- through the most-precise shortcut, so
+            // typing such an element here as well would double its diagnostics.
+            if (elt.value is EArray _) {
+              this.asConstExpr(tcenv, elt, true) match {
+              | Some(t) -> t
+              | None() -> this.expr(tcenv, elt, true)
+              }
+            } else {
+              this.expr(tcenv, elt, true)
+            }
+          ),
+          true,
+        ),
+      )
     | Unop(UOExclamationMark(), subE) ->
-      this.asConstExpr(tcenv, subE).map(stype ->
-        stype match {
-        | TPrimValue(TBool(), lits, _) ->
+      // Type the operand with underAsConst=false: `!`'s operand is a scalar,
+      // never part of an enclosing as-const's tuple scope. This also keeps an
+      // array-literal operand from being const-typed (and its elements
+      // memoized) only to be discarded here, which would crash the re-typing
+      // the None fall-through triggers ("already type checked expression"). An
+      // array/object operand yields None below and is reported as a misused
+      // const assertion (TS1355) by the caller, matching the object case.
+      this.asConstExpr(tcenv, subE, false).map(ty ->
+        ty.getSingleConstant() match {
+        | Some(TPrimValue(TBool(), lits, _)) ->
           lits.flatMap(v -> v.singleElt()) match {
           | Some(lit) ->
             tcenv.error(
@@ -3173,12 +3220,12 @@ extension class TypeChecker {
                 }`,
               )
             };
-            TPrimValue::single(TBool(), res, pos)
+            TType::single(TPrimValue::single(TBool(), res, pos))
           | None() ->
             internal_error(
               `asConstExpr returned a non-literal boolean: ${this.ppType(
                 tcenv,
-                TType::single(stype),
+                ty,
               )}`,
             )
           }
@@ -3186,10 +3233,7 @@ extension class TypeChecker {
           fatalError(
             Array[
               (pos, "Operator '!' cannot be applied to this type"),
-              (
-                subE.pos,
-                `This has type ${this.ppType(tcenv, TType::single(stype))}`,
-              ),
+              (subE.pos, `This has type ${this.ppType(tcenv, ty)}`),
             ],
             ESLintCode("@typescript-eslint/strict-boolean-expressions"),
           )
@@ -3197,10 +3241,15 @@ extension class TypeChecker {
       )
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      this.asConstExpr(tcenv, subE).flatMap(stype ->
-        stype match {
-        | TPrimValue(k @ TNum(), valuesOpt, _)
-        | TPrimValue(k @ TBigInt(), valuesOpt, _) ->
+      // Operand typed with underAsConst=false, for the same reason as `!`
+      // above: a unary arithmetic operator's operand is a scalar, and
+      // const-typing an array-literal operand here would memoize its elements
+      // and then crash the re-typing that this arm's None fall-through
+      // triggers.
+      this.asConstExpr(tcenv, subE, false).flatMap(ty ->
+        ty.getSingleConstant() match {
+        | Some(TPrimValue(k @ TNum(), valuesOpt, _))
+        | Some(TPrimValue(k @ TBigInt(), valuesOpt, _)) ->
           Some(
             nuop match {
             | UOPlus() ->
@@ -3213,18 +3262,12 @@ extension class TypeChecker {
                 fatalError(
                   Array[
                     (pos, "Operator '+' cannot be applied to type 'bigint'"),
-                    (
-                      subE.pos,
-                      `This has type ${this.ppType(
-                        tcenv,
-                        TType::single(stype),
-                      )}`,
-                    ),
+                    (subE.pos, `This has type ${this.ppType(tcenv, ty)}`),
                   ],
                   TSCode(2736),
                 )
               } else {
-                stype
+                ty
               }
             | UOMinus() ->
               valuesOpt.flatMap(v -> v.singleElt()) match {
@@ -3233,7 +3276,9 @@ extension class TypeChecker {
                   "asConstExpr should return literals with a single value",
                 )
               | Some(lit) ->
-                TPrimValue::single(k, negateJSNumberLiteral(lit.val), pos)
+                TType::single(
+                  TPrimValue::single(k, negateJSNumberLiteral(lit.val), pos),
+                )
               }
             },
           )
@@ -3244,7 +3289,7 @@ extension class TypeChecker {
     // freshLiteralType. Unary +/- never reaches here: the recursive
     // arithmetic arm above catches it first (and, unlike directLiteralSType,
     // accepts '+' on a bigint -- pre-existing, see issue #671).
-    | _ -> this.directLiteralSType(e)
+    | _ -> this.directLiteralSType(e).map(TType::single)
     }
   }
 
