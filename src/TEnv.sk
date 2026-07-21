@@ -1427,6 +1427,7 @@ base class TEnv{
     isMethod: Bool,
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
+    isShapeMethod: Bool = false,
   ): TFuns {
     sig = this.getFunSig(tcenvb.context, fd);
     retType = sig.retType match {
@@ -1444,7 +1445,7 @@ base class TEnv{
     | (_, Some(x)) -> x
     };
     tafun = TAFun(isMethod, sig.tparams, sig.params, retType, cgNode);
-    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, true)
+    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, true, isShapeMethod)
   }
 
   // Normalizes a type annotation.
@@ -2336,6 +2337,7 @@ base class TEnv{
     pos: PosRange,
     tafun: TAFun,
     isDeclaredSignature: Bool = false,
+    isShapeMethod: Bool = false,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -2453,9 +2455,13 @@ base class TEnv{
           )
         }
       };
+      thisParamValue: ThisParam = thisParam match {
+      | Some(t) -> Explicit(t)
+      | None() -> if (isShapeMethod) ImplicitShape() else NoThis()
+      };
       tfun = TFun(
         funTParams,
-        thisParam,
+        thisParamValue,
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
@@ -2729,7 +2735,15 @@ base class TEnv{
         }
       | fd @ ObjectFieldMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        tFuns = this.funDecl(tcenvb, false, fd, cgNode);
+        // Named method-syntax members are attach-only shape methods; the
+        // object's call/new signatures are not (the object itself is invoked).
+        isShapeMethod = fd.name match {
+        | FNNormal(Name(_, "new"))
+        | FNEmpty(_) ->
+          false
+        | SimpleFieldName _ -> true
+        };
+        tFuns = this.funDecl(tcenvb, false, fd, cgNode, isShapeMethod);
         fd.name match {
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty(_) -> !call = Some(tFuns)

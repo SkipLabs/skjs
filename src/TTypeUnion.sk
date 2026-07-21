@@ -279,11 +279,24 @@ extension class TFun {
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
 
     thisParam = (f1.thisParam, f2.thisParam) match {
-    | (None(), _)
-    | (_, None()) ->
-      None()
-    | (Some(this1), Some(this2)) ->
-      Some(TType::inter(subst, tenv, this1, this2))
+    // Attach-only wins: if either branch is a shape method, the union can only
+    // be called attached (using it any other way could reach the shape-method
+    // branch with no receiver).
+    | (ImplicitShape(), _)
+    | (_, ImplicitShape()) ->
+      ImplicitShape()
+    | (NoThis(), _)
+    | (_, NoThis()) ->
+      NoThis()
+    | (tp1, tp2) ->
+      Explicit(
+        TType::inter(
+          subst,
+          tenv,
+          tp1.tyOpt().fromSome(),
+          tp2.tyOpt().fromSome(),
+        ),
+      )
     };
 
     spread1elt = f1.spreadParam match {
