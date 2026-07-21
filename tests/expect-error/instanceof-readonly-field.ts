@@ -46,12 +46,14 @@ function mutableRejectedByRigidity(x: unknown): void {
 // `instanceof Array` is intersected with the mutable `Array` view; the readonly
 // number index must stay readonly, so writing one element into another -- which
 // a rigid element type alone accepts (both sides are the same hidden type) --
-// is rejected. UNSOUND: accepted today; the fix rejects it. tsc narrows to a
-// mutable `string[]` and accepts it too.
+// is rejected. tsc narrows to a mutable `string[]` and accepts it.
 function readonlyIndexStaysReadonly(a: ReadonlyArray<string>): void {
   if (a instanceof Array) {
     const e = a[1];
     if (e !== undefined) {
+      // @skjs-expect-error Type is not assignable to the assignment target's type
+      // @skjs-expect-error-line2 Type 'Array#T extends string'
+      // @skjs-expect-error-line3 is not assignable to type 'never'
       a[0] = e;
     }
   }
