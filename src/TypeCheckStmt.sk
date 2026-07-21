@@ -109,10 +109,10 @@ extension class TypeChecker {
       // it, not to an enclosing switch — and its exits carry their edges: a
       // jump leaves mid-body with the state at the jump, which the body's
       // end-of-block state no longer holds.
-      catcher = tcenv.withJumpCatcher(true, () -> {
-        loopBody = this.block(tcenv, block);
-        tcenv.popScopeReplace(loopBody)
-      });
+      (loopBody, catcher) = tcenv.withJumpCatcher(true, () ->
+        this.block(tcenv, block)
+      );
+      tcenv.popScopeReplace(loopBody);
       // A `continue` runs the increment on its way back to the header, so its
       // edges are folded in before the increment is checked; a `break` skips
       // it, so its edges join after.
@@ -170,10 +170,10 @@ extension class TypeChecker {
       // See the `For` case: the loop catches its body's jumps and folds their
       // edges into its exit. With no condition or increment to run on the way
       // out, break and continue edges join at the same point.
-      catcher = tcenv.withJumpCatcher(true, () -> {
-        loopBody = this.block(tcenv, block);
-        tcenv.popScopeReplace(loopBody)
-      });
+      (loopBody, catcher) = tcenv.withJumpCatcher(true, () ->
+        this.block(tcenv, block)
+      );
+      tcenv.popScopeReplace(loopBody);
       for (snap in catcher.continues) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
@@ -197,10 +197,10 @@ extension class TypeChecker {
       // edges into its exit. A `continue` re-enters the header, whose
       // condition turning false then leaves the loop with the edge's state, so
       // both kinds of edge reach the code after and join at the same point.
-      catcher = tcenv.withJumpCatcher(true, () -> {
-        loopBody = this.block(tcenv, block, Some((cond, true)));
-        tcenv.popScopeReplace(loopBody)
-      });
+      (loopBody, catcher) = tcenv.withJumpCatcher(true, () ->
+        this.block(tcenv, block, Some((cond, true)))
+      );
+      tcenv.popScopeReplace(loopBody);
       for (snap in catcher.continues) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
@@ -386,7 +386,7 @@ extension class TypeChecker {
     // a state the clause's end-of-block scope no longer holds, so it is recorded
     // as a snapshot and unioned into the post-switch merge below, rather than
     // read off the end-of-block scope.
-    catcher = tcenv.withJumpCatcher(false, () -> {
+    (_, catcher) = tcenv.withJumpCatcher(false, () -> {
       for (i in Range(0, branches.size())) {
         block = branches[i].block;
         // How the block ends answers both questions asked of it below: whether it
