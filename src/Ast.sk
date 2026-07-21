@@ -319,6 +319,13 @@ class Param{
     | None() -> this.default.map(defaultExpr -> defaultExpr.pos)
     }
   }
+
+  fun isThisParam(): Bool {
+    this.name.value match {
+    | PVar(Name(_, "this")) -> true
+    | _ -> false
+    }
+  }
 }
 
 /***************************************************************************/

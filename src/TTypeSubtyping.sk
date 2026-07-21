@@ -1915,10 +1915,16 @@ extension class TFun {
       !tsubst[tparam2.id] = tparam1;
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+    // `thisParam` is contravariant. A missing this on the subtype side is
+    // `this: unknown` (the function ignores its receiver): sound to accept. A
+    // missing this on the SUPERTYPE side is a free-call permit, so the
+    // subtype's declared `this` must accept `unknown` — assigning
+    // (this: T) => R to () => R and free-calling it would run the body with no
+    // receiver (SkipLabs/skjs#960). TS accepts that; SKJS rejects it.
     (f1.thisParam, f2.thisParam) match {
-    | (_, None()) -> void
-    | (None(), Some(_)) -> return STRecFunThisParam(None(), f1, f2)
-    | (Some(this1), Some(this2)) ->
+    | (None(), _) -> void
+    | (Some(this1), this2opt) ->
+      this2 = this2opt.default(TType::top(this1.pos));
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)

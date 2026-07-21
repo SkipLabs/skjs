@@ -429,6 +429,17 @@ extension class TypeChecker {
         TSCode(1093),
       );
     };
+    // A constructor cannot declare an explicit `this` parameter (TS2681).
+    if (cstrSig.params.size() > 0) {
+      cstrSig.params[0].name.value match {
+      | PVar(Name(thisPos, "this")) ->
+        subst.error(
+          Array[(thisPos, "A constructor cannot have a 'this' parameter")],
+          TSCode(2681),
+        )
+      | _ -> void
+      }
+    };
     for (modifier in fd.modifiers.modifiers) {
       subst.error(
         Array[
