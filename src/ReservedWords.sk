@@ -43,7 +43,9 @@ const reservedWords: SortedSet<String> = SortedSet[
   "return",
   "super",
   "switch",
-  "this",
+  // `this` is deliberately absent: SKJS handles it with dedicated, position-
+  // aware logic (the `this` parameter, and the "'this' is not allowed in this
+  // binding position" errors), which a generic reserved-word check would shadow.
   "throw",
   "true",
   "try",

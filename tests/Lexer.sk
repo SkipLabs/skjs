@@ -591,7 +591,7 @@ fun testIdentifierEscapeDecodesToTheSameName(): void {
 // A reserved word (ECMA-262 sec 12.7.2, plus the strict-mode set -- TypeScript
 // modules are always strict) may not name a binding or a declaration; tsc
 // rejects each of the first group and accepts every one of the second, where
-// the same word is a property name. SKJS accepts them everywhere (#938).
+// the same word is a property name. SKJS used to accept them everywhere (#938).
 @test
 fun testReservedWordsAsNames(): void {
   // (source, whether it should parse)
@@ -629,7 +629,7 @@ fun testReservedWordsAsNames(): void {
     ),
   ];
   for (case in cases) {
-    (content, _shouldParse) = case;
+    (content, shouldParse) = case;
     fileName = SKJS.FPath::create(SKJS.RootId::project, "tmp.ts");
     lexer = SKJS.Lexer::mcreate(fileName, content);
     parser = mutable SKJS.Parser(lexer);
@@ -640,10 +640,7 @@ fun testReservedWordsAsNames(): void {
     | SKJS.ErrorExn(_) -> true
     | exn -> throw exn
     };
-    // FIXME(#938): reserved words are accepted everywhere, so the bindings
-    // that should be rejected parse cleanly.
-    _ = _shouldParse;
-    SKTest.expectFalse(threw, `${content}: currently accepted`)
+    SKTest.expectEq(!threw, shouldParse, content)
   }
 }
 module end;

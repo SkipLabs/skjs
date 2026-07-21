@@ -817,7 +817,7 @@ extension class Parser {
 
   // Parse type definitions
   mutable fun typeDef(): TypeDef {
-    name = this.getName();
+    name = this.bindingName();
     tdefParams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
       this.typeDefsParams();
@@ -839,7 +839,7 @@ extension class Parser {
 
   // Parse enum definitions
   mutable fun enum(isConst: ?PosRange): Enum {
-    name = this.getName();
+    name = this.bindingName();
     this.expect(TKOpenCurly());
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
@@ -886,7 +886,7 @@ extension class Parser {
       classSymbol,
       symbolContextPos,
     );
-    name = this.getName();
+    name = this.bindingName();
 
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -1052,7 +1052,7 @@ extension class Parser {
   mutable fun typeDefsParams(): Array<TypeParam> {
     tdparams = mutable Vector[];
     loop {
-      name = this.getName();
+      name = this.bindingName();
       constr = if (this.lex.isEq("extends")) {
         _ = this.lex.next();
         Some(this.type(0))
@@ -1099,7 +1099,7 @@ extension class Parser {
   mutable fun typeParams(): Array<TypeParam> {
     result = mutable Vector[];
     loop {
-      tparamName = this.getName();
+      tparamName = this.bindingName();
       tparamType = if (this.lex.isEq("extends")) {
         _ = this.lex.next();
         ty = this.type(0);
@@ -1165,7 +1165,7 @@ extension class Parser {
       funcSymbol,
       symbolContextPos,
     );
-    funName = this.getName();
+    funName = this.bindingName();
 
     result = this.methodDef(
       {tparams, params, retType, body} ->
