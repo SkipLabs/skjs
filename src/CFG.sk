@@ -105,7 +105,7 @@ mutable class CFGBuilder{
   mutable continueStack: mutable Vector<CFGBlockId> = mutable Vector[],
   mutable finallyStack: mutable Vector<FinallyCtx> = mutable Vector[],
   mutable nextId: Int,
-  exprTypes: SortedMap<(PosRange, Bool, Bool), TType>,
+  exprTypes: SortedMap<(PosRange, Bool, Bool, Bool), TType>,
   stmtTerminations: SortedMap<PosRange, StmtTermination>,
   normalExit: CFGBlockId,
   exnExit: CFGBlockId,
@@ -116,7 +116,7 @@ mutable class CFGBuilder{
     params: Array<(Pattern, TType)>,
     retType: TType,
     body: Array<Stmt>,
-    exprTypes: SortedMap<(PosRange, Bool, Bool), TType>,
+    exprTypes: SortedMap<(PosRange, Bool, Bool, Bool), TType>,
     stmtTerminations: SortedMap<PosRange, StmtTermination>,
   ): CFG {
     entryId = CFGBlockId(0);
@@ -229,9 +229,11 @@ mutable class CFGBuilder{
     pos: PosRange,
     isLValue: Bool = false,
   ): ?TType {
-    this.exprTypes.maybeGet((pos, true, isLValue)) match {
+    // underAsConst=false: CFG narrowing looks up expressions typed in normal,
+    // non-`as const` contexts.
+    this.exprTypes.maybeGet((pos, true, isLValue, false)) match {
     | ty @ Some(_) -> ty
-    | None() -> this.exprTypes.maybeGet((pos, false, isLValue))
+    | None() -> this.exprTypes.maybeGet((pos, false, isLValue, false))
     }
   }
   // Close the current block with `term`, first inlining a copy of every

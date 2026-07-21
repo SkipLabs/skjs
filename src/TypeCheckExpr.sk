@@ -1662,8 +1662,14 @@ extension class TypeChecker {
     e: Expr,
     mostPrecise: Bool,
     isLValue: Bool = false,
+    // True when e is the operand of an `as const` (or an element of such an
+    // array). Part of the cache key: while `as const`-ness is fixed by e's
+    // syntactic parent (so a position is always typed the same way in
+    // practice), keying it keeps the cache correct-by-construction rather than
+    // relying on that invariant.
+    underAsConst: Bool = false,
   ): TType {
-    key = (e.pos, mostPrecise, isLValue);
+    key = (e.pos, mostPrecise, isLValue, underAsConst);
     tcenv.exprTypes.maybeGet(key) match {
     | Some(_ty) ->
       internal_error(
@@ -1673,17 +1679,20 @@ extension class TypeChecker {
           e.pos.fileName.toString(),
       )
     | None() ->
-      ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
+      ty = this.exprImpl(tcenv, e, mostPrecise, isLValue, underAsConst);
       tcenv.!exprTypes[key] = ty;
       ty
     };
   }
 
   fun lookupExprType(tcenv: mutable TCEnv, e: Expr): TType {
-    tcenv.exprTypes.maybeGet((e.pos, true, false)) match {
+    // underAsConst=false: the expressions looked up here (narrowing scrutinees,
+    // comparison operands) are always typed in a normal, non-`as const`
+    // context.
+    tcenv.exprTypes.maybeGet((e.pos, true, false, false)) match {
     | Some(ty) -> ty
     | None() ->
-      tcenv.exprTypes.maybeGet((e.pos, false, false)) match {
+      tcenv.exprTypes.maybeGet((e.pos, false, false, false)) match {
       | Some(ty) -> ty
       // Not yet typechecked -- can't lookup.
       // Currently treating this as a loud internal failure, but could equally
@@ -1705,6 +1714,7 @@ extension class TypeChecker {
     e: Expr,
     mostPrecise: Bool,
     isLValue: Bool,
+    underAsConst: Bool,
   ): TType {
     if (mostPrecise) {
       if (isLValue) {
@@ -1718,7 +1728,13 @@ extension class TypeChecker {
           SKJSCode(9999),
         )
       };
-      this.asConstExpr(tcenv, e, false) match {
+      // Speculative fast path for a directly-const-foldable expression (a
+      // primitive literal, or a unary op on one). asConstExpr is pure -- it
+      // never type-checks a sub-expression -- so a None result can be
+      // discarded and the full typing below re-run without re-checking
+      // anything. Composite literals (arrays) and `as const` itself are not
+      // handled here; they fall through to the EArray / AsConst cases.
+      this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return ty
       | None() -> void
       }
@@ -1782,9 +1798,20 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(e -> this.asConstExpr(tcenv, e, false)) match {
+              value match {
+              // An `as const` value must fold through the full const-assertion
+              // typing in exprImpl's AsConst case (readonly tuple, literal,
+              // ...), which the pure asConstExpr fast path deliberately does
+              // not handle. (Named valExpr, not e, to avoid shadowing the
+              // exprImpl parameter.)
+              | Some(valExpr) if (valExpr.value is AsConst _) ->
+                this.expr(tcenv, valExpr, true)
+              | Some(valExpr) ->
+                this.asConstExpr(tcenv, valExpr) match {
+                | Some(ty) -> ty
+                | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
+                }
               | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
-              | Some(ty) -> ty
               }
             | Some(ty) ->
               this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
@@ -2335,6 +2362,18 @@ extension class TypeChecker {
       tvar = this.newTVar(tcenv, pos, FromEmptyArray(pos));
       TType::inst(Name(pos, "Array"), TArgs(Array[tvar]))
 
+    | EArray(arr) if (underAsConst && !arr.any(x -> x.value is Spread _)) ->
+      // `[e0, e1, ...] as const` is a readonly tuple whose element types are
+      // the elements' own `as const` types. Each element is typed once here,
+      // in a const context (mostPrecise + underAsConst), which keeps a literal
+      // element literal, makes a nested array literal a nested readonly tuple,
+      // and gives any other element its most-precise type. Spread elements are
+      // not yet supported and fall through to the general case below.
+      TType::tuple(
+        pos,
+        arr.map(x -> this.expr(tcenv, x, true, false, true)),
+        true,
+      )
     | EArray(arr) ->
       hasSpread = arr.any(x -> x.value is Spread _);
       if (hasSpread) {
@@ -2504,7 +2543,7 @@ extension class TypeChecker {
         // this is the only place their lvalue type is recorded (the CFG builder
         // looks it up by `(e1.pos, _, true)`). A plain map write, not an
         // `expr` call, so it doesn't count as a second typecheck.
-        tcenv.!exprTypes[(e1.pos, mostPrecise, true)] = ty;
+        tcenv.!exprTypes[(e1.pos, mostPrecise, true, false)] = ty;
         ty
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
@@ -3073,19 +3112,43 @@ extension class TypeChecker {
 
       TType::union(tcenv.subst, this, left, right)
     | AsConst(subExpr) ->
-      this.asConstExpr(tcenv, subExpr, true) match {
-      | Some(ty) -> ty
-      | None() ->
-        tcenv.error(
-          Array[
-            (
-              pos,
-              "A 'const' assertion can only be applied to a string, number, boolean, array, or object literal",
-            ),
-          ],
-          TSCode(1355),
+      // A redundant 'as const' does not change the program's meaning, so warn
+      // rather than error. It is redundant when the surrounding context is
+      // already producing a const/precise type -- either a most-precise
+      // context or an enclosing `as const`. (Not always truly redundant: an
+      // `as const` on an array literal turns a mutable value readonly.)
+      if (mostPrecise || underAsConst) {
+        tcenv.warning(
+          Array[(subExpr.pos, "This 'as const' is unnecessary")],
+          SKJSCode(2044),
         );
-        this.expr(tcenv, subExpr, true)
+      };
+      subExpr.value match {
+      // An array literal, or a nested `as const`, is typed in a const context:
+      // the EArray case builds the readonly tuple and this same case handles a
+      // nested assertion (warning it once). Elements are type-checked exactly
+      // once, on this single pass -- there is no speculative retyping to crash.
+      | EArray _
+      | AsConst _ ->
+        this.expr(tcenv, subExpr, true, false, true)
+      // Everything else must be a directly-const-foldable primitive; anything
+      // that is not (a variable reference, a call, an object literal, ...) is a
+      // misused const assertion.
+      | _ ->
+        this.asConstExpr(tcenv, subExpr) match {
+        | Some(ty) -> ty
+        | None() ->
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "A 'const' assertion can only be applied to a string, number, boolean, array, or object literal",
+              ),
+            ],
+            TSCode(1355),
+          );
+          this.expr(tcenv, subExpr, true)
+        }
       }
     | Params _ -> paramsError(pos)
     | Regexp _ ->
@@ -3133,72 +3196,25 @@ extension class TypeChecker {
     this.directLiteralSType(e).map(stype -> TType::single(stype))
   }
 
-  /* Typechecks expression e as const.
+  /* The precise type of a directly const-foldable expression -- a primitive
+   * literal, or a unary operator applied to one -- or None for anything else.
    *
-   * Returns a full TType (not a single SType) so that an array literal can
-   * produce a readonly tuple, which SKJS represents as a synthetic-class
-   * instance rather than a single SType.
+   * Pure: it never type-checks a sub-expression (no `this.expr`), so a None
+   * result can be discarded and the caller can fall back to the full typing in
+   * exprImpl without any duplicated work. Composite `as const` operands (array
+   * and object literals) and the `as const` operator itself are NOT handled
+   * here; the AsConst case in exprImpl owns them.
    *
-   * `underAsConst` is true when e sits inside an `as const` region (the
-   * operand of an `as const`, or an element of such an array). It gates the
-   * one place where a const assertion changes a composite literal's type: an
-   * array literal becomes a readonly tuple only under `as const`; a bare array
-   * literal in a most-precise context stays a mutable (delayed) tuple and is
-   * left to the normal array-literal typing by returning None. */
-  fun asConstExpr(tcenv: mutable TCEnv, e: Expr, underAsConst: Bool): ?TType {
+   * Returns a full TType rather than a single SType only to spare the two
+   * callers a `TType::single` wrapper. */
+  fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?TType {
     pos = e.pos;
     e.value match {
-    | AsConst(subExpr) ->
-      // A redundant 'as const' does not change the program's meaning, so this
-      // is a warning rather than a build-breaking error. It is also not always
-      // truly redundant (an 'as const' on an array/object literal changes a
-      // mutable value into a readonly one), which is a further reason not to
-      // block on it.
-      tcenv.warning(
-        Array[(subExpr.pos, "This 'as const' is unnecessary")],
-        SKJSCode(2044),
-      );
-      this.asConstExpr(tcenv, subExpr, true)
     | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
       Some(TType::single(TPrimUnit(TUndefined(), pos)))
-    | EArray(elts) if (underAsConst && elts.all(x -> !(x.value is Spread _))) ->
-      // `[e0, e1, ...] as const` is a readonly tuple whose element types are
-      // the elements' own `as const` types: a literal element keeps its
-      // literal type and a nested array literal becomes a nested readonly
-      // tuple (asConstExpr with underAsConst still set), while any other
-      // element keeps its most-precise type. Spread elements are not yet
-      // supported and fall through to the None arm below.
-      Some(
-        TType::tuple(
-          pos,
-          elts.map(elt ->
-            // Only a nested array literal is const-typed here (into a nested
-            // readonly tuple); every other element gets its most-precise type.
-            // That path already routes a literal -- and a redundant
-            // element-level `as const` -- through the most-precise shortcut, so
-            // typing such an element here as well would double its diagnostics.
-            if (elt.value is EArray _) {
-              this.asConstExpr(tcenv, elt, true) match {
-              | Some(t) -> t
-              | None() -> this.expr(tcenv, elt, true)
-              }
-            } else {
-              this.expr(tcenv, elt, true)
-            }
-          ),
-          true,
-        ),
-      )
     | Unop(UOExclamationMark(), subE) ->
-      // Type the operand with underAsConst=false: `!`'s operand is a scalar,
-      // never part of an enclosing as-const's tuple scope. This also keeps an
-      // array-literal operand from being const-typed (and its elements
-      // memoized) only to be discarded here, which would crash the re-typing
-      // the None fall-through triggers ("already type checked expression"). An
-      // array/object operand yields None below and is reported as a misused
-      // const assertion (TS1355) by the caller, matching the object case.
-      this.asConstExpr(tcenv, subE, false).map(ty ->
+      this.asConstExpr(tcenv, subE).map(ty ->
         ty.getSingleConstant() match {
         | Some(TPrimValue(TBool(), lits, _)) ->
           lits.flatMap(v -> v.singleElt()) match {
@@ -3241,12 +3257,7 @@ extension class TypeChecker {
       )
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      // Operand typed with underAsConst=false, for the same reason as `!`
-      // above: a unary arithmetic operator's operand is a scalar, and
-      // const-typing an array-literal operand here would memoize its elements
-      // and then crash the re-typing that this arm's None fall-through
-      // triggers.
-      this.asConstExpr(tcenv, subE, false).flatMap(ty ->
+      this.asConstExpr(tcenv, subE).flatMap(ty ->
         ty.getSingleConstant() match {
         | Some(TPrimValue(k @ TNum(), valuesOpt, _))
         | Some(TPrimValue(k @ TBigInt(), valuesOpt, _)) ->
