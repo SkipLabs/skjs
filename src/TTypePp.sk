@@ -29,8 +29,8 @@ value class Margin{
 // type before rendering is answering a question about a different object.
 mutable class PpNames{
   private emitted: mutable Vector<(String, Id)> = mutable Vector[],
-  // Empty while collecting; freeze() fills it in, and only then does suffix()
-  // return anything.
+  // Empty while collecting; assignOrdinals() fills it in, and only then does
+  // suffix() return anything.
   private mutable ordinals: SortedMap<Id, Int> = SortedMap[],
 } {
   mutable fun record(name: String, id: Id): void {
