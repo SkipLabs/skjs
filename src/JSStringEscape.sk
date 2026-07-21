@@ -63,6 +63,42 @@ fun normalizeTemplateLineTerminators(raw: String): String {
   String::fromChars(out.toArray())
 }
 
+// If an identifier escape (`\uXXXX` or `\u{...}`) starts at `pos` -- the index
+// of the backslash -- returns the character it denotes and the index just past
+// it. None when there is no escape there or it is malformed, which leaves the
+// backslash to be reported as the invalid character it is.
+fun decodeIdentifierEscape(chars: Array<Char>, pos: Int): ?(Char, Int) {
+  if (pos + 1 >= chars.size() || chars[pos] != '\\' || chars[pos + 1] != 'u') {
+    return None()
+  };
+  out = mutable Vector<Char>[];
+  decodeUnicodeEscape(chars, pos + 1, out) match {
+  | Success(next) if (out.size() == 1) -> Some((out[0], next))
+  | _ -> None()
+  }
+}
+
+// The name an IdentifierName denotes: its escapes decoded, so that `caf\u00e9`
+// and `café` are one name. ECMA-262 sec 12.7 (an identifier's StringValue).
+fun decodeIdentifierName(raw: String): String {
+  // Fast path: an identifier almost never contains an escape.
+  if (!raw.contains("\\")) return raw;
+  chars = raw.chars().toArray();
+  out = mutable Vector<Char>[];
+  i = 0;
+  while (i < chars.size()) {
+    decodeIdentifierEscape(chars, i) match {
+    | Some((c, next)) ->
+      out.push(c);
+      !i = next
+    | None() ->
+      out.push(chars[i]);
+      !i = i + 1
+    }
+  };
+  String::fromChars(out.toArray())
+}
+
 // Decodes the body of a string literal (with the surrounding quotes already
 // stripped). Returns Success(value) or Failure(kind) with the parse error to
 // report.
