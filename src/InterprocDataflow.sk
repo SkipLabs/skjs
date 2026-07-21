@@ -79,7 +79,7 @@ mutable class Interproc<
   callgraph: SortedMap<CGNode, Array<CGNode>>,
   domain: D,
   ctx_policy: C,
-  mutable invariant_map: SortedMap<Loc<Ctx>, State> = SortedMap[],
+  private mutable invariant_map: SortedMap<Loc<Ctx>, State> = SortedMap[],
   private worklist: mutable Vector<Loc<Ctx>> = mutable Vector[],
   // Map from a callee entry loc to the caller locs that must be re-analyzed
   // when the callee's return state grows.

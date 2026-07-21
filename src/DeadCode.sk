@@ -101,10 +101,14 @@ fun deadBlocks(
     ctx_policy => ContextInsensitive(),
   };
   solver.analyzeForward(cfgs.keys().collect(Array));
+  // A block is reachable exactly when the fixpoint assigned it a (necessarily
+  // `Live`) state; `blockStates` omits blocks that were never reached.
+  states = solver.blockStates();
   isLive = (node: CGNode, blk: CFGBlockId) -> {
-    (solver.invariant_map.maybeGet(
-      Loc{node, blk, ctx => void},
-    ) : ?Liveness) is Some(Live())
+    states.maybeGet(node) match {
+    | None() -> false
+    | Some(inner) -> (inner.maybeGet(blk) : ?Liveness) is Some(Live())
+    }
   };
 
   result = SortedMap<CGNode, SortedSet<CFGBlockId>>[];
