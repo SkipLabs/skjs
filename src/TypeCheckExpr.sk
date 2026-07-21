@@ -3336,6 +3336,11 @@ extension class TypeChecker {
     tcenv.recordCalls(CGNodes::singleton(callingContext));
     savedScope = tcenv.scope;
     savedCallingContext = tcenv.callingContext;
+    // A jump target cannot cross a function boundary, so the lambda body
+    // starts with no catchers: a break/continue inside it must find its own
+    // loop or switch, never an enclosing function's (see `recordBreak`).
+    savedJumpCatchers = tcenv.jumpCatchers;
+    tcenv.!jumpCatchers = mutable Vector[];
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
     tcenv.!callingContext = callingContext;
 
@@ -3416,6 +3421,7 @@ extension class TypeChecker {
 
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
+    tcenv.!jumpCatchers = savedJumpCatchers;
 
     // Build a CFG for the lambda body, keyed by its AnonymousLambda node, just
     // like funDef does for named functions and methods. An expression body

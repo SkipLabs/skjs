@@ -257,6 +257,54 @@ mutable class Scope{
     }
   }
 
+  // A snapshot of every outer binding this scope's chain has touched, down to
+  // the ancestor with `baselineId` (exclusive): each name mapped to the nearest
+  // (innermost) value on the way up. Used to record the state at a `break` /
+  // `continue`, which exits mid-block carrying exactly this, so the catcher can
+  // union it into the state after the loop or switch.
+  readonly fun snapshotTo(baselineId: Int): mutable Map<String, LocalRef> {
+    acc = mutable Map<String, LocalRef>[];
+    // Names declared below the baseline (a clause's own `const`/`let`): their
+    // refs are collected along the way but dropped at the end, since they do
+    // not escape to where the catcher merges and the merge cannot resolve them.
+    localNames = mutable Vector<String>[];
+    this.snapshotInto(baselineId, acc, localNames);
+    for (name in localNames) {
+      _ = acc.maybeRemove(name)
+    };
+    acc
+  }
+
+  private readonly fun snapshotInto(
+    baselineId: Int,
+    acc: mutable Map<String, LocalRef>,
+    localNames: mutable Vector<String>,
+  ): void {
+    if (this.id != baselineId) {
+      for (kv in this.refs.items()) {
+        if (!acc.containsKey(kv.i0)) acc![kv.i0] = kv.i1
+      };
+      for (kv in this.locals.items()) {
+        localNames.push(kv.i0)
+      };
+      this.up match {
+      // The baseline is the scope of the catcher this jump was routed to, so
+      // it is necessarily an ancestor; running out of parents without meeting
+      // it means the routing and the scope chain disagree.
+      | None() -> internal_error("jump snapshot baseline is not an ancestor")
+      | Some(u) -> u.snapshotInto(baselineId, acc, localNames)
+      }
+    }
+  }
+
+  // Fill this (fresh, empty) scope with a recorded snapshot, so it can stand in
+  // as one more direct subscope for `mergeN`.
+  mutable fun seedRefs(snap: readonly Map<String, LocalRef>): void {
+    for (kv in snap.items()) {
+      this.!refs[kv.i0] = kv.i1
+    }
+  }
+
   // Merge sibling subscopes into `this`. Every scope must be a direct subscope.
   //
   // A binding ends up as the union over every path that can reach this point:
