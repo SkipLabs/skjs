@@ -20,7 +20,6 @@ function groupedLabelsDefinitelyAssign(
       y = "set";
       break;
   }
-  // @skjs-expect-error Variable 'y' is used before being assigned
   log(y);
 }
 
@@ -39,7 +38,6 @@ function groupedLabelsWithDefault(
     default:
       y = "def";
   }
-  // @skjs-expect-error Variable 'y' is used before being assigned
   log(y);
 }
 
@@ -73,7 +71,6 @@ function fallthroughClauseIsNotItsOwnExit(x: 1 | 2, a: "a", b: "b"): void {
       y = b;
       break;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "b" = y;
 }
 
@@ -96,9 +93,8 @@ function breakOrReturnCountsAsExit(
     default:
       break;
   }
-  // Pins today's behaviour, which is unsound: the break path leaves `y` at "b",
-  // so it can reach here as "b", and annotating it "a" must be rejected. Today
-  // this clause's scope is dropped (it can also return), so the write is lost
-  // and this is wrongly accepted. The next commit rejects it.
+  // The break path leaves `y` at "b", so it can reach here as "b", and
+  // annotating it "a" must be rejected.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "a" = y;
 }
