@@ -37,10 +37,10 @@ function widthOk(): MethodShape {
   return carrier;
 }
 
-// FIXME: accepted for now — extracting a shape method and free-calling it
-// loses the receiver; rejected once shape members are attach-only.
+// Extracting a shape method and free-calling it loses the receiver.
 function detachShapeMethod(): number {
   const f = shape.m;
+  // @skjs-expect-error A shape method can only be called on the object it was accessed on
   return f();
 }
 

@@ -4329,7 +4329,24 @@ extension class TypeChecker {
 
       // Check the receiver against the declared `this` parameter, if any.
       // A call with no receiver (free call) uses `this: void`, matching TS.
-      tfun.thisParam.tyOpt().each(expectedThis -> {
+      tfun.thisParam match {
+      | NoThis() -> void
+      // A shape method is attach-only: at an attached call the receiver is
+      // the object it was accessed on; a free call has lost it.
+      | ImplicitShape() ->
+        if (thisArgOpt is None _) {
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "A shape method can only be called on the object it was accessed on",
+              ),
+            ],
+            SKJSCode(2075),
+          )
+        }
+      | tp ->
+        expectedThis = tp.tyOpt().fromSome();
         actualThis = thisArgOpt match {
         | Some(t) -> t
         | None() -> TType::single(TPrimUnit(TVoid(), pos))
@@ -4342,7 +4359,7 @@ extension class TypeChecker {
           expectedThis,
           TSCode(2684),
         )
-      });
+      };
 
       version = tcenv.subst.version;
       loop {
