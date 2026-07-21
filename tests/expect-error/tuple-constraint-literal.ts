@@ -7,7 +7,9 @@
 // (`pop(): T0 | T1 | ...`), sealing each sibling to the union of all
 // positions; a literal whose every element matched its own position could
 // still fail. Same-arity tuple pairs now seed from the positional fields
-// only, which pair the elements one-to-one.
+// only, which pair the elements one-to-one. Nested literals additionally
+// check element-by-element against the constraint's positions, so the inner
+// literals commit against their own positions too (#942).
 
 // Exact match: tsc infers K = [0, 1].
 declare function exact<K extends [0, 1]>(x: K): K;
@@ -50,25 +52,26 @@ function readonlyWidenedElement(): void {
   const r = roWiden([0, 5]);
 }
 
-// FIXME: TypeScript accepts this call. The outer positions pair one-to-one,
-// but the uncommitted inner literals still fail the constraint's own
-// position-unioning members, so SKJS rejects nested tuple literals (#942).
+// Nested tuple literals: each inner literal commits against its own
+// constraint position rather than meeting the union of all positions through
+// the tuple's number index and methods (#942).
 declare function nest<K extends [[0, 1], [2, 3]]>(x: K): K;
 function nestedTuples(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest([
     [0, 1],
     [2, 3],
   ]);
 }
 
-// ...at any nesting depth.
 declare function nest3<K extends [[[0]]]>(x: K): K;
 function nestedTuplesDepth3(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = nest3([[[0]]]);
 }
 
+// FIXME: TypeScript accepts this call. The faithfulness probe recurses at
+// most kProjectionDepth levels into the constraint, so a deeper literal falls
+// back to the whole-tuple check and the inner literals are rejected again
+// (#942).
 declare function nest5<K extends [[[[[0]]]]]>(x: K): K;
 function nestedTuplesDepth5(): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
