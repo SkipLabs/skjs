@@ -13,19 +13,7 @@ mutable base class TCEnvBase private {
   // it is left here on the way past. A switch is absent until its clauses have
   // been checked, so asking early gets `false`, which is the conservative
   // answer: the switch is assumed to be escapable.
-  mutable exhaustiveSwitches: SortedSet<PosRange> = SortedSet[],
 } {
-  // Record that this switch's cases leave no value unmatched.
-  mutable fun recordExhaustiveSwitch(scrutinee: PosRange): void {
-    this.!exhaustiveSwitches = this.exhaustiveSwitches.set(scrutinee)
-  }
-
-  // Whether this switch's cases were found to leave no value unmatched. False
-  // before its clauses have been checked.
-  readonly fun isExhaustiveSwitch(scrutinee: PosRange): Bool {
-    this.exhaustiveSwitches.contains(scrutinee)
-  }
-
   mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
     this.results.recordClassHierarchy{child, parent}
   }

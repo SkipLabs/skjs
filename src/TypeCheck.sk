@@ -43,13 +43,4 @@ class TypeChecker{
   }
 }
 
-/***************************************************************************/
-/* Returns true if a statement always is "terminal", meaning if
-/* evaluating this statements terminates the function. */
-/***************************************************************************/
-
-fun isTerminalBlock(tcenvb: mutable TCEnvBase, bl: Array<Stmt>): Bool {
-  StmtTermination::block(tcenvb, bl).isTerminal()
-}
-
 module end;
