@@ -47,9 +47,18 @@ mutable class PpNames{
     false
   }
 
-  // The distinct Ids emitted under each name that stood for more than one,
-  // in emission order.
-  readonly fun collisions(): SortedMap<String, Array<Id>> {
+  // Number the type parameters that printed under a shared name, so suffix()
+  // can tell them apart, and report whether any name needed it. No-op (and
+  // returns false) when every emitted name stood for one parameter.
+  //
+  // Ordered by Id, not by the order the names were emitted, so a parameter
+  // keeps its number across every message that disambiguates it: `x.v = y.v`
+  // and `y.v = x.v` name the same two parameters, and numbering by where they
+  // landed in the sentence would swap the labels between the two errors. The
+  // number stays small and gap-free either way -- what the Id contributes is
+  // the order, not the digits, whose own values are a per-file parse counter
+  // and would read as arbitrary (`T#7`, `T#11`).
+  mutable fun assignOrdinals(): Bool {
     byName = mutable Map<String, mutable Vector<Id>>[];
     for (pair in this.emitted) {
       ids = byName.maybeGet(pair.i0) match {
@@ -61,33 +70,17 @@ mutable class PpNames{
       };
       if (!ids.contains(pair.i1)) ids.push(pair.i1)
     };
-    result = SortedMap<String, Array<Id>>[];
+    assigned = false;
     for (name => ids in byName) {
-      if (ids.size() > 1) !result = result.set(name, ids.toArray())
-    };
-    result
-  }
-
-  // Assign each colliding Id its 1-based ordinal, after which suffix() marks
-  // them apart. Ids that do not collide keep the bare name.
-  //
-  // Ordered by Id, not by the order the names were emitted, so a parameter
-  // keeps its number across every message that has to disambiguate it: `x.v =
-  // y.v` and `y.v = x.v` name the same two parameters, and numbering them by
-  // where they landed in the sentence would have swapped the labels between
-  // the two errors. The number stays small and gap-free either way -- what the
-  // Id contributes is the order, not the digits, whose own values are a
-  // per-file parse counter and would read as arbitrary (`T#7`, `T#11`).
-  mutable fun freeze(): void {
-    next = this.ordinals;
-    for (name => ids in this.collisions()) {
       _ = name;
-      sorted = ids.sorted();
-      for (i => id in sorted) {
-        !next = next.set(id, i + 1)
+      if (ids.size() > 1) {
+        !assigned = true;
+        for (i => id in ids.sorted()) {
+          this.!ordinals = this.ordinals.set(id, i + 1)
+        }
       }
     };
-    this.!ordinals = next
+    assigned
   }
 
   readonly fun suffix(id: Id): String {
@@ -95,11 +88,6 @@ mutable class PpNames{
     | Some(n) -> `#${n}`
     | None() -> ""
     }
-  }
-
-  // Start a fresh render, keeping the ordinals computed by freeze().
-  mutable fun beginRender(): void {
-    this.emitted.clear()
   }
 
   // The line explaining a disambiguated rendering. Says outright that the

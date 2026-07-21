@@ -235,16 +235,15 @@ class SubtypingError(
     };
     names = mutable PpNames{};
     rendered = render(names);
-    collisions = names.collisions();
-    if (this.tenv.verbose || collisions.isEmpty()) return rendered;
-    names.freeze();
-    names.beginRender();
+    // Suffixes only ever widen a name, and width is handled by re-layout, not
+    // by dropping content (depth is what elides, and a suffix adds none), so
+    // the second pass emits the same names as the first -- no need to guard
+    // against the note disagreeing with the text.
+    if (this.tenv.verbose || !names.assignOrdinals()) return rendered;
+    // Second pass, reusing the same sink now that its ordinals are set, so the
+    // shared names print with their suffixes. It starts from the same saved
+    // state, so it differs from the first only by those suffixes.
     disambiguated = render(names);
-    // The suffixes widen lines, which could in principle change a layout
-    // decision and with it what gets printed. If the collisions the second
-    // pass sees are not the ones it was numbering for, keep the first pass
-    // rather than print a note that disagrees with the text above it.
-    if (names.collisions() != collisions) return rendered;
     notePos = if (rendered.isEmpty()) {
       this.messages[0].i0
     } else {
