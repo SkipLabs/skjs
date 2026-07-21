@@ -1182,7 +1182,21 @@ base class TEnv{
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
-        metTFuns = this.funDecl(subst, !metIsStatic, fd, cgNode);
+        // Populate the implicit `this` type for methods that have a body
+        // defined in a standalone (non-extending) class. This closes the
+        // "detached method call" soundness gap for ordinary data classes
+        // without breaking contravariant override compatibility in
+        // inheritance hierarchies (which would require polymorphic `this`)
+        // or variance of generic container types (whose methods are
+        // body-less stubs and thus already excluded here).
+        hasBody = this.getFunBody(subst.context, fd) is FDBSome _;
+        hasExtends = cls.extends_.size() > 0;
+        implicitThisOpt = if (metIsStatic || !hasBody || hasExtends) {
+          None()
+        } else {
+          Some(TType::inst(className, TArgs(targs)))
+        };
+        metTFuns = this.funDecl(subst, implicitThisOpt, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
         metAccess: FieldAccess = FAPublic();
         for (modifier in fd.modifiers.modifiers) {
@@ -1424,7 +1438,7 @@ base class TEnv{
 
   fun funDecl(
     tcenvb: mutable TCEnvBase,
-    isMethod: Bool,
+    implicitThisOpt: ?TType,
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
     isShapeMethod: Bool = false,
@@ -1444,8 +1458,21 @@ base class TEnv{
       )
     | (_, Some(x)) -> x
     };
-    tafun = TAFun(isMethod, sig.tparams, sig.params, retType, cgNode);
-    this.normalizeFun(tcenvb, fd.name.getPos(), tafun, true, isShapeMethod)
+    tafun = TAFun(
+      implicitThisOpt.isSome(),
+      sig.tparams,
+      sig.params,
+      retType,
+      cgNode,
+    );
+    this.normalizeFun(
+      tcenvb,
+      fd.name.getPos(),
+      tafun,
+      true,
+      isShapeMethod,
+      implicitThisOpt,
+    )
   }
 
   // Normalizes a type annotation.
@@ -2134,7 +2161,7 @@ base class TEnv{
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.fromSome();
           return TType::single(
-            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
+            TObject::createCall(this.funDecl(tcenvb, None(), fd, cgNode)),
           )
         | Class{kind => CKInterface()} -> !sawInterface = true
         | Class _ ->
@@ -2338,6 +2365,7 @@ base class TEnv{
     tafun: TAFun,
     isDeclaredSignature: Bool = false,
     isShapeMethod: Bool = false,
+    implicitThisOpt: ?TType = None(),
   ): TFuns {
     tafun match {
     | TAFun(isMethod, tParams, params, retType, cgNode) ->
@@ -2457,7 +2485,11 @@ base class TEnv{
       };
       thisParamValue: ThisParam = thisParam match {
       | Some(t) -> Explicit(t)
-      | None() -> if (isShapeMethod) ImplicitShape() else NoThis()
+      | None() ->
+        implicitThisOpt match {
+        | Some(i) -> ImplicitClass(i)
+        | None() -> if (isShapeMethod) ImplicitShape() else NoThis()
+        }
       };
       tfun = TFun(
         funTParams,
@@ -2743,7 +2775,7 @@ base class TEnv{
           false
         | SimpleFieldName _ -> true
         };
-        tFuns = this.funDecl(tcenvb, false, fd, cgNode, isShapeMethod);
+        tFuns = this.funDecl(tcenvb, None(), fd, cgNode, isShapeMethod);
         fd.name match {
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty(_) -> !call = Some(tFuns)

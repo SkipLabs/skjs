@@ -1757,7 +1757,7 @@ extension class TypeChecker {
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
-            tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
+            tFuns = this.funDecl(tcenv, None(), fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | Class{kind => CKInterface()} -> !sawInterface = true
           | TypeDef _ -> !sawTypeAlias = true
@@ -2072,7 +2072,7 @@ extension class TypeChecker {
           }
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          tFuns = this.funDecl(tcenv, false, fd, cgNode);
+          tFuns = this.funDecl(tcenv, None(), fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
         for (i in Range(0, states.size())) {
