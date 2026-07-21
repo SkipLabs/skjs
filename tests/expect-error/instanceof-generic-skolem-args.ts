@@ -147,9 +147,8 @@ declare function takesBoxString(b: Box<string>): void;
 function concreteAdmission(x: unknown): void {
   if (x instanceof Box) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
-    // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'Box#T'
-    // @skjs-expect-error-line4 This would not be an error if this field were readonly
+    // @skjs-expect-error-line2 Type 'Box#T'
+    // @skjs-expect-error-line3 is not assignable to type 'string'
     takesBoxString(x);
   }
 }

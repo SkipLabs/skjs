@@ -1081,34 +1081,59 @@ extension class TFields {
         if (f1.set.isBottom() && !f2.set.isBottom()) {
           return STRecFieldsField(None(), f1, f2, FMKSetter(), fields1, fields2)
         };
-        TType::isSub(subst, tenv, f2.set, f1.set) match {
-        | STOk() -> void
-        | err @ STErrorOnTType _ ->
-          return STRecFieldsField(
-            Some(err),
-            f1,
-            f2,
-            FMKSetter(),
-            fields1,
-            fields2,
-          )
-        };
-        // Exact optional semantics: `f?: T` promises that a PRESENT key
-        // holds a T. The sub's field describes present values, so it must
-        // satisfy bare T — never T | undefined (the | undefined of an
-        // optional read accounts for ABSENCE only, and absence is the
-        // Right(f2) case, not this one).
-        TType::isSub(subst, tenv, f1.get, f2.get) match {
-        | STOk() -> void
-        | err @ STErrorOnTType _ ->
-          return STRecFieldsField(
-            Some(err),
-            f1,
-            f2,
-            FMKGetter(),
-            fields1,
-            fields2,
-          )
+        // Check the setter (contravariant) first: committing it before the
+        // getter is load-bearing for inference (reordering breaks
+        // pr437-set-check-unsound). Then check the getter (covariant) once.
+        //
+        // Exact optional semantics for the getter: `f?: T` promises that a
+        // PRESENT key holds a T, so the sub's field -- which describes present
+        // values -- must satisfy bare T, never T | undefined (the | undefined
+        // of an optional read accounts for ABSENCE only, the Right(f2) case).
+        setterResult = TType::isSub(subst, tenv, f2.set, f1.set);
+        // The getter is checked whether or not the setter passed: its result
+        // decides both the getter error and whether `readonly` (which drops
+        // the setter check) would fix a setter failure. Its inference commit
+        // needs no cleanup when the setter failed -- this whole comparison
+        // then returns an STError, and `TFields::isSub` restores the subst on
+        // error (the invariant every `isSub` upholds).
+        getterResult = TType::isSub(subst, tenv, f1.get, f2.get);
+        setterResult match {
+        | STOk() ->
+          getterResult match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(
+              Some(err),
+              f1,
+              f2,
+              FMKGetter(),
+              fields1,
+              fields2,
+            )
+          }
+        | setterErr @ STErrorOnTType _ ->
+          // Setter failed: suggest readonly only if the getter holds -- else
+          // readonly buys nothing and the getter is the genuine failure.
+          getterResult match {
+          | STOk() ->
+            return STRecFieldsField(
+              Some(setterErr),
+              f1,
+              f2,
+              FMKSetter(),
+              fields1,
+              fields2,
+            )
+          | getterErr @ STErrorOnTType _ ->
+            return STRecFieldsField(
+              Some(getterErr),
+              f1,
+              f2,
+              FMKGetter(),
+              fields1,
+              fields2,
+            )
+          }
         }
       }
     };
