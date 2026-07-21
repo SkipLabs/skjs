@@ -215,7 +215,12 @@ mutable class Interproc<
           // arguments, enqueuing the callee iff this widens its entry state.
           this.updateState(
             entry,
-            this.domain.call(caller_st, site, cfg.params),
+            this.domain.call(
+              caller_st,
+              site,
+              cfg.params,
+              this.interprocCallback(caller),
+            ),
             false,
           );
 

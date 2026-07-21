@@ -226,31 +226,42 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
         // Invalidate writes in the condition, then prune the edge that a known
         // condition value makes unreachable.
         env1 = this.dropVars(env, this.assignedVars(cond.expr));
-        this.truthiness(this.evalExpr(env1, cond.expr)) match {
-        | Some(true) ->
-          label match {
-          | CFGEFalse() -> CPEBot()
-          | _ -> CPEEnv(env1, ret)
+        this.evalExpr(env1, cond.expr, interproc) match {
+        // A pending call in the condition leaves both edges unreachable for now.
+        | CPVBot() -> CPEBot()
+        | cv ->
+          this.truthiness(cv) match {
+          | Some(true) ->
+            label match {
+            | CFGEFalse() -> CPEBot()
+            | _ -> CPEEnv(env1, ret)
+            }
+          | Some(false) ->
+            label match {
+            | CFGETrue() -> CPEBot()
+            | _ -> CPEEnv(env1, ret)
+            }
+          | None() -> CPEEnv(env1, ret)
           }
-        | Some(false) ->
-          label match {
-          | CFGETrue() -> CPEBot()
-          | _ -> CPEEnv(env1, ret)
-          }
-        | None() -> CPEEnv(env1, ret)
         }
       | CFGTSwitch(scrutinee, branches, _default) ->
         env1 = this.dropVars(env, this.assignedVars(scrutinee.expr));
-        sv = this.evalExpr(env1, scrutinee.expr);
+        sv = this.evalExpr(env1, scrutinee.expr, interproc);
+        // A pending scrutinee call leaves every switch edge unreachable for now.
+        if (sv is CPVBot()) return CPEBot();
         label match {
         | CFGECase(i) ->
           branches[i].i0 match {
           | Case(caseExpr) ->
-            cav = this.evalExpr(env1, caseExpr);
+            cav = this.evalExpr(env1, caseExpr, interproc);
             this.strictEq(sv, cav) match {
+            // `Bot` cav (pending case value) folds here: `strictEq` yields
+            // `None`, and the guard below excludes non-concrete values, so the
+            // edge stays unreachable until the case value resolves.
             | Some(false) ->
               CPEBot() // this case can never be selected
             | Some(true) -> CPEEnv(env1, ret)
+            | None() if (cav is CPVBot()) -> CPEBot()
             | None() ->
               // Reaching this case implies `scrutinee === caseValue`. When the
               // case is a known constant and the scrutinee is a bare,
@@ -270,15 +281,19 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
           }
         | CFGEDefault() ->
           // The default is taken only when no case matches, so it is
-          // unreachable once some case is a definite match.
-          someMatch = branches.any(b ->
+          // unreachable once some case is a definite match. Evaluate the case
+          // values once: a pending (`Bot`) case value could still resolve to a
+          // definite match, so keep the default unreachable until every case
+          // value is known — this stays monotone as summaries resolve.
+          caseVals = branches.map(b ->
             b.i0 match {
-            | Case(ce) ->
-              this.strictEq(sv, this.evalExpr(env1, ce)) is Some(true)
-            | Default() -> false
+            | Case(ce) -> this.evalExpr(env1, ce, interproc)
+            | Default() -> CPVTop()
             }
           );
-          if (someMatch) CPEBot() else CPEEnv(env1, ret)
+          anyPending = caseVals.any(cv -> cv is CPVBot());
+          someMatch = caseVals.any(cv -> this.strictEq(sv, cv) is Some(true));
+          if (anyPending || someMatch) CPEBot() else CPEEnv(env1, ret)
         | CFGENormal()
         | CFGETrue()
         | CFGEFalse() ->
@@ -307,38 +322,31 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
 
   // -- Interprocedural calls ------------------------------------------------
 
-  // Evaluate an instruction / return operand. A bare call or `new` is resolved
-  // through the `interproc` callback; `None` signals that no callee returns here
-  // yet, so the program point is unreachable until a returning summary exists.
-  // Every other expression always yields `Some` abstract value
+  // Evaluate an expression in operand position, distinguishing an unreachable
+  // result. `evalExpr` surfaces a pending/non-returning call (anywhere in `e`,
+  // not just at its root) as `CPVBot`; here that becomes `None`, signalling the
+  // program point is unreachable until a returning summary exists. Every other
+  // expression yields `Some` abstract value.
   private fun evalOperand(
     env: SortedMap<String, CPVal>,
     e: Expr,
     interproc: (Callsite, CPEnv) -> CPEnv,
   ): ?CPVal {
-    e.value match {
-    | call @ Call _ ->
-      interproc(CSCall(call, e.pos), CPEEnv(env, CPVUndefined())) match {
-      | CPEBot() -> None()
-      | CPEEnv(_callee_env, ret) -> Some(ret)
-      }
-    | ctor @ New _ ->
-      interproc(CSNew(ctor, e.pos), CPEEnv(env, CPVUndefined())) match {
-      | CPEBot() -> None()
-      | CPEEnv(_, _) -> Some(CPVTop())
-      }
-    | _ -> Some(this.evalExpr(env, e))
+    this.evalExpr(env, e, interproc) match {
+    | CPVBot() -> None()
+    | v -> Some(v)
     }
   }
 
   // Build a callee's entry frame: a fresh environment with each simple formal
   // bound to the abstract value of the corresponding actual (evaluated in the
   // caller's env), and `ret` seeded to `undefined`. Destructured or surplus
-  // formals are left unconstrained; a call nested in an argument evals to `Top`.
+  // formals are left unconstrained.
   fun call(
     callerState: CPEnv,
     site: Callsite,
     params: Array<(Pattern, TType)>,
+    interproc: (Callsite, CPEnv) -> CPEnv,
   ): CPEnv {
     callerState match {
     | CPEBot() -> CPEBot()
@@ -350,14 +358,15 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
       n = if (params.size() < args.size()) params.size() else args.size();
       entryEnv = SortedMap<String, CPVal>[];
       for (i in Range(0, n)) {
-        params[i].i0.value match {
-        | PVar(name) ->
-          !entryEnv = this.setVar(
-            entryEnv,
-            name.value,
-            this.evalExpr(callerEnv, args[i]),
-          )
-        | _ -> void
+        this.evalOperand(callerEnv, args[i], interproc) match {
+        // A pending/non-returning call in argument position makes the callee
+        // entry unreachable
+        | None() -> return CPEBot()
+        | Some(v) ->
+          params[i].i0.value match {
+          | PVar(name) -> !entryEnv = this.setVar(entryEnv, name.value, v)
+          | _ -> void
+          }
         }
       };
       CPEEnv(entryEnv, CPVUndefined())
@@ -428,7 +437,17 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   // result cannot be pinned to a single constant. Nested assignments evaluate to
   // `Top` (see `evalBinop`), which poisons any enclosing constant evaluation so
   // a later read of the written variable never gets a stale value.
-  private fun evalExpr(env: SortedMap<String, CPVal>, e: Expr): CPVal {
+  //
+  // A call/`new` (at any depth) is resolved through `interproc`; a callee that
+  // does not return here yet yields `CPVBot`, which is strict — it propagates
+  // through every combinator so the whole enclosing expression is `Bot`. This is
+  // what keeps the fixpoint monotone as callee summaries grow from bottom (see
+  // `evalOperand`, which turns a `Bot` result into an unreachable point).
+  private fun evalExpr(
+    env: SortedMap<String, CPVal>,
+    e: Expr,
+    interproc: (Callsite, CPEnv) -> CPEnv,
+  ): CPVal {
     e.value match {
     | Number(s) ->
       // Number literals are stored in canonical `String(Number(x))` form, which
@@ -443,29 +462,46 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     | Var(Name(_, "null")) -> CPVNull()
     | Var(Name(_, "undefined")) -> CPVUndefined()
     | Var(name) -> this.lookupVar(env, name.value)
-    | Unop(op, e1) -> this.evalUnop(op, this.evalExpr(env, e1))
-    | Binop(op, e1, e2) -> this.evalBinop(env, op, e1, e2)
+    | call @ Call _ ->
+      interproc(CSCall(call, e.pos), CPEEnv(env, CPVUndefined())) match {
+      | CPEBot() -> CPVBot()
+      | CPEEnv(_callee_env, ret) -> ret
+      }
+    | ctor @ New _ ->
+      // A constructed object is not a tracked constant, but the call must still
+      // be resolved so a pending/non-returning constructor propagates as `Bot`.
+      interproc(CSNew(ctor, e.pos), CPEEnv(env, CPVUndefined())) match {
+      | CPEBot() -> CPVBot()
+      | CPEEnv(_, _) -> CPVTop()
+      }
+    | Unop(op, e1) -> this.evalUnop(op, this.evalExpr(env, e1, interproc))
+    | Binop(op, e1, e2) -> this.evalBinop(env, op, e1, e2, interproc)
     | EIf(cond, thenE, elseE) ->
-      this.truthiness(this.evalExpr(env, cond)) match {
-      | Some(true) -> this.evalExpr(env, thenE)
-      | Some(false) -> this.evalExpr(env, elseE)
-      | None() -> CPVTop()
+      this.evalExpr(env, cond, interproc) match {
+      | CPVBot() -> CPVBot()
+      | c ->
+        this.truthiness(c) match {
+        | Some(true) -> this.evalExpr(env, thenE, interproc)
+        | Some(false) -> this.evalExpr(env, elseE, interproc)
+        | None() -> CPVTop()
+        }
       }
     | As(e1, _)
     | AsConst(e1)
     | Satisfies(e1, _) ->
       // Type-only wrappers: identical runtime value.
-      this.evalExpr(env, e1)
+      this.evalExpr(env, e1, interproc)
     | _ ->
-      // Any other form (calls, `new`, property access, object/array/template
-      // literals, ...) is not a tracked constant. `Top` over-approximates every
-      // possible runtime value, so this default is sound for any present or
-      // future expression form.
+      // Any other form (property access, object/array/template literals, ...) is
+      // not a tracked constant. `Top` over-approximates every possible runtime
+      // value, so this default is sound for any present or future expression
+      // form. It cannot contain an unresolved call, so `Bot` never hides here.
       CPVTop()
     }
   }
 
   private fun evalUnop(op: UnaryOperator, v: CPVal): CPVal {
+    if (v is CPVBot()) return CPVBot(); // strict: propagate a pending operand
     op match {
     | UOExclamationMark() ->
       this.truthiness(v) match {
@@ -492,30 +528,44 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     op: BinaryOperator,
     e1: Expr,
     e2: Expr,
+    interproc: (Callsite, CPEnv) -> CPEnv,
   ): CPVal {
     op match {
+    // Short-circuit operators evaluate the left operand first. A pending left
+    // (`Bot`) makes the whole expression `Bot`; when the left is only unknown
+    // (`None`/`Top`) the result may come from either operand, so it stays `Top`
+    // even if the right would be `Bot` — the point is not necessarily dead.
     | BOLogicalAnd() ->
-      l = this.evalExpr(env, e1);
-      this.truthiness(l) match {
-      | Some(false) ->
-        l // short-circuits to the (falsy) left value
-      | Some(true) -> this.evalExpr(env, e2)
-      | None() -> CPVTop()
+      l = this.evalExpr(env, e1, interproc);
+      l match {
+      | CPVBot() -> CPVBot()
+      | _ ->
+        this.truthiness(l) match {
+        | Some(false) ->
+          l // short-circuits to the (falsy) left value
+        | Some(true) -> this.evalExpr(env, e2, interproc)
+        | None() -> CPVTop()
+        }
       }
     | BOLogicalOr() ->
-      l = this.evalExpr(env, e1);
-      this.truthiness(l) match {
-      | Some(true) ->
-        l // short-circuits to the (truthy) left value
-      | Some(false) -> this.evalExpr(env, e2)
-      | None() -> CPVTop()
+      l = this.evalExpr(env, e1, interproc);
+      l match {
+      | CPVBot() -> CPVBot()
+      | _ ->
+        this.truthiness(l) match {
+        | Some(true) ->
+          l // short-circuits to the (truthy) left value
+        | Some(false) -> this.evalExpr(env, e2, interproc)
+        | None() -> CPVTop()
+        }
       }
     | BONullishCoalescing() ->
-      l = this.evalExpr(env, e1);
+      l = this.evalExpr(env, e1, interproc);
       l match {
+      | CPVBot() -> CPVBot()
       | CPVNull()
       | CPVUndefined() ->
-        this.evalExpr(env, e2)
+        this.evalExpr(env, e2, interproc)
       | CPVTop() -> CPVTop()
       | other -> other
       }
@@ -524,8 +574,16 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
       // `Top` is conservative but sound in the presence of sub-expression assignments
       CPVTop()
     | _ ->
-      // Every remaining operator evaluates both operands unconditionally
-      this.evalStrictBinop(op, this.evalExpr(env, e1), this.evalExpr(env, e2))
+      // Every remaining operator evaluates both operands unconditionally, so a
+      // pending call in either makes the result `Bot`.
+      l = this.evalExpr(env, e1, interproc);
+      r = this.evalExpr(env, e2, interproc);
+      (l, r) match {
+      | (CPVBot(), _)
+      | (_, CPVBot()) ->
+        CPVBot()
+      | _ -> this.evalStrictBinop(op, l, r)
+      }
     }
   }
 

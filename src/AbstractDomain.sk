@@ -24,7 +24,7 @@ module SKJS;
 //
 // And w.r.t. interprocedural call/return semantics:
 //   - `call` abstracts the callee entry state given a caller state, callsite,
-//   - and formal parameters
+//     and formal parameters
 //   - `ret` abstracts the caller return state, given the callsite state and
 //     callee exit state
 //   - `callOpaque` over-approximatesthe semantics of a call to an opaque callee
@@ -55,6 +55,7 @@ trait AbstractDomain<S> {
     callerState: S,
     site: Callsite,
     params: Array<(Pattern, TType)>,
+    interproc: (Callsite, S) -> S,
   ): S;
   readonly fun callOpaque(callerState: S, site: Callsite): S;
   readonly fun ret(callerState: S, calleeState: S, site: Callsite): S;

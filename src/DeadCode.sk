@@ -66,6 +66,7 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
     s: Liveness,
     _site: Callsite,
     _params: Array<(Pattern, TType)>,
+    _interproc: (Callsite, Liveness) -> Liveness,
   ): Liveness {
     s
   }
