@@ -7,6 +7,11 @@ base class AccessKind uses XXHashable {
   | AKOptionalChain()
 }
 
+// A warning that `asConstExpr` found but did not emit. `asConstExpr` collects
+// these into a caller-supplied buffer so it never touches the diagnostic stream
+// itself; `asConstExprEmit` (its only emitting caller) flushes them.
+value class AsConstDiag(messages: Array<(PosRange, String)>, code: ErrorCode)
+
 // The stdlib gives SortedMap Hashable/Equality/Orderable but not XXHashable;
 // add it (when keys and values are XXHashable) so records that accumulate into
 // SortedMaps — e.g. ObjectSpreadState — can derive XXHashable. Folds over the
@@ -1718,7 +1723,7 @@ extension class TypeChecker {
           SKJSCode(9999),
         )
       };
-      this.asConstExpr(tcenv, e) match {
+      this.asConstExprEmit(tcenv, e) match {
       | Some(ty) -> return ty
       | None() -> void
       }
@@ -1782,7 +1787,7 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
+              value.flatMap(e -> this.asConstExprEmit(tcenv, e)) match {
               | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
               | Some(ty) -> ty
               }
@@ -3073,7 +3078,7 @@ extension class TypeChecker {
 
       TType::union(tcenv.subst, this, left, right)
     | AsConst(subExpr) ->
-      this.asConstExpr(tcenv, subExpr) match {
+      this.asConstExprEmit(tcenv, subExpr) match {
       | Some(ty) -> ty
       | None() ->
         subExpr.value match {
@@ -3179,8 +3184,18 @@ extension class TypeChecker {
    * constArrayLit) once None comes back here.
    *
    * Returns a full TType rather than a single SType only to spare the callers a
-   * `TType::single` wrapper. */
-  fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?TType {
+   * `TType::single` wrapper.
+   *
+   * Emits nothing: any warning it finds is appended to `diags` for the caller
+   * (asConstExprEmit) to emit, so the fold has no effect on the diagnostic
+   * stream and is safe to run on a speculative / discardable path. (The two
+   * `fatalError`s on an invalid `!`/`+` operand remain -- they abort the whole
+   * definition, so there is nothing left to discard.) */
+  fun asConstExpr(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    diags: mutable Vector<AsConstDiag>,
+  ): ?TType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
@@ -3189,16 +3204,18 @@ extension class TypeChecker {
       // truly redundant (an 'as const' on an array/object literal changes a
       // mutable value into a readonly one), which is a further reason not to
       // block on it.
-      tcenv.warning(
-        Array[(subExpr.pos, "This 'as const' is unnecessary")],
-        SKJSCode(2044),
+      diags.push(
+        AsConstDiag(
+          Array[(subExpr.pos, "This 'as const' is unnecessary")],
+          SKJSCode(2044),
+        ),
       );
-      this.asConstExpr(tcenv, subExpr)
+      this.asConstExpr(tcenv, subExpr, diags)
     | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
       Some(TType::single(TPrimUnit(TUndefined(), pos)))
     | Unop(UOExclamationMark(), subE) ->
-      this.asConstExpr(tcenv, subE).map(ty ->
+      this.asConstExpr(tcenv, subE, diags).map(ty ->
         ty.getSingleConstant() match {
         | Some(TPrimValue(TBool(), lits, _)) ->
           lits.flatMap(v -> v.singleElt()) match {
@@ -3206,12 +3223,14 @@ extension class TypeChecker {
             // Negating a boolean literal is redundant, not wrong: `!true` is a
             // valid, sound way to write `false`. So this is a warning (a
             // simplification hint), not a build-breaking error.
-            tcenv.warning(
-              Array[
-                (pos, "This constant expression could have been simplified"),
-                (subE.pos, `This has type '${lit.val}'`),
-              ],
-              SKJSCode(2060),
+            diags.push(
+              AsConstDiag(
+                Array[
+                  (pos, "This constant expression could have been simplified"),
+                  (subE.pos, `This has type '${lit.val}'`),
+                ],
+                SKJSCode(2060),
+              ),
             );
             res = lit.val match {
             | "true" -> "false"
@@ -3244,7 +3263,7 @@ extension class TypeChecker {
       )
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      this.asConstExpr(tcenv, subE).flatMap(ty ->
+      this.asConstExpr(tcenv, subE, diags).flatMap(ty ->
         ty.getSingleConstant() match {
         | Some(TPrimValue(k @ TNum(), valuesOpt, _))
         | Some(TPrimValue(k @ TBigInt(), valuesOpt, _)) ->
@@ -3289,6 +3308,16 @@ extension class TypeChecker {
     // accepts '+' on a bigint -- pre-existing, see issue #671).
     | _ -> this.directLiteralSType(e).map(TType::single)
     }
+  }
+
+  // The emitting entry point for asConstExpr: folds e and emits any warnings the
+  // fold produced. asConstExpr itself emits nothing, so calling it directly (as
+  // asConstExpr does when it recurses) never touches the diagnostic stream.
+  fun asConstExprEmit(tcenv: mutable TCEnv, e: Expr): ?TType {
+    diags = mutable Vector[];
+    ty = this.asConstExpr(tcenv, e, diags);
+    for (d in diags) tcenv.warning(d.messages, d.code);
+    ty
   }
 
   fun anonFunction(
