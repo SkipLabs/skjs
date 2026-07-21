@@ -496,7 +496,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **A private name needs an IdentifierStart after its `#`**: `#x` and `#a·b` are fine; `#1` and `#·x` are invalid (TS1127), as in tsc
 - **An identifier may not immediately follow a numeric literal** (sec 12.9.3): `2z`, `2é`, `1né` are syntax errors (TS1351), not two adjacent tokens
 - **Unicode escapes are supported**: an identifier character may be written as `\uXXXX` or `\u{...}`, and the name is the decoded text — `caf\u00e9` and `café` are one symbol. The escape must denote a character valid where it sits (`\u0031` cannot start a name but continues `a\u0031b` = `a1b`)
-- **Known gap (more permissive than tsc)**: reserved words are accepted as identifiers, in either spelling — `const if = 1` and `const \u0069f = 1` alike (#938)
+- **Reserved words may not name bindings or declarations**: a value binding (`const if`, a parameter `if`, destructuring), or a declaration name (function/class/enum/type-alias/type-parameter), in either spelling — `const if` and `const \u0069f` alike — is a syntax error (TS1359). The same word is an ordinary property name (`{ if: 1 }.if`, `enum E { if }`, `class C { static() {} }`). The always-reserved words plus the strict-mode set are covered; TypeScript's contextual keywords (`type`, `async`, `readonly`, …) are not reserved and may name things
+- **Known gaps**: `await` is not treated as reserved (it is only inside async code, which is not tracked); and import/export bindings and reference positions do not yet reject reserved words (#938)
 - **Verified by**: `tests/expect-error/unicode-identifiers.ts`, `tests/expect-error/identifier-escapes-prettier-ignore.ts`, `tests/Lexer.sk`, `tests/JSIdentifierChars.sk`
 
 ### 31. Enums (Value-Set Semantics)
