@@ -270,7 +270,7 @@ mutable class Scope{
     localNames = mutable Vector<String>[];
     this.snapshotInto(baselineId, acc, localNames);
     for (name in localNames) {
-      if (acc.containsKey(name)) acc.remove(name)
+      _ = acc.maybeRemove(name)
     };
     acc
   }
@@ -287,7 +287,13 @@ mutable class Scope{
       for (kv in this.locals.items()) {
         localNames.push(kv.i0)
       };
-      this.up.each(u -> u.snapshotInto(baselineId, acc, localNames))
+      this.up match {
+      // The baseline is the scope of the catcher this jump was routed to, so
+      // it is necessarily an ancestor; running out of parents without meeting
+      // it means the routing and the scope chain disagree.
+      | None() -> internal_error("jump snapshot baseline is not an ancestor")
+      | Some(u) -> u.snapshotInto(baselineId, acc, localNames)
+      }
     }
   }
 
