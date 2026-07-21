@@ -3219,7 +3219,10 @@ extension class TypeChecker {
         | Some(TPrimValue(TBool(), lits, _)) ->
           lits.flatMap(v -> v.singleElt()) match {
           | Some(lit) ->
-            tcenv.error(
+            // Negating a boolean literal is redundant, not wrong: `!true` is a
+            // valid, sound way to write `false`. So this is a warning (a
+            // simplification hint), not a build-breaking error.
+            tcenv.warning(
               Array[
                 (pos, "This constant expression could have been simplified"),
                 (subE.pos, `This has type '${lit.val}'`),
