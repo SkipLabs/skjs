@@ -105,15 +105,24 @@ extension class TypeChecker {
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
-      // A loop catches the `break`/`continue` inside its body, so they bind to
-      // it rather than an enclosing switch. Their jump state is not yet folded
-      // back (SkipLabs/skjs#910 for switches only, so far); registering the
-      // catcher only keeps the routing correct.
-      _ = tcenv.withJumpCatcher(true, () -> {
+      // The loop catches the `break`/`continue` inside its body — they bind to
+      // it, not to an enclosing switch — and its exits carry their edges: a
+      // jump leaves mid-body with the state at the jump, which the body's
+      // end-of-block state no longer holds.
+      catcher = tcenv.withJumpCatcher(true, () -> {
         loopBody = this.block(tcenv, block);
         tcenv.popScopeReplace(loopBody)
       });
+      // A `continue` runs the increment on its way back to the header, so its
+      // edges are folded in before the increment is checked; a `break` skips
+      // it, so its edges join after.
+      for (snap in catcher.continues) {
+        loopScope.uniteSnapshot(tcenv.subst, this, snap)
+      };
       _ = this.expr(tcenv, incr, false);
+      for (snap in catcher.breaks) {
+        loopScope.uniteSnapshot(tcenv.subst, this, snap)
+      };
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -158,12 +167,19 @@ extension class TypeChecker {
 
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
-      // See the `For` case: register a jump catcher so an inner `break` /
-      // `continue` binds here, not to an enclosing switch.
-      _ = tcenv.withJumpCatcher(true, () -> {
+      // See the `For` case: the loop catches its body's jumps and folds their
+      // edges into its exit. With no condition or increment to run on the way
+      // out, break and continue edges join at the same point.
+      catcher = tcenv.withJumpCatcher(true, () -> {
         loopBody = this.block(tcenv, block);
         tcenv.popScopeReplace(loopBody)
       });
+      for (snap in catcher.continues) {
+        loopScope.uniteSnapshot(tcenv.subst, this, snap)
+      };
+      for (snap in catcher.breaks) {
+        loopScope.uniteSnapshot(tcenv.subst, this, snap)
+      };
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -177,12 +193,20 @@ extension class TypeChecker {
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
-      // See the `For` case: register a jump catcher so an inner `break` /
-      // `continue` binds here, not to an enclosing switch.
-      _ = tcenv.withJumpCatcher(true, () -> {
+      // See the `For` case: the loop catches its body's jumps and folds their
+      // edges into its exit. A `continue` re-enters the header, whose
+      // condition turning false then leaves the loop with the edge's state, so
+      // both kinds of edge reach the code after and join at the same point.
+      catcher = tcenv.withJumpCatcher(true, () -> {
         loopBody = this.block(tcenv, block, Some((cond, true)));
         tcenv.popScopeReplace(loopBody)
       });
+      for (snap in catcher.continues) {
+        loopScope.uniteSnapshot(tcenv.subst, this, snap)
+      };
+      for (snap in catcher.breaks) {
+        loopScope.uniteSnapshot(tcenv.subst, this, snap)
+      };
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope)
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
