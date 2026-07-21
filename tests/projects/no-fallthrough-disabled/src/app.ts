@@ -38,3 +38,20 @@ export function unionIsAccepted(x: 1 | 2, log: (s: string) => void): void {
       break;
   }
 }
+
+// Allowing the fallthrough does not change what it does: `case 1`'s write is in
+// effect in the body it falls into, where `y` is `"b"` and not the `"a"` the
+// switch was entered with. Withholding the fallthrough diagnostic withholds
+// only that — never the typing that makes the fallthrough sound.
+export function fallthroughCarriesItsWrites(x: 1 | 2, a: "a", b: "b"): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      y = b;
+    case 2:
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const y2: "a" = y;
+      break;
+  }
+}

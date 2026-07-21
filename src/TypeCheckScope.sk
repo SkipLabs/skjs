@@ -209,6 +209,38 @@ mutable class Scope{
       .map(x -> NameRef(x.i0, x.i1))
   }
 
+  // Start this scope from what a sibling it can also be entered from left
+  // behind — a `switch` clause falling into the one this scope belongs to,
+  // whose statements have already run when that is how the body was reached.
+  //
+  // Either entry is possible, so a binding the sibling wrote starts as the
+  // union of the value it left and the parent's, which is what entering on
+  // this clause's own label gives it. Seeding rather than merging into the
+  // parent is what keeps this local: a clause that does not fall through
+  // leaves the parent untouched for the clauses after it.
+  //
+  // A seeded binding escapes this scope in turn, so a chain of clauses falling
+  // into one another accumulates: each is entered from every clause above it
+  // that can reach it.
+  mutable fun seedFallenInto(
+    subst: mutable Subst,
+    tenv: TEnv,
+    from: readonly Scope,
+  ): void {
+    if (from.up.fromSome().id != this.up.fromSome().id) {
+      internal_error("fallthrough scope is not a sibling")
+    };
+    for (nameRef in from.escapingRefs()) {
+      (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
+      this.!refs[nameRef.name] = LocalRef(
+        TType::union(subst, tenv, nameRef.ref.type, upRef.type),
+        upRef.declaredType,
+        upRef.isAnnotated,
+        nameRef.ref.isInitialized && upRef.isInitialized,
+      )
+    }
+  }
+
   // The value this scope left the outer binding `name` at, or None when the
   // scope does not touch it (so the binding keeps whatever the parent holds).
   readonly fun escapingRef(name: String): ?LocalRef {

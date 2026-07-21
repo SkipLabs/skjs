@@ -80,3 +80,77 @@ function nonEmptyClauseFallsThrough(x: 1 | 2, log: (s: string) => void): void {
       break;
   }
 }
+
+// A clause falls into the next by running its own statements first, so a write
+// it makes is already in effect in the clause fallen into: reaching this body
+// through `case 1` leaves `y` at `"b"`, not at the `"a"` the switch was entered
+// with.
+function fallthroughCarriesItsWrites(x: 1 | 2, a: "a", b: "b"): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      y = b;
+    case 2:
+      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      const y2: "a" = y;
+      break;
+  }
+}
+
+// Both entries are possible, so the body sees the union of what they leave
+// behind: `case 1`'s write, or the value the switch was entered with.
+function fallthroughWriteIsUnioned(x: 1 | 2, a: "a", b: "b"): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      y = b;
+    case 2:
+      const y3: "a" | "b" = y;
+      break;
+  }
+}
+
+// A clause that breaks does not fall into the next, so its write is not in
+// effect there: this body is reached only by matching its own label, with `y`
+// still at the `"a"` the switch was entered with.
+function breakingClauseDoesNotCarry(x: 1 | 2 | 3, a: "a", b: "b"): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      y = b;
+      break;
+    case 2:
+      const y4: "a" = y;
+      break;
+    case 3:
+      break;
+  }
+}
+
+// Only the clause fallen *into* is reached with the write in effect; a later
+// clause reached on its own label is not, so the write does not widen it.
+function laterClauseDoesNotSeeTheWrite(
+  x: 1 | 2 | 3,
+  a: "a",
+  b: "b",
+  log: (s: string) => void,
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  switch (x) {
+    case 1:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      y = b;
+    case 2:
+      log("two");
+      break;
+    case 3:
+      const y5: "a" = y;
+      break;
+  }
+}
