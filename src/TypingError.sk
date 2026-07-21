@@ -211,6 +211,14 @@ class SubtypingError(
 ) extends TypingError {
   // The expanded detail lines for this error, at the given detail level.
   //
+  // Rendered twice when it needs to be: the first pass reports which
+  // type-parameter names the message actually prints, and if one name stood
+  // for two different parameters the text reads as a tautology ("Type 'T' is
+  // not assignable to type 'T'"), so a second pass numbers the colliding
+  // names and a closing line says why. Each pass starts from the same saved
+  // state, so the second differs only by the suffixes. Verbose already prints
+  // qualified ids and needs neither.
+  //
   // Both the CLI and the test harness render through here. They must: an
   // error's user-visible text is defined by this function, and a harness that
   // rebuilt it would be free to validate annotations against text no user ever
@@ -219,8 +227,29 @@ class SubtypingError(
     context: mutable SKStore.Context,
     detail: STErrorDetail,
   ): Array<(PosRange, String)> {
-    subst = Subst::mcreateFromSaved(context, this.savedSubst);
-    this.stErr.toError(subst, this.tenv, detail).toArray()
+    e = this.stErr;
+    render = (names: mutable PpNames) -> {
+      passSubst = Subst::mcreateFromSaved(context, this.savedSubst);
+      passSubst.!ppNames = Some(names);
+      e.toError(passSubst, this.tenv, detail).toArray()
+    };
+    names = mutable PpNames{};
+    rendered = render(names);
+    // Suffixes only ever widen a name, and width is handled by re-layout, not
+    // by dropping content (depth is what elides, and a suffix adds none), so
+    // the second pass emits the same names as the first -- no need to guard
+    // against the note disagreeing with the text.
+    if (this.tenv.verbose || !names.assignOrdinals()) return rendered;
+    // Second pass, reusing the same sink now that its ordinals are set, so the
+    // shared names print with their suffixes. It starts from the same saved
+    // state, so it differs from the first only by those suffixes.
+    disambiguated = render(names);
+    notePos = if (rendered.isEmpty()) {
+      this.messages[0].i0
+    } else {
+      rendered[rendered.size() - 1].i0
+    };
+    disambiguated.concat(Array[(notePos, PpNames::collisionNote())])
   }
 
   fun toErrorMessage(

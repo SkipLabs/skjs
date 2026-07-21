@@ -116,8 +116,8 @@ function rejectMethodWrite(x: unknown): void {
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'Box#T'
-    // @skjs-expect-error-line3 is not assignable to type 'Box#T'
+    // @skjs-expect-error-line2 Type 'Box#T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T#1'
     x.v = y.v;
   }
 }
@@ -333,10 +333,10 @@ declare function sharedLen<T>(a: Array<T>, b: Array<T>): number;
 function rejectSharedArrayElement(u: unknown, w: unknown): number {
   if (u instanceof Array && w instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
-    // @skjs-expect-error-line2 Type 'Array#T'
-    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
-    // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <Array#T | Array#T>
-    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'Array#T' must be assignable to source parameter type 'Array#T'
+    // @skjs-expect-error-line2 Type 'Array#T#2'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T#1'
+    // @skjs-expect-error-line4 Consider adding explicit type arguments
+    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'Array#T#2' must be assignable to source parameter type 'Array#T#1'
     return sharedLen(u, w);
   }
   return 0;

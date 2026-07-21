@@ -17,6 +17,89 @@ value class Margin{
   str: String = "",
 }
 
+// Records the type-parameter names the printer actually emitted while
+// rendering one diagnostic, with the Id each name stood for.
+//
+// Two different Ids emitted under one name is what makes a message read as a
+// tautology ("Type 'T' is not assignable to type 'T'"): the qualified id that
+// would tell them apart is deliberately not user-visible (see tparamName).
+// Keying on what was PRINTED, rather than on a predicate over the type, is
+// what makes this reliable -- the printed string is produced after tvar
+// expansion and with constraints folded in, so a predicate evaluated on the
+// type before rendering is answering a question about a different object.
+mutable class PpNames{
+  private emitted: mutable Vector<(String, Id)> = mutable Vector[],
+  // Empty while collecting; assignOrdinals() fills it in, and only then does
+  // suffix() return anything.
+  private mutable ordinals: SortedMap<Id, Int> = SortedMap[],
+} {
+  mutable fun record(name: String, id: Id): void {
+    this.emitted.push((name, id))
+  }
+
+  // True when a name was emitted that has no spelling in source (see
+  // Id::isSynthetic), so a hint embedding this rendering as pastable code
+  // would be suggesting something the program cannot write.
+  readonly fun hasUnwritable(): Bool {
+    for (pair in this.emitted) {
+      if (pair.i1.isSynthetic()) return true
+    };
+    false
+  }
+
+  // Number the type parameters that printed under a shared name, so suffix()
+  // can tell them apart, and report whether any name needed it. No-op (and
+  // returns false) when every emitted name stood for one parameter.
+  //
+  // Ordered by Id, not by the order the names were emitted, so a parameter
+  // keeps its number across every message that disambiguates it: `x.v = y.v`
+  // and `y.v = x.v` name the same two parameters, and numbering by where they
+  // landed in the sentence would swap the labels between the two errors. The
+  // number stays small and gap-free either way -- what the Id contributes is
+  // the order, not the digits, whose own values are a per-file parse counter
+  // and would read as arbitrary (`T#7`, `T#11`).
+  mutable fun assignOrdinals(): Bool {
+    byName = mutable Map<String, mutable Vector<Id>>[];
+    for (pair in this.emitted) {
+      ids = byName.maybeGet(pair.i0) match {
+      | Some(v) -> v
+      | None() ->
+        v = mutable Vector<Id>[];
+        byName![pair.i0] = v;
+        v
+      };
+      if (!ids.contains(pair.i1)) ids.push(pair.i1)
+    };
+    assigned = false;
+    for (name => ids in byName) {
+      _ = name;
+      if (ids.size() > 1) {
+        !assigned = true;
+        for (i => id in ids.sorted()) {
+          this.!ordinals = this.ordinals.set(id, i + 1)
+        }
+      }
+    };
+    assigned
+  }
+
+  readonly fun suffix(id: Id): String {
+    this.ordinals.maybeGet(id) match {
+    | Some(n) -> `#${n}`
+    | None() -> ""
+    }
+  }
+
+  // The line explaining a disambiguated rendering. Says outright that the
+  // suffixes are display-only: `#` cannot appear in a type reference, so a
+  // pasted `T#1` fails at the parser rather than quietly meaning something
+  // else, but the reader should not have to discover that.
+  static fun collisionNote(): String {
+    "Two different types with this name exist, but they are unrelated; " +
+      "the '#' suffixes are display-only and cannot be written in source"
+  }
+}
+
 mutable base class TypePpState private {
   mutable cols: Int = 0,
   mutable buffer: List<String> = List[],
@@ -120,6 +203,10 @@ fun tupleShorthand(fields: TFields): ?(Array<TType>, Bool) {
 
 mutable class TypePp{
   compact: Bool,
+  // Where emitted type-parameter names are reported, when rendering a
+  // diagnostic. None on every other path, which makes the whole mechanism
+  // inert outside error rendering.
+  names: ?mutable PpNames = None(),
   // Mirrors --verbose: when true, internal-only details (synthetic index
   // name; see kSyntheticIndexName) are kept in the printed output for
   // debugging instead of being filtered out.
@@ -1017,12 +1104,24 @@ mutable class TypePp{
     name: String,
     id: Id,
   ): void {
+    // Recorded straight into the sink rather than through backtrackable state:
+    // branch() re-renders the same names on overflow, so an emission it rolls
+    // back is re-emitted, and a duplicate (name, id) is deduplicated by
+    // assignOrdinals -- so counting one is harmless and rolling it back buys
+    // nothing.
+    this.names.each(sink -> sink.record(name, id));
     // The qualified id (name:counter:file-hash) disambiguates same-named type
     // parameters but is not user-readable; like synthetic indexes above, it
     // must not appear in user-visible printed types and is kept under
     // --verbose for debugging.
     if (!this.verbose) {
       this.out(level, margin, name);
+      // Marked apart only on a second pass, once the first established that
+      // this name stood for more than one parameter in this message.
+      this.names.each(sink -> {
+        suffix = sink.suffix(id);
+        if (suffix != "") this.out(level, margin, suffix)
+      });
       return void
     };
     idStr = id.toString();
@@ -1068,8 +1167,26 @@ fun prettyPrint(
     compact,
     verbose => tenv.verbose,
     applyType => ty -> ty.expandTVarsForPp(subst, tenv),
+    names => subst.ppNames,
   };
   pp.render(f)
+}
+
+// Renders a type for embedding in a hint as code the user could paste.
+// None when the rendering emitted a name with no spelling in source (a
+// checker-minted type parameter): such a hint cannot be followed, so its
+// caller should say nothing rather than something unusable.
+fun prettyPrintPastableType(
+  compact: Bool,
+  ty: TType,
+  subst: mutable Subst,
+  tenv: TEnv,
+): ?String {
+  probe = mutable PpNames{};
+  !subst = subst.clone();
+  subst.!ppNames = Some(probe);
+  rendered = prettyPrintType(compact, ty, subst, tenv);
+  if (probe.hasUnwritable()) None() else Some(rendered)
 }
 
 fun prettyPrintType(

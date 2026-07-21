@@ -1343,31 +1343,55 @@ extension class TType {
         sealedType = rawSealed.expandTVarsForPp(clonedSubst, tenv);
         expandedU1 = u1.expandTVarsForPp(clonedSubst, tenv);
         widerType = TType::union(clonedSubst, tenv, sealedType, expandedU1);
-        // The hints below embed the type as code the user could paste into
-        // an annotation, not as prose, so it is deliberately NOT wrapped in
-        // quoteRenderedType.
-        widerStr = widerType.toString(clonedSubst, tenv);
+        // The example below embeds the type as code the user could paste
+        // into an annotation, so it is deliberately NOT wrapped in
+        // quoteRenderedType. It comes back None when the type has a spelling
+        // the program cannot write -- a checker-minted parameter (issue
+        // #919): the advice still holds, but the example would name something
+        // unwritable, so it is dropped and the advice given on its own.
+        widerExample = prettyPrintPastableType(
+          false,
+          widerType,
+          clonedSubst,
+          tenv,
+        );
+        // `${advice}, e.g., ${example}` when the example is writable, else the
+        // advice alone.
+        withExample = (advice, example) ->
+          example match {
+          | Some(ex) -> `${advice}, e.g., ${ex}`
+          | None() -> advice
+          };
         clonedSubst.getOrigin(tvar) match {
         | Some(FromGenericInst(pos, allTVars))
         | Some(FromGenericCall(pos, allTVars)) ->
+          // The example lists every argument, so it is writable only when they
+          // all are -- not just the one that failed.
           targs = allTVars.map(tv -> {
             if (tv.id == tvar.id) {
-              widerStr
+              widerExample
             } else {
               clonedSubst.peekRaw(tv) match {
               | Some(ty) ->
-                ty
-                  .expandTVarsForPp(clonedSubst, tenv)
-                  .toString(clonedSubst, tenv)
-              | None() -> "unknown"
+                prettyPrintPastableType(
+                  false,
+                  ty.expandTVarsForPp(clonedSubst, tenv),
+                  clonedSubst,
+                  tenv,
+                )
+              | None() -> Some("unknown")
               }
             }
           });
-          targsStr = targs.join(", ");
+          example = if (targs.all(t -> t.isSome())) {
+            Some(`<${targs.map(t -> t.fromSome()).join(", ")}>`)
+          } else {
+            None()
+          };
           !hints = List.Cons(
             (
               pos,
-              `Consider adding explicit type arguments, e.g., <${targsStr}>`,
+              withExample("Consider adding explicit type arguments", example),
             ),
             hints,
           )
@@ -1376,7 +1400,10 @@ extension class TType {
           !hints = List.Cons(
             (
               pos,
-              `Consider adding a type annotation, e.g., Array<${widerStr}>`,
+              withExample(
+                "Consider adding a type annotation",
+                widerExample.map(str -> `Array<${str}>`),
+              ),
             ),
             hints,
           )
@@ -1385,7 +1412,10 @@ extension class TType {
           !hints = List.Cons(
             (
               pos,
-              `Consider adding a return type annotation, e.g., ${widerStr}`,
+              withExample(
+                "Consider adding a return type annotation",
+                widerExample,
+              ),
             ),
             hints,
           )
@@ -1396,7 +1426,10 @@ extension class TType {
         | Some(FromArrayElement(pos))
         | Some(FromSyntheticIndex(pos)) ->
           !hints = List.Cons(
-            (pos, `Consider adding a type annotation, e.g., ${widerStr}`),
+            (
+              pos,
+              withExample("Consider adding a type annotation", widerExample),
+            ),
             hints,
           )
         | None() -> void
