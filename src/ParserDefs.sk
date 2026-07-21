@@ -10,6 +10,21 @@ extension class Parser {
   /***************************************************************************/
 
   // <name> ::= <string>
+  // getName plus the reserved-word check for a binding or declaration name: a
+  // reserved word is an ordinary property name but may not name a binding.
+  mutable fun bindingName(): Name {
+    this.checkNotReserved(this.getName())
+  }
+
+  // Rejects a name that is a reserved word. Returns it, so it can wrap a name
+  // already read as a binding (a destructuring shorthand, say).
+  readonly fun checkNotReserved(name: Name): Name {
+    if (isReservedWord(name.value)) {
+      this.error(EPRange(name.pos), ReservedWordAsName(name.value))
+    };
+    name
+  }
+
   mutable fun getName(): Name {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))

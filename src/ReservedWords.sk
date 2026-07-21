@@ -1,0 +1,71 @@
+/***************************************************************************/
+/* ECMAScript reserved words (ECMA-262 sec 12.7.2).                        */
+/***************************************************************************/
+
+module SKJS;
+
+// A reserved word may not be a BindingIdentifier or an IdentifierReference, but
+// it is a perfectly good property name -- `{ if: 1 }.if` is valid -- so this is
+// consulted only at binding and declaration positions, never where an
+// IdentifierName is read.
+//
+// The set is the always-reserved words plus the ones reserved in strict mode,
+// since TypeScript modules are always strict. TypeScript's contextual keywords
+// (`type`, `async`, `readonly`, `of`, `as`, ...) are NOT reserved and may name
+// things; `await` is reserved only inside async code, which is not tracked
+// here, so it is left out to match tsc's default.
+const reservedWords: SortedSet<String> = SortedSet[
+  // Always reserved.
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  // Reserved in strict mode.
+  "implements",
+  "interface",
+  "let",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "static",
+  "yield",
+];
+
+fun isReservedWord(s: String): Bool {
+  reservedWords.contains(s)
+}
+
+module end;
