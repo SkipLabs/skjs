@@ -4,8 +4,8 @@ extension class TypeChecker {
   fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
     tcenv.!stmtTerminations[st.pos] = StmtTermination::stmt(tcenv, st);
     st.value match {
-    | Break() -> void
-    | Continue() -> void
+    | Break() -> tcenv.recordBreak()
+    | Continue() -> tcenv.recordContinue()
     | StmtEmpty() -> void
     | StmtExpr(e) ->
       ty = this.expr(tcenv, e, false);
@@ -105,7 +105,13 @@ extension class TypeChecker {
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
+      // A loop catches the `break`/`continue` inside its body, so they bind to
+      // it rather than an enclosing switch. Their jump state is not yet folded
+      // back (SkipLabs/skjs#910 for switches only, so far); registering the
+      // catcher only keeps the routing correct.
+      tcenv.enterJumpCatcher(true);
       loopBody = this.block(tcenv, block);
+      _ = tcenv.exitJumpCatcher();
       tcenv.popScopeReplace(loopBody);
       _ = this.expr(tcenv, incr, false);
       tcenv.!scope = initScope;
@@ -152,7 +158,11 @@ extension class TypeChecker {
 
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
+      // See the `For` case: register a jump catcher so an inner `break` /
+      // `continue` binds here, not to an enclosing switch.
+      tcenv.enterJumpCatcher(true);
       loopBody = this.block(tcenv, block);
+      _ = tcenv.exitJumpCatcher();
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
@@ -167,7 +177,11 @@ extension class TypeChecker {
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
+      // See the `For` case: register a jump catcher so an inner `break` /
+      // `continue` binds here, not to an enclosing switch.
+      tcenv.enterJumpCatcher(true);
       loopBody = this.block(tcenv, block, Some((cond, true)));
+      _ = tcenv.exitJumpCatcher();
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope)
@@ -342,6 +356,11 @@ extension class TypeChecker {
       | SwitchBranch(Default(), _, _) -> void
       }
     };
+    // Catch the `break` edges out of this switch: a mid-clause break leaves with
+    // a state the clause's end-of-block scope no longer holds, so it is recorded
+    // as a snapshot and unioned into the post-switch merge below, rather than
+    // read off the end-of-block scope.
+    tcenv.enterJumpCatcher(false);
     for (i in Range(0, branches.size())) {
       block = branches[i].block;
       // How the block ends answers both questions asked of it below: whether it
@@ -504,7 +523,12 @@ extension class TypeChecker {
       };
       scopeBranch = this.block(tcenv, block, cond, fallenFrom);
       isLastBranch = i == branches.size() - 1;
-      if (blockTerm.mayBreak || (isLastBranch && blockTerm.mayFallthrough)) {
+      // Only a clause that reaches the code after the switch by falling off the
+      // end — the last one, completing normally — contributes its end-of-block
+      // scope. A clause that breaks reaches there too, but by a jump whose state
+      // the catcher recorded; reading its end-of-block scope instead would miss
+      // a mid-clause break and double-count the final one.
+      if (isLastBranch && blockTerm.mayFallthrough) {
         scopes.push(scopeBranch)
       };
       // This clause falls into the next exactly when its block can complete
@@ -560,6 +584,11 @@ extension class TypeChecker {
           ESLintCode("@typescript-eslint/switch-exhaustiveness-check"),
         )
       }
+    };
+    // Every `break` out of the switch is one more path to the code after it,
+    // carrying the state recorded at the jump; fold each in as a sibling scope.
+    for (snap in tcenv.exitJumpCatcher().breaks) {
+      scopes.push(tcenv.snapshotScope(snap))
     };
     // Each remaining branch is a path out of the switch, so they must all be
     // merged at once: folding the two-scope `merge` pairwise against a fixed

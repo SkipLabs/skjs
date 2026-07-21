@@ -20,10 +20,9 @@ function midBreakEdgeCounts(x: number, c: boolean, a: "a", b: "b"): void {
       y = b;
       break;
   }
-  // Pins today's behaviour, which is unsound: the `break` under `if (c)` leaves
-  // `y` at "a", so `z: "b"` can be reached with `y === "a"`, yet this is
-  // accepted — the break edge's state is not carried to the code after the
-  // switch. The next commit rejects it.
+  // The `break` under `if (c)` leaves `y` at "a", so `z: "b"` can be reached
+  // with `y === "a"` and must be rejected.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "b" = y;
 }
 
