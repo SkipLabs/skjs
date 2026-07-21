@@ -245,26 +245,18 @@ mutable class TCEnv private {
 
   /* Jump-edge catchers for `break` / `continue`; see `JumpCatcher`. */
 
-  private mutable fun enterJumpCatcher(catchesContinue: Bool): void {
+  // Run `f` with a catcher registered, and return the catcher with the edges
+  // it caught. Registering and unregistering live in the same function, so a
+  // caller cannot leave a catcher on the stack.
+  mutable fun withJumpCatcher(
+    catchesContinue: Bool,
+    f: () -> void,
+  ): mutable JumpCatcher {
     this.jumpCatchers.push(
       mutable JumpCatcher{catchesContinue, baselineScopeId => this.scope.id},
-    )
-  }
-
-  private mutable fun exitJumpCatcher(): mutable JumpCatcher {
+    );
+    f();
     this.jumpCatchers.pop()
-  }
-
-  // Run `f` with a catcher registered, and return its result along with the
-  // catcher and the edges it caught. Pairs the enter with the exit so a caller
-  // cannot leave a catcher on the stack.
-  mutable fun withJumpCatcher<T>(
-    catchesContinue: Bool,
-    f: () -> T,
-  ): (T, mutable JumpCatcher) {
-    this.enterJumpCatcher(catchesContinue);
-    res = f();
-    (res, this.exitJumpCatcher())
   }
 
   // Record the current state at a `break`, against the innermost catcher (the

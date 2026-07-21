@@ -109,10 +109,10 @@ extension class TypeChecker {
       // it rather than an enclosing switch. Their jump state is not yet folded
       // back (SkipLabs/skjs#910 for switches only, so far); registering the
       // catcher only keeps the routing correct.
-      (loopBody, _catcher) = tcenv.withJumpCatcher(true, () ->
-        this.block(tcenv, block)
-      );
-      tcenv.popScopeReplace(loopBody);
+      _ = tcenv.withJumpCatcher(true, () -> {
+        loopBody = this.block(tcenv, block);
+        tcenv.popScopeReplace(loopBody)
+      });
       _ = this.expr(tcenv, incr, false);
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
@@ -160,10 +160,10 @@ extension class TypeChecker {
       tcenv.!scope = loopScope;
       // See the `For` case: register a jump catcher so an inner `break` /
       // `continue` binds here, not to an enclosing switch.
-      (loopBody, _catcher) = tcenv.withJumpCatcher(true, () ->
-        this.block(tcenv, block)
-      );
-      tcenv.popScopeReplace(loopBody);
+      _ = tcenv.withJumpCatcher(true, () -> {
+        loopBody = this.block(tcenv, block);
+        tcenv.popScopeReplace(loopBody)
+      });
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -179,10 +179,10 @@ extension class TypeChecker {
       this.checkBool(tcenv, cond);
       // See the `For` case: register a jump catcher so an inner `break` /
       // `continue` binds here, not to an enclosing switch.
-      (loopBody, _catcher) = tcenv.withJumpCatcher(true, () ->
-        this.block(tcenv, block, Some((cond, true)))
-      );
-      tcenv.popScopeReplace(loopBody);
+      _ = tcenv.withJumpCatcher(true, () -> {
+        loopBody = this.block(tcenv, block, Some((cond, true)));
+        tcenv.popScopeReplace(loopBody)
+      });
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope)
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
@@ -334,216 +334,212 @@ extension class TypeChecker {
       | SwitchBranch(Default(), _, _) -> void
       }
     };
+    // Two `default` positions, which differ only in a switch that has more
+    // than one (already an error): the first names the clause a duplicate
+    // conflicts with, and answers whether the switch has a `default` at all;
+    // the last is the one reported unreachable below.
+    seenDefault: ?PosRange = None();
+    lastDefaultPos: ?PosRange = None();
+    // A block is reached both by matching its own label and by falling
+    // through every clause above it that runs on into it, so it is entered
+    // with the union of what each of those entries leaves. Its own label
+    // narrows the scrutinee to that label (the `cond` below); the fallthrough
+    // entries come through `fallenFrom` — the falling clause's whole scope,
+    // unioned into this block after its own narrowing (see `block`'s
+    // parameter of the same name).
+    //
+    // Carrying the scope, not a disjunction of labels, is what keeps this
+    // right when a clause reassigns: the fallthrough entry brings whatever
+    // the falling clause actually left the scrutinee at — its reassigned
+    // value, not the label it matched — and every other write it made along
+    // with it. A clause falls into the next exactly when its block can
+    // complete normally, which an empty one always does and one with
+    // statements does unless it breaks or returns; `fallenFrom` is set to its
+    // scope then, and accumulates, since that scope was itself entered from
+    // the clauses above it.
+    fallenFrom: ?readonly Scope = None();
     // Catch the `break` edges out of this switch: a mid-clause break leaves with
     // a state the clause's end-of-block scope no longer holds, so it is recorded
     // as a snapshot and unioned into the post-switch merge below, rather than
     // read off the end-of-block scope.
-    ((seenDefault, lastDefaultPos), catcher) = tcenv.withJumpCatcher(
-      false,
-      () -> {
-        // Two `default` positions, which differ only in a switch that has more
-        // than one (already an error): the first names the clause a duplicate
-        // conflicts with, and answers whether the switch has a `default` at all;
-        // the last is the one reported unreachable below.
-        seenDefault: ?PosRange = None();
-        lastDefaultPos: ?PosRange = None();
-        // A block is reached both by matching its own label and by falling
-        // through every clause above it that runs on into it, so it is entered
-        // with the union of what each of those entries leaves. Its own label
-        // narrows the scrutinee to that label (the `cond` below); the fallthrough
-        // entries come through `fallenFrom` — the falling clause's whole scope,
-        // unioned into this block after its own narrowing (see `block`'s
-        // parameter of the same name).
+    catcher = tcenv.withJumpCatcher(false, () -> {
+      for (i in Range(0, branches.size())) {
+        block = branches[i].block;
+        // How the block ends answers both questions asked of it below: whether it
+        // falls through into the next clause, and whether it is a path out of the
+        // switch at all.
+        blockTerm = StmtTermination::block(tcenv, block);
+        // Falling *through* means running one clause's statements and then
+        // running the next clause's too. An empty clause has none to run — it is
+        // how several labels are given one body — and the last clause has nothing
+        // to fall into, so neither is a fallthrough. tsc's
+        // `noFallthroughCasesInSwitch` exempts both for the same reason.
         //
-        // Carrying the scope, not a disjunction of labels, is what keeps this
-        // right when a clause reassigns: the fallthrough entry brings whatever
-        // the falling clause actually left the scrutinee at — its reassigned
-        // value, not the label it matched — and every other write it made along
-        // with it. A clause falls into the next exactly when its block can
-        // complete normally, which an empty one always does and one with
-        // statements does unless it breaks or returns; `fallenFrom` is set to its
-        // scope then, and accumulates, since that scope was itself entered from
-        // the clauses above it.
-        fallenFrom: ?readonly Scope = None();
-        for (i in Range(0, branches.size())) {
-          block = branches[i].block;
-          // How the block ends answers both questions asked of it below: whether it
-          // falls through into the next clause, and whether it is a path out of the
-          // switch at all.
-          blockTerm = StmtTermination::block(tcenv, block);
-          // Falling *through* means running one clause's statements and then
-          // running the next clause's too. An empty clause has none to run — it is
-          // how several labels are given one body — and the last clause has nothing
-          // to fall into, so neither is a fallthrough. tsc's
-          // `noFallthroughCasesInSwitch` exempts both for the same reason.
-          //
-          // What kind of clause it is does not enter into it: a `default` runs its
-          // statements and falls into the clause after it exactly as a `case` does,
-          // and tsc reports it the same way.
-          //
-          // Whether the rest is an error is that option's to say. SKJS turns it on
-          // where tsc leaves it off, but a switch that asks for the fallthrough
-          // gets it: only the diagnostic is withheld, never the typing of the
-          // clause fallen into, which is what keeps the fallthrough sound.
-          if (
-            this.noFallthroughCasesInSwitch &&
-            blockTerm.mayFallthrough &&
-            block.size() != 0 &&
-            i != branches.size() - 1
-          ) {
-            tcenv.error(
-              Array[
-                (
-                  block[block.size() - 1].pos,
-                  "Fallthrough case in switch; add a 'break'",
-                ),
-              ],
-              TSCode(7029),
-            )
+        // What kind of clause it is does not enter into it: a `default` runs its
+        // statements and falls into the clause after it exactly as a `case` does,
+        // and tsc reports it the same way.
+        //
+        // Whether the rest is an error is that option's to say. SKJS turns it on
+        // where tsc leaves it off, but a switch that asks for the fallthrough
+        // gets it: only the diagnostic is withheld, never the typing of the
+        // clause fallen into, which is what keeps the fallthrough sound.
+        if (
+          this.noFallthroughCasesInSwitch &&
+          blockTerm.mayFallthrough &&
+          block.size() != 0 &&
+          i != branches.size() - 1
+        ) {
+          tcenv.error(
+            Array[
+              (
+                block[block.size() - 1].pos,
+                "Fallthrough case in switch; add a 'break'",
+              ),
+            ],
+            TSCode(7029),
+          )
+        };
+        cond = branches[i] match {
+        | SwitchBranch(Case(v), _, pos) ->
+          // Typed with the other labels above, along with everything that reads a
+          // label's type: this and the narrowing of the block below.
+          condVType = this.lookupExprType(tcenv, v);
+          // A switch case must be a plain value, so that case-evaluation order
+          // and `===` narrowing are sound. Enum member reads (`E.A`, `E["A"]`,
+          // `E[0]` on an unshadowed enum name) are plain data-property reads and
+          // exempt — a bare name never throws and enum members are not accessors;
+          // every other case must be provably non-throwing. This lives here
+          // rather than in the Termination pass because the exemption needs name
+          // resolution, which that pass has no defMap for.
+          enumMemberBase = v.value match {
+          | Dot(NormalDot(), Expr(_, Var(b)), _) -> Some(b)
+          | Get(
+            Expr(_, Var(b)),
+            key,
+          ) if (this.directLiteralSType(key) is Some _) ->
+            Some(b)
+          | _ -> None()
           };
-          cond = branches[i] match {
-          | SwitchBranch(Case(v), _, pos) ->
-            // Typed with the other labels above, along with everything that reads a
-            // label's type: this and the narrowing of the block below.
-            condVType = this.lookupExprType(tcenv, v);
-            // A switch case must be a plain value, so that case-evaluation order
-            // and `===` narrowing are sound. Enum member reads (`E.A`, `E["A"]`,
-            // `E[0]` on an unshadowed enum name) are plain data-property reads and
-            // exempt — a bare name never throws and enum members are not accessors;
-            // every other case must be provably non-throwing. This lives here
-            // rather than in the Termination pass because the exemption needs name
-            // resolution, which that pass has no defMap for.
-            enumMemberBase = v.value match {
-            | Dot(NormalDot(), Expr(_, Var(b)), _) -> Some(b)
-            | Get(
-              Expr(_, Var(b)),
-              key,
-            ) if (this.directLiteralSType(key) is Some _) ->
-              Some(b)
-            | _ -> None()
-            };
-            isEnumMember = enumMemberBase match {
-            | Some(b) ->
-              tcenv.scope.maybeGet(b) is None() &&
-                this.defMap.getAll(tcenv, b).any(d -> d is Enum _)
-            | None() -> false
-            };
-            if (!isEnumMember) {
-              StmtTermination::expr(v).mayNonThrough().each(term ->
-                tcenv.error(
-                  Array[
-                    (
-                      v.pos,
-                      `A switch case expression must be a plain value, but this one may ${term}.`,
-                    ),
-                  ],
-                  SKJSCode(2055),
-                )
-              )
-            };
-            if (casesKnown) {
-              condVType
-                .getSTypes(tcenv.subst, this, Covariant())
-                .flatMap(stypes ~> stypes.staticValue()) match {
-              | Some(staticValue) ->
-                if (cases.containsKey(staticValue)) {
-                  cases.remove(staticValue);
-                  handledBy![staticValue] = pos
-                } else {
-                  handledBy.maybeGet(staticValue) match {
-                  | Some(earlierPos) ->
-                    tcenv.warning(
-                      Array[
-                        (
-                          pos,
-                          "This case is unreachable: its value is already handled by an earlier case",
-                        ),
-                        (earlierPos, "The value is first handled here"),
-                      ],
-                      SKJSCode(2014),
-                    )
-                  | None() ->
-                    tcenv.warning(
-                      Array[
-                        (
-                          pos,
-                          "This case is unreachable: its value is not in the switched type",
-                        ),
-                      ],
-                      SKJSCode(2014),
-                    )
-                  }
-                }
-              | None() -> void
-              }
-            };
-            // The own-label entry narrows the scrutinee to this label; the entries
-            // by fallthrough are unioned in through `fallenFrom`, each already
-            // carrying whatever the falling clause left the scrutinee at.
-            eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-            Some((eq, true))
-          | SwitchBranch(Default(), _, pos) ->
-            // A switch may contain at most one `default` clause; a second one is a
-            // JavaScript SyntaxError (tsc reports TS1113). Reject every `default`
-            // after the first.
-            seenDefault match {
-            | Some(firstDefaultPos) ->
+          isEnumMember = enumMemberBase match {
+          | Some(b) ->
+            tcenv.scope.maybeGet(b) is None() &&
+              this.defMap.getAll(tcenv, b).any(d -> d is Enum _)
+          | None() -> false
+          };
+          if (!isEnumMember) {
+            StmtTermination::expr(v).mayNonThrough().each(term ->
               tcenv.error(
                 Array[
                   (
-                    pos,
-                    "A 'default' clause cannot appear more than once in a 'switch' statement",
-                  ),
-                  (firstDefaultPos, "First 'default' clause was here"),
-                ],
-                TSCode(1113),
-              )
-            | None() -> !seenDefault = Some(pos)
-            };
-            !lastDefaultPos = Some(pos);
-            if (i != branches.size() - 1) {
-              // A `default` clause that is not last is a lint concern, not a
-              // soundness error: at runtime `default` is only taken when no `case`
-              // matches, so its position never changes which branch runs. tsc does
-              // not reject it.
-              tcenv.warning(
-                Array[
-                  (
-                    pos,
-                    "The 'default' clause should be the last branch of a switch",
+                    v.pos,
+                    `A switch case expression must be a plain value, but this one may ${term}.`,
                   ),
                 ],
-                ESLintCode("default-case-last"),
+                SKJSCode(2055),
               )
-            };
-            // The `default`'s own entry is every value no `case` matched; the
-            // entries by fallthrough are unioned in through `fallenFrom`, as for a
-            // `case`.
-            noCaseMatched match {
-            // No case to rule out: the `default` runs whatever the scrutinee is.
-            | None() -> None()
-            | Some(noCase) -> Some((noCase, true))
+            )
+          };
+          if (casesKnown) {
+            condVType
+              .getSTypes(tcenv.subst, this, Covariant())
+              .flatMap(stypes ~> stypes.staticValue()) match {
+            | Some(staticValue) ->
+              if (cases.containsKey(staticValue)) {
+                cases.remove(staticValue);
+                handledBy![staticValue] = pos
+              } else {
+                handledBy.maybeGet(staticValue) match {
+                | Some(earlierPos) ->
+                  tcenv.warning(
+                    Array[
+                      (
+                        pos,
+                        "This case is unreachable: its value is already handled by an earlier case",
+                      ),
+                      (earlierPos, "The value is first handled here"),
+                    ],
+                    SKJSCode(2014),
+                  )
+                | None() ->
+                  tcenv.warning(
+                    Array[
+                      (
+                        pos,
+                        "This case is unreachable: its value is not in the switched type",
+                      ),
+                    ],
+                    SKJSCode(2014),
+                  )
+                }
+              }
+            | None() -> void
             }
           };
-          scopeBranch = this.block(tcenv, block, cond, fallenFrom);
-          isLastBranch = i == branches.size() - 1;
-          // Only a clause that reaches the code after the switch by falling off the
-          // end — the last one, completing normally — contributes its end-of-block
-          // scope. A clause that breaks reaches there too, but by a jump whose state
-          // the catcher recorded; reading its end-of-block scope instead would miss
-          // a mid-clause break and double-count the final one.
-          if (isLastBranch && blockTerm.mayFallthrough) {
-            scopes.push(scopeBranch)
+          // The own-label entry narrows the scrutinee to this label; the entries
+          // by fallthrough are unioned in through `fallenFrom`, each already
+          // carrying whatever the falling clause left the scrutinee at.
+          eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+          Some((eq, true))
+        | SwitchBranch(Default(), _, pos) ->
+          // A switch may contain at most one `default` clause; a second one is a
+          // JavaScript SyntaxError (tsc reports TS1113). Reject every `default`
+          // after the first.
+          seenDefault match {
+          | Some(firstDefaultPos) ->
+            tcenv.error(
+              Array[
+                (
+                  pos,
+                  "A 'default' clause cannot appear more than once in a 'switch' statement",
+                ),
+                (firstDefaultPos, "First 'default' clause was here"),
+              ],
+              TSCode(1113),
+            )
+          | None() -> !seenDefault = Some(pos)
           };
-          // This clause falls into the next exactly when its block can complete
-          // normally; its scope is then the next clause's fallthrough entry.
-          !fallenFrom = if (blockTerm.mayFallthrough) Some(scopeBranch) else {
-            None()
+          !lastDefaultPos = Some(pos);
+          if (i != branches.size() - 1) {
+            // A `default` clause that is not last is a lint concern, not a
+            // soundness error: at runtime `default` is only taken when no `case`
+            // matches, so its position never changes which branch runs. tsc does
+            // not reject it.
+            tcenv.warning(
+              Array[
+                (
+                  pos,
+                  "The 'default' clause should be the last branch of a switch",
+                ),
+              ],
+              ESLintCode("default-case-last"),
+            )
+          };
+          // The `default`'s own entry is every value no `case` matched; the
+          // entries by fallthrough are unioned in through `fallenFrom`, as for a
+          // `case`.
+          noCaseMatched match {
+          // No case to rule out: the `default` runs whatever the scrutinee is.
+          | None() -> None()
+          | Some(noCase) -> Some((noCase, true))
           }
         };
-        (seenDefault, lastDefaultPos)
-      },
-    );
+        scopeBranch = this.block(tcenv, block, cond, fallenFrom);
+        isLastBranch = i == branches.size() - 1;
+        // Only a clause that reaches the code after the switch by falling off the
+        // end — the last one, completing normally — contributes its end-of-block
+        // scope. A clause that breaks reaches there too, but by a jump whose state
+        // the catcher recorded; reading its end-of-block scope instead would miss
+        // a mid-clause break and double-count the final one.
+        if (isLastBranch && blockTerm.mayFallthrough) {
+          scopes.push(scopeBranch)
+        };
+        // This clause falls into the next exactly when its block can complete
+        // normally; its scope is then the next clause's fallthrough entry.
+        !fallenFrom = if (blockTerm.mayFallthrough) Some(scopeBranch) else {
+          None()
+        }
+      }
+    });
     // A `default` covers exactly the values matched by no `case`, before or
     // after it in source order, so its reachability depends on the full set of
     // cases and is settled only now: judging it inline would let a non-last
