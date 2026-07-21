@@ -3138,7 +3138,12 @@ extension class TypeChecker {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
-      tcenv.error(
+      // A redundant 'as const' does not change the program's meaning, so this
+      // is a warning rather than a build-breaking error. It is also not always
+      // truly redundant (an 'as const' on an array/object literal changes a
+      // mutable value into a readonly one), which is a further reason not to
+      // block on it.
+      tcenv.warning(
         Array[(subExpr.pos, "This 'as const' is unnecessary")],
         SKJSCode(2044),
       );
