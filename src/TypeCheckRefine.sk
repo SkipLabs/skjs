@@ -406,7 +406,13 @@ extension class TypeChecker {
             !rewritten = true;
             TFields::inter(tcenv.subst, this, fields, skolemFields) match {
             | None() -> void
-            | Some(interFields) -> branches.push(interFields)
+            | Some(interFields) ->
+              // The class view's fields are mutable, and the intersection
+              // unions setters, so a field the scrutinee declared readonly
+              // would come back writable. Narrowing must not grant a write the
+              // value's type withheld, so keep the scrutinee's readonly fields
+              // readonly (issue #898).
+              branches.push(interFields.keepReadonlyFrom(fields))
             }
           }
         };

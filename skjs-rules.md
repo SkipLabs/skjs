@@ -446,7 +446,8 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   }
   ```
 - **Diagnostics**: a hidden argument prints as `C#P` — the class it belongs to and the parameter it stands for, e.g. `Box#T` — rather than the bare `T` the class declared, so a message naming two of them usually distinguishes them by itself (`Box#T` against `Crate#T`, `Pair#A` against `Pair#B`). When two still print alike — two narrowings of the same class, or a shadowed name the program declared — they are numbered `#1`/`#2` in the message that mentions both, ordered by identity so a parameter keeps its number, followed by a line saying the names collide. All of this is display-only: `#` cannot appear in a type reference, and none of it reaches a suggestion offered as code to paste — a "Consider adding explicit type arguments" hint whose `e.g., <...>` example would have to name a hidden argument keeps the advice but drops the example, since the program has no way to write one. `--verbose` prints the qualified ids and none of it
-- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`, `tests/expect-error/tparam-name-collision.ts`
+- **Readonly is preserved**: a field the scrutinee declared `readonly` stays readonly through the narrowing — the intersection with the class view may restrict what the field reads as, but never grants a write the value's type withheld (`x.a = x.b` on a narrowed `{ readonly a; readonly b }` is rejected). tsc narrows to `C<any>` and accepts it
+- **Verified by**: `tests/expect-error/instanceof-generic-skolem-args.ts`, `tests/expect-error/tparam-name-collision.ts`, `tests/expect-error/instanceof-readonly-field.ts`
 
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type

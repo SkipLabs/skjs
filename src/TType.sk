@@ -2466,6 +2466,29 @@ class TFields protected {
     this with {fields => this.fields.filterMap(f)}
   }
 
+  // Re-apply `original`'s readonly fields to this narrowed TFields. A field
+  // `original` could not be written -- a readonly field, whose setter is
+  // bottom -- must stay unwritable, since narrowing may restrict what can be
+  // written but never grant it (issue #898). Fields `original` lacks are left
+  // as narrowing produced them. The getter (the readable type) is untouched;
+  // only the setter is forced back to bottom.
+  fun keepReadonlyFrom(original: TFields): TFields {
+    forceReadonly = (fd: TField, orig: ?TField) ->
+      orig match {
+      | Some(o) if (o.set.isBottom() && !fd.set.isBottom()) ->
+        fd with {set => TType::bottom(fd.pos)}
+      | _ -> fd
+      };
+    this with {
+      fields => this.fields.mapKeyed(fd ->
+        forceReadonly(fd, original.maybeGet(fd.name.value))
+      ),
+      symbolFields => this.symbolFields.mapKeyed(fd ->
+        forceReadonly(fd, original.maybeGetSymbol(fd.name.value))
+      ),
+    }
+  }
+
   // Updates the named field in place, leaving all other fields unchanged.
   fun updateField(fieldName: String, f: TField -> TField): TFields {
     this with {
