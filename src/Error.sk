@@ -232,6 +232,14 @@ class UnexpectedObjectTypeMethodReadonly(
   }
   const code: ErrorCode = SKJSCode(1002);
 }
+class ReservedWordAsName(word: String) extends ParsingKind {
+  fun toString(): String {
+    `Identifier expected: '${
+      this.word
+    }' is a reserved word that cannot be used here`
+  }
+  const code: ErrorCode = TSCode(1359);
+}
 class UnterminatedFunDef() extends ParsingKind {
   fun toString(): String {
     `Unterminated function definition ('}' expected)`
