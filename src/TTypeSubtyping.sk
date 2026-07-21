@@ -1633,7 +1633,21 @@ extension class TType {
             bf.isOptional || openFields.maybeGet(bf.name.value).isSome()
           );
           if (!openCanMatchBranch) continue;
+          // When both branches are tuples of the same arity, seed only from
+          // the positional fields. They pair the elements one-to-one, which
+          // is strictly more precise than the position-unioning methods
+          // (`pop(): T0 | T1 | undefined`, `find`, ...): pairing those would
+          // grow EVERY element TVar of the open tuple from the union of ALL
+          // of the bound tuple's positions, conflating sibling positions
+          // (#914).
+          positionalOnly = openFields.isTuple() match {
+          | Some(arity) -> boundFields.isTuple() == Some(arity)
+          | None() -> false
+          };
           for (of in openFields.fields.toArray()) {
+            if (positionalOnly && !isJSNumericString(of.name.value)) {
+              continue
+            };
             boundFields.maybeGet(of.name.value) match {
             | Some(bf) ->
               rConstraintErr = static::growTVars(
