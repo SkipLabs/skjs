@@ -109,14 +109,6 @@ mutable base class TypePpState private {
   // any member" is recorded by the emission path itself. Lives in the
   // backtrackable state because branch() may roll emissions back.
   mutable emittedMember: Bool = false,
-  // The type-parameter names emitted so far, with the Id each stood for.
-  // Lives in the backtrackable state for the same reason as emittedMember: a
-  // name rolled back by branch() never reached the output, so reporting it as
-  // printed could claim a collision the reader cannot see. Defensive rather
-  // than witnessed -- no type in the suite currently truncates away a name
-  // that would collide -- but it costs nothing and the alternative is a note
-  // that disagrees with the text above it.
-  mutable emittedTParams: List<(String, Id)> = List[],
 } {
   readonly fun chill(): SavedTypePp {
     SavedTypePp::create(this)
@@ -127,7 +119,6 @@ mutable base class TypePpState private {
     this.!buffer = saved.buffer;
     this.!expandingTVars = saved.expandingTVars;
     this.!emittedMember = saved.emittedMember;
-    this.!emittedTParams = saved.emittedTParams;
   }
 }
 
@@ -138,7 +129,6 @@ mutable class SavedTypePp private {} extends TypePpState {
       buffer => state.buffer,
       expandingTVars => state.expandingTVars,
       emittedMember => state.emittedMember,
-      emittedTParams => state.emittedTParams,
     }
   }
 }
@@ -228,13 +218,6 @@ mutable class TypePp{
 
   mutable fun render(f: mutable TypePp -> void): String {
     f(this);
-    // Only emissions that survived branch() are reported: a name rolled back
-    // never reached the output.
-    this.names.each(sink -> {
-      for (pair in this.emittedTParams.reversed()) {
-        sink.record(pair.i0, pair.i1)
-      }
-    });
     joined = "".join(this.buffer.reversed());
     if (!this.compact) return joined;
     // Compact mode strips layout characters, but a space separating two
@@ -1121,7 +1104,12 @@ mutable class TypePp{
     name: String,
     id: Id,
   ): void {
-    this.!emittedTParams = List.Cons((name, id), this.emittedTParams);
+    // Recorded straight into the sink rather than through backtrackable state:
+    // branch() re-renders the same names on overflow, so an emission it rolls
+    // back is re-emitted, and a duplicate (name, id) is deduplicated by
+    // assignOrdinals -- so counting one is harmless and rolling it back buys
+    // nothing.
+    this.names.each(sink -> sink.record(name, id));
     // The qualified id (name:counter:file-hash) disambiguates same-named type
     // parameters but is not user-readable; like synthetic indexes above, it
     // must not appear in user-visible printed types and is kept under
