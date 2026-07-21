@@ -4,8 +4,8 @@ extension class TypeChecker {
   fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
     tcenv.!stmtTerminations[st.pos] = StmtTermination::stmt(tcenv, st);
     st.value match {
-    | Break() -> tcenv.recordBreak()
-    | Continue() -> tcenv.recordContinue()
+    | Break() -> tcenv.recordBreak(st.pos)
+    | Continue() -> tcenv.recordContinue(st.pos)
     | StmtEmpty() -> void
     | StmtExpr(e) ->
       ty = this.expr(tcenv, e, false);

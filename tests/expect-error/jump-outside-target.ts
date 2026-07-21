@@ -3,14 +3,13 @@
 // SyntaxError at load time — and one inside a lambda cannot take an enclosing
 // function's loop as its target either (tsc reports TS1107 for both).
 
-// Pins today's behaviour, which reports nothing on any of these; the next
-// commit rejects them all.
-
 function breakWithNoTarget(): void {
+  // @skjs-expect-error Jump target cannot cross function boundary
   break;
 }
 
 function continueWithNoTarget(): void {
+  // @skjs-expect-error Jump target cannot cross function boundary
   continue;
 }
 
@@ -20,6 +19,7 @@ function continueInSwitchWithNoLoop(x: number): void {
   // @skjs-expect-warning This switch has a single branch; use an 'if' statement instead
   switch (x) {
     case 1:
+      // @skjs-expect-error Jump target cannot cross function boundary
       continue;
   }
 }
@@ -29,6 +29,7 @@ function continueInSwitchWithNoLoop(x: number): void {
 function breakInLambdaInLoop(c: boolean): void {
   while (c) {
     const f = (): void => {
+      // @skjs-expect-error Jump target cannot cross function boundary
       break;
     };
     f();
@@ -38,7 +39,20 @@ function breakInLambdaInLoop(c: boolean): void {
 function continueInLambdaInLoop(c: boolean): void {
   while (c) {
     const f = (): void => {
+      // @skjs-expect-error Jump target cannot cross function boundary
       continue;
+    };
+    f();
+  }
+}
+
+// A loop inside the lambda is a valid target for the lambda's own jumps.
+function loopInLambdaInLoop(c: boolean): void {
+  while (c) {
+    const f = (): void => {
+      while (c) {
+        break;
+      }
     };
     f();
   }

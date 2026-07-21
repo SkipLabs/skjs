@@ -256,22 +256,37 @@ mutable class TCEnv private {
   }
 
   // Record the current state at a `break`, against the innermost catcher (the
-  // nearest loop or switch).
-  mutable fun recordBreak(): void {
-    if (!this.jumpCatchers.isEmpty()) {
+  // nearest loop or switch). A break with no catcher has no target in this
+  // function: a JavaScript SyntaxError at load time, and a lambda cannot take
+  // an enclosing function's loop as a target (the stack is cleared at function
+  // boundaries), so it is reported rather than routed.
+  mutable fun recordBreak(pos: PosRange): void {
+    if (this.jumpCatchers.isEmpty()) {
+      this.error(
+        Array[(pos, "Jump target cannot cross function boundary")],
+        TSCode(1107),
+      )
+    } else {
       catcher = this.jumpCatchers[this.jumpCatchers.size() - 1];
       catcher.breaks.push(this.scope.snapshotTo(catcher.baselineScopeId))
     }
   }
 
   // Record the current state at a `continue`, against the innermost catcher
-  // that catches it — the nearest loop, skipping any switch in between.
-  mutable fun recordContinue(): void {
+  // that catches it — the nearest loop, skipping any switch in between. With
+  // no such loop the continue has no target, and is reported as a break with
+  // none is.
+  mutable fun recordContinue(pos: PosRange): void {
     i = this.jumpCatchers.size() - 1;
     while (i >= 0 && !this.jumpCatchers[i].catchesContinue) {
       !i = i - 1
     };
-    if (i >= 0) {
+    if (i < 0) {
+      this.error(
+        Array[(pos, "Jump target cannot cross function boundary")],
+        TSCode(1107),
+      )
+    } else {
       catcher = this.jumpCatchers[i];
       catcher.continues.push(this.scope.snapshotTo(catcher.baselineScopeId))
     }
