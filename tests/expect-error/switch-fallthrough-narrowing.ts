@@ -154,3 +154,21 @@ function laterClauseDoesNotSeeTheWrite(
       break;
   }
 }
+
+// A `default` with statements falls into the clause after it exactly as a
+// `case` does — it runs its statements and then that clause's too — so it is
+// reported the same way.
+function defaultWithStatementsFallsThrough(
+  x: 1 | 2,
+  log: (s: string) => void,
+): void {
+  switch (x) {
+    // @skjs-expect-warning The 'default' clause should be the last branch of a switch
+    default:
+      // @skjs-expect-error Fallthrough case in switch; add a 'break'
+      log("default");
+    case 1:
+      log("one");
+      break;
+  }
+}
