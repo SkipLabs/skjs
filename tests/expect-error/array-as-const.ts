@@ -15,7 +15,6 @@
 declare function pd<K extends readonly [0, 1]>(k: K): K;
 function repro(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const r = pd([0, 1] as const);
 }
 
@@ -23,7 +22,6 @@ function repro(): void {
 // types stay the precise literals `0` and `1`.
 function annotated(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t: readonly [0, 1] = [0, 1] as const;
 }
 
@@ -31,7 +29,6 @@ function annotated(): void {
 // element types really are checked (0 is not 1).
 function mismatch(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const t: readonly [1, 2] = [0, 1] as const;
 }
@@ -39,7 +36,6 @@ function mismatch(): void {
 // Nested array literals become nested readonly tuples.
 function nested(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t = [
     [0, 1],
     [2, 3],
@@ -49,14 +45,12 @@ function nested(): void {
 // A non-literal element keeps its (precise) type in a readonly position.
 function withVar(x: number): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t = [x] as const;
 }
 
 // The empty array literal is the empty readonly tuple.
 function emptyArr(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t = [] as const;
 }
 
@@ -65,8 +59,8 @@ function emptyArr(): void {
 // (tsc: TS4104).
 function notAssignableToMutable(): void {
   // @skjs-expect-warning This 'as const' is unnecessary
-  // @skjs-expect-error A 'const' assertion can only be applied to a string, number, boolean, array, or object literal
   const t = [0, 1] as const;
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const m: [0, 1] = t;
 }
 

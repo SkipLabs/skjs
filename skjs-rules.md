@@ -130,6 +130,13 @@ function handleCode(code: 1 | 2): string {
 // ✓ Array/tuple literal elements - automatic when the expected type asks for literals
 const tags: ('urgent' | 'priority')[] = ['urgent', 'priority'];
 const pair: [0, number] = [0, 1];
+
+// ✓ 'as const' on an array literal - a readonly tuple of the elements' 'as const' types
+function makeReadonlyTuple(): void {
+  const pair = [0, 1] as const; // readonly [0, 1]
+  const nested = [[0, 1]] as const; // readonly [readonly [0, 1]]
+}
+// (the whole-object form `{ ... } as const` is not yet supported)
 ```
 
 #### Examples - Where `as const` is still needed:
