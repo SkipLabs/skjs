@@ -50,3 +50,21 @@ function launderShapeMethod(): Getter {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return shape.m;
 }
+
+// --- Laundering an implicit-class method through no-this types. ---
+// FIXME(transitional): accepted for now via the implicit-class/no-this
+// subtyping skip; rejected once every method carries its implicit `this` and
+// the skip is removed (next commit).
+
+// Passing a class method where a no-this callback is expected detaches it.
+declare function callsFree(cb: () => number): number;
+function methodAsCallback(): number {
+  return callsFree(carrier.m);
+}
+
+// A property-syntax member promises an extractable free function; a class
+// method is not one.
+type PropShape = { readonly m: () => number };
+function methodIntoPropertySlot(): PropShape {
+  return carrier;
+}
