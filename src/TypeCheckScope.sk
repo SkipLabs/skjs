@@ -297,6 +297,27 @@ mutable class Scope{
     }
   }
 
+  // Union a recorded jump snapshot into this scope: each binding becomes what
+  // this scope already holds for it (walking up when it does not touch it) or
+  // the value the jump edge carried. Used by a loop to fold its break and
+  // continue edges into the state its exit merge reads — one more way the code
+  // after the loop can be reached, alongside the body completing normally.
+  mutable fun uniteSnapshot(
+    subst: mutable Subst,
+    tenv: TEnv,
+    snap: readonly Map<String, LocalRef>,
+  ): void {
+    for (kv in snap.items()) {
+      (_, curRef) = this.maybeGetRef(kv.i0).fromSome();
+      this.!refs[kv.i0] = LocalRef(
+        TType::union(subst, tenv, kv.i1.type, curRef.type),
+        curRef.declaredType,
+        curRef.isAnnotated,
+        kv.i1.isInitialized && curRef.isInitialized,
+      )
+    }
+  }
+
   // Fill this (fresh, empty) scope with a recorded snapshot, so it can stand in
   // as one more direct subscope for `mergeN`.
   mutable fun seedRefs(snap: readonly Map<String, LocalRef>): void {

@@ -16,8 +16,7 @@ function whileBreakEdge(c: boolean, d: boolean, a: "a", b: "b"): void {
     }
     y = a;
   }
-  // Pins today's behaviour, which is unsound: the break edge's "b" is lost and
-  // this is accepted. The next commit rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z1: "a" = y;
 }
 
@@ -34,7 +33,7 @@ function whileContinueEdge(c: boolean, d: boolean, a: "a", b: "b"): void {
     }
     y = a;
   }
-  // Pins today's behaviour, which is unsound; the next commit rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z2: "a" = y;
 }
 
@@ -50,7 +49,7 @@ function forBreakEdge(d: boolean, a: "a", b: "b"): void {
     }
     y = a;
   }
-  // Pins today's behaviour, which is unsound; the next commit rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z3: "a" = y;
 }
 
@@ -64,7 +63,7 @@ function forContinueEdge(d: boolean, a: "a", b: "b"): void {
     }
     y = a;
   }
-  // Pins today's behaviour, which is unsound; the next commit rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z4: "a" = y;
 }
 
@@ -79,7 +78,7 @@ function forOfBreakEdge(xs: number[], a: "a", b: "b"): void {
     }
     y = a;
   }
-  // Pins today's behaviour, which is unsound; the next commit rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z5: "a" = y;
 }
 
@@ -139,7 +138,7 @@ function continueInSwitchBindsToTheLoop(
     }
     y = a;
   }
-  // Pins today's behaviour, which is unsound; the next commit rejects it.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z8: "a" = y;
 }
 
