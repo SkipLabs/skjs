@@ -28,8 +28,7 @@ function readonlyWouldHelp(b: Box<string>): void {
 declare function takesBoxString(b: Box<string>): void;
 function readonlyWouldNotHelp<U>(b: Box<U>): void {
   // @skjs-expect-error Argument is not assignable to the parameter's type
-  // @skjs-expect-error-line2 Type 'string'
-  // @skjs-expect-error-line3 is not assignable to type 'U'
-  // @skjs-expect-error-line4 This would not be an error if this field were readonly
+  // @skjs-expect-error-line2 Type 'U'
+  // @skjs-expect-error-line3 is not assignable to type 'string'
   takesBoxString(b);
 }
