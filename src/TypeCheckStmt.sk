@@ -292,10 +292,15 @@ extension class TypeChecker {
     // the one reported unreachable below.
     seenDefault: ?PosRange = None();
     lastDefaultPos: ?PosRange = None();
-    // A branch that always returns or throws never reaches the code after the
-    // switch, so its scope is not one of the paths out and is left out of the
-    // merge (`If` does the same, via `isTerminalBlock`). The block is still
-    // checked either way — only its scope is dropped.
+    // A clause's scope is one of the paths out of the switch only when it can
+    // reach the code after: by a `break`, or — for the last clause — by falling
+    // off the end. A clause that falls into the next one does not exit there; it
+    // runs on, and its writes are carried into the clause it falls into (the
+    // real exit), so merging its scope too would add a phantom path that skips
+    // whatever the fallen-into clause does. A clause that only returns, throws,
+    // continues, or loops forever does not reach the code after either. The
+    // block is still checked either way — only its scope is dropped. (`If` has
+    // no fall-through between arms, so it drops on `isTerminalBlock` alone.)
     scopes = mutable Vector<readonly Scope>[];
     // A block reached by falling through earlier clauses runs whenever any of
     // their labels matches, so it is narrowed by their disjunction, not just its
@@ -523,7 +528,10 @@ extension class TypeChecker {
         cond
       };
       scopeBranch = this.block(tcenv, block, cond, fallenFrom);
-      if (!blockTerm.isTerminal()) scopes.push(scopeBranch);
+      isLastBranch = i == branches.size() - 1;
+      if (blockTerm.mayBreak || (isLastBranch && blockTerm.mayFallthrough)) {
+        scopes.push(scopeBranch)
+      };
       // The same condition the labels above are carried under, for the same
       // reason: this clause falls into the next exactly when its block can
       // complete normally.
