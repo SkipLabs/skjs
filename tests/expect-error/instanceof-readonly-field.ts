@@ -14,15 +14,18 @@ class Cell<T> {
 
 // The scrutinee's fields are readonly and of different types, so it is not a
 // `Cell<t>` for any single `t`; narrowing intersects it with `Cell<skolem>`.
-// That intersection currently drops the readonly, so writing one field into
-// the other is accepted -- corrupting a value the caller declared it could not
-// mutate. UNSOUND: accepted today; the fix rejects it.
+// That intersection keeps the fields readonly, so writing one field into the
+// other -- which would corrupt a value the caller declared it could not mutate
+// -- is rejected.
 function readonlyStaysReadonly(o: {
   readonly a: string;
   readonly b: number;
 }): void {
   const x: { readonly a: string; readonly b: number } = o;
   if (x instanceof Cell) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
+    // @skjs-expect-error-line2 Type 'number & Cell#T'
+    // @skjs-expect-error-line3 is not assignable to type 'never'
     x.a = x.b;
   }
 }
