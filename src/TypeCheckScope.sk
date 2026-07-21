@@ -209,20 +209,24 @@ mutable class Scope{
       .map(x -> NameRef(x.i0, x.i1))
   }
 
-  // Start this scope from what a sibling it can also be entered from left
-  // behind — a `switch` clause falling into the one this scope belongs to,
-  // whose statements have already run when that is how the body was reached.
+  // Fold into this scope another sibling it can also be entered from — a
+  // `switch` clause falling into the one this scope belongs to, whose
+  // statements have already run when that is how the body was reached.
   //
-  // Either entry is possible, so a binding the sibling wrote starts as the
-  // union of the value it left and the parent's, which is what entering on
-  // this clause's own label gives it. Seeding rather than merging into the
-  // parent is what keeps this local: a clause that does not fall through
-  // leaves the parent untouched for the clauses after it.
+  // Either entry is possible, so a binding the sibling touched becomes the union
+  // of the value it left and the value this scope already holds for it — which
+  // is what entering on this clause's own label (this scope's narrowing) gives.
+  // This runs *after* that narrowing, so it widens the own-entry value rather
+  // than being narrowed away by it: a scrutinee the falling clause reassigned to
+  // a value outside this clause's label survives, and one it did not reassign
+  // stays the union of the two entry labels. Folding into this scope, not the
+  // parent, keeps it local: a clause that does not fall through leaves the
+  // parent untouched for the clauses after it.
   //
-  // A seeded binding escapes this scope in turn, so a chain of clauses falling
-  // into one another accumulates: each is entered from every clause above it
-  // that can reach it.
-  mutable fun seedFallenInto(
+  // The result escapes this scope in turn, so a chain of clauses falling into
+  // one another accumulates: each is entered from every clause above it that can
+  // reach it.
+  mutable fun uniteFallenInto(
     subst: mutable Subst,
     tenv: TEnv,
     from: readonly Scope,
@@ -231,12 +235,14 @@ mutable class Scope{
       internal_error("fallthrough scope is not a sibling")
     };
     for (nameRef in from.escapingRefs()) {
-      (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
+      // This scope's current value for the name: what its own-entry narrowing
+      // left it at, or the parent's when the narrowing did not touch it.
+      (_, curRef) = this.maybeGetRef(nameRef.name).fromSome();
       this.!refs[nameRef.name] = LocalRef(
-        TType::union(subst, tenv, nameRef.ref.type, upRef.type),
-        upRef.declaredType,
-        upRef.isAnnotated,
-        nameRef.ref.isInitialized && upRef.isInitialized,
+        TType::union(subst, tenv, nameRef.ref.type, curRef.type),
+        curRef.declaredType,
+        curRef.isAnnotated,
+        nameRef.ref.isInitialized && curRef.isInitialized,
       )
     }
   }

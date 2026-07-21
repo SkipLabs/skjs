@@ -17,9 +17,7 @@ function reassignedScrutineeCarriesAcross(
       // @skjs-expect-error Fallthrough case in switch; add a 'break'
       y = c;
     case "b":
-      // Pins today's behaviour, which is unsound: `y` is narrowed to the entry
-      // label "b", dropping the "c" the fallthrough carried, so this is wrongly
-      // accepted. The next commit rejects it.
+      // @skjs-expect-error Type of returned value is not assignable to the function's return type
       return y;
     default:
       return "a";
@@ -36,7 +34,6 @@ function reassignedIntoLabelIsExact(y: "a" | "b", b: "b"): void {
       // @skjs-expect-error Fallthrough case in switch; add a 'break'
       y = b;
     case "b":
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: "b" = y;
       break;
   }
@@ -51,7 +48,6 @@ function unionOfLabelAndCarried(y: "a" | "b" | "c", c: "c"): void {
       // @skjs-expect-error Fallthrough case in switch; add a 'break'
       y = c;
     case "b":
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: "b" | "c" = y;
       break;
     default:

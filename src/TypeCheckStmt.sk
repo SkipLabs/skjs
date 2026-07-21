@@ -302,23 +302,21 @@ extension class TypeChecker {
     // block is still checked either way — only its scope is dropped. (`If` has
     // no fall-through between arms, so it drops on `isTerminalBlock` alone.)
     scopes = mutable Vector<readonly Scope>[];
-    // A block reached by falling through earlier clauses runs whenever any of
-    // their labels matches, so it is narrowed by their disjunction, not just its
-    // own label — refining `case 1: case 2: <body>` to `2` alone would be
-    // unsound, since the body also runs when the scrutinee is `1`. A clause
+    // A block is reached both by matching its own label and by falling through
+    // every clause above it that runs on into it, so it is entered with the
+    // union of what each of those entries leaves. Its own label narrows the
+    // scrutinee to that label (the `cond` below); the fallthrough entries come
+    // through `fallenFrom` — the falling clause's whole scope, unioned into this
+    // block after its own narrowing (see `block`'s parameter of the same name).
+    //
+    // Carrying the scope, not a disjunction of labels, is what keeps this right
+    // when a clause reassigns: the fallthrough entry brings whatever the falling
+    // clause actually left the scrutinee at — its reassigned value, not the
+    // label it matched — and every other write it made along with it. A clause
     // falls into the next exactly when its block can complete normally, which an
     // empty one always does and one with statements does unless it breaks or
-    // returns; `fallenInto` accumulates the labels of both. A `default` among
-    // them makes the block reachable for any unmatched value, which no
-    // disjunction of labels describes, so the group is then narrowed by nothing.
-    fallenInto: ?Expr = None();
-    fallenIntoDefault = false;
-    // Which labels reach a block is only half of what falling into it means:
-    // the clause fallen from has also *run*, so the writes it made are already
-    // in effect. `fallenFrom` carries its scope to the block below, which
-    // starts from what either entry leaves behind (see `block`'s parameter of
-    // the same name). Without it a body would be typed as if the switch had
-    // been entered at its own label, which the write may well contradict.
+    // returns; `fallenFrom` is set to its scope then, and accumulates, since
+    // that scope was itself entered from the clauses above it.
     fallenFrom: ?readonly Scope = None();
     // `default` runs only for a value no `case` matched, so its body is narrowed
     // by that: the conjunction of `scrutinee !== <label>` over the cases. Every
@@ -456,19 +454,11 @@ extension class TypeChecker {
           | None() -> void
           }
         };
+        // The own-label entry narrows the scrutinee to this label; the entries
+        // by fallthrough are unioned in through `fallenFrom`, each already
+        // carrying whatever the falling clause left the scrutinee at.
         eq = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-        reachedBy = fallenInto match {
-        | None() -> eq
-        | Some(prev) -> Expr(e.pos, (Binop(BOLogicalOr(), prev, eq)))
-        };
-        cond = if (fallenIntoDefault) None() else Some((reachedBy, true));
-        if (blockTerm.mayFallthrough) {
-          !fallenInto = Some(reachedBy)
-        } else {
-          !fallenInto = None();
-          !fallenIntoDefault = false
-        };
-        cond
+        Some((eq, true))
       | SwitchBranch(Default(), _, pos) ->
         // A switch may contain at most one `default` clause; a second one is a
         // JavaScript SyntaxError (tsc reports TS1113). Reject every `default`
@@ -503,38 +493,22 @@ extension class TypeChecker {
             ESLintCode("default-case-last"),
           )
         };
-        cond = noCaseMatched match {
+        // The `default`'s own entry is every value no `case` matched; the
+        // entries by fallthrough are unioned in through `fallenFrom`, as for a
+        // `case`.
+        noCaseMatched match {
         // No case to rule out: the `default` runs whatever the scrutinee is.
         | None() -> None()
-        | Some(noCase) ->
-          // Empty clauses falling in bring their own labels, which the body is
-          // reached by just as much as by matching no case at all.
-          Some(
-            (
-              fallenInto match {
-              | None() -> noCase
-              | Some(prev) -> Expr(e.pos, (Binop(BOLogicalOr(), noCase, prev)))
-              },
-              true,
-            ),
-          )
-        };
-        if (blockTerm.mayFallthrough) {
-          !fallenIntoDefault = true
-        } else {
-          !fallenInto = None();
-          !fallenIntoDefault = false
-        };
-        cond
+        | Some(noCase) -> Some((noCase, true))
+        }
       };
       scopeBranch = this.block(tcenv, block, cond, fallenFrom);
       isLastBranch = i == branches.size() - 1;
       if (blockTerm.mayBreak || (isLastBranch && blockTerm.mayFallthrough)) {
         scopes.push(scopeBranch)
       };
-      // The same condition the labels above are carried under, for the same
-      // reason: this clause falls into the next exactly when its block can
-      // complete normally.
+      // This clause falls into the next exactly when its block can complete
+      // normally; its scope is then the next clause's fallthrough entry.
       !fallenFrom = if (blockTerm.mayFallthrough) Some(scopeBranch) else None()
     };
     // A `default` covers exactly the values matched by no `case`, before or

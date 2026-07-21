@@ -418,19 +418,19 @@ extension class TypeChecker {
     cond: ?(Expr, Bool) = None(),
     // The scope of a `switch` clause that falls into this block, when there is
     // one: its statements have already run when the fallthrough is what reached
-    // this block. See `Scope::seedFallenInto`.
+    // this block. See `Scope::uniteFallenInto`.
     fallenFrom: ?readonly Scope = None(),
   ): readonly Scope {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
-    // Before `cond`, which refines what the entries leave behind rather than
-    // replacing it.
-    fallenFrom.each(from -> scope.seedFallenInto(tcenv.subst, this, from));
     tcenv.!scope = scope;
     cond match {
     | None() -> void
     | Some((c, target)) -> this.evalCond(tcenv, c, target)
     };
+    // After `cond`: the fallthrough entry is a separate way in, so its values
+    // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
+    fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
     for (st in stmts) {
       this.stmt(tcenv, st)
     };
