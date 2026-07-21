@@ -46,16 +46,18 @@ function crossTagged(x: unknown, y: unknown): void {
 
 // The same collision through a call, where the message is built by a different
 // site: note the contravariance line, which names both parameters too. The
-// suggested type arguments are the two hidden arguments, so `<T | T>` is not
-// something the program can write -- neither `T` has a name in source.
+// type arguments an example would list are the two hidden arguments, which
+// have no name in source, so the advice is given without the `e.g., <...>`
+// example rather than suggesting something unwritable.
 declare function sharedLen<T>(a: Array<T>, b: Array<T>): number;
 function sharedArrays(u: unknown, w: unknown): number {
   if (u instanceof Array && w instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type 'Array#T#2'
     // @skjs-expect-error-line3 is not assignable to type 'Array#T#1'
-    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'Array#T#2' must be assignable to source parameter type 'Array#T#1'
-    // @skjs-expect-error-line5 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
+    // @skjs-expect-error-line4 Consider adding explicit type arguments
+    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'Array#T#2' must be assignable to source parameter type 'Array#T#1'
+    // @skjs-expect-error-line6 Two different types with this name exist, but they are unrelated; the '#' suffixes are display-only and cannot be written in source
     return sharedLen(u, w);
   }
   return 0;
