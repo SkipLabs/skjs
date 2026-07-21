@@ -51,6 +51,10 @@ type InterOfUnions = Union1 & Union2;
 type UnionWithThisParam =
   | ((this: Dog, x: number) => string)
   | ((this: Cat, x: number) => string);
+// One branch declares `this`, the other does not (i.e. `this: unknown`).
+type UnionMixedThisParam =
+  | ((x: number) => string)
+  | ((this: Cat, x: number) => string);
 type Union1Str = ((x: number) => string) | ((x: string) => string);
 type Union2StrBool = ((x: string) => string) | ((x: boolean) => string);
 type CombinedUnion = Union1Str | Union2StrBool;
@@ -320,6 +324,15 @@ function f2(this: Cat, _x: number): string {
 function testUnionWithThisParam(): void {
   const union1: UnionWithThisParam = f1;
   const union2: UnionWithThisParam = f2;
+}
+
+// `this` is contravariant, so a union of function types intersects the branch
+// `this` types. A branch with no `this` is `this: unknown`, which intersects
+// away — so the union still requires a receiver satisfying the declared branch.
+// A free call has receiver `void`, so it is rejected (matching TS).
+function testUnionMixedThisParam(g: UnionMixedThisParam): string {
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
+  return g(1);
 }
 
 // Test 24: Multiple unions combined

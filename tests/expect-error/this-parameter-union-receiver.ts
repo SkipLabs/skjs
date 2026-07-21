@@ -18,14 +18,12 @@ class B {
   }
 }
 function classUnion(s: A | B): number {
-  // FIXME: false positive — a union receiver's shared method should type-check.
-  // The union resolves the method's `this` to the intersection of the branches,
-  // so the receiver check spuriously fails; corrected later in the series.
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return s.m();
 }
 
-// Primitive unions: each branch's wrapper method carries an implicit `this`.
+// Primitive unions: each branch's wrapper method declares an explicit `this`
+// (string/number). Distributing the call over the receiver branches checks
+// each branch against its own `this`, so the call type-checks.
 function primitiveUnion(x: string | number): string {
   return x.toString();
 }
