@@ -1974,11 +1974,6 @@ extension class TFun {
     // container variance (ReadonlyArray<Dog> vs ReadonlyArray<Animal>) and
     // subclass override compatibility.
     | (ImplicitClass _, ImplicitClass _) -> void
-    // FIXME(transitional): an implicit class this where no this is declared is
-    // skipped until every method (including body-less interface/stub methods)
-    // carries its implicit this — then this arm is removed and the general
-    // rejection below applies (a later commit in this series).
-    | (ImplicitClass _, NoThis()) -> void
     | (tp1, tp2) ->
       this1 = tp1.tyOpt().fromSome();
       this2 = tp2.tyOpt().default(TType::top(this1.pos));
