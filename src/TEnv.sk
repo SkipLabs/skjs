@@ -526,11 +526,23 @@ base class TEnv{
       cstr = tparam.constraint.map(x -> this.normalize(subst, x));
       // Represent the skolem as a synthetic TParam, preserving its identity
       // and declared upper bound through expansion.
+      //
+      // Name it for where it comes from -- `Box#T`, not the bare `T` the
+      // class declared. A hidden argument has no name in source, so the
+      // printed one is free to say which parameter of which class it stands
+      // for, and a message naming two of them is far easier to read when they
+      // are `Box#T` and `Crate#T` rather than `T` twice. `#` cannot appear in
+      // a type reference, so the name also cannot be mistaken for something
+      // writable.
       TType::fromTParamWithConstraint(
         subst,
         this,
         className.pos,
-        subst.genSkolemTParam(className.pos, tparam.name.value, cstr),
+        subst.genSkolemTParam(
+          className.pos,
+          `${className.value}#${tparam.name.value}`,
+          cstr,
+        ),
       )
     })
   }

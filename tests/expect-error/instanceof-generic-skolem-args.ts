@@ -69,7 +69,7 @@ class WithCb<T> {
 function rejectConcreteRead(x: unknown): string {
   if (x instanceof Box) {
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
-    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line2 Type 'Box#T'
     // @skjs-expect-error-line3 is not assignable to type 'string'
     const s: string = x.v;
     return s;
@@ -83,7 +83,7 @@ function rejectConcreteWrite(a: Box<number>): number {
   if (x instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
     // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T'
     x.v = "s";
   }
   return a.v;
@@ -94,7 +94,7 @@ function nestedConcreteRead(x: unknown): string {
   if (x instanceof Box) {
     if (x instanceof Box) {
       // @skjs-expect-error Type of returned value is not assignable to the function's return type
-      // @skjs-expect-error-line2 Type 'T'
+      // @skjs-expect-error-line2 Type 'Box#T'
       // @skjs-expect-error-line3 is not assignable to type 'string'
       return x.v;
     }
@@ -107,7 +107,7 @@ function rejectMethodWrite(x: unknown): void {
   if (x instanceof Cell) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type 'number'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Cell#T'
     x.put(3);
   }
 }
@@ -116,8 +116,8 @@ function rejectMethodWrite(x: unknown): void {
 function crossExchange(x: unknown, y: unknown): void {
   if (x instanceof Box && y instanceof Box) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'T'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line2 Type 'Box#T'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T'
     x.v = y.v;
   }
 }
@@ -126,8 +126,8 @@ function crossExchange(x: unknown, y: unknown): void {
 function pairArgumentsDistinct(x: unknown): void {
   if (x instanceof Pair) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
-    // @skjs-expect-error-line2 Type 'B'
-    // @skjs-expect-error-line3 is not assignable to type 'A'
+    // @skjs-expect-error-line2 Type 'Pair#B'
+    // @skjs-expect-error-line3 is not assignable to type 'Pair#A'
     x.left = x.right;
   }
 }
@@ -137,7 +137,7 @@ function boundedWrite(x: unknown): void {
   if (x instanceof Tagged) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
     // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'T extends string'
+    // @skjs-expect-error-line3 is not assignable to type 'Tagged#T extends string'
     x.tag = "a";
   }
 }
@@ -148,7 +148,7 @@ function concreteAdmission(x: unknown): void {
   if (x instanceof Box) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Box#T'
     // @skjs-expect-error-line4 This would not be an error if this field were readonly
     takesBoxString(x);
   }
@@ -159,7 +159,7 @@ function subclassWrite(x: unknown): void {
   if (x instanceof SubBox) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
     // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'SubBox#T'
     x.v = "s";
   }
 }
@@ -216,7 +216,7 @@ function unionScrutinee(x: Box<number> | string): number {
 function unionObjectArm(o: { a: number } | Box<string>): string {
   if (o instanceof Box) {
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
-    // @skjs-expect-error-line2 Type 'string | T'
+    // @skjs-expect-error-line2 Type 'string | Box#T'
     // @skjs-expect-error-line3 is not assignable to type 'string'
     return o.v;
   }
@@ -228,7 +228,7 @@ function unionObjectArm(o: { a: number } | Box<string>): string {
 function crossClassRead(x: unknown): string {
   if (x instanceof Box && x instanceof Crate) {
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
-    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line2 Type 'Box#T'
     // @skjs-expect-error-line3 is not assignable to type 'string'
     return x.v;
   }
@@ -261,7 +261,7 @@ function unionRoundTrip(x: unknown): void {
 function hiddenTypeNoEscape(x: unknown): string {
   if (x instanceof Box) {
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
-    // @skjs-expect-error-line2 Type 'T'
+    // @skjs-expect-error-line2 Type 'Box#T'
     // @skjs-expect-error-line3 is not assignable to type 'string'
     return ident(x.v);
   }
@@ -284,7 +284,7 @@ function arrayWrite(a: Array<number>): number {
   if (x instanceof Array) {
     // @skjs-expect-error Type is not assignable to the assignment target's type
     // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
     x[0] = "s";
   }
   return a.length;
@@ -296,7 +296,7 @@ function arrayPush(a: Array<number>): number {
   if (x instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type 'string'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
     x.push("s");
   }
   return a.length;
@@ -333,10 +333,10 @@ declare function sharedLen<T>(a: Array<T>, b: Array<T>): number;
 function rejectSharedArrayElement(u: unknown, w: unknown): number {
   if (u instanceof Array && w instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
-    // @skjs-expect-error-line2 Type 'T'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
-    // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <T | T>
-    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'T' must be assignable to source parameter type 'T'
+    // @skjs-expect-error-line2 Type 'Array#T'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
+    // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <Array#T | Array#T>
+    // @skjs-expect-error-line5 Function parameter types are checked contravariantly: target parameter type 'Array#T' must be assignable to source parameter type 'Array#T'
     return sharedLen(u, w);
   }
   return 0;
@@ -403,7 +403,7 @@ function queryRejectedMapGet(x: unknown): void {
   if (x instanceof Map) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type '"k"'
-    // @skjs-expect-error-line3 is not assignable to type 'K'
+    // @skjs-expect-error-line3 is not assignable to type 'Map#K'
     const v: unknown = x.get("k");
   }
 }
@@ -412,7 +412,7 @@ function queryRejectedSetHas(x: unknown): boolean {
   if (x instanceof Set) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type '"k"'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Set#T'
     return x.has("k");
   }
   return false;
@@ -422,7 +422,7 @@ function queryRejectedArrayIncludes(x: unknown): boolean {
   if (x instanceof Array) {
     // @skjs-expect-error Argument is not assignable to the parameter's type
     // @skjs-expect-error-line2 Type '"k"'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
     return x.includes("k");
   }
   return false;
@@ -436,8 +436,8 @@ function toArrayMutable(x: unknown): unknown[] {
   if (x instanceof Array) {
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
     // @skjs-expect-error-line2 Type 'unknown'
-    // @skjs-expect-error-line3 is not assignable to type 'T'
-    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'unknown' must be assignable to source parameter type 'T'
+    // @skjs-expect-error-line3 is not assignable to type 'Array#T'
+    // @skjs-expect-error-line4 Function parameter types are checked contravariantly: target parameter type 'unknown' must be assignable to source parameter type 'Array#T'
     return x;
   }
   return [];
