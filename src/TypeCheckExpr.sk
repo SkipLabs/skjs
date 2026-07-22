@@ -420,7 +420,7 @@ extension class TypeChecker {
     // one: its statements have already run when the fallthrough is what reached
     // this block. See `Scope::uniteFallenInto`.
     fallenFrom: ?readonly Scope = None(),
-  ): readonly Scope {
+  ): (readonly Scope, StmtTermination) {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!scope = scope;
@@ -431,11 +431,15 @@ extension class TypeChecker {
     // After `cond`: the fallthrough entry is a separate way in, so its values
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
+    // Checking a statement also answers how it ends; the block's termination
+    // folds the answers left to right, where `then` stops accumulating once
+    // control cannot reach the next statement — which is still checked.
+    term = StmtTermination::skip;
     for (st in stmts) {
-      this.stmt(tcenv, st)
+      !term = term.then(this.stmt(tcenv, st))
     };
     tcenv.!scope = scopeCopy;
-    scope
+    (scope, term)
   }
 
   fun bind(

@@ -339,8 +339,7 @@ extension class TypeChecker {
       this.retType match {
       | None() -> void
       | Some(retType) ->
-        _ = this.block(tcenv, body);
-        term = StmtTermination::block(tcenv, body);
+        (_, term) = this.block(tcenv, body);
         if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
           subst.error(
             Array[

@@ -77,6 +77,12 @@ value class StmtTermination private {
       this
     }
   }
+  // The try side of a try/catch: whatever the try may throw is caught there,
+  // so it stops counting as a way the whole construct throws.
+  fun noThrow(): this {
+    this with {mayThrow => false}
+  }
+
   /* Converts continues to fallThroughs. To be used on a block that may continue */
   fun continueToFallthrough(): this {
     if (this.mayContinue) {
@@ -116,103 +122,6 @@ value class StmtTermination private {
   static fun seq<T>(s: Sequence<T>, f: T -> this): this {
     static::it(s.iterator(), f)
   }
-  static fun stmt(tcenvb: mutable TCEnvBase, st: Stmt): this {
-    st.value match {
-    | StmtEmpty() -> static::skip
-    | StmtExpr(e) -> static::expr(e)
-    | Break() -> static::break_
-    | Continue() -> static::continue_
-    | Return(_pos, eo) -> static::exprOpt(eo).then(static::return_)
-    | Throw(e) -> static::expr(e).then(static::throw_)
-    | If(cond, bl1, bl2o) ->
-      static::cond(cond).if_(
-        () -> static::block(tcenvb, bl1),
-        () -> static::blockOpt(tcenvb, bl2o),
-      )
-    | ForInOf(_forInOfKind, var, e, body) ->
-      static::forVar(tcenvb, var);
-      static::expr(e).thenk(() ->
-        CondTermination::any.loop_(() -> static::block(tcenvb, body))
-      )
-    | For(init, cond, incr, body) ->
-      static::stmt(tcenvb, init).thenk(() ->
-        static::cond(cond).loop_(() ->
-          static::block(tcenvb, body).thenk(() ~> static::expr(incr))
-        )
-      )
-    | While(cond, body) ->
-      static::cond(cond).loop_(() -> static::block(tcenvb, body))
-    | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
-    | Switch(e, branches) ->
-      static::expr(e).thenk(() -> {
-        // Each clause may fall into the next, and only the last falls out of
-        // the switch. Judging each block on its own instead would make an empty
-        // clause, which is how labels are grouped, look like it falls out
-        // rather than into its neighbour.
-        //
-        // What has been chained so far is taken as `maybe` before continuing,
-        // which is what keeps the chain going: the switch is entered at
-        // whichever clause matches, so chaining the clauses as they are would
-        // stop at the first that cannot complete normally and never reach the
-        // ones after it — as though the switch could only ever be entered at
-        // its first clause. The clause chained last is left as it is, being the
-        // one that decides whether the switch falls out.
-        //
-        // Starting from `skip` costs nothing — it is what a clause chains onto
-        // unchanged — and it is also the answer for a switch with no clauses at
-        // all, which runs none of them and falls through. (`TypeChecker::switch`
-        // separately reports that switch; this only describes how it ends.)
-        branchesTerm = static::skip;
-        for (branch in branches) {
-          !branchesTerm = branchesTerm
-            .maybe()
-            .then(static::block(tcenvb, branch.block))
-        };
-        // `break` becomes a fallthrough once, on the whole switch. Converting it
-        // per clause would make a clause that breaks look like it continues into
-        // the next one, when it leaves the switch entirely.
-        !branchesTerm = branchesTerm.breakToFallthrough();
-        // Some clause always runs when there is a `default`, and equally when
-        // the cases leave no value unmatched — which only the type-checker can
-        // tell, and leaves on the way past for this. It has not checked the
-        // clauses yet the first time a switch is walked, so this reads false
-        // then and the switch is taken to be escapable; the walk that decides
-        // whether a function returns happens afterwards, and gets the answer.
-        switchIsExhaustive =
-          branches.any(branch ~> branch is SwitchBranch(Default(), _, _)) ||
-          tcenvb.isExhaustiveSwitch(e.pos);
-        if (switchIsExhaustive) branchesTerm else branchesTerm.maybe()
-      })
-    | Block(block) -> static::block(tcenvb, block)
-    | Try(tryBlock, catchClause, finallyBlock) ->
-      tryTerm = static::block(tcenvb, tryBlock);
-      afterCatchTerm = catchClause match {
-      | Some(CatchClause(_, _, catchBlock)) ->
-        // TODO: warning if tryTerm.mayThrow is false
-        // Remove mayThrow from try and combine with catch
-        tryNoThrow = tryTerm with {mayThrow => false};
-        catchTerm = static::block(tcenvb, catchBlock);
-        tryNoThrow / catchTerm
-      | None() -> tryTerm
-      };
-      finallyBlock match {
-      | Some(finallyStmts) ->
-        // TODO: warning if afterCatchTerm always loops or terminates normally
-        finallyTerm = static::block(tcenvb, finallyStmts);
-        afterCatchTerm.finally(finallyTerm)
-      | None() -> afterCatchTerm
-      }
-    }
-  }
-
-  static fun block(tcenvb: mutable TCEnvBase, stmts: Sequence<Stmt>): this {
-    static::seq(stmts, s -> static::stmt(tcenvb, s))
-  }
-
-  static fun blockOpt(tcenvb: mutable TCEnvBase, so: ?Sequence<Stmt>): this {
-    static::block(tcenvb, so.default(Array[]))
-  }
-
   static fun expr(expr: Expr): this {
     /* Operands, array literals, object literals are always evaluated from left to right.
        We assume that the existence of _name is checked in the typechecker.
@@ -294,18 +203,17 @@ value class StmtTermination private {
     static::exprOpt(binding.value)
   }
 
-  static fun forVar(tcenvb: mutable TCEnvBase, stmt: Stmt): void {
-    static::stmt(tcenvb, stmt).mayNonThrough().each(term ->
-      tcenvb.error(
-        Array[
-          (
-            stmt.pos,
-            `A for-loop variable initializer must be a plain value, but this one may ${term}.`,
-          ),
-        ],
-        SKJSCode(2056),
-      )
-    )
+  // The termination of a for-in/of loop's variable position: a fresh binding's
+  // initializer expressions, or the target expression of an assignment form
+  // (`for (o.a of arr)`). The statement walker used to answer this; the
+  // checker owns statements now, and this position holds no statement beyond
+  // these two shapes.
+  static fun forInOfVar(stmt: Stmt): this {
+    stmt.value match {
+    | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
+    | StmtExpr(e) -> static::expr(e)
+    | _ -> static::skip
+    }
   }
 }
 

@@ -471,7 +471,7 @@ extension class TypeChecker {
         TSCode(2391),
       )
     | FDBSome(body) ->
-      blockScope = this.block(tcenv, body);
+      (blockScope, _) = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fdPos, "this"));
       objType = static::filterMethods(
         blockThisType,

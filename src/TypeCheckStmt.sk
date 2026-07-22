@@ -1,17 +1,26 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
-    tcenv.!stmtTerminations[st.pos] = StmtTermination::stmt(tcenv, st);
-    st.value match {
-    | Break() -> tcenv.recordBreak(st.pos)
-    | Continue() -> tcenv.recordContinue(st.pos)
-    | StmtEmpty() -> void
+  // Checking a statement also answers how it ends: the termination is computed
+  // from the same walk, arm by arm, and cached for the CFG. Computing it here
+  // rather than in a separate walker means each construct is walked once — a
+  // diagnostic owned by the walk (SKJS 2056) is reported once, and a switch
+  // knows its own exhaustiveness at the moment it answers (no side-channel).
+  fun stmt(tcenv: mutable TCEnv, st: Stmt): StmtTermination {
+    term = st.value match {
+    | Break() ->
+      tcenv.recordBreak(st.pos);
+      StmtTermination::break_
+    | Continue() ->
+      tcenv.recordContinue(st.pos);
+      StmtTermination::continue_
+    | StmtEmpty() -> StmtTermination::skip
     | StmtExpr(e) ->
       ty = this.expr(tcenv, e, false);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
         this.checkIsIgnorable(tcenv, e.pos, ty)
-      }
+      };
+      StmtTermination::expr(e)
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
@@ -45,7 +54,8 @@ extension class TypeChecker {
         }
       } else {
         this.checkSubType(tcenv, epos, msg, etype, retType, TSCode(2322))
-      }
+      };
+      StmtTermination::exprOpt(eOpt).then(StmtTermination::return_)
 
     | Bind(bkind, bindings) ->
       if (bkind is BKVar()) {
@@ -83,25 +93,27 @@ extension class TypeChecker {
           isInitialized,
           isLocalObject,
         )
-      }
+      };
+      StmtTermination::seq(bindings, StmtTermination::binding)
 
     | If(e, block1, block2opt) ->
       block2 = block2opt.default(Array[]);
       this.checkBool(tcenv, e);
-      scope1 = this.block(tcenv, block1, Some((e, true)));
-      scope2 = this.block(tcenv, block2, Some((e, false)));
-      (isTerminalBlock(tcenv, block1), isTerminalBlock(tcenv, block2)) match {
+      (scope1, term1) = this.block(tcenv, block1, Some((e, true)));
+      (scope2, term2) = this.block(tcenv, block2, Some((e, false)));
+      (term1.isTerminal(), term2.isTerminal()) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
       | (false, false) -> tcenv.mergeScope(this, scope1, scope2)
-      }
+      };
+      StmtTermination::cond(e).if_(() -> term1, () -> term2)
 
     | For(initStmt, cond, incr, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
-      this.stmt(tcenv, initStmt);
+      initTerm = this.stmt(tcenv, initStmt);
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
@@ -109,7 +121,7 @@ extension class TypeChecker {
       // it, not to an enclosing switch — and its exits carry their edges: a
       // jump leaves mid-body with the state at the jump, which the body's
       // end-of-block state no longer holds.
-      (loopBody, catcher) = tcenv.withJumpCatcher(true, () ->
+      ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
       );
       tcenv.popScopeReplace(loopBody);
@@ -126,11 +138,18 @@ extension class TypeChecker {
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
-      tcenv.popScopeReplace(initScope)
+      tcenv.popScopeReplace(initScope);
+      initTerm.thenk(() ->
+        StmtTermination::cond(cond).loop_(() ->
+          bodyTerm.thenk(() ~> StmtTermination::expr(incr))
+        )
+      )
     | Block(stmts) ->
+      blockTerm = StmtTermination::skip;
       for (stmt in stmts) {
-        this.stmt(tcenv, stmt)
-      }
+        !blockTerm = blockTerm.then(this.stmt(tcenv, stmt))
+      };
+      blockTerm
     | ForInOf(kind, initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
@@ -146,6 +165,22 @@ extension class TypeChecker {
       };
 
       this.bindLoopVar(tcenv, initStmt, ty);
+
+      // The variable position must be a plain target, so that binding it per
+      // iteration cannot itself divert control. Reported here, once — the
+      // termination walk that used to own this diagnostic reported it once per
+      // walk (SkipLabs/skjs#891).
+      StmtTermination::forInOfVar(initStmt).mayNonThrough().each(way ->
+        tcenv.error(
+          Array[
+            (
+              initStmt.pos,
+              `A for-loop variable initializer must be a plain value, but this one may ${way}.`,
+            ),
+          ],
+          SKJSCode(2056),
+        )
+      );
 
       // Enter for-in context for safe v[k]! detection
       enteredForIn =
@@ -170,7 +205,7 @@ extension class TypeChecker {
       // See the `For` case: the loop catches its body's jumps and folds their
       // edges into its exit. With no condition or increment to run on the way
       // out, break and continue edges join at the same point.
-      (loopBody, catcher) = tcenv.withJumpCatcher(true, () ->
+      ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
       );
       tcenv.popScopeReplace(loopBody);
@@ -185,9 +220,14 @@ extension class TypeChecker {
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope);
 
-      if (enteredForIn) tcenv.exitForIn()
+      if (enteredForIn) tcenv.exitForIn();
+      StmtTermination::expr(iterable).thenk(() ->
+        CondTermination::any.loop_(() -> bodyTerm)
+      )
 
-    | Throw(e) -> _ = this.expr(tcenv, e, false)
+    | Throw(e) ->
+      _ = this.expr(tcenv, e, false);
+      StmtTermination::expr(e).then(StmtTermination::throw_)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
       loopScope = tcenv.mcreateSubScope{isLoop => true};
@@ -197,7 +237,7 @@ extension class TypeChecker {
       // edges into its exit. A `continue` re-enters the header, whose
       // condition turning false then leaves the loop with the edge's state, so
       // both kinds of edge reach the code after and join at the same point.
-      (loopBody, catcher) = tcenv.withJumpCatcher(true, () ->
+      ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block, Some((cond, true)))
       );
       tcenv.popScopeReplace(loopBody);
@@ -208,19 +248,21 @@ extension class TypeChecker {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
       tcenv.!scope = scopeCopy;
-      tcenv.popScope(this, loopScope)
+      tcenv.popScope(this, loopScope);
+      StmtTermination::cond(cond).loop_(() -> bodyTerm)
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
       tryScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = tryScope;
+      tryTerm = StmtTermination::skip;
       for (stmt in tryBlock) {
-        this.stmt(tcenv, stmt)
+        !tryTerm = tryTerm.then(this.stmt(tcenv, stmt))
       };
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, tryScope);
 
-      catchClause match {
+      afterCatchTerm = catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
         catchScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = catchScope;
@@ -244,33 +286,42 @@ extension class TypeChecker {
           this.bind(tcenv, BKLet(), pat, errorType, false, true, false)
         | None() -> void
         };
+        catchTerm = StmtTermination::skip;
         for (stmt in catchBlock) {
-          this.stmt(tcenv, stmt)
+          !catchTerm = catchTerm.then(this.stmt(tcenv, stmt))
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(this, catchScope)
-      | None() -> void
+        tcenv.popScope(this, catchScope);
+        // TODO: warning if tryTerm.mayThrow is false
+        // Remove mayThrow from try and combine with catch
+        tryTerm.noThrow() / catchTerm
+      | None() -> tryTerm
       };
 
       finallyBlock match {
       | Some(finallyStmts) ->
         finallyScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = finallyScope;
+        finallyTerm = StmtTermination::skip;
         for (stmt in finallyStmts) {
-          this.stmt(tcenv, stmt)
+          !finallyTerm = finallyTerm.then(this.stmt(tcenv, stmt))
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(this, finallyScope)
-      | None() -> void
+        tcenv.popScope(this, finallyScope);
+        // TODO: warning if afterCatchTerm always loops or terminates normally
+        afterCatchTerm.finally(finallyTerm)
+      | None() -> afterCatchTerm
       }
-    }
+    };
+    tcenv.!stmtTerminations[st.pos] = term;
+    term
   }
 
   fun switch(
     tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
-  ): void {
+  ): StmtTermination {
     if (branches.size() == 0) {
       // An empty switch evaluates the scrutinee and does nothing else, which is
       // sound and which tsc accepts silently. Pointless, so still worth saying,
@@ -285,7 +336,7 @@ extension class TypeChecker {
         SKJSCode(2010),
       );
       _ = this.expr(tcenv, e, true);
-      return void
+      return StmtTermination::expr(e)
     };
     if (branches.size() == 1) {
       tcenv.warning(
@@ -332,7 +383,7 @@ extension class TypeChecker {
     // whatever the fallen-into clause does. A clause that only returns, throws,
     // continues, or loops forever does not reach the code after either. The
     // block is still checked either way — only its scope is dropped. (`If` has
-    // no fall-through between arms, so it drops on `isTerminalBlock` alone.)
+    // no fall-through between arms, so it drops on `isTerminal` alone.)
     scopes = mutable Vector<readonly Scope>[];
     // `default` runs only for a value no `case` matched, so its body is narrowed
     // by that: the conjunction of `scrutinee !== <label>` over the cases. Every
@@ -382,6 +433,14 @@ extension class TypeChecker {
     // scope then, and accumulates, since that scope was itself entered from
     // the clauses above it.
     fallenFrom: ?readonly Scope = None();
+    // How the switch ends, folded from how each clause ends as it is checked.
+    // Each clause may fall into the next, and only the last falls out of the
+    // switch; what has been chained so far is taken as `maybe` before
+    // continuing, since the switch is entered at whichever clause matches —
+    // chaining the clauses as they are would stop at the first that cannot
+    // complete normally and never reach the ones after it. Starting from
+    // `skip` costs nothing: it is what a clause chains onto unchanged.
+    branchesTerm = StmtTermination::skip;
     // Catch the `break` edges out of this switch: a mid-clause break leaves with
     // a state the clause's end-of-block scope no longer holds, so it is recorded
     // as a snapshot and unioned into the post-switch merge below, rather than
@@ -389,40 +448,6 @@ extension class TypeChecker {
     (_, catcher) = tcenv.withJumpCatcher(false, () -> {
       for (i in Range(0, branches.size())) {
         block = branches[i].block;
-        // How the block ends answers both questions asked of it below: whether it
-        // falls through into the next clause, and whether it is a path out of the
-        // switch at all.
-        blockTerm = StmtTermination::block(tcenv, block);
-        // Falling *through* means running one clause's statements and then
-        // running the next clause's too. An empty clause has none to run — it is
-        // how several labels are given one body — and the last clause has nothing
-        // to fall into, so neither is a fallthrough. tsc's
-        // `noFallthroughCasesInSwitch` exempts both for the same reason.
-        //
-        // What kind of clause it is does not enter into it: a `default` runs its
-        // statements and falls into the clause after it exactly as a `case` does,
-        // and tsc reports it the same way.
-        //
-        // Whether the rest is an error is that option's to say. SKJS turns it on
-        // where tsc leaves it off, but a switch that asks for the fallthrough
-        // gets it: only the diagnostic is withheld, never the typing of the
-        // clause fallen into, which is what keeps the fallthrough sound.
-        if (
-          this.noFallthroughCasesInSwitch &&
-          blockTerm.mayFallthrough &&
-          block.size() != 0 &&
-          i != branches.size() - 1
-        ) {
-          tcenv.error(
-            Array[
-              (
-                block[block.size() - 1].pos,
-                "Fallthrough case in switch; add a 'break'",
-              ),
-            ],
-            TSCode(7029),
-          )
-        };
         cond = branches[i] match {
         | SwitchBranch(Case(v), _, pos) ->
           // Typed with the other labels above, along with everything that reads a
@@ -547,7 +572,38 @@ extension class TypeChecker {
           | Some(noCase) -> Some((noCase, true))
           }
         };
-        scopeBranch = this.block(tcenv, block, cond, fallenFrom);
+        (scopeBranch, blockTerm) = this.block(tcenv, block, cond, fallenFrom);
+        // Falling *through* means running one clause's statements and then
+        // running the next clause's too. An empty clause has none to run — it is
+        // how several labels are given one body — and the last clause has nothing
+        // to fall into, so neither is a fallthrough. tsc's
+        // `noFallthroughCasesInSwitch` exempts both for the same reason.
+        //
+        // What kind of clause it is does not enter into it: a `default` runs its
+        // statements and falls into the clause after it exactly as a `case` does,
+        // and tsc reports it the same way.
+        //
+        // Whether the rest is an error is that option's to say. SKJS turns it on
+        // where tsc leaves it off, but a switch that asks for the fallthrough
+        // gets it: only the diagnostic is withheld, never the typing of the
+        // clause fallen into, which is what keeps the fallthrough sound.
+        if (
+          this.noFallthroughCasesInSwitch &&
+          blockTerm.mayFallthrough &&
+          block.size() != 0 &&
+          i != branches.size() - 1
+        ) {
+          tcenv.error(
+            Array[
+              (
+                block[block.size() - 1].pos,
+                "Fallthrough case in switch; add a 'break'",
+              ),
+            ],
+            TSCode(7029),
+          )
+        };
+        !branchesTerm = branchesTerm.maybe().then(blockTerm);
         isLastBranch = i == branches.size() - 1;
         // Only a clause that reaches the code after the switch by falling off the
         // end — the last one, completing normally — contributes its end-of-block
@@ -573,7 +629,6 @@ extension class TypeChecker {
     // `default` below clears what is left, which would make the two
     // indistinguishable.
     casesLeaveNothing = casesKnown && cases.isEmpty();
-    if (casesLeaveNothing) tcenv.recordExhaustiveSwitch(e.pos);
     if (casesKnown) {
       lastDefaultPos match {
       | Some(pos) ->
@@ -631,7 +686,17 @@ extension class TypeChecker {
       this,
       scopes.toArray(),
       seenDefault is None() && !casesLeaveNothing,
-    )
+    );
+    // How the switch ends. `break` becomes a fallthrough once, on the whole
+    // switch — converting it per clause would make a clause that breaks look
+    // like it continues into the next one, when it leaves the switch entirely.
+    // Some clause always runs when there is a `default`, and equally when the
+    // cases leave no value unmatched — known right here, no side-channel: the
+    // fold and the exhaustiveness verdict come from the same checked walk.
+    !branchesTerm = branchesTerm.breakToFallthrough();
+    switchIsExhaustive = seenDefault.isSome() || casesLeaveNothing;
+    switchTerm = if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
+    StmtTermination::expr(e).thenk(() -> switchTerm)
   }
 
   fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
