@@ -1714,6 +1714,11 @@ base class SType private (
     prettyPrintSType(subst, tenv, this, false)
   }
 
+  // `null` or `undefined` — the values an optional chain (`?.`) short-circuits on.
+  fun isNullish(): Bool {
+    this is TPrimUnit(TNull(), _) || this is TPrimUnit(TUndefined(), _)
+  }
+
   // Truthiness classification of this single type (issue #654).
   fun falsiness(): SFalsiness {
     this match {
