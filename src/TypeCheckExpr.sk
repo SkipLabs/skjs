@@ -1025,12 +1025,20 @@ extension class TypeChecker {
       if (!f.optionalParams.isEmpty() || f.spreadParam.isSome()) {
         None()
       } else {
-        argsTuple = TType::tuple(pos, f.params, true);
         // The argument array may be omitted when the function takes no
         // parameters, so `g.apply(thisArg)` type-checks for a zero-arg `g`.
         (applyParams, applyOptional) = if (f.params.isEmpty()) {
-          (Array[thisType], Array[argsTuple])
+          // ...and the canonical empty array `[]` supplies the same zero
+          // arguments. Model the optional array as `ReadonlyArray<never>` (like
+          // `.bind`'s rest) so both `g.apply(t)` and `g.apply(t, [])` type-check
+          // while any element still over-supplies and is rejected.
+          emptyArgs = TType::inst(
+            Name(pos, "ReadonlyArray"),
+            TArgs(Array[TType::bottom(pos)]),
+          );
+          (Array[thisType], Array[emptyArgs])
         } else {
+          argsTuple = TType::tuple(pos, f.params, true);
           (Array[thisType, argsTuple], Array[])
         };
         Some(
