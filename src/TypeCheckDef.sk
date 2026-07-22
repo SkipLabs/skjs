@@ -287,6 +287,7 @@ extension class TypeChecker {
     // nothing, and normalize resolves the cycle silently rather than reporting
     // it.
     this.checkCircularTypeDef(tcenvl, typeDef);
+    this.checkCircularDefault(tcenvl, typeDef);
 
     subst = Subst::mcreate(tcenvl);
     !this = this.addTParams(subst, typeDef.tdefParams);
@@ -316,6 +317,29 @@ extension class TypeChecker {
         ],
         TSCode(2456),
       )
+    }
+  }
+
+  // Reports a type parameter whose default circularly references the alias
+  // (TS2716, issue #886). `type A<T = A>` needs A's own default to compute A's
+  // default, so the alias denotes nothing. TEnv::circularDefaultTParam defines
+  // what counts.
+  private fun checkCircularDefault(
+    tcenvl: mutable TCEnvLight,
+    typeDef: TypeDef,
+  ): void {
+    this.circularDefaultTParam(tcenvl.context, typeDef) match {
+    | Some(tparam) ->
+      tcenvl.error(
+        Array[
+          (
+            tparam.name.pos,
+            `Type parameter '${tparam.name.value}' has a circular default`,
+          ),
+        ],
+        TSCode(2716),
+      )
+    | None() -> void
     }
   }
 

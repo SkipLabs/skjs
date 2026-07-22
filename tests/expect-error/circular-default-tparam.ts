@@ -15,23 +15,29 @@
 // checker (unbounded default-filling), which is filed separately.
 
 // Direct self-reference in the default.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type SelfDefault<T = SelfDefault> = T;
 
 // An array element of a default is immediate, unlike `type Arr = Arr[]`, which
 // is a legal alias body.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type ArrayDefault<T = ArrayDefault[]> = T;
 
 // A tuple element likewise, unlike the legal body `type Tup = [Tup]`.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type TupleDefault<T = [TupleDefault]> = T;
 
 // A union member.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type UnionDefault<T = UnionDefault | string> = T;
 
 // The operand of `keyof`.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type KeyofDefault<T = keyof KeyofDefault> = T;
 
 // The arguments of an interface reference are immediate in a default, unlike
 // `type ArrInst = Array<ArrInst>`, which is a legal alias body.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type RefArgDefault<T = Array<RefArgDefault>> = T;
 
 // A cycle that runs through a second alias's default rather than back to this
