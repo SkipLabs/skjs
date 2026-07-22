@@ -104,18 +104,18 @@ base class TEnv{
   // relation is considered correct (by co-induction).
   seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
 
-  // How deep the current structural subtyping check has recursed on this path.
-  // `seenSub` stops a check that returns to an identical pair, but two recursive
-  // aliases whose type arguments grow at each level never produce an identical
-  // pair, so the descent runs until the stack — or, once it branches, the heap —
-  // is gone. Past a shallow bound the pair is assumed related, the way tsc
-  // treats a deeply nested type: the finite obligations at each level (a field
-  // whose type does not itself recurse) have already been checked, so a
-  // mismatch is caught before the bound; only the growing recursive part is
-  // assumed, which closes the co-induction. Threaded like `seenSub`, so it is
-  // the depth of the current path, and a sibling field is checked in full — a
-  // shallow mismatch is never masked.
-  subtypingDepth: Int = 0,
+  // How many times each pair of type constructors has been compared on the
+  // current structural-subtyping path. `seenSub` stops a check that returns to
+  // an identical pair, but two recursive aliases whose type arguments grow at
+  // each level never produce an identical pair, so their descent runs until the
+  // stack — or, once it branches, the heap — is gone. A genuinely recursive
+  // alias reaches the same constructor pair over and over with different
+  // arguments; past a bound on that count the recursion is refused as
+  // excessively deep rather than assumed related, which would let an unsound
+  // program through. Keyed on the constructor names, not the whole types, so it
+  // fires only on real recursion and not on a legitimately deep but finite
+  // nesting; threaded like `seenSub`, so it counts the current path.
+  subtypingHeadDepth: SortedMap<(String, String), Int> = SortedMap[],
 
   // Controls whether field inter/union operations fully expand intersections.
   // When false (default), defers via unexpandedInter to avoid infinite expansion
