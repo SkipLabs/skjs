@@ -81,6 +81,15 @@ base class TEnv{
   // process of expanding.
   seenInstantiate: SortedSet<String> = SortedSet[],
 
+  // The value names currently being resolved through `typeof` in a type
+  // position. `typeof v` reads v's declared type, so two values that name each
+  // other's `typeof` (`declare const v: typeof w; declare const w: typeof v`)
+  // resolve forever without this; on re-entering a name already here, the
+  // resolution reports TS2502 and stops. Like `seenInstantiate`, this is only
+  // added to below the point it is set, so it scopes itself as the resolution
+  // unwinds.
+  typeofValues: SortedSet<String> = SortedSet[],
+
   // This field keeps track of type names that, if used, would define
   // a cyclic type definition.
   forbiddenInsts: SortedSet<String> = SortedSet[],
@@ -2239,6 +2248,24 @@ base class TEnv{
       for (def in this.defMap.getAll(tcenvb, varName)) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
+          if (this.typeofValues.contains(varName.value)) {
+            // v's type is `typeof v`, directly or through other values — it
+            // refers to itself, so it denotes nothing. Report it and stop,
+            // rather than resolve it forever.
+            tcenvb.error(
+              Array[
+                (
+                  varName.pos,
+                  `'${
+                    varName.value
+                  }' is referenced directly or indirectly in its own type annotation`,
+                ),
+              ],
+              TSCode(2502),
+            );
+            return TType::bottom(varName.pos)
+          };
+          !this.typeofValues = this.typeofValues.set(varName.value);
           return this.normalize(
             tcenvb,
             t,
