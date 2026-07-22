@@ -412,9 +412,10 @@ fun resolveStubs(
       fpath = FPath::create(RootId::stub(i), moduleName + "/index.d.ts");
       res match {
       | Some(existing) ->
-        debug(
-          `Found at least 2 stubs with name ${moduleName}: ${existing} and ${path}`,
-        )
+        print_error(
+          `Found more than one import stub for module '${moduleName}': ${existing} and ${path}`,
+        );
+        throw Exit(2)
       | None() -> !res = Some(fpath)
       }
     }
