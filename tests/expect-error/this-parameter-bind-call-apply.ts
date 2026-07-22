@@ -95,6 +95,18 @@ function noArgs(this: Ctx): number {
 function applyZeroArgOk(): number {
   return noArgs.apply(ctx);
 }
+// ...and the canonical empty argument array supplies the same zero arguments.
+function applyZeroArgEmptyArrayOk(): number {
+  // FIXME: false positive — the empty array supplies zero arguments, exactly
+  // matching a zero-parameter function's arity.
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  return noArgs.apply(ctx, []);
+}
+// A non-empty array still over-supplies and is rejected.
+function applyZeroArgExtraRejected(): number {
+  // @skjs-expect-error Argument is not assignable to the parameter's type
+  return noArgs.apply(ctx, [1]);
+}
 
 // Partial application is not modeled: extra bound args to .bind are rejected
 // (a never[] rest) rather than silently ignored, like TS's TS2554.
