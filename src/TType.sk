@@ -809,6 +809,12 @@ class TType private {
       None()
     }
   }
+
+  fun getSingleInst(): ?TSInst {
+    if (this.clauses.isEmpty()) this.insts.getSingleInst() else {
+      None()
+    }
+  }
 }
 
 base class Variance {
@@ -3125,6 +3131,13 @@ class TInsts private (
   fun getSingleVar(): ?TVar {
     this.getUnique() match {
     | Some(var @ TVar _) -> Some(var)
+    | _ -> None()
+    }
+  }
+
+  fun getSingleInst(): ?TSInst {
+    this.getUnique() match {
+    | Some(inst @ TSInst _) -> Some(inst)
     | _ -> None()
     }
   }

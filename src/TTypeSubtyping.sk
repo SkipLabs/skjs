@@ -9,6 +9,14 @@
 
 module SKJS;
 
+// How many times one pair of type constructors may be compared on a single
+// structural-subtyping path before the recursion is refused as excessively deep
+// (see TEnv::subtypingHeadDepth). In the spirit of tsc's deeply-nested-type
+// cutoff: a genuinely recursive alias revisits the same constructor pair, so a
+// bound on that revisit count catches an unbounded descent while leaving a
+// finite nesting, which reaches any given pair only a few times, untouched.
+const kMaxSubtypingHeadDepth: Int = 12;
+
 /* Controls the level of detail in subtyping error messages */
 class STErrorDetail(
   // Maximum depth for STRecType intermediate steps (type wrapper contexts)
@@ -1842,6 +1850,30 @@ extension class TType {
   ): STResult<TType> {
     if (u2.isTop()) return STOk();
     if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
+    // Two recursive aliases whose type arguments grow at each level never
+    // repeat a `seenSub` entry, so their descent is bounded by how many times
+    // it revisits the same pair of constructors (issue #997). Past the bound
+    // the recursion is refused as excessively deep, rather than assumed related,
+    // which would let an unsound program through. A finite nesting reaches any
+    // given pair only a few times, so it is untouched.
+    (u1.getSingleInst(), u2.getSingleInst()) match {
+    | (Some(inst1), Some(inst2)) ->
+      key = (inst1.name.value, inst2.name.value);
+      count = tenv.subtypingHeadDepth.maybeGet(key).default(0);
+      if (count >= kMaxSubtypingHeadDepth) {
+        fatalError(
+          Array[
+            (
+              u1.pos,
+              "Type instantiation is excessively deep and possibly infinite",
+            ),
+          ],
+          TSCode(2589),
+        )
+      };
+      !tenv.subtypingHeadDepth = tenv.subtypingHeadDepth.set(key, count + 1)
+    | _ -> void
+    };
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
