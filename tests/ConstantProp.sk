@@ -4,9 +4,10 @@
 // expected `serializeConstantProp` output (CFG names are CGNode descriptors so
 // expected files stay machine-independent). Regenerate with UPDATE_EXPECT=1.
 //
-// The analysis is seeded at every top-level function named `main`; other
-// functions are analyzed only as they are called, so their entry state shows
-// the arguments bound by their callers.
+// The analysis is seeded at each file's top-level code (the `Toplevel` CGNode),
+// which always runs on load; other functions are analyzed only as they are
+// (transitively) called, so their entry state shows the arguments bound by
+// their callers.
 module SKJSTests;
 
 fun constPropExpectationPath(fileName: SKJS.FAbsolute): String {
@@ -134,19 +135,6 @@ fun serializeConstantProp(
   cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
   callgraph: SortedMap<SKJS.CGNode, Array<SKJS.CGNode>>,
 ): String {
-  // Seed only true entrypoints (here: every top-level `main`): a function also
-  // seeded here would have its formals joined with `Top`, discarding the values
-  // `call` binds at its call sites — sound, but it defeats interprocedural
-  // precision. Every other function is analyzed purely from its callers.
-  entrypoints = cfgs
-    .keys()
-    .filter(n ->
-      n.id match {
-      | SKJS.TopLevelFunction(nm, _) -> nm.getName() == "main"
-      | _ -> false
-      }
-    )
-    .collect(Array);
   // Explicit type arguments: inferring `State` for a domain that reaches
   // `AbstractDomain<CPEnv>` only via a supertype leaves it unresolved.
   solver = mutable SKJS.Interproc<
@@ -160,7 +148,10 @@ fun serializeConstantProp(
     domain => SKJS.ConstantProp(),
     ctx_policy => SKJS.ContextInsensitive(),
   };
-  solver.analyzeForward(entrypoints);
+
+  entrypoints = cfgs.keys().filter(node -> node.id is SKJS.Toplevel _);
+  solver.analyzeForward(entrypoints.collect(Array));
+
   invByNode = solver.blockStates();
 
   stanzas = cfgs

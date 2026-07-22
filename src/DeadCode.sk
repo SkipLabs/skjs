@@ -101,7 +101,9 @@ fun deadBlocks(
     domain => LivenessDomain(),
     ctx_policy => ContextInsensitive(),
   };
-  solver.analyzeForward(cfgs.keys().collect(Array));
+
+  entrypoints = cfgs.keys().filter(node -> node.id is Toplevel _);
+  solver.analyzeForward(entrypoints.collect(Array));
   // A block is reachable exactly when the fixpoint assigned it a (necessarily
   // `Live`) state; `blockStates` omits blocks that were never reached.
   states = solver.blockStates();
