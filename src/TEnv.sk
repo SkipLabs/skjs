@@ -90,6 +90,18 @@ base class TEnv{
   // unwinds.
   typeofValues: SortedSet<String> = SortedSet[],
 
+  // The alias names whose reference-site constraint check is in progress. That
+  // check fills a missing type argument from its parameter's default and checks
+  // each argument against its parameter's constraint, both by normalizing a
+  // type that can reference the alias again — `type A<T = A>` fills T from A,
+  // `type C<T extends C<string>>` checks against C. Without this, normalizing
+  // that default or constraint re-enters the same check forever. On re-entering
+  // a name already here the check is skipped: the alias references itself, so it
+  // is circular and reported elsewhere, and the reference-site check has nothing
+  // sound left to verify. Like `seenInstantiate`, it is only added to below the
+  // point it is set, so it scopes itself as the check unwinds.
+  refCheckInProgress: SortedSet<String> = SortedSet[],
+
   // This field keeps track of type names that, if used, would define
   // a cyclic type definition.
   forbiddenInsts: SortedSet<String> = SortedSet[],
@@ -1913,29 +1925,44 @@ base class TEnv{
           )
         };
 
-        if (this.seenInstantiate.contains(n.value)) {
-          !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
-        };
-        normTargs = targs.map(x -> this.normalize(tcenvb, x));
-        // Check the type arguments against the parameters' constraints at the
-        // reference site, the same obligation enforced when the definition is
-        // expanded (see instantiateTParams), but without expanding the body.
-        // Without this, a violating argument in a reference that is never
-        // expanded — an unused ambient declaration, an interface field, an
-        // unused parameter type — escapes the expansion-time check entirely
-        // and skjs accepts a reference TypeScript rejects (TS2344). The check
-        // runs on a throwaway subst so its discarded bindings and clone growth
-        // never touch the live substitution. Guarded on arityOk so a wrong
-        // count is reported once (as TS2707) rather than also here.
-        if (arityOk) {
-          _ = this.instantiateTParams(
-            Subst::mcreate(tcenvb),
-            n.pos,
-            normTargs,
-            tparams,
-          )
-        };
-        TType::inst(n, TArgs(normTargs))
+        if (this.refCheckInProgress.contains(n.value)) {
+          // Recursive re-entry: this alias appears in its own default or
+          // constraint, and computing that has led back to it. Yield `unknown`
+          // to break the recursion (issue #1000). The reference is circular
+          // and reported elsewhere; `unknown` leaves a constraint check that
+          // reaches it vacuously satisfiable rather than expanding the
+          // self-reference, and leaves a circular default as `unknown` rather
+          // than the empty type — the safer recovery, since no value slips
+          // into it unchecked.
+          TType::top(pos)
+        } else {
+          if (this.seenInstantiate.contains(n.value)) {
+            !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
+          };
+          normTargs = targs.map(x -> this.normalize(tcenvb, x));
+          // Check the type arguments against the parameters' constraints at the
+          // reference site, the same obligation enforced when the definition is
+          // expanded (see instantiateTParams), but without expanding the body.
+          // Without this, a violating argument in a reference that is never
+          // expanded — an unused ambient declaration, an interface field, an
+          // unused parameter type — escapes the expansion-time check entirely
+          // and skjs accepts a reference TypeScript rejects (TS2344). The check
+          // runs on a throwaway subst so its discarded bindings and clone growth
+          // never touch the live substitution. Guarded on arityOk so a wrong
+          // count is reported once (as TS2707) rather than also here. Marking
+          // the alias as being checked makes a self-referential default or
+          // constraint re-enter the branch above rather than recurse forever.
+          if (arityOk) {
+            !this.refCheckInProgress = this.refCheckInProgress.set(n.value);
+            _ = this.instantiateTParams(
+              Subst::mcreate(tcenvb),
+              n.pos,
+              normTargs,
+              tparams,
+            )
+          };
+          TType::inst(n, TArgs(normTargs))
+        }
       }
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
