@@ -2394,27 +2394,76 @@ extension class TypeChecker {
       ) -> {
         e1Ty = this.expr(tcenv, e1, mostPrecise);
         idxTy = this.expr(tcenv, idx, true);
-        resolve = (recv: TType) ->
-          this.getWithIndexType(
-            tcenv,
-            getPos,
-            recv,
-            idxTy,
-            idx.pos,
-            accessKind,
-          );
-        e1Ty.getSTypes(tcenv.subst, this, Covariant()) match {
-        | Some(stypes) if (distribute && stypes.size() > 1) ->
-          TType::unionN(
-            tcenv.subst,
-            this,
-            pos,
-            stypes.collect(Array).map(stype -> {
-              branchTy = TType::single(stype);
-              dispatchCall(resolve(branchTy), Some(branchTy))
-            }),
-          )
-        | _ -> dispatchCall(resolve(e1Ty), Some(e1Ty))
+        resolve = (recv: TType, ak: AccessKind) ->
+          this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
+        callOn = (recv: TType) ->
+          dispatchCall(resolve(recv, AKNormal()), Some(recv));
+        isNullish = (st: SType) ->
+          st is TPrimUnit(TNull(), _) || st is TPrimUnit(TUndefined(), _);
+        if (accessKind is AKOptionalChain _) {
+          // `x?.m()` short-circuits on the RECEIVER: when `x` may be nullish,
+          // call `m` on its non-nullish part (so an optional `m` still errors)
+          // and union `undefined` onto the result. Stripping the callee's
+          // `undefined` instead would unsoundly accept `x?.m()` when `m` itself
+          // is optional (its `undefined` is not the chain's short-circuit).
+          e1Ty.getSTypes(tcenv.subst, this, Covariant()) match {
+          | Some(
+            stypes,
+          ) if (
+            stypes.any(st ->
+              st is TPrimUnit(TNull(), _) || st is TPrimUnit(TUndefined(), _)
+            )
+          ) ->
+            definedSTypes = stypes.filterSTypes(st -> !isNullish(st));
+            if (definedSTypes.isEmpty()) {
+              tcenv.warning(
+                Array[
+                  (
+                    getPos,
+                    "The result of this optional chain is always 'undefined'",
+                  ),
+                  (
+                    e1Ty.pos,
+                    `${this.ppType(tcenv, e1Ty)} is always null or undefined`,
+                  ),
+                ],
+                ESLintCode("@typescript-eslint/no-unnecessary-condition"),
+              );
+              TType::single(TPrimUnit(TUndefined(), pos))
+            } else {
+              defined = definedSTypes.collect(Array);
+              callResult = if (defined.size() > 1) {
+                TType::unionN(
+                  tcenv.subst,
+                  this,
+                  pos,
+                  defined.map(st -> callOn(TType::single(st))),
+                )
+              } else {
+                callOn(TType::single(defined[0]))
+              };
+              TType::unionUndefined(tcenv.subst, this, callResult, pos)
+            }
+          | _ ->
+            // Receiver is never nullish (or Top): the `?.` does not change the
+            // call. Defer to the normal resolution, which emits the "unnecessary
+            // `?.`" warning and the member error/call exactly as before.
+            dispatchCall(resolve(e1Ty, accessKind), Some(e1Ty))
+          }
+        } else {
+          e1Ty.getSTypes(tcenv.subst, this, Covariant()) match {
+          | Some(stypes) if (distribute && stypes.size() > 1) ->
+            TType::unionN(
+              tcenv.subst,
+              this,
+              pos,
+              stypes.collect(Array).map(stype -> {
+                branchTy = TType::single(stype);
+                dispatchCall(resolve(branchTy, accessKind), Some(branchTy))
+              }),
+            )
+          | _ -> dispatchCall(resolve(e1Ty, accessKind), Some(e1Ty))
+          }
         }
       };
       rty = f.value match {

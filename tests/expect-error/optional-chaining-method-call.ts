@@ -8,7 +8,6 @@ interface Obj {
 // A required member through a nullable receiver is guarded; the result is
 // `number | undefined`.
 export function requiredMember(x: Obj | undefined): number | undefined {
-  // @skjs-expect-error This expression is not callable
   return x?.f();
 }
 
@@ -19,7 +18,6 @@ class C {
   }
 }
 export function classMethod(x: C | undefined): number | undefined {
-  // @skjs-expect-error This expression is not callable
   return x?.g();
 }
 
