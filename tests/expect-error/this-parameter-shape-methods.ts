@@ -99,3 +99,12 @@ function tupleDetach(): number {
   // @skjs-expect-error A shape method can only be called on the object it was accessed on
   return f();
 }
+
+// A property-syntax member carrying a real `this` requirement must NOT inhabit a
+// method-syntax shape: the shape erases the requirement, so `o.m()` would run
+// with the carrier as `this`, which need not satisfy it (#993).
+declare const explicitThisProp: { m: (this: { x: number }) => number };
+function propExplicitThisIntoShape(): MethodShape {
+  // TODO(#993): should be rejected — the carrier need not satisfy `this: { x }`.
+  return explicitThisProp;
+}
