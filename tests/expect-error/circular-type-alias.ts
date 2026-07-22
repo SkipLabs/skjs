@@ -148,6 +148,7 @@ function useList(x: List<number>): null | { head: number; tail: List<number> } {
 // `typeof v`, where `v` is itself typed as that alias, requires itself — the
 // same shape as `type R = R`, one step removed through the value.
 declare const vSelf: TypeofSelf;
+// @skjs-expect-error Type alias 'TypeofSelf' circularly references itself
 type TypeofSelf = typeof vSelf;
 
 // A second alias that reaches the circular one through the same value is not
@@ -156,7 +157,9 @@ type TypeofReaches = typeof vSelf;
 
 // `typeof` reaches the alias through another alias.
 declare const vHop: TypeofHopB;
+// @skjs-expect-error Type alias 'TypeofHopA' circularly references itself
 type TypeofHopA = typeof vHop;
+// @skjs-expect-error Type alias 'TypeofHopB' circularly references itself
 type TypeofHopB = TypeofHopA;
 
 // A chain of values, each typed as the next's `typeof`, ending back at the
@@ -164,6 +167,7 @@ type TypeofHopB = TypeofHopA;
 // walk loops between them.
 declare const vChain: typeof wChain;
 declare const wChain: TypeofChain;
+// @skjs-expect-error Type alias 'TypeofChain' circularly references itself
 type TypeofChain = typeof vChain;
 
 // An array element of a *value's* type is deferred here, unlike in tsc, which
