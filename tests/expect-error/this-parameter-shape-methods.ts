@@ -69,3 +69,33 @@ function methodIntoPropertySlot(): PropShape {
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return carrier;
 }
+
+// --- Attach-only enforcement composes through nested positions. ---
+
+// Through a NESTED object shape: the inner method is still attach-only.
+type NestedShape = { outer: { m(): number } };
+declare const nested: NestedShape;
+function nestedAttachOk(): number {
+  return nested.outer.m();
+}
+function nestedDetach(): number {
+  const f = nested.outer.m;
+  // @skjs-expect-error A shape method can only be called on the object it was accessed on
+  return f();
+}
+function nestedLaunder(): Getter {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return nested.outer.m;
+}
+
+// ...and through a TUPLE element shape.
+type TupleShape = [{ m(): number }];
+declare const tup: TupleShape;
+function tupleAttachOk(): number {
+  return tup[0].m();
+}
+function tupleDetach(): number {
+  const f = tup[0].m;
+  // @skjs-expect-error A shape method can only be called on the object it was accessed on
+  return f();
+}
