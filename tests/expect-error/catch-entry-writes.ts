@@ -154,3 +154,99 @@ function midTryAssignmentIsNotDefinite(
     log(y);
   }
 }
+
+// ——— Escape channels beyond the plain shapes ———
+
+// A finally's write leaves with an exception passing THROUGH it, not only
+// with one it throws itself: the inner try's exception runs the inner finally
+// on the way out, and arrives at the outer catch with the write applied.
+function passingExceptionCarriesFinallyWrite(
+  a: "a",
+  b: "b",
+  mayThrow: () => void,
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  try {
+    try {
+      mayThrow();
+    } finally {
+      y = b;
+    }
+    mayThrow();
+    y = a;
+  } catch {
+    const z: "a" = y;
+  }
+}
+
+// A value that outlives an absorbed inner construct normally is in flight in
+// the outer try: a later throw carries it to the outer catch, however calmly
+// the inner construct resolved.
+function survivorCarriedByLaterThrow(
+  a: "a",
+  b: "b",
+  mayThrow: () => void,
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  try {
+    try {
+      y = b;
+      mayThrow();
+      y = a;
+    } catch {}
+    mayThrow();
+    y = a;
+  } catch {
+    const z: "a" = y;
+  }
+}
+
+// A return unwinds through every enclosing finally, carrying the catch's
+// state — seeds included. Rejected before and after the next commit, but the
+// channel changes: today it leans on the returning catch's state leaking into
+// the ordinary merge; the fix routes the unwind explicitly and removes the
+// leak.
+function returnUnwindsThroughOuterFinally(
+  a: "a",
+  b: "b",
+  mayThrow: () => void,
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  try {
+    try {
+      y = b;
+      mayThrow();
+      y = a;
+    } catch {
+      return;
+    }
+  } finally {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+    const z: "a" = y;
+  }
+}
+
+// But a catch that never completes normally is no part of the flow AFTER the
+// construct: code there runs only when the try completed, ending on `y = a`.
+// Pins today's behaviour, which wrongly merges the returning catch's seeded
+// state into the code after; the next commit accepts this.
+function returningCatchLeavesThePostFlowAlone(
+  a: "a",
+  b: "b",
+  mayThrow: () => void,
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  try {
+    y = b;
+    mayThrow();
+    y = a;
+  } catch {
+    return;
+  }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  const z: "a" = y;
+}
