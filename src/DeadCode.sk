@@ -8,10 +8,9 @@ base class Liveness {
   | Live()
 }
 
-// Reachability / dead-code analysis. Liveness propagates unchanged along every
-// edge (the transfers are the identity, ignoring calls), so a block is reachable
-// exactly when the solver assigns it a state; dead blocks are the rest (see
-// `deadBlocks`).
+// Reachability / dead-code analysis.
+// Basic interprocedural control-flow is implemented, but conditions are ignored (soundly)
+// and exceptional control-flow needs some work (TODO: add `exn` flag to interproc callback?)
 class LivenessDomain() uses AbstractDomain<Liveness> {
   fun bottom(): Liveness {
     Dead()
@@ -35,33 +34,69 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
   }
 
   fun transfer(
-    _instrs: Array<CFGInstr>,
+    instrs: Array<CFGInstr>,
     s: Liveness,
-    _interproc: (Callsite, Liveness) -> Liveness,
+    interproc: (Callsite, Liveness) -> Liveness,
   ): Liveness {
+    for (callsite in instrs.iterator().flatMap(instrCallsites)) {
+      if (s is Dead()) return s;
+      !s = interproc(callsite, s)
+    };
     s
   }
 
   fun transferExn(
-    _block: CFGBlock,
+    block: CFGBlock,
     s: Liveness,
-    _interproc: (Callsite, Liveness) -> Liveness,
+    interproc: (Callsite, Liveness) -> Liveness,
   ): Liveness {
-    s
+    blockCallsites = block.instrs.iterator().flatMap(instrCallsites);
+    callsites = block.terminator match {
+    | CFGTReturn(Some(e))
+    | CFGTBranch(e, _, _)
+    | CFGTSwitch(e, _, _) ->
+      blockCallsites.concat(exprCallsites(e.expr))
+    | _ -> blockCallsites
+    };
+
+    for (callsite in callsites) {
+      //TODO if callsite can throw, return Live()
+      if (s is Dead()) return s;
+      !s = interproc(callsite, s)
+    };
+
+    block.terminator match {
+    | CFGTThrow(_) -> s
+    | _ -> Dead()
+    }
   }
 
   fun transferTerminator(
-    _term: BBTerminator,
+    term: BBTerminator,
     s: Liveness,
     _label: CFGENormalLabel,
-    _interproc: (Callsite, Liveness) -> Liveness,
+    interproc: (Callsite, Liveness) -> Liveness,
   ): Liveness {
+    // Seed calls in the terminator's value expression (a `throw` has no normal
+    // edge and is handled in `transferExn`).
+    term match {
+    | CFGTReturn(Some(e))
+    | CFGTBranch(e, _, _)
+    | CFGTSwitch(e, _, _) ->
+      for (site in exprCallsites(e.expr)) !s = interproc(site, s)
+    | CFGTReturn(None())
+    | CFGTJump _
+    | CFGTThrow _
+    | CFGTUnreachable() ->
+      void
+    };
     s
   }
 
-  // Liveness ignores calls (the transfers never invoke the callback), so these
-  // are only here to satisfy the trait: a reachable caller reaches its callees,
-  // and an opaque call leaves reachability unchanged.
+  // A call marks its callee reachable: `call` seeds the callee entry with the
+  // caller's (reachable) state. An opaque call reaches nothing analyzable. The
+  // callback's return value is discarded by the transfers above, so `ret` is
+  // only here to satisfy the trait.
   fun call(
     s: Liveness,
     _site: Callsite,
@@ -85,12 +120,15 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
   }
 }
 
-// The dead (unreachable) blocks of every function in `cfgs`. Runs the
-// inter-procedural liveness solver with every function as an entrypoint — so a
-// block is judged reachable relative to its own function's entry — and
-// `callgraph` resolving call/return edges between them. For each function it
-// returns every block absent from the fixpoint (excluding the structural
-// `normalExit`/`exnExit` sentinels).
+// The dead (unreachable) blocks of every function in `cfgs`. Reachability is
+// rooted at the program's real entrypoints — the module top-level code, which
+// always runs on load — and flows outward through the solver: each block's
+// transfer seeds the callees of its call sites, so a function reached only
+// through a call is analyzed. A function never (transitively) reached from
+// top-level code is entirely dead: none of its blocks are seeded, so all of them
+// are reported. Within a reached function, a block is dead when it is absent
+// from the fixpoint. The structural `normalExit`/`exnExit` sentinels are never
+// reported.
 fun deadBlocks(
   cfgs: SortedMap<CGNode, CFG>,
   callgraph: SortedMap<CGNode, Array<CGNode>>,
@@ -127,6 +165,84 @@ fun deadBlocks(
     !result = result.set(node, dead)
   };
   result
+}
+
+fun instrCallsites(instr: CFGInstr): mutable Iterator<Callsite> {
+  instr match {
+  | CFGIBind(_, _, _, None()) -> void
+  | CFGIBind(_, _, _, Some(e))
+  | CFGIExpr(e) ->
+    for (site in exprCallsites(e.expr)) yield site
+  | CFGIAssign(target, value) ->
+    for (site in exprCallsites(value.expr)) yield site;
+    for (site in exprCallsites(target.expr)) yield site
+  }
+}
+
+fun exprCallsites(e: Expr): mutable Iterator<Callsite> {
+  e.value match {
+  | Number _
+  | BigInt _
+  | Var _
+  | EString _
+  | Regexp _
+  | Params _
+  | Closure _ ->
+    void
+  | Spread(e1)
+  | TypeOf(e1)
+  | VoidOp(e1)
+  | Await(e1)
+  | Async(e1)
+  | Unop(_, e1)
+  | PostOp(_, e1)
+  | Dot(_, e1, _)
+  | As(e1, _)
+  | AsConst(e1)
+  | Satisfies(e1, _) ->
+    for (site in exprCallsites(e1)) yield site
+  | Get(e1, e2)
+  | In(e1, e2)
+  | InstanceOf(e1, e2)
+  | Binop(_, e1, e2) ->
+    for (site in exprCallsites(e2)) yield site;
+    for (site in exprCallsites(e1)) yield site
+  | EIf(a, b, c) ->
+    for (site in exprCallsites(a)) yield site;
+    for (site in exprCallsites(b)) yield site;
+    for (site in exprCallsites(c)) yield site
+
+  | EArray(exprs)
+  | TemplateLiteral(_, exprs) ->
+    for (expr in exprs) {
+      for (site in exprCallsites(expr)) yield site
+    }
+
+  | Object(fields) ->
+    for (field in fields) {
+      field match {
+      | FDSpread(expr)
+      | FDNormal(_, expr) ->
+        for (site in exprCallsites(expr)) yield site
+      | FDComputed(key, value) ->
+        for (site in exprCallsites(key)) yield site;
+        for (site in exprCallsites(value)) yield site
+      | FDMethod _ -> void
+      }
+    }
+  | ctor @ New(callee, _, args) ->
+    for (arg in args) {
+      for (site in exprCallsites(arg)) yield site
+    };
+    for (site in exprCallsites(callee)) yield site;
+    yield CSNew(ctor, e.pos)
+  | call @ Call(callee, _, args) ->
+    for (arg in args) {
+      for (site in exprCallsites(arg)) yield site;
+    };
+    for (site in exprCallsites(callee)) yield site;
+    yield CSCall(call, e.pos)
+  }
 }
 
 module end;
