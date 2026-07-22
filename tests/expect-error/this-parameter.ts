@@ -42,8 +42,5 @@ class TestConstructorThis {
 // The rejected `this` parameter must not cascade to construction sites: the
 // user wrote `new TestConstructorThis(5)` correctly.
 export function makeTestConstructorThis(): TestConstructorThis {
-  // FIXME: cascaded spurious diagnostic — the constructor's `this` parameter is
-  // already rejected above; the `new` site is correct.
-  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return new TestConstructorThis(5);
 }
