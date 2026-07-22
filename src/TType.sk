@@ -1373,11 +1373,12 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
   }
 }
 
-// The `this` parameter of a function type, with three distinct states:
+// The `this` parameter of a function type, with four distinct states:
 //   - NoThis()        no declared `this` (a genuinely free function)
 //   - Explicit(ty)    an explicit `this: T` written in the signature
-//   - ImplicitClass(ty) the implicit `this` of a class method (the enclosing
-//                     class instance)
+//   - ImplicitClass(ty) the implicit `this` of an instance method — of a class,
+//                     interface, or ambient/stub declaration (the enclosing
+//                     instance type)
 //   - ImplicitShape() a METHOD-syntax member of an object-literal type
 //                     (`{ m(): R }`): attach-only — its receiver is the very
 //                     object it is accessed on, and its carrier type is
