@@ -7,9 +7,7 @@
 // `i + undefined` at runtime.
 function continueLeavesUnassigned(c: boolean): void {
   let x: number;
-  // Pins today's behaviour, which is unsound: the edge mentions nothing for
-  // `x`, so the fold before the increment keeps the body-end "assigned" state
-  // and the read passes. The next commit rejects it.
+  // @skjs-expect-error Variable 'x' is used before being assigned
   for (let i = 0; i < 3; i = i + x) {
     if (c) {
       continue;

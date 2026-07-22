@@ -315,6 +315,28 @@ mutable class Scope{
         curRef.isAnnotated,
         kv.i1.isInitialized && curRef.isInitialized,
       )
+    };
+    // The edge speaks for every binding, not only the ones it mentions: one it
+    // does not was left at the state above this scope, since the jump touched
+    // nothing below its baseline for it. The exit merge already unions the
+    // parent's value on that account; the initialization bit is this scope's
+    // to keep honest — a binding this scope's own paths assigned is not
+    // assigned on the edge's path unless it already was above
+    // (SkipLabs/skjs#969: a `continue` past the assignment must not leave the
+    // for-increment reading the binding as assigned).
+    for (nameRef in this.escapingRefs()) {
+      if (nameRef.ref.isInitialized && !snap.containsKey(nameRef.name)) {
+        this.up.fromSome().maybeGetRef(nameRef.name) match {
+        | Some((_, upRef)) if (!upRef.isInitialized) ->
+          this.!refs[nameRef.name] = LocalRef(
+            nameRef.ref.type,
+            nameRef.ref.declaredType,
+            nameRef.ref.isAnnotated,
+            false,
+          )
+        | _ -> void
+        }
+      }
     }
   }
 
