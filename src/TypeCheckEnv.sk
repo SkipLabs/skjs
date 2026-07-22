@@ -247,6 +247,49 @@ mutable class TCEnv private {
     (res, this.jumpCatchers.pop())
   }
 
+  // The number of edges each catcher holds, innermost last — taken before a
+  // `try`, so the edges recorded while checking it can be found again once its
+  // `finally` is known.
+  readonly fun jumpEdgeMarks(): mutable Vector<(Int, Int)> {
+    marks = mutable Vector[];
+    for (catcher in this.jumpCatchers) {
+      marks.push((catcher.breaks.size(), catcher.continues.size()))
+    };
+    marks
+  }
+
+  // Fold a finally's writes into every jump edge recorded since `marks`: those
+  // jumps leave the `try` through the finally, so what they carry to their
+  // target must include its effects. Edges recorded before the try — and
+  // catchers entered and left inside it, whose edges were consumed within the
+  // try — are not touched. See `Scope::foldFinallyIntoSnapshot`.
+  mutable fun foldFinallyIntoJumpEdges(
+    tenv: TEnv,
+    marks: readonly Vector<(Int, Int)>,
+    finallyScope: readonly Scope,
+  ): void {
+    for (i in Range(0, min(marks.size(), this.jumpCatchers.size()))) {
+      catcher = this.jumpCatchers[i];
+      (breaksMark, continuesMark) = marks[i];
+      for (j in Range(breaksMark, catcher.breaks.size())) {
+        this.scope.foldFinallyIntoSnapshot(
+          this.subst,
+          tenv,
+          catcher.breaks[j],
+          finallyScope,
+        )
+      };
+      for (j in Range(continuesMark, catcher.continues.size())) {
+        this.scope.foldFinallyIntoSnapshot(
+          this.subst,
+          tenv,
+          catcher.continues[j],
+          finallyScope,
+        )
+      }
+    }
+  }
+
   // Record the current state at a `break`, against the innermost catcher (the
   // nearest loop or switch). A break with no catcher has no target in this
   // function: a JavaScript SyntaxError at load time, and a lambda cannot take

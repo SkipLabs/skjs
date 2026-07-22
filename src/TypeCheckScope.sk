@@ -318,6 +318,36 @@ mutable class Scope{
     }
   }
 
+  // Fold a finally's writes into a recorded jump snapshot. A jump that leaves
+  // a `try` runs its `finally` on the way out, so the edge carries the state
+  // after the finally's writes: each binding the finally wrote becomes the
+  // union of what the edge carried — or, when it carried nothing, the view
+  // from this scope, which the try's own merge has already widened past the
+  // baseline the edge implies — and the written value, covering the write
+  // path and a conditional path that left the binding alone. The
+  // initialization state is left as carried: upgrading it would claim the
+  // finally definitely assigned from the edge's entry, which its own merge
+  // cannot attest.
+  readonly fun foldFinallyIntoSnapshot(
+    subst: mutable Subst,
+    tenv: TEnv,
+    snap: mutable Map<String, LocalRef>,
+    finallyScope: readonly Scope,
+  ): void {
+    for (nameRef in finallyScope.escapingRefs()) {
+      cur = snap.maybeGet(nameRef.name) match {
+      | Some(ref) -> ref
+      | None() -> this.maybeGetRef(nameRef.name).fromSome().i1
+      };
+      snap![nameRef.name] = LocalRef(
+        TType::union(subst, tenv, cur.type, nameRef.ref.type),
+        cur.declaredType,
+        cur.isAnnotated,
+        cur.isInitialized,
+      )
+    }
+  }
+
   // Fill this (fresh, empty) scope with a recorded snapshot, so it can stand in
   // as one more direct subscope for `mergeN`.
   mutable fun seedRefs(snap: readonly Map<String, LocalRef>): void {

@@ -2,13 +2,9 @@
 // the edge carries to the jump's target is the state *after* the finally — a
 // write there is on every such path.
 
-// Pins today's behaviour, which is unsound: the edge snapshots the state at
-// the jump statement, before the finally's write, so `x` is typed "a" after
-// the loop while the break path leaves it at "b". The next commit folds the
-// finally's effects into every edge recorded inside the try, and rejects
-// these. (tsc accepts all of them — its finally handling shares the hole —
-// but the runtime witness is concrete, and SKJS's diagnostics answer to the
-// runtime, not to tsc.)
+// (tsc accepts the first four — its finally handling shares the hole it had
+// here — but the runtime witness is concrete, and SKJS's diagnostics answer
+// to the runtime, not to tsc.)
 
 function breakThroughFinally(c: () => boolean, a: "a", b: "b"): void {
   let x: "a" | "b" = a;
@@ -22,6 +18,7 @@ function breakThroughFinally(c: () => boolean, a: "a", b: "b"): void {
       }
     }
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
@@ -38,6 +35,7 @@ function continueThroughFinally(c: () => boolean, a: "a", b: "b"): void {
     }
     x = a;
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
@@ -54,6 +52,7 @@ function breakOutOfSwitchThroughFinally(n: number, a: "a", b: "b"): void {
     default:
       break;
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 
@@ -73,6 +72,7 @@ function conditionalFinallyWrite(c: () => boolean, a: "a", b: "b"): void {
       }
     }
   }
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: "a" = x;
 }
 

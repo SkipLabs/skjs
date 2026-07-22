@@ -261,6 +261,10 @@ extension class TypeChecker {
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
+      // A jump out of the try or catch blocks leaves through the `finally`,
+      // whose writes must then reach what the edge carries; mark the catchers
+      // now so those edges can be found once the finally is checked.
+      edgeMarks = tcenv.jumpEdgeMarks();
       tryScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = tryScope;
       tryTerm = StmtTermination::skip;
@@ -316,6 +320,7 @@ extension class TypeChecker {
         };
         tcenv.!scope = scopeCopy;
         tcenv.popScope(this, finallyScope);
+        tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
         // TODO: warning if afterCatchTerm always loops or terminates normally
         afterCatchTerm.finally(finallyTerm)
       | None() -> afterCatchTerm
