@@ -2394,27 +2394,52 @@ extension class TypeChecker {
       ) -> {
         e1Ty = this.expr(tcenv, e1, mostPrecise);
         idxTy = this.expr(tcenv, idx, true);
-        resolve = (recv: TType) ->
-          this.getWithIndexType(
-            tcenv,
-            getPos,
-            recv,
-            idxTy,
-            idx.pos,
-            accessKind,
-          );
-        e1Ty.getSTypes(tcenv.subst, this, Covariant()) match {
-        | Some(stypes) if (distribute && stypes.size() > 1) ->
+        resolve = (recv: TType, ak: AccessKind) ->
+          this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
+        callOn = (recv: TType) ->
+          dispatchCall(resolve(recv, AKNormal()), Some(recv));
+        distributeOver = (stypes: STypes) ->
           TType::unionN(
             tcenv.subst,
             this,
             pos,
-            stypes.collect(Array).map(stype -> {
-              branchTy = TType::single(stype);
-              dispatchCall(resolve(branchTy), Some(branchTy))
-            }),
-          )
-        | _ -> dispatchCall(resolve(e1Ty), Some(e1Ty))
+            stypes.collect(Array).map(st -> callOn(TType::single(st))),
+          );
+        maybeStypes = e1Ty.getSTypes(tcenv.subst, this, Covariant());
+        if (accessKind is AKOptionalChain _) {
+          // `x?.m()` short-circuits on the RECEIVER: when `x` may be nullish,
+          // call `m` on its non-nullish part (so an optional `m` still errors)
+          // and union `undefined` onto the result. Stripping the callee's
+          // `undefined` instead would unsoundly accept `x?.m()` when `m` itself
+          // is optional (its `undefined` is not the chain's short-circuit).
+          maybeStypes match {
+          | Some(stypes) if (stypes.any(st -> st.isNullish())) ->
+            definedSTypes = stypes.filterSTypes(st -> !st.isNullish());
+            if (definedSTypes.isEmpty()) {
+              // Receiver is always nullish: defer to the member access, which
+              // yields `undefined` (no call) and emits the "always undefined"
+              // warning.
+              resolve(e1Ty, accessKind)
+            } else {
+              TType::unionUndefined(
+                tcenv.subst,
+                this,
+                distributeOver(definedSTypes),
+                pos,
+              )
+            }
+          | _ ->
+            // Receiver is never nullish (or Top): the `?.` does not change the
+            // call. Defer to the normal resolution, which emits the "unnecessary
+            // `?.`" warning and the member error/call exactly as before.
+            dispatchCall(resolve(e1Ty, accessKind), Some(e1Ty))
+          }
+        } else {
+          maybeStypes match {
+          | Some(stypes) if (distribute && stypes.size() > 1) ->
+            distributeOver(stypes)
+          | _ -> callOn(e1Ty)
+          }
         }
       };
       rty = f.value match {
