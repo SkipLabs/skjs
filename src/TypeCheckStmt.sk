@@ -265,6 +265,11 @@ extension class TypeChecker {
       // whose writes must then reach what the edge carries; mark the catchers
       // now so those edges can be found once the finally is checked.
       edgeMarks = tcenv.jumpEdgeMarks();
+      // Log every write the try block makes: an exception can leave it after
+      // any prefix, so the catch and finally entries below union the log in
+      // (SkipLabs/skjs#963). Each block gets its own log; what escapes to any
+      // enclosing try is decided at the end, gated on who can actually throw.
+      tcenv.pushTryWriteLog();
       tryScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = tryScope;
       tryTerm = StmtTermination::skip;
@@ -273,10 +278,15 @@ extension class TypeChecker {
       };
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, tryScope);
+      tryLog = tcenv.popTryWriteLog();
 
-      afterCatchTerm = catchClause match {
+      (afterCatchTerm, catchLogOpt) = catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
         catchScope = tcenv.mcreateSubScope{isLoop => false};
+        // Entered only when the try threw — after any prefix of it, so with
+        // any value the try wrote.
+        catchScope.uniteTryWrites(tcenv.subst, this, tryLog);
+        tcenv.pushTryWriteLog();
         tcenv.!scope = catchScope;
         param match {
         | Some(pat) ->
@@ -306,13 +316,20 @@ extension class TypeChecker {
         tcenv.popScope(this, catchScope);
         // TODO: warning if tryTerm.mayThrow is false
         // Remove mayThrow from try and combine with catch
-        tryTerm.noThrow() / catchTerm
-      | None() -> tryTerm
+        (tryTerm.noThrow() / catchTerm, Some(tcenv.popTryWriteLog()))
+      | None() -> (tryTerm, None())
       };
 
-      finallyBlock match {
+      (finalTerm, finallyLogOpt, finallyMayThrow) = finallyBlock match {
       | Some(finallyStmts) ->
         finallyScope = tcenv.mcreateSubScope{isLoop => false};
+        // The finally runs however the try (or catch) ended — normally, or
+        // thrown out of after any prefix — so it unions both blocks' writes.
+        finallyScope.uniteTryWrites(tcenv.subst, this, tryLog);
+        catchLogOpt.each(catchLog ->
+          finallyScope.uniteTryWrites(tcenv.subst, this, catchLog)
+        );
+        tcenv.pushTryWriteLog();
         tcenv.!scope = finallyScope;
         finallyTerm = StmtTermination::skip;
         for (stmt in finallyStmts) {
@@ -322,9 +339,34 @@ extension class TypeChecker {
         tcenv.popScope(this, finallyScope);
         tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
         // TODO: warning if afterCatchTerm always loops or terminates normally
-        afterCatchTerm.finally(finallyTerm)
-      | None() -> afterCatchTerm
-      }
+        (
+          afterCatchTerm.finally(finallyTerm),
+          Some(tcenv.popTryWriteLog()),
+          finallyTerm.mayThrow,
+        )
+      | None() -> (afterCatchTerm, None(), false)
+      };
+      // What escapes to an enclosing try is what an exception can leave THIS
+      // construct carrying, beyond the end states the ordinary merges already
+      // hold. With a catch, the try's exceptions are absorbed: the try's (and
+      // the catch's) intermediate states escape only if the catch itself may
+      // throw; without one, they escape if the try may. The finally's own
+      // intermediates escape only if it may throw. An inner try whose catch
+      // absorbs everything therefore keeps its intermediate states to itself.
+      escapeCarriesBody = catchLogOpt match {
+      | Some _ -> afterCatchTerm.mayThrow
+      | None() -> tryTerm.mayThrow
+      };
+      if (escapeCarriesBody) {
+        tcenv.propagateTryWrites(this, tryLog);
+        catchLogOpt.each(catchLog -> tcenv.propagateTryWrites(this, catchLog))
+      };
+      if (finallyMayThrow) {
+        finallyLogOpt.each(finallyLog ->
+          tcenv.propagateTryWrites(this, finallyLog)
+        )
+      };
+      finalTerm
     };
     tcenv.!stmtTerminations[st.pos] = term;
     term

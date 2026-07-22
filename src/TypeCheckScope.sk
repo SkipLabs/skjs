@@ -340,6 +340,31 @@ mutable class Scope{
     }
   }
 
+  // Enter a `catch` or `finally` with the try's write-log unioned in: the
+  // exception can leave the try after any prefix, so each logged binding may
+  // hold any value written — or what it held on entry, which the walk-up
+  // already gives, and which also keeps the initialization bit: a mid-try
+  // assignment is not definite here, since the throw may come first. A name
+  // that does not resolve is local to the try, out of scope here.
+  mutable fun uniteTryWrites(
+    subst: mutable Subst,
+    tenv: TEnv,
+    log: readonly Map<String, TType>,
+  ): void {
+    for (kv in log.items()) {
+      this.maybeGetRef(kv.i0) match {
+      | Some((_, cur)) ->
+        this.!refs[kv.i0] = LocalRef(
+          TType::union(subst, tenv, cur.type, kv.i1),
+          cur.declaredType,
+          cur.isAnnotated,
+          cur.isInitialized,
+        )
+      | None() -> void
+      }
+    }
+  }
+
   // Fold a finally's writes into a recorded jump snapshot. A jump that leaves
   // a `try` runs its `finally` on the way out, so the edge carries the state
   // after the finally's writes: each binding the finally wrote becomes the

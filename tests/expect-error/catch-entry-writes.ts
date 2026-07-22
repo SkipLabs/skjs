@@ -1,13 +1,7 @@
 // An exception can leave a `try` after any prefix of it, so its `catch` (and
 // `finally`) is entered with each binding at any value the try wrote — not
 // just the value the try ended on. The entry state unions every write made
-// while the try ran.
-
-// Pins today's behaviour, which is unsound (SkipLabs/skjs#963): the write
-// `y = b` is overwritten by the try's end, so only the end state reaches the
-// catch, and `z: "a" = y` is accepted — while `mayThrow()` throwing leaves
-// `y` at "b". The next commit rejects it, and its finally and nested-try
-// variants.
+// while the try ran, as tsc's does.
 
 function midTryWriteReachesCatch(a: "a", b: "b", mayThrow: () => void): void {
   let y: "a" | "b" = a;
@@ -17,6 +11,7 @@ function midTryWriteReachesCatch(a: "a", b: "b", mayThrow: () => void): void {
     mayThrow();
     y = a;
   } catch {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const z: "a" = y;
   }
 }
@@ -29,14 +24,15 @@ function midTryWriteReachesFinally(a: "a", b: "b", mayThrow: () => void): void {
     mayThrow();
     y = a;
   } finally {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const z: "a" = y;
   }
 }
 
-// The outer catch sees the inner try's writes too — the exception can leave
-// both after any prefix — even when the inner construct fully cleans up its
-// own end state.
-function innerTryWriteReachesOuterCatch(
+// An inner try whose catch absorbs every exception — and cannot itself throw
+// — keeps its intermediate states to itself: no path carries the inner "b" to
+// the outer catch, which tsc agrees on.
+function absorbedInnerTryDoesNotEscape(
   a: "a",
   b: "b",
   mayThrow: () => void,
@@ -53,6 +49,33 @@ function innerTryWriteReachesOuterCatch(
     }
     mayThrow();
   } catch {
+    const z: "a" = y;
+  }
+}
+
+// But a catch that can itself throw lets the exception escape carrying the
+// inner try's states: the rethrow happens with `y` still at whatever the
+// inner try wrote. (tsc accepts this one — its catch entries are not
+// compositional — but the runtime witness is concrete, and the diagnostics
+// answer to the runtime.)
+function rethrowingInnerCatchEscapes(
+  a: "a",
+  b: "b",
+  mayThrow: () => void,
+): void {
+  let y: "a" | "b" = a;
+  y = a;
+  try {
+    try {
+      y = b;
+      mayThrow();
+      y = a;
+    } catch {
+      mayThrow();
+      y = a;
+    }
+  } catch {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const z: "a" = y;
   }
 }
