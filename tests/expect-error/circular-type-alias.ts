@@ -193,10 +193,9 @@ type TypeofFnReturn = typeof fnRet;
 
 // A self-instantiation in a deferred position, with the alias's own arguments
 // growing on each turn. The self-reference sits behind an object member, so it
-// never requires the alias, and tsc accepts it. SKJS mis-reports it as circular
-// today (issue #884), from a guard separate from the declaration check above —
-// note the wording, "Type", not "Type alias".
-// @skjs-expect-error Type 'DeferredGrow' circularly references itself
+// never requires the alias, and tsc accepts it — the growing arguments do not
+// matter, because the recursion bottoms out at the object clause rather than at
+// a reference the expansion must chase.
 type DeferredGrow<T> = { v: DeferredGrow<DeferredGrow<T>> };
 
 function useDeferredGrow(
