@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Supported TypeScript subset
+    url: https://github.com/SkipLabs/skjs/blob/main/skjs-rules.md
+    about: What SKJS accepts and rejects — check here before filing a false positive.
