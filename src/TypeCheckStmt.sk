@@ -101,11 +101,19 @@ extension class TypeChecker {
       this.checkBool(tcenv, e);
       (scope1, term1) = this.block(tcenv, block1, Some((e, true)));
       (scope2, term2) = this.block(tcenv, block2, Some((e, false)));
-      (term1.isTerminal(), term2.isTerminal()) match {
-      | (true, true) -> void /* TODO: everything that follows is unreachable */
-      | (true, false) -> tcenv.popScopeReplace(scope2)
-      | (false, true) -> tcenv.popScopeReplace(scope1)
-      | (false, false) -> tcenv.mergeScope(this, scope1, scope2)
+      // A branch that cannot complete normally is not a path out of the `if`:
+      // a return/throw branch never re-joins the flow, one that loops forever
+      // never leaves, and a break/continue branch re-joins after the enclosing
+      // switch or loop — through its jump edge, which carries the state at the
+      // jump to that merge. So only a branch that can fall through contributes
+      // its scope here, and a jump guard (`if (x === undefined) continue;`)
+      // leaves the other branch's narrowing to survive alone.
+      (term1.mayFallthrough, term2.mayFallthrough) match {
+      | (false, false) ->
+        void /* TODO: everything that follows is unreachable */
+      | (false, true) -> tcenv.popScopeReplace(scope2)
+      | (true, false) -> tcenv.popScopeReplace(scope1)
+      | (true, true) -> tcenv.mergeScope(this, scope1, scope2)
       };
       StmtTermination::cond(e).if_(() -> term1, () -> term2)
 
@@ -253,6 +261,10 @@ extension class TypeChecker {
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
+      // A jump out of the try or catch blocks leaves through the `finally`,
+      // whose writes must then reach what the edge carries; mark the catchers
+      // now so those edges can be found once the finally is checked.
+      edgeMarks = tcenv.jumpEdgeMarks();
       tryScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = tryScope;
       tryTerm = StmtTermination::skip;
@@ -308,6 +320,7 @@ extension class TypeChecker {
         };
         tcenv.!scope = scopeCopy;
         tcenv.popScope(this, finallyScope);
+        tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
         // TODO: warning if afterCatchTerm always loops or terminates normally
         afterCatchTerm.finally(finallyTerm)
       | None() -> afterCatchTerm
