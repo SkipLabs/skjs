@@ -2466,12 +2466,12 @@ class TFields protected {
     this with {fields => this.fields.filterMap(f)}
   }
 
-  // Re-apply `original`'s readonly fields to this narrowed TFields. A field
-  // `original` could not be written -- a readonly field, whose setter is
-  // bottom -- must stay unwritable, since narrowing may restrict what can be
-  // written but never grant it (issue #898). Fields `original` lacks are left
-  // as narrowing produced them. The getter (the readable type) is untouched;
-  // only the setter is forced back to bottom.
+  // Re-apply `original`'s readonly fields and indexes to this narrowed
+  // TFields. A field or index `original` could not be written -- readonly,
+  // whose setter is bottom -- must stay unwritable, since narrowing may
+  // restrict what can be written but never grant it (issues #898, #978).
+  // Members `original` lacks are left as narrowing produced them. The getter
+  // (the readable type) is untouched; only the setter is forced to bottom.
   fun keepReadonlyFrom(original: TFields): TFields {
     forceReadonly = (fd: TField, orig: ?TField) ->
       orig match {
@@ -2479,6 +2479,8 @@ class TFields protected {
         fd with {set => TType::bottom(fd.pos)}
       | _ -> fd
       };
+    forceReadonlyIdx = (idx: ?TField, orig: ?TField) ->
+      idx.map(fd -> forceReadonly(fd, orig));
     this with {
       fields => this.fields.mapKeyed(fd ->
         forceReadonly(fd, original.maybeGet(fd.name.value))
@@ -2486,6 +2488,12 @@ class TFields protected {
       symbolFields => this.symbolFields.mapKeyed(fd ->
         forceReadonly(fd, original.maybeGetSymbol(fd.name.value))
       ),
+      // An index too: a `ReadonlyArray` scrutinee's readonly number index (or
+      // any readonly index) must not become writable by intersecting with the
+      // mutable `Array` view (the `instanceof Array` incarnation of #791/#978).
+      stringIndex => forceReadonlyIdx(this.stringIndex, original.stringIndex),
+      numberIndex => forceReadonlyIdx(this.numberIndex, original.numberIndex),
+      symbolIndex => forceReadonlyIdx(this.symbolIndex, original.symbolIndex),
     }
   }
 
