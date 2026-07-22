@@ -266,7 +266,10 @@ mutable class TCEnv private {
 
   // Record a runtime write for the innermost block being logged. Narrowings
   // are not writes — they must not widen a catch's view of a value the runtime
-  // never changed — so only the assignment forms call this. Outer trys receive
+  // never changed — so only the assignment forms call this. The log is keyed
+  // by bare name, which relies on SKJS rejecting nested shadowing (TS2451):
+  // if shadowing is ever allowed, distinct bindings would share entries and
+  // this needs a binding identity instead (as Scope::snapshotTo does too). Outer trys receive
   // an inner construct's writes when it is popped, gated on whether an
   // exception can actually escape it carrying them (see the Try arm): an inner
   // try whose catch absorbs everything keeps its intermediate states to
