@@ -628,6 +628,14 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | Some(m) ->
       if (detail.maxIntermediateDepth > 0 && detail.showIntermediateMessages) {
         !msgs = List.Cons(m, msgs)
+      } else if (this is STRecFunThisParam _) {
+        // Surface the `this`-parameter frame ("Their this parameters are not
+        // compatible") even at the default detail level: the bare leaf ("X is
+        // not assignable to Y") is otherwise impossible to connect to a `this`
+        // mismatch. The outer "Function type ..." wrapper stays gated to the
+        // higher detail levels, so other function-subtyping messages are
+        // unchanged.
+        return List.Cons(m, msgs)
       } else {
         return msgs
       }
