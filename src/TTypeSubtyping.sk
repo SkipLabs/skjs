@@ -9,6 +9,14 @@
 
 module SKJS;
 
+// The path depth at which a structural subtyping check assumes the pair related
+// to break an unbounded descent (see TEnv::subtypingDepth). Deliberately
+// shallow, in the spirit of tsc's deeply-nested-type cutoff: a growing mutual
+// recursion branches at each level, so the number of paths, not their length,
+// is what explodes, and a shallow per-path bound keeps that count small while
+// still letting every finite obligation at each level be checked first.
+const kMaxSubtypingDepth: Int = 15;
+
 /* Controls the level of detail in subtyping error messages */
 class STErrorDetail(
   // Maximum depth for STRecType intermediate steps (type wrapper contexts)
@@ -1842,7 +1850,12 @@ extension class TType {
   ): STResult<TType> {
     if (u2.isTop()) return STOk();
     if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
+    // A descent that keeps producing fresh pairs — two recursive aliases whose
+    // type arguments grow at each level — never repeats a `seenSub` entry, so
+    // bound the path and assume the pair related past the bound (issue #997).
+    if (tenv.subtypingDepth >= kMaxSubtypingDepth) return STOk();
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
+    !tenv.subtypingDepth = tenv.subtypingDepth + 1;
 
     // Shortcut: TInter(tys) <: u2 if u2 is one of the tys
     u1.getSingleInter() match {
