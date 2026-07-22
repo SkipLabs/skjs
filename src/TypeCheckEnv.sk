@@ -239,7 +239,7 @@ mutable class TCEnv private {
   mutable fun withJumpCatcher<T>(
     catchesContinue: Bool,
     f: () -> T,
-  ): (T, mutable JumpCatcher) {
+  ): (T, readonly JumpCatcher) {
     this.jumpCatchers.push(
       mutable JumpCatcher{catchesContinue, baselineScopeId => this.scope.id},
     );
@@ -250,12 +250,12 @@ mutable class TCEnv private {
   // The number of edges each catcher holds, innermost last — taken before a
   // `try`, so the edges recorded while checking it can be found again once its
   // `finally` is known.
-  readonly fun jumpEdgeMarks(): mutable Vector<(Int, Int)> {
+  readonly fun jumpEdgeMarks(): Array<(Int, Int)> {
     marks = mutable Vector[];
     for (catcher in this.jumpCatchers) {
       marks.push((catcher.breaks.size(), catcher.continues.size()))
     };
-    marks
+    marks.toArray()
   }
 
   // Fold a finally's writes into every jump edge recorded since `marks`: those
@@ -265,7 +265,7 @@ mutable class TCEnv private {
   // try — are not touched. See `Scope::foldFinallyIntoSnapshot`.
   mutable fun foldFinallyIntoJumpEdges(
     tenv: TEnv,
-    marks: readonly Vector<(Int, Int)>,
+    marks: Array<(Int, Int)>,
     finallyScope: readonly Scope,
   ): void {
     for (i in Range(0, min(marks.size(), this.jumpCatchers.size()))) {
