@@ -386,6 +386,7 @@ base class TEnv{
       this.getTypeDefBody(context, td),
       static::tparamNames(td.tdefParams),
       mutable Set[],
+      mutable Set[],
     )
   }
 
@@ -420,6 +421,11 @@ base class TEnv{
   // path, the same body is re-explored once per path that reaches it, which is
   // exponential on a chain of alias unions (`type A0 = A1 | A1; ...`).
   //
+  // `typeofVisited` is the same idea for the value names reached through
+  // `typeof`. It stops a value-level `typeof` cycle
+  // (`declare const v: typeof w; declare const w: typeof v`) from looping the
+  // walk when neither value's type ever reaches an alias.
+  //
   // The walk is purely syntactic — it never instantiates — so it terminates
   // even on bodies whose expansion would not.
   private fun requiresTypeDef(
@@ -428,16 +434,80 @@ base class TEnv{
     ty: Type,
     shadowed: SortedSet<String>,
     visited: mutable Set<TypeDefBodyRef>,
+    typeofVisited: mutable Set<String>,
   ): Bool {
     ty.value match {
     | TAUnion(ty1, ty2)
     | TAInter(ty1, ty2) ->
-      this.requiresTypeDef(context, target, ty1, shadowed, visited) ||
-        this.requiresTypeDef(context, target, ty2, shadowed, visited)
+      this.requiresTypeDef(
+        context,
+        target,
+        ty1,
+        shadowed,
+        visited,
+        typeofVisited,
+      ) ||
+        this.requiresTypeDef(
+          context,
+          target,
+          ty2,
+          shadowed,
+          visited,
+          typeofVisited,
+        )
     // `keyof T` needs T's keys, so T is resolved. Its *members* are not, which
     // is why `type K = keyof { a: K }` stays legal: the object below defers.
     | TAKeyOf(operand) ->
-      this.requiresTypeDef(context, target, operand, shadowed, visited)
+      this.requiresTypeDef(
+        context,
+        target,
+        operand,
+        shadowed,
+        visited,
+        typeofVisited,
+      )
+    // `typeof v` forces the declared type of the value `v`, so the alias is
+    // reached whenever v's annotation reaches it — `type R = typeof v` with
+    // `declare const v: R` is circular, exactly as `type R = R` is. The
+    // annotation is walked under the same immediate/deferred rule, so a value
+    // typed `{ a: R }` or `() => R` still defers. Only the bare-identifier form
+    // is followed; a dotted `typeof v.a`, a value with no annotation, and a
+    // typeof of a function, class, or enum are left for a later pass.
+    //
+    // v's annotation is read in v's own scope, which has no type parameters, so
+    // `shadowed` resets — a value cannot mention the alias's parameters, and
+    // carrying them would hide an alias of the same name.
+    //
+    // tsc additionally treats an array or tuple element of a *value's* type as
+    // immediate (its value-level TS2502), so it rejects `declare const v: R[];
+    // type R = typeof v`. SKJS keeps the deferred rule there and accepts it:
+    // `R` is then the well-founded recursive `R[]`, an inhabited type, not the
+    // empty type, so the acceptance is sound rather than a hole.
+    | TATypeOf(operand) ->
+      operand.value match {
+      | Var(varName) ->
+        if (typeofVisited.maybeInsert(varName.value)) {
+          probe = mutable TCEnvLight{
+            context,
+            results => TCResultsAcc::mcreate{errorHandling => EHKeepGoing()},
+          };
+          this.defMap.getAll(probe, varName).maybeGet(0) match {
+          | Some(FDVar(_, _, Some(annotation), _)) ->
+            this.requiresTypeDef(
+              context,
+              target,
+              annotation,
+              SortedSet[],
+              visited,
+              typeofVisited,
+            )
+          | _ -> false
+          }
+        } else {
+          false
+        }
+      | _ -> false
+      }
     | TAInst(n, targs) ->
       if (shadowed.contains(n.value)) {
         // A type parameter of the alias being walked, not the alias itself.
@@ -452,7 +522,14 @@ base class TEnv{
             // `shadowed`; the body is read in the callee's, so it takes the
             // callee's parameters instead.
             targs.any(targ ->
-              this.requiresTypeDef(context, target, targ, shadowed, visited)
+              this.requiresTypeDef(
+                context,
+                target,
+                targ,
+                shadowed,
+                visited,
+                typeofVisited,
+              )
             ) ||
               (visited.maybeInsert(td.bodyRef) &&
                 this.requiresTypeDef(
@@ -461,6 +538,7 @@ base class TEnv{
                   this.getTypeDefBody(context, td),
                   static::tparamNames(td.tdefParams),
                   visited,
+                  typeofVisited,
                 ))
           }
         // Not an alias: a class or interface reference defers its arguments,

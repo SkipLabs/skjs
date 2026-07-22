@@ -139,3 +139,50 @@ type List<T> = null | { head: T; tail: List<T> };
 function useList(x: List<number>): null | { head: number; tail: List<number> } {
   return x;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+// `typeof` reaches through a value's declared type (issue #885).
+/////////////////////////////////////////////////////////////////////////////
+
+// `typeof v` forces the declared type of `v`, so an alias whose body is
+// `typeof v`, where `v` is itself typed as that alias, requires itself — the
+// same shape as `type R = R`, one step removed through the value.
+declare const vSelf: TypeofSelf;
+// @skjs-expect-error Type alias 'TypeofSelf' circularly references itself
+type TypeofSelf = typeof vSelf;
+
+// A second alias that reaches the circular one through the same value is not
+// itself on the cycle, and is left alone — the `type X = Y` rule, via `typeof`.
+type TypeofReaches = typeof vSelf;
+
+// `typeof` reaches the alias through another alias.
+declare const vHop: TypeofHopB;
+// @skjs-expect-error Type alias 'TypeofHopA' circularly references itself
+type TypeofHopA = typeof vHop;
+// @skjs-expect-error Type alias 'TypeofHopB' circularly references itself
+type TypeofHopB = TypeofHopA;
+
+// A chain of values, each typed as the next's `typeof`, ending back at the
+// alias. Following it requires remembering the values already entered, or the
+// walk loops between them.
+declare const vChain: typeof wChain;
+declare const wChain: TypeofChain;
+// @skjs-expect-error Type alias 'TypeofChain' circularly references itself
+type TypeofChain = typeof vChain;
+
+// An array element of a *value's* type is deferred here, unlike in tsc, which
+// treats it as immediate (its value-level circularity check) and rejects this.
+// SKJS accepts it soundly: `TypeofArray` is the well-founded recursive type
+// `TypeofArray[]`, inhabited by nested arrays, not the empty type.
+// SKJS accepts this; tsc rejects it (TS2456) — a sound divergence.
+declare const vArray: TypeofArray[];
+type TypeofArray = typeof vArray;
+
+// An object member of the value's type defers, so this names the alias without
+// requiring it — legal in both.
+declare const vObj: { a: TypeofObjMember };
+type TypeofObjMember = typeof vObj;
+
+// A function return defers likewise.
+declare function fnRet(): TypeofFnReturn;
+type TypeofFnReturn = typeof fnRet;
