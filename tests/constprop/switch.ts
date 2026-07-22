@@ -14,3 +14,6 @@ function classify(k: number): number {
 function main(): number {
   return classify(2); // case 2 -> 200; case 1 and default are dead
 }
+
+// Module top-level code is the entrypoint; it invokes main.
+const _ = main();

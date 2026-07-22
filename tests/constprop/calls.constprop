@@ -10,3 +10,6 @@ fn:pick:
   BB_3: {c=true}
   BB_4: unreachable
   BB_5: unreachable
+toplevel:
+  return: undefined
+  BB_0: {}

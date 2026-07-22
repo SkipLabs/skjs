@@ -17,3 +17,7 @@ function countingLoop(n: number): number {
   }
   return sum;
 }
+
+// Top-level code is the entrypoint that makes both functions reachable.
+const r1 = bothBranches(true);
+const r2 = countingLoop(3);

@@ -14,3 +14,6 @@ function main(): number {
 
   return x; // 10
 }
+
+// Module top-level code is the entrypoint; it invokes main.
+const _ = main();

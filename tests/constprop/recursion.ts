@@ -24,3 +24,6 @@ function main(): number {
   const b = loopConst(3);
   return b;
 }
+
+// Module top-level code is the entrypoint; it invokes main.
+const _ = main();

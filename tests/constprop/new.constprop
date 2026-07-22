@@ -4,3 +4,6 @@ ctor:Point:
 fn:main:
   return: 0.0
   BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

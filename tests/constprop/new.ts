@@ -16,3 +16,6 @@ function main(): number {
   const p = new Point(3, 4);
   return 0;
 }
+
+// Module top-level code is the entrypoint; it invokes main.
+const _ = main();

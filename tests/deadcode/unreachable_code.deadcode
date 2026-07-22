@@ -1,3 +1,4 @@
 fn:afterInfiniteLoop: dead=[BB_6]
 fn:afterReturn: dead=[BB_3]
 fn:afterThrow: dead=[BB_3]
+toplevel: dead=[]

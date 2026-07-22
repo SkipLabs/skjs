@@ -1,0 +1,6 @@
+fn:scale:
+  return: 6.0
+  BB_0: {n=3.0}
+toplevel:
+  return: undefined
+  BB_0: {}

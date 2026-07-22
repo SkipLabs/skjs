@@ -13,3 +13,6 @@ fn:loopConst:
 fn:main:
   return: 7.0
   BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

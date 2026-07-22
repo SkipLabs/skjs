@@ -19,3 +19,6 @@ function main(): number {
   const u = pick(true);
   return s + u;
 }
+
+// Module top-level code is the entrypoint; it invokes main.
+const _ = main();

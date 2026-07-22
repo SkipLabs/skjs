@@ -18,3 +18,6 @@ function branchyWithLoop(a: boolean, b: boolean, c: number): number {
   return x;
   x = 999;
 }
+
+// Top-level entrypoint that makes the function reachable.
+const result = branchyWithLoop(true, false, 3);

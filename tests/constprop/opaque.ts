@@ -6,3 +6,6 @@ function main(): number {
   console.log(x);
   return x;
 }
+
+// Module top-level code is the entrypoint; it invokes main.
+const _ = main();

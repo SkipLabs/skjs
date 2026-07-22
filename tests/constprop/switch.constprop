@@ -8,3 +8,6 @@ fn:classify:
 fn:main:
   return: 200.0
   BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}
