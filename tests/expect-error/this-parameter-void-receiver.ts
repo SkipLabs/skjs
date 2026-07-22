@@ -12,7 +12,6 @@ function undefinedThis(this: undefined): number {
 
 // Assignable to a no-`this` function type.
 export function assignToNoThis(): number {
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const h: () => number = voidThis;
   return h();
 }
@@ -22,7 +21,6 @@ function callsCb(cb: () => number): number {
   return cb();
 }
 export function asCallback(): number {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   return callsCb(undefinedThis);
 }
 
@@ -31,13 +29,13 @@ function voidArg(this: void, a: number): number {
   return a;
 }
 export function viaCall(): number {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   return voidArg.call(undefined, 1);
 }
 
 // The body of a receiver-less function may NOT observe `this`: under a rebound
 // receiver the declared `this: undefined` would be violated.
 function usesThis(this: undefined): boolean {
+  // @skjs-expect-error 'this' is not available in this context
   return this === undefined;
 }
 

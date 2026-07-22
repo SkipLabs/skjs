@@ -41,12 +41,12 @@ function applyWrongReceiver(): void {
   withThis.apply(notCtx, [1]);
 }
 
-// `this: void` accepts a direct call but rejects a non-void receiver via .call.
+// `this: void` is receiver-less (a free function), so a direct call and a
+// `.call` with any receiver both type-check — the body ignores `this`.
 function noThisOk(): void {
   noThis(1);
 }
-function noThisCallWrong(): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
+function noThisCallAnyReceiver(): void {
   noThis.call(ctx, 1);
 }
 

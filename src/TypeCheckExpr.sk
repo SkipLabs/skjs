@@ -1877,6 +1877,17 @@ extension class TypeChecker {
       TType::single(TPrimValue::boolean(pos))
     | Var(Name(_, "null")) -> TType::single(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> TType::single(TPrimUnit(TUndefined(), pos))
+    // An unbound `this` — a function that declares `this: void` / `this: undefined`
+    // leaves `this` unusable (funDefSetup), since a receiver-less function may
+    // not observe its receiver. Report it specifically rather than as a generic
+    // "cannot find name".
+    | Var(
+      thisName @ Name(thisPos, "this"),
+    ) if (tcenv.scope.maybeGet(thisName) is None _) ->
+      fatalError(
+        Array[(thisPos, "'this' is not available in this context")],
+        SKJSCode(2076),
+      )
     | Var(local) ->
       // Transition local objects to LOUsed state when read/referenced.
       // Once used, the type is frozen - no more fields can be added.

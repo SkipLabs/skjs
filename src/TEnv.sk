@@ -2361,6 +2361,24 @@ base class TEnv{
     }
   }
 
+  // An explicit `this: void` / `this: undefined` declares a function that
+  // ignores its receiver. Its body may not use `this` (funDefSetup enforces
+  // this), so it is sound to treat it as a genuinely free function (`NoThis`):
+  // assignable to a no-`this` type and callable with any receiver.
+  static fun isReceiverlessThis(
+    subst: mutable Subst,
+    tenv: TEnv,
+    thisTy: TType,
+  ): Bool {
+    thisTy.getSTypes(subst, tenv, Covariant()) match {
+    | Some(sTypes) ->
+      sTypes.all(st ->
+        st is TPrimUnit(TVoid(), _) || st is TPrimUnit(TUndefined(), _)
+      )
+    | None() -> false
+    }
+  }
+
   // isDeclaredSignature: true only when tafun is a named function/method
   // declaration's own signature (from funDecl) — the only case where a
   // top-level `x is T` return type is accepted (see normalizeReturnType).
@@ -2493,7 +2511,17 @@ base class TEnv{
         }
       };
       thisParamValue: ThisParam = thisParam match {
-      | Some(t) -> Explicit(t)
+      | Some(t) ->
+        // An explicit `this: void` / `this: undefined` gives the body no
+        // receiver to use (funDefSetup rejects any use of `this`), so the
+        // function is effectively free: freely callable, assignable to a
+        // no-`this` type, and its `.call`/`.apply`/`.bind` accept the natural
+        // `undefined` receiver. Represent it as `NoThis`.
+        if (TEnv::isReceiverlessThis(subst, this, t)) {
+          NoThis()
+        } else {
+          Explicit(t)
+        }
       | None() ->
         implicitThisOpt match {
         | Some(i) -> ImplicitClass(i)
