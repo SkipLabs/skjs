@@ -47,7 +47,7 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 
 | Path | Contents |
 | --- | --- |
-| `src/*.sk` | Type checker implementation (~49 files): lexer, parser, type checker, module resolver |
+| `src/*.sk` | Type checker implementation (~61 files): lexer, parser, type checker, module resolver |
 | `tests/*.sk` | Test harness (Skip test files) |
 | `tests/expect-error/*.ts` | Negative + positive type-checking tests with error annotations |
 | `examples/src/*.ts` | Working example programs demonstrating supported features |
