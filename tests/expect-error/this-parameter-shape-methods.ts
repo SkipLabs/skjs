@@ -32,8 +32,11 @@ function attachOk(): number {
   return shape.m();
 }
 
-// A class instance inhabits a method-syntax shape.
+// A class instance no longer structurally inhabits a method-syntax shape: the
+// blunt fix that closes the shape-carrier hole (#993) also rejects this safe
+// case (a sound over-approximation, to be relaxed later).
 function widthOk(): MethodShape {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return carrier;
 }
 
@@ -98,4 +101,13 @@ function tupleDetach(): number {
   const f = tup[0].m;
   // @skjs-expect-error A shape method can only be called on the object it was accessed on
   return f();
+}
+
+// A property-syntax member carrying a real `this` requirement must NOT inhabit a
+// method-syntax shape: the shape erases the requirement, so `o.m()` would run
+// with the carrier as `this`, which need not satisfy it (#993).
+declare const explicitThisProp: { m: (this: { x: number }) => number };
+function propExplicitThisIntoShape(): MethodShape {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return explicitThisProp;
 }

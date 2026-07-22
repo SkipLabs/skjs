@@ -564,12 +564,19 @@ cases and conservatively under-approximates a few others.
   callback or storing one in a property-syntax member (`m: () => R`).
 - **Method-syntax members of object-literal types are attach-only.** In
   `{ m(): R }` the member's receiver is the object it is accessed on (rendered
-  `(this: <shape>) => R`), which is what lets primitives and class instances
-  inhabit such shapes soundly. Extracting the member for a free call
+  `(this: <shape>) => R`). Extracting the member for a free call
   (`const f = shape.m; f()`) or laundering it through a no-`this` type is
   rejected, and `.call`/`.apply`/`.bind` are not synthesized for it (its
   carrier type is erased). Property-syntax members stay genuinely free
   functions.
+  - Only a no-`this` function or another shape method inhabits a shape-method
+    slot. A source whose method declares a real receiver — an explicit `this`,
+    a class/interface method, or a primitive's method — is rejected, because the
+    shape erases the receiver requirement and `o.m()` would run with the carrier
+    as `this`, which need not satisfy it (SkipLabs/skjs#993). This is a **sound
+    over-approximation**: it also rejects a class instance or primitive *safely*
+    inhabiting `{ m(): R }` (a false positive, to be relaxed once the carrier
+    can be checked precisely).
 - **`this: void` / `this: undefined` is receiver-less.** Such a function is a
   free function: assignable to a no-`this` type, usable as a no-`this` callback,
   and its `.call`/`.apply`/`.bind` accept any receiver (more permissive than TS,

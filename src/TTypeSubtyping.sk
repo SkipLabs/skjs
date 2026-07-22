@@ -1997,13 +1997,22 @@ extension class TFun {
     // receiver (SkipLabs/skjs#960). TS accepts that; SKJS rejects it.
     (f1.thisParam, f2.thisParam) match {
     | (NoThis(), _) -> void
-    // A method-syntax member of an object-literal shape is attach-only: at an
-    // attached call its receiver is the very object it was accessed on (shape
-    // methods are readonly, so the member IS the carrier's own), so every
-    // inhabitant of the shape satisfies it even though its carrier type is
-    // erased. That acceptance is what lets primitives and class instances
-    // inhabit `{ m(): R }` shapes.
-    | (_, ImplicitShape()) -> void
+    // A method-syntax member of an object-literal shape (`{ m(): R }`) is
+    // attach-only: at an attached call its receiver is the very object it was
+    // accessed on. So a source that is itself receiver-agnostic — a no-`this`
+    // function (handled above) or another attach-only shape method — soundly
+    // inhabits it.
+    | (ImplicitShape(), ImplicitShape()) -> void
+    // A source whose method declares a real receiver (`Explicit`/`ImplicitClass`)
+    // does NOT soundly inhabit a shape method: the shape target erases the
+    // requirement, so `o.m()` would run with the carrier as `this`, which need
+    // not satisfy the declared `this` — the #993 hole. Falling through to the
+    // generic contravariant arm rejects it (the shape's erased receiver is
+    // treated as `unknown`, which no real declared `this` accepts). This is a
+    // sound over-approximation: it also rejects a class instance or primitive
+    // structurally inhabiting a method-syntax shape, even though the carrier
+    // there IS a valid receiver (a false positive we accept to close the hole;
+    // see SkipLabs/skjs#993).
     // A shape method used where a declared- or no-this function is expected:
     // its receiver requirement is erased, so nothing can be proven — reject.
     | (ImplicitShape(), _) -> return STRecFunThisParam(None(), f1, f2)

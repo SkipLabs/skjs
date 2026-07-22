@@ -162,8 +162,14 @@ function testTupleSpreadFollowedByPositional(): void {
 
 // 7) Motivating API
 function testMotivatingAPI(): void {
+  // #993 sound over-approximation: the mapper constructors return a
+  // method-syntax shape (`{ process(): void }`) that a class instance no longer
+  // structurally inhabits, so these otherwise-valid `map` calls are rejected.
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Zero);
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(One, "hello");
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, "hello", 42);
   // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, "hello");
@@ -172,6 +178,7 @@ function testMotivatingAPI(): void {
 
   // Tuple spread into the rest args should preserve shape
   const args2: [string, number] = ["z", 7];
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, ...args2);
 
   const argsArr: VariadicDepSafe[] = ["z", 7];
@@ -179,7 +186,9 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, ...argsArr);
 
   // Mixed fixed + tuple-rest constructor pattern
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   prefixedColl.mapWithPrefix("tag", PrefixOne, "hello");
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
   // @skjs-expect-error Argument is not assignable to the parameter's type
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");

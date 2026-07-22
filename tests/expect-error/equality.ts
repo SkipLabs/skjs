@@ -180,6 +180,9 @@ function primVsBoxedShape(
   x: number,
   y: { toFixed(digits?: number): string },
 ): boolean {
+  // #993 sound over-approximation: a primitive no longer structurally inhabits
+  // a method-syntax shape, so the overlap is (wrongly) reported as empty.
+  // @skjs-expect-warning This comparison is always false because the operand types do not overlap
   return x === y;
 }
 
