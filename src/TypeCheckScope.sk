@@ -247,6 +247,12 @@ mutable class Scope{
     }
   }
 
+  // The current view of `name` from this scope: the nearest ref's type walking
+  // up, or None when the name does not resolve here.
+  readonly fun lookupRefType(name: String): ?TType {
+    this.maybeGetRef(name).map(x -> x.i1.type)
+  }
+
   // The value this scope left the outer binding `name` at, or None when the
   // scope does not touch it (so the binding keeps whatever the parent holds).
   readonly fun escapingRef(name: String): ?LocalRef {

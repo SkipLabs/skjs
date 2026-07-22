@@ -313,10 +313,21 @@ extension class TypeChecker {
           !catchTerm = catchTerm.then(this.stmt(tcenv, stmt))
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(this, catchScope);
+        catchLog = tcenv.popTryWriteLog();
+        if (catchTerm.mayFallthrough) {
+          tcenv.popScope(this, catchScope)
+        } else {
+          // The catch never completes normally, so its state is not part of
+          // the flow after the construct — merging it would put states there
+          // that only exceptions ever saw. It still leaves along its own
+          // ways out: a break/continue travels its jump edge (recorded with
+          // the seeds in scope), and a return or throw unwinds through every
+          // enclosing finally — the enclosing log carries it there.
+          tcenv.propagateScopeToTryLog(this, catchScope)
+        };
         // TODO: warning if tryTerm.mayThrow is false
         // Remove mayThrow from try and combine with catch
-        (tryTerm.noThrow() / catchTerm, Some(tcenv.popTryWriteLog()))
+        (tryTerm.noThrow() / catchTerm, Some(catchLog))
       | None() -> (tryTerm, None())
       };
 
@@ -361,11 +372,24 @@ extension class TypeChecker {
         tcenv.propagateTryWrites(this, tryLog);
         catchLogOpt.each(catchLog -> tcenv.propagateTryWrites(this, catchLog))
       };
-      if (finallyMayThrow) {
+      // The finally's own writes leave with any exception that passes through
+      // it — one it throws itself, or one leaving the blocks it cleans up
+      // after — not only with its own.
+      if (escapeCarriesBody || finallyMayThrow) {
         finallyLogOpt.each(finallyLog ->
           tcenv.propagateTryWrites(this, finallyLog)
         )
       };
+      // A logged value that outlived the construct normally is in flight in
+      // any enclosing try — a later throw there carries it, however calmly
+      // this construct resolved. Its post-construct view says what survived.
+      tcenv.propagateSurvivorsToTryLog(this, tryLog);
+      catchLogOpt.each(catchLog ->
+        tcenv.propagateSurvivorsToTryLog(this, catchLog)
+      );
+      finallyLogOpt.each(finallyLog ->
+        tcenv.propagateSurvivorsToTryLog(this, finallyLog)
+      );
       finalTerm
     };
     tcenv.!stmtTerminations[st.pos] = term;

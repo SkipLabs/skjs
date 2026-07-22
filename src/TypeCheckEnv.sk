@@ -298,6 +298,42 @@ mutable class TCEnv private {
     }
   }
 
+  // Union a scope's escaping bindings, by type, into the innermost log still
+  // open — the unwind channel of a catch that cannot complete normally: its
+  // return (or jump) passes through every enclosing finally carrying the
+  // catch's state, seeds included.
+  mutable fun propagateScopeToTryLog(tenv: TEnv, scope: readonly Scope): void {
+    if (!this.tryWriteLogs.isEmpty()) {
+      outer = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
+      for (nameRef in scope.escapingRefs()) {
+        outer![nameRef.name] = outer.maybeGet(nameRef.name) match {
+        | None() -> nameRef.ref.type
+        | Some(prev) -> TType::union(this.subst, tenv, prev, nameRef.ref.type)
+        }
+      }
+    }
+  }
+
+  // A logged value that outlived its construct normally is in flight in any
+  // enclosing try: union its post-construct view into the log still open. A
+  // name that no longer resolves was local to the construct.
+  mutable fun propagateSurvivorsToTryLog(
+    tenv: TEnv,
+    log: readonly Map<String, TType>,
+  ): void {
+    if (!this.tryWriteLogs.isEmpty()) {
+      outer = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
+      for (kv in log.items()) {
+        this.scope.lookupRefType(kv.i0).each(ty ->
+          outer![kv.i0] = outer.maybeGet(kv.i0) match {
+          | None() -> ty
+          | Some(prev) -> TType::union(this.subst, tenv, prev, ty)
+          }
+        )
+      }
+    }
+  }
+
   // The number of edges each catcher holds, innermost last — taken before a
   // `try`, so the edges recorded while checking it can be found again once its
   // `finally` is known.

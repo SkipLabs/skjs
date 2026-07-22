@@ -176,6 +176,7 @@ function passingExceptionCarriesFinallyWrite(
     mayThrow();
     y = a;
   } catch {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const z: "a" = y;
   }
 }
@@ -199,6 +200,7 @@ function survivorCarriedByLaterThrow(
     mayThrow();
     y = a;
   } catch {
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const z: "a" = y;
   }
 }
@@ -231,8 +233,6 @@ function returnUnwindsThroughOuterFinally(
 
 // But a catch that never completes normally is no part of the flow AFTER the
 // construct: code there runs only when the try completed, ending on `y = a`.
-// Pins today's behaviour, which wrongly merges the returning catch's seeded
-// state into the code after; the next commit accepts this.
 function returningCatchLeavesThePostFlowAlone(
   a: "a",
   b: "b",
@@ -247,6 +247,5 @@ function returningCatchLeavesThePostFlowAlone(
   } catch {
     return;
   }
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: "a" = y;
 }
