@@ -13,3 +13,13 @@ docs/*.aux
 /.claude/settings.local.json
 /.skargoconfig
 .regen-staging/
+
+# Scratch repros contributors are told to create (see AGENTS.md) and debug traces
+tmp_*.ts
+_skjs-debug/
+
+# OS / editor junk
+.DS_Store
+*.swp
+*.swo
+.idea/
