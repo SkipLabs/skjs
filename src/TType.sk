@@ -1058,12 +1058,14 @@ class TObject private (
           fieldName,
         )}' does not exist on this type`,
       ),
-      (
-        pos,
-        "Possible options are:\n" +
-          names.toArray().map(n -> TypePp::escapeName(n.value)).join("\n"),
-      ),
     ];
+    // Only list options when there are any: a bare "Possible options are:"
+    // followed by nothing (a receiver with no commonly-accessible named member,
+    // e.g. a bare function type) reads as a mysterious dangling header.
+    optionNames = names.toArray().map(n -> TypePp::escapeName(n.value));
+    if (!optionNames.isEmpty()) {
+      msgs.push((pos, "Possible options are:\n" + optionNames.join("\n")))
+    };
     if (
       branches.any(b ->
         isBottomIdx(b.stringIndex) || isBottomIdx(b.symbolIndex)
@@ -2732,24 +2734,20 @@ class TFields protected {
   }
 
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
-    fatalError(
-      Array[
-        (
-          pos,
-          `Property '${TypePp::escapeName(
-            fieldName,
-          )}' does not exist on this type`,
-        ),
-        (
-          pos,
-          "Possible options are:\n" +
-            this.fields.toArray()
-              .map(x -> TypePp::escapeName(x.name.value))
-              .join("\n"),
-        ),
-      ],
-      TSCode(2339),
-    )
+    base = (
+      pos,
+      `Property '${TypePp::escapeName(fieldName)}' does not exist on this type`,
+    );
+    // Only list options when there are any (see the TObject overload).
+    optionNames = this.fields.toArray().map(x ->
+      TypePp::escapeName(x.name.value)
+    );
+    msgs = if (optionNames.isEmpty()) {
+      Array[base]
+    } else {
+      Array[base, (pos, "Possible options are:\n" + optionNames.join("\n"))]
+    };
+    fatalError(msgs, TSCode(2339))
   }
 
   fun getType(
