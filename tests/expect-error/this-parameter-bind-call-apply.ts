@@ -97,9 +97,6 @@ function applyZeroArgOk(): number {
 }
 // ...and the canonical empty argument array supplies the same zero arguments.
 function applyZeroArgEmptyArrayOk(): number {
-  // FIXME: false positive — the empty array supplies zero arguments, exactly
-  // matching a zero-parameter function's arity.
-  // @skjs-expect-error Argument is not assignable to the parameter's type
   return noArgs.apply(ctx, []);
 }
 // A non-empty array still over-supplies and is rejected.
