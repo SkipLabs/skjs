@@ -950,40 +950,11 @@ function badTraverseList<T>(head: ListNode<T> | null): void {
 
 ## Working Examples Summary
 
-The following TypeScript files demonstrate patterns that work well with SKJS:
+A few of the example programs under `examples/src/` and the patterns they demonstrate:
 
-### Basic Examples
 - **basic_types.ts**: Variable declarations, functions, basic types
-- **classes.ts**: Class definitions without inheritance
 - **algorithms.ts**: Array operations, recursive algorithms
-
-### Advanced Examples  
-- **advanced.ts**: Interfaces, generics, union types, type annotations
-- **generic_examples.ts**: Comprehensive generic classes (Container, Collection, Stack, Pair)
-- **tuple_examples.ts**: Tuple types, mixed-type collections, tuple operations
-- **simple_adt_examples.ts**: Algebraic Data Types with `kind` field pattern matching
-- **state_machines.ts**: State machine patterns using ADTs and pattern matching
-- **working_patterns.ts**: Practical patterns - branded types, Result type, validation
-- **data_structures.ts**: Stack implementations with concrete types
-- **functional_programming.ts**: Map, filter, reduce, function composition
-- **recursion_examples.ts**: Factorial, Fibonacci, string reversal
 - **string_processing.ts**: String manipulation, palindrome checking
-- **edge_cases.ts**: Optional parameters, null checks, boundary conditions
-- **complex_types.ts**: Type aliases, nested interfaces, type-safe operations
-- **mathematical_computations.ts**: Prime numbers, matrix operations, statistics
-
-### Module System Examples
 - **math_utils.ts**: Exportable math functions and utilities
-- **array_utils.ts**: Array manipulation functions for import/export
-- **types.ts**: Shared type definitions and interfaces
-- **result_utils.ts**: Result type utilities with validation functions
-- **business_logic.ts**: Complex business logic using multiple imports
-- **import_demo.ts**: Comprehensive demonstration of the import system
 
-### Enhanced Builtins
-The builtins.ts file has been extended with:
-- Additional Array methods: `filter`, `reduce`, `join`, `slice`
-- More Math functions: `min`, `ceil`, `round`, `abs`, `pow`, `sqrt`
-- Extended string methods: `substring`, `indexOf`, `split`, `toLowerCase`, `toUpperCase`
-
-All examples follow SKJS constraints and pass type checking successfully.
+These follow SKJS constraints and pass type checking; see `examples/src/` for the full set.
