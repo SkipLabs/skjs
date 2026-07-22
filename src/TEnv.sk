@@ -1432,7 +1432,16 @@ base class TEnv{
       retTypePos,
       TAInst(Name(retTypePos, className.value), TEnv::tparamsAsTArgs(tparams)),
     );
-    tafun = TAFun(false, tparams, sig.params, retType, cgNode);
+    // A `this` parameter on a constructor is already an error (TS2681, reported
+    // in TypeChecker::constructor). Drop it from the synthesized `new` signature
+    // so it stays receiver-free and construction sites (`new C()`) do not
+    // cascade a spurious "this context is not assignable" error.
+    params = if (sig.params.size() > 0 && sig.params[0].isThisParam()) {
+      sig.params.slice(1)
+    } else {
+      sig.params
+    };
+    tafun = TAFun(false, tparams, params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
   }
 

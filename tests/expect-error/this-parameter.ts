@@ -39,3 +39,8 @@ class TestConstructorThis {
     this.x = n;
   }
 }
+// The rejected `this` parameter must not cascade to construction sites: the
+// user wrote `new TestConstructorThis(5)` correctly.
+export function makeTestConstructorThis(): TestConstructorThis {
+  return new TestConstructorThis(5);
+}
