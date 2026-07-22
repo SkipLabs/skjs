@@ -2145,7 +2145,47 @@ extension class TObject {
       for (fields2 in obj2.branches) {
         savedBranchSubst = subst.save();
         TFields::isSub(subst, tenv, fields1, fields2) match {
-        | STOk() -> break void
+        | STOk() ->
+          // A supertype method-syntax member (`{ m(): R }`, ImplicitShape) is
+          // attach-only: at `o.m()` the receiver is the carrier `o` itself. So
+          // whenever the subtype's own `m` declares a real receiver `this: T`
+          // (an explicit `this`, or a class/interface method), that carrier
+          // must satisfy T — otherwise the shape target would erase the
+          // requirement and let `o.m()` run with a bad receiver (#993). This
+          // holds by construction for a class/primitive inhabitant (its own
+          // instance IS the receiver) and fails exactly for a property-syntax
+          // member `{ m: f }` whose `f` carries an independent `this`.
+          //
+          // WIP (#993): this catches explicitly-typed carriers but NOT an
+          // inline literal `{ m: f }` (contextually retyped to the shape before
+          // this runs), and it regresses a boxed primitive carrier
+          // (`number <= { toFixed(): string }`) because `obj1` is the boxed
+          // object, not the primitive. See the issue.
+          TObject::checkShapeCarriers(
+            subst,
+            tenv,
+            TType::single(obj1),
+            fields1,
+            fields2,
+          ) match {
+          | None() -> break void
+          | Some((f1, f2, err)) ->
+            !errors = List.Cons(
+              (
+                fields2,
+                STRecFieldsField(
+                  Some(err),
+                  f1,
+                  f2,
+                  FMKGetter(),
+                  fields1,
+                  fields2,
+                ),
+              ),
+              errors,
+            );
+            subst.restore(savedBranchSubst)
+          }
         | err @ STErrorOnTFields _ ->
           !errors = List.Cons((fields2, err), errors);
           subst.restore(savedBranchSubst)
@@ -2156,6 +2196,50 @@ extension class TObject {
       }
     };
     STOk()
+  }
+
+  // The `this` parameter of a callable member field, if it has a call
+  // signature (else None — a plain data field).
+  private static fun fieldThisParam(
+    subst: mutable Subst,
+    tenv: TEnv,
+    field: TField,
+  ): ?ThisParam {
+    field.get.clauses
+      .getObject()
+      .flatMap(obj -> obj.maybeGetCall(subst, tenv))
+      .map(tfuns -> tfuns.fun_.thisParam)
+  }
+
+  // For every attach-only shape method in the supertype, require the carrier
+  // (`subObj`, the value being assigned) to satisfy the subtype member's own
+  // declared `this`. Returns the first violation, or None.
+  private static fun checkShapeCarriers(
+    subst: mutable Subst,
+    tenv: TEnv,
+    subObj: TType,
+    fields1: TFields,
+    fields2: TFields,
+  ): ?(TField, TField, STErrorOnTType) {
+    for (f2 in fields2.fields.values()) {
+      if (TObject::fieldThisParam(subst, tenv, f2) is Some(ImplicitShape _)) {
+        fields1.fields.maybeGet(f2.name) match {
+        | Some(f1) ->
+          TObject::fieldThisParam(subst, tenv, f1).flatMap(tp ->
+            tp.tyOpt()
+          ) match {
+          | Some(reqThis) ->
+            TType::isSub(subst, tenv, subObj, reqThis) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ -> return Some((f1, f2, err))
+            }
+          | None() -> void
+          }
+        | None() -> void
+        }
+      }
+    };
+    None()
   }
 }
 
