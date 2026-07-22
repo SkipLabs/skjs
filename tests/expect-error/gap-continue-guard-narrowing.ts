@@ -10,9 +10,6 @@ export function continueGuardNarrowing(
   const out: string[] = [];
   for (const x of xs) {
     if (x === undefined) continue;
-    // Pins today's behaviour: the continue branch is merged back, so `x` stays
-    // possibly-undefined. The next commit drops the branch and narrows.
-    // @skjs-expect-error Argument is not assignable to the parameter's type
     out.push(x);
   }
   return out;

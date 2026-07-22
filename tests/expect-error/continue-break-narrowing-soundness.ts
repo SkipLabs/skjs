@@ -92,9 +92,6 @@ function breakGuardNarrowsInSwitch(x: number, v: string | undefined): void {
   switch (x) {
     case 1:
       if (v === undefined) break;
-      // Pins today's behaviour: the break branch is merged back, so `v` stays
-      // possibly-undefined. The next commit drops the branch and narrows.
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const s: string = v;
       break;
     default:

@@ -20,11 +20,6 @@ function breakSubpathWriteStaysOnItsEdge(
         break;
       }
     case "b":
-      // Pins today's behaviour: the kept break branch widens `y` to include
-      // "c" here. The next commit drops the branch; the write still reaches
-      // the code after the switch (see the function below), but not this
-      // clause.
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
       const z: "a" | "b" = y;
       break;
     default:
