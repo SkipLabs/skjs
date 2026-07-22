@@ -29,8 +29,18 @@ extension class TypeChecker {
         ),
       ),
     );
-    !this.bindings["this"] = thisType;
-    tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true);
+    // A function that explicitly declares `this: void` / `this: undefined` is
+    // treated as receiver-less (a free function; see TEnv::isReceiverlessThis).
+    // That is only sound if the body does not observe `this` — otherwise a
+    // rebound receiver would contradict the declared type. Leave `this` unbound
+    // so any use of it in the body is rejected.
+    receiverlessThis = explicitThisOpt
+      .map(t -> TEnv::isReceiverlessThis(subst, this, t))
+      .default(false);
+    if (!receiverlessThis) {
+      !this.bindings["this"] = thisType;
+      tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true)
+    };
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
     this.bindParams(tcenv, sig.params, paramTypes);
     typedParams = sig.params.mapWithIndex((i, param) ->

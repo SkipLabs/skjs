@@ -570,6 +570,12 @@ cases and conservatively under-approximates a few others.
   rejected, and `.call`/`.apply`/`.bind` are not synthesized for it (its
   carrier type is erased). Property-syntax members stay genuinely free
   functions.
+- **`this: void` / `this: undefined` is receiver-less.** Such a function is a
+  free function: assignable to a no-`this` type, usable as a no-`this` callback,
+  and its `.call`/`.apply`/`.bind` accept any receiver (more permissive than TS,
+  which restricts the `.call` receiver). To keep that sound, the body may not
+  observe `this` — any use is rejected (stricter than TS, which types `this` as
+  `void`/`undefined` inside the body).
 - **Verified by**: `tests/expect-error/this-parameter*.ts`
 
 ## Coding Guidelines for SKJS
