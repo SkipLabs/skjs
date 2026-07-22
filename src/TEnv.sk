@@ -2790,7 +2790,7 @@ base class TEnv{
             field = TField::create{
               pos => exprPos,
               name => uniqueId,
-              isOptional => false,
+              isOptional => fd.optional is Some _,
               isReadonly => Some(exprPos),
               type => decl,
               access => FAPublic(),
@@ -2800,7 +2800,7 @@ base class TEnv{
             field = TField::create{
               pos => name.pos,
               name => name.value,
-              isOptional => false,
+              isOptional => fd.optional is Some _,
               isReadonly => Some(name.pos),
               type => decl,
               access => FAPublic(),

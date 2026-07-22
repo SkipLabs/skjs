@@ -6,17 +6,14 @@
 // An object that omits an optional method-syntax member inhabits the type.
 type WithOptMethod = { data: number; m?(): number };
 export function omitOk(): WithOptMethod {
-  // FIXME: false positive — an optional method member may be omitted; the
-  // optionality is currently dropped, so the omitting object is rejected.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { data: 1 };
 }
 
 // Calling an optional method without narrowing may reach `undefined`.
 type OnlyOptMethod = { m?(): number };
 export function callUnguarded(o: OnlyOptMethod): number {
-  // TODO: should be rejected — `o.m` is optional, so it may be undefined at the
-  // call. The optionality is currently dropped, so the unguarded call is accepted.
+  // `o.m` is optional, so it may be undefined at the call.
+  // @skjs-expect-error This expression is not callable
   return o.m();
 }
 
