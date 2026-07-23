@@ -118,12 +118,6 @@ export declare class SkipServiceBroker {
     key: K,
   ): Promise<V[]>;
 
-  getUnique<K extends Json, V extends Json>(
-    resource: string,
-    params: Json,
-    key: K,
-  ): Promise<V>;
-
   update<K extends Json, V extends Json>(
     collection: string,
     entries: Entry<K, V>[],
