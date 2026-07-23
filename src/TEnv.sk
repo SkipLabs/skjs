@@ -81,6 +81,17 @@ base class TEnv{
   // process of expanding.
   seenInstantiate: SortedSet<String> = SortedSet[],
 
+  // The aliases whose type parameters are being instantiated — their defaults
+  // filled and constraints checked. Filling a default or checking a constraint
+  // that names the alias, directly or through another alias, leads back here;
+  // `typeReachesTypeDef` catches the direct case precisely (a circular default
+  // becomes `unknown`, a self-referential constraint is refused), and this
+  // catches the rest, a cycle through a second alias's default or constraint,
+  // which would otherwise recurse until the stack is gone. Reaching it again is
+  // an excessively deep instantiation and is refused. Only added to below the
+  // point it is set, so it scopes itself as the instantiation unwinds.
+  instantiatingTParams: SortedSet<String> = SortedSet[],
+
   // The value names currently being resolved through `typeof` in a type
   // position. `typeof v` reads v's declared type, so two values that name each
   // other's `typeof` (`declare const v: typeof w; declare const w: typeof v`)
@@ -201,7 +212,13 @@ base class TEnv{
       if (this.isCircularTypeDef(tcenvb.context, ta)) {
         return TType::inst(name, targs);
       };
-      !this = this.instantiateTParams(subst, name.pos, targs.targs, tdefParams);
+      !this = this.instantiateTParams(
+        subst,
+        name.pos,
+        targs.targs,
+        tdefParams,
+        Some(ta),
+      );
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
@@ -242,8 +259,45 @@ base class TEnv{
     pos: PosRange,
     tArgs: Array<TType>,
     tParams: Array<TypeParam>,
+    // The alias being instantiated, when it is one (None for a class). A
+    // parameter's default or constraint may name it, and resolving either then
+    // needs itself — a cycle SKJS cannot compute (issue #1000). A circular
+    // default has no value, so it resolves to `unknown`: nothing is assumed of
+    // it, and a value declared at it is caught rather than laundered. A
+    // self-referential constraint is a check SKJS cannot verify, so any
+    // instantiation reaching it is refused.
+    selfTd: ?TypeDef = None(),
   ): this {
     tcenvb: mutable TCEnvBase = subst;
+
+    // A cycle through a second alias's default (which `typeReachesTypeDef`
+    // below does not follow) leads back to instantiating the same alias with
+    // no arguments; refuse it as excessively deep rather than recurse forever.
+    // The mark is set and tested only for an under-applied reference — one that
+    // fills a default — because that is where a default cycle propagates: a
+    // fully-applied reference (`A<string>` inside `type A<T = A<string>>`) binds
+    // its parameter and terminates, so it neither marks nor trips the guard. The
+    // mark covers only the parameter fill below; it is lifted before this
+    // returns, so the body normalized after — which recurses through the alias
+    // legitimately — is not caught.
+    savedInstantiating = this.instantiatingTParams;
+    underApplied = tArgs.size() < tParams.size();
+    selfTd match {
+    | Some(td) if (underApplied) ->
+      if (this.instantiatingTParams.contains(td.name.value)) {
+        fatalError(
+          Array[
+            (
+              td.name.pos,
+              "Type instantiation is excessively deep and possibly infinite",
+            ),
+          ],
+          TSCode(2589),
+        )
+      };
+      !this.instantiatingTParams = this.instantiatingTParams.set(td.name.value)
+    | _ -> void
+    };
 
     if (tArgs.size() > tParams.size()) {
       tcenvb.error(
@@ -257,10 +311,29 @@ base class TEnv{
       )
     };
 
+    shadowed = static::tparamNames(tParams);
+
     for (i => tParam in tParams) {
       tArg = if (i < tArgs.size()) tArgs[i] else {
         tParam.default match {
-        | Some(default) -> this.normalize(tcenvb, default)
+        | Some(default) ->
+          reachesSelf =
+            selfTd.map(td ->
+              this.typeReachesTypeDef(
+                tcenvb.context,
+                td,
+                default,
+                shadowed,
+                true,
+              )
+            ) == Some(true);
+          if (reachesSelf) {
+            // A circular default denotes nothing, and resolving it would not
+            // terminate; recover it as `unknown` so it launders no value.
+            TType::top(pos)
+          } else {
+            this.normalize(tcenvb, default)
+          }
         | None() ->
           tcenvb.error(
             Array[
@@ -277,6 +350,23 @@ base class TEnv{
       tParam.constraint match {
       | None() -> void
       | Some(cstr) ->
+        if (
+          selfTd.map(td ->
+            this.typeReachesTypeDef(tcenvb.context, td, cstr, shadowed, false)
+          ) == Some(true)
+        ) {
+          // A self-referential constraint is a check SKJS cannot verify; refuse
+          // any instantiation reaching it rather than accept it unchecked.
+          fatalError(
+            Array[
+              (
+                cstr.pos,
+                "Type instantiation is excessively deep and possibly infinite",
+              ),
+            ],
+            TSCode(2589),
+          )
+        };
         cstrTy = this.normalize(tcenvb, cstr);
         // Clone substitution: constraint checking should verify compatibility
         // but NOT permanently grow type variables. Growing here would close the
@@ -313,6 +403,7 @@ base class TEnv{
       };
       !this.bindings[tParam.name.value] = tArg;
     };
+    !this.instantiatingTParams = savedInstantiating;
     this
   }
 
@@ -2015,6 +2106,10 @@ base class TEnv{
             n.pos,
             normTargs,
             tparams,
+            tdef match {
+            | td @ TypeDef _ -> Some(td)
+            | _ -> None()
+            },
           )
         };
         TType::inst(n, TArgs(normTargs))

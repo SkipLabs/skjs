@@ -4,21 +4,24 @@
 // A type parameter's default fills the parameter when a reference omits it.
 // When the default names the alias it belongs to — with too few arguments to
 // break the recursion — filling it would require the alias's own instantiation,
-// the very one being computed: a cycle with no fixed point. An explicit
-// argument breaks it: `type A<T = A<string>>` is well-founded.
+// the very one being computed: a cycle with no fixed point. Such a default
+// denotes nothing, so the parameter resolves to `unknown`. `unknown` is sound:
+// a value declared at the alias is caught the moment it is used at a concrete
+// type, rather than laundered into it as the empty type would be. A cycle the
+// analysis can see at the declaration is reported there and resolved; one that
+// only emerges by running through a second alias's default, or through a
+// self-referential constraint, surfaces as an excessively deep instantiation
+// and is refused. Before this, every such reference either resolved to the
+// empty type and laundered, or crashed the checker outright.
 //
 // The immediate positions inside a default are WIDER than inside a body: an
 // array element, a tuple element, the operand of `keyof`, and the arguments of
 // any reference — a class or interface included — all reach the alias here,
 // though the same shapes are legal as an alias body (see circular-type-alias.ts).
 // Only object members and function signatures defer.
-//
-// A circular default is reported at its declaration (TS2716, issue #886). It
-// still denotes nothing; resolving it to `unknown` and refusing the cyclic
-// instantiations that only surface at a use is the fix for #1000, added next.
 
 /////////////////////////////////////////////////////////////////////////////
-// A default that reaches its own alias through an immediate position.
+// A circular default is reported at its declaration and resolves to `unknown`.
 /////////////////////////////////////////////////////////////////////////////
 
 // Direct self-reference in the default.
@@ -48,6 +51,29 @@ type KeyofDefault<T = keyof KeyofDefault> = T;
 type RefArgDefault<T = Array<RefArgDefault>> = T;
 
 /////////////////////////////////////////////////////////////////////////////
+// The alias resolves to `unknown`: a value cannot be drawn out of it.
+/////////////////////////////////////////////////////////////////////////////
+
+// Assigning a value *into* the alias is fine — everything is `unknown`.
+function intoSelf(): SelfDefault {
+  return 5;
+}
+
+declare const selfValue: SelfDefault;
+
+// But the value cannot be used at a concrete type: `unknown` is not `string`.
+function drainSelf(): string {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return selfValue;
+}
+
+// Nor cast out of, unlike the empty type, which would satisfy any cast.
+function castSelf(): string {
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
+  return selfValue as SelfDefault as string;
+}
+
+/////////////////////////////////////////////////////////////////////////////
 // A default that supplies enough arguments is well-founded, not circular.
 /////////////////////////////////////////////////////////////////////////////
 
@@ -75,19 +101,42 @@ type ObjectMemberDefault<T = { x: ObjectMemberDefault }> = T;
 type FnDefault<T = () => FnDefault> = T;
 
 /////////////////////////////////////////////////////////////////////////////
-// Cycles that only close through a second alias's default.
+// Cycles that only close through a second alias's default are refused.
 /////////////////////////////////////////////////////////////////////////////
 
 // `MutualA`'s default is `MutualB`, whose default is `MutualA`: filling either
 // requires the other. Neither default names its own alias, so the cycle is not
-// visible at a single declaration.
+// visible at a single declaration and stays silent until a reference forces the
+// defaults to be filled — `useMutual` below. The instantiation that closes the
+// cycle is refused, reported at the alias it reaches back to. tsc instead
+// reports a circular default at `MutualB`'s declaration; both are sound.
+// @skjs-expect-error Type instantiation is excessively deep and possibly infinite
 type MutualA<T = MutualB> = T;
 type MutualB<X = MutualA> = X;
 
-// A longer cycle through three aliases.
+function useMutual(x: MutualA): void {}
+
+// A longer cycle is refused the same way, reported at its entry alias.
+// @skjs-expect-error Type instantiation is excessively deep and possibly infinite
 type RingA<T = RingB> = T;
 type RingB<T = RingC> = T;
 type RingC<T = RingA> = T;
+
+function useRing(x: RingA): void {}
+
+/////////////////////////////////////////////////////////////////////////////
+// A self-referential constraint is refused.
+/////////////////////////////////////////////////////////////////////////////
+
+// The constraint of `Fbound` names `Fbound` itself, so satisfying it requires
+// instantiating the alias again — a check the analysis cannot discharge. Every
+// instantiation is refused, including the well-typed `Fbound<string>`. tsc
+// accepts `Fbound<string>`; SKJS refuses it — a sound over-refusal, not a wrong
+// answer about a value.
+// @skjs-expect-error Type instantiation is excessively deep and possibly infinite
+type Fbound<T extends Fbound<string>> = T;
+
+function useFbound(x: Fbound<string>): void {}
 
 /////////////////////////////////////////////////////////////////////////////
 // Ordinary type-parameter defaults and constraints are unaffected.
