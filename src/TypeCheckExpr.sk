@@ -3082,6 +3082,25 @@ extension class TypeChecker {
           num,
           TSCode(2356),
         );
+        // A `++`/`--` on a plain variable writes it back — the binding holds
+        // `number` afterwards, not whatever it was narrowed to. Route the write
+        // through `Scope::set`, the same path `x = x + 1` takes, so a later read
+        // of a value the binding's type now excludes is caught and so any
+        // write-log hook sees the mutation (SkipLabs/skjs#1017).
+        subExpr.value match {
+        | Var(n) ->
+          tcenv.scope.set(n, num, (x, y) ->
+            this.checkSubType(
+              tcenv,
+              pos,
+              "Type is not assignable to the variable's type",
+              x,
+              y,
+              TSCode(2322),
+            )
+          )
+        | _ -> void
+        };
         num
       | POExcl() ->
         (isValid, tyWithoutNullish) = this.exprWithoutNullish(
