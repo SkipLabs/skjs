@@ -6,6 +6,7 @@ dist/
 .devcontainer
 node_modules/
 .generated-examples-check/
+.project-survey/
 docs/*.bbl
 docs/*.log
 docs/*.aux
