@@ -265,9 +265,23 @@ mutable class TCEnv private {
     (res, this.tryWriteLogs.pop())
   }
 
-  // Record a runtime write for the innermost block being logged. Narrowings
-  // are not writes — they must not widen a catch's view of a value the runtime
-  // never changed — so only the assignment forms call this. The log is keyed
+  // A runtime write to the in-scope binding of `name`: record the value for
+  // any enclosing try's log, then narrow the binding through `Scope::set`.
+  // Narrowings are not writes — they must not widen a catch's view of a value
+  // the runtime never changed — so the refinement and constructor-`super`
+  // sets go to `Scope::set` directly, and only the assignment forms come
+  // here.
+  mutable fun writeVar(
+    tenv: TEnv,
+    name: Name,
+    ty: TType,
+    isSubType: (TType, TType) -> void,
+  ): void {
+    this.recordTryWrite(tenv, name, ty);
+    this.scope.set(name, ty, isSubType)
+  }
+
+  // Record a write for the innermost block being logged. The log is keyed
   // by bare name, which relies on SKJS rejecting nested shadowing (TS2451):
   // if shadowing is ever allowed, distinct bindings would share entries and
   // this needs a binding identity instead (as Scope::snapshotTo does too). Outer trys receive
@@ -275,7 +289,7 @@ mutable class TCEnv private {
   // exception can actually escape it carrying them (see the Try arm): an inner
   // try whose catch absorbs everything keeps its intermediate states to
   // itself.
-  mutable fun recordTryWrite(tenv: TEnv, name: Name, ty: TType): void {
+  private mutable fun recordTryWrite(tenv: TEnv, name: Name, ty: TType): void {
     if (!this.tryWriteLogs.isEmpty()) {
       log = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
       log![name.value] = log.maybeGet(name.value) match {

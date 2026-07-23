@@ -3757,8 +3757,7 @@ extension class TypeChecker {
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      tcenv.recordTryWrite(this, n, ty2);
-      tcenv.scope.set(n, ty2, (x, y) ->
+      tcenv.writeVar(this, n, ty2, (x, y) ->
         this.checkSubType(
           tcenv,
           pos,
@@ -3988,8 +3987,7 @@ extension class TypeChecker {
     this.checkLValue(tcenv, target);
     target.value match {
     | Var(n) ->
-      tcenv.recordTryWrite(this, n, valueType);
-      tcenv.scope.set(n, valueType, (x, y) ->
+      tcenv.writeVar(this, n, valueType, (x, y) ->
         this.checkSubType(
           tcenv,
           target.pos,
@@ -4223,8 +4221,7 @@ extension class TypeChecker {
         | Some(o) -> TType::single(o)
         | None() -> TType::bottom(objPos)
         };
-        tcenv.recordTryWrite(this, local, newTy);
-        tcenv.scope.set(local, newTy, (x, y) -> {
+        tcenv.writeVar(this, local, newTy, (x, y) -> {
           this.checkSubType(
             tcenv,
             fieldType.pos,
