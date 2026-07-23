@@ -584,6 +584,75 @@ base class TEnv{
     tparams.reduce((names, tparam) -> names.set(tparam.name.value), SortedSet[])
   }
 
+  // The first type parameter of `td` whose default circularly references `td`
+  // (TS2716, issue #886), or None(). A default with no explicit argument for a
+  // parameter falls back to that parameter's default, so `type A<T = A>` needs
+  // A's own default to compute A's default — a cycle. An explicit argument
+  // breaks it: `type A<T = A<string>>` is well-founded, which is why only a
+  // reference supplying fewer arguments than the alias has parameters counts.
+  fun circularDefaultTParam(
+    context: mutable SKStore.Context,
+    td: TypeDef,
+  ): ?TypeParam {
+    shadowed = static::tparamNames(td.tdefParams);
+    td.tdefParams.find(tparam ->
+      tparam.default match {
+      | Some(default) ->
+        this.typeReachesTypeDef(context, td, default, shadowed, true)
+      | None() -> false
+      }
+    )
+  }
+
+  // Whether computing `ty` reaches the alias `target` through an immediate
+  // position — the type itself, either side of a union or intersection, the
+  // operand of `keyof`, an array or tuple element, and the arguments of any
+  // reference (a class or interface included, since `Array<A>` reaches `A`).
+  // Object members and function signatures defer, as in a body. `argGated`
+  // (true for a default, false for a constraint) requires the reaching
+  // reference to leave a parameter to be default-filled — fewer arguments than
+  // the alias has — so `type A<T = A<string>>` is well-founded but
+  // `type C<T extends C<string>>` still reaches `C`.
+  private fun typeReachesTypeDef(
+    context: mutable SKStore.Context,
+    target: TypeDef,
+    ty: Type,
+    shadowed: SortedSet<String>,
+    argGated: Bool,
+  ): Bool {
+    walk = t -> this.typeReachesTypeDef(context, target, t, shadowed, argGated);
+    ty.value match {
+    | TAUnion(ty1, ty2)
+    | TAInter(ty1, ty2) ->
+      walk(ty1) || walk(ty2)
+    | TAKeyOf(operand) -> walk(operand)
+    | TAReadonly(inner) -> walk(inner)
+    | TAArray(elt) -> walk(elt)
+    | TATuple(elts) ->
+      elts.any(elt ->
+        elt match {
+        | TEType(_, _, t) -> walk(t)
+        | TESpread(_, t) -> walk(t)
+        }
+      )
+    | TAInst(n, targs) ->
+      if (shadowed.contains(n.value)) {
+        // A type parameter, not the alias.
+        false
+      } else {
+        targs.any(walk) ||
+          (this.maybeGetTypeDef(context, n) match {
+          | Some(referenced) ->
+            referenced.bodyRef == target.bodyRef &&
+              (!argGated || targs.size() < target.tdefParams.size())
+          | None() -> false
+          })
+      }
+    // Object members and function signatures defer, as in a body.
+    | _ -> false
+    }
+  }
+
   fun getFunSig(
     context: mutable SKStore.Context,
     fd: FunDef<FunDefName>,

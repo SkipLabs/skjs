@@ -13,32 +13,38 @@
 // though the same shapes are legal as an alias body (see circular-type-alias.ts).
 // Only object members and function signatures defer.
 //
-// This file pins the current handling of these aliases; the reporting,
-// resolution, and refusal they now receive are added by the fixes for #886 and
-// #1000.
+// A circular default is reported at its declaration (TS2716, issue #886). It
+// still denotes nothing; resolving it to `unknown` and refusing the cyclic
+// instantiations that only surface at a use is the fix for #1000, added next.
 
 /////////////////////////////////////////////////////////////////////////////
 // A default that reaches its own alias through an immediate position.
 /////////////////////////////////////////////////////////////////////////////
 
 // Direct self-reference in the default.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type SelfDefault<T = SelfDefault> = T;
 
 // An array element of a default is immediate, unlike `type Arr = Arr[]`, a
 // legal alias body.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type ArrayDefault<T = ArrayDefault[]> = T;
 
 // A tuple element likewise, unlike the legal body `type Tup = [Tup]`.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type TupleDefault<T = [TupleDefault]> = T;
 
 // A union member.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type UnionDefault<T = UnionDefault | string> = T;
 
 // The operand of `keyof`.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type KeyofDefault<T = keyof KeyofDefault> = T;
 
 // The arguments of an interface reference are immediate in a default, unlike
 // `type ArrInst = Array<ArrInst>`, a legal alias body.
+// @skjs-expect-error Type parameter 'T' has a circular default
 type RefArgDefault<T = Array<RefArgDefault>> = T;
 
 /////////////////////////////////////////////////////////////////////////////
