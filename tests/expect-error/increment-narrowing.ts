@@ -8,8 +8,7 @@ function incrementClearsNarrowing(): void {
   let y: number = 0;
   if (y !== 0) return; // y narrowed to 0
   y++;
-  // TODO: SkipLabs/skjs#1017 — the increment never updates the binding, so
-  // this unsound read is wrongly accepted (`y` is `1` at runtime).
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: 0 = y;
 }
 
@@ -18,7 +17,7 @@ function decrementClearsNarrowing(): void {
   let y: number = 0;
   if (y !== 0) return;
   y--;
-  // TODO: SkipLabs/skjs#1017 — same unsound acceptance for `--`.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: 0 = y;
 }
 
