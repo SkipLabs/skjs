@@ -269,16 +269,17 @@ extension class TypeChecker {
       // any prefix, so the catch and finally entries below union the log in
       // (SkipLabs/skjs#963). Each block gets its own log; what escapes to any
       // enclosing try is decided at the end, gated on who can actually throw.
-      tcenv.pushTryWriteLog();
-      tryScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = tryScope;
-      tryTerm = StmtTermination::skip;
-      for (stmt in tryBlock) {
-        !tryTerm = tryTerm.then(this.stmt(tcenv, stmt))
-      };
-      tcenv.!scope = scopeCopy;
-      tcenv.popScope(this, tryScope);
-      tryLog = tcenv.popTryWriteLog();
+      (tryTerm, tryLog) = tcenv.withTryWriteLog(() -> {
+        tryScope = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = tryScope;
+        term = StmtTermination::skip;
+        for (stmt in tryBlock) {
+          !term = term.then(this.stmt(tcenv, stmt))
+        };
+        tcenv.!scope = scopeCopy;
+        tcenv.popScope(this, tryScope);
+        term
+      });
 
       (afterCatchTerm, catchLogOpt) = catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
@@ -286,34 +287,35 @@ extension class TypeChecker {
         // Entered only when the try threw — after any prefix of it, so with
         // any value the try wrote.
         catchScope.uniteTryWrites(tcenv.subst, this, tryLog);
-        tcenv.pushTryWriteLog();
-        tcenv.!scope = catchScope;
-        param match {
-        | Some(pat) ->
-          errorType = type match {
-          | Some(t) ->
-            tcenv.error(
-              Array[
-                (
-                  t.pos,
-                  "A 'catch' clause variable may not have a type annotation",
-                ),
-              ],
-              SKJSCode(2018),
-            );
-            this.normalize(tcenv, t)
-          | None() -> TType::top(pat.pos)
+        (catchTerm, catchLog) = tcenv.withTryWriteLog(() -> {
+          tcenv.!scope = catchScope;
+          param match {
+          | Some(pat) ->
+            errorType = type match {
+            | Some(t) ->
+              tcenv.error(
+                Array[
+                  (
+                    t.pos,
+                    "A 'catch' clause variable may not have a type annotation",
+                  ),
+                ],
+                SKJSCode(2018),
+              );
+              this.normalize(tcenv, t)
+            | None() -> TType::top(pat.pos)
+            };
+            tcenv.!exprTypes[(pat.pos, false, true)] = errorType;
+            this.bind(tcenv, BKLet(), pat, errorType, false, true, false)
+          | None() -> void
           };
-          tcenv.!exprTypes[(pat.pos, false, true)] = errorType;
-          this.bind(tcenv, BKLet(), pat, errorType, false, true, false)
-        | None() -> void
-        };
-        catchTerm = StmtTermination::skip;
-        for (stmt in catchBlock) {
-          !catchTerm = catchTerm.then(this.stmt(tcenv, stmt))
-        };
-        tcenv.!scope = scopeCopy;
-        catchLog = tcenv.popTryWriteLog();
+          term = StmtTermination::skip;
+          for (stmt in catchBlock) {
+            !term = term.then(this.stmt(tcenv, stmt))
+          };
+          tcenv.!scope = scopeCopy;
+          term
+        });
         if (catchTerm.mayFallthrough) {
           tcenv.popScope(this, catchScope)
         } else {
@@ -340,19 +342,21 @@ extension class TypeChecker {
         catchLogOpt.each(catchLog ->
           finallyScope.uniteTryWrites(tcenv.subst, this, catchLog)
         );
-        tcenv.pushTryWriteLog();
-        tcenv.!scope = finallyScope;
-        finallyTerm = StmtTermination::skip;
-        for (stmt in finallyStmts) {
-          !finallyTerm = finallyTerm.then(this.stmt(tcenv, stmt))
-        };
-        tcenv.!scope = scopeCopy;
-        tcenv.popScope(this, finallyScope);
-        tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
+        (finallyTerm, finallyLog) = tcenv.withTryWriteLog(() -> {
+          tcenv.!scope = finallyScope;
+          term = StmtTermination::skip;
+          for (stmt in finallyStmts) {
+            !term = term.then(this.stmt(tcenv, stmt))
+          };
+          tcenv.!scope = scopeCopy;
+          tcenv.popScope(this, finallyScope);
+          tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);
+          term
+        });
         // TODO: warning if afterCatchTerm always loops or terminates normally
         (
           afterCatchTerm.finally(finallyTerm),
-          Some(tcenv.popTryWriteLog()),
+          Some(finallyLog),
           finallyTerm.mayThrow,
         )
       | None() -> (afterCatchTerm, None(), false)

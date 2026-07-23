@@ -256,12 +256,13 @@ mutable class TCEnv private {
     (res, this.jumpCatchers.pop())
   }
 
-  mutable fun pushTryWriteLog(): void {
-    this.tryWriteLogs.push(mutable Map[])
-  }
-
-  mutable fun popTryWriteLog(): mutable Map<String, TType> {
-    this.tryWriteLogs.pop()
+  // Run `f` with a fresh write-log open, and return its result along with the
+  // writes `f` logged. Opening and closing live in the same function, so a
+  // caller cannot leave a log on the stack; a closed log is only ever read.
+  mutable fun withTryWriteLog<T>(f: () -> T): (T, readonly Map<String, TType>) {
+    this.tryWriteLogs.push(mutable Map[]);
+    res = f();
+    (res, this.tryWriteLogs.pop())
   }
 
   // Record a runtime write for the innermost block being logged. Narrowings
