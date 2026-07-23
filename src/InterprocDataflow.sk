@@ -284,4 +284,179 @@ mutable class Interproc<
   }
 }
 
+// -- CFG / expression utilities for interprocedural domains -----------------
+
+fun instrCallsites(instr: CFGInstr): mutable Iterator<Callsite> {
+  instr match {
+  | CFGIBind(_, _, _, None()) -> void
+  | CFGIBind(_, _, _, Some(e))
+  | CFGIExpr(e) ->
+    for (site in exprCallsites(e.expr)) yield site
+  | CFGIAssign(target, value) ->
+    for (site in exprCallsites(value.expr)) yield site;
+    for (site in exprCallsites(target.expr)) yield site
+  }
+}
+
+fun exprCallsites(e: Expr): mutable Iterator<Callsite> {
+  e.value match {
+  | Number _
+  | BigInt _
+  | Var _
+  | EString _
+  | Regexp _
+  | Params _
+  | Closure _ ->
+    void
+  | Spread(e1)
+  | TypeOf(e1)
+  | VoidOp(e1)
+  | Await(e1)
+  | Async(e1)
+  | Unop(_, e1)
+  | PostOp(_, e1)
+  | Dot(_, e1, _)
+  | As(e1, _)
+  | AsConst(e1)
+  | Satisfies(e1, _) ->
+    for (site in exprCallsites(e1)) yield site
+  | Get(e1, e2)
+  | In(e1, e2)
+  | InstanceOf(e1, e2)
+  | Binop(_, e1, e2) ->
+    for (site in exprCallsites(e2)) yield site;
+    for (site in exprCallsites(e1)) yield site
+  | EIf(a, b, c) ->
+    for (site in exprCallsites(a)) yield site;
+    for (site in exprCallsites(b)) yield site;
+    for (site in exprCallsites(c)) yield site
+
+  | EArray(exprs)
+  | TemplateLiteral(_, exprs) ->
+    for (expr in exprs) {
+      for (site in exprCallsites(expr)) yield site
+    }
+
+  | Object(fields) ->
+    for (field in fields) {
+      field match {
+      | FDSpread(expr)
+      | FDNormal(_, expr) ->
+        for (site in exprCallsites(expr)) yield site
+      | FDComputed(key, value) ->
+        for (site in exprCallsites(key)) yield site;
+        for (site in exprCallsites(value)) yield site
+      | FDMethod _ -> void
+      }
+    }
+  | ctor @ New(callee, _, args) ->
+    for (arg in args) {
+      for (site in exprCallsites(arg)) yield site
+    };
+    for (site in exprCallsites(callee)) yield site;
+    yield CSNew(ctor, e.pos)
+  | call @ Call(callee, _, args) ->
+    for (arg in args) {
+      for (site in exprCallsites(arg)) yield site;
+    };
+    for (site in exprCallsites(callee)) yield site;
+    yield CSCall(call, e.pos)
+  }
+}
+
+// Every expression evaluated by a block: instruction operands then the
+// terminator's value expression.
+fun blockExprs(block: CFGBlock): mutable Iterator<Expr> {
+  for (instr in block.instrs) {
+    instr match {
+    | CFGIBind(_, _, _, None()) -> void
+    | CFGIBind(_, _, _, Some(e))
+    | CFGIExpr(e) ->
+      yield e.expr
+    | CFGIAssign(target, value) ->
+      yield target.expr;
+      yield value.expr
+    }
+  };
+  block.terminator match {
+  | CFGTReturn(Some(e))
+  | CFGTBranch(e, _, _)
+  | CFGTSwitch(e, _, _)
+  | CFGTThrow(e) ->
+    yield e.expr
+  | CFGTReturn(None())
+  | CFGTJump _
+  | CFGTUnreachable() ->
+    void
+  }
+}
+
+fun blockCallsites(block: CFGBlock): mutable Iterator<Callsite> {
+  for (e in blockExprs(block)) {
+    for (site in exprCallsites(e)) yield site
+  }
+}
+
+// Whether the block can throw for a reason other than a call — a property
+// access, indexing, `in`, or `instanceof`. Calls are excluded because their
+// throwing is modeled interprocedurally (see `LivenessDomain.transferExn`).
+fun blockMayThrowImplicitly(block: CFGBlock): Bool {
+  for (e in blockExprs(block)) {
+    if (exprMayThrowImplicitly(e)) return true
+  };
+  false
+}
+
+fun exprMayThrowImplicitly(e: Expr): Bool {
+  e.value match {
+  | Get _
+  | In _
+  | InstanceOf _
+  | Dot(NormalDot(), _, _) ->
+    true
+  | Number _
+  | BigInt _
+  | Var _
+  | EString _
+  | Regexp _
+  | Params _
+  | Closure _ ->
+    false
+  | Dot(OptionalDot(), e1, _)
+  | Spread(e1)
+  | TypeOf(e1)
+  | VoidOp(e1)
+  | Await(e1)
+  | Async(e1)
+  | Unop(_, e1)
+  | PostOp(_, e1)
+  | As(e1, _)
+  | AsConst(e1)
+  | Satisfies(e1, _) ->
+    exprMayThrowImplicitly(e1)
+  | Binop(_, e1, e2) -> exprMayThrowImplicitly(e1) || exprMayThrowImplicitly(e2)
+  | EIf(a, b, c) ->
+    exprMayThrowImplicitly(a) ||
+      exprMayThrowImplicitly(b) ||
+      exprMayThrowImplicitly(c)
+  | EArray(exprs)
+  | TemplateLiteral(_, exprs) ->
+    exprs.any(exprMayThrowImplicitly)
+  | Object(fields) ->
+    fields.any(field ->
+      field match {
+      | FDSpread(expr)
+      | FDNormal(_, expr) ->
+        exprMayThrowImplicitly(expr)
+      | FDComputed(key, value) ->
+        exprMayThrowImplicitly(key) || exprMayThrowImplicitly(value)
+      | FDMethod _ -> false
+      }
+    )
+  | New(callee, _, args)
+  | Call(callee, _, args) ->
+    exprMayThrowImplicitly(callee) || args.any(exprMayThrowImplicitly)
+  }
+}
+
 module end;
