@@ -2,6 +2,10 @@
 
 SKJS is a typechecker for a dialect of TypeScript. Its goal is soundness — rejecting programs that would fail at runtime for type reasons — while restricting the type system to tractable constructs (see `skjs-rules.md`). Soundness is what SKJS aims for rather than a finished guarantee: some unsound programs are still accepted today, and known gaps are tracked as issues.
 
+## Incremental
+
+SKJS is incremental: after the first run it re-analyses only the files affected by a change, so re-checks are faster than checking from scratch. Use `--init` to prime an on-disk cache and `--data` to reuse it — see [docs/incremental.md](docs/incremental.md).
+
 ## Quickstart
 
 Grab a released binary, unpack the bundled type stubs, and check a file:
