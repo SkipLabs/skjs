@@ -85,7 +85,7 @@ mutable class Interproc<
   // when the callee's return state grows.
   private mutable callers: SortedMap<
     Loc<Ctx>,
-    mutable Vector<Loc<Ctx>>,
+    SortedSet<Loc<Ctx>>,
   > = SortedMap[],
 } {
   mutable fun analyzeForward(entrypoints: Sequence<CGNode>): void {
@@ -211,11 +211,10 @@ mutable class Interproc<
 
           // Record the callee->caller dependency so the caller is re-analyzed
           // when either of the callee's exit states grows.
-          this.callers.maybeGet(entry) match {
-          | None() ->
-            this.!callers = this.callers.set(entry, mutable Vector[caller])
-          | Some(callers) -> callers.push(caller)
-          };
+          this.!callers = this.callers.set(
+            entry,
+            this.callers.maybeGet(entry).default(SortedSet[]).set(caller),
+          );
 
           // Analyze the callee entry with its formals bound to actual
           // arguments, enqueuing the callee iff this widens its entry state.
