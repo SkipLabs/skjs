@@ -36,11 +36,14 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
   fun transfer(
     instrs: Array<CFGInstr>,
     s: Liveness,
-    interproc: (Callsite, Liveness) -> Liveness,
+    interproc: (Callsite, Liveness) -> (Liveness, Liveness),
   ): Liveness {
+    // Thread each call site's *normal* return through the block; a callee that
+    // never returns leaves everything sequenced after it unreachable.
     for (callsite in instrs.iterator().flatMap(instrCallsites)) {
       if (s is Dead()) return s;
-      !s = interproc(callsite, s)
+      (onReturn, _onThrow) = interproc(callsite, s);
+      !s = onReturn
     };
     s
   }
@@ -48,34 +51,33 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
   fun transferExn(
     block: CFGBlock,
     s: Liveness,
-    interproc: (Callsite, Liveness) -> Liveness,
+    interproc: (Callsite, Liveness) -> (Liveness, Liveness),
   ): Liveness {
-    blockCallsites = block.instrs.iterator().flatMap(instrCallsites);
-    callsites = block.terminator match {
-    | CFGTReturn(Some(e))
-    | CFGTBranch(e, _, _)
-    | CFGTSwitch(e, _, _) ->
-      blockCallsites.concat(exprCallsites(e.expr))
-    | _ -> blockCallsites
-    };
+    if (blockMayThrowImplicitly(block)) return Live();
 
-    for (callsite in callsites) {
-      //TODO if callsite can throw, return Live()
-      if (s is Dead()) return s;
-      !s = interproc(callsite, s)
-    };
+    result: Liveness = Dead();
+    for (site in blockCallsites(block)) {
+      if (s is Dead()) return result;
 
+      (onReturn, onThrow) = interproc(site, s);
+
+      !result = this.join(result, onThrow);
+      !s = onReturn
+    };
+    // An explicit `throw` throws whenever it is reached (its operand's calls are
+    // among `blockCallsites`, already threaded above).
     block.terminator match {
-    | CFGTThrow(_) -> s
-    | _ -> Dead()
-    }
+    | CFGTThrow _ -> if (s is Live()) !result = Live()
+    | _ -> void
+    };
+    result
   }
 
   fun transferTerminator(
     term: BBTerminator,
     s: Liveness,
     _label: CFGENormalLabel,
-    interproc: (Callsite, Liveness) -> Liveness,
+    interproc: (Callsite, Liveness) -> (Liveness, Liveness),
   ): Liveness {
     // Seed calls in the terminator's value expression (a `throw` has no normal
     // edge and is handled in `transferExn`).
@@ -83,14 +85,19 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
     | CFGTReturn(Some(e))
     | CFGTBranch(e, _, _)
     | CFGTSwitch(e, _, _) ->
-      for (site in exprCallsites(e.expr)) !s = interproc(site, s)
+      for (site in exprCallsites(e.expr)) {
+        if (s is Dead()) return s;
+        (onReturn, _onThrow) = interproc(site, s);
+        !s = onReturn
+      };
+      s
     | CFGTReturn(None())
-    | CFGTJump _
+    | CFGTJump _ ->
+      s
     | CFGTThrow _
     | CFGTUnreachable() ->
-      void
-    };
-    s
+      Dead()
+    }
   }
 
   // A call marks its callee reachable: `call` seeds the callee entry with the
@@ -101,7 +108,7 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
     s: Liveness,
     _site: Callsite,
     _params: Array<(Pattern, TType)>,
-    _interproc: (Callsite, Liveness) -> Liveness,
+    _interproc: (Callsite, Liveness) -> (Liveness, Liveness),
   ): Liveness {
     s
   }
