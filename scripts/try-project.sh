@@ -4,10 +4,9 @@
 # much of it type-checks.
 #
 # Usage:
-#   scripts/try-project.sh <name> <git-url> [ref] [src-subdir]
+#   scripts/try-project.sh <git-url> [ref] [src-subdir]
 #
-#   <name>        short id for the project (used for the clone + report paths)
-#   <git-url>     repository to clone
+#   <git-url>     repository to clone (the project name is its last path segment)
 #   [ref]         tag / branch / commit to pin (default: the repo default branch)
 #   [src-subdir]  directory within the repo to scan (default: the whole repo)
 #
@@ -34,11 +33,12 @@ die() {
   exit 2
 }
 
-[[ $# -ge 2 ]] || die "usage: try-project.sh <name> <git-url> [ref] [src-subdir]"
-name="$1"
-url="$2"
-ref="${3:-}"
-src="${4:-.}"
+[[ $# -ge 1 ]] || die "usage: try-project.sh <git-url> [ref] [src-subdir]"
+url="$1"
+ref="${2:-}"
+src="${3:-.}"
+name="$(basename "$url" .git)"
+[[ -n "$name" ]] || die "could not derive a project name from url: $url"
 
 [[ -x "$SKJS_BIN" ]] || die "skjs binary not found or not executable: $SKJS_BIN (build it, or set SKJS_BIN)"
 [[ -d "$STUBS" ]] || die "import-stubs dir not found: $STUBS (set STUBS)"

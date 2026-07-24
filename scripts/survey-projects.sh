@@ -20,16 +20,16 @@ WORKDIR="${WORKDIR:-${PROJECT_ROOT}/.project-survey}"
 TRY="${PROJECT_ROOT}/scripts/try-project.sh"
 export WORKDIR
 
-# name | git-url | ref | src-subdir
+# git-url | ref | src-subdir   (the project name is the url's last path segment)
 PROJECTS=(
-  "js-sdsl|https://github.com/js-sdsl/js-sdsl|v4.4.2|src"
-  "ts-results|https://github.com/vultix/ts-results|v3.0.0|src"
-  "neverthrow|https://github.com/supermacro/neverthrow|v8.2.0|src"
-  "radash|https://github.com/sodiray/radash|v12.1.1|src"
-  "immer|https://github.com/immerjs/immer|v11.1.15|src"
-  "fp-ts|https://github.com/gcanti/fp-ts|2.16.9|src"
-  "zod|https://github.com/colinhacks/zod|v3.24.1|src"
-  "valibot|https://github.com/fabian-hiller/valibot|v1.4.2|library/src"
+  "https://github.com/js-sdsl/js-sdsl|v4.4.2|src"
+  "https://github.com/vultix/ts-results|v3.0.0|src"
+  "https://github.com/supermacro/neverthrow|v8.2.0|src"
+  "https://github.com/sodiray/radash|v12.1.1|src"
+  "https://github.com/immerjs/immer|v11.1.15|src"
+  "https://github.com/gcanti/fp-ts|2.16.9|src"
+  "https://github.com/colinhacks/zod|v3.24.1|src"
+  "https://github.com/fabian-hiller/valibot|v1.4.2|library/src"
 )
 
 reports="${WORKDIR}/reports"
@@ -37,9 +37,10 @@ mkdir -p "$reports"
 
 names=()
 for entry in "${PROJECTS[@]}"; do
-  IFS='|' read -r name url ref src <<<"$entry"
+  IFS='|' read -r url ref src <<<"$entry"
+  name="$(basename "$url" .git)"
   names+=("$name")
-  "$TRY" "$name" "$url" "$ref" "$src" || echo "survey: try-project failed for $name" >&2
+  "$TRY" "$url" "$ref" "$src" || echo "survey: try-project failed for $name" >&2
 done
 
 # --- aggregate ---------------------------------------------------------------
