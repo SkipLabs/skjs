@@ -586,6 +586,29 @@ cases and conservatively under-approximates a few others.
   `void`/`undefined` inside the body).
 - **Verified by**: `tests/expect-error/this-parameter*.ts`
 
+### 33. Circular Type-Parameter Defaults and Constraints
+
+A type parameter's default fills the parameter when a reference omits it. A
+default that reaches its own alias with too few arguments to break the recursion
+(`type A<T = A>`, or through an array/tuple element, a `keyof` operand, a
+union/intersection member, or a reference's arguments) denotes nothing.
+`type A<T = A<string>>` supplies its argument and stays well-founded.
+
+- **Reported and resolved to `unknown`** (matches tsc, which reports TS2716). A
+  value declared at the alias is caught the moment it is used at a concrete type,
+  rather than laundered through as the empty type would allow — assigning *into*
+  the alias is fine, drawing a value back out is not.
+- **A cycle that only closes through a second alias's default is refused** where
+  a reference forces the defaults to be filled (`Type instantiation is
+  excessively deep and possibly infinite`), reported at the alias the cycle
+  reaches back to. tsc reports a circular default at a declaration instead; both
+  are sound.
+- **A self-referential constraint is refused** — `type C<T extends C<string>>`.
+  Satisfying it requires instantiating the alias again, a check SKJS cannot
+  discharge, so every instantiation is refused, including the well-typed
+  `C<string>`. This is a **sound over-refusal**: tsc accepts `C<string>`.
+- **Verified by**: `tests/expect-error/circular-type-param-default.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
