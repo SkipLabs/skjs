@@ -163,6 +163,15 @@ mutable class TCEnv private {
   mutable forInContext: ?ForInContext = None(),
   // Stack of enclosing loops/switches, innermost last; see `JumpCatcher`.
   mutable jumpCatchers: mutable Vector<mutable JumpCatcher> = mutable Vector[],
+  // One write-log per `try` being checked, innermost last: the running union
+  // of every value written to each binding while the try runs. An exception
+  // can leave the try after any prefix, so its catch and finally are entered
+  // with each logged binding at any of these values — their entry states
+  // union the log in (SkipLabs/skjs#963). A write feeds every level: it is
+  // "during" each enclosing try.
+  mutable tryWriteLogs: mutable Vector<
+    mutable Map<String, TType>,
+  > = mutable Vector[],
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
@@ -245,6 +254,102 @@ mutable class TCEnv private {
     );
     res = f();
     (res, this.jumpCatchers.pop())
+  }
+
+  // Run `f` with a fresh write-log open, and return its result along with the
+  // writes `f` logged. Opening and closing live in the same function, so a
+  // caller cannot leave a log on the stack; a closed log is only ever read.
+  mutable fun withTryWriteLog<T>(f: () -> T): (T, readonly Map<String, TType>) {
+    this.tryWriteLogs.push(mutable Map[]);
+    res = f();
+    (res, this.tryWriteLogs.pop())
+  }
+
+  // A runtime write to the in-scope binding of `name`: record the value for
+  // any enclosing try's log, then narrow the binding through `Scope::set`.
+  // Narrowings are not writes — they must not widen a catch's view of a value
+  // the runtime never changed — so the refinement and constructor-`super`
+  // sets go to `Scope::set` directly, and only the assignment forms come
+  // here.
+  mutable fun writeVar(
+    tenv: TEnv,
+    name: Name,
+    ty: TType,
+    isSubType: (TType, TType) -> void,
+  ): void {
+    this.recordTryWrite(tenv, name, ty);
+    this.scope.set(name, ty, isSubType)
+  }
+
+  // Record a write for the innermost block being logged. The log is keyed
+  // by bare name, which relies on SKJS rejecting nested shadowing (TS2451):
+  // if shadowing is ever allowed, distinct bindings would share entries and
+  // this needs a binding identity instead (as Scope::snapshotTo does too). Outer trys receive
+  // an inner construct's writes when it is popped, gated on whether an
+  // exception can actually escape it carrying them (see the Try arm): an inner
+  // try whose catch absorbs everything keeps its intermediate states to
+  // itself.
+  private mutable fun recordTryWrite(tenv: TEnv, name: Name, ty: TType): void {
+    if (!this.tryWriteLogs.isEmpty()) {
+      log = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
+      log![name.value] = log.maybeGet(name.value) match {
+      | None() -> ty
+      | Some(prev) -> TType::union(this.subst, tenv, prev, ty)
+      }
+    }
+  }
+
+  // Union a popped log's entries into the innermost log still open, if any —
+  // the escape channel from an inner construct to the trys around it.
+  mutable fun propagateTryWrites(
+    tenv: TEnv,
+    log: readonly Map<String, TType>,
+  ): void {
+    if (!this.tryWriteLogs.isEmpty()) {
+      outer = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
+      for (kv in log.items()) {
+        outer![kv.i0] = outer.maybeGet(kv.i0) match {
+        | None() -> kv.i1
+        | Some(prev) -> TType::union(this.subst, tenv, prev, kv.i1)
+        }
+      }
+    }
+  }
+
+  // Union a scope's escaping bindings, by type, into the innermost log still
+  // open — the unwind channel of a catch that cannot complete normally: its
+  // return (or jump) passes through every enclosing finally carrying the
+  // catch's state, seeds included.
+  mutable fun propagateScopeToTryLog(tenv: TEnv, scope: readonly Scope): void {
+    if (!this.tryWriteLogs.isEmpty()) {
+      outer = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
+      for (nameRef in scope.escapingRefs()) {
+        outer![nameRef.name] = outer.maybeGet(nameRef.name) match {
+        | None() -> nameRef.ref.type
+        | Some(prev) -> TType::union(this.subst, tenv, prev, nameRef.ref.type)
+        }
+      }
+    }
+  }
+
+  // A logged value that outlived its construct normally is in flight in any
+  // enclosing try: union its post-construct view into the log still open. A
+  // name that no longer resolves was local to the construct.
+  mutable fun propagateSurvivorsToTryLog(
+    tenv: TEnv,
+    log: readonly Map<String, TType>,
+  ): void {
+    if (!this.tryWriteLogs.isEmpty()) {
+      outer = this.tryWriteLogs[this.tryWriteLogs.size() - 1];
+      for (kv in log.items()) {
+        this.scope.lookupRefType(kv.i0).each(ty ->
+          outer![kv.i0] = outer.maybeGet(kv.i0) match {
+          | None() -> ty
+          | Some(prev) -> TType::union(this.subst, tenv, prev, ty)
+          }
+        )
+      }
+    }
   }
 
   // The number of edges each catcher holds, innermost last — taken before a
