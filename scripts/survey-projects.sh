@@ -7,7 +7,9 @@
 #   scripts/survey-projects.sh
 #
 # Environment (forwarded to try-project.sh):
-#   SKJS_BIN, STUBS, WORKDIR, KEEP_CLONE   (see try-project.sh)
+#   SKJS_BIN, STUBS, WORKDIR, REFRESH, NO_UPDATE   (see try-project.sh)
+#
+# Clones are reused by default (fast reruns); set REFRESH=1 to re-clone.
 #
 # Writes a markdown report to $WORKDIR/support-status.md and prints a table.
 # The project list is pinned to tags so the survey is reproducible; bump a ref

@@ -14,7 +14,12 @@
 #   SKJS_BIN    path to the skjs binary   (default: <repo>/target/host/dev/skjs)
 #   STUBS       import-stubs directory    (default: <repo>/import-stubs)
 #   WORKDIR     scratch dir for clones + reports (default: <repo>/.project-survey)
-#   KEEP_CLONE  if non-empty, reuse an existing clone instead of re-cloning
+#   REFRESH     if non-empty, force a fresh clone even if one already exists
+#   NO_UPDATE   if non-empty, don't fetch the latest default branch when no ref
+#               is given (reuse the existing clone as-is)
+#
+# An existing clone is reused by default. When no ref is pinned, the reused clone
+# is updated to the latest default branch unless NO_UPDATE is set.
 #
 # It writes a machine-readable summary to $WORKDIR/reports/<name>.json and prints
 # a human report. A project that fails to type-check is a *result*, not a script
@@ -48,9 +53,7 @@ reports="${WORKDIR}/reports"
 mkdir -p "$reports"
 
 # --- clone (or reuse) -------------------------------------------------------
-if [[ -n "${KEEP_CLONE:-}" && -d "${repo}/.git" ]]; then
-  echo "try-project: reusing existing clone at ${repo}" >&2
-else
+fresh_clone() {
   rm -rf "$repo"
   mkdir -p "$(dirname "$repo")"
   if [[ -n "$ref" ]]; then
@@ -63,6 +66,32 @@ else
   else
     git clone --quiet --depth 1 "$url" "$repo" || die "clone failed: $url"
   fi
+}
+
+if [[ -z "${REFRESH:-}" && -d "${repo}/.git" ]]; then
+  if [[ -n "$ref" ]]; then
+    # Reuse only if the existing clone is already at the requested ref.
+    want="$(git -C "$repo" rev-parse -q --verify "${ref}^{commit}" 2>/dev/null || true)"
+    have="$(git -C "$repo" rev-parse -q --verify HEAD 2>/dev/null || true)"
+    if [[ -n "$want" && "$want" == "$have" ]]; then
+      echo "try-project: reusing clone at ${repo} (${ref})" >&2
+    else
+      echo "try-project: clone not at ${ref}; re-cloning ${name}" >&2
+      fresh_clone
+    fi
+  elif [[ -n "${NO_UPDATE:-}" ]]; then
+    echo "try-project: reusing clone at ${repo} (no update)" >&2
+  else
+    # No ref pinned: update the reused clone to the latest default branch.
+    if git -C "$repo" fetch --quiet --depth 1 origin HEAD 2>/dev/null \
+        && git -C "$repo" reset --quiet --hard FETCH_HEAD 2>/dev/null; then
+      echo "try-project: updated ${name} to latest default branch" >&2
+    else
+      echo "try-project: update failed; reusing existing clone as-is" >&2
+    fi
+  fi
+else
+  fresh_clone
 fi
 sha="$(git -C "$repo" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
