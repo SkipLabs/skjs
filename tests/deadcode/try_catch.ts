@@ -28,10 +28,11 @@ function sometimesThrows(b: boolean): number {
 // (A) call that always throws
 function wrapAlways(): number {
   try {
-    return alwaysThrows();
+    const _ = alwaysThrows();
   } catch (e) {
     return -1;
   }
+  return 0;
 }
 
 // (B) call that never throws
