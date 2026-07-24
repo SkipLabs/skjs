@@ -119,7 +119,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   fun transfer(
     instrs: Array<CFGInstr>,
     env: CPEnv,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPEnv {
     instrs.foldl((acc, instr) -> this.transferInstr(instr, acc, interproc), env)
   }
@@ -127,7 +127,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   private fun transferInstr(
     instr: CFGInstr,
     state: CPEnv,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPEnv {
     state match {
     | CPEBot() -> CPEBot()
@@ -191,32 +191,60 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     }
   }
 
-  // The exceptional edge is taken when the block raises somewhere in the middle
-  // of its body (or terminator). At the handler an unknown prefix has executed,
-  // so any variable the block *may* assign could hold either its entry value or
-  // a new one: drop all of them from the entry state. Variables the block never
-  // writes keep their entry values.
+  // The exceptional edge is taken when the block raises at some point in its
+  // body or terminator. The handler sees the environment as of the throw point:
+  // instructions before it have run, the throwing one has only partially run (so
+  // its own writes are uncertain). Thread the normal environment through the
+  // block in evaluation order, joining the current environment — with the
+  // throwing construct's writes dropped — at every point that may throw.
   fun transferExn(
     block: CFGBlock,
     s: CPEnv,
-    _interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPEnv {
-    s match {
-    | CPEBot() -> CPEBot()
+    result: CPEnv = CPEBot();
+    cur = s;
+    for (instr in block.instrs) {
+      cur match {
+      // A non-returning call earlier in the block leaves the rest unreachable.
+      | CPEBot() -> void
+      | CPEEnv(env, ret) ->
+        if (instrMayThrow(instr)) {
+          !result = this.join(
+            result,
+            CPEEnv(this.dropVars(env, this.instrModifiedVars(instr)), ret),
+          )
+        };
+        !cur = this.transferInstr(instr, cur, interproc)
+      }
+    };
+
+    cur match {
+    | CPEBot() -> void
     | CPEEnv(env, ret) ->
-      modified = block.instrs.reduce(
-        (acc, instr) -> acc.union(this.instrModifiedVars(instr)),
-        this.terminatorModifiedVars(block.terminator),
-      );
-      CPEEnv(this.dropVars(env, modified), ret)
-    }
+      // A `throw` operand runs on no normal edge, so seed its calls here.
+      block.terminator match {
+      | CFGTThrow(te) -> _ = this.evalExpr(env, te.expr, interproc)
+      | _ -> void
+      };
+      if (terminatorMayThrow(block.terminator)) {
+        !result = this.join(
+          result,
+          CPEEnv(
+            this.dropVars(env, this.terminatorModifiedVars(block.terminator)),
+            ret,
+          ),
+        )
+      }
+    };
+    result
   }
 
   fun transferTerminator(
     term: BBTerminator,
     s: CPEnv,
     label: CFGENormalLabel,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPEnv {
     s match {
     | CPEBot() -> CPEBot()
@@ -330,7 +358,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   private fun evalOperand(
     env: SortedMap<String, CPVal>,
     e: Expr,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): ?CPVal {
     this.evalExpr(env, e, interproc) match {
     | CPVBot() -> None()
@@ -346,7 +374,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     callerState: CPEnv,
     site: Callsite,
     params: Array<(Pattern, TType)>,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPEnv {
     callerState match {
     | CPEBot() -> CPEBot()
@@ -446,7 +474,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   private fun evalExpr(
     env: SortedMap<String, CPVal>,
     e: Expr,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPVal {
     e.value match {
     | Number(s) ->
@@ -463,14 +491,20 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     | Var(Name(_, "undefined")) -> CPVUndefined()
     | Var(name) -> this.lookupVar(env, name.value)
     | call @ Call _ ->
-      interproc(CSCall(call, e.pos), CPEEnv(env, CPVUndefined())) match {
+      (onReturn, _onThrow) = interproc(
+        CSCall(call, e.pos),
+        CPEEnv(env, CPVUndefined()),
+      );
+      onReturn match {
       | CPEBot() -> CPVBot()
       | CPEEnv(_callee_env, ret) -> ret
       }
     | ctor @ New _ ->
-      // A constructed object is not a tracked constant, but the call must still
-      // be resolved so a pending/non-returning constructor propagates as `Bot`.
-      interproc(CSNew(ctor, e.pos), CPEEnv(env, CPVUndefined())) match {
+      (onReturn, _onThrow) = interproc(
+        CSNew(ctor, e.pos),
+        CPEEnv(env, CPVUndefined()),
+      );
+      onReturn match {
       | CPEBot() -> CPVBot()
       | CPEEnv(_, _) -> CPVTop()
       }
@@ -528,7 +562,7 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     op: BinaryOperator,
     e1: Expr,
     e2: Expr,
-    interproc: (Callsite, CPEnv) -> CPEnv,
+    interproc: (Callsite, CPEnv) -> (CPEnv, CPEnv),
   ): CPVal {
     op match {
     // Short-circuit operators evaluate the left operand first. A pending left
