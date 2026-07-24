@@ -19,10 +19,10 @@ private class Loc<Ctx: Orderable>{
   }
 }
 
-trait AbstractContext<C: Orderable> {
-  readonly fun init(): C;
-  readonly fun call(curr: C, callsite: Callsite): C;
-  readonly fun eq(c1: C, c2: C): Bool;
+trait ContextPolicy<Ctx: Orderable> {
+  readonly fun init(): Ctx;
+  readonly fun call(curr: Ctx, callsite: Callsite): Ctx;
+  readonly fun eq(c1: Ctx, c2: Ctx): Bool;
 }
 
 base class Callsite uses Orderable {
@@ -42,7 +42,7 @@ base class Callsite uses Orderable {
   }
 }
 
-class ContextInsensitive() uses AbstractContext<void> {
+class ContextInsensitive() uses ContextPolicy<void> {
   fun init(): void {
     void
   }
@@ -53,7 +53,7 @@ class ContextInsensitive() uses AbstractContext<void> {
     true
   }
 }
-class OneCFA() uses AbstractContext<?Callsite> {
+class OneCFA() uses ContextPolicy<?Callsite> {
   fun init(): ?Callsite {
     None()
   }
@@ -73,7 +73,7 @@ mutable class Interproc<
   State,
   Ctx: Orderable,
   D: AbstractDomain<State>,
-  C: AbstractContext<Ctx>,
+  C: ContextPolicy<Ctx>,
 >{
   cfgs: SortedMap<CGNode, CFG>,
   callgraph: SortedMap<CGNode, Array<CGNode>>,
