@@ -110,18 +110,18 @@ mutable class Interproc<
       pre = this.invariant_map.maybeGet(loc).default(this.domain.bottom());
       // The callback threads inter-procedural call/return edges through the
       // transfer functions (see `interprocCallback`).
-      callback = this.interprocCallback(loc);
+      interproc = this.interprocCallback(loc);
       // Block body only; the terminator is modeled per outgoing edge below.
-      post = this.domain.transfer(block.instrs, pre, callback);
+      post = this.domain.transfer(block.instrs, pre, interproc);
       for ((label, target) in cfg.successors(block)) {
         edgeState = label match {
-        | CFGEException() -> this.domain.transferExn(block, pre, callback)
+        | CFGEException() -> this.domain.transferExn(block, pre, interproc)
         | normal @ CFGENormalLabel _ ->
           this.domain.transferTerminator(
             block.terminator,
             post,
             normal,
-            callback,
+            interproc,
           )
         };
         this.updateState(
@@ -130,9 +130,9 @@ mutable class Interproc<
           cfg.isBackEdge(loc.blk, target),
         )
       };
-      // When a function's normal-exit state grows, callers must re-observe the
-      // (possibly larger) return state, so re-enqueue them.
-      if (loc.blk == cfg.normalExit) {
+      // When a function's normal- or exceptional-exit state grows, callers must
+      // re-observe the (possibly larger) return/throw state, so re-enqueue them.
+      if (loc.blk == cfg.normalExit || loc.blk == cfg.exnExit) {
         this.callers.maybeGet(loc with {blk => cfg.entry}) match {
         | Some(callerLocs) ->
           callerLocs.each(caller -> this.worklist.push(caller))
@@ -180,31 +180,37 @@ mutable class Interproc<
     }
   }
 
+  // The interprocedural transfer for a call site, as a callback. Given a call
+  // site and the caller state flowing into it, it resolves the call once and
+  // returns the caller state on *both* callee exits: `(onReturn, onThrow)`,
+  // joined across all possible callees.
   private mutable fun interprocCallback(
     caller: Loc<Ctx>,
-  ): (site: Callsite, caller_st: State) -> State {
+  ): (site: Callsite, caller_st: State) -> (State, State) {
     (site, caller_st) -> {
       callee_ctx = this.ctx_policy.call(caller.ctx, site);
-      // calleeExit is joined across all possible callees
-      calleeExit = this.domain.bottom();
+      // Each exit is joined across all possible callees.
+      normalExit = this.domain.bottom();
+      exnExit = this.domain.bottom();
       callees = this.resolveCallees(caller.node, site);
       if (callees.isEmpty()) {
-        // Treat callsite with no resolvable callees as opaque
-        !calleeExit = this.domain.callOpaque(caller_st, site)
+        // A callsite with no resolvable callees is opaque: it may return or
+        // throw, so both exits get the opaque result.
+        opaque = this.domain.callOpaque(caller_st, site);
+        !normalExit = opaque;
+        !exnExit = opaque
       };
       for (callee in callees) {
         this.cfgs.maybeGet(callee) match {
         | None() ->
-          !calleeExit = this.domain.join(
-            calleeExit,
-            this.domain.callOpaque(caller_st, site),
-          )
+          opaque = this.domain.callOpaque(caller_st, site);
+          !normalExit = this.domain.join(normalExit, opaque);
+          !exnExit = this.domain.join(exnExit, opaque)
         | Some(cfg) ->
           entry = Loc{ctx => callee_ctx, node => callee, blk => cfg.entry};
-          exit = Loc{ctx => callee_ctx, node => callee, blk => cfg.normalExit};
 
           // Record the callee->caller dependency so the caller is re-analyzed
-          // when the callee's return state grows.
+          // when either of the callee's exit states grows.
           this.callers.maybeGet(entry) match {
           | None() ->
             this.!callers = this.callers.set(entry, mutable Vector[caller])
@@ -224,13 +230,25 @@ mutable class Interproc<
             false,
           );
 
-          this.invariant_map.maybeGet(exit) match {
-          | Some(st) -> !calleeExit = this.domain.join(calleeExit, st)
-          | None() -> void
-          }
+          exitLoc = Loc{
+            ctx => callee_ctx,
+            node => callee,
+            blk => cfg.normalExit,
+          };
+          exnExitLoc = exitLoc with {blk => cfg.exnExit};
+
+          this.invariant_map.maybeGet(exitLoc).each(st ->
+            !normalExit = this.domain.join(normalExit, st)
+          );
+          this.invariant_map.maybeGet(exnExitLoc).each(st ->
+            !exnExit = this.domain.join(exnExit, st)
+          )
         };
       };
-      this.domain.ret(caller_st, calleeExit, site);
+      (
+        this.domain.ret(caller_st, normalExit, site),
+        this.domain.ret(caller_st, exnExit, site),
+      );
     }
   }
 

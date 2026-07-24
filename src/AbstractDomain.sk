@@ -27,7 +27,10 @@ module SKJS;
 //     and formal parameters
 //   - `ret` abstracts the caller return state, given the callsite state and
 //     callee exit state
-//   - `callOpaque` over-approximatesthe semantics of a call to an opaque callee
+//   - `callOpaque` over-approximates the semantics of a call to an opaque callee
+//
+// The transfers receive an interprocedural callback `(site, callerState) ->
+// (onReturn, onThrow)`.
 trait AbstractDomain<S> {
   readonly fun bottom(): S;
   readonly fun init(): S;
@@ -41,21 +44,25 @@ trait AbstractDomain<S> {
   readonly fun transfer(
     instrs: Array<CFGInstr>,
     s: S,
-    call: (Callsite, S) -> S,
+    call: (Callsite, S) -> (S, S),
   ): S;
-  readonly fun transferExn(block: CFGBlock, s: S, call: (Callsite, S) -> S): S;
+  readonly fun transferExn(
+    block: CFGBlock,
+    s: S,
+    call: (Callsite, S) -> (S, S),
+  ): S;
   readonly fun transferTerminator(
     term: BBTerminator,
     s: S,
     label: CFGENormalLabel,
-    call: (Callsite, S) -> S,
+    call: (Callsite, S) -> (S, S),
   ): S;
 
   readonly fun call(
     callerState: S,
     site: Callsite,
     params: Array<(Pattern, TType)>,
-    interproc: (Callsite, S) -> S,
+    interproc: (Callsite, S) -> (S, S),
   ): S;
   readonly fun callOpaque(callerState: S, site: Callsite): S;
   readonly fun ret(callerState: S, calleeState: S, site: Callsite): S;
