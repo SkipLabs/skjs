@@ -660,24 +660,24 @@ mutable class CFGBuilder{
         // propagate
         exnFinallyOpt.each(id -> this.exnStack.push(id));
         this.lowerBlock(tryStmts);
-        exnFinallyOpt.each(_ -> _ = this.exnStack.pop());
         if (this.stmtsMayFallthrough(tryStmts)) {
           this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
         } else {
           this.finishBlock(CFGTUnreachable())
-        }
+        };
+        exnFinallyOpt.each(_ -> _ = this.exnStack.pop())
       | Some(CatchClause(paramOpt, _type, catchStmts)) ->
         catchId = this.allocId();
         // Exceptions in the try body go to this construct's own catch; the
         // finally runs only after the catch completes
         this.exnStack.push(catchId);
         this.lowerBlock(tryStmts);
-        _ = this.exnStack.pop();
         if (this.stmtsMayFallthrough(tryStmts)) {
           this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
         } else {
           this.finishBlock(CFGTUnreachable())
         };
+        _ = this.exnStack.pop();
         // Catch block
         this.startBlock(catchId);
         paramOpt match {
