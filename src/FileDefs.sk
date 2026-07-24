@@ -659,6 +659,8 @@ mutable class FileDefsState private {
         }
       }
     | Global(defs) ->
+      // A non-empty `declare global { ... }` is not supported yet; an empty
+      // `declare global {}` declares nothing, so there is nothing to reject.
       if (defs.size() > 0) {
         this.fileErrors.push(
           NamingError(
@@ -671,8 +673,6 @@ mutable class FileDefsState private {
             SKJSCode(9006),
           ),
         )
-      } else {
-        internal_error("TODO: global")
       }
     | Module(Name(pos, _), _defsOpt) ->
       this.fileErrors.push(
