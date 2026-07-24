@@ -1,3 +1,5 @@
+// NOTE: currently deadcode analysis ignores conditions so the loop _does_ fall through
+
 // Two kinds of dead code around a non-returning function:
 //   - Intra-procedural: the `return` after the infinite loop is unreachable.
 //   - Inter-procedural: because `afterInfiniteLoop` never returns, `neverReached`
