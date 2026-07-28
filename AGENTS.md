@@ -69,6 +69,7 @@ Read these before starting the relevant task:
 | --- | --- |
 | [Setup](docs/setup.md) | First time setting up the repo |
 | [TypeScript Subset Rules](skjs-rules.md) | Before changing what SKJS accepts or rejects — this is the source of truth |
+| [TypeScript Soundness Holes](docs/typescript-soundness-holes.md) | Before deciding whether to follow tsc — catalogues the programs tsc accepts unsoundly |
 | [Writing Code](docs/writing-code.md) | Before writing or modifying `.sk` or `.ts` files |
 | [Testing](docs/testing.md) | Before writing or modifying tests |
 | [Commits and PRs](docs/commits-and-prs.md) | Before committing or opening a pull request |
