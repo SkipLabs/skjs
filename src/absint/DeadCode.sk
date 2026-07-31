@@ -9,8 +9,11 @@ base class Liveness {
 }
 
 // Reachability / dead-code analysis.
-// Basic interprocedural control-flow is implemented, but conditions are ignored (soundly)
-// and exceptional control-flow needs some work (TODO: add `exn` flag to interproc callback?)
+// Interprocedural control-flow — normal and exceptional — is implemented: the
+// interproc callback yields the callee's (onReturn, onThrow) states, so a callee
+// that never returns kills its continuation and one that never throws leaves the
+// enclosing handler dead. Conditions are ignored (soundly): both edges out of a
+// branch are always taken.
 class LivenessDomain() uses AbstractDomain<Liveness> {
   fun bottom(): Liveness {
     Dead()

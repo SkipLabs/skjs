@@ -7,8 +7,9 @@
 //   (C) wraps a call that SOMETIMES throws -> both catch and continuation
 //       reachable.
 //
-// A precise analysis distinguishes these; today the callee's throw behavior is
-// not propagated through the interproc callback, so the results are coarser.
+// The callee's throw behavior is propagated back through the interproc
+// callback's `onThrow` state, so the analysis distinguishes all three: the
+// expectations below show the catch block dead in (B) only.
 
 function alwaysThrows(): number {
   throw new Error("boom");
