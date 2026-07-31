@@ -53,7 +53,7 @@ class LivenessDomain() uses AbstractDomain<Liveness> {
     s: Liveness,
     interproc: (Callsite, Liveness) -> (Liveness, Liveness),
   ): Liveness {
-    if (blockMayThrowImplicitly(block)) return Live();
+    if (blockMayThrowImplicitly(block) && s is Live()) return Live();
 
     result: Liveness = Dead();
     for (site in blockCallsites(block)) {
