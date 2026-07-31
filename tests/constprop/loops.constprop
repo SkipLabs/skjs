@@ -1,0 +1,25 @@
+fn:counted:
+  return: top
+  BB_0: {n=4.0}
+  BB_3: {n=4.0}
+  BB_4: {n=4.0}
+  BB_5: {n=4.0}
+fn:forSum:
+  return: top
+  BB_0: {}
+  BB_3: {}
+  BB_4: {}
+  BB_5: {}
+  BB_6: {}
+fn:loopInvariant:
+  return: 3.0
+  BB_0: {n=4.0}
+  BB_3: {n=4.0, s=3.0}
+  BB_4: {n=4.0, s=3.0}
+  BB_5: {n=4.0, s=3.0}
+fn:main:
+  return: top
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}
