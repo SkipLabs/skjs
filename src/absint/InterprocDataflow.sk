@@ -1,0 +1,511 @@
+// Forward inter-procedural worklist solver
+module SKJS;
+
+// A context-abstracted program location
+private class Loc<Ctx: Orderable>{
+  ctx: Ctx,
+  node: CGNode,
+  blk: CFGBlockId,
+} uses Orderable {
+  fun compare(other: Loc<Ctx>): Order {
+    this.node.compare(other.node) match {
+    | EQ() ->
+      this.blk.compare(other.blk) match {
+      | EQ() -> this.ctx.compare(other.ctx)
+      | ord -> ord
+      }
+    | ord -> ord
+    }
+  }
+}
+
+trait ContextPolicy<Ctx: Orderable> {
+  readonly fun init(): Ctx;
+  readonly fun call(curr: Ctx, callsite: Callsite): Ctx;
+  readonly fun eq(c1: Ctx, c2: Ctx): Bool;
+}
+
+base class Callsite uses Orderable {
+  children =
+  | CSCall(Call, PosRange)
+  | CSNew(New, PosRange)
+
+  private fun pos(): PosRange {
+    this match {
+    | CSCall(_, pos)
+    | CSNew(_, pos) ->
+      pos
+    }
+  }
+  fun compare(other: Callsite): Order {
+    this.pos().compare(other.pos())
+  }
+}
+
+class ContextInsensitive() uses ContextPolicy<void> {
+  fun init(): void {
+    void
+  }
+  fun call(_curr: void, _: Callsite): void {
+    void
+  }
+  fun eq(_c1: void, _c2: void): Bool {
+    true
+  }
+}
+class OneCFA() uses ContextPolicy<?Callsite> {
+  fun init(): ?Callsite {
+    None()
+  }
+  fun call(_curr: ?Callsite, call: Callsite): ?Callsite {
+    Some(call)
+  }
+  fun eq(c1: ?Callsite, c2: ?Callsite): Bool {
+    (c1, c2) match {
+    | (None(), None()) -> true
+    | (Some(x), Some(y)) -> x.compare(y) is EQ()
+    | (_, _) -> false
+    }
+  }
+}
+
+mutable class Interproc<
+  State,
+  Ctx: Orderable,
+  D: AbstractDomain<State>,
+  C: ContextPolicy<Ctx>,
+>{
+  cfgs: SortedMap<CGNode, CFG>,
+  callgraph: SortedMap<CGNode, Array<CGNode>>,
+  domain: D,
+  ctx_policy: C,
+  private mutable invariant_map: SortedMap<Loc<Ctx>, State> = SortedMap[],
+  private mutable worklist: SortedSet<Loc<Ctx>> = SortedSet[],
+  // Map from a callee entry loc to the caller locs that must be re-analyzed
+  // when the callee's return state grows.
+  private mutable callers: SortedMap<
+    Loc<Ctx>,
+    SortedSet<Loc<Ctx>>,
+  > = SortedMap[],
+  // lazily-constructed map from class names to constructor CGNodes
+  // to avoid analysis time scans/filters over this.cfgs.keys
+  private mutable constructorsByName: ?SortedMap<
+    String,
+    Array<CGNode>,
+  > = None(),
+} {
+  private mutable fun popWorklist(): Loc<Ctx> {
+    this.worklist.min() match {
+    | Some(l) ->
+      this.!worklist = this.worklist.remove(l);
+      l
+    | None() ->
+      invariant_violation(
+        "unreachable: only called after `!this.worklist.isEmpty()`",
+      )
+    }
+  }
+  private mutable fun pushWorklist(l: Loc<Ctx>): void {
+    this.!worklist = this.worklist.set(l);
+  }
+
+  mutable fun analyzeForward(entrypoints: Sequence<CGNode>): void {
+    this.computeConstructorsByName();
+    for (entrypoint in entrypoints) {
+      this.cfgs.maybeGet(entrypoint) match {
+      | Some(cfg) ->
+        entry_loc = Loc{
+          ctx => this.ctx_policy.init(),
+          node => entrypoint,
+          blk => cfg.entry,
+        };
+        // Seed each entrypoint's entry block with the initial state.
+        this.updateState(entry_loc, this.domain.init(), false)
+      | None() -> void
+      }
+    };
+
+    while (!this.worklist.isEmpty()) {
+      loc = this.popWorklist();
+      cfg = this.cfgs.get(loc.node);
+      block = cfg.blocks.get(loc.blk);
+      pre = this.invariant_map.maybeGet(loc).default(this.domain.bottom());
+      // The callback threads inter-procedural call/return edges through the
+      // transfer functions (see `interprocCallback`).
+      interproc = this.interprocCallback(loc);
+      // Block body only; the terminator is modeled per outgoing edge below.
+      post = this.domain.transfer(block.instrs, pre, interproc);
+      for ((label, target) in cfg.successors(block)) {
+        edgeState = label match {
+        | CFGEException() -> this.domain.transferExn(block, pre, interproc)
+        | normal @ CFGENormalLabel _ ->
+          this.domain.transferTerminator(
+            block.terminator,
+            post,
+            normal,
+            interproc,
+          )
+        };
+        this.updateState(
+          loc with {blk => target},
+          edgeState,
+          cfg.isBackEdge(loc.blk, target),
+        )
+      };
+      // When a function's normal- or exceptional-exit state grows, callers must
+      // re-observe the (possibly larger) return/throw state, so re-enqueue them.
+      if (loc.blk == cfg.normalExit || loc.blk == cfg.exnExit) {
+        this.callers.maybeGet(loc with {blk => cfg.entry}) match {
+        | Some(callerLocs) -> callerLocs.each(this.pushWorklist)
+        | None() -> void
+        }
+      }
+    }
+  }
+
+  // The analysis result: for each function, the abstract state at the entry of
+  // every block the analysis reached (joined across contexts). A block absent
+  // from the inner map was never reached. This is the public view of
+  // `invariant_map`, which is keyed by the module-private `Loc`.
+  readonly fun blockStates(): SortedMap<CGNode, SortedMap<CFGBlockId, State>> {
+    this.invariant_map.items().reduce(
+      (acc, kv) -> {
+        (loc, st) = kv;
+        inner = acc.maybeGet(loc.node).default(SortedMap[]);
+        merged = inner.maybeGet(loc.blk) match {
+        | None() -> st
+        | Some(prev) -> this.domain.join(prev, st)
+        };
+        acc.set(loc.node, inner.set(loc.blk, merged))
+      },
+      SortedMap[],
+    )
+  }
+
+  private mutable fun updateState(
+    loc: Loc<Ctx>,
+    incoming: State,
+    is_back_edge: Bool,
+  ): void {
+    old = this.invariant_map.maybeGet(loc).default(this.domain.bottom());
+
+    merged = if (is_back_edge) {
+      this.domain.widen(old, incoming)
+    } else {
+      this.domain.join(old, incoming)
+    };
+
+    if (!this.domain.leq(merged, old)) {
+      this.!invariant_map = this.invariant_map.set(loc, merged);
+      this.pushWorklist(loc)
+    }
+  }
+
+  // The interprocedural transfer for a call site, as a callback. Given a call
+  // site and the caller state flowing into it, it resolves the call once and
+  // returns the caller state on *both* callee exits: `(onReturn, onThrow)`,
+  // joined across all possible callees.
+  private mutable fun interprocCallback(
+    caller: Loc<Ctx>,
+  ): (site: Callsite, caller_st: State) -> (State, State) {
+    (site, caller_st) -> {
+      callee_ctx = this.ctx_policy.call(caller.ctx, site);
+      // Each exit is joined across all possible callees.
+      normalExit = this.domain.bottom();
+      exnExit = this.domain.bottom();
+      callees = this.resolveCallees(caller.node, site);
+      if (callees.isEmpty()) {
+        // A callsite with no resolvable callees is opaque: it may return or
+        // throw, so both exits get the opaque result.
+        opaque = this.domain.callOpaque(caller_st, site);
+        !normalExit = opaque;
+        !exnExit = opaque
+      };
+      for (callee in callees) {
+        this.cfgs.maybeGet(callee) match {
+        | None() ->
+          opaque = this.domain.callOpaque(caller_st, site);
+          !normalExit = this.domain.join(normalExit, opaque);
+          !exnExit = this.domain.join(exnExit, opaque)
+        | Some(cfg) ->
+          entry = Loc{ctx => callee_ctx, node => callee, blk => cfg.entry};
+
+          // Record the callee->caller dependency so the caller is re-analyzed
+          // when either of the callee's exit states grows.
+          this.!callers = this.callers.set(
+            entry,
+            this.callers.maybeGet(entry).default(SortedSet[]).set(caller),
+          );
+
+          // Analyze the callee entry with its formals bound to actual
+          // arguments, enqueuing the callee iff this widens its entry state.
+          this.updateState(
+            entry,
+            this.domain.call(
+              caller_st,
+              site,
+              cfg.params,
+              this.interprocCallback(caller),
+            ),
+            false,
+          );
+
+          exitLoc = Loc{
+            ctx => callee_ctx,
+            node => callee,
+            blk => cfg.normalExit,
+          };
+          exnExitLoc = exitLoc with {blk => cfg.exnExit};
+
+          this.invariant_map.maybeGet(exitLoc).each(st ->
+            !normalExit = this.domain.join(normalExit, st)
+          );
+          this.invariant_map.maybeGet(exnExitLoc).each(st ->
+            !exnExit = this.domain.join(exnExit, st)
+          )
+        };
+      };
+      (
+        this.domain.ret(caller_st, normalExit, site),
+        this.domain.ret(caller_st, exnExit, site),
+      );
+    }
+  }
+
+  // Narrow `this.callgraph` using function/method/constructor names; fall back
+  // to all callees of the caller when not possible
+  readonly fun resolveCallees(
+    caller: CGNode,
+    site: Callsite,
+  ): Sequence<CGNode> {
+    callees = this.callgraph.maybeGet(caller).default(Array[]);
+    matched = site match {
+    | CSCall(Call(fn, _, _), _) ->
+      fn.value match {
+      | Var(name) ->
+        callees.filter(n ->
+          n.id match {
+          | TopLevelFunction(nm, _) -> nm.getName() == name.value
+          | AnonymousFunDef(fd) -> fd.name.getName() == name.value
+          | _ -> false
+          }
+        )
+      | Dot(_, _, method) ->
+        callees.filter(n ->
+          n.id match {
+          | Method(nm, _, _) -> nm.getName() == method.value
+          | _ -> false
+          }
+        )
+      | _ ->
+        callees // opaque callee expression
+      }
+    | CSNew(New(cls, _, _), _) ->
+      constructorsMap = this.constructorsByName.fromSome();
+      cls.value match {
+      | Var(name) ->
+        // The call graph records a `new` under a method node, but the
+        // constructor's CFG is keyed by a `Constructor` node, so resolve it by
+        // class name directly against the analyzed CFGs.
+        constructorsMap.maybeGet(name.value) match {
+        | Some(nodes) -> nodes
+        | None() -> Array[]
+        }
+      | _ -> Array[]
+      }
+    };
+    if (matched.isEmpty()) callees else matched;
+  }
+
+  private mutable fun computeConstructorsByName(): void {
+    res = SortedMap<String, Array<CGNode>>[];
+    this.cfgs.keys().each(n ->
+      n.id match {
+      | Constructor(cn, _) ->
+        !res = res.maybeGet(cn.value) match {
+        | None() -> res.set(cn.value, Array[n])
+        | Some(nodes) -> res.set(cn.value, nodes.append(n))
+        }
+      | _ -> void
+      }
+    );
+    this.!constructorsByName = Some(res)
+  }
+}
+
+// -- CFG / expression utilities for interprocedural domains -----------------
+
+fun instrCallsites(instr: CFGInstr): mutable Iterator<Callsite> {
+  instr match {
+  | CFGIBind(_, _, _, None()) -> void
+  | CFGIBind(_, _, _, Some(e))
+  | CFGIExpr(e) ->
+    for (site in exprCallsites(e.expr)) yield site
+  | CFGIAssign(target, value) ->
+    for (site in exprCallsites(value.expr)) yield site;
+    for (site in exprCallsites(target.expr)) yield site
+  }
+}
+
+fun exprCallsites(e: Expr): mutable Iterator<Callsite> {
+  e.value match {
+  | Number _
+  | BigInt _
+  | Var _
+  | EString _
+  | Regexp _
+  | Params _
+  | Closure _ ->
+    void
+  | Spread(e1)
+  | TypeOf(e1)
+  | VoidOp(e1)
+  | Await(e1)
+  | Async(e1)
+  | Unop(_, e1)
+  | PostOp(_, e1)
+  | Dot(_, e1, _)
+  | As(e1, _)
+  | AsConst(e1)
+  | Satisfies(e1, _) ->
+    for (site in exprCallsites(e1)) yield site
+  | Get(e1, e2)
+  | In(e1, e2)
+  | InstanceOf(e1, e2)
+  | Binop(_, e1, e2) ->
+    for (site in exprCallsites(e2)) yield site;
+    for (site in exprCallsites(e1)) yield site
+  | EIf(a, b, c) ->
+    for (site in exprCallsites(a)) yield site;
+    for (site in exprCallsites(b)) yield site;
+    for (site in exprCallsites(c)) yield site
+
+  | EArray(exprs)
+  | TemplateLiteral(_, exprs) ->
+    for (expr in exprs) {
+      for (site in exprCallsites(expr)) yield site
+    }
+
+  | Object(fields) ->
+    for (field in fields) {
+      field match {
+      | FDSpread(expr)
+      | FDNormal(_, expr) ->
+        for (site in exprCallsites(expr)) yield site
+      | FDComputed(key, value) ->
+        for (site in exprCallsites(key)) yield site;
+        for (site in exprCallsites(value)) yield site
+      | FDMethod _ -> void
+      }
+    }
+  | ctor @ New(callee, _, args) ->
+    for (arg in args) {
+      for (site in exprCallsites(arg)) yield site
+    };
+    for (site in exprCallsites(callee)) yield site;
+    yield CSNew(ctor, e.pos)
+  | call @ Call(callee, _, args) ->
+    for (arg in args) {
+      for (site in exprCallsites(arg)) yield site;
+    };
+    for (site in exprCallsites(callee)) yield site;
+    yield CSCall(call, e.pos)
+  }
+}
+
+// Every expression evaluated by a block: instruction operands then the
+// terminator's value expression.
+fun blockExprs(block: CFGBlock): mutable Iterator<Expr> {
+  for (instr in block.instrs) {
+    instr match {
+    | CFGIBind(_, _, _, None()) -> void
+    | CFGIBind(_, _, _, Some(e))
+    | CFGIExpr(e) ->
+      yield e.expr
+    | CFGIAssign(target, value) ->
+      yield target.expr;
+      yield value.expr
+    }
+  };
+  block.terminator match {
+  | CFGTReturn(Some(e))
+  | CFGTBranch(e, _, _)
+  | CFGTSwitch(e, _, _)
+  | CFGTThrow(e) ->
+    yield e.expr
+  | CFGTReturn(None())
+  | CFGTJump _
+  | CFGTUnreachable() ->
+    void
+  }
+}
+
+fun blockCallsites(block: CFGBlock): mutable Iterator<Callsite> {
+  for (e in blockExprs(block)) {
+    for (site in exprCallsites(e)) yield site
+  }
+}
+
+// Whether the block can throw for a reason other than a call — a property
+// access, indexing, `in`, or `instanceof`. Calls are excluded because their
+// throwing is modeled interprocedurally (see `LivenessDomain.transferExn`).
+fun blockMayThrowImplicitly(block: CFGBlock): Bool {
+  for (e in blockExprs(block)) {
+    if (exprMayThrowImplicitly(e)) return true
+  };
+  false
+}
+
+fun exprMayThrowImplicitly(e: Expr): Bool {
+  e.value match {
+  | Get _
+  | In _
+  | InstanceOf _
+  | Dot(NormalDot(), _, _) ->
+    true
+  | Number _
+  | BigInt _
+  | Var _
+  | EString _
+  | Regexp _
+  | Params _
+  | Closure _ ->
+    false
+  | Dot(OptionalDot(), e1, _)
+  | Spread(e1)
+  | TypeOf(e1)
+  | VoidOp(e1)
+  | Await(e1)
+  | Async(e1)
+  | Unop(_, e1)
+  | PostOp(_, e1)
+  | As(e1, _)
+  | AsConst(e1)
+  | Satisfies(e1, _) ->
+    exprMayThrowImplicitly(e1)
+  | Binop(_, e1, e2) -> exprMayThrowImplicitly(e1) || exprMayThrowImplicitly(e2)
+  | EIf(a, b, c) ->
+    exprMayThrowImplicitly(a) ||
+      exprMayThrowImplicitly(b) ||
+      exprMayThrowImplicitly(c)
+  | EArray(exprs)
+  | TemplateLiteral(_, exprs) ->
+    exprs.any(exprMayThrowImplicitly)
+  | Object(fields) ->
+    fields.any(field ->
+      field match {
+      | FDSpread(expr)
+      | FDNormal(_, expr) ->
+        exprMayThrowImplicitly(expr)
+      | FDComputed(key, value) ->
+        exprMayThrowImplicitly(key) || exprMayThrowImplicitly(value)
+      | FDMethod _ -> false
+      }
+    )
+  | New(callee, _, args)
+  | Call(callee, _, args) ->
+    exprMayThrowImplicitly(callee) || args.any(exprMayThrowImplicitly)
+  }
+}
+
+module end;

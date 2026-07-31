@@ -5,7 +5,7 @@
 module SKJS;
 
 // Unique block identifier within a function CFG
-value class CFGBlockId(id: Int) uses Orderable, Show {
+value class CFGBlockId(id: Int) uses Orderable, Hashable, Show {
   fun toString(): String {
     `BB_${this.id}`
   }
@@ -33,6 +33,23 @@ base class BBTerminator {
   | CFGTThrow(value: TypedExpr)
   | CFGTUnreachable()
 }
+
+// A labeled out-edge of a block. The normal (non-exceptional) labels are
+// grouped under `CFGENormalLabel` so a terminator transfer can be typed to
+// exclude the exceptional edge; `CFGEException` is the out-of-band edge taken
+// when the block raises.
+base class CFGEdgeLabel uses Orderable
+base class CFGENormalLabel extends CFGEdgeLabel {
+  children =
+  | CFGENormal()
+  | CFGETrue()
+  | CFGEFalse()
+  | CFGECase(
+    idx: Int,
+  ) // index into `CFGTSwitch.branches` array
+  | CFGEDefault()
+}
+class CFGEException() extends CFGEdgeLabel
 
 // A basic block
 value class CFGBlock(
@@ -93,6 +110,45 @@ value class CFG{
   normalExit: CFGBlockId,
   exnExit: CFGBlockId,
   blocks: SortedMap<CFGBlockId, CFGBlock>,
+  backEdges: SortedMap<CFGBlockId, SortedSet<CFGBlockId>>,
+} {
+  // The labeled out-edges of a block, in the order they should be presented:
+  // terminator-derived edges first, then the exceptional edge appended last.
+  // This is the single source of truth for the CFG's edge set — the DOT renderer
+  // and any data-flow solver derive successors from here rather than re-deriving
+  // them from terminators. `cfg` supplies the function-level exit blocks that a
+  // `return`/`throw` transfers to.
+  fun successors(block: CFGBlock): Array<(CFGEdgeLabel, CFGBlockId)> {
+    edges = mutable Vector<(CFGEdgeLabel, CFGBlockId)>[];
+    block.terminator match {
+    | CFGTJump(target) -> edges.push((CFGENormal(), target))
+    | CFGTBranch(_, thenTarget, elseTarget) ->
+      edges.push((CFGETrue(), thenTarget));
+      edges.push((CFGEFalse(), elseTarget))
+    | CFGTSwitch(_, branches, default_) ->
+      for (i in Range(0, branches.size())) {
+        edges.push((CFGECase(i), branches[i].i1))
+      };
+      edges.push((CFGEDefault(), default_))
+    | CFGTReturn _ -> edges.push((CFGENormal(), this.normalExit))
+    | CFGTThrow _ ->
+      edges.push((CFGEException(), block.exnTarget.default(this.exnExit)))
+    | CFGTUnreachable() -> void
+    };
+    // A non-throw block that may still raise carries an exceptional edge to its
+    // innermost enclosing handler `exnTarget`
+    if (!(block.terminator is CFGTThrow _)) {
+      block.exnTarget.each(target -> edges.push((CFGEException(), target)))
+    };
+    edges.toArray()
+  }
+
+  fun isBackEdge(src: CFGBlockId, snk: CFGBlockId): Bool {
+    this.backEdges.maybeGet(src) match {
+    | None() -> false
+    | Some(snks) -> snks.contains(snk)
+    }
+  }
 }
 
 mutable class CFGBuilder{
@@ -141,7 +197,7 @@ mutable class CFGBuilder{
       None(),
     );
     builder.!blocks[exnExitId] = CFGBlock(exnExitId, Array[], sentinel, None());
-    CFG{
+    cfg = CFG{
       name,
       pos,
       params,
@@ -150,7 +206,37 @@ mutable class CFGBuilder{
       normalExit => normalExitId,
       exnExit => exnExitId,
       blocks => builder.blocks,
-    }
+      // Placeholder: back-edges are derived from the finished CFG's successor
+      // edges, so they are computed and attached immediately below.
+      backEdges => SortedMap[],
+    };
+    cfg with {backEdges => static::backEdgesHelper(cfg, cfg.entry)}
+  }
+
+  // Depth-first search to compute CFG back-edges. `path` are the nodes that
+  // can reach `curr` along the current DFS path, used to detect back-edges;
+  // `visited` is the global visited set, avoiding exponential blowup on
+  // sequential branching.
+  private static fun backEdgesHelper(
+    cfg: CFG,
+    curr: CFGBlockId,
+    accum: SortedMap<CFGBlockId, SortedSet<CFGBlockId>> = SortedMap[],
+    path: SortedSet<CFGBlockId> = SortedSet[],
+    visited: mutable Set<CFGBlockId> = mutable Set[],
+  ): SortedMap<CFGBlockId, SortedSet<CFGBlockId>> {
+    !path = path.add(curr);
+    visited.add(curr);
+    for ((_label, succ) in cfg.successors(cfg.blocks.get(curr))) {
+      if (path.contains(succ)) {
+        !accum = accum.maybeGet(curr) match {
+        | None() -> accum.set(curr, SortedSet[succ])
+        | Some(succs) -> accum.set(curr, succs.add(succ))
+        };
+      } else if (!visited.contains(succ)) {
+        !accum = static::backEdgesHelper(cfg, succ, accum, path, visited)
+      }
+    };
+    accum
   }
 
   mutable fun allocId(): CFGBlockId {
@@ -574,24 +660,24 @@ mutable class CFGBuilder{
         // propagate
         exnFinallyOpt.each(id -> this.exnStack.push(id));
         this.lowerBlock(tryStmts);
-        exnFinallyOpt.each(_ -> _ = this.exnStack.pop());
         if (this.stmtsMayFallthrough(tryStmts)) {
           this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
         } else {
           this.finishBlock(CFGTUnreachable())
-        }
+        };
+        exnFinallyOpt.each(_ -> _ = this.exnStack.pop())
       | Some(CatchClause(paramOpt, _type, catchStmts)) ->
         catchId = this.allocId();
         // Exceptions in the try body go to this construct's own catch; the
         // finally runs only after the catch completes
         this.exnStack.push(catchId);
         this.lowerBlock(tryStmts);
-        _ = this.exnStack.pop();
         if (this.stmtsMayFallthrough(tryStmts)) {
           this.terminateThroughFinallys(keepDepth, CFGTJump(mergeId))
         } else {
           this.finishBlock(CFGTUnreachable())
         };
+        _ = this.exnStack.pop();
         // Catch block
         this.startBlock(catchId);
         paramOpt match {

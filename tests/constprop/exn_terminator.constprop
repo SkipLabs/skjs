@@ -1,0 +1,14 @@
+fn:f:
+  return: 5.0
+  BB_0: {b=true}
+  BB_4: {b=true, x=5.0}
+  BB_5: {b=true, x=5.0}
+fn:mightThrow:
+  return: unreachable
+  BB_0: {b=true}
+  BB_3: {b=true}
+  BB_4: unreachable
+  BB_5: unreachable
+toplevel:
+  return: undefined
+  BB_0: {}

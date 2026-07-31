@@ -1,0 +1,13 @@
+fn:classify:
+  return: 200.0
+  BB_0: {k=2.0}
+  BB_3: unreachable
+  BB_4: unreachable
+  BB_5: {k=2.0}
+  BB_6: unreachable
+fn:main:
+  return: 200.0
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

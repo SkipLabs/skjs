@@ -1,0 +1,7 @@
+fn:alwaysThrows: dead=[]
+fn:neverThrows: dead=[]
+fn:sometimesThrows: dead=[]
+fn:wrapAlways: dead=[BB_3]
+fn:wrapNever: dead=[BB_5]
+fn:wrapSometimes: dead=[]
+toplevel: dead=[]

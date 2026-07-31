@@ -384,43 +384,37 @@ fun cfgToDot(cfg: CFG): String {
       label = "\\l".join(labelLines.map(dotEscape)) + "\\l";
       lines.push(`  ${id} [label="${label}"];`)
     };
-    block.terminator match {
-    | CFGTJump(target) -> lines.push(`  ${id} -> ${target};`)
-    | CFGTBranch(_, thenTarget, elseTarget) ->
-      lines.push(`  ${id} -> ${thenTarget} [label="true"];`);
-      lines.push(`  ${id} -> ${elseTarget} [label="false"];`)
-    | CFGTSwitch(_, branches, default_) ->
-      for (branch in branches) {
-        (case, target) = branch;
-        caseLabel = case match {
-        | Case(e) -> renderExpr(e)
-        | Default() -> "default"
+    for ((edge, target) in cfg.successors(block)) {
+      attr = edge match {
+      | CFGENormal() -> ""
+      | CFGETrue() -> ` [label="true"]`
+      | CFGEFalse() -> ` [label="false"]`
+      | CFGEDefault() -> ` [label="default"]`
+      | CFGECase(idx) ->
+        caseLabel = block.terminator match {
+        | CFGTSwitch(_, branches, _) ->
+          branches[idx].i0 match {
+          | Case(e) -> renderExpr(e)
+          | Default() -> "default"
+          }
+        | _ -> ""
         };
-        lines.push(`  ${id} -> ${target} [label=${dotQuote(caseLabel)}];`)
+        ` [label=${dotQuote(caseLabel)}]`
+      | CFGEException() ->
+        // A `throw` shows its transfer as a plain edge (the throw itself is in
+        // the node body); any other block that merely may raise gets the
+        // dashed exceptional edge.
+        if (block.terminator is CFGTThrow _) {
+          ""
+        } else {
+          ` [label="exn", style=dashed]`
+        }
       };
-      lines.push(`  ${id} -> ${default_} [label="default"];`)
-    | CFGTReturn _ -> lines.push(`  ${id} -> ${cfg.normalExit};`)
-    | CFGTThrow _ ->
-      throwTarget = block.exnTarget.default(cfg.exnExit);
-      lines.push(`  ${id} -> ${throwTarget};`)
-    | CFGTUnreachable() -> void
-    };
-    block.exnTarget match {
-    | Some(target) ->
-      if (!(block.terminator is CFGTThrow _)) {
-        lines.push(`  ${id} -> ${target} [label="exn", style=dashed];`)
-      }
-    | None() -> void
+      lines.push(`  ${id} -> ${target}${attr};`)
     }
   };
   lines.push("}");
   "\n".join(lines) + "\n"
-}
-
-fun serializeDeterministic(cfgs: SortedMap<CGNode, CFG>): String {
-  "\n".join(
-    cfgs.values().collect(Array).sortedBy(cfg ~> cfg.name).map(cfgToDot),
-  )
 }
 
 module end;

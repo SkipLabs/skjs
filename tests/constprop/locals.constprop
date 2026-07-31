@@ -1,0 +1,9 @@
+fn:main:
+  return: 10.0
+  BB_0: {}
+  BB_3: {x=1.0, y=2.0, z=3.0}
+  BB_4: unreachable
+  BB_5: {x=10.0, y=2.0, z=3.0}
+toplevel:
+  return: undefined
+  BB_0: {}

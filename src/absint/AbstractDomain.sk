@@ -1,0 +1,71 @@
+module SKJS;
+
+// The (join semi-)lattice of analysis states for a forward data-flow analysis.
+
+// An abstract domain for a forward analysis over a state lattice `S`
+//
+// An implementation is expected to satisfy the usual laws:
+//   - `join` is commutative, associative, and idempotent (the least upper bound)
+//   - `leq` is the partial order induced by `join`
+//   - `widen` is an upper bound satisfying the ascending chain condition; it
+//     defaults to `join`, which is correct for finite-height lattices.
+//
+// The domain must also be sound w.r.t. the concrete semantics:
+//   - `bottom()` is `leq` every element of `S`.
+//   - `init()` over-approximates the state at the program entrypoint.
+//   - `transfer` over-approximates a block body's normal control-flow (the
+//     instruction sequence only, excluding the terminator).
+//   - `transferExn` over-approximates the state escaping to the enclosing
+//     handler: mid-block implicit throws and explicit `throw` terminators, e.g.
+//     by joining over throw-point states (only invoked for blocks with an
+//     exceptional successor).
+//   - `transferTerminator` over-approximates terminator semantics for the
+//     normal outgoing edge carrying the provided `label`.
+//
+// And w.r.t. interprocedural call/return semantics:
+//   - `call` abstracts the callee entry state given a caller state, callsite,
+//     and formal parameters
+//   - `ret` abstracts the caller return state, given the callsite state and
+//     callee exit state
+//   - `callOpaque` over-approximates the semantics of a call to an opaque callee
+//
+// The transfers receive an interprocedural callback `(site, callerState) ->
+// (onReturn, onThrow)`.
+trait AbstractDomain<S> {
+  readonly fun bottom(): S;
+  readonly fun init(): S;
+
+  readonly fun join(l: S, r: S): S;
+  readonly fun leq(l: S, r: S): Bool;
+  overridable readonly fun widen(l: S, r: S): S {
+    this.join(l, r)
+  }
+
+  readonly fun transfer(
+    instrs: Array<CFGInstr>,
+    s: S,
+    call: (Callsite, S) -> (S, S),
+  ): S;
+  readonly fun transferExn(
+    block: CFGBlock,
+    s: S,
+    call: (Callsite, S) -> (S, S),
+  ): S;
+  readonly fun transferTerminator(
+    term: BBTerminator,
+    s: S,
+    label: CFGENormalLabel,
+    call: (Callsite, S) -> (S, S),
+  ): S;
+
+  readonly fun call(
+    callerState: S,
+    site: Callsite,
+    params: Array<(Pattern, TType)>,
+    interproc: (Callsite, S) -> (S, S),
+  ): S;
+  readonly fun callOpaque(callerState: S, site: Callsite): S;
+  readonly fun ret(callerState: S, calleeState: S, site: Callsite): S;
+}
+
+module end;

@@ -1,0 +1,4 @@
+fn:orphan: dead=[BB_0]
+fn:used: dead=[]
+fn:usedByOrphanOnly: dead=[BB_0]
+toplevel: dead=[]

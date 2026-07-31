@@ -1,0 +1,18 @@
+fn:fact:
+  return: top
+  BB_0: {}
+  BB_3: {}
+  BB_4: {}
+  BB_5: {}
+fn:loopConst:
+  return: 7.0
+  BB_0: {}
+  BB_3: {}
+  BB_4: {}
+  BB_5: {}
+fn:main:
+  return: 7.0
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

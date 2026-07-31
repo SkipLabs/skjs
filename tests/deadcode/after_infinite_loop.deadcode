@@ -1,0 +1,3 @@
+fn:afterInfiniteLoop: dead=[BB_6]
+fn:neverReached: dead=[BB_0]
+toplevel: dead=[]

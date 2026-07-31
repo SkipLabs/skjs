@@ -1,0 +1,6 @@
+fn:main:
+  return: 5.0
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

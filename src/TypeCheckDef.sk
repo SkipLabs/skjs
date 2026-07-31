@@ -62,7 +62,80 @@ extension class TypeChecker {
       | None() -> results.push(this.checkDef(context, def))
       }
     };
+
+    if (getConfig(context).buildCfg) {
+      // Build a CFG for the whole top-level sequence, keyed by the file's
+      // `Toplevel` node, to serve as entrypoint for whole-program interprocedural analyses
+      this.buildToplevelCfg(context, fileName, defs).each(results.push)
+    };
     TCResults::ofAccs(results)
+  }
+
+  // Build the CFG for a file's top-level executable code, returned as a
+  // results accumulator carrying just that CFG. Returns `None` when there is no
+  // executable top-level code, or when it does not typecheck cleanly (a type
+  // error can leave an expression without a recorded type, which CFG
+  // construction requires).
+  private fun buildToplevelCfg(
+    context: mutable SKStore.Context,
+    fileName: FPath,
+    defs: Array<Def>,
+  ): ?(readonly TCResultsAcc) {
+    stmts = static::toplevelStmts(defs);
+    if (stmts.isEmpty()) return None();
+
+    // Re-check the collected statements in one shared scope so `exprTypes` and
+    // `stmtTerminations` are populated across the whole sequence (`const x = …`
+    // must be in scope for a later `f(x)`). The per-def pass already reported
+    // any errors; this `passResults` is a throwaway sink whose errors and
+    // call-graph edges are discarded — only the CFG below is kept.
+    tcResults = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
+    tcenvl = mutable TCEnvLight{context, results => tcResults};
+    subst = Subst::mcreate(tcenvl);
+    cgNode = CGNode::toplevel(fileName);
+    tcenv = TCEnv::mcreate(subst, cgNode);
+    exn = catchError(() -> {
+      _ = this.block(tcenv, stmts)
+    });
+    if (exn is Some _ || !tcResults.errors.isEmpty()) {
+      return None()
+    };
+
+    pos = stmts[0].pos;
+    cfg = CFGBuilder::build(
+      cgNode.id.toString(),
+      pos,
+      Array[],
+      TType::single(TPrimUnit(TVoid(), pos)),
+      stmts,
+      tcenv.exprTypes,
+      tcenv.stmtTerminations,
+    );
+    cfgAcc = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
+    cfgAcc.!cfgs = cfgAcc.cfgs.set(cgNode, cfg);
+    Some(cfgAcc)
+  }
+
+  // The file's executable top-level items, in source order, as statements: bare
+  // expressions and variable declarations (including exported ones). Everything
+  // else — function/class/type declarations, imports, ambient `declare`s — is
+  // not executable top-level code and is skipped.
+  private static fun toplevelStmts(defs: Array<Def>): Array<Stmt> {
+    defs.filterMap(def -> {
+      def.value match {
+      | e @ Expr _ -> Some(Stmt(e.pos, StmtExpr(e)))
+      | Export(VarDefs(kind, varDefs))
+      | VarDefs(kind, varDefs) ->
+        bindings = varDefs.map(vd -> Binding(vd.pat, vd.type, vd.value));
+        bindingKind = kind match {
+        | VDKConst() -> BKConst()
+        | VDKLet() -> BKLet()
+        | VDKVar() -> BKVar()
+        };
+        Some(Stmt(def.pos, Bind(bindingKind, bindings)))
+      | _ -> None()
+      }
+    })
   }
 
   fun checkDef(

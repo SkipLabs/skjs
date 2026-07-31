@@ -1,0 +1,180 @@
+// Reachability / dead-code analysis as a two-element abstract domain
+
+module SKJS;
+
+base class Liveness {
+  children =
+  | Dead()
+  | Live()
+}
+
+// Reachability / dead-code analysis.
+// Interprocedural control-flow — normal and exceptional — is implemented: the
+// interproc callback yields the callee's (onReturn, onThrow) states, so a callee
+// that never returns kills its continuation and one that never throws leaves the
+// enclosing handler dead. Conditions are ignored (soundly): both edges out of a
+// branch are always taken.
+class LivenessDomain() uses AbstractDomain<Liveness> {
+  fun bottom(): Liveness {
+    Dead()
+  }
+
+  fun init(): Liveness {
+    Live()
+  }
+
+  fun join(l: Liveness, r: Liveness): Liveness {
+    l match {
+    | Live() -> Live()
+    | Dead() -> r
+    }
+  }
+  fun leq(l: Liveness, r: Liveness): Bool {
+    l match {
+    | Dead() -> true
+    | Live() -> r is Live()
+    }
+  }
+
+  fun transfer(
+    instrs: Array<CFGInstr>,
+    s: Liveness,
+    interproc: (Callsite, Liveness) -> (Liveness, Liveness),
+  ): Liveness {
+    // Thread each call site's *normal* return through the block; a callee that
+    // never returns leaves everything sequenced after it unreachable.
+    for (callsite in instrs.iterator().flatMap(instrCallsites)) {
+      if (s is Dead()) return s;
+      (onReturn, _onThrow) = interproc(callsite, s);
+      !s = onReturn
+    };
+    s
+  }
+
+  fun transferExn(
+    block: CFGBlock,
+    s: Liveness,
+    interproc: (Callsite, Liveness) -> (Liveness, Liveness),
+  ): Liveness {
+    if (blockMayThrowImplicitly(block) && s is Live()) return Live();
+
+    result: Liveness = Dead();
+    for (site in blockCallsites(block)) {
+      if (s is Dead()) return result;
+
+      (onReturn, onThrow) = interproc(site, s);
+
+      !result = this.join(result, onThrow);
+      !s = onReturn
+    };
+    // An explicit `throw` throws whenever it is reached (its operand's calls are
+    // among `blockCallsites`, already threaded above).
+    block.terminator match {
+    | CFGTThrow _ -> if (s is Live()) !result = Live()
+    | _ -> void
+    };
+    result
+  }
+
+  fun transferTerminator(
+    term: BBTerminator,
+    s: Liveness,
+    _label: CFGENormalLabel,
+    interproc: (Callsite, Liveness) -> (Liveness, Liveness),
+  ): Liveness {
+    // Seed calls in the terminator's value expression (a `throw` has no normal
+    // edge and is handled in `transferExn`).
+    term match {
+    | CFGTReturn(Some(e))
+    | CFGTBranch(e, _, _)
+    | CFGTSwitch(e, _, _) ->
+      for (site in exprCallsites(e.expr)) {
+        if (s is Dead()) return s;
+        (onReturn, _onThrow) = interproc(site, s);
+        !s = onReturn
+      };
+      s
+    | CFGTReturn(None())
+    | CFGTJump _ ->
+      s
+    | CFGTThrow _
+    | CFGTUnreachable() ->
+      Dead()
+    }
+  }
+
+  // A call marks its callee reachable: `call` seeds the callee entry with the
+  // caller's (reachable) state. An opaque call reaches nothing analyzable. The
+  // callback's return value is discarded by the transfers above, so `ret` is
+  // only here to satisfy the trait.
+  fun call(
+    s: Liveness,
+    _site: Callsite,
+    _params: Array<(Pattern, TType)>,
+    _interproc: (Callsite, Liveness) -> (Liveness, Liveness),
+  ): Liveness {
+    s
+  }
+
+  fun callOpaque(s: Liveness, _site: Callsite): Liveness {
+    s
+  }
+
+  // The caller continues past the call exactly when the callee returns.
+  fun ret(
+    _callerState: Liveness,
+    calleeState: Liveness,
+    _site: Callsite,
+  ): Liveness {
+    calleeState
+  }
+}
+
+// The dead (unreachable) blocks of every function in `cfgs`. Reachability is
+// rooted at the program's real entrypoints — the module top-level code, which
+// always runs on load — and flows outward through the solver: each block's
+// transfer seeds the callees of its call sites, so a function reached only
+// through a call is analyzed. A function never (transitively) reached from
+// top-level code is entirely dead: none of its blocks are seeded, so all of them
+// are reported. Within a reached function, a block is dead when it is absent
+// from the fixpoint. The structural `normalExit`/`exnExit` sentinels are never
+// reported.
+fun deadBlocks(
+  cfgs: SortedMap<CGNode, CFG>,
+  callgraph: SortedMap<CGNode, Array<CGNode>>,
+): SortedMap<CGNode, SortedSet<CFGBlockId>> {
+  solver = mutable Interproc{
+    cfgs,
+    callgraph,
+    domain => LivenessDomain(),
+    ctx_policy => ContextInsensitive(),
+  };
+
+  entrypoints = cfgs.keys().filter(node -> node.id is Toplevel _);
+  solver.analyzeForward(entrypoints.collect(Array));
+  // A block is reachable exactly when the fixpoint assigned it a (necessarily
+  // `Live`) state; `blockStates` omits blocks that were never reached.
+  states = solver.blockStates();
+  isLive = (node: CGNode, blk: CFGBlockId) -> {
+    states.maybeGet(node) match {
+    | None() -> false
+    | Some(inner) -> (inner.maybeGet(blk) : ?Liveness) is Some(Live())
+    }
+  };
+
+  result = SortedMap<CGNode, SortedSet<CFGBlockId>>[];
+  for (kv in cfgs.items()) {
+    (node, cfg) = kv;
+    dead = SortedSet<CFGBlockId>[];
+    for (block in cfg.blocks.values()) {
+      isSentinel = block.id == cfg.normalExit || block.id == cfg.exnExit;
+      if (!isSentinel && !isLive(node, block.id)) {
+        !dead = dead.set(block.id)
+      }
+    };
+    !result = result.set(node, dead)
+  };
+  result
+}
+
+module end;

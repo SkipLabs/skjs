@@ -1,0 +1,15 @@
+fn:agree:
+  return: 11.0
+  BB_0: {x=10.0}
+fn:main:
+  return: top
+  BB_0: {}
+fn:mixed:
+  return: top
+  BB_0: {a=1.0}
+fn:scale:
+  return: top
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

@@ -1,0 +1,12 @@
+fn:double:
+  return: 10.0
+  BB_0: {n=5.0}
+fn:five:
+  return: 5.0
+  BB_0: {}
+fn:main:
+  return: 16.0
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

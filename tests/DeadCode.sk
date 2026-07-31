@@ -1,0 +1,126 @@
+// Expectation tests for dead-code (reachability) analysis over typed CFGs.
+//
+// Each tests/deadcode/*.ts fixture has a sibling *.deadcode file holding the
+// expected `serializeDeadCode` output (CFG names are CGNode descriptors so
+// expected files stay machine-independent). Regenerate with UPDATE_EXPECT=1.
+module SKJSTests;
+
+fun deadCodeExpectationPath(fileName: SKJS.FAbsolute): String {
+  fileName.toString().stripSuffix(".ts") + ".deadcode"
+}
+
+fun validateDeadCode(
+  context: mutable SKStore.Context,
+  checker: SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+  update: UpdateMode,
+): Array<SKTest.ExpectationError> {
+  fileName = checkResult.fileName.toAbsolute(checker.files.rootMap);
+  // The checked-files map also visits builtins/stubs; only fixture files have
+  // expectation *.deadcode.
+  if (!fileName.toString().contains("/tests/deadcode/")) {
+    return Array[]
+  };
+
+  if (checkResult.parseError is Some _ || checkResult.errors.size() > 0) {
+    errs = checkResult.parseError match {
+    | None() -> checkResult.errors
+    | Some(parseError) -> checkResult.errors.concat(Array[parseError])
+    };
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: dead-code test fixtures must typecheck cleanly`,
+        "no errors",
+        checker.errorsToString(context, errs),
+      ),
+    ]
+  };
+
+  // Rename CFGs from CGNode strings (which embed absolute paths) to
+  // machine-independent descriptors.
+  cfgs = SortedMap[];
+  checkResult.cfgs.each((cgNode, cfg) -> {
+    !cfgs = cfgs.set(cgNode, cfg with {name => cgNode.id.descriptor()})
+  });
+  actual = serializeDeadCode(cfgs, checkResult.callgraph);
+
+  expectationPath = deadCodeExpectationPath(fileName);
+  update match {
+  | UMDoUpdate _ ->
+    existing = if (FileSystem.exists(expectationPath)) {
+      FileSystem.readTextFile(expectationPath)
+    } else {
+      ""
+    };
+    if (actual != existing) {
+      FileSystem.writeTextFile(expectationPath, actual);
+      print_string(`Updated: ${expectationPath}\n`)
+    };
+    Array[]
+  | UMValidateOnly() ->
+    if (!FileSystem.exists(expectationPath)) {
+      return Array[
+        SKTest.ExpectationError(
+          `${fileName}: missing dead-code expectation file`,
+          expectationPath,
+          "not found (run with UPDATE_EXPECT=1 to create)",
+        ),
+      ]
+    };
+    expected = FileSystem.readTextFile(expectationPath);
+    if (actual != expected) {
+      Array[
+        SKTest.ExpectationError(
+          `${fileName}: dead-code output differs from ${expectationPath} (run with UPDATE_EXPECT=1 to update)`,
+          expected,
+          actual,
+        ),
+      ]
+    } else {
+      Array[]
+    }
+  }
+}
+
+@test
+fun testDeadCode(): void {
+  dir = Path.resolve("./tests/deadcode/");
+  srcFiles = FileSystem.readDirectory(dir).filterMap(f ->
+    if (SKJS.isTsFile(f)) Some(Path.join(dir, f)) else None()
+  );
+  invariant(!srcFiles.isEmpty(), "No dead-code test fixtures found");
+  testFiles(
+    srcFiles,
+    Array["./import-stubs"],
+    validateDeadCode,
+    UpdateMode::fromEnv(),
+    true,
+  )
+}
+
+// Deterministic dead-code report over a set of CFGs: one line per function
+// (sorted by name), listing its dead block ids in block order.
+fun serializeDeadCode(
+  cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
+  callgraph: SortedMap<SKJS.CGNode, Array<SKJS.CGNode>>,
+): String {
+  deadByNode = SKJS.deadBlocks(cfgs, callgraph);
+  lines = cfgs
+    .items()
+    .collect(Array)
+    .sortedBy(kv ~> kv.i1.name)
+    .map(kv -> {
+      (node, cfg) = kv;
+      dead = deadByNode.maybeGet(node).default(SortedSet[]);
+      ids = mutable Vector<String>[];
+      for (block in cfg.blocks.values()) {
+        if (dead.contains(block.id)) {
+          ids.push(block.id.toString())
+        }
+      };
+      `${cfg.name}: dead=[${", ".join(ids)}]`
+    });
+  "\n".join(lines) + "\n"
+}
+
+module end;
