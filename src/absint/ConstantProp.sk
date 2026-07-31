@@ -30,7 +30,7 @@ base class CPVal uses Equality {
     | (CPVUndefined(), CPVUndefined())
     | (CPVNull(), CPVNull()) ->
       true
-    | (CPVNumber(x), CPVNumber(y)) -> x == y
+    | (CPVNumber(x), CPVNumber(y)) -> x == y || x.isNaN() && y.isNaN()
     | (CPVString(x), CPVString(y)) -> x == y
     | (CPVBool(x), CPVBool(y)) -> x == y
     | _ -> false
