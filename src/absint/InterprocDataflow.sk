@@ -80,7 +80,7 @@ mutable class Interproc<
   domain: D,
   ctx_policy: C,
   private mutable invariant_map: SortedMap<Loc<Ctx>, State> = SortedMap[],
-  private worklist: mutable Vector<Loc<Ctx>> = mutable Vector[],
+  private mutable worklist: SortedSet<Loc<Ctx>> = SortedSet[],
   // Map from a callee entry loc to the caller locs that must be re-analyzed
   // when the callee's return state grows.
   private mutable callers: SortedMap<
@@ -88,6 +88,21 @@ mutable class Interproc<
     SortedSet<Loc<Ctx>>,
   > = SortedMap[],
 } {
+  private mutable fun popWorklist(): Loc<Ctx> {
+    this.worklist.min() match {
+    | Some(l) ->
+      this.!worklist = this.worklist.remove(l);
+      l
+    | None() ->
+      invariant_violation(
+        "unreachable: only called after `!this.worklist.isEmpty()`",
+      )
+    }
+  }
+  private mutable fun pushWorklist(l: Loc<Ctx>): void {
+    this.!worklist = this.worklist.set(l);
+  }
+
   mutable fun analyzeForward(entrypoints: Sequence<CGNode>): void {
     for (entrypoint in entrypoints) {
       this.cfgs.maybeGet(entrypoint) match {
@@ -104,7 +119,7 @@ mutable class Interproc<
     };
 
     while (!this.worklist.isEmpty()) {
-      loc = this.worklist.pop();
+      loc = this.popWorklist();
       cfg = this.cfgs.get(loc.node);
       block = cfg.blocks.get(loc.blk);
       pre = this.invariant_map.maybeGet(loc).default(this.domain.bottom());
@@ -134,8 +149,7 @@ mutable class Interproc<
       // re-observe the (possibly larger) return/throw state, so re-enqueue them.
       if (loc.blk == cfg.normalExit || loc.blk == cfg.exnExit) {
         this.callers.maybeGet(loc with {blk => cfg.entry}) match {
-        | Some(callerLocs) ->
-          callerLocs.each(caller -> this.worklist.push(caller))
+        | Some(callerLocs) -> callerLocs.each(this.pushWorklist)
         | None() -> void
         }
       }
@@ -176,7 +190,7 @@ mutable class Interproc<
 
     if (!this.domain.leq(merged, old)) {
       this.!invariant_map = this.invariant_map.set(loc, merged);
-      this.worklist.push(loc)
+      this.pushWorklist(loc)
     }
   }
 
