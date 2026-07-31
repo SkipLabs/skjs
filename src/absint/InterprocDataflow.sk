@@ -87,6 +87,12 @@ mutable class Interproc<
     Loc<Ctx>,
     SortedSet<Loc<Ctx>>,
   > = SortedMap[],
+  // lazily-constructed map from class names to constructor CGNodes
+  // to avoid analysis time scans/filters over this.cfgs.keys
+  private mutable constructorsByName: ?SortedMap<
+    String,
+    Array<CGNode>,
+  > = None(),
 } {
   private mutable fun popWorklist(): Loc<Ctx> {
     this.worklist.min() match {
@@ -104,6 +110,7 @@ mutable class Interproc<
   }
 
   mutable fun analyzeForward(entrypoints: Sequence<CGNode>): void {
+    this.computeConstructorsByName();
     for (entrypoint in entrypoints) {
       this.cfgs.maybeGet(entrypoint) match {
       | Some(cfg) ->
@@ -294,24 +301,35 @@ mutable class Interproc<
         callees // opaque callee expression
       }
     | CSNew(New(cls, _, _), _) ->
+      constructorsMap = this.constructorsByName.fromSome();
       cls.value match {
       | Var(name) ->
         // The call graph records a `new` under a method node, but the
         // constructor's CFG is keyed by a `Constructor` node, so resolve it by
         // class name directly against the analyzed CFGs.
-        this.cfgs.keys()
-          .filter(n ->
-            n.id match {
-            | Constructor(cn, _) -> cn.value == name.value
-            | _ -> false
-            }
-          )
-          .collect(Array)
-      | _ ->
-        callees // opaque constructor expression
+        constructorsMap.maybeGet(name.value) match {
+        | Some(nodes) -> nodes
+        | None() -> Array[]
+        }
+      | _ -> Array[]
       }
     };
     if (matched.isEmpty()) callees else matched;
+  }
+
+  private mutable fun computeConstructorsByName(): void {
+    res = SortedMap<String, Array<CGNode>>[];
+    this.cfgs.keys().each(n ->
+      n.id match {
+      | Constructor(cn, _) ->
+        !res = res.maybeGet(cn.value) match {
+        | None() -> res.set(cn.value, Array[n])
+        | Some(nodes) -> res.set(cn.value, nodes.append(n))
+        }
+      | _ -> void
+      }
+    );
+    this.!constructorsByName = Some(res)
   }
 }
 
