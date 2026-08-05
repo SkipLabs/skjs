@@ -107,15 +107,16 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   // Transfer the block body by threading each instruction's transfer over the
   // instruction sequence.
   //
-  // Calls are handled interprocedurally: a call as the initializer/right-hand
-  // side of a bind/assignment, in statement position, or as a `return` value is
-  // resolved through `interproc` (formals bound to actuals by `call`, the
-  // callee's return value read back from its exit state). Calls nested inside a
-  // larger expression (e.g. `f(a) + 1`) are not yet resolved and evaluate to
-  // `Top`. The analysis is otherwise intraprocedural and sound under the
-  // assumption that a tracked local is never reassigned "at a distance" through
-  // a closure that captures it; every syntactically visible write (assignments,
-  // compound assignments, `++`/`--`, including nested ones) is invalidated.
+  // Calls are handled interprocedurally: every call reached by walking an
+  // evaluated expression is resolved through `interproc` (formals bound to
+  // actuals by `call`, the callee's return value read back from its exit
+  // state), whatever its depth — as an initializer/right-hand side, in
+  // statement position, as a `return` value, or nested inside a larger
+  // expression such as `f(a) + 1` or `[f(a)]`. The analysis is otherwise
+  // intraprocedural, and sound under the assumption that a tracked local is
+  // never reassigned "at a distance" through a closure that captures it; every
+  // syntactically visible write (assignments, compound assignments, `++`/`--`,
+  // including nested ones) is invalidated.
   fun transfer(
     instrs: Array<CFGInstr>,
     env: CPEnv,
@@ -490,23 +491,32 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     | Var(Name(_, "null")) -> CPVNull()
     | Var(Name(_, "undefined")) -> CPVUndefined()
     | Var(name) -> this.lookupVar(env, name.value)
-    | call @ Call _ ->
-      (onReturn, _onThrow) = interproc(
-        CSCall(call, e.pos),
-        CPEEnv(env, CPVUndefined()),
-      );
-      onReturn match {
-      | CPEBot() -> CPVBot()
-      | CPEEnv(_callee_env, ret) -> ret
+    | call @ Call(callee, _, _) ->
+      this.evalExpr(env, callee, interproc) match {
+      | CPVBot() -> CPVBot()
+      | _ ->
+        (onReturn, _onThrow) = interproc(
+          CSCall(call, e.pos),
+          CPEEnv(env, CPVUndefined()),
+        );
+        onReturn match {
+        | CPEBot() -> CPVBot()
+        | CPEEnv(_callee_env, ret) -> ret
+        }
       }
-    | ctor @ New _ ->
-      (onReturn, _onThrow) = interproc(
-        CSNew(ctor, e.pos),
-        CPEEnv(env, CPVUndefined()),
-      );
-      onReturn match {
-      | CPEBot() -> CPVBot()
-      | CPEEnv(_, _) -> CPVTop()
+    | ctor @ New(callee, _, _) ->
+      this.evalExpr(env, callee, interproc) match {
+      | CPVBot() -> CPVBot()
+      | _ ->
+        (onReturn, _onThrow) = interproc(
+          CSNew(ctor, e.pos),
+          CPEEnv(env, CPVUndefined()),
+        );
+        onReturn match {
+        | CPEBot() -> CPVBot()
+        // The constructed object's identity is not a tracked constant.
+        | CPEEnv(_, _) -> CPVTop()
+        }
       }
     | Unop(op, e1) -> this.evalUnop(op, this.evalExpr(env, e1, interproc))
     | Binop(op, e1, e2) -> this.evalBinop(env, op, e1, e2, interproc)
@@ -517,19 +527,127 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
         this.truthiness(c) match {
         | Some(true) -> this.evalExpr(env, thenE, interproc)
         | Some(false) -> this.evalExpr(env, elseE, interproc)
-        | None() -> CPVTop()
+        | None() ->
+          CPVal::join(
+            this.evalExpr(env, thenE, interproc),
+            this.evalExpr(env, elseE, interproc),
+          )
         }
       }
     | As(e1, _)
     | AsConst(e1)
-    | Satisfies(e1, _) ->
-      // Type-only wrappers: identical runtime value.
+    | Satisfies(e1, _)
+    | PostOp(POExcl(), e1) ->
+      // Type-only wrappers (including the `!` non-null assertion): identical
+      // runtime value.
       this.evalExpr(env, e1, interproc)
-    | _ ->
-      // Any other form (property access, object/array/template literals, ...) is
-      // not a tracked constant. `Top` over-approximates every possible runtime
-      // value, so this default is sound for any present or future expression
-      // form. It cannot contain an unresolved call, so `Bot` never hides here.
+    | PostOp(POIncr(), e1)
+    | PostOp(PODecr(), e1) ->
+      // A postfix `++`/`--` evaluates to the operand's *old* value coerced by
+      // `ToNumber`, which is the identity on a number. The write itself is
+      // handled by the `assignedVars` invalidation in the caller.
+      this.evalExpr(env, e1, interproc) match {
+      | CPVBot() -> CPVBot()
+      | CPVNumber(x) -> CPVNumber(x)
+      | _ -> CPVTop()
+      }
+    | TypeOf(e1) ->
+      // `typeof` on a value known to be a tracked primitive is exact. The
+      // results below contain no escapable character, so they are their own raw
+      // spelling and compare correctly against string literals (see `strictEq`).
+      this.evalExpr(env, e1, interproc) match {
+      | CPVBot() -> CPVBot()
+      | CPVNumber(_) -> CPVString("number")
+      | CPVString(_) -> CPVString("string")
+      | CPVBool(_) -> CPVString("boolean")
+      | CPVUndefined() -> CPVString("undefined")
+      // `typeof null === "object"` — the historical wart.
+      | CPVNull() -> CPVString("object")
+      // A `Top` operand may be an object, function, symbol or bigint too.
+      | CPVTop() -> CPVTop()
+      }
+    | VoidOp(e1) ->
+      // `void e` evaluates `e` and always yields `undefined`.
+      this.evalExpr(env, e1, interproc) match {
+      | CPVBot() -> CPVBot()
+      | _ -> CPVUndefined()
+      }
+    // The remaining forms have no tracked constant value of their own, but they
+    // may still *contain* calls, so their sub-expressions are walked rather than
+    // folded straight to `Top`: `interproc` is what registers a callsite edge
+    // and reads the callee's summary back, so skipping the walk silently drops
+    // those edges and leaves the callee unanalyzed.
+    | Dot(_, e1, _)
+    | Spread(e1)
+    | Await(e1)
+    | Async(e1) ->
+      this.evalExpr(env, e1, interproc) match {
+      | CPVBot() -> CPVBot()
+      | _ -> CPVTop()
+      }
+    | Get(e1, e2)
+    | In(e1, e2)
+    | InstanceOf(e1, e2) ->
+      this.evalExpr(env, e1, interproc) match {
+      | CPVBot() -> CPVBot()
+      | _ ->
+        this.evalExpr(env, e2, interproc) match {
+        | CPVBot() -> CPVBot()
+        | _ -> CPVTop()
+        }
+      }
+    // A template literal's interpolations apply `ToString`, whose result is not
+    // a raw string spelling (see `strictEq`), so the pieces of both forms are
+    // evaluated only for their interprocedural effect.
+    | EArray(exprs)
+    | TemplateLiteral(_, exprs) ->
+      // Annotated so the accumulator is the `CPVal` base class rather than the
+      // `CPVTop` seed, which alone would make the `CPVBot` test ill-typed.
+
+      exprs.foldl<CPVal>(
+        (acc, expr) -> {
+          if (acc is CPVBot()) CPVBot() else {
+            this.evalExpr(env, expr, interproc) match {
+            | CPVBot() -> CPVBot()
+            | _ -> CPVTop()
+            }
+          }
+        },
+        CPVTop(),
+      )
+    | Object(fields) ->
+      exprs = mutable Vector<Expr>[];
+      for (field in fields) {
+        field match {
+        | FDNormal(_, ex)
+        | FDSpread(ex) ->
+          exprs.push(ex)
+        | FDComputed(key, value) ->
+          exprs.push(key);
+          exprs.push(value)
+        // A method body runs when called, not where it is written.
+        | FDMethod _ -> void
+        }
+      };
+      exprs.foldl<CPVal>(
+        (acc, expr) -> {
+          if (acc is CPVBot()) CPVBot() else {
+            this.evalExpr(env, expr, interproc) match {
+            | CPVBot() -> CPVBot()
+            | _ -> CPVTop()
+            }
+          }
+        },
+        CPVTop(),
+      )
+    // Leaves with no sub-expression to walk and no tracked value: a `bigint`
+    // or regexp literal, and the parenthesized parameter list of an arrow
+    // function. A closure is deliberately opaque — its body runs when called,
+    // not where it is written, so the calls it makes are not seeded here.
+    | BigInt(_)
+    | Regexp(_)
+    | Params(_)
+    | Closure(_, _, _, _) ->
       CPVTop()
     }
   }
@@ -578,7 +696,9 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
         | Some(false) ->
           l // short-circuits to the (falsy) left value
         | Some(true) -> this.evalExpr(env, e2, interproc)
-        | None() -> CPVTop()
+        | None() ->
+          _ = this.evalExpr(env, e2, interproc);
+          CPVTop()
         }
       }
     | BOLogicalOr() ->
@@ -590,7 +710,9 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
         | Some(true) ->
           l // short-circuits to the (truthy) left value
         | Some(false) -> this.evalExpr(env, e2, interproc)
-        | None() -> CPVTop()
+        | None() ->
+          _ = this.evalExpr(env, e2, interproc);
+          CPVTop()
         }
       }
     | BONullishCoalescing() ->
@@ -600,13 +722,26 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
       | CPVNull()
       | CPVUndefined() ->
         this.evalExpr(env, e2, interproc)
-      | CPVTop() -> CPVTop()
+      | CPVTop() ->
+        _ = this.evalExpr(env, e2, interproc);
+        CPVTop()
       | other -> other
       }
     | BOAssignment()
     | BOOpAssignment(_) ->
-      // `Top` is conservative but sound in the presence of sub-expression assignments
-      CPVTop()
+      // A nested assignment (`y = (x = f())`). Both operands are evaluated —
+      // the target first, which matters when it is computed (`a[i()] = v`) —
+      // so that the calls in either are resolved. The assignment's own value is
+      // `Top`: conservative but sound, and the write it performs is handled by
+      // the `assignedVars` invalidation in the caller.
+      this.evalExpr(env, e1, interproc) match {
+      | CPVBot() -> CPVBot()
+      | _ ->
+        this.evalExpr(env, e2, interproc) match {
+        | CPVBot() -> CPVBot()
+        | _ -> CPVTop()
+        }
+      }
     | _ ->
       // Every remaining operator evaluates both operands unconditionally, so a
       // pending call in either makes the result `Bot`.
@@ -794,9 +929,9 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
     }
   }
 
-  // Immediate sub-expressions of `e`. Closures are deliberately opaque: their
-  // body runs when *called*, not where the closure is written, so any write it
-  // performs is out of scope for this intraprocedural analysis.
+  // Immediate sub-expressions of `e`, used to collect the syntactic write sets
+  // Closures are deliberately opaque: their body runs when *called*, not where
+  // the closure is written
   private fun childExprs(e: Expr): Array<Expr> {
     e.value match {
     | Number _
