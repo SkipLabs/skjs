@@ -1,0 +1,278 @@
+/***************************************************************************/
+/* Annotating source text with dataflow invariants.                        */
+/*                                                                         */
+/* Comments are inserted into the source text rather than printed from the */
+/* AST, which the parser strips comments from. Anchors come from the CFGs:  */
+/* `cfg.pos` for functions and lambdas, and the tested expression of a      */
+/* branch/switch terminator for conditionals and loop heads.               */
+/***************************************************************************/
+
+module SKJS;
+
+base class AnnotLevel {
+  children =
+  | ALFunctions() // Function and lambda entry/exit states only.
+  | ALLoops() // ...and the head of every loop.
+  | ALBranches() // ...and every other conditional and switch as well.
+}
+
+fun annotatesHeader(level: AnnotLevel, isLoopHeader: Bool): Bool {
+  level match {
+  | ALFunctions() -> false
+  | ALLoops() -> isLoopHeader
+  | ALBranches() -> true
+  }
+}
+
+// Implemented by a dataflow client, which knows its own abstract values. An
+// empty array annotates nothing at that point.
+base class CFGAnnotations {
+  fun function(node: CGNode, cfg: CFG): Array<String>;
+
+  fun header(
+    node: CGNode,
+    cfg: CFG,
+    block: CFGBlock,
+    isLoopHeader: Bool,
+  ): Array<String>;
+}
+
+/***************************************************************************/
+/* Anchors.                                                                */
+/***************************************************************************/
+
+// Where an annotation goes, given that anchors point into the middle of their
+// construct: a function's position is its name, a header's is the expression
+// it tests.
+base class AnnotPlace {
+  children =
+  | APAbove() // Always on the line above: functions, methods, top-level code.
+  | APLambda() // Above when it starts a line, else in front of it.
+  | APHeader() // Above when the line opens the header, else in front of the test.
+}
+
+// `offset` is an absolute character index; `seq` orders annotations that land
+// on the same one.
+value class SourceAnnotation(
+  offset: Int,
+  seq: Int,
+  lines: Array<String>,
+  place: AnnotPlace,
+)
+
+// Every loop form lowers its test into a block the back edge returns to, so a
+// branch found here is a loop head and one that is not is a conditional.
+fun loopHeaderBlocks(cfg: CFG): SortedSet<CFGBlockId> {
+  headers = SortedSet[];
+  for ((_src, snks) in cfg.backEdges.items()) {
+    for (snk in snks) {
+      !headers = headers.add(snk)
+    }
+  };
+  headers
+}
+
+fun terminatorTest(term: BBTerminator): ?TypedExpr {
+  term match {
+  | CFGTBranch(cond, _, _) -> Some(cond)
+  | CFGTSwitch(scrutinee, _, _) -> Some(scrutinee)
+  | CFGTJump _
+  | CFGTReturn _
+  | CFGTThrow _
+  | CFGTUnreachable() ->
+    None()
+  }
+}
+
+fun collectAnnotations(
+  fileName: FPath,
+  cfgs: SortedMap<CGNode, CFG>,
+  symbols: Map<SymbolicPos, Int>,
+  annotations: CFGAnnotations,
+  level: AnnotLevel,
+): Array<SourceAnnotation> {
+  found = mutable Vector<SourceAnnotation>[];
+  seq = 0;
+  next = () -> {
+    !seq = seq + 1;
+    seq
+  };
+  for ((node, cfg) in cfgs.items()) {
+    // Positions are relative to their own file's symbol table.
+    if (cfg.pos.fileName != fileName) continue;
+
+    funLines = annotations.function(node, cfg);
+    if (!funLines.isEmpty()) {
+      found.push(
+        SourceAnnotation(
+          cfg.pos.getStart(symbols).value,
+          next(),
+          funLines,
+          if (node.id is AnonymousLambda _) APLambda() else APAbove(),
+        ),
+      )
+    };
+
+    headers = loopHeaderBlocks(cfg);
+    for (block in cfg.blocks.values()) {
+      terminatorTest(block.terminator).each(test -> {
+        isLoopHeader = headers.contains(block.id);
+        if (annotatesHeader(level, isLoopHeader)) {
+          lines = annotations.header(node, cfg, block, isLoopHeader);
+          if (!lines.isEmpty()) {
+            found.push(
+              SourceAnnotation(
+                test.expr.pos.getStart(symbols).value,
+                next(),
+                lines,
+                APHeader(),
+              ),
+            )
+          }
+        }
+      })
+    }
+  };
+  found.toArray()
+}
+
+/***************************************************************************/
+/* Insertion.                                                              */
+/***************************************************************************/
+
+// `*/` would close a block comment early — abstract values can carry string
+// constants, so a state holding `x="*/"` is a real way to emit broken code —
+// and a newline inside a block comment counts as a line terminator for
+// automatic semicolon insertion.
+fun commentSafe(text: String): String {
+  text.replace("*/", "*\\/").replace("\n", " ").replace("\r", " ")
+}
+
+// `newLines` holds the index of each line terminator's last character, so the
+// next line starts just past it (see computeNewLines).
+fun lineStartOffset(newLines: Array<Int>, offset: Int): Int {
+  idx = SKStore.binSearch(i ~> newLines[i], offset, 0, newLines.size() - 1);
+  if (idx <= 0) 0 else newLines[idx - 1] + 1
+}
+
+fun lineIndent(chars: Array<Char>, lineStart: Int, limit: Int): String {
+  i = lineStart;
+  while (i < limit && (chars[i] == ' ' || chars[i] == '\t')) {
+    !i = i + 1
+  };
+  String::fromChars(chars.slice(lineStart, i))
+}
+
+// Whether the construct at `offset` starts its own line, and so can be
+// annotated above rather than in front.
+fun startsLine(chars: Array<Char>, lineStart: Int, offset: Int): Bool {
+  i = lineStart;
+  while (i < offset) {
+    if (chars[i] != ' ' && chars[i] != '\t') return false;
+    !i = i + 1
+  };
+  true
+}
+
+// Whether the line `lineStart` begins is the start of the construct a header
+// anchors to. A header's anchor is its tested expression, so `if (x)` and
+// `} else if (x)` are indistinguishable from the anchor alone — but the first
+// wants its annotation on the line above, and the second would then read as
+// belonging to the block that just closed.
+fun lineOpensHeader(chars: Array<Char>, lineStart: Int, limit: Int): Bool {
+  i = lineStart;
+  while (i < limit && (chars[i] == ' ' || chars[i] == '\t')) {
+    !i = i + 1
+  };
+  start = i;
+  while (i < limit && isJSIdentifierPart(chars[i])) {
+    !i = i + 1
+  };
+  keyword = String::fromChars(chars.slice(start, i));
+  keyword == "if" ||
+    keyword == "while" ||
+    keyword == "for" ||
+    keyword == "switch" ||
+    keyword == "do"
+}
+
+// Back up to the start of the identifier `offset` falls inside, so that an
+// anchor pointing at a construct's interior cannot split a token.
+fun tokenStart(chars: Array<Char>, offset: Int): Int {
+  i = offset;
+  while (i > 0 && isJSIdentifierPart(chars[i - 1])) {
+    !i = i - 1
+  };
+  i
+}
+
+fun renderAnnotation(
+  chars: Array<Char>,
+  newLines: Array<Int>,
+  annot: SourceAnnotation,
+): (Int, String) {
+  lineStart = lineStartOffset(newLines, annot.offset);
+  above = annot.place match {
+  | APAbove() -> true
+  | APLambda() -> startsLine(chars, lineStart, annot.offset)
+  | APHeader() -> lineOpensHeader(chars, lineStart, annot.offset)
+  };
+  if (above) {
+    indent = lineIndent(chars, lineStart, annot.offset);
+    text = "".join(
+      annot.lines.map(line -> `${indent}// ${commentSafe(line)}\n`),
+    );
+    (lineStart, text)
+  } else {
+    // Kept to one line: see commentSafe.
+    body = " | ".join(annot.lines.map(commentSafe));
+    (tokenStart(chars, annot.offset), `/* ${body} */ `)
+  }
+}
+
+fun applyAnnotations(
+  content: String,
+  newLines: Array<Int>,
+  annots: Array<SourceAnnotation>,
+): String {
+  if (annots.isEmpty()) return content;
+  chars = content.chars().toArray();
+  insertions = annots
+    .map(a -> (a, renderAnnotation(chars, newLines, a)))
+    .sortedBy(entry ~> (entry.i1.i0, entry.i0.seq));
+  out = mutable Vector<String>[];
+  cursor = 0;
+  for (entry in insertions) {
+    (offset, text) = entry.i1;
+    if (offset > cursor) {
+      out.push(String::fromChars(chars.slice(cursor, offset)));
+      !cursor = offset
+    };
+    out.push(text)
+  };
+  if (cursor < chars.size()) {
+    out.push(String::fromChars(chars.slice(cursor, chars.size())))
+  };
+  "".join(out)
+}
+
+// `content` with the invariants `annotations` reports for `cfgs` inserted as
+// comments. Nothing but comments is added, so the result parses to the same
+// program.
+fun annotateSource(
+  fileName: FPath,
+  content: String,
+  newLines: Array<Int>,
+  symbols: Map<SymbolicPos, Int>,
+  cfgs: SortedMap<CGNode, CFG>,
+  annotations: CFGAnnotations,
+  level: AnnotLevel = ALLoops(),
+): String {
+  applyAnnotations(
+    content,
+    newLines,
+    collectAnnotations(fileName, cfgs, symbols, annotations, level),
+  )
+}
+
+module end;
