@@ -1,11 +1,11 @@
-/***************************************************************************/
-/* Annotating source text with dataflow invariants.                        */
-/*                                                                         */
-/* Comments are inserted into the source text rather than printed from the */
-/* AST, which the parser strips comments from. Anchors come from the CFGs:  */
-/* `cfg.pos` for functions and lambdas, and the tested expression of a      */
-/* branch/switch terminator for conditionals and loop heads.               */
-/***************************************************************************/
+// Utilities to annotate source text with dataflow invariants.
+//
+// Comments are inserted into source rather than pretty-printed with an AST,
+// since we don't want to deal with parsing and re-rendering comments
+// (a well-known pain point for such things)
+//
+// We anchor those inserted comments on CFG positions of functions, lambdas,
+// conditions, switch scrutinees, etc.
 
 module SKJS;
 
@@ -24,8 +24,8 @@ fun annotatesHeader(level: AnnotLevel, isLoopHeader: Bool): Bool {
   }
 }
 
-// Implemented by a dataflow client, which knows its own abstract values. An
-// empty array annotates nothing at that point.
+// Implemented by a dataflow client, which chooses how to serialize its own
+// abstract states. An empty array annotates nothing at that point.
 base class CFGAnnotations {
   fun function(node: CGNode, cfg: CFG): Array<String>;
 
@@ -36,10 +36,6 @@ base class CFGAnnotations {
     isLoopHeader: Bool,
   ): Array<String>;
 }
-
-/***************************************************************************/
-/* Anchors.                                                                */
-/***************************************************************************/
 
 // Where an annotation goes, given that anchors point into the middle of their
 // construct: a function's position is its name, a header's is the expression
@@ -136,14 +132,8 @@ fun collectAnnotations(
   found.toArray()
 }
 
-/***************************************************************************/
-/* Insertion.                                                              */
-/***************************************************************************/
-
-// `*/` would close a block comment early — abstract values can carry string
-// constants, so a state holding `x="*/"` is a real way to emit broken code —
-// and a newline inside a block comment counts as a line terminator for
-// automatic semicolon insertion.
+// Escape away newlines and block-comment-closing strings to avoid breaking
+// programs when inserting comments
 fun commentSafe(text: String): String {
   text.replace("*/", "*\\/").replace("\n", " ").replace("\r", " ")
 }
@@ -224,7 +214,6 @@ fun renderAnnotation(
     );
     (lineStart, text)
   } else {
-    // Kept to one line: see commentSafe.
     body = " | ".join(annot.lines.map(commentSafe));
     (tokenStart(chars, annot.offset), `/* ${body} */ `)
   }
