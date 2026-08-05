@@ -103,31 +103,6 @@ fun testConstantProp(): void {
   )
 }
 
-// Render a single abstract value.
-fun renderCPVal(v: SKJS.CPVal): String {
-  v match {
-  | SKJS.CPVBot() -> "bot"
-  | SKJS.CPVTop() -> "top"
-  | SKJS.CPVNumber(x) -> x.toString()
-  | SKJS.CPVString(s) -> "\"" + s + "\""
-  | SKJS.CPVBool(b) -> b.toString()
-  | SKJS.CPVNull() -> "null"
-  | SKJS.CPVUndefined() -> "undefined"
-  }
-}
-
-// Render a block's abstract state as its (sorted) variable bindings.
-fun renderCPEnv(st: SKJS.CPEnv): String {
-  st match {
-  | SKJS.CPEBot() -> "unreachable"
-  | SKJS.CPEEnv(env, _ret) ->
-    parts = env.items().collect(Array).map(kv ->
-      kv.i0 + "=" + renderCPVal(kv.i1)
-    );
-    "{" + ", ".join(parts) + "}"
-  }
-}
-
 // Deterministic constant-propagation report: one stanza per function (sorted by
 // name) with its abstract return value and the entry state of each non-sentinel
 // block (in block order).
@@ -166,7 +141,7 @@ fun serializeConstantProp(
       | Some(st) ->
         st match {
         | SKJS.CPEBot() -> "unreachable"
-        | SKJS.CPEEnv(_, ret) -> renderCPVal(ret)
+        | SKJS.CPEEnv(_, ret) -> SKJS.renderCPVal(ret)
         }
       };
       body = mutable Vector<String>[`  return: ${retStr}`];
@@ -175,7 +150,7 @@ fun serializeConstantProp(
         if (!isSentinel) {
           stStr = perBlock.maybeGet(block.id) match {
           | None() -> "unreachable"
-          | Some(st) -> renderCPEnv(st)
+          | Some(st) -> SKJS.renderCPEnv(st)
           };
           body.push(`  ${block.id}: ${stStr}`)
         }

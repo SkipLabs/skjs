@@ -880,4 +880,80 @@ class ConstantProp() uses AbstractDomain<CPEnv> {
   }
 }
 
+// Render a single abstract value.
+fun renderCPVal(v: CPVal): String {
+  v match {
+  | CPVBot() -> "bot"
+  | CPVTop() -> "top"
+  | CPVNumber(x) -> x.toString()
+  | CPVString(s) -> "\"" + s + "\""
+  | CPVBool(b) -> b.toString()
+  | CPVNull() -> "null"
+  | CPVUndefined() -> "undefined"
+  }
+}
+
+// Render a block's abstract state as its (sorted) variable bindings.
+fun renderCPEnv(st: CPEnv): String {
+  st match {
+  | CPEBot() -> "unreachable"
+  | CPEEnv(env, _ret) ->
+    parts = env.items().collect(Array).map(kv ->
+      kv.i0 + "=" + renderCPVal(kv.i1)
+    );
+    "{" + ", ".join(parts) + "}"
+  }
+}
+
+// Renders constant-propagation states as the comment lines to insert.
+//
+// A CFG the analysis never reached gets no annotation at all rather than a row
+// of "unreachable": a lambda passed to an unresolved higher-order call is not
+// something the reader needs told about at every occurrence.
+class ConstantPropAnnotations(
+  states: SortedMap<CGNode, SortedMap<CFGBlockId, CPEnv>>,
+) extends CFGAnnotations {
+  fun blockState(node: CGNode, block: CFGBlockId): ?CPEnv {
+    this.states.maybeGet(node).flatMap(perBlock -> perBlock.maybeGet(block))
+  }
+
+  fun analyzed(node: CGNode): Bool {
+    this.states.maybeGet(node) match {
+    | None() -> false
+    | Some(perBlock) -> !perBlock.isEmpty()
+    }
+  }
+
+  fun renderState(node: CGNode, block: CFGBlockId): String {
+    this.blockState(node, block) match {
+    | None() -> "unreachable"
+    | Some(st) -> renderCPEnv(st)
+    }
+  }
+
+  fun function(node: CGNode, cfg: CFG): Array<String> {
+    if (!this.analyzed(node)) return Array[];
+    ret = this.blockState(node, cfg.normalExit) match {
+    | Some(CPEEnv(_, r)) -> ` returns ${renderCPVal(r)}`
+    | _ -> ""
+    };
+    Array[
+      `dataflow entry: ${this.renderState(node, cfg.entry)}`,
+      `dataflow exit: ${this.renderState(node, cfg.normalExit)}${ret}`,
+      `dataflow throw: ${this.renderState(node, cfg.exnExit)}`,
+    ]
+  }
+
+  fun header(
+    node: CGNode,
+    _cfg: CFG,
+    block: CFGBlock,
+    isLoopHeader: Bool,
+  ): Array<String> {
+    if (!this.analyzed(node)) return Array[];
+    label = if (isLoopHeader) "loop head" else "branch";
+    Array[`dataflow ${label}: ${this.renderState(node, block.id)}`]
+  }
+}
+
 module end;
