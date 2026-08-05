@@ -1,0 +1,27 @@
+fn:inArray:
+  return: 1.0
+  BB_0: {}
+fn:inDot:
+  return: top
+  BB_0: {}
+fn:inIndex:
+  return: 0.0
+  BB_0: {}
+fn:inObject:
+  return: 4.0
+  BB_0: {}
+fn:inTemplate:
+  return: 2.0
+  BB_0: {}
+fn:inTypeof:
+  return: 3.0
+  BB_0: {}
+fn:indexed:
+  return: top
+  BB_0: {n=6.0}
+fn:main:
+  return: top
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}

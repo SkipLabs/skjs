@@ -1,0 +1,36 @@
+fn:agree:
+  return: 7.0
+  BB_0: {}
+fn:inElse:
+  return: 2.0
+  BB_0: {}
+fn:inThen:
+  return: 1.0
+  BB_0: {}
+fn:main:
+  return: top
+  BB_0: {}
+fn:pick:
+  return: top
+  BB_0: {}
+fn:postIncrement:
+  return: 5.0
+  BB_0: {}
+fn:typeofIsNumber:
+  return: true
+  BB_0: {}
+fn:typeofNull:
+  return: "object"
+  BB_0: {}
+fn:typeofNumber:
+  return: "number"
+  BB_0: {}
+fn:typeofString:
+  return: "string"
+  BB_0: {}
+fn:voidValue:
+  return: undefined
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}
