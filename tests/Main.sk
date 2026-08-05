@@ -688,6 +688,7 @@ fun testNoLostTest(): void {
     "cfg", // handled in testCFG
     "deadcode", // handled in testDeadCode
     "constprop", // handled in testConstantProp
+    "annotate", // handled in testAnnotate
   ];
   for (subDir in FileSystem.readDirectory(testsDir)) {
     if (coveredTestDirs.contains(subDir)) continue;

@@ -1,0 +1,274 @@
+===== level: functions =====
+
+// Loops and conditionals, with comments throughout: the point of inserting
+// annotations into the source text rather than reprinting the AST is that
+// every comment in this file survives into the annotated output verbatim.
+
+// dataflow entry: {n=4.0}
+// dataflow exit: {n=4.0} returns top
+// dataflow throw: unreachable
+function counted(n: number): number {
+  let i = 0;
+  // `i` disagrees around the back edge, so the loop head widens it to top.
+  while (i < n) {
+    i = i + 1;
+  }
+  return i;
+}
+
+// dataflow entry: {}
+// dataflow exit: {s=3.0} returns 3.0
+// dataflow throw: unreachable
+function loopInvariant(): number {
+  let s = 3;
+  let i = 0;
+  while (i < 4) {
+    s = 3; // same constant on both edges: `s` survives the widening
+    i = i + 1;
+  }
+  return s;
+}
+
+/* A block comment, to check that those are left alone too. */
+// dataflow entry: {n=0.0}
+// dataflow exit: {n=0.0} returns "zero"
+// dataflow throw: unreachable
+function classify(n: number): string {
+  if (n < 0) {
+    return "negative";
+  } else if (n === 0) {
+    // Reached only when n is exactly zero.
+    return "zero";
+  }
+  return "positive";
+}
+
+// dataflow entry: {n=1.0}
+// dataflow exit: {n=1.0} returns 20.0
+// dataflow throw: unreachable
+function pick(n: number): number {
+  switch (n) {
+    case 0:
+      return 10;
+    case 1:
+      return 20;
+    default:
+      return 30;
+  }
+}
+
+// dataflow entry: {}
+// dataflow exit: {} returns top
+// dataflow throw: unreachable
+function forSum(): number {
+  let total = 0;
+  for (let j = 0; j < 3; j = j + 1) {
+    total = total + j;
+  }
+  return total;
+}
+
+// dataflow entry: {}
+// dataflow exit: {b=3.0, d=20.0, e="zero"} returns top
+// dataflow throw: {}
+function main(): number {
+  const a = counted(4);
+  const b = loopInvariant();
+  const c = forSum();
+  const d = pick(1);
+  const e = classify(0);
+  const f = e.length;
+  return a + b + c + d + f;
+}
+
+// Module top-level code is the entrypoint; it invokes main.
+// dataflow entry: {}
+// dataflow exit: {} returns undefined
+// dataflow throw: {}
+const _ = main();
+
+===== level: loops =====
+
+// Loops and conditionals, with comments throughout: the point of inserting
+// annotations into the source text rather than reprinting the AST is that
+// every comment in this file survives into the annotated output verbatim.
+
+// dataflow entry: {n=4.0}
+// dataflow exit: {n=4.0} returns top
+// dataflow throw: unreachable
+function counted(n: number): number {
+  let i = 0;
+  // `i` disagrees around the back edge, so the loop head widens it to top.
+  // dataflow loop head: {n=4.0}
+  while (i < n) {
+    i = i + 1;
+  }
+  return i;
+}
+
+// dataflow entry: {}
+// dataflow exit: {s=3.0} returns 3.0
+// dataflow throw: unreachable
+function loopInvariant(): number {
+  let s = 3;
+  let i = 0;
+  // dataflow loop head: {s=3.0}
+  while (i < 4) {
+    s = 3; // same constant on both edges: `s` survives the widening
+    i = i + 1;
+  }
+  return s;
+}
+
+/* A block comment, to check that those are left alone too. */
+// dataflow entry: {n=0.0}
+// dataflow exit: {n=0.0} returns "zero"
+// dataflow throw: unreachable
+function classify(n: number): string {
+  if (n < 0) {
+    return "negative";
+  } else if (n === 0) {
+    // Reached only when n is exactly zero.
+    return "zero";
+  }
+  return "positive";
+}
+
+// dataflow entry: {n=1.0}
+// dataflow exit: {n=1.0} returns 20.0
+// dataflow throw: unreachable
+function pick(n: number): number {
+  switch (n) {
+    case 0:
+      return 10;
+    case 1:
+      return 20;
+    default:
+      return 30;
+  }
+}
+
+// dataflow entry: {}
+// dataflow exit: {} returns top
+// dataflow throw: unreachable
+function forSum(): number {
+  let total = 0;
+  // dataflow loop head: {}
+  for (let j = 0; j < 3; j = j + 1) {
+    total = total + j;
+  }
+  return total;
+}
+
+// dataflow entry: {}
+// dataflow exit: {b=3.0, d=20.0, e="zero"} returns top
+// dataflow throw: {}
+function main(): number {
+  const a = counted(4);
+  const b = loopInvariant();
+  const c = forSum();
+  const d = pick(1);
+  const e = classify(0);
+  const f = e.length;
+  return a + b + c + d + f;
+}
+
+// Module top-level code is the entrypoint; it invokes main.
+// dataflow entry: {}
+// dataflow exit: {} returns undefined
+// dataflow throw: {}
+const _ = main();
+
+===== level: branches =====
+
+// Loops and conditionals, with comments throughout: the point of inserting
+// annotations into the source text rather than reprinting the AST is that
+// every comment in this file survives into the annotated output verbatim.
+
+// dataflow entry: {n=4.0}
+// dataflow exit: {n=4.0} returns top
+// dataflow throw: unreachable
+function counted(n: number): number {
+  let i = 0;
+  // `i` disagrees around the back edge, so the loop head widens it to top.
+  // dataflow loop head: {n=4.0}
+  while (i < n) {
+    i = i + 1;
+  }
+  return i;
+}
+
+// dataflow entry: {}
+// dataflow exit: {s=3.0} returns 3.0
+// dataflow throw: unreachable
+function loopInvariant(): number {
+  let s = 3;
+  let i = 0;
+  // dataflow loop head: {s=3.0}
+  while (i < 4) {
+    s = 3; // same constant on both edges: `s` survives the widening
+    i = i + 1;
+  }
+  return s;
+}
+
+/* A block comment, to check that those are left alone too. */
+// dataflow entry: {n=0.0}
+// dataflow exit: {n=0.0} returns "zero"
+// dataflow throw: unreachable
+function classify(n: number): string {
+  // dataflow branch: {n=0.0}
+  if (n < 0) {
+    return "negative";
+  } else if (/* dataflow branch: {n=0.0} */ n === 0) {
+    // Reached only when n is exactly zero.
+    return "zero";
+  }
+  return "positive";
+}
+
+// dataflow entry: {n=1.0}
+// dataflow exit: {n=1.0} returns 20.0
+// dataflow throw: unreachable
+function pick(n: number): number {
+  // dataflow branch: {n=1.0}
+  switch (n) {
+    case 0:
+      return 10;
+    case 1:
+      return 20;
+    default:
+      return 30;
+  }
+}
+
+// dataflow entry: {}
+// dataflow exit: {} returns top
+// dataflow throw: unreachable
+function forSum(): number {
+  let total = 0;
+  // dataflow loop head: {}
+  for (let j = 0; j < 3; j = j + 1) {
+    total = total + j;
+  }
+  return total;
+}
+
+// dataflow entry: {}
+// dataflow exit: {b=3.0, d=20.0, e="zero"} returns top
+// dataflow throw: {}
+function main(): number {
+  const a = counted(4);
+  const b = loopInvariant();
+  const c = forSum();
+  const d = pick(1);
+  const e = classify(0);
+  const f = e.length;
+  return a + b + c + d + f;
+}
+
+// Module top-level code is the entrypoint; it invokes main.
+// dataflow entry: {}
+// dataflow exit: {} returns undefined
+// dataflow throw: {}
+const _ = main();

@@ -1,0 +1,227 @@
+// Expectation tests for annotating source text with dataflow invariants.
+//
+// Each tests/annotate/*.ts fixture has a sibling *.annot file holding the
+// expected output at every verbosity level. Regenerate with UPDATE_EXPECT=1.
+//
+// The invariants come from interprocedural constant propagation, seeded at the
+// file's top-level code, exactly as in tests/ConstantProp.sk — this test is
+// about *where* the annotations land and what the annotated text looks like,
+// not about what the analysis concludes.
+//
+// Two properties beyond matching the expectation:
+//
+//   - the annotated text still parses. Only comments were added, so it has to,
+//     and it is how a payload that closes its own comment early (`*/` inside a
+//     string constant) or an insertion that lands mid-token gets caught.
+//   - the fixtures' own comments survive verbatim. That is the whole reason
+//     for inserting into source text instead of printing the AST back out, so
+//     it is worth asserting rather than eyeballing.
+module SKJSTests;
+
+fun annotExpectationPath(fileName: SKJS.FAbsolute): String {
+  fileName.toString().stripSuffix(".ts") + ".annot"
+}
+
+// Run interprocedural constant propagation, seeded at top-level code, and
+// return the per-block entry states it reaches.
+fun constPropStates(
+  cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
+  callgraph: SortedMap<SKJS.CGNode, Array<SKJS.CGNode>>,
+): SortedMap<SKJS.CGNode, SortedMap<SKJS.CFGBlockId, SKJS.CPEnv>> {
+  // Explicit type arguments: inferring `State` for a domain that reaches
+  // `AbstractDomain<CPEnv>` only via a supertype leaves it unresolved.
+  solver = mutable SKJS.Interproc<
+    SKJS.CPEnv,
+    void,
+    SKJS.ConstantProp,
+    SKJS.ContextInsensitive,
+  >{
+    cfgs,
+    callgraph,
+    domain => SKJS.ConstantProp(),
+    ctx_policy => SKJS.ContextInsensitive(),
+  };
+  entrypoints = cfgs.keys().filter(node -> node.id is SKJS.Toplevel _);
+  solver.analyzeForward(entrypoints.collect(Array));
+  solver.blockStates()
+}
+
+fun annotateAtLevel(
+  fileName: SKJS.FPath,
+  content: String,
+  newLines: Array<Int>,
+  symbols: Map<SKJS.SymbolicPos, Int>,
+  cfgs: SortedMap<SKJS.CGNode, SKJS.CFG>,
+  annotations: SKJS.ConstantPropAnnotations,
+  level: SKJS.AnnotLevel,
+): String {
+  SKJS.annotateSource(
+    fileName,
+    content,
+    newLines,
+    symbols,
+    cfgs,
+    annotations,
+    level,
+  )
+}
+
+// Every comment line of the original must appear, unchanged, in the output.
+fun checkCommentsPreserved(
+  label: String,
+  original: String,
+  annotated: String,
+): Array<SKTest.ExpectationError> {
+  errors = mutable Vector[];
+  annotatedLines = annotated.split("\n");
+  for (line in original.split("\n")) {
+    trimmed = line.trim();
+    if (trimmed.startsWith("//") && !annotatedLines.contains(line)) {
+      errors.push(
+        SKTest.ExpectationError(
+          `${label}: a source comment was lost`,
+          line,
+          "not present in the annotated output",
+        ),
+      )
+    }
+  };
+  errors.toArray()
+}
+
+fun checkParses(
+  label: String,
+  fileName: SKJS.FPath,
+  annotated: String,
+): Array<SKTest.ExpectationError> {
+  lexer = SKJS.Lexer::mcreate(fileName, annotated);
+  parser = mutable SKJS.Parser(lexer);
+  try {
+    _ = parser.toplevelDefs();
+    Array[]
+  } catch {
+  | exn ->
+    Array[
+      SKTest.ExpectationError(
+        `${label}: the annotated output no longer parses`,
+        "a parseable program",
+        exn.getMessage(),
+      ),
+    ]
+  }
+}
+
+fun validateAnnotate(
+  context: mutable SKStore.Context,
+  checker: SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+  update: UpdateMode,
+): Array<SKTest.ExpectationError> {
+  fileName = checkResult.fileName;
+  absFileName = fileName.toAbsolute(checker.files.rootMap);
+  // The checked-files map also visits builtins/stubs; only fixture files have
+  // expectation *.annot.
+  if (!absFileName.toString().contains("/tests/annotate/")) {
+    return Array[]
+  };
+
+  if (checkResult.parseError is Some _ || checkResult.errors.size() > 0) {
+    errs = checkResult.parseError match {
+    | None() -> checkResult.errors
+    | Some(parseError) -> checkResult.errors.concat(Array[parseError])
+    };
+    return Array[
+      SKTest.ExpectationError(
+        `${absFileName}: annotation fixtures must typecheck cleanly`,
+        "no errors",
+        checker.errorsToString(context, errs),
+      ),
+    ]
+  };
+
+  content = checker.files.filesContent.get(context, fileName).value;
+  newLines = checker.newLinesMap.get(context, fileName);
+  symbols = checker.symbolsMap.get(context, fileName);
+  annotations = SKJS.ConstantPropAnnotations(
+    constPropStates(checkResult.cfgs, checkResult.callgraph),
+  );
+
+  errors = mutable Vector<SKTest.ExpectationError>[];
+  sections = mutable Vector<String>[];
+  levels = Array[
+    ("functions", SKJS.ALFunctions()),
+    ("loops", SKJS.ALLoops()),
+    ("branches", SKJS.ALBranches()),
+  ];
+  for (entry in levels) {
+    (name, level) = entry;
+    annotated = annotateAtLevel(
+      fileName,
+      content,
+      newLines,
+      symbols,
+      checkResult.cfgs,
+      annotations,
+      level,
+    );
+    label = `${absFileName} [${name}]`;
+    checkParses(label, fileName, annotated).each(errors.push);
+    checkCommentsPreserved(label, content, annotated).each(errors.push);
+    sections.push(`===== level: ${name} =====\n\n${annotated}`)
+  };
+  actual = "\n".join(sections.toArray());
+
+  expectationPath = annotExpectationPath(absFileName);
+  update match {
+  | UMDoUpdate _ ->
+    existing = if (FileSystem.exists(expectationPath)) {
+      FileSystem.readTextFile(expectationPath)
+    } else {
+      ""
+    };
+    if (actual != existing) {
+      FileSystem.writeTextFile(expectationPath, actual);
+      print_string(`Updated: ${expectationPath}\n`)
+    }
+  | UMValidateOnly() ->
+    if (!FileSystem.exists(expectationPath)) {
+      errors.push(
+        SKTest.ExpectationError(
+          `${absFileName}: missing annotation expectation file`,
+          expectationPath,
+          "not found (run with UPDATE_EXPECT=1 to create)",
+        ),
+      )
+    } else {
+      expected = FileSystem.readTextFile(expectationPath);
+      if (actual != expected) {
+        errors.push(
+          SKTest.ExpectationError(
+            `${absFileName}: annotated output differs from ${expectationPath} (run with UPDATE_EXPECT=1 to update)`,
+            expected,
+            actual,
+          ),
+        )
+      }
+    }
+  };
+  errors.toArray()
+}
+
+@test
+fun testAnnotate(): void {
+  dir = Path.resolve("./tests/annotate/");
+  srcFiles = FileSystem.readDirectory(dir).filterMap(f ->
+    if (SKJS.isTsFile(f)) Some(Path.join(dir, f)) else None()
+  );
+  invariant(!srcFiles.isEmpty(), "No annotation test fixtures found");
+  testFiles(
+    srcFiles,
+    Array["./import-stubs"],
+    validateAnnotate,
+    UpdateMode::fromEnv(),
+    true,
+  )
+}
+
+module end;
