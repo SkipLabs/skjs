@@ -1,0 +1,21 @@
+ctor:Box:
+  return: undefined
+  BB_0: {v=3.0}
+fn:inCalleeExpr:
+  return: unreachable
+  BB_0: unreachable
+fn:inNewArg:
+  return: 3.0
+  BB_0: {}
+fn:inOpaqueArg:
+  return: 1.0
+  BB_0: {}
+fn:main:
+  return: top
+  BB_0: {}
+fn:makeFn:
+  return: top
+  BB_0: {}
+toplevel:
+  return: undefined
+  BB_0: {}
