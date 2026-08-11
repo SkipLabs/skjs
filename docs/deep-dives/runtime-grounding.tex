@@ -687,12 +687,21 @@ real substitution is touched in deciding to keep it (the probe runs in
 a discarded clone), so $\sem{B}_{\rho'} = \sem{B}_{\rho} \ni v$. An
 \emph{intersected} branch has
 $B' = (B \sqcap C\langle \vec s \rangle)$ with readonly restored: the
-skolems $\vec s$ are rigid parameters interpreted existentially — the
-runtime object fixes them — so interpreting $s_i := U_i$ puts
+skolems $\vec s$ are read under the per-view witness assignment of
+imported row \textbf{SKOLEM-SEM} — each denotes the runtime object's
+actual hidden argument $U_i$ — so
 $v \in \sem{C\langle \vec s \rangle}$ by the previous paragraph, and
 $v \in \sem{B}_{\rho}$ by hypothesis, so $v$ is in the semantic
-intersection, which the implementation's \texttt{inter}
-over-approximates by the imported \textbf{L-INTER} containment.
+intersection. Two cases on the implemented result. If
+$\mathtt{inter}(B, C\langle \vec s \rangle) \neq \bot$, the imported
+\textbf{L-INTER} non-bottom containment puts $v$ in the installed
+branch. If the result \emph{is} $\bot$, the branch is dropped — sound
+only if the operands are semantically disjoint, which contradicts
+$v$ inhabiting both; that is precisely the imported disjointness
+clause \textbf{L-INTER-BOT}, \textsc{violated}, so this case is a
+named condition of the discharge, live exactly where the operand
+types can reach the violated strata (function-signature and
+beyond-precision numeric content nested in the branch).
 Restoring the scrutinee's readonly fields only lowers set-types, which
 get-only membership does not consult. The fallback branch is the middle
 case with $B = \top_{\mathsf{obj}}$. No inference candidate is minted

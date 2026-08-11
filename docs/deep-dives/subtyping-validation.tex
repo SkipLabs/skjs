@@ -1304,8 +1304,10 @@ TType.sk / TFields::create (brand stripping)}
 \texttt{TFields::isSub} is one-step sound for the main paper's object
 membership \emph{with the $\mathsf{CAbsent}$ clause restricted to
 callability-proving sources and the brand clause deleted},
-unconditionally in the read direction
-(Lemmas~\ref{lem:both-get}, \ref{lem:width}, \ref{lem:indexes});
+in the read direction conditional only on \textbf{L-SUB-IDXNAME} at
+the numeric-named-field/dual-index corner
+(Lemmas~\ref{lem:both-get}, \ref{lem:width}, \ref{lem:indexes} — the
+width lemma's named residual);
 its set-direction checks are the \textbf{L-MUT} obligations
 (Lemma~\ref{lem:both-set}); the two carve-outs are exactly the
 F-CABSENT/F-BRAND violations, and the sound callability arms of
@@ -1509,7 +1511,8 @@ correct one. \qed
 The two approximation facts themselves decompose as follows.
 \emph{Covariant/sub side:} Deep Dive~C's T-EXP proves expansion
 over-approximates for modes \texttt{None}/\texttt{Covariant},
-conditional on (among others) \textbf{L-INTER} --- and Deep Dive~B
+conditional on (among others) \textbf{L-INTER} and
+\textbf{L-INTER-BOT} --- and Deep Dive~B
 \emph{refuted} the $\bot$-clause \textbf{L-INTER-BOT} in its live strata
 (incomparable signatures return $\bot$; the beyond-precision
 num-spelling stratum). The
@@ -1522,7 +1525,7 @@ $\sem{\alpha}$ and validating vacuously. We name the residue:
 \label{obl:getcov}
 $\sem{\alpha}_\rho \subseteq
 \sem{\texttt{Subst::get}(\alpha, \mathsf{cov})}_{\rho'}$. Follows from
-the instance-semantics axiom plus L-INTER; open on the remaining live
+the instance-semantics axiom plus L-INTER/L-INTER-BOT; open on the remaining live
 \textbf{L-INTER-BOT} strata (incomparable signatures;
 beyond-precision num-spelling),
 which the constraint application can still hit. Status: \textsc{open},
@@ -1537,7 +1540,8 @@ committed solution: $\bot$ for fresh variables is trivially below
 anything; an $\SVOpen$ bound is below the final value because bounds
 only grow (Deep Dive~E's transitions) --- \emph{but} the constraint
 intersection applied on the way out must not \emph{enlarge} past
-$\sem{\alpha}$, which is L-INTER's other half, and the semantics of
+$\sem{\alpha}$. This is a meet lower-bound property, not the
+over-approximation supplied by L-INTER/L-INTER-BOT, and the semantics of
 ``eventual solution'' for variables that are never sealed needs the main
 paper to fix a convention. Deep Dive~C explicitly assigned this read to
 L-SUB; we discharge its use in Lemma~\ref{lem:variance} and leave the
@@ -1666,7 +1670,7 @@ proofs; the failures are reported as violations rather than weakened
 into assumptions. (iii) A proof of \texttt{TFun::isSub} against the
 opaque-signature semantics is not merely hard but type-incorrect --- the
 conclusion is not expressible; hence E-SIG. (iv) An unconditional proof
-of the covariant read (O-GETCOV) fails against Deep Dive~B's L-INTER
+of the covariant read (O-GETCOV) fails against Deep Dive~B's L-INTER-BOT
 counterexamples; we did not find a validator-local workaround, since the
 constraint application lives inside \texttt{Subst::get}.
 

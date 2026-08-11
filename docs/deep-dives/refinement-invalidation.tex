@@ -406,18 +406,21 @@ binding) are rejected with TS2322 at the write.
 \end{lemma}
 
 \begin{keydef}
-\textbf{Carve-out (evolving bindings).} The inferred-type check is
+\textbf{The evolving-binding facet (row L-CAPT-EVOLVE, violated).} The
+inferred-type check is
 skipped when \texttt{declaredType} is a single unresolved type variable
 — a bare \texttt{let x = null}/\texttt{undefined}
 (\texttt{TypeCheckScope.sk:192}). Such a binding widens like
 TypeScript's evolving \texttt{any}, so \emph{every} escaping write is
-allowed, and reads elsewhere are not informed of it: \texttt{let x =
-null; const g = () => \{ x = "s"; \}; g(); const y: null = x} is
-accepted \emph{(probed)} while \texttt{y} holds \texttt{"s"} at runtime.
-tsc accepts the same program through the same mechanism (implicit
-evolving \texttt{any}), so this is a tsc-parity residue, but it means
-L-CAPT's guarantee is scoped to bindings with an annotation or a
-non-trivial initializer.
+allowed, and reads elsewhere are not informed of it — witnessed
+end-to-end (issue draft \texttt{evolving-capture-unchecked.md}: a
+closure writes \texttt{"s"} into a bare \texttt{let x = null} binding
+and a later read binds the string at type \texttt{null}). tsc accepts
+the same program through the same mechanism (implicit evolving
+\texttt{any}), so the hole is tsc-parity — but it is a hole, and it is
+this paper's row \textbf{L-CAPT-EVOLVE}, which is exactly the facet
+L-CAPT's proved statement excludes: L-CAPT quantifies over bindings
+with an annotation or a non-trivial initializer.
 \end{keydef}
 
 Because captured writes are checked but not propagated, the remaining
@@ -627,7 +630,8 @@ Layered, in decreasing order of urgency:
 scoping at mutation sites]
 \label{lem:preservation}
 Assume the main paper's axioms (\textbf{L-UNION}, \textbf{L-INTER},
-\textbf{L-EXP}, \textbf{L-MONO}, \textbf{L-TC}, \textbf{L-SUB}) and the
+\textbf{L-INTER-BOT}, \textbf{L-EXP}, \textbf{L-MONO}, \textbf{L-TC},
+\textbf{L-SUB}) and the
 well-formedness condition $\sem{f.\mathsf{get}} \supseteq$ the values a
 read of $f$ can yield after an accepted write
 (Obligation~\ref{obl:getset}). Under Policy~\ref{pol:main} (P1--P4), for

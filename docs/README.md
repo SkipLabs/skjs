@@ -53,7 +53,8 @@ assumptions are closed. The registry is a dependency graph, not a
 certificate; corpus-level guarantees are always relative to the current
 `assumed`/`open`/`violated` frontier. Where different facets of one
 question have different grades, they are separate rows (e.g. `L-INTER`,
-the proved containment, vs. `L-INTER-BOT`, the violated
+the structural non-bottom lemma with an open cache facet, vs.
+`L-INTER-BOT`, the violated
 bottom-implies-disjointness clause), so "treat the imported row as an
 axiom" is never ambiguous.
 

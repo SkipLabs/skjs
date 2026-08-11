@@ -6,15 +6,19 @@
 // x at the stale `string` while the store holds null.
 // run: make check-file-in-docker FILE=docs/deep-dives/issues/repros/loop-carried-narrowing-stale.ts BIN=target/host/dev/skjs
 
-declare function cond(): boolean;
 function f(): void {
+  let i = 0;
+  const cond = (): boolean => {
+    i = i + 1;
+    return i <= 2;
+  };
   let x: string | null = "hi";
   if (x !== null) {
     while (cond()) {
       const s: string = x;
       x = null;
-      console.log(s);
+      console.log(`iter${i} s = ${s}`);
     }
   }
 }
-console.log(f);
+f();

@@ -106,7 +106,7 @@ Notation, semantics, and the status vocabulary
 are the main paper's. All code references are against the pinned revision
 \texttt{\skjspinhash}; line numbers are cited where they disambiguate.
 ``Paper B'' is the deep dive on union and intersection
-(\textbf{L-UNION}/\textbf{L-INTER}), which this paper cites and does not
+(\textbf{L-UNION}/\textbf{L-INTER}/\textbf{L-INTER-BOT}), which this paper cites and does not
 re-prove.
 
 %==========================================================================
@@ -396,14 +396,14 @@ For every variable occurrence $\alpha^K$ and state $\rho$:
 \item[(b)] Mode $\Cov$, $\rho$ binds $\alpha$ (open or closed, freeze or
   not): the step returns $t \sqcap K$ built by \texttt{TType::inter} from
   the bound value $t$ and the occurrence constraints. By (V2), (V1) and
-  \textbf{L-INTER} (paper B),
+  \textbf{L-INTER}/\textbf{L-INTER-BOT} (paper B),
   $\sem{\alpha^K}_\rho \subseteq \sem{t}_\rho \cap \bigcap_K \sem{c}_\rho
   \subseteq \sem{t \sqcap K}_{\rho'}$, the last step reading the result
   at the post-step state via \textbf{L-MONO}. The seal
   $\SVOpen(t) \to \SVClosed(t)$, when it fires, is value-preserving.
 \item[(c)] Mode $\Cov$, $\alpha$ unbound: the step seals
   $\alpha \mapsto \SVClosed(\top)$ and returns $\top \sqcap K$. By (V1)
-  and \textbf{L-INTER},
+  and \textbf{L-INTER}/\textbf{L-INTER-BOT},
   $\sem{\alpha^K}_\rho \subseteq \bigcap_K \sem{c}_\rho \subseteq
   \sem{\top \sqcap K}_{\rho'}$; the new binding of value $\top$ makes
   (V2) hold vacuously at $\rho'$.
@@ -515,7 +515,8 @@ The one-step expansion of $\mathsf{TInter}(\{t_1,\dots,t_k\})$ sets
 \texttt{tenv.expandInter} and left-folds \texttt{TType::inter} over the
 members. (That flag selects full over deferred field intersection; its
 path-scoping and the deferred form's containment are registry row
-TENV-EXPANDINTER (\textsc{open}), which this arm's argument imports.) By (I1) and \textbf{L-INTER} (paper B, which covers
+TENV-EXPANDINTER (\textsc{open}), which this arm's argument imports.) By (I1) and
+\textbf{L-INTER}/\textbf{L-INTER-BOT} (paper B, whose two cases together cover
 \texttt{inter} at every level, including the \texttt{seenInter} cache
 and the cycle guard \texttt{tenv.seenInter}),
 \[
@@ -576,7 +577,7 @@ $(I', C', \rho') = \expandop_m(t, \rho)$,
 residual instances appear verbatim in $I'$ and keep their semantics,
 and the state evolution $\rho \to \rho'$ consists only of the
 transitions of Lemma~\ref{lem:evolutions}. The result is conditional on:
-\textbf{L-UNION}/\textbf{L-INTER} (paper B), \textbf{L-MONO} (main
+\textbf{L-UNION}/\textbf{L-INTER}/\textbf{L-INTER-BOT} (paper B), \textbf{L-MONO} (main
 paper), \textbf{E-NORM}, \textbf{E-ARR}, and — for reuse of cached
 \texttt{TSInst} expansions — the key-identity premise \textbf{E-EXPKEY}
 (Section~\ref{sec:expkey}; \emph{violated}, see the registry),
@@ -1173,7 +1174,7 @@ E-PLACEHOLDER-ATOM & The missing-annotation atom is treated as unknown
 
 Net effect on \textbf{L-EXP}: \textsc{assumed} $\to$ \textsc{proved}
 for modes $\NoneM$/$\Cov$, conditional on
-\textbf{L-UNION}/\textbf{L-INTER}, \textbf{L-MONO}, \textbf{E-NORM},
+\textbf{L-UNION}/\textbf{L-INTER}/\textbf{L-INTER-BOT}, \textbf{L-MONO}, \textbf{E-NORM},
 \textbf{E-ARR}, \textbf{E-CLASS-SYM}, \textbf{E-GUARD},
 \textbf{E-PLACEHOLDER-ATOM}, and — for any reuse crossing modules —
 \textbf{E-EXPKEY}, which is refuted, so cross-module programs sit

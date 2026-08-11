@@ -49,6 +49,7 @@ than return bottom; alternatively the `===` narrowing must not treat a
 
 ## Provenance
 
-Deep dive B (`docs/deep-dives/lattice-operations.tex`, violated stratum
-L-INTER-d); adversarially verified end-to-end 2026-07-05 — the witness is
+Deep dive B (`docs/deep-dives/lattice-operations.tex`, violated
+L-INTER-BOT callability/signature stratum); adversarially verified
+end-to-end 2026-07-05 — the witness is
 a single accepted program. Main-paper assumption row: L-INTER-BOT (the bottom-implies-disjointness clause).

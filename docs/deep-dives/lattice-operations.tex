@@ -47,16 +47,18 @@ an Audit of the Lattice Operations\\
 \maketitle
 
 \begin{abstract}
-The main soundness paper assumes, as its rows \textbf{L-UNION} and
-\textbf{L-INTER}, that \texttt{TType::union} over-approximates set union,
-and that \texttt{TType::inter} over-approximates set intersection. Refinement
-and one subtyping rule also require a stronger property: if
-\texttt{inter} returns $\bot$, the operands must be semantically disjoint.
+The main soundness paper assumes that \texttt{TType::union}
+over-approximates set union (\textbf{L-UNION}). It splits intersection
+into non-bottom containment, conditional on faithful recursive bottoms
+(\textbf{L-INTER}), and the bottom-implies-disjointness case
+(\textbf{L-INTER-BOT}); together those cases say that
+\texttt{TType::inter} over-approximates semantic intersection.
 We check both operations at every layer of the type representation. Union
 always contains the semantic union, and is exact at every layer observed by
 the membership semantics; its cache is independent of the inference
-substitution. Intersection always contains the semantic intersection, but the
-stronger disjointness property fails in two witnessed cases. A failed function
+substitution. Non-bottom intersection contains the semantic intersection in
+the audited structural strata; stale \texttt{seenInter} reuse remains open.
+The bottom clause fails in two witnessed cases. A failed function
 signature intersection is treated as if the containing object branches were
 disjoint, and distinct beyond-precision numeric spellings can denote the same
 double while intersecting to $\bot$. In both cases the checker narrows a
@@ -79,15 +81,18 @@ This document is deep dive B in the series supporting the main paper
 Its lattice rows in the main paper's ``Assumptions and Proof
 Obligations'' ledger are: \textbf{L-UNION} (union over-approximates set
 union at all levels), established here \emph{exact at every stratum};
-\textbf{L-INTER} (the containment clause of intersection); and
+\textbf{L-INTER} (non-bottom containment, conditional on recursive
+bottom-faithfulness); and
 \textbf{L-INTER-BOT} (the $\bot$-implies-disjointness clause), which
-splits here into an exact containment and the $\bot$-clause, refuted in
-two strata. It also owns the cache obligation C-FREEZE-CACHE; its
+is refuted in two strata. It also owns the cache obligation
+C-FREEZE-CACHE, the remaining open part of L-INTER's implementation
+coverage; its
 proofs consume the canonical variable-denotation row TVAR-SEM (owner:
 main paper).
 
 \noindent
-Note that the two halves of L-INTER are one property: if
+Note that L-INTER and L-INTER-BOT are the two cases of universal
+intersection containment: if
 $\inter(t_1,t_2) = \bot$ while $\sem{t_1}_\rho \cap \sem{t_2}_\rho \neq
 \emptyset$, then the containment fails at that pair (nothing is in
 $\sem{\bot} = \emptyset$), and conversely. The ``$\bot$ implies
@@ -575,7 +580,8 @@ present, its value lies in each side's applicable get-constraint — the
 named field's get on the side that names it, the index's get on a side
 that covers it without naming it (the index clause of the object
 semantics applies precisely because the key is \emph{not named there}) —
-hence in the intersection of the collected gets, recursively by L-INTER
+hence in the intersection of the collected gets, recursively by
+L-INTER/L-INTER-BOT
 at the field-type level. Access combination is most-restrictive
 (\texttt{FAPhantom} absorbs into phantom, distinct-owner privates give
 \texttt{FANever}); phantoms weaken the value constraint to
@@ -668,7 +674,7 @@ function value can satisfy two incomparable signatures (any overload;
 e.g.\ a \texttt{(x: unknown) => void} value inhabits both
 \texttt{(s: string) => void} and \texttt{(n: number) => void}).
 
-\begin{finding}[Signature Bottom: L-INTER is Violated at the
+\begin{finding}[Signature Bottom: L-INTER-BOT is Violated at the
 Signature Arm of the Callability Meet]
 \label{find:tfun}
 $\inter$ of two single-branch function types with incomparable
@@ -763,7 +769,7 @@ occurrence's constraints at every read. Then
 $\sem{\alpha^{\mathit{cs}}} \cap \sem{t} =
 \sem{\alpha^{\mathit{cs} \cup \{t\}}}$ \emph{exactly}, at every state —
 provided the get-time intersection itself over-approximates, which is
-L-INTER again, applied at read time; the circularity is benign (an
+L-INTER/L-INTER-BOT again, applied at read time; the circularity is benign (an
 inductive appeal at the strictly later read). Never $\bot$.
 \impl{TTypeInter.sk / inter\_ (setConstraint arms); TType.sk /
 TVar::setConstraint; TTypeSubst.sk / Subst::get (constraint loop)}
@@ -993,7 +999,7 @@ runtime; the end-to-end witness and the tsc comparison are issue draft
 \subsection{Probe 3: literal spellings (Finding~\ref{find:spelling})}
 \begin{finding}[Spelling-Sensitive Disjointness]
 \label{find:spelling}
-Beyond-precision numeric spellings break L-INTER's \emph{disjointness}
+Beyond-precision numeric spellings break \textbf{L-INTER-BOT}:
 reading: spellings that alias one double are kept distinct (the
 num-kind \textbf{L-LIT}(ii) violation, issue draft
 \path{issues/beyond-precision-numeric-literals.md}, which carries the
@@ -1078,7 +1084,7 @@ Inter: STypes assembly & exact — empty shared tags dropped, $\bot$ iff all
   drop \\
 Inter: named fields, indexes, brand, access &
   Section~\ref{sec:inter-object} (brand $\bot$ semantic; given
-  sub-level L-INTER) \\
+  sub-level L-INTER/L-INTER-BOT) \\
 Inter: callability meet & sound outside the signature arm (array-brand
   $\bot$ semantic modulo F-BRAND); signature-failure branch drop
   (Finding~\ref{find:tfun}, pinned probe) \\
@@ -1108,45 +1114,41 @@ Signature bodies built by \texttt{TFun::union} — including its
 \texttt{this}-parameter intersection — are outside membership
 semantics and remain part of the subtyping surface.''
 
-\paragraph{L-INTER.} Established stratum by stratum:
+\paragraph{L-INTER and L-INTER-BOT.} The two cases are graded separately:
 \begin{itemize}
-\item \textbf{L-INTER-a} (units, tags, fields, indexes, brand, clause
-  product, instance layer): \textsc{proved} (this document,
-  Sections~\ref{sec:inter-prim}--\ref{sec:inter-inst}); the instance
-  layer using \textbf{TVAR-SEM}
-  (Lemma~\ref{lem:tvar-sem}).
-\item \textbf{L-INTER-b} (literal sets): \textsc{violated} for
-  \emph{beyond-precision} numeric spellings, which alias one double
-  yet stay distinct lexemes; witness pinned
-  (Finding~\ref{find:spelling}). Decoded string spellings and
-  within-precision numeric spellings (normalized at parse time) are
-  \textsc{proved} via Lemma~\ref{lem:lit-inter}.
-\item \textbf{L-INTER-c} (STypes assembly): \textsc{proved} — empty
-  shared tags are dropped, $\bot$ only when all drop
-  (Section~\ref{sec:inter-stypes}).
-\item \textbf{L-INTER-d} (the callability meet): \textsc{proved}
-  outside the signature arm — the array-brand bottom semantic modulo
-  the brand's membership invariant (F-BRAND) — and \textsc{violated}
-  at the signature arm: heuristic branch drop on incomparable
-  signatures, witness pinned (Finding~\ref{find:tfun}). Fix: never
-  convert \texttt{TFuns::inter} failure into \texttt{None}; keep a
-  widened or overloaded signature.
-\item \textbf{L-INTER-e} (\texttt{seenInter} reuse): \textsc{open} —
-  Obligation~\ref{obl:freeze-cache} (C-FREEZE-CACHE).
+\item \textbf{L-INTER} is \textsc{proved}, conditional on
+  \textbf{L-INTER-BOT} for recursive calls, whenever a fresh structural
+  intersection returns non-bottom: units, tags, literal sets, fields,
+  indexes, brand, callability, clause product, STypes assembly, and the
+  instance layer (the last using \textbf{TVAR-SEM}). This recursive premise
+  is load-bearing: a non-bottom outer object may contain a field result
+  produced by a nested intersection that spuriously returned $\bot$.
+\item \textbf{L-INTER-BOT} is \textsc{proved} for units, tags, decoded
+  strings, within-precision numbers, fields, indexes, brand (modulo
+  F-BRAND), clause product, STypes assembly, and the instance layer. It is
+  \textsc{violated} for beyond-precision numeric spellings and for the
+  callability signature arm (Findings~\ref{find:spelling}
+  and~\ref{find:tfun}).
+\item Cached \texttt{seenInter} reuse remains \textsc{open} for both
+  guarantees where inference growth can make a retained result stale
+  (C-FREEZE-CACHE, Obligation~\ref{obl:freeze-cache}). Consequently the
+  registry grades L-INTER \textsc{open}, with its fresh structural core
+  proved; L-INTER-BOT is already \textsc{violated} by direct witnesses.
 \end{itemize}
-Every theorem of the main paper that cites \textbf{L-INTER} — the
+Every theorem of the main paper that needs an inhabited intersection to
+survive consumes both rows. The
 branch-drop steps of \textsc{R-Eq}, \textsc{R-EqField},
 \textsc{R-Inst}, \textsc{R-IsArray}, and the equality-narrowing
-intersection itself — is affected by the violated ranges of b and d
+intersection itself are affected by the violated L-INTER-BOT ranges
 exactly where its operands reach them; the \textsc{R-IsArray} drops
 are unaffected (their bottoms are the brand and no-shared-tag cases,
 both semantic — except when the intersected array branch pair hits the
 signature arm, which \texttt{ReadonlyArray} does not). As with the
 main paper's other \textsc{violated} entries, the violations are local
-to leaf strata: both are code fixes that change no statement or proof
-in this document, after which L-INTER-a--d are all \textsc{proved}
-(d modulo F-BRAND's brand invariant at its array arm) and only the
-\textsc{open} obligation C-FREEZE-CACHE remains here. Each violated
+to leaf strata: both are code fixes after which the structural
+L-INTER-BOT cases are all \textsc{proved} (modulo F-BRAND's brand
+invariant at its array arm), and only the \textsc{open} obligation
+C-FREEZE-CACHE remains here. Each violated
 stratum carries a pinned end-to-end repro with its issue draft under
 \path{issues/repros/}, asserted by the registry tooling.
 

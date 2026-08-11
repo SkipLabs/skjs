@@ -319,8 +319,9 @@ declared upper bound, minted with collision-guarded identities
 (\texttt{makeSkolemTArgsOf}, \texttt{src/TEnv.sk:780-808};
 \texttt{genSkolemTParam}, \texttt{src/TTypeSubst.sk:262-281}). A skolem
 is not an inference candidate — no write can \emph{bind} it; each one
-denotes the runtime object's actual hidden argument, the instantiation
-row \textbf{L-INST} grades. The installed view is then computed per
+denotes the runtime object's actual hidden argument by the imported
+interpretation row \textbf{SKOLEM-SEM}, and the installed view contains
+the object by \textbf{L-INST}. The view is then computed per
 branch of the scrutinee:
 \begin{itemize}
 \item \emph{Branches already satisfying the test are kept verbatim.} A
@@ -337,8 +338,11 @@ branch of the scrutinee:
   result: \texttt{keepReadonlyFrom} forces $\mathsf{set}=\bot$ back
   onto every named field, symbol field, and index the branch declared
   readonly (\texttt{src/TypeCheckRefine.sk:407-416};
-  \texttt{src/TType.sk:2489-2512}) — narrowing may restrict the write
-  surface but never grant it.
+  \texttt{src/TType.sk:2489-2512}). Its lookup is per-member-kind, so
+  it restores readonly status at every key the branch named — but a named
+  field the \emph{intersection introduces} at a key the branch covered
+  only by a readonly index escapes it (row \textbf{V-MINT-ROIDX},
+  below).
 \item \emph{A $\top$-bound scrutinee gets the skolem class view
   itself} ($C\langle C\#\bar{T}\rangle$;
   \texttt{src/TypeCheckRefine.sk:430-439, 721-738}) — declared data
@@ -352,9 +356,11 @@ Let $y$ be the view \texttt{instanceof} $C$ installs from scrutinee
 branch $x$, and let $A$ be any set of live views of the same runtime
 object, each reached from a write-self-consistent declared root by
 admission chains. Then $A \cup \{y\}$ is coherent at every data-field
-key, conditional on \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET} (the
-chains), \textbf{L-INST} (each skolem denotes the actual hidden
-argument), and \textbf{SET-SEM}.
+key that $x$ does not cover solely by a readonly index (the excluded
+corner is row \textbf{V-MINT-ROIDX}), conditional on
+\textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET} (the
+chains), \textbf{L-INST} (view membership), \textbf{SKOLEM-SEM} (each
+skolem denotes the actual hidden argument), and \textbf{SET-SEM}.
 \end{lemma}
 \begin{proof}
 For a kept branch, $y = x$ and there is nothing to show. Otherwise
@@ -365,8 +371,8 @@ C\#\bar{T}\rangle,p)$ (\texttt{TField::inter} unions set-types,
 is monotone-safe, so it suffices to grade the two union arms. Let $r$
 be the object's construction view: the class's declared fields at the
 actual arguments $\bar{A}$, so $\setty(r,p) = \getty(r,p) =
-\sem{T_p[\bar{A}]}$ for a data field, and by \textbf{L-INST},
-$\sem{C\#\bar{T}} = \bar{A}$'s sets, hence
+\sem{T_p[\bar{A}]}$ for a data field, and by \textbf{SKOLEM-SEM} each
+$C\#T_i$ denotes the actual argument $A_i$, hence
 $\setty(C\langle C\#\bar{T}\rangle,p) = \sem{T_p[\bar{A}]}$. Every
 view in $A \cup \{x\}$ sits on an admission chain from $r$, giving
 $\setty(v,p) \subseteq \setty(r,p)$ (contravariant accumulation, row
@@ -379,9 +385,15 @@ $x$-conjunct of $\getty(y,p)$ — and in the skolem conjunct, which
 $w \in \sem{T_p[\bar{A}]} = \getty(r,p)$, lands in the same three
 places by the same containments. A write through any $v \in A$
 satisfies $w \in \setty(v,p) \subseteq \getty(r,p)$ and so preserves
-both conjuncts of $\getty(y,p)$. Where $p$ resolves through an index,
-the same computation runs on the index arms, whose set direction deep
-dive D records alongside the named-field arms'.
+both conjuncts of $\getty(y,p)$. Where $p$ resolves through an index in
+\emph{both} $x$ and $y$, the same computation runs on the index arms,
+whose set direction deep dive D records alongside the named-field
+arms'. The excluded corner is precisely where the resolution
+\emph{changes}: $x$ covers $p$ only by a readonly index while the class
+view contributes named $p$, so $y$ resolves $p$ through the introduced
+named field — whose setter is the union computed by
+\texttt{TField::interIndex}, absorbing the index's $\bot$ — and the
+transfer above does not apply (row \textbf{V-MINT-ROIDX}).
 \end{proof}
 
 The lemma's premise localizes what remains exposed: a scrutinee branch
@@ -392,6 +404,30 @@ Section~\ref{sec:narrowing}'s site through the same union. That is the
 already-graded defect surfacing through a longer route, not a defect of
 the minting rule. Accessor fields are \textbf{L-GETSET}; call-mediated
 writes are \textbf{L-MUT-ALIAS-CALL}.
+
+\paragraph{The readonly-covering-index corner (row V-MINT-ROIDX).}
+The one write-surface defect of the minting rule itself is the
+resolution change carved out of the lemma. Mechanism, verified in
+source: \texttt{TField::interIndex} builds the introduced named field
+with $\mathsf{set} = \mathsf{set}_1 \cup \mathsf{set}_2$
+(\texttt{src/TTypeInter.sk:245-262}), so a readonly covering index's
+$\bot$ setter is absorbed by the class field's writable one; and
+\texttt{keepReadonlyFrom} checks a named field only against the
+original's \emph{named} fields (\texttt{original.maybeGet},
+\texttt{src/TType.sk:2489-2512}), so a field the intersection
+introduced at an index-only key is never restored. The minted view
+then authorizes a write the scrutinee view prohibited. The grade is
+violated by code-level derivation: three checked-code admission routes
+into a readonly-covering-index view of a class instance were probed at
+the pin and all rejected (a class instance into an index-signature
+type, directly, through an intermediate named-field binding, and
+through a function boundary — SKJS is stricter than tsc on each), so
+the remaining candidate route is the ambient/stub trust boundary. The
+repair is to make \texttt{keepReadonlyFrom} consult the original's
+covering index for introduced named fields, with the symbol kind
+handled identically.
+\impl{TTypeInter.sk / TField::interIndex, interNamedFields;
+TType.sk / keepReadonlyFrom}
 
 \paragraph{\texttt{Array} probes.} The rule at \texttt{Array} mints
 \texttt{Array}$\langle$\texttt{Array\#T}$\rangle$: the index

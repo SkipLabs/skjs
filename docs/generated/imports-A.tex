@@ -7,13 +7,15 @@
 \toprule
 \textbf{Row} & \textbf{Canonical statement} & \textbf{Owner} & \textbf{Status} \\
 \midrule
-L-INTER & \texttt{inter} over-approximates set intersection (the containment clause). & B & \textsc{proved} \\
+L-INTER & When \texttt{inter} does not return $\bot$, its result contains the set intersection of its operands, conditional on recursive bottom results satisfying L-INTER-BOT. & B & \textsc{open} \\
+L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & B & \textsc{violated} \\
 L-TC & Checked expressions inhabit their checked types. & main & \textsc{assumed} \\
 L-PURE & Evaluating a condition does not mutate the narrowed locals. & F & \textsc{violated} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & main & \textsc{assumed} \\
 L-MUT-ALIAS & A checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & H & \textsc{violated} \\
 OBL-MONOTONE & Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions. & E & \textsc{violated} \\
 TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty. & main & \textsc{proved} \\
+SKOLEM-SEM & A skolem in an installed \texttt{instanceof} view denotes the scrutinee object's actual hidden type argument, fixed at narrowing time and stable thereafter. & main & \textsc{proved} \\
 F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & D & \textsc{violated} \\
 \bottomrule
 \end{tabular}

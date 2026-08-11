@@ -10,6 +10,7 @@
 L-MUT-ALIAS & A checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & \textsc{violated} \\
 L-MUT-ALIAS-CALL & Call-mediated mutation (setter-shaped methods, \texttt{push}) through one view preserves the membership guarantees of every live alias. & \textsc{open} \\
 V-INTER-SET & Reachability of an incoherent live pair through the intersection's permissive $\mathsf{set}$-union, independent of the already violated subtyping and narrowing sites. & \textsc{open} \\
+V-MINT-ROIDX & The \texttt{instanceof} class arm grants a write at a key the scrutinee covered only by a readonly index: the intersection's named field keeps a writable setter that survives \texttt{keepReadonlyFrom}. & \textsc{violated} \\
 \bottomrule
 \end{tabular}
 \end{center}

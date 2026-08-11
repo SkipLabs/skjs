@@ -19,11 +19,12 @@
 \endlastfoot
 L-TAG & Every runtime value carries exactly one tag consistent with its static tag. & \textsc{proved} \\
 L-UNION & \texttt{union} over-approximates set union (all levels). & \textsc{proved} \\
-L-INTER & \texttt{inter} over-approximates set intersection (the containment clause). & \textsc{proved} \\
+L-INTER & When \texttt{inter} does not return $\bot$, its result contains the set intersection of its operands, conditional on recursive bottom results satisfying L-INTER-BOT. & \textsc{open} \\
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & \textsc{violated} \\
 L-EXP & Expansion preserves or enlarges semantics (modes \texttt{None}/Covariant); residual instances keep theirs. & \textsc{proved} \\
 L-MONO & Legal inference-state changes during refinement preserve membership in types computed earlier. & \textsc{proved} \\
 L-SEQ & Type denotations used as equality RHSs are $\approx$-closed. & \textsc{violated} \\
+L-ASSERT & \texttt{console.assert}$(e)$ establishes $e$ on the subsequent path. & \textsc{violated} \\
 L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state. & \textsc{open} \\
 A-CTOR-CALL & Class-constructor values carry $\mathsf{CPresent}$ construct and $\mathsf{CFunction}$ call modes, consistent with $[[\mathrm{Call}]]$/$[[\mathrm{Construct}]]$. & \textsc{proved} \\
 L-TC & Checked expressions inhabit their checked types. & \textsc{assumed} \\
@@ -32,7 +33,8 @@ L-INST & $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as ins
 L-ISARR & $\mathsf{isArrayV}(o)$ implies $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$. & \textsc{proved} \\
 L-LOCAL & Module-level bindings are never narrowed; function-level locals are, including captured ones. & \textsc{proved} \\
 L-PURE & Evaluating a condition does not mutate the narrowed locals. & \textsc{violated} \\
-L-CAPT & Assignments to captured locals are checked against the binding's declared type. & \textsc{proved} \\
+L-CAPT & Assignments to captured annotated or initializer-inferred locals are checked against the binding's declared or widened inferred type. & \textsc{proved} \\
+L-CAPT-EVOLVE & A captured write to an evolving binding (bare \texttt{let x = null/undefined}) is unchecked, and later reads keep the stale evolved type. & \textsc{violated} \\
 L-STALE-READ & A closure body invoked later reads enclosing narrowings that are stale at invocation time. & \textsc{violated} \\
 L-LOOP-CARRIED & A pre-loop narrowing of an annotated binding survives a back-edge write that invalidates it. & \textsc{violated} \\
 L-CLONE & A type computed by \texttt{inter} under a cloned substitution over-approximates the intersection under the main one. & \textsc{proved} \\
@@ -54,23 +56,23 @@ Every runtime value carries exactly one tag consistent with its static tag (the 
 \nopagebreak
 \textsc{proved} (deep dive B — in fact exact at every stratum for the membership semantics)
 
-\medskip\par\noindent\textbf{L-INTER}\quad(\textsc{proved})\\*[0.15em]
-\texttt{inter} over-approximates set intersection — the containment clause; the $\bot \Rightarrow$ disjointness clause is the separate row L-INTER-BOT\\*[0.15em]
+\medskip\par\noindent\textbf{L-INTER}\quad(\textsc{open})\\*[0.15em]
+Non-bottom containment: when $\mathtt{inter}(t_1,t_2) \neq \bot$, $\sem{t_1} \cap \sem{t_2} \subseteq \sem{\mathtt{inter}(t_1,t_2)}$, conditional on L-INTER-BOT for recursive intersections used to build the result. The top-level $\bot$ case is also L-INTER-BOT; a consumer that concludes an inhabitant is \emph{in} the implemented intersection needs both rows, since a $\bot$ result empties the conclusion\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeInter.sk}}\par
 \nopagebreak
-\textsc{proved} (deep dive B) at every stratum, using the canonical TVAR-SEM definition for the instance layer
+\textsc{proved} (deep dive B) for every fresh structural intersection that returns non-$\bot$, conditional on L-INTER-BOT for recursive calls and using the canonical TVAR-SEM definition for the instance layer; \textsc{open} for stale \texttt{seenInter} reuse under inference growth (C-FREEZE-CACHE)
 
 \medskip\par\noindent\textbf{L-INTER-BOT}\quad(\textsc{violated})\\*[0.15em]
 A $\bot$ result from \texttt{inter} implies semantic disjointness — the property required by refinement rules that discard an impossible branch and by L-SUB's covariant variable read (O-GETCOV)\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeInter.sk}}\par
 \nopagebreak
-\textsc{violated} (deep dive B) in two strata: the \texttt{TFun::inter} stratum — incomparable signatures treated as disjoint (issue draft \path{tfun-inter-incomparable-not-disjoint.md}); and the num-kind beyond-precision spelling stratum — distinct spellings of one double kept distinct, their lexeme intersection a spurious $\bot$ (mediated by L-LIT; issue draft \path{beyond-precision-numeric-literals.md}). The per-tag \texttt{STypes} assembly, within-precision numeric spellings, and decoded string spellings produce only semantic bottoms and are \textsc{proved}
+\textsc{violated} (deep dive B) in two strata: the \texttt{TFun::inter} stratum — incomparable signatures treated as disjoint (issue draft \path{tfun-inter-incomparable-not-disjoint.md}); and the num-kind beyond-precision spelling stratum — distinct spellings of one double kept distinct, their lexeme intersection a spurious $\bot$ (mediated by L-LIT; issue draft \path{beyond-precision-numeric-literals.md}). The per-tag \texttt{STypes} assembly, within-precision numeric spellings, and decoded string spellings produce only semantic bottoms and are \textsc{proved}; stale \texttt{seenInter} reuse under inference growth remains the separate open cache obligation C-FREEZE-CACHE
 
 \medskip\par\noindent\textbf{L-EXP}\quad(\textsc{proved})\\*[0.15em]
 Expansion preserves or enlarges semantics; residual instances keep theirs\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TType::expand}}\par
 \nopagebreak
-\textsc{proved} (deep dive C) for the modes refinement uses (\texttt{None}/Covariant) — and shown \emph{false} in contravariant mode (unbound reads produce $\bot$), so the axiom is hereby scoped to those modes; all refinement clients verified to use only them. Reusing an alias expansion is exact because alias normalization does not read existing variable bindings. The remaining conditions are recorded separately as E-NORM, E-ARR, E-CLASS-SYM, E-GUARD, E-EXPKEY, and E-PLACEHOLDER-ATOM; see deep dive C
+\textsc{proved} (deep dive C) for the modes refinement uses (\texttt{None}/Covariant) — and shown \emph{false} in contravariant mode (unbound reads produce $\bot$), so the axiom is hereby scoped to those modes; all refinement clients verified to use only them. The containment proof consumes both L-INTER cases and is therefore conditional on L-INTER-BOT (\textsc{violated}) as well as on L-INTER's open cache facet. Reusing an alias expansion is exact because alias normalization does not read existing variable bindings. The remaining conditions are recorded separately as E-NORM, E-ARR, E-CLASS-SYM, E-GUARD, E-EXPKEY, and E-PLACEHOLDER-ATOM; see deep dive C
 
 \medskip\par\noindent\textbf{L-MONO}\quad(\textsc{proved})\\*[0.15em]
 Legal inference-state changes during refinement preserve membership in types computed earlier (Axiom~\ref{ax:mono})\\*[0.15em]
@@ -84,11 +86,17 @@ Type denotations used as equality RHSs are $\approx$-closed\\*[0.15em]
 \nopagebreak
 \textsc{violated}, witnessed end-to-end at the undefined/\texttt{void} corner (\S\ref{sec:ex-voidseq}; issue draft \path{void-undefined-equality-never.md}): \texttt{evalVarEquality}'s generic variable-RHS arm installs $\mathtt{inter}(\texttt{void},\texttt{undefined}) = \texttt{never}$ while $\approx$ relates the two units, and the \texttt{void}-operand check on \texttt{===} is a warning, so the corner is reachable — the branch runs with \texttt{undefined} bound at \texttt{never}. The undefined-\emph{literal} arm filters the units jointly and is sound; literal/full primitives and objects remain $\approx$-closed by construction
 
+\medskip\par\noindent\textbf{L-ASSERT}\quad(\textsc{violated})\\*[0.15em]
+The premise behind the \texttt{console.assert} refinement clause: the call must terminate when $e$ is false, and the callee must be the asserting global — neither holds\\*[0.15em]
+{\small\emph{Anchor:} \texttt{TypeCheckExpr.sk} (the \texttt{console.assert} match)}\par
+\nopagebreak
+\textsc{violated}, witnessed end-to-end in both directions (issue draft \path{console-assert-narrowing.md}): a failed \texttt{console.assert} logs and continues, so the narrowed path runs with the condition false; and the match is by spelling alone, so a shadowing binding named \texttt{console} with an arbitrary \texttt{assert} method triggers the same refinement. tsc rejects both witnesses. Fix shape: remove the refinement or register a terminating, receiver-resolved assertion intrinsic
+
 \medskip\par\noindent\textbf{L-SUB}\quad(\textsc{open})\\*[0.15em]
 \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeSubtyping.sk}}\par
 \nopagebreak
-split (deep dive D): \textsc{proved} — dispatcher architecture, \texttt{tenv.seenSub} version-keying (corrected argument), coinductive reduction (via SEM-GFP), primitives, \texttt{STypes}, DNF covering, object skeleton, and the field stratum's read direction; conditional — field \emph{set} direction on L-MUT, functions on the E-SIG signature semantics; \textsc{violated} — \texttt{subst.seenSub} results recorded while candidate growth is suppressed (witnessed; issue draft \path{freeze-window-stale-memo-caches.md}), and the two brands used by refinement but never validated by subtyping: a callable can enter a type marked \texttt{CAbsent} (F-CABSENT), and the never-compared array brand (F-BRAND)
+split (deep dive D): \textsc{proved} — dispatcher architecture, \texttt{tenv.seenSub} version-keying (corrected argument), coinductive reduction (via SEM-GFP), primitives, \texttt{STypes}, DNF covering, object skeleton, and the field stratum's read direction (conditional on L-SUB-IDXNAME at its numeric-named-field/dual-index corner); conditional — field \emph{set} direction on L-MUT, functions on the E-SIG signature semantics; \textsc{violated} — \texttt{subst.seenSub} results recorded while candidate growth is suppressed (witnessed; issue draft \path{freeze-window-stale-memo-caches.md}), and the two brands used by refinement but never validated by subtyping: a callable can enter a type marked \texttt{CAbsent} (F-CABSENT), and the never-compared array brand (F-BRAND)
 
 \medskip\par\noindent\textbf{A-CTOR-CALL}\quad(\textsc{proved})\\*[0.15em]
 Class-constructor values are typed with construct mode $\mathsf{CPresent}$ and call mode $\mathsf{CFunction}$ (Definition Callability), so \texttt{typeof}-\texttt{"function"} refinement keeps them — the runtime facts $[[\mathrm{Call}]]$ and $[[\mathrm{Construct}]]$ are both represented\\*[0.15em]
@@ -112,7 +120,7 @@ Three claims about literal spellings: (i) $\delta$ is a function — definitiona
 $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalInstanceof}}\par
 \nopagebreak
-\textsc{proved} (deep dive A) modulo A-HASINST and A-PROTO (both \textsc{assumed}): narrowing preserves the scrutinee's own type arguments — the instance view is built as \texttt{TFields} from the resolved class with the preservation probe run per branch — so the installed type is inhabited by exactly the values \texttt{instanceof} admits at those arguments; no fresh unbound candidates are introduced at the narrowing site
+\textsc{proved} (deep dive A) modulo A-HASINST and A-PROTO (both \textsc{assumed}) and, for intersected branches, L-INTER-BOT (\textsc{violated}): the containment step of the proof needs the intersection to be non-$\bot$ (L-INTER) — when it is $\bot$ the branch is dropped, which is sound only under the disjointness clause. Narrowing preserves the scrutinee's own type arguments — the instance view is built as \texttt{TFields} from the resolved class with the preservation probe run per branch — so the installed type is inhabited by exactly the values \texttt{instanceof} admits at those arguments (skolem interpretation: SKOLEM-SEM); no fresh unbound candidates are introduced at the narrowing site
 
 \medskip\par\noindent\textbf{L-ISARR}\quad(\textsc{proved})\\*[0.15em]
 $\mathsf{isArrayV}(o)$ implies $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$\\*[0.15em]
@@ -133,10 +141,16 @@ Evaluating a condition does not mutate the narrowed locals\\*[0.15em]
 \textsc{violated} (empirically pinned): the checker narrows across a call that assigns a captured local and accepts the resulting unsound program (\texttt{if (x !== null \&\& mut())} with \texttt{mut} setting \texttt{x = null}) — the same unsoundness tsc accepts. Tracked as issues \#597 (side-effecting call between test and use) and \#599 (captured local mutated via a lambda). The one-step scoping of the branch-soundness theorems (\S\ref{sec:scope}) is therefore a real boundary, not caution. Deep dive F specifies the fix: a layered invalidation policy (P1--P4) with a preservation lemma replacing the one-step scoping
 
 \medskip\par\noindent\textbf{L-CAPT}\quad(\textsc{proved})\\*[0.15em]
-Assignments to captured locals are checked against the binding's declared type (an implicit premise of L-TC for closure bodies)\\*[0.15em]
+Assignments to captured annotated or initializer-inferred locals are checked against the binding's declared or widened inferred type (an implicit premise of L-TC for closure bodies); evolving bindings are the separate row L-CAPT-EVOLVE\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Scope::set}; \texttt{TypeCheckExpr.sk} (lambda checking)}\par
 \nopagebreak
-\textsc{proved} (deep dive F) for annotated and initializer-inferred bindings: assignments to captured locals are routed through the binding's write path and checked against the declared or widened inferred type, in lambda bodies as at top level. Exception: bindings declared without an annotation or widening initializer (\texttt{let x = null/undefined}) evolve, and their captured writes are unchecked to match tsc. The read-side staleness of enclosing narrowings is the separate row L-STALE-READ
+\textsc{proved} (deep dive F): assignments to captured annotated or initializer-inferred locals are routed through the binding's write path and checked against the declared or widened inferred type, in lambda bodies as at top level. The evolving-binding exemption is the separate violated row L-CAPT-EVOLVE; the read-side staleness of enclosing narrowings is the separate row L-STALE-READ
+
+\medskip\par\noindent\textbf{L-CAPT-EVOLVE}\quad(\textsc{violated})\\*[0.15em]
+Evolving bindings are exempt from the captured-write check, and reads after the closure runs do not incorporate the written value — the facet of the captured-write question that L-CAPT's proved statement excludes\\*[0.15em]
+{\small\emph{Anchor:} \texttt{Scope::set} (evolving exemption); \texttt{getSingleVar}}\par
+\nopagebreak
+\textsc{violated}, witnessed end-to-end (deep dive F; issue draft \path{evolving-capture-unchecked.md}): a closure writes \texttt{"s"} into a bare \texttt{let x = null} binding and a later read binds the string at type \texttt{null}; tsc accepts the same program (evolving \texttt{any} parity). Fix shape: track captured writes in the evolved union or check them against it at the write site
 
 \medskip\par\noindent\textbf{L-STALE-READ}\quad(\textsc{violated})\\*[0.15em]
 Closure bodies capture enclosing narrowings, but invocation may postdate mutations that invalidate them — the read-in dual of the L-PURE family (\#599)\\*[0.15em]
@@ -154,7 +168,7 @@ Loop-carried narrowing staleness: \texttt{Scope::set}'s annotation arm checks a 
 A type computed by \texttt{inter} under a cloned substitution over-approximates the intersection when later read under the main one\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalVarEquality}}\par
 \nopagebreak
-\textsc{proved} (deep dive E, fork-state bridging, modulo the fork-state form of L-INTER); CL-1 is discharged by a non-escape audit: the \texttt{instanceof} preservation probe generates variables on a clone, but uses them only in probe-side subtype checks, so none reaches a type installed against the main substitution. The property should be guarded by the recommended CI assertion
+\textsc{proved} (deep dive E, fork-state bridging, modulo the fork-state forms of L-INTER and L-INTER-BOT); CL-1 is discharged by a non-escape audit: the \texttt{instanceof} preservation probe generates variables on a clone, but uses them only in probe-side subtype checks, so none reaches a type installed against the main substitution. The property should be guarded by the recommended CI assertion
 
 \medskip\par\noindent\textbf{L-MUT}\quad(\textsc{assumed})\\*[0.15em]
 Field writes are governed by $\mathsf{set}$-types via subtyping; membership semantics (get-only) is sound for the snapshot reads refinement performs\\*[0.15em]
@@ -166,7 +180,7 @@ Field writes are governed by $\mathsf{set}$-types via subtyping; membership sema
 Cross-view mutation coherence, direct writes: a checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object; call-mediated mutation is the separate row L-MUT-ALIAS-CALL\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalInstanceof}; indexed writes}\par
 \nopagebreak
-\textsc{violated} (deep dive H) at the narrowing-admitted-alias site, in both directions (issue draft \path{narrowed-alias-stale-write.md}); types introduced directly by \texttt{instanceof} narrowing are coherent — the \texttt{Array} arm preserves the readonly index and the class arm preserves the scrutinee's type arguments — and declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
+\textsc{violated} (deep dive H) at the narrowing-admitted-alias site, in both directions (issue draft \path{narrowed-alias-stale-write.md}); types introduced directly by \texttt{instanceof} narrowing are coherent — the \texttt{Array} arm preserves the readonly index and the class arm preserves the scrutinee's type arguments — except at the readonly-covering-index corner recorded as V-MINT-ROIDX, and declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
 
 \medskip\par\noindent\textbf{L-GETSET}\quad(\textsc{open})\\*[0.15em]
 Get/set coherence of accessor fields — the prerequisite for the sound accessor variant of deep dive F's W-Field re-widening rule\\*[0.15em]

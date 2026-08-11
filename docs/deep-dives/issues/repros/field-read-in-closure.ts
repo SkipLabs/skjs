@@ -8,8 +8,11 @@
 
 function t(x: { f: { m(): void } | null }): void {
   if (x.f !== null) {
-    const g = (): void => { x.f.m(); };
+    const g = (): void => {
+      x.f.m();
+    };
     x.f = null;
     g();
   }
 }
+t({ f: { m: (): void => {} } });

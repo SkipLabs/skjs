@@ -119,20 +119,28 @@ entries:
     kind: assumption
     table: main
     short: >-
-      \texttt{inter} over-approximates set intersection (the containment
-      clause).
+      When \texttt{inter} does not return $\bot$, its result contains the
+      set intersection of its operands, conditional on recursive bottom
+      results satisfying L-INTER-BOT.
     statement: >-
-      \texttt{inter} over-approximates set intersection — the containment
-      clause; the $\bot \Rightarrow$ disjointness clause is the separate
-      row L-INTER-BOT
+      Non-bottom containment: when $\mathtt{inter}(t_1,t_2) \neq \bot$,
+      $\sem{t_1} \cap \sem{t_2} \subseteq \sem{\mathtt{inter}(t_1,t_2)}$,
+      conditional on L-INTER-BOT for recursive intersections used to build
+      the result. The top-level $\bot$ case is also L-INTER-BOT; a consumer that
+      concludes an inhabitant is \emph{in} the implemented intersection
+      needs both rows, since a $\bot$ result empties the conclusion
     anchor: \texttt{TTypeInter.sk}
     anchor_files: [src/TTypeInter.sk]
-    status: [proved]
+    status: [open]
     status_note: >-
-      \textsc{proved} (deep dive B) at every stratum, using the canonical
-      TVAR-SEM definition for the instance layer
+      \textsc{proved} (deep dive B) for every fresh structural
+      intersection that returns non-$\bot$, conditional on L-INTER-BOT for
+      recursive calls and using the canonical TVAR-SEM definition for the
+      instance layer; \textsc{open} for stale \texttt{seenInter} reuse under
+      inference growth (C-FREEZE-CACHE)
     summary:
-      - {bucket: proved, label: "L-INTER's containment (all strata)"}
+      - {bucket: proved, label: "L-INTER's fresh structural non-bottom containment, conditional on recursive L-INTER-BOT"}
+      - {bucket: open, label: "L-INTER under stale seenInter reuse (C-FREEZE-CACHE)"}
     owner: B
     consumers: [C, D, F, E, A]
     issues: []
@@ -160,12 +168,13 @@ entries:
       \texttt{beyond-precision-numeric-literals.md}). The per-tag
       \texttt{STypes} assembly, within-precision numeric spellings, and
       decoded string spellings produce only semantic bottoms and are
-      \textsc{proved}
+      \textsc{proved}; stale \texttt{seenInter} reuse under inference
+      growth remains the separate open cache obligation C-FREEZE-CACHE
     summary:
       - {bucket: violated-witnessed,
          label: "intersection returns $\\bot$ for overlapping functions or numeric spellings (L-INTER-BOT)"}
     owner: B
-    consumers: [D]
+    consumers: [C, D, F, E, A]
     issues: [tfun-inter-incomparable-not-disjoint.md,
              beyond-precision-numeric-literals.md]
 
@@ -186,11 +195,14 @@ entries:
       (\texttt{None}/Covariant) — and shown \emph{false} in contravariant
       mode (unbound reads produce $\bot$), so the axiom is hereby scoped to
       those modes; all refinement clients verified to use only them.
+      The containment proof consumes both L-INTER cases and is therefore
+      conditional on L-INTER-BOT (\textsc{violated}) as well as on
+      L-INTER's open cache facet.
       Reusing an alias expansion is exact because alias normalization does
       not read existing variable bindings. The remaining conditions are
       recorded separately as E-NORM, E-ARR, E-CLASS-SYM, E-GUARD, E-EXPKEY,
       and E-PLACEHOLDER-ATOM; see deep dive C
-    summary: [{bucket: proved, label: "L-EXP (mode-scoped)"}]
+    summary: [{bucket: proved, label: "L-EXP (mode-scoped; conditional on L-INTER/L-INTER-BOT and its named expansion obligations)"}]
     owner: C
     consumers: [B, D, F]
     issues: []
@@ -245,6 +257,35 @@ entries:
     consumers: []
     issues: [void-undefined-equality-never.md]
 
+  - id: L-ASSERT
+    kind: assumption
+    table: main
+    short: >-
+      \texttt{console.assert}$(e)$ establishes $e$ on the subsequent
+      path.
+    statement: >-
+      The premise behind the \texttt{console.assert} refinement clause:
+      the call must terminate when $e$ is false, and the callee must be
+      the asserting global — neither holds
+    anchor: \texttt{TypeCheckExpr.sk} (the \texttt{console.assert} match)
+    anchor_files: [src/TypeCheckExpr.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end in both directions (issue
+      draft \texttt{console-assert-narrowing.md}): a failed
+      \texttt{console.assert} logs and continues, so the narrowed path
+      runs with the condition false; and the match is by spelling alone,
+      so a shadowing binding named \texttt{console} with an arbitrary
+      \texttt{assert} method triggers the same refinement. tsc rejects
+      both witnesses. Fix shape: remove the refinement or register a
+      terminating, receiver-resolved assertion intrinsic
+    summary:
+      - {bucket: violated-witnessed,
+         label: "\\texttt{console.assert} narrows without a terminating or receiver-checked premise (L-ASSERT)"}
+    owner: main
+    consumers: []
+    issues: [console-assert-narrowing.md]
+
   - id: L-SUB
     kind: obligation
     table: main
@@ -262,7 +303,9 @@ entries:
       \texttt{tenv.seenSub} version-keying (corrected argument),
       coinductive reduction (via SEM-GFP), primitives, \texttt{STypes},
       DNF covering, object skeleton, and the field stratum's read
-      direction; conditional — field \emph{set} direction on L-MUT,
+      direction (conditional on L-SUB-IDXNAME at its
+      numeric-named-field/dual-index corner); conditional — field
+      \emph{set} direction on L-MUT,
       functions on the E-SIG signature semantics; \textsc{violated} —
       \texttt{subst.seenSub} results recorded while candidate growth is
       suppressed (witnessed; issue draft
@@ -414,14 +457,18 @@ entries:
     status: [proved]
     status_note: >-
       \textsc{proved} (deep dive A) modulo A-HASINST and A-PROTO (both
-      \textsc{assumed}): narrowing preserves the scrutinee's own type
+      \textsc{assumed}) and, for intersected branches, L-INTER-BOT
+      (\textsc{violated}): the containment step of the proof needs the
+      intersection to be non-$\bot$ (L-INTER) — when it is $\bot$ the
+      branch is dropped, which is sound only under the disjointness
+      clause. Narrowing preserves the scrutinee's own type
       arguments — the instance view is built as \texttt{TFields} from the
       resolved class with the preservation probe run per branch — so the
       installed type is inhabited by exactly the values \texttt{instanceof}
-      admits at those arguments; no fresh unbound candidates are introduced
-      at the narrowing site
+      admits at those arguments (skolem interpretation: SKOLEM-SEM); no
+      fresh unbound candidates are introduced at the narrowing site
     summary:
-      - {bucket: proved, label: "\\texttt{instanceof} narrowing matches runtime instances (L-INST; subject to A-HASINST and A-PROTO)"}
+      - {bucket: proved, label: "\\texttt{instanceof} narrowing matches runtime instances (L-INST; subject to A-HASINST, A-PROTO, and L-INTER-BOT)"}
     owner: A
     consumers: [H]
     issues: []
@@ -503,28 +550,59 @@ entries:
     kind: assumption
     table: main
     short: >-
-      Assignments to captured locals are checked against the binding's
-      declared type.
+      Assignments to captured annotated or initializer-inferred locals
+      are checked against the binding's declared or widened inferred
+      type.
     statement: >-
-      Assignments to captured locals are checked against the binding's
-      declared type (an implicit premise of L-TC for closure bodies)
+      Assignments to captured annotated or initializer-inferred locals
+      are checked against the binding's declared or widened inferred type
+      (an implicit premise of L-TC for closure bodies); evolving bindings
+      are the separate row L-CAPT-EVOLVE
     anchor: \texttt{Scope::set}; \texttt{TypeCheckExpr.sk} (lambda checking)
     anchor_files: [src/TypeCheckScope.sk, src/TypeCheckExpr.sk]
     status: [proved]
     status_note: >-
-      \textsc{proved} (deep dive F) for annotated and initializer-inferred
-      bindings: assignments to captured locals are routed through the
-      binding's write path and checked against the declared or widened
-      inferred type, in lambda bodies as at top level. Exception: bindings
-      declared without an annotation or widening initializer
-      (\texttt{let x = null/undefined}) evolve, and their captured writes
-      are unchecked to match tsc. The read-side
-      staleness of enclosing narrowings is the separate row L-STALE-READ
+      \textsc{proved} (deep dive F): assignments to captured annotated or
+      initializer-inferred locals are routed through the binding's write
+      path and checked against the declared or widened inferred type, in
+      lambda bodies as at top level. The evolving-binding exemption is
+      the separate violated row L-CAPT-EVOLVE; the read-side staleness of
+      enclosing narrowings is the separate row L-STALE-READ
     summary:
-      - {bucket: proved, label: "L-CAPT"}
+      - {bucket: proved, label: "L-CAPT (annotated and initializer-inferred bindings)"}
     owner: F
     consumers: []
     issues: []
+
+  - id: L-CAPT-EVOLVE
+    kind: assumption
+    table: main
+    short: >-
+      A captured write to an evolving binding (bare
+      \texttt{let x = null/undefined}) is unchecked, and later reads
+      keep the stale evolved type.
+    statement: >-
+      Evolving bindings are exempt from the captured-write check, and
+      reads after the closure runs do not incorporate the written value
+      — the facet of the captured-write question that L-CAPT's proved
+      statement excludes
+    anchor: \texttt{Scope::set} (evolving exemption); \texttt{getSingleVar}
+    anchor_files: [src/TypeCheckScope.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (deep dive F; issue draft
+      \texttt{evolving-capture-unchecked.md}): a closure writes
+      \texttt{"s"} into a bare \texttt{let x = null} binding and a later
+      read binds the string at type \texttt{null}; tsc accepts the same
+      program (evolving \texttt{any} parity). Fix shape: track captured
+      writes in the evolved union or check them against it at the write
+      site
+    summary:
+      - {bucket: violated-witnessed,
+         label: "unchecked captured writes to evolving bindings (L-CAPT-EVOLVE)"}
+    owner: F
+    consumers: []
+    issues: [evolving-capture-unchecked.md]
 
   - id: L-STALE-READ
     kind: series-obligation
@@ -593,7 +671,7 @@ entries:
     status: [proved]
     status_note: >-
       \textsc{proved} (deep dive E, fork-state bridging, modulo the
-      fork-state form of L-INTER); CL-1 is discharged by a non-escape audit:
+      fork-state forms of L-INTER and L-INTER-BOT); CL-1 is discharged by a non-escape audit:
       the \texttt{instanceof} preservation probe generates variables on a
       clone, but uses them only in probe-side subtype checks, so none reaches
       a type installed against the main substitution. The property should be
@@ -649,7 +727,8 @@ entries:
       \texttt{narrowed-alias-stale-write.md}); types introduced directly by
       \texttt{instanceof} narrowing are coherent — the \texttt{Array} arm
       preserves the readonly index and the class arm preserves the
-      scrutinee's type arguments — and declaration-only aliasing is
+      scrutinee's type arguments — except at the readonly-covering-index
+      corner recorded as V-MINT-ROIDX, and declaration-only aliasing is
       coherent, conditional on L-SUB-FIELDS-SET
     summary:
       - {bucket: violated-witnessed,
@@ -705,6 +784,40 @@ entries:
       graded sites; ambient-declared intersection types enter through
       the stub trust boundary
     summary: []
+    owner: H
+    consumers: []
+    issues: []
+
+  - id: V-MINT-ROIDX
+    kind: series-obligation
+    table: series
+    short: >-
+      The \texttt{instanceof} class arm grants a write at a key the
+      scrutinee covered only by a readonly index: the intersection's
+      named field keeps a writable setter that survives
+      \texttt{keepReadonlyFrom}.
+    statement: >-
+      When the scrutinee branch has a readonly covering index and no
+      named field at key $p$ while the class view contributes named $p$,
+      \texttt{TField::interIndex} unions the setter types (the readonly
+      $\bot$ is absorbed) and \texttt{keepReadonlyFrom} consults only
+      named fields of the original — so the minted view authorizes a
+      write the scrutinee view prohibited
+    anchor: \texttt{TField::interIndex}; \texttt{keepReadonlyFrom}
+    anchor_files: [src/TTypeInter.sk, src/TType.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated} by code-level derivation (found by the
+      adversarial referee pass; no end-to-end run): the mechanism is
+      verified in source, but three checked-code admission routes into a
+      readonly-covering-index view of a class instance were probed and
+      all rejected — SKJS is stricter than tsc on those admissions — so
+      the remaining candidate route is the ambient/stub trust boundary.
+      Fix shape: make \texttt{keepReadonlyFrom} consult the original's
+      covering index for named fields the intersection introduced
+    summary:
+      - {bucket: violated-derived,
+         label: "the readonly-covering-index corner of minted views (V-MINT-ROIDX)"}
     owner: H
     consumers: []
     issues: []
@@ -857,13 +970,16 @@ entries:
     kind: series-assumption
     table: series
     short: >-
-      Fork-state form of L-INTER: the containments hold from a forked
-      substitution state (consumed by L-CLONE's proof).
+      Fork-state form of L-INTER/L-INTER-BOT: non-bottom containment and
+      bottom disjointness hold from a forked substitution state (consumed
+      together by L-CLONE's proof).
     statement: ""
     anchor: \texttt{TTypeInter.sk}
     anchor_files: [src/TTypeInter.sk]
     status: [assumed]
-    status_note: \textsc{assumed} (deep dives B and E); folds into L-INTER's discharge
+    status_note: >-
+      \textsc{assumed} (deep dives B and E); its two cases fold into
+      L-INTER and L-INTER-BOT respectively
     summary: []
     owner: E
     consumers: []
@@ -1094,6 +1210,37 @@ entries:
     consumers: [A, B, C, E]
     issues: []
 
+  - id: SKOLEM-SEM
+    kind: series-lemma
+    table: series
+    short: >-
+      A skolem in an installed \texttt{instanceof} view denotes the
+      scrutinee object's actual hidden type argument, fixed at narrowing
+      time and stable thereafter.
+    statement: >-
+      Skolem interpretation: the clause parameters minted by
+      \textsc{R-Inst} are interpreted by a per-view witness assignment —
+      each skolem denotes the runtime object's actual hidden argument,
+      chosen once when the view is installed. The assignment is stable
+      because no later operation can bind a skolem: skolems are not
+      inference variables, never enter the substitution, and clones
+      cannot mint them
+    anchor: \texttt{genSkolemTParam}; \texttt{makeSkolemTArgsOf}
+    anchor_files: [src/TTypeSubst.sk, src/TEnv.sk]
+    status: [proved]
+    status_note: >-
+      \textsc{proved}: by definition in the main paper (the skolem
+      interpretation definition) for the denotation, and by code
+      inspection for stability — skolems live in clause var-sets, the
+      substitution never binds them, and clone-side generation is
+      guarded. Consumed by deep dive A's L-INST discharge (the
+      existential step) and by deep dive H's per-skolem
+      hidden-argument fact
+    summary: [{bucket: proved, label: "SKOLEM-SEM"}]
+    owner: main
+    consumers: [A, H]
+    issues: []
+
   - id: SET-SEM
     kind: series-lemma
     table: series
@@ -1181,7 +1328,7 @@ entries:
     table: series
     short: >-
       Soundness of the covariant variable read in subtyping (inherits
-      L-INTER's violated $\bot$-clause).
+      L-INTER-BOT's violated $\bot$-clause).
     statement: ""
     anchor: \texttt{Subst::get} (covariant); \texttt{expandToClauses}
     anchor_files: [src/TTypeSubst.sk]
@@ -1347,7 +1494,8 @@ entries:
     short: >-
       The \texttt{tenv.expandInter} mode flag is path-scoped, and both
       intersection forms it selects (expanded and deferred
-      \texttt{unexpandedInter}) satisfy the L-INTER containment.
+      \texttt{unexpandedInter}) satisfy the two-case
+      L-INTER/L-INTER-BOT containment.
     statement: ""
     anchor: \texttt{TEnv.expandInter}; \texttt{TInter::expand}
     anchor_files: [src/TEnv.sk, src/TTypeInter.sk]

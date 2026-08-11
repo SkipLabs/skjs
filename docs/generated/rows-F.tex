@@ -9,7 +9,8 @@
 \midrule
 L-LOCAL & Module-level bindings are never narrowed; function-level locals are, including captured ones. & \textsc{proved} \\
 L-PURE & Evaluating a condition does not mutate the narrowed locals. & \textsc{violated} \\
-L-CAPT & Assignments to captured locals are checked against the binding's declared type. & \textsc{proved} \\
+L-CAPT & Assignments to captured annotated or initializer-inferred locals are checked against the binding's declared or widened inferred type. & \textsc{proved} \\
+L-CAPT-EVOLVE & A captured write to an evolving binding (bare \texttt{let x = null/undefined}) is unchecked, and later reads keep the stale evolved type. & \textsc{violated} \\
 L-STALE-READ & A closure body invoked later reads enclosing narrowings that are stale at invocation time. & \textsc{violated} \\
 L-LOOP-CARRIED & A pre-loop narrowing of an annotated binding survives a back-edge write that invalidates it. & \textsc{violated} \\
 L-GETSET & Get/set coherence of accessor fields. & \textsc{open} \\

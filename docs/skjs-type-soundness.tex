@@ -625,7 +625,17 @@ e.g.\ \texttt{Box\#T}, carrying the declared upper bound as its
 constraint) minted where a type argument is fixed by a runtime object
 but hidden from the program — rule \textsc{R-Inst}'s hidden instance
 arguments; skolems live in clause var-sets like any parameter and
-never enter the substitution. Constraints belong to
+never enter the substitution. Their interpretation is a definition of
+the model, registry row \textbf{SKOLEM-SEM}: a view installed by
+\textsc{R-Inst} is read under a \emph{per-view witness assignment}
+mapping each of its skolems to the scrutinee object's actual hidden
+argument, chosen once when the view is installed. The assignment is a
+constant of the view's denotation — not open inference state — and it
+is stable because nothing can bind a skolem afterwards: skolems are
+not inference variables, the substitution never binds them, and
+clone-side generation is guarded. Rule \textsc{R-Inst}'s soundness
+proof (deep dive A) performs its existential step under exactly this
+assignment. Constraints belong to
 occurrences because \texttt{TVar::setConstraint} is functional;
 \texttt{Subst::get} realizes the displayed intersection when the
 occurrence is read. This equation is the corpus's definition of
@@ -666,19 +676,22 @@ $\clause{\emptyset}{\top}$ is the top clause.
 Refinement and constant removal are built from a small set of operations whose
 soundness this document assumes as assumptions and uses freely:
 
-\begin{axiom}[L-UNION, L-INTER]
+\begin{axiom}[L-UNION, L-INTER, L-INTER-BOT]
 \label{ax:union-inter}
 For all $t_1, t_2$ and states $\rho$:
 $\sem{t_1}_\rho \cup \sem{t_2}_\rho \subseteq
- \sem{\mathsf{union}(t_1,t_2)}_\rho$
-and
+ \sem{\mathsf{union}(t_1,t_2)}_\rho$. Intersection has two separately
+graded cases. If $\mathsf{inter}(t_1,t_2) \neq \bot$, then, conditional on
+bottom-faithfulness of the recursive intersections used to construct it,
 $\sem{t_1}_\rho \cap \sem{t_2}_\rho \subseteq
- \sem{\mathsf{inter}(t_1,t_2)}_\rho$.
-In particular $\mathsf{inter}(t_1,t_2) = \bot$ implies
-$\sem{t_1}_\rho \cap \sem{t_2}_\rho = \emptyset$, which refinement uses to
-drop branches. (The two clauses are tracked as separate registry rows:
-the containment as L-INTER, the disjointness clause as L-INTER-BOT.) The same containments are assumed at the $\STypes$ and
-$\mathsf{object}$ levels.
+ \sem{\mathsf{inter}(t_1,t_2)}_\rho$ (\textbf{L-INTER}). If
+$\mathsf{inter}(t_1,t_2) = \bot$, then
+$\sem{t_1}_\rho \cap \sem{t_2}_\rho = \emptyset$
+(\textbf{L-INTER-BOT}), which is both the recursive premise of L-INTER and
+the premise refinement needs to drop a
+branch. Thus unconditional containment requires both rows; the second is
+\textsc{violated} in the registry. The same case split applies at the
+$\STypes$ and $\mathsf{object}$ levels.
 \impl{TTypeUnion.sk; TTypeInter.sk; TType.sk / STypes::union, TObject::inter}
 \end{axiom}
 
@@ -951,7 +964,12 @@ what no case matched (\texttt{TypeCheckStmt.sk};
 \texttt{TypeCheckExpr.sk} block-entry narrowing).
 \texttt{console.assert}$(e)$ applies the true branch of $e$ — matched by
 call shape, first argument, without verifying \texttt{console} is the global
-(\texttt{TypeCheckExpr.sk}). \texttt{for}-loop conditions do \emph{not}
+(\texttt{TypeCheckExpr.sk}). The premise this clause would need — a
+terminating, receiver-resolved assertion — is registry row
+\textbf{L-ASSERT}, \textsc{violated}: a failed \texttt{console.assert}
+logs and continues, and a shadowing binding named \texttt{console}
+triggers the same refinement (witnessed both ways; issue draft
+\texttt{console-assert-narrowing.md}). \texttt{for}-loop conditions do \emph{not}
 narrow (\texttt{checkBool} only). Strict inequality dispatches to the same
 handlers with the target negated. The \texttt{instanceof} arm is guarded:
 it narrows only when the RHS names a class or interface with a known
@@ -1003,8 +1021,10 @@ Assume $\sem{\tau_e}$ is $\approx$-closed (assumption \textbf{L-SEQ}).
 $\sigma(x) \approx v_e$, the value of $e$. By type correctness of the
 checker for $e$ (assumption \textbf{L-TC}), $v_e \in \sem{\tau_e}$, and by
 $\approx$-closure $\sigma(x) \in \sem{\tau_e}$. So
-$\sigma(x) \in \sem{\Env(x)} \cap \sem{\tau_e} \subseteq
-\sem{\mathsf{inter}(\Env(x), \tau_e)}$ by \textbf{L-INTER}.
+$\sigma(x) \in \sem{\Env(x)} \cap \sem{\tau_e}$. If the implemented
+intersection is non-bottom, \textbf{L-INTER} puts $\sigma(x)$ in it; if it
+is bottom, the same inhabitant contradicts \textbf{L-INTER-BOT}. Hence the
+installed intersection contains $\sigma(x)$, conditional on both rows.
 As in Lemma~\ref{lem:pred-to-branch}, the unchanged variables transport to
 the post-refinement state by \textbf{L-MONO} (this rule bypasses the
 memberwise primitive, so the step must be taken explicitly).
@@ -1123,7 +1143,8 @@ load-bearing: with the raw $\mathsf{get}$-type, the true branch of
 $\omega = \bot$ and wrongly drop the object branch.)
 \emph{True branch:} $w \approx v_e$ and $v_e \in \sem{\tau_e}$
 (\textbf{L-TC}), so $w \in \sem{\tau_e}$ by closure, and
-$w \in \sem{\omega}$ by \textbf{L-INTER}; in particular $\omega \neq \bot$,
+$w \in \sem{\omega}$ by \textbf{L-INTER}, with the bottom case excluded by
+\textbf{L-INTER-BOT}; in particular $\omega \neq \bot$,
 so $v$'s object branch is not dropped. If $f$ is present in $v$, the strengthened
 field is satisfied; if absent (possible only when
 $v_e \approx \texttt{undefined}$), optionality is kept and the strengthened
@@ -1136,7 +1157,7 @@ since $w$ inhabits it, the removal is not $\bot$ and the object branch survives
 with $v$ in it. When $c$ is the \texttt{undefined} unit, optionality is
 cleared: $w \not\approx \texttt{undefined}$ entails $f$ is present in $v$,
 so the now-required field is satisfied.
-If $\omega = \bot$ then by \textbf{L-INTER} the field value could never
+If $\omega = \bot$ then by \textbf{L-INTER-BOT} the field value could never
 strictly equal $v_e$ (using closure of $\sem{\tau_e}$), and the object branch is
 kept unchanged, which is sound. Branches without a declared $f$ and
 non-object members are unchanged (identity,
@@ -1251,7 +1272,9 @@ True branch: $\sigma \models_{\mathsf{true}}$ gives
 $v = \sigma(x) \in \ObjVal$ with $\mathsf{isArrayV}(v)$. By assumption
 \textbf{L-ISARR}, $v \in
 \sem{\mathsf{object}(\mathsf{ReadonlyArray}\langle\top\rangle)}$; by
-\textbf{L-INTER} (object level) $v$ inhabits the intersected branch, and
+\textbf{L-INTER} (object level) $v$ inhabits a non-bottom intersected branch,
+while \textbf{L-INTER-BOT} excludes bottom because $v$ inhabits both operands;
+therefore $v$ inhabits the implemented intersection, and
 setting the brand to $\mathsf{Some}(\mathsf{true})$ is satisfied by
 $\mathsf{isArrayV}(v)$. False branch: if $v \in \ObjVal$ then
 $\neg\mathsf{isArrayV}(v)$ satisfies brand $\mathsf{Some}(\mathsf{false})$
@@ -1303,8 +1326,10 @@ $v \in P_{\mathsf{inst}}(C) \subseteq \ObjVal$. Dropping non-object members
 is sound by A0 (values of a non-object member carry that member's tag, so
 $v$ is not in it). A preserved branch is the identity
 (Lemma~\ref{lem:identity-sound}). For a rewritten branch,
-$v \in \sem{T_C}$ by \textbf{L-INST}, so $v$ inhabits the intersection by
-\textbf{L-INTER} (object level), which is in particular not $\bot$;
+$v \in \sem{T_C}$ by \textbf{L-INST}. The non-bottom case is contained by
+\textbf{L-INTER} (object level), and the bottom case is excluded by
+\textbf{L-INTER-BOT}, since $v$ inhabits both operands; hence $v$ inhabits
+the implemented intersection, which is in particular not $\bot$;
 forcing a field's $\mathsf{set}$-type back to $\bot$ only shrinks the
 write surface, and membership constrains values through
 $\mathsf{get}$-types alone (Definition~\ref{def:object-semantics}), so

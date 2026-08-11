@@ -39,10 +39,17 @@ must live in different modules). Run
 at the pin).
 
 - SKJS: **exit 0, zero diagnostics**.
-- node (`--experimental-strip-types`, `.ts` specifier): prints
-  `undefined` — a `string`-typed call result is `undefined`.
-- tsc `--strict` (7.0.2): rejects, `TS2741: Property 's' is missing in
-  type 'Box' but required in type 'import("./a").Box'`.
+- node: compile the pair first, then run the emitted JavaScript
+  (`npx tsc docs/deep-dives/issues/repros/expansion-key-collision/*.ts`
+  despite the expected tsc error, then `node .../main.js`): prints
+  `undefined` — a `string`-typed call result is `undefined`. (`main.ts`
+  imports `./dep.js`, the emitted-file specifier, so direct
+  strip-types execution of the `.ts` pair is not the supported route.)
+- tsc `--strict`: rejects the call — the local `Box` (`{ n: number }`)
+  is not assignable to `dep.ts`'s `Box` (`{ s: string }`), reported as
+  a missing property `s`. Exact message and code vary by tsc version;
+  the asserted fact is the rejected relationship between the two
+  same-named definitions.
 
 Controls, both verified at the pin:
 

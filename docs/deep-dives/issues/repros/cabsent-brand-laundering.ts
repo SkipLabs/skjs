@@ -12,7 +12,7 @@ function h(g: () => void): void {
   const c: C = o;
   if (typeof c === "function") {
     const n: never = c;
-    console.log(n);
+    console.log("branch taken at never:", n);
   }
 }
-console.log(h);
+h((): void => {});

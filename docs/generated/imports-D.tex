@@ -7,7 +7,7 @@
 \toprule
 \textbf{Row} & \textbf{Canonical statement} & \textbf{Owner} & \textbf{Status} \\
 \midrule
-L-INTER & \texttt{inter} over-approximates set intersection (the containment clause). & B & \textsc{proved} \\
+L-INTER & When \texttt{inter} does not return $\bot$, its result contains the set intersection of its operands, conditional on recursive bottom results satisfying L-INTER-BOT. & B & \textsc{open} \\
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & B & \textsc{violated} \\
 L-EXP & Expansion preserves or enlarges semantics (modes \texttt{None}/Covariant); residual instances keep theirs. & C & \textsc{proved} \\
 A-CTOR-CALL & Class-constructor values carry $\mathsf{CPresent}$ construct and $\mathsf{CFunction}$ call modes, consistent with $[[\mathrm{Call}]]$/$[[\mathrm{Construct}]]$. & A & \textsc{proved} \\

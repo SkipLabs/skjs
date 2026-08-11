@@ -58,7 +58,8 @@ reused after the candidate grows (\textbf{MR-1}), and the reflexive
 For cloned substitutions, the only refinement probe that generates inference
 variables consumes them entirely within temporary clones; no generated
 variable reaches a type installed against the main substitution. This proves
-\textbf{L-CLONE} subject to the fork-state form of \textbf{L-INTER}. Finally,
+\textbf{L-CLONE} subject to the fork-state forms of \textbf{L-INTER} and
+\textbf{L-INTER-BOT}. Finally,
 an exhaustive save/restore review establishes No Commitment on Failure, with
 one separately justified exception: array-literal commitments intentionally
 survive some failed checks.
@@ -795,7 +796,8 @@ what \texttt{inter} can do:
 
 \begin{theorem}[Clone Stability]
 \label{thm:lclone}
-Assume M1, M2, and the fork-state form of \textbf{L-INTER}:
+Assume M1, M2, and the fork-state forms of
+\textbf{L-INTER}/\textbf{L-INTER-BOT}:
 \begin{itemize}
 \item[\textbf{(I$_f$)}] $\sem{t_1}_{\rho_f} \cap \sem{t_2}_{\rho_f}
   \subseteq \sem{u}_{\rho''}$ \emph{for every $\rho'' \sqsupseteq
@@ -805,7 +807,7 @@ Assume M1, M2, and the fork-state form of \textbf{L-INTER}:
 Then \textbf{L-CLONE} holds: the installed $u$ over-approximates the
 fork-state intersection under the main substitution at install time and
 at all later states. Moreover I$_f$ follows from the ordinary
-\textbf{L-INTER} plus M1 for every value whose membership does not
+\textbf{L-INTER}/\textbf{L-INTER-BOT} plus M1 for every value whose membership does not
 depend on clone-side state that $u$ bakes or mentions; the two ways such
 dependence can arise are exactly C2/C3 occurrences and C4 identifiers,
 analyzed below.
@@ -815,16 +817,20 @@ The clone evolves monotonically from $\rho_f$
 (Lemma~\ref{lem:trans-mono} + Lemma~\ref{lem:restore-safe}):
 $\rho_f \stle \rho_c$. The main substitution also evolves monotonically:
 $\rho_f \stle \rho''$. Ordinary \textbf{L-INTER} gives containment in
-$\sem{u}_{\rho_c}$; the gap is that $\rho_c$ and $\rho''$ are
+$\sem{u}_{\rho_c}$ when $u \neq \bot$; \textbf{L-INTER-BOT} supplies the
+same conclusion vacuously when $u = \bot$. The remaining fork-to-main gap
+is that $\rho_c$ and $\rho''$ are
 \emph{incomparable} (divergent branches of $\rho_f$), so M1 cannot bridge
 them directly — this was the first failed proof attempt, and the reason
-\textbf{L-CLONE} cannot be reduced to \textbf{L-INTER} + M1 alone.
+\textbf{L-CLONE} cannot be reduced to \textbf{L-INTER}/\textbf{L-INTER-BOT}
++ M1 alone.
 The bridge is per-occurrence: (C2) material \emph{baked} into $u$ is the
 clone-state envelope of the variable at read time, which by monotonicity
 of the clone run is $\supseteq$ its fork-state envelope; baked material
 is state-independent thereafter, so reading $u$ under $\rho''$ yields at
 least what reading it with fork-state envelopes would — and the
-fork-state intersection is contained in that by \textbf{L-INTER}
+fork-state intersection is contained in that by
+\textbf{L-INTER}/\textbf{L-INTER-BOT}
 \emph{evaluated at} $\rho_f$. (C1) occurrences carry their constraints
 with them and denote
 $\env{\rho''}{\alpha} \cap \bigcap\sem{\mathrm{cstr}}$, which by
@@ -1115,7 +1121,7 @@ Obl.\ Monotone Reads & general statement via
   (Finding~\ref{find:freeze-memo}), and the reflexive-\texttt{TSInst}
   \texttt{peekRaw} read sits outside the audited family (deep dive D) \\
 L-CLONE & Theorem~\ref{thm:lclone} given I$_f$
-  (fork-state L-INTER; registry row I-F); the id-collision hazard CL-1
+  (fork-state L-INTER/L-INTER-BOT; registry row I-F); the id-collision hazard CL-1
   discharged by the non-escape audit of the single clone-side
   \texttt{gen*} site (Finding~\ref{find:clone-gen}), CI-assertion guard
   recommended \\
