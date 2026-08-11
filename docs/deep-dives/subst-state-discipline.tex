@@ -40,36 +40,28 @@ four of its ledger rows concern that machine's state discipline —
 axiom \textbf{L-MONO} (refinement-time monotonicity), the
 obligation \emph{Monotone Reads Under Growth}, assumption
 \textbf{L-CLONE} (clone stability), and the obligation
-\emph{No Commitment on Failure} — and this paper is the evidence behind
-their current table statuses. This deep dive completes
-the state model the main paper elides — the version counter, the four
-caches, the environment-side cycle sets and the head-depth refusal
-counter, constraint attachment, the skolem-identifier supply, and the
-candidate-freezing flag — and works the four rows as one coherent
-discipline. The load-bearing discovery is representational:
-\texttt{TVar::setConstraint} is a \emph{functional update} on a frozen
-value, not a mutation of shared state, which removes the envelope-shrinking
-threat the main paper flagged for \textbf{L-MONO} and \textbf{L-CLONE}.
-With that, \textbf{L-MONO} is proved under two stated modeling conditions;
-\emph{Monotone Reads} is proved by a read-variance audit everywhere except
-one \textsc{violated} residue within the audited family, MR-1 — a
-freeze-window unsealed read
-memoized in \texttt{seenSub}, witnessed end-to-end by an order-dependent
-unsound acceptance (issue draft
-\path{issues/freeze-window-stale-memo-caches.md}) — plus one read site
-outside it, the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}
-(audited in deep dive D; issue draft
-\path{issues/reflexive-tsinst-fastpath-unsealed-read.md}); \textbf{L-CLONE} is
-proved conditional on a strengthened, fork-state form of \textbf{L-INTER}
-— the clone-generated-identifier hazard is settled by a non-escape audit
-(exactly one \texttt{gen*} site runs on a refinement clone — the
-\texttt{instanceof} preservation probe — and nothing it mints reaches an
-installed type), with the skolem counter hard-guarded against clone-side
-minting by a runtime invariant; and \emph{No Commitment on
-Failure} is discharged by an exhaustive save/restore audit with one
-intentional, separately-argued exception (array-literal form commitments
-persisting on failed checks). Failed proof attempts are reported as
-findings.
+\emph{No Commitment on Failure}. We complete the state model with the version
+counter, four caches, cycle-detection sets, recursive-subtyping depth counter,
+constraint attachment, skolem-identifier supply, and candidate-freezing flag,
+then analyze the four rows together.
+
+The implementation fact that makes monotonicity possible is that
+\texttt{TVar::setConstraint} returns a new frozen value rather than mutating
+shared state. Under the two conditions stated in the paper, legal state
+transitions therefore preserve membership in types computed earlier
+(\textbf{L-MONO}). The audit of later reads finds two exceptions: a
+\texttt{seenSub} result recorded while candidate growth is suppressed can be
+reused after the candidate grows (\textbf{MR-1}), and the reflexive
+\texttt{TSInst} fast path reads an unsealed candidate through
+\texttt{peekRaw} (analyzed in deep dive D).
+
+For cloned substitutions, the only refinement probe that generates inference
+variables consumes them entirely within temporary clones; no generated
+variable reaches a type installed against the main substitution. This proves
+\textbf{L-CLONE} subject to the fork-state form of \textbf{L-INTER}. Finally,
+an exhaustive save/restore review establishes No Commitment on Failure, with
+one separately justified exception: array-literal commitments intentionally
+survive some failed checks.
 \end{abstract}
 
 \tableofcontents

@@ -19,18 +19,18 @@
 \endlastfoot
 L-LIT-FOLD & A literal synthesized by the enum constant folder denotes the member's runtime value. & \textsc{violated} \\
 L-MUT-ALIAS-CALL & Call-mediated mutation (setter-shaped methods, \texttt{push}) through one view preserves the membership guarantees of every live alias. & \textsc{open} \\
-V-INTER-SET & Reachability of an incoherent live pair through the intersection's permissive $\mathsf{set}$-union, independent of the already violated admission and minting sites. & \textsc{open} \\
+V-INTER-SET & Reachability of an incoherent live pair through the intersection's permissive $\mathsf{set}$-union, independent of the already violated subtyping and narrowing sites. & \textsc{open} \\
 OBL-MONOTONE & Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions. & \textsc{violated} \\
 OBL-RESTORE & No Commitment on Failure: failing and exploratory paths restore all relevant state. & \textsc{proved} \\
 MR-1 & No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outlive growth of an open candidate readable from its left side. & \textsc{violated} \\
-C-FREEZE-CACHE & Isolated attribution of \texttt{seenInter} freeze-window staleness (mechanism active; shared witness with MR-1). & \textsc{open} \\
+C-FREEZE-CACHE & A stale \texttt{seenInter} entry can cause an unsound acceptance after candidate growth resumes without also reusing a stale \texttt{subst.seenSub} entry. & \textsc{open} \\
 CL-1 & No fresh variable generated on a clone occurs in a type installed against the main substitution. & \textsc{proved} \\
 M1 & Semantic monotonicity of $\sem{\cdot}$ in variable envelopes (a property of the get-only, signature-opaque semantics). & \textsc{assumed} \\
 I-F & Fork-state form of L-INTER: the containments hold from a forked substitution state (consumed by L-CLONE's proof). & \textsc{assumed} \\
 RB-1 & Maintenance condition: \texttt{isSub} callers discarding errors are save/restore-wrapped or unreachable by uncommitted array literals. & \textsc{open} \\
 E-NORM & Named-type normalization is semantics-preserving (interface consumed by expansion). & \textsc{assumed} \\
 E-ARR & Delayed array-literal forms keep their semantics under expansion. & \textsc{assumed} \\
-E-CLASS-SYM & The class path of expansion is binding-blind (or its binding reads are harmless). & \textsc{open} \\
+E-CLASS-SYM & Class expansion either does not depend on existing variable bindings, or any bindings it reads cannot make cache reuse unsound. & \textsc{open} \\
 E-GUARD & Recursion-guard identity expansions are never cached into long-lived substitutions. & \textsc{open} \\
 SEM-GFP & The set-theoretic semantics is the greatest solution of the recursive membership equations. & \textsc{proved} \\
 E-SIG & Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement). & \textsc{assumed} \\
@@ -48,9 +48,9 @@ O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \text
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
 F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
-F-THIS-IMPLICIT & The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitShape}/\texttt{ImplicitShape}, \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without comparing receiver types. & \textsc{assumed} \\
+F-THIS-IMPLICIT & Subtyping between two shape receivers, or two class receivers, with implicit \texttt{this} parameters accepts without comparing their receiver types. & \textsc{assumed} \\
 SETCONSTRAINT-FUN & \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state. & \textsc{proved} \\
-E-TRANSPORT & Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, modulo MR-1. & \textsc{proved} \\
+E-TRANSPORT & Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, except for the cache behavior recorded by MR-1. & \textsc{proved} \\
 TENV-EXPANDINTER & The \texttt{tenv.expandInter} mode flag is path-scoped, and both intersection forms it selects (expanded and deferred \texttt{unexpandedInter}) satisfy the L-INTER containment. & \textsc{open} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
@@ -65,7 +65,7 @@ L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same n
 A literal synthesized by the enum constant folder denotes the member's runtime value.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{enumFold} (string-concat arms); \texttt{enumNumOrUnknown}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive G; issue draft \path{enum-concat-imprecise-fold.md}): the string-concat arms concatenate operand \emph{lexemes}, and a direct numeric-literal operand bypasses the double-safe gate that guards numeric fold results, so a beyond-precision spelling mints a member literal whose spelling is not the runtime string (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime value is \texttt{"x0"}). Numeric folds are exact within the gate and mint no literal outside it — that half is \textsc{proved}. A prerequisite of the future preservation theorem's switch-coverage lemma (semantic case coverage consumes member-value faithfulness)
+\textsc{violated}, witnessed end-to-end (deep dive G; issue draft \path{enum-concat-imprecise-fold.md}): the string-concat arms concatenate operand \emph{lexemes}, and a direct numeric-literal operand bypasses the double-safe gate that guards numeric fold results, so a beyond-precision spelling produces a member literal whose spelling is not the runtime string (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime value is \texttt{"x0"}). Numeric folds are exact within the gate and produce no literal outside it — that half is \textsc{proved}. A prerequisite of the future preservation theorem's switch-coverage lemma (semantic case coverage consumes member-value faithfulness)
 
 \medskip\par\noindent\textbf{L-MUT-ALIAS-CALL}\quad(\textsc{open})\\*[0.15em]
 Cross-view mutation coherence, call-mediated facet: a checked method call through one view preserves every live alias's membership; needs a receiver-effect strengthening of E-SIG, which as stated concerns behavioral signature semantics only\\*[0.15em]
@@ -74,7 +74,7 @@ Cross-view mutation coherence, call-mediated facet: a checked method call throug
 \textsc{open} (deep dive H): the live route is a setter-shaped method call on a narrowing-admitted alias, but no signature semantics with receiver-heap effects exists to grade it against
 
 \medskip\par\noindent\textbf{V-INTER-SET}\quad(\textsc{open})\\*[0.15em]
-\texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already graded by the narrowing-admission or minted-view sites\\*[0.15em]
+\texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already covered by the narrowing-admission or direct narrowing sites\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TField::inter} (set arm)}\par
 \nopagebreak
 \textsc{open} (deep dive H): the mechanism is established; every declared route probed is blocked by the admission gate (the union widens the target's $\mathsf{set}$, making admission harder), and refinement-installed intersections reduce to the graded sites; ambient-declared intersection types enter through the stub trust boundary
@@ -89,7 +89,7 @@ Monotone Reads Under Growth: judgements validated under $\rho$ survive later leg
 No Commitment on Failure: failing and exploratory paths restore all relevant state.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{SavedSubst}; save/restore sites}\par
 \nopagebreak
-\textsc{proved} (deep dive E: 14-row save/restore audit; \texttt{SavedSubst} completeness; array-literal carve-out sound under RB-1)
+\textsc{proved} (deep dive E: 14-row save/restore audit; \texttt{SavedSubst} completeness; the intentional persistence of array-literal commitments is sound under RB-1)
 
 \medskip\par\noindent\textbf{MR-1}\quad(\textsc{violated})\\*[0.15em]
 No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outlive growth of an open candidate readable from its left side.\\*[0.15em]
@@ -98,7 +98,7 @@ No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outl
 \textsc{violated}, witnessed end-to-end (order-dependent acceptance; deep dive E; issue draft \path{freeze-window-stale-memo-caches.md})
 
 \medskip\par\noindent\textbf{C-FREEZE-CACHE}\quad(\textsc{open})\\*[0.15em]
-Isolated attribution of \texttt{seenInter} freeze-window staleness (mechanism active; shared witness with MR-1).\\*[0.15em]
+A stale \texttt{seenInter} entry can cause an unsound acceptance after candidate growth resumes without also reusing a stale \texttt{subst.seenSub} entry.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{seenInter}; \texttt{TType::inter}}\par
 \nopagebreak
 \textsc{open} for the isolated statement; mechanism demonstrated active (deep dive B); the MR-1 fix covers both memos
@@ -140,7 +140,7 @@ Delayed array-literal forms keep their semantics under expansion.\\*[0.15em]
 \textsc{assumed} (deep dive C)
 
 \medskip\par\noindent\textbf{E-CLASS-SYM}\quad(\textsc{open})\\*[0.15em]
-The class path of expansion is binding-blind (or its binding reads are harmless).\\*[0.15em]
+Class expansion either does not depend on existing variable bindings, or any bindings it reads cannot make cache reuse unsound.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{newObject}/\texttt{addFields}}\par
 \nopagebreak
 \textsc{open} (deep dive C; proof and counterexample both outstanding)
@@ -239,19 +239,19 @@ Soundness of the array-literal decision procedure inside subtyping.\\*[0.15em]
 The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types.\\*[0.15em]
 {\small\emph{Anchor:} \path{TFields::isSubCallability} ($\mathsf{CAbsent}$ arm); \path{narrowByTypeofFunction}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive D): a callable laundered \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps is narrowed to \texttt{never} in the branch the runtime takes; issue draft \path{cabsent-brand-laundering.md}. The callability instance of the F-BRAND trust model (refinement narrows on a brand subtyping never validates)
+\textsc{violated}, witnessed end-to-end (deep dive D): a callable passes through \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps, then is narrowed to \texttt{never} in the branch the runtime takes; issue draft \path{cabsent-brand-laundering.md}. The callability instance of the F-BRAND trust model (refinement narrows on a brand subtyping never validates)
 
 \medskip\par\noindent\textbf{F-BRAND}\quad(\textsc{violated})\\*[0.15em]
 Subtyping never compares the array brand, though refinement narrows on it.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TFields::isSub\_}}\par
 \nopagebreak
-\textsc{violated} by code-level derivation (deep dive D; composite witness sketch; no end-to-end run). The brand has a second consumer: the callability meet's array-brand $\bot$ arm (deep dive B) is semantic only under the brand's membership invariant, so a laundered callable in an array-branded view yields a spurious disjointness on a branch-dropping path
+\textsc{violated} by code-level derivation (deep dive D; composite witness sketch; no end-to-end run). The brand has a second consumer: the callability meet's array-brand $\bot$ arm (deep dive B) is semantic only under the brand's membership invariant, so a callable accepted into an array-branded view yields a spurious disjointness in a refinement rule that discards a branch
 
 \medskip\par\noindent\textbf{F-THIS-IMPLICIT}\quad(\textsc{assumed})\\*[0.15em]
-The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitShape}/\texttt{ImplicitShape}, \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without comparing receiver types.\\*[0.15em]
+Subtyping between two shape receivers, or two class receivers, with implicit \texttt{this} parameters accepts without comparing their receiver types.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{ThisParam} arms in \texttt{TFuns} subtyping}\par
 \nopagebreak
-\textsc{assumed} (deep dive D): the diagonal acceptances are justified only under an attachment semantics — a method invoked on the object it was accessed on — which E-SIG does not yet state; a detached object-\emph{literal} method free-called with a \texttt{this}-reading body is accepted (probed), so the attachment premise is not checker-enforced on the literal route
+\textsc{assumed} (deep dive D): these acceptances are justified only under an attachment semantics — a method invoked on the object it was accessed on — which E-SIG does not yet state; a detached object-\emph{literal} method free-called with a \texttt{this}-reading body is accepted (probed), so the attachment premise is not checker-enforced on the literal route
 
 \medskip\par\noindent\textbf{SETCONSTRAINT-FUN}\quad(\textsc{proved})\\*[0.15em]
 \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state.\\*[0.15em]
@@ -260,10 +260,10 @@ The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitSha
 \textsc{proved} (deep dive E, by code inspection: frozen class, functional update, both call sites use the return value)
 
 \medskip\par\noindent\textbf{E-TRANSPORT}\quad(\textsc{proved})\\*[0.15em]
-Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, modulo MR-1.\\*[0.15em]
+Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, except for the cache behavior recorded by MR-1.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst} transitions}\par
 \nopagebreak
-\textsc{proved} (deep dive E, the monotone-reads theorem, given M1 and the MR/BR audit; residue MR-1)
+\textsc{proved} (deep dive E, the monotone-reads theorem, given M1 and the MR/BR audit; subject to MR-1)
 
 \medskip\par\noindent\textbf{TENV-EXPANDINTER}\quad(\textsc{open})\\*[0.15em]
 The \texttt{tenv.expandInter} mode flag is path-scoped, and both intersection forms it selects (expanded and deferred \texttt{unexpandedInter}) satisfy the L-INTER containment.\\*[0.15em]
@@ -293,7 +293,7 @@ An un-annotated ambient-class field reads as an opaque per-field atom; the atom'
 The expansion-cache key (\texttt{ExpansionKey}: unqualified name text + arguments) identifies one definition: same-named, same-argument aliases from different modules must not collide.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{ExpansionKey}; \texttt{seenExpansion}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end in both directions (deep dive C; issue draft \path{expansion-key-collision.md}): two same-named, same-argument aliases from different modules share one \texttt{ExpansionKey}, so whichever expands first is served for both — an unsound acceptance one way (a \texttt{string}-typed call returns \texttt{undefined}) and an order-dependent false rejection the other, its diagnostic anchored in the wrong module; renaming either alias restores the correct verdicts. Refutes the implementation's not-yet-triggerable claim (upstream \#889); fix direction: key by definition identity
+\textsc{violated}, witnessed end-to-end in both directions (deep dive C; issue draft \path{expansion-key-collision.md}): two same-named, same-argument aliases from different modules share one \texttt{ExpansionKey}, so whichever expands first is served for both — an unsound acceptance one way (a \texttt{string}-typed call returns \texttt{undefined}) and an order-dependent false rejection the other, its diagnostic anchored in the wrong module; renaming either alias restores the correct verdicts. Refutes the source comment claiming the collision could not yet be triggered (upstream \#889); fix direction: key by definition identity
 
 \medskip\par\noindent\textbf{ACCESSOR-METHOD}\quad(\textsc{violated})\\*[0.15em]
 Accessor (\texttt{get}/\texttt{set}) members must be typed as fields, not methods; today a getter is a call signature, so \texttt{c.p()} type-checks and throws.\\*[0.15em]

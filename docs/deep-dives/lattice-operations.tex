@@ -49,29 +49,23 @@ an Audit of the Lattice Operations\\
 \begin{abstract}
 The main soundness paper assumes, as its rows \textbf{L-UNION} and
 \textbf{L-INTER}, that \texttt{TType::union} over-approximates set union,
-that \texttt{TType::inter} over-approximates set intersection, and — the
-load-bearing extra used by every branch-dropping refinement rule — that an
-intersection result of $\bot$ implies semantic disjointness. This deep dive
-audits both operations level by level against the pinned revision.
-The outcome is asymmetric. Union is \emph{proved}: every stratum
-over-approximates, and all strata that membership semantics can observe are
-in fact exact; the \texttt{seenUnion} cache is unconditionally sound because
-the union computation never reads the substitution. Intersection is
-\emph{refuted as stated} by one defect that makes \texttt{inter} return
-$\bot$ on semantically overlapping operands — the treatment of a failed
-signature intersection inside the callability meet as branch
-disjointness — with one further spelling defect inheriting the
-\textbf{L-LIT}(ii) violation: beyond-precision numeric spellings that
-alias one double. Both are empirically witnessed at the pinned
-revision: the checker silently narrows an inhabited variable to
-\texttt{never} in a reachable branch. Every other intersection stratum
-(units, tags, literal spellings of decoded strings and within-precision
-numbers, named fields, indexes under the covering semantics, the array
-brand, the four-point callability meet outside its signature arm, the
-per-tag \texttt{STypes} assembly, the instance layer) is proved sound,
-so the ledger row splits into proved strata, the two violated strata,
-and one named residual obligation (the \texttt{seenInter} cache under
-candidate freezing).
+and that \texttt{TType::inter} over-approximates set intersection. Refinement
+and one subtyping rule also require a stronger property: if
+\texttt{inter} returns $\bot$, the operands must be semantically disjoint.
+We check both operations at every layer of the type representation. Union
+always contains the semantic union, and is exact at every layer observed by
+the membership semantics; its cache is independent of the inference
+substitution. Intersection always contains the semantic intersection, but the
+stronger disjointness property fails in two witnessed cases. A failed function
+signature intersection is treated as if the containing object branches were
+disjoint, and distinct beyond-precision numeric spellings can denote the same
+double while intersecting to $\bot$. In both cases the checker narrows a
+reachable value to \texttt{never}. The remaining non-cache intersection cases
+satisfy the required property. \texttt{seenInter} is known to retain results
+computed while candidate growth is temporarily suppressed. The unresolved
+question is whether reusing such a stale entry can cause an unsound acceptance
+without also reusing a stale subtyping-cache entry
+(\textbf{C-FREEZE-CACHE}).
 \end{abstract}
 
 \tableofcontents

@@ -10,8 +10,8 @@
 \newcommand{\getty}{\mathsf{getty}}
 \newcommand{\Env}{\Gamma}
 
-\title{View Coherence:\\
-the Write Surface of Installed Types\\
+\title{View Coherence under Mutable Aliasing:\\
+Writes through Multiple Types of One Object\\
 {\large Deep Dive H for ``Refinement and Inference Growth in SKJS''}}
 \author{}
 \date{\skjspin}
@@ -23,32 +23,27 @@ the Write Surface of Installed Types\\
 \begin{abstract}
 The main paper's membership semantics is get-only and snapshot; its
 Write Authorization definition (registry row \textbf{SET-SEM}) gives
-each view a second surface — the writes its $\mathsf{set}$-types accept
-— and \textbf{L-MUT-ALIAS} states the coherence property over it: a
-checked write through one view preserves the membership guarantees of
-every live alias of the same runtime object. This deep dive audits that
-property site by site over the checker's view-creation families —
-subtyping admission, refinement installation, and outright minting —
-with an inventory funneling the remaining creation forms into these
-families or explicitly out of scope. The audit isolates two mechanisms that together imply
-coherence — the admission gate's downward write-capability preservation
-(D's row L-SUB-FIELDS-SET) and \emph{write-self-consistency} of the
-source ($\mathsf{set}$-types below $\mathsf{get}$-types) — and shows the
-checker enforces the first while refinement destroys the second.
-Declaration-only aliasing is coherent: the
-covariant field upcast, the mutable-array upcast, and the narrowing
-subclass override are all rejected, each stricter than tsc. The minted
-views of \texttt{instanceof} narrowing are coherent: the class arm
-instantiates hidden type arguments at rigid skolems, keeps every branch
-that already satisfies the test, and re-imposes the scrutinee's
-readonly members on the rest, so the minted write surface stays inside
-what the runtime instance authorizes (a coherence lemma, conditional on
-the admission-chain premises). One site is refuted with executed
-witnesses: narrowing-admitted aliases — a get-narrowed object passes
-the gate into a narrower view, then a legal write through the original
-goes stale on the alias, in both directions. The intersection's
-permissive $\mathsf{set}$-union is mechanism without a found route. Fix
-directions accompany each refuted verdict.
+each type of an object a second component: the writes accepted by its
+$\mathsf{set}$-types. Row \textbf{L-MUT-ALIAS} requires a write accepted
+through one type to preserve the membership guarantees of every other live
+type of the same runtime object. We examine how those multiple types arise:
+subtyping, assignment after narrowing, and types introduced directly by a
+refinement rule. Every remaining construction path is assigned to one of
+these cases or placed explicitly outside the model.
+
+Two conditions together guarantee coherence. Subtyping must not increase
+write capability (\textbf{L-SUB-FIELDS-SET}), and a source type must accept
+only writes that remain within its own readable type. The checker enforces the
+first condition, but narrowing can break the second. Ordinary declaration and
+subtyping paths reject the problematic field, array, and override conversions,
+often more strictly than tsc. Types introduced by \texttt{instanceof}
+narrowing are coherent because the implementation uses rigid type arguments,
+preserves already-compatible branches, and retains readonly members. The
+witnessed failure occurs when a previously narrowed object is assigned to a
+narrower alias: a legal write through either original reference can invalidate
+the other reference's type. The intersection operation also unions accepted
+write types, but no independent program path to an incoherent live pair was
+found. The paper records repair requirements for each failing case.
 \end{abstract}
 
 \tableofcontents

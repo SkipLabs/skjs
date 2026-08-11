@@ -40,43 +40,25 @@ denotation $\delta_k$ from stored literal spellings to runtime payloads, and
 records three claims about it as assumption \textbf{L-LIT}: (i) $\delta$ is
 a function, (ii) distinct (normalized) spellings denote
 $\approx$-inequivalent values, and (iii) the implementation's lexeme-level
-falsiness test agrees with the semantic definition of truthiness. The
-canonicalization strategy is uniform across kinds: parse the source
-spelling to the denoted value at the parser choke point, and store a
-canonical rendering of that value. For the numeric and bigint kinds the
-parser normalizes literals to canonical form
-(\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}); for the string
-kind it decodes escape sequences and line continuations to the runtime
-string value (\texttt{JSStringEscape.sk}). On that basis parts
-(ii)/(iii) \textbf{hold} for the string kind and \textbf{hold on the
-within-precision range} for num/bigint; \emph{beyond} precision —
-spellings failing the round-trip $\mathtt{String(Number(s))} = s$ — both
-parts fail for \texttt{num} (Finding~\ref{find:precision}), the one live
-\textbf{L-LIT} violation. This deep dive gives the mathematics the
-canonicalization realizes and the gap. We define the denotation
-$\delta_k$ precisely for each literal kind, define a canonical form per
-kind (parse to the denoted value, re-render canonically, with $-0$
-identified with $0$ to match the main paper's $\approx$-closure
-semantics), and prove that over canonical forms \textbf{L-LIT}(i)--(iii)
-all hold, with the exact finite falsy canonical set per kind. We then
-describe where normalization lives — including the string decoder's
-value model and rejection surface, the template-literal-type reduction
-that concatenates canonical lexemes, and the enum member values that
-enter the literal domain — and how canonical storage
-interacts with \texttt{PrimLiterals} set operations, numeric property
-names, and pretty-printing. Four adjacent items surface while proving
-the results: the beyond-precision numeric spellings — a num-kind
-violation of \textbf{L-LIT}(ii)/(iii), witnessed end-to-end
-(Finding~\ref{find:precision}); the enum folder's string-concat arms,
-which mint a member literal from a raw operand lexeme and are
-value-unfaithful for beyond-precision operands — row
-\textbf{L-LIT-FOLD}, witnessed end-to-end
-(Finding~\ref{find:enumfold}); the ECMA magnitude bounds
-\texttt{isJSNumericString} enforces on exponent forms
-(Finding~\ref{find:jsnum}); and the code-point value model that makes
-the string results hold on a scalar-value domain, at the price of
-rejecting lone-surrogate escapes tsc accepts
-(Finding~\ref{find:surrogates}).
+falsiness test agrees with semantic truthiness. We define the denotation and
+canonical form of each literal kind, then prove all three claims for canonical
+forms. Numeric and bigint literals are parsed and rendered canonically by
+\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; string escapes and line
+continuations are decoded to their runtime string value by
+\texttt{JSStringEscape.sk}.
+
+The string results hold, as do the numeric and bigint results within the range
+where conversion to a runtime number and back preserves the spelling. Beyond
+that range, distinct numeric spellings can denote the same double, and a
+nonzero-looking spelling can underflow to zero. These cases break equality
+narrowing and truthiness reasoning (\textbf{L-LIT}). A separate enum-folding
+failure concatenates a raw numeric operand spelling rather than its runtime
+string value, producing an incorrect member literal type
+(\textbf{L-LIT-FOLD}). The paper also checks every literal-production path,
+including template literal type reduction, enum members, numeric property
+names, set operations, and pretty-printing. Finally, it records two intentional
+differences from tsc: ECMAScript numeric-string magnitude bounds and rejection
+of lone-surrogate string escapes under the model's scalar-value domain.
 \end{abstract}
 
 \tableofcontents

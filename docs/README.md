@@ -121,18 +121,21 @@ the pinned tests land in `tests/`). On any status flip: walk the row's
 
 Three patterns span multiple papers (statuses: see the registry).
 
-- **Freeze-window cache staleness** is one family with one fix shape
-  (version-key the memo, or suppress writes under `freezeCandidates`):
-  rows MR-1 and C-FREEZE-CACHE; the expansion cache is immune (deep dive
-  C's binding-blindness result, load-bearing now that its key is shared
-  across mentions — row E-EXPKEY).
-- **Brand trust**: refinement narrows on brands subtyping never
-  validates — the `CAbsent` callability brand reachable by laundering a
-  callable through `{}` (row F-CABSENT) and the array brand (row
-  F-BRAND); one trust-model decision resolves both.
+- **Cache entries recorded while candidate growth is suppressed** can become
+  stale after growth resumes. Rows MR-1 and C-FREEZE-CACHE describe this
+  problem for the subtyping and intersection caches; either version-key the
+  entries or avoid recording them under `freezeCandidates`. Alias expansion
+  does not read existing variable bindings, but its name-based key can collide
+  across modules (row E-EXPKEY).
+- **Unchecked refinement brands**: refinement trusts facts that subtyping does
+  not validate. A callable can pass through `{}` into a type marked
+  `CAbsent` (row F-CABSENT), and the array brand is never compared (row
+  F-BRAND). Both require the checker to define and enforce when a brand may be
+  introduced.
 - **`⊥ ⟹ disjoint`** (row L-INTER-BOT) is consumed both by the main paper's
-  branch-dropping refinement rules and by subtyping's covariant variable
-  read (row O-GETCOV) — repairing it sits on both critical paths.
+  refinement rules that discard impossible branches and by subtyping's
+  covariant variable read (row O-GETCOV), so both uses must be reconsidered
+  when it is repaired.
 
 ## Deferred by design
 

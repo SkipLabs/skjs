@@ -29,25 +29,25 @@
 \begin{abstract}
 The main soundness paper proves \emph{one-step branch soundness}: a
 condition is evaluated against a fixed store, and the refined environment
-is guaranteed only at that instant. Its assumption ledger records
-\textbf{L-PURE} as \textsc{violated} (issues \#597, \#599) and a tracked
-instance of the \textbf{L-MUT} boundary (issue \#598). This deep dive is
-part formalization, part design document. It extends the one-step store
-model with mutation events, classifies the tracked unsoundness shapes and
-pins where each breaks the main paper's branch-soundness argument, and
-establishes by code inspection and by running the checker what the
-implementation does at every mutation site. On the sound side it proves
-\textbf{L-CAPT}: assignments to captured locals are checked against the
-binding's declared (or widened inferred) type, with a named
-evolving-binding carve-out. Beyond the tracked issues it establishes two
-violated behaviors: closure bodies \emph{read} enclosing narrowings that
-may be stale at invocation (row \textbf{L-STALE-READ}), and a narrowing
-carried into a loop is not invalidated across the back edge, so a second
-iteration reads a stale type. It then analyzes four invalidation
-policies and recommends one — loop-entry and capture-based invalidation
-for locals plus field re-widening at writes and call-boundary havoc for
-field narrowings — together with the preservation-style lemma the chosen
-policy validates.
+is guaranteed only at that instant. This paper extends the model with
+mutation events and determines which events must invalidate an existing
+narrowing. It relates each implementation path to the point where mutation
+can break the main paper's branch-soundness argument.
+
+Assignments to captured locals are checked against the binding's declared or
+widened inferred type (\textbf{L-CAPT}). Bindings whose types intentionally
+evolve from an unannotated \texttt{null} or \texttt{undefined} initializer are
+the stated exception. Two distinct read-side failures remain: a closure can
+observe an enclosing narrowing after an intervening mutation invalidates it
+(\textbf{L-STALE-READ}), and a narrowing established before a loop can survive
+an invalidating write on the loop's back edge
+(\textbf{L-LOOP-CARRIED}). Field writes and calls create corresponding
+invalidation requirements for field narrowings.
+
+The paper compares four repair policies and recommends invalidating affected
+locals at loop entry and closure capture, restoring a field's declared type
+after writes, and invalidating field narrowings across calls. It states the
+preservation property that this combined policy must satisfy.
 \end{abstract}
 
 \tableofcontents

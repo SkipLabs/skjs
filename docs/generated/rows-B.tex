@@ -10,7 +10,7 @@
 L-UNION & \texttt{union} over-approximates set union (all levels). & \textsc{proved} \\
 L-INTER & \texttt{inter} over-approximates set intersection (the containment clause). & \textsc{proved} \\
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & \textsc{violated} \\
-C-FREEZE-CACHE & Isolated attribution of \texttt{seenInter} freeze-window staleness (mechanism active; shared witness with MR-1). & \textsc{open} \\
+C-FREEZE-CACHE & A stale \texttt{seenInter} entry can cause an unsound acceptance after candidate growth resumes without also reusing a stale \texttt{subst.seenSub} entry. & \textsc{open} \\
 \bottomrule
 \end{tabular}
 \end{center}

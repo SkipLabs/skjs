@@ -52,25 +52,23 @@ the claim that acceptance by the subtyping validator implies semantic
 inclusion under the current substitution state. Part~I proves the
 architecture: the \texttt{isSub} dispatch, the two memoization caches
 (\texttt{subst.seenSub} and the version-keyed \texttt{tenv.seenSub}), the
-growth pre-passes, restore-on-failure, and the coinductive treatment of
-recursive types, which we reduce --- via a stratified-semantics theorem ---
-to \emph{one-step soundness} of the individual strata. Part~II proves the
-strata that the main paper's membership semantics supports (primitives,
-$\STypes$, the DNF clause covering, object-branch matching, the
-getter/optional/index/access rules of $\TFields$), states the
-setter directions as conditional on \textbf{L-MUT}, and gives function
-signatures the behavioral semantics the main paper lacks, proving the
-variance rules of \texttt{TFun::isSub} against it. Four findings emerge
-where the implementation is laxer than the semantics: the two
-refinement-trusted brands --- the laundered $\mathsf{CAbsent}$
-callability mode (witnessed end-to-end) and the never-compared array
-brand --- each composing with a refinement rule into an unsoundness; a
-type-parameter constraint-dropping acceptance; and the
-implicit-receiver arms of \texttt{this}-parameter subtyping, justified
-only under an attachment semantics the behavioral contract does not yet
-express. The closing status table recommends
-splitting the main paper's single \textbf{L-SUB} row into ten rows with
-individual statuses.
+growth pre-passes, restoration after failed checks, and the coinductive
+treatment of recursive types. A stratified-semantics theorem reduces the
+recursive case to soundness of each individual representation layer. Part~II
+establishes the layers supported by the main paper's membership semantics:
+primitives, $\STypes$, DNF clause covering, object-branch matching, and the
+getter, optional-field, index, and access rules of $\TFields$. Setter rules
+remain conditional on \textbf{L-MUT}; function rules are checked against the
+behavioral signature semantics recorded by \textbf{E-SIG}.
+
+The analysis finds four places where acceptance is not justified by those
+semantics. A callable can pass through \texttt{Function} and \texttt{\{\}}
+into a type marked non-callable (\textbf{F-CABSENT}); the array brand is never
+compared (\textbf{F-BRAND}); one path accepts after dropping a type-parameter
+constraint; and subtyping between two implicit shape receivers, or two
+implicit class receivers, does not compare their receiver types
+(\textbf{F-THIS-IMPLICIT}). The registry separates these findings and the
+remaining conditional cases from the parts of L-SUB established here.
 \end{abstract}
 
 \tableofcontents

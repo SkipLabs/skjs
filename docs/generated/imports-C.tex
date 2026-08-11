@@ -9,7 +9,7 @@
 \midrule
 L-UNION & \texttt{union} over-approximates set union (all levels). & B & \textsc{proved} \\
 L-INTER & \texttt{inter} over-approximates set intersection (the containment clause). & B & \textsc{proved} \\
-L-MONO & Refinement-time state evolutions preserve membership in already-installed types. & E & \textsc{proved} \\
+L-MONO & Legal inference-state changes during refinement preserve membership in types computed earlier. & E & \textsc{proved} \\
 TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty. & main & \textsc{proved} \\
 SETCONSTRAINT-FUN & \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state. & E & \textsc{proved} \\
 TENV-EXPANDINTER & The \texttt{tenv.expandInter} mode flag is path-scoped, and both intersection forms it selects (expanded and deferred \texttt{unexpandedInter}) satisfy the L-INTER containment. & E & \textsc{open} \\

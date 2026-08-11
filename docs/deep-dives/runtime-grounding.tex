@@ -38,24 +38,19 @@ ECMAScript Semantics for the SKJS Value Domain\\
 The main soundness paper models the runtime as an abstract value domain
 $\Val$ equipped with predicates ($\approx$, $\mathsf{truthy}$,
 $\mathsf{callable}$, $\mathsf{constructible}$, $\mathsf{isArrayV}$,
-$P_{\mathsf{inst}}$); three of its ledger rows rest entirely on that
-domain: \textbf{L-TAG}, \textbf{L-INST}, and \textbf{L-ISARR}. This
-paper is the evidence behind their current table statuses.
-SKJS is a type checker only — there is no SKJS code generator, and checked
-programs run \emph{unmodified} on a JavaScript engine — so each of these
-rows is really a claim about ECMAScript. This deep dive supplies the
-grounding: a realization map from the model's value domain onto ECMAScript
-language values under which the model's predicates are exactly the
-pullbacks of the spec's \texttt{IsStrictlyEqual}, \texttt{ToBoolean},
+$P_{\mathsf{inst}}$). Because SKJS emits no code, checked programs run
+unchanged on a JavaScript engine, and the corresponding registry claims must
+hold in ECMAScript itself. We therefore define a realization map from the
+model's values to ECMAScript language values and show that the model's
+predicates agree with \texttt{IsStrictlyEqual}, \texttt{ToBoolean},
 \texttt{typeof}, \texttt{IsCallable}/\texttt{IsConstructor}, and
-\texttt{IsArray}. Under it, \textbf{L-TAG}, \textbf{L-ISARR}, and
-\textbf{L-INST} are discharged (\textsc{proved}, modulo named
-environment assumptions), the checker's four-point \texttt{Callability}
-lattice is grounded in $\intm{Call}$/$\intm{Construct}$ — including the
-constructor-value modes (\textbf{A-CTOR-CALL}, \textsc{proved}) — and
-the one caveat of the \texttt{typeof}-\texttt{"function"} narrowing is
-isolated to the imported brand-trust row \textbf{F-CABSENT}.
-Section~\ref{sec:status} maps every row to its evidence.
+\texttt{IsArray}. This establishes \textbf{L-TAG}, \textbf{L-ISARR}, and
+\textbf{L-INST} subject to their named environment assumptions. It also
+relates the checker's four-point \texttt{Callability} lattice to ECMAScript
+call and construct behavior, including constructor values
+(\textbf{A-CTOR-CALL}). The remaining \texttt{typeof "function"} problem is
+not a mismatch with ECMAScript: subtyping can admit a callable into a type
+marked non-callable, as recorded by \textbf{F-CABSENT}.
 \end{abstract}
 
 \tableofcontents

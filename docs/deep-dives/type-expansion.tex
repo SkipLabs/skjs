@@ -46,36 +46,25 @@ Companion to the main soundness paper.}
 \begin{abstract}
 The main soundness paper assumes axiom \textbf{L-EXP}: expansion of a type
 to its instance-plus-clauses view preserves or enlarges its semantics, with
-residual instances keeping theirs. This deep dive models expansion precisely
-as a worklist over the instance layer, proves the containment
-$\sem{t}_\rho \subseteq \sem{\expandop(t)}_{\rho'}$ for the expansion modes
-the refinement machinery actually uses, and — as its centerpiece — turns the
-\texttt{seenExpansion} cache-soundness comment
-(\texttt{TTypeSubst.sk:17--31}) into a precise invariance theorem. The
-cache is keyed by \emph{definition identity} — name text plus arguments
-(\texttt{ExpansionKey}) — so one entry serves every mention of a named
-type, and the invariance theorem is load-bearing for that reuse. The
-audit yields a result \emph{stronger} than the comment claims for type
-aliases: normalization is \emph{binding-blind} — every substitution it
-consults for variable bindings is freshly created empty — so a cached alias
-expansion is a function of the resolved definition and arguments alone and
-is immune to the freeze-window staleness that threatens the other memo
-caches. It also yields refutations and corrections: the key's name-text
-component does \emph{not} identify a definition across modules — a
-same-named alias in two modules collides in the cache, witnessed
-end-to-end in both directions (registry row E-EXPKEY;
-Section~\ref{sec:expkey}) — refuting the implementation comment's
-``not yet triggerable''; the comment's ``\texttt{inter} never resolves an
-unbound \texttt{TVar}'' is false for variables nested in compound operands
-(harmless where it matters, for a stated reason); the class-instantiation
-path is \emph{not} binding-blind and remains an open obligation; and
-contravariant-mode expansion does not satisfy \textbf{L-EXP} at all, forcing
-a scope edit to the axiom. Two further sections audit the placeholder atom
-minted for un-annotated ambient fields (registry row E-PLACEHOLDER-ATOM)
-and extend the binding-blindness audit to the template-literal,
-\texttt{Closed<T>}, and enum arms of normalization.
-Section~\ref{sec:status} gives the resulting
-ledger edits for the main paper's Assumptions table.
+residual instances keeping theirs. We model expansion as a worklist over the
+instance layer and prove
+$\sem{t}_\rho \subseteq \sem{\expandop(t)}_{\rho'}$ for the
+\texttt{None} and covariant modes used by refinement. Contravariant expansion
+does not satisfy this property, so it is excluded from L-EXP.
+
+We also state and check the condition required to reuse entries in
+\texttt{seenExpansion}. Alias normalization does not consult existing
+variable bindings, so an alias expansion depends only on the resolved
+definition and its arguments. Cache reuse among references to the same
+definition is therefore exact. The implemented key, however, stores an
+unqualified name rather than definition identity. Same-named aliases in two
+modules can collide, producing an unsound acceptance in one expansion order
+and a false rejection in the other (\textbf{E-EXPKEY}). Class expansion does
+read existing bindings and remains a separate open obligation
+(\textbf{E-CLASS-SYM}). Finally, we examine recursion-guarded cache entries,
+the opaque type used for unannotated ambient fields
+(\textbf{E-PLACEHOLDER-ATOM}), and normalization of template literal types,
+\texttt{Closed<T>}, and enums.
 \end{abstract}
 
 \tableofcontents

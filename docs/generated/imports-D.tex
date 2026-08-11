@@ -18,7 +18,7 @@ OBL-RESTORE & No Commitment on Failure: failing and exploratory paths restore al
 MR-1 & No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outlive growth of an open candidate readable from its left side. & E & \textsc{violated} \\
 E-ARR & Delayed array-literal forms keep their semantics under expansion. & C & \textsc{assumed} \\
 SEM-GFP & The set-theoretic semantics is the greatest solution of the recursive membership equations. & main & \textsc{proved} \\
-E-TRANSPORT & Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, modulo MR-1. & E & \textsc{proved} \\
+E-TRANSPORT & Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, except for the cache behavior recorded by MR-1. & E & \textsc{proved} \\
 \bottomrule
 \end{tabular}
 \end{center}

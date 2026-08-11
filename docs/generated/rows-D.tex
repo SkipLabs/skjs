@@ -17,7 +17,7 @@ O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \text
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
 F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
-F-THIS-IMPLICIT & The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitShape}/\texttt{ImplicitShape}, \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without comparing receiver types. & \textsc{assumed} \\
+F-THIS-IMPLICIT & Subtyping between two shape receivers, or two class receivers, with implicit \texttt{this} parameters accepts without comparing their receiver types. & \textsc{assumed} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
 L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{violated} \\

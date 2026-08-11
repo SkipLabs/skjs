@@ -55,18 +55,20 @@
 \maketitle
 
 \begin{abstract}
-We formalize the internal type representation used by SKJS and prove soundness
-properties for its two flow-sensitive type transformations: predicate-driven
-\emph{refinement} (control-flow narrowing, \texttt{evalCond}) and
-\emph{constant removal} (the residue of the former general type-difference
-operation). We model the inference substitution as a small state machine and
-state the invariants under which inference growth (\texttt{growTVars}) cannot
-cause unsound acceptance. Everything the model does not describe concretely is
-either an explicit abstract interface with stated axioms (collected in
-Section~\ref{sec:assumptions}, Assumptions and Proof Obligations) or explicitly
-out of scope with a justification that the omission cannot hide a soundness
-hole (Section~\ref{sec:scope}). This document supersedes the draft
-attached to PR \#342 (``Refinement and Type Difference in SKJS'').
+We model SKJS's internal type representation and its two flow-sensitive type
+transformations: predicate-driven \emph{refinement} (control-flow narrowing in
+\texttt{evalCond}) and \emph{constant removal} (the remaining use of the
+checker's former general type-difference operation). We prove soundness
+properties for both transformations and model the inference substitution as a
+state machine, making explicit the conditions under which inference growth
+(\texttt{growTVars}) preserves membership in types computed earlier during
+refinement. This is not a claim
+that the whole checker is sound. Every implementation behavior needed by the
+results is either modeled here, represented by a named registry assumption or
+obligation, or excluded with a reason that it cannot affect the stated result.
+The registry and exclusions appear in Sections~\ref{sec:assumptions}
+and~\ref{sec:scope}. This document supersedes the draft attached to PR \#342
+(``Refinement and Type Difference in SKJS'').
 \end{abstract}
 
 \tableofcontents
@@ -124,45 +126,48 @@ $\SVOpen$ and the obligation status; the object semantics of
 Definition~\ref{def:object-semantics} is called \emph{extensible}.
 
 \paragraph{Routing source features into the contract.}
-The unit of classification is an implementation \emph{mechanism}, not a
-source-language feature: one feature may have a modeled representation, an
-abstracted checking phase, and diagnostics outside this theorem.  The relevant
-source forms route as follows.  A template literal type with only
-finite holes normalizes to a finite string-literal union; an \texttt{enum}
-type normalizes to the literal union of its member values; and
-\texttt{Closed<T>} normalizes to \texttt{T}'s object type with every
-uncovered key represented by a never-valued index.  These are \emph{modeled}:
-after normalization they are exactly the literal and object forms of
-Section~\ref{sec:representation}.  Their production paths are exposed to the
-existing obligations rather than granted a feature-level exemption:
-canonical literal production is \textbf{L-LIT} (over all stored
-literals, parser-produced and folder-synthesized alike), with the
-orthogonal value-faithfulness of folder-synthesized member literals as
-\textbf{L-LIT-FOLD}; expansion is \textbf{L-EXP}; admission of a closed
-absence fact is
-\textbf{L-SUB-CLOSED-ABSENCE}, and rule \textsc{R-In} consumes that fact.
-A \texttt{switch} case/default is
-likewise a client of the modeled \textsc{R-Eq} rules; fallthrough contributes
-an additional scope entry, as recorded with the master list below.  Finite
-case coverage also determines whether an unmatched exit path exists and
-whether the statement may fall through; those are statement-flow facts for
-the future preservation theorem, not new condition-refinement rules — and
-that future coverage lemma will consume member-value faithfulness
-(\textbf{L-LIT-FOLD}) as a prerequisite, since semantic case coverage is
-judged over the member value set.
+Classification follows implementation mechanisms rather than whole
+source-language features. A single feature can have a modeled type
+representation, a checking phase represented by a registry obligation, and a
+diagnostic outside this theorem.
 
-Other mechanisms of the same features are \emph{abstracted} or outside the
-one-step result for independent reasons.  Correctness of expression typing is
-\textbf{L-TC}; behavioral function signatures are E-SIG, covering
-synthesized \texttt{.call}/\texttt{.apply}/\texttt{.bind} members,
-\texttt{this}-parameter checking, and contextual typing of un-annotated
-closure parameters.  Executing an enum declaration and constructing its
-runtime forward/reverse-mapping object belongs to the future statement
-preservation theorem (the modeled consumers still see its ordinary object
-fields and callability mode); switch-exhaustiveness \emph{reporting} is a
-non-fatal diagnostic and is not itself an acceptance gate.  Thus no whole
-feature is assigned to one bin at the surface level: each downstream
-mechanism is classified where the proof consumes it.
+The following normalization results are modeled directly because they produce
+the literal and object forms defined in Section~\ref{sec:representation}:
+finite template literal types become finite unions of string literals;
+\texttt{enum} types become unions of their member literal types; and
+\texttt{Closed<T>} becomes \texttt{T}'s object type with never-valued indexes
+for uncovered keys. The registry records the required properties of the code
+that produces these forms:
+\begin{itemize}
+\item \textbf{L-LIT} covers the representation of every stored literal,
+  whether produced by the parser or the enum constant folder.
+\item \textbf{L-LIT-FOLD} separately requires an enum member's synthesized
+  literal type to denote the member's runtime value.
+\item \textbf{L-EXP} covers expansion of the normalized types.
+\item \textbf{L-SUB-CLOSED-ABSENCE} governs when subtyping may establish the
+  absence facts consumed by rule \textsc{R-In}.
+\end{itemize}
+
+A \texttt{switch} case uses the modeled \textsc{R-Eq} rules, and fallthrough
+adds the extra scope entry shown in the refinement-rule list below. Whether a
+finite set of cases covers every value is instead a statement-level property
+for the future preservation theorem. Such a result will require
+\textbf{L-LIT-FOLD}, because coverage depends on the runtime values of enum
+members.
+
+Other mechanisms remain represented by registry rows or lie outside the
+one-step result. Expression typing is \textbf{L-TC}. Behavioral function
+signatures are E-SIG, which covers synthesized
+\texttt{.call}/\texttt{.apply}/\texttt{.bind} members, explicit
+\texttt{this}-parameter checking, and contextual typing of unannotated closure
+parameters. Executing an enum declaration and constructing its runtime
+forward/reverse-mapping object belongs to the future statement-preservation
+theorem. This exclusion does not hide the enum object's type-level components
+from the modeled results: refinement and subtyping still see its ordinary
+fields and callability mode. Switch-exhaustiveness reporting is a nonfatal
+diagnostic and does not affect acceptance. Each mechanism is therefore
+classified where a proof uses it; no source-language feature receives one
+blanket classification.
 \impl{TEnv.sk / normalizeTemplate, closeObjectType; TypeCheckEnum.sk;
 TypeCheckStmt.sk / Switch; TypeCheckExpr.sk / call checking}
 

@@ -10,7 +10,7 @@
 L-EXP & Expansion preserves or enlarges semantics (modes \texttt{None}/Covariant); residual instances keep theirs. & \textsc{proved} \\
 E-NORM & Named-type normalization is semantics-preserving (interface consumed by expansion). & \textsc{assumed} \\
 E-ARR & Delayed array-literal forms keep their semantics under expansion. & \textsc{assumed} \\
-E-CLASS-SYM & The class path of expansion is binding-blind (or its binding reads are harmless). & \textsc{open} \\
+E-CLASS-SYM & Class expansion either does not depend on existing variable bindings, or any bindings it reads cannot make cache reuse unsound. & \textsc{open} \\
 E-GUARD & Recursion-guard identity expansions are never cached into long-lived substitutions. & \textsc{open} \\
 E-PLACEHOLDER-ATOM & An un-annotated ambient-class field reads as an opaque per-field atom; the atom's denotation must over-approximate the arbitrary runtime value. & \textsc{open} \\
 E-EXPKEY & The expansion-cache key (\texttt{ExpansionKey}: unqualified name text + arguments) identifies one definition: same-named, same-argument aliases from different modules must not collide. & \textsc{violated} \\
