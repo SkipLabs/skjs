@@ -23,16 +23,18 @@ L-INTER & \texttt{inter} over-approximates set intersection (the containment cla
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & \textsc{violated} \\
 L-EXP & Expansion preserves or enlarges semantics (modes \texttt{None}/Covariant); residual instances keep theirs. & \textsc{proved} \\
 L-MONO & Refinement-time state evolutions preserve membership in already-installed types. & \textsc{proved} \\
-L-SEQ & Type denotations used as equality RHSs are $\approx$-closed. & \textsc{proved} \\
+L-SEQ & Type denotations used as equality RHSs are $\approx$-closed. & \textsc{violated} \\
 L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state. & \textsc{open} \\
-A-CTOR-CALL & Class-constructor values are typed with call mode $\mathsf{None}$, but constructors implement $[[\mathrm{Call}]]$. & \textsc{violated} \\
+A-CTOR-CALL & Class-constructor values carry $\mathsf{CPresent}$ construct and $\mathsf{CFunction}$ call modes, consistent with $[[\mathrm{Call}]]$/$[[\mathrm{Construct}]]$. & \textsc{proved} \\
 L-TC & Checked expressions inhabit their checked types. & \textsc{assumed} \\
 L-LIT & Literal spellings: (i) $\delta$ is a function; (ii) injectivity modulo $\approx$ after normalization; (iii) falsiness-exactness of the lexeme test. & \textsc{violated} \\
-L-INST & $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site. & \textsc{violated} \\
+L-INST & $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site. & \textsc{proved} \\
 L-ISARR & $\mathsf{isArrayV}(o)$ implies $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$. & \textsc{proved} \\
 L-LOCAL & Module-level bindings are never narrowed; function-level locals are, including captured ones. & \textsc{proved} \\
 L-PURE & Evaluating a condition does not mutate the narrowed locals. & \textsc{violated} \\
-L-CAPT & Assignments to captured locals are checked against the binding's declared type. & \textsc{violated} \\
+L-CAPT & Assignments to captured locals are checked against the binding's declared type. & \textsc{proved} \\
+L-STALE-READ & A closure body invoked later reads enclosing narrowings that are stale at invocation time. & \textsc{violated} \\
+L-LOOP-CARRIED & A pre-loop narrowing of an annotated binding survives a back-edge write that invalidates it. & \textsc{violated} \\
 L-CLONE & A type computed by \texttt{inter} under a cloned substitution over-approximates the intersection under the main one. & \textsc{proved} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & \textsc{assumed} \\
 L-MUT-ALIAS & A checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object. & \textsc{violated} \\
@@ -62,13 +64,13 @@ Every runtime value carries exactly one tag consistent with its static tag (the 
 A $\bot$ result from \texttt{inter} implies semantic disjointness — the clause every branch-dropping refinement step and L-SUB's covariant variable read (O-GETCOV) consume\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeInter.sk}}\par
 \nopagebreak
-\textsc{violated} (deep dive B) in three strata: the \texttt{TFun::inter} stratum — incomparable signatures treated as disjoint (issue draft \path{tfun-inter-incomparable-not-disjoint.md}); the string-kind literal-spelling stratum (undecoded escapes, mediated by L-LIT); and the num-kind beyond-precision spelling stratum — distinct spellings of one double kept distinct, their lexeme intersection a spurious $\bot$ (mediated by L-LIT; issue draft \path{beyond-precision-numeric-literals.md}). The per-tag \texttt{STypes} assembly and within-precision numeric spellings produce only semantic bottoms and are \textsc{proved}
+\textsc{violated} (deep dive B) in two strata: the \texttt{TFun::inter} stratum — incomparable signatures treated as disjoint (issue draft \path{tfun-inter-incomparable-not-disjoint.md}); and the num-kind beyond-precision spelling stratum — distinct spellings of one double kept distinct, their lexeme intersection a spurious $\bot$ (mediated by L-LIT; issue draft \path{beyond-precision-numeric-literals.md}). The per-tag \texttt{STypes} assembly, within-precision numeric spellings, and decoded string spellings produce only semantic bottoms and are \textsc{proved}
 
 \medskip\par\noindent\textbf{L-EXP}\quad(\textsc{proved})\\*[0.15em]
 Expansion preserves or enlarges semantics; residual instances keep theirs\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TType::expand}}\par
 \nopagebreak
-\textsc{proved} (deep dive C) for the modes refinement uses (\texttt{None}/Covariant) — and shown \emph{false} in contravariant mode (unbound reads produce $\bot$), so the axiom is hereby scoped to those modes; all refinement clients verified to use only them. Alias-path cache reuse proved exact (binding-blind normalization); residues: E-NORM, E-ARR (\textsc{assumed}), E-CLASS-SYM, E-GUARD (\textsc{open}) — see deep dive C
+\textsc{proved} (deep dive C) for the modes refinement uses (\texttt{None}/Covariant) — and shown \emph{false} in contravariant mode (unbound reads produce $\bot$), so the axiom is hereby scoped to those modes; all refinement clients verified to use only them. Alias-path cache reuse proved exact (binding-blind normalization, now load-bearing under cross-mention keying); residues: E-NORM, E-ARR (\textsc{assumed}), E-CLASS-SYM, E-GUARD, E-EXPKEY, E-PLACEHOLDER-ATOM (\textsc{open}) — see deep dive C
 
 \medskip\par\noindent\textbf{L-MONO}\quad(\textsc{proved})\\*[0.15em]
 Refinement-time state evolutions preserve membership in already-installed types (Axiom~\ref{ax:mono})\\*[0.15em]
@@ -76,23 +78,23 @@ Refinement-time state evolutions preserve membership in already-installed types 
 \nopagebreak
 \textsc{proved} (deep dive E, given M1 — semantic monotonicity in variable envelopes — and L-UNION); \texttt{setConstraint} is a functional update, so there is no shared-state threat, and the $\mathrm{range}(\Env)$ restriction is droppable (see the axiom's remark)
 
-\medskip\par\noindent\textbf{L-SEQ}\quad(\textsc{proved})\\*[0.15em]
+\medskip\par\noindent\textbf{L-SEQ}\quad(\textsc{violated})\\*[0.15em]
 Type denotations used as equality RHSs are $\approx$-closed\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalVarEquality}}\par
 \nopagebreak
-\textsc{proved}: by construction for literal/full primitives and objects; the undefined/\texttt{void} corner is unreachable — strict equality rejects \texttt{void}-typed operands before refinement (empirically pinned, \S\ref{sec:r-eq})
+\textsc{violated}, witnessed end-to-end at the undefined/\texttt{void} corner (\S\ref{sec:ex-voidseq}; issue draft \path{void-undefined-equality-never.md}): \texttt{evalVarEquality}'s generic variable-RHS arm installs $\mathtt{inter}(\texttt{void},\texttt{undefined}) = \texttt{never}$ while $\approx$ relates the two units, and the \texttt{void}-operand check on \texttt{===} is a warning, so the corner is reachable — the branch runs with \texttt{undefined} bound at \texttt{never}. The undefined-\emph{literal} arm filters the units jointly and is sound; literal/full primitives and objects remain $\approx$-closed by construction
 
 \medskip\par\noindent\textbf{L-SUB}\quad(\textsc{open})\\*[0.15em]
 \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TTypeSubtyping.sk}}\par
 \nopagebreak
-split (deep dive D): \textsc{proved} — dispatcher architecture, \texttt{tenv.seenSub} version-keying (corrected argument), coinductive reduction (via SEM-GFP), primitives, \texttt{STypes}, DNF covering, object skeleton, and the field stratum's read direction; conditional — field \emph{set} direction on L-MUT, functions on the E-SIG signature semantics; \textsc{violated} — \texttt{subst.seenSub} inside freeze windows (witnessed; issue draft \path{freeze-window-stale-memo-caches.md}), the \texttt{isSubOptTFuns} \texttt{None}-mode arm (F-CALL) and the never-compared array brand (F-BRAND), both facets of the \texttt{call{=}None} dichotomy
+split (deep dive D): \textsc{proved} — dispatcher architecture, \texttt{tenv.seenSub} version-keying (corrected argument), coinductive reduction (via SEM-GFP), primitives, \texttt{STypes}, DNF covering, object skeleton, and the field stratum's read direction; conditional — field \emph{set} direction on L-MUT, functions on the E-SIG signature semantics; \textsc{violated} — \texttt{subst.seenSub} inside freeze windows (witnessed; issue draft \path{freeze-window-stale-memo-caches.md}), and the two refinement-trusted brands subtyping never validates: the laundered \texttt{CAbsent} callability brand (F-CABSENT) and the never-compared array brand (F-BRAND)
 
-\medskip\par\noindent\textbf{A-CTOR-CALL}\quad(\textsc{violated})\\*[0.15em]
-Class-constructor values are typed with call mode $\mathsf{None}$, but constructors implement $[[\mathrm{Call}]]$ — the refinement side of the \texttt{call{=}None} dichotomy (Definition Signature Modes)\\*[0.15em]
-{\small\emph{Anchor:} \texttt{newStaticObject}; \texttt{evalTypeofEquality}}\par
+\medskip\par\noindent\textbf{A-CTOR-CALL}\quad(\textsc{proved})\\*[0.15em]
+Class-constructor values are typed with construct mode $\mathsf{CPresent}$ and call mode $\mathsf{CFunction}$ (Definition Callability), so \texttt{typeof}-\texttt{"function"} refinement keeps them — the runtime facts $[[\mathrm{Call}]]$ and $[[\mathrm{Construct}]]$ are both represented\\*[0.15em]
+{\small\emph{Anchor:} \texttt{newStaticObject}; \path{narrowByTypeofFunction}}\par
 \nopagebreak
-\textsc{violated} (witnessed: a \texttt{string}-typed function returns a class at runtime through the \texttt{typeof} \texttt{"function"} branch drop; deep dive A; issue draft \path{class-constructor-call-none-typeof.md})
+\textsc{proved} (deep dive A: constructor values built with both positive modes, and the constructible-implies-$[[\mathrm{Call}]]$ invariant enforced at \texttt{TFields} construction); the residual brand-trust gap of the \texttt{Callability} lattice is the separate row F-CABSENT
 
 \medskip\par\noindent\textbf{L-TC}\quad(\textsc{assumed})\\*[0.15em]
 Checked expressions inhabit their checked types (used for the RHS of \textsc{R-Eq} and field reads)\\*[0.15em]
@@ -102,15 +104,15 @@ Checked expressions inhabit their checked types (used for the RHS of \textsc{R-E
 
 \medskip\par\noindent\textbf{L-LIT}\quad(\textsc{violated})\\*[0.15em]
 Three claims about literal spellings: (i) $\delta$ is a function — definitional, used by R2; (ii) \emph{injectivity modulo $\approx$} after normalization — needed only for \emph{exactness} claims; (iii) \emph{falsiness-exactness}: the lexeme test \texttt{isFalsy} agrees with Definition~\ref{def:truthiness} — needed by the residue lemma\\*[0.15em]
-{\small\emph{Anchor:} \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; \texttt{isFalsy}; \texttt{unquoteString}}\par
+{\small\emph{Anchor:} \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; \texttt{isFalsy}; string-escape decoding; enum fold outputs}\par
 \nopagebreak
-(i) \textsc{proved} (definitional). For num/bigint, (ii)/(iii) are \textsc{proved} for \emph{within-precision} literals: normalized to canonical form at parse time (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so on that range zero has one spelling per kind and injectivity holds. For \emph{beyond-precision} numeric literals — those failing the round-trip $\mathtt{String(Number(s))} = s$: 16--17-digit decimals, radix forms $> 2^{53}$, over/underflow exponent forms — (ii)/(iii) are \textsc{violated}: distinct spellings of one double are kept distinct, so \texttt{===} narrowing yields a spurious \texttt{never} (ii), and the normalizer can emit a zero-denoting lexeme (\texttt{1e-400}, underflow to $+0$) classified truthy (iii) — both witnessed end-to-end (issue draft \path{beyond-precision-numeric-literals.md}). For the \emph{string} kind, (ii)/(iii) are \textsc{violated}: escapes are stored undecoded (\texttt{unquoteString}; issue draft \path{string-literal-escapes-undecoded.md}), so distinct spellings of one string are treated as distinct (ii), and a line-continuation lexeme denotes \texttt{""} yet is classified truthy (iii) — both witnessed end-to-end. All other results are unconditional
+(i) \textsc{proved} (definitional). For the \emph{string} kind, (ii)/(iii) are \textsc{proved}: escape sequences are decoded at parse time (\texttt{JSStringEscape.sk}), so a literal's stored lexeme is its denoted string — one spelling per value (ii) and the lexeme emptiness test agrees with falsiness (iii). For num/bigint, (ii)/(iii) are \textsc{proved} for \emph{within-precision} literals: normalized to canonical form at parse time (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so on that range zero has one spelling per kind and injectivity holds. For \emph{beyond-precision} numeric literals — those failing the round-trip $\mathtt{String(Number(s))} = s$: 16--17-digit decimals, radix forms $> 2^{53}$, over/underflow exponent forms — (ii)/(iii) are \textsc{violated}: distinct spellings of one double are kept distinct, so \texttt{===} narrowing yields a spurious \texttt{never} (ii), and the normalizer can emit a zero-denoting lexeme (\texttt{1e-400}, underflow to $+0$) classified truthy (iii) — both witnessed end-to-end (issue draft \path{beyond-precision-numeric-literals.md}). All three claims quantify over \emph{all stored literals}, enum-folder-synthesized ones included (deep dive G proves the fold outputs canonical in form); whether a synthesized literal equals the runtime value of its source expression is the orthogonal row L-LIT-FOLD. All other results are unconditional
 
-\medskip\par\noindent\textbf{L-INST}\quad(\textsc{violated})\\*[0.15em]
+\medskip\par\noindent\textbf{L-INST}\quad(\textsc{proved})\\*[0.15em]
 $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalInstanceof}}\par
 \nopagebreak
-decomposed (deep dive A): conditionally \textsc{proved} modulo A-HASINST — \textsc{violated}, tsc-parity (issue draft \path{symbol-hasinstance-narrowing.md}) — and A-PROTO (\textsc{assumed}, enforced for checked code by stub omissions). Note that \texttt{makeTArgs} yields fresh unbound inference candidates; under canonical TVAR-SEM they denote empty lower envelopes, so L-INST fails when the narrowed type is installed, and a later covariant use exposes the failure by sealing the argument from context (witnessed; issue draft \path{instanceof-type-argument-sealing.md})
+\textsc{proved} (deep dive A) modulo A-HASINST and A-PROTO (both \textsc{assumed}): narrowing preserves the scrutinee's own type arguments — the instance view is built as \texttt{TFields} from the resolved class with the preservation probe run per branch — so the installed type is inhabited by exactly the values \texttt{instanceof} admits at those arguments; no fresh unbound candidates are minted at the narrowing site
 
 \medskip\par\noindent\textbf{L-ISARR}\quad(\textsc{proved})\\*[0.15em]
 $\mathsf{isArrayV}(o)$ implies $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$\\*[0.15em]
@@ -130,11 +132,23 @@ Evaluating a condition does not mutate the narrowed locals\\*[0.15em]
 \nopagebreak
 \textsc{violated} (empirically pinned): the checker narrows across a call that assigns a captured local and accepts the resulting unsound program (\texttt{if (x !== null \&\& mut())} with \texttt{mut} setting \texttt{x = null}) — the same unsoundness tsc accepts. Tracked as issues \#597 (side-effecting call between test and use) and \#599 (captured local mutated via a lambda). The one-step scoping of the branch-soundness theorems (\S\ref{sec:scope}) is therefore a real boundary, not caution. Deep dive F specifies the fix: a layered invalidation policy (P1--P4) with a preservation lemma replacing the one-step scoping
 
-\medskip\par\noindent\textbf{L-CAPT}\quad(\textsc{violated})\\*[0.15em]
+\medskip\par\noindent\textbf{L-CAPT}\quad(\textsc{proved})\\*[0.15em]
 Assignments to captured locals are checked against the binding's declared type (an implicit premise of L-TC for closure bodies)\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Scope::set}; \texttt{TypeCheckExpr.sk} (lambda checking)}\par
 \nopagebreak
-\textsc{violated} (witnessed: a captured-local write is never checked at all — arbitrary type confusion with no refinement involved; distinct root cause from \#597--\#599; issue draft \path{captured-local-writes-unchecked.md}). Sibling: closure bodies read enclosing narrowings that are stale at invocation (the read-in dual of \#599; issue draft \path{stale-closure-reads-narrowing.md})
+\textsc{proved} (deep dive F) for annotated and initializer-inferred bindings: assignments to captured locals are routed through the binding's write path and checked against the declared or widened inferred type, in lambda bodies as at top level. Carve-out: bindings declared bare (\texttt{let x = null/undefined}) evolve and their captured writes are unchecked — tsc-parity by design. The read-side staleness of enclosing narrowings is the separate row L-STALE-READ
+
+\medskip\par\noindent\textbf{L-STALE-READ}\quad(\textsc{violated})\\*[0.15em]
+Closure bodies capture enclosing narrowings, but invocation may postdate mutations that invalidate them — the read-in dual of the L-PURE family (\#599)\\*[0.15em]
+{\small\emph{Anchor:} \texttt{TypeCheckExpr.sk} (lambda checking); narrowed-scope capture}\par
+\nopagebreak
+\textsc{violated}, witnessed end-to-end in both forms — a captured narrowed local and a narrowed field read inside a closure (deep dive F; issue draft \path{stale-closure-reads-narrowing.md}); the fix shape is deep dive F's layered invalidation policy, shared with L-PURE
+
+\medskip\par\noindent\textbf{L-LOOP-CARRIED}\quad(\textsc{violated})\\*[0.15em]
+Loop-carried narrowing staleness: \texttt{Scope::set}'s annotation arm checks a back-edge write only against the declared type, so a pre-loop narrowing of an annotated binding survives into iteration 2 after a write that falsifies it; un-annotated bindings are protected by the through-loop check\\*[0.15em]
+{\small\emph{Anchor:} \texttt{Scope::set} (annotation arm); loop merge}\par
+\nopagebreak
+\textsc{violated}, witnessed end-to-end (deep dive F; issue draft \path{loop-carried-narrowing-stale.md}): the narrowed read binds \texttt{null} at \texttt{string} on iteration 2; tsc rejects. Fix shape: deep dive F's P1 loop-entry invalidation layer
 
 \medskip\par\noindent\textbf{L-CLONE}\quad(\textsc{proved})\\*[0.15em]
 A type computed by \texttt{inter} under a cloned substitution over-approximates the intersection when later read under the main one\\*[0.15em]
@@ -152,7 +166,7 @@ Field writes are governed by $\mathsf{set}$-types via subtyping; membership sema
 Cross-view mutation coherence, direct writes: a checked field or index write through one mutable view preserves the membership guarantees of every live alias of the same runtime object; call-mediated mutation is the separate row L-MUT-ALIAS-CALL\\*[0.15em]
 {\small\emph{Anchor:} \texttt{evalInstanceof}; indexed writes}\par
 \nopagebreak
-\textsc{violated} (deep dive H) at three witnessed sites — the two minted \texttt{instanceof} arms (issue drafts \path{instanceof-array-mutable-top-view.md}, \path{instanceof-type-argument-sealing.md}, write side) and narrowing-admitted aliases, in both directions (issue draft \path{narrowed-alias-stale-write.md}); declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
+\textsc{violated} (deep dive H) at the narrowing-admitted-alias site, in both directions (issue draft \path{narrowed-alias-stale-write.md}); the minted \texttt{instanceof} views are coherent — the \texttt{Array} arm preserves the readonly index and the class arm preserves the scrutinee's type arguments — and declaration-only aliasing is coherent, conditional on L-SUB-FIELDS-SET
 
 \medskip\par\noindent\textbf{L-GETSET}\quad(\textsc{open})\\*[0.15em]
 Get/set coherence of accessor fields — the prerequisite for the sound accessor variant of deep dive F's W-Field re-widening rule\\*[0.15em]

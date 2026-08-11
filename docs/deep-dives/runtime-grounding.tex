@@ -4,8 +4,6 @@
 \input{../shared/pin}
 
 
-\newtheorem{finding}[theorem]{Finding}
-
 % Long typewriter tokens (spec names, file paths) defeat hyphenation;
 % allow a little inter-word stretch instead of overfull lines.
 \emergencystretch=2em
@@ -50,15 +48,14 @@ grounding: a realization map from the model's value domain onto ECMAScript
 language values under which the model's predicates are exactly the
 pullbacks of the spec's \texttt{IsStrictlyEqual}, \texttt{ToBoolean},
 \texttt{typeof}, \texttt{IsCallable}/\texttt{IsConstructor}, and
-\texttt{IsArray}. Under it, \textbf{L-TAG} and \textbf{L-ISARR} are
-discharged (\textsc{proved}, modulo two named environment assumptions),
-and \textbf{L-INST} is decomposed into sharper named assumptions — two of
-which turn out to be \textsc{violated}, with checked-and-executed
-counterexamples produced while attempting the discharge. A third
-by-product refutes an implementation premise behind \textsc{R-Typeof}:
-class constructors implement $\intm{Call}$, but the checker types them as
-definitely-not-callable. Section~\ref{sec:status} gives the precise
-ledger edits for the main paper.
+\texttt{IsArray}. Under it, \textbf{L-TAG}, \textbf{L-ISARR}, and
+\textbf{L-INST} are discharged (\textsc{proved}, modulo named
+environment assumptions), the checker's four-point \texttt{Callability}
+lattice is grounded in $\intm{Call}$/$\intm{Construct}$ — including the
+constructor-value modes (\textbf{A-CTOR-CALL}, \textsc{proved}) — and
+the one caveat of the \texttt{typeof}-\texttt{"function"} narrowing is
+isolated to the imported brand-trust row \textbf{F-CABSENT}.
+Section~\ref{sec:status} maps every row to its evidence.
 \end{abstract}
 
 \tableofcontents
@@ -100,13 +97,13 @@ the per-tag truthiness table (its Definition ``Truthiness''; used by
 shown to be \emph{exactly} the ECMAScript algorithms, transported along
 the realization map (Sections~\ref{sec:seq} and~\ref{sec:truthy}).
 
-Failed discharge attempts are reported as numbered
-\emph{Findings}. Three of them carry executed witnesses — programs the
-pinned checker accepts that misbehave on Node, each held with its issue
-draft and pinned repro under \path{issues/}: they are witnesses, not
-conjectures. All spec citations are to ECMA-262 as of the 2025 edition;
-clause \emph{numbers} drift between editions, so each citation also names
-the clause.
+Where a discharge is conditional, the condition is a named registry row
+— either an environment assumption this paper states
+(\textbf{A-DDA}, \textbf{A-PROTO}, \textbf{A-PROXY},
+\textbf{A-HASINST}) or an imported row of another paper cited by its
+canonical statement (\textbf{F-CABSENT}). All spec citations are to
+ECMA-262 as of the 2025 edition; clause \emph{numbers} drift between
+editions, so each citation also names the clause.
 
 \paragraph{Notation.}
 We reuse the main paper's notation unchanged: $\Val$, $\Tags$, $\rtag$,
@@ -269,9 +266,8 @@ $P_{\mathsf{typeof}=k}$ for all eight operands. So the evaluation
 semantics of \textsc{R-Typeof} is grounded; the soundness of its
 narrowing given that semantics is the main paper's Lemma
 ``\textsc{R-Typeof} is Branch-Sound'' and is not
-re-proved here. (Whether the checker's \emph{types} populate the callable
-split correctly is a separate question — see
-Finding~\ref{find:ctor-call}.)
+re-proved here. (How the checker's \emph{types} populate the callable
+split is Section~\ref{sec:callability}.)
 
 \paragraph{Named environment caveat (A-DDA).}
 Annex B of the spec (\ecma{B.3.6}, ``The $\intm{IsHTMLDDA}$ Internal
@@ -408,9 +404,9 @@ lemma of the main paper (its Lemma ``Residues are Sound'') additionally
 needs the
 \emph{implementation's lexeme-level} falsiness test to agree with
 $\mathsf{truthy}$ on literal spellings — a checker-internal (not
-runtime) lexeme-level matter, violated for string literals whose escapes
-are stored undecoded, and out of scope here.
-The runtime side contributes no further caveat.
+runtime) lexeme-level matter, graded in the registry under literal
+canonicalization and out of scope here. The runtime side contributes
+no further caveat.
 \impl{TType.sk / TPrimValueKind::isFalsy, SType::falsiness}
 
 %==========================================================================
@@ -466,43 +462,86 @@ Interface (its Definition ``Object Interface'') and used in the
 \texttt{"object"} case of its Lemma ``\textsc{R-Typeof} is Branch-Sound'':
 status \textsc{proved}.
 
-\begin{finding}[Class constructors refute the checker's
-$\mathsf{call} = \mathsf{None}$ typing; unsound \texttt{typeof}
-narrowing]
-\label{find:ctor-call}
-Attempting to ground \textsc{R-Typeof}'s object-branch treatment
-end-to-end turned up a genuine unsoundness. The checker's static-side
-object type for a class $C$ (the type of the constructor \emph{value})
-is built with a construct signature but \emph{no} call signature —
-$\mathsf{new} = \mathsf{Some}(\ldots)$,
-$\mathsf{call} = \mathsf{None}$
-(\texttt{TEnv::newStaticObject} passes \texttt{new} and omits
-\texttt{call}). Under the main paper's object semantics,
-$\mathsf{call} = \mathsf{None}$ asserts $\neg\mathsf{callable}$ of every
-member; but by Definition~\ref{def:callable} and \ecma{10.2.1} the
-runtime constructor value \emph{is} callable
-(\texttt{typeof C === "function"}). So $\sem{\texttt{typeof } C}$
-excludes the value $C$ itself — \textbf{L-TC} is violated at
-class-constructor values — and \textsc{R-Typeof}, whose narrowing is
-sound \emph{given} membership, misfires: the \texttt{"function"}/true
-arm drops the sole object member of a class-constructor value's type
-(call mode $\mathsf{None}$), leaving an uninhabited type from which any
-annotation is vacuously reachable, and the branch is taken at runtime.
-Executed witness (tsc rejects the program): issue draft
-\path{issues/class-constructor-call-none-typeof.md}. The false branch of
-\texttt{typeof F === "object"} misfires symmetrically. The defect is not
-in \textsc{R-Typeof}'s rule (the main paper's proof is correct given
-membership) nor in the runtime facts (grounded above); it is in the
-static-side type: $\mathsf{call} = \mathsf{None}$ (``definitely not
-callable'') should be the maybe-callable mode
-$(\mathsf{true}, \sigma)$, or the \texttt{"function"} arm should treat
-$\mathsf{new} \neq \mathsf{None}$ as callable, per
-Theorem~\ref{thm:ctor-call}. Proposed ledger row:
-\textbf{A-CTOR-CALL}, status \textsc{violated}
-(Section~\ref{sec:status}); a pinned test is recommended.
-\impl{TEnv.sk / newStaticObject (call omitted);
-TypeCheckRefine.sk / evalTypeofEquality}
-\end{finding}
+\subsection{The \texttt{Callability} lattice and \textbf{A-CTOR-CALL}}
+\label{sec:callability}
+
+The checker records, per object branch, a callability mode and a
+constructibility mode drawn from the four-point lattice
+\texttt{Callability}
+(\texttt{TType.sk:2189-2237}), ordered
+$\mathsf{CPresent}(\sigma) \le \mathsf{CFunction} \le
+\mathsf{CUnknown}$ and $\mathsf{CAbsent} \le \mathsf{CUnknown}$. Its
+grounded readings, for a branch $B$ and every $o \in \sem{B}$:
+\begin{itemize}
+\item $\mathsf{CPresent}(\sigma)$: $\mathsf{callable}(o)$
+  (resp.\ $\mathsf{constructible}(o)$) with invocation signature
+  $\sigma$;
+\item $\mathsf{CFunction}$: $\mathsf{callable}(o)$
+  (resp.\ $\mathsf{constructible}(o)$), no signature known — invocation
+  is still rejected (\texttt{maybeGetCall} requires
+  $\mathsf{CPresent}$), so the mode is a pure \emph{predicate} claim;
+\item $\mathsf{CAbsent}$: $\neg\mathsf{callable}(o)$
+  (resp.\ $\neg\mathsf{constructible}(o)$);
+\item $\mathsf{CUnknown}$: no claim.
+\end{itemize}
+Two constructions keep the modes consistent with the runtime facts of
+this section. First, the constructible-implies-$\intm{Call}$ invariant:
+whenever a branch acquires $\mathsf{new} \in
+\{\mathsf{CPresent}, \mathsf{CFunction}\}$ with
+$\mathsf{call} = \mathsf{CUnknown}$, construction forces
+$\mathsf{call} = \mathsf{CFunction}$
+(\texttt{TType.sk:2273-2281}) — the static image of
+Theorem~\ref{thm:ctor-call}. Second, the constructor-value typing:
+
+\begin{theorem}[Constructor-value modes; discharges
+\textbf{A-CTOR-CALL}]
+\label{thm:ctor-modes}
+The static-side object type of a class $C$ (the type of the constructor
+\emph{value}) carries $\mathsf{new} = \mathsf{CPresent}(\sigma_C)$ for
+the declared (or synthesized empty) construct signature and
+$\mathsf{call} = \mathsf{CFunction}$
+(\texttt{TEnv.sk:1042-1057}). Both claims hold of the runtime value:
+$\realize(C)$ implements $\intm{Construct}$ with the declared signature
+(it is the class's constructor function object) and implements
+$\intm{Call}$ (\ecma{10.2.1} — the $\intm{Call}$ exists and throws), so
+\texttt{typeof C === "function"} and the checker's modes assert exactly
+the true predicates. That no call \emph{signature} is offered is
+forced: a class constructor's $\intm{Call}$ unconditionally throws, so
+$\mathsf{CFunction}$ (``callable, not invocable'') is the strongest
+sound mode.
+\end{theorem}
+
+The \texttt{typeof}-\texttt{"function"} narrowing reads the call mode
+alone — sound by the invariant above — via
+\texttt{narrowByTypeofFunction}
+(\texttt{TType.sk:2438-2460}): the true branch keeps
+$\mathsf{CPresent}$/$\mathsf{CFunction}$/$\mathsf{CUnknown}$ branches
+(strengthening a surviving $\mathsf{CUnknown}$ to $\mathsf{CFunction}$,
+justified by the runtime proof of $\intm{Call}$) and drops
+$\mathsf{CAbsent}$ branches; the false branch drops the provable
+function branches and stamps survivors $\mathsf{CAbsent}$. By
+Theorem~\ref{thm:ctor-modes} a constructor value survives the true
+branch with its construct signature intact — both runtime facts are
+represented, so neither branch excludes a value it can hold.
+
+The one caveat is the $\mathsf{CAbsent}$ drop itself: it is sound
+exactly when the mode's grounded reading
+($\neg\mathsf{callable}$ of every member) is trustworthy.
+$\mathsf{CAbsent}$ is assigned both where it is derivable (object
+literals, enum objects, the array-brand lowering of
+\texttt{TType.sk:2266-2272}) and as a \emph{brand} on nominal
+class-instance types (\texttt{TEnv.sk:1000-1008}), which structural
+subtyping does not validate: the registry row \textbf{F-CABSENT}
+(imported here; owner deep dive D) records that the lax
+$(\mathsf{CUnknown},\mathsf{CAbsent})$ subtyping arm admits callables
+into branded types, and is \textsc{violated} — witnessed end-to-end
+(issue draft \path{issues/cabsent-brand-laundering.md}). Within this
+paper's scope the import is consumed only here: the
+\texttt{"function"}-true drop and the \texttt{"object"}-true keep of a
+$\mathsf{CAbsent}$ branch are sound \emph{given} F-CABSENT's statement,
+and unsound where its violation is exercised.
+\impl{TType.sk / Callability, narrowByTypeofFunction;
+TEnv.sk / newStaticObject; TypeCheckRefine.sk / evalTypeofEquality}
 
 %==========================================================================
 \section{\texttt{instanceof} and \textbf{L-INST}}
@@ -539,37 +578,84 @@ Ground $P_{\mathsf{inst}}(C) \triangleq \{v \in \Val \mid
 vacuous for narrowing. That
 $P_{\mathsf{inst}}(C) \subseteq \ObjVal$ is immediate from step 3 of
 \texttt{OrdinaryHasInstance} — \emph{provided} evaluation reaches it,
-which step 2 does not guarantee. This is the first caveat.
+which step 2 does not guarantee: everything below the gate therefore
+splits on whether a non-default \texttt{@@hasInstance} can govern the
+test (the A-HASINST question).
 
 \subsection{What the checker builds, and the gate}
 
-\textsc{R-Inst} fires only on the true branch, and only when the RHS is a
-bare name that resolves to a class or interface \emph{definition}
-(\texttt{hasClassDef}); a merely Function-typed RHS narrows nothing.
-The instance type $T_C$ is built by \texttt{newObject} with type
-arguments from \texttt{makeTArgs} — verified at the pin:
-\texttt{makeTArgs} generates one \emph{fresh ordinary inference variable}
-(\texttt{Subst::gen}, a candidate \texttt{TVID}) per class parameter and
-attaches exactly the parameter's \emph{declared constraint}, if any
-(\texttt{tvar.setConstraint}); \texttt{Array} is special-cased to the
-single argument $\top$.
-\impl{TypeCheckRefine.sk / evalCond (InstanceOf arm), evalInstanceof}
-\impl{TEnv.sk / hasClassDef, makeTArgs, newObject}
+\textsc{R-Inst} fires only on the true branch, and only when the RHS is
+a bare name that resolves to a class or interface \emph{definition}
+(\texttt{hasClassDef}) \emph{and} whose static type declares no custom
+\texttt{[Symbol.hasInstance]} member, directly or inherited
+(\texttt{rhsDeclaresHasInstance},
+\texttt{src/TypeCheckRefine.sk:448-470}; the gate conjunction at
+\texttt{src/TypeCheckRefine.sk:506-511}). A merely Function-typed RHS
+narrows nothing, and a class that overrides the runtime membership test
+narrows nothing either — the override decides membership and may accept
+non-instances, so suppression is the sound response
+(\texttt{tsc} narrows there anyway, unsoundly; TS parity is
+deliberately given up).
 
-This pins the representation used by the implementation, and canonical
-TVAR-SEM pins its denotation: until a binding is installed, each fresh
-argument denotes the empty set, and the attached declared constraint
-intersects with that empty envelope.
+The instance view is built with \emph{skolem} type arguments
+(\texttt{makeSkolemTArgsOf}, \texttt{src/TEnv.sk:780-808}): one
+synthetic rigid type parameter per class parameter — printed
+\texttt{Box\#T}, a spelling no source type reference can collide with —
+carrying exactly the parameter's normalized declared constraint. Each
+represents a type argument \emph{fixed by the runtime object but hidden
+from the program}: it is never an inference candidate, so no later use
+can bind it (contrast \texttt{makeTArgsOf},
+\texttt{src/TEnv.sk:822-840}, the inference-side constructor, used here
+only inside a throwaway probe clone). Narrowing then proceeds per
+branch of the scrutinee (\texttt{evalInstanceof},
+\texttt{src/TypeCheckRefine.sk:362-440}):
+\begin{itemize}
+\item a branch that already satisfies the instance shape — decided by
+  an \texttt{isSub} probe against a fresh-candidate instantiation in a
+  cloned substitution, so the real state is untouched — is kept
+  \emph{unchanged}, preserving the type arguments the scrutinee already
+  carries;
+\item any other branch is intersected with the skolem view, and the
+  scrutinee's readonly fields are restored afterwards
+  (\texttt{keepReadonlyFrom},
+  \texttt{src/TypeCheckRefine.sk:407-416}) — the class view's fields
+  are mutable and intersection unions set-types, so without the
+  restoration a narrowing would grant writes the value's type withheld;
+\item a scrutinee with no object branch falls back to the skolem view
+  itself.
+\end{itemize}
+\impl{TypeCheckRefine.sk / evalCond (InstanceOf arm), evalInstanceof,
+rhsDeclaresHasInstance; TEnv.sk / hasClassDef, makeSkolemTArgsOf}
 
-\subsection{Conditional discharge and the honest caveats}
+\subsection{Discharge}
 
-\begin{theorem}[Existential discharge of \textbf{L-INST}]
+\paragraph{The A-HASINST residue.}
+The gate closes the declared case: a custom
+\texttt{[Symbol.hasInstance]} in a class body resolves into the static
+side's symbol fields (the \texttt{FNComputed} arm of
+\texttt{addFields}; \texttt{Symbol.hasInstance} is a stubbed
+\texttt{unique symbol} found via
+\texttt{getWellKnownSymbolUniqueId}), and
+\texttt{rhsDeclaresHasInstance} searches every branch of the RHS's
+static type for that symbol key, inherited members included, before
+narrowing is allowed. What no static check can see is a hook installed
+\emph{dynamically} on an RHS whose declaration omits it — through the
+unchecked boundary (ambient \texttt{declare}d functions), since the
+checked surface itself offers no route: the stubs declare no
+\texttt{Object.defineProperty} and no \texttt{Proxy}/\texttt{Reflect}.
+The registry row \textbf{A-HASINST} records exactly this residue,
+status \textsc{assumed}, alongside \textbf{A-PROTO}'s stub discipline.
+\impl{TypeCheckRefine.sk / rhsDeclaresHasInstance;
+TEnv.sk / addFields (FNComputed), getWellKnownSymbolUniqueId}
+
+\begin{theorem}[Discharge of \textbf{L-INST}]
 \label{thm:inst}
 Assume, for the class $C$ at a narrowing site:
 \begin{itemize}
 \item \textbf{A-HASINST}: no \texttt{@@hasInstance} method other than
   the \texttt{Function.prototype} default is found on
-  $\realize(C)$ (step 2 resolves to the default);
+  $\realize(C)$ (step 2 resolves to the default; the declared case is
+  excluded by the gate, the dynamic case by the assumption);
 \item \textbf{A-PROTO}: no prototype surgery — objects with
   $C.\texttt{prototype}$ in their chain were produced by \texttt{new} on
   $C$ or a subclass (no \texttt{Object.create},
@@ -580,94 +666,52 @@ Assume, for the class $C$ at a narrowing site:
   establishes the instance object type of the constructed class
   (fields present and typed, per the class-checking discipline).
 \end{itemize}
-Let $T_C^{\exists}$ be the existential instance type, with
-$\sem{T_C^{\exists}}_{\rho'} = \bigcup_{\vec U}
-\sem{C\langle\vec U\rangle}_{\rho'}$, the union over argument tuples
-$\vec U$ within the declared bounds. Then
-$P_{\mathsf{inst}}(C) \subseteq \sem{T_C^{\exists}}_{\rho'}$ at the
-post-instantiation state $\rho'$.
+Let $T_C$ be the installed type at the narrowing site — per branch,
+either the unchanged scrutinee branch, or its intersection with the
+skolem view $C\langle \vec s \rangle$ (readonly restored), or
+$C\langle \vec s \rangle$ itself — and let $\rho'$ be the
+post-narrowing state. Then
+$P_{\mathsf{inst}}(C) \cap \sem{B}_{\rho} \subseteq \sem{B'}_{\rho'}$
+for every scrutinee branch $B$ with narrowed form $B'$, i.e.\
+\textbf{L-INST} holds for the implementation's installed type.
 \end{theorem}
 \begin{proof}[Proof sketch]
-By \textbf{A-HASINST}, membership in $P_{\mathsf{inst}}(C)$ is decided by
-\texttt{OrdinaryHasInstance}, so $v$ is an object with
+Let $v \in P_{\mathsf{inst}}(C)$. By \textbf{A-HASINST}, membership was
+decided by \texttt{OrdinaryHasInstance}, so $v$ is an object with
 $C.\texttt{prototype}$ in its chain. By \textbf{A-PROTO}, $v$ was
 constructed by $C$ or a subclass, as some instantiation
 $C\langle \vec U \rangle$ with $\vec U$ within the declared bounds. By
-\textbf{L-TC} at the construction site, $v$ then satisfies the instance
+\textbf{L-TC} at the construction site, $v$ satisfies the instance
 object type of $C\langle \vec U \rangle$: every declared field present
 with a $\vec U$-instantiated get-type, inherited fields included
-(subclass constructors must complete \texttt{super()}). $\vec U$ is
-within the declared bounds, so its disjunct of $T_C^{\exists}$ contains
-$v$ and $v \in \sem{T_C^{\exists}}_{\rho'}$. Mutation after construction is governed by
-\textbf{L-MUT} exactly as for every other membership statement in the
-main paper.
+(subclass constructors must complete \texttt{super()}).
+
+Per branch, at the post-narrowing state $\rho'$: a \emph{kept} branch
+is unchanged — the narrowing installs $B' = B$, and no binding of the
+real substitution is touched in deciding to keep it (the probe runs in
+a discarded clone), so $\sem{B}_{\rho'} = \sem{B}_{\rho} \ni v$. An
+\emph{intersected} branch has
+$B' = (B \sqcap C\langle \vec s \rangle)$ with readonly restored: the
+skolems $\vec s$ are rigid parameters interpreted existentially — the
+runtime object fixes them — so interpreting $s_i := U_i$ puts
+$v \in \sem{C\langle \vec s \rangle}$ by the previous paragraph, and
+$v \in \sem{B}_{\rho}$ by hypothesis, so $v$ is in the semantic
+intersection, which the implementation's \texttt{inter}
+over-approximates by the imported \textbf{L-INTER} containment.
+Restoring the scrutinee's readonly fields only lowers set-types, which
+get-only membership does not consult. The fallback branch is the middle
+case with $B = \top_{\mathsf{obj}}$. No inference candidate is minted
+in the installed type — the probe's candidates live in a discarded
+clone — so the skolems can never be bound by later uses: the
+interpretation $s_i := U_i$ is a fixed parameter of the installed
+type's denotation, not open inference state, and survival of the
+judgement under later growth is the general transport question
+(row \textbf{OBL-MONOTONE}, imported), not an \textbf{L-INST}-specific
+caveat. Mutation after construction is governed by \textbf{L-MUT}
+exactly as for every other membership statement in the main paper; the
+write surface of the installed views is graded by deep dive H (row
+\textbf{L-MUT-ALIAS}).
 \end{proof}
-
-\textbf{L-INST} itself is stated for the implementation's $T_C$, so the
-theorem discharges it exactly when
-$\sem{T_C^{\exists}}_{\rho'} \subseteq \sem{T_C}_{\rho'}$ — the bridge
-from the existential type to the installed representation. Each
-hypothesis and the bridge must now be audited against the implementation.
-The audit fails for A-HASINST and for the bridge; both failures are
-pinned.
-
-\begin{finding}[\textbf{A-HASINST} is violated: SKJS accepts
-\texttt{@@hasInstance} overrides and narrows anyway]
-\label{find:hasinstance}
-The narrowing gate checks only that the RHS name has a class definition
-(\texttt{hasClassDef}); nothing rejects or inspects a static
-\texttt{[Symbol.hasInstance]} member, which SKJS class bodies \emph{can}
-declare — computed symbol-keyed members resolve into symbol fields
-(the \texttt{FNComputed} arm of \texttt{addFields}), and
-\texttt{Symbol.hasInstance} is a stubbed \texttt{unique symbol}.
-The implementation itself documents the gap
-(``Mirrors tsc's TS2359 acceptance (modulo \texttt{Symbol.hasInstance},
-which SKJS does not model)'', \texttt{isInstanceofRhs}). At runtime,
-step 2 of \texttt{InstanceofOperator} finds a program-declared static
-override, every value is ``an instance'', and the narrowed read
-produces a value outside its checked type; the executed witness, the
-tsc-parity confirmation, and the repair directions are issue draft
-\path{issues/symbol-hasinstance-narrowing.md}. One mitigation is
-structural and belongs to this grounding: the override must be declared
-\emph{in the checked program itself} on a class the same program
-narrows on — ambient code cannot smuggle one in unseen, since the stubs
-declare none.
-\impl{TypeCheckRefine.sk / evalCond (InstanceOf arm)}
-\impl{TEnv.sk / addFields (FNComputed), resolveComputedKeyFieldKey}
-\impl{TypeCheckExpr.sk / isInstanceofRhs (comment)}
-\end{finding}
-
-\begin{finding}[Instantiation weakness is real: fresh arguments are
-sealed by later covariant use]
-\label{find:fresh-seal}
-The bridge $\sem{T_C^{\exists}}_{\rho'} \subseteq \sem{T_C}_{\rho'}$
-fails for the concrete fresh-\texttt{TVar} representation: by the main
-paper's canonical TVAR-SEM definition, an unbound argument denotes an
-empty inference lower bound, so for a class with a parameter-typed field
-no constructed instance is in $\sem{T_C}_{\rho'}$, and \textbf{L-INST}
-fails at the narrowing instant. A later use exposes the failure
-operationally:
-a later covariant read of an unbound candidate does not seal it to
-$\top$ but to the \emph{expected type of the use}
-(the $\mathsf{grow}(t, \mathsf{cov})$/unbound $\to$
-$\mathsf{SVClosed}(t)$ transition of the main paper's Definition
-``Transitions''), so
-program \emph{uses} choose the type argument that narrowing had left
-open — the unsound direction, since no value flow justifies it. The
-executed witness (a \texttt{string} read seals \texttt{Box}'s fresh
-argument; a number then crosses a checked \texttt{string} boundary),
-the tsc comparison, and the order-dependence protocol are issue draft
-\path{issues/instanceof-type-argument-sealing.md}. The \texttt{Array}
-special case is immune to this finding — its argument is the closed
-$\top$, so no unbound variable is installed — while the minted view's
-\emph{write} surface is the separately witnessed row
-\textbf{L-MUT-ALIAS}, graded, with the general $\top$-substitution
-question, by deep dive H. A precise repair needs a distinct
-rigid/existential witness kind; until then, \textbf{L-INST} fails at
-installation.
-\impl{TEnv.sk / makeTArgs; TTypeSubst.sk / Subst::grow (cov/unbound)}
-\impl{TypeCheckRefine.sk / evalInstanceof (Array $\top$ special case)}
-\end{finding}
 
 \paragraph{\textbf{A-PROTO} audit.}
 The pinned stubs omit the surgery surface deliberately: the
@@ -864,11 +908,12 @@ $\approx$ grounding & Theorem~\ref{thm:seq},
 Truthiness & Theorem~\ref{thm:truthy}\\
 ctor$\Rightarrow$call & Theorem~\ref{thm:ctor-call}\\
 \textbf{A-DDA} & \S\ref{sec:typeof-table}\\
-\textbf{A-CTOR-CALL} & Finding~\ref{find:ctor-call}\\
+\textbf{A-CTOR-CALL} & Theorem~\ref{thm:ctor-modes},
+  \S\ref{sec:callability}\\
+F-CABSENT (imported) & \S\ref{sec:callability}\\
 L-INST & Theorem~\ref{thm:inst}\\
-\textbf{A-HASINST} & Finding~\ref{find:hasinstance}\\
+\textbf{A-HASINST} & \S\ref{sec:inst} (the residue paragraph)\\
 \textbf{A-PROTO} & \S\ref{sec:inst}\\
-Fresh-arg survival & Finding~\ref{find:fresh-seal}\\
 L-ISARR & Theorem~\ref{thm:isarr}\\
 \textbf{A-PROXY} & \S\ref{sec:isarr}\\
 \end{longtable}
@@ -889,15 +934,12 @@ statement; no other paper's internals are in scope:
 
 \input{../generated/imports-A}
 
-\paragraph{Method note (failed attempts).}
-Three discharge attempts failed and became the Findings above; each
-failure was converted into a checked-and-executed witness rather than a
-weakened assumption, per the series contract. One further attempt is
-worth recording as simply \emph{unnecessary}: we initially looked for a
+\paragraph{Method note.}
+One attempted row is worth recording as simply \emph{unnecessary}: a
 realm assumption for \textbf{L-INST} symmetric to the classical
-\texttt{instanceof Array} pitfall, and found that true-branch-only
-narrowing makes realms a pure completeness concern
-(\S\ref{sec:inst}), so no such row exists.
+\texttt{instanceof Array} pitfall does not exist, because
+true-branch-only narrowing makes realms a pure completeness concern
+(\S\ref{sec:inst}).
 
 %==========================================================================
 \appendix
@@ -921,13 +963,17 @@ brand stub spelling & \texttt{import-stubs/@types/skjs/index.d.ts} \\
 array-brand intersection & \texttt{TTypeInter.sk /
   TFields::interIsArray} \\
 \textsc{R-Inst} gate + handler & \texttt{TypeCheckRefine.sk / evalCond,
-  evalInstanceof} \\
-instance type arguments & \texttt{TEnv.sk / makeTArgs};
-  \texttt{TTypeSubst.sk / Subst::gen} \\
+  evalInstanceof, rhsDeclaresHasInstance} \\
+skolem instance arguments & \texttt{TEnv.sk / makeSkolemTArgsOf};
+  \texttt{TTypeSubst.sk / genSkolemTParam} \\
+readonly restoration & \texttt{TypeCheckRefine.sk /
+  evalInstanceof (keepReadonlyFrom)} \\
 class-def gate & \texttt{TEnv.sk / hasClassDef} \\
 RHS validity (TS2359) & \texttt{TypeCheckExpr.sk / isInstanceofRhs} \\
 symbol-keyed class members & \texttt{TEnv.sk / addFields (FNComputed)} \\
 static-side class type & \texttt{TEnv.sk / newStaticObject} \\
+\texttt{Callability} lattice & \texttt{TType.sk / Callability,
+  narrowByTypeofFunction} \\
 \textsc{R-Typeof} handler & \texttt{TypeCheckRefine.sk /
   evalTypeofEquality} \\
 truthiness tables & \texttt{TType.sk / TPrimValueKind::isFalsy,
@@ -954,21 +1000,5 @@ $\intm{Call}$ and $\intm{Construct}$; \S13.5.3 \texttt{typeof};
 \texttt{Function.prototype}; \S23.1.2.2
 \texttt{Array.isArray}; \S23.1.3 \texttt{Array.prototype} methods;
 Annex~B \S B.3.6 $\intm{IsHTMLDDA}$.
-
-\section{Witness Protocol}
-\label{app:witness}
-
-Each Finding's program was (i) written to a temporary file in the
-repository working tree, (ii) checked with the pinned binary — the
-\texttt{make check-file-in-docker} target, passing
-\texttt{BIN=target/host/dev/skjs} — all three accepted with
-exit code 0
-and no diagnostics — and (iii) type-stripped mechanically and executed
-with Node to observe the printed value named in the Finding
-(\texttt{[class C]}, \texttt{undefined}, \texttt{42} respectively). The
-temporary files were removed afterwards; turning the witnesses into
-pinned tests is proposed in Section~\ref{sec:status} but deliberately
-not done here (this deep dive changes no file outside
-\texttt{docs/deep-dives/}).
 
 \end{document}

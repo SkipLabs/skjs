@@ -12,7 +12,8 @@ E-NORM & Named-type normalization is semantics-preserving (interface consumed by
 E-ARR & Delayed array-literal forms keep their semantics under expansion. & \textsc{assumed} \\
 E-CLASS-SYM & The class path of expansion is binding-blind (or its binding reads are harmless). & \textsc{open} \\
 E-GUARD & Recursion-guard identity expansions are never cached into long-lived substitutions. & \textsc{open} \\
-E-GUARD-PLACEHOLDER & An un-annotated ambient-class field placeholder must not head-expand to $\bot$ (the case E-GUARD's recursion-guard audit did not cover). & \textsc{violated} \\
+E-PLACEHOLDER-ATOM & An un-annotated ambient-class field reads as an opaque per-field atom; the atom's denotation must over-approximate the arbitrary runtime value. & \textsc{open} \\
+E-EXPKEY & The expansion-cache key (\texttt{ExpansionKey}: unqualified name text + arguments) identifies one definition: same-named, same-argument aliases from different modules must not collide. & \textsc{violated} \\
 \bottomrule
 \end{tabular}
 \end{center}

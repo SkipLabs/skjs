@@ -135,7 +135,7 @@ entries:
     summary:
       - {bucket: proved, label: "L-INTER's containment (all strata)"}
     owner: B
-    consumers: [C, D, F, E]
+    consumers: [C, D, F, E, A]
     issues: []
 
   - id: L-INTER-BOT
@@ -151,20 +151,20 @@ entries:
     anchor_files: [src/TTypeInter.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive B) in three strata: the
+      \textsc{violated} (deep dive B) in two strata: the
       \texttt{TFun::inter} stratum — incomparable signatures treated as
       disjoint (issue draft
-      \texttt{tfun-inter-incomparable-not-disjoint.md}); the string-kind
-      literal-spelling stratum (undecoded escapes, mediated by L-LIT); and
-      the num-kind beyond-precision spelling stratum — distinct spellings
-      of one double kept distinct, their lexeme intersection a spurious
-      $\bot$ (mediated by L-LIT; issue draft
+      \texttt{tfun-inter-incomparable-not-disjoint.md}); and the num-kind
+      beyond-precision spelling stratum — distinct spellings of one
+      double kept distinct, their lexeme intersection a spurious $\bot$
+      (mediated by L-LIT; issue draft
       \texttt{beyond-precision-numeric-literals.md}). The per-tag
-      \texttt{STypes} assembly and within-precision numeric spellings
-      produce only semantic bottoms and are \textsc{proved}
+      \texttt{STypes} assembly, within-precision numeric spellings, and
+      decoded string spellings produce only semantic bottoms and are
+      \textsc{proved}
     summary:
       - {bucket: violated-witnessed,
-         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (\\texttt{TFun} + string/num spellings)"}
+         label: "the $\\bot{\\Rightarrow}$disjoint clause L-INTER-BOT (\\texttt{TFun} + num spellings)"}
     owner: B
     consumers: [D]
     issues: [tfun-inter-incomparable-not-disjoint.md,
@@ -187,9 +187,10 @@ entries:
       (\texttt{None}/Covariant) — and shown \emph{false} in contravariant
       mode (unbound reads produce $\bot$), so the axiom is hereby scoped to
       those modes; all refinement clients verified to use only them.
-      Alias-path cache reuse proved exact (binding-blind normalization);
-      residues: E-NORM, E-ARR (\textsc{assumed}), E-CLASS-SYM, E-GUARD
-      (\textsc{open}) — see deep dive C
+      Alias-path cache reuse proved exact (binding-blind normalization,
+      now load-bearing under cross-mention keying); residues: E-NORM,
+      E-ARR (\textsc{assumed}), E-CLASS-SYM, E-GUARD, E-EXPKEY,
+      E-PLACEHOLDER-ATOM (\textsc{open}) — see deep dive C
     summary: [{bucket: proved, label: "L-EXP (mode-scoped)"}]
     owner: C
     consumers: [B, D, F]
@@ -225,16 +226,25 @@ entries:
     statement: Type denotations used as equality RHSs are $\approx$-closed
     anchor: \texttt{evalVarEquality}
     anchor_files: [src/TypeCheckRefine.sk]
-    status: [proved]
+    status: [violated]
     status_note: >-
-      \textsc{proved}: by construction for literal/full primitives and
-      objects; the undefined/\texttt{void} corner is unreachable — strict
-      equality rejects \texttt{void}-typed operands before refinement
-      (empirically pinned, \S\ref{sec:r-eq})
-    summary: [{bucket: proved, label: "L-SEQ"}]
+      \textsc{violated}, witnessed end-to-end at the undefined/\texttt{void}
+      corner (\S\ref{sec:ex-voidseq}; issue draft
+      \texttt{void-undefined-equality-never.md}): \texttt{evalVarEquality}'s
+      generic variable-RHS arm installs
+      $\mathtt{inter}(\texttt{void},\texttt{undefined}) = \texttt{never}$
+      while $\approx$ relates the two units, and the \texttt{void}-operand
+      check on \texttt{===} is a warning, so the corner is reachable — the
+      branch runs with \texttt{undefined} bound at \texttt{never}. The
+      undefined-\emph{literal} arm filters the units jointly and is sound;
+      literal/full primitives and objects remain $\approx$-closed by
+      construction
+    summary:
+      - {bucket: violated-witnessed,
+         label: "L-SEQ's undefined/\\texttt{void} corner"}
     owner: main
     consumers: []
-    issues: []
+    issues: [void-undefined-equality-never.md]
 
   - id: L-SUB
     kind: obligation
@@ -256,10 +266,10 @@ entries:
       direction; conditional — field \emph{set} direction on L-MUT,
       functions on the E-SIG signature semantics; \textsc{violated} —
       \texttt{subst.seenSub} inside freeze windows (witnessed; issue draft
-      \texttt{freeze-window-stale-memo-caches.md}), the
-      \texttt{isSubOptTFuns} \texttt{None}-mode arm (F-CALL) and the
-      never-compared array brand (F-BRAND), both facets of the
-      \texttt{call{=}None} dichotomy
+      \texttt{freeze-window-stale-memo-caches.md}), and the two
+      refinement-trusted brands subtyping never validates: the laundered
+      \texttt{CAbsent} callability brand (F-CABSENT) and the
+      never-compared array brand (F-BRAND)
     summary:
       - {bucket: proved, label: "the majority strata of L-SUB"}
       - {bucket: open, label: "L-SUB's conditional strata"}
@@ -271,24 +281,28 @@ entries:
     kind: assumption
     table: main
     short: >-
-      Class-constructor values are typed with call mode $\mathsf{None}$,
-      but constructors implement $[[\mathrm{Call}]]$.
+      Class-constructor values carry $\mathsf{CPresent}$ construct and
+      $\mathsf{CFunction}$ call modes, consistent with
+      $[[\mathrm{Call}]]$/$[[\mathrm{Construct}]]$.
     statement: >-
-      Class-constructor values are typed with call mode $\mathsf{None}$,
-      but constructors implement $[[\mathrm{Call}]]$ — the refinement side
-      of the \texttt{call{=}None} dichotomy (Definition Signature Modes)
-    anchor: \texttt{newStaticObject}; \texttt{evalTypeofEquality}
-    anchor_files: [src/TypeCheckRefine.sk]
-    status: [violated]
+      Class-constructor values are typed with construct mode
+      $\mathsf{CPresent}$ and call mode $\mathsf{CFunction}$ (Definition
+      Callability), so \texttt{typeof}-\texttt{"function"} refinement
+      keeps them — the runtime facts $[[\mathrm{Call}]]$ and
+      $[[\mathrm{Construct}]]$ are both represented
+    anchor: \texttt{newStaticObject}; \texttt{narrowByTypeofFunction}
+    anchor_files: [src/TEnv.sk, src/TType.sk]
+    status: [proved]
     status_note: >-
-      \textsc{violated} (witnessed: a \texttt{string}-typed function
-      returns a class at runtime through the \texttt{typeof}
-      \texttt{"function"} branch drop; deep dive A; issue draft
-      \texttt{class-constructor-call-none-typeof.md})
-    summary: [{bucket: violated-witnessed, label: "A-CTOR-CALL"}]
+      \textsc{proved} (deep dive A: constructor values built with both
+      positive modes, and the constructible-implies-$[[\mathrm{Call}]]$
+      invariant enforced at \texttt{TFields} construction); the residual
+      brand-trust gap of the \texttt{Callability} lattice is the separate
+      row F-CABSENT
+    summary: [{bucket: proved, label: "A-CTOR-CALL"}]
     owner: A
     consumers: [D]
-    issues: [class-constructor-call-none-typeof.md]
+    issues: []
 
   - id: L-TC
     kind: assumption
@@ -322,13 +336,17 @@ entries:
       after normalization — needed only for \emph{exactness} claims; (iii)
       \emph{falsiness-exactness}: the lexeme test \texttt{isFalsy} agrees
       with Definition~\ref{def:truthiness} — needed by the residue lemma
-    anchor: \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; \texttt{isFalsy}; \texttt{unquoteString}
-    anchor_files: [src/JSNumericString.sk, src/ParserUtils.sk, src/TType.sk, src/PrimLiterals.sk]
+    anchor: \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}; \texttt{isFalsy}; string-escape decoding; enum fold outputs
+    anchor_files: [src/JSNumericString.sk, src/ParserUtils.sk, src/TType.sk, src/PrimLiterals.sk, src/JSStringEscape.sk, src/TypeCheckEnum.sk]
     status: [violated]
     status_note: >-
-      (i) \textsc{proved} (definitional). For num/bigint, (ii)/(iii) are
-      \textsc{proved} for \emph{within-precision} literals: normalized to
-      canonical form at parse time
+      (i) \textsc{proved} (definitional). For the \emph{string} kind,
+      (ii)/(iii) are \textsc{proved}: escape sequences are decoded at
+      parse time (\texttt{JSStringEscape.sk}), so a literal's stored
+      lexeme is its denoted string — one spelling per value (ii) and the
+      lexeme emptiness test agrees with falsiness (iii). For num/bigint,
+      (ii)/(iii) are \textsc{proved} for \emph{within-precision} literals:
+      normalized to canonical form at parse time
       (\texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}), so on that
       range zero has one spelling per kind and injectivity holds. For
       \emph{beyond-precision} numeric literals — those failing the
@@ -339,21 +357,47 @@ entries:
       (ii), and the normalizer can emit a zero-denoting lexeme
       (\texttt{1e-400}, underflow to $+0$) classified truthy (iii) — both
       witnessed end-to-end (issue draft
-      \texttt{beyond-precision-numeric-literals.md}). For the
-      \emph{string} kind, (ii)/(iii) are \textsc{violated}: escapes are
-      stored undecoded (\texttt{unquoteString}; issue draft
-      \texttt{string-literal-escapes-undecoded.md}), so distinct spellings
-      of one string are treated as distinct (ii), and a line-continuation
-      lexeme denotes \texttt{""} yet is classified truthy (iii) — both
-      witnessed end-to-end. All other results are unconditional
+      \texttt{beyond-precision-numeric-literals.md}). All three claims
+      quantify over \emph{all stored literals}, enum-folder-synthesized
+      ones included (deep dive G proves the fold outputs canonical in
+      form); whether a synthesized literal equals the runtime value of
+      its source expression is the orthogonal row L-LIT-FOLD. All
+      other results are unconditional
     summary:
       - {bucket: violated-witnessed,
-         label: "L-LIT(ii)/(iii) string-kind (undecoded escapes) + num
-           beyond-precision spellings"}
+         label: "L-LIT(ii)/(iii) num beyond-precision spellings"}
     owner: G
     consumers: [B, D]
-    issues: [string-literal-escapes-undecoded.md,
-             beyond-precision-numeric-literals.md]
+    issues: [beyond-precision-numeric-literals.md]
+
+  - id: L-LIT-FOLD
+    kind: series-obligation
+    table: series
+    short: >-
+      A literal synthesized by the enum constant folder denotes the
+      member's runtime value.
+    statement: ""
+    anchor: \texttt{enumFold} (string-concat arms); \texttt{enumNumOrUnknown}
+    anchor_files: [src/TypeCheckEnum.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (deep dive G; issue draft
+      \texttt{enum-concat-imprecise-fold.md}): the string-concat arms
+      concatenate operand \emph{lexemes}, and a direct numeric-literal
+      operand bypasses the double-safe gate that guards numeric fold
+      results, so a beyond-precision spelling mints a member literal
+      whose spelling is not the runtime string
+      (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime
+      value is \texttt{"x0"}). Numeric folds are exact within the gate
+      and mint no literal outside it — that half is \textsc{proved}.
+      A prerequisite of the future preservation theorem's switch-coverage
+      lemma (semantic case coverage consumes member-value faithfulness)
+    summary:
+      - {bucket: violated-witnessed,
+         label: "the enum folder's concat-minted literals (L-LIT-FOLD)"}
+    owner: G
+    consumers: []
+    issues: [enum-concat-imprecise-fold.md]
 
   - id: L-INST
     kind: assumption
@@ -366,23 +410,20 @@ entries:
       instantiated at the narrowing site
     anchor: \texttt{evalInstanceof}
     anchor_files: [src/TypeCheckRefine.sk]
-    status: [violated]
+    status: [proved]
     status_note: >-
-      decomposed (deep dive A): conditionally \textsc{proved} modulo
-      A-HASINST — \textsc{violated}, tsc-parity (issue draft
-      \texttt{symbol-hasinstance-narrowing.md}) — and A-PROTO
-      (\textsc{assumed}, enforced for checked code by stub omissions).
-      Note that \texttt{makeTArgs} yields fresh unbound inference candidates;
-      under canonical TVAR-SEM they denote empty lower envelopes, so L-INST
-      fails when the narrowed type is installed, and a later covariant use
-      exposes the failure by sealing the argument from context (witnessed;
-      issue draft \texttt{instanceof-type-argument-sealing.md})
+      \textsc{proved} (deep dive A) modulo A-HASINST and A-PROTO (both
+      \textsc{assumed}): narrowing preserves the scrutinee's own type
+      arguments — the instance view is built as \texttt{TFields} from the
+      resolved class with the preservation probe run per branch — so the
+      installed type is inhabited by exactly the values \texttt{instanceof}
+      admits at those arguments; no fresh unbound candidates are minted at
+      the narrowing site
     summary:
-      - {bucket: violated-witnessed,
-         label: "L-INST's A-HASINST and fresh-argument representation"}
+      - {bucket: proved, label: "L-INST (modulo A-HASINST, A-PROTO)"}
     owner: A
     consumers: [H]
-    issues: [symbol-hasinstance-narrowing.md, instanceof-type-argument-sealing.md]
+    issues: []
 
   - id: L-ISARR
     kind: assumption
@@ -468,21 +509,73 @@ entries:
       declared type (an implicit premise of L-TC for closure bodies)
     anchor: \texttt{Scope::set}; \texttt{TypeCheckExpr.sk} (lambda checking)
     anchor_files: [src/TypeCheckScope.sk, src/TypeCheckExpr.sk]
-    status: [violated]
+    status: [proved]
     status_note: >-
-      \textsc{violated} (witnessed: a captured-local write is never checked
-      at all — arbitrary type confusion with no refinement involved;
-      distinct root cause from \#597--\#599; issue draft
-      \texttt{captured-local-writes-unchecked.md}). Sibling: closure bodies
-      read enclosing narrowings that are stale at invocation (the read-in
-      dual of \#599; issue draft
-      \texttt{stale-closure-reads-narrowing.md})
+      \textsc{proved} (deep dive F) for annotated and initializer-inferred
+      bindings: assignments to captured locals are routed through the
+      binding's write path and checked against the declared or widened
+      inferred type, in lambda bodies as at top level. Carve-out: bindings
+      declared bare (\texttt{let x = null/undefined}) evolve and their
+      captured writes are unchecked — tsc-parity by design. The read-side
+      staleness of enclosing narrowings is the separate row L-STALE-READ
     summary:
-      - {bucket: violated-witnessed,
-         label: "L-CAPT and its stale-read sibling"}
+      - {bucket: proved, label: "L-CAPT"}
     owner: F
     consumers: []
-    issues: [captured-local-writes-unchecked.md, stale-closure-reads-narrowing.md]
+    issues: []
+
+  - id: L-STALE-READ
+    kind: series-obligation
+    table: main
+    short: >-
+      A closure body invoked later reads enclosing narrowings that are
+      stale at invocation time.
+    statement: >-
+      Closure bodies capture enclosing narrowings, but invocation may
+      postdate mutations that invalidate them — the read-in dual of the
+      L-PURE family (\#599)
+    anchor: \texttt{TypeCheckExpr.sk} (lambda checking); narrowed-scope capture
+    anchor_files: [src/TypeCheckExpr.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end in both forms — a captured
+      narrowed local and a narrowed field read inside a closure (deep
+      dive F; issue draft \texttt{stale-closure-reads-narrowing.md});
+      the fix shape is deep dive F's layered invalidation policy, shared
+      with L-PURE
+    summary:
+      - {bucket: violated-witnessed,
+         label: "stale closure reads of enclosing narrowings (L-STALE-READ)"}
+    owner: F
+    consumers: []
+    issues: [stale-closure-reads-narrowing.md]
+
+  - id: L-LOOP-CARRIED
+    kind: series-obligation
+    table: main
+    short: >-
+      A pre-loop narrowing of an annotated binding survives a back-edge
+      write that invalidates it.
+    statement: >-
+      Loop-carried narrowing staleness: \texttt{Scope::set}'s annotation
+      arm checks a back-edge write only against the declared type, so a
+      pre-loop narrowing of an annotated binding survives into iteration
+      2 after a write that falsifies it; un-annotated bindings are
+      protected by the through-loop check
+    anchor: \texttt{Scope::set} (annotation arm); loop merge
+    anchor_files: [src/TypeCheckScope.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end (deep dive F; issue draft
+      \texttt{loop-carried-narrowing-stale.md}): the narrowed read binds
+      \texttt{null} at \texttt{string} on iteration 2; tsc rejects. Fix
+      shape: deep dive F's P1 loop-entry invalidation layer
+    summary:
+      - {bucket: violated-witnessed,
+         label: "loop-carried narrowing staleness (L-LOOP-CARRIED)"}
+    owner: F
+    consumers: []
+    issues: [loop-carried-narrowing-stale.md]
 
   - id: L-CLONE
     kind: assumption
@@ -548,22 +641,20 @@ entries:
     anchor_files: [src/TypeCheckRefine.sk, src/TypeCheckExpr.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive H) at three witnessed sites — the two
-      minted \texttt{instanceof} arms (issue drafts
-      \texttt{instanceof-array-mutable-top-view.md},
-      \texttt{instanceof-type-argument-sealing.md}, write side) and
-      narrowing-admitted aliases, in both directions (issue draft
-      \texttt{narrowed-alias-stale-write.md}); declaration-only aliasing
-      is coherent, conditional on L-SUB-FIELDS-SET
+      \textsc{violated} (deep dive H) at the narrowing-admitted-alias
+      site, in both directions (issue draft
+      \texttt{narrowed-alias-stale-write.md}); the minted
+      \texttt{instanceof} views are coherent — the \texttt{Array} arm
+      preserves the readonly index and the class arm preserves the
+      scrutinee's type arguments — and declaration-only aliasing is
+      coherent, conditional on L-SUB-FIELDS-SET
     summary:
       - {bucket: violated-witnessed,
-         label: "cross-view mutation coherence L-MUT-ALIAS (minted
-           \\texttt{instanceof} views; narrowing-admitted aliases)"}
+         label: "cross-view mutation coherence L-MUT-ALIAS
+           (narrowing-admitted aliases)"}
     owner: H
     consumers: [A, F]
-    issues: [instanceof-array-mutable-top-view.md,
-             instanceof-type-argument-sealing.md,
-             narrowed-alias-stale-write.md]
+    issues: [narrowed-alias-stale-write.md]
 
   - id: L-MUT-ALIAS-CALL
     kind: series-obligation
@@ -581,11 +672,9 @@ entries:
     anchor_files: [src/TypeCheckExpr.sk]
     status: [open]
     status_note: >-
-      \textsc{open} (deep dive H): the minted
-      \texttt{Array}$\langle\top\rangle$ view exposes the same
-      incoherence through \texttt{push} as through the graded index
-      write, but no signature semantics with receiver-heap effects exists
-      to grade it against
+      \textsc{open} (deep dive H): the live route is a setter-shaped
+      method call on a narrowing-admitted alias, but no signature
+      semantics with receiver-heap effects exists to grade it against
     summary: []
     owner: H
     consumers: []
@@ -732,9 +821,13 @@ entries:
     anchor_files: [src/TTypeSubst.sk]
     status: [proved]
     status_note: >-
-      discharged (deep dive E): unreachable — no \texttt{gen*} call site in
-      the clone-compute-install tree; guard with the recommended CI
-      assertion
+      discharged (deep dive E, non-escape audit): the one \texttt{gen*}
+      site reached on a clone (the \texttt{instanceof} preservation
+      probe) produces values consumed only as \texttt{isSub} right-hand
+      sides on per-branch re-clones — no probe product is installed
+      against the main substitution; every other \texttt{gen*} site runs
+      on the expression-typing substitution, and the skolem class is
+      hard-guarded at runtime
     summary: []
     owner: E
     consumers: []
@@ -956,19 +1049,24 @@ entries:
     kind: series-assumption
     table: series
     short: >-
-      No non-default \texttt{Symbol.hasInstance} on narrowed
-      \texttt{instanceof} RHS classes.
+      No non-default \texttt{Symbol.hasInstance} governs a narrowed
+      \texttt{instanceof}: narrowing is suppressed when the RHS declares
+      one; dynamically installed hooks are assumed absent.
     statement: ""
-    anchor: \texttt{isInstanceofRhs}
-    anchor_files: [src/TypeCheckExpr.sk]
-    status: [violated]
+    anchor: \texttt{rhsDeclaresHasInstance}
+    anchor_files: [src/TypeCheckRefine.sk]
+    status: [assumed]
     status_note: >-
-      \textsc{violated}, tsc-parity (deep dive A; issue draft
-      \texttt{symbol-hasinstance-narrowing.md})
+      \textsc{assumed} (deep dive A): the checker suppresses
+      \texttt{instanceof} narrowing when the RHS class declares a custom
+      \texttt{Symbol.hasInstance}, closing the declared case; the residue
+      is a hook installed dynamically on an RHS whose declaration omits
+      it — assumed unreachable for checked code, alongside A-PROTO's stub
+      discipline
     summary: []
     owner: A
     consumers: []
-    issues: [symbol-hasinstance-narrowing.md]
+    issues: []
 
   - id: TVAR-SEM
     kind: series-lemma
@@ -991,7 +1089,7 @@ entries:
       are intersected after either read
     summary: [{bucket: proved, label: "TVAR-SEM"}]
     owner: main
-    consumers: [A, B, C, E, H]
+    consumers: [A, B, C, E]
     issues: []
 
   - id: SET-SEM
@@ -1045,6 +1143,37 @@ entries:
     consumers: [H]
     issues: []
 
+  - id: L-SUB-CLOSED-ABSENCE
+    kind: series-lemma
+    table: series
+    short: >-
+      \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>}
+      absence fact: acceptance requires the source to prove
+      $\mathsf{get}=\bot$ at every key the target proves absent.
+    statement: >-
+      Absence-fact preservation: against a closed target's never-valued
+      index, a source with no covering index is rejected
+      ($\top \leq \bot$), a source with one is accepted only if its
+      $\mathsf{get} \leq \bot$, and a source \emph{naming} an extra field
+      the target proves absent is rejected by the width lemma's
+      extra-field check against the never-valued index — so an admitted
+      view proves absent only keys the source already proved absent; the
+      fact \textsc{R-In}'s true-branch pruning consumes
+    anchor: \texttt{TFields::isSub\_IndexPair}; \texttt{TFields::isSub\_NamedFields} (extra-field arm); \texttt{closeObjectType}
+    anchor_files: [src/TTypeSubtyping.sk, src/TEnv.sk]
+    status: [open]
+    status_note: >-
+      \textsc{open} (conditional): the syntactic checks are verified at
+      every index-pair arm and at \texttt{isSub\_NamedFields}'s
+      extra-source-field-against-target-index arm (deep dive D, the
+      absence corollary); the containment they induce is conditional on
+      the recursive \texttt{isSub} verdicts, exactly as the read
+      direction is inside L-SUB
+    summary: []
+    owner: D
+    consumers: [H]
+    issues: []
+
   - id: O-GETCOV
     kind: series-obligation
     table: series
@@ -1059,8 +1188,8 @@ entries:
       \textsc{open} (deep dive D): the covariant variable read applies
       \texttt{Subst::get}'s constraint-intersection loop, whose soundness
       rests on the \texttt{L-INTER-BOT} bottoms; its live strata
-      (incomparable signatures; string-spelling; beyond-precision
-      num-spelling) leave the read unproven. On L-SUB's critical path
+      (incomparable signatures; beyond-precision num-spelling) leave the
+      read unproven. On L-SUB's critical path
     summary:
       - {bucket: open, label: "O-GETCOV, O-GETCONTRA, O-ARRAYLIT"}
     owner: D
@@ -1095,27 +1224,33 @@ entries:
     consumers: []
     issues: []
 
-  - id: F-CALL
+  - id: F-CABSENT
     kind: series-assumption
     table: series
     short: >-
-      The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads
-      \texttt{call{=}None} as unknown callability (vs.\ refinement's
-      definitely-not-callable).
+      The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops
+      $\mathsf{CAbsent}$ branches under \texttt{typeof}
+      \texttt{"function"}, but subtyping's lax
+      $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into
+      branded types.
     statement: ""
-    anchor: \texttt{isSubOptTFuns}
-    anchor_files: [src/TTypeSubtyping.sk]
+    anchor: \texttt{TFields::isSubCallability} ($\mathsf{CAbsent}$ arm); \texttt{narrowByTypeofFunction}
+    anchor_files: [src/TTypeSubtyping.sk, src/TType.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated}, witnessed end-to-end (deep dive D): a callable assigned
-      to \texttt{\{\}} then narrowed by \texttt{typeof} to \texttt{never};
-      issue draft \texttt{class-constructor-call-none-typeof.md}
+      \textsc{violated}, witnessed end-to-end (deep dive D): a callable
+      laundered \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in
+      two accepted subtyping steps is narrowed to \texttt{never} in the
+      branch the runtime takes; issue draft
+      \texttt{cabsent-brand-laundering.md}. The callability instance of
+      the F-BRAND trust model (refinement narrows on a brand subtyping
+      never validates)
     summary:
       - {bucket: violated-witnessed,
-         label: "L-SUB's \\texttt{call{=}None} subtyping arm (F-CALL)"}
+         label: "the laundered \\texttt{CAbsent} brand (F-CABSENT)"}
     owner: D
-    consumers: []
-    issues: [class-constructor-call-none-typeof.md]
+    consumers: [A]
+    issues: [cabsent-brand-laundering.md]
 
   - id: F-BRAND
     kind: series-assumption
@@ -1129,10 +1264,38 @@ entries:
     status: [violated]
     status_note: >-
       \textsc{violated} by code-level derivation (deep dive D; composite
-      witness sketch; no end-to-end run)
+      witness sketch; no end-to-end run). The brand has a second consumer:
+      the callability meet's array-brand $\bot$ arm (deep dive B) is
+      semantic only under the brand's membership invariant, so a laundered
+      callable in an array-branded view yields a spurious disjointness on
+      a branch-dropping path
     summary:
       - {bucket: violated-derived,
          label: "the never-compared array brand (F-BRAND)"}
+    owner: D
+    consumers: [B]
+    issues: []
+
+  - id: F-THIS-IMPLICIT
+    kind: series-assumption
+    table: series
+    short: >-
+      The implicit-receiver diagonals of this-parameter subtyping
+      (\texttt{ImplicitShape}/\texttt{ImplicitShape},
+      \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without
+      comparing receiver types.
+    statement: ""
+    anchor: \texttt{ThisParam} arms in \texttt{TFuns} subtyping
+    anchor_files: [src/TTypeSubtyping.sk, src/TType.sk]
+    status: [assumed]
+    status_note: >-
+      \textsc{assumed} (deep dive D): the diagonal acceptances are
+      justified only under an attachment semantics — a method invoked on
+      the object it was accessed on — which E-SIG does not yet state; a
+      detached object-\emph{literal} method free-called with a
+      \texttt{this}-reading body is accepted (probed), so the attachment
+      premise is not checker-enforced on the literal route
+    summary: []
     owner: D
     consumers: []
     issues: []
@@ -1211,12 +1374,12 @@ entries:
       \textsc{open} — found by external review: the width lemma checks a
       numeric-named sub field against only one super index
       (\texttt{indexForFieldName} returns a single index), while covering
-      semantics needs both; SKJS enforces neither TS2411 nor TS2413. The
-      subtyping over-acceptance is real but \emph{not} end-to-end
-      unsound at the pin — reads of numeric-string keys stay conservative
-      (\texttt{string|number}), masking it, as verified against the
-      binary; a validator-completeness gap, not a witnessed unsoundness.
-      Cited at deep dive D's width lemma as a named residual
+      semantics needs both. Declarations whose number/string index value
+      types are incompatible are rejected at the declaration itself
+      (verified against the binary), shrinking but not closing the gap:
+      the single-index consultation is still in code, unreached by any
+      witness so far — a validator-completeness gap, not a witnessed
+      unsoundness. Cited at deep dive D's width lemma as a named residual
     summary: [{bucket: open, label: "L-SUB-IDXNAME"}]
     owner: D
     consumers: []
@@ -1241,28 +1404,58 @@ entries:
     consumers: []
     issues: []
 
-  - id: E-GUARD-PLACEHOLDER
+  - id: E-PLACEHOLDER-ATOM
     kind: series-obligation
     table: series
     short: >-
-      An un-annotated ambient-class field placeholder must not head-expand to
-      $\bot$ (the case E-GUARD's recursion-guard audit did not cover).
+      An un-annotated ambient-class field reads as an opaque per-field
+      atom; the atom's denotation must over-approximate the arbitrary
+      runtime value.
     statement: ""
-    anchor: \texttt{instantiate} (missing-annotation return); \texttt{expandToVectors}
-    anchor_files: [src/TEnv.sk, src/TType.sk]
-    status: [violated]
+    anchor: \texttt{instantiate} (missing-annotation placeholder)
+    anchor_files: [src/TEnv.sk]
+    status: [open]
     status_note: >-
-      \textsc{violated}, witnessed end-to-end (deep dive C): the
-      missing-annotation identity return fires with \texttt{seenInstantiate}
-      empty, the identity is dropped by the expansion seen-set, and the field
-      reads as $\bot$ (accepted into \texttt{never}); issue draft
-      \texttt{ambient-unannotated-field-bottom.md}. Sibling of the
-      recursion-guard E-GUARD row, which is empirically safe
+      \textsc{open} (deep dive C): the placeholder is a fresh opaque
+      atom, so the field neither head-expands to $\bot$ nor unifies with
+      any other type — assignments out of it are rejected, which is
+      conservative for the flows audited; outstanding is the atom's
+      semantics under narrowing and equality (an arbitrary runtime value
+      must inhabit it wherever membership is consulted)
     summary:
-      - {bucket: violated-witnessed, label: "the ambient-field $\\bot$-collapse (E-GUARD-PLACEHOLDER)"}
+      - {bucket: open, label: "the ambient-field placeholder atom (E-PLACEHOLDER-ATOM)"}
     owner: C
     consumers: []
-    issues: [ambient-unannotated-field-bottom.md]
+    issues: []
+
+  - id: E-EXPKEY
+    kind: series-assumption
+    table: series
+    short: >-
+      The expansion-cache key (\texttt{ExpansionKey}: unqualified name
+      text + arguments) identifies one definition: same-named,
+      same-argument aliases from different modules must not collide.
+    statement: ""
+    anchor: \texttt{ExpansionKey}; \texttt{seenExpansion}
+    anchor_files: [src/TType.sk, src/TTypeSubst.sk]
+    status: [violated]
+    status_note: >-
+      \textsc{violated}, witnessed end-to-end in both directions (deep
+      dive C; issue draft \texttt{expansion-key-collision.md}): two
+      same-named, same-argument aliases from different modules share one
+      \texttt{ExpansionKey}, so whichever expands first is served for
+      both — an unsound acceptance one way (a \texttt{string}-typed call
+      returns \texttt{undefined}) and an order-dependent false rejection
+      the other, its diagnostic anchored in the wrong module; renaming
+      either alias restores the correct verdicts. Refutes the
+      implementation's not-yet-triggerable claim (upstream \#889); fix
+      direction: key by definition identity
+    summary:
+      - {bucket: violated-witnessed,
+         label: "the expansion-cache key collision (E-EXPKEY)"}
+    owner: C
+    consumers: []
+    issues: [expansion-key-collision.md]
 
   - id: ACCESSOR-METHOD
     kind: series-obligation

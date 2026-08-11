@@ -37,16 +37,18 @@ source ($\mathsf{set}$-types below $\mathsf{get}$-types) — and shows the
 checker enforces the first while refinement destroys the second.
 Declaration-only aliasing is coherent: the
 covariant field upcast, the mutable-array upcast, and the narrowing
-subclass override are all rejected, each stricter than tsc. Three
-sites are refuted with executed witnesses: narrowing-admitted aliases
-(a get-narrowed object passes the gate into a narrower view, then a
-legal write through the original goes stale on the alias) and both
-minted-view arms of \texttt{instanceof} narrowing — the mutable
-\texttt{Array}$\langle\top\rangle$ view, and the generic arm, where a
-write \emph{binds} the fresh unbound argument instead of being
-rejected. The intersection's permissive $\mathsf{set}$-union is
-mechanism without a found route. Fix directions accompany each
-verdict.
+subclass override are all rejected, each stricter than tsc. The minted
+views of \texttt{instanceof} narrowing are coherent: the class arm
+instantiates hidden type arguments at rigid skolems, keeps every branch
+that already satisfies the test, and re-imposes the scrutinee's
+readonly members on the rest, so the minted write surface stays inside
+what the runtime instance authorizes (a coherence lemma, conditional on
+the admission-chain premises). One site is refuted with executed
+witnesses: narrowing-admitted aliases — a get-narrowed object passes
+the gate into a narrower view, then a legal write through the original
+goes stale on the alias, in both directions. The intersection's
+permissive $\mathsf{set}$-union is mechanism without a found route. Fix
+directions accompany each refuted verdict.
 \end{abstract}
 
 \tableofcontents
@@ -96,9 +98,10 @@ call-mediated facet, split out as this paper's open row
 \textbf{L-MUT-ALIAS-CALL}: the signature semantics \textbf{E-SIG}, as
 stated, concerns behavioral call soundness and does not by itself
 deliver receiver-heap preservation across aliases, so the facet cannot
-be graded until a receiver-effect strengthening exists — the minted
-\texttt{Array}$\langle\top\rangle$ view exposes the same incoherence
-through \texttt{push} as through the index write graded below.
+be graded until a receiver-effect strengthening exists — the
+narrowing-admitted pair of Section~\ref{sec:narrowing} reaches every
+alias through a setter-shaped method exactly as through the direct
+write graded there.
 
 Write $\getty(b,p)$ for the resolved get-type ($f.\mathsf{get}$, or the
 covering index's). Both resolvers are total: $\setty(b,p) = \bot$ when
@@ -176,7 +179,8 @@ every site audited below: give a program a view whose source is
 narrows $\mathsf{get}$ only, so a narrowed view has
 $\mathsf{set} \not\subseteq \mathsf{get}$), or give it a view that never
 crossed the admission gate at all (Section~\ref{sec:minted} — minted
-views).
+views, whose coherence is the minting rule's own obligation; the pin's
+\texttt{instanceof} rule discharges it by rigid instantiation).
 
 The same split re-derives deep dive F's \#598 with no new machinery: a
 write \emph{through the narrowed view itself} is authorized by the wide
@@ -200,7 +204,12 @@ initialization and re-assignment, argument passing, return passing,
 storing a reference into an object field, and array/tuple element
 storage — each checks the incoming value against the declared target
 type with \texttt{isSub} at its \texttt{TypeCheckExpr} site, so each
-is an admission edge. \emph{Refinement installation}
+is an admission edge. In particular, by imported
+\textbf{L-SUB-CLOSED-ABSENCE}, admission cannot manufacture a
+\texttt{Closed<T>} absence fact from an extensible source: the target's
+concrete never-valued index rejects a source that does not already prove
+the same absence.
+\emph{Refinement installation}
 (Section~\ref{sec:narrowing}) and \emph{minting}
 (Section~\ref{sec:minted}): the R-rules. \emph{No aliasing created}:
 destructuring and spread copy values into fresh objects; an object
@@ -211,9 +220,11 @@ deep dive F's territory. \emph{Class construction and inheritance}:
 field initialization is admission against the declared field type, and
 the override gate is pinned by the probe of
 Section~\ref{sec:declared}. \emph{Generic instantiation}: a call to a
-generic function admits arguments against the instantiated signature
-(admission); inference-minted argument views are the generic
-\texttt{instanceof} site's mechanism, graded there. \emph{Trust
+generic function admits arguments against the instantiated signature —
+an admission edge like any other. \emph{Value families with no write
+surface}: enum objects (every field readonly) and \texttt{Closed<T>}
+absence facts are graded in Section~\ref{sec:minted}'s closing
+paragraph. \emph{Trust
 boundary}: ambient (stub-declared) values enter with their declared
 types unchecked — part of the corpus-wide stub trust, like every other
 ambient fact, and the one entry point for declared intersection views
@@ -293,52 +304,143 @@ TTypeSubtyping.sk / TFields::isSub\_ (shared arm);
 TType.sk / TFields::resolveFieldType (isLValue)}
 \end{finding}
 
-\subsection{Minted views: refuted at both \texttt{instanceof} arms}
+\subsection{Minted views: the \texttt{instanceof} rule, coherent by
+rigid instantiation}
 \label{sec:minted}
 
 A \emph{minted} view is installed by a refinement rule without any
 \texttt{isSub} admission, so Lemma~\ref{lem:admission} does not apply
-at all; coherence is the minting rule's own obligation.
+at all; coherence is the minting rule's own obligation. The minting
+rules are \texttt{instanceof} narrowing
+(\texttt{evalInstanceof}, \texttt{src/TypeCheckRefine.sk:362-440}) —
+\texttt{instanceof Array} is the same rule at the \texttt{Array}
+class, with no special case — and \texttt{Array.isArray}'s readonly
+view, the vacuous case graded in the \texttt{Array} paragraph below.
 
-\paragraph{\texttt{instanceof Array} (refuted, witnessed).}
-\texttt{evalInstanceof} special-cases \texttt{Array} to the closed
-argument $\top$ on the \emph{mutable} \texttt{Array} class, so the
-minted view's index set-type is $\top$, above any actual element type:
-the pair it forms with the scrutinee's other views is incoherent by
-construction. Executed witness and repair: issue draft
-\path{issues/instanceof-array-mutable-top-view.md}; the repair recorded
-there (\texttt{ReadonlyArray}, as the \texttt{Array.isArray} path
-already does) is the vacuous case of Definition~\ref{def:selfcons} — no
-write surface, self-consistent for free.
-\impl{TypeCheckRefine.sk / evalInstanceof (Array arm), evalIsArray
-(ReadonlyArray contrast)}
+\paragraph{The minting mechanism.} The rule instantiates the class's
+hidden type arguments at \emph{skolems}: synthetic, rigid type
+parameters named for their provenance (\texttt{Box\#T}), carrying the
+declared upper bound, minted with collision-guarded identities
+(\texttt{makeSkolemTArgsOf}, \texttt{src/TEnv.sk:780-808};
+\texttt{genSkolemTParam}, \texttt{src/TTypeSubst.sk:262-281}). A skolem
+is not an inference candidate — no write can \emph{bind} it; each one
+denotes the runtime object's actual hidden argument, the instantiation
+row \textbf{L-INST} grades. The installed view is then computed per
+branch of the scrutinee:
+\begin{itemize}
+\item \emph{Branches already satisfying the test are kept verbatim.} A
+  preservation probe — the class at fresh inference arguments, minted
+  in a throwaway clone so nothing leaks into the real substitution
+  (\texttt{src/TypeCheckRefine.sk:373-379}; clones cannot mint skolems,
+  \texttt{src/TTypeSubst.sk:163}) — is matched against each branch, and
+  a matching branch is pushed unchanged
+  (\texttt{src/TypeCheckRefine.sk:395-404}). No new view exists at all:
+  the branch \emph{is} the pre-narrowing view, with its own precise
+  arguments.
+\item \emph{Non-matching branches are intersected with the skolem
+  view}, and the scrutinee's readonly members are re-imposed on the
+  result: \texttt{keepReadonlyFrom} forces $\mathsf{set}=\bot$ back
+  onto every named field, symbol field, and index the branch declared
+  readonly (\texttt{src/TypeCheckRefine.sk:407-416};
+  \texttt{src/TType.sk:2489-2512}) — narrowing may restrict the write
+  surface but never grant it.
+\item \emph{A $\top$-bound scrutinee gets the skolem class view
+  itself} ($C\langle C\#\bar{T}\rangle$;
+  \texttt{src/TypeCheckRefine.sk:430-439, 721-738}) — declared data
+  fields at rigid arguments, $\mathsf{set}=\mathsf{get}$,
+  write-self-consistent by construction.
+\end{itemize}
 
-\begin{finding}[Generic \texttt{instanceof}: a write binds the fresh
-argument]
-\label{find:generic-write}
-For a generic class the minted view's field set-types mention the fresh
-unbound arguments of \texttt{makeTArgs}. Under canonical
-\textbf{TVAR-SEM} an unbound argument denotes $\emptyset$ — the minted
-view authorizes no writes, vacuously coherent as installed — but a
-write's check against the unbound candidate \emph{binds} it to the
-right-hand side's type instead of rejecting, manufacturing write
-authorization from the program context the same way covariant reads
-manufacture read guarantees. This is deep dive A's \textbf{L-INST}
-representation defect surfacing on the write surface; the executed
-witness with its first-write-wins mechanism confirmation is the
-write-side section of issue draft
-\path{issues/instanceof-type-argument-sealing.md}, and the
-rigid-witness repair recorded there covers both sides.
-\impl{TEnv.sk / makeTArgs; TTypeSubst.sk / Subst::grow;
-TType.sk / TFields::resolveFieldType (isLValue)}
-\end{finding}
+\begin{lemma}[Minted-View Coherence]
+\label{lem:minted}
+Let $y$ be the view \texttt{instanceof} $C$ installs from scrutinee
+branch $x$, and let $A$ be any set of live views of the same runtime
+object, each reached from a write-self-consistent declared root by
+admission chains. Then $A \cup \{y\}$ is coherent at every data-field
+key, conditional on \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET} (the
+chains), \textbf{L-INST} (each skolem denotes the actual hidden
+argument), and \textbf{SET-SEM}.
+\end{lemma}
+\begin{proof}
+For a kept branch, $y = x$ and there is nothing to show. Otherwise
+$\setty(y,p) = \setty(x,p) \cup \setty(C\langle
+C\#\bar{T}\rangle,p)$ (\texttt{TField::inter} unions set-types,
+\texttt{src/TTypeInter.sk:228}), less the members
+\texttt{keepReadonlyFrom} returns to $\bot$ — removing authorizations
+is monotone-safe, so it suffices to grade the two union arms. Let $r$
+be the object's construction view: the class's declared fields at the
+actual arguments $\bar{A}$, so $\setty(r,p) = \getty(r,p) =
+\sem{T_p[\bar{A}]}$ for a data field, and by \textbf{L-INST},
+$\sem{C\#\bar{T}} = \bar{A}$'s sets, hence
+$\setty(C\langle C\#\bar{T}\rangle,p) = \sem{T_p[\bar{A}]}$. Every
+view in $A \cup \{x\}$ sits on an admission chain from $r$, giving
+$\setty(v,p) \subseteq \setty(r,p)$ (contravariant accumulation, row
+L-SUB-FIELDS-SET) and $\getty(r,p) \subseteq \getty(v,p)$ (covariant
+accumulation) for each such $v$. A write of $w$ through $y$'s first
+arm, $w \in \setty(x,p) \subseteq \setty(r,p) = \getty(r,p)$, lands in
+$\getty(v,p)$ for every $v \in A$, in $\getty(x,p)$ — hence in the
+$x$-conjunct of $\getty(y,p)$ — and in the skolem conjunct, which
+\emph{is} $\getty(r,p)$. A write through the second arm,
+$w \in \sem{T_p[\bar{A}]} = \getty(r,p)$, lands in the same three
+places by the same containments. A write through any $v \in A$
+satisfies $w \in \setty(v,p) \subseteq \getty(r,p)$ and so preserves
+both conjuncts of $\getty(y,p)$. Where $p$ resolves through an index,
+the same computation runs on the index arms, whose set direction deep
+dive D records alongside the named-field arms'.
+\end{proof}
+
+The lemma's premise localizes what remains exposed: a scrutinee branch
+that was previously get-narrowed is \emph{not} on a self-consistent
+admission chain, and the minted intersection keeps its
+$\mathsf{set}$-width — so such a pair inherits the incoherence of
+Section~\ref{sec:narrowing}'s site through the same union. That is the
+already-graded defect surfacing through a longer route, not a defect of
+the minting rule. Accessor fields are \textbf{L-GETSET}; call-mediated
+writes are \textbf{L-MUT-ALIAS-CALL}.
+
+\paragraph{\texttt{Array} probes.} The rule at \texttt{Array} mints
+\texttt{Array}$\langle$\texttt{Array\#T}$\rangle$: the index
+$\mathsf{set}$-type is the skolem, so a write of any program-typeable
+value is rejected — probed at the pin: on \texttt{x: unknown},
+\texttt{if (x instanceof Array) \{ x[0] = "s" \}} is rejected
+(``\texttt{string} is not assignable''), and on
+\texttt{x: ReadonlyArray<number>} even \texttt{x[0] = 1} stays
+rejected, the readonly index surviving the intersection by
+\texttt{keepReadonlyFrom}'s index arm
+(\texttt{src/TType.sk:2505-2510}). The \texttt{Array.isArray} path
+mints \texttt{ReadonlyArray}$\langle\top\rangle$ instead
+(\texttt{evalIsArray}, \texttt{src/TypeCheckRefine.sk:326-358}) — the
+vacuous case of Definition~\ref{def:selfcons}: no write surface,
+self-consistent for free.
+\impl{TypeCheckRefine.sk / evalInstanceof; TEnv.sk /
+makeSkolemTArgsOf; TType.sk / TFields::keepReadonlyFrom;
+TTypeSubst.sk / Subst::genSkolemTParam}
 
 \paragraph{Other refinement rules.}
-\textsc{R-Eq}, \textsc{R-EqField}, \textsc{R-IsArray}, and \textsc{R-In}
-install intersections of \emph{already-live} views (the scrutinee's
-current type against a value type, brand, or key fact) rather than views
-of new provenance; their write-surface behavior reduces to the
-intersection's set direction, audited next.
+\textsc{R-Eq}, \textsc{R-EqField}, and \textsc{R-IsArray} install
+intersections of \emph{already-live} views (the scrutinee's current
+type against a value type or brand) rather than views of new
+provenance; their write-surface behavior reduces to the intersection's
+set direction, audited next. \textsc{R-In}'s true branch synthesizes a
+named field for the tested key, but with no new authorization: where an
+index covers the key, the field copies the index's $\mathsf{get}$
+\emph{and} $\mathsf{set}$ — the same writes $\setty$'s index resolution
+already authorized — and where none does, it is a phantom with
+$\mathsf{get}=\top$, $\mathsf{set}=\bot$, invisible to subtyping and
+erroring at access (\texttt{src/TypeCheckRefine.sk:555-593}).
+\texttt{switch} narrowing is an \textsc{R-Eq} client: each case label
+narrows the scrutinee through a synthesized strict-equality condition
+(\texttt{src/TypeCheckStmt.sk:610-614}), and fallthrough entries carry
+the falling clause's whole scope — no separate install mechanism.
+\texttt{Closed<T>} constrains key \emph{absence}; unmentioned keys have
+$\setty = \bot$, so no checked write through the closed view can add a key.
+By imported \textbf{L-SUB-CLOSED-ABSENCE}, admission does not manufacture
+the absence fact from an extensible source, and conditional on
+\textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET} a later admitted view acquires no
+write capability the closed source lacked; absence facts therefore carry
+no write surface. Enum objects declare every member and
+reverse-mapping field readonly
+(\texttt{src/TypeCheckEnum.sk:555-609}) — vacuously coherent.
 
 \subsection{The intersection's $\mathsf{set}$-union: mechanism without a
 found route}
@@ -360,9 +462,11 @@ live pair through it:
   operand's type (probed at the pin: rejected). tsc, which intersects
   property types instead, rejects the subsequent write; SKJS rejects
   the admission — different mechanisms, same outcome.
-\item \emph{By refinement}: the rules of Section~\ref{sec:minted} install
-  intersections of the scrutinee's own views; producing a runtime value
-  that inhabits two views with genuinely different set-types at one key
+\item \emph{By refinement}: the rules of Section~\ref{sec:minted}
+  install intersections of the scrutinee's own views — including the
+  skolem-view intersection, whose unioned $\mathsf{set}$ is exactly
+  what Lemma~\ref{lem:minted} grades; producing a runtime value that
+  inhabits two views with genuinely different set-types at one key
   requires an admission or a mint that Sections~\ref{sec:declared}
   and~\ref{sec:narrowing}--\ref{sec:minted} already grade.
 \item \emph{By ambient declaration}: a stub-declared intersection-typed
@@ -397,16 +501,16 @@ identity, are the open row \textbf{L-GETSET} and are not graded here.
 
 \paragraph{Verdict for L-MUT-ALIAS.} The row's status is rendered from
 the registry below; the evidence this paper contributes decomposes site
-by site — three witnessed refutations, with the open facets split into
+by site — one witnessed refutation, with the open facets split into
 their own rows:
 \begin{itemize}
 \item narrowing-admitted aliases: refuted, witnessed in both directions
   (Finding~\ref{find:narrowed-alias});
-\item minted \texttt{instanceof Array} view: refuted, witnessed
-  (Section~\ref{sec:minted});
-\item generic \texttt{instanceof} write-side binding: refuted,
-  witnessed; shares its root — and its repair — with the rigid-witness
-  representation defect (Finding~\ref{find:generic-write});
+\item minted \texttt{instanceof} views: coherent by rigid
+  instantiation (Lemma~\ref{lem:minted}), conditional on
+  \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET}/\textbf{L-INST} and the
+  admission-chain premise — a previously get-narrowed scrutinee routes
+  the narrowing-admitted defect through the mint, adding nothing new;
 \item the intersection $\mathsf{set}$-union: mechanism present, no
   reachable incoherent pair found — the open row \textbf{V-INTER-SET}
   (Section~\ref{sec:inter-set});
@@ -415,11 +519,12 @@ their own rows:
   (Section~\ref{sec:recap}).
 \end{itemize}
 Declaration-only aliasing is coherent by Corollary~\ref{cor:declared},
-conditional on \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET}, with the three
+conditional on \textbf{L-SUB}/\textbf{L-SUB-FIELDS-SET}, with the four
 rejection probes of Section~\ref{sec:declared} pinning the gate's
-behavior (with the index-signature control extending them to
-$\setty$'s index resolution); each refuted site carries its fix
-direction where it is graded.
+behavior (the index-signature control extending them to $\setty$'s
+index resolution) and the two \texttt{Array} probes of
+Section~\ref{sec:minted} pinning the minted write surface; the refuted
+site carries its fix direction where it is graded.
 
 \paragraph{Registry.}
 The authoritative statuses are maintained in the registry
@@ -453,13 +558,16 @@ admission gate, field arms & \texttt{TTypeSubtyping.sk /
 override checking & \texttt{TypeCheckClass.sk} \\
 field narrowing (get-only) & \texttt{TypeCheckRefine.sk / narrowField,
   evalFieldEqualityType (withGet)} \\
-minted views & \texttt{TypeCheckRefine.sk / evalInstanceof (Array arm),
-  evalIsArray}; \texttt{TEnv.sk / makeTArgs} \\
+minted views & \texttt{TypeCheckRefine.sk / evalInstanceof,
+  evalIsArray}; \texttt{TEnv.sk / makeSkolemTArgsOf}; \texttt{TType.sk
+  / TFields::keepReadonlyFrom} \\
+rigid instantiation & \texttt{TTypeSubst.sk / Subst::genSkolemTParam} \\
+key-fact synthesis & \texttt{TypeCheckRefine.sk / evalCond (In arm,
+  field synthesis)} \\
 intersection set direction & \texttt{TTypeInter.sk / TField::inter
   (set => TType::union)} \\
 merge set direction & \texttt{TTypeUnion.sk / TField::union
   (set => inter)} \\
-write-side candidate binding & \texttt{TTypeSubst.sk / Subst::grow} \\
 \bottomrule
 \end{tabular}
 \end{center}

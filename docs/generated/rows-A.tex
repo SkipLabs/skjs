@@ -8,13 +8,13 @@
 \textbf{Row} & \textbf{Statement} & \textbf{Status} \\
 \midrule
 L-TAG & Every runtime value carries exactly one tag consistent with its static tag. & \textsc{proved} \\
-A-CTOR-CALL & Class-constructor values are typed with call mode $\mathsf{None}$, but constructors implement $[[\mathrm{Call}]]$. & \textsc{violated} \\
-L-INST & $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site. & \textsc{violated} \\
+A-CTOR-CALL & Class-constructor values carry $\mathsf{CPresent}$ construct and $\mathsf{CFunction}$ call modes, consistent with $[[\mathrm{Call}]]$/$[[\mathrm{Construct}]]$. & \textsc{proved} \\
+L-INST & $P_{\mathsf{inst}}(C) \subseteq \sem{T_C}$ for the instance type as instantiated at the narrowing site. & \textsc{proved} \\
 L-ISARR & $\mathsf{isArrayV}(o)$ implies $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$. & \textsc{proved} \\
 A-PROTO & No prototype surgery / Proxy GetPrototypeOf traps reach checked code (enforced by stub omissions). & \textsc{assumed} \\
 A-DDA & No [[IsHTMLDDA]] object (\texttt{document.all}) reaches checked code (vacuous on Node). & \textsc{assumed} \\
 A-PROXY & No Proxy exotic object reaches checked code. & \textsc{assumed} \\
-A-HASINST & No non-default \texttt{Symbol.hasInstance} on narrowed \texttt{instanceof} RHS classes. & \textsc{violated} \\
+A-HASINST & No non-default \texttt{Symbol.hasInstance} governs a narrowed \texttt{instanceof}: narrowing is suppressed when the RHS declares one; dynamically installed hooks are assumed absent. & \textsc{assumed} \\
 \bottomrule
 \end{tabular}
 \end{center}

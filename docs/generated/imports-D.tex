@@ -10,7 +10,7 @@
 L-INTER & \texttt{inter} over-approximates set intersection (the containment clause). & B & \textsc{proved} \\
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & B & \textsc{violated} \\
 L-EXP & Expansion preserves or enlarges semantics (modes \texttt{None}/Covariant); residual instances keep theirs. & C & \textsc{proved} \\
-A-CTOR-CALL & Class-constructor values are typed with call mode $\mathsf{None}$, but constructors implement $[[\mathrm{Call}]]$. & A & \textsc{violated} \\
+A-CTOR-CALL & Class-constructor values carry $\mathsf{CPresent}$ construct and $\mathsf{CFunction}$ call modes, consistent with $[[\mathrm{Call}]]$/$[[\mathrm{Construct}]]$. & A & \textsc{proved} \\
 L-LIT & Literal spellings: (i) $\delta$ is a function; (ii) injectivity modulo $\approx$ after normalization; (iii) falsiness-exactness of the lexeme test. & G & \textsc{violated} \\
 L-MUT & Field writes are governed by $\mathsf{set}$-types; get-only membership is sound for snapshot reads. & main & \textsc{assumed} \\
 OBL-MONOTONE & Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions. & E & \textsc{violated} \\

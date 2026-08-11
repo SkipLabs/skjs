@@ -35,15 +35,15 @@ Reproduction: [`repros/freeze-window-stale-seensub.ts`](repros/freeze-window-sta
 
 ## Root cause
 
-- Unsealed freeze read: `src/TTypeSubst.sk:199-208` (`freezeCandidates &&
+- Unsealed freeze read: `src/TTypeSubst.sk:218-227` (`freezeCandidates &&
   isCandidate` arm of `get`).
-- Pair-keyed memo write on success: `src/TTypeSubtyping.sk:1521-1524`
-  (`subst.seenSub`); contrast `tenv.seenSub` at :1536, which *is*
+- Pair-keyed memo write on success: `src/TTypeSubtyping.sk:1837-1841`
+  (`subst.seenSub`); contrast `tenv.seenSub` at :1852, which *is*
   version-keyed.
 - The freeze flag lives outside `SubstState` (`src/TTypeSubst.sk:89`), so no
   save/restore erases memos written under it.
 - `seenInter` shares the shape: write at `src/TTypeInter.sk:123`, reachable
-  under freeze via the constraint loop `src/TTypeSubst.sk:218-220`.
+  under freeze via the constraint loop `src/TTypeSubst.sk:237-239`.
 
 ## Relation to existing issues/PRs
 

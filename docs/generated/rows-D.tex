@@ -11,11 +11,13 @@ L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the 
 E-SIG & Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement). & \textsc{assumed} \\
 A-HASH & \texttt{TType::compare} equality is trustworthy (XXHash-only fast paths). & \textsc{assumed} \\
 L-SUB-FIELDS-SET & \texttt{isSub}'s field arms preserve write capability downward: acceptance implies each target field's $\mathsf{set}$-type is below the source's, and readonly fields acquire no writers. & \textsc{open} \\
+L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & \textsc{open} \\
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
-F-CALL & The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads \texttt{call{=}None} as unknown callability (vs.\ refinement's definitely-not-callable). & \textsc{violated} \\
+F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
+F-THIS-IMPLICIT & The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitShape}/\texttt{ImplicitShape}, \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without comparing receiver types. & \textsc{assumed} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
 L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{violated} \\

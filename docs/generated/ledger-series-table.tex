@@ -17,6 +17,7 @@
 \endfoot
 \bottomrule
 \endlastfoot
+L-LIT-FOLD & A literal synthesized by the enum constant folder denotes the member's runtime value. & \textsc{violated} \\
 L-MUT-ALIAS-CALL & Call-mediated mutation (setter-shaped methods, \texttt{push}) through one view preserves the membership guarantees of every live alias. & \textsc{open} \\
 V-INTER-SET & Reachability of an incoherent live pair through the intersection's permissive $\mathsf{set}$-union, independent of the already violated admission and minting sites. & \textsc{open} \\
 OBL-MONOTONE & Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions. & \textsc{violated} \\
@@ -37,31 +38,40 @@ A-HASH & \texttt{TType::compare} equality is trustworthy (XXHash-only fast paths
 A-PROTO & No prototype surgery / Proxy GetPrototypeOf traps reach checked code (enforced by stub omissions). & \textsc{assumed} \\
 A-DDA & No [[IsHTMLDDA]] object (\texttt{document.all}) reaches checked code (vacuous on Node). & \textsc{assumed} \\
 A-PROXY & No Proxy exotic object reaches checked code. & \textsc{assumed} \\
-A-HASINST & No non-default \texttt{Symbol.hasInstance} on narrowed \texttt{instanceof} RHS classes. & \textsc{violated} \\
+A-HASINST & No non-default \texttt{Symbol.hasInstance} governs a narrowed \texttt{instanceof}: narrowing is suppressed when the RHS declares one; dynamically installed hooks are assumed absent. & \textsc{assumed} \\
 TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty. & \textsc{proved} \\
 SET-SEM & A view authorizes exactly the writes its resolved $\mathsf{set}$-types accept; a readonly field authorizes nothing. & \textsc{proved} \\
 L-SUB-FIELDS-SET & \texttt{isSub}'s field arms preserve write capability downward: acceptance implies each target field's $\mathsf{set}$-type is below the source's, and readonly fields acquire no writers. & \textsc{open} \\
+L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & \textsc{open} \\
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
-F-CALL & The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads \texttt{call{=}None} as unknown callability (vs.\ refinement's definitely-not-callable). & \textsc{violated} \\
+F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
+F-THIS-IMPLICIT & The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitShape}/\texttt{ImplicitShape}, \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without comparing receiver types. & \textsc{assumed} \\
 SETCONSTRAINT-FUN & \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state. & \textsc{proved} \\
 E-TRANSPORT & Monotone-reads transport: an inclusion validated under $\rho$ survives later legal transitions on the same timeline, modulo MR-1. & \textsc{proved} \\
 TENV-EXPANDINTER & The \texttt{tenv.expandInter} mode flag is path-scoped, and both intersection forms it selects (expanded and deferred \texttt{unexpandedInter}) satisfy the L-INTER containment. & \textsc{open} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\
 A-INTERSEM & $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume. & \textsc{assumed} \\
-E-GUARD-PLACEHOLDER & An un-annotated ambient-class field placeholder must not head-expand to $\bot$ (the case E-GUARD's recursion-guard audit did not cover). & \textsc{violated} \\
+E-PLACEHOLDER-ATOM & An un-annotated ambient-class field reads as an opaque per-field atom; the atom's denotation must over-approximate the arbitrary runtime value. & \textsc{open} \\
+E-EXPKEY & The expansion-cache key (\texttt{ExpansionKey}: unqualified name text + arguments) identifies one definition: same-named, same-argument aliases from different modules must not collide. & \textsc{violated} \\
 ACCESSOR-METHOD & Accessor (\texttt{get}/\texttt{set}) members must be typed as fields, not methods; today a getter is a call signature, so \texttt{c.p()} type-checks and throws. & \textsc{violated} \\
 L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound. & \textsc{violated} \\
 \end{longtable}
 \endgroup
 \paragraph{Details.}\leavevmode
+\medskip\par\noindent\textbf{L-LIT-FOLD}\quad(\textsc{violated})\\*[0.15em]
+A literal synthesized by the enum constant folder denotes the member's runtime value.\\*[0.15em]
+{\small\emph{Anchor:} \texttt{enumFold} (string-concat arms); \texttt{enumNumOrUnknown}}\par
+\nopagebreak
+\textsc{violated}, witnessed end-to-end (deep dive G; issue draft \path{enum-concat-imprecise-fold.md}): the string-concat arms concatenate operand \emph{lexemes}, and a direct numeric-literal operand bypasses the double-safe gate that guards numeric fold results, so a beyond-precision spelling mints a member literal whose spelling is not the runtime string (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime value is \texttt{"x0"}). Numeric folds are exact within the gate and mint no literal outside it — that half is \textsc{proved}. A prerequisite of the future preservation theorem's switch-coverage lemma (semantic case coverage consumes member-value faithfulness)
+
 \medskip\par\noindent\textbf{L-MUT-ALIAS-CALL}\quad(\textsc{open})\\*[0.15em]
 Cross-view mutation coherence, call-mediated facet: a checked method call through one view preserves every live alias's membership; needs a receiver-effect strengthening of E-SIG, which as stated concerns behavioral signature semantics only\\*[0.15em]
 {\small\emph{Anchor:} method calls on narrowed receivers}\par
 \nopagebreak
-\textsc{open} (deep dive H): the minted \texttt{Array}$\langle\top\rangle$ view exposes the same incoherence through \texttt{push} as through the graded index write, but no signature semantics with receiver-heap effects exists to grade it against
+\textsc{open} (deep dive H): the live route is a setter-shaped method call on a narrowing-admitted alias, but no signature semantics with receiver-heap effects exists to grade it against
 
 \medskip\par\noindent\textbf{V-INTER-SET}\quad(\textsc{open})\\*[0.15em]
 \texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already graded by the narrowing-admission or minted-view sites\\*[0.15em]
@@ -97,7 +107,7 @@ Isolated attribution of \texttt{seenInter} freeze-window staleness (mechanism ac
 No fresh variable generated on a clone occurs in a type installed against the main substitution.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::clone}, \texttt{Subst::gen}}\par
 \nopagebreak
-discharged (deep dive E): unreachable — no \texttt{gen*} call site in the clone-compute-install tree; guard with the recommended CI assertion
+discharged (deep dive E, non-escape audit): the one \texttt{gen*} site reached on a clone (the \texttt{instanceof} preservation probe) produces values consumed only as \texttt{isSub} right-hand sides on per-branch re-clones — no probe product is installed against the main substitution; every other \texttt{gen*} site runs on the expression-typing substitution, and the skolem class is hard-guarded at runtime
 
 \medskip\par\noindent\textbf{M1}\quad(\textsc{assumed})\\*[0.15em]
 Semantic monotonicity of $\sem{\cdot}$ in variable envelopes (a property of the get-only, signature-opaque semantics).\\*[0.15em]
@@ -177,11 +187,11 @@ No Proxy exotic object reaches checked code.\\*[0.15em]
 \nopagebreak
 \textsc{assumed} (deep dive A)
 
-\medskip\par\noindent\textbf{A-HASINST}\quad(\textsc{violated})\\*[0.15em]
-No non-default \texttt{Symbol.hasInstance} on narrowed \texttt{instanceof} RHS classes.\\*[0.15em]
-{\small\emph{Anchor:} \texttt{isInstanceofRhs}}\par
+\medskip\par\noindent\textbf{A-HASINST}\quad(\textsc{assumed})\\*[0.15em]
+No non-default \texttt{Symbol.hasInstance} governs a narrowed \texttt{instanceof}: narrowing is suppressed when the RHS declares one; dynamically installed hooks are assumed absent.\\*[0.15em]
+{\small\emph{Anchor:} \path{rhsDeclaresHasInstance}}\par
 \nopagebreak
-\textsc{violated}, tsc-parity (deep dive A; issue draft \path{symbol-hasinstance-narrowing.md})
+\textsc{assumed} (deep dive A): the checker suppresses \texttt{instanceof} narrowing when the RHS class declares a custom \texttt{Symbol.hasInstance}, closing the declared case; the residue is a hook installed dynamically on an RHS whose declaration omits it — assumed unreachable for checked code, alongside A-PROTO's stub discipline
 
 \medskip\par\noindent\textbf{TVAR-SEM}\quad(\textsc{proved})\\*[0.15em]
 Canonical \texttt{TVar} denotation: an occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty.\\*[0.15em]
@@ -201,11 +211,17 @@ Write-capability preservation: field acceptance requires $f_2.\mathsf{set} \leq 
 \nopagebreak
 \textsc{open} (conditional): the syntactic checks are verified at every field arm (deep dive D, write-direction lemma); the SET-SEM containment they induce is conditional on the recursive \texttt{isSub} verdicts, exactly as the read direction is inside L-SUB
 
+\medskip\par\noindent\textbf{L-SUB-CLOSED-ABSENCE}\quad(\textsc{open})\\*[0.15em]
+Absence-fact preservation: against a closed target's never-valued index, a source with no covering index is rejected ($\top \leq \bot$), a source with one is accepted only if its $\mathsf{get} \leq \bot$, and a source \emph{naming} an extra field the target proves absent is rejected by the width lemma's extra-field check against the never-valued index — so an admitted view proves absent only keys the source already proved absent; the fact \textsc{R-In}'s true-branch pruning consumes\\*[0.15em]
+{\small\emph{Anchor:} \texttt{TFields::isSub\_IndexPair}; \texttt{TFields::isSub\_NamedFields} (extra-field arm); \texttt{closeObjectType}}\par
+\nopagebreak
+\textsc{open} (conditional): the syntactic checks are verified at every index-pair arm and at \texttt{isSub\_NamedFields}'s extra-source-field-against-target-index arm (deep dive D, the absence corollary); the containment they induce is conditional on the recursive \texttt{isSub} verdicts, exactly as the read direction is inside L-SUB
+
 \medskip\par\noindent\textbf{O-GETCOV}\quad(\textsc{open})\\*[0.15em]
 Soundness of the covariant variable read in subtyping (inherits L-INTER's violated $\bot$-clause).\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get} (covariant); \texttt{expandToClauses}}\par
 \nopagebreak
-\textsc{open} (deep dive D): the covariant variable read applies \texttt{Subst::get}'s constraint-intersection loop, whose soundness rests on the \texttt{L-INTER-BOT} bottoms; its live strata (incomparable signatures; string-spelling; beyond-precision num-spelling) leave the read unproven. On L-SUB's critical path
+\textsc{open} (deep dive D): the covariant variable read applies \texttt{Subst::get}'s constraint-intersection loop, whose soundness rests on the \texttt{L-INTER-BOT} bottoms; its live strata (incomparable signatures; beyond-precision num-spelling) leave the read unproven. On L-SUB's critical path
 
 \medskip\par\noindent\textbf{O-GETCONTRA}\quad(\textsc{open})\\*[0.15em]
 Soundness of the contravariant variable read in subtyping.\\*[0.15em]
@@ -219,17 +235,23 @@ Soundness of the array-literal decision procedure inside subtyping.\\*[0.15em]
 \nopagebreak
 \textsc{open} (deep dive D; delegated)
 
-\medskip\par\noindent\textbf{F-CALL}\quad(\textsc{violated})\\*[0.15em]
-The \texttt{isSubOptTFuns} \texttt{None}-mode arm reads \texttt{call{=}None} as unknown callability (vs.\ refinement's definitely-not-callable).\\*[0.15em]
-{\small\emph{Anchor:} \texttt{isSubOptTFuns}}\par
+\medskip\par\noindent\textbf{F-CABSENT}\quad(\textsc{violated})\\*[0.15em]
+The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types.\\*[0.15em]
+{\small\emph{Anchor:} \path{TFields::isSubCallability} ($\mathsf{CAbsent}$ arm); \path{narrowByTypeofFunction}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive D): a callable assigned to \texttt{\{\}} then narrowed by \texttt{typeof} to \texttt{never}; issue draft \path{class-constructor-call-none-typeof.md}
+\textsc{violated}, witnessed end-to-end (deep dive D): a callable laundered \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps is narrowed to \texttt{never} in the branch the runtime takes; issue draft \path{cabsent-brand-laundering.md}. The callability instance of the F-BRAND trust model (refinement narrows on a brand subtyping never validates)
 
 \medskip\par\noindent\textbf{F-BRAND}\quad(\textsc{violated})\\*[0.15em]
 Subtyping never compares the array brand, though refinement narrows on it.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TFields::isSub\_}}\par
 \nopagebreak
-\textsc{violated} by code-level derivation (deep dive D; composite witness sketch; no end-to-end run)
+\textsc{violated} by code-level derivation (deep dive D; composite witness sketch; no end-to-end run). The brand has a second consumer: the callability meet's array-brand $\bot$ arm (deep dive B) is semantic only under the brand's membership invariant, so a laundered callable in an array-branded view yields a spurious disjointness on a branch-dropping path
+
+\medskip\par\noindent\textbf{F-THIS-IMPLICIT}\quad(\textsc{assumed})\\*[0.15em]
+The implicit-receiver diagonals of this-parameter subtyping (\texttt{ImplicitShape}/\texttt{ImplicitShape}, \texttt{ImplicitClass}/\texttt{ImplicitClass}) accept without comparing receiver types.\\*[0.15em]
+{\small\emph{Anchor:} \texttt{ThisParam} arms in \texttt{TFuns} subtyping}\par
+\nopagebreak
+\textsc{assumed} (deep dive D): the diagonal acceptances are justified only under an attachment semantics — a method invoked on the object it was accessed on — which E-SIG does not yet state; a detached object-\emph{literal} method free-called with a \texttt{this}-reading body is accepted (probed), so the attachment premise is not checker-enforced on the literal route
 
 \medskip\par\noindent\textbf{SETCONSTRAINT-FUN}\quad(\textsc{proved})\\*[0.15em]
 \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state.\\*[0.15em]
@@ -253,7 +275,7 @@ The \texttt{tenv.expandInter} mode flag is path-scoped, and both intersection fo
 A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case).\\*[0.15em]
 {\small\emph{Anchor:} \texttt{indexForFieldName}; \texttt{TFields::isSub\_}}\par
 \nopagebreak
-\textsc{open} — found by external review: the width lemma checks a numeric-named sub field against only one super index (\texttt{indexForFieldName} returns a single index), while covering semantics needs both; SKJS enforces neither TS2411 nor TS2413. The subtyping over-acceptance is real but \emph{not} end-to-end unsound at the pin — reads of numeric-string keys stay conservative (\texttt{string|number}), masking it, as verified against the binary; a validator-completeness gap, not a witnessed unsoundness. Cited at deep dive D's width lemma as a named residual
+\textsc{open} — found by external review: the width lemma checks a numeric-named sub field against only one super index (\texttt{indexForFieldName} returns a single index), while covering semantics needs both. Declarations whose number/string index value types are incompatible are rejected at the declaration itself (verified against the binary), shrinking but not closing the gap: the single-index consultation is still in code, unreached by any witness so far — a validator-completeness gap, not a witnessed unsoundness. Cited at deep dive D's width lemma as a named residual
 
 \medskip\par\noindent\textbf{A-INTERSEM}\quad(\textsc{assumed})\\*[0.15em]
 $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer upper bound the dispatcher's fast paths assume.\\*[0.15em]
@@ -261,11 +283,17 @@ $\sem{\mathsf{TInter}(\bar t)} \subseteq \bigcap \sem{t}$ — the instance-layer
 \nopagebreak
 \textsc{assumed} (deep dive D; the instance-layer counterpart of deep dive C's \texttt{TInter} expansion — an upper bound on the denotation, distinct from L-EXP's over-approximation direction)
 
-\medskip\par\noindent\textbf{E-GUARD-PLACEHOLDER}\quad(\textsc{violated})\\*[0.15em]
-An un-annotated ambient-class field placeholder must not head-expand to $\bot$ (the case E-GUARD's recursion-guard audit did not cover).\\*[0.15em]
-{\small\emph{Anchor:} \texttt{instantiate} (missing-annotation return); \texttt{expandToVectors}}\par
+\medskip\par\noindent\textbf{E-PLACEHOLDER-ATOM}\quad(\textsc{open})\\*[0.15em]
+An un-annotated ambient-class field reads as an opaque per-field atom; the atom's denotation must over-approximate the arbitrary runtime value.\\*[0.15em]
+{\small\emph{Anchor:} \texttt{instantiate} (missing-annotation placeholder)}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive C): the missing-annotation identity return fires with \texttt{seenInstantiate} empty, the identity is dropped by the expansion seen-set, and the field reads as $\bot$ (accepted into \texttt{never}); issue draft \path{ambient-unannotated-field-bottom.md}. Sibling of the recursion-guard E-GUARD row, which is empirically safe
+\textsc{open} (deep dive C): the placeholder is a fresh opaque atom, so the field neither head-expands to $\bot$ nor unifies with any other type — assignments out of it are rejected, which is conservative for the flows audited; outstanding is the atom's semantics under narrowing and equality (an arbitrary runtime value must inhabit it wherever membership is consulted)
+
+\medskip\par\noindent\textbf{E-EXPKEY}\quad(\textsc{violated})\\*[0.15em]
+The expansion-cache key (\texttt{ExpansionKey}: unqualified name text + arguments) identifies one definition: same-named, same-argument aliases from different modules must not collide.\\*[0.15em]
+{\small\emph{Anchor:} \texttt{ExpansionKey}; \texttt{seenExpansion}}\par
+\nopagebreak
+\textsc{violated}, witnessed end-to-end in both directions (deep dive C; issue draft \path{expansion-key-collision.md}): two same-named, same-argument aliases from different modules share one \texttt{ExpansionKey}, so whichever expands first is served for both — an unsound acceptance one way (a \texttt{string}-typed call returns \texttt{undefined}) and an order-dependent false rejection the other, its diagnostic anchored in the wrong module; renaming either alias restores the correct verdicts. Refutes the implementation's not-yet-triggerable claim (upstream \#889); fix direction: key by definition identity
 
 \medskip\par\noindent\textbf{ACCESSOR-METHOD}\quad(\textsc{violated})\\*[0.15em]
 Accessor (\texttt{get}/\texttt{set}) members must be typed as fields, not methods; today a getter is a call signature, so \texttt{c.p()} type-checks and throws.\\*[0.15em]

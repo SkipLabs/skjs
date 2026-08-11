@@ -59,17 +59,19 @@ in fact exact; the \texttt{seenUnion} cache is unconditionally sound because
 the union computation never reads the substitution. Intersection is
 \emph{refuted as stated} by one defect that makes \texttt{inter} return
 $\bot$ on semantically overlapping operands — the treatment of a failed
-call/new signature intersection as branch disjointness — with two further
-spelling defects inheriting the \textbf{L-LIT}(ii) violations:
-string-kind escape spellings, and beyond-precision numeric spellings that
-alias one double. All three are empirically witnessed at the pinned
+signature intersection inside the callability meet as branch
+disjointness — with one further spelling defect inheriting the
+\textbf{L-LIT}(ii) violation: beyond-precision numeric spellings that
+alias one double. Both are empirically witnessed at the pinned
 revision: the checker silently narrows an inhabited variable to
 \texttt{never} in a reachable branch. Every other intersection stratum
-(units, tags, named fields, indexes under the covering semantics, the
-array brand, the per-tag \texttt{STypes} assembly, the instance layer) is
-proved sound, so the ledger row splits into proved strata, the three
-violated strata, and one named residual obligation (the
-\texttt{seenInter} cache under candidate freezing).
+(units, tags, literal spellings of decoded strings and within-precision
+numbers, named fields, indexes under the covering semantics, the array
+brand, the four-point callability meet outside its signature arm, the
+per-tag \texttt{STypes} assembly, the instance layer) is proved sound,
+so the ledger row splits into proved strata, the two violated strata,
+and one named residual obligation (the \texttt{seenInter} cache under
+candidate freezing).
 \end{abstract}
 
 \tableofcontents
@@ -86,7 +88,7 @@ union at all levels), established here \emph{exact at every stratum};
 \textbf{L-INTER} (the containment clause of intersection); and
 \textbf{L-INTER-BOT} (the $\bot$-implies-disjointness clause), which
 splits here into an exact containment and the $\bot$-clause, refuted in
-three strata. It also owns the cache obligation C-FREEZE-CACHE; its
+two strata. It also owns the cache obligation C-FREEZE-CACHE; its
 proofs consume the canonical variable-denotation row TVAR-SEM (owner:
 main paper).
 
@@ -218,13 +220,13 @@ arises at this level.
 \impl{TTypeUnion.sk / TObject::union (branches.union)}
 \end{proof}
 
-The nontrivial object-\emph{merging} code (\texttt{TFields::union},
-\texttt{TField::union}) is \emph{not} on the $\union(t_1,t_2)$ path: it is
-a separate client used to collapse a multi-branch object into a single
-summary branch for field reads. We audit it in
-Section~\ref{sec:tfields-union} because the main paper's \textsc{R-EqField}
-proof leans on the resolved read type it produces, and L-UNION is stated
-``at all levels''.
+The nontrivial object-\emph{merging} code (\texttt{TField::union} and
+the per-read merge loops that apply it) is \emph{not} on the
+$\union(t_1,t_2)$ path: it is a separate client family used to resolve
+a read against a multi-branch object. We audit it in
+Section~\ref{sec:tfields-union} because the main paper's
+\textsc{R-EqField} proof leans on the resolved read type it produces,
+and L-UNION is stated ``at all levels''.
 
 \subsection{STypes, Clause, Clauses, TInsts}
 
@@ -318,85 +320,99 @@ reuse for the cache in Section~\ref{sec:caches}.
 \end{proof}
 
 Two remarks. First, exactness is relative to the main paper's
-\emph{membership} semantics, in which function signatures are opaque; the
-signature bodies that \texttt{TFun::union} builds (parameters intersected
-contravariantly, returns unioned) never enter $\sem{\cdot}$ and are part
-of the subtyping surface instead — and \texttt{TFun::union} is not
-reachable from $\union(t_1,t_2)$ anyway (only from the branch-merging
-client below). Second, \texttt{unionN} of an empty sequence returns
-$\bot$, the exact empty union.
+\emph{membership} semantics, in which function signatures are opaque;
+the signature bodies that \texttt{TFun::union} builds (parameters
+intersected contravariantly, \texttt{this} parameters intersected
+through the \texttt{ThisParam} cases — attach-only absorbing, an
+undeclared \texttt{this} acting as the intersection identity
+(\texttt{TTypeUnion.sk:286-307}) — returns unioned) never enter
+$\sem{\cdot}$ and are part of the subtyping surface instead — and
+\texttt{TFun::union} is not reachable from $\union(t_1,t_2)$ anyway
+(only from the per-read merging clients below). Second, \texttt{unionN}
+of an empty sequence returns $\bot$, the exact empty union.
 
-\subsection{The branch-merging client: TFields::union}
+\subsection{The branch-merging clients: per-read merges and the
+callability join}
 \label{sec:tfields-union}
 
-A multi-branch object's field reads union the per-field types across the
-branches: \texttt{maybeGetType} combines each branch's field with
-\texttt{TField::union} (via \texttt{TType::unionN}), and the sibling read
-paths (\texttt{resolveLiteralAccess}, \texttt{maybeGetSymbol},
-\texttt{maybeGetCall}/\texttt{maybeGetNew},
-\texttt{maybeGetNonSyntheticIndexForKeyKind}) do the same; these feed the
-resolved read types of \textsc{R-EqField}. The correctness statement is
-branch-level:
+A multi-branch object is never collapsed into a summary branch; instead
+each \emph{read} merges what the branches offer for that one lookup,
+and every read path requires the key to be served by \emph{all}
+branches (a lookup any branch cannot serve returns \texttt{None} and is
+rejected upstream). The paths: \texttt{TObject::maybeGetType} resolves
+the field per branch and unions the resolved types
+(\texttt{TType.sk:1008-1022}); \texttt{resolveLiteralAccess} and
+\texttt{maybeGetSymbol} merge the per-branch \texttt{TField}s with
+\texttt{TField::union} (\texttt{TType.sk:1259-1279, 1115-1134});
+accessible index lookups fold \texttt{TField::unionIndex}
+(\texttt{TType.sk:1288-1305}); and the call/new surface is the
+\emph{join} \texttt{TObject::modeOf} over the \texttt{Callability}
+lattice with \texttt{TFuns::union} on signatures
+(\texttt{TType.sk:1136-1204}). These feed the resolved read types of
+\textsc{R-EqField}. The correctness statements:
 
-\begin{lemma}[Branch Merge Over-Approximates]
+\begin{lemma}[Per-Read Merges Over-Approximate]
 \label{lem:tfields-union}
-For object branches $b_1, b_2$:
-$\sem{b_1} \cup \sem{b_2} \subseteq
-\sem{\TFields\mathord{::}\union(b_1,b_2)}$.
+Let $o \in \sem{\mathsf{object}(B)}$, say $o \in \sem{b_1}$ with
+$b_1 \in B$.
+(1) If every branch resolves field $f$, then $o$'s value at $f$ (when
+present) lies in the unioned resolved type returned by
+\texttt{maybeGetType}, and $f$ is required of $o$ only if $b_1$
+requires it.
+(2) The same holds for the merged \texttt{TField} of
+\texttt{resolveLiteralAccess}/\texttt{maybeGetSymbol}
+(\texttt{TField::union}: get-union, $\mathsf{opt}_1 \vee
+\mathsf{opt}_2$) and for folded index gets
+(\texttt{TField::unionIndex}).
+(3) \texttt{modeOf} returns the lattice join of the branch modes, so
+$o$ satisfies the returned mode; in particular
+$\mathsf{CPresent}$ is returned only when every branch is
+$\mathsf{CPresent}$, and \texttt{maybeGetCall}/\texttt{maybeGetNew}
+accept only that case.
 \end{lemma}
 \begin{proof}
-Let $o \in \sem{b_1}$ (the other case is symmetric); we check every
-constraint of the merged branch $b$.
-\emph{Named fields.} A field in both sides merges with get-union and
-$\mathsf{opt}_1 \vee \mathsf{opt}_2$: if $o$ has the key, its value is in
-$\mathsf{get}_1 \subseteq$ the union (Theorem~\ref{thm:union}); if absent,
-the field is required only if required on both sides, contradicting
-$o \in \sem{b_1}$ when required there — so optionality is respected. A
-field only in $b_1$: if $b_2$ has an index covering its key, the merge
-keeps it unioned with the index-as-named field, which is \emph{optional}
-(indexes carry $\mathsf{opt} = \mathsf{true}$), so the disjunct
-$o \in \sem{b_2}$ also satisfies it; if $b_2$ has no covering index, the
-field is \emph{dropped}, sound under the extensible semantics.
-\emph{Indexes.} A per-kind index survives only if both sides have one
-covering that kind (the number index may be covered by a string index,
-per the covering semantics), with get-union. Take a prop $p$ of $o$
-covered by the merged index and not named in $b$. Names in $b$ include
-every $b_1$ name that survived; a $b_1$ name is dropped only when $b_2$
-lacks a covering index — but then the merged index of that kind would not
-exist either. So $p$ is covered-and-not-named in $b_1$ as well, and
-$\mathsf{get}(o,p) \in \sem{\mathsf{idx}_1.\mathsf{get}} \subseteq$ the
-union. The final adjustment $\mathsf{idx}_{\mathsf{num}} \mathrel{:=}
-\mathsf{idx}_{\mathsf{num}} \sqcap \mathsf{idx}_{\mathsf{str}}$
-(maintaining the invariant
-$N.\mathsf{get} <: S.\mathsf{get}$) is sound because a
-numeric-kind prop of $o$ is constrained by \emph{both} the effective
-number index and the string index of $b_1$ (a string index covers numeric
-keys), so its value is in both gets, hence in their intersection —
-\emph{this} appeal is to intersection soundness at the field-type level
-and is unconditional there (Section~\ref{sec:inter-fields}).
-\emph{Call/new.} One side absent yields mode $\mathsf{Maybe}$, which
-constrains nothing; both present yields
-$\mathsf{opt}_1 \vee \mathsf{opt}_2$ over the signature union, and only
-the $\mathsf{Definite}$/$\mathsf{None}$ modes are semantically visible:
-$o$ callable per $b_1$'s $\mathsf{Definite}$ stays callable; the merged
-mode is $\mathsf{Definite}$ only if both were. Signatures are opaque.
-\emph{Brand.} Kept only when the two sides agree; otherwise
-$\mathsf{None}$ (unconstrained), a widening.
+(1) $b_1$'s resolved type for $f$ is one disjunct of the returned
+\texttt{unionN}, and $o$'s value at $f$ lies in it ($o \in \sem{b_1}$,
+field or covering-index clause of the object semantics); containment by
+Theorem~\ref{thm:union}. Requiredness: the union is over per-branch
+resolutions, each carrying its own optionality into the merged
+optionality disjunction, so a key optional in $b_1$ stays optional.
+(2) \texttt{TField::union} unions gets and or-s optionality — the
+constraint of the merged field on $o$ is weaker than $b_1$'s
+(get-containment by Theorem~\ref{thm:union}; a required merged field
+is required on both sides, in particular on $b_1$).
+(3) By case analysis on \texttt{modeOf}'s fold
+(\texttt{TType.sk:1162-1204}): any $\mathsf{CUnknown}$ branch, or
+mixed $\mathsf{CAbsent}$/positive branches, join to
+$\mathsf{CUnknown}$ (no claim); all-$\mathsf{CAbsent}$ joins to
+$\mathsf{CAbsent}$, which $o$ satisfies from $b_1$'s side; a positive
+join ($\mathsf{CFunction}$, or $\mathsf{CPresent}$ with the
+\texttt{TFuns::union} of the branch signatures) asserts
+$[[\mathrm{Call}]]$, which $b_1$ (positive, since no
+$\mathsf{CAbsent}$/$\mathsf{CUnknown}$ was seen) already asserted of
+$o$; signatures are opaque to membership. The partial signature union
+\texttt{modeOf} also returns is consumed only by recovery diagnostics,
+never as a sound signature (the code comment states this;
+\texttt{maybeGetCall} requires $\mathsf{CPresent}$,
+\texttt{TType.sk:1206-1214}).
 \emph{Set-types and access.} Membership never reads $\mathsf{set}$
-(get-only semantics) — the merge intersects set-types, the correct dual
-for write-through-the-summary, but nothing here depends on it; and
+(get-only semantics) — \texttt{TField::union} intersects set-types
+(deferred as an unexpanded intersection under the
+\texttt{tenv.expandInter} mode flag), the correct dual for
+write-through-the-merge, but nothing here depends on it; and
 \texttt{FieldAccess::combine} is most-restrictive, which only
 \emph{restricts} programs (main paper, Definition of object semantics,
 Never/Phantom discussion).
-\impl{TType.sk / maybeGetType, resolveLiteralAccess, maybeGetSymbol,
-maybeGetCall, maybeGetNew, maybeGetNonSyntheticIndexForKeyKind;
-TTypeUnion.sk / TField::union, unionIndex}
+\impl{TType.sk / TObject::maybeGetType, resolveLiteralAccess,
+maybeGetSymbol, modeOf, callMode, newMode, maybeGetCall, maybeGetNew,
+maybeGetAccessibleIndexForKeyKind;
+TTypeUnion.sk / TField::union, unionIndex, TFuns::union}
 \end{proof}
 
-Unlike the branch-set union of Lemma~\ref{lem:obj-union}, the merge is a
-genuine over-approximation (field gets are unioned across branches), which
-is why the implementation uses it only for reads, never as the
-representation of a union type.
+Unlike the branch-set union of Lemma~\ref{lem:obj-union}, the per-read
+merge is a genuine over-approximation (field gets are unioned across
+branches), which is why the implementation uses it only for reads,
+never as the representation of a union type.
 
 %==========================================================================
 \section{Intersection, Level by Level}
@@ -404,12 +420,15 @@ representation of a union type.
 
 We now audit \texttt{TType::inter} in the same bottom-up order. The
 summary: the primitive stratum is exact \emph{modulo spelling injectivity}
-(\textbf{L-LIT}(ii), known violated); the per-tag assembly in
-\texttt{STypes::inter} has an outright bug; inside an object branch pair,
-fields, indexes and the brand are sound (with the brand and the
-no-shared-tag cases being the only \emph{semantic} bottoms), but the
-call/new arm converts a failed signature intersection into a branch drop,
-which is heuristic. The instance layer is sound. Throughout,
+(\textbf{L-LIT}(ii) — proved for decoded strings and within-precision
+numbers, violated for beyond-precision numeric spellings); the per-tag
+assembly in \texttt{STypes::inter} is exact; inside an object branch
+pair, fields, indexes, the brand, and the callability meet outside its
+signature arm are sound (the brand conflicts, the array-branded
+callability conflicts, and the no-shared-tag cases being the
+\emph{semantic} bottoms), but the signature arm of the callability meet
+converts a failed signature intersection into a branch drop, which is
+heuristic. The instance layer is sound. Throughout,
 \texttt{inter\_} expands its operands as it runs (covariant reads seal
 variables), an evolution $\rho \to \rho'$; the operands transport across
 it by \textbf{L-EXP} (expansion preserves or enlarges semantics; imported
@@ -438,10 +457,17 @@ denotations exclude NaN). By transitivity
 $\delta_k(\ell_1) \approx \delta_k(\ell_2)$, so by injectivity
 $\ell_1 = \ell_2 \in L_1 \cap L_2$. The implementation intersects
 \emph{spelling} sets, so this is exactly its computation. If injectivity
-fails — as for the string kind, whose escape spellings are stored
-undecoded — two spellings of the same value make
-$L_1 \cap L_2 = \emptyset$ while the semantic intersection is inhabited.
-\impl{PrimLiterals.sk / inter; TTypeInter.sk / TPrimValue::inter}
+fails — as for beyond-precision numeric spellings, which alias one
+double while remaining distinct lexemes — two spellings of the same
+value make $L_1 \cap L_2 = \emptyset$ while the semantic intersection is
+inhabited. For the string kind injectivity holds outright: escape
+sequences are decoded at parse time
+(\texttt{JSStringEscape.sk / decodeJSStringLiteral}, called from the
+literal-building sites in \texttt{ParserExpr.sk} and
+\texttt{ParserUtils.sk}), so the stored lexeme \emph{is} the denoted
+string and spelling intersection coincides with value intersection.
+\impl{PrimLiterals.sk / inter; TTypeInter.sk / TPrimValue::inter;
+JSStringEscape.sk / decodeJSStringLiteral}
 \end{proof}
 
 \begin{lemma}[TPrimValue/TPrimUnit Intersection]
@@ -516,6 +542,15 @@ $\inter(b_1,b_2)$ whenever it is not \texttt{None}.
 \impl{TTypeInter.sk / TObject::inter}
 \end{proof}
 
+One guard sits on this product: when the pairwise crossing of two
+multi-branch objects exceeds the representation cap
+(\texttt{kMaxObjectBranches}), \texttt{TObject::inter} raises a fatal
+diagnostic (TS2590, ``too complex to represent'';
+\texttt{TTypeInter.sk:609-624}) instead of materializing the
+exponential branch set. That is a \emph{rejection}, not a $\bot$
+result — conservative for soundness, a completeness bound only — so it
+does not enter the bottom inventory.
+
 So the object stratum reduces entirely to one branch pair, audited
 constraint by constraint against the main paper's object semantics. Fix
 $o \in \sem{b_1} \cap \sem{b_2}$ and let $b$ be the merged branch.
@@ -588,28 +623,59 @@ covered by \emph{both} the effective number index and the string index
 of each side that has them. No index arm returns bottom.
 \impl{TTypeInter.sk / TIndexes::inter, TFields::interOptIndex}
 
-\paragraph{Call/new (unsound bottom).}
-One side absent keeps the other: sound — if $b_1$ has
-$\mathsf{call} = \mathsf{None}$ ($o$ not callable) and $b_2$ has a mode,
-the kept mode is satisfied vacuously ($\mathsf{Maybe}$) or the pair was
-semantically disjoint anyway ($\mathsf{Definite}$; any result
-over-approximates $\emptyset$, though $\bot$ would have been more
-precise). Both present: the optionality conjunction
-$\mathsf{opt}_1 \wedge \mathsf{opt}_2$ is sound ($o$ callable whenever
-either side demands it, and $\mathsf{Definite}$ results demand only what
-some side demanded). The defect is \texttt{TFuns::inter}: it intersects
-the signatures by trying \texttt{TFun::isSub} in both directions and
-returning the smaller side, and when \emph{neither} signature subsumes
-the other it returns \texttt{None} — which \texttt{TFields::inter}
-converts into dropping the whole branch pair. ``Neither is a subtype of
-the other'' is not disjointness: under the membership semantics
-signatures are opaque, and even behaviorally, one function value can
-satisfy two incomparable signatures (any overload; e.g.\ a
-\texttt{(x: unknown) => void} value inhabits both
+\paragraph{Call/new: the callability meet.}
+The call and new members are values of the four-point
+\texttt{Callability} lattice
+($\mathsf{CPresent}(\mathit{sig}) \le \mathsf{CFunction} \le
+\mathsf{CUnknown}$, $\mathsf{CAbsent} \le \mathsf{CUnknown}$;
+\texttt{TType.sk:2189-2237}), read by membership semantics as:
+$\mathsf{CAbsent}$ — no member implements $[[\mathrm{Call}]]$
+(resp.\ $[[\mathrm{Construct}]]$); $\mathsf{CFunction}$ and
+$\mathsf{CPresent}$ — every member does; $\mathsf{CUnknown}$ — no
+constraint; signatures opaque. Both arms of \texttt{TFields::inter} meet
+the modes with \texttt{TFields::interCallability}
+(\texttt{TTypeInter.sk:474-502}), arm by arm:
+$(\mathsf{CUnknown}, m) \to m$ is exact (one side constrains nothing);
+$(\mathsf{CAbsent}, \mathsf{CAbsent}) \to \mathsf{CAbsent}$ and
+$(\mathsf{CFunction}, \mathsf{CFunction}) \to \mathsf{CFunction}$ are
+exact; $(\mathsf{CFunction}, \mathsf{CPresent}) \to \mathsf{CPresent}$
+is exact (both sides assert $[[\mathrm{Call}]]$; the signature is the
+more precise claim). The mixed arm
+$(\mathsf{CAbsent}, \mathsf{CPresent}/\mathsf{CFunction})$ is
+brand-aware: off the array brand it \emph{keeps the positive mode} — a
+sound over-approximation of a contradiction (a member cannot both
+implement and not implement $[[\mathrm{Call}]]$), deliberately not
+$\bot$ because $\mathsf{CAbsent}$ on nominal instances is a brand-like
+approximation that structural width subtyping can falsify (the
+laundering documented in the code at \texttt{isSubCallability}), so a
+$\bot$ here would collapse inhabited hybrid types like
+\texttt{(() => void) \& C}. Under the array brand
+($\mathsf{isArray} = \mathsf{Some(true)}$) the same arm returns
+\texttt{None} (\texttt{TTypeInter.sk:485-492}): \emph{semantic},
+because an array-branded member is an array exotic object, which
+implements neither $[[\mathrm{Call}]]$ nor $[[\mathrm{Construct}]]$
+(ECMA-262 \S10.4.2), contradicting the positive mode — conditional on
+the array brand's membership invariant, i.e.\ exactly the brand trust
+that subtyping leaves unvalidated (registry row F-BRAND); a value
+laundered into an array-branded view would make this bottom spurious
+through that row, not through this arm. The meet also preserves the
+constructible-implies-$[[\mathrm{Call}]]$ construction invariant
+pairwise (\texttt{TType.sk:2273-2281}): it never invents a
+constructible mode from $\mathsf{CUnknown}$ inputs. The one unsound
+arm is $(\mathsf{CPresent}, \mathsf{CPresent})$: it delegates to
+\texttt{TFuns::inter}, which intersects the signatures by trying
+\texttt{TFun::isSub} in both directions and returning the smaller side,
+and when \emph{neither} signature subsumes the other it returns
+\texttt{None} — which \texttt{interCallability} propagates and
+\texttt{TFields::inter} converts into dropping the whole branch pair.
+``Neither is a subtype of the other'' is not disjointness: under the
+membership semantics signatures are opaque, and even behaviorally, one
+function value can satisfy two incomparable signatures (any overload;
+e.g.\ a \texttt{(x: unknown) => void} value inhabits both
 \texttt{(s: string) => void} and \texttt{(n: number) => void}).
 
-\begin{finding}[Signature Bottom: L-INTER is Violated at the Call/New
-Stratum]
+\begin{finding}[Signature Bottom: L-INTER is Violated at the
+Signature Arm of the Callability Meet]
 \label{find:tfun}
 $\inter$ of two single-branch function types with incomparable
 signatures is $\bot$ although their semantic intersection is inhabited.
@@ -624,10 +690,11 @@ correctly says reference types always overlap, in direct tension with
 \texttt{never} (probe~4), so nothing is assignable to \texttt{F}
 (spurious rejection — the same defect surfacing as incompleteness).
 The sound repair is to keep the branch with an overload-like or
-widened signature (even call mode $\mathsf{Definite}$ with either
-signature is membership-sound), never to drop it.
-\impl{TTypeInter.sk / TFun::inter, TFuns::inter, TFields::inter
-(call/new arms); SType::overlaps (contrast)}
+widened signature (even $\mathsf{CPresent}$ with either operand's
+signature is membership-sound, signatures being opaque), never to drop
+it.
+\impl{TTypeInter.sk / TFun::inter, TFuns::inter, TFields::interCallability,
+TFields::inter (call/new arms); SType::overlaps (contrast)}
 \end{finding}
 
 \subsection{Clause and Clauses intersection}
@@ -754,8 +821,9 @@ inherited from the sites it aggregates.
 \textbf{Site} & \textbf{When $\bot$} & \textbf{Nature of $\bot$} \\
 \midrule
 \texttt{PrimLiterals::inter} & spelling sets disjoint &
-  semantic iff L-LIT(ii); spurious for the string kind and for
-  beyond-precision num spellings (Finding~\ref{find:spelling}) \\
+  semantic iff L-LIT(ii); exact for decoded strings and
+  within-precision numbers; spurious for beyond-precision num
+  spellings (Finding~\ref{find:spelling}) \\
 \texttt{TPrimValue::inter} & kind mismatch & semantic (A1); unreachable
   from \texttt{STypes::inter} \\
 \texttt{STypes::inter}, no shared tag survives & all per-tag results
@@ -764,8 +832,13 @@ inherited from the sites it aggregates.
   intersection is empty & semantic (A1); dropped, not zeroed \\
 \texttt{TFields::inter}, brand & $\mathsf{Some}(\mathsf{true})$ vs
   $\mathsf{Some}(\mathsf{false})$ & semantic \\
-\texttt{TFields::inter}, call/new & \texttt{TFuns::inter} fails both
-  \texttt{isSub} directions & heuristic
+\texttt{interCallability}, array-branded conflict &
+  $\mathsf{CAbsent} \sqcap \mathsf{CPresent}/\mathsf{CFunction}$ under
+  $\mathsf{isArray} = \mathsf{Some(true)}$ & semantic, conditional on
+  the array brand's membership invariant (F-BRAND) \\
+\texttt{interCallability}, signature arm & \texttt{TFuns::inter} fails
+  both \texttt{isSub} directions
+  ($\mathsf{CPresent} \sqcap \mathsf{CPresent}$) & heuristic
   (Finding~\ref{find:tfun}) \\
 \texttt{TFields::interIsArray} & brand conflict at \textsc{R-IsArray} &
   semantic \\
@@ -787,8 +860,10 @@ branch (and, if the field is optional, its members lacking the key)
 survives. The implementation's own \texttt{overlaps} comment documents
 this deliberately (``a shared field with non-overlapping types'' is
 listed as a TODO for \emph{warning} precision, not as a bottom). So the
-only unsound bottoms are the two Findings plus the conditional literal
-stratum — but each sits on a hot refinement path.
+only unsound bottoms are the signature arm
+(Finding~\ref{find:tfun}) and the beyond-precision range of the
+literal stratum (Finding~\ref{find:spelling}) — but each sits on a hot
+refinement path.
 
 %==========================================================================
 \section{The Caches: seenUnion and seenInter}
@@ -924,33 +999,28 @@ runtime; the end-to-end witness and the tsc comparison are issue draft
 \subsection{Probe 3: literal spellings (Finding~\ref{find:spelling})}
 \begin{finding}[Spelling-Sensitive Disjointness]
 \label{find:spelling}
-With \texttt{a: "\textbackslash x61"} and \texttt{b: "a"}, the checker
-warns that \texttt{a === b} never holds and narrows the true branch to
-\texttt{never} — yet the comparison is \emph{true} at runtime (both
-spellings denote \texttt{"a"}), so both the warning and the narrowing
-are wrong; the executed witness is with the issue draft cited below.
-This is not a new root cause: it is the \emph{string}-kind
-\textbf{L-LIT}(ii) violation (escape sequences stored undecoded, issue
-draft \path{issues/string-literal-escapes-undecoded.md}) propagating
-through Lemma~\ref{lem:lit-inter} into \texttt{PrimLiterals::inter}'s
-bottom and thence into \texttt{overlaps} and the branch logic — L-INTER's
-\emph{disjointness} reading breaking on it. \emph{Within-precision}
-numeric spellings do not trigger it: the parser normalizes them, so
-\texttt{0.0} and \texttt{0} share one lexeme. \emph{Beyond-precision}
-numeric spellings do trigger it, through the same lemma: spellings that
-alias one double are kept distinct (the num-kind \textbf{L-LIT}(ii)
-violation, issue draft
+Beyond-precision numeric spellings break L-INTER's \emph{disjointness}
+reading: spellings that alias one double are kept distinct (the
+num-kind \textbf{L-LIT}(ii) violation, issue draft
 \path{issues/beyond-precision-numeric-literals.md}, which carries the
 executed witness: two $2^{53}$ spellings make an accepted
 \texttt{===}-true branch live at runtime with a spurious \texttt{never},
-and a number flows into \texttt{string}), so their lexeme
-intersection is empty while their value sets coincide.
+and a number flows into \texttt{string}), so their lexeme intersection
+is empty while their value sets coincide — the failure propagating
+through Lemma~\ref{lem:lit-inter} into \texttt{PrimLiterals::inter}'s
+bottom and thence into \texttt{overlaps} and the branch logic.
+\emph{Within-precision} numeric spellings do not trigger it: the parser
+normalizes them, so \texttt{0.0} and \texttt{0} share one lexeme.
+\emph{String} spellings do not trigger it either: escape sequences are
+decoded at parse time, so distinct stored lexemes denote distinct
+strings and the spelling bottom is semantic
+(Lemma~\ref{lem:lit-inter}).
 The comparison \emph{lint} knows the runtime truth —
 \texttt{checkComparisonOverlap} is silenced for imprecise pairs by
 \texttt{hasImpreciseNumberLiteral}
-(\texttt{TypeCheckExpr.sk:1448-1458}), its comment citing this very pair
-— but the narrowing and intersection path carries no precision guard, so
-the spurious $\bot$ is still installed.
+(\texttt{TypeCheckExpr.sk:1656-1657, 1704}), its comment citing this
+very pair — but the narrowing and intersection path carries no
+precision guard, so the spurious $\bot$ is still installed.
 \end{finding}
 
 \subsection{Probe 4: type-level intersections}
@@ -971,8 +1041,8 @@ For completeness, the containments we attempted and could not close,
 each of which became a Finding or Obligation rather than a theorem:
 (1) call/new-level $\bot$-implies-disjoint — refuted
 (Finding~\ref{find:tfun});
-(2) literal-level $\bot$-implies-disjoint without the string-kind and
-beyond-precision num-kind L-LIT(ii) — refuted, both kinds
+(2) literal-level $\bot$-implies-disjoint without the beyond-precision
+num-kind L-LIT(ii) — refuted for that range
 (Finding~\ref{find:spelling});
 (3) unconditional \texttt{seenInter} reuse — the sealing argument's
 freeze gap resisted proof and is Obligation~\ref{obl:freeze-cache}.
@@ -1000,21 +1070,23 @@ Union: object branch sets & Lemma~\ref{lem:obj-union} (exact) \\
 Union: STypes / Clause / Clauses / TInsts &
   Lemmas~\ref{lem:stypes-union}--\ref{lem:insts-union},
   Theorem~\ref{thm:union} (exact) \\
-Union: branch-merge client (\texttt{TFields::union}) &
-  Lemma~\ref{lem:tfields-union} (over-approx.) \\
+Union: per-read merge clients (\texttt{TField::union},
+  \texttt{modeOf}) & Lemma~\ref{lem:tfields-union} (over-approx.) \\
 \texttt{seenUnion} cache & Theorem~\ref{thm:seenunion} (unconditional) \\
 \midrule
 Inter: units, tag dropping, no-shared-tag $\bot$ &
   Lemma~\ref{lem:prim-inter}, A1 \\
 Inter: literal sets & Lemma~\ref{lem:lit-inter}, conditional on
-  L-LIT(ii); string-kind escapes and beyond-precision num spellings
-  spurious (Finding~\ref{find:spelling}) \\
+  L-LIT(ii); exact for decoded strings and within-precision numbers;
+  beyond-precision num spellings spurious
+  (Finding~\ref{find:spelling}) \\
 Inter: STypes assembly & exact — empty shared tags dropped, $\bot$ iff all
   drop \\
 Inter: named fields, indexes, brand, access &
   Section~\ref{sec:inter-object} (brand $\bot$ semantic; given
   sub-level L-INTER) \\
-Inter: call/new & signature-failure branch drop
+Inter: callability meet & sound outside the signature arm (array-brand
+  $\bot$ semantic modulo F-BRAND); signature-failure branch drop
   (Finding~\ref{find:tfun}, pinned probe) \\
 Inter: Clause/Clauses product & Lemmas~\ref{lem:clause-inter},
   \ref{lem:clauses-inter} (derived) \\
@@ -1036,9 +1108,11 @@ Cloned-subst reuse of results & clone-stability, via the fork-state
 Lemmas~\ref{lem:lit-union}--\ref{lem:tfields-union} and
 Theorem~\ref{thm:seenunion} for the cache). Note field: ``exact for
 membership semantics at every stratum on the $\union(t_1,t_2)$ path;
-the branch-merge client \texttt{TFields::union} is over-approximating
-only. Signature bodies built by \texttt{TFun::union} are outside
-membership semantics and remain part of the subtyping surface.''
+the per-read merge clients (\texttt{TField::union}, the
+\texttt{modeOf} callability join) are over-approximating only.
+Signature bodies built by \texttt{TFun::union} — including its
+\texttt{this}-parameter intersection — are outside membership
+semantics and remain part of the subtyping surface.''
 
 \paragraph{L-INTER.} Established stratum by stratum:
 \begin{itemize}
@@ -1047,36 +1121,40 @@ membership semantics and remain part of the subtyping surface.''
   Sections~\ref{sec:inter-prim}--\ref{sec:inter-inst}); the instance
   layer using \textbf{TVAR-SEM}
   (Lemma~\ref{lem:tvar-sem}).
-\item \textbf{L-INTER-b} (literal sets): \textsc{violated} for the
-  \emph{string} kind — inherits \textbf{L-LIT}(ii) undecoded escapes —
-  and for \emph{beyond-precision} numeric spellings, which alias one
-  double yet stay distinct lexemes; both witnesses pinned
-  (Finding~\ref{find:spelling}). Within-precision numeric spellings are
-  normalized at parse time, so that range is \textsc{proved} via
-  Lemma~\ref{lem:lit-inter}.
+\item \textbf{L-INTER-b} (literal sets): \textsc{violated} for
+  \emph{beyond-precision} numeric spellings, which alias one double
+  yet stay distinct lexemes; witness pinned
+  (Finding~\ref{find:spelling}). Decoded string spellings and
+  within-precision numeric spellings (normalized at parse time) are
+  \textsc{proved} via Lemma~\ref{lem:lit-inter}.
 \item \textbf{L-INTER-c} (STypes assembly): \textsc{proved} — empty
   shared tags are dropped, $\bot$ only when all drop
   (Section~\ref{sec:inter-stypes}).
-\item \textbf{L-INTER-d} (call/new): \textsc{violated} — heuristic
-  branch drop on incomparable signatures, witness pinned
-  (Finding~\ref{find:tfun}). Fix: never convert \texttt{TFuns::inter}
-  failure into \texttt{None}; keep a widened or overloaded signature.
+\item \textbf{L-INTER-d} (the callability meet): \textsc{proved}
+  outside the signature arm — the array-brand bottom semantic modulo
+  the brand's membership invariant (F-BRAND) — and \textsc{violated}
+  at the signature arm: heuristic branch drop on incomparable
+  signatures, witness pinned (Finding~\ref{find:tfun}). Fix: never
+  convert \texttt{TFuns::inter} failure into \texttt{None}; keep a
+  widened or overloaded signature.
 \item \textbf{L-INTER-e} (\texttt{seenInter} reuse): \textsc{open} —
   Obligation~\ref{obl:freeze-cache} (C-FREEZE-CACHE).
 \end{itemize}
 Every theorem of the main paper that cites \textbf{L-INTER} — the
 branch-drop steps of \textsc{R-Eq}, \textsc{R-EqField},
 \textsc{R-Inst}, \textsc{R-IsArray}, and the equality-narrowing
-intersection itself — is affected by b--d exactly where its operands
-reach a violated stratum; the \textsc{R-IsArray} drops are unaffected
-(their bottoms are the brand and no-shared-tag cases, both semantic —
-except when the intersected array branch pair hits the call/new arm,
-which \texttt{ReadonlyArray} does not). As with the main paper's other
-\textsc{violated} entries, the violations are local to leaf strata:
-b--d are code fixes that change no statement or proof in this
-document, after which L-INTER-a--d are all \textsc{proved} and only
-the \textsc{open} obligation C-FREEZE-CACHE remains here. Each violated stratum carries a pinned end-to-end repro with its issue
-draft under \path{issues/repros/}, asserted by the registry tooling.
+intersection itself — is affected by the violated ranges of b and d
+exactly where its operands reach them; the \textsc{R-IsArray} drops
+are unaffected (their bottoms are the brand and no-shared-tag cases,
+both semantic — except when the intersected array branch pair hits the
+signature arm, which \texttt{ReadonlyArray} does not). As with the
+main paper's other \textsc{violated} entries, the violations are local
+to leaf strata: both are code fixes that change no statement or proof
+in this document, after which L-INTER-a--d are all \textsc{proved}
+(d modulo F-BRAND's brand invariant at its array arm) and only the
+\textsc{open} obligation C-FREEZE-CACHE remains here. Each violated
+stratum carries a pinned end-to-end repro with its issue draft under
+\path{issues/repros/}, asserted by the registry tooling.
 
 \paragraph{Registry.}
 The authoritative, current statuses are maintained in the registry
@@ -1108,7 +1186,8 @@ Pinned to \texttt{\skjspinhash}.
 \midrule
 union top level, cache & \texttt{TTypeUnion.sk / TType::union,
   union\_} \\
-literal-set ops & \texttt{PrimLiterals.sk / union, inter, diff} \\
+literal-set ops & \texttt{PrimLiterals.sk / union, inter, diff};
+  \texttt{JSStringEscape.sk / decodeJSStringLiteral} (decode at parse) \\
 primitive merges & \texttt{TTypeUnion.sk / TPrimValue::union};
   \texttt{TTypeInter.sk / TPrimValue::inter} \\
 STypes assembly & \texttt{TTypeUnion.sk / STypes::union};
@@ -1119,13 +1198,17 @@ object branch sets & \texttt{TTypeUnion.sk / TObject::union};
   \texttt{TTypeInter.sk / TObject::inter} \\
 branch pair & \texttt{TTypeInter.sk / TFields::inter,
   interNamedFields, TIndexes::inter} \\
-branch merge (reads) & \texttt{TType.sk / maybeGetType,
-  resolveLiteralAccess, maybeGetSymbol, maybeGetCall/New} \\
+per-read merges & \texttt{TType.sk / TObject::maybeGetType,
+  resolveLiteralAccess, maybeGetSymbol, modeOf, callMode, newMode,
+  maybeGetCall/New, maybeGetAccessibleIndexForKeyKind} \\
 fields & \texttt{TTypeInter.sk / TField::inter, interIndex};
   \texttt{TTypeUnion.sk / TField::union, unionIndex} \\
 access lattice & \texttt{TType.sk / FieldAccess::combine} \\
-call/new & \texttt{TTypeInter.sk / TFun::inter, TFuns::inter};
-  \texttt{TTypeUnion.sk / TFun::union} \\
+callability & \texttt{TType.sk / Callability,
+  TFields::createFromSortedIterator (invariants)};
+  \texttt{TTypeInter.sk / TFields::interCallability, TFun::inter,
+  TFuns::inter}; \texttt{TTypeUnion.sk / TFun::union (incl.\
+  thisParam), TFuns::union} \\
 brand & \texttt{TTypeInter.sk / TFields::inter (isArray),
   interIsArray} \\
 clause strata & \texttt{TTypeUnion.sk} / \texttt{TTypeInter.sk} /

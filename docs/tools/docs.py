@@ -402,9 +402,14 @@ def check(entries, fixes=(), papers=()):
     # referenced (witnesses are discrete, findable artifacts).
     md_blob = "\n".join(f.read_text() for f in sorted(ISSUES.glob("*.md")))
     referenced = set(re.findall(r"repros/([A-Za-z0-9_-]+\.ts)", md_blob))
+    referenced_dirs = set(re.findall(r"repros/([A-Za-z0-9_-]+)(?=[/\s)\]`])",
+                                     md_blob)) - {n[:-3] for n in referenced}
     for name in sorted(referenced):
         if not (REPROS / name).exists():
             problems.append("issue md references missing repro: %s" % name)
+    for name in sorted(referenced_dirs):
+        if not (REPROS / name / "main.ts").exists():
+            problems.append("issue md references missing repro dir: %s" % name)
     if REPROS.exists():
         for f in sorted(REPROS.glob("*.ts")):
             if f.name not in referenced:
@@ -414,6 +419,16 @@ def check(entries, fixes=(), papers=()):
             if "// expect:" not in head:
                 problems.append("repro missing // expect: header: %s"
                                 % f.name)
+        for d in sorted(p for p in REPROS.iterdir() if p.is_dir()):
+            if d.name not in referenced_dirs:
+                problems.append("repro dir not referenced by any issue md: %s"
+                                % d.name)
+            main_ts = d / "main.ts"
+            if not main_ts.exists():
+                problems.append("repro dir missing main.ts: %s" % d.name)
+            elif "// expect:" not in main_ts.read_text()[:400]:
+                problems.append("repro missing // expect: header: %s/main.ts"
+                                % d.name)
 
     # \impl anchors inside dive/main texts: leading file token must exist.
     impl_re = re.compile(r"\\impl\{([^}]*)\}")
@@ -514,13 +529,18 @@ def repro():
     if not REPROS.exists():
         print("repro: no repros/ directory"); return True
     ok = True
-    for f in sorted(REPROS.glob("*.ts")):
+    targets = sorted(REPROS.glob("*.ts")) + sorted(REPROS.glob("*/main.ts"))
+    for f in targets:
         head = f.read_text()[:600]
         m = re.search(r"// expect:\s*(accepted|rejected)", head)
         if not m:
             print("repro: %s has no expect header" % f.name); ok = False; continue
         want = m.group(1)
-        rel = f.relative_to(REPO)
+        # A pair-directory witness (repros/<name>/main.ts) is checked as its
+        # whole directory so its sibling modules are on the module path.
+        target = f.parent if f.name == "main.ts" else f
+        rel = target.relative_to(REPO)
+        label = (f.parent.name + "/" if f.name == "main.ts" else "") + f.name
         r = subprocess.run(
             ["make", "check-file-in-docker", "FILE=%s" % rel,
              "BIN=target/host/dev/skjs"],
@@ -529,7 +549,7 @@ def repro():
         status = "OK " if got == want else "MISMATCH"
         if got != want:
             ok = False
-        print("repro: %-8s %s (want %s, got %s)" % (status, f.name, want, got))
+        print("repro: %-8s %s (want %s, got %s)" % (status, label, want, got))
     return ok
 
 def main():

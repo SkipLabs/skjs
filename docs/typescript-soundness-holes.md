@@ -617,7 +617,7 @@ const j: { m(this: Base): number } = i; // tsc: OK — method `this` is bivarian
 const n: number = j.m.call(new Base()); // body reads this.extra; Base has none
 ```
 
-**Test:** [tests/expect-error/this-parameter-subtyping.ts](../tests/expect-error/this-parameter-subtyping.ts) pins the contravariant rejection for a bare function type; the method-syntax bivariance itself has no dedicated pin · **SKJS:** rejects — `Their this parameters are not compatible` / `Type '{ tag: string; }'` / `is not assignable to type '{ extra: number; tag: string; }'` / `The field 'extra' is missing`
+**Test:** [tests/expect-error/this-parameter-subtyping.ts](../tests/expect-error/this-parameter-subtyping.ts) pins the contravariant rejection for a bare function type; the method-syntax bivariance itself has no dedicated pin · **SKJS:** rejects — on this exact spelling SKJS stops earlier at an unrelated restriction (`error: The type of a top-level constant must be a primitive type, not an object`, on `i` and `j`); with the bindings moved into a function body it rejects the assignment itself: `Their this parameters are not compatible` / `Type '{ tag: string; }'` / `is not assignable to type '{ extra: number; tag: string; }'` / `The field 'extra' is missing`
 
 ### A no-`this` target type is a free-call permit, and assignability skips the check
 

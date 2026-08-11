@@ -123,12 +123,56 @@ declaration. ``Open'' is used only for the substitution state
 $\SVOpen$ and the obligation status; the object semantics of
 Definition~\ref{def:object-semantics} is called \emph{extensible}.
 
+\paragraph{Routing source features into the contract.}
+The unit of classification is an implementation \emph{mechanism}, not a
+source-language feature: one feature may have a modeled representation, an
+abstracted checking phase, and diagnostics outside this theorem.  The relevant
+source forms route as follows.  A template literal type with only
+finite holes normalizes to a finite string-literal union; an \texttt{enum}
+type normalizes to the literal union of its member values; and
+\texttt{Closed<T>} normalizes to \texttt{T}'s object type with every
+uncovered key represented by a never-valued index.  These are \emph{modeled}:
+after normalization they are exactly the literal and object forms of
+Section~\ref{sec:representation}.  Their production paths are exposed to the
+existing obligations rather than granted a feature-level exemption:
+canonical literal production is \textbf{L-LIT} (over all stored
+literals, parser-produced and folder-synthesized alike), with the
+orthogonal value-faithfulness of folder-synthesized member literals as
+\textbf{L-LIT-FOLD}; expansion is \textbf{L-EXP}; admission of a closed
+absence fact is
+\textbf{L-SUB-CLOSED-ABSENCE}, and rule \textsc{R-In} consumes that fact.
+A \texttt{switch} case/default is
+likewise a client of the modeled \textsc{R-Eq} rules; fallthrough contributes
+an additional scope entry, as recorded with the master list below.  Finite
+case coverage also determines whether an unmatched exit path exists and
+whether the statement may fall through; those are statement-flow facts for
+the future preservation theorem, not new condition-refinement rules — and
+that future coverage lemma will consume member-value faithfulness
+(\textbf{L-LIT-FOLD}) as a prerequisite, since semantic case coverage is
+judged over the member value set.
+
+Other mechanisms of the same features are \emph{abstracted} or outside the
+one-step result for independent reasons.  Correctness of expression typing is
+\textbf{L-TC}; behavioral function signatures are E-SIG, covering
+synthesized \texttt{.call}/\texttt{.apply}/\texttt{.bind} members,
+\texttt{this}-parameter checking, and contextual typing of un-annotated
+closure parameters.  Executing an enum declaration and constructing its
+runtime forward/reverse-mapping object belongs to the future statement
+preservation theorem (the modeled consumers still see its ordinary object
+fields and callability mode); switch-exhaustiveness \emph{reporting} is a
+non-fatal diagnostic and is not itself an acceptance gate.  Thus no whole
+feature is assigned to one bin at the surface level: each downstream
+mechanism is classified where the proof consumes it.
+\impl{TEnv.sk / normalizeTemplate, closeObjectType; TypeCheckEnum.sk;
+TypeCheckStmt.sk / Switch; TypeCheckExpr.sk / call checking}
+
 \paragraph{Out of scope, with justification.}
 \begin{itemize}
 \item \emph{Syntax rejected at normalization.} Conditional types
-  (\texttt{T extends U ? X : Y}, SKJS9020), \texttt{infer} (9017), template
-  literal types (9018), indexed access \texttt{T[K]} (9021), type predicates
-  \texttt{x is T} (9015), \texttt{asserts} predicates (9013): these produce a
+  (\texttt{T extends U ? X : Y}, SKJS9020), \texttt{infer} (9017), indexed
+  access \texttt{T[K]} (9021), type predicates
+  \texttt{x is T} (9015), \texttt{asserts} predicates (9013), and template
+  literal types with an infinitely-valued hole (9018): these produce a
   fatal diagnostic in \texttt{TEnv::normalize} and never reach the type
   machinery, so they are outside the soundness surface by construction.
   \impl{TEnv.sk / normalize}
@@ -338,7 +382,8 @@ requires. Unique symbols are represented as literals of kind \texttt{sym}
 whose stored string is a \emph{synthesized position-derived identity}
 (\texttt{unique\_symbol:file:sym:offset:name}), not a source lexeme — so
 distinct unique symbols have distinct denotations by construction.
-\impl{PrimLiterals.sk; TType.sk / TPrimValue; TEnv.sk / uniqueSymbol}
+\impl{PrimLiterals.sk; TType.sk / TPrimValue; TEnv.sk / normalize
+(TAUniqueSymbol)}
 \end{definition}
 
 \begin{lemma}[A0: Tag Consistency]
@@ -378,10 +423,10 @@ An \emph{object branch} $b \in \TFields$ is a record consisting of:
 \item optional index fields $\mathsf{idx}_\kappa$ for
   $\kappa \in \{\mathsf{strKey}, \mathsf{numKey}, \mathsf{symKey}\}$, each a
   field;
-\item $\mathsf{call}, \mathsf{new} \in
-  \{\mathsf{None}\} \cup \{(\mathit{opt}, \sigma) \mid \mathit{opt} \in
-  \{\mathsf{true},\mathsf{false}\}\}$ where $\sigma$ ranges over abstract
-  function signatures;
+\item $\mathsf{call}, \mathsf{new} \in \mathsf{Callability}$, the
+  four-point lattice of Definition~\ref{def:callability}, whose
+  $\mathsf{CPresent}$ point carries an abstract function signature
+  $\sigma$;
 \item $\mathsf{isArr} \in \{\mathsf{None}, \mathsf{Some}(\mathsf{true}),
   \mathsf{Some}(\mathsf{false})\}$, the array brand.
 \end{itemize}
@@ -396,24 +441,46 @@ it.
 \impl{TType.sk / TField, TFields, TIndexesBase, FieldAccess}
 \end{definition}
 
-\begin{definition}[Signature Modes]
-\label{def:sig-modes}
-The three-valued call/new encoding has the following intended reading
-(abbreviate: $\mathsf{None}$ / $\mathsf{Maybe}(\sigma)$ /
-$\mathsf{Definite}(\sigma)$):
-$\mathsf{None}$ = definitely not callable (constructible);
-$(\mathsf{true}, \sigma)$ = \emph{maybe} callable, with signature $\sigma$ if
-so; $(\mathsf{false}, \sigma)$ = definitely callable with signature $\sigma$.
-The implementation violates the $\mathsf{None}$ reading at
-class-constructor \emph{values}: they are typed $\mathsf{None}$ although
-class constructors implement $[[\mathrm{Call}]]$
-(\texttt{typeof C === "function"} at runtime), so
-\textsc{R-Typeof}'s soundness proof — which consumes this reading —
-inherits a witnessed violation at those values (ledger row A-CTOR-CALL;
-issue draft \path{class-constructor-call-none-typeof.md}; deep dive A).
-The same $\mathsf{None}$ mode is read as ``callability unknown'' by one
-subtyping arm (deep dive D's F-CALL) — the \texttt{call{=}None} dichotomy:
-no single reading validates both consumers.
+\begin{definition}[Callability]
+\label{def:callability}
+$\mathsf{Callability}$ is the four-point lattice
+\[
+\mathsf{CPresent}(\sigma) \;\le\; \mathsf{CFunction} \;\le\;
+\mathsf{CUnknown},
+\qquad
+\mathsf{CAbsent} \;\le\; \mathsf{CUnknown},
+\]
+read as a constraint on the members of an object branch — for
+$\mathsf{call}$ on $[[\mathrm{Call}]]$, for $\mathsf{new}$ on
+$[[\mathrm{Construct}]]$:
+$\mathsf{CPresent}(\sigma)$, every member is invocable with signature
+$\sigma$; $\mathsf{CFunction}$, every member implements the internal
+method but no signature is known, so it is \emph{not} invocable (the
+denotation of the global \texttt{Function} type — invocation requires
+$\mathsf{CPresent}$); $\mathsf{CAbsent}$, no member implements it;
+$\mathsf{CUnknown}$, no constraint — the mode of structural object types
+(\texttt{\{\}}, interfaces, object annotations), whose width subtyping
+admits callable inhabitants (\texttt{const o: \{\} = () => \{\}}).
+Two invariants hold at branch construction: an array-branded branch
+lowers $\mathsf{CUnknown}$ to $\mathsf{CAbsent}$ (arrays are never
+callable — a claim exactly as trustworthy as the brand itself), and a
+constructible branch
+($\mathsf{new} \in \{\mathsf{CPresent}, \mathsf{CFunction}\}$) raises an
+unknown $\mathsf{call}$ to $\mathsf{CFunction}$, by the
+$\mathsf{constructible} \implies \mathsf{callable}$ fact of
+Definition~\ref{def:object-interface} — which is what lets
+\textsc{R-Typeof} decide typeof-\texttt{"function"}-ness from the
+$\mathsf{call}$ mode alone. A class-constructor \emph{value} is typed
+$\mathsf{new} = \mathsf{CPresent}(\sigma_C)$,
+$\mathsf{call} = \mathsf{CFunction}$ (its $[[\mathrm{Call}]]$ always
+throws, so there is no signature to offer) — registry row A-CTOR-CALL.
+Nominal class instances and enum objects carry
+$\mathsf{call} = \mathsf{new} = \mathsf{CAbsent}$, a brand-like
+approximation that structural width subtyping cannot fully enforce —
+the trust refinement places in that brand is registry row F-CABSENT;
+interfaces carry $\mathsf{CUnknown}$ for both.
+\impl{TType.sk / Callability, TFields::createFromSortedIterator;
+TEnv.sk / newStaticObject, newFieldsOf}
 \end{definition}
 
 \begin{definition}[Object-Type Semantics]
@@ -440,10 +507,11 @@ of:
   $\mathsf{idx}_\kappa(b) = \mathsf{Some}(f)$ and every
   $p \in \mathsf{props}(o)$ covered by it and not named by a field of $b$:
   $\mathsf{get}(o, p) \in \sem{\mathsf{get}(f)}$.
-\item \textbf{Call/new:} if $\mathsf{call}(b) = \mathsf{None}$ then
-  $\neg\mathsf{callable}(o)$; if $\mathsf{call}(b) = (\mathsf{false},\sigma)$
-  then $\mathsf{callable}(o)$; if $\mathsf{call}(b) = (\mathsf{true},\sigma)$,
-  no constraint. Signatures themselves are opaque (their behavioral meaning is
+\item \textbf{Call/new:} if $\mathsf{call}(b) = \mathsf{CAbsent}$ then
+  $\neg\mathsf{callable}(o)$; if $\mathsf{call}(b) \in
+  \{\mathsf{CPresent}(\sigma), \mathsf{CFunction}\}$ then
+  $\mathsf{callable}(o)$; $\mathsf{CUnknown}$ imposes no constraint.
+  Signatures themselves are opaque (their behavioral meaning is
   bundled into assumption \textbf{L-SUB}). Same for $\mathsf{new}$ with
   $\mathsf{constructible}$.
 \item \textbf{Brand:} if $\mathsf{isArr}(b) = \mathsf{Some}(x)$ then
@@ -545,14 +613,21 @@ joins the recursive membership conditions of
 Definition~\ref{def:object-semantics}; every recursive occurrence is
 positive, and the solution is the greatest one (registry row
 SEM-GFP). An unbound \texttt{TVar} thus denotes an empty inference lower
-bound, and \texttt{TVar} is the model's only variable kind — the model
-has no rigid or skolem variables. Constraints belong to
+bound, and \texttt{TVar} is the model's only \emph{inference} variable
+kind. Rigid abstraction is carried by $\TParam$, not by a variable
+kind: a \emph{skolem} is a synthetic $\TParam$ (named for its origin,
+e.g.\ \texttt{Box\#T}, carrying the declared upper bound as its
+constraint) minted where a type argument is fixed by a runtime object
+but hidden from the program — rule \textsc{R-Inst}'s hidden instance
+arguments; skolems live in clause var-sets like any parameter and
+never enter the substitution. Constraints belong to
 occurrences because \texttt{TVar::setConstraint} is functional;
 \texttt{Subst::get} realizes the displayed intersection when the
 occurrence is read. This equation is the corpus's definition of
 \texttt{TVar} denotation, registry row \textbf{TVAR-SEM}. Named
 instances and intersections satisfy the expansion axiom \textbf{L-EXP}.
-\impl{TType.sk / TInst, TVar, TSInst, TArrayLit; TTypeInter.sk / TInter}
+\impl{TType.sk / TInst, TVar, TSInst, TArrayLit; TTypeInter.sk / TInter;
+TTypeSubst.sk / genSkolemTParam}
 \end{definition}
 
 \begin{definition}[Clause, Clauses, TType]
@@ -861,13 +936,24 @@ means that control-flow branch performs no narrowing.
 Entry points that reduce to this list: \texttt{if}/\texttt{while} conditions,
 the ternary $c\ \texttt{?}\ a\ \texttt{:}\ b$ (which narrows inside $a$ and
 $b$ exactly like \texttt{if}), and \texttt{\&\&}/\texttt{||} value positions
-call \texttt{evalCond}; \texttt{switch} desugars each \texttt{case $v$:} to
-$e\ \texttt{===}\ v$ (\texttt{TypeCheckStmt.sk});
+call \texttt{evalCond}. A \texttt{switch} clause's body is checked under
+the true branch of the desugared label equality $e\ \texttt{===}\ v$; a
+clause entered \emph{by fallthrough} additionally unions in the falling
+clause's exit scope (the fallthrough entry is a separate way in, not
+narrowed by the label), and the \texttt{default} body is checked under
+the false branch of \emph{every} case equality — so it is narrowed to
+what no case matched (\texttt{TypeCheckStmt.sk};
+\texttt{TypeCheckExpr.sk} block-entry narrowing).
 \texttt{console.assert}$(e)$ applies the true branch of $e$ — matched by
 call shape, first argument, without verifying \texttt{console} is the global
 (\texttt{TypeCheckExpr.sk}). \texttt{for}-loop conditions do \emph{not}
-narrow. Strict inequality dispatches to the same handlers with the target
-negated.
+narrow (\texttt{checkBool} only). Strict inequality dispatches to the same
+handlers with the target negated. The \texttt{instanceof} arm is guarded:
+it narrows only when the RHS names a class or interface with a known
+definition \emph{and} the RHS's static type declares no custom
+\texttt{[Symbol.hasInstance]} member — such a class overrides the runtime
+membership test, so narrowing is suppressed entirely
+(\texttt{rhsDeclaresHasInstance}; registry row A-HASINST).
 
 \subsection{Rules and soundness}
 
@@ -931,7 +1017,7 @@ It holds by construction for literal and full primitive types
 transitivity via Lemma~\ref{lem:per}, and $\approx$ is payload equality on
 non-numeric tags), for the \texttt{null} unit (payload equality at its own
 tag — null comparisons flow through this generic rule), and trivially for
-object types (reference equality). The corner where it can fail is the
+object types (reference equality). The corner where it fails is the
 cross-tag $\mathsf{undef}/\mathsf{void}$ arm of $\approx$, in either
 direction: a $\tau_e$ denoting the \texttt{undefined} unit alone is not
 closed against $\mathsf{void}$-tagged values, and dually for a
@@ -940,12 +1026,19 @@ comparison
 $x\ \texttt{===}\ \texttt{undefined}$ takes the dedicated rule
 \textsc{R-EqUndef}, which treats the two tags jointly; a comparison against
 an undefined- or void-\emph{typed} expression that is not the literal
-(\texttt{x === y} with \texttt{y: undefined}) reaches the generic rule —
-but the corner where either unit type could meet the other tag's value is
-unreachable: the checker rejects \texttt{void}-typed operands of strict
-equality outright (``An expression of type 'void' cannot be used here''),
-before any refinement runs, discharging the last case of assumption
-\textbf{L-SEQ} (empirically pinned).
+(\texttt{x === y} with \texttt{y: undefined}) reaches the generic rule,
+and the corner is \emph{reachable}: a \texttt{void}-typed operand of
+strict equality draws only a \emph{warning} (``An expression of type
+'void' cannot be used here''), after which refinement runs. There the
+closure hypothesis is genuinely false — the generic rule's intersection
+treats the \texttt{void} and \texttt{undefined} units as disjoint, so
+the true branch of \texttt{x === y} with \texttt{x} of type
+\texttt{void} and \texttt{y} of type \texttt{undefined} narrows
+\texttt{x} to \texttt{never} although the runtime takes that branch with
+both operands holding \texttt{undefined}. This is the witnessed
+violation of assumption \textbf{L-SEQ} (issue draft
+\path{deep-dives/issues/void-undefined-equality-never.md}); see the
+worked example in Section~\ref{sec:ex-voidseq}.
 
 \paragraph{State caveat.}
 The implementation computes the intersection under a \emph{cloned}
@@ -1058,24 +1151,43 @@ then no narrowing occurs. Writing $b$ for the control-flow branch:
 \item $k = \texttt{"undefined"}$: keep $s$ iff
   $(\tagfn(s) \in \{\mathsf{undef},\mathsf{void}\}) = b$; no default.
 \item $k = \texttt{"object"}$: on $b = \mathsf{true}$, keep \texttt{null};
-  drop other primitives; per object branch, by call mode
-  (Definition~\ref{def:sig-modes}): $\mathsf{None} \to$ keep,
-  $(\mathsf{true},\sigma) \to$ keep with call mode $\mathsf{None}$,
-  $(\mathsf{false},\sigma) \to$ drop.
-  On $b = \mathsf{false}$: dual — \texttt{null} dropped, other primitives
-  kept, per object branch $\mathsf{None} \to$ drop,
-  $(\mathsf{true},\sigma) \to (\mathsf{false},\sigma)$,
-  $(\mathsf{false},\sigma) \to$ keep. Default (true branch):
-  $\{\texttt{null}\} \sqcup \mathsf{object}(\{\emptyset\})$.
+  drop other primitives; narrow each object branch by
+  $\mathsf{fnNarrow}(\mathsf{false}, \mathsf{false})$ (below). On
+  $b = \mathsf{false}$: \texttt{null} dropped, other primitives kept,
+  each object branch narrowed by
+  $\mathsf{fnNarrow}(\mathsf{true}, \mathsf{false})$. Default (true
+  branch): $\{\texttt{null}\} \sqcup \mathsf{object}(\{\emptyset\})$.
 \item $k = \texttt{"function"}$: on $b = \mathsf{true}$: drop all
-  non-objects; per object branch $\mathsf{None} \to$ drop,
-  $(\mathsf{true},\sigma) \to (\mathsf{false},\sigma)$,
-  $(\mathsf{false},\sigma) \to$ keep. On $b = \mathsf{false}$: keep
-  non-objects; per object branch $\mathsf{None} \to$ keep,
-  $(\mathsf{true},\sigma) \to$ call mode $\mathsf{None}$,
-  $(\mathsf{false},\sigma) \to$ drop. No default.
+  non-objects; narrow each object branch by
+  $\mathsf{fnNarrow}(\mathsf{true}, \mathsf{true})$. On
+  $b = \mathsf{false}$: keep non-objects; narrow each object branch by
+  $\mathsf{fnNarrow}(\mathsf{false}, \mathsf{false})$. Default (true
+  branch only): the global \texttt{Function} object type, whose single
+  branch carries $\mathsf{call} = \mathsf{CFunction}$ — so a clause
+  $\clause{V}{\top}$ becomes $\clause{V}{\mathsf{Function}}$: a type
+  parameter narrows to $T \mathbin{\&} \texttt{Function}$ and
+  \texttt{unknown} to \texttt{Function}, matching tsc. (The false
+  branch has no default: ``$T$ minus functions'' has no
+  representation.)
 \end{itemize}
-\impl{TypeCheckRefine.sk / evalTypeofEquality}
+Both object-branch cases use one transformer.
+$\mathsf{fnNarrow}(\mathit{want}, \mathit{proven})$ acts on an object
+branch $\beta$ by its $\mathsf{call}$ mode
+(Definition~\ref{def:callability}): with $\mathit{want} = \mathsf{true}$,
+drop $\beta$ if $\mathsf{call}(\beta) = \mathsf{CAbsent}$, keep it
+otherwise — strengthening $\mathsf{CUnknown}$ to $\mathsf{CFunction}$
+only when $\mathit{proven}$ (the \texttt{"function"} true branch has a
+runtime proof of $[[\mathrm{Call}]]$; the \texttt{"object"} false branch
+does not and leaves $\mathsf{CUnknown}$ alone, which is conservative).
+With $\mathit{want} = \mathsf{false}$, drop $\beta$ if
+$\mathsf{call}(\beta) \in \{\mathsf{CPresent}, \mathsf{CFunction}\}$,
+keep it otherwise with both modes stamped $\mathsf{CAbsent}$. The
+construction invariant $\mathsf{new} \ge \mathsf{CFunction} \implies
+\mathsf{call} \ge \mathsf{CFunction}$ is why reading $\mathsf{call}$
+alone suffices: a constructible branch is never mistaken for
+definitely-not-a-function.
+\impl{TypeCheckRefine.sk / evalTypeofEquality;
+TType.sk / TFields::narrowByTypeofFunction}
 
 \begin{lemma}[\textsc{R-Typeof} is Branch-Sound]
 \label{lem:r-typeof-sound}
@@ -1084,23 +1196,30 @@ then no narrowing occurs. Writing $b$ for the control-flow branch:
 Tag cases are immediate from A0 and Definition~\ref{def:eval}; defaults are
 adequate since $P_{\mathsf{typeof}=k} \subseteq \sem{\mathrm{full}\ k}$. For
 \texttt{"object"}, the default's object branch (\texttt{TObject::createEmpty})
-has no fields or indexes and $\mathsf{call} = \mathsf{new} = \mathsf{None}$,
-which by Definition~\ref{def:object-semantics} constrains members to be
-non-callable and non-constructible; every
-$o \in P_{\mathsf{typeof}=\texttt{"object"}} \setminus \sem{\texttt{null}}$
-is non-callable by definition and therefore non-constructible by the
-$\mathsf{constructible} \implies \mathsf{callable}$ fact of
-Definition~\ref{def:object-interface}, so adequacy holds. For the callable cases, let
-$v \in \ObjVal \cap \sem{\beta}$. If $\mathsf{callable}(v)$
-($k=\texttt{"function"}$, $b=\mathsf{true}$): $\beta$'s call mode cannot be
-$\mathsf{None}$ (Definition~\ref{def:object-semantics}); a
-$(\mathsf{true},\sigma)$ mode is strengthened to
-$(\mathsf{false},\sigma)$, which $v$ satisfies since it is callable.
-If $\neg\mathsf{callable}(v)$: the mode cannot be $(\mathsf{false},\sigma)$;
-a $(\mathsf{true},\sigma)$ mode weakens/strengthens to $\mathsf{None}$, which
-$v$ satisfies. The \texttt{"object"} cases combine this with the
-\texttt{null} tag case. The mode rewrites preserve all other constraints of
-$\beta$, and are tag-preserving, so Lemma~\ref{lem:branchwise-sound} applies.
+has no fields or indexes and
+$\mathsf{call} = \mathsf{new} = \mathsf{CUnknown}$, which constrains
+nothing, so adequacy is immediate. For \texttt{"function"}, the default
+replaces a top clause $\clause{V}{\top}$ keeping its parameters, and its
+branch carries $\mathsf{call} = \mathsf{CFunction}$: every
+$o \in P_{\mathsf{typeof}=\texttt{"function"}}$ is callable and satisfies
+it (the \texttt{Function} branch has no other constraint — its brand
+field folds into the mode and is not a property), so adequacy holds.
+For $\mathsf{fnNarrow}$, let $v \in \ObjVal \cap \sem{\beta}$.
+If $\mathsf{callable}(v)$ (the $\mathit{want} = \mathsf{true}$ predicates):
+$\mathsf{call}(\beta) \neq \mathsf{CAbsent}$ by
+Definition~\ref{def:object-semantics}, so $\beta$ survives, and when the
+mode is strengthened to $\mathsf{CFunction}$ under $\mathit{proven}$, $v$
+satisfies it by its callability — the runtime proof is exactly the
+strengthening's premise; without $\mathit{proven}$ the mode is unchanged
+and $v$ satisfies it a fortiori. If $\neg\mathsf{callable}(v)$
+(the $\mathit{want} = \mathsf{false}$ predicates):
+$\mathsf{call}(\beta) \notin \{\mathsf{CPresent}, \mathsf{CFunction}\}$,
+so $\beta$ survives, and the stamped $\mathsf{CAbsent}$ modes are
+satisfied — $v$ is not callable, hence by the
+$\mathsf{constructible} \implies \mathsf{callable}$ fact not
+constructible either. The mode rewrites preserve all other constraints
+of $\beta$ and are tag-preserving, so
+Lemma~\ref{lem:branchwise-sound} applies.
 \end{proof}
 
 \subsubsection{\textsc{R-IsArray}}
@@ -1146,14 +1265,26 @@ where the original branch already had it.
 \subsubsection{\textsc{R-Inst}: \texttt{instanceof}}
 \label{sec:r-inst}
 
-Fires only on the true branch and only when the RHS names a class or
+Fires only on the true branch, and only when the RHS names a class or
 interface with a known definition (a Function-typed value as RHS narrows
-nothing). Let $T_C = \mathsf{object}$-typed instance of $C$ with
-implementation-chosen type arguments ($\top$ for \texttt{Array}; fresh
-inference arguments otherwise). Mapper: drop non-objects; intersect each
-object member with $T_C$ (dropping empty intersections). Default:
-$T_C$ itself.
-\impl{TypeCheckRefine.sk / evalInstanceof, evalCond (InstanceOf arm)}
+nothing) that declares no custom \texttt{[Symbol.hasInstance]} (the
+dispatch guard; registry row A-HASINST). Let $T_C$ be the
+$\mathsf{object}$-typed instance of $C$ at \emph{skolem} arguments — one
+synthetic rigid $\TParam$ per class parameter
+(Definition~\ref{def:tinsts}), carrying the declared bound: the runtime
+object fixes each argument, but the program cannot name it. Mapper: drop
+non-objects; each object branch $\beta$ is first probed for
+\emph{preservation} — if $\beta$ is already a subtype of $C$'s fields at
+fresh probe arguments (minted in a throwaway clone, per branch, so the
+main substitution never sees them), $\beta$ is kept \emph{unchanged},
+retaining its own type arguments rather than intersecting them away —
+otherwise $\beta$ is intersected with $T_C$'s fields (dropping empty
+intersections), and the intersection retains $\beta$'s readonly fields
+readonly: the class view's mutable fields must not re-grant a write the
+scrutinee's type withheld. Default: $T_C$ itself.
+\impl{TypeCheckRefine.sk / evalInstanceof, rhsDeclaresHasInstance,
+evalCond (InstanceOf arm); TType.sk / TFields::keepReadonlyFrom;
+TEnv.sk / makeSkolemTArgsOf}
 
 \begin{lemma}[\textsc{R-Inst} is Branch-Sound]
 Given assumption \textbf{L-INST}
@@ -1165,15 +1296,20 @@ is the identity.
 Let $v = \sigma(x)$ with $\sigma \models_{\mathsf{true}}$, so
 $v \in P_{\mathsf{inst}}(C) \subseteq \ObjVal$. Dropping non-object members
 is sound by A0 (values of a non-object member carry that member's tag, so
-$v$ is not in it). For $v$'s object member,
-$v \in \sem{T_C}$ by \textbf{L-INST}, so
-$v$ inhabits the intersection by \textbf{L-INTER} (object level), which is
-in particular not $\bot$. The default $D = \{T_C\}$ is a singleton
-$\STypes$ ($T_C$ is a \texttt{TObject} built by \texttt{newObject}) and is
-adequate by \textbf{L-INST} directly. Both \textbf{L-INST} and the mapper
-are evaluated at the post-instantiation state $\rho'$ ($T_C$'s fresh
-inference arguments live in $\rho'$); later growth of those arguments is
-covered by \textbf{L-MONO}/Obligation~\ref{obl:monotone}. Apply
+$v$ is not in it). A preserved branch is the identity
+(Lemma~\ref{lem:identity-sound}). For a rewritten branch,
+$v \in \sem{T_C}$ by \textbf{L-INST}, so $v$ inhabits the intersection by
+\textbf{L-INTER} (object level), which is in particular not $\bot$;
+forcing a field's $\mathsf{set}$-type back to $\bot$ only shrinks the
+write surface, and membership constrains values through
+$\mathsf{get}$-types alone (Definition~\ref{def:object-semantics}), so
+the readonly restoration preserves $v$'s membership. The default
+$D = \{T_C\}$ is a singleton $\STypes$ ($T_C$ is a \texttt{TObject}
+built by \texttt{newObject}) and is adequate by \textbf{L-INST}
+directly. The skolem arguments are rigid parameters — nothing about them
+lives in $\rho$, so no later growth threatens the installed type; the
+preservation probes run on clones and commit nothing
+(Obligation~\ref{obl:restore}). Apply
 Lemmas~\ref{lem:branchwise-sound} and~\ref{lem:pred-to-branch}.
 \end{proof}
 
@@ -1198,10 +1334,14 @@ of \texttt{in} on a primitive throws; Definition~\ref{def:eval}). With a
 single key $\pi$, per object branch $\beta$:
 \begin{itemize}
 \item \textbf{True branch:} if $\beta$ has field $\pi$: clear its
-  optionality. Else if $\beta$ has a non-synthetic index \emph{covering} $\pi$
-  with field $f_{\mathrm{idx}}$: add the required field
-  $\pi \mapsto f_{\mathrm{idx}}$. Else: add a required \emph{phantom} field
-  $\pi$ ($\mathsf{get} = \top$, $\mathsf{set} = \bot$,
+  optionality. Else if $\beta$ has a non-synthetic index \emph{covering}
+  $\pi$ with field $f_{\mathrm{idx}}$: when
+  $f_{\mathrm{idx}}.\mathsf{get} = \bot$ (a never-valued index, the form
+  \texttt{Closed<T>} installs on uncovered keys), \emph{drop} the object
+  branch — the index proves $\pi$ absent from every member, so this
+  branch cannot take the true edge; otherwise add the required field
+  $\pi \mapsto f_{\mathrm{idx}}$. Else: add a required \emph{phantom}
+  field $\pi$ ($\mathsf{get} = \top$, $\mathsf{set} = \bot$,
   $\mathsf{access} = \mathsf{Phantom}$).
 \item \textbf{False branch:} if $\beta$ has required $\pi$: drop the object branch.
   If optional $\pi$: remove the field from $\beta$. Else: keep.
@@ -1221,7 +1361,11 @@ form; the value constraint is unchanged. If the field is added from an index
 covering $\pi$: membership of $v$ in $\beta$ already constrains
 $\mathsf{get}(v,\pi) \in \sem{f_{\mathrm{idx}}.\mathsf{get}}$
 (Definition~\ref{def:object-semantics}, index clause — $\pi$ is covered
-and was not named), so $v$ satisfies the named copy. A phantom field constrains presence only, which holds.
+and was not named), so $v$ satisfies the named copy; in the never-valued
+case that constraint reads
+$\mathsf{get}(v,\pi) \in \sem{\bot} = \emptyset$, which is unsatisfiable
+— $v$ was never in $\beta$, so dropping the branch loses nothing. A
+phantom field constrains presence only, which holds.
 False branch: $v \in \ObjVal$ with $\neg\mathsf{has}(v,\pi)$ contradicts a
 required $\pi$ — including a required \emph{phantom}, which still demands
 presence — so $v$ was never in dropped object branches. Removing an optional field
@@ -1231,6 +1375,18 @@ is sound here: $v$ lacks $\pi$, so the re-exposed index constraint on
 $\pi$ is vacuous for $v$, and constraints on other keys are unchanged.
 Primitives kept is identity.
 \end{proof}
+
+\emph{Remark.} The branch drop trusts the never-valued index as a truthful
+absence fact about $v$. Within this lemma that is nothing extra: the store
+satisfies the environment by hypothesis, and membership at a never-valued
+index is already unsatisfiable for a value carrying the key. What the lemma
+does \emph{not} establish is that environment satisfaction survives
+admission into a closed view — that no extensible source is ever accepted
+into one. That is registry row \textbf{L-SUB-CLOSED-ABSENCE} (deep dive D's
+absence corollary): a prerequisite of the future preservation theorem and
+of deep dive H's cross-view argument, not a premise of this proof. R-In
+consumes the semantic absence fact; the row is what will make that fact
+survive the program.
 
 \subsubsection{\textsc{R-Not}, \textsc{R-And}, \textsc{R-Or}}
 \label{sec:connectives}
@@ -1332,11 +1488,13 @@ widenings (full string/number/bigint kept on both branches) only enlarge the
 result. The literal-filtering case is sound \emph{only if} the
 implementation's lexeme-level falsiness test agrees with
 Definition~\ref{def:truthiness} on every literal in $L$ — this is the
-falsiness-exactness part (iii) of assumption \textbf{L-LIT}, which the
-string kind violates (see the assumptions table for the full
-inventory of violated assumptions): a line-continuation string lexeme
-denotes \texttt{""} yet is classified truthy, and would be dropped from
-the falsy branch. For $\mathsf{vres}_{\mathsf{false}}$: the only falsy string value is
+falsiness-exactness part (iii) of assumption \textbf{L-LIT}. String and
+within-precision numeric lexemes are canonical (escapes decoded, numerals
+normalized at parse time), so the test is exact there; the residual
+violation is the num-kind \emph{beyond-precision} stratum (see the
+assumptions table): a zero-denoting underflow lexeme such as
+\texttt{1e-400} is classified truthy and would be dropped from the falsy
+branch. For $\mathsf{vres}_{\mathsf{false}}$: the only falsy string value is
 $\texttt{""}$ and the only falsy bigint value is $0$, so the narrowed
 literal contains every falsy member; number stays wide precisely because its
 falsy set $\{0, -0, \mathsf{NaN}\}$ is not expressible as literals.
@@ -1693,26 +1851,37 @@ When the key expression's type is a union of literals, \textsc{R-In} keeps
 object members unchanged (still dropping primitives on the true branch);
 per-key case splits are not performed.
 
-\subsection{Known unsoundness: string-kind falsiness}
-\label{sec:ex-strfalsy}
-The lexeme-level falsiness test classifies a string literal by its stored
-lexeme (\texttt{lexeme == ""}), but the lexeme is not decoded. An
-ECMA-262 \emph{LineContinuation} — a backslash followed by a line
-terminator — has string value \texttt{""}, so a non-empty
-backslash-newline lexeme denotes the falsy value \texttt{""} while the
-test reads it truthy (assumption \textbf{L-LIT}(iii)). This is
-\emph{observable}. Let \texttt{L} be such a line-continuation string
-literal and take \texttt{x: L | 0} — both members falsy at runtime.
-\texttt{L} is classified truthy, so the union appears to have exactly one
-falsy member; the boolean-condition guard passes, the falsy residue of
-\texttt{if (x)} drops \texttt{L}, and in the else-branch
-\texttt{const z: 0 = x} is \emph{accepted} while $x$ holds the string
-\texttt{""} at runtime. The canonical control \texttt{"" | 0} is
-correctly rejected as a two-falsy-value condition. The sibling assumption
-\textbf{L-LIT}(ii) fails on the same undecoded-lexeme root: two spellings
-of one string (e.g.\ \texttt{"a"} and \texttt{"\textbackslash x61"}) are
-stored as distinct literals, so an equality that holds at runtime is
-typed as always-false.
+\subsection{Known unsoundness: the \texttt{void}/\texttt{undefined}
+equality corner}
+\label{sec:ex-voidseq}
+The checker's \texttt{void} is a fiction over the runtime value
+\texttt{undefined} (Definition~\ref{def:runtime-values}), and $\approx$
+crosses the two tags (Definition~\ref{def:seq}) — which is exactly what
+the $\approx$-closure hypothesis of \textsc{R-Eq} guards. The corner is
+live:
+\begin{verbatim}
+function g(): void {}
+function f(y: undefined): void {
+  const x = g();
+  if (x === y) {
+    const n: never = x;  // accepted; branch taken at runtime
+  }
+}
+\end{verbatim}
+A \texttt{void}-typed operand of \texttt{===} draws only a warning, so
+refinement runs; \texttt{y} is a variable, not the \texttt{undefined}
+literal, so the comparison takes the generic \textsc{R-Eq} rule, whose
+true branch installs
+$\mathsf{inter}(\texttt{void}, \texttt{undefined}) = \bot$ for
+\texttt{x} — the two units are distinct same-\emph{model}-tag members
+and their intersection is empty, sound only under the closure
+hypothesis that fails here. At runtime \texttt{g()} returns
+\texttt{undefined}, \texttt{undefined === undefined} takes the branch,
+and \texttt{n : never} holds \texttt{undefined}. The dedicated
+\textsc{R-EqUndef} rule shows the repair shape: treat the
+$\mathsf{undef}$/$\mathsf{void}$ tags jointly wherever a comparison can
+relate them (assumption \textbf{L-SEQ}; issue draft
+\path{deep-dives/issues/void-undefined-equality-never.md}).
 
 %==========================================================================
 \section{Assumptions and Proof Obligations}
@@ -1755,8 +1924,10 @@ statuses are the tables above, from which this grouping is generated):
 \noindent The violations remain local to leaf
 assumptions: every fix restores its assumption without changing a theorem
 statement or proof in this document. Two design decisions gate several
-fixes and are recorded as fundamental holes rather than bugs: the
-\texttt{call{=}None} reading dichotomy and the refinement-invalidation
+fixes and are recorded as fundamental holes rather than bugs: the brand
+trust model — refinement narrows on brands ($\mathsf{CAbsent}$,
+the array brand) that subtyping never validates (registry rows
+F-CABSENT, F-BRAND) — and the refinement-invalidation
 policy (deep dive F). Known unsoundness here is enumerated, witnessed,
 and quarantined — future work, not architectural debt.
 
@@ -1782,8 +1953,9 @@ $\mathsf{unit}, \mathsf{prim}, \mathsf{object}$ &
   \texttt{TPrimUnit}, \texttt{TPrimValue}, \texttt{TObject} (TType.sk) \\
 literal payloads & \texttt{PrimLiterals} \\
 object branches $B$, fields & \texttt{ArraySet<TFields>}, \texttt{TField} \\
-sig modes $\mathsf{None}/(\mathit{opt},\sigma)$ &
-  \texttt{TFields.call/new : ?(Bool, TFuns)} \\
+$\mathsf{Callability}$ ($\mathsf{CPresent}/\mathsf{CFunction}/
+\mathsf{CAbsent}/\mathsf{CUnknown}$) &
+  \texttt{TFields.call/new : Callability} \\
 array brand & \texttt{TFields.isArray : ?Bool} \\
 phantom fields & \texttt{FAPhantom} \\
 $\STypes$ & \texttt{STypes} (tag-keyed map) \\

@@ -43,7 +43,8 @@ obligation \emph{Monotone Reads Under Growth}, assumption
 \emph{No Commitment on Failure} — and this paper is the evidence behind
 their current table statuses. This deep dive completes
 the state model the main paper elides — the version counter, the four
-caches, the environment-side cycle sets, constraint attachment, and the
+caches, the environment-side cycle sets and the head-depth refusal
+counter, constraint attachment, the skolem-identifier supply, and the
 candidate-freezing flag — and works the four rows as one coherent
 discipline. The load-bearing discovery is representational:
 \texttt{TVar::setConstraint} is a \emph{functional update} on a frozen
@@ -60,9 +61,11 @@ outside it, the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}
 (audited in deep dive D; issue draft
 \path{issues/reflexive-tsinst-fastpath-unsealed-read.md}); \textbf{L-CLONE} is
 proved conditional on a strengthened, fork-state form of \textbf{L-INTER}
-— the clone-generated-identifier hazard is verified \emph{unreachable}
-(no \texttt{gen*} call site lies in the clone-compute-install tree),
-guarded by a recommended CI assertion; and \emph{No Commitment on
+— the clone-generated-identifier hazard is settled by a non-escape audit
+(exactly one \texttt{gen*} site runs on a refinement clone — the
+\texttt{instanceof} preservation probe — and nothing it mints reaches an
+installed type), with the skolem counter hard-guarded against clone-side
+minting by a runtime invariant; and \emph{No Commitment on
 Failure} is discharged by an exhaustive save/restore audit with one
 intentional, separately-argued exception (array-literal form commitments
 persisting on failed checks). Failed proof attempts are reported as
@@ -106,13 +109,14 @@ A substitution state $\rho$ consists of the fields of the Skip class
   paper's transition table;
 \item $\mathsf{version} \in \mathbb{N}$ — a counter with two duties:
   (a) it is incremented immediately before \emph{every} write to
-  $\mathsf{values}$ (\texttt{grow}, \texttt{TTypeSubst.sk:181};
-  \texttt{get}'s two sealing writes, \texttt{:195} and \texttt{:205}); and
+  $\mathsf{values}$ (\texttt{grow}, \texttt{TTypeSubst.sk:200};
+  \texttt{get}'s two sealing writes, \texttt{:214} and \texttt{:224}); and
   (b) it doubles as the fresh-identifier supply — \texttt{gen},
   \texttt{genForField}, and \texttt{genForLiteralCommitment}
-  (\texttt{:237--253}) each return \texttt{TVarID(version)} and increment.
-  Consequence: within one linear execution segment, distinct
-  $\mathsf{values}$ states have distinct versions
+  (\texttt{:256--293}) each return \texttt{TVarID(version)} and increment.
+  (Skolem type parameters are \emph{not} drawn from it — they have their
+  own counter, U2 below.) Consequence: within one linear execution
+  segment, distinct $\mathsf{values}$ states have distinct versions
   (Lemma~\ref{lem:version-values});
 \item $\mathsf{origins}$ — diagnostic provenance for variables
   (\texttt{setOrigin}); no semantic content;
@@ -120,19 +124,23 @@ A substitution state $\rho$ consists of the fields of the Skip class
   \begin{itemize}
   \item $\mathsf{seenSub} \subseteq \TType \times \TType$ — a
     \emph{success memo} for \texttt{TType::isSub}: a pair is inserted on
-    acceptance (\texttt{TTypeSubtyping.sk:1591}) and consulted before
-    re-checking (\texttt{:1588}). Not version-keyed;
+    acceptance (\texttt{TTypeSubtyping.sk:1840}) and consulted before
+    re-checking (\texttt{:1837}). Not version-keyed;
   \item $\mathsf{seenInter}, \mathsf{seenUnion} :
     (\TType \times \TType) \rightharpoonup \TType$ — result memos for
-    \texttt{TType::inter} (\texttt{TTypeInter.sk:107--125}; pairs
-    containing a bare variable are excluded, \texttt{:105}) and
-    \texttt{TType::union} (\texttt{TTypeUnion.sk:29--32});
-  \item $\mathsf{seenExpansion} : \mathsf{TSInst} \rightharpoonup \TType$
-    — memo of one-level named-type expansion
-    (\texttt{TType.sk:650--653}); the cached body is \emph{symbolic} in
+    \texttt{TType::inter} (\texttt{TTypeInter.sk:107--123}; pairs
+    containing a bare variable are excluded from the memo) and
+    \texttt{TType::union} (\texttt{TTypeUnion.sk:29--36});
+  \item $\mathsf{seenExpansion} : \mathsf{ExpansionKey} \rightharpoonup
+    \TType$ — memo of one-level named-type expansion, keyed by the
+    dedicated \texttt{ExpansionKey} value class (unqualified name text
+    plus arguments, \texttt{TType.sk:3055--3057}; read/write
+    \texttt{TType.sk:697--700}); the cached body is \emph{symbolic} in
     the type arguments (arguments occur as free variables, re-resolved at
     every use), which is why reuse under growth is sound
-    (comment \texttt{TTypeSubst.sk:17--30}).
+    (comment \texttt{TTypeSubst.sk:17--30}). The key's identity premise
+    (name text $\Rightarrow$ definition) and cross-mention exactness are
+    registry rows owned by the expansion paper, not re-argued here.
   \end{itemize}
 \end{itemize}
 \texttt{save()} snapshots all seven fields into a frozen
@@ -144,7 +152,7 @@ persistent map/set, \texttt{save} is $O(1)$ and lossless.
 
 \subsection{Unsaved state}
 
-Three pieces of mutable or threaded state live \emph{outside}
+Five pieces of mutable or threaded state live \emph{outside}
 \texttt{SubstState}; each needs its own safety argument.
 
 \paragraph{(U1) \texttt{freezeCandidates}.}
@@ -152,46 +160,91 @@ Declared on \texttt{Subst} itself, not on \texttt{SubstState}
 (\texttt{TTypeSubst.sk:76--89}), with an explicit comment that
 save/restore never touch it; it is push/popped around the
 constraint-admissibility check in \texttt{growTVars}
-(\texttt{TTypeSubtyping.sk:1431--1443}). Verified by inspection: those two
+(\texttt{TTypeSubtyping.sk:1666--1678}). Verified by inspection: those two
 lines are the \emph{only} writes to the flag in \texttt{src/}, the
 push/pop brackets a straight-line region with no early return (the
-\texttt{break} at \texttt{:1440} exits only the inner constraint loop),
+\texttt{break} at \texttt{:1676} exits only the inner constraint loop),
 and nested checks restore the outer value via \texttt{wasFreezing}. So
 excluding it from \texttt{SavedSubst} is safe: a restore can never observe
 a torn flag, because every save/restore pair either lies entirely inside
 or entirely outside a freeze window.
 
-\paragraph{(U2) \texttt{tenv.seenSub} and \texttt{tenv.seenInter}.}
-\texttt{TEnv} is a \emph{frozen} Skip class (\texttt{TEnv.sk:12}); the
-apparent mutations \texttt{!tenv.seenSub = \ldots}
-(\texttt{TTypeSubtyping.sk:1537}) and \texttt{!tenv.seenInter = \ldots}
-(\texttt{TTypeInter.sk:157}) are functional updates of the \emph{local}
+\paragraph{(U2) \texttt{nextSkolemId}.}
+The counter supplying skolem type-parameter identifiers
+(\texttt{TTypeSubst.sk:90--93}, drawn by \texttt{genSkolemTParam},
+\texttt{:262--281}). Deliberately outside \texttt{SubstState}
+\emph{because} restore rewinds the version: reusing a skolem id on a
+restored timeline would merge two distinct hidden type arguments, so the
+supply must survive rollback. Exclusion is safe for the same reason it
+exists — the counter only increases, so ids are never reused across any
+sequence of saves and restores. Clone-side minting is impossible by
+construction: \texttt{clone()} poisons the field to $-1$
+(\texttt{TTypeSubst.sk:160--165}) and \texttt{genSkolemTParam} fails
+hard on a poisoned counter (\texttt{:267--272}). Exactly one mint site
+exists (\texttt{TEnv.sk:801}, inside \texttt{makeSkolemTArgsOf}),
+reached from \texttt{instanceof} narrowing on the main substitution
+(\texttt{TypeCheckRefine.sk:367}). Skolems are type \emph{parameters}
+(name-based), not \texttt{TVar}s: minting one writes nothing into
+$\rho$.
+
+\paragraph{(U3) \texttt{ppNames}.}
+A diagnostic-rendering accumulator (\texttt{TTypeSubst.sk:94--101}),
+\emph{shared} by \texttt{clone()} on purpose — pretty-printing runs
+through clones and would otherwise lose the emissions it exists to
+collect. Safe because it is a record of output only: nothing reads it
+back into typing, and save/restore never touch it.
+
+\paragraph{(U4) \texttt{TEnv}-threaded state.}
+\texttt{TEnv} is a \emph{frozen} Skip class; every apparent mutation
+\texttt{!tenv.f = \ldots} is a functional update of the \emph{local}
 binding, propagated only into callees that receive the updated
-\texttt{tenv}. These sets are therefore \emph{path-scoped coinduction
-hypotheses}, not caches: an entry is visible exactly in the dynamic
-extent of the recording activation and vanishes when it returns. This
-structural fact does most of the work in the \#446 argument
-(\S\ref{sec:tenv-seensub}). \texttt{tenv.seenSub} is keyed by
-$(\mathsf{version}, u_1, u_2)$ (\texttt{TEnv.sk:74});
-\texttt{tenv.seenInter} by the bare pair (\texttt{TEnv.sk:69}), which is
-safe because its only effect is to return an \emph{unexpanded}
-intersection on a cycle (\texttt{TTypeInter.sk:154--156}) — a
-representation choice, not a judgement.
+\texttt{tenv} — so each field below is \emph{path-scoped}: an entry is
+visible exactly in the dynamic extent of the recording activation and
+vanishes when it returns. The judgement-relevant fields:
+\begin{itemize}
+\item \texttt{tenv.seenSub}, keyed by $(\mathsf{version}, u_1, u_2)$
+  (\texttt{TEnv.sk:116}; recorded at
+  \texttt{TTypeSubtyping.sk:1877}) — the coinduction hypothesis set;
+  path-scoping does most of the work in the \#446 argument
+  (\S\ref{sec:tenv-seensub}).
+\item \texttt{tenv.seenInter}, keyed by the bare pair
+  (\texttt{TEnv.sk:111}; \texttt{TTypeInter.sk:154--157}) — safe because
+  its only effect is to return an \emph{unexpanded} intersection on a
+  cycle, a representation choice, not a judgement.
+\item \texttt{tenv.subtypingHeadDepth}
+  (\texttt{TEnv.sk:129}): a per-path count of how often each
+  constructor \emph{pair} has been revisited on the current
+  structural-subtyping descent; past
+  \texttt{kMaxSubtypingHeadDepth} $= 12$
+  (\texttt{TTypeSubtyping.sk:19}) the recursion is \emph{refused} as
+  excessively deep (TS2589, \texttt{TTypeSubtyping.sk:1859--1875}).
+  Threaded exactly like \texttt{tenv.seenSub}, hence path-scoped; it
+  needs no monotone-reads or rollback argument because a hit can only
+  \emph{reject} — refusal is conservative for soundness, so the field
+  affects completeness only.
+\item \texttt{tenv.expandInter} (\texttt{TEnv.sk:131--135}): a mode flag
+  selecting full versus deferred (\texttt{unexpandedInter}) field
+  intersection. Its path-scoping and the containment coverage of the
+  deferred form are the \textsc{open} registry row TENV-EXPANDINTER.
+\end{itemize}
+The remaining \texttt{TEnv} fields are resolution-side: the cycle sets
+\texttt{seenInstantiate}, \texttt{instantiatingTParams},
+\texttt{typeofValues}, \texttt{forbiddenInsts}
+(\texttt{TEnv.sk:82,93,102,106} — each self-scoping by the same
+frozen-threading discipline, and each able only to stop a resolution,
+never to accept one) and the mode/diagnostic fields
+\texttt{bindings}, \texttt{inTypeDefValidation},
+\texttt{instantiateAt}, \texttt{verbose}
+(\texttt{TEnv.sk:65,143,148,155}). They govern which \emph{types} the
+environment produces — the expansion paper's scope — not the
+substitution discipline; they are listed so this inventory covers every
+non-\texttt{SubstState} field on both classes.
 
-\paragraph{(U4) \texttt{tenv.expandInter}.}
-A mode flag on \texttt{TEnv} selecting full versus deferred
-(\texttt{unexpandedInter}) field intersection; set by
-\texttt{TInter::expand} and, like \texttt{tenv.seenSub}, threaded through
-the frozen-\texttt{TEnv} update discipline, so the setting should be
-path-scoped. This flag was found missing from this inventory by external
-review; its path-scoping and the containment coverage of the deferred
-form are the \textsc{open} registry row TENV-EXPANDINTER.
-
-\paragraph{(U3) \texttt{results} and \texttt{context}.}
+\paragraph{(U5) \texttt{results} and \texttt{context}.}
 The diagnostics/callgraph accumulator \texttt{results} is shared by
-\texttt{clone()} (\texttt{TTypeSubst.sk:137--149}) and never rolled back
+\texttt{clone()} (\texttt{TTypeSubst.sk:149--168}) and never rolled back
 (e.g.\ \texttt{recordSubtypingEdge} on \texttt{TFun::isSub} success,
-\texttt{TTypeSubtyping.sk:1681--1688}). It carries no typing state, so it
+\texttt{TTypeSubtyping.sk:1954--1961}). It carries no typing state, so it
 is outside $\rho$; \S\ref{sec:lclone} flags the one place this is worth a
 remark.
 
@@ -215,7 +268,7 @@ variable identifier retains its own constraint set.
 \begin{proof}[Proof (by inspection of the pinned source)]
 \texttt{TVar} is a frozen (non-\texttt{mutable}) class and
 \texttt{setConstraint} a non-\texttt{mutable} method
-(\texttt{TType.sk:2589} and \texttt{:2590--2591}):
+(\texttt{TType.sk:2988--2992} and \texttt{:3001--3004}):
 \begin{center}
 \texttt{fun setConstraint(ty: TType): TVar \{}\\
 \texttt{\ \ !this.constraints = this.constraints.set(ty); this \}}
@@ -223,23 +276,21 @@ variable identifier retains its own constraint set.
 In Skip, field assignment through \texttt{!this.f = e} in a frozen-class
 method is a \emph{functional record update of the local binding}
 \texttt{this}; the method must return the updated copy for the change to
-be visible at all. The same idiom appears throughout the pinned revision
-on unambiguously frozen classes
-(\texttt{STErrorDetail::ensureIntermediateDepth},
-\texttt{TTypeSubtyping.sk:40--45}; \texttt{TEnv::instantiate},
-\texttt{TEnv.sk:131}). Two corroborations: (i) \texttt{constraints}
-participates in \texttt{TVar::xxhash} (\texttt{TType.sk:2598--2607}) and
+be visible at all (the sibling \texttt{mapConstraints},
+\texttt{:3006--3009}, uses the same idiom). Two corroborations: (i)
+\texttt{constraints}
+participates in \texttt{TVar::xxhash} (\texttt{TType.sk:3010--3019}) and
 in \texttt{Orderable} equality — a shared-mutation semantics would break
 hashing of interned type terms; (ii) both call sites use the return value
 (\texttt{TType::var(tvar.setConstraint(ty2))},
 \texttt{TTypeInter.sk:145--151}; \texttt{!tvar = tvar.setConstraint(...)},
-\texttt{TEnv.sk:314}) — a genuine mutation would make that redundant.
+\texttt{TEnv.sk:830--832}) — a genuine mutation would make that redundant.
 \end{proof}
 
 \begin{corollary}[Occurrence-Relative Envelopes]
 \label{cor:occurrence}
 The ``constraint intersection'' step of \texttt{Subst::get}
-(\texttt{TTypeSubst.sk:218--221}) intersects the binding with the
+(\texttt{TTypeSubst.sk:237--239}) intersects the binding with the
 constraints \emph{of the occurrence being read}. A variable identifier
 therefore has no global constraint set; constraints are part of the type
 term. Refinement, intersection, or any other operation attaching a
@@ -264,19 +315,22 @@ op & effect on $\rho$ & anchor \\
 \midrule
 $\mathsf{grow},\ \mathsf{get}(\mathsf{cov})$ writes &
   per main paper; $\mathsf{version}{+}{+}$ before each write &
-  \texttt{TTypeSubst.sk:151--222} \\
+  \texttt{TTypeSubst.sk:170--241} \\
 $\mathsf{gen}/\mathsf{genFor*}$ &
   fresh id $=$ $\mathsf{version}$; $\mathsf{version}{+}{+}$; no binding &
-  \texttt{TTypeSubst.sk:237--253} \\
+  \texttt{TTypeSubst.sk:256--293} \\
+$\mathsf{genSkolemTParam}$ & skolem id from \texttt{nextSkolemId} (U2);
+  no $\rho$ effect & \texttt{TTypeSubst.sk:262--281} \\
 cache insert & add to one of the four memo maps; no version bump &
   \S\ref{def:fullstate} \\
-$\mathsf{setOrigin}$ & origins only & \texttt{TTypeSubst.sk:271} \\
+$\mathsf{setOrigin}$ & origins only & \texttt{TTypeSubst.sk:311} \\
 $\mathsf{save}/\mathsf{restore}$ & snapshot / reinstate all seven fields &
   \texttt{TTypeSubst.sk:36--48} \\
 $\mathsf{clone}$ & fork: new \texttt{Subst}, same seven fields, shared
-  \texttt{results} & \texttt{TTypeSubst.sk:137--149} \\
+  \texttt{results}/\texttt{ppNames}, poisoned skolem counter &
+  \texttt{TTypeSubst.sk:149--168} \\
 freeze push/pop & toggle \texttt{freezeCandidates} (unsaved) &
-  \texttt{TTypeSubtyping.sk:1431--1443} \\
+  \texttt{TTypeSubtyping.sk:1666--1678} \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -284,7 +338,7 @@ Verified write-site completeness: the only assignments to
 \texttt{values} in \texttt{src/} are in \texttt{grow}, \texttt{get}, and
 \texttt{restore}; the only version writes are those plus \texttt{gen*};
 external \texttt{grow} callers (\texttt{TArrayLitTyping.sk:147,352};
-\texttt{TVariadicTyping.sk:125}; \texttt{TypeCheckUtils.sk:310,321,332})
+\texttt{TVariadicTyping.sk:125}; \texttt{TypeCheckUtils.sk:317,328,339})
 go through the same transitions.
 \end{definition}
 
@@ -318,7 +372,7 @@ $\env{\rho}{\alpha} \subseteq \env{\rho'}{\alpha}$ for every $\alpha$.
 The value $\emptyset$ for unbound variables is the canonical TVAR-SEM
 definition owned by the main paper; it is the modeling counterpart
 of $\mathsf{get}(\mathsf{contra})$ returning $\bot$ without writing
-(\texttt{TTypeSubst.sk:211--212}).
+(\texttt{TTypeSubst.sk:230--231}).
 \end{definition}
 
 \begin{definition}[Modeling Conditions]
@@ -435,7 +489,7 @@ $v \in \sem{u}_\rho \implies v \in \sem{u}_{\rho'}$.
 \label{sec:lmono-enum}
 
 By a walk of every arm of \texttt{evalCond}
-(\texttt{TypeCheckRefine.sk:371--541}) and its handlers, the evolutions of
+(\texttt{TypeCheckRefine.sk:476--663}) and its handlers, the evolutions of
 the \emph{main} substitution that condition refinement can trigger are
 exactly:
 
@@ -443,44 +497,54 @@ exactly:
 \item[\textbf{(E1)}] \emph{Covariant expansion in the refinement
   primitive.} \texttt{setLocalFilterMap} runs
   \texttt{mapSTypes(\ldots, Some(Covariant()), f)} on the main
-  substitution (\texttt{TypeCheckRefine.sk:615}); expansion applies
+  substitution (\texttt{TypeCheckRefine.sk:721,736}); expansion applies
   \texttt{subst.get(tenv, tvar, Covariant())} to every spine variable
-  (\texttt{TType.sk:660}): fresh variables seal to $\top$, open variables
+  (\texttt{expandToVectors}, \texttt{TType.sk:680--747}): fresh variables
+  seal to $\top$, open variables
   seal at their bound. Used by \emph{every} rule that factors through the
   primitive.
 \item[\textbf{(E2)}] \emph{Union/intersection during residue and clause
   rebuilding.} \texttt{mapSTypes} reassembles clauses with
-  \texttt{Clauses::unionN} (\texttt{TType.sk:411}); the
+  \texttt{Clauses::unionN} (\texttt{TType.sk:457}); the
   \texttt{typeof\,==\,"object"} default builds
   \texttt{STypes::union} on the main substitution
-  (\texttt{TypeCheckRefine.sk:273--285}). Union itself performs no
+  (\texttt{TypeCheckRefine.sk:275}). Union itself performs no
   \texttt{get}/\texttt{grow} (verified: no such call in
   \texttt{TTypeUnion.sk}) but recursively calls \texttt{TType::inter} on
   field set-types (\texttt{TTypeUnion.sk:102,124}), reaching E3.
 \item[\textbf{(E3)}] \emph{Main-substitution intersections.}
-  \texttt{evalIsArray}'s true branch and \texttt{evalInstanceof} run
-  \texttt{TObject::inter} on the main substitution
-  (\texttt{TypeCheckRefine.sk:334,361}). Inside
+  \texttt{evalIsArray}'s true branch runs \texttt{TObject::inter}
+  (\texttt{TypeCheckRefine.sk:344}) and \texttt{evalInstanceof}'s
+  non-matching branches run \texttt{TFields::inter} against the skolem
+  view (\texttt{TypeCheckRefine.sk:407}, readonly fields preserved via
+  \texttt{keepReadonlyFrom}), both on the main substitution. Inside
   \texttt{TType::inter\_}: covariant expansion of both operands
   (\texttt{TTypeInter.sk:158--159}, seals as in E1); constraint
   attachment on bare-variable operands
   (\texttt{TTypeInter.sk:145--151}, a value operation by
   Lemma~\ref{lem:setconstraint}); speculative concrete
-  \texttt{isSub} probes (\texttt{:163--188}); and
+  \texttt{isSub} probes (\texttt{:160--190}); and
   \texttt{TFun::inter}'s two \texttt{TFun::isSub} attempts on the main
-  substitution (\texttt{TTypeInter.sk:602, 606}) — on success their
+  substitution (\texttt{TTypeInter.sk:643, 647}) — on success their
   \texttt{growTVars} growth \emph{commits}, on failure it is restored.
-\item[\textbf{(E4)}] \emph{Fresh variable generation.}
-  \texttt{evalInstanceof} instantiates the class with fresh inference
-  arguments (\texttt{makeTArgs}, \texttt{TEnv.sk:308--323}:
-  \texttt{gen} + occurrence-level \texttt{setConstraint} +
-  \texttt{setOrigin}); \texttt{newObject} may create synthetic index
-  variables (\texttt{TType.sk:1764--1780}).
+\item[\textbf{(E4)}] \emph{Fresh identifier generation.}
+  \texttt{evalInstanceof} instantiates the class view with fresh
+  \emph{skolem} arguments on the main substitution
+  (\texttt{makeSkolemTArgsOf}, \texttt{TEnv.sk:780--806}) — a
+  \texttt{nextSkolemId} draw with no $\rho$ effect (U2) — and mints
+  ordinary inference arguments only on the throwaway \emph{probe clone}
+  (\texttt{TypeCheckRefine.sk:373--379}; \texttt{makeTArgsOf},
+  \texttt{TEnv.sk:822--836}: \texttt{gen} + occurrence-level
+  \texttt{setConstraint}), analyzed as C4 in \S\ref{sec:lclone};
+  object-literal typing may create synthetic index
+  variables (\texttt{toTFields}, \texttt{TypeCheckExpr.sk:112--120};
+  \texttt{createSyntheticIndex}, \texttt{TType.sk:1969--1975}).
 \item[\textbf{(E5)}] \emph{Cache inserts} in all of the above.
 \end{itemize}
 
 Everything else refinement does runs on a \emph{clone}
-(\texttt{TypeCheckRefine.sk:89,99,177,197,573}) and does not evolve the
+(\texttt{TypeCheckRefine.sk:89,99,177,197,373,398,694}) and does not
+evolve the
 main $\rho$ at all; those sites are \S\ref{sec:lclone}'s subject.
 
 \subsection{Discharge}
@@ -577,63 +641,62 @@ accepted inclusion is therefore preserved.
 \subsection{Site audit}
 \label{sec:mr-audit}
 
-Every \texttt{expandToClauses}/\texttt{expand}/\texttt{get} site with its
-variance, in the pinned revision. Expansion applies its variance uniformly
+Expansion applies its variance uniformly
 to every \emph{spine} variable, including through \texttt{TSInst} and
-\texttt{TInter} unfolding (\texttt{TType.sk:634--678}); it does not enter
+\texttt{TInter} unfolding (\texttt{expandToVectors},
+\texttt{TType.sk:680--747}); it does not enter
 fields or signatures, so no variance flip arises inside a single
 expansion — flips happen only where the recursion of \texttt{isSub}
 swaps sides.
 
-\begin{center}
-\renewcommand{\arraystretch}{1.2}
-\small
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{5.4cm}p{1.1cm}>{\raggedright\arraybackslash}p{6.7cm}@{}}
-\toprule
-site & var. & discipline check \\
-\midrule
-\texttt{isSub\_} lhs $u_1$ (TTypeSubtyping.sk:1623) &
-  cov & BR: seals; memo \texttt{seenSub} baked on success \\
-\texttt{isSub\_} rhs $u_2$ (:1624) &
-  contra & MR: supertype side \\
-\texttt{TFun::isSub\_} rest, \emph{sub} side (:1708) &
-  contra & MR: becomes rhs of param check
-  \texttt{isSub(p2,\,p1)} \\
-\texttt{TFun::isSub\_} rest, \emph{super} side (:1768--1773) &
-  cov & BR: lhs of param checks; sealed \\
-\texttt{TTypeInter} both operands (TTypeInter.sk:158--159) &
-  cov & BR: result memoized/installed; seal justifies
-  \texttt{seenInter} \\
-\texttt{TypeCheckUtils} truthiness reads (:19,43) &
-  cov & BR: result drives diagnostics/refinement \\
-\texttt{resolveSpreadToTuple} (TVariadicTyping.sk:53,74) &
-  contra & MR: tuple shape probe; restored when \texttt{None}
-  (:64,70,78) \\
-TEnv.sk:820,2103; TypeCheckClass.sk:55,146;
-  TypeCheckExpr.sk:1549--1553 & cov & BR \\
-\texttt{expandTVarsForPp} (TType.sk:703) & cov &
-  on a \emph{clone} (TTypePp.sk:815, TTypeSubtyping.sk:1195--1196):
-  pretty-printing must not seal \\
-\texttt{ArrayLitTyping} probes (TArrayLitTyping.sk:175,236,394) &
-  cov & :236 clones; :175,394 seal on the live subst
-  (commitment sites) \\
-\bottomrule
-\end{tabular}
-\end{center}
+BR holds at covariant sites \emph{by construction}:
+$\mathsf{get}(\mathsf{cov})$ seals on every path
+(\texttt{TTypeSubst.sk:207--228}) except the freeze-candidate arm
+(\texttt{:221--222}) — the one designed exception, which is this
+section's finding. Representative covariant sites (the population has
+grown with the checker and is not usefully enumerable per line; the
+load-bearing ones are): \texttt{isSub\_} lhs $u_1$
+(\texttt{TTypeSubtyping.sk:1896} — memo \texttt{seenSub} baked on
+success), \texttt{TFun::isSub\_} rest on the \emph{super} side
+(\texttt{:2145}), both \texttt{TTypeInter} operands
+(\texttt{TTypeInter.sk:158--159} — the seal justifies
+\texttt{seenInter}), the \texttt{TypeCheckUtils} truthiness/void reads
+(\texttt{:19,42}), the \texttt{ArrayLitTyping} commitment-site checks
+(\texttt{TArrayLitTyping.sk:339,365}), and \texttt{expandTVarsForPp}
+(\texttt{TType.sk:750}) — which runs on a \emph{clone}
+(\texttt{TTypePp.sk:1202,1215}) precisely so pretty-printing never
+seals.
 
-No site violates MR: all contravariant reads end up on the right of a
-validation. BR holds at all sites on the success path, with one
-exception, which is the section's finding.
+The \emph{non-sealing} reads are the exhaustive obligation, and they
+are: the contravariant sides of validation — \texttt{isSub\_} rhs $u_2$
+(\texttt{TTypeSubtyping.sk:1897}) and \texttt{TFun::isSub\_} rest on the
+\emph{sub} side (\texttt{:2081}), each used only as the right-hand side
+of a check (MR); the \texttt{resolveSpreadToTuple} shape probes
+(\texttt{TVariadicTyping.sk:51--78}), bracketed by save
+(\texttt{:51}) and restored on every \texttt{None} path
+(\texttt{:64,70,78}); the freeze-candidate arm of
+$\mathsf{get}(\mathsf{cov})$ (Finding~\ref{find:freeze-memo}); and the
+two live-substitution \texttt{peekRaw} sites — the spread probe just
+cited (\texttt{TVariadicTyping.sk:67}, inside the restored bracket) and
+the reflexive-\texttt{TSInst} fast path
+(\texttt{TTypeSubtyping.sk:1817}), which is outside this family and
+analyzed in deep dive D. (\texttt{peekRaw} at
+\texttt{TTypeSubtyping.sk:1389,1424} and \texttt{TypeCheckExpr.sk:1753}
+runs on clones.)
+
+No site violates MR: all non-sealing reads either end on the right of a
+validation or are restored. BR holds at all sites on the success path,
+with the freeze-arm exception, which is the section's finding.
 
 \subsection{Residual hazard: the freeze-window unsealed read}
 \label{sec:freeze-hazard}
 
 $\mathsf{get}(\mathsf{cov})$ on an open \emph{candidate} under
 \texttt{freezeCandidates} returns the bound \emph{without sealing}
-(\texttt{TTypeSubst.sk:202--203}) — a covariant read that violates BR by
+(\texttt{TTypeSubst.sk:221--222}) — a covariant read that violates BR by
 design, so that constraint admissibility checks are queries. The check
 runs full \texttt{TType::isSub(boundTy, cstr)}
-(\texttt{TTypeSubtyping.sk:1435}), whose \emph{successes} insert pairs
+(\texttt{TTypeSubtyping.sk:1670}), whose \emph{successes} insert pairs
 into the persistent, version-\emph{unkeyed} \texttt{subst.seenSub} memo.
 
 \begin{finding}[Stale \texttt{seenSub} memo via freeze-window reads]
@@ -648,7 +711,7 @@ $t$ \emph{unsealed} and memoizing $(u_1, \mathrm{cstr}) \in
 contravariantly grow the same $\alpha$ (it is no longer protected) to
 $t \vee s$. The memo now asserts an inclusion validated with the smaller
 $\sem{u_1}$; a later syntactically-identical query hits it
-(\texttt{TTypeSubtyping.sk:1588}) without re-validation. The eventual
+(\texttt{TTypeSubtyping.sk:1837}) without re-validation. The eventual
 covariant expansion of $u_1$ seals $\alpha$ at $t \vee s$ — \emph{after}
 the memo was recorded. The discipline itself cannot close this gap: the
 memo survives on the enclosing check's success path, and nothing re-keys
@@ -694,10 +757,11 @@ installs $u$ into the scope, discarding the clone
 (\texttt{TypeCheckRefine.sk:87--94}); likewise \texttt{removeConstant}
 (\texttt{:96--106}), \texttt{evalFieldEqualityType}
 (\texttt{:176--201}), and \texttt{evalFieldTruthiness}
-(\texttt{:571--576}). \texttt{clone()} forks all seven
+(\texttt{:694}). \texttt{clone()} forks all seven
 \texttt{SubstState} fields (immutable maps, so the fork is a true
-snapshot) and shares only \texttt{results} and \texttt{context}
-(\texttt{TTypeSubst.sk:137--149}).
+snapshot), shares \texttt{results}, \texttt{context}, and the
+output-only \texttt{ppNames}, and poisons the skolem counter (U2)
+(\texttt{TTypeSubst.sk:149--168}).
 
 Write $\rho_f$ for the fork state ($=$ the main state at the clone),
 $\rho_c$ for the clone state when \texttt{inter} returns, and $\rho''$
@@ -722,15 +786,17 @@ what \texttt{inter} can do:
 \item[\textbf{(C3)}] \emph{Grows and commitments} from speculative
   subtyping inside \texttt{inter}: \texttt{TFun::inter} runs
   \texttt{TFun::isSub} both ways on the clone
-  (\texttt{TTypeInter.sk:602, 606}), committing growth on success;
+  (\texttt{TTypeInter.sk:643, 647}), committing growth on success;
   \texttt{ArrayLitTyping} may commit a literal's form variable on the
   clone. All lost at discard, while $u$ may mention the affected
   variables.
-\item[\textbf{(C4)}] \emph{Fresh generations} on the clone (expansion of
+\item[\textbf{(C4)}] \emph{Fresh generations} on the clone (the
+  \texttt{instanceof} preservation probe mints inference arguments on
+  its probe clone, \texttt{TypeCheckRefine.sk:373--379}; expansion of
   a cold \texttt{TSInst} can reach \texttt{tenv.instantiate} and, through
-  class setup, \texttt{gen}-sites such as synthetic index fields,
-  \texttt{TType.sk:1764--1780}). The clone's version counter advances
-  privately; the main counter does not.
+  object-literal branch building, \texttt{gen}-sites such as synthetic
+  index fields, \texttt{TType.sk:1969--1975}). The clone's version
+  counter advances privately; the main counter does not.
 \end{itemize}
 
 \subsection{Over-approximation: the positive result}
@@ -782,40 +848,54 @@ signature-opacity deflection applies verbatim. Field-get positions reach
 
 \subsection{Clone-escaped fresh identifiers: an unreachable hazard}
 
-\begin{finding}[Identifier collision between clone and main is
-unreachable]
+\begin{finding}[Clone-minted identifiers never escape into installed
+types]
 \label{find:clone-gen}
 Fresh identifiers are drawn from the \emph{version counter}
-(\texttt{TTypeSubst.sk:237--253}), and a clone forks the counter: if a
-clone ever generated a variable (C4), its id would equal the id the
+(\texttt{TTypeSubst.sk:256--293}), and a clone forks the counter: if a
+clone generates a variable (C4), its id equals the id the
 \emph{main} substitution assigns to its own next generation, and a
-clone-generated occurrence escaping into the installed $u$ in a
+clone-generated occurrence escaping into an installed type in a
 semantically visible position (a field get type — synthetic index fields
-qualify, \texttt{TType.sk:1764--1780}) would, once the main substitution
+qualify, \texttt{TType.sk:1969--1975}) would, once the main substitution
 binds the colliding id, silently read an unrelated variable's envelope.
 Nothing in Theorem~\ref{thm:lclone}'s bridge would cover that: the
-occurrence's denotation would not be monotone from fork state. The hazard
-is settled by a reachability audit: of all ten \texttt{gen*} call sites,
-\emph{none} lies in the clone-compute-install call tree
-(\texttt{inter} / \texttt{removeConstant} / \texttt{expand} /
-\texttt{instantiate} / \texttt{normalize} / \texttt{newObject} /
-\texttt{addFields}); in particular the two
-\texttt{createSyntheticIndex} generators have exactly two callers, both
-in the object-literal branch of expression typing, which runs on the
-\emph{main} substitution — never under a refinement clone. So no
-clone-side fresh identifier is ever generated during
-clone-compute-install, no collision can occur, and CL-1
-(\S\ref{sec:status}) is \emph{discharged}. The discharge rests on a
-code invariant that should be guarded: assert (and CI-check) that
-clone-side runs of \texttt{inter} never call \texttt{gen*}; drawing ids
-from a counter shared by reference would remove the hazard class
-altogether.
+occurrence's denotation would not be monotone from fork state. The
+hazard is settled by an escape audit of the \texttt{gen*} call sites.
+Exactly one runs under a clone: the \texttt{instanceof} preservation
+probe mints inference arguments on \texttt{probeSubst}
+(\texttt{TypeCheckRefine.sk:373--379} via \texttt{makeTArgsOf},
+\texttt{gen} at \texttt{TEnv.sk:829}). Its products are confined by
+construction: \texttt{probeFields} is consumed only as the
+right-hand side of per-branch \texttt{TFields::isSub} probes, each on a
+fresh re-clone (\texttt{TypeCheckRefine.sk:395--402}), and the branches
+actually \emph{installed} are either the scrutinee's own
+(\texttt{fields}) or intersections computed on the main substitution
+from main-substitution material
+(\texttt{TypeCheckRefine.sk:407--415}) — no probe-clone identifier
+occurs in an installed type. Every other \texttt{gen*} site
+(\texttt{TypeCheckFun.sk:318}; \texttt{TArrayLitTyping.sk:195};
+\texttt{TypeCheckUtils.sk:315,326,337,344};
+\texttt{TypeCheckExpr.sk:4485}; the two
+\texttt{createSyntheticIndex} callers in \texttt{toTFields},
+\texttt{TypeCheckExpr.sk:112--120}) runs on the expression-typing
+substitution, never under a refinement clone — re-verified by
+enumerating all \texttt{.gen(}/\texttt{.genForField(}/%
+\texttt{.genForLiteralCommitment(} sites at the pin. So no
+clone-side fresh identifier reaches a type installed against the main
+substitution, and CL-1 (\S\ref{sec:status}) is \emph{discharged}. The
+discharge rests on a code invariant that should be guarded: assert (and
+CI-check) that clone-minted variables do not escape the probe; for the
+skolem class the analogous guard already \emph{is} a runtime invariant
+— \texttt{clone()} poisons \texttt{nextSkolemId} and
+\texttt{genSkolemTParam} fails hard on it
+(\texttt{TTypeSubst.sk:160--165, 267--272}).
 \end{finding}
 
 \paragraph{Shared \texttt{results}.} Clone-side speculative
 \texttt{TFun::isSub} successes record subtyping edges into the shared
 accumulator even when the exploration is discarded
-(\texttt{TTypeSubtyping.sk:1681--1688}). This does not touch typing
+(\texttt{TTypeSubtyping.sk:1954--1961}). This does not touch typing
 state; it can only over-connect the callgraph consumed by later phases.
 Out of scope for type soundness, recorded here so the boundary is
 explicit.
@@ -845,33 +925,34 @@ pair):
 \toprule
 \# & site (save; restore) & restore condition \\
 \midrule
-1 & \texttt{TFields::isSub} (\texttt{TTypeSubtyping.sk:796; 798}) &
+1 & \texttt{TFields::isSub} (\texttt{TTypeSubtyping.sk:943; 945}) &
   on \texttt{STError} \\
-2 & \texttt{STypes::isSub} (\texttt{:1109; 1136}) & on failure \\
-3 & \texttt{Clauses::isSub} (\texttt{:1149; 1169}) &
+2 & \texttt{STypes::isSub} (\texttt{:1307; 1334}) & on failure \\
+3 & \texttt{Clauses::isSub} (\texttt{:1347; 1367}) &
   on overall failure (clause with no matching partner) \\
-4 & \texttt{TObject::isSub} outer (\texttt{:1877; 1889}) &
+4 & \texttt{TObject::isSub} outer (\texttt{:2183; 2195}) &
   on overall failure \\
-5 & \texttt{TObject::isSub} per branch pair (\texttt{:1881; 1886}) &
+5 & \texttt{TObject::isSub} per branch pair (\texttt{:2187; 2192}) &
   after each failed pairing, before trying the next \\
-6 & \texttt{TType::isSub\_} (\texttt{:1617; 1643}) &
+6 & \texttt{TType::isSub\_} (\texttt{:1890; 1916}) &
   on validation failure (growth persists on success, intentionally) \\
-7 & \texttt{growTVars} per-variable (\texttt{:1416; 1447}) &
+7 & \texttt{growTVars} per-variable (\texttt{:1651; 1682}) &
   on constraint-check failure \\
-8 & \texttt{isCovered} probes (\texttt{:1354; 1365}) &
+8 & \texttt{isCovered} probes (\texttt{:1589; 1600}) &
   after \emph{every} probe, hit or miss \\
-9 & \texttt{TFun::isSub} (\texttt{:1676; 1679}) & on \texttt{STError} \\
+9 & \texttt{TFun::isSub} (\texttt{:1949; 1952}) & on \texttt{STError} \\
 10 & \texttt{ArrayLit} tuple commit (\texttt{TArrayLitTyping.sk:402;
   416}) & on element-check failure (case 2c) \\
 11 & \texttt{resolveSpreadToTuple} (\texttt{TVariadicTyping.sk:51;
   64,70,78}) & on every \texttt{None} path \\
 12 & \texttt{inferRestTypeVar} (\texttt{TVariadicTyping.sk:124; 130}) &
   on constraint failure (error also reported) \\
-13 & \texttt{satisfies} (\texttt{TypeCheckExpr.sk:2793; 2805}) &
+13 & \texttt{satisfies} (\texttt{TypeCheckExpr.sk:3218; 3227}) &
   \emph{unconditionally} — \texttt{satisfies} must not commit inference \\
-14 & clone-as-rollback: \texttt{TEnv.sk:222},
-  \texttt{TypeCheckRefine.sk} (5 sites), \texttt{TypeCheckExpr.sk}
-  (6 sites), pretty-printer & discard instead of restore \\
+14 & clone-as-rollback: \texttt{TEnv.sk:378},
+  \texttt{TypeCheckRefine.sk} (7 sites), \texttt{TypeCheckExpr.sk}
+  (7 sites), pretty-printer (\texttt{TTypePp.sk:1202,1215}) &
+  discard instead of restore \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -879,9 +960,13 @@ pair):
 Three structural corollaries. (i) Well-bracketing holds at all sites, so
 Lemmas~\ref{lem:restore-safe} and~\ref{lem:version-values} apply
 globally. (ii) \texttt{SavedSubst} captures \emph{all} mutable typing
-state (Definition~\ref{def:fullstate}); the two exclusions are
-\texttt{freezeCandidates} — safe by its own push/pop bracketing, U1 —
-and \texttt{tenv.seenSub} — safe by \S\ref{sec:tenv-seensub}. In
+state (Definition~\ref{def:fullstate}); the exclusions are exactly
+U1--U5 of \S\ref{sec:model} — \texttt{freezeCandidates} (safe by its
+push/pop bracketing), \texttt{nextSkolemId} (safe \emph{because} it is
+never rewound), \texttt{ppNames} (output-only), the
+\texttt{TEnv}-threaded fields (path-scoped;
+\texttt{tenv.seenSub} by \S\ref{sec:tenv-seensub}), and
+\texttt{results}/\texttt{context} (no typing state). In
 particular a rollback also erases \texttt{seenSub}/\texttt{seenInter}/%
 \texttt{seenUnion}/\texttt{seenExpansion} entries recorded in the failed
 subtree, so no stale \emph{success} memo survives a rollback. (iii)
@@ -894,11 +979,11 @@ was already satisfied — rollback needs no analogue of \textbf{L-MONO}.
 \label{sec:arraylit-exception}
 
 \texttt{ArrayLitTyping::subtyping} runs at the top of
-\texttt{TType::isSub\_} \emph{before} the save at \texttt{:1617}
-(\texttt{TTypeSubtyping.sk:1612}). Its cases 1 and 2b commit the
+\texttt{TType::isSub\_} \emph{before} the save at \texttt{:1890}
+(\texttt{TTypeSubtyping.sk:1884--1888}). Its cases 1 and 2b commit the
 literal's form variable and then return the result of a subsequent
 check \emph{even when that check fails}
-(\texttt{TArrayLitTyping.sk:334--341, 368--392}): the commitment
+(\texttt{TArrayLitTyping.sk:339, 365--392}): the commitment
 persists on an \texttt{STError} return, violating the module contract's
 letter. This is deliberate (``irreversible'', \texttt{:140}); case 2c by
 contrast restores the commitment on failure (row 10).
@@ -918,17 +1003,17 @@ may be wrong for the runtime value (case 2b commits to
 The risk is a discarded failure. Probe callers: \texttt{isCovered}
 (row 8) restores around every probe; \texttt{growTVars} constraint checks
 (row 7) restore on failure; the speculative probes inside
-\texttt{inter\_} (\texttt{TTypeInter.sk:163--188}) and
-\texttt{SType::overlaps} (\texttt{:392--393}) compare a boxed-primitive
+\texttt{inter\_} (\texttt{TTypeInter.sk:160--190}) and
+\texttt{SType::overlaps} (\texttt{:393}) compare a boxed-primitive
 instance against a single \texttt{SType} — neither side is a bare
 uncommitted \texttt{TArrayLit}, which is the only trigger shape
 (\texttt{getSingleArrayLitUncommitted} requires a sole
-\texttt{TArrayLit} inst, \texttt{TArrayLitTyping.sk:68--82});
+\texttt{TArrayLit} inst, \texttt{TArrayLitTyping.sk:68});
 \texttt{TFun::inter}'s two attempts run under \texttt{TFun::isSub}'s own
 save/restore (row 9), which was taken \emph{before} the inner
 \texttt{isSub\_} ran, hence before the commitment — a failed first
 attempt rolls the commitment back. The constraint probe at
-\texttt{TEnv.sk:222} runs on a clone (row 14).
+\texttt{TEnv.sk:378} runs on a clone (row 14).
 \end{proof}
 
 This audit is complete for the pinned revision but fragile — any new
@@ -942,7 +1027,7 @@ condition.
 \texttt{tenv.seenSub} is the coinduction set of \texttt{isSub\_}: on
 entry, if $(\mathsf{version}, u_1, u_2)$ is present the check succeeds by
 coinductive hypothesis; otherwise the triple is recorded and threaded
-into the recursive calls (\texttt{TTypeSubtyping.sk:1603--1604}). It is
+into the recursive calls (\texttt{TTypeSubtyping.sk:1852, 1877}). It is
 not part of \texttt{SubstState}, and no rollback ever touches it. Its
 safety rests on two independent mechanisms:
 
@@ -974,7 +1059,7 @@ consulted under different bindings \emph{within the same extent} (probe
 loops, rows 7--8, restore and re-grow inside one \texttt{isSub\_}
 activation); the version key makes exactly those entries inert. The
 prerequisite ``version is bumped on every \texttt{values} write'' is
-verified at all three write sites (\texttt{TTypeSubst.sk:181,195,205});
+verified at all three write sites (\texttt{TTypeSubst.sk:200,214,224});
 note \texttt{gen*} bumps too, which additionally protects hypotheses
 against fresh-variable aliasing inside an extent.
 
@@ -1002,9 +1087,12 @@ Named sub-obligations introduced by this paper:
 \item[\textbf{CL-1}] No fresh variable generated on a clone may occur in
   a type installed against the main substitution
   (Finding~\ref{find:clone-gen}). Status: discharged — the property
-  holds, verified unreachable by the \texttt{gen*} call-site audit;
-  guard the underlying invariant with the recommended CI assertion
-  (\texttt{gen*} unreachable under clones used by refinement).
+  holds by the escape audit: the single clone-side \texttt{gen*} site
+  (the \texttt{instanceof} preservation probe) confines its products to
+  probe-side subtype checks, and every other \texttt{gen*} site runs on
+  the expression-typing substitution; guard with the recommended CI
+  assertion (clone-minted variables must not escape the probe — the
+  skolem analogue is already a runtime invariant).
 \item[\textbf{RB-1}] Maintenance condition: every \texttt{isSub} caller
   that discards \texttt{STError} must wrap the call in save/restore or
   be unreachable by uncommitted array literals
@@ -1036,8 +1124,8 @@ Obl.\ Monotone Reads & general statement via
   \texttt{peekRaw} read sits outside the audited family (deep dive D) \\
 L-CLONE & Theorem~\ref{thm:lclone} given I$_f$
   (fork-state L-INTER; registry row I-F); the id-collision hazard CL-1
-  discharged as
-  unreachable (Finding~\ref{find:clone-gen}), CI-assertion guard
+  discharged by the non-escape audit of the single clone-side
+  \texttt{gen*} site (Finding~\ref{find:clone-gen}), CI-assertion guard
   recommended \\
 Obl.\ No Commitment on Failure & 14-row save/restore
   audit (\S\ref{sec:rollback}; \texttt{SavedSubst} completeness;
@@ -1094,34 +1182,39 @@ Pinned to \texttt{\skjspinhash}.
 $\rho$ (seven fields) & \texttt{SubstState} (TTypeSubst.sk:13--49) \\
 snapshot / reinstate & \texttt{SavedSubst}, \texttt{save},
   \texttt{restore} (TTypeSubst.sk:36--74) \\
-transitions & \texttt{Subst::grow/get} (TTypeSubst.sk:151--222) \\
+transitions & \texttt{Subst::grow/get} (TTypeSubst.sk:170--241) \\
 fresh ids from version & \texttt{gen/genForField/genForLiteralCommitment}
-  (TTypeSubst.sk:237--253) \\
+  (TTypeSubst.sk:256--293) \\
+skolem ids (unsaved counter) & \texttt{nextSkolemId},
+  \texttt{genSkolemTParam} (TTypeSubst.sk:90--93, 262--281) \\
+pp-name record (unsaved) & \texttt{ppNames} (TTypeSubst.sk:94--101) \\
 $\mathsf{freeze}$ (unsaved) & \texttt{Subst.freezeCandidates}
-  (TTypeSubst.sk:76--89); push/pop TTypeSubtyping.sk:1431--1443 \\
-clone fork & \texttt{Subst::clone} (TTypeSubst.sk:137--149) \\
+  (TTypeSubst.sk:76--89); push/pop TTypeSubtyping.sk:1666--1678 \\
+clone fork & \texttt{Subst::clone} (TTypeSubst.sk:149--168) \\
 occurrence constraints & \texttt{TVar}, \texttt{setConstraint}
-  (TType.sk:2576--2607) \\
+  (TType.sk:2988--3019) \\
 success memo & \texttt{subst.seenSub}
-  (TTypeSubtyping.sk:1588,1591) \\
-coinduction hypotheses & \texttt{tenv.seenSub} (TEnv.sk:74;
-  TTypeSubtyping.sk:1603--1604); \texttt{tenv.seenInter}
-  (TEnv.sk:69; TTypeInter.sk:154--157) \\
+  (TTypeSubtyping.sk:1837,1840) \\
+coinduction hypotheses & \texttt{tenv.seenSub} (TEnv.sk:116;
+  TTypeSubtyping.sk:1852,1877); \texttt{tenv.seenInter}
+  (TEnv.sk:111; TTypeInter.sk:154--157) \\
+head-depth refusal & \texttt{tenv.subtypingHeadDepth} (TEnv.sk:129;
+  TTypeSubtyping.sk:19,1859--1875) \\
 result memos & \texttt{seenInter/seenUnion/seenExpansion}
-  (TTypeInter.sk:107--125; TTypeUnion.sk:29--32; TType.sk:650--653) \\
+  (TTypeInter.sk:107--123; TTypeUnion.sk:29--36; TType.sk:697--700) \\
 uniform-variance expansion & \texttt{expandToVectors}
-  (TType.sk:634--678) \\
+  (TType.sk:680--747) \\
 validation spine & \texttt{isSub\_/growTVars/isCovered}
-  (TTypeSubtyping.sk:1318--1646) \\
+  (TTypeSubtyping.sk:1562--1916) \\
 clone-compute-install & \texttt{evalVarEquality} etc.\
-  (TypeCheckRefine.sk:87--106,176--201,571--576) \\
+  (TypeCheckRefine.sk:87--106,176--201,694) \\
 main-subst refinement ops & \texttt{setLocalFilterMap}
-  (TypeCheckRefine.sk:615); \texttt{evalIsArray/evalInstanceof}
-  (TypeCheckRefine.sk:334,361) \\
+  (TypeCheckRefine.sk:721,736); \texttt{evalIsArray/evalInstanceof}
+  (TypeCheckRefine.sk:326--420) \\
 form commitments & \texttt{ArrayLitTyping}
   (TArrayLitTyping.sk:140--148,326--432) \\
 external grow callers & TArrayLitTyping.sk:147,352;
-  TVariadicTyping.sk:125; TypeCheckUtils.sk:310,321,332 \\
+  TVariadicTyping.sk:125; TypeCheckUtils.sk:317,328,339 \\
 \bottomrule
 \end{tabular}
 \end{center}

@@ -61,11 +61,14 @@ getter/optional/index/access rules of $\TFields$), states the
 setter directions as conditional on \textbf{L-MUT}, and gives function
 signatures the behavioral semantics the main paper lacks, proving the
 variance rules of \texttt{TFun::isSub} against it. Four findings emerge
-where the implementation is laxer than the semantics: the call/new
-\emph{mode} arm and the array-\emph{brand} omission (each composing with a
-refinement rule into a concrete unsoundness candidate), and two
-TS-compatibility acceptances in function subtyping (\texttt{this} and
-type-parameter constraint dropping). The closing status table recommends
+where the implementation is laxer than the semantics: the two
+refinement-trusted brands --- the laundered $\mathsf{CAbsent}$
+callability mode (witnessed end-to-end) and the never-compared array
+brand --- each composing with a refinement rule into an unsoundness; a
+type-parameter constraint-dropping acceptance; and the
+implicit-receiver arms of \texttt{this}-parameter subtyping, justified
+only under an attachment semantics the behavioral contract does not yet
+express. The closing status table recommends
 splitting the main paper's single \textbf{L-SUB} row into ten rows with
 individual statuses.
 \end{abstract}
@@ -102,19 +105,21 @@ field rules are proved against the main paper's membership semantics; the
 (\textbf{L-MUT}); \emph{function} subtyping is proved against a new
 behavioral signature semantics that we propose as an extension of the main
 paper's object semantics (whose opaque signatures cannot even express the
-claim); and two arms of the field stratum --- the call/new \emph{mode}
-lattice and the array \emph{brand} --- are found to be unsound relative to
-the main paper's stated semantics, each with a composite witness sketch
-involving a refinement rule whose proof in the main paper leans on exactly
-the semantic clause the subtyping arm ignores
-(Findings~\ref{find:call} and~\ref{find:brand}).
+claim); and two arms of the field stratum --- the lax
+$(\mathsf{CUnknown},\mathsf{CAbsent})$ callability arm and the array
+\emph{brand} --- are found to be unsound relative to
+the main paper's stated semantics, each composing with a refinement rule
+whose proof in the main paper leans on exactly
+the semantic clause the subtyping arm ignores --- the first witnessed
+end-to-end, the second by composite sketch
+(Findings~\ref{find:cabsent} and~\ref{find:brand}).
 Section~\ref{sec:status} gives the resulting ledger split.
 
 \paragraph{Relation to the rest of the series.}
 We build on three dives (exact rows in this paper's Imports table):
 Deep Dive~B (\texttt{lattice-operations.tex}) for the union/intersection
 results --- union proved exact, and the $\bot$-clause refuted in its
-live strata (incomparable signatures, string-spelling, and
+live strata (incomparable signatures and
 beyond-precision num-spelling, \textbf{L-INTER-BOT});
 Deep Dive~C (\texttt{type-expansion.tex}) for \textbf{L-EXP} scoped to
 expansion modes \texttt{None}/\texttt{Covariant} (its theorem T-EXP),
@@ -128,7 +133,7 @@ and the refutation of the naive ``version is a state hash'' reading of the
 \texttt{tenv.seenSub} key, whose corrected argument we complete in
 \S\ref{sec:tenvseen}. All code references are to revision
 \texttt{\skjspinhash}; the primary sources are
-\texttt{src/TTypeSubtyping.sk} (all 1897 lines audited),
+\texttt{src/TTypeSubtyping.sk} (all 2203 lines audited),
 \texttt{src/TTypeSubst.sk}, and the \texttt{isSub} helpers in
 \texttt{src/TType.sk}.
 
@@ -146,10 +151,21 @@ $V \subseteq_{\mathrm{fin}} \TParam$ and $S \in \STypes \cup \{\top\}$.
 $\STypes$ is tag-indexed, at most one $\SType$ per tag; $\SType$s are
 units, literal-or-full primitives, and $\mathsf{object}(B)$ with branches
 $b \in \TFields$ carrying named string/symbol fields, per-kind indexes,
-call/new signature \emph{modes}
-($\mathsf{None} \mid (\mathit{opt}, \sigma)$), and the array brand
+call/new \emph{callability modes} --- the four-point lattice
+$\mathsf{Callability} =
+\{\mathsf{CAbsent}, \mathsf{CUnknown}, \mathsf{CFunction},
+\mathsf{CPresent}(\sigma)\}$, ordered
+$\mathsf{CPresent} \leq \mathsf{CFunction} \leq \mathsf{CUnknown}$ and
+$\mathsf{CAbsent} \leq \mathsf{CUnknown}$
+(the main paper's Definition ``Callability'';
+\texttt{src/TType.sk:2217-2237}) --- and the array brand
 $\mathsf{isArr} \in \{\mathsf{None},\mathsf{Some}(\mathsf{true}),
-\mathsf{Some}(\mathsf{false})\}$.
+\mathsf{Some}(\mathsf{false})\}$. Two invariants are enforced at
+$\TFields$ construction (\texttt{src/TType.sk:2266-2281}): an
+array-branded branch lowers an unconstrained mode to $\mathsf{CAbsent}$,
+and a constructible branch has $\mathsf{call} \geq \mathsf{CFunction}$
+(ECMA-262: every value implementing $[[\mathrm{Construct}]]$ implements
+$[[\mathrm{Call}]]$).
 Semantics ($\sem{\cdot}_\rho$, indexed by the substitution state $\rho$):
 \[
 \sem{(I,C)}_\rho = \sem{I}_\rho \cup \sem{C}_\rho, \qquad
@@ -161,9 +177,11 @@ main paper's Definition ``Object-Type Semantics'': required/optional
 fields constrain values via $\mathsf{get}$-types, indexes constrain the
 props they \emph{cover} (string index covers both string- and numeric-kind
 string keys; number index covers numeric-kind keys; symbol index covers
-symbol keys), $\mathsf{call}(b)=\mathsf{None}$ entails
-$\neg\mathsf{callable}(o)$, $(\mathsf{false},\sigma)$ entails
-$\mathsf{callable}(o)$, $(\mathsf{true},\sigma)$ entails nothing, and
+symbol keys), $\mathsf{call}(b)=\mathsf{CAbsent}$ entails
+$\neg\mathsf{callable}(o)$, $\mathsf{CFunction}$ and
+$\mathsf{CPresent}(\sigma)$ entail $\mathsf{callable}(o)$,
+$\mathsf{CUnknown}$ entails nothing --- dually for $\mathsf{new}$ and
+$\mathsf{constructible}$ --- and
 $\mathsf{isArr}(b)=\mathsf{Some}(x)$ entails $\mathsf{isArrayV}(o)=x$.
 Signatures $\sigma$ are \emph{opaque} to membership --- until
 \S\ref{sec:tfun}, where we refine this.
@@ -199,7 +217,7 @@ burying them in the notation.
 
 \paragraph{Result vocabulary.}
 \texttt{STResult} is $\STOk$ or an $\STErr$ tree. The error hierarchy
-(roughly 600 of the file's 1897 lines) exists to \emph{render} failures;
+(several hundred of the file's 2203 lines) exists to \emph{render} failures;
 it never influences acceptance. We audit it only for state effects:
 \texttt{toError} renderers take the substitution and may expand types for
 printing, but every render site on the acceptance path occurs strictly
@@ -227,7 +245,9 @@ argument a variable that \texttt{peekRaw}-resolves to $u_2$'s --- accept;
 \texttt{subst.seenSub}. \texttt{isSub\_}$(u_1,u_2)$ in order:
 (1) if $u_2.\mathsf{isTop}()$, accept;
 (2) if $(\ver, u_1, u_2) \in \texttt{tenv.seenSub}$, accept; otherwise
-    record $(\ver, u_1, u_2)$ in the \emph{local} \texttt{tenv} copy;
+    --- after the head-depth refusal of
+    Definition~\ref{def:headdepth} --- record $(\ver, u_1, u_2)$ in the
+    \emph{local} \texttt{tenv} copy;
 (3) if $u_1$ is a single \texttt{TInter}$(\mathit{tys})$ with
     $u_2 \in \mathit{tys}$, accept;
 (4) if \texttt{ArrayLitTyping::subtyping} claims the pair, return its
@@ -312,7 +332,7 @@ license.
 \emph{(Transport.)} The equality is read off an \emph{unsealed}
 $\SVOpen$ candidate. The slow path's covariant grow seals what it reads
 (\texttt{isSub\_} step (2); \texttt{Subst::get} covariant,
-$\SVOpen \to \SVClosed$, \texttt{TTypeSubst.sk:199-208}); the arm
+$\SVOpen \to \SVClosed$, \texttt{TTypeSubst.sk:218-227}); the arm
 performs the exact-value read \emph{without} the seal --- precisely the
 read discipline the main paper's monotone-reads obligation forbids for
 open candidates --- so a later contravariant grow widens the binding and
@@ -447,8 +467,14 @@ makes it a query on already-determined candidates --- but its
 frozen, which is one of the two entry points of the inherited MR-1
 hazard (Theorem~\ref{thm:memo}). (iii) The
 \texttt{constraintErr} value threaded out of growth is used only to decorate
-the error message with hints on the failure path.
-\impl{TTypeSubtyping.sk / growTVars, collectTVars, isSub\_}
+the error message with hints on the failure path. (iv) When both sides
+are tuples of the same arity, the structural descent seeds each element
+variable from its positional pair only, not from the position-unioning
+method members (\texttt{pop}, \texttt{at}, \ldots) --- a precision
+choice inside guidance: it changes which state validation decides under,
+never the verdict logic, so the lemmas of Part~II are unaffected.
+\impl{TTypeSubtyping.sk / growTVars, collectTVars, isSub\_ (tuple
+positional seeding)}
 
 \section{The Cycle Cache: \texttt{tenv.seenSub} and Version Keying}
 \label{sec:tenvseen}
@@ -587,8 +613,39 @@ intervening growth, treating a judgement-in-progress under $\rho$ as
 applicable under a strictly grown $\rho'$ --- the stale-cache regression
 class (\#446) the key was introduced to kill. What remains to justify is
 the logic of accepting a pending pair at all.
-\impl{TTypeSubtyping.sk / isSub\_ (lines 1603--1604); TEnv.sk / seenSub
+\impl{TTypeSubtyping.sk / isSub\_ (lines 1852, 1877); TEnv.sk / seenSub
 comment}
+
+\subsection{The head-depth refusal}
+
+\begin{definition}[Head-Depth Refusal]
+\label{def:headdepth}
+Between the cycle-cache check and its record, \texttt{isSub\_} counts,
+per ordered pair of \emph{head constructor names} (both sides lone
+\texttt{TSInst}s), how many times the current path has entered that
+pair, in a map \texttt{tenv.subtypingHeadDepth} carried exactly like
+\texttt{tenv.seenSub} (a functional update of the local frozen-\texttt{TEnv}
+copy, so Lemma~\ref{lem:pathscope}'s path-scoping applies verbatim).
+Past the bound (\texttt{kMaxSubtypingHeadDepth} $= 12$) the check is
+\emph{refused} with TS2589 rather than assumed related: two recursive
+aliases whose arguments grow at every level never repeat a
+\texttt{seenSub} entry, so without the bound their descent would be
+limited by nothing.
+\impl{TTypeSubtyping.sk / isSub\_ (lines 1852-1877); kMaxSubtypingHeadDepth
+(line 18); TEnv.sk / subtypingHeadDepth}
+\end{definition}
+
+\noindent
+For \textbf{L-SUB} the refusal is the sound direction --- it can only
+reject --- and it does not perturb the coinductive argument: a
+\texttt{tenv.seenSub} hit still names a pending ancestor at identical
+bindings (the record still precedes the descent), and the bound merely
+caps how many same-constructor entries a path accumulates before
+refusing. Its cost is completeness (deep finite nestings past the bound
+are rejected; the constant makes this rare), and its benefit is the
+termination remark of the honesty box below: the implementation carries
+its own divergence guard for the one recursion pattern the cycle cache
+cannot close.
 
 \section{Coinduction over the Value Semantics}
 \label{sec:coinduction}
@@ -711,7 +768,9 @@ via the memo and via transport); O-ARRAYLIT; A-HASH; and one-step
 soundness of every stratum --- Part~II shows the last is where the
 substance and the violations live. Termination (that the cycle cache is
 \emph{hit} rather than the growth diverging --- convergence relies on the
-idempotent-grow early return noted in Lemma~\ref{lem:version}) is a
+idempotent-grow early return noted in Lemma~\ref{lem:version}, and the
+argument-growing recursion the cache cannot close is refused by the
+head-depth bound, Definition~\ref{def:headdepth}) is a
 liveness property, out of scope for L-SUB.
 
 %==========================================================================
@@ -977,13 +1036,23 @@ if $b_2$ has an index covering the name
 (\texttt{indexForFieldName}: numeric-spelling names consult the number
 index first, then the string index --- matching the covering semantics,
 under which a numeric-kind key must satisfy \emph{both} when both exist;
-registry row \texttt{L-SUB-IDXNAME}, \textsc{violated} (derived): the
-code checks against only the first-consulted index, so a numeric-named sub
-field is under-checked when the super has both a number and a string index.
-The over-acceptance is real but masked at the pin — reads of numeric-string
-keys stay conservative (\texttt{string|number}) — so it is a
-validator-completeness gap, not a witnessed unsoundness; the ``suffices''
-below therefore holds only under that masking, not in general), the code
+registry row \texttt{L-SUB-IDXNAME}, \textsc{open}: the code checks
+against only the first-consulted index
+(\texttt{src/TType.sk:2135-2141}; call site
+\texttt{src/TTypeSubtyping.sk:1172}), so a numeric-named sub field is
+under-checked when the super has both a number and a string index. The
+routes to the under-check are narrow, three of them verified against
+the binary at the pin: a named-field-only source is rejected outright
+against an index-declaring super --- the
+$(\mathsf{None},\mathsf{Some})$ index-pair arm, which the
+implementation's own comment records as the guard
+(\texttt{src/TType.sk:2127-2134}); a declaration whose number and
+string indexes carry incompatible value types is rejected at the
+declaration itself; and reads of numeric-named keys resolve through the
+number index --- the same index the width check consulted --- while
+string-variable reads stay conservative. A validator-completeness gap,
+not a witnessed unsoundness; the ``suffices''
+below therefore holds only under those guards, not in general), the code
 requires
 $f_1.\mathsf{get} \leq \mathit{idx}_2.\mathsf{get}$: then when
 $\mathsf{has}(o, \mathsf{name})$, the value lies in
@@ -1066,60 +1135,133 @@ per-kind-partition reading, the number-under-string fallback would have
 been an unsound borrowing; under covering it is the exact transfer.
 \end{proof}
 
-\subsection{Call/new modes: a violation}
+\begin{corollary}[An Extensible Source Cannot Manufacture Closed Absence]
+\label{cor:open-closed}
+Subtyping cannot admit an object source that leaves an uncovered key
+unconstrained into a \texttt{Closed<T>} target that proves the key absent.
+This corollary establishes registry row \textbf{L-SUB-CLOSED-ABSENCE}
+(conditional on the recursive \texttt{isSub} verdicts, as every field-stratum
+result is).
+\end{corollary}
+\begin{proof}
+\texttt{Closed<T>} represents every uncovered string or symbol key with a
+concrete index whose $\mathsf{get}=\bot$ (number keys fall back to the string
+index). Against a source with no corresponding index, the
+$(\mathsf{None},\mathsf{Some}(i_2))$ arm must prove
+$\top \leq i_2.\mathsf{get}=\bot$ and rejects. Against a source with a
+concrete index, the $(\mathsf{Some},\mathsf{Some})$ arm requires
+$i_1.\mathsf{get}\leq\bot$ and therefore accepts only when the source already
+proves the same absence. A source may also \emph{name} an extra field the
+closed target proves absent: the width lemma's extra-field case checks a
+named source field with no target counterpart against the target's covering
+index — here the never-valued one — so it must establish
+$f_1.\mathsf{get}\leq\bot$ and rejects any inhabited extra field, string- and
+symbol-named alike. Numeric-named extras consult the string never-index and
+nothing else: \texttt{closeObjectType} rejects every \emph{declared} index
+(string, number, or symbol; SKJS~9033) before installing the never-indexes,
+and the synthetic number index is cleared — a valid closed target therefore
+has no number index at all, so the single-index consultation of
+L-SUB-IDXNAME cannot even arise here.
+Closing also drops a \emph{synthetic} number index
+(\texttt{withNeverIndexes}) — an object-literal inference artifact carrying
+\texttt{TVar} get/set, describing no declared capability — and this is
+absence-safe: with the number slot empty, numeric-kind keys fall under the
+string never-index for \emph{admission} exactly as they do for the absence
+claim, so the claim and the gate move together. Hence an accepted admission
+never creates the absence fact on which the main paper's \textsc{R-In}
+true-branch pruning relies. Note the structural contrast with
+Finding~F-CABSENT: indexes have no lax middle state — an absent index reads
+$\top$ and $\top \leq \bot$ rejects — so the two-step laundering that
+defeats the callability brand has no analogue here. The pinned
+open-to-closed control is
+\texttt{tests/expect-error/closed-type.ts} /
+\texttt{testOpenIntoClosedRejected}.
+\impl{TEnv.sk / closeObjectType; TType.sk / withNeverIndexes,
+createSyntheticIndex; TTypeSubtyping.sk / isSub\_IndexPair,
+isSub\_NamedFields (extra-field arm)}
+\end{proof}
+
+\subsection{Callability: the lattice check and a violation}
 \label{sec:modes}
 
-\begin{definition}[Mode Check]
-\texttt{isSubOptTFuns}$(m_1, m_2)$ over modes
-$\mathsf{None} \mid (\mathit{opt}, \sigma)$:
-$(-, \mathsf{None})$ accept;
-$(\mathsf{None}, (\mathsf{true},-))$ accept;
-$(\mathsf{None}, (\mathsf{false},-))$ and
-$((\mathsf{true},-), (\mathsf{false},-))$ reject;
-otherwise recurse into \texttt{TFuns::isSub} on the signatures.
-The same table serves \texttt{call} and \texttt{new}.
-\impl{TTypeSubtyping.sk / TFields::isSubOptTFuns}
+\begin{definition}[Callability Check]
+\label{def:callability-check}
+\texttt{TFields::isSubCallability}$(m_1, m_2)$ over the
+$\mathsf{Callability}$ lattice (\S\ref{sec:recap}), by arm
+(\texttt{src/TTypeSubtyping.sk:1255-1297}):
+$(-, \mathsf{CUnknown})$ accept;
+$(\mathsf{CAbsent}, \mathsf{CAbsent})$ accept;
+$(\mathsf{CUnknown}, \mathsf{CAbsent})$ accept --- \emph{lax by design},
+analyzed below;
+$(\mathsf{CPresent}, \mathsf{CAbsent})$ and
+$(\mathsf{CFunction}, \mathsf{CAbsent})$ reject;
+$(\mathsf{CPresent}, \mathsf{CFunction})$ and
+$(\mathsf{CFunction}, \mathsf{CFunction})$ accept;
+$(\mathsf{CAbsent}, \mathsf{CFunction})$,
+$(\mathsf{CUnknown}, \mathsf{CFunction})$,
+$(\mathsf{CFunction}, \mathsf{CPresent})$,
+$(\mathsf{CAbsent}, \mathsf{CPresent})$, and
+$(\mathsf{CUnknown}, \mathsf{CPresent})$ reject;
+$(\mathsf{CPresent}(\sigma_1), \mathsf{CPresent}(\sigma_2))$ recurses
+into \texttt{TFuns::isSub}. The same table serves \texttt{call} and
+\texttt{new} (invocations at \texttt{:1240-1251}).
+\impl{TTypeSubtyping.sk / TFields::isSubCallability}
 \end{definition}
 
-Under the main paper's semantics --- $\mathsf{None}$ entails
-$\neg\mathsf{callable}(o)$; $(\mathsf{false},\sigma)$ entails
-$\mathsf{callable}(o)$; $(\mathsf{true},\sigma)$ entails nothing --- the
-two rejections are semantically forced, the
-$(\mathsf{None},(\mathsf{true},-))$ acceptance is exact (no constraint on
-the right), and the signature recursion is the subject of
-\S\ref{sec:tfun}. The first arm is not sound:
+Against the semantics of \S\ref{sec:recap}, every arm except one is
+exact or forced. The five rejections are semantically necessary
+($\mathsf{callable}$ members cannot inhabit a
+$\neg\mathsf{callable}$ claim, and nothing short of a proof of
+$[[\mathrm{Call}]]$ may enter the positive $\mathsf{CFunction}$ brand
+--- in particular $\mathsf{CUnknown} \not\leq \mathsf{CFunction}$, so
+\emph{nothing launders into} $\mathsf{CFunction}$; likewise a bare
+$\mathsf{CFunction}$ offers no signature to satisfy a
+$\mathsf{CPresent}$ target). $(-, \mathsf{CUnknown})$ is exact: the
+target claims nothing. $(\mathsf{CPresent}, \mathsf{CFunction})$ and
+the $\mathsf{CFunction}$ diagonal are exact: the target claims
+callability, which the source proves. The signature recursion is the
+subject of \S\ref{sec:tfun}. The one lax arm is not sound:
 
-\begin{finding}[F-CALL: The $(-,\mathsf{None})$ Mode Arm]
-\label{find:call}
-$(\mathsf{Some}(\sigma), \mathsf{None})$ is accepted, i.e.\ a callable
-type is a subtype of a type whose mode claims \emph{definitely not
-callable}. Against the main paper's Definition ``Object-Type
-Semantics'' this is a genuine non-inclusion: a callable
-$o \in \sem{b_1}$ is excluded from $\sem{b_2}$ by the
-$\mathsf{call}(b_2) = \mathsf{None} \Rightarrow \neg\mathsf{callable}(o)$
-clause. The lax arm is TS-compatible width subtyping
-(\texttt{() => void} is assignable to \texttt{\{\}}), and it composes
-with the refinement layer into a concrete unsoundness candidate,
-because the main paper's \textsc{R-Typeof} proof \emph{uses} the violated
-clause: for \texttt{typeof x === "function"} the true branch
-\emph{drops} object branches with mode $\mathsf{None}$, so a function
-value admitted into \texttt{\{\}} through the lax arm is narrowed to
-\texttt{never} in a branch the program takes (executed witness: issue
-draft \path{issues/class-constructor-call-none-typeof.md}).
-The dichotomy is exact: either $\mathsf{None}$ means
-\emph{not callable} (then this subtyping arm is unsound) or it means
-\emph{unconstrained} (then \textsc{R-Typeof}'s drop --- and the
-\texttt{"object"} dual --- is unsound). No reading of $\mathsf{None}$
-validates both components. Repair options: (a) reject
-$(\mathsf{Some}, \mathsf{None})$ --- sound, breaks TS compatibility for
-function-to-\texttt{\{\}} width; (b) demote the drop in
-\textsc{R-Typeof} to mode-strengthening (treat $\mathsf{None}$ like
-$(\mathsf{true}, \top\text{-sig})$ during narrowing) and re-read
-$\mathsf{None}$ as unconstrained --- keeps TS behavior, weakens
-narrowing precision, and requires re-proving \textsc{R-Typeof}. The same
-analysis applies verbatim to \texttt{new}/\textsf{constructible}.
-\impl{TTypeSubtyping.sk / isSubOptTFuns first arm;
-TypeCheckRefine.sk / evalTypeofEquality}
+\begin{finding}[F-CABSENT: The Laundered $\mathsf{CAbsent}$ Brand]
+\label{find:cabsent}
+$(\mathsf{CUnknown}, \mathsf{CAbsent})$ is accepted: an
+unknown-callability source flows into a type whose mode claims
+\emph{definitely not callable}. The arm exists for TS structural
+assignability --- a plain object type flows into a class-instance type
+(\texttt{\{a: number\}} into \texttt{C}), and class instances carry
+$\mathsf{call} = \mathsf{new} = \mathsf{CAbsent}$
+(\texttt{src/TEnv.sk:1003-1008}); the code comment names the cost
+explicitly (\texttt{src/TTypeSubtyping.sk:1264-1271}). Against
+\S\ref{sec:recap}'s semantics it is a genuine non-inclusion: a callable
+$o \in \sem{b_1}$ (callables inhabit $\mathsf{CUnknown}$ branches ---
+that is what makes the mode ``unknown'') is excluded from $\sem{b_2}$
+by the $\mathsf{call}(b_2) = \mathsf{CAbsent} \Rightarrow
+\neg\mathsf{callable}(o)$ clause. And the violated clause is
+load-bearing in refinement: \texttt{narrowByTypeofFunction} drops
+$\mathsf{CAbsent}$ branches in the \texttt{typeof x === "function"}
+true case (\texttt{src/TType.sk:2438-2460}), so a callable laundered
+\texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} --- two
+individually-accepted steps, $(\mathsf{CPresent}, \mathsf{CUnknown})$
+then $(\mathsf{CUnknown}, \mathsf{CAbsent})$ --- is narrowed to
+\texttt{never} in the branch the runtime takes. Witnessed end-to-end
+(registry row \textbf{F-CABSENT}; issue draft
+\path{issues/cabsent-brand-laundering.md}: SKJS accepts, Node takes the
+branch with a function value at type \texttt{never}, tsc rejects ---
+the unsoundness is SKJS-specific). $\mathsf{CAbsent}$ is thus a
+\emph{brand}: a claim refinement trusts as proof but subtyping enforces
+only against sources that themselves prove callability --- exactly the
+trust model of the array brand (Finding~\ref{find:brand}), whose
+callability instance this is. Repair options: (a) reject
+$(\mathsf{CUnknown}, \mathsf{CAbsent})$ --- sound, breaks TS structural
+assignability into class-instance types; (b) downgrade refinement's
+trust: treat $\mathsf{CAbsent}$ as droppable under
+\texttt{typeof "function"} only where every inhabitant is
+class-constructed (no structural admission route) --- which is the same
+decision the array brand needs, so one trust-model resolution covers
+both findings. The same analysis applies verbatim to
+\texttt{new}/\textsf{constructible}.
+\impl{TTypeSubtyping.sk / isSubCallability (CUnknown, CAbsent) arm;
+TType.sk / narrowByTypeofFunction; TEnv.sk / class-instance modes}
 \end{finding}
 
 \subsection{The array brand: an omission}
@@ -1136,16 +1278,20 @@ is accepted against a branch with $\mathsf{isArr} =
 \mathsf{Some}(\mathsf{true})$ whenever the structural checks pass.
 Against the main paper's brand clause
 ($\mathsf{isArr}(b) = \mathsf{Some}(x) \Rightarrow \mathsf{isArrayV}(o)
-= x$) this is a non-inclusion; and as with F-CALL the violated clause is
-load-bearing elsewhere: \textsc{R-IsArray}'s \emph{false} branch drops
+= x$) this is a non-inclusion; and as with F-CABSENT the violated clause
+is load-bearing elsewhere: \textsc{R-IsArray}'s \emph{false} branch drops
 branches branded $\mathsf{Some}(\mathsf{true})$, so a structural
 non-array impostor accepted at type
 \texttt{ReadonlyArray<T>} is typed \texttt{never} in the
 \texttt{else} of an \texttt{Array.isArray} test that its runtime takes.
-Exploitability is narrower than F-CALL --- the impostor must
+Exploitability is narrower than F-CABSENT --- the impostor must
 structurally satisfy every array member, which TS programs rarely do
 accidentally, and tsc has no brand at all, so SKJS is here no
 \emph{worse} than TS, merely less sound than its own model claims.
+(The construction-time lowering of an array-branded branch's modes to
+$\mathsf{CAbsent}$, \S\ref{sec:recap}, rests on this same brand: the
+callability meet's $\bot$ under the array brand is exactly as
+trustworthy as \texttt{isArray} itself.)
 Repair: compare brands in \texttt{isSub\_}
 ($\mathsf{Some}(x) \leq \mathsf{Some}(x)$;
 $\mathsf{None} \not\leq \mathsf{Some}(x)$), or downgrade the brand
@@ -1158,13 +1304,14 @@ TType.sk / TFields::create (brand stripping)}
 \begin{theorem}[Field Stratum, Assembled]
 \label{thm:tfields}
 \texttt{TFields::isSub} is one-step sound for the main paper's object
-membership \emph{with the call/new-mode and brand clauses deleted},
+membership \emph{with the $\mathsf{CAbsent}$ clause restricted to
+callability-proving sources and the brand clause deleted},
 unconditionally in the read direction
 (Lemmas~\ref{lem:both-get}, \ref{lem:width}, \ref{lem:indexes});
 its set-direction checks are the \textbf{L-MUT} obligations
-(Lemma~\ref{lem:both-set}); the deleted clauses are exactly the
-F-CALL/F-BRAND violations, plus the sound mode arms of
-\S\ref{sec:modes} whose signature recursion is deferred to
+(Lemma~\ref{lem:both-set}); the two carve-outs are exactly the
+F-CABSENT/F-BRAND violations, and the sound callability arms of
+\S\ref{sec:modes} defer their signature recursion to
 \S\ref{sec:tfun}. \qed
 \end{theorem}
 
@@ -1196,12 +1343,15 @@ if $\mathit{this}$ is absent), and every $\vec{a}$ conforming to
 $\theta\sigma$: if calling $o$ with $(t, \vec{a})$ returns normally, the
 result is in $\sem{\theta\,\mathit{ret}}$. The proposed refinement of
 the main paper's object semantics: replace ``signatures are opaque'' by
---- $\mathsf{call}(b) = (\mathsf{false},\sigma)$ entails
+--- $\mathsf{call}(b) = \mathsf{CPresent}(\sigma)$ entails
 $\mathsf{callable}(o) \wedge o \vDash \sigma$;
-$\mathsf{call}(b) = (\mathsf{true},\sigma)$ entails
-$\mathsf{callable}(o) \Rightarrow o \vDash \sigma$; dually for
-$\mathsf{new}$ with construction. (The $\mathsf{None}$ clause is
-F-CALL's dichotomy and is ratified separately.) Two deliberate choices:
+$\mathsf{CFunction}$ entails $\mathsf{callable}(o)$ only (no signature
+claim --- and \texttt{maybeGetCall} requires $\mathsf{CPresent}$, so the
+checker never invokes through a bare $\mathsf{CFunction}$);
+$\mathsf{CUnknown}$ entails nothing; dually for
+$\mathsf{new}$ with construction. (The $\mathsf{CAbsent}$ clause is
+unchanged from \S\ref{sec:recap} and its lax subtyping arm is graded as
+Finding~\ref{find:cabsent}.) Two deliberate choices:
 extra trailing arguments are \emph{unconstrained but permitted} ---
 JS functions accept any arity, and the contract must quantify over them
 or arity-widening subsumption would be unsound; and only normal returns
@@ -1230,10 +1380,25 @@ $\mathit{cstr}_2 \leq \mathit{cstr}_1$ (a recursive pair, transported by
 Lemma~\ref{lem:clauses}'s parametricity through the renaming) makes
 $\theta$ admissible for $f_1$; where neither exists, trivial; the
 $(\mathsf{Some},\mathsf{None})$ arm is Finding~\ref{find:tparam}.
-\emph{This:} where both are present, $t \in \sem{\theta\,\mathit{this}_2}
-\subseteq \sem{\theta\,\mathit{this}_1}$ contravariantly; where $f_1$
-has none, any $t$ is fine; the $(\mathsf{Some},\mathsf{None})$ arm is
-Finding~\ref{find:this}; $(\mathsf{None},\mathsf{Some})$ is rejected.
+\emph{This:} the receiver is a four-state sum
+(\texttt{ThisParam}: \texttt{NoThis}, \texttt{Explicit},
+\texttt{ImplicitClass}, \texttt{ImplicitShape};
+\texttt{src/TType.sk:1384-1411}; arms at
+\texttt{src/TTypeSubtyping.sk:1992-2033}). A \texttt{NoThis} source
+accepts outright --- its contract quantifies over every receiver. An
+\texttt{ImplicitShape} source against a non-shape target rejects
+(its receiver requirement is erased; nothing can be proven). The
+generic arm is contravariant, $\mathit{this}_2 \leq \mathit{this}_1$,
+with a \emph{missing} target receiver read as $\top$ --- a free-call
+permit, so the source's declared \texttt{this} must accept anything;
+a source demanding a real receiver is thereby rejected against a
+receiver-less target (TS accepts that; SKJS rejects). This arm is
+exactly E-SIG's quantification. The two remaining diagonals ---
+\texttt{ImplicitShape}/\texttt{ImplicitShape} and
+\texttt{ImplicitClass}/\texttt{ImplicitClass}, both accepted without
+comparing receiver types --- are justified only under an
+\emph{attachment} reading of the receiver that E-SIG does not express:
+Finding~\ref{find:this}.
 \emph{Arguments:} we claim $\vec{a}$ conforms to $\theta f_1$. Both
 sides are first normalized by flattening tuple rests into positionals
 (\texttt{resolveSpreadToTuple}; conformance is invariant under this
@@ -1261,20 +1426,32 @@ success is a results-accumulator write, not a \texttt{SubstState} write
 --- it does not perturb Part~I's audits.
 \end{proof}
 
-\begin{finding}[F-THIS: Missing \texttt{this} on the Super Side]
+\begin{finding}[F-THIS-IMPLICIT: The Attach-Only Receiver Arms]
 \label{find:this}
-$(\mathsf{Some}(\mathit{this}_1), \mathsf{None})$ is accepted: a
-function demanding a typed receiver may be used where the type promises
-none, and E-SIG's ``any $t$'' quantification on the $f_2$ side is then
-not covered by $f_1$'s contract. This mirrors tsc, where an
-un-annotated \texttt{this} is \texttt{any}; it is unjustified by E-SIG
-as stated. Severity: requires the sub's body to actually depend on the
-receiver type. Options: reject unless
-$\mathit{this}_1 = \top$, or weaken E-SIG's missing-\texttt{this}
-clause to ``unspecified receiver'' (giving up the guarantee tsc also
-gives up). Status recommendation: \textsc{assumed}-with-caveat
-(TS-compatibility débt), pinned test recommended.
-\impl{TTypeSubtyping.sk / TFun::isSub\_ (thisParam match, first arm)}
+The \texttt{ImplicitShape}/\texttt{ImplicitShape} and
+\texttt{ImplicitClass}/\texttt{ImplicitClass} diagonals accept without
+comparing receiver types. Under E-SIG as stated they are unjustified:
+the target's contract quantifies over receivers in
+$\sem{\mathit{this}_2}$, and nothing relates $\mathit{this}_1$ to it
+(for \texttt{ImplicitClass} the receivers may be outright incompatible
+--- the arm exists so that generic-container variance and subclass
+overrides survive, since a contravariant receiver check would reject
+\texttt{ReadonlyArray<Dog>} $\leq$ \texttt{ReadonlyArray<Animal>}).
+What justifies them is a different receiver model: an
+\emph{attachment} semantics in which a method's receiver at a call is
+the very object it was accessed on, so a method carried from a
+$b_1$-view of an object to a $b_2$-view of the \emph{same} object still
+runs on that object. The checker enforces the model's premise
+separately --- shape methods are attach-only by construction (their
+carrier type is erased and a detached use rejects), and call sites
+check the receiver of \texttt{Explicit}/\texttt{ImplicitClass}
+functions --- but E-SIG has no clause expressing ``receiver $=$
+carrier'', so the two diagonals cannot be graded against it. Named
+residual: extend E-SIG with an attachment clause and prove the
+diagonals against it, or restrict them. Status recommendation:
+\textsc{assumed} (the attachment premise), pinned tests recommended.
+\impl{TTypeSubtyping.sk / TFun::isSub\_ (thisParam match);
+TType.sk / ThisParam}
 \end{finding}
 
 \begin{finding}[F-TPARAM: Constraint Dropping]
@@ -1291,13 +1468,17 @@ pinned test recommended.
 \end{finding}
 
 \noindent
-With E-SIG ratified, the mode arms of \S\ref{sec:modes} other than
-F-CALL's are also fully justified: $((\mathsf{false},\sigma_1),
-(\mathsf{true},\sigma_2))$ and the definite/definite and maybe/maybe
-diagonals all reduce to $\sigma_1 \leq \sigma_2$ under
-Theorem~\ref{thm:tfun}, and
-$((\mathsf{true},-),(\mathsf{false},-))$'s rejection is forced since
-maybe-callable does not entail callable.
+With E-SIG ratified, the callability arms of \S\ref{sec:modes} other
+than F-CABSENT's are also fully justified:
+$(\mathsf{CPresent}(\sigma_1), \mathsf{CPresent}(\sigma_2))$ reduces to
+$\sigma_1 \leq \sigma_2$ under Theorem~\ref{thm:tfun};
+$(\mathsf{CPresent}, \mathsf{CFunction})$ and the
+$\mathsf{CFunction}$ diagonal are exact, since the target claims
+callability only and the source proves it (E-SIG assigns
+$\mathsf{CFunction}$ no signature clause); and the rejections are
+forced --- $\mathsf{CUnknown}$ does not entail callable, so nothing
+unproven enters the positive brand, and a bare $\mathsf{CFunction}$
+offers no signature to satisfy a $\mathsf{CPresent}$ target.
 
 \section{Variance Plumbing: Why Each Side Expands the Way It Does}
 \label{sec:variance}
@@ -1332,8 +1513,8 @@ The two approximation facts themselves decompose as follows.
 over-approximates for modes \texttt{None}/\texttt{Covariant},
 conditional on (among others) \textbf{L-INTER} --- and Deep Dive~B
 \emph{refuted} the $\bot$-clause \textbf{L-INTER-BOT} in its live strata
-(incomparable signatures return $\bot$; the string- and beyond-precision
-num-spelling strata). The
+(incomparable signatures return $\bot$; the beyond-precision
+num-spelling stratum). The
 exposure here is concrete: \texttt{get}'s constraint application
 $\mathsf{inter}(\mathit{binding}, \mathit{cstr})$ can under-shoot the true
 intersection through those strata, shrinking the covariant expansion below
@@ -1344,7 +1525,7 @@ $\sem{\alpha}$ and validating vacuously. We name the residue:
 $\sem{\alpha}_\rho \subseteq
 \sem{\texttt{Subst::get}(\alpha, \mathsf{cov})}_{\rho'}$. Follows from
 the instance-semantics axiom plus L-INTER; open on the remaining live
-\textbf{L-INTER-BOT} strata (incomparable signatures; string- and
+\textbf{L-INTER-BOT} strata (incomparable signatures;
 beyond-precision num-spelling),
 which the constraint application can still hit. Status: \textsc{open},
 inherited.
@@ -1393,8 +1574,10 @@ Restore-on-failure & Lemma~\ref{lem:restore} (family-wide audit) \\
   \ref{lem:pathscope}, \ref{lem:coherence}: hit $=$ pending ancestor at
   identical bindings \\
 Coinduction & Theorem~\ref{thm:coind}: L-SUB reduces to one-step strata \\
+Head-depth refusal & Definition~\ref{def:headdepth}: rejection-only
+  divergence guard, path-scoped \\
 Growth pre-passes & guidance only (main paper theorem);
-  MR-1 entry point noted \\
+  MR-1 entry point noted; tuple positional seeding \\
 Primitives, units & Lemma~\ref{lem:prim} \\
 $\STypes$ covering & Lemma~\ref{lem:stypes} \\
 $\Clauses$ DNF + var gate & Lemma~\ref{lem:clauses}, parametric in
@@ -1404,8 +1587,10 @@ Fields, read direction & Lemmas~\ref{lem:both-get}, \ref{lem:width},
   \ref{lem:indexes} (incl.\ covering indexes, synthetic-index probes,
   access/phantom/private) \\
 Fields, write direction & Lemma~\ref{lem:both-set} \\
-Call/new mode $(-,\mathsf{None})$ & Finding~\ref{find:call} + composite
-  witness \\
+Callability lattice & Definition~\ref{def:callability-check}: all arms
+  exact or forced except one \\
+$(\mathsf{CUnknown},\mathsf{CAbsent})$ arm & Finding~\ref{find:cabsent}
+  + executed witness \\
 Array brand & Finding~\ref{find:brand} + composite witness \\
 \texttt{TFun} variance & Theorem~\ref{thm:tfun} against E-SIG \\
 \texttt{this}/tparam-cstr arms & Findings~\ref{find:this},
@@ -1426,9 +1611,9 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   L-SUB-DNF ($\STypes$/$\Clauses$/\texttt{TObject} skeletons;
   \textsc{proved} modulo lower strata); L-SUB-FIELDS-GET
   (\textsc{proved}); L-SUB-FIELDS-SET (conditional on L-MUT);
-  L-SUB-MODES (\textsc{violated}, F-CALL); L-SUB-BRAND
+  L-SUB-MODES (\textsc{violated}, F-CABSENT); L-SUB-BRAND
   (\textsc{violated}, F-BRAND); L-SUB-FUN (\textsc{proved} against
-  E-SIG, residuals F-THIS/F-TPARAM); L-SUB-EXPVAR
+  E-SIG, residuals F-THIS-IMPLICIT/F-TPARAM); L-SUB-EXPVAR
   (\textsc{open}, O-GETCOV/O-GETCONTRA); L-SUB-ARRAYLIT
   (\textsc{open}).
 \item \emph{Recommended model extensions}:
@@ -1439,11 +1624,15 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   counterexample (``membership never inspects parameter types'') stops
   being automatic and must cite the stratified-level bookkeeping of
   \S\ref{sec:coinduction}.
-\item \emph{Resolve the F-CALL dichotomy explicitly}: choose a reading
-  of $\mathsf{None}$ and mark the losing component
-  (\texttt{isSubOptTFuns} arm or \textsc{R-Typeof}/\textsc{R-IsArray}
-  drops) as the defect; wire the two composite witnesses of
-  Findings~\ref{find:call}/\ref{find:brand} as pinned tests either way.
+\item \emph{Resolve the brand-trust model explicitly}: the
+  $\mathsf{CAbsent}$ and array brands are claims refinement trusts as
+  proofs but subtyping enforces only against sources that themselves
+  prove the property; either close the lax admissions
+  ($(\mathsf{CUnknown},\mathsf{CAbsent})$; the missing brand arm) or
+  downgrade the \textsc{R-Typeof}/\textsc{R-IsArray} drops to
+  brand-insensitive narrowing --- one decision covers both findings;
+  wire the executed F-CABSENT witness and F-BRAND's composite sketch as
+  pinned tests either way.
 \item \emph{Cross-reference}: the L-INTER-BOT row lists O-GETCOV as a
   downstream dependent, so that repairing the remaining L-INTER-BOT
   strata is understood to be on L-SUB's critical path, not only
@@ -1472,7 +1661,8 @@ argument for \texttt{tenv.seenSub} fails (two concrete counterexample
 schemas, \S\ref{sec:naive}); the successful replacement needs the frozen
 \texttt{TEnv} threading and save/restore locality, neither of which is
 about the version at all. (ii) A membership-only proof of the field
-stratum fails at exactly two clauses (modes, brand) --- both times
+stratum fails at exactly two clauses (the $\mathsf{CAbsent}$ clause
+under its lax admission arm, and the brand) --- both times
 because the main paper priced those clauses into \emph{refinement}
 proofs; the failures are reported as violations rather than weakened
 into assumptions. (iii) A proof of \texttt{TFun::isSub} against the

@@ -39,9 +39,13 @@ BIN=target/host/dev/skjs` (expect: **accepted** at the pin).
 ## Root cause
 
 Closure bodies are checked against the enclosing scope chain's *current*
-(narrowed) binding types (`Scope::maybeGetRef` walks the `up` chain,
-`src/TypeCheckScope.sk`); no re-widening is applied for locals that are
-assigned anywhere and captured.
+(narrowed) binding types (`Scope::maybeGetRefHelper` walks the `up`
+chain, `src/TypeCheckScope.sk:62-75`); no re-widening is applied for
+locals that are assigned anywhere and captured. The capture machinery
+guards the *write* direction only: `Scope::set` checks a captured write
+against the binding's declared type (`isThroughFunction`,
+`src/TypeCheckScope.sk:115-132, 184-194`), but reads inside the closure
+still see the creation-time narrowing.
 
 ## Relation to existing issues/PRs
 
@@ -59,5 +63,5 @@ anywhere use their declared (widened) type, not the flow-narrowed one.
 
 Deep dive F (`docs/deep-dives/refinement-invalidation.tex`, the
 stale-closure-reads finding);
-adversarially verified with runtime execution 2026-07-05. Main-paper
-assumption rows: L-PURE / L-LOCAL boundary.
+adversarially verified with runtime execution 2026-07-05. Registry row:
+L-STALE-READ (with L-PURE and L-LOCAL adjacent).

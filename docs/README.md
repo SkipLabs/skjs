@@ -10,7 +10,7 @@ pinned to one revision of `main` (see [`shared/pin.tex`](shared/pin.tex)).
 |---|---|
 | [`skjs-type-soundness.tex`](skjs-type-soundness.tex) | **Main paper**: the model, the theorems, and the rendered registry |
 | [`ledger.yaml`](ledger.yaml) | **The registry**: the only place any assumption/obligation *status* is stated |
-| [`deep-dives/`](deep-dives/README.md) | Seven evidence papers (A–G), each owning the proofs behind specific registry rows |
+| [`deep-dives/`](deep-dives/README.md) | Eight evidence papers (A–H), each owning the proofs behind specific registry rows |
 | [`deep-dives/issues/`](deep-dives/issues/) | Issue drafts (prose + fix directions); each executed witness is a runnable `repros/*.ts` file the draft references |
 | [`generated/`](generated/) | Tables rendered from the registry (do not edit) |
 | [`shared/`](shared/) | Preamble and revision pin shared by every document |
@@ -124,10 +124,12 @@ Three patterns span multiple papers (statuses: see the registry).
 - **Freeze-window cache staleness** is one family with one fix shape
   (version-key the memo, or suppress writes under `freezeCandidates`):
   rows MR-1 and C-FREEZE-CACHE; the expansion cache is immune (deep dive
-  C's binding-blindness result).
-- **The `call = None` dichotomy**: refinement and one subtyping arm read
-  the mode incompatibly (rows A-CTOR-CALL, F-CALL); no single reading
-  validates both, so the fixes are gated on a representation decision.
+  C's binding-blindness result, load-bearing now that its key is shared
+  across mentions — row E-EXPKEY).
+- **Brand trust**: refinement narrows on brands subtyping never
+  validates — the `CAbsent` callability brand reachable by laundering a
+  callable through `{}` (row F-CABSENT) and the array brand (row
+  F-BRAND); one trust-model decision resolves both.
 - **`⊥ ⟹ disjoint`** (row L-INTER-BOT) is consumed both by the main paper's
   branch-dropping refinement rules and by subtyping's covariant variable
   read (row O-GETCOV) — repairing it sits on both critical paths.

@@ -11,6 +11,7 @@ L-EXP & Expansion preserves or enlarges semantics (modes \texttt{None}/Covariant
 L-LIT & Literal spellings: (i) $\delta$ is a function; (ii) injectivity modulo $\approx$ after normalization; (iii) falsiness-exactness of the lexeme test. & G & \textsc{violated} \\
 MR-1 & No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outlive growth of an open candidate readable from its left side. & E & \textsc{violated} \\
 TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty. & main & \textsc{proved} \\
+F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & D & \textsc{violated} \\
 SETCONSTRAINT-FUN & \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state. & E & \textsc{proved} \\
 \bottomrule
 \end{tabular}
