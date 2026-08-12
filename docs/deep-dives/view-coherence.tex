@@ -69,8 +69,8 @@ clause of an eventual heap-level soundness statement: this paper for
 coherence at creation, F for preservation afterwards. That composition
 is a later heap-level proof obligation, not a fact assumed here: every
 transition analyzed by F must be shown to preserve this paper's relational
-coherence invariant, and aliases created before a narrowing straddle
-the two axes.
+coherence invariant, and aliases created before a narrowing involve
+both obligations.
 
 \impl{TTypeSubtyping.sk / TFields::isSub\_; TypeCheckRefine.sk /
 narrowField, evalInstanceof; TType.sk / TFields::resolveFieldType}
@@ -192,8 +192,8 @@ view, it cannot restore a type guarantee held by another alias.
 \label{sec:inventory}
 
 The audit covers three view-creation families; the remaining ways a
-program comes to hold a view funnel into them or out of scope, as
-follows. \emph{Admission} (Section~\ref{sec:declared}): local
+program comes to hold a view reduce to the following cases.
+\emph{Admission} (Section~\ref{sec:declared}): local
 initialization and re-assignment, argument passing, return passing,
 storing a reference into an object field, and array/tuple element
 storage — each checks the incoming value against the declared target

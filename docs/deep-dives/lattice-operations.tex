@@ -397,8 +397,8 @@ never as a sound signature (the code comment states this;
 \emph{Set-types and access.} Membership never reads $\mathsf{set}$
 (get-only semantics) — \texttt{TField::union} intersects set-types
 (deferred as an unexpanded intersection under the
-\texttt{tenv.expandInter} mode flag), the correct dual for
-write-through-the-merge, but nothing here depends on it; and
+\texttt{tenv.expandInter} mode flag), the correct dual for writes through
+the merged view, but nothing here depends on it; and
 \texttt{FieldAccess::combine} is most-restrictive, which only
 \emph{restricts} programs (main paper, Definition of object semantics,
 Never/Phantom discussion).
@@ -912,7 +912,7 @@ evolves the state. The implementation's justification (the comment on
   ($\mathsf{SVOpen} \to \mathsf{SVClosed}$; fresh $\to$
   $\mathsf{SVClosed}(\top)$); a sealed binding never changes again (main
   paper, Lemma ``Determined Candidates Are Never Widened''(iii), which
-  holds for all identifiers), so the expansion the cache baked in equals
+  holds for all identifiers), so the expansion stored in the cache equals
   the expansion any later state would produce.
 \item Named-type expansions consulted along the way
   (\texttt{seenExpansion}) are symbolic in their type arguments — the

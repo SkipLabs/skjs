@@ -377,7 +377,7 @@ spellings' denotations: the literal type \texttt{0} contains both $0$ and
 $-0$, matching JS strict equality and tsc's treatment of numeric literal
 types. (For non-numeric kinds the closure is the identity. The cross-tag
 $\mathsf{undef}/\mathsf{void}$ arm of $\approx$ is deliberately \emph{not}
-baked into unit denotations; the rules that compare against
+included in unit denotations; the rules that compare against
 \texttt{undefined} handle the two tags jointly, and the residual corner is
 assumption \textbf{L-SEQ}.)
 We assume $\mathsf{Lit}_{\texttt{num}}$ contains no $\mathsf{NaN}$
@@ -635,8 +635,8 @@ mapping each of its skolems to the scrutinee object's actual hidden
 argument, chosen once when the view is installed. The assignment is a
 constant of the view's denotation — not open inference state — and it
 is stable because nothing can bind a skolem afterwards: skolems are
-not inference variables, the substitution never binds them, and
-clone-side generation is guarded. Rule \textsc{R-Inst}'s soundness
+not inference variables, the substitution never binds them, and skolem
+generation in clones is rejected. Rule \textsc{R-Inst}'s soundness
 proof (deep dive A) performs its existential step under exactly this
 assignment. Constraints belong to
 occurrences because \texttt{TVar::setConstraint} is functional;

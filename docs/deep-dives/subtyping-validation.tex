@@ -556,7 +556,7 @@ update of the \emph{local} binding \texttt{tenv} (contrast
 \texttt{Subst}); the updated copy flows only into the callees of the
 recording invocation --- \texttt{growTVars}, \texttt{expandToClauses},
 \texttt{Clauses::isSub} and its strata --- and evaporates when that
-invocation returns. A grep-complete audit shows \texttt{isSub\_} is the
+invocation returns. A repository-wide search shows \texttt{isSub\_} is the
 only writer of the field in the codebase. Hence visibility is precisely
 ``my ancestors' records'': each ancestor recorded into its local copy
 before descending, and no other write exists.
@@ -959,8 +959,8 @@ The code: reject if $f_1$ optional and $f_2$ required; reject if
 $\neg f_1.\mathsf{access}.\mathsf{isCompatibleWith}(f_2.\mathsf{access})$;
 reject if $f_1.\mathsf{set} = \bot$ (readonly) and
 $f_2.\mathsf{set} \neq \bot$ (skipping the recursive check to avoid a
-TVar in $f_2.\mathsf{set}$ unifying its way to spurious success --- a
-nice example of growth-avoidance \emph{for precision}, not soundness);
+TVar in $f_2.\mathsf{set}$ unifying its way to spurious success --- an
+example where avoiding candidate growth improves precision, not soundness);
 otherwise require $f_2.\mathsf{set} \leq f_1.\mathsf{set}$
 (contravariant) and $f_1.\mathsf{get} \leq f_2.\mathsf{get}$ (covariant,
 against \emph{bare} $f_2.\mathsf{get}$ even when both are optional ---
@@ -1665,7 +1665,7 @@ schemas, \S\ref{sec:naive}); the successful replacement needs the frozen
 about the version at all. (ii) A membership-only proof of the field
 stratum fails at exactly two clauses (the $\mathsf{CAbsent}$ clause
 under its permissive admission arm, and the brand) --- both times
-because the main paper priced those clauses into \emph{refinement}
+because the main paper assigned those clauses to \emph{refinement}
 proofs; the failures are reported as violations rather than weakened
 into assumptions. (iii) A proof of \texttt{TFun::isSub} against the
 opaque-signature semantics is not merely hard but type-incorrect --- the

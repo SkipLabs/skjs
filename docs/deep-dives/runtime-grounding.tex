@@ -726,8 +726,8 @@ The pinned stubs deliberately omit APIs that modify prototypes: the
 declared at all. A checked program therefore cannot express prototype
 surgery; what remains is the generic unchecked boundary (ambient
 \texttt{declare}d functions, \texttt{JSON.parse<T>}) through which any
-assumption, not specially this one, can be voided — that boundary is
-priced into \textbf{L-TC} already. Status: \textsc{assumed}, adequately
+assumption, not specially this one, can be voided — \textbf{L-TC} already
+accounts for that boundary. Status: \textsc{assumed}, adequately
 enforced for checked code.
 \impl{import-stubs/@types/skjs/index.d.ts (Object statics)}
 
@@ -852,7 +852,7 @@ reads) and $\mathsf{get} = \intm{Get}$, snapshots per \textbf{L-PURE}.
   other realms find their own realm's identical-by-spec
   \texttt{Array.prototype}. (An own property shadowing a method with a
   non-callable value would falsify this — that is ordinary property
-  mutation, priced into \textbf{L-MUT}/\textbf{L-PURE} snapshots like
+  mutation, covered by \textbf{L-MUT}/\textbf{L-PURE} snapshots like
   every other field statement, not a new caveat.)
 \item \emph{\texttt{[Symbol.iterator]}} (inherited from the
   \texttt{Iterable<T>} base): same argument; the \texttt{@@iterator}

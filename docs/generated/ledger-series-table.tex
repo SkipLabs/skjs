@@ -211,7 +211,7 @@ Canonical \texttt{TVar} denotation: an occurrence denotes its substitution envel
 Skolem interpretation: the clause parameters introduced by \textsc{R-Inst} are interpreted by a per-view witness assignment — each skolem denotes the runtime object's actual hidden argument, chosen once when the view is installed. The assignment is stable because no later operation can bind a skolem: skolems are not inference variables, never enter the substitution, and clones cannot generate them\\*[0.15em]
 {\small\emph{Anchor:} \texttt{genSkolemTParam}; \texttt{makeSkolemTArgsOf}}\par
 \nopagebreak
-\textsc{proved}: by definition in the main paper (the skolem interpretation definition) for the denotation, and by code inspection for stability — skolems live in clause var-sets, the substitution never binds them, and clone-side generation is guarded. Consumed by deep dive A's L-INST discharge (the existential step) and by deep dive H's per-skolem hidden-argument fact
+\textsc{proved}: by definition in the main paper (the skolem interpretation definition) for the denotation, and by code inspection for stability — skolems live in clause var-sets, the substitution never binds them, and skolem generation in clones is rejected. Consumed by deep dive A's L-INST discharge (the existential step) and by deep dive H's per-skolem hidden-argument fact
 
 \medskip\par\noindent\textbf{SET-SEM}\quad(\textsc{proved})\\*[0.15em]
 Write authorization: a view authorizes the write of $v$ at key $p$ iff $v$ inhabits the resolved $\mathsf{set}$-type of $p$ (intersected named-field $\mathsf{set}$-types, else the covering index's, resolved as at lvalue sites); readonly ($\mathsf{set}=\bot$) and keys with no writable field or index authorize nothing; call-mediated writes are E-SIG's\\*[0.15em]

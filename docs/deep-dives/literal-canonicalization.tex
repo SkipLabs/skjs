@@ -50,7 +50,7 @@ continuations are decoded to their runtime string value by
 The string results hold, as do the numeric and bigint results within the range
 where conversion to a runtime number and back preserves the spelling. Beyond
 that range, distinct numeric spellings can denote the same double, and a
-nonzero-looking spelling can underflow to zero. These cases break equality
+spelling other than \texttt{0} can underflow to zero. These cases break equality
 narrowing and truthiness reasoning (\textbf{L-LIT}). A separate enum-folding
 failure concatenates a raw numeric operand spelling rather than its runtime
 string value, producing an incorrect member literal type
@@ -688,7 +688,7 @@ TypeCheckUtils.sk / checkCondition}
 \subsection{Where normalization lives}
 \label{sec:where}
 
-Normalization lives at one choke point, the parser.
+Normalization happens at one construction point, the parser.
 \texttt{getNumber}/\texttt{getBigInt} (\texttt{ParserUtils.sk:22-44})
 call \texttt{validateJSNumericLiteral}/\texttt{validateJSBigIntLiteral}
 then \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}. Two
@@ -708,7 +708,7 @@ synthesized constants (\texttt{SyntheticTuples.sk} 116, 127;
 \impl{ParserUtils.sk / getNumber, getBigInt; JSNumericString.sk /
 normalizeJSNumber (:492), normalizeJSBigInt, negateJSNumberLiteral}
 
-String literals are canonicalized at the same choke point;
+String literals are canonicalized at the same construction point;
 Section~\ref{sec:strings} gives the decoder.
 
 \subsection{Strings: decoding at the quote boundary}
@@ -771,8 +771,7 @@ decoder cannot represent. One admission gap sits upstream in the lexer:
 a \emph{raw} lone CR inside a quoted string is accepted as content
 where ECMAScript calls the string unterminated (upstream \#901) --- the
 program is invalid JS and cannot run, so no runtime value contradicts a
-type, but the acceptance is a parser-parity gap adjacent to this
-paper's scope.
+type. This parser compatibility difference is adjacent to the paper's scope.
 
 The decoded lexemes make injectivity and falsiness structural: the
 union \texttt{"a" | "\textbackslash x61"} stores one lexeme,
@@ -863,11 +862,11 @@ literal is carried through unchanged, so the member denotes what the
 written literal denotes (\textbf{L-LIT}(i)), with no reliance on
 (ii)/(iii), which remain violated beyond precision. A
 \emph{numerically folded} initializer is computed by exact integer
-arithmetic gated to the double-safe range: operands must parse by
+arithmetic within the supported exact-integer range: operands must parse by
 \texttt{toIntOption} with magnitude $\leq 2^{53}{-}1$, every operation
 checks for overflow and inexactness (division folds only when exact;
-fractional, overflowing, or out-of-range results widen to an
-\emph{untracked number}, creating no literal), and results render through
+fractional, overflowing, or out-of-range results become enum members with
+unknown numeric values, creating no literal), and results render through
 \texttt{Int.toString()} --- canonical decimal numerals denoting exactly
 the runtime results, so this route is faithful.
 
@@ -1123,7 +1122,7 @@ re-do work the constructor does once. Normalize-at-construction keeps the
 invariant local and makes every downstream operation correct by
 Corollary~\ref{cor:setops} without per-site logic --- the same argument
 for both the numeric normalizer and the string decoder, which
-accordingly live at the same parser choke point
+accordingly live at the same parser construction point
 (\S\ref{sec:where}, \S\ref{sec:strings}).
 \end{finding}
 

@@ -692,7 +692,7 @@ entries:
       \textsc{proved} (deep dive E, fork-state bridging, modulo the
       fork-state forms of L-INTER and L-INTER-BOT); CL-1 is discharged by a non-escape audit:
       the \texttt{instanceof} preservation probe generates variables on a
-      clone, but uses them only in probe-side subtype checks, so none reaches
+      clone, but uses them only in subtype checks within the probe, so none reaches
       a type installed against the main substitution. The property should be
       guarded by the recommended CI assertion
     summary: [{bucket: proved, label: "types computed on temporary inference-state clones remain sound in the main state (L-CLONE)"}]
@@ -1252,8 +1252,8 @@ entries:
       \textsc{proved}: by definition in the main paper (the skolem
       interpretation definition) for the denotation, and by code
       inspection for stability — skolems live in clause var-sets, the
-      substitution never binds them, and clone-side generation is
-      guarded. Consumed by deep dive A's L-INST discharge (the
+      substitution never binds them, and skolem generation in clones is
+      rejected. Consumed by deep dive A's L-INST discharge (the
       existential step) and by deep dive H's per-skolem
       hidden-argument fact
     summary: [{bucket: proved, label: "stable per-view interpretation of instanceof skolems (SKOLEM-SEM)"}]

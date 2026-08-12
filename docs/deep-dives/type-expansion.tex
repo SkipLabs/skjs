@@ -466,7 +466,7 @@ position and not the hash, so the argument term is inserted
 \emph{verbatim}; a \texttt{Class} builds the object type via
 \texttt{new}/\texttt{newObject}/\texttt{addFields} with the same
 binding mechanism for field types; an \texttt{Enum} builds the union of
-its member literal types (binding-blind — Lemma~\ref{lem:enum-blind});
+its member literal types (binding-independent — Lemma~\ref{lem:enum-blind});
 an enum-\emph{member} type reference (\texttt{E.A}) never reaches
 $\instop$ at all (it is resolved inside \texttt{normalize}'s
 \texttt{TAInst} arm, an \texttt{invariant\_violation} guards the
@@ -611,7 +611,7 @@ every use through \texttt{Subst::get}; and (ii) the \emph{key}
 identifies one definition, so the entry is only ever reused for the
 definition that filled it. This section makes both precise. For (i) it
 proves a strictly stronger statement on the alias path
-(binding-blindness) and corrects the comment in two places; for (ii) it
+(binding independence) and corrects the comment in two places; for (ii) it
 exhibits a refutation — the key's name-text component conflates
 same-named definitions from different modules, witnessed end-to-end
 (Section~\ref{sec:expkey}).
@@ -715,24 +715,24 @@ conclusion is simply false — the fresh run would expand a different
 $B_{n'}$ (Section~\ref{sec:expkey}).
 \end{proof}
 
-\subsection{The alias path is binding-blind}
+\subsection{The alias path is binding-independent}
 
 The mechanism turns out to be simpler and stronger than the comment's
 operation-by-operation argument: on the \texttt{TypeDef} path,
 normalization \emph{never consults the live substitution at all}.
 
-\begin{definition}[Binding-Blind]
-A computation is \emph{binding-blind} if every \texttt{Subst} whose
+\begin{definition}[Binding-Independent]
+A computation is \emph{binding-independent} if every \texttt{Subst} whose
 binding map it consults (via \texttt{get}, \texttt{peek},
 \texttt{isUnbound}, \texttt{isOpen}, \texttt{isClosed}) is freshly
 created with the empty state, or is a clone whose results influence
 diagnostics only.
 \end{definition}
 
-\begin{lemma}[normalize is Binding-Blind]
+\begin{lemma}[normalize is Binding-Independent]
 \label{lem:blind}
 \texttt{TEnv::normalize} and the helpers it reaches on the
-\texttt{TypeDef} path are binding-blind. By arms of the dispatch
+\texttt{TypeDef} path are binding-independent. By arms of the dispatch
 (\texttt{TEnv.sk:1755--2153}):
 \begin{itemize}
 \item \emph{Literals, primitives, top, bottom, tuples-as-names, and the
@@ -789,7 +789,7 @@ diagnostics only.
 3160)}
 \end{lemma}
 
-\begin{lemma}[The Enum Arm is Binding-Blind]
+\begin{lemma}[The Enum Arm is Binding-Independent]
 \label{lem:enum-blind}
 $\instop$ on an \texttt{Enum} definition returns the union of the
 members' literal types, and an enum-member type reference returns one
@@ -825,9 +825,9 @@ $\instop$ on the \texttt{TypeDef} arm performs: parameter binding
 terms themselves, defaults normalized recursively, and the constraint
 check runs on \texttt{subst.clone()} of the state \emph{copy} and is
 discarded (\texttt{TEnv.sk:378}, diagnostics only); then
-\texttt{normalize} of the body, which is binding-blind by
-Lemma~\ref{lem:blind}. The \texttt{Enum} arm is binding-blind by
-Lemma~\ref{lem:enum-blind}. A binding-blind computation's result cannot
+\texttt{normalize} of the body, which is binding-independent by
+Lemma~\ref{lem:blind}. The \texttt{Enum} arm is binding-independent by
+Lemma~\ref{lem:enum-blind}. A binding-independent computation's result cannot
 depend on the ambient binding map; the remaining inputs (definition
 ASTs via \texttt{defMap}, the lexical bindings, the argument terms) are
 fixed by $d$, $\bar{a}$, and the compilation unit. The memo caches
@@ -944,7 +944,7 @@ On the \texttt{Class} arm, $\instop$ calls
 \texttt{new} $\to$ \texttt{newObject} $\to$ \texttt{addFields} passing
 the \emph{copy of the live state} made at \texttt{TEnv.sk:196} — not a
 fresh empty substitution. Field-type normalization inside is
-binding-blind (Lemma~\ref{lem:blind} applies arm by arm), but member
+binding-independent (Lemma~\ref{lem:blind} applies arm by arm), but member
 assembly is not obviously so: any \texttt{TType::inter} reached with
 that substitution — the audited candidates are index merging
 (\texttt{TField::interIndex}, \texttt{TTypeInter.sk:245}, called
@@ -969,7 +969,7 @@ observable growth) was not constructed. Discharge either by (a) showing
 the reachable \texttt{inter} operands during \texttt{addFields} never
 nest a live inference variable inside a compound type (targ variables
 occur bare or inside unexpanded \texttt{TSInst}s there), or (b) making
-the class path binding-blind by construction (fresh empty substitution
+the class path binding-independent by construction (fresh empty substitution
 in \texttt{newObject}, as the alias path already effectively has), or
 (c) keying \texttt{seenExpansion} entries for class instances by
 substitution version, as \texttt{seenSub} already is for cycles.
@@ -1151,7 +1151,7 @@ E-NORM & Instantiation is semantics-preserving at the state of use
 E-ARR & Array-literal commitment discipline (Axiom~\ref{ax:earr}) &
   \texttt{TArrayLitTyping.sk} \\
 E-SYM-ALIAS & Cache invariance, \texttt{TypeDef}/\texttt{Enum} paths:
-  binding-blind, hence exact reuse among same-definition mentions, and
+  binding-independent, hence exact reuse among same-definition mentions, and
   freeze-window immunity
   (Theorem~\ref{thm:invariance}, Corollary~\ref{cor:freeze}) &
   \texttt{seenExpansion}; \texttt{TEnv::normalize} \\
@@ -1230,7 +1230,7 @@ definition'') fails across modules, and the refutation ran end-to-end
 in both failure directions.
 Finding~\ref{find:inter-comment}: the comment's blanket
 ``inter never resolves an unbound TVar'' failed verification; rescued
-only via the binding-blind property.
+only via the binding-independent property.
 Finding~\ref{find:keyof}: the keyof-equal-approximation claim could not
 be proved as stated (a bound variable read \emph{would} produce precise
 keys) — it is true for the vacuous reason that no live read occurs.

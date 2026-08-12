@@ -598,8 +598,7 @@ reproducers (done). This is genuine tsc parity for shapes (a) and (b) —
 tsc accepts both — but \emph{not} for shape (c),
 Finding~\ref{find:loop-carried}, or Finding~\ref{find:stale-read}, all
 of which tsc rejects. Status quo is therefore not a coherent resting
-point: those behaviors are strictly-more-unsound-than-tsc bugs, not
-policy choices.
+point: those are SKJS bugs that tsc rejects, not compatibility choices.
 
 \subsection{Recommendation}
 \label{sec:recommend}
@@ -811,20 +810,20 @@ fixes change the registry when they land:
 \begin{longtable}{@{}p{2.0cm}p{8.6cm}p{3.4cm}@{}}
 \toprule
 \textbf{Row} & \textbf{Established here / fix impact} &
-\textbf{Trajectory when the fix lands} \\
+\textbf{Expected status after the fix} \\
 \midrule
 \endhead
 L-PURE & Fix specified: Policy P1--P4. Lemma~\ref{lem:preservation}
-  discharges the \emph{caller-path} shapes (a) \#597 by P4 and (b)
-  \#599 by P3. Residues it does \emph{not} cover: the closure-side
+  discharges the caller-side cases (a) \#597 by P4 and (b)
+  \#599 by P3. Cases it does \emph{not} cover: the closure-side
   stale read is the separate row L-STALE-READ below; implicit
   invocations (getters/coercions/iterators) are outside the (M-Call)
   event model, so P3/P4 do not fire there. The back-edge instance
   (Finding~\ref{find:loop-carried}, fix P1) is adjacent: no call is
   involved, so it sits outside L-PURE's statement — its own row is
   L-LOOP-CARRIED. &
-  the caller-path shapes close once P3/P4 land; the loop and
-  event-model residues remain \\
+  the caller-side cases close once P3/P4 land; the loop and
+  event-model cases remain \\
 L-MUT & \#598 has a specified re-widening rule (W-Field, adequate by
   Lemma~\ref{lem:rewiden-sound} for data fields); the accessor case
   depends on get/set coherence (Obligation~\ref{obl:getset}); the

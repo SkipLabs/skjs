@@ -604,9 +604,9 @@ sealing by $\mathsf{get}(\mathsf{contra})$.
   result is used only as the right-hand side of a validation
   $\sem{\mathrm{lhs}} \subseteq \sem{\cdot}$, so that later growth of the
   variable only enlarges the right-hand side.
-\item[\textbf{(BR)}] \emph{Bake-requires-seal.} Every covariant read
+\item[\textbf{(BR)}] \emph{Persistent results require sealing.} Every covariant read
   whose result is embedded in a persistent artifact (a memoized result, a
-  type installed in an environment) seals the variable, so the baked
+  type installed in an environment) seals the variable, so the stored
   snapshot equals the envelope at all later states
   (never-widen(iii)).
 \end{itemize}
@@ -649,7 +649,7 @@ $\mathsf{get}(\mathsf{cov})$ seals on every path
 section's finding. Representative covariant sites (the population has
 grown with the checker and is not usefully enumerable per line; the
 necessary ones are): \texttt{isSub\_} lhs $u_1$
-(\texttt{TTypeSubtyping.sk:1896} — memo \texttt{seenSub} baked on
+(\texttt{TTypeSubtyping.sk:1896} — the \texttt{seenSub} memo entry is computed on
 success), \texttt{TFun::isSub\_} rest on the \emph{super} side
 (\texttt{:2145}), both \texttt{TTypeInter} operands
 (\texttt{TTypeInter.sk:158--159} — the seal justifies
@@ -679,9 +679,9 @@ runs on clones.)
 
 No site violates MR: all non-sealing reads either end on the right of a
 validation or are restored. BR holds at all sites on the success path,
-with the freeze-arm exception, which is the section's finding.
+except for the \texttt{freezeCandidates} arm described in the next section.
 
-\subsection{Residual hazard: the freeze-window unsealed read}
+\subsection{Remaining hazard: an unsealed read during a freeze window}
 \label{sec:freeze-hazard}
 
 $\mathsf{get}(\mathsf{cov})$ on an open \emph{candidate} under
@@ -772,8 +772,8 @@ what \texttt{inter} can do:
   its first half.
 \item[\textbf{(C2)}] \emph{Seals} from covariant expansion
   (\texttt{TTypeInter.sk:158--159}): the expansion replaces the spine
-  occurrence by the read value in $u$ — fresh variables bake $\top$,
-  open variables bake their fork-state bound $t$ — but the seal itself
+  occurrence by the read value in $u$ — fresh variables embed $\top$,
+  open variables embed their fork-state bound $t$ — but the seal itself
   dies with the clone; on the main substitution the variable stays
   open/unbound and may later grow or seal differently.
 \item[\textbf{(C3)}] \emph{Grows and commitments} from speculative
@@ -808,7 +808,7 @@ Then \textbf{L-CLONE} holds: the installed $u$ over-approximates the
 fork-state intersection under the main substitution at install time and
 at all later states. Moreover I$_f$ follows from the ordinary
 \textbf{L-INTER}/\textbf{L-INTER-BOT} plus M1 for every value whose membership does not
-depend on clone-side state that $u$ bakes or mentions; the two ways such
+depend on state from the clone that $u$ embeds or mentions; the two ways such
 dependence can arise are exactly C2/C3 occurrences and C4 identifiers,
 analyzed below.
 \end{theorem}
@@ -824,9 +824,9 @@ is that $\rho_c$ and $\rho''$ are
 them directly — this was the first failed proof attempt, and the reason
 \textbf{L-CLONE} cannot be reduced to \textbf{L-INTER}/\textbf{L-INTER-BOT}
 + M1 alone.
-The bridge is per-occurrence: (C2) material \emph{baked} into $u$ is the
+The bridge is per-occurrence: (C2) material \emph{embedded} in $u$ is the
 clone-state envelope of the variable at read time, which by monotonicity
-of the clone run is $\supseteq$ its fork-state envelope; baked material
+of the clone run is $\supseteq$ its fork-state envelope; embedded material
 is state-independent thereafter, so reading $u$ under $\rho''$ yields at
 least what reading it with fork-state envelopes would — and the
 fork-state intersection is contained in that by
@@ -879,8 +879,8 @@ occurs in an installed type. Every other \texttt{gen*} site
 \texttt{TypeCheckExpr.sk:112--120}) runs on the expression-typing
 substitution, never under a refinement clone — re-verified by
 enumerating all \texttt{.gen(}/\texttt{.genForField(}/%
-\texttt{.genForLiteralCommitment(} sites at the pin. So no
-clone-side fresh identifier reaches a type installed against the main
+\texttt{.genForLiteralCommitment(} sites at the pin. So no fresh
+identifier generated in a clone reaches a type installed against the main
 substitution, and CL-1 (\S\ref{sec:status}) is \emph{discharged}. The
 discharge rests on a code invariant that should be guarded: assert (and
 CI-check) that clone-created variables do not escape the probe; for the
@@ -890,8 +890,8 @@ skolem class the analogous guard already \emph{is} a runtime invariant
 (\texttt{TTypeSubst.sk:160--165, 267--272}).
 \end{finding}
 
-\paragraph{Shared \texttt{results}.} Clone-side speculative
-\texttt{TFun::isSub} successes record subtyping edges into the shared
+\paragraph{Shared \texttt{results}.} Successful speculative
+\texttt{TFun::isSub} checks in a clone record subtyping edges in the shared
 accumulator even when the exploration is discarded
 (\texttt{TTypeSubtyping.sk:1954--1961}). This does not touch typing
 state; it can only over-connect the callgraph consumed by later phases.
@@ -947,7 +947,7 @@ pair):
   on constraint failure (error also reported) \\
 13 & \texttt{satisfies} (\texttt{TypeCheckExpr.sk:3218; 3227}) &
   \emph{unconditionally} — \texttt{satisfies} must not commit inference \\
-14 & clone-as-rollback: \texttt{TEnv.sk:378},
+14 & clones discarded instead of restored: \texttt{TEnv.sk:378},
   \texttt{TypeCheckRefine.sk} (7 sites), \texttt{TypeCheckExpr.sk}
   (7 sites), pretty-printer (\texttt{TTypePp.sk:1202,1215}) &
   discard instead of restore \\
@@ -1085,9 +1085,9 @@ Named sub-obligations introduced by this paper:
 \item[\textbf{CL-1}] No fresh variable generated on a clone may occur in
   a type installed against the main substitution
   (Finding~\ref{find:clone-gen}). Status: discharged — the property
-  holds by the escape audit: the single clone-side \texttt{gen*} site
+  holds by the escape audit: the single \texttt{gen*} site in a clone
   (the \texttt{instanceof} preservation probe) confines its products to
-  probe-side subtype checks, and every other \texttt{gen*} site runs on
+  subtype checks within that probe, and every other \texttt{gen*} site runs on
   the expression-typing substitution; guard with the recommended CI
   assertion (clone-created variables must not escape the probe — the
   skolem analogue is already a runtime invariant).
@@ -1117,12 +1117,12 @@ L-MONO & Theorem~\ref{thm:lmono}, conditional on M1
   restriction is droppable \\
 Obl.\ Monotone Reads & general statement via
   Theorem~\ref{thm:stable} (given M1 + the MR/BR audit,
-  \S\ref{sec:mr-audit}); the residue MR-1 is witnessed
+  \S\ref{sec:mr-audit}); the remaining case MR-1 is witnessed
   (Finding~\ref{find:freeze-memo}), and the reflexive-\texttt{TSInst}
   \texttt{peekRaw} read sits outside the audited family (deep dive D) \\
 L-CLONE & Theorem~\ref{thm:lclone} given I$_f$
   (fork-state L-INTER/L-INTER-BOT; registry row I-F); the id-collision hazard CL-1
-  discharged by the non-escape audit of the single clone-side
+  discharged by the non-escape audit of the single
   \texttt{gen*} site (Finding~\ref{find:clone-gen}), CI-assertion guard
   recommended \\
 Obl.\ No Commitment on Failure & 14-row save/restore
@@ -1204,7 +1204,7 @@ uniform-variance expansion & \texttt{expandToVectors}
   (TType.sk:680--747) \\
 validation spine & \texttt{isSub\_/growTVars/isCovered}
   (TTypeSubtyping.sk:1562--1916) \\
-clone-compute-install & \texttt{evalVarEquality} etc.\
+compute in a clone, then install & \texttt{evalVarEquality} etc.\
   (TypeCheckRefine.sk:87--106,176--201,694) \\
 main-subst refinement ops & \texttt{setLocalFilterMap}
   (TypeCheckRefine.sk:721,736); \texttt{evalIsArray/evalInstanceof}
