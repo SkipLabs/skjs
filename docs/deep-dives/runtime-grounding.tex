@@ -885,7 +885,7 @@ runtime grounding: it is a precision choice about which \emph{set-types}
 to add, and set-types do not participate in membership.
 
 %==========================================================================
-\section{Status and Ledger Edits}
+\section{Status and Registry}
 \label{sec:status}
 
 ``Here'' means in this deep dive.
@@ -924,6 +924,13 @@ L-ISARR & Theorem~\ref{thm:isarr}\\
 \end{longtable}
 \endgroup
 
+\paragraph{Method note.}
+One attempted row is worth recording as simply \emph{unnecessary}: a
+realm assumption for \textbf{L-INST} symmetric to the classical
+\texttt{instanceof Array} pitfall does not exist, because
+true-branch-only narrowing makes realms a pure completeness concern
+(\S\ref{sec:inst}).
+
 \paragraph{Registry.}
 The authoritative, current statuses of every item above are maintained in
 the registry (\texttt{docs/ledger.yaml}), rendered as the main paper's
@@ -938,13 +945,6 @@ each as an axiom, checking citations against the registry's canonical
 statement; no other paper's internals are in scope:
 
 \input{../generated/imports-A}
-
-\paragraph{Method note.}
-One attempted row is worth recording as simply \emph{unnecessary}: a
-realm assumption for \textbf{L-INST} symmetric to the classical
-\texttt{instanceof Array} pitfall does not exist, because
-true-branch-only narrowing makes realms a pure completeness concern
-(\S\ref{sec:inst}).
 
 %==========================================================================
 \appendix

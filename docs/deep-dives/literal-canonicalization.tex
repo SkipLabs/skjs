@@ -1183,23 +1183,7 @@ L-LIT(ii)/(iii) hold exactly where the canonical-storage invariant
 does; the beyond-precision \texttt{num} violations are witnessed
 (Finding~\ref{find:precision}).
 
-\subsection{Registry}
-
-The authoritative, current statuses are maintained in the registry
-(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
-Proof Obligations tables; this paper is cited there as evidence. The
-registry rows it supports:
-
-\input{../generated/rows-G}
-
-\paragraph{Imports (review contract).}
-The named statements this paper assumes from elsewhere. A reviewer treats
-each as an axiom, checking citations against the registry's canonical
-statement; no other paper's internals are in scope:
-
-\input{../generated/imports-G}
-
-\subsection{Registry alignment}
+\subsection{Registry implications}
 
 The registry records, consistent with this paper:
 \begin{enumerate}
@@ -1256,5 +1240,21 @@ L-LIT row anchors
 \texttt{JSStringEscape.sk}, and \texttt{TypeCheckEnum.sk}'s fold outputs
 (canonical in form); the L-LIT-FOLD row also anchors
 \texttt{TypeCheckEnum.sk}, for the orthogonal value-faithfulness claim.
+
+\subsection{Registry}
+
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence. The
+registry rows it supports:
+
+\input{../generated/rows-G}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-G}
 
 \end{document}

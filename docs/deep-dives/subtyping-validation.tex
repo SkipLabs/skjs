@@ -1550,7 +1550,26 @@ two flagged sub-claims open. Status: \textsc{open}.
 \end{obligation}
 
 %==========================================================================
-\section{Status and Recommended Ledger Edits}
+\section{Failed Proof Attempts and Their Consequences}
+
+Recorded per series policy: (i) the global ``version-as-state-hash''
+argument for \texttt{tenv.seenSub} fails (two concrete counterexample
+schemas, \S\ref{sec:naive}); the successful replacement needs the frozen
+\texttt{TEnv} threading and save/restore locality, neither of which is
+about the version at all. (ii) A membership-only proof of the field
+stratum fails at exactly two clauses (the $\mathsf{CAbsent}$ clause
+under its permissive admission arm, and the brand) --- both times
+because the main paper assigned those clauses to \emph{refinement}
+proofs; the failures are reported as violations rather than weakened
+into assumptions. (iii) A proof of \texttt{TFun::isSub} against the
+opaque-signature semantics is not merely hard but type-incorrect --- the
+conclusion is not expressible; hence E-SIG. (iv) An unconditional proof
+of the covariant read (O-GETCOV) fails against Deep Dive~B's L-INTER-BOT
+counterexamples; we did not find a validator-local workaround, since the
+constraint application lives inside \texttt{Subst::get}.
+
+%==========================================================================
+\section{Status and Registry}
 \label{sec:status}
 
 \subsection{Status by stratum}
@@ -1655,23 +1674,5 @@ each as an axiom, checking citations against the registry's canonical
 statement; no other paper's internals are in scope:
 
 \input{../generated/imports-D}
-
-\subsection{Failed-attempt log}
-
-Recorded per series policy: (i) the global ``version-as-state-hash''
-argument for \texttt{tenv.seenSub} fails (two concrete counterexample
-schemas, \S\ref{sec:naive}); the successful replacement needs the frozen
-\texttt{TEnv} threading and save/restore locality, neither of which is
-about the version at all. (ii) A membership-only proof of the field
-stratum fails at exactly two clauses (the $\mathsf{CAbsent}$ clause
-under its permissive admission arm, and the brand) --- both times
-because the main paper assigned those clauses to \emph{refinement}
-proofs; the failures are reported as violations rather than weakened
-into assumptions. (iii) A proof of \texttt{TFun::isSub} against the
-opaque-signature semantics is not merely hard but type-incorrect --- the
-conclusion is not expressible; hence E-SIG. (iv) An unconditional proof
-of the covariant read (O-GETCOV) fails against Deep Dive~B's L-INTER-BOT
-counterexamples; we did not find a validator-local workaround, since the
-constraint application lives inside \texttt{Subst::get}.
 
 \end{document}

@@ -1115,7 +1115,7 @@ outside the soundness contract and is left unstated.
 TAInst (2032, 2089); TType.sk / expandToVectors (718--722)}
 
 %==========================================================================
-\section{Status and Ledger Edits}
+\section{Status and Registry}
 \label{sec:status}
 
 \subsection{Decomposition of L-EXP}
@@ -1183,27 +1183,7 @@ The single-module residue is smaller and sharper than the original
 axiom: two named interface assumptions and three localized open
 obligations.
 
-\subsection{Registry}
-
-The authoritative, current statuses are maintained in the registry
-(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
-Proof Obligations tables; this paper is cited there as evidence — in
-particular for the mode scoping of Axiom \textbf{L-EXP} (the containment
-holds for modes \texttt{None}/\texttt{Covariant} only,
-Lemma~\ref{lem:clients}) and for the rows E-NORM, E-ARR, E-CLASS-SYM,
-E-GUARD, E-EXPKEY, E-PLACEHOLDER-ATOM. The registry rows this paper
-supports:
-
-\input{../generated/rows-C}
-
-\paragraph{Imports (review contract).}
-The named statements this paper assumes from elsewhere. A reviewer treats
-each as an axiom, checking citations against the registry's canonical
-statement; no other paper's internals are in scope:
-
-\input{../generated/imports-C}
-
-\paragraph{Outstanding recommendations.}
+\subsection{Outstanding recommendations}
 (i) Repair \textbf{E-EXPKEY}: key \texttt{seenExpansion} by definition
 identity (module qualifier or defMap definition id), and correct the
 ``not yet triggerable'' judgement in the \texttt{ExpansionKey} comment
@@ -1241,6 +1221,26 @@ Obligation~\ref{obl:guard}: cache poisoning by identity returns could
 not be excluded by a local invariant; global call-site audit only.
 Section~\ref{sec:placeholder}: the placeholder atom's
 membership-consulting sites are unaudited (E-PLACEHOLDER-ATOM).
+
+\subsection{Registry}
+
+The authoritative, current statuses are maintained in the registry
+(\texttt{docs/ledger.yaml}), rendered as the main paper's Assumptions and
+Proof Obligations tables; this paper is cited there as evidence — in
+particular for the mode scoping of Axiom \textbf{L-EXP} (the containment
+holds for modes \texttt{None}/\texttt{Covariant} only,
+Lemma~\ref{lem:clients}) and for the rows E-NORM, E-ARR, E-CLASS-SYM,
+E-GUARD, E-EXPKEY, E-PLACEHOLDER-ATOM. The registry rows this paper
+supports:
+
+\input{../generated/rows-C}
+
+\paragraph{Imports (review contract).}
+The named statements this paper assumes from elsewhere. A reviewer treats
+each as an axiom, checking citations against the registry's canonical
+statement; no other paper's internals are in scope:
+
+\input{../generated/imports-C}
 
 %==========================================================================
 \section*{Implementation Anchors (Summary)}

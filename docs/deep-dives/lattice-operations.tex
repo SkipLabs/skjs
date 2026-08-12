@@ -991,13 +991,13 @@ All probes were run against the pinned binary
 (\texttt{target/host/dev/skjs}) via
 \texttt{make check-file-in-docker}. ``Accepted'' means zero diagnostics.
 
-\subsection{Probe 2: signature bottom (Finding~\ref{find:tfun})}
+\subsection{Function-signature bottom (Finding~\ref{find:tfun})}
 \texttt{if (k === g)} on incomparable signature types narrows \texttt{k}
 to \texttt{never} in a branch a single accepted program takes at
 runtime; the end-to-end witness and the tsc comparison are issue report
 \path{issues/tfun-inter-incomparable-not-disjoint.md}.
 
-\subsection{Probe 3: literal spellings (Finding~\ref{find:spelling})}
+\subsection{Beyond-precision literal spellings (Finding~\ref{find:spelling})}
 \begin{finding}[Spelling-Sensitive Disjointness]
 \label{find:spelling}
 Beyond-precision numeric spellings break \textbf{L-INTER-BOT}:
@@ -1024,7 +1024,7 @@ very pair — but the narrowing and intersection path carries no
 precision guard, so the spurious $\bot$ is still installed.
 \end{finding}
 
-\subsection{Probe 4: type-level intersections}
+\subsection{Type-level intersections}
 \begin{verbatim}
 type C = ("a" | 0) & ("a" | 1);
 function p6(): void { const c: C = "a"; }        // ACCEPTED: C = "a"
@@ -1052,7 +1052,7 @@ strata of intersection, the instance-layer arms, the clause product, or
 the in-flight cycle handling.
 
 %==========================================================================
-\section{Status and Ledger Edits}
+\section{Status and Registry}
 \label{sec:status}
 
 \subsection{Status by stratum}

@@ -1068,8 +1068,22 @@ by Theorem~\ref{thm:stable}; it is the memo that inherits the MR-1
 hazard (Finding~\ref{find:freeze-memo}).
 
 %==========================================================================
-\section{Status Table and Ledger Edits}
+\section{Status and Registry}
 \label{sec:status}
+
+\paragraph{Summary.} Three of the four rows close (L-MONO; No
+Commitment on Failure, with a documented exception; L-CLONE modulo
+I$_f$, its id-collision hazard verified unreachable and guarded by a CI
+assertion). The fourth — Monotone Reads — is \textsc{proved} at every
+audited site except its one remaining case, MR-1, which is
+\textsc{violated} with an end-to-end witness (issue report
+\path{issues/freeze-window-stale-memo-caches.md}); the fix
+(version-keying or freeze-window write suppression) must cover both
+\texttt{seenSub} and \texttt{seenInter}. A further violated read site,
+the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}, lies
+outside this paper's audited family and is analyzed in deep dive D
+(issue report
+\path{issues/reflexive-tsinst-fastpath-unsealed-read.md}).
 
 Named sub-obligations introduced by this paper:
 
@@ -1149,20 +1163,6 @@ each as an axiom, checking citations against the registry's canonical
 statement; no other paper's internals are in scope:
 
 \input{../generated/imports-E}
-
-\paragraph{Summary.} Three of the four rows close (L-MONO; No
-Commitment on Failure, with a documented exception; L-CLONE modulo
-I$_f$, its id-collision hazard verified unreachable and guarded by a CI
-assertion). The fourth — Monotone Reads — is \textsc{proved} at every
-audited site except its one remaining case, MR-1, which is
-\textsc{violated} with an end-to-end witness (issue report
-\path{issues/freeze-window-stale-memo-caches.md}); the fix
-(version-keying or freeze-window write suppression) must cover both
-\texttt{seenSub} and \texttt{seenInter}. A further violated read site,
-the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}, lies
-outside this paper's audited family and is analyzed in deep dive D
-(issue report
-\path{issues/reflexive-tsinst-fastpath-unsealed-read.md}).
 
 %==========================================================================
 \appendix
