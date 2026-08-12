@@ -73,9 +73,10 @@ definitions, so the entry filled for one serves the other.
 
 ## Relation to existing issues/PRs
 
-Upstream #889 tracks adding a module qualifier to the key; the code
-comment there considers the collision not yet triggerable. Not
-previously witnessed.
+Tracked by #889, which identifies the bare-name key defect and the need
+for resolved definition identity. This report supplies the concrete
+trigger, both failure directions, and the isolating rename/order
+controls; the defect is therefore observable rather than merely latent.
 
 ## Suggested fix
 

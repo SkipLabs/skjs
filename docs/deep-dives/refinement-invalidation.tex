@@ -364,7 +364,7 @@ under the pre-loop narrowing, so iteration-2 reads are justified only if
 back-edge writes preserve the loop-entry type, which the declared-type
 check does not ensure. For \emph{un-annotated} bindings the loop-entry
 check does fire and the shape is rejected. Registry row
-\textbf{L-LOOP-CARRIED}; the witness is the repro of issue draft
+\textbf{L-LOOP-CARRIED}; the witness is the repro of issue report
 \path{issues/loop-carried-narrowing-stale.md}, accepted at the pin. The
 fix is policy layer P1 (Section~\ref{sec:recommend}).
 \end{finding}
@@ -413,7 +413,7 @@ skipped when \texttt{declaredType} is a single unresolved type variable
 (\texttt{TypeCheckScope.sk:192}). Such a binding widens like
 TypeScript's evolving \texttt{any}, so \emph{every} escaping write is
 allowed, and reads elsewhere are not informed of it — witnessed
-end-to-end (issue draft \texttt{evolving-capture-unchecked.md}: a
+end-to-end (issue report \texttt{evolving-capture-unchecked.md}: a
 closure writes \texttt{"s"} into a bare \texttt{let x = null} binding
 and a later read binds the string at type \texttt{null}). tsc accepts
 the same program through the same mechanism (implicit evolving
@@ -442,7 +442,7 @@ the closure writes and enclosing code later reads; here enclosing code
 writes and the closure later reads. Confirmed with a runtime witness (a
 \texttt{TypeError} reading \texttt{.length} of \texttt{null}); the
 witnesses — including a field-level variant no policy layer below
-covers — are the two repros of issue draft
+covers — are the two repros of issue report
 \path{issues/stale-closure-reads-narrowing.md}, both accepted at the
 pin.
 \end{finding}
@@ -558,7 +558,7 @@ already builds a call graph during checking (\texttt{CGNode},
 the call graph including indirect calls through function-typed values —
 which in practice degrades to ``any unknown callee may write anything'',
 (2) summaries for \texttt{declare}d ambient functions, which have no
-bodies — so either an effect annotation surface is added to the language
+bodies — so either effect annotations are added to the language
 (a major design commitment tsc has repeatedly declined) or ambient calls
 havoc everything, and (3) soundness of the summary under first-class
 functions, requiring the call graph itself to be sound, which it is not
@@ -707,9 +707,9 @@ hypothesis fails at the pin: the alias
 \texttt{const y:\ \{f:\ number\} = x} \emph{is admitted} after narrowing
 and the legal write \texttt{o.f := null} through \texttt{x} is
 unrecorded on $y$ (mechanism, executed witness, and tsc comparison:
-issue draft \path{issues/narrowed-alias-stale-write.md}). The
+issue report \path{issues/narrowed-alias-stale-write.md}). The
 hypothesis is strictly stronger than Obligation~\ref{obl:getset}; its
-site-by-site grading — including the created views that need no declared
+site-by-site analysis — including the created views that need no declared
 alias at all — is deep dive H's.
 \end{lemma}
 \begin{proof}
@@ -743,7 +743,7 @@ checker never consults it, so a getter \texttt{get p(): T} is typed as a
 lacking a return type). That method-typing is itself unsound in the
 \emph{call} direction --- \texttt{const n: number = c.p()} type-checks
 but throws at runtime, and tsc rejects it (TS6234); registry row
-ACCESSOR-METHOD (issue draft \path{getter-typed-as-method.md}), a known
+ACCESSOR-METHOD (issue report \path{getter-typed-as-method.md}), a known
 limitation (tests \path{callgraph-unsupported/getter-calls.ts}). For
 re-widening the consequence is that there are no coercing-setter fields:
 a getter read is never a narrowable value (it is a function), and the
@@ -826,11 +826,11 @@ L-PURE & Fix specified: Policy P1--P4. Lemma~\ref{lem:preservation}
   the caller-path shapes close once P3/P4 land; the loop and
   event-model residues remain \\
 L-MUT & \#598 has a specified re-widening rule (W-Field, adequate by
-  Lemma~\ref{lem:rewiden-sound} for data fields); accessor residue
-  gated on get/set coherence (Obligation~\ref{obl:getset}); the
-  cross-view facet is the separate row L-MUT-ALIAS, witnessed via
-  aliases created after narrowing, outside W-Field's reach (issue draft
-  \texttt{narrowed-alias-stale-write.md}; graded in deep dive H). &
+  Lemma~\ref{lem:rewiden-sound} for data fields); the accessor case
+  depends on get/set coherence (Obligation~\ref{obl:getset}); the
+  cross-view case is the separate row L-MUT-ALIAS, witnessed via
+  aliases created after narrowing, outside W-Field's reach (issue report
+  \texttt{narrowed-alias-stale-write.md}; analyzed in deep dive H). &
   data fields discharged once W-Field lands; L-MUT-ALIAS needs its
   own fix \\
 L-LOCAL & Module half: mutable module-level bindings are rejected
@@ -850,7 +850,7 @@ L-CAPT & Proved (Lemma~\ref{lem:capt}): every assignment form reaches
   stable; the exception is the named residue \\
 L-STALE-READ & Owned here (Finding~\ref{find:stale-read}): closure
   bodies read enclosing narrowings valid at creation, not invocation;
-  witnessed in local and field-level forms (issue draft
+  witnessed in local and field-level forms (issue report
   \texttt{stale-closure-reads-narrowing.md}). P3 blocks inflow for
   captured-and-assigned locals; the field-level variant is closed by no
   layer. &
@@ -858,7 +858,7 @@ L-STALE-READ & Owned here (Finding~\ref{find:stale-read}): closure
   rule \\
 L-GETSET & Introduced here (Obligation~\ref{obl:getset}):
   prerequisite for the sound accessor variant of W-Field. &
-  gated on the get/set coherence check \\
+  depends on the get/set coherence check \\
 \bottomrule
 \end{longtable}
 \endgroup
@@ -873,7 +873,7 @@ lands flips its cases from expect-clean to expect-error, forcing the
 corresponding passage of this paper and of the main paper's ledger to be
 updated in the same change — the maintenance discipline of the main
 paper's Appendix B. Additionally pin the \emph{sound} behaviors this
-paper leans on, so regressions surface: direct-assignment clobbering
+paper leans on, so regressions become visible: direct-assignment clobbering
 (\texttt{x = null} after narrowing rejects the next use), the rejection
 of a wrong-typed captured write in both its annotated and inferred-type
 forms (Lemma~\ref{lem:capt}), and the un-annotated loop back-edge check
@@ -896,6 +896,6 @@ noted in its proof; the lemma is honest only with the ``apply W-Field to
 every local carrying a narrowed $f$'' clause.
 (4) Effect tracking (option ii) was evaluated and found to collapse to
 havoc at every ambient/indirect call; recorded so it is not re-proposed
-without an annotation surface.
+without effect annotations.
 
 \end{document}

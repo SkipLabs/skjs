@@ -432,7 +432,7 @@ exactly because failed timelines are rolled back and successful growth
 is what the transport theorem is about.
 \end{proof}
 
-\paragraph{The freeze-window residue.} The conditional hypothesis fails
+\paragraph{The remaining freeze-window case.} The conditional hypothesis fails
 in the implementation: MR-1 is \textsc{violated}, witnessed end-to-end
 by an order-dependent unsound acceptance through a stale
 \texttt{seenSub} entry recorded in a freeze window (deep dive E; issue
@@ -1133,7 +1133,7 @@ per-kind-partition reading, the number-under-string fallback would have
 been an unsound borrowing; under covering it is the exact transfer.
 \end{proof}
 
-\begin{corollary}[An Extensible Source Cannot Manufacture Closed Absence]
+\begin{corollary}[An Extensible Source Cannot Establish Closed Absence]
 \label{cor:open-closed}
 Subtyping cannot admit an object source that leaves an uncovered key
 unconstrained into a \texttt{Closed<T>} target that proves the key absent.
@@ -1165,7 +1165,7 @@ Closing also drops a \emph{synthetic} number index
 \texttt{TVar} get/set, describing no declared capability — and this is
 absence-safe: with the number slot empty, numeric-kind keys fall under the
 string never-index for \emph{admission} exactly as they do for the absence
-claim, so the claim and the gate move together. Hence an accepted admission
+claim, so the claim and the admission check move together. Hence an accepted admission
 never creates the absence fact on which the main paper's \textsc{R-In}
 true-branch pruning relies. Note the structural contrast with
 Finding~F-CABSENT: indexes have no permissive middle state — an absent index reads
@@ -1242,7 +1242,7 @@ true case (\texttt{src/TType.sk:2438-2460}), so a callable accepted through
 individually-accepted steps, $(\mathsf{CPresent}, \mathsf{CUnknown})$
 then $(\mathsf{CUnknown}, \mathsf{CAbsent})$ --- is narrowed to
 \texttt{never} in the branch the runtime takes. Witnessed end-to-end
-(registry row \textbf{F-CABSENT}; issue draft
+(registry row \textbf{F-CABSENT}; issue report
 \path{issues/cabsent-brand-laundering.md}: SKJS accepts, Node takes the
 branch with a function value at type \texttt{never}, tsc rejects ---
 the unsoundness is SKJS-specific). $\mathsf{CAbsent}$ is thus a
@@ -1350,7 +1350,7 @@ claim --- and \texttt{maybeGetCall} requires $\mathsf{CPresent}$, so the
 checker never invokes through a bare $\mathsf{CFunction}$);
 $\mathsf{CUnknown}$ entails nothing; dually for
 $\mathsf{new}$ with construction. (The $\mathsf{CAbsent}$ clause is
-unchanged from \S\ref{sec:recap} and its permissive subtyping arm is graded as
+unchanged from \S\ref{sec:recap} and its permissive subtyping arm is analyzed in
 Finding~\ref{find:cabsent}.) Two deliberate choices:
 extra trailing arguments are \emph{unconstrained but permitted} ---
 JS functions accept any arity, and the contract must quantify over them
@@ -1446,7 +1446,7 @@ separately --- shape methods are attach-only by construction (their
 carrier type is erased and a detached use rejects), and call sites
 check the receiver of \texttt{Explicit}/\texttt{ImplicitClass}
 functions --- but E-SIG has no clause expressing ``receiver $=$
-carrier'', so the two diagonals cannot be graded against it. Named
+carrier'', so the two diagonals cannot be justified against it. Named
 residual: extend E-SIG with an attachment clause and prove the
 diagonals against it, or restrict them. Status recommendation:
 \textsc{assumed} (the attachment premise), pinned tests recommended.
@@ -1462,7 +1462,7 @@ pair is accepted: \texttt{<T extends string>(x: T) => T} passes as
 $\mathit{cstr}_1$, exercising the sub's body off its contract; E-SIG
 does not justify the arm. (The subsequent positional checks run with
 the shared parameter \emph{rigid}, so they cannot recover the gap.)
-Same severity shape as F-THIS. Status recommendation: named residual,
+Same severity as F-THIS. Status recommendation: named residual,
 pinned test recommended.
 \impl{TTypeSubtyping.sk / TFun::isSub\_ (tparam cstr match)}
 \end{finding}
@@ -1480,7 +1480,7 @@ forced --- $\mathsf{CUnknown}$ does not entail callable, so nothing
 unproven enters the positive brand, and a bare $\mathsf{CFunction}$
 offers no signature to satisfy a $\mathsf{CPresent}$ target.
 
-\section{Variance Plumbing: Why Each Side Expands the Way It Does}
+\section{Why Each Side Expands at Its Chosen Variance}
 \label{sec:variance}
 
 Step (5) expands $u_1$ with \texttt{Covariant()} and $u_2$ with
@@ -1597,7 +1597,7 @@ Array brand & Finding~\ref{find:brand} + composite witness \\
 \texttt{TFun} variance & Theorem~\ref{thm:tfun} against E-SIG \\
 \texttt{this}/tparam-cstr arms & Findings~\ref{find:this},
   \ref{find:tparam} \\
-Variance plumbing & Lemma~\ref{lem:variance};
+Variance-directed reads & Lemma~\ref{lem:variance};
   Obligations~\ref{obl:getcov}, \ref{obl:getcontra} \\
 Array-literal decision & Obligation~\ref{obl:arraylit} \\
 \end{longtable}
@@ -1606,7 +1606,7 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
 \subsection{Stratum outcomes and recommendations}
 
 \begin{enumerate}
-\item \emph{The L-SUB surface decomposes as}: L-SUB-ARCH (caches, dispatch,
+\item \emph{L-SUB decomposes into}: L-SUB-ARCH (caches, dispatch,
   coinduction; \textsc{proved} here mod A-HASH — except the
   \texttt{subst.seenSub} component, \textsc{violated} via the witnessed
   MR-1 until the memo is version-keyed); L-SUB-PRIM (\textsc{proved});
@@ -1622,7 +1622,7 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   E-SIG (adopt Extension~\ref{ext:esig}, replacing ``signatures are
   opaque''); A-HASH (hash-consing identity) — both are registry
   entries. Note that adopting E-SIG strengthens the
-  main paper's monotonicity axiom: its deflection of the contravariance
+  main paper's monotonicity axiom: its treatment of the contravariance
   counterexample (``membership never inspects parameter types'') stops
   being automatic and must cite the stratified-level bookkeeping of
   \S\ref{sec:coinduction}.

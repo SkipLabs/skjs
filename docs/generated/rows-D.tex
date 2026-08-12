@@ -11,7 +11,7 @@ L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the 
 E-SIG & Behavioral call-soundness semantics for function signatures (required for function subtyping to be a soundness statement). & \textsc{assumed} \\
 A-HASH & \texttt{TType::compare} equality is trustworthy (XXHash-only fast paths). & \textsc{assumed} \\
 L-SUB-FIELDS-SET & \texttt{isSub}'s field arms preserve write capability downward: acceptance implies each target field's $\mathsf{set}$-type is below the source's, and readonly fields acquire no writers. & \textsc{open} \\
-L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & \textsc{open} \\
+L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot create a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & \textsc{open} \\
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER-BOT's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\

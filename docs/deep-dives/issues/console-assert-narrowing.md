@@ -47,7 +47,7 @@ consulted.
 
 The main paper documents the behavior in its refinement-rule list
 (matched by call shape, receiver unverified) but no registry row
-justified it; this draft registers it as row L-ASSERT. Not previously
+justified it; this report registers it as row L-ASSERT. Not previously
 tracked.
 
 ## Suggested fix

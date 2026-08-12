@@ -16,7 +16,7 @@ E-SIG & Behavioral call-soundness semantics for function signatures (required fo
 SKOLEM-SEM & A skolem in an installed \texttt{instanceof} view denotes the scrutinee object's actual hidden type argument, fixed at narrowing time and stable thereafter. & main & \textsc{proved} \\
 SET-SEM & A view authorizes exactly the writes its resolved $\mathsf{set}$-types accept; a readonly field authorizes nothing. & main & \textsc{proved} \\
 L-SUB-FIELDS-SET & \texttt{isSub}'s field arms preserve write capability downward: acceptance implies each target field's $\mathsf{set}$-type is below the source's, and readonly fields acquire no writers. & D & \textsc{open} \\
-L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & D & \textsc{open} \\
+L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot create a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & D & \textsc{open} \\
 \bottomrule
 \end{tabular}
 \end{center}

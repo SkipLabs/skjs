@@ -828,7 +828,7 @@ rejected (TS2590) rather than truncated.
 \end{fact}
 
 Two design notes. First, the beyond-precision refusal in the number
-arm is the same defect surface as Finding~\ref{find:precision},
+arm addresses the same precision defect as Finding~\ref{find:precision},
 handled \emph{conservatively} here: where the \texttt{===}-narrowing
 path reads a lexeme-level verdict semantically with no precision guard,
 the template path refuses to create a lexeme that does not pin down one
@@ -877,7 +877,7 @@ beyond-precision operands: L-LIT-FOLD is violated]
 The third route is string concatenation: the \texttt{BOAddition} arms
 build \texttt{EFStr(a + b)} for \texttt{(EFStr, EFStr)},
 \texttt{(EFStr, EFNum)}, and \texttt{(EFNum, EFStr)} by textual
-concatenation of operand \emph{lexemes}. The double-safe gate of
+concatenation of operand \emph{lexemes}. The numeric precision check in
 \texttt{enumNumOrUnknown} guards numeric fold \emph{results} only; a
 direct numeric-literal operand contributes its stored spelling with no
 precision check. At runtime the engine converts the \emph{value}
@@ -887,21 +887,20 @@ round-trip predicate concatenates wrongly:
 \texttt{"x1e-400"} while \texttt{E.A} evaluates to \texttt{"x0"}. The
 created literal is a perfectly canonical \emph{string} — the failure is
 faithfulness, not form: the member's runtime value escapes its static
-type. Witnessed end-to-end (issue draft
+type. Witnessed end-to-end (issue report
 \texttt{enum-concat-imprecise-fold.md}; SKJS accepts the assignment at
 the wrong literal type, tsc types \texttt{E.A} as \texttt{E} and
 rejects). Two repairs fit the current representation: concatenate
 \texttt{String(Number(lexeme))} — correct JavaScript semantics — or
 conservatively \emph{reject} a string fold whose numeric operand fails
-\texttt{isPreciseJSNumberLiteral}. The numeric route's fallback to an untracked number
-philosophy does not transfer as-is: the representation has an
-untracked-\emph{number} member but no untracked-string analogue, and
-refusing the constant fold today routes into the computed-member path,
-which expects a number; an untracked-string member is a larger design
-change.
+\texttt{isPreciseJSNumberLiteral}. The numeric fallback cannot be reused:
+the representation can express an enum member whose numeric value is
+unknown but has no equivalent for strings. Refusing the constant fold
+today routes into the computed-member path, which expects a number;
+adding such a string representation would be a larger design change.
 \end{finding}
 
-With the concat arms carved out, the enum machinery is otherwise an
+Excluding the concat arms, the enum machinery is otherwise an
 upstream \emph{client} of the canonical-literal domain: no enum path
 creates a lexeme outside the canonical forms already audited, and the
 faithfulness gap is confined to Finding~\ref{find:enumfold}.
@@ -1022,7 +1021,7 @@ spells the same value in hex; \texttt{1e309} and \texttt{2e309} are both
 (Corollary~\ref{cor:setops}'s parenthetical) equality narrowing types a
 reachable branch \texttt{never}: with the two $2^{53}$ spellings, an
 accepted \texttt{===}-true branch is live at runtime and a number flows
-into \texttt{string} (executed witness: issue draft
+into \texttt{string} (executed witness: issue report
 \path{issues/beyond-precision-numeric-literals.md}). Falsiness (iii)
 fails on the same residue: the normalizer rewrites a longhand
 $10^{-400}$ decimal to the lexeme \texttt{"1e-400"}, whose IEEE value
@@ -1040,7 +1039,7 @@ imprecise spellings outright (\S\ref{sec:templates}), but the narrowing
 and intersection path carries no precision guard, and \texttt{isFalsy}'s
 \texttt{num} comment asserts beyond-precision literals ``can never be
 zero'' (\texttt{TType.sk:1546-1547}), which the underflow rewriting
-falsifies. Both witnesses are runnable; issue draft:
+falsifies. Both witnesses are runnable; issue report:
 \path{issues/beyond-precision-numeric-literals.md}. The suite pin
 \texttt{tests/expect-error/number-literal-precision.ts} records the
 never-merge behavior itself; its header's soundness rationale does not
@@ -1114,8 +1113,9 @@ tests/expect-error/string-escape-lone-surrogate-prettier-ignore.ts}
 \label{find:usesite}
 The alternative --- keep raw lexemes and parse or decode to values inside
 \texttt{isFalsy}, \texttt{inter}, \texttt{diff}, \texttt{sameConstant},
-\texttt{xxhash}, subtyping, and printing --- is inferior. The comparison
-surface is wide and grows (any consumer of \texttt{PrimLiteral.val}
+\texttt{xxhash}, subtyping, and printing --- is inferior. Many operations
+already compare literals, and the list grows (any consumer of
+\texttt{PrimLiteral.val}
 reading the raw lexeme would revert to lexeme semantics), the hash
 requires a canonical key anyway (hashing raw spellings would break
 hash-consistency of semantically equal types), and per-use parsing would
@@ -1209,7 +1209,7 @@ The registry records, consistent with this paper:
   over canonical forms; the string kind and the within-precision
   num/bigint range canonical by construction (Section~\ref{sec:fix});
   the beyond-precision \texttt{num} residue carrying the witnessed
-  violation (Finding~\ref{find:precision}, with its issue draft). The
+  violation (Finding~\ref{find:precision}, with its issue report). The
   row anchors \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt},
   \texttt{isFalsy}, and the string-escape decoding
   (\texttt{JSStringEscape.sk}).
@@ -1230,7 +1230,7 @@ normalize to \texttt{0}; and
 the never-merge treatment of beyond-precision pairs (whose header's
 soundness rationale Finding~\ref{find:precision} refutes). String: a
 dedicated family under \texttt{tests/expect-error/} pins escape
-decoding and its rejection surface ---
+decoding and the inputs it rejects ---
 \path{string-literal-escapes-prettier-ignore.ts},
 \path{string-literal-line-continuation-prettier-ignore.ts},
 \path{string-escape-octal-prettier-ignore.ts},

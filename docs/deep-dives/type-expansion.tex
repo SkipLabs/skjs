@@ -308,7 +308,7 @@ bound value irrespective of open/closed — so among expansion's evolutions
 only seal-to-top has semantic content, and it only \emph{adds} a binding
 of value $\top$.
 
-\subsection{The plumbing is sound}
+\subsection{Containment through the worklist}
 
 \begin{lemma}[Worklist Containment]
 \label{lem:plumbing}
@@ -495,7 +495,7 @@ $\sem{\mathsf{TSInst}(n,\bar{a})}_\rho \subseteq
 For the two identity early returns (recursion guard, circular alias)
 the result \emph{is} the input, so the axiom is trivially true there
 and the re-emitted instance is a residual that keeps its semantics by
-construction; the placeholder-atom return is graded separately
+construction; the placeholder-atom return is tracked separately
 (Section~\ref{sec:placeholder}, registry row E-PLACEHOLDER-ATOM).
 \impl{TEnv.sk / instantiate, normalize}
 \end{axiom}
@@ -632,7 +632,7 @@ implementation comment acknowledges the missing module qualifier but
 judges the collision ``not yet triggerable'' (\texttt{TType.sk:3048--3050},
 upstream \#889). That judgement is refuted by execution — registry row
 \textbf{E-EXPKEY}, violated and witnessed end-to-end in both failure
-directions (issue draft \texttt{expansion-key-collision.md}):
+directions (issue report \texttt{expansion-key-collision.md}):
 
 \begin{itemize}
 \item \emph{Unsound acceptance.} Module \texttt{dep} exports
@@ -847,7 +847,7 @@ later grows. On the alias path, \texttt{seenExpansion} is \emph{immune
 by construction}: by Theorem~\ref{thm:invariance} the cached value does
 not depend on any binding read, frozen or not — the unsealed read can
 return whatever it likes without being able to reach the cached value.
-This immunity is now necessary rather than belt-and-braces, since
+This immunity is necessary because
 cross-mention keying makes cache hits routine. It is also orthogonal to
 \textbf{E-EXPKEY}: the collision serves a \emph{wrong definition's}
 correct expansion, never a stale one — no binding staleness is
@@ -861,7 +861,7 @@ immunity argument breaks; Obligation~\ref{obl:classsym}.)
 \texttt{restore}, and \texttt{clone} carry bindings and cache
 atomically, so an entry filled on an exploratory path is rolled back
 with that path's bindings, and entries filled in a clone die with the
-clone. On the alias path this atomicity is belt-and-braces — by
+clone. On the alias path this atomicity is unnecessary — by
 Theorem~\ref{thm:invariance} even a leaked entry would be correct — but
 it is what keeps the \emph{class-path} exposure — and the
 \textbf{E-EXPKEY} collision exposure — bounded to reuse within one live

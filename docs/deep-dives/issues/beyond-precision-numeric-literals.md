@@ -77,8 +77,8 @@ warning and still performs the unsound narrowing.
 
 - #655 (normalize numeric/bigint literal types instead of comparing raw
   source lexemes): covers the within-precision spellings, whose
-  parse-time normalization landed; this issue is the beyond-precision
-  residue that normalization deliberately left non-canonical.
+  parse-time normalization landed; this issue is the remaining
+  beyond-precision case that normalization deliberately left non-canonical.
 - `tests/expect-error/number-literal-precision.ts` pins the never-merge
   behavior and its header calls it "sound, but … stricter than tsc";
   the witnesses above falsify that rationale — the header (and the

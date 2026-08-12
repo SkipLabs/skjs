@@ -24,6 +24,25 @@
 #
 # Pinned revision: see docs/shared/pin.tex.
 
+# One-to-one correspondence between the corpus's issue reports and their
+# GitHub issue threads. The consistency checker enforces total coverage and
+# uniqueness; live GitHub resolution is verified when this mapping changes.
+github_issues:
+  beyond-precision-numeric-literals.md: 781
+  cabsent-brand-laundering.md: 1038
+  console-assert-narrowing.md: 1042
+  enum-concat-imprecise-fold.md: 1039
+  evolving-capture-unchecked.md: 840
+  expansion-key-collision.md: 889
+  freeze-window-stale-memo-caches.md: 773
+  getter-typed-as-method.md: 767
+  loop-carried-narrowing-stale.md: 1040
+  narrowed-alias-stale-write.md: 792
+  reflexive-tsinst-fastpath-unsealed-read.md: 780
+  stale-closure-reads-narrowing.md: 770
+  tfun-inter-incomparable-not-disjoint.md: 768
+  void-undefined-equality-never.md: 1041
+
 papers:
   - letter: A
     file: runtime-grounding.tex
@@ -160,11 +179,11 @@ entries:
     status_note: >-
       \textsc{violated} (deep dive B) in two cases: the
       \texttt{TFun::inter} case — incomparable signatures treated as
-      disjoint (issue draft
+      disjoint (issue report
       \texttt{tfun-inter-incomparable-not-disjoint.md}); and the num-kind
       beyond-precision spelling case — distinct spellings of one
       double kept distinct, their lexeme intersection a spurious $\bot$
-      (mediated by L-LIT; issue draft
+      (mediated by L-LIT; issue report
       \texttt{beyond-precision-numeric-literals.md}). The per-tag
       \texttt{STypes} assembly, within-precision numeric spellings, and
       decoded string spellings produce only semantic bottoms and are
@@ -240,7 +259,7 @@ entries:
     status: [violated]
     status_note: >-
       \textsc{violated}, witnessed end-to-end at the undefined/\texttt{void}
-      corner (\S\ref{sec:ex-voidseq}; issue draft
+      corner (\S\ref{sec:ex-voidseq}; issue report
       \texttt{void-undefined-equality-never.md}): \texttt{evalVarEquality}'s
       generic variable-RHS arm installs
       $\mathtt{inter}(\texttt{void},\texttt{undefined}) = \texttt{never}$
@@ -277,7 +296,7 @@ entries:
       runs with the condition false; and the match is by spelling alone,
       so a shadowing binding named \texttt{console} with an arbitrary
       \texttt{assert} method triggers the same refinement. tsc rejects
-      both witnesses. Fix shape: remove the refinement or register a
+      both witnesses. Fix: remove the refinement or register a
       recognized assertion function that does not return when its condition
       is false
     summary:
@@ -309,7 +328,7 @@ entries:
       \emph{set} direction on L-MUT,
       functions on the E-SIG signature semantics; \textsc{violated} —
       \texttt{subst.seenSub} results recorded while candidate growth is
-      suppressed (witnessed; issue draft
+      suppressed (witnessed; issue report
       \texttt{freeze-window-stale-memo-caches.md}), and the two
       brands used by refinement but never validated by subtyping: a callable
       can enter a type marked \texttt{CAbsent} (F-CABSENT), and the
@@ -400,7 +419,7 @@ entries:
       distinct, so \texttt{===} narrowing yields a spurious \texttt{never}
       (ii), and the normalizer can emit a zero-denoting lexeme
       (\texttt{1e-400}, underflow to $+0$) classified truthy (iii) — both
-      witnessed end-to-end (issue draft
+      witnessed end-to-end (issue report
       \texttt{beyond-precision-numeric-literals.md}). All three claims
       quantify over \emph{all stored literals}, enum-folder-synthesized
       ones included (deep dive G proves the fold outputs canonical in
@@ -425,15 +444,15 @@ entries:
     anchor_files: [src/TypeCheckEnum.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated}, witnessed end-to-end (deep dive G; issue draft
+      \textsc{violated}, witnessed end-to-end (deep dive G; issue report
       \texttt{enum-concat-imprecise-fold.md}): the string-concat arms
       concatenate operand \emph{lexemes}, and a direct numeric-literal
-      operand bypasses the double-safe gate that guards numeric fold
+      operand bypasses the numeric precision check that guards numeric fold
       results, so a beyond-precision spelling produces a member literal
       whose spelling is not the runtime string
       (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime
-      value is \texttt{"x0"}). Numeric folds are exact within the gate
-      and produce no literal outside it — that half is \textsc{proved}.
+      value is \texttt{"x0"}). Numeric folds are exact within the checked
+      range and produce no literal outside it — that half is \textsc{proved}.
       A prerequisite of the future preservation theorem's switch-coverage
       lemma (semantic case coverage consumes member-value faithfulness)
     summary:
@@ -590,11 +609,11 @@ entries:
     anchor_files: [src/TypeCheckScope.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated}, witnessed end-to-end (deep dive F; issue draft
+      \textsc{violated}, witnessed end-to-end (deep dive F; issue report
       \texttt{evolving-capture-unchecked.md}): a closure writes
       \texttt{"s"} into a bare \texttt{let x = null} binding and a later
       read binds the string at type \texttt{null}; tsc accepts the same
-      program (evolving \texttt{any} parity). Fix shape: track captured
+      program (evolving \texttt{any} parity). Fix: track captured
       writes in the evolved union or check them against it at the write
       site
     summary:
@@ -620,8 +639,8 @@ entries:
     status_note: >-
       \textsc{violated}, witnessed end-to-end in both forms — a captured
       narrowed local and a narrowed field read inside a closure (deep
-      dive F; issue draft \texttt{stale-closure-reads-narrowing.md});
-      the fix shape is deep dive F's layered invalidation policy, shared
+      dive F; issue report \texttt{stale-closure-reads-narrowing.md});
+      the fix is deep dive F's layered invalidation policy, shared
       with L-PURE
     summary:
       - {bucket: violated-witnessed,
@@ -646,10 +665,10 @@ entries:
     anchor_files: [src/TypeCheckScope.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated}, witnessed end-to-end (deep dive F; issue draft
+      \textsc{violated}, witnessed end-to-end (deep dive F; issue report
       \texttt{loop-carried-narrowing-stale.md}): the narrowed read binds
       \texttt{null} at \texttt{string} on iteration 2; tsc rejects. Fix
-      shape: deep dive F's P1 loop-entry invalidation layer
+      fix: deep dive F's P1 loop-entry invalidation layer
     summary:
       - {bucket: violated-witnessed,
          label: "loop-carried narrowing staleness (L-LOOP-CARRIED)"}
@@ -723,7 +742,7 @@ entries:
     status: [violated]
     status_note: >-
       \textsc{violated} (deep dive H) when an alias is created after field
-      narrowing, for writes through either alias (issue draft
+      narrowing, for writes through either alias (issue report
       \texttt{narrowed-alias-stale-write.md}); types introduced directly by
       \texttt{instanceof} narrowing are coherent — the \texttt{Array} arm
       preserves the readonly index and the class arm preserves the
@@ -782,7 +801,7 @@ entries:
       every declared route probed is rejected by subtyping
       (the union widens the target's $\mathsf{set}$, making admission
       harder), and refinement-installed intersections reduce to the
-      graded sites; ambient-declared intersection types enter through
+      sites already analyzed; ambient-declared intersection types enter through
       the stub trust boundary
     summary: []
     owner: H
@@ -814,7 +833,7 @@ entries:
       readonly-covering-index view of a class instance were probed and
       all rejected — SKJS is stricter than tsc on those admissions — so
       the remaining candidate route is the ambient/stub trust boundary.
-      Fix shape: make \texttt{keepReadonlyFrom} consult the original's
+      Fix: make \texttt{keepReadonlyFrom} consult the original's
       covering index for named fields the intersection introduced
     summary:
       - {bucket: violated-derived,
@@ -898,7 +917,7 @@ entries:
     status: [violated]
     status_note: >-
       \textsc{violated}, witnessed end-to-end (order-dependent acceptance;
-      deep dive E; issue draft
+      deep dive E; issue report
       \texttt{freeze-window-stale-memo-caches.md})
     summary: []
     owner: E
@@ -1277,7 +1296,7 @@ entries:
     statement: >-
       Write-capability preservation: field acceptance requires
       $f_2.\mathsf{set} \leq f_1.\mathsf{set}$ (contravariant) and the
-      readonly gate, so under SET-SEM an admitted view authorizes only
+      readonly check, so under SET-SEM an admitted view authorizes only
       writes the source view authorizes
     anchor: \texttt{TFields::isSub\_}
     anchor_files: [src/TTypeSubtyping.sk]
@@ -1297,7 +1316,7 @@ entries:
     kind: series-lemma
     table: series
     short: >-
-      \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>}
+      \texttt{isSub} admission cannot create a \texttt{Closed<T>}
       absence fact: acceptance requires the source to prove
       $\mathsf{get}=\bot$ at every key the target proves absent.
     statement: >-
@@ -1393,7 +1412,7 @@ entries:
       passes through \texttt{Function} $\to$ \texttt{\{\}} $\to$
       \texttt{C} in two accepted subtyping steps, then is narrowed to
       \texttt{never} in the
-      branch the runtime takes; issue draft
+      branch the runtime takes; issue report
       \texttt{cabsent-brand-laundering.md}. This has the same validation
       failure as F-BRAND: refinement relies on a brand-like claim that
       subtyping never validates
@@ -1594,7 +1613,7 @@ entries:
     status: [violated]
     status_note: >-
       \textsc{violated}, witnessed end-to-end in both directions (deep
-      dive C; issue draft \texttt{expansion-key-collision.md}): two
+      dive C; issue report \texttt{expansion-key-collision.md}): two
       same-named, same-argument aliases from different modules share one
       \texttt{ExpansionKey}, so whichever expands first is served for
       both — an unsound acceptance one way (a \texttt{string}-typed call
@@ -1626,7 +1645,7 @@ entries:
       with TS6234): the parser's \texttt{isGetSet} marker is never read by
       the checker, so a getter \texttt{get p(): T} is typed as a method
       \texttt{p(): T}. \texttt{c.p()} is accepted and throws at runtime
-      (\texttt{c.p} is not a function). Issue draft
+      (\texttt{c.p} is not a function). Issue report
       \texttt{getter-typed-as-method.md}. Adjacent to F's accessor caveat
       and L-GETSET, but a distinct (member-typing) hole
     summary:
@@ -1652,7 +1671,7 @@ entries:
       \texttt{SVOpen} candidate via \texttt{peekRaw} without the covariant
       seal the slow path performs, so a later contravariant grow widens
       the binding and reads through aliases break — witnessed end-to-end
-      (a value typed \texttt{number} holds a string; issue draft
+      (a value typed \texttt{number} holds a string; issue report
       \texttt{reflexive-tsinst-fastpath-unsealed-read.md}). For
       constrained variables the equality claim also fails as stated: the
       occurrence denotes $\sem{t_2}_\rho \cap \bigcap\sem{C}$, not

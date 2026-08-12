@@ -4,8 +4,9 @@
 Usage:  python3 docs/tools/docs.py [gen|check|build|all]   (default: all)
 
   gen    Render docs/generated/*.tex from docs/ledger.yaml.
-  check  Consistency checks (registry integrity, anchors, issue files,
-         temporal-marker and numeric-cross-reference lint, pin usage).
+  check  Consistency checks (registry integrity, anchors, issue files and
+         their GitHub mappings, temporal-marker and numeric-cross-reference
+         lint, pin usage).
   build  gen + compile every .tex with pdflatex (two passes), keeping the
          .pdf next to its source. Auxiliary files live in docs/.texbuild/
          (git-ignored) so incremental recompilation stays warm.
@@ -41,8 +42,8 @@ SUMMARY_BUCKETS = [
     ("assumed", r"\emph{Assumed}"),
     ("open", r"\emph{Open}"),
     ("violated-witnessed",
-     r"\emph{Violated, with an executed witness} (each with a tracked issue "
-     r"or an issue draft under \texttt{deep-dives/issues/})"),
+     r"\emph{Violated, with an executed witness} (each with a GitHub issue "
+     r"and an issue report under \texttt{deep-dives/issues/})"),
     ("violated-derived",
      r"\emph{Violated by code-level derivation} (no end-to-end run yet)"),
 ]
@@ -254,8 +255,9 @@ def gen(entries, papers=(), fixes=()):
     print("gen: wrote %d generated files + series map" % (3 + 14 + 1))
 
 
-def check(entries, fixes=(), papers=()):
+def check(entries, fixes=(), papers=(), github_issues=None):
     problems = []
+    github_issues = github_issues or {}
     letters = {pp["letter"] for pp in papers} or set("ABCDEFG")
 
     ids = [e["id"] for e in entries]
@@ -306,6 +308,23 @@ def check(entries, fixes=(), papers=()):
             if s["bucket"] not in {b for b, _ in SUMMARY_BUCKETS}:
                 problems.append("ledger %s: bad summary bucket %r"
                                 % (e["id"], s["bucket"]))
+
+    # Every issue report corresponds to exactly one distinct GitHub issue.
+    # This check is intentionally network-free; maintainers verify that a new
+    # number resolves when adding it, while CI enforces totality and uniqueness.
+    issue_files = {f.name for f in ISSUES.glob("*.md")}
+    mapped_files = set(github_issues)
+    for name in sorted(issue_files - mapped_files):
+        problems.append("issue file has no GitHub issue mapping: %s" % name)
+    for name in sorted(mapped_files - issue_files):
+        problems.append("GitHub issue mapping names missing file: %s" % name)
+    issue_numbers = list(github_issues.values())
+    for name, number in github_issues.items():
+        if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+            problems.append("GitHub issue mapping %s has invalid number: %r"
+                            % (name, number))
+    if len(issue_numbers) != len(set(issue_numbers)):
+        problems.append("GitHub issue mappings contain duplicate issue numbers")
 
     # Every issue file must be referenced from the ledger or some document.
     tex_blob = "\n".join(p.read_text() for p in ALL_TEXS)
@@ -561,7 +580,8 @@ def main():
         gen(entries, data.get("papers") or [], data.get("fixes") or [])
     if mode in ("check", "all"):
         ok = check(entries, data.get("fixes") or [],
-                   data.get("papers") or []) and ok
+                   data.get("papers") or [],
+                   data.get("github_issues") or {}) and ok
     if mode in ("build", "all"):
         ok = build() and ok
     if mode == "repro":

@@ -346,7 +346,8 @@ identifies the zeros. Neither is $\approx$. This matters in two
 directions: (i) the checker narrows only on \texttt{===}/\texttt{!==},
 so only \texttt{IsStrictlyEqual} needs grounding —
 \texttt{Object.is} is not even in the pinned stubs, and
-\texttt{Map}/\texttt{Set}/\texttt{includes} are opaque signatures (a subtyping-surface concern); (ii) inside \texttt{OrdinaryHasInstance} the spec
+\texttt{Map}/\texttt{Set}/\texttt{includes} are opaque signatures (their
+behavior is governed by subtyping); (ii) inside \texttt{OrdinaryHasInstance} the spec
 compares prototype-chain entries with \texttt{SameValue}, but on Objects
 \texttt{SameValue} and \texttt{IsStrictlyEqual} coincide (both are
 identity), so no discrepancy reaches Section~\ref{sec:inst}.
@@ -399,7 +400,7 @@ lemma of the main paper (its Lemma ``Residues are Sound'') additionally
 needs the
 \emph{implementation's lexeme-level} falsiness test to agree with
 $\mathsf{truthy}$ on literal spellings — a checker-internal (not
-runtime) lexeme-level matter, graded in the registry under literal
+runtime) lexeme-level matter, tracked in the registry under literal
 canonicalization and out of scope here. The runtime side contributes
 no further caveat.
 \impl{TType.sk / TPrimValueKind::isFalsy, SType::falsiness}
@@ -530,7 +531,7 @@ subtyping does not validate: the registry row \textbf{F-CABSENT}
 (imported here; owner deep dive D) records that the lax
 $(\mathsf{CUnknown},\mathsf{CAbsent})$ subtyping arm admits callables
 into branded types, and is \textsc{violated} — witnessed end-to-end
-(issue draft \path{issues/cabsent-brand-laundering.md}). Within this
+(issue report \path{issues/cabsent-brand-laundering.md}). Within this
 paper's scope the import is consumed only here: the
 \texttt{"function"}-true drop and the \texttt{"object"}-true keep of a
 $\mathsf{CAbsent}$ branch are sound \emph{given} F-CABSENT's statement,
@@ -573,18 +574,18 @@ Ground $P_{\mathsf{inst}}(C) \triangleq \{v \in \Val \mid
 vacuous for narrowing. That
 $P_{\mathsf{inst}}(C) \subseteq \ObjVal$ is immediate from step 3 of
 \texttt{OrdinaryHasInstance} — \emph{provided} evaluation reaches it,
-which step 2 does not guarantee: everything below the gate therefore
-splits on whether a non-default \texttt{@@hasInstance} can govern the
+which step 2 does not guarantee: the analysis below therefore splits on
+whether a non-default \texttt{@@hasInstance} can govern the
 test (the A-HASINST question).
 
-\subsection{What the checker builds, and the gate}
+\subsection{When the checker narrows and which type it constructs}
 
 \textsc{R-Inst} fires only on the true branch, and only when the RHS is
 a bare name that resolves to a class or interface \emph{definition}
 (\texttt{hasClassDef}) \emph{and} whose static type declares no custom
 \texttt{[Symbol.hasInstance]} member, directly or inherited
 (\texttt{rhsDeclaresHasInstance},
-\texttt{src/TypeCheckRefine.sk:448-470}; the gate conjunction at
+\texttt{src/TypeCheckRefine.sk:448-470}; the conjunction at
 \texttt{src/TypeCheckRefine.sk:506-511}). A merely Function-typed RHS
 narrows nothing, and a class that overrides the runtime membership test
 narrows nothing either — the override decides membership and may accept
@@ -624,8 +625,8 @@ rhsDeclaresHasInstance; TEnv.sk / hasClassDef, makeSkolemTArgsOf}
 
 \subsection{Discharge}
 
-\paragraph{The A-HASINST residue.}
-The gate closes the declared case: a custom
+\paragraph{The remaining A-HASINST case.}
+The check rules out the declared case: a custom
 \texttt{[Symbol.hasInstance]} in a class body resolves into the static
 side's symbol fields (the \texttt{FNComputed} arm of
 \texttt{addFields}; \texttt{Symbol.hasInstance} is a stubbed
@@ -636,9 +637,9 @@ static type for that symbol key, inherited members included, before
 narrowing is allowed. What no static check can see is a hook installed
 \emph{dynamically} on an RHS whose declaration omits it — through the
 unchecked boundary (ambient \texttt{declare}d functions), since the
-checked surface itself offers no route: the stubs declare no
+checked language offers no route: the stubs declare no
 \texttt{Object.defineProperty} and no \texttt{Proxy}/\texttt{Reflect}.
-The registry row \textbf{A-HASINST} records exactly this residue,
+The registry row \textbf{A-HASINST} records exactly this remaining case,
 status \textsc{assumed}, alongside \textbf{A-PROTO}'s stub discipline.
 \impl{TypeCheckRefine.sk / rhsDeclaresHasInstance;
 TEnv.sk / addFields (FNComputed), getWellKnownSymbolUniqueId}
@@ -650,7 +651,7 @@ Assume, for the class $C$ at a narrowing site:
 \item \textbf{A-HASINST}: no \texttt{@@hasInstance} method other than
   the \texttt{Function.prototype} default is found on
   $\realize(C)$ (step 2 resolves to the default; the declared case is
-  excluded by the gate, the dynamic case by the assumption);
+  excluded by the check, the dynamic case by the assumption);
 \item \textbf{A-PROTO}: no prototype surgery — objects with
   $C.\texttt{prototype}$ in their chain were produced by \texttt{new} on
   $C$ or a subclass (no \texttt{Object.create},
@@ -713,12 +714,12 @@ judgement under later growth is the general transport question
 (row \textbf{OBL-MONOTONE}, imported), not an \textbf{L-INST}-specific
 caveat. Mutation after construction is governed by \textbf{L-MUT}
 exactly as for every other membership statement in the main paper; the
-write surface of the installed views is graded by deep dive H (row
+write permissions of the installed views are analyzed by deep dive H (row
 \textbf{L-MUT-ALIAS}).
 \end{proof}
 
 \paragraph{\textbf{A-PROTO} audit.}
-The pinned stubs omit the surgery surface deliberately: the
+The pinned stubs deliberately omit APIs that modify prototypes: the
 \texttt{Object} statics \texttt{create}, \texttt{getPrototypeOf}, and
 \texttt{setPrototypeOf} are present only as comments marked
 ``disallowed'', and neither \texttt{Proxy} nor \texttt{Reflect} is
@@ -769,9 +770,9 @@ brand}
 \textbf{L-ISARR} claims $\mathsf{isArrayV}(o)$ implies
 $o \in \sem{\mathsf{ReadonlyArray}\langle\top\rangle}$. Two things could
 break this: the stub type could demand a \emph{property} real arrays do
-not have, or a declared member could fail on real arrays. The first
-danger is real on the surface: the stub spells the brand as an ordinary
-declaration,
+not have, or a declared member could fail on real arrays. At first, the
+stub appears to require such a runtime field because it spells the brand
+as an ordinary declaration,
 \begin{verbatim}
 declare interface ReadonlyArray<T> extends Iterable<T> {
   readonly __SKJS_isArray: true;
@@ -843,8 +844,8 @@ reads) and $\mathsf{get} = \intm{Get}$, snapshots per \textbf{L-PURE}.
   single-branch object with a \emph{definite} call signature
   (interface methods are built through \texttt{TObject::createCall}).
   Membership requires presence and callability of the property value;
-  the behavioral meaning of the signature itself is opaque
-  (bundled into the subtyping surface by the main paper's object semantics).
+  the behavioral meaning of the signature itself is opaque and belongs
+  to the main paper's subtyping claim rather than its object semantics.
   Every listed name is a function-valued property of
   \texttt{Array.prototype} in every realm (\ecma{23.1.3}), reached by
   $\mathsf{get}$ through the instance's prototype chain; arrays from
@@ -966,13 +967,13 @@ brand stub spelling & \texttt{import-stubs/@types/skjs/index.d.ts} \\
 \textsc{R-IsArray} handler & \texttt{TypeCheckRefine.sk / evalIsArray} \\
 array-brand intersection & \texttt{TTypeInter.sk /
   TFields::interIsArray} \\
-\textsc{R-Inst} gate + handler & \texttt{TypeCheckRefine.sk / evalCond,
+\textsc{R-Inst} condition + handler & \texttt{TypeCheckRefine.sk / evalCond,
   evalInstanceof, rhsDeclaresHasInstance} \\
 skolem instance arguments & \texttt{TEnv.sk / makeSkolemTArgsOf};
   \texttt{TTypeSubst.sk / genSkolemTParam} \\
 readonly restoration & \texttt{TypeCheckRefine.sk /
   evalInstanceof (keepReadonlyFrom)} \\
-class-def gate & \texttt{TEnv.sk / hasClassDef} \\
+class-definition check & \texttt{TEnv.sk / hasClassDef} \\
 RHS validity (TS2359) & \texttt{TypeCheckExpr.sk / isInstanceofRhs} \\
 symbol-keyed class members & \texttt{TEnv.sk / addFields (FNComputed)} \\
 static-side class type & \texttt{TEnv.sk / newStaticObject} \\

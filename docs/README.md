@@ -11,7 +11,7 @@ pinned to one revision of `main` (see [`shared/pin.tex`](shared/pin.tex)).
 | [`skjs-type-soundness.tex`](skjs-type-soundness.tex) | **Main paper**: the model, the theorems, and the rendered registry |
 | [`ledger.yaml`](ledger.yaml) | **The registry**: the only place any assumption/obligation *status* is stated |
 | [`deep-dives/`](deep-dives/README.md) | Eight evidence papers (A–H), each owning the proofs behind specific registry rows |
-| [`deep-dives/issues/`](deep-dives/issues/) | Issue drafts (prose + fix directions); each executed witness is a runnable `repros/*.ts` file the draft references |
+| [`deep-dives/issues/`](deep-dives/issues/) | Issue reports (prose + fix directions); each corresponds to one GitHub issue and each executed witness is a runnable `repros/*.ts` file the report references |
 | [`generated/`](generated/) | Tables rendered from the registry (do not edit) |
 | [`shared/`](shared/) | Preamble and revision pin shared by every document |
 | [`tools/docs.py`](tools/docs.py) | Build and consistency tooling |
@@ -40,7 +40,9 @@ usage.
   for axioms the main paper states); other papers may `consume` a row —
   never another paper's internals. Any statement used across a paper
   boundary must be a registry row.
-- **Witnesses** live in issue drafts; papers cite them by filename.
+- **Witnesses** live in issue reports; papers cite them by filename. The
+  `github_issues` map in [`ledger.yaml`](ledger.yaml) records and checks their
+  one-to-one correspondence with GitHub issue threads.
 - **Implementation correspondence** is owned per claim by the paper making
   it (scoped by its `impl:` anchors) and corpus-wide by the tooling.
 
@@ -80,8 +82,8 @@ is cited with the registry's canonical statement, and (3) the dive's
 implementation claims hold at the pin within its anchor scope. Findings
 already verified by witness reproduction are marked as such.
 
-**Reviewing an issue draft.** Run its referenced `repros/*.ts` (or
-`docs.py repro` for all), and check the draft's runtime-on-Node and tsc
+**Reviewing an issue report.** Run its referenced `repros/*.ts` (or
+`docs.py repro` for all), and check the report's runtime-on-Node and tsc
 claims. Each repro's header states its expected `skjs check` verdict at
 the pin; `docs.py repro` asserts it.
 
@@ -95,7 +97,7 @@ registry's canonical statement; (c) an implementation claim false at the
 pin; (d) a registry-discipline violation (an undeclared cross-paper
 dependency, a status stated outside the registry). Explicit
 **non-findings**: a `proved` row with `open`/`assumed` residuals (that is
-what local status means), and a consumed row whose *sibling facet row* is
+what local status means), and a consumed row whose *separate related row* is
 violated when the proof uses only the row actually imported.
 
 **Completeness claims get a wider net.** Anchors scope *faithfulness*

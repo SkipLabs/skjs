@@ -42,7 +42,7 @@ immediately above it filters the two units jointly and is sound; only
 the variable-RHS path reaches the disjoint intersection. The
 void-operand check on `===` operands is a warning by design
 (`src/TypeCheckExpr.sk`, "runtime-sound and tsc permits it"), so it
-does not gate the narrowing.
+does not prevent the narrowing.
 
 ## Relation to existing issues/PRs
 

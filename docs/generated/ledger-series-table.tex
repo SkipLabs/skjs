@@ -44,7 +44,7 @@ TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersec
 SKOLEM-SEM & A skolem in an installed \texttt{instanceof} view denotes the scrutinee object's actual hidden type argument, fixed at narrowing time and stable thereafter. & \textsc{proved} \\
 SET-SEM & A view authorizes exactly the writes its resolved $\mathsf{set}$-types accept; a readonly field authorizes nothing. & \textsc{proved} \\
 L-SUB-FIELDS-SET & \texttt{isSub}'s field arms preserve write capability downward: acceptance implies each target field's $\mathsf{set}$-type is below the source's, and readonly fields acquire no writers. & \textsc{open} \\
-L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & \textsc{open} \\
+L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot create a \texttt{Closed<T>} absence fact: acceptance requires the source to prove $\mathsf{get}=\bot$ at every key the target proves absent. & \textsc{open} \\
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER-BOT's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
@@ -67,7 +67,7 @@ L-SUB-TSINST & The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same n
 A literal synthesized by the enum constant folder denotes the member's runtime value.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{enumFold} (string-concat arms); \texttt{enumNumOrUnknown}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive G; issue draft \path{enum-concat-imprecise-fold.md}): the string-concat arms concatenate operand \emph{lexemes}, and a direct numeric-literal operand bypasses the double-safe gate that guards numeric fold results, so a beyond-precision spelling produces a member literal whose spelling is not the runtime string (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime value is \texttt{"x0"}). Numeric folds are exact within the gate and produce no literal outside it — that half is \textsc{proved}. A prerequisite of the future preservation theorem's switch-coverage lemma (semantic case coverage consumes member-value faithfulness)
+\textsc{violated}, witnessed end-to-end (deep dive G; issue report \path{enum-concat-imprecise-fold.md}): the string-concat arms concatenate operand \emph{lexemes}, and a direct numeric-literal operand bypasses the numeric precision check that guards numeric fold results, so a beyond-precision spelling produces a member literal whose spelling is not the runtime string (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime value is \texttt{"x0"}). Numeric folds are exact within the checked range and produce no literal outside it — that half is \textsc{proved}. A prerequisite of the future preservation theorem's switch-coverage lemma (semantic case coverage consumes member-value faithfulness)
 
 \medskip\par\noindent\textbf{L-MUT-ALIAS-CALL}\quad(\textsc{open})\\*[0.15em]
 Cross-view mutation coherence for calls: a checked method call through one view preserves every live alias's membership; needs a receiver-effect strengthening of E-SIG, which as stated concerns behavioral signature semantics only\\*[0.15em]
@@ -79,13 +79,13 @@ Cross-view mutation coherence for calls: a checked method call through one view 
 \texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already covered by aliases created after narrowing or by direct narrowing\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TField::inter} (set arm)}\par
 \nopagebreak
-\textsc{open} (deep dive H): the mechanism is established; every declared route probed is rejected by subtyping (the union widens the target's $\mathsf{set}$, making admission harder), and refinement-installed intersections reduce to the graded sites; ambient-declared intersection types enter through the stub trust boundary
+\textsc{open} (deep dive H): the mechanism is established; every declared route probed is rejected by subtyping (the union widens the target's $\mathsf{set}$, making admission harder), and refinement-installed intersections reduce to the sites already analyzed; ambient-declared intersection types enter through the stub trust boundary
 
 \medskip\par\noindent\textbf{V-MINT-ROIDX}\quad(\textsc{violated})\\*[0.15em]
 When the scrutinee branch has a readonly covering index and no named field at key $p$ while the class view contributes named $p$, \texttt{TField::interIndex} unions the setter types (the readonly $\bot$ is absorbed) and \texttt{keepReadonlyFrom} consults only named fields of the original — so the type introduced by narrowing authorizes a write the scrutinee type prohibited\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TField::interIndex}; \texttt{keepReadonlyFrom}}\par
 \nopagebreak
-\textsc{violated} by code-level derivation (found by the adversarial referee pass; no end-to-end run): the mechanism is verified in source, but three checked-code admission routes into a readonly-covering-index view of a class instance were probed and all rejected — SKJS is stricter than tsc on those admissions — so the remaining candidate route is the ambient/stub trust boundary. Fix shape: make \texttt{keepReadonlyFrom} consult the original's covering index for named fields the intersection introduced
+\textsc{violated} by code-level derivation (found by the adversarial referee pass; no end-to-end run): the mechanism is verified in source, but three checked-code admission routes into a readonly-covering-index view of a class instance were probed and all rejected — SKJS is stricter than tsc on those admissions — so the remaining candidate route is the ambient/stub trust boundary. Fix: make \texttt{keepReadonlyFrom} consult the original's covering index for named fields the intersection introduced
 
 \medskip\par\noindent\textbf{OBL-MONOTONE}\quad(\textsc{violated})\\*[0.15em]
 Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions.\\*[0.15em]
@@ -103,7 +103,7 @@ No Commitment on Failure: failing and exploratory paths restore all relevant sta
 No \texttt{subst.seenSub} memo recorded under \texttt{freezeCandidates} may outlive growth of an open candidate readable from its left side.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{Subst::get} (freeze arm); \texttt{TType::isSub} memo}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (order-dependent acceptance; deep dive E; issue draft \path{freeze-window-stale-memo-caches.md})
+\textsc{violated}, witnessed end-to-end (order-dependent acceptance; deep dive E; issue report \path{freeze-window-stale-memo-caches.md})
 
 \medskip\par\noindent\textbf{C-FREEZE-CACHE}\quad(\textsc{open})\\*[0.15em]
 A stale \texttt{seenInter} entry can cause an unsound acceptance after candidate growth resumes without also reusing a stale \texttt{subst.seenSub} entry.\\*[0.15em]
@@ -220,7 +220,7 @@ Write authorization: a view authorizes the write of $v$ at key $p$ iff $v$ inhab
 \textsc{proved} by definition in the main paper and matched to the checker's write path: assignment checks the right-hand side against the resolved $\mathsf{set}$-type by subtyping
 
 \medskip\par\noindent\textbf{L-SUB-FIELDS-SET}\quad(\textsc{open})\\*[0.15em]
-Write-capability preservation: field acceptance requires $f_2.\mathsf{set} \leq f_1.\mathsf{set}$ (contravariant) and the readonly gate, so under SET-SEM an admitted view authorizes only writes the source view authorizes\\*[0.15em]
+Write-capability preservation: field acceptance requires $f_2.\mathsf{set} \leq f_1.\mathsf{set}$ (contravariant) and the readonly check, so under SET-SEM an admitted view authorizes only writes the source view authorizes\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TFields::isSub\_}}\par
 \nopagebreak
 \textsc{open} (conditional): the syntactic checks are verified at every field arm (deep dive D, write-direction lemma); the SET-SEM containment they induce is conditional on the recursive \texttt{isSub} verdicts, exactly as the read direction is inside L-SUB
@@ -253,7 +253,7 @@ Soundness of the array-literal decision procedure inside subtyping.\\*[0.15em]
 The $\mathsf{CAbsent}$ brand-like claim accurately excludes callables: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's permissive $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types.\\*[0.15em]
 {\small\emph{Anchor:} \path{TFields::isSubCallability} ($\mathsf{CAbsent}$ arm); \path{narrowByTypeofFunction}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive D): a callable passes through \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps, then is narrowed to \texttt{never} in the branch the runtime takes; issue draft \path{cabsent-brand-laundering.md}. This has the same validation failure as F-BRAND: refinement relies on a brand-like claim that subtyping never validates
+\textsc{violated}, witnessed end-to-end (deep dive D): a callable passes through \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps, then is narrowed to \texttt{never} in the branch the runtime takes; issue report \path{cabsent-brand-laundering.md}. This has the same validation failure as F-BRAND: refinement relies on a brand-like claim that subtyping never validates
 
 \medskip\par\noindent\textbf{F-BRAND}\quad(\textsc{violated})\\*[0.15em]
 Subtyping never compares the array brand, though refinement narrows on it.\\*[0.15em]
@@ -307,17 +307,17 @@ An un-annotated ambient-class field reads as an opaque per-field atom; the atom'
 The expansion-cache key (\texttt{ExpansionKey}: unqualified name text + arguments) identifies one definition: same-named, same-argument aliases from different modules must not collide.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{ExpansionKey}; \texttt{seenExpansion}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end in both directions (deep dive C; issue draft \path{expansion-key-collision.md}): two same-named, same-argument aliases from different modules share one \texttt{ExpansionKey}, so whichever expands first is served for both — an unsound acceptance one way (a \texttt{string}-typed call returns \texttt{undefined}) and an order-dependent false rejection the other, its diagnostic anchored in the wrong module; renaming either alias restores the correct verdicts. Refutes the source comment claiming the collision could not yet be triggered (upstream \#889); fix direction: key by definition identity
+\textsc{violated}, witnessed end-to-end in both directions (deep dive C; issue report \path{expansion-key-collision.md}): two same-named, same-argument aliases from different modules share one \texttt{ExpansionKey}, so whichever expands first is served for both — an unsound acceptance one way (a \texttt{string}-typed call returns \texttt{undefined}) and an order-dependent false rejection the other, its diagnostic anchored in the wrong module; renaming either alias restores the correct verdicts. Refutes the source comment claiming the collision could not yet be triggered (upstream \#889); fix direction: key by definition identity
 
 \medskip\par\noindent\textbf{ACCESSOR-METHOD}\quad(\textsc{violated})\\*[0.15em]
 Accessor (\texttt{get}/\texttt{set}) members must be typed as fields, not methods; today a getter is a call signature, so \texttt{c.p()} type-checks and throws.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{isGetSet} (parser-only); member typing}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (SKJS-specific; tsc rejects with TS6234): the parser's \texttt{isGetSet} marker is never read by the checker, so a getter \texttt{get p(): T} is typed as a method \texttt{p(): T}. \texttt{c.p()} is accepted and throws at runtime (\texttt{c.p} is not a function). Issue draft \path{getter-typed-as-method.md}. Adjacent to F's accessor caveat and L-GETSET, but a distinct (member-typing) hole
+\textsc{violated}, witnessed end-to-end (SKJS-specific; tsc rejects with TS6234): the parser's \texttt{isGetSet} marker is never read by the checker, so a getter \texttt{get p(): T} is typed as a method \texttt{p(): T}. \texttt{c.p()} is accepted and throws at runtime (\texttt{c.p} is not a function). Issue report \path{getter-typed-as-method.md}. Adjacent to F's accessor caveat and L-GETSET, but a distinct (member-typing) hole
 
 \medskip\par\noindent\textbf{L-SUB-TSINST}\quad(\textsc{violated})\\*[0.15em]
 The reflexive \texttt{TSInst} fast path in \texttt{isSub} (same name, arguments equal after \texttt{peekRaw}) is sound.\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TType::isSub} (TSInst reflexive arm)}\par
 \nopagebreak
-\textsc{violated} (deep dive D): the inclusion at the verdict state holds for unconstrained bindings, but the arm reads an unsealed \texttt{SVOpen} candidate via \texttt{peekRaw} without the covariant seal the slow path performs, so a later contravariant grow widens the binding and reads through aliases break — witnessed end-to-end (a value typed \texttt{number} holds a string; issue draft \path{reflexive-tsinst-fastpath-unsealed-read.md}). For constrained variables the equality claim also fails as stated: the occurrence denotes $\sem{t_2}_\rho \cap \bigcap\sem{C}$, not $\sem{t_2}_\rho$
+\textsc{violated} (deep dive D): the inclusion at the verdict state holds for unconstrained bindings, but the arm reads an unsealed \texttt{SVOpen} candidate via \texttt{peekRaw} without the covariant seal the slow path performs, so a later contravariant grow widens the binding and reads through aliases break — witnessed end-to-end (a value typed \texttt{number} holds a string; issue report \path{reflexive-tsinst-fastpath-unsealed-read.md}). For constrained variables the equality claim also fails as stated: the occurrence denotes $\sem{t_2}_\rho \cap \bigcap\sem{C}$, not $\sem{t_2}_\rho$
 

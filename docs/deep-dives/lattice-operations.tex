@@ -325,7 +325,7 @@ intersected contravariantly, \texttt{this} parameters intersected
 through the \texttt{ThisParam} cases — attach-only absorbing, an
 undeclared \texttt{this} acting as the intersection identity
 (\texttt{TTypeUnion.sk:286-307}) — returns unioned) never enter
-$\sem{\cdot}$ and are part of the subtyping surface instead — and
+$\sem{\cdot}$ and are governed by subtyping instead — and
 \texttt{TFun::union} is not reachable from $\union(t_1,t_2)$ anyway
 (only from the per-read merging clients below). Second, \texttt{unionN}
 of an empty sequence returns $\bot$, the exact empty union.
@@ -344,7 +344,7 @@ the field per branch and unions the resolved types
 \texttt{maybeGetSymbol} merge the per-branch \texttt{TField}s with
 \texttt{TField::union} (\texttt{TType.sk:1259-1279, 1115-1134});
 accessible index lookups fold \texttt{TField::unionIndex}
-(\texttt{TType.sk:1288-1305}); and the call/new surface is the
+(\texttt{TType.sk:1288-1305}); and callability and constructibility use the
 \emph{join} \texttt{TObject::modeOf} over the \texttt{Callability}
 lattice with \texttt{TFuns::union} on signatures
 (\texttt{TType.sk:1136-1204}). These feed the resolved read types of
@@ -947,7 +947,7 @@ reached inside freeze windows with unsealed candidates (via
 entries are written there, and an end-to-end order-dependent unsound
 acceptance exercising this path exists — shared with the sibling
 \texttt{subst.seenSub} memo (deep dive E's MR-1, \textsc{violated};
-issue draft \path{issues/freeze-window-stale-memo-caches.md}). In
+issue report \path{issues/freeze-window-stale-memo-caches.md}). In
 particular, two otherwise-tempting deflections are false: admissibility
 checks do \emph{not} save/restore around themselves on success paths,
 and freeze-window operand pairs do \emph{not} always carry a bare
@@ -994,7 +994,7 @@ All probes were run against the pinned binary
 \subsection{Probe 2: signature bottom (Finding~\ref{find:tfun})}
 \texttt{if (k === g)} on incomparable signature types narrows \texttt{k}
 to \texttt{never} in a branch a single accepted program takes at
-runtime; the end-to-end witness and the tsc comparison are issue draft
+runtime; the end-to-end witness and the tsc comparison are issue report
 \path{issues/tfun-inter-incomparable-not-disjoint.md}.
 
 \subsection{Probe 3: literal spellings (Finding~\ref{find:spelling})}
@@ -1002,7 +1002,7 @@ runtime; the end-to-end witness and the tsc comparison are issue draft
 \label{find:spelling}
 Beyond-precision numeric spellings break \textbf{L-INTER-BOT}:
 reading: spellings that alias one double are kept distinct (the
-num-kind \textbf{L-LIT}(ii) violation, issue draft
+num-kind \textbf{L-LIT}(ii) violation, issue report
 \path{issues/beyond-precision-numeric-literals.md}, which carries the
 executed witness: two $2^{53}$ spellings make an accepted
 \texttt{===}-true branch live at runtime with a spurious \texttt{never},
@@ -1113,9 +1113,9 @@ the per-read merge clients (\texttt{TField::union}, the
 \texttt{modeOf} callability join) are over-approximating only.
 Signature bodies built by \texttt{TFun::union} — including its
 \texttt{this}-parameter intersection — are outside membership
-semantics and remain part of the subtyping surface.''
+semantics and remain governed by subtyping.''
 
-\paragraph{L-INTER and L-INTER-BOT.} The two cases are graded separately:
+\paragraph{L-INTER and L-INTER-BOT.} The two cases receive separate statuses:
 \begin{itemize}
 \item \textbf{L-INTER} is \textsc{proved}, conditional on
   \textbf{L-INTER-BOT} for recursive calls, whenever a fresh structural
@@ -1150,7 +1150,7 @@ to leaf strata: both are code fixes after which the structural
 L-INTER-BOT cases are all \textsc{proved} (modulo F-BRAND's brand
 invariant at its array arm), and only the \textsc{open} obligation
 C-FREEZE-CACHE remains here. Each violated
-stratum carries a pinned end-to-end repro with its issue draft under
+stratum carries a pinned end-to-end repro with its issue report under
 \path{issues/repros/}, asserted by the registry tooling.
 
 \paragraph{Registry.}

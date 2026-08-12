@@ -57,17 +57,19 @@ console.log(w({ f: 1 }));
   `number`-typed `w` returns `null`.
 - A `readonly` target shows the same failure and isolates the read half:
   `const y: { readonly f: number } = x` is likewise admitted (the readonly
-  gate demands nothing of the source), and `y.f` goes stale the same way.
+  check imposes no write requirement on the source), and `y.f` goes stale
+  the same way.
   Also accepted at the pin.
 - The control experiments confirm the admission is narrowing-specific:
   without narrowing, the same alias assignment is rejected (get-covariance
   fails against the declared `number | null`), and the plain covariant
   field upcast `{f: number} → {f: number | string}` is rejected by the
-  contravariant set gate — declaration-only aliasing cannot build this
+  contravariant write check — declaration-only aliasing cannot build this
   pair of views.
 - tsc (strict) rejects the witness: it narrows the *access* `x.f`, not
   the type of `x`, so the alias assignment fails TS2322. SKJS narrows the
-  whole object type, which is what reaches the gate. Not a parity hole.
+  whole object type, which is what reaches the subtyping check. This is not
+  a TypeScript-compatibility issue.
 
 The write-through-alias witness
 ([`repros/narrowed-alias-stale-write-reverse.ts`](repros/narrowed-alias-stale-write-reverse.ts))
@@ -126,7 +128,7 @@ aliases created before narrowing.
 ## Corpus location
 
 Deep dive H (`docs/deep-dives/view-coherence.tex`) owns `L-MUT-ALIAS` and
-grades this as the alias-created-after-narrowing case. The separate
+analyzes this as the alias-created-after-narrowing case. The separate
 readonly-index problem in a type introduced by `instanceof` narrowing is
 registry row `V-MINT-ROIDX`.
 It shares its root with issue #598 — get-only narrowing leaves a wider

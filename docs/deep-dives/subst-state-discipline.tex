@@ -721,7 +721,7 @@ so a \texttt{number}-typed binding holds \texttt{"s"} at runtime.
 MR-1 (\S\ref{sec:status}) is therefore \textsc{violated}. Fix: key
 \texttt{subst.seenSub} by version, or suppress memo insertion while
 \texttt{freezeCandidates} is set; the same fix should cover
-\texttt{seenInter}, which the witness also exercises. Issue draft:
+\texttt{seenInter}, which the witness also exercises. Issue report:
 \path{issues/freeze-window-stale-memo-caches.md}; a pinned test is
 recommended.
 \end{finding}
@@ -733,7 +733,7 @@ discharges its MR/BR premises for every other site of the audited
 the reflexive-\texttt{TSInst} fast path in \texttt{TType::isSub} reads
 an open candidate via \texttt{peekRaw} — an exact-value read with no
 seal, no memo, and no \texttt{get}-mediated variance — analyzed and
-witnessed in deep dive D (issue draft
+witnessed in deep dive D (issue report
 \path{issues/reflexive-tsinst-fastpath-unsealed-read.md}). The
 obligation therefore stands \textsc{violated} at the freeze-window memo
 and at that read, and \textsc{proved} everywhere else.
@@ -839,7 +839,7 @@ semantics is exact here. (C3) growth affects $u$ only through signature
 positions (\texttt{TFun::inter} returns one of the two function terms,
 whose parameter/return types may mention clone-grown variables), and
 signatures are opaque to $\sem{\cdot}$ — the main paper's
-signature-opacity deflection applies verbatim. Field-get positions reach
+signature-opacity argument applies verbatim. Field-get positions reach
 \texttt{inter} recursively and fall under C1/C2. What the sketch does
 \emph{not} cover is C4, next.
 \end{proof}
@@ -1078,7 +1078,7 @@ Named sub-obligations introduced by this paper:
   \texttt{freezeCandidates} is set may outlive subsequent growth of an
   open candidate readable from its left-hand side
   (Finding~\ref{find:freeze-memo}). Status: \textsc{violated}, witnessed
-  end-to-end (issue draft
+  end-to-end (issue report
   \path{issues/freeze-window-stale-memo-caches.md}). Fix options:
   version-key the memo, or skip memo insertion under freeze; either must
   also cover \texttt{seenInter}. Pinned test recommended.
@@ -1154,14 +1154,14 @@ statement; no other paper's internals are in scope:
 Commitment on Failure, with a documented exception; L-CLONE modulo
 I$_f$, its id-collision hazard verified unreachable and guarded by a CI
 assertion). The fourth — Monotone Reads — is \textsc{proved} at every
-audited site except its one sharp residue, MR-1, which is
-\textsc{violated} with an end-to-end witness (issue draft
+audited site except its one remaining case, MR-1, which is
+\textsc{violated} with an end-to-end witness (issue report
 \path{issues/freeze-window-stale-memo-caches.md}); the fix
 (version-keying or freeze-window write suppression) must cover both
 \texttt{seenSub} and \texttt{seenInter}. A further violated read site,
 the reflexive-\texttt{TSInst} fast path's \texttt{peekRaw}, lies
 outside this paper's audited family and is analyzed in deep dive D
-(issue draft
+(issue report
 \path{issues/reflexive-tsinst-fastpath-unsealed-read.md}).
 
 %==========================================================================

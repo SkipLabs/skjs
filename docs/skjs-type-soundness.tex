@@ -182,7 +182,7 @@ TypeCheckStmt.sk / Switch; TypeCheckExpr.sk / call checking}
   \texttt{x is T} (9015), \texttt{asserts} predicates (9013), and template
   literal types with an infinitely-valued hole (9018): these produce a
   fatal diagnostic in \texttt{TEnv::normalize} and never reach the type
-  machinery, so they are outside the soundness surface by construction.
+  machinery, so the soundness claim does not cover them.
   \impl{TEnv.sk / normalize}
 \item \emph{Unhandled condition forms.} The refinement dispatch falls through
   to the identity on any condition shape it does not recognize
@@ -538,7 +538,7 @@ it is an ordinary field). Note that membership constrains values via
 $\mathsf{get}$-types only; the $\mathsf{set}$ component governs which writes
 the checker accepts and participates in soundness through subtyping and
 mutation, not through membership (assumption \textbf{L-MUT}). That
-governance has a second named facet, cross-view coherence: a checked
+governance creates a second obligation, cross-view coherence: a checked
 field or index write through one mutable view preserves the membership
 guarantees of every live alias of the same runtime object
 (\textbf{L-MUT-ALIAS}; its call-mediated counterpart is the row
@@ -572,7 +572,7 @@ definition at assignment
 sites — the right-hand side is checked against $\mathsf{setty}$ by
 subtyping (\textbf{L-SUB}) — and writes mediated by method calls are
 covered by the signature semantics (E-SIG), not by $\mathsf{setty}$.
-This is the corpus's definition of a view's write surface, registry row
+This is the corpus's definition of a view's write permissions, registry row
 \textbf{SET-SEM}; \textbf{L-MUT-ALIAS} is the coherence property over
 it.
 \impl{TType.sk / TFields::resolveFieldType (isLValue);
@@ -684,7 +684,7 @@ soundness this document assumes as assumptions and uses freely:
 For all $t_1, t_2$ and states $\rho$:
 $\sem{t_1}_\rho \cup \sem{t_2}_\rho \subseteq
  \sem{\mathsf{union}(t_1,t_2)}_\rho$. Intersection has two separately
-graded cases. If $\mathsf{inter}(t_1,t_2) \neq \bot$, then, conditional on
+tracked cases. If $\mathsf{inter}(t_1,t_2) \neq \bot$, then, conditional on
 bottom-faithfulness of the recursive intersections used to construct it,
 $\sem{t_1}_\rho \cap \sem{t_2}_\rho \subseteq
  \sem{\mathsf{inter}(t_1,t_2)}_\rho$ (\textbf{L-INTER}). If
@@ -972,7 +972,7 @@ recognized global assertion function that does not return when its condition
 is false — is registry row
 \textbf{L-ASSERT}, \textsc{violated}: a failed \texttt{console.assert}
 logs and continues, and a shadowing binding named \texttt{console}
-triggers the same refinement (witnessed both ways; issue draft
+triggers the same refinement (witnessed both ways; issue report
 \texttt{console-assert-narrowing.md}). \texttt{for}-loop conditions do \emph{not}
 narrow (\texttt{checkBool} only). Strict inequality dispatches to the same
 handlers with the target negated. The \texttt{instanceof} arm is guarded:
@@ -1065,7 +1065,7 @@ the true branch of \texttt{x === y} with \texttt{x} of type
 \texttt{void} and \texttt{y} of type \texttt{undefined} narrows
 \texttt{x} to \texttt{never} although the runtime takes that branch with
 both operands holding \texttt{undefined}. This is the witnessed
-violation of assumption \textbf{L-SEQ} (issue draft
+violation of assumption \textbf{L-SEQ} (issue report
 \path{deep-dives/issues/void-undefined-equality-never.md}); see the
 worked example in Section~\ref{sec:ex-voidseq}.
 
@@ -1334,8 +1334,8 @@ $v \in \sem{T_C}$ by \textbf{L-INST}. The non-bottom case is contained by
 \textbf{L-INTER} (object level), and the bottom case is excluded by
 \textbf{L-INTER-BOT}, since $v$ inhabits both operands; hence $v$ inhabits
 the implemented intersection, which is in particular not $\bot$;
-forcing a field's $\mathsf{set}$-type back to $\bot$ only shrinks the
-write surface, and membership constrains values through
+forcing a field's $\mathsf{set}$-type back to $\bot$ only reduces the
+writes the view authorizes, and membership constrains values through
 $\mathsf{get}$-types alone (Definition~\ref{def:object-semantics}), so
 the readonly restoration preserves $v$'s membership. The default
 $D = \{T_C\}$ is a singleton $\STypes$ ($T_C$ is a \texttt{TObject}
@@ -1912,9 +1912,9 @@ and their intersection is empty, sound only under the closure
 hypothesis that fails here. At runtime \texttt{g()} returns
 \texttt{undefined}, \texttt{undefined === undefined} takes the branch,
 and \texttt{n : never} holds \texttt{undefined}. The dedicated
-\textsc{R-EqUndef} rule shows the repair shape: treat the
+\textsc{R-EqUndef} rule shows the required repair: treat the
 $\mathsf{undef}$/$\mathsf{void}$ tags jointly wherever a comparison can
-relate them (assumption \textbf{L-SEQ}; issue draft
+relate them (assumption \textbf{L-SEQ}; issue report
 \path{deep-dives/issues/void-undefined-equality-never.md}).
 
 %==========================================================================
@@ -1957,13 +1957,13 @@ statuses are the tables above, from which this grouping is generated):
 
 \noindent The violations remain local to leaf
 assumptions: every fix restores its assumption without changing a theorem
-statement or proof in this document. Two design decisions gate several
-fixes and are recorded as fundamental holes rather than bugs: unchecked
-brands — refinement relies on $\mathsf{CAbsent}$ and the array brand even
+statement or proof in this document. Two design decisions determine several
+fixes and are tracked separately because a local patch cannot resolve them:
+unchecked brands — refinement relies on $\mathsf{CAbsent}$ and the array brand even
 though subtyping does not validate them (registry rows
 F-CABSENT, F-BRAND) — and the refinement-invalidation
-policy (deep dive F). Known unsoundness here is enumerated, witnessed,
-and quarantined — future work, not architectural debt.
+policy (deep dive F). The known unsound cases are enumerated and witnessed;
+their remaining fixes are future work.
 
 \medskip
 \input{generated/ledger-fixes}
@@ -2028,7 +2028,8 @@ development. The replacement is enforced coupling; the parts marked
   document's status.
 \item \textbf{Consistency checks} (\emph{in place}). The \texttt{check}
   command verifies: registry integrity (status vocabulary, anchor files
-  exist, issue references resolve); every issue draft is referenced;
+  exist, issue references resolve); every issue report is referenced
+  and maps one-to-one to a distinct GitHub issue;
   no temporal/history markers in any document; no numeric cross-document
   references (deep dives must cite main-paper items by \emph{name});
   every document's date goes through the shared pin
@@ -2049,7 +2050,7 @@ development. The replacement is enforced coupling; the parts marked
   \texttt{deep-dives/issues/repros/*.ts} with a header verdict;
   \texttt{docs.py repro} runs each against the pinned checker and asserts
   it, and \texttt{check} enforces that every repro is referenced by an
-  issue draft and vice versa. A repro that flips verdict when its fix
+  issue report and vice versa. A repro that flips verdict when its fix
   lands fails, forcing a documentation update in the same change. Still
   \emph{pending}: expect-error pins for the incompleteness worked
   examples in the test suite proper.
@@ -2059,7 +2060,7 @@ development. The replacement is enforced coupling; the parts marked
 \end{enumerate}
 
 \noindent The review protocol for this corpus — scopes and checks for
-reviewing this paper, the deep dives, and the issue drafts — lives in
+reviewing this paper, the deep dives, and the issue reports — lives in
 \texttt{docs/README.md}.
 
 \end{document}
