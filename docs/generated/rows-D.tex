@@ -15,7 +15,7 @@ L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Clo
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER-BOT's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
-F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
+F-CABSENT & The $\mathsf{CAbsent}$ brand-like claim accurately excludes callables: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's permissive $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
 F-THIS-IMPLICIT & Subtyping between two shape receivers, or two class receivers, with implicit \texttt{this} parameters accepts without comparing their receiver types. & \textsc{assumed} \\
 L-SUB-IDXNAME & A numeric-named field is checked against both a number and a string index when the supertype has both (soundness of the width lemma's numeric-named case). & \textsc{open} \\

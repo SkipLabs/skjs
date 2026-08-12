@@ -119,7 +119,10 @@ A \emph{candidate} is an ordinary inference variable (\texttt{TVID});
 \emph{grow} and \emph{seal} are the substitution transitions of
 Section~\ref{sec:inference}; \emph{expansion} rewrites a type to its
 instance-plus-clauses view under the current substitution.
-A \emph{brand} is the \texttt{Array.isArray} marker on an object branch;
+A \emph{brand} is a type-level claim about a runtime property that
+refinement treats as evidence. The array brand records the result of an
+\texttt{Array.isArray} test on an object branch; $\mathsf{CAbsent}$ is a
+brand-like claim that the branch contains no callable values.
 a \emph{phantom field} records runtime-confirmed presence without a
 declaration. ``Open'' is used only for the substitution state
 $\SVOpen$ and the obligation status; the object semantics of
@@ -468,7 +471,7 @@ $\mathsf{CUnknown}$, no constraint — the mode of structural object types
 admits callable inhabitants (\texttt{const o: \{\} = () => \{\}}).
 Two invariants hold at branch construction: an array-branded branch
 lowers $\mathsf{CUnknown}$ to $\mathsf{CAbsent}$ (arrays are never
-callable — a claim exactly as trustworthy as the brand itself), and a
+callable, provided the array brand is accurate), and a
 constructible branch
 ($\mathsf{new} \in \{\mathsf{CPresent}, \mathsf{CFunction}\}$) raises an
 unknown $\mathsf{call}$ to $\mathsf{CFunction}$, by the
@@ -482,7 +485,7 @@ throws, so there is no signature to offer) — registry row A-CTOR-CALL.
 Nominal class instances and enum objects carry
 $\mathsf{call} = \mathsf{new} = \mathsf{CAbsent}$, a brand-like
 approximation that structural width subtyping cannot fully enforce —
-the trust refinement places in that brand is registry row F-CABSENT;
+registry row F-CABSENT records whether refinement may rely on that claim;
 interfaces carry $\mathsf{CUnknown}$ for both.
 \impl{TType.sk / Callability, TFields::createFromSortedIterator;
 TEnv.sk / newStaticObject, newFieldsOf}
@@ -622,7 +625,7 @@ bound, and \texttt{TVar} is the model's only \emph{inference} variable
 kind. Rigid abstraction is carried by $\TParam$, not by a variable
 kind: a \emph{skolem} is a synthetic $\TParam$ (named for its origin,
 e.g.\ \texttt{Box\#T}, carrying the declared upper bound as its
-constraint) minted where a type argument is fixed by a runtime object
+constraint) introduced where a type argument is fixed by a runtime object
 but hidden from the program — rule \textsc{R-Inst}'s hidden instance
 arguments; skolems live in clause var-sets like any parameter and
 never enter the substitution. Their interpretation is a definition of
@@ -965,7 +968,8 @@ what no case matched (\texttt{TypeCheckStmt.sk};
 \texttt{console.assert}$(e)$ applies the true branch of $e$ — matched by
 call shape, first argument, without verifying \texttt{console} is the global
 (\texttt{TypeCheckExpr.sk}). The premise this clause would need — a
-terminating, receiver-resolved assertion — is registry row
+recognized global assertion function that does not return when its condition
+is false — is registry row
 \textbf{L-ASSERT}, \textsc{violated}: a failed \texttt{console.assert}
 logs and continues, and a shadowing binding named \texttt{console}
 triggers the same refinement (witnessed both ways; issue draft
@@ -1096,7 +1100,7 @@ $\Env(x)$, let $\tau_\beta$ be $\beta$'s \emph{resolved read type} for the
 \emph{declared named} field $f$: $\mathsf{get}(f)$ if $f$ is required,
 $\mathsf{union}(\mathsf{get}(f), \texttt{undefined})$ if optional
 (\texttt{maybeGetType}/\texttt{resolveFieldType} — the implementation
-resolves before narrowing, which is load-bearing below). If $\beta$ has no
+resolves before narrowing, which is necessary for the proof below). If $\beta$ has no
 declared field $f$ — including when $f$ is reachable only through an index
 signature — the object branch is kept unchanged (a sound over-approximation; no
 diagnostic is emitted). Let $\omega = \mathsf{inter}(\tau_\beta, \tau_e)$:
@@ -1138,7 +1142,7 @@ $w \in \sem{\mathsf{get}(f)} \subseteq \sem{\tau_\beta}$ (\textbf{L-UNION});
 if $f$ is optional and absent,
 $w = \texttt{undefined} \in \sem{\tau_\beta}$ because resolution unioned
 \texttt{undefined} in. (This is why resolving before narrowing is
-load-bearing: with the raw $\mathsf{get}$-type, the true branch of
+necessary: with the raw $\mathsf{get}$-type, the true branch of
 \texttt{x.f === undefined} on an absent optional field would compute
 $\omega = \bot$ and wrongly drop the object branch.)
 \emph{True branch:} $w \approx v_e$ and $v_e \in \sem{\tau_e}$
@@ -1303,7 +1307,7 @@ synthetic rigid $\TParam$ per class parameter
 object fixes each argument, but the program cannot name it. Mapper: drop
 non-objects; each object branch $\beta$ is first probed for
 \emph{preservation} — if $\beta$ is already a subtype of $C$'s fields at
-fresh probe arguments (minted in a throwaway clone, per branch, so the
+fresh probe arguments (created in a temporary clone, per branch, so the
 main substitution never sees them), $\beta$ is kept \emph{unchanged},
 retaining its own type arguments rather than intersecting them away —
 otherwise $\beta$ is intersected with $T_C$'s fields (dropping empty
@@ -1750,7 +1754,7 @@ accounted for by the constraint intersection in $\mathsf{get}$.
 \texttt{isSub}$(t_1, t_2)$ proceeds as:
 (0) acceptance shortcuts that return before any growth --- $t_1 = t_2$, and
 the reflexive \texttt{TSInst} arm (equal name, arguments equal after
-\texttt{peekRaw}), both guidance-free; the \texttt{TSInst} arm's
+\texttt{peekRaw}); neither operation provides inference guidance. The \texttt{TSInst} arm's
 \texttt{peekRaw} reads an open candidate \emph{without sealing it},
 the unsealed-read instance of
 Obligation~\ref{obl:monotone} (deep dive D);
@@ -1933,7 +1937,7 @@ Obligation~\ref{obl:sub} partially \textsc{proved} with named residues
 (deep dive D), Obligation~\ref{obl:monotone} \textsc{violated} in two
 witnessed instances (see its status note), and
 Obligation~\ref{obl:restore} \textsc{proved} (deep dive E, with a
-documented carve-out).
+documented exception).
 
 \input{generated/ledger-table}
 
@@ -1954,9 +1958,9 @@ statuses are the tables above, from which this grouping is generated):
 \noindent The violations remain local to leaf
 assumptions: every fix restores its assumption without changing a theorem
 statement or proof in this document. Two design decisions gate several
-fixes and are recorded as fundamental holes rather than bugs: the brand
-trust model — refinement narrows on brands ($\mathsf{CAbsent}$,
-the array brand) that subtyping never validates (registry rows
+fixes and are recorded as fundamental holes rather than bugs: unchecked
+brands — refinement relies on $\mathsf{CAbsent}$ and the array brand even
+though subtyping does not validate them (registry rows
 F-CABSENT, F-BRAND) — and the refinement-invalidation
 policy (deep dive F). Known unsoundness here is enumerated, witnessed,
 and quarantined — future work, not architectural debt.

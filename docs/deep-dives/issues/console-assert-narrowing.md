@@ -11,8 +11,9 @@ subsequent path. JavaScript gives no such guarantee: a failed
 call runs with the condition false. The match is also purely syntactic —
 it does not verify that `console` denotes the global — so a local or
 parameter named `console` with an arbitrary `assert` method triggers the
-same refinement, letting any user-supplied method vouch for the
-condition. No registry row supplies a terminating-assertion premise.
+same refinement, letting any user-supplied method establish the
+condition. Registry row L-ASSERT records that both required premises
+are violated.
 
 ## Minimal reproduction (self-contained)
 

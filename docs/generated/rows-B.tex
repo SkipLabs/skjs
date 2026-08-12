@@ -8,7 +8,7 @@
 \textbf{Row} & \textbf{Statement} & \textbf{Status} \\
 \midrule
 L-UNION & \texttt{union} over-approximates set union (all levels). & \textsc{proved} \\
-L-INTER & When \texttt{inter} does not return $\bot$, its result contains the set intersection of its operands, conditional on recursive bottom results satisfying L-INTER-BOT. & \textsc{open} \\
+L-INTER & When \texttt{inter} returns a non-$\bot$ result, that result contains the semantic intersection of its operands, provided every recursive call that returned $\bot$ had disjoint operands (L-INTER-BOT). & \textsc{open} \\
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & \textsc{violated} \\
 C-FREEZE-CACHE & A stale \texttt{seenInter} entry can cause an unsound acceptance after candidate growth resumes without also reusing a stale \texttt{subst.seenSub} entry. & \textsc{open} \\
 \bottomrule

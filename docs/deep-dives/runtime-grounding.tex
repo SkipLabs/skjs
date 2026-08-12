@@ -247,7 +247,7 @@ Object, callable & \texttt{"function"} & $\mathsf{obj}$ \\
 \end{tabular}
 \end{center}
 
-Two quirks are load-bearing for the checker and both are already encoded
+Two quirks are necessary for the checker and both are already encoded
 in the main paper's $P_{\mathsf{typeof}=k}$ sets (its Definition
 ``Evaluation of Condition Forms''):
 \texttt{typeof null === "object"} (the \texttt{null} row above; the model
@@ -704,7 +704,7 @@ types can reach the violated strata (function-signature and
 beyond-precision numeric content nested in the branch).
 Restoring the scrutinee's readonly fields only lowers set-types, which
 get-only membership does not consult. The fallback branch is the middle
-case with $B = \top_{\mathsf{obj}}$. No inference candidate is minted
+case with $B = \top_{\mathsf{obj}}$. No inference candidate is created
 in the installed type — the probe's candidates live in a discarded
 clone — so the skolems can never be bound by later uses: the
 interpretation $s_i := U_i$ is a fixed parameter of the installed

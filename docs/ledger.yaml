@@ -48,8 +48,8 @@ papers:
     file: subtyping-validation.tex
     title: "Subtyping Validation Soundness"
     scope: >-
-      The isSub architecture, its caches and coinduction, and per-stratum
-      validation soundness.
+      The isSub architecture, its caches and coinduction, and soundness of
+      each representation case.
   - letter: E
     file: subst-state-discipline.tex
     title: "The Substitution State Machine"
@@ -108,7 +108,7 @@ entries:
     anchor_files: [src/TTypeUnion.sk]
     status: [proved]
     status_note: >-
-      \textsc{proved} (deep dive B — in fact exact at every stratum for the
+      \textsc{proved} (deep dive B — in fact exact at every representation layer for the
       membership semantics)
     summary: [{bucket: proved, label: "L-UNION"}]
     owner: B
@@ -119,9 +119,9 @@ entries:
     kind: assumption
     table: main
     short: >-
-      When \texttt{inter} does not return $\bot$, its result contains the
-      set intersection of its operands, conditional on recursive bottom
-      results satisfying L-INTER-BOT.
+      When \texttt{inter} returns a non-$\bot$ result, that result contains
+      the semantic intersection of its operands, provided every recursive
+      call that returned $\bot$ had disjoint operands (L-INTER-BOT).
     statement: >-
       Non-bottom containment: when $\mathtt{inter}(t_1,t_2) \neq \bot$,
       $\sem{t_1} \cap \sem{t_2} \subseteq \sem{\mathtt{inter}(t_1,t_2)}$,
@@ -139,8 +139,8 @@ entries:
       instance layer; \textsc{open} for stale \texttt{seenInter} reuse under
       inference growth (C-FREEZE-CACHE)
     summary:
-      - {bucket: proved, label: "L-INTER's fresh structural non-bottom containment, conditional on recursive L-INTER-BOT"}
-      - {bucket: open, label: "L-INTER under stale seenInter reuse (C-FREEZE-CACHE)"}
+      - {bucket: proved, label: "fresh non-bottom intersections contain the semantic intersection, provided recursive bottom results are sound (L-INTER)"}
+      - {bucket: open, label: "non-bottom containment after stale seenInter cache reuse (L-INTER; C-FREEZE-CACHE)"}
     owner: B
     consumers: [C, D, F, E, A]
     issues: []
@@ -158,11 +158,11 @@ entries:
     anchor_files: [src/TTypeInter.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive B) in two strata: the
-      \texttt{TFun::inter} stratum — incomparable signatures treated as
+      \textsc{violated} (deep dive B) in two cases: the
+      \texttt{TFun::inter} case — incomparable signatures treated as
       disjoint (issue draft
       \texttt{tfun-inter-incomparable-not-disjoint.md}); and the num-kind
-      beyond-precision spelling stratum — distinct spellings of one
+      beyond-precision spelling case — distinct spellings of one
       double kept distinct, their lexeme intersection a spurious $\bot$
       (mediated by L-LIT; issue draft
       \texttt{beyond-precision-numeric-literals.md}). The per-tag
@@ -197,7 +197,7 @@ entries:
       those modes; all refinement clients verified to use only them.
       The containment proof consumes both L-INTER cases and is therefore
       conditional on L-INTER-BOT (\textsc{violated}) as well as on
-      L-INTER's open cache facet.
+      L-INTER's open cache-reuse case.
       Reusing an alias expansion is exact because alias normalization does
       not read existing variable bindings. The remaining conditions are
       recorded separately as E-NORM, E-ARR, E-CLASS-SYM, E-GUARD, E-EXPKEY,
@@ -265,8 +265,8 @@ entries:
       path.
     statement: >-
       The premise behind the \texttt{console.assert} refinement clause:
-      the call must terminate when $e$ is false, and the callee must be
-      the asserting global — neither holds
+      the call must not return normally when $e$ is false, and the callee
+      must resolve to the global assertion function — neither condition holds
     anchor: \texttt{TypeCheckExpr.sk} (the \texttt{console.assert} match)
     anchor_files: [src/TypeCheckExpr.sk]
     status: [violated]
@@ -278,10 +278,11 @@ entries:
       so a shadowing binding named \texttt{console} with an arbitrary
       \texttt{assert} method triggers the same refinement. tsc rejects
       both witnesses. Fix shape: remove the refinement or register a
-      terminating, receiver-resolved assertion intrinsic
+      recognized assertion function that does not return when its condition
+      is false
     summary:
       - {bucket: violated-witnessed,
-         label: "\\texttt{console.assert} narrows without a terminating or receiver-checked premise (L-ASSERT)"}
+         label: "\\texttt{console.assert} narrows even when a false condition can return normally or the receiver is shadowed (L-ASSERT)"}
     owner: main
     consumers: []
     issues: [console-assert-narrowing.md]
@@ -302,8 +303,8 @@ entries:
       split (deep dive D): \textsc{proved} — dispatcher architecture,
       \texttt{tenv.seenSub} version-keying (corrected argument),
       coinductive reduction (via SEM-GFP), primitives, \texttt{STypes},
-      DNF covering, object skeleton, and the field stratum's read
-      direction (conditional on L-SUB-IDXNAME at its
+      DNF covering, object skeleton, and field reads
+      (conditional on L-SUB-IDXNAME at their
       numeric-named-field/dual-index corner); conditional — field
       \emph{set} direction on L-MUT,
       functions on the E-SIG signature semantics; \textsc{violated} —
@@ -314,8 +315,8 @@ entries:
       can enter a type marked \texttt{CAbsent} (F-CABSENT), and the
       never-compared array brand (F-BRAND)
     summary:
-      - {bucket: proved, label: "the majority strata of L-SUB"}
-      - {bucket: open, label: "L-SUB's conditional strata"}
+      - {bucket: proved, label: "the proved portions of L-SUB"}
+      - {bucket: open, label: "the remaining conditional portions of L-SUB"}
     owner: D
     consumers: [E, F, H]
     issues: [freeze-window-stale-memo-caches.md]
@@ -340,9 +341,8 @@ entries:
       \textsc{proved} (deep dive A: constructor values built with both a
       construct signature and known callability, and the
       constructible-implies-$[[\mathrm{Call}]]$ invariant enforced at
-      \texttt{TFields} construction); the remaining
-      brand-trust gap of the \texttt{Callability} lattice is the separate
-      row F-CABSENT
+      \texttt{TFields} construction); the remaining validation gap for
+      the brand-like $\mathsf{CAbsent}$ claim is the separate row F-CABSENT
     summary: [{bucket: proved, label: "A-CTOR-CALL"}]
     owner: A
     consumers: [D]
@@ -584,7 +584,7 @@ entries:
     statement: >-
       Evolving bindings are exempt from the captured-write check, and
       reads after the closure runs do not incorporate the written value
-      — the facet of the captured-write question that L-CAPT's proved
+      — the part of the captured-write question that L-CAPT's proved
       statement excludes
     anchor: \texttt{Scope::set} (evolving exemption); \texttt{getSingleVar}
     anchor_files: [src/TypeCheckScope.sk]
@@ -611,9 +611,9 @@ entries:
       A closure body invoked later reads enclosing narrowings that are
       stale at invocation time.
     statement: >-
-      Closure bodies capture enclosing narrowings, but invocation may
-      postdate mutations that invalidate them — the read-in dual of the
-      L-PURE family (\#599)
+      A closure body is checked using an enclosing narrowing even when
+      enclosing code can invalidate that narrowing before invoking the
+      closure; \#599 covers the opposite write-then-read direction
     anchor: \texttt{TypeCheckExpr.sk} (lambda checking); narrowed-scope capture
     anchor_files: [src/TypeCheckExpr.sk]
     status: [violated]
@@ -641,7 +641,7 @@ entries:
       arm checks a back-edge write only against the declared type, so a
       pre-loop narrowing of an annotated binding survives into iteration
       2 after a write that falsifies it; un-annotated bindings are
-      protected by the through-loop check
+      protected by the loop-write check
     anchor: \texttt{Scope::set} (annotation arm); loop merge
     anchor_files: [src/TypeCheckScope.sk]
     status: [violated]
@@ -722,13 +722,14 @@ entries:
     anchor_files: [src/TypeCheckRefine.sk, src/TypeCheckExpr.sk]
     status: [violated]
     status_note: >-
-      \textsc{violated} (deep dive H) at the narrowing-admitted-alias
-      site, in both directions (issue draft
+      \textsc{violated} (deep dive H) when an alias is created after field
+      narrowing, for writes through either alias (issue draft
       \texttt{narrowed-alias-stale-write.md}); types introduced directly by
       \texttt{instanceof} narrowing are coherent — the \texttt{Array} arm
       preserves the readonly index and the class arm preserves the
-      scrutinee's type arguments — except at the readonly-covering-index
-      corner recorded as V-MINT-ROIDX, and declaration-only aliasing is
+      scrutinee's type arguments — except when a readonly index covers a
+      named field introduced by the class (V-MINT-ROIDX). Aliasing between
+      declaration-derived types is
       coherent, conditional on L-SUB-FIELDS-SET
     summary:
       - {bucket: violated-witnessed,
@@ -741,11 +742,11 @@ entries:
     kind: series-obligation
     table: series
     short: >-
-      Call-mediated mutation (setter-shaped methods, \texttt{push})
+      Calls that mutate a receiver (setter-style methods, \texttt{push})
       through one view preserves the membership guarantees of every live
       alias.
     statement: >-
-      Cross-view mutation coherence, call-mediated facet: a checked
+      Cross-view mutation coherence for calls: a checked
       method call through one view preserves every live alias's
       membership; needs a receiver-effect strengthening of E-SIG, which
       as stated concerns behavioral signature semantics only
@@ -753,9 +754,9 @@ entries:
     anchor_files: [src/TypeCheckExpr.sk]
     status: [open]
     status_note: >-
-      \textsc{open} (deep dive H): the live route is a setter-shaped
-      method call on a narrowing-admitted alias, but no signature
-      semantics with receiver-heap effects exists to grade it against
+      \textsc{open} (deep dive H): the live route is a mutating method call
+      on an alias created after narrowing, but the signature semantics do
+      not model effects on the receiver's fields
     summary: []
     owner: H
     consumers: []
@@ -771,14 +772,14 @@ entries:
     statement: >-
       \texttt{TField::inter} unions $\mathsf{set}$-types; the open
       question is whether an incoherent live pair is reachable through
-      it on a route not already covered by the narrowing-admission or direct
-      narrowing sites
+      it on a route not already covered by aliases created after narrowing
+      or by direct narrowing
     anchor: \texttt{TField::inter} (set arm)
     anchor_files: [src/TTypeInter.sk]
     status: [open]
     status_note: >-
       \textsc{open} (deep dive H): the mechanism is established;
-      every declared route probed is blocked by the admission gate
+      every declared route probed is rejected by subtyping
       (the union widens the target's $\mathsf{set}$, making admission
       harder), and refinement-installed intersections reduce to the
       graded sites; ambient-declared intersection types enter through
@@ -801,8 +802,8 @@ entries:
       named field at key $p$ while the class view contributes named $p$,
       \texttt{TField::interIndex} unions the setter types (the readonly
       $\bot$ is absorbed) and \texttt{keepReadonlyFrom} consults only
-      named fields of the original — so the minted view authorizes a
-      write the scrutinee view prohibited
+      named fields of the original — so the type introduced by narrowing
+      authorizes a write the scrutinee type prohibited
     anchor: \texttt{TField::interIndex}; \texttt{keepReadonlyFrom}
     anchor_files: [src/TTypeInter.sk, src/TType.sk]
     status: [violated]
@@ -817,7 +818,7 @@ entries:
       covering index for named fields the intersection introduced
     summary:
       - {bucket: violated-derived,
-         label: "the readonly-covering-index corner of minted views (V-MINT-ROIDX)"}
+         label: "instanceof narrowing can make a readonly indexed property writable (V-MINT-ROIDX)"}
     owner: H
     consumers: []
     issues: []
@@ -1218,13 +1219,13 @@ entries:
       scrutinee object's actual hidden type argument, fixed at narrowing
       time and stable thereafter.
     statement: >-
-      Skolem interpretation: the clause parameters minted by
+      Skolem interpretation: the clause parameters introduced by
       \textsc{R-Inst} are interpreted by a per-view witness assignment —
       each skolem denotes the runtime object's actual hidden argument,
       chosen once when the view is installed. The assignment is stable
       because no later operation can bind a skolem: skolems are not
       inference variables, never enter the substitution, and clones
-      cannot mint them
+      cannot generate them
     anchor: \texttt{genSkolemTParam}; \texttt{makeSkolemTArgsOf}
     anchor_files: [src/TTypeSubst.sk, src/TEnv.sk]
     status: [proved]
@@ -1236,7 +1237,7 @@ entries:
       guarded. Consumed by deep dive A's L-INST discharge (the
       existential step) and by deep dive H's per-skolem
       hidden-argument fact
-    summary: [{bucket: proved, label: "SKOLEM-SEM"}]
+    summary: [{bucket: proved, label: "stable per-view interpretation of instanceof skolems (SKOLEM-SEM)"}]
     owner: main
     consumers: [A, H]
     issues: []
@@ -1377,9 +1378,10 @@ entries:
     kind: series-assumption
     table: series
     short: >-
-      The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops
+      The $\mathsf{CAbsent}$ brand-like claim accurately excludes callables:
+      refinement drops
       $\mathsf{CAbsent}$ branches under \texttt{typeof}
-      \texttt{"function"}, but subtyping's lax
+      \texttt{"function"}, but subtyping's permissive
       $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into
       branded types.
     statement: ""
@@ -1392,9 +1394,9 @@ entries:
       \texttt{C} in two accepted subtyping steps, then is narrowed to
       \texttt{never} in the
       branch the runtime takes; issue draft
-      \texttt{cabsent-brand-laundering.md}. The callability instance of
-      the F-BRAND trust model (refinement narrows on a brand subtyping
-      never validates)
+      \texttt{cabsent-brand-laundering.md}. This has the same validation
+      failure as F-BRAND: refinement relies on a brand-like claim that
+      subtyping never validates
     summary:
       - {bucket: violated-witnessed,
          label: "callables accepted into types marked \\texttt{CAbsent} (F-CABSENT)"}

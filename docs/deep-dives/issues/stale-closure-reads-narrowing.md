@@ -1,17 +1,18 @@
-# Unsound: closure bodies read enclosing narrowings that are stale at invocation (read-in dual of #599)
+# Unsound: a closure reads an enclosing narrowing after reassignment has invalidated it
 
-Proposed labels: `soundness`, `bug`, `narrowing`. Related: #599 (its dual),
+Proposed labels: `soundness`, `bug`, `narrowing`. Related: #599,
 #597, #598.
 
 ## Summary
 
 A closure body created inside a refined branch captures the *narrowed* type
 of an enclosing local. If the local is reassigned before the closure runs,
-the closure body's typing is stale. This is the **read-in** direction —
-distinct from #599, which covers the **write-out** direction (closure
-reassigns; enclosing code reads) and whose reproducer both SKJS and tsc
-accept. For this direction tsc *rejects* (it re-widens captured-and-assigned
-`let`s inside closure bodies, TS18047); SKJS accepts.
+the closure body's typing is stale. This differs from #599: there the
+closure performs the reassignment and enclosing code later reads the
+binding, while here enclosing code reassigns the binding and the closure
+later reads it. Both SKJS and tsc accept #599's reproducer; tsc rejects
+this case because it re-widens captured-and-assigned `let` bindings inside
+closure bodies (TS18047).
 
 ## Minimal reproduction (self-contained)
 
@@ -49,8 +50,9 @@ still see the creation-time narrowing.
 
 ## Relation to existing issues/PRs
 
-#599 read in full: write-out direction only; its text notes both tools
-accept its shape, and `tests/expect-error/unsound-refinement.ts` covers
+#599 covers only writes in a closure followed by reads in enclosing code;
+its text notes both tools accept that shape, and
+`tests/expect-error/unsound-refinement.ts` covers
 cases #597/#598/#599 without any closure-body read. Not previously tracked.
 
 ## Suggested fix

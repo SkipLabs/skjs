@@ -8,10 +8,12 @@
 // run: make check-file-in-docker FILE=docs/deep-dives/issues/repros/getter-typed-as-method.ts BIN=target/host/dev/skjs
 
 class C {
-  get p(): number { return 5; }
+  get p(): number {
+    return 5;
+  }
 }
 function t(c: C): void {
-  const n: number = c.p();   // accepted: c.p typed as () => number
-  console.log(n.toFixed());  // runtime: c.p is not a function
+  const n: number = c.p(); // accepted: c.p typed as () => number
+  console.log(n.toFixed()); // runtime: c.p is not a function
 }
 t(new C());

@@ -1,4 +1,4 @@
-# Unsound: enum string-concat folding mints a member literal whose spelling is not the runtime string
+# Unsound: enum string-concat folding creates a member literal whose spelling is not the runtime string
 
 Proposed labels: `soundness`, `bug`, `enums`.
 
@@ -12,7 +12,7 @@ operand contributes its raw spelling, and — unlike numeric fold
 a direct numeric-literal operand is taken as-is. A beyond-precision
 spelling therefore reaches the concat: `"x" + 1e-400` folds to the
 member literal `"x1e-400"`, while at runtime `1e-400` underflows to `0`
-before `ToString`, so the member's value is `"x0"`. The minted literal
+before `ToString`, so the member's value is `"x0"`. The resulting literal
 type is inhabited by no run of the program, and the member's actual
 value escapes its static type: an assignment at the wrong literal type
 is accepted, `===` narrowing against the spelling takes branches that
@@ -29,7 +29,7 @@ Reproduction: [`repros/enum-concat-imprecise-fold.ts`](repros/enum-concat-imprec
 - node (enum compiled by tsc): `E.A` evaluates to `"x0"`;
   `E.A === "x1e-400"` is `false`.
 - tsc `--strict` (7.0.2): accepts the enum but types `E.A` as `E` —
-  it mints no literal — and rejects the assignment,
+  it creates no literal type — and rejects the assignment,
   `TS2322: Type 'E' is not assignable to type '"x1e-400"'`. The
   unsoundness is SKJS-specific.
 
@@ -56,8 +56,8 @@ string-kind literal whose denotation is wrong. Not previously tracked.
 Either fold the numeric operand through its value — concatenate
 `String(Number(lexeme))`, matching runtime `ToString` — or
 conservatively reject a string fold whose numeric operand fails the
-round-trip predicate (`isPreciseJSNumberLiteral`). Note the numeric
-route's widen-to-untracked philosophy does not transfer directly: the
+round-trip predicate (`isPreciseJSNumberLiteral`). The numeric route's
+fallback does not transfer directly: the
 representation has an untracked-*number* member but no untracked-string
 analogue, and refusing the constant fold currently routes into the
 computed-member path, which expects a number and may reject rather than

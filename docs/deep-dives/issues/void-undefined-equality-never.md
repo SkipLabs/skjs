@@ -4,8 +4,8 @@ Proposed labels: `soundness`, `bug`, `narrowing`.
 
 ## Summary
 
-The checker's `void` type is a fiction over the runtime value
-`undefined`: strict equality relates the two ("undefined === g()" is
+The checker's `void` type includes the runtime value
+`undefined`: strict equality relates the two (`undefined === g()` is
 true for a void-returning `g`). The dedicated undefined-literal rule
 respects this — `x === undefined` filters the undefined and void units
 jointly. But a comparison against an undefined-**typed** variable takes

@@ -170,14 +170,14 @@ The counter supplying skolem type-parameter identifiers
 restored timeline would merge two distinct hidden type arguments, so the
 supply must survive rollback. Exclusion is safe for the same reason it
 exists — the counter only increases, so ids are never reused across any
-sequence of saves and restores. Clone-side minting is impossible by
+sequence of saves and restores. Creating skolems in a clone is impossible by
 construction: \texttt{clone()} poisons the field to $-1$
 (\texttt{TTypeSubst.sk:160--165}) and \texttt{genSkolemTParam} fails
-hard on a poisoned counter (\texttt{:267--272}). Exactly one mint site
+hard on a poisoned counter (\texttt{:267--272}). Exactly one creation site
 exists (\texttt{TEnv.sk:801}, inside \texttt{makeSkolemTArgsOf}),
 reached from \texttt{instanceof} narrowing on the main substitution
 (\texttt{TypeCheckRefine.sk:367}). Skolems are type \emph{parameters}
-(name-based), not \texttt{TVar}s: minting one writes nothing into
+(name-based), not \texttt{TVar}s: creating one writes nothing into
 $\rho$.
 
 \paragraph{(U3) \texttt{ppNames}.}
@@ -524,7 +524,7 @@ exactly:
   \texttt{evalInstanceof} instantiates the class view with fresh
   \emph{skolem} arguments on the main substitution
   (\texttt{makeSkolemTArgsOf}, \texttt{TEnv.sk:780--806}) — a
-  \texttt{nextSkolemId} draw with no $\rho$ effect (U2) — and mints
+  \texttt{nextSkolemId} draw with no $\rho$ effect (U2) — and creates
   ordinary inference arguments only on the throwaway \emph{probe clone}
   (\texttt{TypeCheckRefine.sk:373--379}; \texttt{makeTArgsOf},
   \texttt{TEnv.sk:822--836}: \texttt{gen} + occurrence-level
@@ -648,7 +648,7 @@ $\mathsf{get}(\mathsf{cov})$ seals on every path
 (\texttt{:221--222}) — the one designed exception, which is this
 section's finding. Representative covariant sites (the population has
 grown with the checker and is not usefully enumerable per line; the
-load-bearing ones are): \texttt{isSub\_} lhs $u_1$
+necessary ones are): \texttt{isSub\_} lhs $u_1$
 (\texttt{TTypeSubtyping.sk:1896} — memo \texttt{seenSub} baked on
 success), \texttt{TFun::isSub\_} rest on the \emph{super} side
 (\texttt{:2145}), both \texttt{TTypeInter} operands
@@ -784,7 +784,7 @@ what \texttt{inter} can do:
   clone. All lost at discard, while $u$ may mention the affected
   variables.
 \item[\textbf{(C4)}] \emph{Fresh generations} on the clone (the
-  \texttt{instanceof} preservation probe mints inference arguments on
+  \texttt{instanceof} preservation probe creates inference arguments on
   its probe clone, \texttt{TypeCheckRefine.sk:373--379}; expansion of
   a cold \texttt{TSInst} can reach \texttt{tenv.instantiate} and, through
   object-literal branch building, \texttt{gen}-sites such as synthetic
@@ -846,7 +846,7 @@ signature-opacity deflection applies verbatim. Field-get positions reach
 
 \subsection{Clone-escaped fresh identifiers: an unreachable hazard}
 
-\begin{finding}[Clone-minted identifiers never escape into installed
+\begin{finding}[Clone-created identifiers never escape into installed
 types]
 \label{find:clone-gen}
 Fresh identifiers are drawn from the \emph{version counter}
@@ -861,7 +861,7 @@ Nothing in Theorem~\ref{thm:lclone}'s bridge would cover that: the
 occurrence's denotation would not be monotone from fork state. The
 hazard is settled by an escape audit of the \texttt{gen*} call sites.
 Exactly one runs under a clone: the \texttt{instanceof} preservation
-probe mints inference arguments on \texttt{probeSubst}
+probe creates inference arguments on \texttt{probeSubst}
 (\texttt{TypeCheckRefine.sk:373--379} via \texttt{makeTArgsOf},
 \texttt{gen} at \texttt{TEnv.sk:829}). Its products are confined by
 construction: \texttt{probeFields} is consumed only as the
@@ -883,7 +883,7 @@ enumerating all \texttt{.gen(}/\texttt{.genForField(}/%
 clone-side fresh identifier reaches a type installed against the main
 substitution, and CL-1 (\S\ref{sec:status}) is \emph{discharged}. The
 discharge rests on a code invariant that should be guarded: assert (and
-CI-check) that clone-minted variables do not escape the probe; for the
+CI-check) that clone-created variables do not escape the probe; for the
 skolem class the analogous guard already \emph{is} a runtime invariant
 — \texttt{clone()} poisons \texttt{nextSkolemId} and
 \texttt{genSkolemTParam} fails hard on it
@@ -986,7 +986,7 @@ persists on an \texttt{STError} return, violating the module contract's
 letter. This is deliberate (``irreversible'', \texttt{:140}); case 2c by
 contrast restores the commitment on failure (row 10).
 
-\begin{lemma}[The carve-out is sound for accepted programs]
+\begin{lemma}[The exception is sound for accepted programs]
 \label{lem:arraylit-carveout}
 A commitment persisting on a failed check cannot cause unsound
 acceptance, provided every caller that \emph{discards} an
@@ -1089,7 +1089,7 @@ Named sub-obligations introduced by this paper:
   (the \texttt{instanceof} preservation probe) confines its products to
   probe-side subtype checks, and every other \texttt{gen*} site runs on
   the expression-typing substitution; guard with the recommended CI
-  assertion (clone-minted variables must not escape the probe — the
+  assertion (clone-created variables must not escape the probe — the
   skolem analogue is already a runtime invariant).
 \item[\textbf{RB-1}] Maintenance condition: every \texttt{isSub} caller
   that discards \texttt{STError} must wrap the call in save/restore or
@@ -1151,7 +1151,7 @@ statement; no other paper's internals are in scope:
 \input{../generated/imports-E}
 
 \paragraph{Summary.} Three of the four rows close (L-MONO; No
-Commitment on Failure, with a documented carve-out; L-CLONE modulo
+Commitment on Failure, with a documented exception; L-CLONE modulo
 I$_f$, its id-collision hazard verified unreachable and guarded by a CI
 assertion). The fourth — Monotone Reads — is \textsc{proved} at every
 audited site except its one sharp residue, MR-1, which is

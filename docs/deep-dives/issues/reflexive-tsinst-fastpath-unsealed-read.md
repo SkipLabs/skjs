@@ -11,7 +11,7 @@ TSInst<K>` when both sides carry the same name value and the tvar's
 covariant seal the slow path performs (`Subst::get` covariant flips
 `SVOpen → SVClosed`). Equality at the moment of the check is therefore
 not stable: a later contravariant grow widens the candidate, and every
-read through an alias the fast path blessed sees the widened value. The
+read through an alias accepted by the fast path sees the widened value. The
 accepted program below puts the string `"s"` in a `const n: number`.
 
 ## Minimal reproduction (self-contained)
@@ -62,8 +62,8 @@ for equality, resolving a lone sub-side tvar via `subst.peekRaw` — a
 `readonly` lookup that neither seals the binding nor registers any read
 discipline. The slow path protects the same read by sealing at the
 covariant grow (`isSub_` step (2) → `Subst::get` covariant,
-`SVOpen → SVClosed`, `src/TTypeSubst.sk:199-208`). The arm's advertised
-virtue — guidance-free, no state write — is exactly what skips the seal.
+`SVOpen → SVClosed`, `src/TTypeSubst.sk:199-208`). The arm avoids inference
+guidance and state writes, which also skips the seal.
 Equality of an open candidate is a fact about the *present* substitution
 only; acceptance based on it is an exact-value read of an unsealed
 candidate, which later contravariant growth (`Subst::grow`,
@@ -79,7 +79,7 @@ variance of the argument position fails as stated.
 - #737 introduced the arm (compare TSInst names by value in the isSub
   fast path), targeting an OOM on deep recursive generics. It added no
   regression test.
-- #759 (post-merge review of #737) finds the arm **not load-bearing** on
+- #759 (post-merge review of #737) finds that the arm is **not needed** on
   current `main` — the #736 `mapTParams` fix prevents the blowup
   upstream, and the fast path fires 0 times across the generated
   examples — and its "the algorithm is sound … it only fires when the
@@ -100,7 +100,7 @@ Three options, strongest first given #759's finding that the arm rescues
 nothing on current `main`:
 
 1. **Revert the arm** and rely on #736 (per #759's action item); re-add
-   only with a load-bearing regression test.
+   it only with a regression test that fails without it.
 2. **Restrict the arm to sealed bindings**: accept only when
    `subst.isClosed(tv)` (peekRaw of an `SVClosed` binding is stable),
    keeping the arm write-free.

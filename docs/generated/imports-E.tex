@@ -8,7 +8,7 @@
 \textbf{Row} & \textbf{Canonical statement} & \textbf{Owner} & \textbf{Status} \\
 \midrule
 L-UNION & \texttt{union} over-approximates set union (all levels). & B & \textsc{proved} \\
-L-INTER & When \texttt{inter} does not return $\bot$, its result contains the set intersection of its operands, conditional on recursive bottom results satisfying L-INTER-BOT. & B & \textsc{open} \\
+L-INTER & When \texttt{inter} returns a non-$\bot$ result, that result contains the semantic intersection of its operands, provided every recursive call that returned $\bot$ had disjoint operands (L-INTER-BOT). & B & \textsc{open} \\
 L-INTER-BOT & A $\bot$ result from \texttt{inter} implies semantic disjointness. & B & \textsc{violated} \\
 L-SUB & \texttt{Clauses::isSub} acceptance implies semantic inclusion under the current state. & D & \textsc{open} \\
 TVAR-SEM & A type-variable occurrence denotes its substitution envelope intersected with its occurrence constraints; an unbound envelope is empty. & main & \textsc{proved} \\

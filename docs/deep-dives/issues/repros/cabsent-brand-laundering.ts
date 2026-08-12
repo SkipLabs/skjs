@@ -1,7 +1,7 @@
 // repro for: cabsent-brand-laundering (F-CABSENT)
 // expect: accepted   (skjs check exits 0 — the unsound acceptance at the pin)
 // isSubCallability accepts (CPresent, CUnknown) and (CUnknown, CAbsent), so a
-// callable launders Function -> {} -> C in two accepted steps; C's CAbsent
+// callable passes Function -> {} -> C in two accepted steps; C's CAbsent
 // brand is then trusted by typeof "function" narrowing, which drops the
 // taken branch to never.
 // run: make check-file-in-docker FILE=docs/deep-dives/issues/repros/cabsent-brand-laundering.ts BIN=target/host/dev/skjs

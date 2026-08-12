@@ -100,7 +100,7 @@ values, satisfaction $\sigma \models_\rho \Env$, the evaluation relations
 $\sigma \models_b e$, and branch soundness for rules
 $\RefineB{\Env}{e}{\Env'}{b}$ (main paper, Definitions ``Environments
 and Stores'' through ``Branch Soundness''). Three
-recap points are load-bearing here:
+recap points are necessary here:
 \begin{enumerate}
 \item \textbf{One-step scoping.} The main paper's branch-soundness
   theorems say: if $\sigma \models_\rho \Env$ and $\sigma \models_b e$
@@ -406,7 +406,7 @@ binding) are rejected with TS2322 at the write.
 \end{lemma}
 
 \begin{keydef}
-\textbf{The evolving-binding facet (row L-CAPT-EVOLVE, violated).} The
+\textbf{The evolving-binding exception (row L-CAPT-EVOLVE, violated).} The
 inferred-type check is
 skipped when \texttt{declaredType} is a single unresolved type variable
 — a bare \texttt{let x = null}/\texttt{undefined}
@@ -418,7 +418,7 @@ closure writes \texttt{"s"} into a bare \texttt{let x = null} binding
 and a later read binds the string at type \texttt{null}). tsc accepts
 the same program through the same mechanism (implicit evolving
 \texttt{any}), so the hole is tsc-parity — but it is a hole, and it is
-this paper's row \textbf{L-CAPT-EVOLVE}, which is exactly the facet
+this paper's row \textbf{L-CAPT-EVOLVE}, which is exactly the case
 L-CAPT's proved statement excludes: L-CAPT quantifies over bindings
 with an annotation or a non-trivial initializer.
 \end{keydef}
@@ -438,7 +438,8 @@ compiles clean and crashes at runtime. The narrowing was valid when the
 closure was \emph{created}, not when it \emph{runs}. tsc handles this by
 re-widening, inside closure bodies, any \texttt{let} that is assigned
 anywhere in the function. This is the dual of shape (b): (b) is a stale
-write-out, this is a stale read-in. Confirmed with a runtime witness (a
+the closure writes and enclosing code later reads; here enclosing code
+writes and the closure later reads. Confirmed with a runtime witness (a
 \texttt{TypeError} reading \texttt{.length} of \texttt{null}); the
 witnesses — including a field-level variant no policy layer below
 covers — are the two repros of issue draft
@@ -576,7 +577,7 @@ narrowings of $W$-locals flow in — resolve them at their declared type
 (fixing Finding~\ref{find:stale-read}). The prerequisite that makes
 ``declared type'' a sound havoc target — captured writes bounded by the
 declared type — is established checker behavior (Lemma~\ref{lem:capt});
-for the evolving-binding carve-out the havoc target is the widened union
+for the evolving-binding exception the havoc target is the widened union
 of the binding's writes. This is sound for \emph{whole-local}
 narrowings: an (M-Call) can write exactly the $W$-locals
 (Definition~\ref{def:events}), and each write is bounded by the declared
@@ -609,7 +610,7 @@ Layered, in decreasing order of urgency:
 \begin{enumerate}
 \item \textbf{P1 (bug fix, Finding~\ref{find:loop-carried}):} invalidate
   loop-carried narrowings. Either extend \texttt{Scope::set}'s
-  through-loop check to annotated bindings — a back-edge write is
+  loop-write check to annotated bindings — a back-edge write is
   checked against the loop-entry (possibly narrowed) type \emph{in
   addition to} the declared type — or, matching tsc, re-widen at loop
   entry the narrowings of every binding the loop body assigns.
@@ -708,7 +709,7 @@ and the legal write \texttt{o.f := null} through \texttt{x} is
 unrecorded on $y$ (mechanism, executed witness, and tsc comparison:
 issue draft \path{issues/narrowed-alias-stale-write.md}). The
 hypothesis is strictly stronger than Obligation~\ref{obl:getset}; its
-site-by-site grading — including the minted views that need no declared
+site-by-site grading — including the created views that need no declared
 alias at all — is deep dive H's.
 \end{lemma}
 \begin{proof}
@@ -828,7 +829,7 @@ L-MUT & \#598 has a specified re-widening rule (W-Field, adequate by
   Lemma~\ref{lem:rewiden-sound} for data fields); accessor residue
   gated on get/set coherence (Obligation~\ref{obl:getset}); the
   cross-view facet is the separate row L-MUT-ALIAS, witnessed via
-  narrowing-admitted aliases, outside W-Field's reach (issue draft
+  aliases created after narrowing, outside W-Field's reach (issue draft
   \texttt{narrowed-alias-stale-write.md}; graded in deep dive H). &
   data fields discharged once W-Field lands; L-MUT-ALIAS needs its
   own fix \\
@@ -844,9 +845,9 @@ L-CAPT & Proved (Lemma~\ref{lem:capt}): every assignment form reaches
   \texttt{Scope::set}, which checks annotated bindings against the
   declared type everywhere and un-annotated captured writes against the
   widened inferred type; probed at the write for both. Scoped by the
-  evolving-binding carve-out (bare \texttt{let x = null/undefined};
+  evolving-binding exception (bare \texttt{let x = null/undefined};
   tsc-parity). &
-  stable; the carve-out is the named residue \\
+  stable; the exception is the named residue \\
 L-STALE-READ & Owned here (Finding~\ref{find:stale-read}): closure
   bodies read enclosing narrowings valid at creation, not invocation;
   witnessed in local and field-level forms (issue draft

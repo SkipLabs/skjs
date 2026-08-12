@@ -10,7 +10,7 @@ check that protects every other binding (row L-CAPT) exempts them. A
 closure can therefore write any value into the binding, while reads
 after the closure runs still use the evolved type from the declaration
 site: the program below binds `"s"` at type `null`. tsc accepts the
-same program — its evolving `any` has the same blind spot — so this is
+same program — its evolving `any` has the same limitation — so this is
 a parity hole, but a hole nonetheless: the acceptance is unsound on
 Node.
 
@@ -35,7 +35,7 @@ not incorporate values written through captures.
 ## Relation to existing issues/PRs
 
 The exemption is deliberate tsc parity (deep dive F's evolving-binding
-exception under row L-CAPT). This draft splits the unsound facet into
+exception under row L-CAPT). This draft splits the unsound case into
 its own row, L-CAPT-EVOLVE, so the proved L-CAPT row can be scoped
 honestly to annotated and initializer-inferred bindings. Sibling of the
 stale-read row L-STALE-READ (a different mechanism: there the write is
@@ -50,6 +50,6 @@ common initialization pattern while closing the type confusion.
 
 ## Provenance
 
-Deep dive F's carve-out paragraph, promoted to a row with an executed
+Deep dive F's exception for evolving bindings, promoted to a row with an executed
 witness by the adversarial referee pass
 (`docs/adversarial-review-findings-2026-08-11.md`, finding 3).

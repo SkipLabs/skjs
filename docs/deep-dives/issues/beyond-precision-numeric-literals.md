@@ -7,8 +7,9 @@ Proposed labels: `soundness`, `bug`, `narrowing`.
 Numeric literals that fail the round-trip `String(Number(s)) = s` —
 16–17-digit decimals, radix forms above 2^53, over/underflow exponent
 forms — are stored as distinct lexemes even when they denote the *same*
-double, and they are never merged. Never-merging keeps subsumption sound
-but is precisely the unsound direction wherever an empty lexeme
+double, and they are never merged. Keeping them distinct prevents
+subtyping from equating spellings solely because their doubles collide,
+but it is unsound wherever an empty lexeme
 intersection is read as *disjointness*: `===` narrowing between two
 spellings of one double types a live branch `never`. A second
 manifestation hits falsiness: the normalizer rewrites a longhand
@@ -99,4 +100,4 @@ Either direction restores soundness; the first also restores tsc parity:
    lint**: treat any pair involving an imprecise lexeme
    (`isPreciseJSNumberLiteral` false) as *overlapping* (no branch drop,
    no `never`), and make `isFalsy` recognize underflow-to-zero
-   renderings (or normalize them to `"0"` at mint time).
+   renderings (or normalize them to `"0"` when the literal is created).

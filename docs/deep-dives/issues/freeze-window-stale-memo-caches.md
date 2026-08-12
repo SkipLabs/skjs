@@ -1,4 +1,4 @@
-# Unsound: `subst.seenSub` memoizes judgements made on unsealed candidate bounds during freeze windows (order-dependent acceptance)
+# Unsound: `subst.seenSub` reuses a subtype result after an inference candidate changes
 
 Proposed labels: `soundness`, `bug`, `inference`, `caching`. Related:
 PR #446 (partial fix this is the residual of), PRs #713/#721/#740 (the
@@ -16,7 +16,7 @@ is reused without re-validation. The result is **order-dependent acceptance**:
 adding an *earlier* call to a generic function flips a correct rejection
 into an unsound acceptance.
 
-The same freeze-window write path exists for `seenInter` (reached via the
+The same cache-write path during a freeze exists for `seenInter` (reached via the
 constraint-application loop in `Subst::get` → `TType::inter`); it is
 exercised by the witness below but was not isolable from `seenSub`'s
 contribution. The fix below covers both.
@@ -49,8 +49,8 @@ Reproduction: [`repros/freeze-window-stale-seensub.ts`](repros/freeze-window-sta
 
 PR #446 fixed stale caches surviving save/restore and version-keyed
 `tenv.seenSub`, but left `subst.seenSub` (and `seenInter`) pair-keyed,
-relying on save/restore — which the freeze-window write-site-suppression
-design (PRs #713/#721/#740) deliberately bypasses. This is the uncovered
+relying on save/restore — which the `freezeCandidates` design
+(PRs #713/#721/#740) deliberately bypasses. This is the remaining
 residual. Regression test for the original bug:
 `tests/expect-error/seensub-stale-cache.ts`. Not previously tracked.
 

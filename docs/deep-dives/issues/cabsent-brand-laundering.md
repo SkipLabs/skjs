@@ -1,25 +1,25 @@
-# Unsound: a callable laundered through `{}` into a class-instance type is narrowed away by `typeof x === "function"`
+# Unsound: a callable accepted first as `{}` and then as a class instance is narrowed away by `typeof x === "function"`
 
 Proposed labels: `soundness`, `bug`, `narrowing`.
 
 ## Summary
 
 Callability is a four-point lattice (`CPresent ≤ CFunction ≤ CUnknown`,
-`CAbsent ≤ CUnknown`). Subtyping deliberately accepts two lax steps:
+`CAbsent ≤ CUnknown`). Subtyping accepts two permissive steps:
 `(CPresent, CUnknown)` — a callable is a subtype of `{}` (TS structural
 assignability) — and `(CUnknown, CAbsent)` — `{}` flows into a
 class-instance type, whose call mode is the `CAbsent` brand. Composed, a
-callable launders `Function -> {} -> C` in two individually-accepted
+callable passes from `Function -> {} -> C` in two individually accepted
 steps. Refinement then trusts the brand as a proof of non-callability:
 the `typeof x === "function"` true branch drops `CAbsent` branches, so a
 binding that holds a function at runtime is narrowed to `never` in the
 branch the runtime takes.
 
-The brand is trustworthy only for values *constructed* at class-instance
-types; subtyping's lax `(CUnknown, CAbsent)` arm admits values that
-falsify it. The same trust model — refinement narrowing on a brand that
-subtyping never validates — is deep dive D's finding F-BRAND (the array
-brand); this is its callability instance.
+`CAbsent` is reliable as a brand-like claim only for values known to have
+been constructed as class instances. The `(CUnknown, CAbsent)` subtyping arm
+also admits structurally compatible values, including functions, that
+contradict the claim. Deep dive D records the analogous array-brand
+problem as F-BRAND.
 
 ## Minimal reproduction (self-contained)
 
@@ -35,7 +35,7 @@ Reproduction: [`repros/cabsent-brand-laundering.ts`](repros/cabsent-brand-launde
 
 `TFields::isSubCallability` accepts `(_, CUnknown)` (structural `{}`
 admits callables) and, separately, `(CUnknown, CAbsent)` — the code
-comment documents the laundering route as a known cost of TS structural
+comment documents this two-step route as a known cost of TS structural
 assignability (`src/TTypeSubtyping.sk`, `isSubCallability`, the
 `CAbsent` arm). Class-instance types carry `call = CAbsent`
 (`src/TEnv.sk`, instance-type construction), and
@@ -51,7 +51,7 @@ brand path. Not previously tracked.
 
 ## Suggested fix
 
-Either close the laundering arm — reject `(CUnknown, CAbsent)` when the
+Either reject `(CUnknown, CAbsent)` when the
 left side is not itself `CAbsent` (at the price of TS parity on
 `{} -> C` assignability) — or downgrade refinement's trust: treat
 `CAbsent` under `typeof "function"` as droppable only for types whose

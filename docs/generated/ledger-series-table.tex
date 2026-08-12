@@ -18,7 +18,7 @@
 \bottomrule
 \endlastfoot
 L-LIT-FOLD & A literal synthesized by the enum constant folder denotes the member's runtime value. & \textsc{violated} \\
-L-MUT-ALIAS-CALL & Call-mediated mutation (setter-shaped methods, \texttt{push}) through one view preserves the membership guarantees of every live alias. & \textsc{open} \\
+L-MUT-ALIAS-CALL & Calls that mutate a receiver (setter-style methods, \texttt{push}) through one view preserves the membership guarantees of every live alias. & \textsc{open} \\
 V-INTER-SET & Reachability of an incoherent live pair through the intersection's permissive $\mathsf{set}$-union, independent of the already violated subtyping and narrowing sites. & \textsc{open} \\
 V-MINT-ROIDX & The \texttt{instanceof} class arm grants a write at a key the scrutinee covered only by a readonly index: the intersection's named field keeps a writable setter that survives \texttt{keepReadonlyFrom}. & \textsc{violated} \\
 OBL-MONOTONE & Monotone Reads Under Growth: judgements validated under $\rho$ survive later legal transitions. & \textsc{violated} \\
@@ -48,7 +48,7 @@ L-SUB-CLOSED-ABSENCE & \texttt{isSub} admission cannot manufacture a \texttt{Clo
 O-GETCOV & Soundness of the covariant variable read in subtyping (inherits L-INTER-BOT's violated $\bot$-clause). & \textsc{open} \\
 O-GETCONTRA & Soundness of the contravariant variable read in subtyping. & \textsc{open} \\
 O-ARRAYLIT & Soundness of the array-literal decision procedure inside subtyping. & \textsc{open} \\
-F-CABSENT & The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
+F-CABSENT & The $\mathsf{CAbsent}$ brand-like claim accurately excludes callables: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's permissive $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types. & \textsc{violated} \\
 F-BRAND & Subtyping never compares the array brand, though refinement narrows on it. & \textsc{violated} \\
 F-THIS-IMPLICIT & Subtyping between two shape receivers, or two class receivers, with implicit \texttt{this} parameters accepts without comparing their receiver types. & \textsc{assumed} \\
 SETCONSTRAINT-FUN & \texttt{TVar::setConstraint} is a functional update on a frozen value: constraints are occurrence-level, not shared state. & \textsc{proved} \\
@@ -70,19 +70,19 @@ A literal synthesized by the enum constant folder denotes the member's runtime v
 \textsc{violated}, witnessed end-to-end (deep dive G; issue draft \path{enum-concat-imprecise-fold.md}): the string-concat arms concatenate operand \emph{lexemes}, and a direct numeric-literal operand bypasses the double-safe gate that guards numeric fold results, so a beyond-precision spelling produces a member literal whose spelling is not the runtime string (\texttt{"x" + 1e-400} folds to \texttt{"x1e-400"}; the runtime value is \texttt{"x0"}). Numeric folds are exact within the gate and produce no literal outside it — that half is \textsc{proved}. A prerequisite of the future preservation theorem's switch-coverage lemma (semantic case coverage consumes member-value faithfulness)
 
 \medskip\par\noindent\textbf{L-MUT-ALIAS-CALL}\quad(\textsc{open})\\*[0.15em]
-Cross-view mutation coherence, call-mediated facet: a checked method call through one view preserves every live alias's membership; needs a receiver-effect strengthening of E-SIG, which as stated concerns behavioral signature semantics only\\*[0.15em]
+Cross-view mutation coherence for calls: a checked method call through one view preserves every live alias's membership; needs a receiver-effect strengthening of E-SIG, which as stated concerns behavioral signature semantics only\\*[0.15em]
 {\small\emph{Anchor:} method calls on narrowed receivers}\par
 \nopagebreak
-\textsc{open} (deep dive H): the live route is a setter-shaped method call on a narrowing-admitted alias, but no signature semantics with receiver-heap effects exists to grade it against
+\textsc{open} (deep dive H): the live route is a mutating method call on an alias created after narrowing, but the signature semantics do not model effects on the receiver's fields
 
 \medskip\par\noindent\textbf{V-INTER-SET}\quad(\textsc{open})\\*[0.15em]
-\texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already covered by the narrowing-admission or direct narrowing sites\\*[0.15em]
+\texttt{TField::inter} unions $\mathsf{set}$-types; the open question is whether an incoherent live pair is reachable through it on a route not already covered by aliases created after narrowing or by direct narrowing\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TField::inter} (set arm)}\par
 \nopagebreak
-\textsc{open} (deep dive H): the mechanism is established; every declared route probed is blocked by the admission gate (the union widens the target's $\mathsf{set}$, making admission harder), and refinement-installed intersections reduce to the graded sites; ambient-declared intersection types enter through the stub trust boundary
+\textsc{open} (deep dive H): the mechanism is established; every declared route probed is rejected by subtyping (the union widens the target's $\mathsf{set}$, making admission harder), and refinement-installed intersections reduce to the graded sites; ambient-declared intersection types enter through the stub trust boundary
 
 \medskip\par\noindent\textbf{V-MINT-ROIDX}\quad(\textsc{violated})\\*[0.15em]
-When the scrutinee branch has a readonly covering index and no named field at key $p$ while the class view contributes named $p$, \texttt{TField::interIndex} unions the setter types (the readonly $\bot$ is absorbed) and \texttt{keepReadonlyFrom} consults only named fields of the original — so the minted view authorizes a write the scrutinee view prohibited\\*[0.15em]
+When the scrutinee branch has a readonly covering index and no named field at key $p$ while the class view contributes named $p$, \texttt{TField::interIndex} unions the setter types (the readonly $\bot$ is absorbed) and \texttt{keepReadonlyFrom} consults only named fields of the original — so the type introduced by narrowing authorizes a write the scrutinee type prohibited\\*[0.15em]
 {\small\emph{Anchor:} \texttt{TField::interIndex}; \texttt{keepReadonlyFrom}}\par
 \nopagebreak
 \textsc{violated} by code-level derivation (found by the adversarial referee pass; no end-to-end run): the mechanism is verified in source, but three checked-code admission routes into a readonly-covering-index view of a class instance were probed and all rejected — SKJS is stricter than tsc on those admissions — so the remaining candidate route is the ambient/stub trust boundary. Fix shape: make \texttt{keepReadonlyFrom} consult the original's covering index for named fields the intersection introduced
@@ -208,7 +208,7 @@ Canonical \texttt{TVar} denotation: an occurrence denotes its substitution envel
 \textsc{proved} by definition in the main paper and matched to \texttt{Subst::get}: missing bindings read as bottom contravariantly and seal to top before a covariant expansion; occurrence constraints are intersected after either read
 
 \medskip\par\noindent\textbf{SKOLEM-SEM}\quad(\textsc{proved})\\*[0.15em]
-Skolem interpretation: the clause parameters minted by \textsc{R-Inst} are interpreted by a per-view witness assignment — each skolem denotes the runtime object's actual hidden argument, chosen once when the view is installed. The assignment is stable because no later operation can bind a skolem: skolems are not inference variables, never enter the substitution, and clones cannot mint them\\*[0.15em]
+Skolem interpretation: the clause parameters introduced by \textsc{R-Inst} are interpreted by a per-view witness assignment — each skolem denotes the runtime object's actual hidden argument, chosen once when the view is installed. The assignment is stable because no later operation can bind a skolem: skolems are not inference variables, never enter the substitution, and clones cannot generate them\\*[0.15em]
 {\small\emph{Anchor:} \texttt{genSkolemTParam}; \texttt{makeSkolemTArgsOf}}\par
 \nopagebreak
 \textsc{proved}: by definition in the main paper (the skolem interpretation definition) for the denotation, and by code inspection for stability — skolems live in clause var-sets, the substitution never binds them, and clone-side generation is guarded. Consumed by deep dive A's L-INST discharge (the existential step) and by deep dive H's per-skolem hidden-argument fact
@@ -250,10 +250,10 @@ Soundness of the array-literal decision procedure inside subtyping.\\*[0.15em]
 \textsc{open} (deep dive D; delegated)
 
 \medskip\par\noindent\textbf{F-CABSENT}\quad(\textsc{violated})\\*[0.15em]
-The $\mathsf{CAbsent}$ brand is trustworthy: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's lax $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types.\\*[0.15em]
+The $\mathsf{CAbsent}$ brand-like claim accurately excludes callables: refinement drops $\mathsf{CAbsent}$ branches under \texttt{typeof} \texttt{"function"}, but subtyping's permissive $(\mathsf{CUnknown},\mathsf{CAbsent})$ arm admits callables into branded types.\\*[0.15em]
 {\small\emph{Anchor:} \path{TFields::isSubCallability} ($\mathsf{CAbsent}$ arm); \path{narrowByTypeofFunction}}\par
 \nopagebreak
-\textsc{violated}, witnessed end-to-end (deep dive D): a callable passes through \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps, then is narrowed to \texttt{never} in the branch the runtime takes; issue draft \path{cabsent-brand-laundering.md}. The callability instance of the F-BRAND trust model (refinement narrows on a brand subtyping never validates)
+\textsc{violated}, witnessed end-to-end (deep dive D): a callable passes through \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} in two accepted subtyping steps, then is narrowed to \texttt{never} in the branch the runtime takes; issue draft \path{cabsent-brand-laundering.md}. This has the same validation failure as F-BRAND: refinement relies on a brand-like claim that subtyping never validates
 
 \medskip\par\noindent\textbf{F-BRAND}\quad(\textsc{violated})\\*[0.15em]
 Subtyping never compares the array brand, though refinement narrows on it.\\*[0.15em]

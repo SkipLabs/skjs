@@ -204,14 +204,14 @@ beyond-precision \texttt{num} residue (Finding~\ref{find:precision}).
 \subsection{Construction sites of literal lexemes}
 \label{sec:sites}
 
-Every path that mints a numeric or bigint literal lexeme:
+Every path that creates a numeric or bigint literal lexeme:
 
 \begin{center}
 \small
 \renewcommand{\arraystretch}{1.2}
 \begin{tabular}{@{}p{5.6cm}p{7.6cm}@{}}
 \toprule
-\textbf{Site} & \textbf{Lexeme minted} \\
+\textbf{Site} & \textbf{Lexeme created} \\
 \midrule
 \texttt{ParserUtils.sk / getNumber, getBigInt} (lines 22--44) &
   the normalized canonical form (\texttt{validate*} then
@@ -232,8 +232,8 @@ Every path that mints a numeric or bigint literal lexeme:
   with the same string \\
 \texttt{TypeCheckEnum.sk} (fold results; \S\ref{sec:enums}) &
   exact integer folds rendered by \texttt{Int.toString()} (canonical
-  decimal); non-exact folds mint \emph{no} literal; the string-concat
-  arms mint canonical strings that can be value-unfaithful
+  decimal); non-exact folds create \emph{no} literal; the string-concat
+  arms create canonical strings that need not match the runtime value
   (Finding~\ref{find:enumfold}, row L-LIT-FOLD) \\
 \texttt{SyntheticTuples.sk} (lines 116, 127) &
   tuple arity via \texttt{Int.toString()} (canonical decimal) \\
@@ -244,7 +244,7 @@ Every path that mints a numeric or bigint literal lexeme:
 \end{center}
 
 Every numeric and bigint site routes through the shared normalizer
-(\texttt{getNumber}/\texttt{getBigInt}) or mints a canonical decimal
+(\texttt{getNumber}/\texttt{getBigInt}) or creates a canonical decimal
 directly, with the negative forms folded by
 \texttt{negateJSNumberLiteral}. Consequently the stored lexeme set for
 a source union \texttt{0x1 | 1} has \emph{one} element, \texttt{"1"},
@@ -277,7 +277,7 @@ rejected outright --- \texttt{NumericSeparatorsNotAllowedHere},
 denotes $+0$ yet fails the \texttt{== "0"} test
 (Finding~\ref{find:precision}). The num arm retains the \texttt{"NaN"}
 check --- defensive only, since no construction site of
-Section~\ref{sec:sites} can mint it (Theorem~\ref{thm:nonan} makes this
+Section~\ref{sec:sites} can create it (Theorem~\ref{thm:nonan} makes this
 precise).
 \impl{TType.sk / TPrimValueKind::isFalsy (:1548--1556)}
 
@@ -387,16 +387,16 @@ $\mathrm{MV}(\ell)$ is a nonnegative real; the Number value of a real is a
 finite double or $\pm\infty$, never $\mathsf{NaN}$, and negation
 preserves that. The only non-grammar lexemes admitted are
 \texttt{Infinity}/\texttt{-Infinity}, denoting $\pm\infty$. The
-remaining mint paths --- \texttt{keyof} over string keys, which filters
+remaining creation paths --- \texttt{keyof} over string keys, which filters
 through \texttt{isJSNumericString} (a grammar with no \texttt{NaN}
 production), and the integer renderings of the enum folder and
-\texttt{SyntheticTuples} --- mint only numerals.
+\texttt{SyntheticTuples} --- create only numerals.
 \end{proof}
 
 This \emph{proves} (rather than assumes) the main paper's stipulation
 that $\Lit{num}$ contains no $\mathsf{NaN}$ spelling, and shows the
 \texttt{literal == "NaN"} arm of \texttt{isFalsy} is defensive: no
-construction site mints \texttt{NaN}.
+construction site creates \texttt{NaN}.
 \impl{JSNumericString.sk / isJSNumericString; TType.sk / isFalsy}
 
 %==========================================================================
@@ -466,7 +466,7 @@ $\emptyset$ under closure semantics), and Theorem~\ref{thm:nonan} shows
 totality is not thereby lost.
 (3)~The finite part of $\Canon{num}$ is exactly the strings satisfying
 $\mathtt{String(Number(s))} = s$, the predicate the codebase already
-uses to classify numeric property names --- so \texttt{keyof}-minted
+uses to classify numeric property names --- so lexemes created by \texttt{keyof}
 number literals and canonicalized literals agree by construction
 (Finding~\ref{find:jsnum} details how the predicate enforces the
 magnitude bounds).
@@ -757,7 +757,7 @@ Interpolated template \emph{expressions} are the deliberate
 non-consumer: their chunks are validated but kept raw
 (\texttt{ParserExpr.sk / validateTemplatePart}, :659--666), because the
 expression is typed \texttt{string} without its parts becoming values
-(\texttt{TypeCheckExpr.sk:1878}); no literal type is minted, so no
+(\texttt{TypeCheckExpr.sk:1878}); no literal type is created, so no
 canonicality obligation arises.
 
 Invalid forms are \emph{rejected}, not guessed, mirroring
@@ -813,11 +813,11 @@ full product (\texttt{TEnv.sk / normalizeTemplate}, :2168--2274;
 
 \begin{fact}[Template reduction is exact]
 \label{fact:template}
-When the reduction succeeds, the minted literal set is
+When the reduction succeeds, the created literal set is
 $\{\,c_0 v_1 c_1 \cdots v_n c_n \mid v_i \in V_i\,\}$ where $c_j$ are
 the cooked chunk values and $V_i$ the per-member runtime spellings
-above --- each minted lexeme is the exact runtime value of the
-corresponding member choice, so the minted \texttt{TPrimValue} is
+above --- each created lexeme is the exact runtime value of the
+corresponding member choice, so the created \texttt{TPrimValue} is
 canonical (Definition~\ref{def:invariant}) and its semantics is exactly
 the set of strings the template type denotes. Absorption cases are
 handled before materialization: a \texttt{never} hole gives $\bot$; an
@@ -831,23 +831,23 @@ Two design notes. First, the beyond-precision refusal in the number
 arm is the same defect surface as Finding~\ref{find:precision},
 handled \emph{conservatively} here: where the \texttt{===}-narrowing
 path reads a lexeme-level verdict semantically with no precision guard,
-the template path refuses to mint a lexeme that does not pin down one
+the template path refuses to create a lexeme that does not pin down one
 double. Second, holes that are \texttt{number}, \texttt{bigint}, or
 abstract are rejected outright (SKJS has no pattern representation for
 an infinite-but-partial set of strings), and a hole that may not be
 interpolated at all (e.g.\ \texttt{symbol}) is a TS2322 error ---
-both rejections, so no unsound literal is minted on any template path.
+both rejections, so no unsound literal is created on any template path.
 \impl{TEnv.sk / normalizeTemplate, templateHole;
 JSNumericString.sk / isPreciseJSNumberLiteral (:87)}
 
 \subsection{Enum member values enter the literal domain}
 \label{sec:enums}
 
-Enum members mint literal types on three routes. Canonicality — is the
-minted lexeme a canonical form? — holds on all three, so every enum
+Enum members create literal types on three routes. Canonicality — is the
+created lexeme a canonical form? — holds on all three, so every enum
 member literal is inside \textbf{L-LIT}'s scope like any other stored
 literal, and every registry consumer of L-LIT's form properties covers
-enum literals unchanged. \emph{Value faithfulness} — does the minted literal
+enum literals unchanged. \emph{Value faithfulness} — does the created literal
 equal the runtime result of its source expression? — is the
 \emph{orthogonal} claim, distinctive to synthesis: it holds on the
 first two routes and fails on the third. It is registry row
@@ -856,7 +856,7 @@ first two routes and fails on the third. It is registry row
 A \emph{direct} initializer (or the implicit auto-increment seed
 \texttt{"0"}) carries a lexeme from the ordinary literal path ---
 normalized numerics, decoded strings --- so it inherits every result of
-this paper, including the beyond-precision carve-out (a member
+this paper, including the beyond-precision exception (a member
 initialized with a beyond-precision spelling stores that spelling, like
 any other literal); faithfulness here is definitional — the ordinary
 literal is carried through unchanged, so the member denotes what the
@@ -867,11 +867,11 @@ arithmetic gated to the double-safe range: operands must parse by
 \texttt{toIntOption} with magnitude $\leq 2^{53}{-}1$, every operation
 checks for overflow and inexactness (division folds only when exact;
 fractional, overflowing, or out-of-range results widen to an
-\emph{untracked number}, minting no literal), and results render through
+\emph{untracked number}, creating no literal), and results render through
 \texttt{Int.toString()} --- canonical decimal numerals denoting exactly
 the runtime results, so this route is faithful.
 
-\begin{finding}[The string-concat fold arms are value-unfaithful for
+\begin{finding}[The string-concat fold arms can disagree with runtime values for
 beyond-precision operands: L-LIT-FOLD is violated]
 \label{find:enumfold}
 The third route is string concatenation: the \texttt{BOAddition} arms
@@ -883,9 +883,9 @@ direct numeric-literal operand contributes its stored spelling with no
 precision check. At runtime the engine converts the \emph{value}
 (\texttt{ToString(Number)}), so any operand whose spelling fails the
 round-trip predicate concatenates wrongly:
-\texttt{enum E \{ A = "x" + 1e-400 \}} mints the member literal
+\texttt{enum E \{ A = "x" + 1e-400 \}} creates the member literal
 \texttt{"x1e-400"} while \texttt{E.A} evaluates to \texttt{"x0"}. The
-minted literal is a perfectly canonical \emph{string} — the failure is
+created literal is a perfectly canonical \emph{string} — the failure is
 faithfulness, not form: the member's runtime value escapes its static
 type. Witnessed end-to-end (issue draft
 \texttt{enum-concat-imprecise-fold.md}; SKJS accepts the assignment at
@@ -893,7 +893,7 @@ the wrong literal type, tsc types \texttt{E.A} as \texttt{E} and
 rejects). Two repairs fit the current representation: concatenate
 \texttt{String(Number(lexeme))} — correct JavaScript semantics — or
 conservatively \emph{reject} a string fold whose numeric operand fails
-\texttt{isPreciseJSNumberLiteral}. The numeric route's widen-to-untracked
+\texttt{isPreciseJSNumberLiteral}. The numeric route's fallback to an untracked number
 philosophy does not transfer as-is: the representation has an
 untracked-\emph{number} member but no untracked-string analogue, and
 refusing the constant fold today routes into the computed-member path,
@@ -903,7 +903,7 @@ change.
 
 With the concat arms carved out, the enum machinery is otherwise an
 upstream \emph{client} of the canonical-literal domain: no enum path
-mints a lexeme outside the canonical forms already audited, and the
+creates a lexeme outside the canonical forms already audited, and the
 faithfulness gap is confined to Finding~\ref{find:enumfold}.
 \impl{TypeCheckEnum.sk / enumFoldNumericBinop (:131--190),
 enumNumOrUnknown (:123--126), EFStr concat arms (:439--457),
@@ -992,7 +992,7 @@ Because stored lexemes are canonical, the falsiness test reads them
 directly. \texttt{isFalsy} (\texttt{TType.sk:1548}) compares against the
 canonical falsy sets of Theorem~\ref{thm:falsy}: \texttt{TNum() ->
 literal == "NaN" || literal == "0"} (the \texttt{"NaN"} arm is
-defensive, though Theorem~\ref{thm:nonan} shows no site mints it);
+defensive, though Theorem~\ref{thm:nonan} shows no site creates it);
 \texttt{TBigInt() -> literal == "0n"}; \texttt{TString() -> literal ==
 ""} (exact, since the stored lexeme is the decoded value); other kinds
 compare against their own canonical falsy lexemes. There is no separate
@@ -1074,7 +1074,7 @@ beyond-precision decimals (\texttt{9007199254740993}, whose value renders
 everything the predicate accepts; the residue is
 Finding~\ref{find:precision}. A separate \texttt{isJSNumberKeyName}
 predicate (\texttt{:126}) serves the index-signature clients, so the
-\texttt{keyof} and number-index paths do not mint non-canonical number
+\texttt{keyof} and number-index paths do not create non-canonical number
 literals from string keys. $\Canon{num}$ in this paper is defined by the
 rendering, not by the predicate, so the theorems are stated
 independently of the predicate's exact grammar; adversarial probing of
@@ -1164,12 +1164,12 @@ Storage & parse-time \texttt{normalizeJSNumber}/\texttt{normalizeJSBigInt}
   and \texttt{decodeJSStringLiteral}
   ($= \canon_k$ of \S\ref{sec:canonical}); property names normalize and
   decode via the shared parser helpers (\S\ref{sec:propnames});
-  template-type reduction and enum folding mint only canonical lexemes
+  template-type reduction and enum folding create only canonical lexemes
   (\S\ref{sec:templates}, \S\ref{sec:enums} --- canonical in \emph{form};
   the concat arms' value-faithfulness gap is
   Finding~\ref{find:enumfold}); the
   \texttt{isJSNumericString} thresholds (Finding~\ref{find:jsnum}) are
-  enforced. Carve-out: beyond-precision \texttt{num} literals
+  enforced. Exception: beyond-precision \texttt{num} literals
   (round-trip failures: 16--17-digit decimals, radix $>2^{53}$,
   over/underflow exponent forms) are stored non-canonically and never
   merged, so the canonical-storage invariant of

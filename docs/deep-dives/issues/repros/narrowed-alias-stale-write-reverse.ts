@@ -1,4 +1,4 @@
-// repro for: narrowed-alias-stale-write, reverse direction (docs/deep-dives/issues/narrowed-alias-stale-write.md)
+// repro for: narrowed-alias-stale-write, write through alias (docs/deep-dives/issues/narrowed-alias-stale-write.md)
 // expect: accepted   (skjs check exits 0 — the unsound acceptance at the pin)
 // run: make check-file-in-docker FILE=docs/deep-dives/issues/repros/narrowed-alias-stale-write-reverse.ts BIN=target/host/dev/skjs
 

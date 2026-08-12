@@ -646,8 +646,9 @@ brand-aware: off the array brand it \emph{keeps the positive mode} — a
 sound over-approximation of a contradiction (a member cannot both
 implement and not implement $[[\mathrm{Call}]]$), deliberately not
 $\bot$ because $\mathsf{CAbsent}$ on nominal instances is a brand-like
-approximation that structural width subtyping can falsify (the
-laundering documented in the code at \texttt{isSubCallability}), so a
+approximation that structural width subtyping can falsify (the two-step
+callable-to-class conversion documented in the code at
+\texttt{isSubCallability}), so a
 $\bot$ here would collapse inhabited hybrid types like
 \texttt{(() => void) \& C}. Under the array brand
 ($\mathsf{isArray} = \mathsf{Some(true)}$) the same arm returns
@@ -655,9 +656,9 @@ $\bot$ here would collapse inhabited hybrid types like
 because an array-branded member is an array exotic object, which
 implements neither $[[\mathrm{Call}]]$ nor $[[\mathrm{Construct}]]$
 (ECMA-262 \S10.4.2), contradicting the positive mode — conditional on
-the array brand's membership invariant, i.e.\ exactly the brand trust
-that subtyping leaves unvalidated (registry row F-BRAND); a value
-laundered into an array-branded view would make this bottom spurious
+the array brand's membership invariant, which subtyping leaves
+unvalidated (registry row F-BRAND); a value accepted into an
+array-branded view would make this bottom spurious
 through that row, not through this arm. The meet also preserves the
 constructible-implies-$[[\mathrm{Call}]]$ construction invariant
 pairwise (\texttt{TType.sk:2273-2281}): it never invents a
@@ -1121,7 +1122,7 @@ semantics and remain part of the subtyping surface.''
   intersection returns non-bottom: units, tags, literal sets, fields,
   indexes, brand, callability, clause product, STypes assembly, and the
   instance layer (the last using \textbf{TVAR-SEM}). This recursive premise
-  is load-bearing: a non-bottom outer object may contain a field result
+  is necessary: a non-bottom outer object may contain a field result
   produced by a nested intersection that spuriously returned $\bot$.
 \item \textbf{L-INTER-BOT} is \textsc{proved} for units, tags, decoded
   strings, within-precision numbers, fields, indexes, brand (modulo
@@ -1132,7 +1133,7 @@ semantics and remain part of the subtyping surface.''
 \item Cached \texttt{seenInter} reuse remains \textsc{open} for both
   guarantees where inference growth can make a retained result stale
   (C-FREEZE-CACHE, Obligation~\ref{obl:freeze-cache}). Consequently the
-  registry grades L-INTER \textsc{open}, with its fresh structural core
+  registry grades L-INTER \textsc{open}, with the fresh structural case
   proved; L-INTER-BOT is already \textsc{violated} by direct witnesses.
 \end{itemize}
 Every theorem of the main paper that needs an inhabited intersection to

@@ -12,7 +12,7 @@ and the loop-entry (possibly narrowed) type is never consulted. The loop
 body is checked once under the pre-loop narrowing, so a second iteration
 reads the binding at the stale narrowed type while the store holds a
 value the first iteration wrote — no call, closure, or alias involved.
-For *un-annotated* bindings the through-loop check does fire and the
+For *un-annotated* bindings the loop-write check does run and the
 shape is rejected.
 
 ## Minimal reproduction (self-contained)
@@ -32,7 +32,7 @@ Reproduction: [`repros/loop-carried-narrowing-stale.ts`](repros/loop-carried-nar
 `Scope::set`'s three checks are mutually exclusive in order
 annotation → capture → loop (`src/TypeCheckScope.sk:178-197`): the
 annotation arm (`isAnnotated`, checks against `declaredType`) preempts
-the through-loop arm (checks against the loop-entry type `upRef.type`),
+the loop-write arm (checks against the loop-entry type `upRef.type`),
 so annotated bindings never receive the back-edge guard. Iteration-2
 reads are justified only if back-edge writes preserve the loop-entry
 type, which the declared-type check does not ensure.
@@ -47,7 +47,7 @@ previously tracked.
 
 ## Suggested fix
 
-Deep dive F's policy layer P1: either extend the through-loop check to
+Deep dive F's policy layer P1: either extend the loop-write check to
 annotated bindings — a back-edge write is checked against the loop-entry
 type *in addition to* the declared type — or, matching tsc, re-widen at
 loop entry the narrowings of every binding the loop body assigns.

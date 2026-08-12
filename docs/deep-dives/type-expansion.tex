@@ -81,7 +81,7 @@ residual instances keep theirs,'' anchored at \texttt{TType::expand}. Every
 refinement operator of the main paper runs on the expanded view
 (its Definition ``Memberwise Refinement''), and the proof of its
 memberwise-refinement lemma consumes \textbf{L-EXP} in its first step; the
-axiom is therefore load-bearing for every branch-soundness result.
+axiom is therefore necessary for every branch-soundness result.
 
 \paragraph{What this paper does.}
 (i) models $\expandop$ as a function of a type, a substitution state, and a
@@ -847,7 +847,7 @@ later grows. On the alias path, \texttt{seenExpansion} is \emph{immune
 by construction}: by Theorem~\ref{thm:invariance} the cached value does
 not depend on any binding read, frozen or not — the unsealed read can
 return whatever it likes without being able to reach the cached value.
-This immunity is now load-bearing rather than belt-and-braces, since
+This immunity is now necessary rather than belt-and-braces, since
 cross-mention keying makes cache hits routine. It is also orthogonal to
 \textbf{E-EXPKEY}: the collision serves a \emph{wrong definition's}
 correct expansion, never a stale one — no binding staleness is
@@ -1012,7 +1012,7 @@ does not cover the circular-alias return, which fires with it empty).
 \label{sec:placeholder}
 
 An un-annotated field of an \emph{ambient} class has no type to
-normalize; the checker mints a synthetic name for it
+normalize; the checker creates a synthetic name for it
 (\texttt{Missing\_type\_annotation\_for\_...}) and $\instop$, on seeing
 that prefix, returns not an identity $\mathsf{TSInst}$ but an
 \emph{opaque atom}: a synthetic rigid \texttt{TParam}, ``a subtype of
@@ -1055,7 +1055,7 @@ While expanding $n$, an inner reference to $n$ normalizes to an
 unexpanded \texttt{TSInst} instead of unfolding
 (\texttt{TEnv.sk:79--82, 189--192, 2089--2091}). The cutoff is sound by
 construction: the re-emitted instance denotes the named type ((N1)),
-and nested occurrences sit inside object fields or targs, where the
+and nested occurrences sit inside object fields or type arguments, where the
 worklist does not descend — expansion is one level deep by design (the
 main paper's ``expansion rewrites a type to its instance-plus-clauses
 view'' is inherently head expansion).
@@ -1072,7 +1072,7 @@ in programs already rejected. Two neighbouring guards in parameter
 filling are fatal or top-recovering, hence trivially sound: a cycle
 through a second alias's \emph{default} is refused as excessively deep
 (TS2589, \texttt{TEnv.sk:283--299}), a directly circular default
-resolves to \texttt{unknown} so it launders no value
+resolves to \texttt{unknown}, so it cannot introduce a value at an unsupported type
 (\texttt{TEnv.sk:330--336}), and a self-referential \emph{constraint}
 refuses the instantiation outright (TS2589,
 \texttt{TEnv.sk:360--368}).

@@ -340,7 +340,7 @@ by \texttt{b.set("s")}, yields an accepted program in which a value
 typed \texttt{number} holds the string \texttt{"s"} at runtime (issue
 draft \path{issues/reflexive-tsinst-fastpath-unsealed-read.md}, runnable
 repro). The arm returns $\STOk$ without expanding or growing
-(guidance-free, no state write, not memoized) --- which is exactly why
+(without inference guidance, state writes, or memoization) --- which is why
 nothing seals the peeked variable. Fix directions: seal the peeked
 variables (a covariant \texttt{get}) before accepting; restrict the arm
 to $\SVClosed$ bindings; or retire the arm.
@@ -1168,8 +1168,8 @@ string never-index for \emph{admission} exactly as they do for the absence
 claim, so the claim and the gate move together. Hence an accepted admission
 never creates the absence fact on which the main paper's \textsc{R-In}
 true-branch pruning relies. Note the structural contrast with
-Finding~F-CABSENT: indexes have no lax middle state — an absent index reads
-$\top$ and $\top \leq \bot$ rejects — so the two-step laundering that
+Finding~F-CABSENT: indexes have no permissive middle state — an absent index reads
+$\top$ and $\top \leq \bot$ rejects — so the two-step conversion that
 defeats the callability brand has no analogue here. The pinned
 open-to-closed control is
 \texttt{tests/expect-error/closed-type.ts} /
@@ -1189,7 +1189,7 @@ $\mathsf{Callability}$ lattice (\S\ref{sec:recap}), by arm
 (\texttt{src/TTypeSubtyping.sk:1255-1297}):
 $(-, \mathsf{CUnknown})$ accept;
 $(\mathsf{CAbsent}, \mathsf{CAbsent})$ accept;
-$(\mathsf{CUnknown}, \mathsf{CAbsent})$ accept --- \emph{lax by design},
+$(\mathsf{CUnknown}, \mathsf{CAbsent})$ accept --- \emph{permissive by design},
 analyzed below;
 $(\mathsf{CPresent}, \mathsf{CAbsent})$ and
 $(\mathsf{CFunction}, \mathsf{CAbsent})$ reject;
@@ -1212,15 +1212,15 @@ exact or forced. The five rejections are semantically necessary
 $\neg\mathsf{callable}$ claim, and nothing short of a proof of
 $[[\mathrm{Call}]]$ may enter the positive $\mathsf{CFunction}$ brand
 --- in particular $\mathsf{CUnknown} \not\leq \mathsf{CFunction}$, so
-\emph{nothing launders into} $\mathsf{CFunction}$; likewise a bare
+\emph{no unsupported value enters} $\mathsf{CFunction}$; likewise a bare
 $\mathsf{CFunction}$ offers no signature to satisfy a
 $\mathsf{CPresent}$ target). $(-, \mathsf{CUnknown})$ is exact: the
 target claims nothing. $(\mathsf{CPresent}, \mathsf{CFunction})$ and
 the $\mathsf{CFunction}$ diagonal are exact: the target claims
 callability, which the source proves. The signature recursion is the
-subject of \S\ref{sec:tfun}. The one lax arm is not sound:
+subject of \S\ref{sec:tfun}. The one permissive arm is not sound:
 
-\begin{finding}[F-CABSENT: The Laundered $\mathsf{CAbsent}$ Brand]
+\begin{finding}[F-CABSENT: Callables Can Enter a $\mathsf{CAbsent}$ Type]
 \label{find:cabsent}
 $(\mathsf{CUnknown}, \mathsf{CAbsent})$ is accepted: an
 unknown-callability source flows into a type whose mode claims
@@ -1235,9 +1235,9 @@ $o \in \sem{b_1}$ (callables inhabit $\mathsf{CUnknown}$ branches ---
 that is what makes the mode ``unknown'') is excluded from $\sem{b_2}$
 by the $\mathsf{call}(b_2) = \mathsf{CAbsent} \Rightarrow
 \neg\mathsf{callable}(o)$ clause. And the violated clause is
-load-bearing in refinement: \texttt{narrowByTypeofFunction} drops
+necessary in refinement: \texttt{narrowByTypeofFunction} drops
 $\mathsf{CAbsent}$ branches in the \texttt{typeof x === "function"}
-true case (\texttt{src/TType.sk:2438-2460}), so a callable laundered
+true case (\texttt{src/TType.sk:2438-2460}), so a callable accepted through
 \texttt{Function} $\to$ \texttt{\{\}} $\to$ \texttt{C} --- two
 individually-accepted steps, $(\mathsf{CPresent}, \mathsf{CUnknown})$
 then $(\mathsf{CUnknown}, \mathsf{CAbsent})$ --- is narrowed to
@@ -1247,15 +1247,15 @@ then $(\mathsf{CUnknown}, \mathsf{CAbsent})$ --- is narrowed to
 branch with a function value at type \texttt{never}, tsc rejects ---
 the unsoundness is SKJS-specific). $\mathsf{CAbsent}$ is thus a
 \emph{brand}: a claim refinement trusts as proof but subtyping enforces
-only against sources that themselves prove callability --- exactly the
-trust model of the array brand (Finding~\ref{find:brand}), whose
-callability instance this is. Repair options: (a) reject
+only against sources that themselves prove callability. The array brand
+has the same validation gap (Finding~\ref{find:brand}). Repair options:
+(a) reject
 $(\mathsf{CUnknown}, \mathsf{CAbsent})$ --- sound, breaks TS structural
 assignability into class-instance types; (b) downgrade refinement's
 trust: treat $\mathsf{CAbsent}$ as droppable under
 \texttt{typeof "function"} only where every inhabitant is
 class-constructed (no structural admission route) --- which is the same
-decision the array brand needs, so one trust-model resolution covers
+decision the array brand needs, so one resolution covers
 both findings. The same analysis applies verbatim to
 \texttt{new}/\textsf{constructible}.
 \impl{TTypeSubtyping.sk / isSubCallability (CUnknown, CAbsent) arm;
@@ -1277,7 +1277,7 @@ is accepted against a branch with $\mathsf{isArr} =
 Against the main paper's brand clause
 ($\mathsf{isArr}(b) = \mathsf{Some}(x) \Rightarrow \mathsf{isArrayV}(o)
 = x$) this is a non-inclusion; and as with F-CABSENT the violated clause
-is load-bearing elsewhere: \textsc{R-IsArray}'s \emph{false} branch drops
+is necessary elsewhere: \textsc{R-IsArray}'s \emph{false} branch drops
 branches branded $\mathsf{Some}(\mathsf{true})$, so a structural
 non-array impostor accepted at type
 \texttt{ReadonlyArray<T>} is typed \texttt{never} in the
@@ -1309,7 +1309,7 @@ the numeric-named-field/dual-index corner
 (Lemmas~\ref{lem:both-get}, \ref{lem:width}, \ref{lem:indexes} — the
 width lemma's named residual);
 its set-direction checks are the \textbf{L-MUT} obligations
-(Lemma~\ref{lem:both-set}); the two carve-outs are exactly the
+(Lemma~\ref{lem:both-set}); the two exceptions are exactly the
 F-CABSENT/F-BRAND violations, and the sound callability arms of
 \S\ref{sec:modes} defer their signature recursion to
 \S\ref{sec:tfun}. \qed
@@ -1350,7 +1350,7 @@ claim --- and \texttt{maybeGetCall} requires $\mathsf{CPresent}$, so the
 checker never invokes through a bare $\mathsf{CFunction}$);
 $\mathsf{CUnknown}$ entails nothing; dually for
 $\mathsf{new}$ with construction. (The $\mathsf{CAbsent}$ clause is
-unchanged from \S\ref{sec:recap} and its lax subtyping arm is graded as
+unchanged from \S\ref{sec:recap} and its permissive subtyping arm is graded as
 Finding~\ref{find:cabsent}.) Two deliberate choices:
 extra trailing arguments are \emph{unconstrained but permitted} ---
 JS functions accept any arity, and the contract must quantify over them
@@ -1626,10 +1626,10 @@ Array-literal decision & Obligation~\ref{obl:arraylit} \\
   counterexample (``membership never inspects parameter types'') stops
   being automatic and must cite the stratified-level bookkeeping of
   \S\ref{sec:coinduction}.
-\item \emph{Resolve the brand-trust model explicitly}: the
+\item \emph{Define when refinement may rely on brands}: the
   $\mathsf{CAbsent}$ and array brands are claims refinement trusts as
   proofs but subtyping enforces only against sources that themselves
-  prove the property; either close the lax admissions
+  prove the property; either reject the permissive admissions
   ($(\mathsf{CUnknown},\mathsf{CAbsent})$; the missing brand arm) or
   downgrade the \textsc{R-Typeof}/\textsc{R-IsArray} drops to
   brand-insensitive narrowing --- one decision covers both findings;
@@ -1664,7 +1664,7 @@ schemas, \S\ref{sec:naive}); the successful replacement needs the frozen
 \texttt{TEnv} threading and save/restore locality, neither of which is
 about the version at all. (ii) A membership-only proof of the field
 stratum fails at exactly two clauses (the $\mathsf{CAbsent}$ clause
-under its lax admission arm, and the brand) --- both times
+under its permissive admission arm, and the brand) --- both times
 because the main paper priced those clauses into \emph{refinement}
 proofs; the failures are reported as violations rather than weakened
 into assumptions. (iii) A proof of \texttt{TFun::isSub} against the
