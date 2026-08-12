@@ -57,48 +57,64 @@
 \begin{abstract}
 We model SKJS's internal type representation and its two flow-sensitive type
 transformations: predicate-driven \emph{refinement} (control-flow narrowing in
-\texttt{evalCond}) and \emph{constant removal} (the remaining use of the
-checker's former general type-difference operation). We prove soundness
-properties for both transformations and model the inference substitution as a
-state machine, making explicit the conditions under which inference growth
+\texttt{evalCond}) and \emph{constant removal} (the checker's single-constant
+subtraction operation). We derive conditional
+soundness properties for both transformations and model the inference
+substitution as a state machine, making explicit the conditions under which
+inference growth
 (\texttt{growTVars}) preserves membership in types computed earlier during
 refinement. This is not a claim
 that the whole checker is sound. Every implementation behavior needed by the
 results is either modeled here, represented by a named registry assumption or
 obligation, or excluded with a reason that it cannot affect the stated result.
-The registry and exclusions appear in Sections~\ref{sec:assumptions}
-and~\ref{sec:scope}. This document supersedes the draft attached to PR \#342
-(``Refinement and Type Difference in SKJS'').
+The evidence corpus proves some of those conditions and records counterexamples
+to others. The registry and exclusions appear in
+Sections~\ref{sec:assumptions} and~\ref{sec:scope}.
 \end{abstract}
 
 \tableofcontents
 
 \paragraph{Reading guide.}
-Sections~\ref{sec:scope}--\ref{sec:inference} build the model and prove the
-refinement, constant-removal, and inference results. The worked examples then
-show both established behavior and known counterexamples. Readers auditing a
-particular assumption can go directly to Section~\ref{sec:assumptions}, whose
-generated registry entries name the owning evidence paper and implementation
-anchors. The final two sections record implementation correspondence and the
-maintenance rules for keeping the corpus synchronized with the checker.
+Section~\ref{sec:scope} states the result boundary before the runtime and type
+models are introduced. Sections~\ref{sec:refinement}--\ref{sec:inference}
+derive the refinement and constant-removal results and state the conditions
+needed by inference. Readers auditing a particular condition can go directly
+to the status frontier in Section~\ref{sec:assumptions} and the row-level
+registry in Appendix~\ref{app:registry}. Corpus-wide build and review
+instructions live in \texttt{docs/README.md}.
 
 %==========================================================================
-\section{Scope, Method, and Modeling Contract}
+\section{Result Boundary and Scope}
 \label{sec:scope}
 
-\paragraph{Pinned revision.}
-All implementation references (file, class, function) are against commit
-\texttt{\skjspinhash}. The document is maintained by the discipline of
-Appendix~\ref{app:maintenance}: every inference rule in the refinement master
-list corresponds to one dispatch arm of \texttt{evalCond}, and drift between
-the list and the dispatch is intended to be mechanically checkable.
-Two terms of art for that mechanism, used throughout: an
-\emph{implementation anchor} is a file/class/function reference (typeset as
-\textsf{impl:}~\texttt{\dots}) locating the code a definition or rule
-models — the maintenance check verifies anchors bidirectionally; a
-\emph{pinned test} is a test in the repository that fails when a documented
-behavior changes, forcing the corresponding passage to be updated in the
-same change.
+\subsection{Result boundary}
+
+The contribution is a model with conditional results, not a certificate for
+the checker as a whole:
+
+\begin{keydef}
+\renewcommand{\arraystretch}{1.2}
+\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.18\linewidth}
+                    >{\raggedright\arraybackslash}p{0.34\linewidth}
+                    >{\raggedright\arraybackslash}p{0.39\linewidth}@{}}
+\toprule
+\textbf{Area} & \textbf{Result here} & \textbf{Boundary} \\
+\midrule
+Refinement & Each modeled rule is branch-sound. & Conditional on the named
+  runtime, representation, lattice, mutation, and inference rows used by its
+  proof. \\
+Constant removal & The result contains every value in the semantic set
+  difference; exactness holds for the listed non-top forms. & It deliberately
+  leaves top clauses unchanged. \\
+Inference & The state transitions are modeled, and growth supplies guidance
+  while validation decides acceptance. & Validation soundness, stability under
+  later growth, and rollback are explicit obligations. \\
+Whole checker & No theorem. & Expression soundness and full statement
+  preservation remain outside this paper. \\
+\bottomrule
+\end{tabular}
+\end{keydef}
 
 \paragraph{Modeling contract.}
 Every behavior of the implementation that can affect type soundness is placed
@@ -106,80 +122,31 @@ in exactly one of three bins:
 \begin{enumerate}
 \item \textbf{Modeled}: defined concretely in this document and proved sound.
 \item \textbf{Abstracted}: hidden behind an interface with explicitly stated
-  axioms. All such axioms are collected in Section~\ref{sec:assumptions}
-  (Assumptions and Proof Obligations), each with an implementation anchor
-  and a status from the fixed vocabulary \textsc{proved} / \textsc{assumed}
-  / \textsc{open} / \textsc{violated} defined there.
+  axioms. Section~\ref{sec:assumptions} summarizes their status frontier, and
+  Appendix~\ref{app:registry} renders every row with its implementation anchor
+  and registry status.
 \item \textbf{Out of scope}: listed below, each with a reason why omission
   cannot create a hole in the soundness argument.
 \end{enumerate}
 An implementation behavior that fits none of the bins is a defect of this
 document.
 
-\paragraph{Terminology.}
-The model deliberately keeps the implementation's names so that every term
-can be grepped for; the cost is a few SKJS-specific usages, fixed here.
-An \emph{object branch} is one alternative of an object type's internal
-union (the implementation's \texttt{TObject.branches}); it is always
-qualified, since \emph{true/false branch} refers to control flow.
-A \emph{member} is one $\SType$ alternative of an $\STypes$ union;
-a \emph{clause} pairs type parameters with such a union.
-A \emph{candidate} is an ordinary inference variable (\texttt{TVID});
-\emph{grow} and \emph{seal} are the substitution transitions of
-Section~\ref{sec:inference}; \emph{expansion} rewrites a type to its
-instance-plus-clauses view under the current substitution.
-A \emph{brand} is a type-level claim about a runtime property that
-refinement treats as evidence. The array brand records the result of an
-\texttt{Array.isArray} test on an object branch; $\mathsf{CAbsent}$ is a
-brand-like claim that the branch contains no callable values.
-a \emph{phantom field} records runtime-confirmed presence without a
-declaration. ``Open'' is used only for the substitution state
-$\SVOpen$ and the obligation status; the object semantics of
-Definition~\ref{def:object-semantics} is called \emph{extensible}.
-
-\paragraph{Routing source features into the contract.}
-Classification follows implementation mechanisms rather than whole
-source-language features. A single feature can have a modeled type
-representation, a checking phase represented by a registry obligation, and a
-diagnostic outside this theorem.
-
-The following normalization results are modeled directly because they produce
-the literal and object forms defined in Section~\ref{sec:representation}:
-finite template literal types become finite unions of string literals;
-\texttt{enum} types become unions of their member literal types; and
-\texttt{Closed<T>} becomes \texttt{T}'s object type with never-valued indexes
-for uncovered keys. The registry records the required properties of the code
-that produces these forms:
-\begin{itemize}
-\item \textbf{L-LIT} covers the representation of every stored literal,
-  whether produced by the parser or the enum constant folder.
-\item \textbf{L-LIT-FOLD} separately requires an enum member's synthesized
-  literal type to denote the member's runtime value.
-\item \textbf{L-EXP} covers expansion of the normalized types.
-\item \textbf{L-SUB-CLOSED-ABSENCE} governs when subtyping may establish the
-  absence facts consumed by rule \textsc{R-In}.
-\end{itemize}
-
-A \texttt{switch} case uses the modeled \textsc{R-Eq} rules, and fallthrough
-adds the extra scope entry shown in the refinement-rule list below. Whether a
-finite set of cases covers every value is instead a statement-level property
-for the future preservation theorem. Such a result will require
-\textbf{L-LIT-FOLD}, because coverage depends on the runtime values of enum
-members.
-
-Other mechanisms remain represented by registry rows or lie outside the
-one-step result. Expression typing is \textbf{L-TC}. Behavioral function
-signatures are E-SIG, which covers synthesized
-\texttt{.call}/\texttt{.apply}/\texttt{.bind} members, explicit
-\texttt{this}-parameter checking, and contextual typing of unannotated closure
-parameters. Executing an enum declaration and constructing its runtime
-forward/reverse-mapping object belongs to the future statement-preservation
-theorem. This exclusion does not hide the enum object's type-level components
-from the modeled results: refinement and subtyping still see its ordinary
-fields and callability mode. Switch-exhaustiveness reporting is a nonfatal
-diagnostic and does not affect acceptance. Each mechanism is therefore
-classified where a proof uses it; no source-language feature receives one
-blanket classification.
+\paragraph{Features that cross the boundary.}
+Classification follows implementation mechanisms, not whole source-language
+features. Finite template literals, enum types, and \texttt{Closed<T>} produce
+the literal and object forms modeled below; \textbf{L-LIT},
+\textbf{L-LIT-FOLD}, \textbf{L-EXP}, and
+\textbf{L-SUB-CLOSED-ABSENCE} govern whether their construction and later use
+justify those forms. A \texttt{switch} case uses the modeled \textsc{R-Eq} rules, but
+case coverage belongs to the future statement-preservation theorem. Behavioral
+function signatures — including synthesized \texttt{.call/.apply/.bind}
+members, explicit \texttt{this} parameters, and contextual typing of
+unannotated closure parameters — remain behind \textbf{E-SIG}. Executing an
+enum declaration and
+constructing its runtime mapping object also belongs to statement preservation,
+although refinement and subtyping still see the enum object's ordinary fields
+and callability mode. Nonfatal diagnostics such as switch-exhaustiveness
+reporting cannot affect acceptance and therefore do not enter the theorem.
 \impl{TEnv.sk / normalizeTemplate, closeObjectType; TypeCheckEnum.sk;
 TypeCheckStmt.sk / Switch; TypeCheckExpr.sk / call checking}
 
@@ -207,22 +174,45 @@ TypeCheckStmt.sk / Switch; TypeCheckExpr.sk / call checking}
   future work. The interaction of narrowing with mutation \emph{during
   condition evaluation} is governed by assumptions
   \textbf{L-PURE} and \textbf{L-LOCAL}.
-\item \emph{Flow-typing sites outside condition narrowing.} The master list
-  covers condition forms only. The checker performs flow-sensitive type
-  updates at five further sites, listed here so the boundary is a stated
-  enumeration rather than an implication: assignment to a local updates its
-  scope entry (\texttt{TypeCheckExpr.sk}, \texttt{Var}-LHS
-  \texttt{scope.set}); literal-typed local objects grow fields on
-  assignment; \texttt{this} is re-typed after \texttt{super(...)}; the
-  non-null assertion \texttt{x!} and optional chaining remove nullish
-  members from the \emph{expression's} type (no scope mutation, via
-  \texttt{removeUndefined}); and the \texttt{for}-\texttt{in} index
-  mechanism suppresses element errors without narrowing. None of these is a
-  condition refinement; each would be a case of the future preservation
-  theorem. Note also that \texttt{for}-loop conditions do \emph{not} narrow.
+\item \emph{Flow typing outside condition narrowing.} Assignment updates,
+  field growth on literal-typed locals, retyping \texttt{this} after
+  \texttt{super(...)}, nullish removal for assertions and optional chains,
+  and the \texttt{for}-\texttt{in} index mechanism are not condition
+  refinements. They belong to the future preservation theorem. A
+  \texttt{for}-loop condition itself does not narrow.
 \item \emph{Numeric coercions, operators, and standard-library semantics.}
   Only the condition forms of the master list are given evaluation semantics.
 \end{itemize}
+
+%==========================================================================
+\section{Reading Conventions}
+
+\paragraph{Pinned revision.}
+All implementation references are against commit \texttt{\skjspinhash}.
+Every rule in the refinement master list corresponds to one dispatch arm of
+\texttt{evalCond}; Appendix~\ref{app:maintenance} describes how that
+correspondence is maintained.
+
+\paragraph{Terminology.}
+The model deliberately keeps the implementation's names so that every term
+can be grepped for; the cost is a few SKJS-specific usages, fixed here.
+An \emph{object branch} is one alternative of an object type's internal
+union (the implementation's \texttt{TObject.branches}); it is always
+qualified, since \emph{true/false branch} refers to control flow.
+A \emph{member} is one $\SType$ alternative of an $\STypes$ union;
+a \emph{clause} pairs type parameters with such a union.
+A \emph{candidate} is an ordinary inference variable (\texttt{TVID});
+\emph{grow} and \emph{seal} are the substitution transitions of
+Section~\ref{sec:inference}; \emph{expansion} rewrites a type to its
+instance-plus-clauses view under the current substitution.
+A \emph{brand} is a type-level claim about a runtime property that
+refinement treats as evidence. The array brand records the result of an
+\texttt{Array.isArray} test on an object branch; $\mathsf{CAbsent}$ is a
+brand-like claim that the branch contains no callable values.
+A \emph{phantom field} records runtime-confirmed presence without a
+declaration. ``Open'' is used only for the substitution state
+$\SVOpen$ and the obligation status; the object semantics of
+Definition~\ref{def:object-semantics} is called \emph{extensible}.
 
 %==========================================================================
 \section{Runtime Model}
@@ -755,6 +745,13 @@ argument below.
 \section{Refinement (Control-Flow Narrowing)}
 \label{sec:refinement}
 
+The section first proves a reusable memberwise-refinement lemma, then defines
+branch soundness, inventories the dispatch, and checks each rule against that
+framework. Most rules reduce to the reusable lemma; whole-variable equality
+and connective scope merges receive direct arguments. The master list is the
+implementation-facing index, while the rule subsections contain the semantic
+claims and their exact registry dependencies.
+
 \subsection{The single refinement primitive}
 
 Nearly all narrowing in SKJS is performed by one primitive applied to a
@@ -966,30 +963,13 @@ means that control-flow branch performs no narrowing.
 Entry points that reduce to this list: \texttt{if}/\texttt{while} conditions,
 the ternary $c\ \texttt{?}\ a\ \texttt{:}\ b$ (which narrows inside $a$ and
 $b$ exactly like \texttt{if}), and \texttt{\&\&}/\texttt{||} value positions
-call \texttt{evalCond}. A \texttt{switch} clause's body is checked under
-the true branch of the desugared label equality $e\ \texttt{===}\ v$; a
-clause entered \emph{by fallthrough} additionally unions in the falling
-clause's exit scope (the fallthrough entry is a separate way in, not
-narrowed by the label), and the \texttt{default} body is checked under
-the false branch of \emph{every} case equality — so it is narrowed to
-what no case matched (\texttt{TypeCheckStmt.sk};
-\texttt{TypeCheckExpr.sk} block-entry narrowing).
-\texttt{console.assert}$(e)$ applies the true branch of $e$ — matched by
-call shape, first argument, without verifying \texttt{console} is the global
-(\texttt{TypeCheckExpr.sk}). The premise this clause would need — a
-recognized global assertion function that does not return when its condition
-is false — is registry row
-\textbf{L-ASSERT}, \textsc{violated}: a failed \texttt{console.assert}
-logs and continues, and a shadowing binding named \texttt{console}
-triggers the same refinement (witnessed both ways; issue report
-\texttt{console-assert-narrowing.md}). \texttt{for}-loop conditions do \emph{not}
-narrow (\texttt{checkBool} only). Strict inequality dispatches to the same
-handlers with the target negated. The \texttt{instanceof} arm is guarded:
-it narrows only when the RHS names a class or interface with a known
-definition \emph{and} the RHS's static type declares no custom
-\texttt{[Symbol.hasInstance]} member — such a class overrides the runtime
-membership test, so narrowing is suppressed entirely
-(\texttt{rhsDeclaresHasInstance}; registry row A-HASINST).
+call \texttt{evalCond}. Switch labels use \textsc{R-Eq}; fallthrough adds the
+predecessor's exit scope, and \texttt{default} composes the false branches of
+all case equalities. Strict inequality negates the target branch.
+\texttt{console.assert}$(e)$ also applies the true branch of $e$, subject to
+registry row \textbf{L-ASSERT}. A \texttt{for}-loop condition does not narrow.
+\impl{TypeCheckStmt.sk / Switch; TypeCheckExpr.sk / block-entry narrowing,
+console.assert; TypeCheckRefine.sk / evalCond}
 
 \subsection{Rules and soundness}
 
@@ -1577,8 +1557,7 @@ SKJS has no general type-difference operation: inference growth is
 structural (Section~\ref{sec:inference}) and consumes no differences, and
 the only subtraction clients — destructuring defaults
 ($\tau \setminus \texttt{undefined}$) and \texttt{!==} narrowing —
-subtract a \emph{single constant}. (The historical \texttt{TType::diff}
-and its per-level strata were deleted when growth became structural.)
+subtract a \emph{single constant}.
 
 \begin{definition}[Constant Removal]
 \label{def:rmc}
@@ -1735,9 +1714,9 @@ the only remaining writes touching a bound candidate, and both are
 suppressed; (iii) no transition rewrites an $\SVClosed$ binding.
 \end{proof}
 
-This is the write-site invariant behind the
-``covariant checks never widen a determined inference candidate'' work
-(\#713, \#740): a covariant grow pushes an \emph{expected} type — an upper
+This is the write-site invariant behind the rule that covariant checks never
+widen a determined inference candidate: a covariant grow pushes an
+\emph{expected} type — an upper
 bound — and the value of a candidate must come from its defining expression,
 with the comparison against the expected type happening in validation, not by
 overwriting the candidate.
@@ -1856,12 +1835,12 @@ Every failing or exploratory path restores the substitution:
 \texttt{isSub} restores on validation failure; coverage probes and
 constraint-check failures inside $\mathsf{growTVars}$ restore; refinement's
 exploratory intersections run on clones (\textbf{L-CLONE}). The stale-cache
-regression class (\#446) is guarded by keying cycle caches with the
-substitution version.
+regression class is guarded by keying cycle caches with the substitution
+version.
 \end{obligation}
 
 %==========================================================================
-\section{Worked Examples}
+\section{Representative Consequences and Counterexamples}
 \label{sec:examples}
 
 \subsection{Literal narrowing}
@@ -1877,22 +1856,27 @@ $\mathsf{prim}(\texttt{num}, \{1,2\})$; the false branch of \textsc{R-Eq}
 applies $\mathsf{rmc}$ with $c = 1$, and Theorem~\ref{thm:rmc} gives exactly
 $\mathsf{prim}(\texttt{num}, \{2\})$.
 
-\subsection{Persisting incompleteness: subtracting from top}
-\texttt{unknown} is the top clause; \textsc{R-Eq}'s false branch and the
-truthiness residues leave top clauses unchanged
-(Section~\ref{sec:removeconstant}), so
-\texttt{x !== null \&\& x !== undefined} does not narrow
-\texttt{x: unknown}. This remains a representation limitation: there is no
-form for ``all values except these tags''.
+\subsection{Known incompleteness}
 
-\subsection{Persisting incompleteness: no false-branch \texttt{instanceof}}
-\textsc{R-Inst} refines only the true branch; \texttt{else} branches keep
-the unnarrowed type. Sound (identity), incomplete relative to tsc.
+Three limitations follow directly from the rule definitions:
+\begin{description}
+\item[Top-clause subtraction.] \texttt{unknown} remains unchanged after
+  constant removal or truthiness filtering because the representation has no
+  form for ``all values except these tags.''
+\item[False-branch \texttt{instanceof}.] \textsc{R-Inst} refines only the
+  true branch; the false branch is the sound but imprecise identity.
+\item[Multi-literal \texttt{in} keys.] \textsc{R-In} does not split a union
+  of keys into per-key cases. It leaves object members unchanged while still
+  dropping primitives on the true branch.
+\end{description}
 
-\subsection{Persisting incompleteness: multi-literal \texttt{in} keys}
-When the key expression's type is a union of literals, \textsc{R-In} keeps
-object members unchanged (still dropping primitives on the true branch);
-per-key case splits are not performed.
+\subsection{Inference: guidance does not settle later reuse}
+Theorem~\ref{thm:guidance} separates acceptance under the state produced by
+growth from the stability of that acceptance after later growth. The former
+depends on validation; the latter is exactly why monotone reads and rollback
+remain named obligations. Treating the growth pre-pass itself as a soundness
+argument would erase this distinction and miss the witnessed stale-read cases
+recorded in the registry.
 
 \subsection{Known unsoundness: the \texttt{void}/\texttt{undefined}
 equality corner}
@@ -1930,146 +1914,81 @@ relate them (assumption \textbf{L-SEQ}; issue report
 \section{Assumptions and Proof Obligations}
 \label{sec:assumptions}
 
-Every axiom this document assumes, with its implementation anchor and a
-status from a fixed vocabulary:
-\textsc{proved} (established in this document or by inspection of the
-anchored code), \textsc{assumed} (believed true, undischarged),
-\textsc{open} (a stated obligation whose discharge is planned), and
-\textsc{violated} (a known counterexample exists in the implementation).
-A status may carry a note. Items whose discharge should be a pinned test
-say so in the note; wiring those tests is part of the maintenance plan
-(Appendix~\ref{app:maintenance}). The obligations of
-Section~\ref{sec:inference} (Obligations~\ref{obl:sub}--\ref{obl:restore})
-belong to this section's inventory; their current statuses (after the
-deep-dive series, \texttt{deep-dives/README.md}):
-Obligation~\ref{obl:sub} partially \textsc{proved} with named residues
-(deep dive D), Obligation~\ref{obl:monotone} \textsc{violated} in two
-witnessed instances (see its status note), and
-Obligation~\ref{obl:restore} \textsc{proved} (deep dive E, with a
-documented exception).
+The registry is the authoritative boundary between the conditional results
+above and the evidence papers that establish or challenge their premises. The
+summary comes first so the reader sees that boundary before the row-level
+reference material.
 
-\input{generated/ledger-table}
-
-\paragraph{Series-introduced items.}
-The deep-dive series introduces further named assumptions and obligations
-(interface facts its proofs consume, and residues its audits leave). They
-are registry entries like the rows above and carry the same status
-vocabulary:
-
-\input{generated/ledger-series-table}
-
-In summary, after the deep-dive series and its adversarial verification
-(series map in \texttt{deep-dives/README.md}; the authoritative per-item
-statuses are the tables above, from which this grouping is generated):
+\subsection{Current frontier}
 
 \input{generated/ledger-summary}
 
-\noindent The violations remain local to leaf
-assumptions: every fix restores its assumption without changing a theorem
-statement or proof in this document. Two design decisions determine several
-fixes and are tracked separately because a local patch cannot resolve them:
+Two design decisions determine several fixes and cannot be resolved by a
+local patch:
 unchecked brands — refinement relies on $\mathsf{CAbsent}$ and the array brand even
 though subtyping does not validate them (registry rows
 F-CABSENT, F-BRAND) — and the refinement-invalidation
-policy (deep dive F). The known unsound cases are enumerated and witnessed;
-their remaining fixes are future work.
+policy (deep dive F).
 
-\medskip
-\input{generated/ledger-fixes}
+%==========================================================================
+\section{Conclusion}
+
+The model reduces refinement soundness to explicit runtime, representation,
+lattice, mutation, and inference conditions. Within that boundary it gives a
+uniform proof for memberwise narrowing, direct proofs for the exceptional
+equality and connective rules, a containment theorem for constant removal,
+and an account of why inference guidance cannot replace validation or stable
+reuse. The registry records the current status of every premise and the
+evidence behind it.
+
+Accordingly, this is neither a whole-checker soundness proof nor a claim that
+the remaining counterexamples are harmless. It is a compositional basis for
+repair: each counterexample identifies a named premise whose consumers are
+known. Expression soundness and full statement preservation remain the
+capstone results needed to extend this model to accepted programs as a whole.
 
 %==========================================================================
 \appendix
 
-\section{Implementation Correspondence}
-\label{app:impl}
+\section{Registry Reference}
+\label{app:registry}
 
-Pinned to \texttt{\skjspinhash}.
+These generated tables are the row-level reference behind
+Section~\ref{sec:assumptions}.
 
-\begin{center}
-\renewcommand{\arraystretch}{1.25}
-\begin{tabular}{@{}l@{\quad}l@{}}
-\toprule
-\textbf{Model} & \textbf{Implementation} \\
-\midrule
-$\Tags$ (9 tags) & \texttt{STypeTag} (TType.sk) \\
-$\mathsf{unit}, \mathsf{prim}, \mathsf{object}$ &
-  \texttt{TPrimUnit}, \texttt{TPrimValue}, \texttt{TObject} (TType.sk) \\
-literal payloads & \texttt{PrimLiterals} \\
-object branches $B$, fields & \texttt{ArraySet<TFields>}, \texttt{TField} \\
-$\mathsf{Callability}$ ($\mathsf{CPresent}/\mathsf{CFunction}/
-\mathsf{CAbsent}/\mathsf{CUnknown}$) &
-  \texttt{TFields.call/new : Callability} \\
-array brand & \texttt{TFields.isArray : ?Bool} \\
-phantom fields & \texttt{FAPhantom} \\
-$\STypes$ & \texttt{STypes} (tag-keyed map) \\
-$\clause{V}{S}$, $\Clauses$, $\TType$ &
-  \texttt{Clause}, \texttt{Clauses}, \texttt{TType} \\
-$\refineop^{g,d}$ & \texttt{setLocalFilterMap} + \texttt{TType::mapSTypes} \\
-master list dispatch & \texttt{evalCond} (TypeCheckRefine.sk) \\
-$\mathsf{rmc}$ & \texttt{TType::removeConstant} \\
-$\mathsf{tres}_b, \mathsf{vres}_b$ &
-  \texttt{truthinessResidue}, \texttt{truthinessValueResidue} \\
-scope merge $\sqcup$ & \texttt{TCEnv::mergeScope} \\
-$\rho$, transitions & \texttt{Subst}, \texttt{SVOpen}/\texttt{SVClosed},
-  \texttt{grow}/\texttt{get} (TTypeSubst.sk) \\
-$\mathsf{freeze}$ & \texttt{Subst.freezeCandidates} \\
-growth pre-pass & \texttt{growTVars} (TTypeSubtyping.sk) \\
-validation & \texttt{Clauses::isSub} \\
-\bottomrule
-\end{tabular}
-\end{center}
+\subsection{Rows stated by this paper}
 
-\section{Maintenance}
+The following table gives every axiom and obligation stated by the main
+paper, its implementation anchor, its current registry status, and the
+evidence behind that status. The inference obligations
+(Obligations~\ref{obl:sub}--\ref{obl:restore}) are included here.
+
+\input{generated/ledger-table}
+
+\subsection{Rows introduced by the evidence series}
+
+The evidence papers introduce additional interface facts and residual
+obligations. They use the same registry vocabulary and appear here because
+they delimit the results imported back into this paper.
+
+\input{generated/ledger-series-table}
+
+%==========================================================================
+\section{Corpus Maintenance}
 \label{app:maintenance}
 
-An advisory maintenance rule (``when the implementation adds a new
-refinement, add it to this list'') does not survive contact with
-development. The replacement is enforced coupling; the parts marked
-\emph{in place} are implemented by \texttt{docs/tools/docs.py}
-(\texttt{gen} / \texttt{check} / \texttt{build}):
+The paper relies on four corpus invariants: the shared pin identifies the
+modeled revision; \texttt{docs/ledger.yaml} is the only source of registry
+statuses; each model claim carries an inline implementation anchor; and the
+generated tables are never edited by hand. \texttt{docs/tools/docs.py}
+regenerates and checks the corpus, builds every paper, and executes the issue
+witnesses. The exact commands, enforced checks, ownership rules, and review
+protocol live in \texttt{docs/README.md}.
 
-\begin{enumerate}
-\item \textbf{The registry} (\emph{in place}). Statuses live only in
-  \texttt{docs/ledger.yaml}; the tables of
-  Section~\ref{sec:assumptions}, their summary, and the deep dives'
-  rows tables are generated from it (\texttt{docs/generated/}). A status
-  change is a one-line registry edit; no document states another
-  document's status.
-\item \textbf{Consistency checks} (\emph{in place}). The \texttt{check}
-  command verifies: registry integrity (status vocabulary, anchor files
-  exist, issue references resolve); every issue report is referenced
-  and maps one-to-one to a distinct GitHub issue;
-  no temporal/history markers in any document; no numeric cross-document
-  references (deep dives must cite main-paper items by \emph{name});
-  every document's date goes through the shared pin
-  (\texttt{docs/shared/pin.tex}).
-\item \textbf{Local builds} (\emph{in place}). The \texttt{build}
-  command compiles every document (two \texttt{pdflatex} passes), keeps
-  each \texttt{.pdf} next to its source, fails on errors or unresolved
-  references, and keeps auxiliary files in the git-ignored
-  \texttt{docs/.texbuild/} for warm incremental recompilation.
-\item \textbf{Anchor cross-check} (\emph{pending}). Each dispatch arm of
-  \texttt{evalCond} carries a comment \texttt{// paper: R-\dots}\ naming
-  its rule; the check verifies both directions (every arm has a rule;
-  every master-list rule has a live arm). Existence, not correctness —
-  semantic drift within an arm still requires review, but silent
-  additions and removals become failures.
-\item \textbf{Witness repros} (\emph{in place for issue witnesses}).
-  Each executed unsoundness witness is a runnable
-  \texttt{deep-dives/issues/repros/*.ts} with a header verdict;
-  \texttt{docs.py repro} runs each against the pinned checker and asserts
-  it, and \texttt{check} enforces that every repro is referenced by an
-  issue report and vice versa. A repro that flips verdict when its fix
-  lands fails, forcing a documentation update in the same change. Still
-  \emph{pending}: expect-error pins for the incompleteness worked
-  examples in the test suite proper.
-\item \textbf{Pinned revision.} \texttt{docs/shared/pin.tex} names the
-  modeled commit once, for every document. A change that trips any check
-  updates the pin as part of restoring it.
-\end{enumerate}
-
-\noindent The review protocol for this corpus — scopes and checks for
-reviewing this paper, the deep dives, and the issue reports — lives in
-\texttt{docs/README.md}.
+One correspondence check remains manual: every dispatch arm of
+\texttt{evalCond} must have exactly one rule in the refinement master list and
+every listed rule must still have a live arm. Automating that bidirectional
+check would detect silent additions and removals; semantic changes within an
+existing arm will continue to require review.
 
 \end{document}
