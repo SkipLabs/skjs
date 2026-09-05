@@ -9,3 +9,6 @@
 tests/ts-conformance/**/*.ts
 *-prettier-ignore.*
 generated-examples
+
+# lake regenerates this on every build; leave its formatting alone
+verification/lean/lake-manifest.json

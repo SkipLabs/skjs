@@ -7,6 +7,13 @@ extension class TypeChecker {
   // diagnostic owned by the walk (SKJS 2056) is reported once, and a switch
   // knows its own exhaustiveness at the moment it answers (no side-channel).
   fun stmt(tcenv: mutable TCEnv, st: Stmt): StmtTermination {
+    if (getConfig(tcenv.context).emitSkjsTypeClaims) {
+      vars = mutable Vector<TypeClaimVar>[];
+      for (kv in tcenv.scope.visibleRefs().items()) {
+        vars.push(TypeClaimVar(kv.i0, kv.i1.type))
+      };
+      tcenv.claimedEnvs.push(TypeClaimEnv(st.pos, vars.toArray()))
+    };
     term = st.value match {
     | Break() ->
       tcenv.recordBreak(st.pos);

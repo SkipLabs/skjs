@@ -1,0 +1,262 @@
+/***************************************************************************/
+/* SKJS type claims (verification/DESIGN.md).
+ *
+ * Records expression types and statement environments and prints them as JSON.
+ * The Lean verifier checks these claims against an independent source AST.
+ * A claim is not trusted: verifier acceptance establishes program typing, not
+ * that this exporter faithfully recorded every internal SKJS decision.
+ *
+ * Emission is gated on the --emit-skjs-type-claims flag and adds no work to a
+ * normal run.
+ */
+/***************************************************************************/
+
+module SKJS;
+
+/***************************************************************************/
+/* The claims. */
+/***************************************************************************/
+
+class TypeClaimVar(name: String, type: TType)
+
+// The environment SKJS held on entry to the statement at `pos`.
+class TypeClaimEnv(pos: PosRange, vars: Array<TypeClaimVar>)
+
+// The type SKJS assigned to the expression node at `pos`.
+class TypeClaimExpr(pos: PosRange, type: TType)
+
+class TypeClaimParam(name: String, type: TType)
+
+class FunTypeClaims(
+  name: String,
+  // The function name's own span: the key the checker binds these claims to
+  // in the trusted AST.
+  namePos: PosRange,
+  params: Array<TypeClaimParam>,
+  retType: TType,
+  envs: Array<TypeClaimEnv>,
+  exprs: Array<TypeClaimExpr>,
+)
+
+// Collects the claims for one function once its body has been checked.
+// Reads only what the checker already computed.
+fun buildFunTypeClaims(
+  name: String,
+  namePos: PosRange,
+  typedParams: Array<(Pattern, TType)>,
+  retType: TType,
+  tcenv: mutable TCEnv,
+): FunTypeClaims {
+  params = typedParams.map(p ->
+    TypeClaimParam(
+      p.i0.value match {
+      | PVar(local) -> local.value
+      | _ -> "?"
+      },
+      p.i1,
+    )
+  );
+  // One type per source span. A node checked in both modes keeps the
+  // most-precise one, which is the type `lookupExprType` reads.
+  byPos = SortedMap<PosRange, TType>[];
+  for (kv in tcenv.exprTypes.items()) {
+    if (!kv.i0.i2 && !kv.i0.i1) {
+      !byPos = byPos.set(kv.i0.i0, kv.i1)
+    }
+  };
+  for (kv in tcenv.exprTypes.items()) {
+    if (!kv.i0.i2 && kv.i0.i1) {
+      !byPos = byPos.set(kv.i0.i0, kv.i1)
+    }
+  };
+  exprs = mutable Vector<TypeClaimExpr>[];
+  for (kv in byPos.items()) {
+    exprs.push(TypeClaimExpr(kv.i0, kv.i1))
+  };
+  FunTypeClaims(
+    name,
+    namePos,
+    params,
+    retType,
+    tcenv.claimedEnvs.toArray(),
+    exprs.toArray(),
+  )
+}
+
+/***************************************************************************/
+/* Type serialization.
+ *
+ * A type is rendered as {"top": bool, "atoms": [...]}: `top` is `unknown`,
+ * an empty atom list is `never`, and otherwise the type is the union of its
+ * atoms. Anything outside the supported fragment renders as {"unsupported": true},
+ * which the checker treats as a rejection rather than as a type.
+ */
+/***************************************************************************/
+
+const claimUnsupported: String = "{\"unsupported\": true}";
+
+fun claimKindName(kind: TPrimValueKind): ?String {
+  kind match {
+  | TNum() -> Some("number")
+  | TString() -> Some("string")
+  | TBool() -> Some("boolean")
+  | TBigInt() -> None()
+  | TSymbol() -> None()
+  }
+}
+
+// Pushes the atoms of `sty` onto `acc`. Returns false if `sty` is outside the fragment.
+fun claimPushAtoms(sty: SType, acc: mutable Vector<String>): Bool {
+  sty match {
+  | TPrimUnit(TNull(), _) ->
+    acc.push(jsonObj(Array[("a", jsonStr("null"))]));
+    true
+  | TPrimUnit(TUndefined(), _) ->
+    acc.push(jsonObj(Array[("a", jsonStr("undefined"))]));
+    true
+  | TPrimUnit(TVoid(), _) -> false
+  | TPrimValue(kind, litsOpt, _) ->
+    claimKindName(kind) match {
+    | None() -> false
+    | Some(tag) ->
+      litsOpt match {
+      | None() ->
+        acc.push(jsonObj(Array[("a", jsonStr(tag))]));
+        true
+      | Some(lits) ->
+        for (lit in lits) {
+          acc.push(
+            jsonObj(
+              Array[("a", jsonStr(tag + "lit")), ("v", jsonStr(lit.val))],
+            ),
+          )
+        };
+        true
+      }
+    }
+  | TObject _ -> false
+  }
+}
+
+fun claimTypeJson(ty: TType): String {
+  if (!ty.insts.isEmpty()) {
+    // Unexpanded instances, type variables and intersections are outside the fragment.
+    claimUnsupported
+  } else if (ty.clauses.isTop()) {
+    "{\"top\": true, \"atoms\": []}"
+  } else {
+    atoms = mutable Vector<String>[];
+    ok = true;
+    nClauses = 0;
+    for (clause in ty.clauses) {
+      !nClauses = nClauses + 1;
+      if (clause.vars.size() != 0) {
+        // A universally quantified type parameter: outside the fragment.
+        !ok = false
+      };
+      clause.stypes match {
+      | None() -> !ok = false
+      | Some(stypes) ->
+        for (sty in stypes) {
+          if (!claimPushAtoms(sty, atoms)) {
+            !ok = false
+          }
+        }
+      }
+    };
+    // `never` is zero clauses; more than one clause is a DNF outside the fragment.
+    if (nClauses > 1) {
+      !ok = false
+    };
+    if (ok) {
+      `{"top": false, "atoms": ${jsonArr(atoms)}}`
+    } else {
+      claimUnsupported
+    }
+  }
+}
+
+/***************************************************************************/
+/* Type-claim serialization. */
+/***************************************************************************/
+
+fun claimPosJson(pos: PosRange, symbols: Map<SymbolicPos, Int>): String {
+  `[${pos.getStart(symbols).value}, ${pos.getEnd(symbols).value}]`
+}
+
+fun funTypeClaimsJson(
+  fc: FunTypeClaims,
+  symbols: Map<SymbolicPos, Int>,
+): String {
+  jsonObj(
+    Array[
+      ("name", jsonStr(fc.name)),
+      ("namePos", claimPosJson(fc.namePos, symbols)),
+      (
+        "params",
+        jsonArr(
+          fc.params.map(p ->
+            jsonObj(
+              Array[("name", jsonStr(p.name)), ("type", claimTypeJson(p.type))],
+            )
+          ),
+        ),
+      ),
+      ("retType", claimTypeJson(fc.retType)),
+      (
+        "envs",
+        jsonArr(
+          fc.envs.map(e ->
+            jsonObj(
+              Array[
+                ("pos", claimPosJson(e.pos, symbols)),
+                (
+                  "vars",
+                  jsonArr(
+                    e.vars.map(v ->
+                      jsonObj(
+                        Array[
+                          ("name", jsonStr(v.name)),
+                          ("type", claimTypeJson(v.type)),
+                        ],
+                      )
+                    ),
+                  ),
+                ),
+              ],
+            )
+          ),
+        ),
+      ),
+      (
+        "exprs",
+        jsonArr(
+          fc.exprs.map(x ->
+            jsonObj(
+              Array[
+                ("pos", claimPosJson(x.pos, symbols)),
+                ("type", claimTypeJson(x.type)),
+              ],
+            )
+          ),
+        ),
+      ),
+    ],
+  )
+}
+
+fun fileTypeClaimsJson(
+  fileName: String,
+  typeClaims: SortedMap<CGNode, FunTypeClaims>,
+  symbols: Map<SymbolicPos, Int>,
+): String {
+  funs = mutable Vector<String>[];
+  for (kv in typeClaims.items()) {
+    funs.push(funTypeClaimsJson(kv.i1, symbols))
+  };
+  jsonObj(
+    Array[("file", jsonStr(fileName)), ("functions", jsonArr(funs.toArray()))],
+  )
+}
+
+module end;

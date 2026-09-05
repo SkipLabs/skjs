@@ -534,6 +534,20 @@ mutable class Scope{
     acc
   }
 
+  // Every binding visible from this scope, innermost shadowing outer. Used
+  // only by claim recording (SkjsTypeClaims.sk), which needs the environment
+  // as a flat map rather than as a chain.
+  readonly fun visibleRefs(): SortedMap<String, LocalRef> {
+    acc = this.up match {
+    | None() -> SortedMap[]
+    | Some(up) -> up.visibleRefs()
+    };
+    for (kv in this.refs.items()) {
+      !acc = acc.set(kv.i0, kv.i1)
+    };
+    acc
+  }
+
   readonly fun isThroughLoop(name: Name): Bool {
     this.maybeGetRef(name.value) match {
     | None() -> false

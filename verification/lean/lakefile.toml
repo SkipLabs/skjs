@@ -1,0 +1,10 @@
+name = "verification"
+defaultTargets = ["verifier", "Verification"]
+
+[[lean_lib]]
+name = "Verification"
+globs = ["Verification", "Verification.Tests.+"]
+
+[[lean_exe]]
+name = "verifier"
+root = "Main"

@@ -86,6 +86,18 @@ check-file-in-docker:
 	: $${FILE:?Usage: make check-file-in-docker FILE=path/to/file.ts [BIN=target/host/dev/skjs]}
 	$(DOCKER_RUN) $(if $(BIN),$(BIN),skargo run --) check --import-stubs import-stubs "$(FILE)"
 
+# Verification (verification/DESIGN.md, verification/README.md).
+# Use VERBOSE=1 for detailed diagnostics and build output.
+.PHONY: verify verify-programs verify-claims
+verify:
+	@./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose)
+
+verify-programs:
+	@./verification/run.sh --build $(if $(filter 1,$(VERBOSE)),--verbose)
+
+verify-claims:
+	@./verification/run.sh --build --suite claims $(if $(filter 1,$(VERBOSE)),--verbose)
+
 .PHONY: clean
 clean:
 	skargo clean

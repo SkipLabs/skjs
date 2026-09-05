@@ -247,6 +247,11 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Emit typed control-flow graphs for all checked functions to stdout. Formats: json, dot",
     ),
+  Cli.Arg::bool("emit-skjs-type-claims")
+    .long("emit-skjs-type-claims")
+    .about(
+      "Emit SKJS type claims for all checked functions to stdout as JSON (see verification/DESIGN.md)",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -490,6 +495,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   };
 
+  emitSkjsTypeClaims = args.getBool("emit-skjs-type-claims");
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
   warningsDirName = SKStore.DirName::create("/check/warnings/");
 
@@ -510,6 +517,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           errorDetailConfig,
           verbose,
           buildCfg => emitCfgFormat.isSome(),
+          emitSkjsTypeClaims,
         },
       );
 
@@ -625,6 +633,24 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       SKStore.CStop(None())
     },
   );
+  if (emitSkjsTypeClaims) {
+    context.unsafeMaybeGetEagerDir(checkResultsDirName) match {
+    | None() -> void
+    | Some(_) ->
+      checkResults = SKStore.EHandle(
+        FPath::keyType,
+        CheckResult::type,
+        checkResultsDirName,
+      );
+      files = mutable Vector<String>[];
+      for ((_fileName, results) in checkResults.items(context)) {
+        for (res in results) {
+          res.typeClaimsJson.each(files.push)
+        }
+      };
+      print_raw("[" + ",\n".join(files.toArray().sorted()) + "]\n")
+    }
+  };
   emitCfgFormat match {
   | None() -> void
   | Some(format) ->
@@ -713,6 +739,9 @@ class CheckResult(
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
   cfgs: SortedMap<CGNode, CFG> = SortedMap[],
+  // The file's SKJS type claims, already serialized: positions are resolved
+  // against this file's symbol table, which is only available here.
+  typeClaimsJson: ?String = None(),
 ) extends SKStore.File
 
 class Checker private {
@@ -838,6 +867,17 @@ class Checker private {
               results.classHierarchy,
               results.subtypingEdges,
               results.cfgs,
+              if (getConfig(context).emitSkjsTypeClaims) {
+                Some(
+                  fileTypeClaimsJson(
+                    fileName.toString(),
+                    results.typeClaims,
+                    this.symbolsMap.get(context, fileName),
+                  ),
+                )
+              } else {
+                None()
+              },
             ),
           )
         | PRError(err) ->

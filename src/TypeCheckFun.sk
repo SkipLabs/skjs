@@ -10,13 +10,6 @@ extension class TypeChecker {
     sig = this.getFunSig(subst.context, fd);
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
-    writes = mutable CaptureWrites{};
-    writes.params(sig.params);
-    this.getFunBody(subst.context, fd) match {
-    | FDBSome(body) -> writes.stmts(body)
-    | FDBNone() -> void
-    };
-    tcenv.scope.setCaptureWrites(writes.result(), writes.capturedNames());
     fdPos = fd.name.getPos();
     !this = this.addTParams(subst, sig.tparams);
     // An explicit `this: T` as the first parameter overrides the enclosing
@@ -46,10 +39,10 @@ extension class TypeChecker {
       .default(false);
     if (!receiverlessThis) {
       !this.bindings["this"] = thisType;
-      // `this` cannot be reassigned.
-      tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true, false)
+      tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true)
     };
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
+    this.bindParams(tcenv, sig.params, paramTypes);
     typedParams = sig.params.mapWithIndex((i, param) ->
       (param.name, paramTypes[i])
     );
@@ -59,46 +52,16 @@ extension class TypeChecker {
     (this, tcenv, typedParams)
   }
 
-  // Reserve every binding without projecting types or evaluating pattern
-  // defaults. Shared by parameters and local patterns. The placeholder type
-  // is inaccessible while uninitialized;
-  // bind installs the projected contract when each binding is initialized.
-  fun reserveBindingNames(
+  fun bindParams(
     tcenv: mutable TCEnv,
-    pattern: Pattern,
-    placeholder: TType,
-    isMutable: Bool = true,
+    params: Array<Param>,
+    paramTypes: Array<TType>,
   ): void {
-    name = pattern.value match {
-    | PVar(name) -> Some(name)
-    | PArray(elements, rest) ->
-      elements.each(element ->
-        element.each(item ->
-          this.reserveBindingNames(tcenv, item.i0, placeholder, isMutable)
-        )
-      );
-      rest
-    | PObject{fields, rest} ->
-      fields.each(field ->
-        this.reserveBindingNames(tcenv, field.i1, placeholder, isMutable)
-      );
-      rest
-    };
-    name.each(name -> {
-      // A block prepass and the declaration itself reserve the same identity.
-      if (!tcenv.pendingBindings.contains(name.pos)) {
-        tcenv.scope.bind(
-          tcenv,
-          name,
-          placeholder,
-          true,
-          false,
-          isMutable,
-          tcenv.pendingBindings,
-        );
-        tcenv.!pendingBindings = tcenv.pendingBindings.set(name.pos)
+    for (i => param in params) {
+      if (!param.isThisParam()) {
+        this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, true, false)
       }
-    })
+    }
   }
 
   // Compute the effective types of a function parameters by applying the
@@ -118,7 +81,7 @@ extension class TypeChecker {
     allowThis: Bool,
     expectedParamTypes: Array<?TType> = Array[],
   ): Array<TType> {
-    paramTypes = params.mapWithIndex((i, param) -> {
+    params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
         param.isRest.each(restPos ->
@@ -225,7 +188,7 @@ extension class TypeChecker {
       };
       param.default match {
       | None() -> void
-      | Some _ ->
+      | Some(defaultExpr) ->
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
@@ -238,7 +201,22 @@ extension class TypeChecker {
             ],
             TSCode(1015),
           )
-        }
+        };
+        savedScope = tcenv.scope;
+        // The default initializer can only reference enclosing-frame names
+        // (sibling params are bound later), so mark this as a function boundary:
+        // a write to a captured local here is checked against its declared type.
+        paramScope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
+        tcenv.!scope = paramScope;
+        this.checkSubType(
+          tcenv,
+          defaultExpr.pos,
+          "Type of default value is not assignable to the parameter's type",
+          this.expr(tcenv, defaultExpr, true),
+          paramType,
+          TSCode(2322),
+        );
+        tcenv.!scope = savedScope
       };
       for (modifier in param.modifiers.modifiers) {
         tcenv.error(
@@ -251,69 +229,8 @@ extension class TypeChecker {
           SKJSCode(2067),
         )
       };
-
       paramType
-    });
-    savedPendingBindings = tcenv.pendingBindings;
-    // Reserve the whole list, including names inside patterns, before any
-    // initializer runs. Binding then proceeds in runtime initialization order.
-    for (i => param in params) {
-      if (!param.isThisParam()) {
-        this.reserveBindingNames(tcenv, param.name, paramTypes[i])
-      }
-    };
-    for (i => param in params) {
-      initialType = param.default match {
-      | None() -> paramTypes[i]
-      | Some(defaultExpr) ->
-        defaultType = this.bindingDefaultType(tcenv, defaultExpr, true, true);
-        TType::isSub(tcenv.subst, this, defaultType, paramTypes[i]) match {
-        | STOk() ->
-          // A supplied non-undefined argument or the initializer's result.
-          // The initializer may itself return undefined; retain that possibility.
-          this.defaultedValueType(tcenv, paramTypes[i], defaultType)
-        | err @ STErrorOnTType _ ->
-          tcenv.subtypingError(
-            tcenv.subst,
-            this,
-            Array[
-              (
-                defaultExpr.pos,
-                "Type of default value is not assignable to the parameter's type",
-              ),
-            ],
-            err,
-            TSCode(2322),
-          );
-          // Recovery must not install a value that already failed the contract.
-          paramTypes[i]
-        }
-      };
-      if (!param.isThisParam()) {
-        param.name.value match {
-        | PVar(name) ->
-          // The annotation remains the write/capture contract. Only this
-          // invocation's initial flow type reflects the default's result.
-          tcenv.scope.initializeReservedBinding(name, paramTypes[i]);
-          tcenv.!pendingBindings = tcenv.pendingBindings.remove(name.pos);
-          tcenv.scope.set(name, initialType, (_, _) -> void)
-        | PArray _
-        | PObject _ ->
-          this.bind(
-            tcenv,
-            BKLet(),
-            param.name,
-            initialType,
-            true,
-            true,
-            false,
-            true,
-          )
-        }
-      }
-    };
-    tcenv.!pendingBindings = savedPendingBindings;
-    paramTypes
+    })
   }
 
   fun funDef(
@@ -432,37 +349,39 @@ extension class TypeChecker {
       this.retType match {
       | None() -> void
       | Some(retType) ->
-        checkBody = () -> {
-          (_, term) = this.block(tcenv, body);
-          if (
-            term.mayFallthrough &&
-            !this.isVoid(tcenv, this.isAsync, retType)
-          ) {
-            subst.error(
-              Array[
-                (
-                  fdPos,
-                  "Not all code paths return a value, and the return type does not include 'undefined'",
-                ),
-              ],
-              TSCode(2366),
-            )
-          };
-          tcenv.validateHiddenEscapes();
-          if (getConfig(tcenv.context).buildCfg) {
-            cfg = CFGBuilder::build(
-              cgNode.id.toString(),
-              fdPos,
-              typedParams,
-              retType,
-              body,
-              tcenv.exprTypes,
-              tcenv.stmtTerminations,
-            );
-            tcenv.results.!cfgs[cgNode] = cfg
-          };
+        (_, term) = this.block(tcenv, body);
+        if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
+          subst.error(
+            Array[
+              (
+                fdPos,
+                "Not all code paths return a value, and the return type does not include 'undefined'",
+              ),
+            ],
+            TSCode(2366),
+          )
         };
-        checkBody()
+        if (getConfig(tcenv.context).buildCfg) {
+          cfg = CFGBuilder::build(
+            cgNode.id.toString(),
+            fdPos,
+            typedParams,
+            retType,
+            body,
+            tcenv.exprTypes,
+            tcenv.stmtTerminations,
+          );
+          tcenv.results.!cfgs[cgNode] = cfg
+        };
+        if (getConfig(tcenv.context).emitSkjsTypeClaims) {
+          tcenv.results.!typeClaims[cgNode] = buildFunTypeClaims(
+            fd.name.getName(),
+            fdPos,
+            typedParams,
+            retType,
+            tcenv,
+          )
+        }
       }
     };
   }

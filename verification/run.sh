@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+#
+# The verification harness (verification/DESIGN.md, stage 0).
+#
+# For every program under verification/tests/programs it runs the four stages of the
+# pipeline and checks the outcome against the directory the program lives in:
+#
+#   accept/         SKJS accepts it AND its claims check
+#   reject/         SKJS rejects it (an ordinary type error)
+#   outside/        the trusted front end rejects it (the fragment gate)
+#   known-unsound/  SKJS accepts it but its claims do NOT check
+#
+# Stage 1  trusted front end   verification/tools/parse-source.js  (TypeScript API)
+# Stage 2  untrusted checker   skjs check --emit-skjs-type-claims
+# Stage 3  trusted checker     verification/lean/.lake/build/bin/verifier
+# Stage 4  runtime agreement   verification/tools/runtime-check.js  (Node)
+#
+# The claims suite separately tests the verifier's input validation.
+# It uses a real SKJS claim set as a fixture, then alters it in JavaScript.
+#
+# Usage: verification/run.sh [--build] [--verbose] [--suite programs|claims|all] [--skjs BIN] [filter]
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO"
+
+SKJS_BIN="target/host/dev/skjs"
+FILTER=""
+BUILD=0
+VERBOSE=0
+SUITE=programs
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --build) BUILD=1; shift ;;
+    --verbose) VERBOSE=1; shift ;;
+    --suite) SUITE="${2:-}"; shift; [ $# -eq 0 ] || shift ;;
+    --skjs) SKJS_BIN="$2"; shift 2 ;;
+    *) FILTER="$1"; shift ;;
+  esac
+done
+case "$SUITE" in
+  programs|claims|all) ;;
+  *) echo "Unknown suite '$SUITE': use programs, claims, or all"; exit 2 ;;
+esac
+if [ -n "$FILTER" ] && [ "$SUITE" != programs ]; then
+  echo "A filename filter is only supported with the programs suite"
+  exit 2
+fi
+
+DOCKER_IMAGE="${DOCKER_IMAGE:-skiplabs/skip:latest}"
+SKIP_DIR="${SKIP_DIR:-$REPO/../skip}"
+VERIFIER="$REPO/verification/lean/.lake/build/bin/verifier"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+if [ "$BUILD" -eq 1 ]; then
+  echo "Building verifier..."
+  if (cd verification/lean && lake build) > "$WORK/build.out" 2>&1; then
+    [ "$VERBOSE" -eq 0 ] || cat "$WORK/build.out"
+  else
+    echo "FAIL: verifier build"
+    cat "$WORK/build.out"
+    exit 1
+  fi
+fi
+
+skjs_check() { # $1 = repo-relative .ts path; claims on stdout, errors on stderr
+  if [ -n "${DEVCONTAINER:-}" ]; then
+    "$SKJS_BIN" check --import-stubs import-stubs --truthiness boolean \
+      --emit-skjs-type-claims "$1"
+  else
+    docker run --rm -v "$REPO:/work/skjs" -v "$SKIP_DIR:/work/skip" \
+      -w /work/skjs "$DOCKER_IMAGE" \
+      "$SKJS_BIN" check --import-stubs import-stubs --truthiness boolean \
+      --emit-skjs-type-claims "$1"
+  fi
+}
+
+pass=0; fail=0
+report() { # $1 = OK|FAIL, $2 = file, $3 = detail
+  if [ "$1" = "OK" ]; then
+    pass=$((pass + 1))
+    case "$kind" in
+      accept) echo "verified" ;;
+      reject) echo "rejected by SKJS (expected)" ;;
+      outside) echo "outside fragment (expected)" ;;
+      known-unsound) echo "unsound result caught (expected)" ;;
+    esac
+    [ "$VERBOSE" -eq 0 ] || printf '    %s\n' "$3"
+  else
+    fail=$((fail + 1)); printf 'FAIL: %s\n' "$3"
+    # Preserve complete diagnostics when the concise first line is insufficient.
+    for log in "$WORK/$base.gate.err" "$WORK/$base.skjs.err" \
+               "$WORK/$base.check.out" "$WORK/$base.run.out"; do
+      if [ -s "$log" ]; then cat "$log"; fi
+    done
+  fi
+}
+
+if [ "$SUITE" != claims ]; then
+echo "Checking TypeScript programs..."
+for f in $(find verification/tests/programs -name '*.ts' | sort); do
+  [ -n "$FILTER" ] && case "$f" in *"$FILTER"*) ;; *) continue ;; esac
+  kind="$(basename "$(dirname "$f")")"
+  base="$(echo "$f" | tr / _)"
+  ast="$WORK/$base.ast.json"
+  claims="$WORK/$base.claims.json"
+  printf '  %s ... ' "${f#verification/tests/}"
+
+  # Stage 1: the trusted front end, which is also the syntactic gate.
+  if ! node verification/tools/parse-source.js "$f" > "$ast" 2> "$WORK/$base.gate.err"; then
+    if [ "$kind" = "outside" ]; then
+      report OK "$f" "gate rejected: $(head -1 "$WORK/$base.gate.err")"
+    else
+      report FAIL "$f" "gate rejected a program inside the fragment: $(head -1 "$WORK/$base.gate.err")"
+    fi
+    continue
+  fi
+  if [ "$kind" = "outside" ]; then
+    report FAIL "$f" "the gate accepted a program that is outside the fragment"
+    continue
+  fi
+
+  # Stage 2: SKJS, untrusted.
+  skjs_check "$f" > "$claims" 2> "$WORK/$base.skjs.err"
+  skjs_status=$?
+  if [ "$kind" = "reject" ]; then
+    if [ "$skjs_status" -ne 0 ] && grep -q 'error:' "$WORK/$base.skjs.err"; then
+      report OK "$f" "skjs rejected: $(grep -m1 error: "$WORK/$base.skjs.err" | cut -c1-60)"
+    elif [ "$skjs_status" -ne 0 ]; then
+      report FAIL "$f" "SKJS failed without a type diagnostic (exit $skjs_status)"
+    else
+      report FAIL "$f" "skjs accepted a program it must reject"
+    fi
+    continue
+  fi
+  if [ "$skjs_status" -ne 0 ]; then
+    report FAIL "$f" "skjs rejected: $(grep -m1 error: "$WORK/$base.skjs.err" | cut -c1-60)"
+    continue
+  fi
+
+  # Stage 3: the trusted verifier.
+  checked=0
+  if "$VERIFIER" "$ast" "$claims" "$f" > "$WORK/$base.check.out" 2>&1; then
+    checked=1
+  fi
+
+  # Stage 4: agreement with Node. An accepted program must run within its
+  # declared types; a known-unsound one must be caught doing otherwise.
+  runtime_ok=0
+  if node verification/tools/runtime-check.js "$f" "$ast" > "$WORK/$base.run.out" 2>&1; then
+    runtime_ok=1
+  fi
+
+  detail="$(head -1 "$WORK/$base.check.out" | cut -c1-88)"
+  runline="$(head -1 "$WORK/$base.run.out" | cut -c1-88)"
+  if [ "$kind" = "known-unsound" ]; then
+    # A verdict alone is not evidence: a decoder bug or an arity mismatch would
+    # also reject. Where the program carries an `expect-reject:` line, require
+    # the checker to have rejected it through that obligation.
+    want="$(sed -n 's|^// expect-reject: *||p' "$f" | head -1)"
+    if [ "$checked" -eq 1 ]; then
+      report FAIL "$f" "the claims checked, but this program is unsound"
+    elif [ "$runtime_ok" -eq 1 ]; then
+      report FAIL "$f" "the claims were rejected but Node found no violation"
+    elif [ -n "$want" ] && ! grep -qF "$want" "$WORK/$base.check.out"; then
+      report FAIL "$f" "rejected for the wrong reason: wanted \"$want\", got: $detail"
+    else
+      report OK "$f" "rejected, and Node agrees: ${runline#violation: }"
+    fi
+  else
+    if [ "$checked" -eq 0 ]; then
+      report FAIL "$f" "$detail"
+    elif [ "$runtime_ok" -eq 0 ]; then
+      report FAIL "$f" "claims checked but Node disagreed: $runline"
+    else
+      report OK "$f" "claims checked; $runline"
+    fi
+  fi
+done
+
+if [ "$((pass + fail))" -eq 0 ]; then
+  echo "FAIL: no programs matched '$FILTER'"
+  exit 1
+fi
+echo "Programs: $pass passed, $fail failed"
+fi
+
+# Receiver tests: alter claims and source identifiers in a real claim set.
+if [ "$SUITE" != programs ]; then
+  echo "Testing verifier claim validation..."
+  BASE="verification/tests/programs/accept/typeof_narrow.ts"
+  OTHER="verification/tests/programs/accept/early_return.ts"
+  if ! { node verification/tools/parse-source.js "$BASE" > "$WORK/claims.ast" &&
+         node verification/tools/parse-source.js "$OTHER" > "$WORK/claims.other.ast" &&
+         skjs_check "$BASE" > "$WORK/claims.claims"; } 2> "$WORK/claims.setup.err"; then
+    echo "FAIL: claim validation test setup"
+    cat "$WORK/claims.setup.err"
+    exit 1
+  fi
+  if node verification/tests/type-claims.js "$WORK/claims.ast" "$WORK/claims.claims" \
+       "$BASE" "$VERIFIER" "$WORK/claims.other.ast" > "$WORK/claims.out" 2>&1; then
+    cat "$WORK/claims.out"
+  else
+    echo "FAIL: claim validation checks"
+    cat "$WORK/claims.out"
+    fail=$((fail + 1))
+  fi
+fi
+
+[ "$fail" -eq 0 ]
