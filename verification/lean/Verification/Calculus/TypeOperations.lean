@@ -215,9 +215,6 @@ theorem mem_bool_inv {v : Val} (h : mem v bool_) : ∃ b, v = .vbool b := by
   cases v <;> simp [inhabits] at this
   exact ⟨_, rfl⟩
 
-theorem mem_string {s : String} : mem (.vstr s) string_ :=
-  mem_ofAtom_iff.mpr (by simp [inhabits])
-
 theorem inhabits_atomOfVal (v : Val) : inhabits v (atomOfVal v) = true := by
   cases v <;> simp [atomOfVal, inhabits]
 

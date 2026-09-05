@@ -94,54 +94,100 @@ function: the name and `namePos` must match, and the claimed signature must be
 *source* annotation regardless, so this comparison is an audit of the claims
 rather than something program soundness rests on.
 
-### 4. Lowering discards the spans
+### 4. Lowering compiles the body into a control-flow graph
 
-`eraseProg` maps the source AST onto the calculus: `.bin .eq` becomes
-`Core.Exp.eq`, spans disappear, and an absent `else` becomes an empty branch.
+`lowerProg` turns each function body into a list of nodes indexed by position,
+each naming its successors. A `const` becomes `set`, a `return` becomes `ret`,
+an `if` becomes `branch`. Both arms of the `if` name the *same* continuation
+label, so a branch that falls through and the branch's other edge arrive at
+one node with two predecessors: a join. Successors are `Option Nat`, and
+`none` -- control leaving the graph without returning -- is what no edge check
+can justify.
+
+Lowering also resolves lexical binding. Each `const` allocates a fresh slot,
+and expressions are renamed to refer to slots rather than source names,
+because connecting a branch to its continuation would otherwise let a binding
+declared inside the branch escape:
+
+```ts
+const x = "outer";
+if (b) { const x = "inner"; }
+return x;              // must read the outer slot
+```
+
+Both have type `string`, so no type check would notice. Renaming is what makes
+the `return` read `x@0`.
+
+A declaration binds throughout its block, not from its own statement onward,
+so the slots for a block are allocated before any of its statements is
+lowered:
+
+```ts
+const x = "outer";
+if (b) {
+  return x;            // the inner x, which has no value yet
+  const x = "inner";
+}
+```
+
+That `return` resolves to the inner slot, which nothing sets on that path, so
+no environment can supply it and the read is rejected -- and were the graph
+run, `venvGet` would find nothing and report `stuck`. JavaScript throws
+`ReferenceError` there and TypeScript rejects the program. Resolving from the
+declaration onward would instead have silently read the outer binding.
+
+Two scopes are therefore recorded per node, and they differ exactly in that
+window. **Resolution** is block-scoped and says which slot an expression
+means. **Visibility** is declaration-scoped -- what SKJS records -- and says
+which slot a claim's name means. A binding that visibility has shadowed but
+that is still live is carried as a *hidden* binding, taking its type from the
+claim at the declaration that shadowed it; bindings are immutable, so that
+type cannot have changed since. Without this the outer binding's type would be
+lost inside the block, and the edge leaving it could not re-establish what its
+target still needs.
+
+The claim JSON does not change.
+
 Everything proved from here on is about the lowered program, which is why the
 final theorem mentions neither JSON nor source positions.
 
 ### 5. Obligation generation and discharge
 
-The verifier walks the lowered body carrying its own environment, and at each
-node it constructs an obligation and immediately discharges it. Following the
-`return x` path:
+Every node's entry environment is the claim at the statement it came from,
+translated into slots. The checks are what justify using it: each node is
+checked against its environment, and each edge must carry the environment its
+source derived into the environment its target was given.
 
 ```text
-at 50    envCovers   x: string | number  ⊆  x: string | number   the claimed env
-[61,62]  variable    string | number     ⊆  string | number      the claimed type
-[54,62]  typeof      "string" | "number" ⊆  string               the claimed type
-                     (the left side is tagsOf of the operand's type)
-[67,75]  literal     "string"            ⊆  "string"             the claimed type
-[54,75]  ===         boolean             ⊆  boolean              the claimed type
-         condition   boolean             ⊆  boolean              an `if` needs a boolean
+entry              x: string | number  ⊆  x: string | number   node 0's claim
 
-         --- narrowing: the true edge of the condition gives x: string ---
+node 0  branch
+[61,62]  variable  string | number     ⊆  string | number      the claimed type
+[54,62]  typeof    "string" | "number" ⊆  string               the claimed type
+                   (the left side is tagsOf of the operand's type)
+[67,75]  literal   "string"            ⊆  "string"             the claimed type
+[54,75]  ===       boolean             ⊆  boolean              the claimed type
+         condition boolean             ⊆  boolean              a branch needs a boolean
+         true edge x: string           ⊆  x: string            node 1's claim
+         false edge x: number          ⊆  x: number            node 2's claim
 
-at 83    envCovers   x: string           ⊆  x: string            the claimed env
-[90,91]  variable    string              ⊆  string               the claimed type
-         return      string              ⊆  string               the declared return
+node 1  ret
+[90,91]  variable  string              ⊆  string               the claimed type
+         return    string              ⊆  string               the declared return
 ```
 
-Each line is one `Obligation.subtype`, discharged by `sub`. The narrowing step
-is the calculus's, not SKJS's: the verifier derives `x: string` from
-`typeof x === "string"` itself, and uses the claimed environment only to check
-that SKJS did not narrow further than the rules justify.
+Each line is one `Obligation.subtype`, discharged by `sub`. The narrowing on
+the two edges is the calculus's, not SKJS's: the verifier derives `x: string`
+from `typeof x === "string"` itself, and the edge check is what licenses
+continuing under node 1's claim.
 
-Two of these lines are the reason a claim can fail. For the claimed type `T`
-at `[90,91]`, discharge requires both
-
-```text
-string ⊆ T       T covers every value that can reach the expression
-T ⊆ string       T fits the declared return type
-```
-
-`T = string` passes. `T = never` fails the first — the claim excludes a value
-that really arrives. `T = unknown` fails the second. Neither failure needs the
-verifier to know what SKJS was thinking; both are relations between types.
-
-The false edge is checked the same way, with `x: number` derived from the same
-condition, and `"a number" ⊆ string` at the return.
+An edge obligation is `Covers G H`: every value environment agreeing with the
+source `G` agrees with the target `H`. So an edge may establish more than its
+target requires -- forgetting a fact is sound -- but a binding the target
+requires and the source cannot supply is not. When two edges arrive at one
+node, both must independently cover its claim, which is how a join is checked
+without a least upper bound on types. The calculus has `meet` and `diff` and
+deliberately no join.
 
 ### 6. What acceptance establishes
 
@@ -158,10 +204,12 @@ Acceptance is a statement about the program, audited claims being the route to
 it rather than the subject of it.
 
 F0 is small enough that the verifier could infer these types without SKJS's
-help; the calculus already includes a standalone checker. Using SKJS's claims
-also lets the experiment check its answers. The value of supplied claims should
-become clearer with loop invariants and generic instantiations, where finding a
-suitable claim is harder.
+help. Using SKJS's claims instead also lets the experiment check its answers,
+and it is the interface a later fragment needs: once a loop head has a back
+edge, there is no forward pass that derives its environment, and a supplied
+one checked against every incoming edge is what replaces the fixed point. The
+value of that should become clearer with loop invariants and generic
+instantiations, where finding a suitable claim is harder.
 
 ## Current implementation
 
@@ -177,13 +225,24 @@ comparisons are sound; they do not decide every semantic inclusion.
 
 Expression types are checked and then used in subsequent obligations. For
 example, a call argument's claimed type must fit the callee's source parameter
-type. The verifier derives branch environments itself, rather than relying on
-the claimed ones.
+type. The verifier derives branch environments itself, and the edge check is
+what licenses continuing under the claimed one.
 
-Claimed environments have an additional check: every live binding the verifier
-derives must appear in the claimed environment, with a type containing the
-derived type. This catches unjustified narrowing, including a claimed
-`never` for a reachable value.
+Environment claims are not audited alongside a separately derived
+environment; they *are* the environments the nodes are checked against, and
+the entry and edge checks are what make that sound. A claim narrower than the
+values that reach a node fails on the edge into it -- including a `never`
+claimed for a reachable value.
+
+Statements that cannot run are not lowered. They are not part of the program
+the theorem is about, so they carry none of its obligations -- in particular a
+`const` after a `return` is not required to have anywhere to continue to. The
+claims SKJS emits for them are simply not consumed; SKJS checks every
+statement whether or not control reaches it, so nothing it accepts is rejected
+here on this account.
+
+The declarations in unreachable code still take effect on scope, because they
+still shadow.
 
 ## Program certification and claim auditing
 
@@ -217,8 +276,10 @@ The language definitions are organized around three questions:
 - [Values.lean](lean/Verification/Calculus/Values.lean): what values exist?
 - [Types.lean](lean/Verification/Calculus/Types.lean): what types exist, and
   which values belong to each type?
-- [Programs.lean](lean/Verification/Calculus/Programs.lean): what expressions,
-  statements and programs exist, and how do they execute?
+- [Programs.lean](lean/Verification/Calculus/Programs.lean): what expressions
+  and programs exist, and how do they execute? A function body is a
+  control-flow graph, so joins -- and later loop heads and back edges -- are
+  ordinary edges rather than shapes the syntax has to anticipate.
 
 Each language sits beside its semantics. `Values.lean` has no project imports;
 `Types.lean` imports `Values.lean`, and `Programs.lean` imports `Types.lean`
@@ -228,14 +289,17 @@ or checking algorithms.
 Then read [SourceAst.lean](lean/Verification/SourceAst.lean) for the supported
 **TypeScript source** representation, with source locations. The mapping into
 **programs in the core calculus** is in [Lowering.lean](lean/Verification/Lowering.lean).
-Start at `eraseProg`, which translates a program by translating each function;
-`eraseFn`, `eraseStm` and `eraseExp` handle functions, statements and expressions.
-This translation determines which program the theorem describes.
+Start at `lowerProg`, which compiles each function body into a graph. This
+translation determines which program the theorem describes, and it is doing
+more than erasure now: it allocates labels, so an off-by-one produces a
+well-formed graph with the wrong control flow, and it resolves lexical binding
+to slots, without which a `const` declared inside a branch would remain
+readable after it.
 
 The intended separation is:
 
 ```text
-TypeScript text → SourceAst ──Lowering──→ calculus Programs → modeled execution
+TypeScript text → SourceAst ──Lowering──→ calculus graphs → modeled execution
 ```
 
 As TypeScript support grows, prefer translating source constructs into existing
@@ -245,23 +309,27 @@ definitions and their proofs manageable. Some features will still need new
 core constructs or semantics; the current fragment does not establish how far
 translation alone will suffice.
 
-Keeping the calculus small does not remove the need to review the translation.
-The current theorem establishes safety of the translated core program; it does
-not separately prove that the translation preserves TypeScript behavior. More
-substantial translations would need corresponding justification, through review
-and tests or a preservation proof where the source semantics is formalized.
+Keeping the calculus small does not remove the need to review the translation,
+and the move to graphs increased what there is to review. The current theorem
+establishes safety of the translated core program; it does not separately
+prove that the translation preserves source behavior. Lean has both the
+source AST and the generated graph, so this boundary is accessible to proof;
+what is missing is an independent semantics for the supported source AST.
+Today, review and [Tests/Lowering.lean](lean/Verification/Tests/Lowering.lean)
+support trust in the translation by checking successor labels and which slot
+each node binds and reads. The optional work below describes how some of that
+trust could be replaced with proofs.
 
 The remaining calculus modules contain type operations, narrowing, typing
-rules, soundness proofs and a standalone checker. `Calculus.lean` only imports
-those modules, preserving the existing import path.
+rules and soundness proofs. `Calculus.lean` only imports those modules,
+preserving the existing import path.
 
 Each module has a test file under `Tests/` named after it, built by the
 existing build command. A test file's header says which definitions it pins
 and whether they are in the trusted base, because the two cases call for
 different tests. For a trusted definition the checks are the only evidence
 there is: nothing else in the project runs the evaluator, and soundness does
-not constrain it (`execB … ≠ .stuck` holds for an `execB` that always times
-out). For a derived definition soundness is already proved, so the checks pin
+not constrain it (`run … ≠ .stuck` holds for a `run` that always times out). For a derived definition soundness is already proved, so the checks pin
 *precision* instead -- a `sub` that always returns `false` and a `narrow` that
 changes nothing satisfy every proof in the development.
 
@@ -277,13 +345,13 @@ The key results are:
 | Result | Meaning |
 |---|---|
 | `Obligation.discharge_sound` | A successful type comparison establishes the obligation's semantic meaning. |
-| `checkExp_sound`, `checkStmts_sound`, `checkFile_sound` | The traversal, with obligations discharged as generated, establishes the calculus's typing judgements. |
+| `checkNode_sound`, `checkNodes_sound`, `checkFile_sound` | The node and edge checks, with obligations discharged as generated, establish the calculus's typing judgements. |
 | `Core.sound` | A well-typed program cannot get stuck under the model; returned values satisfy the declared return types. |
 
 The file-level theorem is:
 
 ```text
-checkFile funs claims = .ok () → ProgOk (eraseProg funs)
+checkFile funs claims = .ok () → ProgOk (lowerProg funs)
 ```
 
 The theorem quantifies over arbitrary claim data. Its conclusion is about
@@ -387,24 +455,31 @@ within those limits.
 
 ## Next experiment and later directions
 
-The next language experiment is mutable locals, joins and loops, provisionally
-called F1. This should test whether SKJS can supply useful invariants without
-the verifier reproducing its inference machinery.
+The next language experiment is mutable locals and loops, provisionally called
+F1. This should test whether SKJS can supply useful invariants without the
+verifier reproducing its inference machinery.
+
+Joins are no longer part of that step. Moving the core to a control-flow graph
+brought them in already, and the interface they need is the one now in place:
+a supplied environment at each node, justified by every edge into it. A loop
+head is the same shape with one of those edges arriving from later in the
+graph, so what F1 adds is cyclic edges and the obligations on them, not new
+node forms. Mutable writes are the part that adds state semantics: a write
+must respect the slot's declared type and invalidate the refinements that
+depended on the old value.
 
 A claimed loop environment must hold on entry and be preserved by every back
 edge, including `continue`. The loop condition must justify the body and exit
-paths; writes must update or invalidate refinements soundly. Branch joins and
-`break` paths need their own obligations. The exact policy is still design
-work, not an implemented guarantee.
+paths. `break` paths need their own obligations. The exact policy is still
+design work, not an implemented guarantee.
 
 Before claiming that extension works, add the syntax and semantics, close its
 soundness proofs, verify representative accepted programs, and reject incorrect
 invariants for the intended reasons. Merely rejecting loops at the grammar gate
 would not establish loop verification.
 
-Other open work is to strengthen numeric model validation, restore a repeatable
-exporter mutation experiment, and decide whether auditing every claimed
-environment should have its own theorem. A materialized obligation list can be
+Other open work is to strengthen numeric model validation and restore a
+repeatable exporter mutation experiment. A materialized obligation list can be
 introduced if discharging them separately, for testing or diagnostics, justifies it.
 
 Later directions are higher-order functions and closures (F2), objects and
@@ -417,3 +492,32 @@ Production integration would require an SKJS command that only reports certified
 success after verification succeeds. `--emit-skjs-type-claims` currently only
 emits claims. The stable experiment command is `make verify`, independent
 of these fragment names.
+
+### Optional: move the source-to-graph trust boundary
+
+These are optional improvements to the current calculus and pipeline, not
+requirements for adding another fragment. They concern the meaning of today's
+source AST and its translation, not equivalence to a historical implementation.
+
+1. **Prove structural properties of lowering.** Establish that emitted
+   successor labels exist, allocated slots are fresh and cannot collide with
+   source identifiers, and references resolve to the intended lexical binding.
+   State the source well-formedness assumptions explicitly. Include declarations
+   after a return: they still affect binding even though no graph node is emitted
+   for them. Such theorems establish specific compiler properties; they do not
+   alone prove preservation of execution.
+2. **Define source-AST semantics and prove semantic preservation.** Give the
+   supported `SourceAst` a direct execution meaning, including lexical scope,
+   initialization errors, calls, and control flow. Prove that lowering preserves
+   its observable execution outcomes, allowing different fuel consumption in
+   the two representations. Combine that result with graph soundness to connect
+   accepted claims to modeled source safety. This describes the input language
+   of the existing pipeline; it does not introduce another verification pipeline
+   or replace the graph calculus.
+
+The second step would move trust from the lowering algorithm to the source
+semantics and its agreement with JavaScript. That semantics would still need
+review and validation. Faithfulness of the external parser to TypeScript text,
+agreement with actual JavaScript execution, and Lean's trusted infrastructure
+would remain outside this preservation theorem. Full TypeScript formalization
+is not a prerequisite: the semantics can cover only the supported source AST.

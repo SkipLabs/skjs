@@ -5,11 +5,9 @@
 //
 // The verifier identifies a numeric literal by the bit pattern of
 // its double, so on that edge it derives `9007199254740992` for both `x` and
-// `y` and rejects the claimed `never`. It reports `y`, which `narrowEq`
-// binds last and so checks first; both are claimed `never` and both are
-// equally unjustified.
+// `y`, and the edge into the branch cannot justify the claimed `never`.
 //
-// expect-reject: it narrows further than the typing rules justify
+// expect-reject: is not justified by every edge into it
 function h(x: 9007199254740993, y: 9007199254740992): string {
   if (x === y) {
     return x;

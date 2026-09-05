@@ -93,8 +93,10 @@ Conditions and boolean operators require booleans; the harness passes
 `--truthiness boolean` to SKJS.
 
 There are no mutable locals, loops, objects, closures or generics. Branches
-must return rather than merge: an `if` without an `else` may continue on
-its false path, but its true branch must return.
+may fall through and merge; a function may not fall off the end without
+returning. Statements that cannot run are not part of the verified program and
+carry none of its obligations. A declaration binds throughout its block, so
+reading one before its declaration is rejected, as it is in JavaScript.
 
 ## What is established
 
@@ -132,26 +134,26 @@ in its claims.
 
 To find the languages and their meaning, read `Values.lean`, `Types.lean`, and
 `Programs.lean`. These define the calculus. `SourceAst.lean` defines the supported
-TypeScript source representation; `Lowering.lean` maps it into the calculus.
-These files contain definitions without proof developments. The
+TypeScript source representation; `Lowering.lean` compiles it into the calculus.
+These files contain definitions without proof developments, and they are the
+ones the soundness statement reaches. The
 [design document](DESIGN.md#reviewing-the-definitions) explains this boundary.
 
 | File | Responsibility |
 |---|---|
 | [Values.lean](lean/Verification/Calculus/Values.lean) | Shared runtime values. No project imports. |
 | [Types.lean](lean/Verification/Calculus/Types.lean) | Type syntax and its meaning as sets of values. |
-| [Programs.lean](lean/Verification/Calculus/Programs.lean) | Core calculus program syntax and execution semantics. |
+| [Programs.lean](lean/Verification/Calculus/Programs.lean) | Core calculus: expressions, control-flow graphs, and their execution semantics. |
 | [SourceAst.lean](lean/Verification/SourceAst.lean) | TypeScript source AST with locations. |
-| [Lowering.lean](lean/Verification/Lowering.lean) | Source AST → core calculus translation. Start at `eraseProg`. |
+| [Lowering.lean](lean/Verification/Lowering.lean) | Source AST → control-flow graph, resolving lexical binding to slots. Start at `lowerProg`. |
 | [TypeOperations.lean](lean/Verification/Calculus/TypeOperations.lean) | Type constructors, comparisons, intersection and difference, with correctness proofs. |
 | [Narrowing.lean](lean/Verification/Calculus/Narrowing.lean) | Type environments, branch refinement and its correctness proofs. |
-| [Typing.lean](lean/Verification/Calculus/Typing.lean) | Typing rules and program soundness. |
-| [Checker.lean](lean/Verification/Calculus/Checker.lean) | Standalone type checker and its correctness proof. |
+| [Typing.lean](lean/Verification/Calculus/Typing.lean) | Environment implication, edge and node typing, and program soundness. |
 | [Calculus.lean](lean/Verification/Calculus.lean) | Import-only entry point for the calculus modules. |
 | [Obligation.lean](lean/Verification/Obligation.lean) | The relations to establish, their meaning, and a proved discharge procedure. |
-| [Verify.lean](lean/Verification/Verify.lean) | Traverse the source program, generate and discharge obligations, and prove acceptance implies typing. |
+| [Verify.lean](lean/Verification/Verify.lean) | Assign each node the claim at the statement it came from, discharge the node and edge obligations, and prove acceptance implies typing. |
 | [SkjsTypeClaims.lean](lean/Verification/SkjsTypeClaims.lean) | The claim format, claim lookup and signature input validation. |
 | [JsonDecode.lean](lean/Verification/JsonDecode.lean) | JSON decoding. |
-| [Tests/](lean/Verification/Tests) | One test file per calculus module, named after it; each header says what it pins. Built with the verifier. |
+| [Tests/](lean/Verification/Tests) | One test file per module, named after it; each header says what it pins and whether it is trusted. Built with the verifier. |
 | [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) | Emit SKJS's claims: expression types, statement environments and function signatures. |
 | [run.sh](run.sh) | Build when requested, run the corpus and claim validation tests, and report results. |

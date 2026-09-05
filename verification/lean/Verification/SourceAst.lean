@@ -37,9 +37,6 @@ inductive Stmt where
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
   deriving Repr
 
-def Stmt.start : Stmt → Nat
-  | .ret p _ | .cst p _ _ _ | .ite p _ _ _ => p.1
-
 structure Param where
   name : String
   ty : Ty

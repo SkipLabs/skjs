@@ -36,26 +36,59 @@ inductive HasTyArgs : Prog → TEnv → List Exp → List (String × Ty) → Pro
 
 end
 
-/-- A block is well-typed when every path through it returns a value in `tr`.
-There is deliberately no rule for the empty block: falling off the end is not
-a way to leave a function, and that is the whole content of "every branch
-must return". An `if` types its branch followed by whatever came after, so a
-branch that returns never has to account for the rest. -/
-inductive BlockOk : Prog → TEnv → Ty → List Stm → Prop where
-  | ret : HasTy p Γ e tr → BlockOk p Γ tr (.ret e :: rest)
-  | cst : HasTy p Γ init d → BlockOk p (tenvSet Γ x d) tr rest →
-      BlockOk p Γ tr (.cst x annot init :: rest)
-  | ite : HasTy p Γ c bool_ →
-      BlockOk p (narrow Γ c true) tr (thn ++ rest) →
-      BlockOk p (narrow Γ c false) tr (els ++ rest) →
-      BlockOk p Γ tr (.ite c thn els :: rest)
+/-! ## Graph typing
 
-def FnOk (p : Prog) (fn : Fn) : Prop := BlockOk p fn.params fn.ret fn.body
+Every checked node has an established entry environment, recorded in `I`.
+An edge carries the environment its source derived and must justify the
+environment its target was given -- which is what makes a join checkable
+without a least upper bound on types: both predecessors of a merge
+independently imply the merge's environment.
 
-/-- Every function of the program checks against its own declared signature.
-A call is therefore never given a rule of its own: `ProgOk` is the hypothesis
-`sound` discharges for the whole program at once. -/
-def ProgOk (p : Prog) : Prop := ∀ fn ∈ p, FnOk p fn
+`Covers` is semantic implication between environments, so forgetting a fact
+is sound and inventing a required binding is not. -/
+
+def Covers (G H : TEnv) : Prop := ∀ ρ, agree ρ G → agree ρ H
+
+/-- The way `Covers` is established in practice: every binding the target
+requires is supplied by the source at a type it contains. `tenvGet` takes the
+first match, so this respects shadowing on both sides. -/
+theorem Covers_of_sub {G H : TEnv}
+    (h : ∀ x t, tenvGet H x = some t → ∃ s, tenvGet G x = some s ∧ sub s t = true) :
+    Covers G H := by
+  intro ρ hG x t ht
+  obtain ⟨s, hs, hsub⟩ := h x t ht
+  obtain ⟨v, hv, hm⟩ := hG x s hs
+  exact ⟨v, hv, sub_sound hsub hm⟩
+
+/-- An edge from a state described by `G`. `none` is control leaving the graph
+without returning, which no edge can justify: that is where "a function may
+not fall off the end" now lives, stated once rather than once per branch. -/
+def Edge (f : Fn) (I : List TEnv) (G : TEnv) : Option Nat → Prop
+  | none => False
+  | some pc => ∃ H, I[pc]? = some H ∧ Covers G H
+
+inductive NodeOk (p : Prog) (f : Fn) (I : List TEnv) (G : TEnv) : Node → Prop where
+  | ret : HasTy p G e f.ret → NodeOk p f I G (.ret e)
+  | set : HasTy p G e t → Edge f I (tenvSet G x t) next →
+      NodeOk p f I G (.set x e next)
+  | branch : HasTy p G c bool_ →
+      Edge f I (narrow G c true) yes → Edge f I (narrow G c false) no →
+      NodeOk p f I G (.branch c yes no)
+
+/-- `I` establishes an entry environment for every node it covers, the
+function's entry edge is justified from the parameters, and every covered
+node checks against its environment. -/
+structure FnOk (p : Prog) (f : Fn) (I : List TEnv) : Prop where
+  entry : Edge f I f.params (some 0)
+  present : ∀ (pc : Nat) G, I[pc]? = some G → ∃ node, f.code[pc]? = some node
+  nodes : ∀ (pc : Nat) G node, I[pc]? = some G → f.code[pc]? = some node →
+    NodeOk p f I G node
+
+/-- Every function of the program checks against its own declared signature,
+under some environment assignment. A call is therefore never given a rule of
+its own: `ProgOk` is the hypothesis `sound` discharges for the whole program
+at once. -/
+def ProgOk (p : Prog) : Prop := ∀ f ∈ p, ∃ I, FnOk p f I
 
 /-! ## Arguments and parameter binding -/
 
@@ -123,13 +156,16 @@ theorem sound {p : Prog} (hp : ProgOk p) (n : Nat) :
         evalE p n ρ e ≠ .stuck ∧ ∀ v, evalE p n ρ e = .ok v → mem v t)
   ∧ (∀ ρ Γ as ps, agree ρ Γ → HasTyArgs p Γ as ps →
         evalArgs p n ρ as ≠ .stuck ∧ ∀ vs, evalArgs p n ρ as = .ok vs → MemAll vs ps)
-  ∧ (∀ ρ Γ b tr, agree ρ Γ → BlockOk p Γ tr b →
-        execB p n ρ b ≠ .stuck ∧ ∀ v, execB p n ρ b = .ok v → mem v tr) := by
+  ∧ (∀ f I pc G ρ, FnOk p f I → I[pc]? = some G → agree ρ G →
+        run p n f pc ρ ≠ .stuck ∧ ∀ v, run p n f pc ρ = .ok v → mem v f.ret) := by
   induction n with
   | zero =>
-    refine ⟨?_, ?_, ?_⟩ <;> intro ρ Γ a b _ _ <;> simp [evalE, evalArgs, execB]
+    refine ⟨?_, ?_, ?_⟩
+    · intro ρ Γ a b _ _; simp [evalE]
+    · intro ρ Γ a b _ _; simp [evalArgs]
+    · intro f I pc G ρ _ _ _; simp [run]
   | succ n ih =>
-    obtain ⟨ihE, ihA, ihB⟩ := ih
+    obtain ⟨ihE, ihA, ihR⟩ := ih
     refine ⟨?_, ?_, ?_⟩
     -- expressions
     · intro ρ Γ e t hG hty
@@ -250,8 +286,10 @@ theorem sound {p : Prog} (hp : ProgOk p) (n : Nat) :
             have hlen : (vs.length == fn.params.length) = true := by
               simp [MemAll_length hma]
             have hfn : fn ∈ p := List.mem_of_find?_eq_some hlk
-            obtain ⟨hnsB, hpB⟩ := ihB (bindParams fn.params vs) fn.params fn.body fn.ret
-              (agree_bindParams hma) (hp fn hfn)
+            obtain ⟨I, hI⟩ := hp fn hfn
+            obtain ⟨H, hH, hcov⟩ := hI.entry
+            obtain ⟨hnsB, hpB⟩ := ihR fn I 0 H (bindParams fn.params vs) hI hH
+              (hcov _ (agree_bindParams hma))
             simp only [evalE, hlk, heva, hlen, if_true]
             exact ⟨hnsB, fun v hv => sub_sound hsub (hpB v hv)⟩
           | stuck => exact absurd heva hnsA
@@ -280,47 +318,55 @@ theorem sound {p : Prog} (hp : ProgOk p) (n : Nat) :
           | stuck => exact absurd hev1 hns1
           | timeout => simp [evalArgs, hev1]
     -- blocks
-    · intro ρ Γ b tr hG hb
-      cases b with
-      | nil => cases hb
-      | cons s rest =>
-        cases s with
-        | ret e =>
-          cases hb with
-          | ret hte =>
-            simp only [execB]
-            exact ihE ρ Γ e tr hG hte
-        | cst x annot init =>
-          cases hb with
-          | cst hinit hrest =>
-            rename_i d
-            obtain ⟨hns1, hp1⟩ := ihE ρ Γ init d hG hinit
-            cases hev : evalE p n ρ init with
-            | ok v =>
-              obtain ⟨hns2, hp2⟩ := ihB (venvSet ρ x v) (tenvSet Γ x d) rest tr
-                (agree_cons hG (hp1 v hev)) hrest
-              simp only [execB, hev]
+    -- graph nodes
+    · intro f I pc G ρ hI hpc hG
+      obtain ⟨node, hnode⟩ := hI.present pc G hpc
+      have hok : NodeOk p f I G node := hI.nodes pc G node hpc hnode
+      cases hok with
+      | ret hte =>
+        rename_i e
+        simp only [run, hnode]
+        exact ihE ρ G e f.ret hG hte
+      | set hinit hedge =>
+        rename_i e t x next
+        obtain ⟨hns1, hp1⟩ := ihE ρ G e t hG hinit
+        cases hev : evalE p n ρ e with
+        | ok v =>
+          cases next with
+          | none => exact absurd hedge (by simp [Edge])
+          | some k =>
+            obtain ⟨H, hH, hcov⟩ := hedge
+            obtain ⟨hns2, hp2⟩ := ihR f I k H (venvSet ρ x v) hI hH
+              (hcov _ (agree_cons hG (hp1 v hev)))
+            simp only [run, hnode, hev]
+            exact ⟨hns2, hp2⟩
+        | stuck => exact absurd hev hns1
+        | timeout => simp [run, hnode, hev]
+      | branch hc hyes hno =>
+        rename_i c yes no
+        obtain ⟨hns1, hp1⟩ := ihE ρ G c bool_ hG hc
+        cases hev : evalE p n ρ c with
+        | ok v =>
+          obtain ⟨bb, rfl⟩ := mem_bool_inv (hp1 v hev)
+          cases bb
+          · cases no with
+            | none => exact absurd hno (by simp [Edge])
+            | some k =>
+              obtain ⟨H, hH, hcov⟩ := hno
+              obtain ⟨hns2, hp2⟩ := ihR f I k H ρ hI hH
+                (hcov _ (narrow_sound p n ρ G c false hG hev))
+              simp only [run, hnode, hev]
               exact ⟨hns2, hp2⟩
-            | stuck => exact absurd hev hns1
-            | timeout => simp [execB, hev]
-        | ite c thn els =>
-          cases hb with
-          | ite hc hthn hels =>
-            obtain ⟨hns1, hp1⟩ := ihE ρ Γ c bool_ hG hc
-            cases hev : evalE p n ρ c with
-            | ok v =>
-              obtain ⟨bb, rfl⟩ := mem_bool_inv (hp1 v hev)
-              cases bb
-              · obtain ⟨hns2, hp2⟩ := ihB ρ (narrow Γ c false) (els ++ rest) tr
-                  (narrow_sound p n ρ Γ c false hG hev) hels
-                simp only [execB, hev]
-                exact ⟨hns2, hp2⟩
-              · obtain ⟨hns2, hp2⟩ := ihB ρ (narrow Γ c true) (thn ++ rest) tr
-                  (narrow_sound p n ρ Γ c true hG hev) hthn
-                simp only [execB, hev]
-                exact ⟨hns2, hp2⟩
-            | stuck => exact absurd hev hns1
-            | timeout => simp [execB, hev]
+          · cases yes with
+            | none => exact absurd hyes (by simp [Edge])
+            | some k =>
+              obtain ⟨H, hH, hcov⟩ := hyes
+              obtain ⟨hns2, hp2⟩ := ihR f I k H ρ hI hH
+                (hcov _ (narrow_sound p n ρ G c true hG hev))
+              simp only [run, hnode, hev]
+              exact ⟨hns2, hp2⟩
+        | stuck => exact absurd hev hns1
+        | timeout => simp [run, hnode, hev]
 
 /-! ## What the theorem says
 
@@ -328,15 +374,24 @@ Calling a function of a well-typed program with arguments that inhabit its
 parameter types cannot go wrong, and if it produces a value at all then that
 value inhabits the declared return type. -/
 
+private theorem entry_agrees {p : Prog} (hp : ProgOk p) {fn : Fn} (hfn : fn ∈ p)
+    {vs : List Val} (hma : MemAll vs fn.params) :
+    ∃ I H, FnOk p fn I ∧ I[0]? = some H ∧ agree (bindParams fn.params vs) H := by
+  obtain ⟨I, hI⟩ := hp fn hfn
+  obtain ⟨H, hH, hcov⟩ := hI.entry
+  exact ⟨I, H, hI, hH, hcov _ (agree_bindParams hma)⟩
+
 theorem call_never_stuck {p : Prog} (hp : ProgOk p) {fn : Fn} (hfn : fn ∈ p)
     {vs : List Val} (hma : MemAll vs fn.params) (n : Nat) :
-    execB p n (bindParams fn.params vs) fn.body ≠ .stuck :=
-  ((sound hp n).2.2 _ _ _ _ (agree_bindParams hma) (hp fn hfn)).1
+    run p n fn 0 (bindParams fn.params vs) ≠ .stuck := by
+  obtain ⟨I, H, hI, hH, hag⟩ := entry_agrees hp hfn hma
+  exact ((sound hp n).2.2 fn I 0 H _ hI hH hag).1
 
 theorem call_returns_in_type {p : Prog} (hp : ProgOk p) {fn : Fn} (hfn : fn ∈ p)
     {vs : List Val} (hma : MemAll vs fn.params) (n : Nat) {v : Val}
-    (h : execB p n (bindParams fn.params vs) fn.body = .ok v) : mem v fn.ret :=
-  ((sound hp n).2.2 _ _ _ _ (agree_bindParams hma) (hp fn hfn)).2 v h
+    (h : run p n fn 0 (bindParams fn.params vs) = .ok v) : mem v fn.ret := by
+  obtain ⟨I, H, hI, hH, hag⟩ := entry_agrees hp hfn hma
+  exact ((sound hp n).2.2 fn I 0 H _ hI hH hag).2 v h
 
 /-- Subsumption, admissible. Because every rule carries its own `sub` side
 condition, weakening is a single case split composed with `sub_trans` -- no
@@ -353,20 +408,6 @@ theorem HasTy_sub {p Γ e t t'} (h : HasTy p Γ e t) (hs : sub t t' = true) :
   | and hl hr hsub => exact .and hl hr (sub_trans hsub hs)
   | or hl hr hsub => exact .or hl hr (sub_trans hsub hs)
   | call hlk hargs hsub => exact .call hlk hargs (sub_trans hsub hs)
-
-/-- A well-typed block stays well-typed with anything appended: it returns
-before it gets there. This is what lets `checkBlock` demand that a branch
-return and then discharge the `thn ++ rest` obligation of `BlockOk.ite` from
-the branch alone, without walking the concatenation. -/
-theorem BlockOk_append {p Γ tr b1} (h : BlockOk p Γ tr b1) (b2 : List Stm) :
-    BlockOk p Γ tr (b1 ++ b2) := by
-  induction h with
-  | ret hte => exact .ret hte
-  | cst hinit _ ih => exact .cst hinit ih
-  | ite hc _ _ iht ihe =>
-    refine .ite hc ?_ ?_
-    · rw [List.append_assoc] at iht; exact iht
-    · rw [List.append_assoc] at ihe; exact ihe
 
 end Core
 end Verification

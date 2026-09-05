@@ -39,7 +39,10 @@ const INVALID_CLAIMS = [
     entry.type = { top: false, atoms: [] };
     return c;
   }],
-  ["obligation", "narrow a claimed binding to never", "narrows further than the typing rules justify", (c) => {
+  // The claim at a node *is* the environment it is checked against, so a
+  // binding narrowed past what reaches it fails on the edge into that node
+  // rather than in a separate audit.
+  ["obligation", "narrow a claimed binding to never", "is not justified by every edge into it", (c) => {
     const entry = fileEntry(c).functions[0].envs[0].vars.find(
       (v) => v.type && !v.type.unsupported && (v.type.top || v.type.atoms.length > 0),
     );
@@ -67,11 +70,14 @@ const INVALID_CLAIMS = [
   }],
 
   // A binding SKJS never claimed, as distinct from one it claimed too
-  // narrowly. No corpus program exercises this branch.
-  ["input", "drop a binding from a claimed environment", "missing the binding", (c) => {
+  // narrowly. Forgetting a fact is sound on its own -- an edge may always
+  // establish more than its target requires -- so this is caught where the
+  // binding is read, not where it is dropped. The first environment is used
+  // because the statement it belongs to is the one that reads the binding;
+  // dropping it from a later environment nothing reads is genuinely harmless.
+  ["input", "drop a binding from a claimed environment", "unbound variable", (c) => {
     const f = fileEntry(c).functions[0];
-    const env = f.envs[f.envs.length - 1];
-    env.vars = env.vars.filter((v) => v.type && v.type.unsupported);
+    f.envs[0].vars = f.envs[0].vars.filter((v) => v.type && v.type.unsupported);
     return c;
   }],
 

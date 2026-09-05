@@ -45,14 +45,6 @@ def claimTy (claims : FunTypeClaims) (s : Span) : Except String Ty :=
   | some none => .error s!"the type claimed at {spanStr s} is outside the supported fragment"
   | some (some t) => .ok t
 
-def claimEnv (claims : FunTypeClaims) (n : Nat) : Except String TEnv :=
-  match lookupEnv claims.envs n with
-  | none => .error s!"no claimed environment for the statement at offset {n}"
-  | some vars =>
-      -- Bindings SKJS could not express in the fragment (such as `this`) are
-      -- dropped; a program that reads one is rejected at the read.
-      .ok (vars.filterMap fun (x, t) => t.map (fun ty => (x, ty)))
-
 def claimParams : List Param → List (String × Option Ty) → Except String Unit
   | [], [] => .ok ()
   | p :: ps, (n, some t) :: cs =>
