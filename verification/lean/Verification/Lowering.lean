@@ -86,8 +86,12 @@ names it. Its type comes from the claim at `from_` under the source name it
 had before the shadowing block -- or from the signature, when `from_` is
 `none` and the shadowed binding is a parameter.
 
-Reading it from there is exact: bindings are immutable, so a shadowed slot's
-type cannot change while it is shadowed. Without this the type would simply
+Reading it from there is exact because a shadowed slot is *unnameable*: the
+only writer of a slot is a `set` node, and lowering emits one only for the slot
+the scope currently maps the name to. Nothing can write a slot while it is
+shadowed, whether or not bindings are mutable -- so this argument survives
+mutable locals, and a later fragment that can write through a shadowed slot
+(an aliased cell, say) would have to revisit it. Without this the type would simply
 be lost, and an edge leaving the block could not re-establish the binding its
 target still needs. -/
 structure Hidden where

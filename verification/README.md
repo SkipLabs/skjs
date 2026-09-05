@@ -113,7 +113,7 @@ attention; the current Node samples are not a complete model validation.
 Acceptance does not prove that the claims faithfully describe SKJS's internal
 state, or that every inconsistent claim set would be rejected. The
 [design document](DESIGN.md) explains these distinctions,
-the proof boundary and the next experiment.
+the proof boundary and what extending the fragment requires.
 
 ## Tests
 

@@ -453,45 +453,253 @@ The runtime harness checks return values for sampled arguments, not full
 equivalence between Node and the model. Test success should be interpreted
 within those limits.
 
-## Next experiment and later directions
+## Extending the fragment
 
-The next language experiment is mutable locals and loops, provisionally called
-F1. This should test whether SKJS can supply useful invariants without the
-verifier reproducing its inference machinery.
+Moving the core from blocks to a control-flow graph changed no supported
+construct, and still rewrote `Verify.lean`, half of `Typing.lean` and all of
+`Tests/`, grew `Lowering.lean` fourfold and deleted the standalone checker,
+while `Values`, `Types`, `TypeOperations`, `Narrowing`, `SourceAst` and the
+claim modules were untouched. The cut was that clean because the restriction it
+lifted — every branch must return — was not a premise of a rule but the *shape*
+of the definitions: `BlockOk` had no rule for completing normally,
+`BlockOk.ite` duplicated the continuation structurally, and `checkStmts`
+recursed on statement lists. The shape also concealed a defect, `execB` leaking
+a branch's bindings into its continuation, which the restriction had made
+unobservable.
 
-Joins are no longer part of that step. Moving the core to a control-flow graph
-brought them in already, and the interface they need is the one now in place:
-a supplied environment at each node, justified by every edge into it. A loop
-head is the same shape with one of those edges arriving from later in the
-graph, so what F1 adds is cyclic edges and the obligations on them, not new
-node forms. Mutable writes are the part that adds state semantics: a write
-must respect the slot's declared type and invalidate the refinements that
-depended on the old value.
+So before each extension, ask whether a restriction is a **side condition**, a
+premise to delete, or a **shape**, in which case work already expressed in
+terms of it has to be redone. Shape changes are worth scheduling deliberately,
+ahead of the features that need them, and carrying out the way this one was:
+same language, new representation, trusted closure measured on both sides.
 
-A claimed loop environment must hold on entry and be preserved by every back
-edge, including `continue`. The loop condition must justify the body and exit
-paths. `break` paths need their own obligations. The exact policy is still
-design work, not an implemented guarantee.
+### Choosing what to extend
 
-Before claiming that extension works, add the syntax and semantics, close its
-soundness proofs, verify representative accepted programs, and reject incorrect
-invariants for the intended reasons. Merely rejecting loops at the grammar gate
-would not establish loop verification.
+Two signals are available, and they disagree.
 
-Other open work is to strengthen numeric model validation and restore a
-repeatable exporter mutation experiment. A materialized obligation list can be
-introduced if discharging them separately, for testing or diagnostics, justifies it.
+*Coverage* asks how much of the corpus a fragment could reach. Measured as
+fragment closure — the 488 corpus files that use nothing outside a candidate
+fragment, detected by pattern, so approximate — it says objects and then
+generics are where the mass is:
 
-Later directions are higher-order functions and closures (F2), objects and
-aliasing (F3), generics and classes (F4), then modules and ambient declarations
-(F5). These labels describe a tentative sequence. Their proof formats,
-invalidation policies, performance and practical coverage remain untested.
-Ambient declarations would introduce explicit assumptions about external code.
+```text
+  42   8%   F0 as implemented            75  15%   + closures
+  44   9%   + mutable locals, loops     203  41%   + objects
+  66  13%   + arithmetic, templates     261  53%   + classes
+  69  14%   + switch, throw, try        410  84%   + type declarations, generics
+```
+
+*Auditability* asks whether extending the fragment would let the verifier
+catch something SKJS actually gets wrong. That is what the experiment is for,
+so where the two disagree, auditability wins. The soundness ledger
+(`docs/ledger.yaml`, 67 rows) is the evidence: 18 rows violated, with fourteen
+runnable witnesses under `docs/deep-dives/issues/`.
+
+Three gates decide whether a row is reachable by this pipeline at all.
+
+**What decides an assumption is the semantics, not the ledger category.** If
+the calculus models the behaviour a row assumes, verification can establish
+what SKJS merely takes for granted. If the calculus assumes it too, verification
+cannot independently confirm it, and no claim can carry evidence for it. On
+that test, rows about the ambient runtime — `A-PROTO`, `A-PROXY`, `A-DDA`,
+`A-HASINST` — and about SKJS's own implementation, such as `A-HASH`, are out of
+reach today and belong to testing and runtime grounding; others may come into
+reach as the model grows.
+
+**A defect in inference machinery is visible only through its results.**
+`MR-1`, `OBL-MONOTONE`, `L-SUB-TSINST`, `C-FREEZE-CACHE` and `RB-1` concern
+substitution state, memo caches and freeze windows. Claims record types at
+source positions, not the state that produced them, so the *cause* is out of
+reach — but a wrong type it produces is not, and rejecting the consequence
+without understanding the cause is an advantage of this arrangement, not a
+limitation. What cannot be relied on is coverage: such a row is caught only on
+the occasions when it yields a type the obligations reject.
+
+**The exporter, not the calculus, is the binding constraint.** `claimTypeJson`
+returns `unsupported` for object types, `void`, type variables, unexpanded
+instances, and any union of more than one DNF clause. A calculus that can
+express more than the exporter can claim gains nothing — the verifier receives
+`unsupported` and rejects. So each step below has to *inspect* what the
+exporter already supplies and extend it only where the target needs it — which
+is not always a new type encoding. For the first step it is not: SKJS already
+emits every type the witness needs. For objects it is, and a claim
+representation for structured types has to be designed before the calculus can
+use one.
+
+### The targets, and what each costs
+
+Witnessed rows that survive those gates, cheapest first, with the shape change
+each requires.
+
+**`L-LIT` — already caught.** Two decimal spellings of one double are kept
+distinct, so equality narrowing types a live branch `never` and a number
+reaches a `string` return. `tests/programs/known-unsound/beyond_precision.ts`
+is rejected today. This is the existence proof that the arrangement works.
+
+**`L-LOOP-CARRIED` — loops need no new control flow; mutable locals need
+storage.** A pre-loop narrowing of an annotated binding survives a back-edge
+write. Reduced to primitive locals and boolean loop control, and arranged so
+the stale value escapes through the declared return type:
+
+```ts
+function f(): string {
+  let x: string | null = "hi";
+  let second: boolean = false;
+  if (x !== null) {
+    while (true) {
+      const s: string = x;   // second iteration: x is null
+      if (second) { return s; }
+      x = null;
+      second = true;
+    }
+  }
+  return "ok";
+}
+```
+
+SKJS accepts this with no diagnostics; Node returns `null` from a function
+declared `: string`. The claims SKJS emits are enough to reject it, and need no
+new type encoding — every type in them is already expressible, and the defect
+is visible in the environments directly: the `while` head claims `x: string`,
+and the statement after `x = null` claims `x: null`. The back edge carries the
+latter into the former, and `Covers` requires a node's claim to be justified by
+*every* incoming edge, so `sub null string` fails.
+
+The two halves of this step are not the same size. **Loops require no new
+control-flow representation**: back edges, `break`, `continue` and `switch` are
+an edge and an obligation on it, which is what the block representation could
+not express and what `Edge` was built for. **Mutable locals require a storage
+representation** — initially cells holding primitive values only. That is a
+small semantic design, and it should be written before implementation:
+allocation, reads, writes, the declared type a cell is constrained by, and what
+holds before initialization. It does not require object layouts, access paths,
+or general closure types. Committing to cells now, rather than to a binding
+that becomes a cell when captured, is what keeps closures from forcing a redo.
+
+One existing argument has to be revisited under writes. Today a shadowed
+binding retains its type across a block, justified in `Lowering.lean` by the
+fact that a shadowed slot is unnameable and so unwritable. That survives
+mutable locals, but the extension should state explicitly which retained facts
+remain valid under writes rather than inheriting the immutability argument.
+
+Completion criteria, so that "catch this row" is a concrete target:
+
+- SKJS accepts the reduced witness and supplies usable claims — confirmed;
+- the independent front end accepts its syntax, which today it does not
+  (`only \`const\` bindings are in the fragment`);
+- verification rejects it at the back edge, for the invariant rather than for
+  unsupported syntax or a missing claim;
+- a corrected counterpart, narrowing inside the loop, verifies;
+- modeled execution produces the bad return, matching Node.
+
+**`L-STALE-READ`, `L-CAPT-EVOLVE` — closures.** A closure body reads enclosing
+narrowings that are stale at invocation, and a captured write to an evolving
+`let x = null` binding goes unchecked. A closure can be a code identifier plus
+captured bindings, so the program stays a fixed collection of code bodies and
+`lookupFun` survives; what grows is the correctness condition — what it means
+for a closure value to inhabit a function type, and what must hold of its
+captured environment.
+
+**`L-MUT-ALIAS` — objects, aliasing, and the heap.** A field write through one
+mutable view must preserve what every live alias of the same object was
+promised. `Val` gains a store and references: threading an updated heap through
+the evaluator is easy, and reference equality needs no special treatment, since
+structural equality on a value carrying a location already expresses identity —
+comparing referenced *contents* is what would be wrong. The exporter needs a
+claim representation for object types. Access-path refinements — `x.kind === "a"`,
+`"k" in x` — need *not* come with the first object fragment; a deliberately
+less precise one can come first. The hard part is neither of these; see below.
+
+**`L-INTER-BOT`, `F-CABSENT` — function and callability types.** Intersecting
+two function types with incomparable signatures yields `never` although the
+semantic intersection is inhabited, and `CAbsent` fails to exclude callables.
+Both need structured types in `Ty` and in claims. What that costs is not
+settled: recursive types, higher-order types and mutable contents each need
+their own semantic decisions, and the atom-containment argument `atomMeet`
+relies on does not survive any of them. Treat this as a direction, not a design.
+
+Two things are worth naming as *not* on this list. Exceptions are not settled
+by having a graph: a `throw` needs exception values, the state at the point of
+raising, and abrupt completion, and `finally` can replace a pending return or
+exception, which makes pending completion part of what the semantics carries.
+And making calls explicit graph nodes is architectural rather than necessary —
+an evaluator can thread a heap left to right through short-circuit operators —
+but it gives effects, exceptional exits and intermediate claims definite places
+to attach, at the cost of moving evaluation order and intermediate binding into
+lowering, where they then have to be tested.
+
+### The open design question
+
+For `L-MUT-ALIAS` the delicate decision is not how to thread a heap through
+theorem signatures. It is what invariant connects the heap to types, and that
+splits into two obligations which must not be conflated:
+
+1. **Well-formedness.** A write preserves the storage and aliasing guarantees
+   the type system depends on — that each location keeps whatever stable type
+   constrains it, and that every live view of it still holds.
+2. **Retained refinements.** After the write, the flow-sensitive facts still
+   carried about that location remain justified.
+
+A conservative answer to (2) — discard every property refinement on any write
+through an unknown reference — is sound and cheap, and it does **not** discharge
+(1). Forgetting stale observations says nothing about whether the write itself
+respected what another alias was promised.
+
+The questions to settle, in that order:
+
+- Is each storage location constrained by a stable declared type?
+- What does a write through one view guarantee to every other live view?
+- Which facts about an aliased variable survive a write, and when may a write
+  refine what is known about the contents?
+- What does a call tell the verifier about the locations it might change?
+
+These decide whether the preservation proofs stay manageable, and they decide
+what SKJS would have to supply. The effort belongs here, before any theorem
+signature changes.
+
+### A bounded way to proceed
+
+Enough of the above is speculative that a foundation built before anything
+exercises it would be as likely to need revision as the block representation
+was. Each step should end with a witnessed row caught, or with a design
+question answered by something that runs.
+
+1. **Mutable locals and loops, to catch `L-LOOP-CARRIED`.** The smallest
+   fragment that reaches an unreached witnessed unsoundness, using machinery
+   already in place. Cells from the start.
+
+2. **Write the heap's semantic commitments down** — reference identity,
+   storage locations, captured cells, and an initial invalidation policy with
+   its precision limits — before changing any signature.
+
+3. **Make calls explicit nodes**, if that is the intended long-term graph
+   interface, while expressions are still small. Test evaluation order,
+   short-circuit behaviour and intermediate binding in `Tests/Lowering.lean`,
+   since they become lowering's responsibility.
+
+4. **Introduce the heap with a program that uses it**, aimed at `L-MUT-ALIAS`.
+   Allocation, a read, a write and two aliases to one location are enough to
+   expose the choices above; a heap carried unchanged through primitive
+   programs would be no evidence that the design works. Include a captured
+   mutable cell as an early design test even if closure syntax comes later.
+
+5. **Prove preservation for that stateful core before widening coverage**, and
+   let what it costs decide whether property refinements or broader function
+   values come next.
+
+Steps 2 to 5 are provisional. What the storage invariant actually costs will
+not be known until step 1 has been built, and that should be allowed to reorder
+what follows it.
+
+Each step extends the current calculus and pipeline; none requires a second
+calculus or equivalence with a previous one. Remaining open work is to
+strengthen numeric model validation, which arithmetic would force anyway, and
+to restore a repeatable exporter mutation experiment.
 
 Production integration would require an SKJS command that only reports certified
 success after verification succeeds. `--emit-skjs-type-claims` currently only
-emits claims. The stable experiment command is `make verify`, independent
-of these fragment names.
+emits claims. The stable experiment command is `make verify`, independent of any
+fragment name.
 
 ### Optional: move the source-to-graph trust boundary
 
