@@ -7,8 +7,8 @@ calculus whose rules are proved sound against its execution model.
 
 The chosen architecture is implemented in memory for a stateful positive-type
 fragment. The source-facing pipeline still runs F0, the smaller first-order
-primitive fragment. Extraction and integration have not yet connected the
-stateful checker to that pipeline. These are implementation stages, not competing
+primitive fragment. A serialized calculus-request interface is available, but source extraction
+has not yet connected the stateful checker to that pipeline. These are implementation stages, not competing
 semantic designs or a requirement to compare historical calculus versions.
 
 This document records the architecture, established commitments, trust boundary
@@ -20,6 +20,7 @@ and remaining work. Details live in:
 | [SEMANTICS](SEMANTICS.md) | Worlds, heap invariants, operational safety and recursive interpretation. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type grammar, normalization, declarative subtype rules and their certificates. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program rules, graph claims, slot maps, certificate production and mathematical statements. |
+| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Versioned stateful requests, independent evidence checking and CLI usage. |
 
 ## Chosen architecture
 
@@ -159,7 +160,8 @@ separator searches, alternative models or a semantic-completeness project.
 | Point claims and slot maps | Checked incoming relations preserve semantic environments under the program's binding transfers. |
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
-| Source-facing integration | F0 runs end to end. Extraction, claim translation and serialization for the stateful checker remain. |
+| Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
+| Source-facing integration | F0 runs end to end. Stateful source extraction and faithful claim translation remain. |
 
 Certificate completeness means **every declarative derivation has accepted
 finite evidence**. It does not mean every inclusion true in the semantic model
@@ -342,9 +344,11 @@ The concrete work is:
    per node. Specify which are source requirements, which come from SKJS, and
    which intermediate annotations the producer may choose and must justify.
    Do not silently treat producer-chosen annotations as verified SKJS claims.
-3. Define a serialized request/evidence interface and validate it at the consumer.
-   Inspect what the exporter actually supplies; extend its representation only
-   where the chosen source slice needs it.
+3. Use the [versioned request/evidence interface](REQUEST-PROTOCOL.md) at the
+   consumer. Inspect what the exporter actually supplies; extend its
+   representation only where the chosen source slice needs it. Boolean
+   singletons already expose a type-translation boundary: the positive calculus
+   has only `boolean`, so silently widening singleton claims is not acceptable.
 4. Run accepted programs and deliberately corrupted claims through the complete
    path. Include a merge, a loop, and a captured cell modified through an alias.
    Require rejection for the intended claim obligation, not merely unsupported
@@ -352,8 +356,8 @@ The concrete work is:
 
 Completion means independently parsed source and associated claims reach the
 proved stateful consumer, without hand-written derivations per program, with an
-explicit account of the remaining translation trust. Evidence production already
-works in memory and is not itself the missing semantic foundation.
+explicit account of the remaining translation trust. Evidence production and serialized consumption already work. The remaining gap
+is source extraction and exact interpretation of its requirements and claims.
 
 The existing F0 path remains operational until that replacement covers the source
 behavior we choose to retain. Migration does not require a theorem relating old

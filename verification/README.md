@@ -5,8 +5,9 @@ in Lean. SKJS exports **type claims**; the verifier reads the source
 independently and checks that those claims justify the program's typing.
 
 The implemented fragment is called **F0**: first-order functions over primitive
-values, with type narrowing. Later fragments are planned, not implemented.
-Verification runs separately from ordinary SKJS checking.
+values, with type narrowing. A stateful calculus and certificate consumer are
+also implemented; their source extraction is not yet connected. Verification
+runs separately from ordinary SKJS checking.
 
 ## Run
 
@@ -66,6 +67,14 @@ verification/run.sh --skjs target/host/dev/skjs.some-variant early_return
 
 `make verify` is the stable command as coverage grows.
 F0 is a name for language coverage, not a version of the public command.
+
+## Stateful calculus requests
+
+The same verifier binary can produce and independently check serialized
+stateful calculus evidence. See [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) for a
+complete minimal request and commands. This interface takes an extracted graph
+and point annotations; it does not yet accept extended TypeScript source or
+reinterpret SKJS's existing claim format.
 
 ## What runs
 

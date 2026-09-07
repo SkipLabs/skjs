@@ -313,8 +313,9 @@ merge narrowing, missing or extra node evidence, changed code and invalid starts
 The graph layer does not change the type-family or expression semantics.
 Closures still contain expression-language bodies, not graph-backed function
 bodies. Branch refinement remains an extension. Source-to-graph extraction and
-serialization remain integration work. The next section supplies an in-memory
-certificate producer. No graph-level completeness theorem is claimed here; the
+faithful claim translation remain integration work. The next section supplies
+an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
+describes its serialized consumer boundary. No graph-level completeness theorem is claimed here; the
 program-evidence and edge-evidence completeness results above retain their
 stated scope.
 
@@ -391,5 +392,7 @@ No evidence is returned as successful unless the consumer accepts it.
   missing or extra edge evidence, invalid starts and exhausted search fuel.
 
 This establishes an in-memory program-plus-annotations-to-checked-evidence path.
-It does not yet establish source extraction correctness, a serialized protocol,
-producer completeness, or integration with the production F0 verifier.
+The [serialized request protocol](REQUEST-PROTOCOL.md) now exposes this boundary
+through the existing verifier binary. Source extraction correctness, producer
+completeness and integration of extended source claims remain outside these
+results.

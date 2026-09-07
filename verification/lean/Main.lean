@@ -2,6 +2,10 @@
   verifier -- the trusted verifier for the supported TypeScript fragment.
 
   Usage: verifier <ast.json> <claims.json> <skjs-file-key>
+         verifier --produce-stateful <request.json> <evidence.json> <search-depth>
+         verifier --check-stateful <request.json> <evidence.json>
+
+  Stateful mode takes a calculus request, not TypeScript source claims.
 
   Exit 0 accepts the claims; any other exit rejects them. Rejection is the
   only failure mode: the checker never reports a program as accepted on the
@@ -9,6 +13,7 @@
 -/
 import Verification.Verify
 import Verification.JsonDecode
+import Verification.ExperimentState.RequestCli
 
 open Verification Lean
 
@@ -46,7 +51,15 @@ def run (astPath typeClaimsPath fileKey : String) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--check-stateful", requestPath, evidencePath] =>
+      ExperimentState.RequestCli.checkFiles requestPath evidencePath
+  | ["--produce-stateful", requestPath, evidencePath, depth] =>
+      match depth.toNat? with
+      | some fuel => ExperimentState.RequestCli.produceFile requestPath evidencePath fuel
+      | none => IO.eprintln "reject: search depth must be a natural number"; return 2
   | [astPath, typeClaimsPath, fileKey] => run astPath typeClaimsPath fileKey
   | _ =>
       IO.eprintln "usage: verifier <ast.json> <claims.json> <skjs-file-key>"
+      IO.eprintln "       verifier --produce-stateful <request.json> <evidence.json> <search-depth>"
+      IO.eprintln "       verifier --check-stateful <request.json> <evidence.json>"
       return 2

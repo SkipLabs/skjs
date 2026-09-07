@@ -140,8 +140,10 @@ require keeping separator searches or a second subtyping implementation.
 
 ## Remaining scope
 
-Program/claim extraction, a serialized certificate decoder, and integration
-with the production verifier remain. A bounded in-memory producer now builds
+Program/claim extraction and integration of extended source claims remain.
+The [versioned request protocol](REQUEST-PROTOCOL.md) exposes the stateful
+consumer through the existing verifier binary, with checked decoded-request
+safety. A bounded in-memory producer now builds
 checked evidence from supplied point annotations, with exact claim fidelity.
 Global graph execution safety includes explicit edge slot mappings for scope
 changes, reordering and alias retention. Graph-backed closure bodies remain an
