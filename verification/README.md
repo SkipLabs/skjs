@@ -157,3 +157,10 @@ ones the soundness statement reaches. The
 | [Tests/](lean/Verification/Tests) | One test file per module, named after it; each header says what it pins and whether it is trusted. Built with the verifier. |
 | [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) | Emit SKJS's claims: expression types, statement environments and function signatures. |
 | [run.sh](run.sh) | Build when requested, run the corpus and claim validation tests, and report results. |
+
+One directory is a design investigation rather than part of the verifier. It
+builds with everything else and is imported by nothing.
+
+| Directory | Responsibility |
+|---|---|
+| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); the recursive-equality result and its boundaries in [COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md). |

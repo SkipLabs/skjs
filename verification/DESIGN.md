@@ -7,7 +7,9 @@ checks them against an independently parsed source program.
 The initial fragment, F0, is implemented. The calculus and verifier have
 soundness proofs, and the test pipeline runs end to end. Broader language
 support and integration into the ordinary SKJS command are future work.
-See the [README](README.md) for setup, commands and the code map.
+See the [README](README.md) for setup, commands and the code map, and
+[SEMANTICS.md](SEMANTICS.md) for the semantics the calculus is heading toward
+and how far it is established.
 
 ## Organization
 
@@ -656,6 +658,131 @@ The questions to settle, in that order:
 These decide whether the preservation proofs stay manageable, and they decide
 what SKJS would have to supply. The effort belongs here, before any theorem
 signature changes.
+
+### The semantics
+
+A recursive type has to mean something before a checker can be trusted about
+it, and once the language can write, membership has to be relative to a world of
+declared contracts rather than to heap contents. The construction, the four
+properties it must satisfy, and what has been established are in
+[SEMANTICS.md](SEMANTICS.md).
+
+In short: a type is a family of approximations indexed by a budget; the budget
+is spent only where the program spends one, at a dereference or a call; recursion
+is the Banach fixed point of a contractive operator, which survives recursion
+through argument positions where neither the least nor the greatest fixed point
+exists; and values are judged against stratified worlds, with a separate
+invariant tying an actual heap to the world. That combination is established for
+a small stateful fragment — recursive reference types with an inhabited cyclic
+heap, allocation, mutation through aliases, closures over mutable cells, and a
+recursive function type — and not beyond it.
+
+Within that fragment one question is closed. For closed types built from
+`null`, `bool`, invariant references and function types, semantic equality **is**
+bisimulation of the corresponding finite guarded graph, in both directions — so
+a finite certificate is complete evidence, and there are no further equations to
+find. See
+[COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md); the boundaries
+are the interesting part.
+
+### What remains between this and a usable calculus
+
+Four pieces, in increasing order of design risk rather than of effort.
+
+**1. Finish the operational interface.** Safety under decreasing budgets, the
+remaining evaluation-context rules, and an adequacy theorem: a verified closed
+program cannot get stuck. The application rule currently extracts a function's
+guarantee at a strictly smaller index, which is not yet the general typing rule
+for arbitrary expressions under environments; term substitution likewise needs
+its binding discipline stated rather than relied on for closed arguments.
+Necessary proof work, low architectural risk.
+
+**2. Interpret an actual type language.** Two representations are on the table
+and they are not interchangeable.
+
+*Graphs* — a finite system of guarded equations — already carry the recursion,
+exclude unguarded definitions by construction, and come with the completeness
+result above. What they cannot express is anything open: no free parameters, no
+schemes, no substitution.
+
+*Binder syntax* is what a source translation naturally produces, and it needs
+the missing bridge: admissibility of interpreted types, a substitution theorem,
+recursive unfolding as the intended type equation, and an explicit guardedness
+policy saying which definitions are admitted and why their interpretations
+exist, rather than discharging that afresh at each use. This is where the
+binder/world interaction is shown repaired *at the language level* — an equation
+about a directly constructed family does not establish substitution through an
+open recursive type.
+
+The two meet at a translation, and the translation is where a real gap sits.
+SKJS represents types as **named declarations with arguments, expanded on demand
+under a depth cap**, which denotes a regular tree only while the parameters do
+not grow. `type T<X> = { next: T<{ v: X }> }` is accepted by SKJS and is *not* a
+finite graph. So graphs cover the closed regular types over the four-constructor
+signature exactly, and a generic alias whose argument grows leaves even that
+class — quite separately from the signature gap between those four constructors
+and real object, union and literal types.
+
+Two things about the rules are already settled. The cycle must be discharged by
+induction on the budget, with an assumption citable only after a guard has been
+crossed — and that has to be enforced by the shape of the rules rather than
+checked afterwards, or a derivation can justify its own conclusion. And a cyclic
+assumption reached through an argument position is needed in the orientation
+opposite to the one that created it, so assumptions are unordered pairs and the
+rule for `μ` establishes both directions.
+
+One consequence is worth knowing before designing the relation: until the type
+language has a top, a bottom or unions, subtyping so specified **coincides with
+equality**. Contravariance is then unobservable and the both-directions
+requirement costs nothing. The interesting design questions start with the
+lattice, not with the recursion.
+
+**3. Resolve what can still change the design.**
+
+*Difference and narrowing come first*, and are now the next gate rather than one
+item among several: recursive equality is settled for the fragment without them,
+and adding them changes the theory rather than extending it. An everywhere-empty
+argument type makes `0 → A` and `0 → B` equal, so free tree equality stops being
+the right judgment and the completeness result does not carry over. Give the
+Boolean layer its own equational theory rather than trying to preserve tree
+equality after adding it.
+
+Pointwise union and intersection preserve admissibility. Pointwise complement does not preserve downward closure, nor
+monotonicity under world extension — so "interpret every DNF operation as the
+corresponding set operation at each index" is not justified. The objective
+leaves room here: a branch rule may use a sound approximation of the values
+remaining after a failed test, and need not supply exact semantic
+complementation of every higher-order type. Establish which operations the
+calculus actually needs before buying a richer Boolean semantics.
+
+*Mutable structural objects* need their own treatment. An invariant cell is a
+foundation, not width subtyping, optional fields, readonly views, or a rule for
+when mutation invalidates an established refinement.
+
+*Generics and `extends` bounds* require language-level proofs, and carry a
+second problem beyond universality. Universality means one runtime function
+works for every permitted interpretation of its parameters, and the
+reference-parameter result does not establish that. Separately, a generic alias
+whose argument grows leaves the regular-tree world altogether, so no finite
+graph and no bisimulation certificate exists for it — and SKJS accepts such
+declarations. Decide whether the calculus refuses them, bounds them as SKJS's
+expansion cap does, or represents them some third way. Start from the intended
+generic-function fragment with semantic bounds, and add recursive bounds only
+where the language requires them.
+
+**4. Connect the calculus to checked invariants.** The deliverable is not SKJS
+soundness but:
+
+> if the calculus program and its supplied invariants pass verification, then
+> execution satisfies the calculus's safety property.
+
+That needs sound local instruction rules, sound checking of each incoming edge
+against the supplied invariants, and a global execution theorem. Loops use the
+supplied invariants; no inference and no computed fixed point is required.
+
+SKJS remains a producer of candidate claims: its inference and its recursive
+subtyping need no correctness proof of their own. Translating programs and
+claims faithfully is a separate interface obligation.
 
 ### A bounded way to proceed
 
