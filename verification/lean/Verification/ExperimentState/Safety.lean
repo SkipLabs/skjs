@@ -71,6 +71,20 @@ theorem Safe_congr {B C : Fam} (n : Nat) (hag : Agree B C n) :
     · exact Or.inl ⟨hv, (hag (p + 1) hj W t).mpr hB⟩
     · exact Or.inr ⟨W', h', t', hx, ha, hs, hok, (ih (by omega) W' h' t').mpr hsafe⟩
 
+/-- Safety is monotone in the type, at every budget it can still reach. -/
+theorem Safe_mono {B C : Fam} : ∀ (j : Nat),
+    (∀ m, m ≤ j → ∀ (W : WorldT m) (v : Val), B m W v → C m W v) →
+    ∀ (W : WorldT j) (h : Heap) (t : Tm), Safe B j W h t → Safe C j W h t := by
+  intro j
+  induction j with
+  | zero => intro _ _ _ _ _; trivial
+  | succ p ih =>
+    intro hbc W h t hs
+    rcases hs with ⟨hv, hB⟩ | ⟨W', h', t', hx, ha, hst, hok, hsafe⟩
+    · exact Or.inl ⟨hv, hbc (p + 1) (Nat.le_refl _) W t hB⟩
+    · exact Or.inr ⟨W', h', t', hx, ha, hst, hok,
+        ih (fun m hm => hbc m (by omega)) W' h' t' hsafe⟩
+
 /-- An arrow is a guard in its **result** as well as its argument, so a
 recursive type may run through either position. -/
 theorem arrowT_cod_contractive (A : Fam) : Contractive (fun X => arrowT A X) := by
@@ -96,6 +110,58 @@ theorem arrowT_adm (A B : Fam) : Adm (arrowT A B) := by
 
 theorem arrowT_valOnly (A B : Fam) : ValOnly (arrowT A B) := by
   rintro _ _ _ ⟨⟨b, rfl⟩, -⟩; rfl
+
+/-! ## Unions and the arrow
+
+A union in the *domain* splits into an intersection of arrows. This is the one
+distributive law the arrow satisfies, and it is why a union under an argument
+can always be eliminated. Nothing similar holds in the result position. -/
+
+theorem arrowT_union_dom (A B C : Fam) (k : Nat) (W : WorldT k) (v : Val) :
+    arrowT (unionT A B) C k W v ↔ interT (arrowT A C) (arrowT B C) k W v := by
+  simp only [arrowT, interT, unionT]
+  constructor
+  · rintro ⟨hl, h⟩
+    refine ⟨⟨hl, ?_⟩, ⟨hl, ?_⟩⟩
+    · intro j hj W' hW hadm hp hok a ha
+      exact h j hj W' hW hadm hp hok a (Or.inl ha)
+    · intro j hj W' hW hadm hp hok a ha
+      exact h j hj W' hW hadm hp hok a (Or.inr ha)
+  · rintro ⟨⟨hl, hA⟩, ⟨_, hB⟩⟩
+    refine ⟨hl, ?_⟩
+    intro j hj W' hW hadm hp hok a ha
+    rcases ha with h | h
+    · exact hA j hj W' hW hadm hp hok a h
+    · exact hB j hj W' hW hadm hp hok a h
+
+/-! ## Divergence is safe at every type
+
+Safety asks for progress, not termination, so a computation that never returns
+satisfies any result type. This is what inhabits an arrow whose result nothing
+can produce. -/
+
+theorem omega_safe (B : Fam) : ∀ (n : Nat) (W : WorldT n) (h : Heap),
+    WorldAdm W → HeapOk n W h → Safe B n W h omegaTm := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h ha hh
+    exact Or.inr ⟨trunc n (Nat.le_succ n) W, h, omegaTm, WExt_refl _,
+      WorldAdm_trunc _ ha, omega_step h, HeapOk_trunc n W h hh,
+      ih _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)⟩
+
+theorem value_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) (v : Val)
+    (hv : isVal v = true) (hb : B n U v) : Safe B n U h v := by
+  cases n with
+  | zero => trivial
+  | succ n => exact Or.inl ⟨hv, hb⟩
+
+theorem safe_value_mem {B : Fam} {n : Nat} {U : WorldT (n+1)} {h : Heap} {v : Val}
+    (hv : isVal v = true) (hs : Safe B (n+1) U h v) : B (n+1) U v := by
+  rcases hs with ⟨_, hb⟩ | ⟨_, _, _, _, _, hs, _, _⟩
+  · exact hb
+  · exact False.elim (value_no_step hv hs)
 
 end ExperimentState
 end Verification

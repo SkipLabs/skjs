@@ -254,5 +254,50 @@ theorem trunc_res {k j : Nat} (h : j ≤ k) (T : Fam) :
   simp only [trunc, toList_ofList, List.map_cons, List.map_nil]
   rfl
 
+/-! ## Pointwise union and intersection
+
+Union and intersection of families are the set operations at each index.
+Both preserve admissibility. They are *not* guards: `F(X) = X ∪ A` is only
+non-expansive, so a recursive node `μX. X ∨ null` is excluded the same way
+`μX. X` is — flatten unions, recurse only through `ref` / `arr`. -/
+
+def unionT (A B : Fam) : Fam := fun n W v => A n W v ∨ B n W v
+
+def interT (A B : Fam) : Fam := fun n W v => A n W v ∧ B n W v
+
+theorem unionT_comm (A B : Fam) (n : Nat) (W : WorldT n) (v : Val) :
+    unionT A B n W v ↔ unionT B A n W v := or_comm
+
+theorem unionT_idemp (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
+    unionT A A n W v ↔ A n W v := ⟨fun h => h.elim id id, Or.inl⟩
+
+theorem unionT_assoc (A B C : Fam) (n : Nat) (W : WorldT n) (v : Val) :
+    unionT (unionT A B) C n W v ↔ unionT A (unionT B C) n W v := or_assoc
+
+theorem unionT_adm (A B : Fam) (hA : Adm A) (hB : Adm B) : Adm (unionT A B) := by
+  constructor
+  · intro n W v hv
+    rcases hv with h | h
+    · exact Or.inl (hA.down n W v h)
+    · exact Or.inr (hB.down n W v h)
+  · intro n W W' hx v hv
+    rcases hv with h | h
+    · exact Or.inl (hA.mono n W W' hx v h)
+    · exact Or.inr (hB.mono n W W' hx v h)
+
+theorem interT_adm (A B : Fam) (hA : Adm A) (hB : Adm B) : Adm (interT A B) := by
+  constructor
+  · intro n W v hv
+    exact ⟨hA.down n W v hv.1, hB.down n W v hv.2⟩
+  · intro n W W' hx v hv
+    exact ⟨hA.mono n W W' hx v hv.1, hB.mono n W W' hx v hv.2⟩
+
+theorem unionT_valOnly (A B : Fam) (hA : ValOnly A) (hB : ValOnly B) :
+    ValOnly (unionT A B) := by
+  intro j W a ha
+  rcases ha with h | h
+  · exact hA j W a h
+  · exact hB j W a h
+
 end ExperimentState
 end Verification

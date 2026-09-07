@@ -149,5 +149,98 @@ theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {l : Nat}
     (hW : WExt (trunc j hj W) W') : refT A j W' (.loc l) :=
   (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)
 
+/-- A function that ignores its argument and diverges inhabits *every* arrow
+type: applied to anything, it never returns, and that is safe at any result. -/
+theorem ignore_safe (B : Fam) (n : Nat) (W : WorldT n) (h : Heap)
+    (ha : WorldAdm W) (hh : HeapOk n W h) (v : Val) (hv : isVal v = true) :
+    Safe B n W h (.app (.lam omegaTm) v) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    apply beta_rule _ _ hv n W h ha hh
+    simpa [omegaTm, delta, subst] using
+      omega_safe B n _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)
+
+theorem diverging_arrow {A B : Fam} (ha : ValOnly A) (n : Nat) (W : WorldT n) :
+    arrowT A B n W (.lam omegaTm) := by
+  apply lam_intro ha
+  intro p hp U hx hu h hh a hA
+  simpa [omegaTm, delta, subst] using
+    omega_safe B p _ h (WorldAdm_trunc (Nat.le_succ p) hu) (HeapOk_trunc p U h hh)
+
+theorem tester_typed {A B : Fam} (hA : Adm A) (hval : ValOnly A)
+    (k : Nat) (W : WorldT k) (l : Nat) (hr : refT A k W (.loc l)) :
+    arrowT A B k W (tester l) := by
+  apply lam_intro hval
+  intro p hp U hx hu h hh a ha
+  have hr' := refT_transfer hr p (by omega) (trunc p (Nat.le_succ p) U) (by
+    have he := WExt_trunc (Nat.le_succ p) hx
+    simpa [trunc_trunc] using he)
+  obtain ⟨q, c, hv, hl, hc⟩ := hr'
+  cases hv
+  have hua := WorldAdm_trunc (Nat.le_succ p) hu
+  have hhp := HeapOk_trunc p U h hh
+  have hw := write_rule hA p _ h l a (hval _ _ _ ha) hua hhp hl hc (hA.down p U a ha)
+  change Safe B p _ h (.app (.lam omegaTm) (.write (.loc l) a))
+  apply Safe_bind_appR (.lam omegaTm) rfl p _ h _ hua hhp hw
+  intro j hj U' hx' hu' h' v hh' hv'
+  exact ignore_safe B j U' h' hu' hh' v (nulT_valOnly _ _ _ hv')
+
+/-- Reading a cell after a value has been produced and discarded. -/
+theorem read_after {B : Fam} (hBv : ValOnly B) (n : Nat) (W : WorldT n) (h : Heap) (r : Nat)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hrB : refT B n W (.loc r))
+    (v : Val) (hv : isVal v = true) :
+    Safe B n W h (.app (.lam (.read (.loc r))) v) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    apply beta_rule _ _ hv p W h hadm hok
+    have hrB' := refT_transfer hrB p (Nat.le_succ p) (trunc p (Nat.le_succ p) W) (WExt_refl _)
+    obtain ⟨s, c, hs, hl, hc⟩ := hrB'
+    cases hs
+    simpa [subst] using
+      read_rule hBv p _ h r (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok) hl hc
+
+/-- **The probe is a function of its declared type.** Given a cell at the domain
+and a cell at the codomain, `probe` inhabits the arrow between them. -/
+theorem probe_typed {A B : Fam} (hA : Adm A) (hAv : ValOnly A) (hBv : ValOnly B)
+    (k : Nat) (W : WorldT k) (l r : Nat)
+    (hrA : refT A k W (.loc l)) (hrB : refT B k W (.loc r)) :
+    arrowT A B k W (probe l r) := by
+  apply lam_intro hAv
+  intro p hp U hx hu h hh a ha
+  have hua := WorldAdm_trunc (Nat.le_succ p) hu
+  have hhp := HeapOk_trunc p U h hh
+  have hxp : WExt (trunc p (Nat.le_of_lt (Nat.lt_of_succ_lt hp)) W)
+      (trunc p (Nat.le_succ p) U) := by
+    have he := WExt_trunc (Nat.le_succ p) hx
+    simpa [trunc_trunc] using he
+  obtain ⟨q, c, hv, hl, hc⟩ :=
+    refT_transfer hrA p (Nat.le_of_lt (Nat.lt_of_succ_lt hp)) _ hxp
+  cases hv
+  have hw := write_rule hA p _ h l a (hAv _ _ _ ha) hua hhp hl hc (hA.down p U a ha)
+  change Safe B p _ h (.app (.lam (.read (.loc r))) (.write (.loc l) a))
+  apply Safe_bind_appR (.lam (.read (.loc r))) rfl p _ h _ hua hhp hw
+  intro j hj U' hx' hu' h' v hh' hv'
+  have hxj : WExt (trunc j (Nat.le_trans hj (Nat.le_of_lt (Nat.lt_of_succ_lt hp))) W) U' := by
+    refine WExt_trans ?_ hx'
+    simpa [trunc_trunc] using WExt_trunc hj hxp
+  exact read_after hBv j U' h' r hu' hh'
+    (refT_transfer hrB j (Nat.le_trans hj (Nat.le_of_lt (Nat.lt_of_succ_lt hp))) U' hxj)
+    v (nulT_valOnly _ _ _ hv')
+
+/-- Being stuck is exactly what `Safe` forbids. -/
+theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
+    ¬ Safe B (k + 1) W h (.app .nul .nul) := by
+  rintro (⟨hv, -⟩ | ⟨_, _, _, _, _, hs, _, _⟩)
+  · simp [isVal] at hv
+  · exact stuck_no_step hs
+
+/-- An arrow with an uninhabited domain constrains nothing: every function has
+that type, including one that would get stuck if it were ever applied. -/
+theorem vacuous_arrow {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
+    (b : Tm) (k : Nat) (W : WorldT k) : arrowT A B k W (.lam b) :=
+  ⟨⟨b, rfl⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+
 end ExperimentState
 end Verification

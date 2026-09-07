@@ -163,4 +163,4 @@ builds with everything else and is imported by nothing.
 
 | Directory | Responsibility |
 |---|---|
-| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); the recursive-equality result and its boundaries in [COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md). |
+| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); the recursive-equality and union-inclusion results, and their boundaries, in [COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md). |

@@ -287,6 +287,63 @@ Safety proofs are assembled from rules rather than traced:
   contractive `F` *is* `μF` (`fix_unique`), and `μX. ref X` and
   `μX. ref (ref X)` are therefore the same type (`R_eq_ref_ref`). Heads are
   disjoint and `ref` is injective on element types.
+- With unions in operand position, **inclusion is exactly clause-to-clause
+  covering** (`sim_iff_incl`), for well-formed graphs. This is a subtyping
+  result, not only an equality one, and it holds because state supplies the
+  observation that makes arrows fail to split.
+
+## Unions, and why covering is complete
+
+A type is a set of nodes read as its union, and so is every operand — which
+`ref A ∨ ref B ≠ ref (A ∨ B)` makes necessary. The judgment is clause-to-clause
+covering: an atom by presence, a reference invariantly, an arrow
+contravariantly, with an empty operand waiving the comparison on the other
+side. Covering is sound *and complete*:
+
+    Sim G S T   ⟺   ∀ n v.  v ∈ ⟦S⟧ₙ(W_G n) → v ∈ ⟦T⟧ₙ(W_G n)
+
+Inclusion has to hold only at the canonical worlds `W_G`; soundness gives it
+back at every world. Intersections, negation and top are still absent, so this
+is the union fragment and not a Boolean algebra of types.
+
+The practical form is that the check decomposes: `S ≤ T` exactly when every
+clause of `S` is below a *single* clause of `T` (`sim_pairwise`), because a
+single clause included in a union is included in one member of it
+(`sim_clause_prime`). The rules, the restriction they need, and what the
+resulting equational theory does and does not contain are written out in
+[COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md#the-rule-in-practice).
+
+Completeness is not what a pure language would give. There, a function on a
+one-element domain either returns a null or returns a boolean, so
+`nul → (nul ∨ bool)` is below `(nul → nul) ∨ (nul → bool)` and no
+clause-to-clause rule can derive it. Here that inclusion is **false**
+(`no_arrow_splitting`): a reader of a cell declared `nul ∨ bool` lies in the
+source type and in neither disjunct, because an arrow quantifies over every
+satisfying heap and one heap holds `true` where another holds `null`. State
+supplies the observation a type test would have.
+
+The proof turns that observation into a construction. Every clause of the source
+gets a value that inhabits it and escapes the *whole* target: an atom by itself,
+a reference by the canonical location of its operand, an arrow by a **probe** —
+a function that writes its argument into a cell declared at the source domain
+and returns the contents of a cell declared at the source codomain. The write
+fails on an argument the domain cannot hold; the returned value is one the
+observer planted, since an arrow quantifies over every satisfying heap. So one
+value tests both sides of an arrow at once, which is what a union in the target
+demands — a single value has to escape every clause, and the budgets above which
+it escapes each of them are combined by the finiteness of the clause list. The
+two cells are distinct even when the two operands coincide, which is why the
+canonical world declares two per operand set.
+
+Getting there needed a restriction rather than more rules. A cell declared to
+hold nothing makes an arrow's obligation vanish, and chasing that exactly leads
+to a side condition that counts evaluation steps — `ref never` is unreachable
+above budget zero, `ref (ref never)` above budget one, and an arrow demands
+nothing below budget two. That is an artifact of the model, not a fact about
+types, so such cells are excluded by well-formedness instead. What remains is the
+one obvious case, an empty union, which is a syntactic check. Well-formedness
+earns its keep: under it every non-empty clause set is inhabited, in a world an
+actual heap satisfies (`wf_inhabited`).
 
 ## What is not
 
@@ -294,7 +351,9 @@ No *binder* syntax, environments or substitution, and so no general binding
 discipline. Types are represented as finite graphs, which cover closed regular
 recursion and nothing else: no open types, and no irregular trees of the kind a
 growing type parameter produces. The unfolding equation is therefore still not a
-substitution theorem for an open recursive type. No subtyping. Safety under
+substitution theorem for an open recursive type. The typing rules have no
+subsumption rule: covering is proved to characterise inclusion, but nothing
+yet uses an inclusion to retype a term. Safety under
 decreasing budgets and the remaining evaluation contexts are unproved, and there
 is no adequacy theorem connecting safety to ordinary execution.
 
@@ -317,6 +376,7 @@ admissible instantiation — and variance. Definability is not universality.
 | `Completeness.lean` | types as finite guarded graphs, their denotation, bisimulation and its soundness |
 | `Separation.lean` | canonical worlds and heaps, separating values, equality completeness |
 | `Polymorphism.lean` | quantified types: definability, bounds, admissibility |
+| `Union.lean` | unions in operand position: the representation, covering, its soundness and its completeness |
 
 ## Names
 

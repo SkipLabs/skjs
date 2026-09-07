@@ -233,44 +233,6 @@ theorem complete_of_arrow_reflection (G : Graph ι) (H : Graph κ)
     | ref z => simp [head] at hh
     | arr z w => exact .arr (ha x y z w he).1 (ha x y z w he).2
 
-/-! ## Stateful arrow-domain separation, with arbitrary result types -/
-
-def delta : Tm := .lam (.app (.var 0) (.var 0))
-def omegaTm : Tm := .app delta delta
-
-theorem omega_safe (B : Fam) : ∀ n W h,
-    WorldAdm W → HeapOk n W h → Safe B n W h omegaTm := by
-  intro n
-  induction n with
-  | zero => intros; trivial
-  | succ n ih =>
-    intro W h ha hh
-    refine Or.inr ⟨trunc n (Nat.le_succ n) W, h, omegaTm, WExt_refl _,
-      WorldAdm_trunc _ ha, ?_, HeapOk_trunc n W h hh,
-      ih _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)⟩
-    exact Step.beta rfl
-
-theorem ignore_safe (B : Fam) (n : Nat) (W : WorldT n) (h : Heap)
-    (ha : WorldAdm W) (hh : HeapOk n W h) (v : Val) (hv : isVal v = true) :
-    Safe B n W h (.app (.lam omegaTm) v) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    apply beta_rule _ _ hv n W h ha hh
-    simpa [omegaTm, delta, subst] using
-      omega_safe B n _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)
-
-/-- Write the argument through a captured reference, then diverge. There is no
-runtime type test, and no returned value that could inspect the codomain. -/
-def tester (l : Nat) : Tm := .lam (.app (.lam omegaTm) (.write (.loc l) (.var 0)))
-
-theorem diverging_arrow {A B : Fam} (ha : ValOnly A) (n : Nat) (W : WorldT n) :
-    arrowT A B n W (.lam omegaTm) := by
-  apply lam_intro ha
-  intro p hp U hx hu h hh a hA
-  simpa [omegaTm, delta, subst] using
-    omega_safe B p _ h (WorldAdm_trunc (Nat.le_succ p) hu) (HeapOk_trunc p U h hh)
-
 /-! Every type in a finite graph has an inhabitant in a common, admissible,
 inhabited world. This includes mixed reference/arrow cycles and negative
 recursion, not just the reference-only completeness fragment. -/
@@ -331,24 +293,6 @@ theorem graphHeap_ok (G : Graph (Fin m)) (n : Nat) : HeapOk n (graphWorld G n) (
   change denote G ⟨l, hlt⟩ j _ _
   rw [graphWorld_trunc]
   exact canonical_mem G ⟨l, hlt⟩ j
-
-theorem tester_typed {A B : Fam} (hA : Adm A) (hval : ValOnly A)
-    (k : Nat) (W : WorldT k) (l : Nat) (hr : refT A k W (.loc l)) :
-    arrowT A B k W (tester l) := by
-  apply lam_intro hval
-  intro p hp U hx hu h hh a ha
-  have hr' := refT_transfer hr p (by omega) (trunc p (Nat.le_succ p) U) (by
-    have he := WExt_trunc (Nat.le_succ p) hx
-    simpa [trunc_trunc] using he)
-  obtain ⟨q, c, hv, hl, hc⟩ := hr'
-  cases hv
-  have hua := WorldAdm_trunc (Nat.le_succ p) hu
-  have hhp := HeapOk_trunc p U h hh
-  have hw := write_rule hA p _ h l a (hval _ _ _ ha) hua hhp hl hc (hA.down p U a ha)
-  change Safe B p _ h (.app (.lam omegaTm) (.write (.loc l) a))
-  apply Safe_bind_appR (.lam omegaTm) rfl p _ h _ hua hhp hw
-  intro j hj U' hx' hu' h' v hh' hv'
-  exact ignore_safe B j U' h' hu' hh' v (nulT_valOnly _ _ _ hv')
 
 def cellWorld (A : Fam) (n : Nat) : WorldT n := ofList [res A]
 

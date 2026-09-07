@@ -677,11 +677,16 @@ a small stateful fragment — recursive reference types with an inhabited cyclic
 heap, allocation, mutation through aliases, closures over mutable cells, and a
 recursive function type — and not beyond it.
 
-Within that fragment one question is closed. For closed types built from
+Within that fragment two questions are closed. For closed types built from
 `null`, `bool`, invariant references and function types, semantic equality **is**
 bisimulation of the corresponding finite guarded graph, in both directions — so
 a finite certificate is complete evidence, and there are no further equations to
-find. See
+find. And once unions are added in operand position, semantic **inclusion** is
+exactly clause-to-clause covering: each clause of the source matched by one
+clause of the target, references invariantly and arrows contravariantly. That
+is a subtyping result, and it holds for a reason specific to this language —
+arrows do not split over unions, because a mutable cell is the branch a type
+test would have provided. See
 [COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md); the boundaries
 are the interesting part.
 
@@ -735,17 +740,20 @@ One consequence is worth knowing before designing the relation: until the type
 language has a top, a bottom or unions, subtyping so specified **coincides with
 equality**. Contravariance is then unobservable and the both-directions
 requirement costs nothing. The interesting design questions start with the
-lattice, not with the recursion.
+lattice, not with the recursion — and the first step into that lattice, unions
+in operand position, is now taken: the rule for it is clause-to-clause covering
+and it is complete.
 
 **3. Resolve what can still change the design.**
 
-*Difference and narrowing come first*, and are now the next gate rather than one
-item among several: recursive equality is settled for the fragment without them,
-and adding them changes the theory rather than extending it. An everywhere-empty
-argument type makes `0 → A` and `0 → B` equal, so free tree equality stops being
-the right judgment and the completeness result does not carry over. Give the
-Boolean layer its own equational theory rather than trying to preserve tree
-equality after adding it.
+*Intersection, difference and narrowing come first*, and are the next gate:
+equality is settled without them, unions are settled with a complete rule, and
+these change the theory rather than extending it. The vacuity they bring is
+already visible — an everywhere-empty argument type makes `0 → A` and `0 → B`
+equal, which is why the union rule waives the comparison at an empty operand and
+why a cell declared at `never` is excluded by well-formedness rather than
+handled. Give the Boolean layer its own equational theory rather than trying to
+preserve tree equality after adding it.
 
 Pointwise union and intersection preserve admissibility. Pointwise complement does not preserve downward closure, nor
 monotonicity under world extension — so "interpret every DNF operation as the

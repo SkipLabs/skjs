@@ -33,22 +33,6 @@ theorem over_trunc {G : Graph (Fin m)} {n j : Nat} {U : WorldT n}
 theorem over_ext {G : Graph (Fin m)} {n : Nat} {U V : WorldT n}
     (hx : Over G n U) (hy : WExt U V) : Over G n V := WExt_trans hx hy
 
-theorem heap_down {n : Nat} {U : WorldT n} {h : Heap} (hh : HeapOk n U h)
-    (j : Nat) (hj : j ≤ n) : HeapOk j (trunc j hj U) h := by
-  induction n generalizing j with
-  | zero =>
-    have : j = 0 := by omega
-    subst j
-    simpa [trunc_id] using hh
-  | succ n ih =>
-    by_cases he : j = n + 1
-    · subst j; simpa [trunc_id] using hh
-    · have hh' := HeapOk_trunc n U h hh
-      have := ih hh' j (by omega)
-      simpa [trunc_trunc] using this
-
-def Closed (v : Val) : Prop := ∀ k a, subst k a v = v
-
 def Sep (G : Graph (Fin m)) (i j : Fin m) : Prop :=
   ∃ v N, Closed v ∧
     (∀ n U, Over G n U → denote G i n U v) ∧
@@ -61,14 +45,6 @@ theorem sep_ne {G : Graph (Fin m)} {i j} (hs : Sep G i j) : ¬ FamEq (denote G i
   obtain ⟨v, N, _, hp, hn⟩ := hs
   exact hn N (Nat.le_refl N) _ _ (WExt_refl _) (graphWorld_adm G N) (graphHeap_ok G N)
     ((he N _ v).mp (hp N _ (WExt_refl _)))
-
-theorem closed_omega : Closed omegaTm := by
-  intro k a
-  simp [omegaTm, delta, subst]
-
-theorem closed_tester (l : Nat) : Closed (tester l) := by
-  intro k a
-  simp [tester, subst, omegaTm, delta]
 
 theorem canonical_closed (G : Graph (Fin m)) (i : Fin m) : Closed (canonical G i) := by
   intro k a
@@ -119,29 +95,6 @@ theorem reference_sep {G : Graph (Fin m)} {i j a b}
     cases hl
     exact hbad (hc N (by omega) V w)
 
-theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' t := by
-  intro hs
-  cases v <;> simp [isVal] at hv <;> cases hs
-
-theorem beta_inv {b a : Tm} (ha : isVal a = true) {h h' t}
-    (hs : Step h (.app (.lam b) a) h' t) : h' = h ∧ t = subst 0 a b := by
-  cases hs with
-  | appL hs => cases hs
-  | appR _ hs => exact False.elim (value_no_step ha hs)
-  | beta => exact ⟨rfl, rfl⟩
-
-theorem value_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) (v : Val)
-    (hv : isVal v = true) (hb : B n U v) : Safe B n U h v := by
-  cases n with
-  | zero => trivial
-  | succ n => exact Or.inl ⟨hv, hb⟩
-
-theorem safe_value_mem {B : Fam} {n : Nat} {U : WorldT (n+1)} {h : Heap} {v : Val}
-    (hv : isVal v = true) (hs : Safe B (n+1) U h v) : B (n+1) U v := by
-  rcases hs with ⟨_, hb⟩ | ⟨_, _, _, _, _, hs, _, _⟩
-  · exact hb
-  · exact False.elim (value_no_step hv hs)
-
 theorem arrow_result_sep {G : Graph (Fin m)} {i j a b c d}
     (hi : G i = .arr a b) (hj : G j = .arr c d) (hs : Sep G b d) : Sep G i j := by
   obtain ⟨v, N, hclosed, hp, hn⟩ := hs
@@ -174,26 +127,6 @@ theorem arrow_result_sep {G : Graph (Fin m)} {i j a b c d}
     subst ht
     have hoz := over_ext (over_trunc ho (Nat.le_succ (N+1))) hz
     exact hn (N+1) (by omega) Z _ hoz huz hhz (safe_value_mem hval hst)
-
-theorem tester_step_inv {l : Nat} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.app (tester l) v) h' t) :
-    h' = h ∧ t = .app (.lam omegaTm) (.write (.loc l) v) := by
-  cases hs with
-  | appL hs => cases hs
-  | appR _ hs => exact False.elim (value_no_step hv hs)
-  | beta => exact ⟨rfl, rfl⟩
-
-theorem write_step_inv {l : Nat} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.app (.lam omegaTm) (.write (.loc l) v)) h' t) :
-    h' = h.set l v ∧ t = .app (.lam omegaTm) .nul ∧ l < h.length := by
-  cases hs with
-  | appL hs => cases hs
-  | beta hv => simp [isVal] at hv
-  | appR _ hs =>
-    cases hs with
-    | writeC1 hs => cases hs
-    | writeC2 _ hs => exact False.elim (value_no_step hv hs)
-    | writeV _ hlt => exact ⟨rfl, rfl, hlt⟩
 
 theorem arrow_argument_sep {G : Graph (Fin m)} {i j a b c d}
     (hi : G i = .arr a b) (hj : G j = .arr c d) (hs : Sep G c a) : Sep G i j := by

@@ -74,6 +74,110 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
 theorem lam_no_step {h b h' t} : ¬ Step h (.lam b) h' t := by intro s; cases s
 
 theorem nul_no_step {h h' t} : ¬ Step h .nul h' t := by intro s; cases s
+theorem tru_no_step {h h' t} : ¬ Step h .tru h' t := by intro s; cases s
+theorem fls_no_step {h h' t} : ¬ Step h .fls h' t := by intro s; cases s
+theorem loc_no_step {h l h' t} : ¬ Step h (.loc l) h' t := by intro s; cases s
+
+/-! ## Divergence
+
+`omegaTm` steps to itself forever. It is the inhabitant of last resort: safe at
+every budget, since safety asks for progress and not termination. -/
+
+def delta : Tm := .lam (.app (.var 0) (.var 0))
+def omegaTm : Tm := .app delta delta
+
+theorem omega_step (h : Heap) : Step h omegaTm h omegaTm := Step.beta rfl
+
+/-! ### Closed values, and inverting the steps a separating value takes
+
+A value is closed when substitution cannot touch it; the values used to tell two
+types apart are closed, so they mean the same thing under every binder. The
+inversion lemmas say what a redex *must* do, which is how a proof that a term
+is unsafe gets started. -/
+
+def Closed (v : Val) : Prop := ∀ k a, subst k a v = v
+
+/-- Write the argument through a captured reference, then diverge. There is no
+runtime type test, and no returned value that could inspect the codomain. -/
+def tester (l : Nat) : Tm := .lam (.app (.lam omegaTm) (.write (.loc l) (.var 0)))
+
+/-- A function that gets stuck the moment it is applied. It inhabits an arrow
+whose domain is empty, since such an arrow is never applied, and no other. -/
+def stuckFn : Tm := .lam (.app .nul .nul)
+
+theorem closed_stuck : Closed stuckFn := by
+  intro k a
+  simp [stuckFn, subst]
+
+theorem stuck_no_step {h h' t} : ¬ Step h (.app .nul .nul) h' t := by
+  intro hs
+  cases hs with
+  | appL hs => exact nul_no_step hs
+  | appR _ hs => exact nul_no_step hs
+
+/-- Write the argument into one cell, then return the contents of another. This
+is the value that observes an arrow on both sides at once: the write fails on an
+argument the first cell cannot hold, and the result is whatever the second cell
+holds — which, since an arrow quantifies over every satisfying heap, an observer
+gets to choose. -/
+def probe (l r : Nat) : Tm := .lam (.app (.lam (.read (.loc r))) (.write (.loc l) (.var 0)))
+
+theorem closed_probe (l r : Nat) : Closed (probe l r) := by
+  intro k a
+  simp [probe, subst]
+
+theorem closed_omega : Closed omegaTm := by
+  intro k a
+  simp [omegaTm, delta, subst]
+
+theorem closed_tester (l : Nat) : Closed (tester l) := by
+  intro k a
+  simp [tester, subst, omegaTm, delta]
+
+theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' t := by
+  intro hs
+  cases v <;> simp [isVal] at hv <;> cases hs
+
+theorem beta_inv {b a : Tm} (ha : isVal a = true) {h h' t}
+    (hs : Step h (.app (.lam b) a) h' t) : h' = h ∧ t = subst 0 a b := by
+  cases hs with
+  | appL hs => cases hs
+  | appR _ hs => exact False.elim (value_no_step ha hs)
+  | beta => exact ⟨rfl, rfl⟩
+
+theorem probe_step_inv {l r : Nat} {v : Val} (hv : isVal v = true) {h h' t}
+    (hs : Step h (.app (probe l r) v) h' t) :
+    h' = h ∧ t = .app (.lam (.read (.loc r))) (.write (.loc l) v) := by
+  cases hs with
+  | appL hs => cases hs
+  | appR _ hs => exact False.elim (value_no_step hv hs)
+  | beta => exact ⟨rfl, rfl⟩
+
+theorem read_step_inv {r : Nat} {h h' t} (hs : Step h (.read (.loc r)) h' t) :
+    h' = h ∧ h[r]? = some t := by
+  cases hs with
+  | readC hs => exact False.elim (loc_no_step hs)
+  | readV he => exact ⟨rfl, he⟩
+
+theorem tester_step_inv {l : Nat} {v : Val} (hv : isVal v = true) {h h' t}
+    (hs : Step h (.app (tester l) v) h' t) :
+    h' = h ∧ t = .app (.lam omegaTm) (.write (.loc l) v) := by
+  cases hs with
+  | appL hs => cases hs
+  | appR _ hs => exact False.elim (value_no_step hv hs)
+  | beta => exact ⟨rfl, rfl⟩
+
+theorem write_step_inv {f : Tm} {l : Nat} {v : Val} (hv : isVal v = true) {h h' t}
+    (hs : Step h (.app (.lam f) (.write (.loc l) v)) h' t) :
+    h' = h.set l v ∧ t = .app (.lam f) .nul ∧ l < h.length := by
+  cases hs with
+  | appL hs => cases hs
+  | beta hv => simp [isVal] at hv
+  | appR _ hs =>
+    cases hs with
+    | writeC1 hs => cases hs
+    | writeC2 _ hs => exact False.elim (value_no_step hv hs)
+    | writeV _ hlt => exact ⟨rfl, rfl, hlt⟩
 
 end ExperimentState
 end Verification
