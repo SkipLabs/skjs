@@ -290,14 +290,18 @@ Safety proofs are assembled from rules rather than traced:
 
 ## What is not
 
-No *binder* syntax, environments or substitution. Types are represented as
-finite graphs, which cover closed regular recursion and nothing else: no open
-types, and no irregular trees of the kind a growing type parameter produces. So
-the unfolding equation is still not a substitution theorem for an open recursive
-type. No subtyping. No general
-binding discipline for substitution. Safety under decreasing budgets and the
-remaining evaluation contexts are unproved. No adequacy theorem connecting
-safety to ordinary execution, and no generics.
+No *binder* syntax, environments or substitution, and so no general binding
+discipline. Types are represented as finite graphs, which cover closed regular
+recursion and nothing else: no open types, and no irregular trees of the kind a
+growing type parameter produces. The unfolding equation is therefore still not a
+substitution theorem for an open recursive type. No subtyping. Safety under
+decreasing budgets and the remaining evaluation contexts are unproved, and there
+is no adequacy theorem connecting safety to ordinary execution.
+
+Quantified types are definable and admissible, and a bound is just an inclusion
+between families, so the semantics of generics needs no new machinery. What is
+missing is the fundamental theorem — one runtime function safe under every
+admissible instantiation — and variance. Definability is not universality.
 
 ## Where it is checked
 
@@ -312,6 +316,7 @@ safety to ordinary execution, and no generics.
 | `Examples.lean` | the recursive function type, the captured cell, the combination |
 | `Completeness.lean` | types as finite guarded graphs, their denotation, bisimulation and its soundness |
 | `Separation.lean` | canonical worlds and heaps, separating values, equality completeness |
+| `Polymorphism.lean` | quantified types: definability, bounds, admissibility |
 
 ## Names
 

@@ -759,16 +759,29 @@ calculus actually needs before buying a richer Boolean semantics.
 foundation, not width subtyping, optional fields, readonly views, or a rule for
 when mutation invalidates an established refinement.
 
-*Generics and `extends` bounds* require language-level proofs, and carry a
-second problem beyond universality. Universality means one runtime function
-works for every permitted interpretation of its parameters, and the
-reference-parameter result does not establish that. Separately, a generic alias
-whose argument grows leaves the regular-tree world altogether, so no finite
+*Generics and `extends` bounds* need less new semantics than expected. The
+machinery is already present, and checked rather than assumed: a type variable is
+a position in an environment of families, a bound is semantic inclusion between
+families, and the quantifier is the intersection over admissible instantiations,
+which is itself admissible whenever its instances are. Impredicative
+quantification is free in this encoding, where a set-theoretic development would
+need a universe bump or a domain construction. And a parameter under a reference
+is already inhabited for every semantic type — the specific prerequisite the
+earlier syntactic-world design failed.
+
+What remains for generics as such is ordinary work: the fundamental theorem, that
+one runtime function is safe under every admissible instantiation, which is what
+universality means and which the reference-parameter result does not establish;
+and variance for generic constructors, which nothing derives yet.
+
+Two things are genuinely open, and neither is caused by quantification. A generic
+alias whose argument grows leaves the regular-tree class altogether, so no finite
 graph and no bisimulation certificate exists for it — and SKJS accepts such
-declarations. Decide whether the calculus refuses them, bounds them as SKJS's
-expansion cap does, or represents them some third way. Start from the intended
-generic-function fragment with semantic bounds, and add recursive bounds only
-where the language requires them.
+declarations, so the calculus must refuse them, bound them as SKJS's expansion
+cap does, or represent them some third way. And `∀` distributes over
+intersections but **not** over unions, so a DNF representation of polymorphic
+types cannot push the quantifier through the normal form and needs its own
+justification. That is the Boolean layer again, which is why it comes first.
 
 **4. Connect the calculus to checked invariants.** The deliverable is not SKJS
 soundness but:
