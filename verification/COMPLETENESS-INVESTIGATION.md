@@ -291,6 +291,49 @@ proved complexity bound, and nothing connects the rule to a subsumption rule in
 the typing judgment: covering is proved to characterise inclusion, but no typing
 rule yet uses an inclusion to retype a term.
 
+## Intersections: what the model already decides
+
+Before designing a rule, it is worth knowing which laws the model will accept.
+The answer is not the expected one, and it is checked in `Intersection.lean`.
+
+**The classical arrow decomposition is unsound here.** The law every treatment
+of overloaded function types has, and an instance of the Frisch–Castagna–Benzaken
+decomposition, is
+
+    (A → B) ∧ (A → C)  ≤  A → (B ∧ C)
+
+and `arrow_inter_codomain_fails` refutes it. Allocation is the reason. A cell
+carries one invariant, fixed when it is allocated, and a location belongs to
+`ref X` only when the world's contract for it *equals* `⟦X⟧`. So `λx. alloc null`
+inhabits both `A → ref null` and `A → ref (null | bool)` — each membership
+choosing a different contract for the new cell — while `ref null ∧ ref (null |
+bool)` is empty. The left-hand side contains a function that returns; the
+right-hand side contains only functions that never do.
+
+**The law holds for rigid codomains.** Where membership depends on the value and
+not on the world, `arrow_inter_rigid_codomain` proves it. The argument needs
+determinism of evaluation (`Step_det`, new): the two runs of the same program
+take the same steps, so if either reaches a value it is the *same* value, and
+rigidity carries the two judgments about it into a single world. Concretely, a
+function that returns a null and returns a boolean on one domain returns nothing
+there at all — it inhabits the arrow into the empty intersection
+(`arrow_inter_nul_bool`).
+
+**What else survives.** Two arrows cover the union of their domains
+(`arrow_inter_dom_union`), and the clause rule that matches a source arrow
+against a single target arrow stays sound (`arrow_inter_clause`).
+
+So the rejected part is narrow and located: intersecting *world-dependent*
+codomains. That is a distinction the classical theory has no vocabulary for,
+which is why its rule cannot be imported, and it is the shape a rule for
+intersections here would have to respect. Everything else about intersections
+looks cheap: pointwise intersection is admissible already; value shapes are
+disjoint, so `null ∧ ref a` is empty structurally; `ref a ∧ ref b` is empty
+unless the operands denote the same family, which mutual covering decides; and an
+intersection of arrows is never empty, since a diverging function inhabits every
+arrow. What that costs is the well-formedness check, which stops being syntactic
+and becomes an emptiness test — still decidable with the machinery above.
+
 ## What the graph fragment can express
 
 A finite graph is a system of guarded equations `Xᵢ = nodeᵢ`, so the types it
@@ -445,6 +488,9 @@ carry this investigation:
   probe, completeness of covering (`sim_iff_incl`), union-primality of single
   clauses (`sim_clause_prime`, `incl_clause_prime`) and the clause-by-clause
   form of the check (`sim_pairwise`).
+- `Intersection.lean` — the laws the model accepts and refuses for intersections
+  of arrows, ahead of any rule: `arrow_inter_codomain_fails`,
+  `arrow_inter_rigid_codomain`, `arrow_inter_dom_union`, `arrow_inter_clause`.
 
 `lake build` passes, with no admitted goals and no new axioms; the completeness,
 separation, operand-reflection and covering theorems use only `propext`,

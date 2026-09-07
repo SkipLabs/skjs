@@ -280,6 +280,9 @@ Safety proofs are assembled from rules rather than traced:
   reference, and reads it through a closure that captured another is safe — and
   its observed value really changes.
 - A callable whose body is stuck is rejected, so none of the above is vacuous.
+- Evaluation is **deterministic** (`Step_det`). Safety does not say so — it
+  quantifies existentially over the world a step lands in — so it has to be
+  proved, and it is what lets two runs of one program be compared.
 - For closed types built from these constructors, semantic equality **is**
   bisimulation of the corresponding finite guarded graph, in both directions.
   See [COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md).
@@ -357,6 +360,30 @@ yet uses an inclusion to retype a term. Safety under
 decreasing budgets and the remaining evaluation contexts are unproved, and there
 is no adequacy theorem connecting safety to ordinary execution.
 
+Intersections are not in the type language, but the model already constrains
+what a rule for them could say, and the constraint is not the expected one. The
+law every treatment of overloaded functions has,
+
+    (A → B) ∧ (A → C)  ≤  A → (B ∧ C)
+
+is **unsound here** (`arrow_inter_codomain_fails`). Allocation is why: a cell
+carries one invariant, chosen when it is allocated, so `λx. alloc null` inhabits
+`A → ref null` and `A → ref (null | bool)` — each membership picking a different
+contract — while the intersection of those codomains is empty, since a location
+belongs to `ref X` only when its contract *equals* `⟦X⟧`. The left-hand side
+contains a function that returns; the right-hand side contains only functions
+that do not.
+
+The failure is narrow, and located. For **rigid** codomains — where membership
+depends on the value and not on the world — the law holds
+(`arrow_inter_rigid_codomain`), by determinism: the two runs take the same steps,
+so the returned value is one value and the two judgments about it combine. What
+also survives is covering the union of two domains (`arrow_inter_dom_union`) and
+the clause rule that matches one conjunct (`arrow_inter_clause`). So the part of
+the classical decomposition this model rejects is exactly the intersection of
+*world-dependent* codomains — which is a distinction that theory has no
+vocabulary for, and the reason its rule cannot simply be imported.
+
 Quantified types are definable and admissible, and a bound is just an inclusion
 between families, so the semantics of generics needs no new machinery. What is
 missing is the fundamental theorem — one runtime function safe under every
@@ -377,6 +404,7 @@ admissible instantiation — and variance. Definability is not universality.
 | `Separation.lean` | canonical worlds and heaps, separating values, equality completeness |
 | `Polymorphism.lean` | quantified types: definability, bounds, admissibility |
 | `Union.lean` | unions in operand position: the representation, covering, its soundness and its completeness |
+| `Intersection.lean` | what the model decides about intersections before a rule is designed |
 
 ## Names
 

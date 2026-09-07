@@ -145,6 +145,60 @@ theorem beta_inv {b a : Tm} (ha : isVal a = true) {h h' t}
   | appR _ hs => exact False.elim (value_no_step ha hs)
   | beta => exact ⟨rfl, rfl⟩
 
+/-- **Evaluation is deterministic.** One term in one heap has at most one next
+state. Nothing in the safety definition says so — it quantifies existentially
+over the world a step lands in — so this has to be proved, and it is what lets
+two independent runs of the same program be compared. -/
+theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
+    h1 = h2 ∧ t1 = t2 := by
+  induction s1 generalizing h2 t2 with
+  | appL s ih =>
+    cases s2 with
+    | appL s' => exact (ih s').imp id (congrArg (Tm.app · _))
+    | appR hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | beta => exact absurd s lam_no_step
+  | appR hv s ih =>
+    cases s2 with
+    | appL s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | appR _ s' => exact (ih s').imp id (congrArg (Tm.app _ ·))
+    | beta hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
+  | beta hv =>
+    cases s2 with
+    | appL s' => exact absurd s' lam_no_step
+    | appR _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | beta => exact ⟨rfl, rfl⟩
+  | allocC s ih =>
+    cases s2 with
+    | allocC s' => exact (ih s').imp id (congrArg Tm.alloc)
+    | allocV hv => exact absurd s (by intro hs; exact value_no_step hv hs)
+  | allocV hv =>
+    cases s2 with
+    | allocC s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | allocV => exact ⟨rfl, rfl⟩
+  | readC s ih =>
+    cases s2 with
+    | readC s' => exact (ih s').imp id (congrArg Tm.read)
+    | readV _ => exact absurd s loc_no_step
+  | readV he =>
+    cases s2 with
+    | readC s' => exact absurd s' loc_no_step
+    | readV he' => exact ⟨rfl, Option.some.inj (he.symm.trans he')⟩
+  | writeC1 s ih =>
+    cases s2 with
+    | writeC1 s' => exact (ih s').imp id (congrArg (Tm.write · _))
+    | writeC2 hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
+    | writeV _ _ => exact absurd s loc_no_step
+  | writeC2 hv s ih =>
+    cases s2 with
+    | writeC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | writeC2 _ s' => exact (ih s').imp id (congrArg (Tm.write _ ·))
+    | writeV hv' _ => exact absurd s (by intro hs; exact value_no_step hv' hs)
+  | writeV hv hlt =>
+    cases s2 with
+    | writeC1 s' => exact absurd s' loc_no_step
+    | writeC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | writeV _ _ => exact ⟨rfl, rfl⟩
+
 theorem probe_step_inv {l r : Nat} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.app (probe l r) v) h' t) :
     h' = h ∧ t = .app (.lam (.read (.loc r))) (.write (.loc l) v) := by
@@ -152,6 +206,12 @@ theorem probe_step_inv {l r : Nat} {v : Val} (hv : isVal v = true) {h h' t}
   | appL hs => cases hs
   | appR _ hs => exact False.elim (value_no_step hv hs)
   | beta => exact ⟨rfl, rfl⟩
+
+theorem alloc_step_inv {v : Val} (hv : isVal v = true) {h h' t}
+    (hs : Step h (.alloc v) h' t) : h' = h ++ [v] ∧ t = .loc h.length := by
+  cases hs with
+  | allocC hs => exact False.elim (value_no_step hv hs)
+  | allocV => exact ⟨rfl, rfl⟩
 
 theorem read_step_inv {r : Nat} {h h' t} (hs : Step h (.read (.loc r)) h' t) :
     h' = h ∧ h[r]? = some t := by

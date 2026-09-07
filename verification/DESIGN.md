@@ -755,6 +755,16 @@ why a cell declared at `never` is excluded by well-formedness rather than
 handled. Give the Boolean layer its own equational theory rather than trying to
 preserve tree equality after adding it.
 
+One constraint on that theory is already established, and it is not the expected
+one: the classical arrow decomposition — `(A → B) ∧ (A → C) ≤ A → (B ∧ C)` — is
+**unsound in this model**, because a cell carries one invariant chosen at
+allocation, so a function that allocates inhabits several `A → ref X` at once
+while the intersection of those codomains is empty. The law does hold when the
+codomains are value-determined rather than world-dependent, and covering the
+union of two domains stays sound. So the rule cannot be imported from semantic
+subtyping, and the part to re-derive is narrow and located. Details in
+[COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md#intersections-what-the-model-already-decides).
+
 Pointwise union and intersection preserve admissibility. Pointwise complement does not preserve downward closure, nor
 monotonicity under world extension — so "interpret every DNF operation as the
 corresponding set operation at each index" is not justified. The objective
