@@ -8,8 +8,9 @@ An untyped call-by-value calculus with a mutable heap: lambda, application, two
 constants, and allocate/read/write. Values are terms, so worlds, heaps and the
 operational semantics all speak about the same objects.
 
-Substitution is written for *closed* arguments, which is all the semantics ever
-substitutes; a general binding discipline is deliberately not attempted here.
+Substitution is written for *closed* arguments. `Bindings.lean` proves its
+closing-substitution laws; `ProgramTyping.lean` ensures typed positive values
+are closed. The untyped step relation itself imposes no scope check.
 
 The step relation is small-step and total in the sense that matters: a term
 that is not a value and cannot step is **stuck**, and the safety predicate in

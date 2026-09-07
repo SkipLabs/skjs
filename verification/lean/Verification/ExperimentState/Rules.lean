@@ -3,8 +3,8 @@ import Verification.ExperimentState.Safety
 # Compatibility rules
 
 The rules a program's safety proof should be assembled from, rather than traced
-by hand. Abstraction is where the budget arithmetic lives: applying a lambda
-costs the beta step, so the body is obliged exactly one level below the argument.
+by hand. Application spends the beta step and uses the function guarantee one level
+below the current budget. Abstraction proves the substituted body safe.
 
 `Safe_bind_appR` is the bind: run a subterm, then continue with whatever value it
 produces, in whatever world and heap it produced them. It is what lets composite
@@ -13,29 +13,31 @@ programs be built compositionally.
 namespace Verification
 namespace ExperimentState
 
-/-- **Abstraction.** The body is obliged one level below the argument, which is
-the level the beta step pays for. -/
-theorem lam_intro {A B : Fam} (hA : ValOnly A) (b : Tm) (k : Nat) (W : WorldT k)
-    (h : ∀ (p : Nat) (hp : p + 1 < k) (W' : WorldT (p + 1)),
-      WExt (trunc (p + 1) (Nat.le_of_lt hp) W) W' → WorldAdm W' →
-      ∀ (hp' : Heap), HeapOk (p + 1) W' hp' → ∀ a, A (p + 1) W' a →
-        Safe B p (trunc p (Nat.le_succ p) W') hp' (subst 0 a b)) :
-    arrowT A B k W (.lam b) := by
-  refine ⟨⟨b, rfl⟩, ?_⟩
-  intro j hj W' hW hadm hh hok a ha
-  cases j with
-  | zero => trivial
-  | succ p =>
-    exact Or.inr ⟨trunc p (Nat.le_succ p) W', hh, subst 0 a b, WExt_refl _,
-      WorldAdm_trunc _ hadm, .beta (hA _ _ _ ha), HeapOk_trunc p W' hh hok,
-      h p hj W' hW hadm hh hok a ha⟩
+/-- Abstraction establishes safety of the substituted body at every smaller
+budget. Application, rather than this obligation, spends the beta step. -/
+theorem lam_intro {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b)
+    (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
+      ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
+        Safe B j U heap (subst 0 a b)) : arrowT A B k W (.lam b) :=
+  ⟨⟨b, rfl, hc⟩, h⟩
 
-/-- **Application.** -/
-theorem app_elim {A B : Fam} {k j : Nat} {W : WorldT k} {v : Tm}
-    (hv : arrowT A B k W v) (hj : j < k) {W' : WorldT j}
-    (hW : WExt (trunc j (Nat.le_of_lt hj) W) W') (hadm : WorldAdm W')
-    {h : Heap} (hok : HeapOk j W' h) {a : Tm} (ha : A j W' a) :
-    Safe B j W' h (.app v a) := hv.2 j hj W' hW hadm h hok a ha
+/-- Same-budget application compatibility, the rule needed for the fundamental
+ theorem under semantic environments. Both values are available at the current
+budget; beta consumes one step and uses the function guarantee below it. -/
+theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
+    {n : Nat} {W : WorldT n} {f a : Tm} {heap : Heap}
+    (hf : arrowT A B n W f) (ha : A n W a)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe B n W heap (.app f a) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    obtain ⟨b, rfl, _⟩ := hf.1
+    exact Or.inr ⟨trunc n (Nat.le_succ n) W, heap, subst 0 a b,
+      WExt_refl _, WorldAdm_trunc _ hw, .beta (hAv _ _ _ ha),
+      HeapOk_trunc n W heap hh,
+      hf.2 n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hw) heap
+        (HeapOk_trunc n W heap hh) a (hA.down n W a ha)⟩
 
 /-- **Beta.** -/
 theorem beta_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
@@ -161,12 +163,12 @@ theorem ignore_safe (B : Fam) (n : Nat) (W : WorldT n) (h : Heap)
     simpa [omegaTm, delta, subst] using
       omega_safe B n _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)
 
-theorem diverging_arrow {A B : Fam} (ha : ValOnly A) (n : Nat) (W : WorldT n) :
+theorem diverging_arrow {A B : Fam} (n : Nat) (W : WorldT n) :
     arrowT A B n W (.lam omegaTm) := by
-  apply lam_intro ha
+  apply lam_intro _ _ _ (by simp [omegaTm, delta, Scoped])
   intro p hp U hx hu h hh a hA
   simpa [omegaTm, delta, subst] using
-    omega_safe B p _ h (WorldAdm_trunc (Nat.le_succ p) hu) (HeapOk_trunc p U h hh)
+    omega_safe B p U h hu hh
 
 /-- Being stuck is exactly what `Safe` forbids. -/
 theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
@@ -178,8 +180,8 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
 /-- An arrow with an uninhabited domain constrains nothing: every function has
 that type, including one that would get stuck if it were ever applied. -/
 theorem vacuous_arrow {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
-    (b : Tm) (k : Nat) (W : WorldT k) : arrowT A B k W (.lam b) :=
-  ⟨⟨b, rfl⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+    (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.lam b) :=
+  ⟨⟨b, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer
 
@@ -238,11 +240,11 @@ theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
     (h j hj W' hx hu hh hok a (hdom p hp j W' a ha))
 
 /-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
-theorem diverging_in_arrowsT (L : List (Fam × Fam)) (hval : ∀ p ∈ L, ValOnly p.1)
+theorem diverging_in_arrowsT (L : List (Fam × Fam))
     (k : Nat) (W : WorldT k) : arrowsT L k W (.lam omegaTm) := by
-  refine ⟨⟨omegaTm, rfl⟩, ?_⟩
+  refine ⟨⟨omegaTm, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
   intro p hp j hj W' hx hu hh hok a ha
-  exact (diverging_arrow (B := p.2) (hval p hp) k W).2 j hj W' hx hu hh hok a ha
+  exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 
 
 end ExperimentState

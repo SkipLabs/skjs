@@ -69,7 +69,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
   | nul => cases h; rfl
   | bool => rcases h with h | h <;> cases h <;> rfl
   | refs a bs => obtain ⟨l, _, rfl, _⟩ := h.1; rfl
-  | arrs L => obtain ⟨b, rfl⟩ := h.1; rfl
+  | arrs L => obtain ⟨b, rfl, _⟩ := h.1; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by

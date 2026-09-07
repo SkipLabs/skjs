@@ -163,4 +163,4 @@ builds with everything else but is not yet used by the production verifier.
 
 | Directory | Responsibility |
 |---|---|
-| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); positive normalization, declarative subtype rules and checked certificates in [POSITIVE-TYPES.md](POSITIVE-TYPES.md). |
+| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); positive normalization, declarative subtype rules and checked certificates in [POSITIVE-TYPES.md](POSITIVE-TYPES.md); proved program rules in [PROGRAM-TYPING.md](PROGRAM-TYPING.md). |

@@ -1,0 +1,292 @@
+# Program typing over positive recursive types
+
+[ProgramTyping.lean](lean/Verification/ExperimentState/ProgramTyping.lean) gives
+syntactic program-typing rules for the stateful language. Its fundamental theorem
+connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
+the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
+This development is independent of the production F0 verifier.
+
+## Judgments and constructor views
+
+Fix a normalized positive graph $G$. A type $A$ is a finite list of graph labels,
+interpreted as their union. Write $A\equiv_G c$ when expanding those labels yields
+exactly the singleton clause $[c]$. This is a finite syntactic equality, not a
+semantic-equivalence oracle. Below, writing a constructor as a type abbreviates
+such a view of its graph labels.
+
+The judgment $\Gamma\vdash_G e:A$ is `HasTy`. The rules are:
+
+$$
+\frac{\Gamma(x)=A}{\Gamma\vdash_G x:A}
+\qquad
+\frac{}{\Gamma\vdash_G \mathsf{null}:\mathsf{Null}}
+\qquad
+\frac{}{\Gamma\vdash_G \mathsf{true},\mathsf{false}:\mathsf{Bool}}
+$$
+
+$$
+\frac{\forall(A,B)\in L.\;\Gamma,x:A\vdash_G e:B}
+     {\Gamma\vdash_G \lambda x.e:\bigwedge_{(A,B)\in L}(A\to B)}
+\qquad
+\frac{\Gamma\vdash_G f:\bigwedge_{(C,D)\in L}(C\to D)
+      \quad(A,B)\in L\quad\Gamma\vdash_G a:A}
+     {\Gamma\vdash_G f(a):B}
+$$
+
+$$
+\frac{\Gamma\vdash_G a:A\quad\Gamma,x:A\vdash_G b:B}
+     {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
+$$
+
+`let` is represented by application of a lambda in the operational language;
+it does not require allocating a type-graph label for that intermediate lambda.
+
+$$
+\frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{alloc}(a):\mathsf{Ref}(A)}
+\qquad
+\frac{\Gamma\vdash_G r:\mathsf{Ref}(A)}{\Gamma\vdash_G\mathsf{read}(r):A}
+$$
+
+$$
+\frac{\Gamma\vdash_G r:\mathsf{Ref}(A)\quad\Gamma\vdash_G a:A}
+     {\Gamma\vdash_G\mathsf{write}(r,a):\mathsf{Null}}
+\qquad
+\frac{\Gamma\vdash_G e:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
+     {\Gamma\vdash_G e:B}
+$$
+
+For branching, $\operatorname{Answers}_G(A,k,q)$ checks that every expanded
+clause of $A$ gives the same Boolean answer $q$ to shape test $k$:
+
+$$
+\frac{\Gamma(x)=A\quad\operatorname{Answers}_G(A,k,q)
+      \quad(q=\mathsf{true}\Rightarrow\Gamma\vdash_G u:B)
+      \quad(q=\mathsf{false}\Rightarrow\Gamma\vdash_G e:B)}
+     {\Gamma\vdash_G\mathsf{if}\ k(x)\ \mathsf{then}\ u\ \mathsf{else}\ e:B}.
+$$
+
+This rule checks each overload body under its own argument type. It handles
+shape dispatch between overloads. General splitting of a union-typed variable
+into refined branch environments remains to be added. Reference rules use a
+single invariant operand; eliminating a conjunction to such a reference view
+can be justified by subsumption. No direct multi-contract program rule is assumed.
+
+## Binding and soundness
+
+`Bindings.lean` defines de Bruijn scope, simultaneous closing substitution, and
+its application law:
+
+$$
+(\operatorname{close}_{\rho}(\lambda x.b))(a)
+\longrightarrow \operatorname{close}_{a::\rho}(b).
+$$
+
+The formal statement is `instantiate_beta`; environment entries must be closed.
+Arrow membership explicitly requires a closed lambda, so every value in a
+positive graph type is both a value and closed (`meaning_value`). Semantic
+environments retain these properties when extended, when their world grows,
+and when their observation budget decreases.
+
+`HasTy.sound` proves:
+
+$$
+\Gamma\vdash_G e:A\ \land\ \rho\models_{n,W}\Gamma\ \land\
+\operatorname{WorldAdm}(W)\ \land\ \operatorname{HeapOk}(n,W,h)
+\ \Longrightarrow\
+\operatorname{Safe}(\llbracket A\rrbracket_G,n,W,h,\operatorname{close}_{\rho}(e)).
+$$
+
+`HasTy.closed_safe` specializes this to a closed program with an empty typing
+environment. It explicitly requires `Scoped 0 e`: the total semantic environment
+must not silently supply meanings for unbound source variables. Safety is partial
+correctness and absence of stuck execution, not termination.
+
+The general evaluation-context lemma `bind` composes computations across heap
+changes and future worlds. The typing theorem is an induction on derivations;
+none of its constructor rules has a semantic safety premise.
+
+## Integration test and remaining work
+
+`ProgramTypingTests.lean` derives safety for a program equivalent to:
+
+```text
+let r = alloc true;
+let f = x => if isNull x then read r else null;
+let alias = r;
+write alias false;
+f(true);
+f(null)
+```
+
+One closure has both `Null → Bool` and `Bool → Null`. Before the final call, a
+checked certificate widens that overload to `(Null | Bool) → (Null | Bool)` by
+splitting the union domain. The program is safe in every admissible world and
+satisfying heap. A separate execution theorem confirms it returns `false` from
+an empty heap; the safety proof does not depend on that trace. A negative theorem
+rules out any typing derivation for applying null as a function.
+
+## Executable program evidence
+
+`ProgramCertificates.lean` checks finite evidence trees. Each node contains a
+sequent (context, term, result type), a rule name, and its premise trees.
+Subsumption nodes carry the existing positive subtype certificate. Lambda nodes
+must supply precisely one body derivation per overload entry, in order. The two
+branch rules supply evidence for the selected branch; the shape-answer check
+must justify that selection.
+
+`checkTree` checks every local rule and premise tree. The public
+`check G t A evidence` additionally binds the root to the **requested** program,
+empty context and result type, and checks the entire program's scope. That last
+check includes unselected branches and bodies of empty overloads. A certificate
+cannot substitute another program or exploit a vacuous body obligation to hide
+free variables.
+
+Lean proves both directions:
+
+$$
+\operatorname{Scoped}(0,t) \land ([] \vdash_G t : A)
+\quad\Longleftrightarrow\quad
+\exists p.\; \operatorname{check}(G,t,A,p)=\mathsf{true}.
+$$
+
+In words: the program is closed and has a typing derivation exactly when some
+finite evidence is accepted for that program and result type.
+
+This is `derivable_iff_checked`: completeness for the declared typing rules,
+including checked subsumption. It neither asserts completeness for semantic
+membership nor supplies proof search. `accepted_safe` derives computation safety
+directly from acceptance. Checker recursion follows the finite evidence tree;
+there is no user-supplied fuel and no semantic level in the evidence.
+
+The explicit sequents keep this initial in-memory format easy to inspect, at the
+cost of repeating terms and contexts. This is not a commitment to a serialized
+format. A producer, decoder or compact representation can be developed against
+the proved checking interface.
+
+`ProgramCertificateTests.lean` supplies concrete executable evidence for the
+stateful overload program above. Tests reject altered programs/result types,
+missing overload premises, changed captured contexts, unjustified branch choices,
+incorrect writes, malformed subtype evidence, extra premises and unbound variables.
+Its safety theorem is obtained from the successful check, with no embedded typing
+proof in the certificate.
+
+## Supplied point claims and incoming edges
+
+`PointClaims.lean` checks supplied type environments. Write $\Gamma \preceq_G \Delta$
+when every slot in the target claim $\Delta$ has a source slot at the same
+position in the incoming environment $\Gamma$, with a proved subtype relation:
+
+$$
+\Gamma \preceq_G \Delta
+\quad\Longleftrightarrow\quad
+|\Delta| \leq |\Gamma|
+\;\land\;
+\forall i < |\Delta|.\; \Gamma_i \leq_G \Delta_i.
+$$
+
+`checkEdge` takes one subtype certificate per target slot. Lean proves that
+acceptance implies coverage and that every derivation of coverage has accepted
+evidence. Coverage also transfers semantic environments: any concrete environment
+meeting $\Gamma$ meets $\Delta$, with closed values preserved.
+
+Slots retain their de Bruijn positions. An edge can widen types and forget a
+suffix. Reordering values or forgetting an interior slot requires an explicit
+transformation of the value environment; the current checker does neither.
+
+`checkIncoming` checks each supplied predecessor against the supplied target
+claim independently. No join is computed. When a computation binds a new result,
+`checked_bind_claim` proves composition through the edge
+$A :: \Gamma \preceq_G \Delta$ into a continuation checked under $\Delta$:
+
+$$
+\frac{
+  \Gamma \vdash_G a : A
+  \qquad A :: \Gamma \preceq_G \Delta
+  \qquad \Delta \vdash_G b : B
+}{
+  \operatorname{Safe}\!\left(
+    \llbracket B \rrbracket_G,n,W,h,
+    \operatorname{close}_{\rho}
+      (\mathsf{let}\;x=a\;\mathsf{in}\;b)
+  \right)
+}.
+$$
+
+The conclusion assumes that $\rho$ meets $\Gamma$ at budget $n$ and world $W$,
+that $W$ is admissible, and that $h$ satisfies $W$. This is a semantic composition
+theorem with checked evidence at both ends; its proof accommodates heap changes
+and world extension. Tests cover two predecessors merging into `Null | Bool`,
+rejected narrowing and slot invention or reordering, and a checked write followed
+by a supplied claim and a read through the retained reference.
+
+These are local obligations. `checkIncoming` checks the edges it is given;
+it does not establish that they enumerate a graph's actual predecessors.
+The graph checker below discharges that enumeration obligation.
+
+## Checked control-flow graphs
+
+`ControlFlow.lean` adds a finite control-flow graph over the existing expression
+language. Each node contains an expression and one continuation:
+
+| Continuation | Action after evaluating the expression |
+| --- | --- |
+| Return | Return its value as the graph's declared result type. |
+| Bind to a label | Push the value onto the environment and enter the destination. |
+| Effect, then a label | Discard the value and enter the destination with the same environment. |
+| Boolean branch | Enter one of two labels according to the Boolean value, preserving the environment. |
+
+Node evidence supplies its entry environment, expression type and program
+evidence, and exactly the edge certificates required by its continuation.
+`checkGraph` enumerates **every node in the actual program**. It requires one
+certificate per node, binds expression evidence to that node's actual code,
+checks scope, and obtains successor labels directly from the continuation.
+Every target must exist in both the program and the certificate. Both branch
+edges are checked even when the condition is a literal, and unreachable nodes
+are checked too. Omitting a predecessor list cannot bypass these obligations.
+
+`checkClosed` also requires a valid start label with an empty entry environment.
+`accepted_closed_safe` proves global safety for every execution budget. In the
+formula below, the initial heap and world are empty and the initial environment
+is the closed default environment:
+
+$$
+\begin{gathered}
+\operatorname{checkClosed}(G,R,P,C,\ell)=\mathsf{true}
+\\
+\Longrightarrow\quad
+\forall n.\;\operatorname{SafeGraph}_P
+  (\llbracket R\rrbracket_G,n,W_{\varnothing},[],\operatorname{at}(\ell,\rho_{\varnothing})).
+\end{gathered}
+$$
+
+The stronger `accepted_entry_safe` accepts any concrete environment meeting the
+selected entry's supplied claim, in any admissible world and satisfying heap.
+The proof inducts on execution budget, so it covers cycles without unrolling
+the graph or computing invariants. Expressions use the existing small-step
+relation and safety theorem. Node dispatch and control transfer each consume
+one step; a control-flow cycle cannot masquerade as progress at zero cost.
+
+`Transition.det` proves determinism of this combined machine.
+`accepted_no_stuck` proves that after any finite actual execution, the machine
+has returned a typed value or can take another step. `accepted_result` proves
+that any returned value meets the declared result type at every positive
+remaining budget, in an admissible world satisfied by the final heap. These
+are safety and partial-correctness theorems, not termination guarantees.
+
+`ControlFlowTests.lean` checks a cyclic program that creates an overloaded
+closure over a Boolean cell, calls it, writes through the original reference,
+traverses a back edge, calls the same closure again and returns `false`. Its
+operational trace traverses the back edge; its safety theorem does not depend
+on that trace. A separate diamond graph joins null and Boolean predecessors at
+one supplied union claim. A nonterminating self-loop is also proved safe.
+Negative tests reject invalid destinations, missing branch evidence, unjustified
+merge narrowing, missing or extra node evidence, changed code and invalid starts.
+
+The graph layer does not change the type-family or expression semantics.
+Closures still contain expression-language bodies, not graph-backed function
+bodies. Edge environments preserve slot positions, with widening and suffix
+forgetting; general slot mappings and branch refinement remain extensions.
+Source-to-graph extraction, serialization and a certificate producer remain
+integration work. No graph-level completeness theorem is claimed here; the
+program-evidence and edge-evidence completeness results above retain their
+stated scope.

@@ -35,7 +35,7 @@ All conjuncts constrain the **same location and its one stored invariant**.
 They are not multiple separately allocated cells, and they are not replaced
 by a single invariant over the intersection of their operands. A plain
 reference is `refs A []`. Function clauses retain the existing intersection
-of arrows, including the function-shaped empty overload list.
+of arrows, including the empty overload list, which denotes closed lambdas without call obligations.
 
 Normalization returns a finite union-list of clauses:
 
@@ -220,7 +220,9 @@ $$
 
 `accepted_subsumption` transports an existing computation-safety judgment from
 $S$ to $T$. It does not establish the initial judgment or a whole-program typing
-theorem. The operational language and trust boundary are documented in
+theorem by itself. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) now supplies the
+separate typing theorem and incorporates checked subsumption. The operational
+language and trust boundary are documented in
 [SEMANTICS.md](SEMANTICS.md).
 
 ## Scope and next decisions
@@ -231,9 +233,13 @@ program-type nodes and under guarded recursive reference/arrow operands. The
 extension does not add negation, difference, polymorphism, primitive types other
 than null/boolean, object records, or a surface `extends` language.
 
-The next useful work is to exercise actual intended claim obligations and
-connect these certificates to program typing. A textual
-type-to-graph compiler and extended program typing still need their own proofs.
+The program-typing theorem now incorporates these certificates, including an
+overload domain-splitting example. Executable program evidence checking and
+local supplied-environment edge obligations are now proved as well. The next
+integration work is source extraction and evidence production: the graph
+consumer now covers every actual node and outgoing edge and proves global safety,
+including cycles. A textual type-to-graph compiler still needs its own correctness
+account.
 Do not resume semantic completeness research as a prerequisite: normalization
 preservation and subtype soundness already give the guarantees needed here.
 
@@ -249,11 +255,12 @@ Implementation files:
 Tests cover distribution, cross-shape elimination, retained incompatible
 contracts, nested constraints, cyclic normalization/checking, domain splitting,
 three-conjunct combination, and rejection of invented constraints or false
-bottom claims. No production pipeline changes or commits were made.
+bottom claims. The program-typing tests additionally cover application, binding,
+stateful overloaded dispatch and checked subsumption.
 
-Validation: the complete Lean library and executable build from a clean build
-directory (`lake clean` followed by `lake build`: 57 jobs), including positive
-and negative certificate tests. The maintained
+Validation: `lake build` checks the complete Lean library and executable,
+including positive and negative certificate tests and the program-typing
+development. The maintained
 files contain no `sorry` or custom axioms. `check_sound` uses `propext`;
 `check_complete` uses `propext` and `Quot.sound`; semantic soundness also uses
 standard `Classical.choice`.

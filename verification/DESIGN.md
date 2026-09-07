@@ -687,13 +687,21 @@ boundaries; semantic separator searches are not part of the maintained path.
 
 ### What remains between this and a usable calculus
 
-**Program typing and invariants.** The extended subtype checker can transport
-an established safety judgment by subsumption. It does not establish that
-judgment. The extended language still needs typing environments, the applicable
-substitution/binding theorem, sufficient evaluation-context rules, a global
-program-safety theorem, and checking of supplied invariants at control-flow
-edges. The production F0 verifier continues to establish its existing theorem
-using its existing calculus.
+**Program typing and invariants.** [PROGRAM-TYPING.md](PROGRAM-TYPING.md) gives
+the proved declarative rules, semantic environments, closing-substitution law,
+evaluation-context composition and fundamental safety theorem. Its combined
+example covers overloaded dispatch, captured mutable state, alias writes and
+checked subsumption. The arrow guarantee concerns the substituted body after
+beta, and function membership requires closed lambdas. Finite program evidence
+is now checked executably, with acceptance equivalent to closed-program
+derivability. Local edge checks justify supplied target environments from every
+supplied predecessor and compose computation safety through such a claim.
+The graph consumer now enumerates every actual node and outgoing edge, checks
+both destinations of branches, and proves global execution safety including
+cycles. Its machine reuses expression steps, with explicit control-transfer
+steps. General slot mappings, branch refinement and graph-backed closure bodies
+remain extensions. The production F0 verifier continues to establish its
+existing theorem using its existing calculus.
 
 **Type and program extraction.** Normalization starts with an explicit guarded
 graph. A compiler from source type declarations to that graph, a serialized

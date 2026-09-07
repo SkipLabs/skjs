@@ -1,3 +1,4 @@
+import Verification.ExperimentState.Bindings
 import Verification.ExperimentState.Heaps
 /-!
 # Safety and function types
@@ -7,7 +8,8 @@ if it reaches a value with budget left, that value is in `T`. Each step spends a
 level and the world drops with it; the world reached after a step must extend the
 truncation of the one before, and must itself be admissible.
 
-A function type is then safety in every *future* world and every heap satisfying
+A function type requires a closed lambda whose substituted body is safe in
+every *future* world and every heap satisfying
 it, at every strictly smaller budget. Requiring admissibility here is what lets a
 function allocate: without it, a world carrying a contract like `badCtr` could be
 supplied, and no allocating function would be safe anywhere.
@@ -39,12 +41,20 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
   | 0, _, _ => trivial
   | _ + 1, _, _ => Or.inl ⟨rfl, rfl⟩
 
-/-- `A → B` over these worlds: safe in every future world and every heap
-satisfying it, at every strictly smaller level. -/
+/-- The body executed after a call's beta step. This is a semantic helper,
+not an additional runtime operation. Arrow membership separately requires a
+lambda, so the non-lambda branch is never used for typed application. -/
+def callBody (v a : Tm) : Tm := match v with
+  | .lam b => subst 0 a b
+  | _ => .app .nul .nul
+
+/-- `A → B` contains closed lambdas whose substituted bodies are safe in every
+future world and satisfying heap, at every strictly smaller level. The actual
+application pays beta before using this body guarantee. -/
 def arrowT (A B : Fam) : Fam := fun k W v =>
-  (∃ b, v = .lam b) ∧
+  (∃ b, v = .lam b ∧ Scoped 1 b) ∧
     ∀ (j : Nat) (hj : j < k) (W' : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) W' →
-      WorldAdm W' → ∀ (h : Heap), HeapOk j W' h → ∀ a, A j W' a → Safe B j W' h (.app v a)
+      WorldAdm W' → ∀ (h : Heap), HeapOk j W' h → ∀ a, A j W' a → Safe B j W' h (callBody v a)
 
 theorem arrowT_contractive (B : Fam) : Contractive (fun X => arrowT X B) := by
   intro n T U hag W v
@@ -109,7 +119,7 @@ theorem arrowT_adm (A B : Fam) : Adm (arrowT A B) := by
     exact h j hj W'' (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hW) hadm hp hok a ha
 
 theorem arrowT_valOnly (A B : Fam) : ValOnly (arrowT A B) := by
-  rintro _ _ _ ⟨⟨b, rfl⟩, -⟩; rfl
+  rintro _ _ _ ⟨⟨b, rfl, _⟩, -⟩; rfl
 
 /-! ## Unions and the arrow
 
@@ -174,9 +184,9 @@ intersections has to have, so it comes with the same structural properties the
 fixed point needs of `arrowT`. -/
 
 def arrowsT (L : List (Fam × Fam)) : Fam := fun k W v =>
-  (∃ b, v = .lam b) ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+  (∃ b, v = .lam b ∧ Scoped 1 b) ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
-      ∀ a, p.1 j W' a → Safe p.2 j W' h (.app v a)
+      ∀ a, p.1 j W' a → Safe p.2 j W' h (callBody v a)
 
 theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
     arrowsT [(A, B)] k W v ↔ arrowT A B k W v := by
@@ -191,11 +201,11 @@ theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
 
 /-- Membership in every conjunct is membership in the intersection. -/
 theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm}
-    (hlam : v = .lam b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
-  ⟨⟨b, hlam⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
+    (hlam : v = .lam b) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
+  ⟨⟨b, hlam, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
 
 theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
-  rintro j W a ⟨⟨b, rfl⟩, -⟩
+  rintro j W a ⟨⟨b, rfl, _⟩, -⟩
   rfl
 
 theorem arrowsT_adm (L : List (Fam × Fam)) : Adm (arrowsT L) := by

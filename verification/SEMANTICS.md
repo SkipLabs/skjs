@@ -3,8 +3,9 @@
 The stateful development in [ExperimentState](lean/Verification/ExperimentState)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). It is independent of the production F0
-verifier. The next integration obligation is program typing and checked
-invariants for the extended language; subtype checking alone does not provide it.
+verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
+typing system and checked control-flow graphs. Extraction for the extended
+language remains an integration obligation.
 
 ## Operational language
 
@@ -13,9 +14,10 @@ application, null/booleans, heap locations, allocation, reading, writing, shape
 tests, and conditionals. Values are a subset of terms. `Step_det` proves that a
 term and heap have at most one successor.
 
-The existing substitution operation is intended for closed substituted values.
-A general typing environment, capture discipline and substitution theorem for
-open terms have not been supplied by this development.
+Substitution operates on closed substituted values. `Bindings.lean` supplies
+scope and simultaneous closing substitution, including its beta law. The program
+typing theorem uses semantic environments of closed values; its closed-program
+interface explicitly checks scope.
 
 ## Types, worlds and heaps
 
@@ -54,10 +56,19 @@ value belonging to `A`, or it can step with one budget spent, preserving heap
 satisfaction in an admissible extension of the truncated world. This is partial
 correctness/safety, not termination.
 
-An arrow contains function-shaped values whose applications are safe for every
+An arrow contains **closed lambdas** whose substituted bodies are safe at every
 smaller budget, every admissible future world, every satisfying heap, and every
-argument in the domain there. Quantification over future worlds is essential:
-allocation and calls cannot invalidate the previously established guarantee.
+argument in the domain there. The guarantee concerns the body after beta; the
+actual application spends that step before invoking it. Consequently `app_elim`
+proves same-budget application compatibility from function and argument
+membership. Quantification over future worlds remains essential for allocation.
+
+In notation, for every $j<n$ and admissible future $U$ and satisfying heap $h$,
+
+$$\lambda x.b\in\llbracket A\to B\rrbracket(n,W)
+\Longrightarrow
+\big(a\in\llbracket A\rrbracket(j,U)\Rightarrow
+\operatorname{Safe}(B,j,U,h,b[a/x])\big).$$
 
 A guarded operator consults recursive operands only below the current budget.
 Its approximation tower stabilizes at every finite observation level, and the
@@ -79,6 +90,18 @@ in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 - `Examples.lean` checks negative recursive function types, closures surviving
   alias writes, and a composed program that allocates, mutates and reads back a
   changed boolean. It also rejects a stuck function.
+- `ProgramTyping.lean` proves safety by induction on syntactic typing derivations.
+  `ProgramTypingTests.lean` combines overload dispatch, captured state, an alias
+  write and checked overload subsumption in one program.
+- `ProgramCertificates.lean` checks finite program evidence and proves acceptance
+  equivalent to closed-program derivability. The same example has executable
+  evidence and obtains safety from its successful check.
+- `PointClaims.lean` checks supplied environment claims against individual incoming
+  edges, proves environment transfer, and composes checked computations through
+  such claims.
+- `ControlFlow.lean` enumerates every actual node and outgoing edge, then proves
+  global safety, no stuck execution and typed returns, including cyclic graphs.
+  It reuses expression steps and adds explicit dispatch and transfer steps.
 - `PositiveNormalization.lean` and `PositiveGraphs.lean` prove finite and
   recursive normalization preservation.
 - `PositiveRules.lean` defines declarative subtype rules and proves their
@@ -117,9 +140,11 @@ require keeping separator searches or a second subtyping implementation.
 
 ## Remaining scope
 
-Open-term program typing and its fundamental theorem, program/claim extraction,
-a certificate producer and decoder, and integration with invariant checking
-remain. Mutable objects and refinements need a specified policy beyond invariant
+Program/claim extraction, a certificate producer and decoder, and integration
+with the production verifier remain. Global graph execution safety is proved
+for graphs over the current expression language. General edge slot mappings and
+graph-backed closure bodies remain extensions. The proved program rules currently use known shape answers per overload;
+general branch-environment refinement remains to be supplied. Mutable objects and refinements need a specified policy beyond invariant
 cells. Parameters, bounded polymorphism, difference and negation require
 additional syntax and sound rules; no generics result is claimed merely from
 being able to define quantification over semantic families.

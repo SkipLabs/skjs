@@ -24,40 +24,30 @@ def Rf : Fam := fixF (fun X => arrowT X nulT)
 theorem Rf_unfold (n : Nat) (W : WorldT n) (v : Val) : Rf n W v ↔ arrowT Rf nulT n W v :=
   fix_unfold _ (arrowT_contractive nulT) n W v
 
-theorem Rf_lam {n W t} (h : Rf n W t) : ∃ b, t = .lam b := ((Rf_unfold n W t).mp h).1
+theorem Rf_lam {n W t} (h : Rf n W t) : ∃ b, t = .lam b := by
+  obtain ⟨b, hb, _⟩ := ((Rf_unfold n W t).mp h).1
+  exact ⟨b, hb⟩
 
 def hFn : Tm := .lam .nul
 
 def kFn : Tm := .lam (.app (.var 0) hFn)
 
-theorem hFn_in_Rf : ∀ (n : Nat) (W : WorldT n), Rf n W hFn := by
-  intro n W
-  refine (Rf_unfold n W hFn).mpr ⟨⟨.nul, rfl⟩, ?_⟩
-  intro j _ W' _ hadm h hok a ha
-  cases j with
-  | zero => trivial
-  | succ p =>
-    obtain ⟨c, rfl⟩ := Rf_lam ha
-    exact Or.inr ⟨trunc p (Nat.le_succ p) W', h, .nul,
-      WExt_refl _, WorldAdm_trunc _ hadm, .beta rfl, HeapOk_trunc p W' h hok,
-      Safe_nul p _ h⟩
+theorem Rf_adm : Adm Rf := fix_adm _ (arrowT_contractive nulT) (fun _ _ => arrowT_adm _ _)
 
-/-- **The recursive-function example, in the same model as the worlds and the
-heap.** The level the beta step pays for is exactly the level at which the
-argument's own arrow property is available. -/
-theorem kFn_in_Rf : ∀ (n : Nat) (W : WorldT n), Rf n W kFn := by
-  intro n W
-  refine (Rf_unfold n W kFn).mpr ⟨⟨_, rfl⟩, ?_⟩
-  intro j _ W' _ hadm h hok a ha
-  cases j with
-  | zero => trivial
-  | succ p =>
-    obtain ⟨c, rfl⟩ := Rf_lam ha
-    refine Or.inr ⟨trunc p (Nat.le_succ p) W', h, .app (.lam c) hFn,
-      WExt_refl _, WorldAdm_trunc _ hadm, .beta rfl, HeapOk_trunc p W' h hok, ?_⟩
-    exact ((Rf_unfold _ W' _).mp ha).2 p (by omega) (trunc p (Nat.le_succ p) W')
-      (WExt_refl _) (WorldAdm_trunc _ hadm) h (HeapOk_trunc p W' h hok) hFn
-      (hFn_in_Rf p _)
+theorem Rf_valOnly : ValOnly Rf := fun n W v h =>
+  arrowT_valOnly _ _ n W v ((Rf_unfold n W v).mp h)
+
+theorem hFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W hFn := by
+  apply (Rf_unfold n W hFn).mpr
+  apply lam_intro _ _ _ (by simp [Scoped])
+  intro j hj U hx hu h hh a ha
+  exact Safe_nul j U h
+
+theorem kFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W kFn := by
+  apply (Rf_unfold n W kFn).mpr
+  apply lam_intro _ _ _ (by simp [Scoped, hFn])
+  intro j hj U hx hu h hh a ha
+  exact app_elim Rf_adm Rf_valOnly ((Rf_unfold j U a).mp ha) (hFn_in_Rf j U) hu hh
 
 /-! ## A closure over a mutable cell -/
 
@@ -69,28 +59,12 @@ def capFn : Tm := .lam (.read (.loc 0))
 location 0 to hold `null` -- **in every heap satisfying that world**, not in one
 particular heap. -/
 theorem capFn_in_arrow (n : Nat) : arrowT nulT nulT n (ofList [res nulT]) capFn := by
-  refine ⟨⟨_, rfl⟩, ?_⟩
-  intro j hj W' hW hadm h hok a ha
-  have ha' : a = .nul := ha
-  subst ha'
-  cases j with
-  | zero => trivial
-  | succ p =>
-    rw [trunc_res] at hW
-    have hl0 : lookup W' 0 = some (res nulT) :=
-      WExt_lookup hW (by simp [lookup])
-    refine Or.inr ⟨trunc p (Nat.le_succ p) W', h, .read (.loc 0),
-      WExt_refl _, WorldAdm_trunc _ hadm, .beta rfl, HeapOk_trunc p W' h hok, ?_⟩
-    cases p with
-    | zero => trivial
-    | succ q =>
-      obtain ⟨v, hv, hmem⟩ := hok.2 0 (res nulT) hl0
-      have hvnul : v = .nul := hmem 0 (by omega)
-      subst hvnul
-      refine Or.inr ⟨trunc q (Nat.le_succ q) _, h, .nul,
-        WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ hadm), .readV hv, ?_,
-        Safe_nul q _ h⟩
-      exact HeapOk_trunc q _ h (HeapOk_trunc (q + 1) W' h hok)
+  apply lam_intro _ _ _ (by trivial)
+  intro j hj U hx hu heap hh a ha
+  have hl : lookup U 0 = some (res nulT) := by
+    rw [trunc_res] at hx
+    exact WExt_lookup hx (by simp [lookup])
+  exact read_rule nulT_valOnly j U heap 0 hu hh hl (fun _ _ _ _ => Iff.rfl)
 
 /-- **And it survives an alias writing to that cell.** The write preserves heap
 satisfaction, and `capFn`'s safety was stated against satisfaction rather than
@@ -100,8 +74,10 @@ theorem capFn_survives_alias_write (n j : Nat) (hj : j < n) (W' : WorldT j) (h :
     (hadm : WorldAdm W') (hok : HeapOk j W' h) (c : Ctr j) (hl : lookup W' 0 = some c)
     (hv : ∀ (i : Nat) (hi : i < j), c i hi (trunc i (Nat.le_of_lt hi) W') .nul) :
     Safe nulT j W' (h.set 0 .nul) (.app capFn .nul) :=
-  (capFn_in_arrow n).2 j hj W' hW hadm (h.set 0 .nul)
-    (write_sound j W' h 0 c .nul hok hl hv) .nul rfl
+  app_elim nulT_adm nulT_valOnly
+    ((arrowT_adm nulT nulT).mono j _ W' hW _
+      ((arrowT_adm nulT nulT).down_le n j (Nat.le_of_lt hj) _ _ (capFn_in_arrow n)))
+    rfl hadm (write_sound j W' h 0 c .nul hok hl hv)
 
 /-! ## The combination
 
@@ -182,48 +158,26 @@ theorem prog_runs :
 /-- And the whole thing really is a function of that type. -/
 theorem prog_lam_arrow (k : Nat) (W : WorldT k) :
     arrowT (refT boolT) boolT k W (.lam body) := by
-  refine lam_intro (refT_valOnly boolT) _ k W ?_
-  intro p hp W' hW hadm hh hok a ha
-  obtain ⟨l, c, rfl, hl, hag⟩ := ha
-  have hr : refT boolT (p + 1) W' (.loc l) := ⟨l, c, rfl, hl, hag⟩
-  show Safe boolT p _ hh (.app (.lam (.read (.loc l))) (.write (.loc l) .fls))
-  have hrp : refT boolT p (trunc p (Nat.le_succ p) W') (.loc l) :=
-    refT_transfer hr p (Nat.le_succ p) _ (WExt_refl _)
-  have hrpc := hrp
-  obtain ⟨l2, c2, hvl2, hl2, hag2⟩ := hrpc
-  injection hvl2 with hll2
-  subst hll2
-  refine Safe_bind_appR (A := nulT) _ rfl p _ hh _ (WorldAdm_trunc _ hadm)
-    (HeapOk_trunc p W' hh hok) ?_ ?_
-  · exact write_rule boolT_adm p _ hh l .fls rfl (WorldAdm_trunc _ hadm)
-      (HeapOk_trunc p W' hh hok) hl2 hag2 (Or.inr rfl)
-  · intro i hi W'' hW'' hadm'' h'' u hok'' hu
-    have hu' : u = .nul := hu
-    subst hu'
-    exact closure_read i W'' h'' (refT_transfer hrp i hi W'' hW'') hadm'' hok'' .nul rfl
+  apply lam_intro _ _ _ (by simp [body, inner, Scoped])
+  intro p hp U hx hu heap hh a ha
+  obtain ⟨l, c, rfl, hl, hc⟩ := ha
+  have hr : refT boolT p U (.loc l) := ⟨l, c, rfl, hl, hc⟩
+  change Safe boolT p U heap (.app (.lam (.read (.loc l))) (.write (.loc l) .fls))
+  apply Safe_bind_appR (A := nulT) _ rfl p U heap _ hu hh
+    (write_rule boolT_adm p U heap l .fls rfl hu hh hl hc (Or.inr rfl))
+  intro j hj V hV hVadm h' v hh' hv
+  exact closure_read j V h' (refT_transfer hr j hj V hV) hVadm hh' v (nulT_valOnly _ _ _ hv)
 
 /-! ## `Safe` is doing real work -/
 
 
 def badFn : Tm := .lam (.app .nul .nul)
 
-theorem badFn_not_in_arrow : ¬ arrowT nulT nulT 3 (ofList []) badFn := by
+theorem badFn_not_in_arrow : ¬ arrowT nulT nulT 2 (ofList []) badFn := by
   intro hb
-  have h2 := hb.2 2 (by omega) (ofList []) (by rw [trunc_nil]; exact WExt_refl _)
-    WorldAdm_nil [] (emptyHeapOk 2) .nul rfl
-  rcases h2 with ⟨hv, -⟩ | ⟨W'', h', t', -, -, hstep, -, hsafe⟩
-  · simp [isVal] at hv
-  · cases hstep with
-    | appL hs => exact lam_no_step hs
-    | appR _ hs => exact nul_no_step hs
-    | beta _ =>
-      rcases hsafe with ⟨hv, -⟩ | ⟨W3, h3, t3, -, -, hstep3, -, -⟩
-      · simp [subst, isVal] at hv
-      · cases hstep3 with
-        | appL hs => exact nul_no_step hs
-        | appR _ hs => exact nul_no_step hs
-
-
+  have hs := hb.2 1 (by omega) (ofList []) (by rw [trunc_nil]; exact WExt_refl _)
+    WorldAdm_nil [] (emptyHeapOk 1) .nul rfl
+  exact stuck_not_safe nulT 0 (ofList []) [] hs
 
 end ExperimentState
 end Verification
