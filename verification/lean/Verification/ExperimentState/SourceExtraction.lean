@@ -6,8 +6,9 @@ become distinct obligations. The consumer reconstructs the request from source
 and claims; evidence never supplies the program it is checked against.
 
 The currently supported source slice is deliberately small: closed functions,
-straight-line initialized consts, a final return, variables and null/boolean
-literals. This compiler remains a reviewed extraction boundary, not a proved
+initialized consts, branches, variables and null/boolean literals, with every
+path returning. Branch-dependent refinements and active-name shadowing are not
+yet supported. This compiler remains a reviewed extraction boundary, not a proved
 TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.ExperimentState.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
@@ -36,28 +37,82 @@ private def env (fc : FunTypeClaims) (pos : Nat) (scope : List String) :
 private def exprType (fc : FunTypeClaims) (e : Expr) : Except String (Ty Nat) := do
   SourceTypes.translate (← claimTy fc e.span)
 
-/-- Two nodes per statement keep claimed types separate from annotations.
-The annotation node checks the saved value without changing its runtime binding. -/
-private def body (fc : FunTypeClaims) (R : Ty Nat) (scope : List String) (label : Nat) :
-    List Stmt → Except String (Program × List (PointClaim Nat))
-  | [] => .error "the current source slice requires a final return"
-  | .ret pos e :: rest => do
-    if !rest.isEmpty then throw "statements after return are outside the current source slice"
-    let Γ ← env fc pos.1 scope
-    let t ← expr scope e
-    let A ← exprType fc e
-    return ([⟨t, .bind ⟨label+1, none⟩⟩, ⟨.var 0, .ret⟩],
-      [⟨Γ,A⟩, ⟨A::Γ,R⟩])
-  | .cst pos name annot e :: rest => do
-    if scope.contains name then throw s!"duplicate local declaration '{name}'"
-    let Γ ← env fc pos.1 scope
-    let t ← expr scope e
-    let A ← exprType fc e
-    let B ← match annot with | none => pure A | some ty => SourceTypes.translate ty
-    let (P, claims) ← body fc R (name::scope) (label+2) rest
-    return (⟨t, .bind ⟨label+1, none⟩⟩ :: ⟨.var 0, .effect ⟨label+2, none⟩⟩ :: P,
-      ⟨Γ,A⟩ :: ⟨A::Γ,B⟩ :: claims)
-  | .ite .. :: _ => .error "branches are outside the current stateful source slice"
+private structure Built where
+  program : Program := []
+  claims : List (PointClaim Nat) := []
+
+private abbrev Compiler := StateT Built (Except String)
+
+private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
+    Compiler Target := do
+  let s ← get
+  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]))
+  return ⟨s.program.length, none⟩
+
+/-- Leaving a block drops its local slots simultaneously. Active-name shadowing
+is gated until the export can identify hidden bindings independently. -/
+private def leave (scope : List String) (tail : Option (Target × List String)) :
+    Except String Target := do
+  let (target, outer) ← match tail with
+    | some t => pure t
+    | none => throw "the current source slice requires a return on every path"
+  let slots ← outer.mapM fun name => match scope.idxOf? name with
+    | some i => pure i
+    | none => throw s!"internal extraction error: lost outer binding '{name}'"
+  return ⟨target.label, some slots⟩
+
+/-- The condition's saved result occupies slot zero at dispatch, and is removed
+before entering either arm. The arm's existing scope-exit map is composed with
+this removal. -/
+private def dropCondition (width : Nat) (target : Target) : Target :=
+  ⟨target.label, some ((target.mapping.getD (List.range width)).map (· + 1))⟩
+
+/-- Compile the continuation once, then point both arms at it. Allocation order
+is intentionally independent of source order; `start` records the real entry.
+Fuel bounds structural traversal, not execution or certificate search. -/
+private def body : Nat → FunTypeClaims → Ty Nat → List String → List Stmt →
+    Option (Target × List String) → Compiler Target
+  | 0, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
+  | fuel+1, fc, R, scope, stmts, tail => do
+    match stmts with
+    | [] => leave scope tail
+    | .ret pos e :: rest =>
+      if !rest.isEmpty then throw "statements after return are outside the current source slice"
+      let Γ ← env fc pos.1 scope
+      let t ← expr scope e
+      let A ← exprType fc e
+      let done ← emit (.var 0) .ret (A::Γ) R
+      emit t (.bind done) Γ A
+    | .cst pos name annot e :: rest =>
+      if scope.contains name then throw s!"duplicate or shadowing local declaration '{name}'"
+      let Γ ← env fc pos.1 scope
+      let t ← expr scope e
+      let A ← exprType fc e
+      let B ← match annot with | none => pure A | some ty => SourceTypes.translate ty
+      let next ← body fuel fc R (name::scope) rest tail
+      let annotation ← emit (.var 0) (.effect next) (A::Γ) B
+      emit t (.bind annotation) Γ A
+    | .ite pos cond thn els :: rest =>
+      let Γ ← env fc pos.1 scope
+      let t ← expr scope cond
+      let A ← exprType fc cond
+      let continuation ← if rest.isEmpty then pure tail else do
+        let next ← body fuel fc R scope rest tail
+        pure (some (next,scope))
+      let yes ← body fuel fc R scope thn continuation
+      let no ← body fuel fc R scope (els.getD []) continuation
+      let dispatch ← emit (.var 0)
+        (.branch (dropCondition scope.length yes) (dropCondition scope.length no)) (A::Γ) [3]
+      emit t (.bind dispatch) Γ A
+
+private def traversalBudget : List Stmt → Nat
+  | [] => 1
+  | .ret .. :: rest | .cst .. :: rest => 1 + traversalBudget rest
+  | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
+  | .ite _ _ thn (some els) :: rest =>
+      1 + traversalBudget thn + traversalBudget els + traversalBudget rest
+termination_by stmts => sizeOf stmts
+
 
 def extractFn (f : Verification.Fn) (fc : FunTypeClaims) : Except String Request := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
@@ -69,8 +124,8 @@ def extractFn (f : Verification.Fn) (fc : FunTypeClaims) : Except String Request
     | some t => SourceTypes.translate t
     | none => throw "unsupported claimed return type"
   if R != claimedR then throw "claimed return type differs from the source annotation"
-  let (P, claims) ← body fc R [] 0 f.body
-  return ⟨1, SourceTypes.types, P, claims, R, 0⟩
+  let (entry, built) ← (body (traversalBudget f.body) fc R [] f.body none).run {}
+  return ⟨1, SourceTypes.types, built.program, built.claims, R, entry.label⟩
 
 def extract (ast claims : Json) (fileKey : String) : Except String (List Request) := do
   if (← jStr (← jField ast "file")) != fileKey then throw "AST file key mismatch"

@@ -162,7 +162,7 @@ separator searches, alternative models or a semantic-completeness project.
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
 | Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
-| Source-facing integration | Closed null/boolean functions reach the stateful consumer. Primitive type translation is proved exact; source compilation remains trusted. Broader source constructs remain. |
+| Source-facing integration | Closed null/boolean functions with branches and shared joins reach the stateful consumer. Primitive type translation is proved exact; source compilation remains trusted. Broader source constructs remain. |
 
 Certificate completeness means **every declarative derivation has accepted
 finite evidence**. It does not mean every inclusion true in the semantic model
@@ -333,33 +333,44 @@ Full TypeScript formalization is not a prerequisite.
 
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
-consumer. It accepts closed functions containing initialized `const` declarations
-and a final return, with variables and null/boolean literals. It rejects branches,
-parameters, statements after return, and unsupported types explicitly. This is a
-coverage gate for this slice, not the intended final dead-code policy.
+consumer. It accepts closed functions containing initialized `const` declarations,
+nested boolean branches and returns, with variables and null/boolean literals. Every
+path must return. It rejects parameters, active-name shadowing, statements after
+an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, boolean, their singleton types, unions and bottom exactly into three graph
-labels: null, true and false. Lean proves the translation preserves primitive
-membership. Singleton clause and typing rules have been added with soundness
+labels: null, true and false. A fourth Boolean label is used only as the dispatch
+requirement; it does not replace exact source claims. Lean proves the translation
+preserves primitive membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
 
 The compiler resolves names to initialized local slots, newest first. Each source
 expression gets its exact exported result claim and its statement's claimed entry
 environment. A separate synthetic node checks the saved value against any source
 annotation, or the function return requirement. Incoming edges must justify the
-next supplied environment. The producer cannot replace these requirements.
+next supplied environment. The continuation after an `if` is compiled once;
+both falling-through arms point to that same entry. Explicit slot maps discard
+arm-local bindings, including when an arm is empty or contains a nested branch.
+The condition is evaluated once and saved for dispatch; its original expression
+claim and the Boolean dispatch requirement are separate checks. The producer
+cannot replace these requirements.
 The consumer reconstructs the requests from AST and claims before checking the
 submitted certificates. Graph safety is proved; source evaluation order and
 binding preservation remain part of the reviewed compiler boundary.
 
-Next, extend this source slice to branches and merges, then the already modeled
-cells and closures. That work should choose explicit binding identities and
-claim locations wherever source offsets alone are insufficient. Change the
-extraction/export format when needed; preserving F0 compatibility is not a goal.
-Source merges, loops and a closure observing an alias write must eventually run
+The branch rule currently checks both edges against the pre-branch environment.
+It does not derive a new singleton refinement for a variable tested by the
+condition. Such a claimed refinement is rejected if the incoming checks cannot
+justify it. The next rule work is a proved path-refinement interface, followed
+by the already modeled cells and closures. Binding identities also need to
+become explicit before supporting hidden, shadowed bindings; exported names
+alone cannot distinguish them. Change the extraction/export format when needed; preserving F0 compatibility is not a goal.
+Source loops and a closure observing an alias write must eventually run
 through production and independent consumption with negative claim tests.
-Their existing raw-calculus tests do not establish source integration.
+Their existing raw-calculus tests do not establish source integration. Merges
+already have real-export integration tests, with additional compiler regressions
+for branch selection, shared continuations and scope-exit transfers.
 
 ## Later feature gates
 

@@ -138,11 +138,12 @@ required data. They also check that object field order does not matter.
 
 ## Source mode
 
-The first adapter accepts closed functions with initialized `const` declarations
-and a final return, using variable expressions and null/boolean literals. Types
+The adapter accepts closed functions with initialized `const` declarations,
+nested boolean branches and returns, using variable expressions and null/boolean
+literals. Every path must return. Types
 may be null, boolean, true, false, unions of these, or bottom. Other constructs
-are rejected by the current slice gate, including branches, parameters and
-statements after return. This restriction is not a final dead-code policy.
+are rejected by the current slice gate, including parameters, active-name
+shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 
 Generate an AST with `tools/parse-source.js`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:
@@ -165,6 +166,18 @@ return requirements are separate synthetic-node obligations. Statement claims
 supply entry contexts, and every initialized local slot requires a claimed type.
 Unused extra exported bindings, such as the implicit `this`, do not create local
 slots. Duplicate claim keys are rejected.
+
+An `if` evaluates its condition once, keeps the exact exported expression claim,
+and checks a separate Boolean dispatch requirement. Both arms share the compiled
+continuation. Slot maps remove saved conditions and arm-local bindings on exit.
+Nested branches, missing/empty arms and early-return arms are supported.
+
+The current branch rule does not derive path-specific variable refinements.
+All arm-entry and merge claims must follow from the existing incoming contexts;
+claims requiring a new refinement fail the ordinary edge checks. The adapter
+never widens those claims to make them pass. A proved refinement rule is next.
+Active-name shadowing remains gated until binding identities can distinguish
+hidden locals in the claim export.
 
 Source extraction remains trusted for evaluation order, lexical binding and
 claim association. The all-budget safety theorem applies to the extracted

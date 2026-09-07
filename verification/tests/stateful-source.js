@@ -11,6 +11,8 @@ const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "stateful-source-"));
 const clone = x => JSON.parse(JSON.stringify(x));
 const fn = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "copyTrue");
+const branchAst = a => a.functions.find(f => f.name === "mergeWithLocals");
+const branchClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "mergeWithLocals");
 const ty = v => ({ top: false, atoms: [{ a: "booleanlit", v }] });
 let passed = 0;
 function run(mode, a, c, evidence) {
@@ -47,10 +49,25 @@ try {
     ["malformed source literal", a => { a.functions[0].body[0].init.lit.v = "maybe"; }, "boolean literal must be exactly"],
     ["return signature mismatch", (a,c) => { fn(c).retType = ty("true"); }, "claimed return type differs"],
     ["uninitialized source read", a => { a.functions[0].body[0].init = { k: "id", pos: a.functions[0].body[0].init.pos, name: "x" }; }, "unbound or uninitialized"],
-    ["duplicate local declaration", a => { a.functions[0].body[1].name = "x"; }, "duplicate local declaration"],
+    ["duplicate local declaration", a => { a.functions[0].body[1].name = "x"; }, "duplicate or shadowing local declaration"],
     ["duplicate file claims", (a,c) => { c.push(clone(c.find(f => f.file === fileKey))); }, "exactly one matching claim file"],
     ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]); }, "duplicate source function identities"],
-    ["missing final return", a => { a.functions[0].body.pop(); }, "requires a final return"],
+    ["missing final return", a => { a.functions[0].body.pop(); }, "requires a return on every path"],
+    ["unjustified merge claim", (a,c) => {
+      const end = branchAst(a).body.at(-1).pos[0];
+      branchClaims(c).envs.find(e => e.pos[0] === end).vars.find(v => v.name === "outer").type = ty("false");
+    }, "evidence search failed"],
+    ["unjustified arm entry", (a,c) => {
+      const entry = branchAst(a).body[1].then[0].pos[0];
+      branchClaims(c).envs.find(e => e.pos[0] === entry).vars.find(v => v.name === "outer").type = ty("false");
+    }, "evidence search failed"],
+    ["nonboolean condition", (a,c) => {
+      const condition = branchAst(a).body[1].cond;
+      condition.lit = { a: "null" };
+      branchClaims(c).exprs.find(e => e.pos[0] === condition.pos[0]).type = { top: false, atoms: [{ a: "null" }] };
+    }, "evidence search failed"],
+    ["branch local cannot escape", a => { branchAst(a).body.at(-1).e.name = "local"; }, "unbound or uninitialized"],
+    ["active-name shadowing gate", a => { branchAst(a).body[1].then[0].name = "outer"; }, "duplicate or shadowing"],
     ["AST identity mismatch", a => { a.file = "other.ts"; }, "AST file key mismatch"],
   ];
   for (const [name, alter, message] of cases) {
