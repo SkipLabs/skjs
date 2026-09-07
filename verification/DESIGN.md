@@ -25,37 +25,10 @@ and remaining work. Details live in:
 
 The intended path is:
 
-```mermaid
-flowchart TD
-    Source["TypeScript source"] --> Parse["Independent parser"]
-    Parse --> Extract["Source and type extraction"]
-    Extract --> Program["Calculus program"]
-    Extract --> Requirements["Source type requirements"]
-    Source --> SKJS["SKJS"]
-    SKJS --> Claims["Candidate type claims"]
-    Claims --> Associate["Associate claims with source points<br/>and translate their types"]
-    Extract --> Associate
-    Associate --> Points["Supplied point annotations"]
+![Architecture: source extraction and associated claims form a request; an untrusted producer supplies certificates, and the proved consumer checks both before establishing modeled safety.](diagrams/architecture.svg)
 
-    Program --> Request["Verification request"]
-    Requirements --> Request
-    Points --> Request
-    Request --> Producer["Untrusted evidence producer"]
-    Producer --> Evidence["Finite derivation certificates"]
-
-    Request --> Consumer["Proved consumer<br/>checks program, requirements,<br/>claims and every actual edge"]
-    Evidence --> Consumer
-    Consumer -->|acceptance| Typing["Declarative typing derivation"]
-    Typing -->|soundness theorem| Safety["Safety of the modeled program"]
-    Model["Reviewed execution and type semantics"] -.->|defines the guarantee| Safety
-
-    classDef extraction fill:#fff4dc,stroke:#9a6700,color:#24292f
-    classDef untrusted fill:#f6f8fa,stroke:#57606a,color:#24292f
-    classDef proved fill:#dafbe1,stroke:#1a7f37,color:#24292f
-    class Parse,Extract,Associate,Model extraction
-    class SKJS,Claims,Producer,Evidence untrusted
-    class Consumer,Typing,Safety proved
-```
+[Open the full-size diagram](diagrams/architecture.svg). The SVG is the editable
+diagram source and renders without a Mermaid preview extension.
 
 Green nodes are connected by Lean proofs. Amber nodes identify source/model
 meaning that still requires review or preservation proofs. The producer and
