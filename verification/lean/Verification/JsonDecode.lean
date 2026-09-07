@@ -39,6 +39,12 @@ def jSpan (j : Json) (k : String) : Except String Span := do
 
 /-! ### Atoms and types -/
 
+def decodeBoolLiteral (j : Json) : Except String Bool := do
+  match ← jStr (← jField j "v") with
+  | "true" => return true
+  | "false" => return false
+  | _ => throw "boolean literal must be exactly true or false"
+
 def decodeAtom (j : Json) : Except String Atom := do
   let a ← jStr (← jField j "a")
   match a with
@@ -49,7 +55,7 @@ def decodeAtom (j : Json) : Except String Atom := do
   | "boolean" => return .bool
   | "numberlit" => return .numLit (← numBits (← jStr (← jField j "v")))
   | "stringlit" => return .strLit (← jStr (← jField j "v"))
-  | "booleanlit" => return .boolLit ((← jStr (← jField j "v")) == "true")
+  | "booleanlit" => return .boolLit (← decodeBoolLiteral j)
   | other => .error s!"unknown type atom '{other}'"
 
 /-- The literal forms. An `Expr.lit` node denotes one value, so a "literal"
@@ -63,7 +69,7 @@ def decodeVal (j : Json) : Except String Val := do
   | "undefined" => return .vundef
   | "numberlit" => return .vnum (← numBits (← jStr (← jField j "v")))
   | "stringlit" => return .vstr (← jStr (← jField j "v"))
-  | "booleanlit" => return .vbool ((← jStr (← jField j "v")) == "true")
+  | "booleanlit" => return .vbool (← decodeBoolLiteral j)
   | other => .error s!"'{other}' is not a literal value"
 
 /-- A type SKJS could not express in the supported fragment decodes as `none`; the

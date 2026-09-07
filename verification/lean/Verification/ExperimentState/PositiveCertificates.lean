@@ -66,6 +66,8 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
     Clause (List ι) → Clause (List ι) → Bool
   | .nul, .nul => true
   | .bool, .bool => true
+  | .boolLit _, .bool => true
+  | .boolLit a, .boolLit b => decide (a = b)
   | .refs a bs, .refs c ds => decide (∀ b ∈ c :: ds,
       ∃ x ∈ a :: bs, Rel table x b ∧ Rel table b x)
   | .arrs L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
@@ -83,6 +85,7 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
     intro p hp
     obtain ⟨e, _, _, _, he⟩ := hh p hp
     exact checkArrow_sound he
+  · exact of_decide_eq_true h
 
 /-- Finite evidence collection is proof-only; the checker itself makes no
 classical choices. Monotonicity allows witnesses to share one evidence list. -/
@@ -126,6 +129,8 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     obtain ⟨es, he⟩ := collect M _ (fun p es es' hm ⟨e, he, hL, hp, hc⟩ =>
       ⟨e, hm e he, hL, hp, hc⟩) hx
     exact ⟨es, by simpa only [checkClause, decide_eq_true_eq] using he⟩
+  · exact ⟨[], rfl⟩
+  · exact ⟨[], by simpa [checkClause] using h⟩
 
 structure Certificate (ι : Type) where
   table : Table ι

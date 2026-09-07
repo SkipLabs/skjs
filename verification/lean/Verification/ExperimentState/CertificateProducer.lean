@@ -103,6 +103,8 @@ def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
     | .nul | .tru | .fls =>
       let r := match t with | .nul => Rule.nul | .tru => .tru | _ => .fls
       return (A :: pool).findSome? fun B =>
+        let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
+          else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
         if checkTree G (leaf B r) then coerce G pool (leaf B r) A else none
     | .lam b =>
       return (A :: pool).findSome? fun F => do

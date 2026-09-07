@@ -24,6 +24,14 @@ $$
 \frac{}{\Gamma\vdash_G \mathsf{true},\mathsf{false}:\mathsf{Bool}}
 $$
 
+Singleton introduction is also available, retaining the ordinary Boolean rules:
+
+$$
+\frac{}{\Gamma\vdash_G \mathsf{true}:\mathsf{boolLit}(\mathsf{true})}
+\qquad
+\frac{}{\Gamma\vdash_G \mathsf{false}:\mathsf{boolLit}(\mathsf{false})}.
+$$
+
 $$
 \frac{\forall(A,B)\in L.\;\Gamma,x:A\vdash_G e:B}
      {\Gamma\vdash_G \lambda x.e:\bigwedge_{(A,B)\in L}(A\to B)}

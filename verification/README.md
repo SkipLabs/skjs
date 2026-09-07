@@ -6,7 +6,7 @@ independently and checks that those claims justify the program's typing.
 
 The implemented fragment is called **F0**: first-order functions over primitive
 values, with type narrowing. A stateful calculus and certificate consumer are
-also implemented; their source extraction is not yet connected. Verification
+also implemented, with a first source adapter for closed null/boolean functions. Verification
 runs separately from ordinary SKJS checking.
 
 ## Run
@@ -49,12 +49,13 @@ SKJS claim set and alter it to test individual validation requirements:
 
 ```sh
 make verify-claims       # claim validation tests
-make verify              # program corpus and claim validation tests
+make verify              # corpus, claim validation and stateful source integration
 ```
 
-Both groups are regression tests, but they exercise different things: the
+These are regression tests that exercise different things: the
 TypeScript corpus tests the pipeline on real programs; claim validation tests
-target the verifier's response to supplied claims. Use the combined command for
+target the verifier's response to supplied claims. The stateful source suite also
+checks real exports through certificate production and independent consumption. Use the combined command for
 the full experiment check.
 
 To run tests without rebuilding the verifier:
@@ -73,8 +74,11 @@ F0 is a name for language coverage, not a version of the public command.
 The same verifier binary can produce and independently check serialized
 stateful calculus evidence. See [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) for a
 complete minimal request and commands. This interface takes an extracted graph
-and point annotations; it does not yet accept extended TypeScript source or
-reinterpret SKJS's existing claim format.
+and point annotations. A source mode also connects the independent parser and
+SKJS exports to this consumer for **closed functions with initialized `const`
+bindings and a final return**, using variables, null and boolean literals.
+Boolean singleton claims are translated exactly. See the protocol's source-mode
+commands and limitations; source loops, closures and mutation are not connected yet.
 
 ## What runs
 

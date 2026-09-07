@@ -42,7 +42,7 @@ def graph (r : Request) : NormalGraph Nat := fun i => r.types[i]?.getD []
 def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 
 def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
-  | .nul | .bool => []
+  | .nul | .bool | .boolLit _ => []
   | .refs A bs => A :: bs
   | .arrs L => L.flatMap (fun p => [p.1,p.2])
 

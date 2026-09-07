@@ -105,6 +105,8 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | .nul, .nul => True
   | .bool, .bool => True
+  | .boolLit _, .bool => True
+  | .boolLit a, .boolLit b => a = b
   | .refs a bs, .refs c ds => ∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x
   | .arrs L, .arrs M => ∀ p ∈ M, Arrow G R L p.1 p.2
   | _, _ => False
@@ -132,6 +134,11 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     intro p hp
     obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
     exact (Arrow.sound (hc q hq) n hr W v hv).2
+  · rename_i b
+    cases b <;> intro hv <;> cases hv
+    · exact Or.inr rfl
+    · exact Or.inl rfl
+  · cases hc; exact id
 
 def Valid (G : NormalGraph ι) (table : Table ι) : Prop :=
   ∀ p ∈ table, ∀ a ∈ expand G p.1, ∃ b ∈ expand G p.2, Covers G (Rel table) a b

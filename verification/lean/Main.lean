@@ -5,7 +5,7 @@
          verifier --produce-stateful <request.json> <evidence.json> <search-depth>
          verifier --check-stateful <request.json> <evidence.json>
 
-  Stateful mode takes a calculus request, not TypeScript source claims.
+  Stateful source mode reconstructs calculus requests from AST and SKJS claims.
 
   Exit 0 accepts the claims; any other exit rejects them. Rejection is the
   only failure mode: the checker never reports a program as accepted on the
@@ -51,6 +51,12 @@ def run (astPath typeClaimsPath fileKey : String) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--check-stateful-source", astPath, claimsPath, fileKey, evidencePath] =>
+      ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath none
+  | ["--produce-stateful-source", astPath, claimsPath, fileKey, evidencePath, depth] =>
+      match depth.toNat? with
+      | some fuel => ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath (some fuel)
+      | none => IO.eprintln "reject: search depth must be a natural number"; return 2
   | ["--check-stateful", requestPath, evidencePath] =>
       ExperimentState.RequestCli.checkFiles requestPath evidencePath
   | ["--produce-stateful", requestPath, evidencePath, depth] =>
@@ -62,4 +68,6 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "usage: verifier <ast.json> <claims.json> <skjs-file-key>"
       IO.eprintln "       verifier --produce-stateful <request.json> <evidence.json> <search-depth>"
       IO.eprintln "       verifier --check-stateful <request.json> <evidence.json>"
+      IO.eprintln "       verifier --produce-stateful-source <ast.json> <claims.json> <file-key> <evidence.json> <depth>"
+      IO.eprintln "       verifier --check-stateful-source <ast.json> <claims.json> <file-key> <evidence.json>"
       return 2

@@ -3,8 +3,7 @@
 This specifies the maintained type representation and subtype rules. Lean
 proves positive normalization preserves recursive type semantics, the declarative
 rules are sound, and the certificate checker is sound and complete for those
-rules. The stateful development is not yet integrated with the production F0
-verifier. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
+rules. A first closed null/boolean source slice is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
 
 ## Representation and mathematical rules
 
@@ -14,12 +13,21 @@ $$
 P ::= \bot\mid c\mid P\lor P\mid P\land P.
 $$
 
-A clause has one of four shapes:
+A clause is an atom, a reference conjunction, or an arrow intersection:
 
 $$
-c ::= \mathsf{null}\mid\mathsf{bool}\mid
+c ::= \mathsf{null}\mid\mathsf{bool}\mid\mathsf{boolLit}(b)\mid
        \mathsf{refs}(A;B_1,\ldots,B_k)\mid
        \mathsf{arrs}((C_1,D_1),\ldots,(C_m,D_m)).
+$$
+
+Here $b$ is true or false. A singleton denotes exactly that boolean value at
+every budget. Its additional atomic rules are
+
+$$
+\mathsf{boolLit}(b)\leq\mathsf{bool},\qquad
+\mathsf{boolLit}(b)\land\mathsf{bool}=\mathsf{boolLit}(b),\qquad
+\mathsf{boolLit}(\mathsf{true})\land\mathsf{boolLit}(\mathsf{false})=\bot.
 $$
 
 Each operand $A,B_i,C_i,D_i$ is a finite union-list of graph labels. The

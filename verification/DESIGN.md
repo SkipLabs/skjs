@@ -5,11 +5,12 @@ consumer. It is not to prove SKJS's inference implementation sound. SKJS supplie
 candidate types and invariants; acceptance requires derivations in an independent
 calculus whose rules are proved sound against its execution model.
 
-The chosen architecture is implemented in memory for a stateful positive-type
-fragment. The source-facing pipeline still runs F0, the smaller first-order
-primitive fragment. A serialized calculus-request interface is available, but source extraction
-has not yet connected the stateful checker to that pipeline. These are implementation stages, not competing
-semantic designs or a requirement to compare historical calculus versions.
+The chosen architecture has a stateful positive-type calculus, a serialized
+certificate consumer, and a first source adapter for closed null/boolean functions.
+The broader primitive F0 corpus still runs through its existing entry point.
+This is an integration stage, not a compatibility requirement: the extraction
+format may change to provide the program points, binding identities and exact
+types needed by the chosen calculus.
 
 This document records the architecture, established commitments, trust boundary
 and remaining work. Details live in:
@@ -161,7 +162,7 @@ separator searches, alternative models or a semantic-completeness project.
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
 | Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
-| Source-facing integration | F0 runs end to end. Stateful source extraction and faithful claim translation remain. |
+| Source-facing integration | Closed null/boolean functions reach the stateful consumer. Primitive type translation is proved exact; source compilation remains trusted. Broader source constructs remain. |
 
 Certificate completeness means **every declarative derivation has accepted
 finite evidence**. It does not mean every inclusion true in the semantic model
@@ -328,41 +329,37 @@ remain outside that theorem. This concerns today's supported language and its
 compilation, not equivalence with an earlier implementation or a second pipeline.
 Full TypeScript formalization is not a prerequisite.
 
-## Next integration milestone
+## Source integration: current slice and next milestone
 
-Connect a small source fragment to the existing stateful checking interface
-before adding more semantic machinery. Start with constructs already modeled:
-null/booleans, invariant cells, supported closures, and graph control flow.
-Prefer translation into existing constructs when it preserves source behavior.
+[SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
+connects independently parsed source and actual SKJS exports to the stateful
+consumer. It accepts closed functions containing initialized `const` declarations
+and a final return, with variables and null/boolean literals. It rejects branches,
+parameters, statements after return, and unsupported types explicitly. This is a
+coverage gate for this slice, not the intended final dead-code policy.
 
-The concrete work is:
+[SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
+null, boolean, their singleton types, unions and bottom exactly into three graph
+labels: null, true and false. Lean proves the translation preserves primitive
+membership. Singleton clause and typing rules have been added with soundness
+proofs; no claim is widened from a singleton to boolean.
 
-1. Specify source-to-graph binding and evaluation order, including slot maps,
-   initialization, and the treatment of unreachable statements.
-2. Associate exported claims with the resulting program points and type graph.
-   The current producer takes an entry context **and expression-result type**
-   per node. Specify which are source requirements, which come from SKJS, and
-   which intermediate annotations the producer may choose and must justify.
-   Do not silently treat producer-chosen annotations as verified SKJS claims.
-3. Use the [versioned request/evidence interface](REQUEST-PROTOCOL.md) at the
-   consumer. Inspect what the exporter actually supplies; extend its
-   representation only where the chosen source slice needs it. Boolean
-   singletons already expose a type-translation boundary: the positive calculus
-   has only `boolean`, so silently widening singleton claims is not acceptable.
-4. Run accepted programs and deliberately corrupted claims through the complete
-   path. Include a merge, a loop, and a captured cell modified through an alias.
-   Require rejection for the intended claim obligation, not merely unsupported
-   syntax or missing data.
+The compiler resolves names to initialized local slots, newest first. Each source
+expression gets its exact exported result claim and its statement's claimed entry
+environment. A separate synthetic node checks the saved value against any source
+annotation, or the function return requirement. Incoming edges must justify the
+next supplied environment. The producer cannot replace these requirements.
+The consumer reconstructs the requests from AST and claims before checking the
+submitted certificates. Graph safety is proved; source evaluation order and
+binding preservation remain part of the reviewed compiler boundary.
 
-Completion means independently parsed source and associated claims reach the
-proved stateful consumer, without hand-written derivations per program, with an
-explicit account of the remaining translation trust. Evidence production and serialized consumption already work. The remaining gap
-is source extraction and exact interpretation of its requirements and claims.
-
-The existing F0 path remains operational until that replacement covers the source
-behavior we choose to retain. Migration does not require a theorem relating old
-and new evaluators. It does require an accurate statement of which source
-programs the integrated checker certifies.
+Next, extend this source slice to branches and merges, then the already modeled
+cells and closures. That work should choose explicit binding identities and
+claim locations wherever source offsets alone are insufficient. Change the
+extraction/export format when needed; preserving F0 compatibility is not a goal.
+Source merges, loops and a closure observing an alias write must eventually run
+through production and independent consumption with negative claim tests.
+Their existing raw-calculus tests do not establish source integration.
 
 ## Later feature gates
 
@@ -397,7 +394,7 @@ evidence rejected. The mapped captured-cell example has both an automatically
 accepted certificate and an operational trace returning the changed boolean.
 
 For the running source pipeline, `make verify-programs` exercises programs,
-`make verify-claims` mutates valid claim sets, and `make verify` runs both.
+`make verify-claims` mutates valid claim sets, and `make verify` also runs the stateful source suite.
 The [beyond_precision](tests/programs/known-unsound/beyond_precision.ts) fixture
 is a concrete case where verification rejects SKJS's unsound numeric narrowing.
 Runtime checks sample calls in Node; they do not prove equivalence with the model.

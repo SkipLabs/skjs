@@ -18,7 +18,7 @@
 # The claims suite separately tests the verifier's input validation.
 # It uses a real SKJS claim set as a fixture, then alters it in JavaScript.
 #
-# Usage: verification/run.sh [--build] [--verbose] [--suite programs|claims|all] [--skjs BIN] [filter]
+# Usage: verification/run.sh [--build] [--verbose] [--suite programs|claims|stateful-source|all] [--skjs BIN] [filter]
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,8 +39,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$SUITE" in
-  programs|claims|all) ;;
-  *) echo "Unknown suite '$SUITE': use programs, claims, or all"; exit 2 ;;
+  programs|claims|stateful-source|all) ;;
+  *) echo "Unknown suite '$SUITE': use programs, claims, stateful-source, or all"; exit 2 ;;
 esac
 if [ -n "$FILTER" ] && [ "$SUITE" != programs ]; then
   echo "A filename filter is only supported with the programs suite"
@@ -97,7 +97,7 @@ report() { # $1 = OK|FAIL, $2 = file, $3 = detail
   fi
 }
 
-if [ "$SUITE" != claims ]; then
+if [ "$SUITE" = programs ] || [ "$SUITE" = all ]; then
 echo "Checking TypeScript programs..."
 for f in $(find verification/tests/programs -name '*.ts' | sort); do
   [ -n "$FILTER" ] && case "$f" in *"$FILTER"*) ;; *) continue ;; esac
@@ -187,7 +187,7 @@ echo "Programs: $pass passed, $fail failed"
 fi
 
 # Receiver tests: alter claims and source identifiers in a real claim set.
-if [ "$SUITE" != programs ]; then
+if [ "$SUITE" = claims ] || [ "$SUITE" = all ]; then
   echo "Testing verifier claim validation..."
   BASE="verification/tests/programs/accept/typeof_narrow.ts"
   OTHER="verification/tests/programs/accept/early_return.ts"
@@ -204,6 +204,20 @@ if [ "$SUITE" != programs ]; then
   else
     echo "FAIL: claim validation checks"
     cat "$WORK/claims.out"
+    fail=$((fail + 1))
+  fi
+fi
+
+if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
+  BASE="verification/tests/stateful-source/basic.ts"
+  if ! { node verification/tools/parse-source.js "$BASE" > "$WORK/source.ast" &&
+         skjs_check "$BASE" > "$WORK/source.claims"; } 2> "$WORK/source.setup.err"; then
+    echo "FAIL: stateful source test setup"
+    cat "$WORK/source.setup.err"
+    exit 1
+  fi
+  if ! node verification/tests/stateful-source.js "$WORK/source.ast" "$WORK/source.claims" \
+       "$BASE" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
 fi

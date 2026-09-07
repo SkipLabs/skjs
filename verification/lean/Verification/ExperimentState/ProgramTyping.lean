@@ -33,6 +33,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   cases c with
   | nul => subst v; exact ⟨rfl, trivial⟩
   | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
+  | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
   | arrs L => obtain ⟨b, rfl, hb⟩ := hc.1; exact ⟨rfl, hb⟩
 
@@ -102,6 +103,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | nul : Represents G A .nul → HasTy G Γ .nul A
   | tru : Represents G A .bool → HasTy G Γ .tru A
   | fls : Represents G A .bool → HasTy G Γ .fls A
+  | truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
+  | flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
   | lam : Represents G F (.arrs L) →
       (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.lam b) F
   | app : HasTy G Γ f F → Represents G F (.arrs L) → (A, B) ∈ L →
@@ -134,6 +137,9 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | fls hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr (Or.inr rfl))
+  | truLit hr | flsLit hr =>
+    intro n W h ρ he hw hh
+    exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
   | @lam F L Γ b hr hb ih =>
     intro n W h ρ he hw hh
     apply value_safe _ _ _ _ _ rfl

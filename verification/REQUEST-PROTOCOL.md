@@ -5,8 +5,8 @@ stateful calculus, separately from its derivation certificate. This is a
 consumer boundary for extracted programs. It is **not** a decoder for SKJS's
 source-associated claims, and it does not certify TypeScript text by itself.
 
-The source-facing F0 invocation is unchanged. Both modes use the same executable;
-stateful request mode is an explicit integration entry point.
+Raw request mode and the source adapter below use the same executable. The
+existing F0 invocation is also available during integration.
 
 ## Run a request
 
@@ -69,6 +69,7 @@ Each type-graph node is a union of clauses:
 | --- | --- |
 | Null | `"nul"` |
 | Boolean | `"bool"` |
+| Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
 | Invariant reference with optional additional contract requirements | `{"refs":{"first":[1],"rest":[]}}` |
 | Intersection of arrows | `{"arrs":{"arrows":[[[0],[1]],[[1],[0]]]}}` |
 
@@ -76,7 +77,7 @@ The arrow example contains two domain/result pairs. References and arrow
 operands may point back to the same finite graph, representing guarded regular
 recursion. The request already contains normalized clauses; a source type
 extractor must use the proved normalization interface when translating positive
-formulas. No string, number, boolean singleton, generic or unsupported-type
+formulas. No string, number, generic or unsupported-type
 fallback is supplied by this protocol.
 
 ## Terms, targets and evidence
@@ -108,7 +109,9 @@ one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
-The codec names and fields are part of protocol version 1. A change to their
+The codec names and fields are part of protocol version 1. The `boolLit` clause
+and `truLit`/`flsLit` evidence rules extend this initial protocol additively:
+existing tags retain their meaning, and older consumers reject the new tags. A change to their
 meaning or shape requires an explicit protocol decision. Decode/re-encode
 validation rejects unknown fields and missing fields, recursively, rather than
 silently ignoring future flags or defaulting omitted fields. The JSON parser
@@ -133,22 +136,49 @@ structural overload-subtyping evidence. Negative cases alter code, claims,
 requirements, maps, versions and type labels, or add unknown fields and omit
 required data. They also check that object field order does not matter.
 
-## What extraction still needs to establish
+## Source mode
 
-A TypeScript extractor must construct the actual graph, preserve evaluation
-order and lexical binding, and associate SKJS claims with the correct nodes.
-It must distinguish source requirements, exported claims and intermediate types
-chosen by the producer. This protocol does not perform those tasks.
+The first adapter accepts closed functions with initialized `const` declarations
+and a final return, using variable expressions and null/boolean literals. Types
+may be null, boolean, true, false, unions of these, or bottom. Other constructs
+are rejected by the current slice gate, including branches, parameters and
+statements after return. This restriction is not a final dead-code policy.
 
-In particular, SKJS's primitive claim encoding can distinguish `true` and
-`false`, while the current positive graph has only `boolean`. Mapping either
-singleton to `boolean` would weaken the claim. A source adapter must reject
-unsupported claims, establish their full meaning through an explicit additional
-check, or extend the calculus with sound rules for those types. It must not
-silently widen them and report that the original claims were verified.
+Generate an AST with `tools/parse-source.js`, and claims with SKJS's
+`--emit-skjs-type-claims`. Then run:
 
-The first source integration should therefore specify exact supported type
-translation before broadening syntax. The current source parser also rejects
-mutable declarations, loops and closures, so the JSON round trips above are
-calculus integration tests, not a claim that those TypeScript features now pass
-through the source pipeline.
+```sh
+verifier --produce-stateful-source ast.json claims.json path/to/input.ts evidence.json 8
+verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.json
+```
+
+The file key must match both inputs. Evidence is a strict object
+`{"version":1,"functions":[...]}`, containing ordinary responses in source
+function order. Exported function order does not matter. The checking command
+reconstructs the requests itself and does not run the producer.
+
+The adapter represents boolean as the union of exact true and false labels.
+[SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) proves
+this primitive translation exact. Unsupported types are rejected. Each source
+expression's exported type remains its result claim; source annotations and
+return requirements are separate synthetic-node obligations. Statement claims
+supply entry contexts, and every initialized local slot requires a claimed type.
+Unused extra exported bindings, such as the implicit `this`, do not create local
+slots. Duplicate claim keys are rejected.
+
+Source extraction remains trusted for evaluation order, lexical binding and
+claim association. The all-budget safety theorem applies to the extracted
+graph, not directly to TypeScript execution. The parser is still the existing
+independent parser; its format and the claim export can change as the broader
+stateful slice requires. There is no F0 compatibility obligation.
+
+`make verify` runs the real-export integration suite. To run only that suite:
+
+```sh
+verification/run.sh --build --suite stateful-source
+```
+
+The suite checks production and independent consumption, then corrupts expression
+claims, incoming environments, source annotations and input identities. Source
+loops, mutable declarations and closures are not connected yet; their raw request
+tests remain calculus tests.
