@@ -78,8 +78,8 @@ and point annotations. A source mode also connects the independent parser and
 SKJS exports to this consumer for **closed functions with initialized `const`
 bindings, nested branches and returns**, using variables, null and boolean
 literals. Both falling-through arms share one continuation.
-Boolean singleton claims are translated exactly. Path-dependent refinements and
-active-name shadowing remain outside the currently accepted cases. See the protocol's source-mode
+Boolean singleton claims are translated exactly, including refinements from
+direct Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
 commands and limitations; source loops, closures and mutation are not connected yet.
 
 ## What runs

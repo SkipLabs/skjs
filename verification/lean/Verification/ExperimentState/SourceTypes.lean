@@ -9,7 +9,7 @@ open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 
 -- Source booleans use both singleton labels, so unions have a canonical form.
 def types : List (List (Clause (List Nat))) :=
-  [[.nul], [.boolLit true], [.boolLit false], [.bool]]
+  [[.nul], [.boolLit true], [.boolLit false]]
 def graph : NormalGraph Nat := fun i => types[i]?.getD []
 
 def admits (t : Core.Ty) (v : Core.Val) : Bool := t.atoms.any (Core.inhabits v)

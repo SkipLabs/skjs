@@ -1,10 +1,10 @@
-import Verification.ExperimentState.PointClaims
+import Verification.ExperimentState.BranchRefinement
 
 /-! A finite control-flow graph over the existing expression language. Expression
 steps use the existing heap machine. Dispatch and transfers are explicit steps,
 so cycles consume execution budget without requiring invariant inference. -/
 namespace Verification.ExperimentState.ControlFlow
-open ProgramTyping PositiveGraphs PositiveRules PointClaims ProgramCertificates
+open ProgramTyping PositiveGraphs PositiveRules PointClaims ProgramCertificates BranchRefinement
 
 /-- The destination and its slot map are executable program data, not evidence. -/
 structure Target where
@@ -19,6 +19,8 @@ inductive Continuation where
   | bind (next : Target)
   | effect (next : Target)
   | branch (yes no : Target)
+  /-- Dispatch and bind the tested Boolean before applying the destination map. -/
+  | branchBind (yes no : Target)
   deriving DecidableEq, Repr
 
 structure Node where
@@ -51,6 +53,9 @@ inductive Transition (P : Program) : Heap → State → Heap → State → Prop 
   | yes : Transition P h (.eval .tru ρ (.branch y n)) h (.at y.label (mapEnv y.mapping ρ))
   | no : Transition P h (.eval .fls ρ (.branch y n)) h (.at n.label (mapEnv n.mapping ρ))
 
+  | yesBind : Transition P h (.eval .tru ρ (.branchBind y n)) h (.at y.label (mapEnv y.mapping (push .tru ρ)))
+  | noBind : Transition P h (.eval .fls ρ (.branchBind y n)) h (.at n.label (mapEnv n.mapping (push .fls ρ)))
+
 def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → State → Prop
   | 0, _, _, _ => True
   | n+1, W, h, s =>
@@ -65,6 +70,13 @@ def checkTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certifi
   | some _, some c => checkMapped G Γ (entry c) target.mapping p
   | _, _ => false
 
+def checkBranchTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
+    (Γ : List (Ty ι)) (q : Bool) (target : Target) (p : EdgeEvidence ι) : Bool :=
+  match P[target.label]?, C[target.label]? with
+  | some _, some c => checkRefined G Γ (entry c) 0 q target.mapping p
+  | _, _ => false
+
+
 def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι) : Bool :=
   decide ((claim c.expression).term = node.expression) &&
@@ -75,6 +87,9 @@ def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
   | .effect l, [p] => checkTarget G P C (entry c) l p
   | .branch y n, [py,pn] => decide (expand G (result c) = [.bool]) &&
       checkTarget G P C (entry c) y py && checkTarget G P C (entry c) n pn
+  | .branchBind y n, [py,pn] => onlyBoolean G (result c) &&
+      checkBranchTarget G P C (result c :: entry c) true y py &&
+      checkBranchTarget G P C (result c :: entry c) false n pn
   | _, _ => false
 
 /-- Enumeration comes from the program, not a certificate-supplied edge list. -/
@@ -88,12 +103,19 @@ def checkGraph [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) : Prop :=
   ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping
 
+def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
+    (Γ : List (Ty ι)) (q : Bool) (l : Target) : Prop :=
+  ∃ c, C[l.label]? = some c ∧ RefinedCovers G Γ (entry c) 0 q l.mapping
+
+
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (A : Ty ι) : Continuation → Prop
   | .ret => A = Rty
   | .bind l => TargetOk G C (A :: Γ) l
   | .effect l => TargetOk G C Γ l
   | .branch y n => Represents G A .bool ∧ TargetOk G C Γ y ∧ TargetOk G C Γ n
+  | .branchBind y n => onlyBoolean G A = true ∧
+      BranchTargetOk G C (A::Γ) true y ∧ BranchTargetOk G C (A::Γ) false n
 
 theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ l p}
     (hc : checkTarget G P C Γ l p = true) : TargetOk G C Γ l := by
@@ -102,6 +124,14 @@ theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ l p}
   · rename_i node c hn he
     exact ⟨c, he, checkMapped_sound hc⟩
   · contradiction
+
+theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ q l p}
+    (hc : checkBranchTarget G P C Γ q l p = true) : BranchTargetOk G C Γ q l := by
+  unfold checkBranchTarget at hc
+  split at hc
+  · exact ⟨_, by assumption, checkRefined_sound hc⟩
+  · contradiction
+
 
 theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
     (hc : checkNode G Rty P C node c = true) :
@@ -117,6 +147,8 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
     · exact target_sound hk
     · simp only [Bool.and_eq_true, decide_eq_true_eq] at hk
       exact ⟨hk.1.1, target_sound hk.1.2, target_sound hk.2⟩
+    · simp only [Bool.and_eq_true] at hk
+      exact ⟨hk.1.1, branch_target_sound hk.1.2, branch_target_sound hk.2⟩
     · contradiction
 
 theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
@@ -143,6 +175,13 @@ theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h}
     (ht : TargetOk G C Γ l) (he : EnvOk G Γ ρ n W) : StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c, hc, hcov⟩ := ht
   exact ⟨c, hc, hcov.env he⟩
+
+theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h}
+    (ht : BranchTargetOk G C Γ q l) (he : EnvOk G Γ ρ n W)
+    (hq : ρ 0 = (if q then .tru else .fls)) :
+    StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
+  obtain ⟨c,hc,hcov⟩ := ht
+  exact ⟨c,hc,hcov.env he hq⟩
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
 theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
@@ -189,6 +228,13 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
               ih U h _ hw' hh' (target_state hk.2.1 he')⟩
           · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
               ih U h _ hw' hh' (target_state hk.2.2 he')⟩
+        | branchBind y no =>
+          have hb := onlyBoolean_sound hk.1 ha
+          rcases hb with rfl | rfl
+          · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
+              ih U h _ hw' hh' (branch_target_state hk.2.1 (he'.push ha') rfl)⟩
+          · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
+              ih U h _ hw' hh' (branch_target_state hk.2.2 (he'.push ha') rfl)⟩
       · exact Or.inr ⟨V, h', .eval t' ρ k, hx, hu, .expr step, hok,
           ih V h' _ hu hok ⟨Γ,A,he.transfer n (Nat.le_succ n) V hx,hsafe,hk⟩⟩
 
@@ -236,6 +282,8 @@ theorem Transition.det {P h s h₁ s₁ h₂ s₂}
     | effect hv => exact False.elim (value_no_step hv hs)
     | yes => exact False.elim (tru_no_step hs)
     | no => exact False.elim (fls_no_step hs)
+    | yesBind => exact False.elim (tru_no_step hs)
+    | noBind => exact False.elim (fls_no_step hs)
   | ret hv =>
     cases hb with
     | expr hs => exact False.elim (value_no_step hv hs)
@@ -256,6 +304,15 @@ theorem Transition.det {P h s h₁ s₁ h₂ s₂}
     cases hb with
     | expr hs => exact False.elim (fls_no_step hs)
     | no => exact ⟨rfl,rfl⟩
+  | yesBind =>
+    cases hb with
+    | expr hs => exact False.elim (tru_no_step hs)
+    | yesBind => exact ⟨rfl,rfl⟩
+  | noBind =>
+    cases hb with
+    | expr hs => exact False.elim (fls_no_step hs)
+    | noBind => exact ⟨rfl,rfl⟩
+
 
 /-- Safety follows the actual operational successor, not just a chosen run. -/
 theorem SafeGraph.successor {P T n W h s h' s'}

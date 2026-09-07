@@ -264,12 +264,13 @@ language. Each node contains an expression and one continuation:
 | Bind to a target | Push the value, apply the target slot map, and enter its label. |
 | Effect, then a target | Discard the value, apply the target slot map, and enter its label. |
 | Boolean branch | Select a target according to the Boolean value and apply its slot map. |
+| Result-binding Boolean branch | Select a target, push the tested Boolean, and apply its slot map with a singleton refinement. |
 
 A target contains its label and an optional slot map. These are executable
 program data, shared by the machine and checker; evidence cannot supply a
 different binding transfer. Numeric targets abbreviate an identity map. A bind
-map indexes the environment **after** pushing the result; effect and branch
-maps index the unchanged incoming environment.
+or `branchBind` map indexes the environment **after** pushing the result; effect
+and ordinary branch maps index the unchanged incoming environment.
 
 Node evidence supplies its entry environment, expression type and program
 evidence, and exactly the edge certificates required by its continuation.
@@ -320,13 +321,61 @@ merge narrowing, missing or extra node evidence, changed code and invalid starts
 
 The graph layer does not change the type-family or expression semantics.
 Closures still contain expression-language bodies, not graph-backed function
-bodies. Branch refinement remains an extension. Source-to-graph extraction and
-faithful claim translation remain integration work. The next section supplies
+bodies. Boolean result refinement is proved as described below. A closed primitive
+source slice is connected; broader source extraction remains integration work. The next section supplies
 an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No graph-level completeness theorem is claimed here; the
 program-evidence and edge-evidence completeness results above retain their
 stated scope.
 
+
+### Boolean result refinement
+
+[BranchRefinement.lean](lean/Verification/ExperimentState/BranchRefinement.lean)
+justifies the `branchBind` continuation. Let $B_q$ denote the singleton family
+containing the Boolean $q$. Its schematic node rule is:
+
+$$
+\frac{
+  \Gamma\vdash_G e:A
+  \quad \operatorname{OnlyBoolean}(G,A)
+  \quad B_{\mathsf{true}}::\Gamma\Rightarrow_{m_y}\Delta_y
+  \quad B_{\mathsf{false}}::\Gamma\Rightarrow_{m_n}\Delta_n
+}{
+  \operatorname{NodeOk}_G(\Gamma,e,\operatorname{branchBind}(y,m_y;n,m_n))
+}.
+$$
+
+The edge relation checks each target slot. Selecting the pushed slot requires
+that its target type contain $q$; selecting an older slot requires an ordinary
+subtype derivation from that slot's incoming type. `booleanMember` checks the
+first obligation directly against expanded Boolean clauses, so no synthetic
+type-graph node is needed for $B_q$. Maps, bounds and target existence are checked
+as usual. The wire evidence uses `subset` as the canonical marker for a slot
+justified by this branch observation; in that position it invokes the singleton
+membership check, not ordinary subset subtyping.
+
+The load-bearing theorem is environment preservation under the observation:
+
+$$
+\frac{
+ \operatorname{EnvOk}_G(\Gamma,\rho,n,W)
+ \quad \rho(i)=q
+ \quad \operatorname{RefinedCovers}_G(\Gamma,\Delta,i,q,m)
+}{
+ \operatorname{EnvOk}_G(\Delta,\operatorname{mapEnv}(m,\rho),n,W)
+}.
+$$
+
+`state_safe` applies this after pushing the actual tested value, with $i=0$.
+This retains the graph's all-budget safety and deterministic execution proofs,
+including cyclic graphs. Both edges are checked. Heap contents are not refined.
+
+For `if (x)`, the source compiler maps the target binding for `x` to the newly
+pushed result of evaluating `x`: the same immutable value, now justified as true
+or false. Other bindings retain their old slots. This supports direct Boolean
+variable tests, including joins after the refined arms; it does not establish
+refinements for related aliases, property reads, or general predicates.
 
 ## Producing evidence from supplied claims
 

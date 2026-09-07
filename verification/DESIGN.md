@@ -340,9 +340,8 @@ an explicit return, and unsupported types. This is a coverage gate for this slic
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, boolean, their singleton types, unions and bottom exactly into three graph
-labels: null, true and false. A fourth Boolean label is used only as the dispatch
-requirement; it does not replace exact source claims. Lean proves the translation
-preserves primitive membership. Singleton clause and typing rules have been added with soundness
+labels: null, true and false. Lean proves the translation preserves primitive
+membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
 
 The compiler resolves names to initialized local slots, newest first. Each source
@@ -352,20 +351,27 @@ annotation, or the function return requirement. Incoming edges must justify the
 next supplied environment. The continuation after an `if` is compiled once;
 both falling-through arms point to that same entry. Explicit slot maps discard
 arm-local bindings, including when an arm is empty or contains a nested branch.
-The condition is evaluated once and saved for dispatch; its original expression
-claim and the Boolean dispatch requirement are separate checks. The producer
+The condition is evaluated once; its exact expression claim must describe only
+Booleans. Dispatch pushes the actual tested value and makes its singleton type
+available to that edge. The producer
 cannot replace these requirements.
 The consumer reconstructs the requests from AST and claims before checking the
 submitted certificates. Graph safety is proved; source evaluation order and
 binding preservation remain part of the reviewed compiler boundary.
 
-The branch rule currently checks both edges against the pre-branch environment.
-It does not derive a new singleton refinement for a variable tested by the
-condition. Such a claimed refinement is rejected if the incoming checks cannot
-justify it. The next rule work is a proved path-refinement interface, followed
-by the already modeled cells and closures. Binding identities also need to
-become explicit before supporting hidden, shadowed bindings; exported names
-alone cannot distinguish them. Change the extraction/export format when needed; preserving F0 compatibility is not a goal.
+The result-binding branch rule and its environment-transfer theorem are proved
+in [BranchRefinement.lean](lean/Verification/ExperimentState/BranchRefinement.lean),
+with mathematical rules in [PROGRAM-TYPING](PROGRAM-TYPING.md#boolean-result-refinement).
+For `if (x)`, the source compiler maps `x` to the tested value on each edge.
+Its true/false singleton can therefore justify SKJS's claimed refinement.
+Untested bindings still require ordinary incoming subtype proofs. This does
+not infer refinements for aliases, property reads or general predicates.
+
+The next entry-interface step is parameterized functions: the graph already has
+safety from any typed entry environment, but the source consumer currently
+requires a closed entry. After that, connect the already modeled cells and
+closures. Binding identities must become explicit before supporting hidden,
+shadowed bindings; exported names alone cannot distinguish them. Change the extraction/export format when needed; preserving F0 compatibility is not a goal.
 Source loops and a closure observing an alias write must eventually run
 through production and independent consumption with negative claim tests.
 Their existing raw-calculus tests do not establish source integration. Merges

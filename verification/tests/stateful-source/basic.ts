@@ -57,3 +57,25 @@ function earlyArm(): boolean {
   }
   return outer;
 }
+
+function narrowVariable(): boolean {
+  const condition: boolean = true;
+  const other: boolean = false;
+  if (condition) {
+    const yes: true = condition;
+    return yes;
+  } else {
+    const no: false = condition;
+    return no;
+  }
+}
+
+function refineThenMerge(): boolean {
+  const condition: boolean = false;
+  if (condition) {
+    const yes: true = condition;
+  } else {
+    const no: false = condition;
+  }
+  return condition;
+}

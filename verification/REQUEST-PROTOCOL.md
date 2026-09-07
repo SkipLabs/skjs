@@ -110,7 +110,8 @@ contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
 The codec names and fields are part of protocol version 1. The `boolLit` clause
-and `truLit`/`flsLit` evidence rules extend this initial protocol additively:
+and `truLit`/`flsLit` evidence rules, followed by the `branchBind` continuation,
+extend this initial protocol additively:
 existing tags retain their meaning, and older consumers reject the new tags. A change to their
 meaning or shape requires an explicit protocol decision. Decode/re-encode
 validation rejects unknown fields and missing fields, recursively, rather than
@@ -168,16 +169,26 @@ Unused extra exported bindings, such as the implicit `this`, do not create local
 slots. Duplicate claim keys are rejected.
 
 An `if` evaluates its condition once, keeps the exact exported expression claim,
-and checks a separate Boolean dispatch requirement. Both arms share the compiled
+and checks that it contains only Boolean clauses. Both arms share the compiled
 continuation. Slot maps remove saved conditions and arm-local bindings on exit.
 Nested branches, missing/empty arms and early-return arms are supported.
 
-The current branch rule does not derive path-specific variable refinements.
-All arm-entry and merge claims must follow from the existing incoming contexts;
-claims requiring a new refinement fail the ordinary edge checks. The adapter
-never widens those claims to make them pass. A proved refinement rule is next.
-Active-name shadowing remains gated until binding identities can distinguish
-hidden locals in the claim export.
+Direct Boolean variable tests refine the tested binding on their outgoing edges.
+The compiler uses `branchBind`: dispatch pushes the actual tested Boolean, then
+applies the target map. For `if (x)`, `x` selects this pushed slot; other variables
+select their old slots. The consumer checks the Boolean singleton against the
+supplied arm-entry type and ordinary subtype proofs for all other slots.
+
+The raw encoding is `{"branchBind":{"yes":TARGET,"no":TARGET}}`, with targets
+in the usual explicit format. Unlike ordinary `branch`, its maps index the
+environment after pushing the result. For a destination slot selecting that
+result, edge evidence must use the canonical `"subset"` marker: the consumer
+then checks branch-specific singleton membership. This marker cannot refine an
+untested slot. Both arm claims and later merge claims remain supplied and checked.
+
+This rule does not derive refinements for aliases, heap contents or general
+predicates. Active-name shadowing remains gated until binding identities can
+distinguish hidden locals in the claim export.
 
 Source extraction remains trusted for evaluation order, lexical binding and
 claim association. The all-budget safety theorem applies to the extracted

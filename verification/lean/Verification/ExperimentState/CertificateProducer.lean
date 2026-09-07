@@ -181,6 +181,20 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let B ← c.context[i]?
     subtype G pool A B
 
+def branchEdge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (q : Bool) (target : Target) :
+    Option (EdgeEvidence ι) := do
+  let c ← claims[target.label]?
+  if let some slots := target.mapping then
+    if slots.length != c.context.length then failure
+  (List.range c.context.length).mapM fun i => do
+    let A ← Γ[slot target.mapping i]?
+    let B ← c.context[i]?
+    if slot target.mapping i == 0 then
+      if BranchRefinement.booleanMember G B q then pure .subset else failure
+    else subtype G pool A B
+
+
 def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι)) :
     Except Failure (ControlFlow.Certificate ι) := do
@@ -191,12 +205,17 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let target := fun Γ t => match edge G pool claims Γ t with
       | some p => Except.ok p
       | none => Except.error (Failure.edge l t.label)
+    let branchTarget := fun Γ q t => match branchEdge G pool claims Γ q t with
+      | some p => Except.ok p
+      | none => Except.error (Failure.edge l t.label)
     let ps ← (match node.continuation with
       | .ret => pure []
       | .bind t => (target (c.type :: c.context) t).map (fun p => [p])
       | .effect t => (target c.context t).map (fun p => [p])
       | .branch y n => (target c.context y).bind (fun py =>
-          (target c.context n).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
+          (target c.context n).map (fun pn => [py,pn]))
+      | .branchBind y n => (branchTarget (c.type :: c.context) true y).bind (fun py =>
+          (branchTarget (c.type :: c.context) false n).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
     return ⟨e,ps⟩
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)

@@ -13,6 +13,8 @@ const clone = x => JSON.parse(JSON.stringify(x));
 const fn = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "copyTrue");
 const branchAst = a => a.functions.find(f => f.name === "mergeWithLocals");
 const branchClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "mergeWithLocals");
+const refinedAst = a => a.functions.find(f => f.name === "narrowVariable");
+const refinedClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "narrowVariable");
 const ty = v => ({ top: false, atoms: [{ a: "booleanlit", v }] });
 let passed = 0;
 function run(mode, a, c, evidence) {
@@ -68,6 +70,18 @@ try {
     }, "evidence search failed"],
     ["branch local cannot escape", a => { branchAst(a).body.at(-1).e.name = "local"; }, "unbound or uninitialized"],
     ["active-name shadowing gate", a => { branchAst(a).body[1].then[0].name = "outer"; }, "duplicate or shadowing"],
+    ["opposite refinement on true edge", (a,c) => {
+      const arm = refinedAst(a).body.find(s => s.k === "if").then[0];
+      refinedClaims(c).envs.find(e => e.pos[0] === arm.pos[0]).vars.find(v => v.name === "condition").type = ty("false");
+    }, "evidence search failed"],
+    ["opposite refinement on false edge", (a,c) => {
+      const arm = refinedAst(a).body.find(s => s.k === "if").else_[0];
+      refinedClaims(c).envs.find(e => e.pos[0] === arm.pos[0]).vars.find(v => v.name === "condition").type = ty("true");
+    }, "evidence search failed"],
+    ["unrelated binding cannot be refined", (a,c) => {
+      const arm = refinedAst(a).body.find(s => s.k === "if").then[0];
+      refinedClaims(c).envs.find(e => e.pos[0] === arm.pos[0]).vars.find(v => v.name === "other").type = ty("true");
+    }, "evidence search failed"],
     ["AST identity mismatch", a => { a.file = "other.ts"; }, "AST file key mismatch"],
   ];
   for (const [name, alter, message] of cases) {

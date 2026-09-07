@@ -61,6 +61,9 @@ private def runPrimitive : Nat → ControlFlow.Program → Nat → Env → Optio
       | .branch yes no =>
         let target ← match v with | .tru => some yes | .fls => some no | _ => none
         runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping ρ)
+      | .branchBind yes no =>
+        let target ← match v with | .tru => some yes | .fls => some no | _ => none
+        runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping (push v ρ))
 
 private def runRequest (r : Request) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
 
@@ -88,7 +91,7 @@ private def branchClaims (q : Bool) : FunTypeClaims :=
 private def targets : ControlFlow.Continuation → List Nat
   | .ret => []
   | .bind t | .effect t => [t.label]
-  | .branch y n => [y.label,n.label]
+  | .branch y n | .branchBind y n => [y.label,n.label]
 #guard is ((extractFn (branchFn true) (branchClaims true)).map fun r =>
   (r.program.filter (fun n => n.continuation == .ret)).length) 1
 #guard is ((extractFn (branchFn true) (branchClaims true)).map fun r =>
@@ -106,5 +109,28 @@ private def choiceClaims (q : Bool) : FunTypeClaims :=
 #guard is ((extractFn (choiceFn false) (choiceClaims false)).map runRequest) (some .fls)
 #guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn true) (choiceClaims true))) 8)
 #guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn false) (choiceClaims false))) 8)
+
+-- The tested binding is older than another local, so the refinement map must
+-- select its copied value rather than refine whichever slot happens to be first.
+private def variableFn (q : Bool) : Verification.Fn :=
+  ⟨"variable",(0,1),[],⟨false,[.bool]⟩,
+    [.cst (2,3) "tested" (some ⟨false,[.bool]⟩) (.lit (4,5) (.vbool q)),
+     .cst (6,7) "other" (some ⟨false,[.bool]⟩) (.lit (8,9) (.vbool false)),
+     .ite (10,21) (.var (12,13) "tested")
+       [.ret (14,17) (.var (16,17) "tested")]
+       (some [.ret (18,21) (.var (20,21) "tested")])]⟩
+private def variableClaims (q : Bool) : FunTypeClaims :=
+  let bool : Core.Ty := ⟨false,[.bool]⟩
+  ⟨"variable",(0,1),[],some bool,
+    [(2,[]),(6,[("tested",some bool)]),
+     (10,[("tested",some bool),("other",some bool)]),
+     (14,[("tested",some t),("other",some bool)]),
+     (18,[("tested",some b),("other",some bool)])],
+    [((4,5),some ⟨false,[.boolLit q]⟩),((8,9),some b),
+     ((12,13),some bool),((16,17),some t),((20,21),some b)]⟩
+#guard is ((extractFn (variableFn true) (variableClaims true)).map runRequest) (some .tru)
+#guard is ((extractFn (variableFn false) (variableClaims false)).map runRequest) (some .fls)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn true) (variableClaims true))) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn false) (variableClaims false))) 8)
 
 end Verification.ExperimentState.SourceExtractionTests

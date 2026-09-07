@@ -7,8 +7,8 @@ and claims; evidence never supplies the program it is checked against.
 
 The currently supported source slice is deliberately small: closed functions,
 initialized consts, branches, variables and null/boolean literals, with every
-path returning. Branch-dependent refinements and active-name shadowing are not
-yet supported. This compiler remains a reviewed extraction boundary, not a proved
+path returning. Boolean variable tests refine the tested binding. Active-name
+shadowing is not yet supported. This compiler remains a reviewed extraction boundary, not a proved
 TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.ExperimentState.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
@@ -61,11 +61,12 @@ private def leave (scope : List String) (tail : Option (Target × List String)) 
     | none => throw s!"internal extraction error: lost outer binding '{name}'"
   return ⟨target.label, some slots⟩
 
-/-- The condition's saved result occupies slot zero at dispatch, and is removed
-before entering either arm. The arm's existing scope-exit map is composed with
-this removal. -/
-private def dropCondition (width : Nat) (target : Target) : Target :=
-  ⟨target.label, some ((target.mapping.getD (List.range width)).map (· + 1))⟩
+/-- Branch binding pushes the actual tested value. For a source variable test,
+map that variable to the pushed value (the same immutable value), exposing its
+proved singleton refinement. Other slots retain their ordinary identities. -/
+private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) : Target :=
+  ⟨target.label, some ((target.mapping.getD (List.range width)).map fun i =>
+    if tested == some i then 0 else i+1)⟩
 
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
@@ -101,9 +102,9 @@ private def body : Nat → FunTypeClaims → Ty Nat → List String → List Stm
         pure (some (next,scope))
       let yes ← body fuel fc R scope thn continuation
       let no ← body fuel fc R scope (els.getD []) continuation
-      let dispatch ← emit (.var 0)
-        (.branch (dropCondition scope.length yes) (dropCondition scope.length no)) (A::Γ) [3]
-      emit t (.bind dispatch) Γ A
+      let tested := match t with | .var i => some i | _ => none
+      emit t (.branchBind (branchMapping scope.length tested yes)
+        (branchMapping scope.length tested no)) Γ A
 
 private def traversalBudget : List Stmt → Nat
   | [] => 1
