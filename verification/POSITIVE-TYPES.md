@@ -236,9 +236,11 @@ than null/boolean, object records, or a surface `extends` language.
 The program-typing theorem now incorporates these certificates, including an
 overload domain-splitting example. Executable program evidence checking and
 local supplied-environment edge obligations are now proved as well. The next
-integration work is source extraction and evidence production: the graph
-consumer now covers every actual node and outgoing edge and proves global safety,
-including cycles. A textual type-to-graph compiler still needs its own correctness
+integration work is source extraction and serialization: a bounded in-memory
+producer now constructs checked evidence from supplied point annotations.
+The graph consumer covers every actual node and outgoing edge and proves global
+safety, including cycles and explicit slot maps. Producer success is checked;
+producer completeness is not claimed. A textual type-to-graph compiler still needs its own correctness
 account.
 Do not resume semantic completeness research as a prerequisite: normalization
 preservation and subtype soundness already give the guarantees needed here.

@@ -140,10 +140,12 @@ require keeping separator searches or a second subtyping implementation.
 
 ## Remaining scope
 
-Program/claim extraction, a certificate producer and decoder, and integration
-with the production verifier remain. Global graph execution safety is proved
-for graphs over the current expression language. General edge slot mappings and
-graph-backed closure bodies remain extensions. The proved program rules currently use known shape answers per overload;
+Program/claim extraction, a serialized certificate decoder, and integration
+with the production verifier remain. A bounded in-memory producer now builds
+checked evidence from supplied point annotations, with exact claim fidelity.
+Global graph execution safety includes explicit edge slot mappings for scope
+changes, reordering and alias retention. Graph-backed closure bodies remain an
+extension. The proved program rules currently use known shape answers per overload;
 general branch-environment refinement remains to be supplied. Mutable objects and refinements need a specified policy beyond invariant
 cells. Parameters, bounded polymorphism, difference and negation require
 additional syntax and sound rules; no generics result is claimed merely from

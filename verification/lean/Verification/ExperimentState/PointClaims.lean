@@ -3,7 +3,7 @@ import Verification.ExperimentState.ProgramCertificates
 /-! Supplied point environments with checked incoming edges. Environment slots
 keep their de Bruijn positions: an edge can widen slots and forget a suffix,
 but cannot silently reorder values. No join or invariant inference is performed.
-This is the local edge interface, not yet a control-flow graph evaluator. -/
+Explicit mappings additionally support selection, reordering and alias retention. -/
 namespace Verification.ExperimentState.PointClaims
 open ProgramTyping PositiveGraphs PositiveRules
 
@@ -68,6 +68,56 @@ theorem Covers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ ρ n W}
 theorem checked_env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ ps ρ n W}
     (hc : checkEdge G Γ Δ ps = true) (he : EnvOk G Γ ρ n W) : EnvOk G Δ ρ n W :=
   (checkEdge_sound hc).env he
+
+/-- Explicit maps belong to the program: target slot i receives source slot
+`slots[i]`. None preserves positions. Repetition retains aliases, never copies
+heap contents. Out-of-range slots are rejected by the checker. -/
+abbrev Mapping := Option (List Nat)
+
+def slot (mapping : Mapping) (i : Nat) : Nat :=
+  match mapping with
+  | none => i
+  | some slots => slots[i]?.getD 0
+
+def mapEnv (mapping : Mapping) (ρ : Env) : Env := fun i => ρ (slot mapping i)
+
+def MappedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
+    (mapping : Mapping) : Prop :=
+  ∀ i B, Δ[i]? = some B → ∃ A, Γ[slot mapping i]? = some A ∧ Sub G A B
+
+def checkMapped [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
+    (mapping : Mapping) (ps : EdgeEvidence ι) : Bool :=
+  match mapping with
+  | none => checkEdge G Γ Δ ps
+  | some slots => decide (slots.length = Δ.length ∧ ps.length = Δ.length) &&
+      (List.range Δ.length).all (fun i =>
+        match Γ[slot mapping i]?, Δ[i]?, ps[i]? with
+        | some A, some B, some p => PositiveCertificates.check G A B p
+        | _, _, _ => false)
+
+theorem checkMapped_sound [DecidableEq ι] {G : NormalGraph ι} {Γ Δ mapping ps}
+    (hc : checkMapped G Γ Δ mapping ps = true) : MappedCovers G Γ Δ mapping := by
+  cases mapping with
+  | none => exact checkEdge_sound hc
+  | some slots =>
+    simp only [checkMapped, Bool.and_eq_true, List.all_eq_true] at hc
+    intro i B hi
+    have h := hc.2 i (List.mem_range.mpr (List.getElem?_eq_some_iff.mp hi).1)
+    rw [hi] at h
+    cases ha : Γ[slot (some slots) i]? with
+    | none => simp [ha] at h
+    | some A =>
+      cases hp : ps[i]? with
+      | none => simp [ha, hp] at h
+      | some p => exact ⟨A, rfl, PositiveCertificates.check_sound (by simpa [ha, hp] using h)⟩
+
+theorem MappedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ mapping ρ n W}
+    (hc : MappedCovers G Γ Δ mapping) (he : EnvOk G Γ ρ n W) :
+    EnvOk G Δ (mapEnv mapping ρ) n W := by
+  refine ⟨fun i => he.1 (slot mapping i), ?_⟩
+  intro i B hi
+  obtain ⟨A, ha, hab⟩ := hc i B hi
+  exact hab.sound n W (ρ (slot mapping i)) (he.2 _ A ha)
 
 /-- A supplied merge claim is checked separately against every incoming edge. -/
 def checkIncoming [DecidableEq ι] (G : NormalGraph ι) (target : List (Ty ι))

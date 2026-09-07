@@ -6,11 +6,19 @@ so cycles consume execution budget without requiring invariant inference. -/
 namespace Verification.ExperimentState.ControlFlow
 open ProgramTyping PositiveGraphs PositiveRules PointClaims ProgramCertificates
 
+/-- The destination and its slot map are executable program data, not evidence. -/
+structure Target where
+  label : Nat
+  mapping : Mapping := none
+  deriving DecidableEq, Repr
+
+instance (n : Nat) : OfNat Target n := ⟨⟨n, none⟩⟩
+
 inductive Continuation where
   | ret
-  | bind (next : Nat)
-  | effect (next : Nat)
-  | branch (yes no : Nat)
+  | bind (next : Target)
+  | effect (next : Target)
+  | branch (yes no : Target)
   deriving DecidableEq, Repr
 
 structure Node where
@@ -38,10 +46,10 @@ inductive Transition (P : Program) : Heap → State → Heap → State → Prop 
       Transition P h (.at l ρ) h (.eval (instantiate 0 ρ node.expression) ρ node.continuation)
   | expr : Step h t h' t' → Transition P h (.eval t ρ k) h' (.eval t' ρ k)
   | ret : isVal v = true → Transition P h (.eval v ρ .ret) h (.done v)
-  | bind : isVal v = true → Transition P h (.eval v ρ (.bind l)) h (.at l (push v ρ))
-  | effect : isVal v = true → Transition P h (.eval v ρ (.effect l)) h (.at l ρ)
-  | yes : Transition P h (.eval .tru ρ (.branch y n)) h (.at y ρ)
-  | no : Transition P h (.eval .fls ρ (.branch y n)) h (.at n ρ)
+  | bind : isVal v = true → Transition P h (.eval v ρ (.bind l)) h (.at l.label (mapEnv l.mapping (push v ρ)))
+  | effect : isVal v = true → Transition P h (.eval v ρ (.effect l)) h (.at l.label (mapEnv l.mapping ρ))
+  | yes : Transition P h (.eval .tru ρ (.branch y n)) h (.at y.label (mapEnv y.mapping ρ))
+  | no : Transition P h (.eval .fls ρ (.branch y n)) h (.at n.label (mapEnv n.mapping ρ))
 
 def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → State → Prop
   | 0, _, _, _ => True
@@ -52,9 +60,9 @@ def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → Stat
 
 /-- Target existence is checked against both the actual graph and its claims. -/
 def checkTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (Γ : List (Ty ι)) (label : Nat) (p : EdgeEvidence ι) : Bool :=
-  match P[label]?, C[label]? with
-  | some _, some c => checkEdge G Γ (entry c) p
+    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) : Bool :=
+  match P[target.label]?, C[target.label]? with
+  | some _, some c => checkMapped G Γ (entry c) target.mapping p
   | _, _ => false
 
 def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
@@ -77,8 +85,8 @@ def checkGraph [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     | some node, some c => checkNode G Rty P C node c
     | _, _ => false)
 
-def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Nat) : Prop :=
-  ∃ c, C[l]? = some c ∧ Covers G Γ (entry c)
+def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) : Prop :=
+  ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping
 
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (A : Ty ι) : Continuation → Prop
@@ -92,7 +100,7 @@ theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ l p}
   unfold checkTarget at hc
   split at hc
   · rename_i node c hn he
-    exact ⟨c, he, checkEdge_sound hc⟩
+    exact ⟨c, he, checkMapped_sound hc⟩
   · contradiction
 
 theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
@@ -132,7 +140,7 @@ def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate
   | .done v => isVal v = true ∧ meaning G Rty n W v
 
 theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h}
-    (ht : TargetOk G C Γ l) (he : EnvOk G Γ ρ n W) : StateOk G Rty C n W h (.at l ρ) := by
+    (ht : TargetOk G C Γ l) (he : EnvOk G Γ ρ n W) : StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c, hc, hcov⟩ := ht
   exact ⟨c, hc, hcov.env he⟩
 
@@ -169,17 +177,17 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
           exact Or.inr ⟨U, h, .done t, WExt_refl _, hw', .ret hv, hh',
             ih U h _ hw' hh' ⟨hv, ha'⟩⟩
         | bind l =>
-          exact Or.inr ⟨U, h, .at l (push t ρ), WExt_refl _, hw', .bind hv, hh',
+          exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
             ih U h _ hw' hh' (target_state hk (he'.push ha'))⟩
         | effect l =>
-          exact Or.inr ⟨U, h, .at l ρ, WExt_refl _, hw', .effect hv, hh',
+          exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
             ih U h _ hw' hh' (target_state hk he')⟩
         | branch y no =>
           have hb := (represents_sem hk.1 (n+1) W t).mp ha
           rcases hb with rfl | rfl
-          · exact Or.inr ⟨U, h, .at y ρ, WExt_refl _, hw', .yes, hh',
+          · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
               ih U h _ hw' hh' (target_state hk.2.1 he')⟩
-          · exact Or.inr ⟨U, h, .at no ρ, WExt_refl _, hw', .no, hh',
+          · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
               ih U h _ hw' hh' (target_state hk.2.2 he')⟩
       · exact Or.inr ⟨V, h', .eval t' ρ k, hx, hu, .expr step, hok,
           ih V h' _ hu hok ⟨Γ,A,he.transfer n (Nat.le_succ n) V hx,hsafe,hk⟩⟩

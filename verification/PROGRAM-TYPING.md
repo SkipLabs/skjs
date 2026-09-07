@@ -160,8 +160,8 @@ there is no user-supplied fuel and no semantic level in the evidence.
 
 The explicit sequents keep this initial in-memory format easy to inspect, at the
 cost of repeating terms and contexts. This is not a commitment to a serialized
-format. A producer, decoder or compact representation can be developed against
-the proved checking interface.
+format. The in-memory producer below uses this interface; a decoder or compact
+representation can be developed against it.
 
 `ProgramCertificateTests.lean` supplies concrete executable evidence for the
 stateful overload program above. Tests reject altered programs/result types,
@@ -189,9 +189,31 @@ acceptance implies coverage and that every derivation of coverage has accepted
 evidence. Coverage also transfers semantic environments: any concrete environment
 meeting $\Gamma$ meets $\Delta$, with closed values preserved.
 
-Slots retain their de Bruijn positions. An edge can widen types and forget a
-suffix. Reordering values or forgetting an interior slot requires an explicit
-transformation of the value environment; the current checker does neither.
+`checkEdge` is the position-preserving specialization: it can widen types and
+forget a suffix. `checkMapped` additionally checks an explicit list of source
+indices, with exactly one index and subtype certificate per target slot.
+Repeated indices retain aliases, and an interior binding can be dropped.
+Every selected source index must exist; no missing binding acquires a type from
+the total environment's default value.
+
+For a supplied map $m$, the rule and its semantic action are:
+
+$$
+\frac{
+  |m|=|\Delta|
+  \qquad
+  \forall i<|\Delta|.\;m_i<|\Gamma|\;\land\;\Gamma_{m_i}\leq_G\Delta_i
+}{
+  \Gamma\preceq_G^{m}\Delta
+}
+\qquad
+(\rho\circ m)(i)=\rho(m_i).
+$$
+
+`checkMapped_sound` proves mapped coverage, and `MappedCovers.env` proves that
+this simultaneous selection preserves the target semantic environment in the
+same world. It does not copy or change heap contents. The absent map means
+identity selection, retaining the earlier edge interface.
 
 `checkIncoming` checks each supplied predecessor against the supplied target
 claim independently. No join is computed. When a computation binds a new result,
@@ -231,9 +253,15 @@ language. Each node contains an expression and one continuation:
 | Continuation | Action after evaluating the expression |
 | --- | --- |
 | Return | Return its value as the graph's declared result type. |
-| Bind to a label | Push the value onto the environment and enter the destination. |
-| Effect, then a label | Discard the value and enter the destination with the same environment. |
-| Boolean branch | Enter one of two labels according to the Boolean value, preserving the environment. |
+| Bind to a target | Push the value, apply the target slot map, and enter its label. |
+| Effect, then a target | Discard the value, apply the target slot map, and enter its label. |
+| Boolean branch | Select a target according to the Boolean value and apply its slot map. |
+
+A target contains its label and an optional slot map. These are executable
+program data, shared by the machine and checker; evidence cannot supply a
+different binding transfer. Numeric targets abbreviate an identity map. A bind
+map indexes the environment **after** pushing the result; effect and branch
+maps index the unchanged incoming environment.
 
 Node evidence supplies its entry environment, expression type and program
 evidence, and exactly the edge certificates required by its continuation.
@@ -284,9 +312,84 @@ merge narrowing, missing or extra node evidence, changed code and invalid starts
 
 The graph layer does not change the type-family or expression semantics.
 Closures still contain expression-language bodies, not graph-backed function
-bodies. Edge environments preserve slot positions, with widening and suffix
-forgetting; general slot mappings and branch refinement remain extensions.
-Source-to-graph extraction, serialization and a certificate producer remain
-integration work. No graph-level completeness theorem is claimed here; the
+bodies. Branch refinement remains an extension. Source-to-graph extraction and
+serialization remain integration work. The next section supplies an in-memory
+certificate producer. No graph-level completeness theorem is claimed here; the
 program-evidence and edge-evidence completeness results above retain their
 stated scope.
+
+
+## Producing evidence from supplied claims
+
+`CertificateProducer.lean` accepts an actual graph, its declared result type and
+start label, and one `PointClaim` per node. Each claim fixes both the entry
+context and the expression result type. These are annotations in this Lean
+interface, not a change to SKJS's exported claim format. Relating source claims
+to these annotations is still extraction work.
+
+`produce` builds expression derivation trees and per-slot subtype evidence for
+every actual edge. It does not infer or repair point invariants. Its inputs also
+include an enumeration of type labels, a search-depth limit, and optional
+intermediate type hints. The vocabulary includes singleton labels, their
+reference/arrow operands, bottom, and the supplied context/result types. Omitting
+labels or useful intermediate types can prevent success, but cannot make an
+incorrect certificate pass.
+
+Expression search covers the current ordinary rules: variables, constants,
+overloaded lambdas, application, lets, allocation, reads, writes, known shape
+answers and subsumption. Subtype search first tries union inclusion, then builds
+a finite candidate cyclic relation and removes unsupported rows. It generates
+arrow evidence for source selection, splitting union domains, and pairwise
+compatible codomain combination. The existing subtype checker validates the
+resulting table and all arrow evidence. This search is deliberately incomplete:
+it does not enumerate arbitrary intermediate types, transitivity derivations,
+or arbitrary nested arrow-combination proofs.
+
+The final `accept` check binds the evidence to **all the requested point claims**
+as well as calling `checkClosed` on the actual program. Thus a valid certificate
+for different annotations is rejected. Lean proves:
+
+$$
+\begin{gathered}
+\operatorname{produce}(G,I,f,R,P,Q,\ell,H)=\operatorname{ok}(C)
+\\
+\Longrightarrow\quad
+\operatorname{accept}(G,R,P,Q,C,\ell)=\mathsf{true},
+\\
+\operatorname{accept}(G,R,P,Q,C,\ell)=\mathsf{true}
+\\
+\Longrightarrow\quad
+\operatorname{claims}(C)=Q
+\;\land\;
+\operatorname{checkClosed}(G,R,P,C,\ell)=\mathsf{true}.
+\end{gathered}
+$$
+
+Here $I$ enumerates labels, $f$ bounds expression search depth, $Q$ contains the
+supplied point annotations, and $H$ contains optional type hints. Search fuel is
+not an execution budget and never occurs in the typing rules or certificates.
+`produce_checked` proves the first implication; `accept_claims` proves claim
+fidelity, and `accepted_safe` obtains global safety from the consumer alone.
+The producer can be replaced without changing the soundness argument.
+
+Failure reports a claim-count mismatch, an expression label, an edge's source
+and destination, or final consumer rejection. Failure means unsupported or
+unjustified within this search, not a proof that the program is untypable.
+No evidence is returned as successful unless the consumer accepts it.
+
+`CertificateProducerTests.lean` runs the full path without hand-built evidence:
+
+- The stateful loop and shared union merge from `ControlFlowTests.lean`.
+- A graph that duplicates a reference slot, inserts a local, reorders bindings,
+  drops the interior local, writes through an alias, and calls the captured
+  closure. A checked 16-step execution returns `false`; its safety follows from
+  the automatically produced certificate.
+- A diamond whose two branch edges use different slot maps.
+- The nested-let overloaded program, union-domain arrow subsumption, and a
+  generated cyclic subtype certificate for recursive references.
+- Rejections for corrupted claims, invalid or wrong-length maps, changed code,
+  missing or extra edge evidence, invalid starts and exhausted search fuel.
+
+This establishes an in-memory program-plus-annotations-to-checked-evidence path.
+It does not yet establish source extraction correctness, a serialized protocol,
+producer completeness, or integration with the production F0 verifier.
