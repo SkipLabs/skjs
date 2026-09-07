@@ -3,8 +3,8 @@ import Verification.ExperimentState.Rules
 # Worked examples
 
 Three things are checked here. That a recursive *function* type behaves --
-`μX. X → null` is the case a fixed-point reading cannot have at all, since its
-recursion sits in an argument position. That a closure over a mutable cell stays
+`μX. X → null` exercises the guarded fixed point with recursion in an
+argument position, where a monotonicity-based construction is unavailable. That a closure over a mutable cell stays
 safe when another reference writes to it. And that these compose into a program
 which allocates, mutates and reads back, with the observed value genuinely
 changing.

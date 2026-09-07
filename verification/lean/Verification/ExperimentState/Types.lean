@@ -29,8 +29,8 @@ namespace ExperimentState
 
 abbrev Fam := (k : Nat) → WorldT k → Val → Prop
 
-/-- Every semantic type restricts to a contract at any level. No approximation
-is lost: the restriction just refuses to be asked above its level. -/
+/-- Every semantic type restricts to a contract at any level. The contract can
+observe only strictly lower levels; higher-level information is unavailable. -/
 def res {k : Nat} (T : Fam) : Ctr k := fun j _ W' v => T j W' v
 
 /-- **A reference, built from a semantic element type.** The stored contract is
@@ -62,6 +62,9 @@ theorem ref_param_universal :
 
 
 def topF : Fam := fun _ _ _ => True
+
+/-- Inclusion of families, at every budget and world. -/
+def FamLe (A B : Fam) : Prop := ∀ (n : Nat) (W : WorldT n) (v : Val), A n W v → B n W v
 
 def Agree (T U : Fam) (n : Nat) : Prop := ∀ m, m < n → ∀ W v, T m W v ↔ U m W v
 

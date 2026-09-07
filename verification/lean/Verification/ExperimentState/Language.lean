@@ -1,8 +1,8 @@
 /-!
 # The object language
 
-A design investigation, not part of the verifier. Built so it cannot rot,
-imported by nothing.
+The operational foundation of the stateful type development. It is compiled
+and tested, but is not yet the production verifier's language.
 
 An untyped call-by-value calculus with a mutable heap: lambda, application, two
 constants, and allocate/read/write. Values are terms, so worlds, heaps and the
@@ -18,6 +18,13 @@ that is not a value and cannot step is **stuck**, and the safety predicate in
 namespace Verification
 namespace ExperimentState
 
+/-- The shapes a value can have, and so the tests a program can make of one.
+There is one per type constructor, which is what a `typeof` in the source
+language amounts to. -/
+inductive Tag where
+  | isNul | isBool | isRef | isFun
+  deriving Repr, DecidableEq
+
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
 about the same objects. -/
 inductive Tm where
@@ -31,6 +38,8 @@ inductive Tm where
   | alloc (a : Tm)
   | read (a : Tm)
   | write (a b : Tm)
+  | test (k : Tag) (a : Tm)
+  | ite (c t e : Tm)
   deriving Repr, DecidableEq
 
 abbrev Val := Tm
@@ -41,6 +50,17 @@ abbrev Val := Tm
 def isVal : Tm → Bool
   | .lam _ => true | .nul => true | .tru => true | .fls => true | .loc _ => true
   | _ => false
+
+/-- What a test of a value answers. A test is total on values: every value has
+exactly one shape, which is the fact the shape lemmas of the type semantics
+record on the other side. -/
+def tagHolds : Tag → Val → Bool
+  | .isNul, .nul => true
+  | .isBool, .tru => true
+  | .isBool, .fls => true
+  | .isRef, .loc _ => true
+  | .isFun, .lam _ => true
+  | _, _ => false
 
 def subst (j : Nat) (a : Tm) : Tm → Tm
   | .var i => if i == j then a else if j < i then .var (i - 1) else .var i
@@ -53,6 +73,8 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .alloc x => .alloc (subst j a x)
   | .read x => .read (subst j a x)
   | .write x y => .write (subst j a x) (subst j a y)
+  | .test k x => .test k (subst j a x)
+  | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
 
 abbrev Heap := List Val
 
@@ -70,6 +92,12 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | writeC1 : Step h a h' a' → Step h (.write a b) h' (.write a' b)
   | writeC2 : isVal a = true → Step h b h' b' → Step h (.write a b) h' (.write a b')
   | writeV : isVal v = true → l < h.length → Step h (.write (.loc l) v) (h.set l v) .nul
+  | testC : Step h a h' a' → Step h (.test k a) h' (.test k a')
+  | testV : isVal v = true →
+      Step h (.test k v) h (if tagHolds k v then .tru else .fls)
+  | iteC : Step h c h' c' → Step h (.ite c t e) h' (.ite c' t e)
+  | iteT : Step h (.ite .tru t e) h t
+  | iteF : Step h (.ite .fls t e) h e
 
 theorem lam_no_step {h b h' t} : ¬ Step h (.lam b) h' t := by intro s; cases s
 
@@ -88,18 +116,9 @@ def omegaTm : Tm := .app delta delta
 
 theorem omega_step (h : Heap) : Step h omegaTm h omegaTm := Step.beta rfl
 
-/-! ### Closed values, and inverting the steps a separating value takes
-
-A value is closed when substitution cannot touch it; the values used to tell two
-types apart are closed, so they mean the same thing under every binder. The
-inversion lemmas say what a redex *must* do, which is how a proof that a term
-is unsafe gets started. -/
+/-! ### Closed values and operational inversion lemmas -/
 
 def Closed (v : Val) : Prop := ∀ k a, subst k a v = v
-
-/-- Write the argument through a captured reference, then diverge. There is no
-runtime type test, and no returned value that could inspect the codomain. -/
-def tester (l : Nat) : Tm := .lam (.app (.lam omegaTm) (.write (.loc l) (.var 0)))
 
 /-- A function that gets stuck the moment it is applied. It inhabits an arrow
 whose domain is empty, since such an arrow is never applied, and no other. -/
@@ -115,24 +134,9 @@ theorem stuck_no_step {h h' t} : ¬ Step h (.app .nul .nul) h' t := by
   | appL hs => exact nul_no_step hs
   | appR _ hs => exact nul_no_step hs
 
-/-- Write the argument into one cell, then return the contents of another. This
-is the value that observes an arrow on both sides at once: the write fails on an
-argument the first cell cannot hold, and the result is whatever the second cell
-holds — which, since an arrow quantifies over every satisfying heap, an observer
-gets to choose. -/
-def probe (l r : Nat) : Tm := .lam (.app (.lam (.read (.loc r))) (.write (.loc l) (.var 0)))
-
-theorem closed_probe (l r : Nat) : Closed (probe l r) := by
-  intro k a
-  simp [probe, subst]
-
 theorem closed_omega : Closed omegaTm := by
   intro k a
   simp [omegaTm, delta, subst]
-
-theorem closed_tester (l : Nat) : Closed (tester l) := by
-  intro k a
-  simp [tester, subst, omegaTm, delta]
 
 theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' t := by
   intro hs
@@ -198,14 +202,27 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | writeC1 s' => exact absurd s' loc_no_step
     | writeC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
     | writeV _ _ => exact ⟨rfl, rfl⟩
-
-theorem probe_step_inv {l r : Nat} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.app (probe l r) v) h' t) :
-    h' = h ∧ t = .app (.lam (.read (.loc r))) (.write (.loc l) v) := by
-  cases hs with
-  | appL hs => cases hs
-  | appR _ hs => exact False.elim (value_no_step hv hs)
-  | beta => exact ⟨rfl, rfl⟩
+  | testC s ih =>
+    cases s2 with
+    | testC s' => exact (ih s').imp id (congrArg (Tm.test _))
+    | testV hv => exact absurd s (by intro hs; exact value_no_step hv hs)
+  | testV hv =>
+    cases s2 with
+    | testC s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | testV _ => exact ⟨rfl, rfl⟩
+  | iteC s ih =>
+    cases s2 with
+    | iteC s' => exact (ih s').imp id (congrArg (Tm.ite · _ _))
+    | iteT => exact absurd s tru_no_step
+    | iteF => exact absurd s fls_no_step
+  | iteT =>
+    cases s2 with
+    | iteC s' => exact absurd s' tru_no_step
+    | iteT => exact ⟨rfl, rfl⟩
+  | iteF =>
+    cases s2 with
+    | iteC s' => exact absurd s' fls_no_step
+    | iteF => exact ⟨rfl, rfl⟩
 
 theorem alloc_step_inv {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.alloc v) h' t) : h' = h ++ [v] ∧ t = .loc h.length := by
@@ -218,14 +235,6 @@ theorem read_step_inv {r : Nat} {h h' t} (hs : Step h (.read (.loc r)) h' t) :
   cases hs with
   | readC hs => exact False.elim (loc_no_step hs)
   | readV he => exact ⟨rfl, he⟩
-
-theorem tester_step_inv {l : Nat} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.app (tester l) v) h' t) :
-    h' = h ∧ t = .app (.lam omegaTm) (.write (.loc l) v) := by
-  cases hs with
-  | appL hs => cases hs
-  | appR _ hs => exact False.elim (value_no_step hv hs)
-  | beta => exact ⟨rfl, rfl⟩
 
 theorem write_step_inv {f : Tm} {l : Nat} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.app (.lam f) (.write (.loc l) v)) h' t) :

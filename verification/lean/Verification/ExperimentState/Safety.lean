@@ -113,9 +113,9 @@ theorem arrowT_valOnly (A B : Fam) : ValOnly (arrowT A B) := by
 
 /-! ## Unions and the arrow
 
-A union in the *domain* splits into an intersection of arrows. This is the one
-distributive law the arrow satisfies, and it is why a union under an argument
-can always be eliminated. Nothing similar holds in the result position. -/
+A union in the domain splits into an intersection of arrows. This equation
+supports domain normalization. Unrestricted distribution in the result position
+is not assumed. -/
 
 theorem arrowT_union_dom (A B C : Fam) (k : Nat) (W : WorldT k) (v : Val) :
     arrowT (unionT A B) C k W v ↔ interT (arrowT A C) (arrowT B C) k W v := by
@@ -134,11 +134,98 @@ theorem arrowT_union_dom (A B C : Fam) (k : Nat) (W : WorldT k) (v : Val) :
     · exact hA j hj W' hW hadm hp hok a h
     · exact hB j hj W' hW hadm hp hok a h
 
-/-! ## Divergence is safe at every type
+/-! ## Comparing two runs of one program
 
-Safety asks for progress, not termination, so a computation that never returns
-satisfies any result type. This is what inhabits an arrow whose result nothing
-can produce. -/
+Two obligations discharged at the same world and heap are two runs of the *same*
+program, so determinism makes them take the same steps. What they force about
+the value it may return is then whatever both judgments force at the first
+world — and no more, since the worlds diverge as soon as anything is allocated.
+The subtype rules use a conservative syntactic sufficient condition for this
+property. `ModelBoundaries.lean` records why unrestricted result intersection
+is invalid; no decision procedure for exact cross-world compatibility is assumed. -/
+
+def CrossCompatUpTo (n : Nat) (B C D : Fam) : Prop :=
+  ∀ (j : Nat), j ≤ n → ∀ (W W' : WorldT j) (h : Heap), HeapOk j W h → HeapOk j W' h →
+    ∀ (u : Val), B j W u → C j W' u → D j W u
+
+theorem safe_cross_upto {B C D : Fam} : ∀ (n : Nat), CrossCompatUpTo n B C D →
+    ∀ (W W' : WorldT n) (h : Heap) (t : Tm), HeapOk n W h → HeapOk n W' h →
+      Safe B n W h t → Safe C n W' h t → Safe D n W h t := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ _ _ _ _ _; trivial
+  | succ p ih =>
+    intro hc W W' h t hok hok'
+    rintro (⟨hv1, hBv⟩ | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
+      (⟨hv2, hCv⟩ | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
+    · exact Or.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv⟩
+    · exact absurd hst2 (value_no_step hv1)
+    · exact absurd hst1 (value_no_step hv2)
+    · obtain ⟨rfl, rfl⟩ := Step_det hst1 hst2
+      exact Or.inr ⟨Z, h1, t1, hz, huz, hst1, hok1,
+        ih (fun j hj => hc j (by omega)) Z Z' h1 t1 hok1 hok2 hcont1 hcont2⟩
+
+/-! ## Overloaded function types
+
+The intersection of finitely many arrows, with the shared "is a lambda"
+condition factored out. `arrowsT [(A, B)]` is `arrowT A B`, and `arrowsT []` is
+the type of all functions. This is the node a representation carrying
+intersections has to have, so it comes with the same structural properties the
+fixed point needs of `arrowT`. -/
+
+def arrowsT (L : List (Fam × Fam)) : Fam := fun k W v =>
+  (∃ b, v = .lam b) ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
+      ∀ a, p.1 j W' a → Safe p.2 j W' h (.app v a)
+
+theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
+    arrowsT [(A, B)] k W v ↔ arrowT A B k W v := by
+  constructor
+  · rintro ⟨hl, h⟩
+    exact ⟨hl, fun j hj W' hx hu hp hh a ha => h (A, B) (by simp) j hj W' hx hu hp hh a ha⟩
+  · rintro ⟨hl, h⟩
+    refine ⟨hl, ?_⟩
+    intro p hp
+    rw [List.mem_singleton.mp hp]
+    exact fun j hj W' hx hu hh hok a ha => h j hj W' hx hu hh hok a ha
+
+/-- Membership in every conjunct is membership in the intersection. -/
+theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm}
+    (hlam : v = .lam b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
+  ⟨⟨b, hlam⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
+
+theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
+  rintro j W a ⟨⟨b, rfl⟩, -⟩
+  rfl
+
+theorem arrowsT_adm (L : List (Fam × Fam)) : Adm (arrowsT L) := by
+  constructor
+  · rintro n W v ⟨hl, h⟩
+    refine ⟨hl, ?_⟩
+    intro p hp j hj W' hx hu hh hok a ha
+    exact h p hp j (by omega) W' (by rwa [trunc_trunc] at hx) hu hh hok a ha
+  · rintro n W W' hx v ⟨hl, h⟩
+    refine ⟨hl, ?_⟩
+    intro p hp j hj W'' hx' hu hh hok a ha
+    exact h p hp j hj W'' (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hx') hu hh hok a ha
+
+/-- The congruence the tower needs: agreement below the budget on every operand
+is agreement on the type. -/
+theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : Nat}
+    (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ Agree (f x).2 (g x).2 n)
+    (W : WorldT n) (v : Val) : arrowsT (l.map f) n W v ↔ arrowsT (l.map g) n W v := by
+  constructor <;> rintro ⟨hl, hobl⟩ <;> refine ⟨hl, ?_⟩ <;>
+      intro p hp j hj W' hx hu hh hok a ha
+  · obtain ⟨x, hx', rfl⟩ := List.mem_map.mp hp
+    obtain ⟨hd, hc⟩ := h x hx'
+    have hcj : Agree (g x).2 (f x).2 (j + 1) := fun m hm U u => (hc m (by omega) U u).symm
+    exact (Safe_congr (j + 1) hcj j (Nat.lt_succ_self j) W' hh _).mpr
+      (hobl (f x) (List.mem_map_of_mem hx') j hj W' hx hu hh hok a ((hd j hj W' a).mpr ha))
+  · obtain ⟨x, hx', rfl⟩ := List.mem_map.mp hp
+    obtain ⟨hd, hc⟩ := h x hx'
+    have hcj : Agree (f x).2 (g x).2 (j + 1) := fun m hm U u => hc m (by omega) U u
+    exact (Safe_congr (j + 1) hcj j (Nat.lt_succ_self j) W' hh _).mpr
+      (hobl (g x) (List.mem_map_of_mem hx') j hj W' hx hu hh hok a ((hd j hj W' a).mp ha))
 
 theorem omega_safe (B : Fam) : ∀ (n : Nat) (W : WorldT n) (h : Heap),
     WorldAdm W → HeapOk n W h → Safe B n W h omegaTm := by

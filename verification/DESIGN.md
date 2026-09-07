@@ -659,161 +659,61 @@ These decide whether the preservation proofs stay manageable, and they decide
 what SKJS would have to supply. The effort belongs here, before any theorem
 signature changes.
 
-### The semantics
+### The semantics and subtype rules
 
-A recursive type has to mean something before a checker can be trusted about
-it, and once the language can write, membership has to be relative to a world of
-declared contracts rather than to heap contents. The construction, the four
-properties it must satisfy, and what has been established are in
-[SEMANTICS.md](SEMANTICS.md).
+The maintained stateful development is documented in [SEMANTICS.md](SEMANTICS.md),
+with its type grammar, normalization and mathematical rules in
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md). It uses admissible stratified worlds,
+heap satisfaction and step-indexed computation safety. Guarded recursive types
+include recursion through function domains; there is no unguarded
+Knaster–Tarski construction on sets of values.
 
-In short: a type is a family of approximations indexed by a budget; the budget
-is spent only where the program spends one, at a dereference or a call; recursion
-is the Banach fixed point of a contractive operator, which survives recursion
-through argument positions where neither the least nor the greatest fixed point
-exists; and values are judged against stratified worlds, with a separate
-invariant tying an actual heap to the world. That combination is established for
-a small stateful fragment — recursive reference types with an inhabited cyclic
-heap, allocation, mutation through aliases, closures over mutable cells, and a
-recursive function type — and not beyond it.
+The type language is a finite graph of positive formulas over null, boolean,
+invariant references and overloaded function types. Reference clauses retain
+conjunctions of contracts. Positive normalization preserves the entire recursive
+interpretation, without unfolding cycles or allocating new labels.
 
-Within that fragment two questions are closed. For closed types built from
-`null`, `bool`, invariant references and function types, semantic equality **is**
-bisimulation of the corresponding finite guarded graph, in both directions — so
-a finite certificate is complete evidence, and there are no further equations to
-find. And once unions are added in operand position, semantic **inclusion** is
-exactly clause-to-clause covering: each clause of the source matched by one
-clause of the target, references invariantly and arrows contravariantly. That
-is a subtyping result, and it holds for a reason specific to this language —
-arrows do not split over unions, because a mutable cell is the branch a type
-test would have provided. See
-[COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md); the boundaries
-are the interesting part.
+There is one maintained declarative subtype system and one certificate checker.
+Lean proves acceptance implies derivability, every derivation has accepted finite
+evidence, and derivability implies semantic inclusion. Structural transitivity
+composes completed proofs; it cannot bypass guarded coverage inside a cyclic
+table. The completeness target is implementation coverage of these rules, not
+all inclusions true in the indexed model.
+
+The stateful program examples and two model counterexamples remain checked.
+The latter prevent unrestricted arrow-result distribution and inappropriate
+collapse of nested-reference approximations. They justify concrete rule
+boundaries; semantic separator searches are not part of the maintained path.
 
 ### What remains between this and a usable calculus
 
-Four pieces, in increasing order of design risk rather than of effort.
+**Program typing and invariants.** The extended subtype checker can transport
+an established safety judgment by subsumption. It does not establish that
+judgment. The extended language still needs typing environments, the applicable
+substitution/binding theorem, sufficient evaluation-context rules, a global
+program-safety theorem, and checking of supplied invariants at control-flow
+edges. The production F0 verifier continues to establish its existing theorem
+using its existing calculus.
 
-**1. Finish the operational interface.** Safety under decreasing budgets, the
-remaining evaluation-context rules, and an adequacy theorem: a verified closed
-program cannot get stuck. The application rule currently extracts a function's
-guarantee at a strictly smaller index, which is not yet the general typing rule
-for arbitrary expressions under environments; term substitution likewise needs
-its binding discipline stated rather than relied on for closed arguments.
-Necessary proof work, low architectural risk.
+**Type and program extraction.** Normalization starts with an explicit guarded
+graph. A compiler from source type declarations to that graph, a serialized
+certificate format/decoder, and a producer of subtype evidence remain separate
+obligations. Graphs cover finite regular recursion. Parameter-changing recursive
+aliases need an explicit acceptance policy or a different representation; no
+finite-graph theorem by itself handles them.
 
-**2. Interpret an actual type language.** Two representations are on the table
-and they are not interchangeable.
+**Feature extensions.** Difference and negation do not follow from positive
+normalization: pointwise complement need not preserve admissibility. Narrowing
+may instead use sound approximations. Mutable structural objects need width,
+field and mutation rules beyond invariant cells. Generics and `extends` bounds
+need syntax, substitution, a disciplined quantification rule and a uniform
+program-typing theorem. These are future gates, not settled consequences of the
+current semantic representation.
 
-*Graphs* — a finite system of guarded equations — already carry the recursion,
-exclude unguarded definitions by construction, and come with the completeness
-result above. What they cannot express is anything open: no free parameters, no
-schemes, no substitution.
-
-*Binder syntax* is what a source translation naturally produces, and it needs
-the missing bridge: admissibility of interpreted types, a substitution theorem,
-recursive unfolding as the intended type equation, and an explicit guardedness
-policy saying which definitions are admitted and why their interpretations
-exist, rather than discharging that afresh at each use. This is where the
-binder/world interaction is shown repaired *at the language level* — an equation
-about a directly constructed family does not establish substitution through an
-open recursive type.
-
-The two meet at a translation, and the translation is where a real gap sits.
-SKJS represents types as **named declarations with arguments, expanded on demand
-under a depth cap**, which denotes a regular tree only while the parameters do
-not grow. `type T<X> = { next: T<{ v: X }> }` is accepted by SKJS and is *not* a
-finite graph. So graphs cover the closed regular types over the four-constructor
-signature exactly, and a generic alias whose argument grows leaves even that
-class — quite separately from the signature gap between those four constructors
-and real object, union and literal types.
-
-Two things about the rules are already settled. The cycle must be discharged by
-induction on the budget, with an assumption citable only after a guard has been
-crossed — and that has to be enforced by the shape of the rules rather than
-checked afterwards, or a derivation can justify its own conclusion. And a cyclic
-assumption reached through an argument position is needed in the orientation
-opposite to the one that created it, so assumptions are unordered pairs and the
-rule for `μ` establishes both directions.
-
-One consequence is worth knowing before designing the relation: until the type
-language has a top, a bottom or unions, subtyping so specified **coincides with
-equality**. Contravariance is then unobservable and the both-directions
-requirement costs nothing. The interesting design questions start with the
-lattice, not with the recursion — and the first step into that lattice, unions
-in operand position, is now taken: the rule for it is clause-to-clause covering
-and it is complete.
-
-**3. Resolve what can still change the design.**
-
-*Intersection, difference and narrowing come first*, and are the next gate:
-equality is settled without them, unions are settled with a complete rule, and
-these change the theory rather than extending it. The vacuity they bring is
-already visible — an everywhere-empty argument type makes `0 → A` and `0 → B`
-equal, which is why the union rule waives the comparison at an empty operand and
-why a cell declared at `never` is excluded by well-formedness rather than
-handled. Give the Boolean layer its own equational theory rather than trying to
-preserve tree equality after adding it.
-
-One constraint on that theory is already established, and it is not the expected
-one: the classical arrow decomposition — `(A → B) ∧ (A → C) ≤ A → (B ∧ C)` — is
-**unsound in this model**, because a cell carries one invariant chosen at
-allocation, so a function that allocates inhabits several `A → ref X` at once
-while the intersection of those codomains is empty. The law does hold when the
-codomains are value-determined rather than world-dependent, and covering the
-union of two domains stays sound. So the rule cannot be imported from semantic
-subtyping, and the part to re-derive is narrow and located. Details in
-[COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md#intersections-what-the-model-already-decides).
-
-Pointwise union and intersection preserve admissibility. Pointwise complement does not preserve downward closure, nor
-monotonicity under world extension — so "interpret every DNF operation as the
-corresponding set operation at each index" is not justified. The objective
-leaves room here: a branch rule may use a sound approximation of the values
-remaining after a failed test, and need not supply exact semantic
-complementation of every higher-order type. Establish which operations the
-calculus actually needs before buying a richer Boolean semantics.
-
-*Mutable structural objects* need their own treatment. An invariant cell is a
-foundation, not width subtyping, optional fields, readonly views, or a rule for
-when mutation invalidates an established refinement.
-
-*Generics and `extends` bounds* need less new semantics than expected. The
-machinery is already present, and checked rather than assumed: a type variable is
-a position in an environment of families, a bound is semantic inclusion between
-families, and the quantifier is the intersection over admissible instantiations,
-which is itself admissible whenever its instances are. Impredicative
-quantification is free in this encoding, where a set-theoretic development would
-need a universe bump or a domain construction. And a parameter under a reference
-is already inhabited for every semantic type — the specific prerequisite the
-earlier syntactic-world design failed.
-
-What remains for generics as such is ordinary work: the fundamental theorem, that
-one runtime function is safe under every admissible instantiation, which is what
-universality means and which the reference-parameter result does not establish;
-and variance for generic constructors, which nothing derives yet.
-
-Two things are genuinely open, and neither is caused by quantification. A generic
-alias whose argument grows leaves the regular-tree class altogether, so no finite
-graph and no bisimulation certificate exists for it — and SKJS accepts such
-declarations, so the calculus must refuse them, bound them as SKJS's expansion
-cap does, or represent them some third way. And `∀` distributes over
-intersections but **not** over unions, so a DNF representation of polymorphic
-types cannot push the quantifier through the normal form and needs its own
-justification. That is the Boolean layer again, which is why it comes first.
-
-**4. Connect the calculus to checked invariants.** The deliverable is not SKJS
-soundness but:
-
-> if the calculus program and its supplied invariants pass verification, then
-> execution satisfies the calculus's safety property.
-
-That needs sound local instruction rules, sound checking of each incoming edge
-against the supplied invariants, and a global execution theorem. Loops use the
-supplied invariants; no inference and no computed fixed point is required.
-
-SKJS remains a producer of candidate claims: its inference and its recursive
-subtyping need no correctness proof of their own. Translating programs and
-claims faithfully is a separate interface obligation.
+The deliverable remains an independent calculus that checks candidate SKJS
+claims, not a proof of SKJS inference. If a useful claim is underivable, add a
+sound declarative rule or make the feature boundary explicit. Semantic
+completeness is not a prerequisite for this work.
 
 ### A bounded way to proceed
 

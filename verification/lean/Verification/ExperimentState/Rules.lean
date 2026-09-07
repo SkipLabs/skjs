@@ -168,67 +168,6 @@ theorem diverging_arrow {A B : Fam} (ha : ValOnly A) (n : Nat) (W : WorldT n) :
   simpa [omegaTm, delta, subst] using
     omega_safe B p _ h (WorldAdm_trunc (Nat.le_succ p) hu) (HeapOk_trunc p U h hh)
 
-theorem tester_typed {A B : Fam} (hA : Adm A) (hval : ValOnly A)
-    (k : Nat) (W : WorldT k) (l : Nat) (hr : refT A k W (.loc l)) :
-    arrowT A B k W (tester l) := by
-  apply lam_intro hval
-  intro p hp U hx hu h hh a ha
-  have hr' := refT_transfer hr p (by omega) (trunc p (Nat.le_succ p) U) (by
-    have he := WExt_trunc (Nat.le_succ p) hx
-    simpa [trunc_trunc] using he)
-  obtain ⟨q, c, hv, hl, hc⟩ := hr'
-  cases hv
-  have hua := WorldAdm_trunc (Nat.le_succ p) hu
-  have hhp := HeapOk_trunc p U h hh
-  have hw := write_rule hA p _ h l a (hval _ _ _ ha) hua hhp hl hc (hA.down p U a ha)
-  change Safe B p _ h (.app (.lam omegaTm) (.write (.loc l) a))
-  apply Safe_bind_appR (.lam omegaTm) rfl p _ h _ hua hhp hw
-  intro j hj U' hx' hu' h' v hh' hv'
-  exact ignore_safe B j U' h' hu' hh' v (nulT_valOnly _ _ _ hv')
-
-/-- Reading a cell after a value has been produced and discarded. -/
-theorem read_after {B : Fam} (hBv : ValOnly B) (n : Nat) (W : WorldT n) (h : Heap) (r : Nat)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hrB : refT B n W (.loc r))
-    (v : Val) (hv : isVal v = true) :
-    Safe B n W h (.app (.lam (.read (.loc r))) v) := by
-  cases n with
-  | zero => trivial
-  | succ p =>
-    apply beta_rule _ _ hv p W h hadm hok
-    have hrB' := refT_transfer hrB p (Nat.le_succ p) (trunc p (Nat.le_succ p) W) (WExt_refl _)
-    obtain ⟨s, c, hs, hl, hc⟩ := hrB'
-    cases hs
-    simpa [subst] using
-      read_rule hBv p _ h r (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok) hl hc
-
-/-- **The probe is a function of its declared type.** Given a cell at the domain
-and a cell at the codomain, `probe` inhabits the arrow between them. -/
-theorem probe_typed {A B : Fam} (hA : Adm A) (hAv : ValOnly A) (hBv : ValOnly B)
-    (k : Nat) (W : WorldT k) (l r : Nat)
-    (hrA : refT A k W (.loc l)) (hrB : refT B k W (.loc r)) :
-    arrowT A B k W (probe l r) := by
-  apply lam_intro hAv
-  intro p hp U hx hu h hh a ha
-  have hua := WorldAdm_trunc (Nat.le_succ p) hu
-  have hhp := HeapOk_trunc p U h hh
-  have hxp : WExt (trunc p (Nat.le_of_lt (Nat.lt_of_succ_lt hp)) W)
-      (trunc p (Nat.le_succ p) U) := by
-    have he := WExt_trunc (Nat.le_succ p) hx
-    simpa [trunc_trunc] using he
-  obtain ⟨q, c, hv, hl, hc⟩ :=
-    refT_transfer hrA p (Nat.le_of_lt (Nat.lt_of_succ_lt hp)) _ hxp
-  cases hv
-  have hw := write_rule hA p _ h l a (hAv _ _ _ ha) hua hhp hl hc (hA.down p U a ha)
-  change Safe B p _ h (.app (.lam (.read (.loc r))) (.write (.loc l) a))
-  apply Safe_bind_appR (.lam (.read (.loc r))) rfl p _ h _ hua hhp hw
-  intro j hj U' hx' hu' h' v hh' hv'
-  have hxj : WExt (trunc j (Nat.le_trans hj (Nat.le_of_lt (Nat.lt_of_succ_lt hp))) W) U' := by
-    refine WExt_trans ?_ hx'
-    simpa [trunc_trunc] using WExt_trunc hj hxp
-  exact read_after hBv j U' h' r hu' hh'
-    (refT_transfer hrB j (Nat.le_trans hj (Nat.le_of_lt (Nat.lt_of_succ_lt hp))) U' hxj)
-    v (nulT_valOnly _ _ _ hv')
-
 /-- Being stuck is exactly what `Safe` forbids. -/
 theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
     ¬ Safe B (k + 1) W h (.app .nul .nul) := by
@@ -241,6 +180,70 @@ that type, including one that would get stuck if it were ever applied. -/
 theorem vacuous_arrow {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
     (b : Tm) (k : Nat) (W : WorldT k) : arrowT A B k W (.lam b) :=
   ⟨⟨b, rfl⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+
+/-! ## Testing a value's shape, and branching on the answer
+
+The two constructs a narrowing source language needs. A test of a value answers
+in one step; a branch on that answer takes one more. Both are ordinary reduction
+steps, so each spends a budget, which is why the rule below starts two above the
+budget its branches are checked at. -/
+
+/-- **A shape test answers.** -/
+theorem test_value_safe (k : Tag) (v : Val) (hv : isVal v = true) (p : Nat)
+    (W : WorldT (p + 1)) (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h) :
+    Safe boolT (p + 1) W h (.test k v) := by
+  refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hadm,
+    .testV hv, HeapOk_trunc p W h hok, ?_⟩
+  cases p with
+  | zero => trivial
+  | succ q =>
+    refine Or.inl ⟨?_, ?_⟩ <;> cases tagHolds k v <;> simp [boolT, isVal]
+
+/-- **Branching on a shape test.** The two branches are checked under the answer
+they run in, which is what makes this narrowing rather than a plain conditional:
+the `then` branch may assume the test succeeded. -/
+theorem ite_test_rule {B : Fam} (k : Tag) (a : Val) (hv : isVal a = true) (u e : Tm)
+    (p : Nat) (W : WorldT (p + 2)) (h : Heap) (hadm : WorldAdm W)
+    (hok : HeapOk (p + 2) W h)
+    (hthen : tagHolds k a = true → Safe B p (trunc p (by omega) W) h u)
+    (helse : tagHolds k a = false → Safe B p (trunc p (by omega) W) h e) :
+    Safe B (p + 2) W h (.ite (.test k a) u e) := by
+  refine Or.inr ⟨trunc (p + 1) (Nat.le_succ _) W, h, _, WExt_refl _,
+    WorldAdm_trunc _ hadm, .iteC (.testV hv), HeapOk_trunc (p + 1) W h hok, ?_⟩
+  have hadm' : WorldAdm (trunc (p + 1) (Nat.le_succ _) W) := WorldAdm_trunc _ hadm
+  have hok' : HeapOk (p + 1) (trunc (p + 1) (Nat.le_succ _) W) h := HeapOk_trunc (p + 1) W h hok
+  cases hb : tagHolds k a with
+  | true =>
+    refine Or.inr ⟨trunc p (Nat.le_succ p) _, h, u, WExt_refl _, WorldAdm_trunc _ hadm',
+      by simp; exact Step.iteT, HeapOk_trunc p _ h hok', ?_⟩
+    rw [trunc_trunc]
+    exact hthen hb
+  | false =>
+    refine Or.inr ⟨trunc p (Nat.le_succ p) _, h, e, WExt_refl _, WorldAdm_trunc _ hadm',
+      by simp; exact Step.iteF, HeapOk_trunc p _ h hok', ?_⟩
+    rw [trunc_trunc]
+    exact helse hb
+
+
+/-- An arrow below every conjunct is below the intersection: one function serves
+a whole overloaded type when its domain covers every domain and its codomain
+sits inside every codomain. -/
+theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
+    (hdom : ∀ p ∈ L, FamLe p.1 A) (hcod : ∀ p ∈ L, FamLe B p.2) :
+    FamLe (arrowT A B) (arrowsT L) := by
+  rintro n W v ⟨hl, h⟩
+  refine ⟨hl, ?_⟩
+  intro p hp j hj W' hx hu hh hok a ha
+  exact Safe_mono j (fun m _ U u hb => hcod p hp m U u hb) W' hh _
+    (h j hj W' hx hu hh hok a (hdom p hp j W' a ha))
+
+/-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
+theorem diverging_in_arrowsT (L : List (Fam × Fam)) (hval : ∀ p ∈ L, ValOnly p.1)
+    (k : Nat) (W : WorldT k) : arrowsT L k W (.lam omegaTm) := by
+  refine ⟨⟨omegaTm, rfl⟩, ?_⟩
+  intro p hp j hj W' hx hu hh hok a ha
+  exact (diverging_arrow (B := p.2) (hval p hp) k W).2 j hj W' hx hu hh hok a ha
+
 
 end ExperimentState
 end Verification

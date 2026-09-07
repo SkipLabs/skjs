@@ -159,8 +159,8 @@ ones the soundness statement reaches. The
 | [run.sh](run.sh) | Build when requested, run the corpus and claim validation tests, and report results. |
 
 One directory is a design investigation rather than part of the verifier. It
-builds with everything else and is imported by nothing.
+builds with everything else but is not yet used by the production verifier.
 
 | Directory | Responsibility |
 |---|---|
-| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); the recursive-equality and union-inclusion results, and their boundaries, in [COMPLETENESS-INVESTIGATION.md](COMPLETENESS-INVESTIGATION.md). |
+| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); positive normalization, declarative subtype rules and checked certificates in [POSITIVE-TYPES.md](POSITIVE-TYPES.md). |
