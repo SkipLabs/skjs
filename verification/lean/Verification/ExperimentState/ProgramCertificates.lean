@@ -16,6 +16,7 @@ structure Sequent (ι : Type) where
 inductive Rule (ι : Type) where
   | var | nul | tru | fls | truLit | flsLit | lam | app | letE | alloc | read | write
   | ifBool | ifTrue | ifFalse
+  | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
   | sub (proof : PositiveCertificates.Proof ι)
 
@@ -54,6 +55,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .ifBool, .ite c t e, [jc,jt,je] =>
     jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
     jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
+  | .ifKnown q, .ite c t e, [jc,jb] =>
+    jc.context = j.context ∧ jc.term = c ∧ Represents G jc.type (.boolLit q) ∧
+    jb = ⟨j.context, (if q then t else e), j.type⟩
   | .ifBoolVar T F, .ite (.var i) t e, [jt,je] =>
     (match j.context[i]? with | some C => Answers G C .isBool true | none => False) ∧
     Represents G T (.boolLit true) ∧ Represents G F (.boolLit false) ∧
@@ -161,6 +165,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have hcond := hp jc (by simp)
     rw [hΓ, hc] at hcond
     exact .ifBool hcond hb (hp ⟨Γ,t,A⟩ (by simp)) (hp ⟨Γ,e,A⟩ (by simp))
+  · rename_i q c t e jc jb
+    rcases hl with ⟨hΓ,hc,hq,rfl⟩
+    have hcond := hp jc (by simp)
+    rw [hΓ,hc] at hcond
+    exact .ifKnown hcond hq (hp ⟨Γ,(if q then t else e),A⟩ (by simp))
   · rename_i T F i t e jt je
     rcases hl with ⟨hb,hT,hF,rfl,rfl⟩
     split at hb
@@ -287,6 +296,14 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · exact ihc
       · exact iht
       · exact ihe
+  | @ifKnown Γ c C q t e A hc hq ht ihc iht =>
+    apply node_complete (r := .ifKnown q) (js := [⟨Γ,c,C⟩,⟨Γ,(if q then t else e),A⟩])
+    · exact ⟨rfl,rfl,hq,rfl⟩
+    · intro j hj
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+      rcases hj with rfl | rfl
+      · exact ihc
+      · exact iht
   | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
     apply node_complete (r := .ifBoolVar T F) (js := [⟨Γ.set i T,t,A⟩,⟨Γ.set i F,e,A⟩])
     · exact ⟨by simpa only [Local, hi] using hb,hT,hF,rfl,rfl⟩

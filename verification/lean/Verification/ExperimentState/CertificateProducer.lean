@@ -169,6 +169,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
       return none
     | .ite c t e =>
+      let known := pool.findSome? fun C => do
+        let [.boolLit q] := expand G C | none
+        let pc ← recur Γ c C
+        let pb ← recur Γ (if q then t else e) A
+        pure (.node ⟨Γ,.ite c t e,A⟩ (.ifKnown q) [pc,pb])
+      if let some p := known then return some p
       let refined := do
         let .var i := c | none
         let C ← Γ[i]?

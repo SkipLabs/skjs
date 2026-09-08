@@ -209,8 +209,8 @@ Nested branches, missing/empty arms and early-return arms are supported.
 Direct and repeatedly negated Boolean variable tests refine the tested binding on their outgoing edges.
 Negation lowers to `ite e false true`. For odd parity, the compiler recovers the
 original variable value and swaps destinations; it never re-evaluates the source
-operand. This also applies to loop conditions. Non-Boolean truthiness and
-singleton negation result proofs remain unsupported.
+operand. This also applies to loop conditions. Non-Boolean truthiness remains unsupported. Singleton negation uses `ifKnown`
+evidence with a condition proof and the selected-arm proof.
 The compiler uses `branchBind`: dispatch pushes the actual tested Boolean, then
 applies the target map. For `if (x)`, `x` selects this pushed slot; other variables
 select their old slots. The consumer checks the Boolean singleton against the

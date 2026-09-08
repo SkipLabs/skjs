@@ -27,6 +27,14 @@ def var (Γ : List (Ty Nat)) (i : Nat) (A : Ty Nat) : Plan := node Γ (.var i) A
 def letE (Γ : List (Ty Nat)) (a b : Plan) : Plan :=
   node Γ (.app (.lam b.term) a.term) b.type .letE [a,b]
 
+/-- A known Boolean still evaluates its condition; only its reachable arm
+needs the requested result type. The consumer checks the singleton premise. -/
+def ifE (G : NormalGraph Nat) (Γ : List (Ty Nat)) (A : Ty Nat) (c t e : Plan) : Plan :=
+  match expand G c.type with
+  | [.boolLit q] => node Γ (.ite c.term t.term e.term) A (.ifKnown q)
+      [c, cast Γ A (if q then t else e)]
+  | _ => node Γ (.ite c.term t.term e.term) A .ifBool [c,cast Γ A t,cast Γ A e]
+
 /-- Rebuild the recipe in the actual context. Variable leaves explicitly coerce
 from that context to the planned type. This handles justified changes of supplied
 statement environments without assuming the planned context holds. -/

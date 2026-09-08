@@ -131,6 +131,9 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G N .nul → HasTy G Γ (.write a b) N
   | ifBool : HasTy G Γ c C → Answers G C .isBool true →
       HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
+  /-- The condition still evaluates; its singleton type selects the reachable arm. -/
+  | ifKnown : HasTy G Γ c C → Represents G C (.boolLit q) →
+      HasTy G Γ (if q then t else e) A → HasTy G Γ (.ite c t e) A
   | ifBoolVar : Γ[i]? = some C → Answers G C .isBool true →
       Represents G T (.boolLit true) → Represents G F (.boolLit false) →
       HasTy G (Γ.set i T) t A → HasTy G (Γ.set i F) e A →
@@ -241,6 +244,27 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ e,
           WExt_refl _, WorldAdm_trunc _ hu, .iteF, HeapOk_trunc k U heap hok, ?_⟩
         exact ihe k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
+          _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+  | @ifKnown Γ c C q t e A hc hq ht ihc iht =>
+    intro n W h ρ henv hw hh
+    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC
+      n W h _ hw hh (ihc n W h ρ henv hw hh)
+    intro j hj U hx hu heap v hok hv ha
+    have hvalue := (represents_sem hq j U v).mp ha
+    cases q <;> simp only [sem] at hvalue <;> subst v
+    · cases j with
+      | zero => trivial
+      | succ k =>
+        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ e,
+          WExt_refl _, WorldAdm_trunc _ hu, .iteF, HeapOk_trunc k U heap hok, ?_⟩
+        exact iht k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
+          _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+    · cases j with
+      | zero => trivial
+      | succ k =>
+        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ t,
+          WExt_refl _, WorldAdm_trunc _ hu, .iteT, HeapOk_trunc k U heap hok, ?_⟩
+        exact iht k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
   | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
     intro n W h ρ henv hw hh

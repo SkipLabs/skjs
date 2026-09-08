@@ -87,10 +87,25 @@ $$
      {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
 $$
 
-The condition is evaluated once. It may read or mutate the heap; its effects
-precede the selected branch. Both branches must check against the supplied result
-type $A$. No least-upper-bound is computed. Both use the same context: this rule
-does not justify narrowed branch environments. A second rule handles a directly
+A condition with a proved singleton type needs only its reachable arm. For
+$q\in\{\mathsf{true},\mathsf{false}\}$, write $B_q$ for a type represented by
+$\mathsf{boolLit}(q)$, and let $t_q$ be $t$ when $q$ is true and $e$ otherwise:
+
+$$
+\frac{\Gamma\vdash_G c:B_q\qquad\Gamma\vdash_G t_q:A}
+     {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+$$
+
+`ifKnown q` carries two proofs: one for the condition at its singleton type,
+and one for the selected arm. This is a typing rule, not constant folding:
+the condition still runs, and all of its heap effects precede the arm. The Lean
+soundness proof uses evaluation-context composition and consumes the ordinary
+conditional step. A checked execution example includes a condition that writes
+through a reference and an unreachable stuck arm.
+
+The general Boolean rule requires both branches at the supplied result type
+$A$. No least-upper-bound is computed. Both use the same context: that rule
+does not justify narrowed branch environments. Another rule handles a directly
 tested immutable variable. Write $\Gamma[i:=T]$ for replacing slot $i$'s type:
 
 $$

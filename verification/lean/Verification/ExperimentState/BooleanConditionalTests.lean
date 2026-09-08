@@ -68,6 +68,41 @@ private def refinedRecipe := DirectProof.node [[0,1]] (.ite (.var 0) (.var 0) .t
   (.ifBoolVar [0] [1]) [DirectProof.var [[0]] 0 [0],DirectProof.node [[1]] .tru [0] .truLit]
 #guard ((DirectProof.render RG [[0],[1],[0,1]] [[0,1]] refinedRecipe).map (checkTree RG)) == some true
 
+-- A singleton condition checks its own evidence and only the reachable arm.
+private def knownCond : Evidence Nat := .node ⟨[],.tru,[0]⟩ .truLit []
+private def knownArm : Evidence Nat := .node ⟨[],.fls,[1]⟩ .flsLit []
+private def knownTerm : Tm := .ite .tru .fls (.read .nul)
+private def knownProof : Evidence Nat :=
+  .node ⟨[],knownTerm,[1]⟩ (.ifKnown true) [knownCond,knownArm]
+#guard checkTree RG knownProof
+#guard ok (roundtrip ⟨2,refinedTypes,[⟨knownTerm,.ret⟩],[⟨[],[1]⟩],[1],0,[]⟩)
+#guard !checkTree RG (.node ⟨[],knownTerm,[1]⟩ (.ifKnown false) [knownCond,knownArm])
+#guard !checkTree RG (.node ⟨[],knownTerm,[1]⟩ (.ifKnown true) [knownArm])
+#guard !checkTree RG (.node ⟨[],.ite .tru (.read .nul) .fls,[1]⟩ (.ifKnown true) [knownCond,knownArm])
+#guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 0) .fls (.read .nul),[1]⟩ (.ifKnown true)
+  [.node ⟨[[0,1]],.var 0,[0,1]⟩ .var [],.node ⟨[[0,1]],.fls,[1]⟩ .flsLit []])
+
+private def knownEffectProgram : Program :=
+  [⟨.alloc .tru,.bind 1⟩,
+   ⟨.ite (.app (.lam .tru) (.write (.var 0) .fls)) .fls (.read .nul),.ret⟩]
+#guard ok (roundtrip ⟨2,refinedTypes ++ [[.refs [0,1] []]],knownEffectProgram,
+  [⟨[],[3]⟩,⟨[[3]],[1]⟩],[1],0,[]⟩)
+
+/-- Selecting a known arm must not erase the condition's write. -/
+theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
+    (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+  repeat first
+    | exact Execution.refl
+    | apply Execution.next (.enter rfl)
+    | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.iteC (.appR rfl (.writeV rfl (by decide)))))
+    | apply Execution.next (.expr (.iteC (.beta rfl)))
+    | apply Execution.next (.expr .iteT)
+    | apply Execution.next (.bind rfl)
+    | apply Execution.next (.ret rfl)
+
+#print axioms known_condition_effects_preserved
+
 -- A captured cell is read when the closure is called, after an alias write.
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1⟩,

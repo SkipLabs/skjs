@@ -50,6 +50,23 @@ private def wireTy (t : Wire.Ty) : Json := Json.mkObj [("top", toJson t.top),
     | .boolLit b => Json.mkObj [("a",toJson "booleanlit"),("v",toJson (if b then "true" else "false"))]
     | _ => Json.mkObj [("a",toJson "unsupported")]))]
 -- Name resolution after a second binding must select the older slot.
+-- Complete producer-neutral claims for literal negation. SKJS may constant-fold
+-- these literals without exporting their operand claims; that is an export gap.
+private def checkLiteralNegation (q : Bool) : Except String Unit := do
+  let result := wireTy ⟨false,[.boolLit (!q)]⟩
+  let fn : SourceInput.Fn := ⟨"negate",(0,1),[],result,
+    [.ret (2,6) (.not (3,6) (.lit (4,6) (.vbool q)))]⟩
+  let claims : SourceInput.Claims := ⟨"negate",(0,1),[],result,[(2,[])],
+    [((3,6),result),((4,6),wireTy ⟨false,[.boolLit q]⟩)]⟩
+  let r ← extractFn fn claims
+  let j := toJson r.toRequest
+  verifyJson j (← produceSourceJson j 10)
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    r.searchLabels SourceTypes.types.length 10 r.obligations
+  pure ()
+#guard ok (checkLiteralNegation true)
+#guard ok (checkLiteralNegation false)
+
 private def f : SourceInput.Fn := ⟨"f",(0,1),[],(wireTy ⟨false,[.boolLit true]⟩),
   [.cst (2,3) "x" none (.lit (4,5) (.vbool true)),
    .cst (6,7) "y" none (.lit (8,9) (.vbool false)),

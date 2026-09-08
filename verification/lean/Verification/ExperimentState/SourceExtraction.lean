@@ -108,9 +108,8 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     pure (DirectProof.node Γ t B r)
   | .not _ a => do
     let a ← closureExpr fc scope Γ a
-    pure (DirectProof.node Γ (.ite a.term .fls .tru) [1,2] .ifBool
-      [a, DirectProof.cast Γ [1,2] (DirectProof.node Γ .fls [2] .flsLit),
-       DirectProof.cast Γ [1,2] (DirectProof.node Γ .tru [1] .truLit)])
+    pure (DirectProof.ifE SourceTypes.graph Γ A a
+      (DirectProof.node Γ .fls [2] .flsLit) (DirectProof.node Γ .tru [1] .truLit))
   | .alloc _ a => do
     let [.refs B []] := PositiveRules.expand SourceTypes.graph A
       | throw "allocation claim must name a cell contract"
@@ -177,8 +176,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     | none =>
       let t ← closureExpr fc scope H thn
       let e ← closureExpr fc scope H els
-      pure (DirectProof.node H (.ite c.term t.term e.term) A .ifBool
-        [c,DirectProof.cast H A t,DirectProof.cast H A e])
+      pure (DirectProof.ifE SourceTypes.graph H A c t e)
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
