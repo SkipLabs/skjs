@@ -1,4 +1,15 @@
 "use strict";
+/* The page: selection, rendering and the live companion.
+ *
+ * These files are plain scripts sharing one global scope, loaded in order:
+ * model.js (read and validate reports) → marks.js (decide what the source view
+ * shows) → candidate.js (pure claim edits) → editor.js (the editing workspace)
+ * → viewer.js. This file provides `state`, `el`, `load`, `select`, `renderShell`
+ * and `renderCode` to editor.js, and uses `candidateState`, `renderEditor`,
+ * `renderMissingEditor`, `renderCandidateStatus`, `canReplaceCandidate` and
+ * `initializeCandidateEditor` from it. Nothing below decides what a mark means:
+ * that lives in marks.js, where it can be tested without a browser.
+ */
 /* ---------- state ---------- */
 const state = {
   report: null,
@@ -38,44 +49,6 @@ state.producerErrors = store.get("errs", true);
 
 // A binding the producer could not decode carries no claim. It is real information
 // about coverage, but it is not a type, so it stays out of the default view.
-// SKJS reports its own errors against the source, with 1-based columns and an
-// exclusive end. They are the producer's diagnostics, shown where they point;
-// nothing here is a claim or a verification result.
-function producerMarks(rep) {
-  const marks = [];
-  if (!rep.diagnostics) return marks;
-  const starts = lineStarts(rep.source);
-  const re = /^File "([^"]+)", line (\d+), character (\d+)-(\d+):\r?\n([^\n]*)/gm;
-  let m;
-  while ((m = re.exec(rep.diagnostics))) {
-    const [, file, line, from, to, text] = m;
-    if (rep.file && !file.endsWith(rep.file)) continue;
-    const ln = Number(line) - 1;
-    if (!(ln >= 0 && ln < starts.length)) continue;
-    const lineEnd =
-      ln + 1 < starts.length ? starts[ln + 1] - 1 : rep.source.length;
-    const start = Math.min(starts[ln] + Number(from) - 1, lineEnd);
-    const end = Math.min(Math.max(starts[ln] + Number(to) - 1, start + 1), lineEnd);
-    marks.push({ pos: [start, end], text: text.trim(), line: ln });
-  }
-  return marks;
-}
-
-const isNoise = (b) =>
-  b.unavailable || b.type === "unsupported" || b.type === "(unavailable)";
-// Gaps read better as a short phrase than as the generator's sentence.
-const GAP_LABEL = {
-  "statement-not-visited": "not visited by producer",
-  "expression-without-type": "no type produced",
-  "claims-unavailable": "no claims for this function",
-  "claim-edit": "claim edit",
-};
-const gapLabel = (g) => GAP_LABEL[g.reason] || g.detail;
-const lineStarts = (src) => {
-  const a = [0];
-  for (let i = 0; i < src.length; i++) if (src[i] === "\n") a.push(i + 1);
-  return a;
-};
 const esc = (s) =>
   String(s).replace(
     /[&<>"']/g,
@@ -121,150 +94,15 @@ function hi(line, state = { block: false }) {
 }
 
 /* ---------- source view ---------- */
-// Claims are drawn as brackets under the exact span they are about, packed onto
-// as few rows as fit. Nesting is then visible without hovering.
-function bracket(w) {
-  if (w <= 1) return "╵";
-  return "╰" + "─".repeat(Math.max(0, w - 2)) + "╯";
-}
-function packRows(items) {
-  const rows = [];
-  items.sort((a, b) => a.col - b.col || a.end - b.end);
-  for (const it of items) {
-    let row = rows.find((r) => r.free <= it.col);
-    if (!row) {
-      row = { items: [], free: 0 };
-      rows.push(row);
-    }
-    row.items.push(it);
-    row.free =
-      it.col +
-      Math.max(1, it.end - it.col) +
-      1 +
-      it.label.length +
-      (it.mark ? it.mark.length + 1 : 0) +
-      1;
-  }
-  return rows;
-}
-// The same symbols the function pill uses: ✗ searched and failed, ? could not
-// properly try. A claim carries one only where checking stopped.
-const proofSymbol = (failureKind) =>
-  INCOMPLETE_INPUT.has(failureKind) ? "?" : "✗";
-
 function renderCode() {
   const rep = state.report,
     f = rep.functions[state.fn];
   const starts = lineStarts(rep.source);
-  const lineOfPos = (p) => lineAt(starts, p);
-  const allRecovery = f.quality === "recovery";
-  const recMark = allRecovery ? "" : "  (recovery)";
-  const items = [];
-  f.exprs.forEach((e, i) => {
-    if (!e.pos) return;
-    const shown = rep.source.slice(e.pos[0], e.pos[1]);
-    const failed = f.status === "not-established" && !!e.failure;
-    if (state.density === "key" && !failed) {
-      if (
-        f.exprs.some(
-          (other) =>
-            other !== e &&
-            other.pos &&
-            other.pos[0] <= e.pos[0] &&
-            other.pos[1] >= e.pos[1] &&
-            (other.pos[0] < e.pos[0] || other.pos[1] > e.pos[1]),
-        )
-      )
-        return;
-      if (shown.trim() === e.type.trim()) return; // a literal restating itself
-    }
-    const ln = lineOfPos(e.pos[0]);
-    const multiline = lineOfPos(e.pos[1] - 1) !== ln;
-    items.push({
-      kind: "expr",
-      line: ln,
-      col: e.pos[0] - starts[ln],
-      end: multiline
-        ? (starts[ln + 1] ?? rep.source.length) - starts[ln] - 1
-        : e.pos[1] - starts[ln],
-      label:
-        shortType(e.type) +
-        (multiline ? " ↳ multiline" : "") +
-        (e.recovery ? recMark : ""),
-      // A claim that proof search stopped at is still a claim: it reads the
-      // same, with the proof outcome added in the symbols used above.
-      mark: failed ? proofSymbol(e.failureKind) : "",
-      id: "e" + i,
-      cls: "expr" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
-    });
+  const { entries: entryItems, items } = sourceMarks(rep, f, {
+    density: state.density,
+    unsupported: state.unsupported,
+    producerErrors: state.producerErrors,
   });
-  f.gaps.forEach((g, i) => {
-    // always shown: absence is the finding
-    const ln = lineOfPos(g.pos[0]);
-    const end =
-      lineOfPos(g.pos[1] - 1) === ln
-        ? g.pos[1] - starts[ln]
-        : (ln + 1 < starts.length ? starts[ln + 1] - 1 : rep.source.length) -
-          starts[ln];
-    const needed = f.status === "not-established" && !!g.failure;
-    items.push({
-      kind: "gap",
-      line: ln,
-      col: g.pos[0] - starts[ln],
-      end,
-      label:
-        (needed ? "⚠ " : "") +
-        gapLabel(g) +
-        (needed
-          ? g.failureBinding
-            ? " · verification needed a claim for " + g.failureBinding
-            : " · verification needed a claim here"
-          : ""),
-      id: "g" + i,
-      cls: "gap" + (needed ? " failed" : ""),
-    });
-  });
-  if (state.producerErrors)
-    for (const [i, mark] of producerMarks(rep).entries()) {
-      if (mark.pos[0] < (f.start || 0) || mark.pos[1] > (f.end ?? rep.source.length))
-        continue;
-      const ln = lineOfPos(mark.pos[0]);
-      items.push({
-        kind: "error",
-        line: ln,
-        col: mark.pos[0] - starts[ln],
-        end: Math.max(mark.pos[1] - starts[ln], mark.pos[0] - starts[ln] + 1),
-        label: mark.text.length > 72 ? mark.text.slice(0, 69) + "…" : mark.text,
-        id: "p" + i,
-        cls: "err",
-      });
-    }
-  const entryItems = [];
-  f.entries.forEach((e, i) => {
-    if (!e.pos) return;
-    const shown = e.bindings.filter((b) => state.unsupported || !isNoise(b));
-    const list =
-      state.density === "key"
-        ? shown.filter((b) => e.changed.has(b.name))
-        : shown;
-    const failed = f.status === "not-established" && !!e.failure;
-    if (!list.length && !failed) return;
-    const ln = lineOfPos(e.pos[0]),
-      col = e.pos[0] - starts[ln];
-    entryItems.push({
-      kind: "entry",
-      line: ln,
-      col,
-      end: col,
-      label:
-        list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
-        (e.recovery ? recMark : ""),
-      mark: failed ? proofSymbol(e.failureKind) : "",
-      id: "n" + i,
-      cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
-    });
-  });
-
   const entryRows = groupLines(entryItems);
   const claimRows = groupLines(items);
   const marks = [];
@@ -282,7 +120,7 @@ function renderCode() {
     .reduce((furthest, other) => Math.max(furthest, other.end), 0);
   for (
     let ln = commentStartLine(rep.source, starts, f.start || 0, previousEnd);
-    ln <= lineOfPos(Math.max(0, (f.end ?? rep.source.length) - 1));
+    ln <= lineAt(starts, Math.max(0, (f.end ?? rep.source.length) - 1));
     ln++
   ) {
     const from = starts[ln],
@@ -303,60 +141,7 @@ function renderCode() {
   el("code").innerHTML = '<pre class="pre">' + out + "</pre>";
   const warning = el("verification-warning");
   warning.hidden = f.status !== "not-established";
-  if (!warning.hidden) {
-    const expression = f.exprs.findIndex((e) => e.failure);
-    const entry = f.entries.findIndex((e) => e.failure);
-    const gap = f.gaps.findIndex((g) => g.failure);
-    const failedId =
-      expression >= 0
-        ? "e" + expression
-        : entry >= 0
-          ? "n" + entry
-          : gap >= 0
-            ? "g" + gap
-            : null;
-    const failureKind = (
-      expression >= 0
-        ? f.exprs[expression]
-        : entry >= 0
-          ? f.entries[entry]
-          : gap >= 0
-            ? f.gaps[gap]
-            : {}
-    ).failureKind;
-    const missingClaim =
-      failureKind === "missing-expression-claim" ||
-      failureKind === "missing-environment-claim";
-    warning.textContent =
-      failureKind === "source-limitation"
-        ? "⚠ Verification unavailable: the marked source expression is outside the supported fragment. This is not a verdict on your edited claim."
-        : missingClaim
-          ? "⚠ Verification needs a claim this report does not contain. The marked place is where extraction stopped, not a claim that was disproved."
-          : failedId
-            ? "⚠ Proof search failed at the marked obligation. Other claims are not individually classified."
-            : "⚠ Proof search failed for this function. No claim location is available for this diagnostic.";
-    if (failedId) {
-      const jump = document.createElement("button");
-      jump.textContent =
-        failureKind === "source-limitation"
-          ? "Show unsupported expression"
-          : missingClaim
-            ? "Show the missing claim"
-            : "Show failed obligation";
-      jump.addEventListener("click", () => {
-        select(failedId);
-        el("code")
-          .querySelector('[data-id="' + failedId + '"]')
-          ?.scrollIntoView({ block: "center" });
-      });
-      warning.append(jump);
-    } else if (f.detail) {
-      const detail = document.createElement("pre");
-      detail.className = "raw";
-      detail.textContent = f.detail;
-      warning.append(detail);
-    }
-  }
+  if (!warning.hidden) renderWarning(warning, f);
   el("codehead").textContent = "Source — " + rep.file.split("/").pop();
   document.querySelectorAll(".lab").forEach((b) => {
     b.addEventListener("click", () => select(b.dataset.id));
@@ -368,6 +153,43 @@ function renderCode() {
     });
   });
 }
+// One banner for the located failure, in the same words as the mark it points at.
+function renderWarning(warning, f) {
+  const failure = firstFailure(f);
+  const missingClaim =
+    failure?.kind === "missing-expression-claim" ||
+    failure?.kind === "missing-environment-claim";
+  warning.textContent =
+    failure?.kind === "source-limitation"
+      ? "⚠ Verification unavailable: the marked source expression is outside the supported fragment. This is not a verdict on your edited claim."
+      : missingClaim
+        ? "⚠ Verification needs a claim this report does not contain. The marked place is where extraction stopped, not a claim that was disproved."
+        : failure
+          ? "⚠ Proof search failed at the marked obligation. Other claims are not individually classified."
+          : "⚠ Proof search failed for this function. No claim location is available for this diagnostic.";
+  if (failure) {
+    const jump = document.createElement("button");
+    jump.textContent =
+      failure.kind === "source-limitation"
+        ? "Show unsupported expression"
+        : missingClaim
+          ? "Show the missing claim"
+          : "Show failed obligation";
+    jump.addEventListener("click", () => {
+      select(failure.id);
+      el("code")
+        .querySelector('[data-id="' + failure.id + '"]')
+        ?.scrollIntoView({ block: "center" });
+    });
+    warning.append(jump);
+  } else if (f.detail) {
+    const detail = document.createElement("pre");
+    detail.className = "raw";
+    detail.textContent = f.detail;
+    warning.append(detail);
+  }
+}
+
 function rowText(items) {
   let out = "",
     cur = 0;
@@ -754,81 +576,23 @@ function collectedLine(rep) {
 }
 
 function stampFor(f, rep) {
-  if (
-    f.status === "not-established" &&
-    f.collection === "complete" &&
-    !INCOMPLETE_INPUT.has(f.result?.location?.kind)
-  )
-    return (
-      '<span class="attention" title="SKJS accepted this function and proof search did not establish it. That is either an unsound acceptance or a limit of these rules; it is not a disproof." aria-hidden="true">⚠</span>'
-    );
-  if (f.status !== "verified") return '<i class="dot"></i>';
-  const fresh = rep.collection?.verified === true;
+  const { stamp, attention } = outcome(f, rep);
+  if (attention)
+    return '<span class="attention" title="SKJS accepted this function and proof search did not establish it. That is either an unsound acceptance or a limit of these rules; it is not a disproof." aria-hidden="true">⚠</span>';
+  if (!stamp) return '<i class="dot"></i>';
   return (
     '<span class="stamp' +
-    (fresh ? "" : " recorded") +
+    (stamp === "fresh" ? "" : " recorded") +
     '" title="' +
-    (fresh
+    (stamp === "fresh"
       ? "A certificate for this function's modeled obligations was checked by the independent consumer for this report."
       : "Recorded in the report as verified. No consumer run backs what you are looking at.") +
     '" aria-hidden="true">✓</span>'
   );
 }
 
-// What each side said about this function, spelled out rather than encoded in a
-// colour: the producer's own outcome, then what proof search found. They are
-// different questions, so both are shown even when they agree.
-//
-// The producer really does reject; the verifier never disproves. "?" therefore
-// means no proof was found, not that the claim is false.
-const PRODUCER_MARK = {
-  complete: ["✓", "SKJS finished checking this function"],
-  aborted: ["✗", "SKJS stopped inside this function"],
-};
-// The same outcomes in words, for the tally and the panels.
-const PROOF_LABEL = {
-  verified: "verified",
-  "not-established": "proof search failed",
-  unsupported: "unsupported source",
-  "not-run": "not run",
-  stale: "stale after an edit",
-};
-const proofLabel = (status) => PROOF_LABEL[status] || status;
-// ✓ proved, ✗ searched and failed, ? could not properly try. The last covers a
-// claim the extractor needed and did not find — typically because the producer
-// stopped before annotating everywhere — and source outside the fragment.
-// ✗ still means no proof was found, never that the claim is false.
-const INCOMPLETE_INPUT = new Set([
-  "missing-expression-claim",
-  "missing-environment-claim",
-  "source-limitation",
-]);
-function proofMark(f) {
-  if (f.status === "verified") return ["✓", "a certificate was checked"];
-  if (f.status === "unsupported")
-    return ["?", "the source fragment gate rejected this file, so nothing was checked"];
-  if (f.status === "not-established")
-    return INCOMPLETE_INPUT.has(f.result?.location?.kind)
-      ? [
-          "?",
-          "checking could not proceed: a claim it needed is missing, or the source is outside the fragment",
-        ]
-      : ["✗", "proof search failed; that is not a disproof of the claim"];
-  if (f.status === "stale")
-    return ["·", "stale: the candidate changed after this result"];
-  return ["·", "verification was not requested"];
-}
-
 function outcomePair(f, rep) {
-  const producer = PRODUCER_MARK[f.collection] || ["·", "no producer outcome recorded"];
-  const proof = proofMark(f);
-  // The two tools disagree when one concluded something the other did not.
-  // Nothing is claimed either way when proof search never reached a verdict.
-  const concluded = !INCOMPLETE_INPUT.has(f.result?.location?.kind);
-  const disagrees =
-    concluded &&
-    ((f.collection === "complete" && f.status === "not-established") ||
-      (f.collection === "aborted" && f.status === "verified"));
+  const { producer, proof, disagrees } = outcome(f, rep);
   return (
     '<span class="pair' +
     (disagrees ? " warn" : "") +
@@ -952,7 +716,7 @@ function renderShell() {
         "</dd><dt>verification</dt><dd>" +
         (collected.verified
           ? "the independent consumer was run"
-          : "not requested for this collection")
+          : "no verifier was available when this ran")
       : "this report was read from a file; it records no collection run") +
     "</dd></dl>";
   // The producer's own output, kept where the rest of "what produced this" is.
@@ -1033,9 +797,13 @@ function renderShell() {
       "</dd>";
   p += "</dl></details>";
   p +=
-    '<details class="disc"><summary>what a status means</summary><div class="detail" style="padding:8px 0 0">' +
-    "<div><b>verified</b> — a certificate for this function was checked by the independent consumer.</div>" +
-    "<div><b>not-run</b> — claims are displayed only; no verification was requested.</div>" +
+    '<details class="disc"><summary>how to read the marks</summary><div class="detail" style="padding:8px 0 0">' +
+    "<div>Each function shows <b>SKJS ✓ · proof ✓</b>: what the producer found, then what proof search found.</div>" +
+    "<div>SKJS: <b>✓</b> it finished this function, <b>✗</b> it stopped inside it. This depends on the source alone.</div>" +
+    "<div>Proof: <b>✓</b> a certificate was checked, <b>✗</b> search failed, <b>?</b> it could not properly try, <b>·</b> nothing ran. This depends on the claims.</div>" +
+    "<div><b>✗</b> never means a claim was disproved.</div>" +
+    "<div>Amber marks a disagreement: SKJS accepted what nothing could prove (⚠), or rejected what a certificate covers.</div>" +
+    "<div>A stamp marks a verified function; it is dashed when the status was only read from a file.</div>" +
     "<div>Results cover modeled obligations, not every exported claim.</div></div></details>";
   el("prov").innerHTML = p;
 }
@@ -1088,10 +856,11 @@ async function load(text, keepCandidate = false) {
       for (const f of rep.functions) {
         f.status = "stale";
         f.detail =
-          "Saved draft differs from this last successful preview. Apply or verify the candidate.";
+          "This report was saved with an edit that had not been checked. Apply an edit to check the candidate again.";
       }
     state.fn = 0;
     state.selected = null;
+    state.selectedId = null;
     el("fnsearch").value = "";
     renderShell();
     renderCode();
@@ -1311,10 +1080,6 @@ connectLive();
 
 setDensity(state.density);
 
-function shortType(type) {
-  if (type.startsWith("{")) return "structured type — inspect";
-  return type.length > 64 ? type.slice(0, 61) + "…" : type;
-}
 function filterFunctions() {
   const query = el("fnsearch").value.toLowerCase();
   el("fnstrip")
@@ -1326,40 +1091,5 @@ function filterFunctions() {
     });
 }
 el("fnsearch").addEventListener("input", filterFunctions);
-
-function lineAt(starts, pos) {
-  let lo = 0,
-    hi = starts.length;
-  while (lo + 1 < hi) {
-    const mid = (lo + hi) >> 1;
-    if (starts[mid] <= pos) lo = mid;
-    else hi = mid;
-  }
-  return lo;
-}
-// Claim spans start at the declaration, but a comment written directly above a
-// function belongs to it for whoever is reading. Show that block, stopping at a
-// blank line or at anything that is not a comment, so a neighbour's trailing
-// comment is never attributed here.
-const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
-function commentStartLine(source, starts, from, floor) {
-  const lineText = (n) =>
-    source.slice(starts[n], n + 1 < starts.length ? starts[n + 1] - 1 : source.length);
-  let line = lineAt(starts, from);
-  while (line > 0 && starts[line - 1] >= floor) {
-    const text = lineText(line - 1);
-    if (!text.trim() || !COMMENT_LINE.test(text)) break;
-    line--;
-  }
-  return line;
-}
-function groupLines(items) {
-  const grouped = new Map();
-  for (const item of items) {
-    if (!grouped.has(item.line)) grouped.set(item.line, []);
-    grouped.get(item.line).push(item);
-  }
-  return grouped;
-}
 
 initializeCandidateEditor();

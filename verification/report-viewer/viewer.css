@@ -2,7 +2,6 @@
   --paper: #f5f7f9;
   --surface: #ffffff;
   --sunken: #edf1f5;
-  --rail: #f9fafc;
   --ink: #111820;
   --ink-2: #4d5a67;
   --ink-3: #7a8794;
@@ -16,7 +15,6 @@
   --warn: #8a6412;
   --warn-soft: #f5eeda;
   --bad: #a2352b;
-  --bad-soft: #f7e6e3;
   --kw: #5a5fa6;
   --ty: #5d7a7e;
   --str: #3f7250;
@@ -32,7 +30,6 @@
     --paper: #0d1218;
     --surface: #141b23;
     --sunken: #101820;
-    --rail: #121920;
     --ink: #e6edf4;
     --ink-2: #a5b3c0;
     --ink-3: #74818e;
@@ -46,7 +43,6 @@
     --warn: #d5a743;
     --warn-soft: #2a2314;
     --bad: #e0796d;
-    --bad-soft: #2c1917;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 30px -20px rgba(0, 0, 0, 0.8);
     --kw: #9aa1e8;
     --ty: #83989c;
@@ -59,7 +55,6 @@
   --paper: #0d1218;
   --surface: #141b23;
   --sunken: #101820;
-  --rail: #121920;
   --ink: #e6edf4;
   --ink-2: #a5b3c0;
   --ink-3: #74818e;
@@ -73,7 +68,6 @@
   --warn: #d5a743;
   --warn-soft: #2a2314;
   --bad: #e0796d;
-  --bad-soft: #2c1917;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 30px -20px rgba(0, 0, 0, 0.8);
   --kw: #9aa1e8;
   --ty: #83989c;
@@ -534,9 +528,6 @@ kbd {
   color: var(--warn);
   font-weight: 700;
 }
-.kw {
-  color: var(--ink-2);
-}
 
 /* ---- detail ---- */
 .detail {
@@ -705,12 +696,6 @@ footer {
 .panel > summary {
   padding: 12px 14px;
   cursor: pointer;
-}
-#diagnostics {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 160px;
-  overflow: auto;
 }
 #inspector {
   order: -1;

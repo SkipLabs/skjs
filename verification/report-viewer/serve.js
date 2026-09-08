@@ -184,6 +184,8 @@ async function analyse(relative) {
   }
 }
 
+// `verify` exists for callers that want attachment validation on its own; the
+// HTTP route never passes it, so nothing a browser asks for skips checking.
 async function candidateReport(candidate, verify = true) {
   const startedAt = Date.now();
   if (
@@ -218,9 +220,10 @@ async function candidateReport(candidate, verify = true) {
       "--stdout",
       "json",
     ];
-    if (verify && !(await hasVerifier()))
-      throw new Error("Verifier unavailable");
-    if (verify) args.push("--verify", VERIFIER);
+    if (verify) {
+      if (!(await hasVerifier())) throw new Error("Verifier unavailable");
+      args.push("--verify", VERIFIER);
+    }
     const result = await execFile(process.execPath, args, {
       cwd: REPO,
       timeout: 120000,
@@ -269,6 +272,7 @@ const assets = new Map([
   ["/", ["claim-report-viewer.html", "text/html"]],
   ["/viewer.js", ["viewer.js", "text/javascript"]],
   ["/model.js", ["model.js", "text/javascript"]],
+  ["/marks.js", ["marks.js", "text/javascript"]],
   ["/candidate.js", ["candidate.js", "text/javascript"]],
   ["/editor.js", ["editor.js", "text/javascript"]],
   ["/viewer.css", ["viewer.css", "text/css"]],
@@ -333,7 +337,7 @@ const server = http.createServer(async (req, res) => {
         return send(
           res,
           200,
-          await candidateReport(input.candidate, input.verify !== false),
+          await candidateReport(input.candidate),
         );
       } finally {
         analysing = false;

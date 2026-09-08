@@ -129,13 +129,17 @@ stale and removes their active failure markers until a fresh check completes.
 
 ## Implementation
 
-`model.js` reads structured bundles and adapts legacy comments. `viewer.js` owns
-selection, filtering and rendering; `viewer.css` owns layout. `serve.js` runs the
+`model.js` reads structured bundles and adapts legacy comments. `marks.js`
+decides what the source view shows — which claims are drawn at what position,
+the outcome symbols, the producer's diagnostic positions — as pure functions the
+tests exercise without a browser. `viewer.js` owns selection, events and
+rendering; `viewer.css` owns layout. `serve.js` runs the
 existing producer and report writer. The live path uses the structured manifest;
 it does not recover types or source from generated comments. Function `pos` ranges
 in manifests use the same original UTF-16 offsets as expression claims.
 
-Run `node verification/tests/report-viewer.js` for model regression checks. They
+Run `node verification/tests/report-viewer.js` for the model and source-mark
+regression checks. They
 also run under `make verify`; report-writer tests exercise the manifest producer.
 
 ## Claim editing

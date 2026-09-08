@@ -1,4 +1,13 @@
 "use strict";
+/* The editing workspace: drafts, checking and the missing-claim forms.
+ *
+ * Provides `candidateState`, `renderEditor`, `renderMissingEditor`,
+ * `renderCandidateStatus`, `canReplaceCandidate` and `initializeCandidateEditor`
+ * to viewer.js, and uses `state`, `el`, `load`, `select`, `renderShell` and
+ * `renderCode` from it, plus the pure edits in candidate.js. A candidate is an
+ * untrusted input: editing never changes a source snapshot or establishes a
+ * result, and every applied edit is checked before it is displayed as one.
+ */
 const candidateState = {
   candidate: null,
   original: null,
@@ -14,7 +23,8 @@ function canReplaceCandidate() {
       JSON.stringify(candidateState.candidate) !== candidateState.saved)
   ) {
     el("candidate-status").textContent =
-      "Export your edits or restore the original claims before loading another report. Wait for any running check to finish.";
+      "Save the report or restore the original claims before loading another. Wait for any running check to finish.";
+    el("candidate-status").hidden = false;
     return false;
   }
   return true;
@@ -105,7 +115,7 @@ function invalidateCandidate() {
   // Conservative first version: all results belong to the previous candidate.
   for (const fn of state.report.functions) {
     fn.status = "stale";
-    fn.detail = "Candidate changed; reverify to establish a new result.";
+    fn.detail = "Candidate changed; this result belonged to the previous claims.";
   }
   if (candidateState.bundle) {
     candidateState.bundle.manifest.results = null;

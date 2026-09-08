@@ -226,8 +226,172 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   );
 }
 
+/* ---------- what the source view decides, without a browser ---------- */
+const marks = require("../report-viewer/marks.js");
+
+// SKJS positions are 1-based with an exclusive end; a diagnostic for another
+// file, or past the end of its line, must not be drawn over this source.
+{
+  const text = "function f(): boolean {\n  return !flag;\n}\n";
+  const rep = {
+    source: text,
+    file: "f.ts",
+    diagnostics:
+      'File "/work/f.ts", line 2, character 10-15:\nerror: nope\n' +
+      'File "/work/other.ts", line 1, character 1-2:\nerror: elsewhere\n' +
+      'File "/work/f.ts", line 2, character 10-999:\nnote: past the line\n',
+  };
+  const found = marks.producerMarks(rep);
+  assert.equal(found.length, 2);
+  assert.equal(text.slice(...found[0].pos), "!flag");
+  assert.equal(found[0].text, "error: nope");
+  assert.equal(text.slice(...found[1].pos), "!flag;");
+  assert.equal(marks.producerMarks({ source: text, file: "f.ts" }).length, 0);
+}
+
+// Both outcomes, and whether they disagree.
+{
+  const fresh = { collection: { verified: true } };
+  const fromFile = { collection: null };
+  const outcome = (f, rep = fresh) => marks.outcome(f, rep);
+  const verified = { status: "verified", collection: "complete" };
+  assert.deepEqual(
+    [outcome(verified).producer[0], outcome(verified).proof[0]],
+    ["✓", "✓"],
+  );
+  assert.equal(outcome(verified).stamp, "fresh");
+  assert.equal(outcome(verified, fromFile).stamp, "recorded");
+  assert.equal(outcome(verified).disagrees, false);
+  const unsound = { status: "not-established", collection: "complete" };
+  assert.equal(outcome(unsound).proof[0], "✗");
+  assert(outcome(unsound).disagrees && outcome(unsound).attention);
+  const beyond = { status: "verified", collection: "aborted" };
+  assert(outcome(beyond).disagrees);
+  assert.equal(outcome(beyond).attention, false);
+  const agreed = { status: "not-established", collection: "aborted" };
+  assert.equal(outcome(agreed).disagrees, false);
+  // Nothing was concluded: no symbol claiming a verdict, and no disagreement.
+  const incomplete = {
+    status: "not-established",
+    collection: "complete",
+    result: { location: { kind: "missing-expression-claim" } },
+  };
+  assert.equal(outcome(incomplete).proof[0], "?");
+  assert.equal(outcome(incomplete).disagrees, false);
+  assert.equal(outcome(incomplete).attention, false);
+  assert.equal(marks.proofLabel("not-established"), "proof search failed");
+  assert.equal(marks.proofSymbol("source-limitation"), "?");
+  assert.equal(marks.proofSymbol("expression-obligation"), "✗");
+}
+
+// The marks drawn for one function: what each density shows, and the symbol a
+// claim carries where checking stopped.
+{
+  const text =
+    "// note\nfunction f(x: boolean): boolean {\n  const y: boolean = x;\n  const t: true = true;\n  return y;\n}\n";
+  const at = (s) => [text.indexOf(s), text.indexOf(s) + s.length];
+  const literal = [text.lastIndexOf("true"), text.lastIndexOf("true") + 4];
+  const rep = { source: text, file: "f.ts", collection: { verified: true } };
+  const fn = {
+    name: "f",
+    status: "not-established",
+    collection: "complete",
+    quality: "unverified",
+    start: text.indexOf("function"),
+    end: text.length - 1,
+    exprs: [
+      { pos: at("x;"), type: "boolean", id: "f0x0" },
+      { pos: at("y;"), type: "boolean", id: "f0x1", failure: "no", failureKind: "expression-obligation" },
+      // a literal restating itself: hidden in Compact, shown in Every claim
+      { pos: literal, type: "true", id: "f0x2" },
+    ],
+    entries: [
+      {
+        pos: at("const y: boolean = x;"),
+        bindings: [
+          { name: "x", type: "boolean" },
+          { name: "this", type: "(unavailable)", unavailable: true },
+        ],
+        changed: new Set(["x"]),
+        id: "f0e0",
+      },
+    ],
+    gaps: [],
+  };
+  const compact = marks.sourceMarks(rep, fn, { density: "key" });
+  assert.deepEqual(
+    compact.items.map((i) => [i.id, i.label, i.mark]),
+    [
+      ["e0", "boolean", ""],
+      ["e1", "boolean", "✗"],
+    ],
+  );
+  assert.equal(compact.entries[0].label, "x: boolean");
+  const all = marks.sourceMarks(rep, fn, { density: "all", unsupported: true });
+  assert.equal(all.entries[0].label, "x: boolean,  this: (unavailable)");
+  assert.deepEqual(
+    all.items.map((i) => i.id),
+    ["e0", "e1", "e2"],
+  );
+  assert.equal(marks.firstFailure(fn).id, "e1");
+  assert.equal(marks.firstFailure({ exprs: [], entries: [], gaps: [] }), null);
+}
+
+// A gap reads like the other marks: its own words, plus the proof symbol where
+// verification stopped there.
+{
+  const text = "function f(): boolean {\n  return true;\n}\n";
+  const rep = { source: text, file: "f.ts" };
+  const fn = {
+    status: "not-established",
+    collection: "aborted",
+    start: 0,
+    end: text.length,
+    exprs: [],
+    entries: [],
+    gaps: [
+      {
+        pos: [text.indexOf("return"), text.indexOf("true;") + 5],
+        reason: "statement-not-visited",
+        detail: "statement not visited",
+        failure: "needed a claim",
+        failureKind: "missing-environment-claim",
+      },
+    ],
+  };
+  const [gap] = marks.sourceMarks(rep, fn, { density: "key" }).items;
+  assert.equal(gap.label, "not visited by producer");
+  assert.equal(gap.mark, "?");
+  assert.equal(gap.cls, "gap failed");
+}
+
+// A comment written above a function belongs to it; a neighbour's does not.
+{
+  const text = "function a() {}\n\n// about b\n// still b\nfunction b() {}\n";
+  const starts = marks.lineStarts(text);
+  const b = text.indexOf("function b");
+  assert.equal(marks.commentStartLine(text, starts, b, 0), 2);
+  assert.equal(
+    marks.commentStartLine(text, starts, b, text.indexOf("// still b")),
+    3,
+  );
+  assert.equal(marks.commentStartLine(text, starts, 0, 0), 0);
+}
+
+// Packing must count the proof symbol, or the next mark would overlap it.
+{
+  const row = marks.packRows([
+    { col: 0, end: 4, label: "boolean", mark: "✗" },
+    { col: 12, end: 16, label: "true", mark: "" },
+  ]);
+  assert.equal(row.length, 2);
+  assert.equal(marks.markWidth({ col: 0, end: 4, label: "boolean", mark: "✗" }), 4 + 1 + 7 + 2);
+  assert.equal(marks.bracket(1), "╵");
+  assert.equal(marks.bracket(5), "╰───╯");
+}
+
 console.log(
-  "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, addressing, and legacy samples passed",
+  "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, addressing, source marks, and legacy comment reports passed",
 );
 
 const failureBundle = structuredClone(bundle);
