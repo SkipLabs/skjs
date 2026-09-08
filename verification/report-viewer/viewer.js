@@ -344,7 +344,26 @@ function moveFunction(step) {
 }
 
 document.addEventListener("keydown", (ev) => {
-  if (ev.metaKey || ev.ctrlKey || ev.altKey || !state.report) return;
+  if (!state.report) return;
+  // Selecting a claim puts the cursor in its editor, so stepping between claims
+  // needs a key the editor will not take: Option (Alt) with the arrows, or with
+  // j and k, works while typing and leaves the next claim ready to type into.
+  // The letters are matched by physical key, because Option composes characters
+  // on macOS and would otherwise arrive as ∆ and ˚.
+  if (ev.altKey && !ev.metaKey && !ev.ctrlKey) {
+    const step =
+      ev.key === "ArrowDown" || ev.code === "KeyJ"
+        ? 1
+        : ev.key === "ArrowUp" || ev.code === "KeyK"
+          ? -1
+          : 0;
+    if (step) {
+      ev.preventDefault();
+      moveSelection(step);
+    }
+    return;
+  }
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
   const t = ev.target;
   if (
     t &&

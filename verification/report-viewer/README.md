@@ -58,7 +58,11 @@ adapter for the display format, with only the data present in those comments.
 - Find a function by name; selecting it shows its source with original line numbers.
 - Keyboard: <kbd>j</kbd>/<kbd>k</kbd> (or the arrow keys) step through the marks
   as drawn, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears the
-  selection. Keys are ignored while typing in a field.
+  selection. Those are ignored while typing in a field, so
+  <kbd>⌥</kbd>/<kbd>Alt</kbd> with <kbd>↓</kbd>/<kbd>↑</kbd> — or with
+  <kbd>j</kbd>/<kbd>k</kbd> — steps between claims from inside the editor,
+  leaving the next one focused: read a claim, retype it, <kbd>Enter</kbd>, move
+  on. The letters are matched by physical key, since Option composes characters.
 - **Compact** shows outer expression claims and environment changes from the
   preceding entry in source order. It hides literal restatements. This is not a
   claim about control-flow edges, narrowing, or the identity of shadowed bindings.
