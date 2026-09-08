@@ -496,3 +496,23 @@ alias write and a condition that writes then reads a cell. Invalid condition
 types, invalid arms, omitted premises and exchanged arms are rejected. This is
 calculus coverage. Source closure blocks now support terminal branches with both
 arms returning, including nested branches and checked entry refinements.
+
+
+Closure branches whose two arms fall through require no additional typing rule.
+Their extracted shape is:
+
+$$
+\mathsf{let}\ z = (\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e)
+\ \mathsf{in}\ k.
+$$
+
+Both $t$ and $e$ finish with an administrative null after their effects.
+The existing conditional rules check them at $\mathsf{Null}$, and the let rule
+checks $k$ under $\mathsf{Null}::\Gamma$. The new slot is anonymous; source names
+refer to their original outer bindings. The source statement at $k$ supplies
+an environment whose types must be justified from this context. Arm-local
+bindings and singleton refinements cannot become assumptions at the join.
+The continuation occurs once, so nested branching does not duplicate its term.
+`shared_continuation_trace` ties the extracted graph to a 44-step execution in
+which the selected arm writes true before the shared read returns true.
+Mixed return/fall-through branches still need a broader control-flow interface.

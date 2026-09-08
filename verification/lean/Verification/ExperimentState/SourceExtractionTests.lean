@@ -305,6 +305,58 @@ theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 37 []
 
 #print axioms terminal_branch_trace
 
+-- Both arms complete before the shared read; the false arm changes the cell
+-- to true. Branch-local administrative slots cannot shift the continuation.
+private def joinedCaptureFn : SourceInput.Fn :=
+  let N := wireTy ⟨false,[.null]⟩
+  { captureFn with body := captureFn.body.map fun st => match st with
+    | .cst pos name annot (.lam lp param arg ret body) =>
+      .cst pos name annot (.lam lp param arg ret
+        (.seqBody (40,49)
+          (.ifBody (40,49) N body (.done (41,42))
+            (.letBody (43,48) "" none
+              (.write (44,47) (.var (44,45) "cell") (.lit (46,47) (.vbool true)))
+              (.done (48,49))))
+          (.atEnv (50,53) (.read (51,53) (.var (51,52) "cell")))))
+    | st => st }
+private def joinedCaptureClaims : SourceInput.Claims :=
+  let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
+  { captureClaims with
+    envs := captureClaims.envs ++ [(40,H),(43,H),(50,H)]
+    exprs := captureClaims.exprs ++ [((44,47),t),((44,45),cellWire),((46,47),t),
+      ((51,53),wireTy ⟨false,[.bool]⟩),((51,52),cellWire)] }
+private def joinedCaptureProgram : ControlFlow.Program :=
+  let assignment := Tm.app (.lam (.app (.lam (.app (.lam (.var 1))
+    (.write (.var 1) (.var 0)))) .tru)) (.var 1)
+  captureProgram.set 11 ⟨.lam (.app (.lam (.read (.var 2)))
+    (.ite (.read (.var 1)) .nul (.app (.lam .nul) assignment))),.bind 10⟩
+#guard is ((extractFn joinedCaptureFn joinedCaptureClaims).map (·.program)) joinedCaptureProgram
+#guard ok (do
+  let r ← extractFn joinedCaptureFn joinedCaptureClaims
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    (List.range 19) 19 0 r.obligations
+  pure ())
+
+theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 44 []
+    (.at 15 (fun _ => .nul)) [.tru] (.done .tru) := by
+  repeat first
+    | exact ControlFlow.Execution.refl
+    | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
+    | apply ControlFlow.Execution.next (.expr (.beta rfl))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.iteC (.readV rfl))))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl .iteF))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.beta rfl))))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.appR rfl (.writeV rfl (by decide))))))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.beta rfl)))
+    | apply ControlFlow.Execution.next (.expr (.readV rfl))
+    | apply ControlFlow.Execution.next (.bind rfl)
+    | apply ControlFlow.Execution.next (.effect rfl)
+    | apply ControlFlow.Execution.next (.ret rfl)
+
+#print axioms shared_continuation_trace
+
 -- Supplemental proofs are necessary even when the whole lambda is typable.
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[]⟩
 #guard captureRequired.obligations.length == 4

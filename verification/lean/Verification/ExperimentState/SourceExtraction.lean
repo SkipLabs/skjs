@@ -37,7 +37,8 @@ private def exprType (fc : Claims) (e : SourceInput.Expr) : Except String (Ty Na
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
 private def closureType (fc : Claims) : SourceInput.Expr → Except String (Ty Nat)
-  | .atEnv _ b | .letBody _ _ _ _ b => closureType fc b
+  | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
+  | .done _ => pure [0]
   | .ifBody _ result _ _ _ => do SourceTypes.translate (← decodeTy result)
   | e => exprType fc e
 
@@ -113,6 +114,11 @@ private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       [DirectProof.var H 1 B,DirectProof.cast H D (DirectProof.var H 0 C)]
     let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 C)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) a done))
+  | .done _ => pure (DirectProof.node Γ .nul [0] .nul)
+  | .seqBody _ init body => do
+    let a ← closureExpr fc scope Γ init
+    let b ← closureExpr fc (""::scope) (a.type::Γ) body
+    pure (DirectProof.letE Γ a b)
   | .letBody pos name annot init body => do
     if name != "" && scope.contains name then
       throw "duplicate or shadowing closure local"
@@ -187,7 +193,7 @@ private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
-  | .atEnv .. | .letBody .. | .ifBody .. => throw "statement environment wrapper is only supported inside a closure"
+  | .atEnv .. | .letBody .. | .ifBody .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
   | .lam .. =>
     let t ← closureExpr fc scope Γ e
     emit t.term (.bind next) Γ A

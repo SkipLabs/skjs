@@ -134,7 +134,8 @@ or a termination requirement.
 Closures currently contain expression-language bodies, not graph-backed bodies.
 A graph loop surrounding closure calls is supported; a loop inside a closure
 body is not thereby expressible. General branch-environment refinement is also
-outside the current program rules, which use known shape answers per overload.
+outside the current program rules; immutable Boolean slots have a specific
+refinement rule, alongside known shape answers per overload.
 
 ### Rule boundaries justified by counterexamples
 
@@ -487,9 +488,16 @@ Boolean singleton in each arm. Source closure blocks now support terminal
 `if/else`, including nesting, where both arms return. Each statement entry still
 requires evidence for every supplied binding; the enclosing result annotation
 supplies the common arm type. No join is computed and no continuation is duplicated.
-General falling-through closure branches remain gated. They need a call/body
-interface that preserves shared continuations; duplicating branches or dropping internal claims would
-not implement that interface. Binding identities must become
+Closure branches whose two arms fall through now use the existing conditional
+and let rules: each arm finishes with an administrative null, then one shared
+continuation executes. Branch locals stay inside the arm's lets. The shared
+continuation has the pre-branch immutable bindings and stable cell contracts;
+its supplied entry environment must follow from those types. No branch-specific
+refinement is retained. This is a sufficient, deliberately conservative join
+check, not a computation of the strongest common type. Empty arms and nested
+fall-through branches use the same construction. Mixed return/fall-through
+branches and loops inside closures remain gated pending a broader call/body
+interface. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Testing a mutable
 field may make SKJS export unequal read/write types in an arm. Those claims are
 still rejected by the invariant-cell decoder; immutable-slot refinement does

@@ -149,6 +149,24 @@ function expr(node) {
         fail(p, "expected a required closure parameter");
       let body;
       if (ts.isBlock(node.body)) {
+        const nullType = {top:false,atoms:[{a:"null"}]};
+        // Both fall-through arms finish before the one shared continuation.
+        const lowerPrefix = (stmts, tail) => {
+          for (let i = stmts.length - 1; i >= 0; --i) {
+            const st = stmts[i];
+            if (st.k === "if") {
+              const arm = xs => lowerPrefix(xs, {k:"doneBody",pos:st.pos});
+              const init = {k:"ifBody",pos:st.pos,result:nullType,cond:st.cond,
+                then:arm(st.then),else_:arm(st.else_ ?? [])};
+              tail = {k:"seqBody",pos:st.pos,init,body:tail};
+            } else if (st.k === "const" || st.k === "effect") {
+              tail = {k:"letBody",pos:st.pos,name:st.k === "const" ? st.name : "",
+                annot:st.k === "const" ? st.annot : null,
+                init:st.k === "const" ? st.init : st.e,body:tail};
+            } else fail(node.body, "mixed return/fall-through closure branches are not supported");
+          }
+          return tail;
+        };
         const lowerBlock = (stmts) => {
           const last = stmts.at(-1);
           let tail;
@@ -157,15 +175,7 @@ function expr(node) {
             tail = {k:"ifBody",pos:last.pos,result:typeOf(node.type),cond:last.cond,
               then:lowerBlock(last.then),else_:lowerBlock(last.else_)};
           else fail(node.body, "closure block must return on both terminal arms");
-          for (let i = stmts.length - 2; i >= 0; --i) {
-            const st = stmts[i];
-            if (st.k !== "const" && st.k !== "effect")
-              fail(node.body, "closure branches must be terminal; fall-through is not supported");
-            tail = {k:"letBody",pos:st.pos,name:st.k === "const" ? st.name : "",
-              annot:st.k === "const" ? st.annot : null,
-              init:st.k === "const" ? st.init : st.e,body:tail};
-          }
-          return tail;
+          return lowerPrefix(stmts.slice(0,-1),tail);
         };
         body = lowerBlock(node.body.statements.map(stmt));
       } else {

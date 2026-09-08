@@ -231,7 +231,7 @@ verification/run.sh --build --suite stateful-source
 
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
-loops, mutable declarations and falling-through closure branches
+loops, mutable declarations and mixed return/fall-through closure branches
 are not connected yet; their raw request tests remain calculus tests.
 
 ## Record-contract export boundary
@@ -349,11 +349,22 @@ statement-entry and annotation obligations, retaining initializer precision in
 the bound slot. Anonymous effect slots retain their types independently of the
 export's named environment. A terminal `if/else` is represented by `ifBody`,
 with `pos`, `result` (the enclosing result annotation), `cond`, `then` and `else_`.
-Both arms recursively end in returns; prefixes may contain consts and effects.
+Terminal arms recursively end in returns; prefixes may contain consts, effects
+and branches whose arms both fall through.
 Its position selects the checked entry environment, not an expression claim.
 Variable conditions use `ifBoolVar`; other Boolean conditions use `ifBool`.
-Arm statement claims are checked against those justified contexts. Falling-through
-branches and shadowing locals remain gated. Field tests that produce unequal
+Arm statement claims are checked against those justified contexts.
+
+For fall-through branches, `ifBody` has the administrative null result type and
+each arm ends in `{"k":"doneBody","pos":[start,end]}`. The sentinel is not a
+source expression or a claimed JavaScript result. A `seqBody` with `pos`, `init`
+and `body` evaluates this conditional, discards its result and runs one shared
+continuation. The continuation uses an anonymous result slot plus the outer
+context; arm-local slots cannot escape. No synthetic source expression claim
+is requested for either administrative node. Their generated typing obligations
+are nevertheless independently checked, as are every source expression and
+statement-entry environment. Mixed return/fall-through branches and shadowing
+locals remain gated. Field tests that produce unequal
 read/write claims remain outside the invariant-cell slice.
 
 For closure expressions the producer follows explicit proof recipes, retaining

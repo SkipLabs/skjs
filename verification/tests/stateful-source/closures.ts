@@ -104,3 +104,31 @@ function capturedBranch(): boolean {
   cell.value = false;
   return run(null);
 }
+
+function joinedClosure(flag: boolean): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    const cell: { value: boolean } = { value: true };
+    if (flag) {
+      const saved: boolean = flag;
+      cell.value = saved;
+    } else {
+      cell.value = false;
+    }
+    return cell.value;
+  };
+  return run(null);
+}
+
+function nestedFallThrough(flag: boolean, other: boolean): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    const cell: { value: boolean } = { value: true };
+    if (flag) {
+      if (other) {
+        cell.value = false;
+      }
+    }
+    const saved: boolean = cell.value;
+    return saved;
+  };
+  return run(null);
+}
