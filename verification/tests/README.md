@@ -1,7 +1,10 @@
 # Verification regressions
 
-`make verify` runs the maintained source pipeline. Lean tests build alongside
-its implementation in `lean/Verification/ExperimentState/`.
+`make verify-test` runs the maintained pipeline regressions. Lean tests build
+alongside its implementation in `lean/Verification/ExperimentState/`.
+`make verify-examples` separately reports per-function outcomes on original SKJS
+claims for the viewer's corpus, without the repairs or corruptions used in tests.
+`make verify` runs both, with separate summaries.
 
 | Tests | Coverage |
 |---|---|

@@ -25,7 +25,11 @@ for the trust boundary, and [tests/README](tests/README.md) for retained coverag
 - The parser has one behavior. `--stateful` is no longer needed or documented;
   the old named-top-level-call lowering branch is gone. The CLI retains the
   explicit request/source production and checking modes, not the old three-arg
-  invocation. `make verify` is the maintained test command.
+  invocation. `make verify-test` runs pipeline regressions; `make verify-examples`
+  reports original claims per function. `make verify` runs both.
+- `examples.js` reuses the viewer's example registry and `verifySkjs` report adapter.
+  Keep its paired SKJS/proof status meanings aligned with the viewer; failed proof
+  search is not disproof. `skjs.sh` shares producer invocation between the two commands.
 - `report-viewer/examples.js` defines picker groups. Default examples are covered
   by current source suites; partial collection is a separate repair exercise.
   Four fixtures in `tests/unsupported/` have expected-reason rejection tests.

@@ -6,7 +6,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
-SKJS_BIN="target/host/dev/skjs"
+SKJS_BIN="${SKJS_BIN:-target/host/dev/skjs}"
 BUILD=0
 VERBOSE=0
 SUITE=all
@@ -24,15 +24,64 @@ case "$SUITE" in
   *) echo "Unknown suite '$SUITE': use stateful-source or all"; exit 2 ;;
 esac
 
-DOCKER_IMAGE="${DOCKER_IMAGE:-skiplabs/skip:latest}"
-SKIP_DIR="${SKIP_DIR:-$REPO/../skip}"
 VERIFIER="$REPO/verification/lean/.lake/build/bin/verifier"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+passed=0
+failed=0
+completed=0
+build_status="not requested"
+started_at=$SECONDS
+
+# Match the example report; preserve readable plain text in logs and NO_COLOR.
+status_line() {
+  local color="$1"
+  shift
+  if [ -t 1 ] && [ "${TERM:-}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
+    printf '\033[%sm%s\033[0m\n' "$color" "$*"
+  else
+    printf '%s\n' "$*"
+  fi
+}
+
+# Count test executables, not their differently formatted internal assertions.
+# An early setup/build failure must still produce a failed, incomplete summary.
+finish() {
+  local status=$?
+  echo
+  if [ "$status" -eq 0 ]; then
+    status_line 32 "✓ Pipeline tests: PASS"
+  else
+    status_line 31 "✗ Pipeline tests: FAIL"
+  fi
+  echo "  Lean build: $build_status"
+  echo "  Test suites: $passed passed, $failed failed"
+  if [ "$completed" -eq 0 ]; then
+    status_line 33 "  ⚠ Run stopped early; remaining suites were not run."
+  fi
+  echo "  Elapsed: $((SECONDS - started_at))s"
+  rm -rf "$WORK"
+}
+trap finish EXIT
+
+run_test() {
+  local name="$1"
+  shift
+  printf '\n%s\n' "$name"
+  if "$@"; then
+    passed=$((passed + 1))
+    status_line 32 "✓ $name"
+  else
+    failed=$((failed + 1))
+    status_line 31 "✗ $name"
+    return 1
+  fi
+}
 
 if [ "$BUILD" -eq 1 ]; then
+  build_status="failed"
   echo "Building verifier..."
   if (cd verification/lean && lake build) > "$WORK/build.out" 2>&1; then
+    build_status="passed"
     [ "$VERBOSE" -eq 0 ] || cat "$WORK/build.out"
   else
     echo "FAIL: verifier build"
@@ -41,23 +90,10 @@ if [ "$BUILD" -eq 1 ]; then
   fi
 fi
 
-skjs_run() { # CLI options, then repo-relative source path
-  if [ -n "${DEVCONTAINER:-}" ]; then
-    "$SKJS_BIN" check --import-stubs import-stubs --truthiness boolean \
-      "$@"
-  else
-    docker run --rm -v "$REPO:/work/skjs" -v "$SKIP_DIR:/work/skip" \
-      -w /work/skjs "$DOCKER_IMAGE" \
-      "$SKJS_BIN" check --import-stubs import-stubs --truthiness boolean \
-      "$@"
-  fi
-}
+source "$REPO/verification/skjs.sh"
 
-skjs_check() { skjs_run --emit-skjs-type-claims "$1"; }
-
-fail=0
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
-  if ! node verification/tests/unsupported.js "$VERIFIER"; then exit 1; fi
+  if ! run_test "Source boundaries" node verification/tests/unsupported.js "$VERIFIER"; then exit 1; fi
   BASE="verification/tests/stateful-source/basic.ts"
   if ! { node verification/tools/parse-source.js "$BASE" > "$WORK/source.ast" &&
          skjs_check "$BASE" > "$WORK/source.claims"; } 2> "$WORK/source.setup.err"; then
@@ -65,10 +101,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     cat "$WORK/source.setup.err"
     exit 1
   fi
-  if ! node verification/tests/stateful-source.js "$WORK/source.ast" "$WORK/source.claims" \
-       "$BASE" "$VERIFIER"; then
-    fail=$((fail + 1))
-  fi
+  run_test "Source claims and certificates" node verification/tests/stateful-source.js "$WORK/source.ast" "$WORK/source.claims" \
+       "$BASE" "$VERIFIER"
   CELL_SOURCE="verification/tests/stateful-source/cells.ts"
   if ! { node verification/tools/parse-source.js "$CELL_SOURCE" > "$WORK/cells.ast" &&
          skjs_check "$CELL_SOURCE" > "$WORK/cells.claims"; } 2> "$WORK/cells.setup.err"; then
@@ -76,10 +110,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     cat "$WORK/cells.setup.err"
     exit 1
   fi
-  if ! node verification/tests/stateful-cells.js "$WORK/cells.ast" "$WORK/cells.claims" \
-       "$CELL_SOURCE" "$VERIFIER"; then
-    fail=$((fail + 1))
-  fi
+  run_test "Mutable cells" node verification/tests/stateful-cells.js "$WORK/cells.ast" "$WORK/cells.claims" \
+       "$CELL_SOURCE" "$VERIFIER"
   CLOSURES="verification/tests/stateful-source/closures.ts"
   if ! { node verification/tools/parse-source.js "$CLOSURES" > "$WORK/closures.ast" &&
          skjs_check "$CLOSURES" > "$WORK/closures.claims"; } 2> "$WORK/closures.setup.err"; then
@@ -87,10 +119,8 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     cat "$WORK/closures.setup.err"
     exit 1
   fi
-  if ! node verification/tests/stateful-closures.js "$WORK/closures.ast" "$WORK/closures.claims" \
-       "$CLOSURES" "$VERIFIER"; then
-    fail=$((fail + 1))
-  fi
+  run_test "Closures" node verification/tests/stateful-closures.js "$WORK/closures.ast" "$WORK/closures.claims" \
+       "$CLOSURES" "$VERIFIER"
   CALLBACKS="verification/tests/stateful-source/primitive-callbacks.ts"
   COUNTEREXAMPLE="verification/tests/skjs-unsound/captured-refinement.ts"
   for pair in "$CALLBACKS:callbacks" "$COUNTEREXAMPLE:counterexample"; do
@@ -100,7 +130,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       echo "FAIL: callback fixture setup"; cat "$WORK/$fixture.err"; exit 1
     fi
   done
-  if ! node verification/tests/primitive-callbacks.js "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER" \
+  if ! run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.js "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER" \
        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"; then exit 1; fi
   NEGATION="verification/tests/stateful-source/negation.ts"
   if ! { node verification/tools/parse-source.js "$NEGATION" > "$WORK/negation.ast" &&
@@ -117,7 +147,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   if skjs_check "$SINGLETON" > "$WORK/singleton.claims" 2> "$WORK/singleton.err"; then
     echo "FAIL: SKJS unexpectedly accepts the singleton-negation witness"; exit 1
   fi
-  if ! node verification/tests/negation.js "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER" \
+  if ! run_test "Negation and claim repair" node verification/tests/negation.js "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER" \
        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT" \
        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"; then exit 1; fi
   NULL_TESTS="verification/tests/stateful-source/null-tests.ts"
@@ -129,21 +159,21 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       echo "FAIL: null-test fixture setup"; cat "$WORK/$fixture.err"; exit 1
     fi
   done
-  if ! node verification/tests/null-tests.js "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER" \
+  if ! run_test "Null predicates" node verification/tests/null-tests.js "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER" \
        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"; then exit 1; fi
   LOOPS="verification/tests/stateful-source/loops.ts"
   if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
          skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then
     echo "FAIL: loop source test setup"; cat "$WORK/loops.setup.err"; exit 1
   fi
-  if ! node verification/tests/stateful-loops.js "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"; then exit 1; fi
+  if ! run_test "While loops" node verification/tests/stateful-loops.js "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"; then exit 1; fi
   TRANSFERS="verification/tests/stateful-source/loop-transfers.ts"
   if ! { node verification/tools/parse-source.js "$TRANSFERS" > "$WORK/transfers.ast" &&
          skjs_check "$TRANSFERS" > "$WORK/transfers.claims"; } 2> "$WORK/transfers.setup.err"; then
     echo "FAIL: loop transfer setup"; cat "$WORK/transfers.setup.err"; exit 1
   fi
-  if ! node verification/tests/stateful-loop-transfers.js "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"; then exit 1; fi
-  if ! node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
+  if ! run_test "Break and continue" node verification/tests/stateful-loop-transfers.js "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"; then exit 1; fi
+  if ! run_test "Producer-neutral claims" node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
   PARTIAL=verification/tests/partial-claims.ts
   skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
   plain_status=$?
@@ -155,25 +185,22 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
      ! cmp -s "$WORK/partial.plain.err" "$WORK/partial.err"; then
     echo "FAIL: partial export changed ordinary diagnostics or exit status"; exit 1
   fi
-  if ! node verification/tests/source-claim-export.js "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL" "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"; then exit 1; fi
-  if ! node verification/tests/partial-claims.js "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"; then
+  if ! run_test "Claim export" node verification/tests/source-claim-export.js "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL" "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"; then exit 1; fi
+  if ! run_test "Partial collection" node verification/tests/partial-claims.js "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"; then
     exit 1
   fi
-  if ! node verification/tests/annotated-source.js "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"; then
-    fail=$((fail + 1))
-  fi
-  if ! node verification/tests/report-viewer.js; then fail=$((fail + 1)); fi
-  if ! node verification/tests/candidate-editor.js "$WORK/closures.claims"; then fail=$((fail + 1)); fi
+  run_test "Annotated source reports" node verification/tests/annotated-source.js "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
+  run_test "Report viewer" node verification/tests/report-viewer.js
+  run_test "Candidate editing" node verification/tests/candidate-editor.js "$WORK/closures.claims"
   CELLS="verification/tests/stateful-source/cell-contracts.ts"
   if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.setup.err"; then
     echo "FAIL: cell contract export setup"
     cat "$WORK/cell.setup.err"
     exit 1
   fi
-  if ! "$REPO/verification/lean/.lake/build/bin/cell_claim_tests" "$WORK/cell.claims" "$CELLS"; then
-    fail=$((fail + 1))
-  fi
+  run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests" "$WORK/cell.claims" "$CELLS"
 
 fi
 
-[ "$fail" -eq 0 ]
+completed=1
+[ "$failed" -eq 0 ]

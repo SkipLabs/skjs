@@ -21,13 +21,35 @@ make build-in-docker
 make verify
 ```
 
-`make verify` builds Lean and runs source integration, altered-claim and
-certificate tests, boundary examples, partial exports, and report/editor tests.
-Use `VERBOSE=1` for build details. Without rebuilding Lean:
+The commands separate regression testing from inspecting example outcomes:
+
+- `make verify-test` builds Lean and runs named pipeline suites: source integration,
+  altered claims and certificates, source boundaries, partial exports and report/editor
+  tests. Its summary counts test executables, not functions or assertions, and marks
+  an incomplete run after an early failure.
+- `make verify-examples` builds Lean and checks fresh, original SKJS claims for the
+  viewer's example corpus. It lists each function with the viewer's paired outcomes:
+  `SKJS ✓/✗/· · proof ✓/✗/?`. Proof `✓` means independently verified, `✗` means proof
+  search failed (not a disproof), and `?` means unsupported source or missing claims.
+  `⚠ outcomes differ` calls attention to disagreement without claiming an SKJS bug.
+  No repair is applied; repair demonstrations belong to the regression suites.
+- `make verify` runs both, building Lean once and keeping their summaries separate.
+
+The example summary counts functions by producer and proof outcome. A separate
+expectation check fails the command on unexpected verification outcomes or runner
+errors. Matching expectations does not mean every example verifies. Both commands
+use some of the same source fixtures, for these different purposes.
+Terminal output uses green for success, red for rejection or failed proof search,
+and amber for unavailable checks or differing outcomes. Symbols and words remain
+visible without color. Redirected output, `TERM=dumb`, and a nonempty `NO_COLOR`
+disable colors.
+Use `VERBOSE=1` for build details and example diagnostics. Without rebuilding Lean:
 
 ```sh
 verification/run.sh
 verification/run.sh --skjs target/host/dev/skjs.some-variant
+node verification/examples.js
+node verification/examples.js --skjs target/host/dev/skjs.some-variant
 ```
 
 Rebuild SKJS when its implementation changes. Repository-wide `make test` checks
