@@ -33,3 +33,24 @@ function allocatedCell(seed: boolean): boolean {
   alias.value = false;
   return cell.value;
 }
+
+function indexedCell(cell: {
+  value: boolean;
+  [key: string]: boolean;
+}): boolean {
+  return cell.value;
+}
+
+function allocatedLiteral(): true {
+  const cell: { value: true } = { value: true };
+  return cell.value;
+}
+
+function allocatedWidened(): boolean {
+  const cell: { value: boolean } = { value: true };
+  return cell.value;
+}
+
+function genericCell<T>(cell: { value: T }): T {
+  return cell.value;
+}

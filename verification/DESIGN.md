@@ -378,7 +378,8 @@ graph-backed callable closures remain separate integration work.
 The cell-contract boundary is implemented in
 [CellClaims.lean](lean/Verification/ExperimentState/CellClaims.lean). SKJS exports
 a bounded single-field record with separate read/write types, optionality and
-object-mode flags. The Lean gate requires a required `value` field and equal
+object-mode flags. Synthetic index markers are recorded separately from runtime
+permissions; real indexes remain unsupported. The Lean gate requires a required `value` field and equal
 read/write meanings after exact primitive normalization. A mutable Boolean
 field passes; a readonly Boolean field has `never` writes and fails this
 particular invariant-cell gate. Readonly objects need a different capability
@@ -389,12 +390,16 @@ an equivalence theorem for TypeScript records and calculus references. Record
 annotations cannot distinguish data properties from accessors. Establishing
 plain-data allocation remains a source-gate and representation obligation.
 
-The allocation/alias-write probe preserves Boolean contracts for both aliases
-after the write, but the fresh object literal's expression claim is still
-unsupported. The test records that gap explicitly. Replacing that expression
-claim with the declaration's annotation would change what is being verified.
+Fresh object literals carry synthetic indexes and inference-variable field
+bounds internally. Export records the former and reads the latter from the
+function's substitution snapshot, without changing inference. Only isolated,
+bound variables without constraints are followed, with bounded recursion;
+unresolved or recursive cases remain unsupported. Tests check actual allocation
+expression claims at Boolean and singleton contracts, contextual field growth,
+and preservation of both aliases' contracts after a write. This export mapping
+is explicit but is not a proved correspondence with SKJS's internal semantics.
 
-Next, resolve the fresh-allocation export, then lower plain object allocation,
+Next, lower plain object allocation,
 property reads and writes while preserving consumed expression claims and
 JavaScript evaluation order. Cell source programs are not yet accepted by the
 program consumer. Closures follow that slice. Binding identities must become explicit before supporting hidden,

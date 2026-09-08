@@ -232,6 +232,7 @@ The SKJS claim exporter additionally supports this bounded record atom:
     "read": {"top": false, "atoms": [{"a": "boolean"}]},
     "write": {"top": false, "atoms": [{"a": "boolean"}]}
   }],
+  "indexes": {"string": "absent", "number": "absent", "symbol": "absent"},
   "call": "unknown",
   "construct": "unknown",
   "array": "unknown"
@@ -240,10 +241,22 @@ The SKJS claim exporter additionally supports this bounded record atom:
 
 This is an SKJS export atom, **not** a new calculus type-graph clause. It records
 permissions rather than choosing a heap invariant. The bounded exporter rejects
-extra fields, symbols, indexes, positive callable/array requirements and nested
-or unresolved field types. It preserves readonly setters as `never` and marks
+extra fields, symbols, real index signatures, positive callable/array requirements
+and nested or unresolved field types. The `indexes` object distinguishes `absent`
+from `synthetic` for each key kind. Synthetic indexes are SKJS inference artifacts
+excluded from runtime field lookup, not index permissions; their internal type
+variables are not exported. It preserves readonly setters as `never` and marks
 optional fields explicitly. `unknown` and `absent` object modes are distinct
 exports, though both are compatible with the future plain-cell interpretation.
+
+Function claims retain the substitution snapshot taken after checking the body.
+Serialization follows only isolated, bound inference variables without
+constraints, up to a fixed recursion limit. It reads both open and closed
+existing bounds without solving, sealing or growing them. Unbound variables,
+constraints, named instances and cycles remain unsupported. This exposes the
+field bounds of fresh object literals without replacing their expression claims
+with declaration annotations. Faithfulness of this bounded export to SKJS's
+internal types is not a Lean theorem.
 
 `CellClaims.translate` validates this shape and requires the read and write
 types to normalize to the same supported primitive set. Unknown fields and
@@ -253,7 +266,7 @@ reference to that meaning; the theorem does not yet establish a TypeScript
 record-to-reference correspondence or exclude accessor-backed runtime objects.
 
 `cell_claim_tests` exercises real SKJS exports and corrupted contracts as part
-of `make verify`. The allocation/alias-write probe retains the named cell
-contracts, while the object literal's own claim remains unsupported. The source
+of `make verify`. Allocation probes check Boolean, singleton and contextually
+widened field bounds; the alias-write probe retains both named cell contracts. The source
 compiler still rejects cell syntax. Plain-data allocation, property reads/writes
 and their source correspondence are the next integration work.

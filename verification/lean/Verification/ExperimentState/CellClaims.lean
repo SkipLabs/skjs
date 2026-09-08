@@ -33,7 +33,9 @@ structure FieldClaim where
 The schema cannot distinguish data properties from accessors; the source gate
 must establish plain-data allocation before using this interpretation. Positive
 call, construct, array, index, symbol and extra-field requirements are excluded
-by this bounded schema. Absence and unknown modes have the same interpretation
+by this bounded schema. Synthetic index markers describe exporter bookkeeping,
+not runtime permissions; their internal inference variables are not interpreted.
+Absence and unknown modes have the same interpretation
 within the plain-cell fragment; this is not full TypeScript object semantics. -/
 def decode (j : Json) : Except String FieldClaim := do
   fieldsExactly j ["top","atoms"]
@@ -42,8 +44,14 @@ def decode (j : Json) : Except String FieldClaim := do
   let atom ← match atoms with
     | [a] => pure a
     | _ => throw "expected a single record atom"
-  fieldsExactly atom ["a","fields","call","construct","array"]
+  fieldsExactly atom ["a","fields","indexes","call","construct","array"]
   if (← jStr (← jField atom "a")) != "record" then throw "expected a record atom"
+  let indexes ← jField atom "indexes"
+  fieldsExactly indexes ["string","number","symbol"]
+  for kind in ["string","number","symbol"] do
+    let mode ← jStr (← jField indexes kind)
+    if mode != "absent" && mode != "synthetic" then
+      throw "real index signatures are not invariant cells"
   plainMode atom "call"
   plainMode atom "construct"
   plainMode atom "array"

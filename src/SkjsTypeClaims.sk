@@ -36,6 +36,9 @@ class FunTypeClaims(
   retType: TType,
   envs: Array<TypeClaimEnv>,
   exprs: Array<TypeClaimExpr>,
+  // Snapshot after checking the body. Export may read existing bounds but
+  // cannot solve, seal or grow inference variables.
+  substValues: SortedMap<TVarID, SubstValue>,
 )
 
 // Collects the claims for one function once its body has been checked.
@@ -80,6 +83,7 @@ fun buildFunTypeClaims(
     retType,
     tcenv.claimedEnvs.toArray(),
     exprs.toArray(),
+    tcenv.subst.values,
   )
 }
 
@@ -110,6 +114,8 @@ fun claimPushAtoms(
   sty: SType,
   acc: mutable Vector<String>,
   records: Bool,
+  values: SortedMap<TVarID, SubstValue>,
+  fuel: Int,
 ): Bool {
   sty match {
   | TPrimUnit(TNull(), _) ->
@@ -140,7 +146,7 @@ fun claimPushAtoms(
     }
   | obj @ TObject _ ->
     if (records) {
-      claimCellRecordJson(obj) match {
+      claimCellRecordJson(obj, values, fuel) match {
       | Some(atom) ->
         acc.push(atom);
         true
@@ -152,10 +158,27 @@ fun claimPushAtoms(
   }
 }
 
-fun claimTypeJsonBounded(ty: TType, records: Bool): String {
-  if (!ty.insts.isEmpty()) {
-    // Unexpanded instances, type variables and intersections are outside the fragment.
+fun claimTypeJsonBounded(
+  ty: TType,
+  records: Bool,
+  values: SortedMap<TVarID, SubstValue>,
+  fuel: Int,
+): String {
+  if (fuel <= 0) {
     claimUnsupported
+  } else if (!ty.insts.isEmpty()) {
+    // Only an isolated, bound, unconstrained inference variable can be read
+    // from the snapshot. Do not approximate constraints or expand named types.
+    ty.getSingleVar() match {
+    | Some(tv) if (tv.constraints.isEmpty()) ->
+      values.maybeGet(tv.id) match {
+      | Some(SVOpen(bound))
+      | Some(SVClosed(bound)) ->
+        claimTypeJsonBounded(bound, records, values, fuel - 1)
+      | None() -> claimUnsupported
+      }
+    | _ -> claimUnsupported
+    }
   } else if (ty.clauses.isTop()) {
     "{\"top\": true, \"atoms\": []}"
   } else {
@@ -172,7 +195,7 @@ fun claimTypeJsonBounded(ty: TType, records: Bool): String {
       | None() -> !ok = false
       | Some(stypes) ->
         for (sty in stypes) {
-          if (!claimPushAtoms(sty, atoms, records)) {
+          if (!claimPushAtoms(sty, atoms, records, values, fuel - 1)) {
             !ok = false
           }
         }
@@ -190,11 +213,15 @@ fun claimTypeJsonBounded(ty: TType, records: Bool): String {
   }
 }
 
-// A deliberately bounded record export: one public `value` field, no index,
+// A deliberately bounded record export: one public `value` field, no real index,
 // symbol, array, call or construct requirements. Preserve read and write types
 // separately; the verifier decides whether they justify an invariant cell.
 // Primitive-only recursive calls bound serialization even for recursive types.
-fun claimCellRecordJson(obj: TObject): ?String {
+fun claimCellRecordJson(
+  obj: TObject,
+  values: SortedMap<TVarID, SubstValue>,
+  fuel: Int,
+): ?String {
   branches = obj.getBranches();
   if (obj.unexpandedType.isSome() || branches.size() != 1) {
     None()
@@ -215,9 +242,7 @@ fun claimCellRecordJson(obj: TObject): ?String {
     if (
       fields.isArray == Some(true) ||
       !fields.symbolFields.isEmpty() ||
-      fields.stringIndex.isSome() ||
-      fields.numberIndex.isSome() ||
-      fields.symbolIndex.isSome() ||
+      fields.hasNonSyntheticIndex() ||
       callMode.isNone() ||
       newMode.isNone()
     ) {
@@ -229,8 +254,8 @@ fun claimCellRecordJson(obj: TObject): ?String {
         if (field.name.value != "value" || !(field.access is FAPublic())) {
           !ok = false
         };
-        read = claimTypeJsonBounded(field.get, false);
-        write = claimTypeJsonBounded(field.set, false);
+        read = claimTypeJsonBounded(field.get, false, values, fuel);
+        write = claimTypeJsonBounded(field.set, false, values, fuel);
         if (read == claimUnsupported || write == claimUnsupported) {
           !ok = false
         };
@@ -251,6 +276,39 @@ fun claimCellRecordJson(obj: TObject): ?String {
             Array[
               ("a", jsonStr("record")),
               ("fields", jsonArr(entries)),
+              // Synthetic indexes are inference bookkeeping, excluded from
+              // runtime field lookup. Record their presence, not their TVars.
+              (
+                "indexes",
+                jsonObj(
+                  Array[
+                    (
+                      "string",
+                      jsonStr(
+                        if (fields.stringIndex.isSome()) "synthetic" else {
+                          "absent"
+                        },
+                      ),
+                    ),
+                    (
+                      "number",
+                      jsonStr(
+                        if (fields.numberIndex.isSome()) "synthetic" else {
+                          "absent"
+                        },
+                      ),
+                    ),
+                    (
+                      "symbol",
+                      jsonStr(
+                        if (fields.symbolIndex.isSome()) "synthetic" else {
+                          "absent"
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               (
                 "call",
                 jsonStr(
@@ -285,8 +343,8 @@ fun claimCellRecordJson(obj: TObject): ?String {
   }
 }
 
-fun claimTypeJson(ty: TType): String {
-  claimTypeJsonBounded(ty, true)
+fun claimTypeJson(ty: TType, values: SortedMap<TVarID, SubstValue>): String {
+  claimTypeJsonBounded(ty, true, values, 64)
 }
 
 /***************************************************************************/
@@ -310,12 +368,15 @@ fun funTypeClaimsJson(
         jsonArr(
           fc.params.map(p ->
             jsonObj(
-              Array[("name", jsonStr(p.name)), ("type", claimTypeJson(p.type))],
+              Array[
+                ("name", jsonStr(p.name)),
+                ("type", claimTypeJson(p.type, fc.substValues)),
+              ],
             )
           ),
         ),
       ),
-      ("retType", claimTypeJson(fc.retType)),
+      ("retType", claimTypeJson(fc.retType, fc.substValues)),
       (
         "envs",
         jsonArr(
@@ -330,7 +391,7 @@ fun funTypeClaimsJson(
                       jsonObj(
                         Array[
                           ("name", jsonStr(v.name)),
-                          ("type", claimTypeJson(v.type)),
+                          ("type", claimTypeJson(v.type, fc.substValues)),
                         ],
                       )
                     ),
@@ -348,7 +409,7 @@ fun funTypeClaimsJson(
             jsonObj(
               Array[
                 ("pos", claimPosJson(x.pos, symbols)),
-                ("type", claimTypeJson(x.type)),
+                ("type", claimTypeJson(x.type, fc.substValues)),
               ],
             )
           ),

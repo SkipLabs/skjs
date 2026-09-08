@@ -49,7 +49,7 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
     (SourceTypes.encode ro.read == [1,2] && SourceTypes.encode ro.write == [])]
   log := log ++ [← expect "readonly is not a mutable invariant" (rejects readonlyCell)]
   log := log ++ [← expect "optional is not a required cell" (rejects optionalCell)]
-  for name in ["otherField","extraField","nestedCell"] do
+  for name in ["otherField","extraField","nestedCell","indexedCell","genericCell"] do
     let ty ← param name
     log := log ++ [← expect s!"{name} stays unsupported"
       ((ty.getObjValAs? Bool "unsupported").toOption == some true)]
@@ -75,12 +75,30 @@ private def checks (claims : Json) (fileKey : String) : Except String (List Stri
     let v ← (vars.find? (fun v => (v.getObjValAs? String "name").toOption == some name)).toExcept "missing alias binding"
     log := log ++ [← expect s!"{name} invariant survives alias-write export" (is (← jField v "type") [1,2])]
   -- Sorted source spans put the outer object literal before its initializer.
-  -- Pin this current export gap so it cannot silently become a substituted
-  -- annotation while allocation lowering is added.
   let allocation ← (← jArr allocated "exprs").head?.toExcept "missing allocation expression"
   let allocationType ← jField allocation "type"
-  log := log ++ [← expect "fresh allocation claim remains explicitly unsupported"
-    ((allocationType.getObjValAs? Bool "unsupported").toOption == some true)]
+  log := log ++ [← expect "fresh allocation preserves Boolean contract" (is allocationType [1,2])]
+  let allocationAtom ← (← jArr allocationType "atoms").head?.toExcept "missing allocation record"
+  let indexes ← jField allocationAtom "indexes"
+  log := log ++ [← expect "fresh allocation records synthetic indexes"
+    ((← jStr (← jField indexes "string")) == "synthetic" &&
+     (← jStr (← jField indexes "symbol")) == "synthetic" &&
+     (← jStr (← jField indexes "number")) == "absent")]
+  log := log ++ [← expect "fresh allocation records plain object modes"
+    ((← jStr (← jField allocationAtom "call")) == "absent" &&
+     (← jStr (← jField allocationAtom "construct")) == "absent" &&
+     (← jStr (← jField allocationAtom "array")) == "absent")]
+  log := log ++ [← expect "real index marker rejected"
+    (rejects (← atomMap allocationType (fun a => put a "indexes"
+      (put indexes "string" (toJson "present")))))]
+  let litFn ← (fs.find? (fun f => (f.getObjValAs? String "name").toOption == some "allocatedLiteral")).toExcept "missing literal allocation"
+  let litExpr ← (← jArr litFn "exprs").head?.toExcept "missing literal expression"
+  log := log ++ [← expect "fresh allocation preserves singleton contract"
+    (is (← jField litExpr "type") [1])]
+  let wideFn ← (fs.find? (fun f => (f.getObjValAs? String "name").toOption == some "allocatedWidened")).toExcept "missing widened allocation"
+  let wideExpr ← (← jArr wideFn "exprs").head?.toExcept "missing widened expression"
+  log := log ++ [← expect "fresh allocation uses inferred field bound"
+    (is (← jField wideExpr "type") [1,2])]
   return log
 
 def main (args : List String) : IO UInt32 := do
