@@ -391,7 +391,7 @@ const marks = require("../report-viewer/marks.js");
 }
 
 /* ---------- claim types in surface syntax ---------- */
-const surface = require("../report-viewer/types.js");
+const surface = require("../tools/claim-types.js");
 
 {
   const cell = (read, write) => ({
@@ -443,7 +443,9 @@ const surface = require("../report-viewer/types.js");
     "{ value: read true write boolean }",
     "(boolean) => null",
   ]);
-  // Everything printed exactly must read back as the encoding it came from.
+  // A printed type must read back, against the type it came from, as exactly
+  // that type. The text is a view: it does not carry index signatures, callable
+  // shapes or optionality, which reading takes from the original.
   for (const [i, type] of shapes.entries())
     assert(surface.roundTrips(type), "round trip: " + printed[i]);
 
@@ -478,7 +480,7 @@ const surface = require("../report-viewer/types.js");
 
   // An encoding this reader cannot name is summarized, and then not editable.
   const exotic = of({ a: "tuple", parts: [] });
-  assert.equal(surface.printType(exotic).exact, false);
+  assert.equal(surface.printType(exotic).printable, false);
   assert.equal(surface.printType(exotic).text, "«tuple»");
   assert.equal(surface.roundTrips(exotic), false);
   assert.equal(surface.printType({ unsupported: true }).text, "(unavailable)");

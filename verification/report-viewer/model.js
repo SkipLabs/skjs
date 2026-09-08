@@ -1,8 +1,8 @@
 "use strict";
-// Surface type printing lives in types.js.
+// Surface type printing is shared with the report writer.
 const SURFACE =
-  typeof module !== "undefined" ? require("./types.js") : surfaceTypes;
-// Not named printType: types.js already owns that name in the page's one scope.
+  typeof module !== "undefined" ? require("../tools/claim-types.js") : surfaceTypes;
+// Not named printType: claim-types.js owns that name in the page's one scope.
 const printSurface = (type) => SURFACE.printType(type);
 
 /* ---------- reading the annotated format ---------- */
@@ -207,7 +207,7 @@ function parseReport(annotated) {
 function signatureText(signature) {
   const part = (type) => {
     const printed = printSurface(type);
-    return printed.exact ? printed.text : JSON.stringify(type);
+    return printed.printable ? printed.text : JSON.stringify(type);
   };
   const params = (signature.params || [])
     .map((p) => (p.name ? p.name + ": " : "") + part(p.type))
@@ -251,7 +251,7 @@ function fromBundle(bundle) {
   const display = (encoding, fallback) => {
     if (encoding === undefined || encoding === null) return fallback;
     const printed = printSurface(encoding);
-    return printed.exact ? printed.text : fallback;
+    return printed.printable ? printed.text : fallback;
   };
   const gaps = [
     ...(m.gaps || []),

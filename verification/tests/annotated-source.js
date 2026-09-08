@@ -105,17 +105,55 @@ try {
     assert.equal(cli([generic,"--claims",gp,"--format","report","--stdout","json"]).status,0);
     assert.deepEqual(fs.readdirSync(tmp),before);
   });
+  // Comments show claim types in surface syntax; the manifest keeps the exact
+  // encoding. A shape the printer cannot name stays visible as its encoding.
+  test("structured claims read as types in the comment, and stay exact in the manifest",()=>{
+    const text="function cell(): boolean { return true; }\n";
+    const ns=text.indexOf("cell"), ret=text.indexOf("true");
+    const encoding={top:false,atoms:[{a:"record",fields:[{name:"value",optional:false,
+      read:{top:false,atoms:[{a:"boolean"}]},write:{top:false,atoms:[{a:"boolean"}]}}],
+      indexes:{string:"synthetic",number:"absent",symbol:"synthetic"},call:"absent",construct:"absent",array:"absent"}]};
+    const exotic={top:false,atoms:[{a:"tuple",parts:[]}]};
+    const input=path.join(tmp,"cell.ts"),cp=path.join(tmp,"cell.json"),out=path.join(tmp,"cell.annotated.ts");
+    fs.writeFileSync(input,text);
+    fs.writeFileSync(cp,JSON.stringify([{file:input,functions:[{name:"cell",namePos:[ns,ns+4],params:[],
+      retType:{top:false,atoms:[{a:"boolean"}]},envs:[],
+      exprs:[{pos:[ret,ret+4],type:encoding},{pos:[text.indexOf("return"),text.indexOf(";")+1],type:exotic}]}]}]));
+    const r=cli([input,"--claims",cp,"--out",out]);assert.equal(r.status,0,r.stderr);
+    const annotated=fs.readFileSync(out,"utf8");
+    assert(annotated.includes("expr { value: boolean }"),annotated);
+    assert(annotated.includes('"a":"tuple"'),"an unnameable shape keeps its encoding");
+    const m=JSON.parse(fs.readFileSync(out+".json"));
+    assert.deepEqual(m.functions[0].expressions[0].raw,encoding);
+    assert.deepEqual(m.functions[0].expressions[1].raw,exotic);
+  });
+  test("a type containing a comment terminator cannot end the comment",()=>{
+    const text="function s(): boolean { return true; }\n";
+    const ns=text.indexOf("s("), ret=text.indexOf("true");
+    const encoding={top:false,atoms:[{a:"stringlit",v:"ends */ here"}]};
+    const input=path.join(tmp,"esc.ts"),cp=path.join(tmp,"esc.json"),out=path.join(tmp,"esc.annotated.ts");
+    fs.writeFileSync(input,text);
+    fs.writeFileSync(cp,JSON.stringify([{file:input,functions:[{name:"s",namePos:[ns,ns+1],params:[],
+      retType:{top:false,atoms:[{a:"boolean"}]},envs:[],exprs:[{pos:[ret,ret+4],type:encoding}]}]}]));
+    const r=cli([input,"--claims",cp,"--out",out]);assert.equal(r.status,0,r.stderr);
+    const annotated=fs.readFileSync(out,"utf8");
+    assert(annotated.includes("ends *\\/ here"),annotated);
+    assert(!/\*\/ here/.test(annotated),"the terminator must not survive unescaped");
+    // The reader recovers the exact source from that comment.
+    const {parseReport}=require("../report-viewer/model.js");
+    assert.equal(parseReport(annotated).source,text);
+  });
   const real=fs.readFileSync(fileKey,"utf8"), claims=JSON.parse(fs.readFileSync(claimsPath));
   // Surface syntax is what a reader edits claims in, so it has to determine the
   // producer's encoding exactly. Check that on every type in a real export.
   test("every exported claim type survives printing and reading back",()=>{
-    const {printType,parseType}=require("../report-viewer/types.js");
+    const {printType,parseType}=require("../tools/claim-types.js");
     const types=[];
     const walk=f=>{for(const e of f.exprs||[])types.push(e.type);
       for(const env of f.envs||[])for(const v of env.vars||[])types.push(v.type);
       for(const p of f.params||[])types.push(p.type); types.push(f.retType);};
     for(const file of claims)for(const f of file.functions)walk(f);
-    const printable=types.filter(t=>t&&!t.unsupported&&printType(t).exact);
+    const printable=types.filter(t=>t&&!t.unsupported&&printType(t).printable);
     assert(printable.length>50,`only ${printable.length} printable types`);
     for(const type of printable)
       assert.deepEqual(parseType(printType(type).text,type),type,printType(type).text);

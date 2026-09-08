@@ -51,12 +51,29 @@ prose as text that may be reworded.
 Manifest records carry the same `id`, so a tool can display a mark and look up
 its exact producer payload without matching on positions or prose.
 
-Types are displayed as the types they are: primitive names, and literal types as
-the literal (`"string"`, `3`, `true`). An encoding the display decoder does not
-recognize is kept verbatim as JSON, so a requirement is never silently dropped.
-A binding the producer could not decode has no claimed type at all and reads
-`(unavailable)`; it is named in the `unsupported` field rather than given an
-invented type. The manifest preserves every original type payload either way.
+Types are displayed in surface syntax: primitive names, literals as the literal
+(`"string"`, `3`, `true`), unions as `a | b`, cells as `{ value: boolean }`, and
+arrows as `(boolean) => null`. A cell whose read and write types differ shows
+both (`{ value: read true write boolean }`), because that distinction is exactly
+what a stale refinement looks like and TypeScript has no shape for it.
+`tools/claim-types.js` does this printing, and the reader uses the same module,
+so a comment and a panel never disagree.
+
+The displayed text is a **view of the claim, not an encoding of it**. Surface
+syntax does not show index signatures, callable shapes or per-field optionality,
+so reading a type back requires the claim it came from: what the text names is
+replaced, and what it does not name comes from that original. A shape the
+printer cannot name is written verbatim as JSON rather than summarized, so no
+requirement is silently hidden. A binding the producer could not decode has no
+claimed type at all and reads `(unavailable)`; it is named in the `unsupported`
+field rather than given an invented type.
+
+**The manifest keeps the producer's exact payloads** in `raw`, whatever the
+comment shows. Claim identity, certificates and verification results depend on
+those, never on the display text. Changing how a type is printed changes the
+bytes of newly generated annotated files, and therefore their `annotatedSha256`;
+snapshots generated earlier stay valid against the hashes recorded with them, and
+source, claim and certificate identities are unaffected.
 
 A failed function result may include `location: {kind: "expression-obligation",
 pos: [start, end]}` when the verifier reports an exact source span. This locates

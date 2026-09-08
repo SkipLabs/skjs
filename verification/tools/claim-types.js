@@ -1,18 +1,20 @@
 "use strict";
-/* Claim types in surface syntax.
+/* Claim types in surface syntax, shared by the report writer and the reader.
  *
- * The producer's encoding is exact and unreadable: a cell holding a boolean is
- * three hundred bytes of JSON. This prints it as `{ value: boolean }` and reads
- * that back, so claims can be inspected and edited in the syntax they were
+ * The producer's encoding is authoritative and unreadable: a cell holding a
+ * boolean is three hundred bytes of JSON. This prints it as `{ value: boolean }`
+ * and reads that back, so claims can be read and edited in the syntax they were
  * written in.
  *
- * Surface syntax cannot express everything the encoding carries — index
- * signatures, call and construct shapes, and whatever a future producer adds.
- * Rather than invent those on the way back, parsing edits an existing encoding:
- * what the surface names is replaced, what it does not name is preserved. A
- * type with no original to edit against is only parseable when the surface
- * determines it completely. `report-viewer.js` checks the round trip over every
- * claim in the corpus.
+ * The text is a view, not an encoding. Surface syntax does not show everything
+ * a claim carries — index signatures, call and construct shapes, per-field
+ * optionality, and whatever a future producer adds — so reading it back needs
+ * the claim it came from: what the text names is replaced, and what it does not
+ * name is taken from that original rather than invented here. `printable` says
+ * the text names the type faithfully, not that it is self-contained. A shape
+ * this module cannot name is not printed at all, and stays on the JSON path.
+ *
+ * The manifest keeps the producer's encoding; comments and panels show this.
  */
 
 // One namespace, and nothing else in the page's shared scope: these files are
@@ -24,11 +26,11 @@ const LITERAL = { booleanlit: 1, stringlit: 1, numberlit: 1, numlit: 1 };
 /* ---------- printing ---------- */
 function atomText(atom, state) {
   if (!atom || typeof atom !== "object") {
-    state.exact = false;
+    state.printable = false;
     return String(atom);
   }
   if (atom.unsupported === true) {
-    state.exact = false;
+    state.printable = false;
     return "(unavailable)";
   }
   if (PRIMITIVE.includes(atom.a) && Object.keys(atom).join() === "a")
@@ -63,38 +65,38 @@ function atomText(atom, state) {
       ") => " +
       typeText(atom.result, state)
     );
-  state.exact = false;
+  state.printable = false;
   return atom.a ? "«" + atom.a + "»" : "«type»";
 }
 
 function typeText(type, state) {
   if (type === undefined || type === null) {
-    state.exact = false;
+    state.printable = false;
     return "«missing»";
   }
   if (typeof type === "string") return type; // already a display string
   if (type.unsupported === true) {
-    state.exact = false;
+    state.printable = false;
     return "(unavailable)";
   }
   if (type.top === true) return "unknown";
   const atoms = Array.isArray(type.atoms) ? type.atoms : null;
   if (!atoms) {
-    state.exact = false;
+    state.printable = false;
     return "«type»";
   }
   if (!atoms.length) return "never";
   return atoms.map((atom) => atomText(atom, state)).join(" | ");
 }
 
-// `exact` says the text names everything the encoding holds except structure
-// this reader preserves rather than shows; it is false where something had to
-// be summarized, and such a type must not be edited through the surface.
-function printType(type) {
-  const state = { exact: true };
-  const text = typeText(type, state);
-  return { text, exact: state.exact };
-}
+// `printable` says the text names this type in surface syntax. It does not say
+  // the text alone determines the encoding: reading it back uses the original,
+  // because index signatures, callable shapes and optionality are not shown.
+  function printType(type) {
+    const state = { printable: true };
+    const text = typeText(type, state);
+    return { text, printable: state.printable };
+  }
 
 /* ---------- reading ---------- */
 class TypeSyntaxError extends Error {}
@@ -240,7 +242,7 @@ function parseType(text, template) {
 // back returns the encoding it came from.
 function roundTrips(type) {
   const printed = printType(type);
-  if (!printed.exact) return false;
+  if (!printed.printable) return false;
   try {
     return JSON.stringify(parseType(printed.text, type)) === JSON.stringify(type);
   } catch (e) {

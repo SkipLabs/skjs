@@ -49,8 +49,8 @@ function renderCandidateStatus(message) {
   el("restore-candidate").disabled = candidateState.running || !changed;
   el("export-candidate").disabled = candidateState.running;
 }
-// Claims are edited in the syntax they are written in; types.js prints and reads
-// them. The producer's encoding stays one disclosure away, and is the only way
+// Claims are edited in the syntax they are written in; ../tools/claim-types.js
+// prints and reads them. The producer's encoding stays one disclosure away, and is the only way
 // to edit something this reader cannot name. Nothing is applied until the text
 // reads back into an encoding.
 
@@ -154,7 +154,18 @@ function renderEditor(fn, item) {
     }
   });
   editor.append(apply);
-  el("detail").append(editor);
+  // Selecting a claim is usually the start of changing it, so the claim comes
+  // first and is ready to type into. Escape hands the keyboard back to the
+  // source view without disturbing what is selected.
+  el("detail").prepend(editor);
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      field.blur();
+    }
+  });
+  field.focus();
+  if (field.select) field.select();
 }
 
 function invalidateCandidate() {
@@ -340,7 +351,7 @@ function renderMissingEditor(fn, region) {
   });
   applyOnEnter(textarea, apply);
   box.append(selectSite, preview, textarea, apply, error);
-  el("detail").append(box);
+  el("detail").prepend(box);
 }
 
 function renderFunctionEditor(fn) {

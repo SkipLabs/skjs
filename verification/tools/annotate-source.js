@@ -55,13 +55,19 @@ function comment(x) {
   return `/* @verify-report ${safeText(fields(x)+text)} */ `;
 }
 
+// The same printer the reader uses, so a comment and a panel say the same thing.
+// The manifest keeps the producer's encoding; this is a readable view of it.
+const {printType}=require("./claim-types.js");
 function typeText(t) {
   if(typeof t==="string")return t;
   // A binding the producer could not decode has no claimed type. Name the
   // absence instead of printing an encoding that reads like a type; the exact
   // payload stays in the manifest, joined by the annotation id.
   if(t && t.unsupported === true && Object.keys(t).length === 1)return "(unavailable)";
-  // Abbreviate only exact primitive encodings. Preserve every other type verbatim.
+  // Surface syntax where the printer can name the type; the exact encoding
+  // otherwise, so a shape it does not know is never quietly hidden.
+  const printed=printType(t);
+  if(printed.printable)return printed.text;
   if(t && t.top === false && Object.keys(t).sort().join() === "atoms,top" && Array.isArray(t.atoms)) {
     const names=t.atoms.map(a=> {
       if(Object.keys(a).join() === "a" && ["null","boolean","string","number","undefined"].includes(a.a))return a.a;

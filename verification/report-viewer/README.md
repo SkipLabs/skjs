@@ -68,6 +68,8 @@ adapter for the display format, with only the data present in those comments.
   containing statement's entry claims, and nested expression claims.
 - **Every claim** includes nested expressions and literal restatements. Multiline
   expressions have a marker on their first line; selection shows the complete span.
+- Selecting a claim opens its editor at the top of the panel, focused and ready
+  to type into; <kbd>Esc</kbd> hands the keyboard back to the source view.
 - Claims read in surface syntax — `{ value: boolean }`, `(boolean) => null`,
   `true | null` — printed from the producer's encoding rather than from prose.
   A cell whose read and write types differ says both: `{ value: read true write
