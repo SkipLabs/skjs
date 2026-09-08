@@ -68,6 +68,14 @@ Other location kinds are `edge-obligation` (the destination expression span),
 `source-limitation` (an unsupported source expression span). The last indicates
 source conversion stopped before proof checking; it is not a failed claim.
 
+Two kinds report a claim the extractor needed and did not find, which is a
+different finding from a search that failed: `missing-expression-claim` (the
+expression span with no claimed type) and `missing-environment-claim` (a
+statement-entry `start`, with the `binding` name when one named binding is
+absent from a supplied environment). A report usually already marks these places
+as gaps; the location says which gap verification stopped at. Supplying the
+claim is what makes checking possible, and establishes nothing by itself.
+
 The manifest also exposes `missingFunctions`: source declarations without a
 function candidate, with `name`, `namePos`, full `pos`, parameter names in source
 order, and `missingSites`. These are parser-derived repair hints, not inferred

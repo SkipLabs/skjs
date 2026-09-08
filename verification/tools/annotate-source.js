@@ -313,8 +313,17 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
       if(produced.status!==0) {
         const detail=(produced.stderr||produced.stdout).trim();
         const located=/^(?:reject: )?(source expression obligation|closure expression claim|source incoming edge obligation|unsupported source expression) at \[(\d+),(\d+)\):/.exec(detail);
-        const environment=/^(?:reject: )?source environment obligation at (\d+):/.exec(detail);
+        const environment=/^(?:reject: )?source environment obligation at (\d+): (.*)$/.exec(detail);
+        // A claim the extractor needed and did not find is a different finding
+        // from a claim whose proof search failed: the report already marks that
+        // place as a gap, and naming it lets a reader see the two together.
+        const absentExpr=/^(?:reject: )?no claimed type for the expression at \[(\d+),(\d+)\)$/.exec(detail);
+        const absentEnv=environment && /^missing statement environment at \d+$/.test(environment[2]);
+        const absentBinding=environment && /^missing claimed binding '([^']*)' at \d+$/.exec(environment[2]);
         const location=located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :
+          absentExpr ? {kind:"missing-expression-claim",pos:[Number(absentExpr[1]),Number(absentExpr[2])]} :
+          absentEnv ? {kind:"missing-environment-claim",start:Number(environment[1])} :
+          absentBinding ? {kind:"missing-environment-claim",start:Number(environment[1]),binding:absentBinding[1]} :
           environment ? {kind:"environment-obligation",start:Number(environment[1])} : null;
         return {status:"not-established",detail,...(location ? {location} : {})};
       }

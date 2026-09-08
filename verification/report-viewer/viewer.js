@@ -6,6 +6,12 @@ const state = {
   density: "key",
   unsupported: false,
   selected: null,
+  selectedId: null,
+  // Ids of the marks currently drawn, in reading order, for keyboard movement.
+  marks: [],
+  // A mark named by the URL, applied once the report it belongs to is rendered.
+  pendingMark: parseReportLink(location.search, location.hash).mark,
+  pendingFile: parseReportLink(location.search, location.hash).file,
 };
 const el = (id) => document.getElementById(id);
 // These colours summarize recorded outcomes, never authenticate proof evidence.
@@ -155,14 +161,22 @@ function renderCode() {
         ? g.pos[1] - starts[ln]
         : (ln + 1 < starts.length ? starts[ln + 1] - 1 : rep.source.length) -
           starts[ln];
+    const needed = f.status === "not-established" && !!g.failure;
     items.push({
       kind: "gap",
       line: ln,
       col: g.pos[0] - starts[ln],
       end,
-      label: gapLabel(g),
+      label:
+        (needed ? "⚠ " : "") +
+        gapLabel(g) +
+        (needed
+          ? g.failureBinding
+            ? " · verification needed a claim for " + g.failureBinding
+            : " · verification needed a claim here"
+          : ""),
       id: "g" + i,
-      cls: "gap",
+      cls: "gap" + (needed ? " failed" : ""),
     });
   });
   const entryItems = [];
@@ -194,6 +208,7 @@ function renderCode() {
 
   const entryRows = groupLines(entryItems);
   const claimRows = groupLines(items);
+  const marks = [];
   const gutter = String(starts.length).length + 1;
   const pad = (n) => " ".repeat(Math.max(0, n));
   const num = (n) =>
@@ -209,33 +224,60 @@ function renderCode() {
       to = ln + 1 < starts.length ? starts[ln + 1] - 1 : rep.source.length;
     const text = rep.source.slice(from, to);
     if (ln === starts.length - 1 && text === "") break;
-    for (const row of packRows(entryRows.get(ln) || []))
+    for (const row of packRows(entryRows.get(ln) || [])) {
       out += blank + rowText(row.items) + "\n";
+      marks.push(...row.items.map((it) => it.id));
+    }
     out += num(ln + 1) + hi(text) + "\n";
-    for (const row of packRows(claimRows.get(ln) || []))
+    for (const row of packRows(claimRows.get(ln) || [])) {
       out += blank + rowText(row.items) + "\n";
+      marks.push(...row.items.map((it) => it.id));
+    }
   }
+  state.marks = marks;
   el("code").innerHTML = '<pre class="pre">' + out + "</pre>";
   const warning = el("verification-warning");
   warning.hidden = f.status !== "not-established";
   if (!warning.hidden) {
     const expression = f.exprs.findIndex((e) => e.failure);
     const entry = f.entries.findIndex((e) => e.failure);
+    const gap = f.gaps.findIndex((g) => g.failure);
     const failedId =
-      expression >= 0 ? "e" + expression : entry >= 0 ? "n" + entry : null;
+      expression >= 0
+        ? "e" + expression
+        : entry >= 0
+          ? "n" + entry
+          : gap >= 0
+            ? "g" + gap
+            : null;
+    const failureKind = (
+      expression >= 0
+        ? f.exprs[expression]
+        : entry >= 0
+          ? f.entries[entry]
+          : gap >= 0
+            ? f.gaps[gap]
+            : {}
+    ).failureKind;
+    const missingClaim =
+      failureKind === "missing-expression-claim" ||
+      failureKind === "missing-environment-claim";
     warning.textContent =
-      expression >= 0 && f.exprs[expression].failureKind === "source-limitation"
+      failureKind === "source-limitation"
         ? "⚠ Verification unavailable: the marked source expression is outside the supported fragment. This is not a verdict on your edited claim."
-        : failedId
-          ? "⚠ Proof not established at the marked obligation. Other claims are not individually classified."
-          : "⚠ Function verification not established. No claim location is available for this diagnostic.";
+        : missingClaim
+          ? "⚠ Verification needs a claim this report does not contain. The marked place is where extraction stopped, not a claim that was disproved."
+          : failedId
+            ? "⚠ Proof not established at the marked obligation. Other claims are not individually classified."
+            : "⚠ Function verification not established. No claim location is available for this diagnostic.";
     if (failedId) {
       const jump = document.createElement("button");
       jump.textContent =
-        expression >= 0 &&
-        f.exprs[expression].failureKind === "source-limitation"
+        failureKind === "source-limitation"
           ? "Show unsupported expression"
-          : "Show failed obligation";
+          : missingClaim
+            ? "Show the missing claim"
+            : "Show failed obligation";
       jump.addEventListener("click", () => {
         select(failedId);
         el("code")
@@ -332,6 +374,152 @@ function renderFlow() {
     );
 }
 
+/* ---------- addressing the current view ---------- */
+// The URL names the file, whether verification was requested, and the selected
+// mark by its manifest id, so a view can be reopened or quoted. A link is a
+// request to display something; it carries no evidence about it.
+function syncLocation() {
+  const live = el("livewrap");
+  const link = reportLink({
+    file: live && !live.hidden ? el("livefile").value : "",
+    verify: !el("verifywrap").hidden && el("liveverify").checked,
+    mark: state.report
+      ? markIdOf(state.report, state.fn, state.selectedId)
+      : "",
+  });
+  if (!link && !location.search && !location.hash) return;
+  try {
+    history.replaceState(null, "", link || location.pathname);
+  } catch (e) {
+    // Some browsers refuse replaceState for local files; the fragment still works.
+    if (link.includes("#")) location.hash = link.slice(link.indexOf("#") + 1);
+  }
+}
+
+function clearSelection() {
+  state.selected = null;
+  state.selectedId = null;
+  el("detail").innerHTML =
+    '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
+  document.querySelectorAll(".lab.on").forEach((x) => x.classList.remove("on"));
+  syncLocation();
+}
+
+// Applies a mark named by the URL once its report is rendered. An unknown id is
+// left alone rather than guessed at: ids identify records in one snapshot.
+function applyPendingMark() {
+  const wanted = state.pendingMark;
+  if (!wanted || !state.report) return;
+  // Reports arrive in any order, and a bundled sample can carry the same ids as
+  // the file a link names. Wait for the named report rather than applying the
+  // mark to whichever report renders first.
+  if (state.pendingFile && state.report.sample) return;
+  const found = findMark(state.report, wanted);
+  // Keep the request until the report holding that id loads, or until the
+  // reader asks for something else.
+  if (!found) return;
+  state.pendingMark = "";
+  if (found.fn !== state.fn) {
+    state.fn = found.fn;
+    renderShell();
+    renderCode();
+    renderFlow();
+  }
+  if (found.id) {
+    // A linked claim can be one Compact hides. Show every claim for this view
+    // rather than selecting something the reader cannot see; the stored density
+    // preference is left alone.
+    if (!state.marks.includes(found.id)) setDensity("all", false);
+    select(found.id);
+    revealSelected();
+  } else syncLocation();
+}
+
+function revealSelected() {
+  el("code")
+    .querySelector('[data-id="' + state.selectedId + '"]')
+    ?.scrollIntoView({ block: "center", behavior: "auto" });
+}
+
+// Keyboard movement through the marks as drawn, so a dense report can be read
+// without hunting for small labels with the mouse.
+function moveSelection(step) {
+  const next = nextMark(state.marks, state.selectedId, step);
+  if (!next) return;
+  select(next);
+  revealSelected();
+}
+
+// Moves to the next function the caller's test accepts, after the current one,
+// wrapping. Selects that function's first failure or gap when it has one.
+function jumpToFunction(matches) {
+  const fns = state.report?.functions || [];
+  for (let i = 1; i <= fns.length; i++) {
+    const at = (state.fn + i) % fns.length;
+    if (!matches(fns[at])) continue;
+    state.fn = at;
+    state.selected = null;
+    state.selectedId = null;
+    renderShell();
+    renderCode();
+    renderFlow();
+    const f = fns[at];
+    const failed = f.exprs.findIndex((e) => e.failure);
+    const failedEntry = f.entries.findIndex((e) => e.failure);
+    const target =
+      failed >= 0
+        ? "e" + failed
+        : failedEntry >= 0
+          ? "n" + failedEntry
+          : f.gaps.length
+            ? "g0"
+            : null;
+    if (target && state.marks.includes(target)) {
+      select(target);
+      revealSelected();
+    } else syncLocation();
+    return;
+  }
+}
+
+function moveFunction(step) {
+  const count = state.report?.functions.length || 0;
+  if (count < 2) return;
+  state.fn = (state.fn + step + count) % count;
+  state.selected = null;
+  state.selectedId = null;
+  el("detail").innerHTML =
+    '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
+  renderShell();
+  renderCode();
+  renderFlow();
+  syncLocation();
+}
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey || !state.report) return;
+  const t = ev.target;
+  if (
+    t &&
+    (t.isContentEditable ||
+      ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(t.tagName))
+  )
+    return;
+  const keys = {
+    j: () => moveSelection(1),
+    ArrowDown: () => moveSelection(1),
+    k: () => moveSelection(-1),
+    ArrowUp: () => moveSelection(-1),
+    "]": () => moveFunction(1),
+    "[": () => moveFunction(-1),
+    Escape: () => clearSelection(),
+  };
+  const action = keys[ev.key];
+  if (!action) return;
+  ev.preventDefault();
+  action();
+});
+
 /* ---------- selection detail ---------- */
 // The id joins this mark to its record in the companion JSON manifest.
 const idLine = (item) =>
@@ -340,6 +528,8 @@ const idLine = (item) =>
     : "";
 function select(id) {
   const f = state.report.functions[state.fn];
+  state.selectedId = id;
+  syncLocation();
   const idx = +id.slice(1);
   const item =
     id[0] === "e"
@@ -355,6 +545,15 @@ function select(id) {
     const explanation =
       item.failureKind === "source-limitation"
         ? "Source conversion stopped at this unsupported expression, before checking the candidate’s proof obligations."
+        : item.failureKind === "missing-expression-claim"
+          ? "Extraction needed a claimed type for this expression and the report has none. Supplying one is what makes checking possible; it does not make the claim true."
+          : item.failureKind === "missing-environment-claim"
+            ? (item.failureBinding
+                ? "The environment claimed at this statement does not include the binding ‘" +
+                  esc(item.failureBinding) +
+                  "’, which extraction needed."
+                : "Extraction needed the environment claimed at this statement and the report has none.") +
+              " Supplying it is what makes checking possible; it does not make the claim true."
         : item.failureKind === "edge-obligation"
           ? "An incoming edge did not justify the environment used at this expression. The incoming value or destination environment may be involved."
           : item.failureKind === "environment-obligation"
@@ -364,7 +563,10 @@ function select(id) {
       '<div class="failure-note"><b>⚠ ' +
       (item.failureKind === "source-limitation"
         ? "Unsupported source expression"
-        : "Proof not established here") +
+        : item.failureKind === "missing-expression-claim" ||
+            item.failureKind === "missing-environment-claim"
+          ? "Verification needed a claim here"
+          : "Proof not established here") +
       "</b><p>" +
       explanation +
       ' This does not prove the claim false.</p><pre class="raw">' +
@@ -500,6 +702,46 @@ function renderShell() {
       : "");
   el("diagnostics").textContent =
     rep.diagnostics || "No diagnostic text in this report.";
+  // What the report records, at a glance. Each count moves to the next function
+  // it describes: with many functions, finding the unfinished ones is the first
+  // thing a reader wants. Counts summarize recorded outcomes, not evidence.
+  const tally = summarize(rep.functions);
+  el("tally").innerHTML =
+    "<span>" +
+    tally.functions +
+    (tally.functions === 1 ? " function" : " functions") +
+    "</span>" +
+    Object.entries(tally.status)
+      .map(
+        ([status, n]) =>
+          '<button class="tallybtn ' +
+          statusClass(status) +
+          '" data-status="' +
+          esc(status) +
+          '">' +
+          n +
+          " " +
+          esc(status) +
+          "</button>",
+      )
+      .join("") +
+    (tally.gaps
+      ? '<button class="tallybtn st-attn" data-gaps="1">' +
+        tally.gaps +
+        (tally.gaps === 1 ? " gap" : " gaps") +
+        "</button>"
+      : "");
+  el("tally")
+    .querySelectorAll("[data-status],[data-gaps]")
+    .forEach((b) =>
+      b.addEventListener("click", () =>
+        jumpToFunction(
+          b.dataset.gaps
+            ? (f) => f.gaps.length > 0
+            : (f) => f.status === b.dataset.status,
+        ),
+      ),
+    );
   el("fnstrip").innerHTML = rep.functions
     .map(
       (f, i) =>
@@ -535,11 +777,13 @@ function renderShell() {
       b.addEventListener("click", () => {
         state.fn = +b.dataset.i;
         state.selected = null;
+        state.selectedId = null;
         el("detail").innerHTML =
           '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
         renderShell();
         renderCode();
         renderFlow();
+        syncLocation();
       }),
     );
   filterFunctions();
@@ -557,6 +801,11 @@ function renderShell() {
       "</pre></details>";
   if (f && f.detail)
     p += '<div class="status-line">' + esc(f.detail) + "</div>";
+  if (f?.result)
+    p +=
+      "<details><summary>Recorded result record</summary><pre class=\"raw\">" +
+      esc(JSON.stringify(f.result, null, 2)) +
+      "</pre></details>";
   if (f && f.collection)
     p +=
       '<dl class="kv"><dt>claims</dt><dd>' +
@@ -644,6 +893,7 @@ async function load(text, isSample, sampleNote, keepCandidate = false) {
     renderCode();
     renderFlow();
     renderCandidateStatus();
+    applyPendingMark();
   } catch (err) {
     if (version !== loadVersion) return;
     state.report = null;
@@ -658,9 +908,9 @@ async function load(text, isSample, sampleNote, keepCandidate = false) {
 }
 
 /* ---------- controls ---------- */
-function setDensity(d) {
+function setDensity(d, persist = true) {
   state.density = d;
-  store.set("density", d);
+  if (persist) store.set("density", d);
   el("d-key").setAttribute("aria-pressed", String(d === "key"));
   el("d-all").setAttribute("aria-pressed", String(d === "all"));
   if (state.report) renderCode();
@@ -681,6 +931,7 @@ el("file").addEventListener("change", (e) => {
   const f = e.target.files[0];
   if (!f) return;
   f.text().then((t) => {
+    state.pendingMark = "";
     activeRequest++;
     document.body.classList.remove("busy");
     return load(t, false);
@@ -700,6 +951,7 @@ window.addEventListener("drop", (e) => {
   const f = e.dataTransfer.files[0];
   if (f)
     f.text().then((t) => {
+      state.pendingMark = "";
       activeRequest++;
       document.body.classList.remove("busy");
       return load(t, false);
@@ -740,17 +992,23 @@ async function connectLive() {
         )
         .join("");
     el("livewrap").hidden = false;
-    const wanted = new URLSearchParams(location.search).get("file");
-    if (wanted) {
-      if (!groups.some((g) => g.files.includes(wanted))) {
+    // The picker lists examples; any repository source can be opened by path.
+    const offerFile = (file) => {
+      if (![...sel.options].some((o) => o.value === file)) {
         const option = document.createElement("option");
-        option.value = wanted;
-        option.textContent = wanted;
+        option.value = file;
+        option.textContent = file;
         sel.append(option);
       }
-      sel.value = wanted;
-    }
+      sel.value = file;
+    };
+    const wanted = new URLSearchParams(location.search).get("file");
+    if (wanted) offerFile(wanted);
     el("verifywrap").hidden = !info.verifier;
+    // A link that recorded "collected with verification" reopens that way, so
+    // the view it names is the view that comes back.
+    if (info.verifier && parseReportLink(location.search, "").verify)
+      el("liveverify").checked = true;
     const run = async () => {
       const file = sel.value;
       if (!file) return;
@@ -773,6 +1031,7 @@ async function connectLive() {
         if (request !== activeRequest) return;
         if (data.error) throw new Error(data.error.split("\n")[0]);
         await load(data, false);
+        syncLocation();
       } catch (err) {
         if (request !== activeRequest) return;
         state.report = null;
@@ -789,8 +1048,47 @@ async function connectLive() {
         if (request === activeRequest) document.body.classList.remove("busy");
       }
     };
-    sel.addEventListener("change", run);
+    sel.addEventListener("change", () => {
+      state.pendingMark = "";
+      run();
+    });
+    const pathInput = el("livepath"),
+      pathList = el("pathlist");
+    el("pathwrap").hidden = false;
+    let suggesting;
+    const suggest = async () => {
+      try {
+        const found = await fetch(
+          "api/sources?q=" + encodeURIComponent(pathInput.value.trim()),
+          { cache: "no-store" },
+        );
+        if (!found.ok) return;
+        const { files: matches, total } = await found.json();
+        pathList.innerHTML = matches
+          .map((f) => '<option value="' + esc(f) + '"></option>')
+          .join("");
+        pathInput.title =
+          total > matches.length
+            ? total + " matching sources; showing the first " + matches.length
+            : total + " matching sources";
+      } catch (e) {
+        /* listing is a convenience; typing a full path still works */
+      }
+    };
+    pathInput.addEventListener("input", () => {
+      clearTimeout(suggesting);
+      suggesting = setTimeout(suggest, 150);
+    });
+    pathInput.addEventListener("change", () => {
+      const file = pathInput.value.trim();
+      if (!file) return;
+      state.pendingMark = "";
+      offerFile(file);
+      run();
+    });
+    suggest();
     el("liveverify").addEventListener("change", () => {
+      state.pendingMark = "";
       if (sel.value) run();
     });
     if (!wanted) sel.value = files[0];
@@ -817,8 +1115,14 @@ function pickSample(which) {
       : "real report for a program SKJS accepts",
   );
 }
-el("s-clean").addEventListener("click", () => pickSample("clean"));
-el("s-gaps").addEventListener("click", () => pickSample("gaps"));
+for (const [id, which] of [
+  ["s-clean", "clean"],
+  ["s-gaps", "gaps"],
+])
+  el(id).addEventListener("click", () => {
+    state.pendingMark = "";
+    pickSample(which);
+  });
 pickSample("clean");
 
 function shortType(type) {

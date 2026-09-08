@@ -246,7 +246,10 @@ function fromBundle(bundle) {
       end: pos[1],
       signature: f.signature ? JSON.stringify(f.signature) : null,
       status: result?.status || "not-run",
-      detail: result ? JSON.stringify(result) : "",
+      // The diagnostic is what a reader needs; the whole record stays available
+      // for provenance, and neither is evidence.
+      detail: result?.detail || "",
+      result: result || null,
       collection: f.collection?.completion || "",
       quality: f.collection?.quality || "",
       mode: f.collection?.mode || "",
@@ -294,22 +297,31 @@ function fromBundle(bundle) {
     const result = m.results?.find((r) => r.function === f.id);
     const location = result?.location;
     if (f.status !== "not-established" || !location) continue;
+    const samePos = (x) =>
+      JSON.stringify(x.pos) === JSON.stringify(location.pos);
+    // A claim the verifier needed and did not find belongs on the gap that
+    // already marks that place. Falling back to a claim at the same position
+    // keeps older reports, where no gap was recorded, locatable.
     const failed =
-      location.kind === "environment-obligation"
-        ? f.entries.find((e) => e.pos[0] === location.start)
-        : [
-              "expression-obligation",
-              "edge-obligation",
-              "source-limitation",
-            ].includes(location.kind)
-          ? f.exprs.find(
-              (e) => JSON.stringify(e.pos) === JSON.stringify(location.pos),
-            )
-          : null;
+      location.kind === "missing-expression-claim"
+        ? f.gaps.find(samePos) || f.exprs.find(samePos)
+        : location.kind === "missing-environment-claim"
+          ? f.gaps.find((g) => g.pos[0] === location.start) ||
+            f.entries.find((e) => e.pos[0] === location.start)
+          : location.kind === "environment-obligation"
+            ? f.entries.find((e) => e.pos[0] === location.start)
+            : [
+                  "expression-obligation",
+                  "edge-obligation",
+                  "source-limitation",
+                ].includes(location.kind)
+              ? f.exprs.find(samePos)
+              : null;
     if (failed) {
       failed.failure =
         result.detail || "Proof search did not establish this obligation.";
       failed.failureKind = location.kind;
+      failed.failureBinding = location.binding || "";
     }
   }
 
@@ -380,5 +392,87 @@ function fromBundle(bundle) {
     manifest: m,
   };
 }
+/* ---------- naming a claim across sessions ---------- */
+// Marks are addressed inside the page by their position in a function's lists,
+// which changes whenever claims change. The manifest id assigned by the report
+// writer does not: it is what a link, or a person quoting an id, should name.
+const MARK_LISTS = [
+  ["e", "exprs"],
+  ["n", "entries"],
+  ["g", "gaps"],
+];
+
+function findMark(report, manifestId) {
+  if (!manifestId) return null;
+  for (let fn = 0; fn < report.functions.length; fn++) {
+    const f = report.functions[fn];
+    if (f.id === manifestId) return { fn, id: null, manifestId };
+    for (const [prefix, list] of MARK_LISTS) {
+      const i = (f[list] || []).findIndex((x) => x.id === manifestId);
+      if (i >= 0) return { fn, id: prefix + i, manifestId };
+    }
+  }
+  return null;
+}
+
+function markIdOf(report, fn, id) {
+  const f = report.functions[fn];
+  if (!f) return "";
+  if (!id) return f.id || "";
+  const entry = MARK_LISTS.find(([prefix]) => prefix === id[0]);
+  return (entry && f[entry[1]]?.[+id.slice(1)]?.id) || "";
+}
+
+// Movement through the marks as drawn. It wraps, and an unknown current
+// position starts at the end nearest the direction of travel, so the first key
+// press always lands on something.
+function nextMark(marks, current, step) {
+  if (!marks.length) return null;
+  const at = marks.indexOf(current);
+  if (at < 0) return step > 0 ? marks[0] : marks[marks.length - 1];
+  return marks[(at + step + marks.length) % marks.length];
+}
+
+// Counts of recorded outcomes. These summarize what the report says, and say
+// nothing about claims a function result does not cover.
+function summarize(functions) {
+  const tally = { functions: functions.length, gaps: 0, status: {} };
+  for (const f of functions) {
+    tally.status[f.status] = (tally.status[f.status] || 0) + 1;
+    tally.gaps += (f.gaps || []).length;
+  }
+  return tally;
+}
+
+// A report link names the source file, whether it was collected with
+// verification, and optionally one mark. It is a request to reopen that view,
+// never a record that anything was established.
+function parseReportLink(search, hash) {
+  const params = new URLSearchParams(search || "");
+  return {
+    file: params.get("file") || "",
+    verify: params.get("verify") === "1",
+    mark: (hash || "").replace(/^#/, "") || "",
+  };
+}
+
+function reportLink({ file, verify, mark }) {
+  const params = new URLSearchParams();
+  if (file) params.set("file", file);
+  if (verify) params.set("verify", "1");
+  const query = params.toString();
+  return (query ? "?" + query : "") + (mark ? "#" + mark : "");
+}
+
 if (typeof module !== "undefined")
-  module.exports = { parseReport, fromBundle, renderType };
+  module.exports = {
+    parseReport,
+    fromBundle,
+    renderType,
+    findMark,
+    markIdOf,
+    nextMark,
+    summarize,
+    parseReportLink,
+    reportLink,
+  };

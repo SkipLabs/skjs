@@ -10,10 +10,26 @@ verification badges are proof evidence.
 node verification/report-viewer/serve.js # http://localhost:8731
 ```
 
-Select a source file to collect claims with SKJS. Tick **verify** to run the
-independent consumer. Rejected programs still show their partial claims and
-producer diagnostics. Links can select any repository source, for example:
+Select an example to collect claims with SKJS, or type any repository-relative
+path into **Open any repository path…**; it suggests matching `.ts` sources as
+you type, and a full path works whether or not it is listed. Tick **verify** to
+run the independent consumer. Rejected programs still show their partial claims
+and producer diagnostics. Links can select any repository source, for example:
 `http://localhost:8731/?file=verification/tests/stateful-source/closures.ts`.
+
+The example groups come from `examples.js`, re-read for each page load, so
+adding an example does not need a server restart. Paths outside the repository
+are refused, and the listing is a convenience for finding a file, not the limit
+of what can be opened.
+
+The address bar follows the view: the selected file, whether it was collected
+with verification (`&verify=1`), and the selected claim as `#<manifest id>`
+(`#f2x1`, `#f0e3`, `#g0`). Reopening that link restores the same view, and the
+id is how a claim can be named in a review or a message. Ids identify records
+within one snapshot, not the same claim across edits, so a link into a changed
+report may name nothing; the reader then leaves the selection alone rather than
+guessing. A linked claim that **Compact** hides is shown with every claim for
+that view, without changing the stored density preference.
 
 The server binds to loopback, runs one collection at a time, and applies a
 120-second timeout to each subprocess. It rejects source changes detected during
@@ -30,7 +46,13 @@ adapter for the display format, with only the data present in those comments.
 
 ## Reading dense reports
 
+- The header tallies what the report records: functions, their recorded statuses,
+  and total gaps. Each count moves to the next function it describes, selecting
+  that function's failure or first gap. Counts summarize stored outcomes only.
 - Find a function by name; selecting it shows its source with original line numbers.
+- Keyboard: <kbd>j</kbd>/<kbd>k</kbd> (or the arrow keys) step through the marks
+  as drawn, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears the
+  selection. Keys are ignored while typing in a field.
 - **Compact** shows outer expression claims and environment changes from the
   preceding entry in source order. It hides literal restatements. This is not a
   claim about control-flow edges, narrowing, or the identity of shadowed bindings.
@@ -61,6 +83,12 @@ Incoming-edge failures mark the destination expression whose environment was
 not justified. Environment conversion failures mark the statement entry.
 Unsupported source expressions instead say **unsupported source**: conversion
 stopped before checking the candidate, so this is not a verdict on an edit.
+
+When verification stopped because a claim it needed is absent, the marker says
+so — **verification needed a claim here**, on the gap that already marks that
+place, naming the binding when one is missing from an environment. This reports
+where extraction stopped, not a claim that was disproved; supplying the claim is
+what makes checking possible.
 
 If no source location is available (including older verifier results), the
 function-level warning displays the diagnostic directly. The reader never

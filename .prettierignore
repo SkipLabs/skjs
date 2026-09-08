@@ -12,3 +12,7 @@ generated-examples
 
 # lake regenerates this on every build; leave its formatting alone
 verification/lean/lake-manifest.json
+
+# annotated report copies are generated, and their exact bytes are fingerprinted
+# in the companion manifest: reformatting one makes it stale
+**/*.annotated.ts

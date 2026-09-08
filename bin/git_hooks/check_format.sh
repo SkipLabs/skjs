@@ -13,6 +13,11 @@ check-file () {
     if [[ "$file" =~ .*-prettier-ignore\..* ]]; then
         exit 0;
     fi
+    # generated annotated reports are fingerprinted byte for byte; keep in sync
+    # with .prettierignore
+    if [[ "$file" == *.annotated.ts ]]; then
+        exit 0;
+    fi
     # select formatter based on filename extension, must transform stdin to stdout
     if [[ "$file" == *.sk ]]; then # keep in sync with fmt-sk in Makefile
         fmt="skfmt --assume-filename=$file"

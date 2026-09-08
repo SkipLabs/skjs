@@ -13,10 +13,61 @@ const REPO = path.resolve(
 );
 const VERIFIER = "verification/lean/.lake/build/bin/verifier";
 const PORT = Number(process.env.PORT || 8731);
-const examples = require("./examples.js");
+const EXAMPLES = "./examples.js";
+// Read the example groups per request: editing that list should show up on the
+// next page load, not only after restarting this server.
+function exampleGroups() {
+  delete require.cache[require.resolve(EXAMPLES)];
+  return require(EXAMPLES);
+}
+
+// Any repository source can be opened, so the picker is a starting point rather
+// than the limit. The listing is cached briefly: it is a convenience for finding
+// a path, and it never widens what `repositoryPath` allows.
+const SKIP = new Set([
+  "node_modules",
+  "target",
+  "dist",
+  "build",
+  "out",
+  ".git",
+  ".lake",
+  ".cache",
+]);
+let listing = { at: 0, files: [] };
+async function sources() {
+  if (Date.now() - listing.at < 10000) return listing.files;
+  const files = [];
+  const walk = async (dir) => {
+    if (files.length > 20000) return;
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") || SKIP.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (/\.(ts|tsx|mts|cts)$/.test(entry.name) && !entry.isSymbolicLink())
+        files.push(path.relative(REPO, full));
+    }
+  };
+  await walk(REPO);
+  files.sort();
+  listing = { at: Date.now(), files };
+  return files;
+}
 
 async function repositoryPath(relative) {
-  const resolved = await fs.realpath(path.resolve(REPO, relative));
+  const resolved = await fs
+    .realpath(path.resolve(REPO, relative))
+    .catch(() => {
+      throw new Error(
+        `No such file in the repository: ${relative || "(no path given)"}`,
+      );
+    });
   if (!resolved.startsWith((await fs.realpath(REPO)) + path.sep))
     throw new Error("Path outside the repository");
   return resolved;
@@ -213,11 +264,24 @@ const server = http.createServer(async (req, res) => {
   try {
     if (url.pathname === "/api/health")
       return send(res, 200, { verifier: await hasVerifier() });
-    if (url.pathname === "/api/files")
+    if (url.pathname === "/api/files") {
+      const examples = exampleGroups();
       return send(res, 200, {
         files: examples.supported,
         groups: examples.groups,
       });
+    }
+    if (url.pathname === "/api/sources") {
+      const query = (url.searchParams.get("q") || "").toLowerCase();
+      const all = await sources();
+      const matched = query
+        ? all.filter((f) => f.toLowerCase().includes(query))
+        : all;
+      return send(res, 200, {
+        files: matched.slice(0, 60),
+        total: matched.length,
+      });
+    }
     if (url.pathname === "/api/analyse") {
       if (analysing)
         return send(res, 409, {

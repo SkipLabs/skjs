@@ -10,6 +10,7 @@
     <div class="brand">
       <h1>Claim report</h1>
       <div class="src" id="srcline"></div>
+      <div class="tally" id="tally"></div>
     </div>
     <div class="controls">
       <div class="seg" role="group" aria-label="Detail level">
@@ -23,7 +24,11 @@
       </div>
       <label class="tog live" id="livewrap" hidden>
         <span class="livedot"></span>
-        <select id="livefile" aria-label="Source file"></select>
+        <select id="livefile" aria-label="Example source file"></select>
+      </label>
+      <label class="tog live" id="pathwrap" hidden>
+        <input id="livepath" type="search" list="pathlist" placeholder="Open any repository path…" aria-label="Repository source path" autocomplete="off">
+        <datalist id="pathlist"></datalist>
       </label>
       <label class="tog live" id="verifywrap" hidden><input type="checkbox" id="liveverify"> verify on collection</label>
       <button class="filebtn" id="load">Load report…</button>
@@ -54,6 +59,9 @@
           <code>cell.value</code>, so they get their own rows.</p>
           <p><span class="k-n">╵</span> above a statement: the claimed types of the bindings in
           scope at that point. In <em>Compact</em>, environments show changes from the preceding entry in source order. This comparison does not describe control-flow edges. Literal restatements and nested expressions are hidden. Select an outer expression to inspect its nested claims, or choose Every claim.</p>
+          <p><b>Keyboard</b>: <kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) step through the
+          marks as drawn, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears the selection.
+          The address bar names the selected claim by its manifest id, so a view can be reopened or quoted.</p>
           <p><span class="k-g">╰─╯</span> in amber: a <b>gap</b> — somewhere the producer went but
           claimed nothing, or an edit against a baseline. Gaps show in both densities, because an
           absent claim is the finding. A dotted underline marks a <b>recovery claim</b>, from a recovery-quality collection snapshot.</p>

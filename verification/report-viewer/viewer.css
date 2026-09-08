@@ -130,6 +130,53 @@ h1 {
   font-weight: 500;
   color: var(--ink);
 }
+.tally {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+.tally > span,
+.tallybtn {
+  padding: 1px 0;
+}
+.tally > span::after,
+.tallybtn:not(:last-child)::after {
+  content: "·";
+  color: var(--edge-2);
+  margin: 0 7px;
+}
+.tallybtn {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-3);
+  cursor: pointer;
+  border-bottom: 1px dotted transparent;
+}
+.tallybtn:hover,
+.tallybtn:focus-visible {
+  border-bottom-color: currentColor;
+}
+.tally .st-ok {
+  color: var(--ok);
+}
+.tally .st-attn {
+  color: var(--warn);
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  border: 1px solid var(--edge-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+  background: var(--surface);
+  color: var(--ink-2);
+}
 .controls {
   display: flex;
   flex-wrap: wrap;
@@ -207,6 +254,18 @@ h1 {
   background: transparent;
   color: var(--ink);
   max-width: 32ch;
+}
+.tog.live input[type="search"] {
+  font-family: var(--mono);
+  font-size: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  width: 26ch;
+  max-width: 40vw;
+}
+.tog.live input[type="search"]::placeholder {
+  color: var(--ink-3);
 }
 .livedot {
   width: 7px;

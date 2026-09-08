@@ -109,6 +109,48 @@ try {
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");
   test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json"));assert(m.results.every(x=>x.status==="verified"));assert(m.results.every(x=>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
+  // A claim the extractor needed and did not find is a different finding from a
+  // proof search that failed, and the report must say which one happened.
+  test("an absent required claim is located as a missing claim",()=>{
+    const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
+    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),fileKey],{encoding:"utf8"});
+    assert.equal(parsed.status,0,parsed.stderr);
+    const body=JSON.parse(parsed.stdout).functions.find(f=>f.name==="capturedRead").body[1].init.body;
+    const removed=f.exprs.find(e=>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(removed);
+    f.exprs=f.exprs.filter(e=>e!==removed);
+    const cp=path.join(tmp,"absent.json"),op=path.join(tmp,"absent.annotated.ts");fs.writeFileSync(cp,JSON.stringify(c));
+    const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
+    const m=JSON.parse(fs.readFileSync(op+".json"));
+    const result=m.results[m.functions.findIndex(f=>f.name==="capturedRead")];
+    assert.equal(result.status,"not-established");
+    assert.deepEqual(result.location,{kind:"missing-expression-claim",pos:removed.pos});
+  });
+  test("an absent environment claim names the statement, and a missing binding names itself",()=>{
+    const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
+    const dropped=f.envs[f.envs.length-1];assert(dropped);
+    const withoutEnv=structuredClone(c);
+    const g=withoutEnv.find(x=>x.file===fileKey).functions.find(x=>x.name==="capturedRead");
+    g.envs=g.envs.filter(e=>e.pos[0]!==dropped.pos[0]);
+    const cp=path.join(tmp,"noenv.json"),op=path.join(tmp,"noenv.annotated.ts");
+    fs.writeFileSync(cp,JSON.stringify(withoutEnv));
+    const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
+    const m=JSON.parse(fs.readFileSync(op+".json"));
+    const result=m.results[m.functions.findIndex(x=>x.name==="capturedRead")];
+    assert.equal(result.location.kind,"missing-environment-claim");
+    assert.equal(result.location.start,dropped.pos[0]);
+    const withoutBinding=structuredClone(c);
+    const h=withoutBinding.find(x=>x.file===fileKey).functions.find(x=>x.name==="capturedRead");
+    const target=h.envs.find(e=>e.vars.some(v=>v.name!=="this"));assert(target);
+    const name=target.vars.find(v=>v.name!=="this").name;
+    target.vars=target.vars.filter(v=>v.name!==name);
+    const bp=path.join(tmp,"nobinding.json"),bo=path.join(tmp,"nobinding.annotated.ts");
+    fs.writeFileSync(bp,JSON.stringify(withoutBinding));
+    const rb=cli([fileKey,"--claims",bp,"--verify",verifier,"--out",bo]);assert.equal(rb.status,0,rb.stderr);
+    const mb=JSON.parse(fs.readFileSync(bo+".json"));
+    const rr=mb.results[mb.functions.findIndex(x=>x.name==="capturedRead")];
+    if(rr.location?.kind==="missing-environment-claim")assert.equal(rr.location.binding,name);
+    else assert.equal(rr.status,"not-established");
+  });
   test("false claim is not called refuted or verified",()=>{
     const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
     const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),fileKey],{encoding:"utf8"});
