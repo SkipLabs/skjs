@@ -113,10 +113,10 @@ try {
   const bad = JSON.parse(fs.readFileSync(badClaimsPath)),
     ba = JSON.parse(fs.readFileSync(badAstPath));
   expect(
-    "original refined reference hits invariant boundary",
+    "original refined reference fails after the callback",
     run("--produce-stateful-source", ba, bad, badFile),
     false,
-    "read and write types do not describe the same invariant",
+    "source incoming edge obligation at",
   );
   // Soundly forget only reference read refinements, retaining every expression claim.
   // This is a manual candidate experiment, not acceptance of the original export.

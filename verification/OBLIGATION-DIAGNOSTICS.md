@@ -68,7 +68,7 @@ The kind identifies the obligation collection, not a claim of semantic blame.
 - `environmentStart`: optional source statement-entry offset, only where known.
 
 Current roles are `tag-dispatch`, `node-typing`, `return-contract`, `binding-annotation`,
-`expression-claim`, `closure-entry`, and `closure-result`. The generic
+`expression-claim`, `closure-entry`, `closure-result`, and `heap-observation`. The generic
 `node-typing` role deliberately does not guess a more specific source purpose.
 Unknown roles should display a generic obligation, not a guessed explanation.
 The span for a closure result may be the lambda span, rather than its body span.
@@ -176,20 +176,22 @@ Representable object branches are exported as separate union atoms. Multiple
 branches alone are not a refusal reason. An unsupported branch causes refusal
 of the whole type rather than a partial export.
 
-For `source-limitation`, the report adapter emits these consumer-limit reasons.
-The raw claim is available; these are not exporter refusals:
+Current-content assertions in the supported cell profile now reach checked
+obligations. Graph failures use `edge-coverage`, with destination origin role
+`heap-observation`; `requiredKnowledge` at the destination identifies the actual
+cell facts. Ordinary closure/compositional proofs use `expression-claim` with the
+same origin role for uniform invariant justification. These are proof failures,
+not exporter refusals. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
+owns their interpretation.
 
-| Reason | Meaning |
-| --- | --- |
-| `non-invariant-cell-contract` | The direct source adapter cannot consume a standalone cell record with unequal read/write meanings. |
-| `current-content-assertion` | An independent sidecar preserves a current-content predicate, but graph evidence cannot yet justify the required observation. |
-
-The [source-claim protocol](SOURCE-CLAIMS.md#current-content-assertions)
-specifies current-content representation; [the design](DESIGN.md#current-content-assertions)
-specifies its semantics and integration status.
+The report reader retains `non-invariant-cell-contract` and
+`current-content-assertion` for older reports. The latter gate is no longer emitted
+by the maintained source consumer. An unequal-contract error can still arise in
+an ordinary type/signature or unsupported record union; standalone point
+observations take the assertion path.
 
 [Annotated-source tests](tests/annotated-source.js) check reason transport and
 classification; [viewer tests](tests/report-viewer.js) cover known, unknown, and
 absent reasons. [Source-claim export tests](tests/source-claim-export.js) check
-that observations survive conversion and report a consumer limit rather than
+that observations survive conversion and become proof obligations rather than
 being silently erased.

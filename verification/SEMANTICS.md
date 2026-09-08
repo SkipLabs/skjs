@@ -113,6 +113,25 @@ future extension. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
 SKJS's internal types with heap assertions.
 
+The finite assertion layer also records two relationships between environment
+slots, interpreted by `HeapLinks.Holds`:
+
+$$
+\begin{aligned}
+\operatorname{read}(x,y)&\equiv
+  \exists\ell.\;\rho(x)=\ell\land h(\ell)=\rho(y),\\
+x=y&\equiv\rho(x)=\rho(y).
+\end{aligned}
+$$
+
+A read relationship depends on the current heap. Slot equality does not: two
+copied references remain the same location after writes. Allocation preserves
+both relationships; an arbitrary write or call preserves slot equality but may
+invalidate any read relationship. The checked rules conservatively discard all
+read relationships on writes/calls. The syntax owner is the
+[assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar); operational rules
+and alias handling belong to [Program typing](PROGRAM-TYPING.md#checked-expression-postconditions).
+
 `SafePost T Q n W h e` strengthens `Safe T n W h e`: at a positive-budget final
 value it additionally requires `Q h e`; its step case uses exactly the same
 operational step, truncated-world extension, admissibility and heap satisfaction.
@@ -193,8 +212,8 @@ require keeping separator searches or a second subtyping implementation.
 The bounded source adapter and graph consumer are connected; their guarantees
 are described in [Program typing](PROGRAM-TYPING.md) and the
 [request protocol](REQUEST-PROTOCOL.md). This does not prove source-to-graph
-correspondence. Graph-backed closures and automatic production of graph evidence
-from source current-content claims remain integration work. Type parameters, bounded polymorphism, and general
+correspondence. Source current-content claims are connected to graph checkpoints;
+graph-backed closure bodies remain integration work. Type parameters, bounded polymorphism, and general
 difference/negation require further syntax and sound rules; definability of
 quantification over semantic families alone is not a generics result.
 [Design](DESIGN.md#later-feature-gates) owns the feature roadmap and priorities.

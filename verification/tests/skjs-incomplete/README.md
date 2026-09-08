@@ -12,12 +12,11 @@ its `true` return annotation because it forgets the condition's false edge after
 `while (!flag)`. The function returns true for both Boolean inputs: the loop body
 returns true, and reaching the following return entails `flag = true`.
 
-`negation.js` takes SKJS's normal-mode partial export (without `--keep-going`),
-changes exactly the final statement's `flag` binding and its returned-expression
-claim from `boolean` to `true`, and produces a certificate accepted by the
-independent consumer. An incorrect `false` exit binding is rejected. This tests
-manual completion of producer claims using the calculus's own rules; it does not
-change SKJS's behavior or infer correctness from SKJS's diagnostic.
+`negation.js` takes SKJS's normal-mode partial export (without `--keep-going`).
+The original broad claims now verify: a checked immutable branch-value fact
+justifies the true result. The test also independently checks an explicit repair
+of the final binding and expression to true and rejects an incorrect false exit
+binding. No SKJS behavior is changed.
 
 `singleton-negation.ts` is another producer precision gap: SKJS types `!flag` as
 `boolean` even for `flag : true`. Changing just that expression claim to `false`
@@ -42,8 +41,12 @@ proves the modeled body safe at true and separately proves its terminating
 execution. [Program typing](../../PROGRAM-TYPING.md#current-content-rules-semantic-layer)
 documents the rules used by that proof.
 
-This is **not yet a certificate produced by the source checker**. Editing the read
-claim to true still fails current proof search; graph typing and certificate
-checking do not yet consume observations. `write-observations.js` pins the source
-shape used by the model proof, checks both TypeScript/SKJS outcomes and runtime
-results, and retains this distinction. See [Current-content assertions](../../DESIGN.md#current-content-assertions).
+The source checker now produces and independently checks a certificate for the
+**original partial claims**, preserving the wider Boolean read claim. It tracks
+the written true value through checked copies of the receiver, then retains the
+read result as an immutable fact for the return contract. A candidate with the
+read explicitly claimed true also verifies; a false read claim is rejected.
+`write-observations.js` checks those outcomes, the source shape, and runtime and
+producer behavior. Supplied current-content assertions in the three unsoundness
+fixtures remain a separate source-consumption task; see
+[Current-content assertions](../../DESIGN.md#current-content-assertions).

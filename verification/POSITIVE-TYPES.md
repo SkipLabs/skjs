@@ -88,15 +88,15 @@ bottom would be an incorrect normalization.
 
 Point claims can combine ordinary types with facts about the current execution
 state. The following notation describes the finite assertion layer; it does not
-add constructors to the ordinary type grammar above. Let $x$ name an environment
-slot, $A$ and $B$ be ordinary types, and $R$ be a finite literal set:
+add constructors to the ordinary type grammar above. Let $x$ and $y$ name environment
+slots, $A$ and $B$ be ordinary types, and $R$ be a finite literal set:
 
 $$
 \begin{aligned}
 a &::= \mathsf{null}\mid\mathsf{true}\mid\mathsf{false},\\
 R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
 J &::= \top\mid x:A\mid\operatorname{cell}(x,R)
-       \mid\operatorname{val}(x,R)\mid J\land J.
+       \mid\operatorname{val}(x,R)\mid\operatorname{read}(x,y)\mid x=y\mid J\land J.
 \end{aligned}
 $$
 
@@ -105,12 +105,15 @@ $$
 | $x:A$ | The value in slot $x$ belongs to the ordinary type $A$, interpreted against the current world and budget. |
 | $\operatorname{cell}(x,R)$ | Slot $x$ holds a location whose current heap contents belong to $R$. It does not specify or change that location's storage invariant. |
 | $\operatorname{val}(x,R)$ | The immutable value in slot $x$ belongs to $R$. This is a snapshot fact, independent of subsequent heap mutation. |
+| $\operatorname{read}(x,y)$ | Slot $x$ holds a location whose current contents equal the immutable value in slot $y$. A write or call can invalidate this relationship. |
+| $x=y$ | Two slots hold the same immutable value, including the same location when they contain references. Mutation of the heap does not change this equality. |
 | $\top$, $J_1\land J_2$ | No requirement, or both requirements. Conjunction does not assert ownership or disjoint locations. |
 
 An empty literal set is an impossible content/value predicate, not an absent
 assertion. There is no general assertion disjunction, negation or quantifier in
 this finite grammar. The union within $R$ permits alternatives for one value;
-it does not express correlations between different slots. Numbers and predicates
+it does not express arbitrary correlated alternatives between slots. The explicit
+read and equality atoms express only the relationships listed above. Numbers and predicates
 on nested references are not part of the implemented literal language.
 
 The notation requested for source claims is an abbreviation:
@@ -131,7 +134,9 @@ ordinary type operand that can be inserted into arrows or recursive type bodies.
 Forgetting the cell assertion leaves `ref(boolean)` and loses information.
 
 The implementation stores these conjunctions as an ordinary context $\Gamma$
-plus `HeapKnowledge.Knowledge`: cell facts $\Delta$ and immutable-value facts $V$.
+plus `HeapKnowledge.Knowledge`: cell facts $\Delta$, immutable-value facts $V$,
+and a list of read/equality links. `HeapLinks.Holds` interprets the latter, with
+an `alias` flag distinguishing timeless slot equality from a current read.
 The grammar is mathematical notation for those components, not a new JSON or
 TypeScript parser. `cell` corresponds to `HeapFacts.Holds`; `val` corresponds to
 `HeapKnowledge.ValueHolds`. A source expression assertion uses its evaluated
@@ -141,8 +146,9 @@ result in place of $x$.
 heap observations and their relationship to the world and satisfying heap.
 [Program typing](PROGRAM-TYPING.md#checked-expression-postconditions) owns the
 checked rules and fact transfer. [Source claims](SOURCE-CLAIMS.md#current-content-assertions)
-owns the wire encoding and its restrictions. Expression and graph checking are proved; source-observation consumption and
-automatic evidence production remain integration work.
+owns the wire encoding and its restrictions. Expression and graph checking are proved;
+source-observation consumption remains integration work. The producer already
+generates checked heap facts from supported operations.
 
 ## Recursive normalization
 

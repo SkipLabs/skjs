@@ -55,13 +55,14 @@ private structure Built where
   claims : List (PointClaim Nat) := []
   obligations : List ExpressionClaims.Required := []
   origins : List (Option DiagnosticOrigin) := []
+  assertions : List (Nat × HeapKnowledge.Knowledge) := []
 
 private abbrev Compiler := StateT Built (Except String)
 
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
     Compiler Target := do
   let s : Built ← get
-  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations (s.origins ++ [none]))
+  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations (s.origins ++ [none]) s.assertions)
   return ⟨s.program.length, none⟩
 
 /-- Diagnostic metadata only; never part of the certified request. -/
@@ -72,12 +73,49 @@ private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat))
   modify fun s => { s with origins := s.origins.set target.label (some ⟨pos,role,environmentStart⟩) }
   return target
 
+/-- A checkpoint is an actual no-op graph node. Every incoming edge must
+justify its supplied current-heap assertion, including backedges. -/
+private def checkpoint (pos : Span) (Γ : List (Ty Nat)) (facts : HeapFacts.Facts)
+    (next : Target) (entry : Option Nat := none) : Compiler Target := do
+  if facts.isEmpty then return next
+  let t ← emitAt pos .nul (.effect next) Γ [0] "heap-observation" entry
+  modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],[]⟩)] }
+  return t
+
+private def contents (A : Ty Nat) : Except String (List HeapFacts.Literal) := do
+  if !RequestJson.validTy SourceTypes.types.length A then throw "invalid current-content type label"
+  let some R := HeapKnowledge.literals SourceTypes.graph A
+    | throw "current-content predicate must be a finite primitive type"
+  return R
+
+private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
+    Except String HeapFacts.Facts := do
+  let cs := (fc.entryCurrent.lookup pos).getD []
+  scope.zipIdx.foldlM (fun facts (name,i) => do
+    match cs.lookup name with
+    | none => return facts
+    | some A => return facts ++ [⟨i,← contents A⟩]) []
+
+/-- Ordinary lambda proofs cannot retain transient heap observations across
+calls. Require their declared storage contract to imply such an observation
+uniformly; this is a located proof obligation, never a discarded assertion. -/
+private def persistentObservation (pos : Span) (A R : Ty Nat) : Compiler Unit := do
+  let _ ← contents R
+  let [.refs W []] := PositiveRules.expand SourceTypes.graph A
+    | throw "current-content assertion requires a single cell contract"
+  let plan := DirectProof.var [W] 0 R
+  modify fun s => { s with obligations := s.obligations ++
+    [⟨pos,plan.goal,some plan,"heap-observation"⟩] }
+
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
 slots at their already checked types while projecting the supplied named slots. -/
 private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List String)
-    (Γ : List (Ty Nat)) : Except String (List (Ty Nat)) := do
+    (Γ : List (Ty Nat)) : Compiler (List (Ty Nat)) := do
   let names := scope.filter (· != "")
   let H ← env fc pos names
+  for (name,A) in names.zip H do
+    if let some R := ((fc.entryCurrent.lookup pos).getD []).lookup name then
+      persistentObservation (pos,pos+1) A R
   (scope.zipIdx).mapM fun (name,i) => do
     let A := if name == "" then Γ[i]? else H[names.idxOf name]?
     match A with
@@ -167,6 +205,8 @@ slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
+  if let some R := fc.exprCurrent.lookup e.span then
+    persistentObservation e.span A R
   let p ← match e with
   | .var _ name =>
     match scope.idxOf? name with
@@ -297,6 +337,9 @@ Mappings discard only the temporaries introduced by this expression. -/
 private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) (next : Target) : Compiler Target := do
   let A ← exprType fc e
+  let next ← match fc.exprCurrent.lookup e.span with
+    | none => pure next
+    | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next
   match e with
   | .var _ name =>
     let i ← match scope.idxOf? name with
@@ -466,7 +509,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
     Option (Target × List String) → Option LoopTargets → Compiler Target
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
-    match stmts with
+    let target ← match stmts with
     | [] => leave scope tail
     | .brk pos :: rest | .cont pos :: rest =>
       if !rest.isEmpty then throw "statements after break or continue are outside the current source slice"
@@ -511,12 +554,24 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       let no ← leave scope continuation
       let condition ← compileCondition fc scope Γ cond yes no
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
-      return head
+      let facts ← entryFacts fc pos.1 scope
+      if !facts.isEmpty then
+        modify fun s => { s with
+          assertions := s.assertions ++ [(head.label,⟨facts,[],[]⟩)]
+          origins := s.origins.set head.label (some ⟨pos,"heap-observation",some pos.1⟩) }
+      pure head
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail loopTargets
       let drop := ⟨next.label, some ((next.mapping.getD (List.range Γ.length)).map (·+1))⟩
       compileExpr fc scope Γ e drop
+    match stmts with
+    | [] | .loop .. :: _ => return target
+    | st :: _ =>
+      let pos := match st with
+        | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
+      let facts ← entryFacts fc pos.1 scope
+      checkpoint pos (← env fc pos.1 scope) facts target (some pos.1)
 
 private def traversalBudget : List SourceInput.Stmt → Nat
   | [] => 1
@@ -531,6 +586,7 @@ termination_by stmts => sizeOf stmts
 structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
   origins : List (Option DiagnosticOrigin) := []
+  assertions : List (Nat × HeapKnowledge.Knowledge) := []
 
 /-- Search hints only. The fixed source graph's arrow/reference operands contain
 primitive labels; avoid considering all unrelated signatures at every coercion.
@@ -563,7 +619,7 @@ def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Exce
   let (entry, built) ← (do
     let first ← body (traversalBudget f.body) fc R scope f.body none none
     emit .nul (.effect first) inputs [0]).run {}
-  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations, built.origins⟩
+  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations, built.origins, built.assertions⟩
 
 /-- Existing wire callers pass through the SKJS adapter. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/
@@ -594,11 +650,37 @@ structure Bundle where
   obligations : List (List (ProgramCertificates.Evidence Nat))
   deriving ToJson, FromJson
 
+/-- The source consumer binds required assertions to the reconstructed graph,
+independently of which stronger facts the certificate producer chose. -/
+def checkAssertions (r : SourceRequest) (c : Response) : Bool :=
+  r.assertions.all fun (l,k) => match c.certificate[l]? with
+    | none => false
+    | some n => HeapKnowledge.check n.knowledge k none
+
+theorem checkAssertions_sound {r : SourceRequest} {c : Response}
+    (hc : checkAssertions r c = true) {l k node ρ heap}
+    (hm : (l,k) ∈ r.assertions) (hn : c.certificate[l]? = some node)
+    (hk : HeapKnowledge.Holds node.knowledge ρ heap) : HeapKnowledge.Holds k ρ heap := by
+  have h := List.all_eq_true.mp hc (l,k) hm
+  simp only [hn] at h
+  exact HeapKnowledge.check_sound (m := none) h hk
+
 def checkRequests (rs : List SourceRequest) (b : Bundle) : Bool :=
   b.version == 3 && rs.length == b.functions.length && rs.length == b.obligations.length &&
-    (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c) &&
+    (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c && checkAssertions r c) &&
     (rs.zip b.obligations).all (fun (r,es) =>
       ExpressionClaims.checkAll (RequestJson.graph r.toRequest) r.types.length r.obligations es)
+
+/-- At a graph checkpoint, the proved state invariant entails the assertion
+reconstructed from source claims, not merely a producer-selected context. -/
+theorem checkRequests_assertions {rs : List SourceRequest} {b : Bundle}
+    (hc : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
+    {l k n W heap ρ} (hr : (l,k) ∈ r.assertions)
+    (hs : StateOk (RequestJson.graph r.toRequest) r.result c.certificate n W heap (.at l ρ)) :
+    HeapKnowledge.Holds k ρ heap := by
+  simp only [checkRequests,Bool.and_eq_true,List.all_eq_true] at hc
+  obtain ⟨node,hn,_,hk⟩ := hs
+  exact checkAssertions_sound (hc.1.2 _ hm).2 hr hn hk
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
   let rs ← extract ast claims fileKey
@@ -611,7 +693,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels)
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels) r.assertions
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence
@@ -643,7 +725,7 @@ theorem checkRequests_safe {rs : List SourceRequest} {b : Bundle}
     (he : EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
     SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result) n W heap (.at r.start ρ) := by
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  exact verify_safe (h.1.2 _ hm) n W heap ρ he hw hh
+  exact verify_safe (h.1.2 _ hm).1 n W heap ρ he hw hh
 
 /-- Every supplemental claim is a derivable sequent in the same calculus. -/
 theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
@@ -653,6 +735,8 @@ theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
   exact ExpressionClaims.checkAll_sound (h.2 _ hm) hq
 
+#print axioms checkRequests_assertions
+#print axioms checkAssertions_sound
 #print axioms checkRequests_obligations
 #print axioms checkJson_checked
 #print axioms checkRequests_safe

@@ -16,6 +16,9 @@ structure Function where
   ret : Candidate
   envs : List (Nat × List (String × Candidate))
   exprs : List (Span × Candidate)
+  /-- Current contents at source entries/results, separate from persistent types. -/
+  entryCurrent : List (Nat × List (String × Ty Nat)) := []
+  exprCurrent : List (Span × Ty Nat) := []
 
 /-- This source adapter uses SourceTypes.graph, not an arbitrary supplied graph.
 Even direct callers must not turn an out-of-range label into its empty default. -/

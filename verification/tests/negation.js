@@ -157,10 +157,9 @@ try {
   assert.equal(exitFn.collection.completion, "aborted");
   assert.equal(exitFn.collection.mode, "normal");
   expect(
-    "SKJS loop exit claim insufficient",
+    "original SKJS loop exit claims verify using the checked branch value",
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
-    false,
-    "evidence search failed",
+    true,
   );
   const ret = exitAst.functions[0].body.at(-1);
   const binding = exitFn.envs

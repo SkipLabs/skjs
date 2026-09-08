@@ -10,9 +10,10 @@
  * the general write-then-read rule: no operation intervenes that could mutate
  * the cell. The source shape is pinned by tests/write-observations.js.
  *
- * This semantic proof is not yet a source-checker certificate. Editing the
- * read claim to true still fails current proof search; graph typing and the
- * certificate checker do not yet consume the heap-observation rules.
+ * The source checker verifies the original partial SKJS claims independently.
+ * It retains the wider Boolean read claim and uses checked current-content
+ * and immutable-result facts to prove the true return contract. A false read
+ * claim is rejected; the producer's rejection is not treated as a proof.
  */
 function writeRefinedRead(): true {
   const cell: { value: boolean } = { value: false };

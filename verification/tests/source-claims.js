@@ -102,6 +102,26 @@ try {
     assert.equal(diagnostic.origin.role,"expression-claim");
     assert.deepEqual(diagnostic.origin.pos,bodyPos);
     assert.deepEqual(diagnostic.sequent.type,[1]);
+    // A closure's heap observation must follow from its invariant for every call.
+    // The earlier true allocation cannot justify a permanent true read capability.
+    const observed=JSON.parse(fs.readFileSync(sc,"utf8"));
+    observed.version=2;observed.profile="stateful-source-75-v2";
+    const cf=observed.functions[0];
+    for(const b of cf.params)b.current=null;
+    for(const e of cf.entries)for(const b of e.bindings)b.current=null;
+    for(const e of cf.expressions)e.current=null;
+    cf.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1,2];
+    const receiver=cf.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(f.body[1].init.body.e.pos));
+    receiver.current=[1,2];fs.writeFileSync(sc,JSON.stringify(observed));
+    const broad=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(broad.status,0,broad.stderr);
+    receiver.current=[1];fs.writeFileSync(sc,JSON.stringify(observed));
+    assert.notEqual(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
+    const stale=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(stale.status,0);
+    const observation=require("../tools/obligation-diagnostic.js").readDiagnostic(stale.stderr);
+    assert.equal(observation.origin.role,"heap-observation");
+    assert.deepEqual(observation.origin.pos,receiver.pos);
+    assert.deepEqual(observation.sequent.context,[[1,2]]);
+    assert.deepEqual(observation.sequent.type,[1]);
   });
   console.log(`Source claims: ${passed} passed, 0 failed`);
 } finally {fs.rmSync(tmp,{recursive:true,force:true});}

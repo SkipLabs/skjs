@@ -5,10 +5,10 @@
  * or hidden alias is needed. Null skips the body and returns true.
  *
  * The exit-cell union is exported in full and simplifies to a Boolean invariant.
- * Current-content assertions inside the loop are exported separately, but the
- * source graph checker does not yet consume them. The diagnostic regression
- * forgets those assertions; the unchanged singleton claim still fails.
- * Runtime behavior, not an export/contract rejection, establishes the counterexample.
+ * Current-content assertions inside the loop become checked graph obligations.
+ * The original export fails proof search; a diagnostic candidate forgetting
+ * those assertions still fails at the singleton read. Runtime behavior, not
+ * failure to find a proof, establishes the counterexample.
  */
 function staleCompound(value: null | boolean): true {
   const cell: { value: boolean } = { value: true };

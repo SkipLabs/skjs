@@ -2,7 +2,7 @@
 "use strict";
 // Classify the two producer witnesses independently of verifier acceptance.
 // The complete safe body also has a Lean proof in WriteRefinedRead.lean; the
-// ordinary source certificate checker does not yet consume those new rules.
+// source checker also consumes the generated heap-aware graph certificate.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
@@ -158,21 +158,27 @@ test("accepted negated-guard export retains a false read after a true write", ()
   assert.equal(exit.atoms.length, 2);
   assert(exit.atoms.every((a) => a.a === "record"));
 });
-test("negated witness is blocked by interpretation, not unavailable export", () => {
+test("negated witness reaches a checked obligation with its original observations", () => {
   const r = check(badFile, badClaims, "staleFlip");
-  assert.equal(r.stage, "source-extraction");
-  assert.equal(r.location.reason, "non-invariant-cell-contract");
-  assert.equal(r.obligation, undefined);
+  assert.equal(r.status, "not-established");
+  assert.equal(r.obligation.phase, "proof-search");
 });
-test("a truthful read-claim edit still needs observation rules in the checker", () => {
+test("original and precise read claims verify through checked write postconditions", () => {
   const candidate = structuredClone(safeClaims);
   at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type =
     lit(true);
   for (const cs of [safeClaims, candidate]) {
     const r = check(safeFile, cs);
-    assert.equal(r.status, "not-established");
-    assert.match(r.detail, /evidence search failed/);
-    assert.equal(r.obligation.phase, "proof-search");
+    assert.equal(r.status, "verified", r.detail);
   }
 });
+test("a false read claim cannot override the actual written value", () => {
+  const candidate = structuredClone(safeClaims);
+  at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type =
+    lit(false);
+  const r = check(safeFile, candidate);
+  assert.equal(r.status, "not-established");
+  assert.equal(r.obligation.phase, "proof-search");
+});
+
 console.log(`Write observations: ${passed} passed, 0 failed`);

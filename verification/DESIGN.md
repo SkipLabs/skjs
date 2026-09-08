@@ -593,26 +593,26 @@ meaning, including heap satisfaction and the budget-zero boundary.
 [Program typing](PROGRAM-TYPING.md#current-content-rules-semantic-layer) gives the
 proved operation rules, entailment check and mathematical statements.
 
-**Implemented:** semantic read/write/allocation/composition rules, a finite
-slot-based heap/value-fact entailment check, sound finite expression-evidence
-checking with effect postconditions, and
-[version-2 sidecar export](SOURCE-CLAIMS.md#current-content-assertions). Required
-observations still fail explicitly in source consumption. The maintained graph
-checker now carries heap facts, checks expression postconditions and incoming-edge
-entailment, and proves graph safety. The source adapter and automatic producer
-have not yet connected supplied observations to that interface. The
-[write-then-read witness](tests/skjs-incomplete/README.md) has a model-level proof,
-not an accepted source certificate. Conversion preserves SKJS's actual claims;
-it does not substitute verifier-derived precision.
+**Implemented:** semantic operation rules, finite heap/value facts and alias links,
+checked expression postconditions and graph-edge entailment, and source consumption
+through both raw SKJS claims and [version-2 sidecars](SOURCE-CLAIMS.md#current-content-assertions).
+The compiler binds required observations to actual statement-entry and
+expression-result checkpoints. The consumer reconstructs these requirements and
+checks them independently of evidence production. Loop heads carry supplied
+requirements; backedges must re-establish them. No loop invariant is inferred.
 
-Graph typing keeps ordinary value types and an additional heap-fact context
-separate. Expression postconditions reach continuations, and every incoming edge
-justifies supplied facts under its slot mapping, including loop back edges.
-Writes discard old facts and establish the written contents; ordinary calls
-discard heap observations. Reads and allocation preserve justified facts.
-`HeapGraphTests` checks a complete allocate/write/read/precise-return graph and
-its safety theorem, plus strict JSON evidence and rejected fact/map tampering.
-Guard-to-cell refinement and source production remain the next integration steps.
+Writes establish new contents for recorded aliases and discard other heap facts;
+ordinary calls discard heap observations and read links. Immutable values and
+slot equalities survive. Boolean guards refine current cells through checked
+read links, including links carried through receiver temporaries. Ordinary
+closure proofs require a supplied observation to follow uniformly from the
+storage invariant; they cannot retain temporary facts from closure creation.
+[Program typing](PROGRAM-TYPING.md#source-observation-checkpoints) owns the precise
+checkpoint obligations and this conservative closure rule.
+
+The [write-then-read witness](tests/skjs-incomplete/README.md) has an accepted
+source certificate using its original partial claims, as well as a model proof.
+Conversion preserves SKJS's claims; derived facts supplement their precision.
 
 Three constraints govern later precision improvements. Possible aliases cannot
 be framed merely because their variable names differ. An immutable snapshot
@@ -630,43 +630,24 @@ The completion target is the original, unedited exports for `staleCapturedCell`,
 controls. Additional standalone semantic proofs or a renamed limitation message
 do not complete this milestone.
 
-The remaining diagnostic barriers are `SkjsSourceClaims.translate`, which still
-uses the ordinary-type decoder at program points, and `SourceClaimJson.pointCandidate`,
-which explicitly rejects a non-null `current`. The graph-checker barrier has been
-removed: `ControlFlow.checkNode` now checks heap-aware expression evidence and
-all outgoing fact transfers. That does not by itself connect source observations.
+The three milestones are:
 
-Implement and validate the following sequence:
-
-1. **Graph evidence and soundness — implemented.** Extend the maintained graph certificate and
-   state invariant with separate cell/value facts and checked expression
-   postconditions. Use `HeapExpressionRules.checkStep`; check fact entailment on
-   every executable edge and slot mapping, including entry and loop back edges.
-   Supplied input facts must be justified, never simply assumed. Preserve the
-   ordinary type-checking obligations and the graph safety theorem.
-2. **Guards and effects.** Connect a tested read to its cell while that relation
-   remains valid, so true/false and compound/negated guards justify branch-entry
-   observations. Invalidate heap facts and read-to-cell relations across writes
-   and unknown calls; establish new contents after a checked write. Preserve
-   immutable snapshots and pure administrative copies. A closure body must not
-   inherit an observation from its creation point. Check direct writes, aliases,
-   captured writers and effects during condition evaluation.
-3. **Source consumption and evidence production.** Represent point candidates as
-   ordinary types plus required observations, bind both to their source origins,
-   and connect raw SKJS `translatePoint` and version-2 sidecars to the same graph
-   consumer. Generate evidence through the existing source-guided producer;
-   check all incoming edges against supplied merge/loop assertions rather than
-   infer loop invariants. Keep ordinary function signatures on the ordinary-type
-   path. Remove the two point-claim gates only when their observations are checked.
-4. **End-to-end diagnostics and regression tests.** The three original exports
-   must reach checked obligations without weakening their claims. A stale
-   post-write/call assertion must produce a located, unproved obligation rather
-   than `non-invariant cell contract` or another unsupported-observation gate.
-   The safe `writeRefinedRead` function must verify with a documented repaired
-   candidate where SKJS omitted or supplied an inadequate claim; existing
-   immutable-snapshot controls must remain verified. Pin the obligation's source
-   association and test both raw-export and independent-sidecar routes. Run
-   `lake build` and `make verify`, and update source-support status only on success.
+1. **Graph evidence and soundness — implemented.** Separate cell/value facts,
+   checked effects, read/equality links and edge entailment belong to the maintained
+   graph checker. External entry facts must be justified. Graph safety is proved.
+2. **Source consumption and evidence production — implemented.** Both adapters
+   retain the invariant and current predicate. Source checkpoints bind observations
+   to entries/results; the producer uses supplied merge/head requirements and the
+   consumer checks every edge. Tests cover allocation, writes, guarded reads,
+   merges, backedges, empty predicates and changed claims. Ordinary signatures
+   retain their existing meaning. Closure observations require uniform invariant
+   justification, pending graph-backed closure bodies.
+3. **Original-witness diagnosis — final audit pending.** The three unedited exports
+   now reach proof obligations rather than the former format gates. Audit that each
+   located failure is the intended stale post-write/call assertion, with adequate
+   positive controls for the preceding guards, including compound/negated guards.
+   Keep raw-export and independent-sidecar routes aligned. The safe
+   `writeRefinedRead` and immutable-snapshot controls must remain verified.
 
 A failed proof search remains an unproved obligation, not a semantic disproof.
 Runtime witnesses independently establish the three unsoundness examples. If a

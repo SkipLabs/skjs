@@ -37,10 +37,10 @@ structure NodeEvidence (ι : Type) where
   expression : Evidence ι
   edges : List (EdgeEvidence ι)
   /-- Supplied precondition; incoming edges must establish it. -/
-  knowledge : HeapKnowledge.Knowledge := ⟨[],[]⟩
+  knowledge : HeapKnowledge.Knowledge := ⟨[],[],[]⟩
   /-- None uses ordinary evidence; some selects a checked effect rule. -/
   effect : Option (HeapExpressionRules.StepEvidence ι) := none
-  output : HeapKnowledge.Knowledge := ⟨[],[]⟩
+  output : HeapKnowledge.Knowledge := ⟨[],[],[]⟩
 
 abbrev Certificate (ι : Type) := List (NodeEvidence ι)
 def entry (c : NodeEvidence ι) := (claim c.expression).context
@@ -78,15 +78,15 @@ def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → Stat
 
 /-- Target existence is checked against both the actual graph and its claims. -/
 def checkTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[]⟩) : Bool :=
+    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : Bool :=
   match P[target.label]?, C[target.label]? with
   | some _, some c => checkMapped G Γ (entry c) target.mapping p && HeapKnowledge.check facts c.knowledge target.mapping
   | _, _ => false
 
 def checkBranchTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[]⟩) : Bool :=
+    (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩) : Bool :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkObserved G Γ (entry c) 0 o target.mapping p && HeapKnowledge.check facts c.knowledge target.mapping
+  | some _, some c => checkObserved G Γ (entry c) 0 o target.mapping p && HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge target.mapping
   | _, _ => false
 
 
@@ -123,7 +123,7 @@ def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : Li
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping ∧ HeapKnowledge.check facts c.knowledge l.mapping = true
+  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping ∧ HeapKnowledge.check (HeapKnowledge.observe facts 0 o) c.knowledge l.mapping = true
 
 
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
@@ -214,7 +214,7 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     (hq : q.holds (ρ 0)) (hf : HeapKnowledge.Holds facts ρ h) :
     StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c,hc,hcov,hfact⟩ := ht
-  exact ⟨c,hc,hcov.env he hq, HeapKnowledge.check_sound hfact hf⟩
+  exact ⟨c,hc,hcov.env he hq, HeapKnowledge.check_sound hfact (HeapKnowledge.observe_holds hf hq)⟩
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
 theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
@@ -292,7 +292,7 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C l c}
 def checkEntry [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι)) : Bool :=
   checkGraph G Rty P C && match C[start]? with
-    | some c => decide (entry c = inputs ∧ c.knowledge = ⟨[],[]⟩)
+    | some c => decide (entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩)
     | none => false
 
 theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C start inputs}
@@ -304,7 +304,7 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C star
   have hx := hc.2
   split at hx
   · rename_i c hc
-    have hem : entry c = inputs ∧ c.knowledge = ⟨[],[]⟩ := of_decide_eq_true hx
+    have hem : entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩ := of_decide_eq_true hx
     apply accepted_entry_safe hg hc n W h ρ _ _ hw hh
     · simpa only [hem.1] using he
     · rw [hem.2]; exact HeapKnowledge.empty ρ h

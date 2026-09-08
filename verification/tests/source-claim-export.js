@@ -46,8 +46,9 @@ try {
     const omissions=JSON.parse(fs.readFileSync(op+".conversion.json")).omissions;
     assert(!omissions.some(o=>o.function===changed.name&&JSON.stringify(o.site.pos)===JSON.stringify(changed.pos)));
     const checked=run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
-    assert.notEqual(checked.status,0,"current contents must never be silently erased");
-    assert(checked.stderr.includes("current-content assertion requires heap-aware source evidence"),checked.stderr);
+    assert.equal(checked.status,0,checked.stderr);
+    const rawCheck=run(verifier,["--check-stateful-source",ap,cp,file,ep]);
+    assert.equal(rawCheck.status,0,rawCheck.stderr);
     const {fromSourceClaims}=require("../tools/annotate-source.js");
     const report=fromSourceClaims(fs.readFileSync(file,"utf8"),file,d,"candidate");
     const shown=report.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
@@ -56,13 +57,12 @@ try {
     const {verifySkjs}=require("../tools/annotate-source.js");
     const result=verifySkjs(file,fs.readFileSync(file,"utf8"),d,file,report,verifier,10,true)
       .results[report.functions.findIndex(f=>f.name===changed.name)];
-    assert.equal(result.stage,"source-extraction");
-    assert.equal(result.location.kind,"source-limitation");
-    assert.equal(result.location.reason,"current-content-assertion");
+    assert.equal(result.status,"verified");
     const check=()=>run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
     point.current=[];fs.writeFileSync(op,JSON.stringify(d));
+    assert.notEqual(run(verifier,["--check-source-claims",ap,op,file,ep]).status,0,"old evidence cannot erase an impossible observation");
     const empty=check();assert.notEqual(empty.status,0);
-    assert(empty.stderr.includes("current-content assertion requires heap-aware source evidence"),empty.stderr);
+    assert(empty.stderr.includes("obligation-diagnostic:"),empty.stderr);
     point.current=[9];fs.writeFileSync(op,JSON.stringify(d));
     const invalid=check();assert.notEqual(invalid.status,0);
     assert(invalid.stderr.includes("invalid source claims"),invalid.stderr);

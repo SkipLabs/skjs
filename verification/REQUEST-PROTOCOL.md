@@ -107,16 +107,18 @@ supply a default. The expression and continuation constructors are defined in
 `Language.lean` and `ControlFlow.lean`; their codecs live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
-The evidence file is an object with `version: 3` and `certificate`, a list of
+The evidence file is an object with `version: 4` and `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
-and `output`. `knowledge` and `output` each contain `cells` and `values`, lists of
+and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
 `{slot, contents}` facts. `contents` is a list of literal constructors `nul`,
-`tru`, or `fls`. These are finite state assertions, not extra type labels.
+`tru`, or `fls`. `links` is a list of `{cell, value, alias}` objects: `alias: true` means equal
+slot values; `alias: false` means the cell currently contains the value in the
+other slot. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
 `observedRead`, `knownValue`, `allocated`, `written`). Constructor payloads use
@@ -128,9 +130,8 @@ The effect checker binds to the root expression sequent and must establish exact
 `output`. Each actual outgoing edge checks fact entailment against the destination's
 `knowledge`, in addition to ordinary type coverage. Effect-only continuations drop
 the result slot before transferring facts. External entry requires empty knowledge.
-All type labels in nested effect proofs are bounds checked. The ordinary producer
-currently emits empty fact contexts; automatic production from source observations
-is still pending. See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
+All type labels in nested effect proofs are bounds checked. The producer derives checked facts along single-predecessor paths. Supplied
+source observations are not yet connected to this interface. See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
 
 The `ifBool` expression rule checks an ordinary `ite` with three premises:
 the Boolean condition, the true arm, and the false arm. Each arm has the root's
@@ -144,7 +145,7 @@ the arms use precisely the root context with that slot replaced. All payload
 labels are bounds checked. The rule cannot narrow any other binding.
 
 Request version 2 requires explicit `inputs`. Raw requests use version 2;
-responses use version 3 for checked heap postconditions. Version-2 responses
+responses use version 4 for checked heap postconditions. Earlier responses
 are rejected. Source bundles use version 3 to include supplemental expression proofs;
 older source bundles are rejected.
 Decode/re-encode validation rejects unknown fields and missing fields,
@@ -195,7 +196,7 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":3,"functions":[...],"obligations":[...]}`, containing version-3
+`{"version":3,"functions":[...],"obligations":[...]}`, containing version-4
 responses in source function order. `obligations` has one list per function,
 including empty lists, with one evidence tree per reconstructed closure-expression
 or annotation judgment. Counts and root judgments must match exactly. Exported
@@ -459,6 +460,14 @@ administrative temporaries. Context changes become explicit variable coercions.
 Only subtype obligations still require search. It can reuse an already produced
 supplemental proof with an exact matching root judgment in the graph certificate.
 The independent consumer and source bundle format are unchanged.
+
+Source assertion requirements are reconstructed from the source/claim inputs,
+not read from the certificate. Statement-entry and expression-result checkpoints
+are ordinary graph nodes with additional required knowledge. Source acceptance
+checks that certificate knowledge entails these requirements, alongside the
+ordinary graph and supplemental proofs. Requirements may seed untrusted evidence
+search at merges/loop heads, but every incoming edge is checked. See
+[the source checkpoint rules](PROGRAM-TYPING.md#source-observation-checkpoints).
 
 Source bundle version 3 carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and

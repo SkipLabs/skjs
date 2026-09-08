@@ -16,7 +16,7 @@ private def writeProof : Evidence Nat := .node writeClaim .write
   [.node ⟨writeClaim.context,.var 0,refBool⟩ .var [],
    .node ⟨writeClaim.context,.var 1,boolTy⟩ .var []]
 private def beforeWrite : Knowledge :=
-  ⟨[⟨0,[.fls]⟩,⟨2,[.fls]⟩],[⟨1,[.tru]⟩,⟨3,[.fls]⟩]⟩
+  ⟨[⟨0,[.fls]⟩,⟨2,[.fls]⟩],[⟨1,[.tru]⟩,⟨3,[.fls]⟩],[]⟩
 private def afterWrite := writeOutput beforeWrite 0 [.tru]
 
 -- The storage contract permits true; current contents are separately updated.
@@ -32,12 +32,12 @@ private def afterWrite := writeOutput beforeWrite 0 [.tru]
 private def afterEdge := HeapKnowledge.project afterWrite (some [1]) 1
 #guard HeapKnowledge.check afterWrite afterEdge (some [1])
 #guard afterEdge.cells == [⟨0,[.tru]⟩]
-#guard !(HeapKnowledge.check afterWrite ⟨[⟨0,[.fls]⟩],[]⟩ (some [1]))
+#guard !(HeapKnowledge.check afterWrite ⟨[⟨0,[.fls]⟩],[],[]⟩ (some [1]))
 
 -- Check a producer's wider Boolean read claim, then use the precise immutable
 -- result to discharge a true return contract. A stale false claim is rejected.
 private def readClaim : Sequent Nat := ⟨[refBool],.read (.var 0),boolTy⟩
-private def afterRead := readOutput afterEdge [.tru]
+private def afterRead := readOutput afterEdge 0 [.tru]
 #guard checkStep G readClaim afterEdge (.observedRead 0 [.tru]) == some afterRead
 #guard checkStep G {readClaim with type := [2]} afterEdge (.observedRead 0 [.tru]) == none
 #guard checkStep G readClaim afterEdge (.observedRead 0 [.fls]) == none
@@ -50,10 +50,10 @@ private def afterRead := readOutput afterEdge [.tru]
 private def allocClaim : Sequent Nat := ⟨[boolTy],.alloc (.var 0),refBool⟩
 private def allocProof : Evidence Nat := .node allocClaim .alloc
   [.node ⟨[boolTy],.var 0,boolTy⟩ .var []]
-#guard checkStep G allocClaim ⟨[],[⟨0,[.fls]⟩]⟩ (.allocated 0 [.fls] allocProof) ==
-  some (allocOutput ⟨[],[⟨0,[.fls]⟩]⟩ [.fls])
+#guard checkStep G allocClaim ⟨[],[⟨0,[.fls]⟩],[]⟩ (.allocated 0 [.fls] allocProof) ==
+  some (allocOutput ⟨[],[⟨0,[.fls]⟩],[]⟩ [.fls])
 -- No initializer fact can be fabricated by the evidence.
-#guard checkStep G allocClaim ⟨[],[]⟩ (.allocated 0 [.fls] allocProof) == none
+#guard checkStep G allocClaim ⟨[],[],[]⟩ (.allocated 0 [.fls] allocProof) == none
 
 -- Administrative source copies preserve the cell fact through aliasing.
 private def copyClaim : Sequent Nat := ⟨[refBool],.var 0,refBool⟩

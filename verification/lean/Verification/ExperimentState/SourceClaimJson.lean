@@ -36,18 +36,12 @@ structure Document where
   functions : List Function
   deriving ToJson, FromJson
 
-/-- A current-content assertion cannot be turned into an ordinary value type.
-Until source observations are connected to heap-aware graph evidence, they fail closed.
-The export retains the assertion so a consumer can check it without re-extraction. -/
-private def pointCandidate (A : List Nat) (current : Option (List Nat)) : SourceClaims.Candidate :=
-  match current with
-  | none => .ok A
-  | some _ => .error "current-content assertion requires heap-aware source evidence"
-
 def Function.normalized (f : Function) : SourceClaims.Function :=
-  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,pointCandidate b.type b.current)),.ok f.result,
-    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,pointCandidate b.type b.current)))),
-    f.expressions.map (fun e => (e.pos,pointCandidate e.type e.current))⟩
+  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,.ok b.type)),.ok f.result,
+    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,.ok b.type)))),
+    f.expressions.map (fun e => (e.pos,.ok e.type)),
+    f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
+    f.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩
 
 private def validType (A : List Nat) : Bool :=
   validTy SourceTypes.types.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
@@ -154,7 +148,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels)
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels) r.assertions
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence

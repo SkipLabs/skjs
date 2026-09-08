@@ -16,7 +16,7 @@ private def produceSourceJson (j : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
   let r ← decodeRequest j
-  let source : SourceRequest := ⟨r,[],[]⟩
+  let source : SourceRequest := ⟨r,[],[],[]⟩
   RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
 
 -- Exact finite-set translation, including normalization of unions.
@@ -446,7 +446,7 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 #print axioms early_return_trace
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
-private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[]⟩
+private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[]⟩
 #guard captureRequired.obligations.length == 4
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
   captureRequired.searchLabels SourceTypes.types.length 10 captureRequired.obligations)

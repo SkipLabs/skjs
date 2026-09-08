@@ -25,11 +25,11 @@ private def allocProof : Evidence Nat := .node ⟨[[2]],.alloc (.var 0),[9]⟩ .
   [widen (leaf [[2]] (.var 0) [2] .var)]
 private def writeProof : Evidence Nat := .node ⟨[[1],[9],[2]],.write (.var 1) (.var 0),[0]⟩ .write
   [leaf [[1],[9],[2]] (.var 1) [9] .var, widen (leaf [[1],[9],[2]] (.var 0) [1] .var)]
-private def allocated : Knowledge := allocOutput ⟨[],[]⟩ [.fls]
-private def beforeWrite := HeapKnowledge.shift allocated
+private def allocated : Knowledge := allocOutput ⟨[],[],[]⟩ [.fls]
+private def beforeWrite := pureOutput allocated .tru
 private def written := writeOutput beforeWrite 1 [.tru]
-private def beforeRead : Knowledge := ⟨[⟨0,[.tru]⟩],[]⟩
-private def readResult := readOutput beforeRead [.tru]
+private def beforeRead : Knowledge := ⟨[⟨0,[.tru]⟩],[],[]⟩
+private def readResult := readOutput beforeRead 0 [.tru]
 
 def certificate : ControlFlow.Certificate Nat :=
   [{expression := leaf [] .fls [2] .flsLit, edges := [[.subset]]},
@@ -53,13 +53,13 @@ theorem safe (n : Nat) : SafeGraph program (PositiveRules.meaning G [1]) n
 
 -- A false observation cannot be preserved through the checked true write.
 #guard !(checkClosed G [1] program
-  (certificate.set 4 {certificate[4] with knowledge := ⟨[⟨0,[.fls]⟩],[]⟩}) 0)
+  (certificate.set 4 {certificate[4] with knowledge := ⟨[⟨0,[.fls]⟩],[],[]⟩}) 0)
 -- Local facts cannot simply be assumed at the external entry.
 #guard !(checkClosed G [1] program
-  (certificate.set 0 {certificate[0] with knowledge := ⟨[],[⟨0,[.tru]⟩]⟩}) 0)
+  (certificate.set 0 {certificate[0] with knowledge := ⟨[],[⟨0,[.tru]⟩],[]⟩}) 0)
 -- Nor can evidence invent its own postcondition or change the actual slot map.
 #guard !(checkClosed G [1] program
-  (certificate.set 3 {certificate[3] with output := ⟨[⟨2,[.fls]⟩],[]⟩}) 0)
+  (certificate.set 3 {certificate[3] with output := ⟨[⟨2,[.fls]⟩],[],[]⟩}) 0)
 #guard !(checkClosed G [1] (program.set 3 ⟨.write (.var 1) (.var 0),.effect ⟨4,some [0]⟩⟩) certificate 0)
 
 -- A back edge must re-establish the head's facts just like the first edge.
@@ -78,7 +78,7 @@ private def cycleCertificate := certificate.set 5
 -- The external checker consumes the same facts and effects through strict JSON.
 private def request : RequestJson.Request :=
   ⟨2,SourceTypes.types,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
-private def response : RequestJson.Response := ⟨3,certificate⟩
+private def response : RequestJson.Response := ⟨4,certificate⟩
 #guard RequestJson.verify request response
 #guard match RequestJson.verifyJson (Lean.toJson request) (Lean.toJson response) with
   | .ok _ => true

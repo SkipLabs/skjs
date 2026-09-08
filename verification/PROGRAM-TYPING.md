@@ -6,7 +6,7 @@ connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption u
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 The ordinary and graph rules below are used by the current verifier. The
 [current-content rules](#current-content-rules-semantic-layer) are separately
-proved expression/graph rules awaiting source-observation integration. This document owns
+proved expression/graph rules awaiting source-assertion integration. This document owns
 rule statements, side conditions, soundness scope and evidence construction;
 [Design](DESIGN.md) owns the integration roadmap.
 
@@ -354,7 +354,8 @@ evidence must establish the output from the input; every outgoing edge checks
 fact entailment against its destination under the executable slot map. Ordinary
 expressions discard cell facts; the [effect rules](#checked-expression-postconditions)
 justify stronger postconditions. Fact transfer is checked on both branch edges;
-refining a cell from a guard's outcome is not yet implemented.
+Boolean branch outcomes refine cells only through checked, still-valid read
+links. Tag outcomes currently retain facts without adding cell refinements.
 `checkGraph` enumerates **every node in the actual program**. It requires one
 certificate per node, binds expression evidence to that node's actual code,
 checks scope, and obtains successor labels directly from the continuation.
@@ -529,7 +530,8 @@ and [HeapFacts.lean](lean/Verification/ExperimentState/HeapFacts.lean).
 [HeapExpressionRules.lean](lean/Verification/ExperimentState/HeapExpressionRules.lean)
 checks finite expression evidence against them. They are not additional `HasTy`
 constructors. The maintained graph checker now accepts the checked effect forms;
-source-observation consumption and automatic evidence production remain pending.
+the source adapter binds supplied observations to checked graph checkpoints.
+The producer can also derive facts through supported operations.
 The [semantic reference](SEMANTICS.md#current-content-assertions-and-postconditions)
 defines `Obs`, `ObservedRef`, and `SafePost`; ordinary immutable-value branch
 observations above must not be confused with these mutable-heap assertions.
@@ -599,10 +601,10 @@ source compilation must still supply and check their graph-level use.
 $V$, interpreted as $\forall(i,R)\in V.\;\rho(i)\in R$. This distinction is
 necessary when the producer claims a wide type for a read: the ordinary type
 remains unchanged, while a proved fact about the returned value can justify a
-narrower subsequent return contract. Mutation invalidates cell contents, not
-values already read into immutable slots.
+narrower subsequent return contract. Mutation invalidates cell contents and read-to-cell relationships, not
+values already read into immutable slots or equalities between copied values.
 
-For $K=(\Delta,V)$, write $K(\rho,h)$ for the conjunction of these assertions.
+For $K=(\Delta,V,L)$, where $L$ contains read/equality links, write $K(\rho,h)$ for the conjunction of these assertions.
 `checkStep_sound` establishes:
 
 $$
@@ -618,12 +620,12 @@ It computes a guaranteed output, not an assumed postcondition:
 
 | Evidence | Guaranteed output in the result-pushed frame |
 | --- | --- |
-| Pure value or variable copy | Preserve both fact sets; copies also duplicate facts about the selected slot at result slot zero. Lambda bodies require ordinary typing, without captured heap facts. |
-| Observed read | Preserve both sets and record the result's literal set. That set must fit the requested ordinary result type. |
+| Pure value or variable copy | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
+| Observed read | Preserve facts and links; record the result's literal set and its current read relationship. That set must fit the requested ordinary result type. |
 | Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
 | Allocation | Check ordinary allocation evidence, preserve old facts, and add the fresh cell's initial contents. |
-| Write | Check ordinary write evidence, discard all old cell facts, record the written contents and the null result, and preserve immutable facts. |
-| Ordinary expression, including calls | Check ordinary evidence, discard all cell facts, and preserve only immutable facts. |
+| Write | Check ordinary write evidence, discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
+| Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities. |
 
 The current write-evidence form also requires a cell observation locating the
 receiver. This is a conservative checker restriction; the semantic write rule
@@ -639,9 +641,23 @@ invariant and checks every incoming edge, including back edges. External entry
 requires empty knowledge; effect-only continuations drop result-slot facts.
 [HeapGraphTests.lean](lean/Verification/ExperimentState/HeapGraphTests.lean) proves
 a complete graph safe, checks its JSON evidence, and rejects fabricated entry
-facts, stale write postconditions and altered maps. These checks do **not** yet
-establish whole-source acceptance: source claims and automatic evidence production
-must still be connected to the corresponding graph facts.
+facts, stale write postconditions and altered maps. Source observations use the
+same checked graph facts, through the checkpoints below.
+
+Boolean guards use the following rule, proved by `observeBoolean_holds`:
+
+$$
+\frac{\operatorname{read}(x,y)\quad y=b}
+ {\operatorname{cell}(x,\{b\})},\qquad b\in\{\mathsf{true},\mathsf{false}\}.
+$$
+
+The read link must hold in the current heap. `HeapGuardTests.lean` proves a
+complete two-branch graph safe and checks that discarding the link prevents this
+refinement. A slot equality $x=y$ permits a checked write through either alias to
+establish the new contents for both. Other cell observations are discarded;
+preservation for proved-distinct cells is not yet implemented. Read links are
+invalidated by writes/calls, while slot equalities survive. These facts let source
+lowering discard a receiver temporary without losing a write to its original cell.
 
 [WriteRefinedRead.lean](lean/Verification/ExperimentState/WriteRefinedRead.lean)
 assembles allocation, postcondition-aware composition and `write_then_read` to
@@ -649,9 +665,63 @@ prove an allocate-false/write-true/read body safe at true in every admissible
 initial heap. A separate five-step execution establishes its returned value.
 Its null-argument wrapper inhabits `null → true`; the source fixture itself has
 no parameters. [The fixture notes](tests/skjs-incomplete/README.md) distinguish
-this model proof from the still-unavailable source certificate.
+this model proof from the source certificate now independently produced and
+checked against the original partial SKJS claims.
+
+### Source observation checkpoints
+
+`SourceClaims.Function` retains ordinary types and separately indexed current
+predicates. Both adapters populate this same interface. The compiler inserts a
+no-op checkpoint at each required source entry and immediately after each
+required expression result. The latter names the actual returned value in slot
+zero, before continuation slot projection. A loop's reserved head also carries
+its required assertion, so backedges cannot bypass it.
+
+For required knowledge $K_r$ and certificate knowledge $K_c$ at checkpoint $l$:
+
+$$
+\frac{\operatorname{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}
+\qquad K_c(\rho,h)}{K_r(\rho,h)}.
+$$
+
+`SourceExtraction.checkAssertions_sound` proves this implication.
+`checkRequests` conjoins this check with graph acceptance and supplemental
+expression proofs. Every incoming edge must establish $K_c$, through the ordinary
+graph transfer rule. The producer may suggest facts or choose stronger ones;
+it cannot remove $K_r$ from the source consumer's reconstructed request.
+An empty content predicate remains an impossible observation, not an absent one.
+
+Ordinary compositional expression proofs, including lambda bodies, do not carry
+heap contexts. For a point assertion $\operatorname{ObservedRef}(B,R)$ there,
+the adapter conservatively requires the ordinary sequent:
+
+$$
+x:B\ \vdash\ x:R.
+$$
+
+Here $x$ is an arbitrary **stored value**, not the reference. This checks that
+the invariant implies the observation uniformly. Its proof is a supplemental
+`heap-observation` obligation at the source site. It never assumes the heap at
+closure creation remains unchanged. Consequently a narrower temporary observation
+inside a closure may remain unproved even when it is valid locally; exploiting
+such facts requires graph-backed closure bodies. The checkpoint integration does
+not claim that extra precision.
+
+`tests/source-heap-claims.js` exercises both source formats, wrong and empty
+observations, write invalidation, Boolean read guards, both incoming merge edges,
+loop backedges, and evidence reuse after changing assertions.
 
 ## Producing evidence from supplied claims
+
+The producer selects checked effect evidence and propagates postconditions along
+single-predecessor paths, scheduling a node once its predecessor is available.
+External entry starts with empty heap knowledge. Merge points and loop heads use
+supplied requirements; there is no iteration to infer a loop invariant. The consumer
+independently checks every edge. Single-predecessor nodes may retain stronger
+established facts, provided their incoming edge justifies the complete context.
+Source point types remain unchanged; derived facts can justify narrower later
+obligations even when an intermediate supplied expression type is wide.
+
 
 `CertificateProducer.lean` accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry

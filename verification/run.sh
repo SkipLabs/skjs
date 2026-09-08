@@ -199,6 +199,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   fi
   if ! run_test "Break and continue" node verification/tests/stateful-loop-transfers.js "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"; then exit 1; fi
   if ! run_test "Producer-neutral claims" node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
+  if ! run_test "Source heap assertions" node verification/tests/source-heap-claims.js "$VERIFIER"; then exit 1; fi
   PARTIAL=verification/tests/partial-claims.ts
   skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
   plain_status=$?

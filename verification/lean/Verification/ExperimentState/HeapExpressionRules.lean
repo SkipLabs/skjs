@@ -11,12 +11,14 @@ open HeapFacts HeapKnowledge HeapObservations ProgramCertificates
 def copyFacts (fs : Facts) (i : Nat) : Facts :=
   (fs.filter (fun f => f.slot == i)).map (fun f => {f with slot := 0}) ++ HeapFacts.shift fs
 
-def copy (k : Knowledge) (i : Nat) : Knowledge := ⟨copyFacts k.cells i,copyFacts k.values i⟩
+def copySlots (i j : Nat) : List Nat := if j = i then [0,j+1] else [j+1]
+
+def copy (k : Knowledge) (i : Nat) : Knowledge := ⟨copyFacts k.cells i,copyFacts k.values i,⟨0,i+1,true⟩ :: HeapLinks.pull k.links (copySlots i)⟩
 
 theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     HeapKnowledge.Holds (copy k i) (push (ρ i) ρ) h := by
   have shifted := HeapKnowledge.shift_holds (v := ρ i) hk
-  constructor
+  refine ⟨?_,?_,?_⟩
   · intro f hf
     rcases List.mem_append.mp hf with hf | hf
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -27,8 +29,22 @@ theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ρ h) :
     rcases List.mem_append.mp hf with hf | hf
     · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
       have hg := List.mem_filter.mp hg
-      simpa [push,of_decide_eq_true (show decide (g.slot = i) = true from hg.2)] using hk.2 g hg.1
-    · exact shifted.2 f hf
+      simpa [push,of_decide_eq_true (show decide (g.slot = i) = true from hg.2)] using hk.2.1 g hg.1
+    · exact shifted.2.1 f hf
+
+  · intro g hg
+    rcases List.mem_cons.mp hg with rfl | hg
+    · rfl
+    · have hp := HeapLinks.pull_holds (pre := copySlots i) (τ := push (ρ i) ρ) hk.2.2 (by
+        intro j v hv
+        unfold copySlots at hv
+        split at hv
+        · rename_i hj
+          rcases List.mem_cons.mp hv with rfl | hv
+          · simpa [push,hj]
+          · have hv := List.mem_singleton.mp hv; subst v; rfl
+        · have hv := List.mem_singleton.mp hv; subst v; rfl)
+      exact hp g hg
 
 /-- Primitive slot facts take precedence over the ordinary (possibly wider)
 value type. Both sources have independently proved membership. -/
@@ -46,7 +62,7 @@ theorem valuesAt_sound {G : NormalGraph ι} {Γ k i R ρ n W h}
     cases hr
     have hm := List.mem_of_find?_eq_some hf
     have hi : f.slot = i := by simpa using List.find?_some hf
-    simpa [hi] using hk.2 f hm
+    simpa [hi] using hk.2.1 f hm
   · cases hb : Γ[i]? with
     | none => simp [hb] at hr
     | some B =>
@@ -70,34 +86,43 @@ theorem includes_sound {G : NormalGraph ι} {A R v} (hc : includes G A R = true)
   · contradiction
 
 def withResult (k : Knowledge) (R : List Literal) : Knowledge :=
-  ⟨k.cells,⟨0,R⟩::k.values⟩
+  ⟨k.cells,⟨0,R⟩::k.values,k.links⟩
 
 theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
     (hr : ∃ a ∈ R, v = a.value) : HeapKnowledge.Holds (withResult k R) (push v ρ) h := by
-  refine ⟨hk.1,?_⟩
+  refine ⟨hk.1,?_,hk.2.2⟩
   intro f hf
   rcases List.mem_cons.mp hf with rfl | hf
   · exact hr
-  · exact hk.2 f hf
+  · exact hk.2.1 f hf
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
 precision even when the producer supplied a wider expression type. -/
-def readOutput (k : Knowledge) (R : List Literal) : Knowledge := withResult (HeapKnowledge.shift k) R
+def readOutput (k : Knowledge) (i : Nat) (R : List Literal) : Knowledge :=
+  let out := withResult (HeapKnowledge.shift k) R
+  {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false⟩) ++ out.links}
 
 theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hm : Fact.mk i R ∈ k.cells) (hc : includes G A R = true)
     (_he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
-      (fun h' v => HeapKnowledge.Holds (readOutput k R) (push v ρ) h') n W h (.read (ρ i)) := by
+      (fun h' v => HeapKnowledge.Holds (readOutput k i R) (push v ρ) h') n W h (.read (ρ i)) := by
   obtain ⟨l,v,hl,hv,a,ha,rfl⟩ := hk.1 _ hm
   rw [hl]
   apply consequence _ _ (read_observed hw hh (by cases a <;> rfl) hv)
   · intro j U u hu; exact includes_sound hc ⟨a,ha,hu⟩ j U
   · intro h' u hp
     rw [hp.1]
-    exact result_holds (HeapKnowledge.shift_holds hk) ⟨a,ha,hp.2⟩
+    have hout := result_holds (HeapKnowledge.shift_holds hk) ⟨a,ha,hp.2⟩
+    refine ⟨hout.1,hout.2.1,?_⟩
+    intro link hm
+    rcases List.mem_append.mp hm with hm | hm
+    · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
+      have he := HeapLinks.aliases_eq hk.2.2 hj
+      exact ⟨l,he.trans hl,by simpa [push,hp.2] using hv⟩
+    · exact hout.2.2 link hm
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hr : valuesAt G Γ k i = some R) (hc : includes G A R = true)
@@ -112,7 +137,7 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
 
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
-def ordinaryOutput (k : Knowledge) : Knowledge := ⟨[],HeapFacts.shift k.values⟩
+def ordinaryOutput (k : Knowledge) : Knowledge := ⟨[],HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
     (ht : HasTy G Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
@@ -121,11 +146,11 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
       (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) (push v ρ) h') n W h (instantiate 0 ρ t) := by
   apply of_value_property _ (ht.sound n W h ρ he hw hh)
   intro _ _ heap v _
-  exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2⟩
+  exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2⟩
 
 /-- Allocation retains facts about old cells and records the fresh cell. -/
 def allocOutput (k : Knowledge) (R : List Literal) : Knowledge :=
-  ⟨⟨0,R⟩ :: HeapFacts.shift k.cells, HeapFacts.shift k.values⟩
+  ⟨⟨0,R⟩ :: HeapFacts.shift k.cells, HeapFacts.shift k.values,(HeapKnowledge.shift k).links⟩
 
 theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (ht : HasTy G Γ (.alloc (.var i)) A)
@@ -139,7 +164,8 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
   have hvv : isVal (ρ i) = true := by rw [hv]; cases a <;> rfl
   apply one_step rfl rfl (.allocV hvv) _
     (by simpa [instantiate] using ht.sound n W h ρ he hw hh)
-  refine ⟨?_,(HeapKnowledge.shift_holds (v := .loc h.length) hk).2⟩
+  refine ⟨?_,(HeapKnowledge.shift_holds (v := .loc h.length) hk).2.1,
+    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .loc h.length) hk).2.2⟩
   intro f hf
   rcases List.mem_cons.mp hf with rfl | hf
   · exact ⟨h.length,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
@@ -150,7 +176,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
 /-- A write forgets all old cell observations (including aliases), establishes
 its new contents, and retains immutable values already read into slots. -/
 def writeOutput (k : Knowledge) (i : Nat) (R : List Literal) : Knowledge :=
-  ⟨[⟨i+1,R⟩],⟨0,[.nul]⟩ :: HeapFacts.shift k.values⟩
+  ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R⟩),⟨0,[.nul]⟩ :: HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
 theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R old A ρ n W h}
     (ht : HasTy G Γ (.write (.var i) (.var j)) A)
@@ -168,15 +194,15 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R old A ρ n
   simp [instantiate] at hs
   rw [hl] at hs ⊢
   apply one_step rfl rfl (.writeV hvv hlt) _ hs
-  constructor
+  refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
   · intro f hf
-    have hf : f = ⟨i+1,R⟩ := List.mem_singleton.mp hf
-    subst f
-    exact ⟨l,ρ j,hl,write_new hlt,a,ha,hv⟩
+    obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
+    have heq := HeapLinks.aliases_eq hk.2.2 hs
+    exact ⟨l,ρ j,heq.trans hl,write_new hlt,a,ha,hv⟩
   · intro f hf
     rcases List.mem_cons.mp hf with rfl | hf
     · exact ⟨.nul,by simp,rfl⟩
-    · exact (HeapKnowledge.shift_holds (v := .nul) hk).2 f hf
+    · exact (HeapKnowledge.shift_holds (v := .nul) hk).2.1 f hf
 
 /-- Source lowering inserts variable copies and literal/lambda nodes between
 operations. These are pure: unlike calls they must not discard cell facts. -/
@@ -186,6 +212,9 @@ def pureTerm : Tm → Bool
 
 def pureOutput (k : Knowledge) : Tm → Knowledge
   | .var i => copy k i
+  | .nul => withResult (HeapKnowledge.shift k) [.nul]
+  | .tru => withResult (HeapKnowledge.shift k) [.tru]
+  | .fls => withResult (HeapKnowledge.shift k) [.fls]
   | _ => HeapKnowledge.shift k
 
 theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
@@ -204,7 +233,11 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
     have hv := meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))
     simpa [instantiate,pureOutput] using
       refine_value hv.1 (copy_holds hk) (show Safe (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
-  all_goals exact refine_value rfl (HeapKnowledge.shift_holds hk) hs
+  all_goals first
+    | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.nul,by simp,rfl⟩) hs
+    | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.tru,by simp,rfl⟩) hs
+    | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.fls,by simp,rfl⟩) hs
+    | exact refine_value rfl (HeapKnowledge.shift_holds hk) hs
 
 /-- Evidence names the particular observation used. The checker binds it to
 an actual source sequent, so neither the slot nor the requested result type can
@@ -232,7 +265,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
   | .observedRead i R =>
     if j.term = .read (.var i) ∧ i < j.context.length ∧
         Fact.mk i R ∈ k.cells ∧ includes G j.type R = true
-    then some (readOutput k R) else none
+    then some (readOutput k i R) else none
   | .knownValue i R =>
     if j.term = .var i ∧ i < j.context.length ∧
         valuesAt G j.context k i = some R ∧ includes G j.type R = true

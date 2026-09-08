@@ -35,6 +35,10 @@ function run(command, args) {
 function expectedVerified(file, name) {
   return (
     supported.includes(file) ||
+    (file === "verification/tests/skjs-incomplete/negated-loop-exit.ts" &&
+      name === "negatedVariableLoop") ||
+    (file === "verification/tests/skjs-incomplete/write-refined-read.ts" &&
+      name === "writeRefinedRead") ||
     (file === "verification/tests/partial-claims.ts" && name === "complete")
   );
 }

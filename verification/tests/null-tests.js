@@ -508,7 +508,7 @@ try {
     .find((f) => f.file === staleFile)
     .functions.filter((f) => f.name === "staleCompound");
   expect(
-    "compound stale-read retains a standalone non-invariant context",
+    "compound stale-read reaches an incoming heap obligation",
     run(
       "--produce-stateful-source",
       staleAst,
@@ -517,7 +517,7 @@ try {
       staleFile,
     ),
     false,
-    "source environment obligation",
+    "source incoming edge obligation at",
   );
   const { candidate } = require("./skjs-unsound/compound-write-candidate.js");
   const { claims: weakened, edits } = candidate(
@@ -578,10 +578,8 @@ try {
     verifier,
     10,
   ).results[0];
-  assert.equal(actualReport.stage, "source-extraction");
-  assert.equal(actualReport.location.kind, "source-limitation");
-  assert.equal(actualReport.location.reason, "non-invariant-cell-contract");
-  assert.equal(actualReport.obligation, undefined);
+  assert.equal(actualReport.status, "not-established");
+  assert.equal(actualReport.obligation.phase, "proof-search");
 
   const originalReport = verifySkjs(
     staleFile,

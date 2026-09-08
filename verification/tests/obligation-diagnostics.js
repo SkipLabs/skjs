@@ -79,10 +79,10 @@ try {
     assert.equal(d.input.sourceSha256, hash(source));
     assert.equal(d.input.functionName, f.name);
   });
-  test("strengthening only the entry leaves the return contract unproved", () => {
-    const d = verify([1], [1, 2]).obligation;
-    assert.equal(d.source.origin.role, "return-contract");
-    assert.deepEqual(d.sequent.context, [[1, 2], [1]]);
+  test("a checked immutable value justifies the return despite a wider expression claim", () => {
+    const r = verify([1], [1, 2]);
+    assert.equal(r.status, "verified");
+    assert.equal(r.obligation, undefined);
   });
   test("strengthening only the expression fails a different obligation at the same span", () => {
     const a = verify([1, 2], [1, 2]).obligation,

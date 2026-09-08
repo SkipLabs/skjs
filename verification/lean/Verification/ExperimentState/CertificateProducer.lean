@@ -245,44 +245,142 @@ def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     | none => subtype G pool A B
 
 
+/-- Select effect evidence without changing the requested sequent. A precise
+read/value rule may succeed when ordinary derivation search cannot. -/
+def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (fuel : Nat) (j : Sequent ι) (k : HeapKnowledge.Knowledge)
+    (suggestions : List (Sequent ι)) (known : List (Evidence ι)) :
+    Option (Evidence ι × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := Id.run do
+  let ordinary := (known.find? fun e => claim e == j).orElse fun _ =>
+    expressionWith G pool suggestions fuel j.context j.term j.type
+  let mut choices : List (HeapExpressionRules.StepEvidence ι) := []
+  match j.term with
+  | .var i =>
+    if let some R := HeapExpressionRules.valuesAt G j.context k i then
+      choices := [.knownValue i R]
+  | .read (.var i) =>
+    choices := (k.cells.filter fun f => f.slot == i).map fun f => .observedRead i f.contents
+  | _ => pure ()
+  if let some e := ordinary then
+    match j.term with
+    | .alloc (.var i) =>
+      if let some R := HeapExpressionRules.valuesAt G j.context k i then
+        choices := choices ++ [.allocated i R e]
+    | .write (.var i) (.var v) =>
+      if let some R := HeapExpressionRules.valuesAt G j.context k v then
+        choices := choices ++ (k.cells.filter fun f => f.slot == i).map fun f => .written i v f.contents R e
+    | _ => pure ()
+    choices := choices ++ [.pure e,.ordinary e]
+  for effect in choices do
+    if let some out := HeapExpressionRules.checkStep G j k effect then
+      -- Effect evidence validates this header itself; an ordinary derivation
+      -- is not required for the precise read/value alternatives.
+      return some (ordinary.getD (.node j .var []),effect,out)
+  return none
+
+/-- All predecessor edges come from executable continuations. -/
+def successors : Continuation → List Target
+  | .ret => []
+  | .bind t | .effect t => [t]
+  | .branch y n | .branchBind y n | .tagBind _ y n => [y,n]
+
+def edgeKnowledge (k : HeapKnowledge.Knowledge) (cont : Continuation) (index : Nat) :
+    HeapKnowledge.Knowledge :=
+  match cont with
+  | .effect _ | .branch _ _ => HeapKnowledge.dropResult k
+  | .branchBind _ _ => HeapKnowledge.observe k 0 (.boolean (index == 0))
+  | .tagBind t _ _ => HeapKnowledge.observe k 0 (.tag t (index == 0))
+  | _ => k
+
+private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
+    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι)) :
+    Except Failure (NodeEvidence ι) := do
+  let some c := claims[l]? | throw .claimCount
+  let some (e,effect,out) := expressionEffect G pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known
+    | throw (.expression l)
+  let target := fun Γ t index => match edge G pool claims Γ t with
+    | some p => Except.ok p
+    | none => Except.error (Failure.edge l t.label index)
+  let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) with
+    | some p => Except.ok p
+    | none => Except.error (Failure.edge l t.label index)
+  let ps ← (match node.continuation with
+    | .ret => pure []
+    | .bind t => (target (c.type :: c.context) t 0).map (fun p => [p])
+    | .effect t => (target c.context t 0).map (fun p => [p])
+    | .branch y n => (target c.context y 0).bind (fun py =>
+        (target c.context n 1).map (fun pn => [py,pn]))
+    | .branchBind y n => (branchTarget (c.type :: c.context) (.boolean true) y 0).bind (fun py =>
+        (branchTarget (c.type :: c.context) (.boolean false) n 1).map (fun pn => [py,pn]))
+    | .tagBind t y n => (branchTarget (c.type :: c.context) (.tag t true) y 0).bind (fun py =>
+        (branchTarget (c.type :: c.context) (.tag t false) n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
+  return {expression := e, edges := ps, knowledge := k, effect := some effect, output := out}
+
+/-- Propagate established postconditions along single-predecessor paths. Entry
+starts empty; merge points use supplied requirements. A node is checked once
+when its unique predecessor is available; this is dependency scheduling, not invariant iteration.
+Every edge is still checked by the independent consumer. -/
 def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
-    (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := []) :
+    (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) :
     Except Failure (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
-  P.zipIdx |>.mapM fun (node, l) => do
-    let some c := claims[l]? | throw .claimCount
-    let cached := known.find? fun e => claim e == ⟨c.context,node.expression,c.type⟩
-    let candidate := cached.orElse fun _ => expressionWith G pool suggestions fuel c.context node.expression c.type
-    let some e := candidate | throw (.expression l)
-    let target := fun Γ t index => match edge G pool claims Γ t with
-      | some p => Except.ok p
-      | none => Except.error (Failure.edge l t.label index)
-    let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) with
-      | some p => Except.ok p
-      | none => Except.error (Failure.edge l t.label index)
-    let ps ← (match node.continuation with
-      | .ret => pure []
-      | .bind t => (target (c.type :: c.context) t 0).map (fun p => [p])
-      | .effect t => (target c.context t 0).map (fun p => [p])
-      | .branch y n => (target c.context y 0).bind (fun py =>
-          (target c.context n 1).map (fun pn => [py,pn]))
-      | .branchBind y n => (branchTarget (c.type :: c.context) (.boolean true) y 0).bind (fun py =>
-          (branchTarget (c.type :: c.context) (.boolean false) n 1).map (fun pn => [py,pn]))
-      | .tagBind t y n => (branchTarget (c.type :: c.context) (.tag t true) y 0).bind (fun py =>
-          (branchTarget (c.type :: c.context) (.tag t false) n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
-    return {expression := e, edges := ps}
+  let incoming := (List.range P.length).map fun target =>
+    P.zipIdx.flatMap fun (node,l) =>
+      (successors node.continuation).zipIdx.filterMap fun (t,index) =>
+        if t.label == target then some (l,index,t) else none
+  let mut table : List (Option (NodeEvidence ι)) := List.replicate P.length none
+  for _ in List.range (P.length + 1) do
+    let mut progress := false
+    for l in List.range P.length do
+      if ((table[l]?).getD none).isSome then continue
+      let some node := P[l]? | throw .claimCount
+      let some c := claims[l]? | throw .claimCount
+      let required := (requirements.lookup l).getD ⟨[],[],[]⟩
+      let mut k := required
+      if l != start then
+        if let some [(pred,index,target)] := incoming[l]? then
+          let some previous := (table[pred]?).getD none | continue
+          let some source := P[pred]? | throw .claimCount
+          k := HeapKnowledge.project (edgeKnowledge previous.output source.continuation index)
+            target.mapping c.context.length
+      k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
+        (k.links ++ required.links).eraseDups⟩
+      let evidence ← produceNode G pool fuel l node claims k suggestions known
+      table := table.set l (some evidence)
+      progress := true
+    if !progress then break
+  table.mapM fun c => match c with
+    | some e => pure e
+    | none => throw .rejected
+
+/-- Recover a located failed edge from the completed candidate. This includes
+heap entailment; it is not limited to ordinary subtype proof construction. -/
+private def failedEdge (P : Program)
+    (C : ControlFlow.Certificate ι) : Option Failure := Id.run do
+  for (node,l) in P.zipIdx do
+    let some c := C[l]? | return some .claimCount
+    for (target,index) in (successors node.continuation).zipIdx do
+      let facts := edgeKnowledge c.output node.continuation index
+      let some destination := C[target.label]? | return some .claimCount
+      if !HeapKnowledge.check facts destination.knowledge target.mapping then
+        return some (.edge l target.label index)
+  return none
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
-    (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := []) : Except Failure (ControlFlow.Certificate ι) :=
-  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known with
+    (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : Except Failure (ControlFlow.Certificate ι) :=
+  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements with
   | .error e => .error e
-  | .ok C => if accept G R P claims C start inputs then .ok C else .error .rejected
+  | .ok C => if accept G R P claims C start inputs then .ok C
+    else .error ((failedEdge P C).getD .rejected)
 
-theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known C}
-    (h : produce G labels fuel R P claims start hints inputs suggestions known = .ok C) :
+theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known requirements C}
+    (h : produce G labels fuel R P claims start hints inputs suggestions known requirements = .ok C) :
     accept G R P claims C start inputs = true := by
   unfold produce at h
   split at h

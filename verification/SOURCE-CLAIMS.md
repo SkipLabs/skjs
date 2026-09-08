@@ -113,12 +113,18 @@ references remain outside this profile.
 
 `SourceInput.translatePoint` preserves a supported standalone record refinement
 as its write-invariant reference plus its read-content predicate. Conversion does
-not manufacture stronger producer claims. Required observations currently fail
-with `current-content assertion requires heap-aware source evidence`; they are
-never silently erased. Export/display support and graph-certificate support are
-separate. [Design](DESIGN.md#current-content-assertions) records the remaining
-integration, and [diagnostics](OBLIGATION-DIAGNOSTICS.md#reason-vocabulary) owns the
-report reason vocabulary.
+not manufacture stronger producer claims. Both raw SKJS and sidecar consumers
+bind current predicates to statement-entry or expression-result graph checkpoints.
+All incoming edges must justify them, including loop backedges. The source consumer
+also checks that the certificate has retained the reconstructed requirements;
+changing an assertion invalidates evidence that does not imply it.
+
+Observations inside ordinary closure/compositional proofs require the storage
+invariant to imply the predicate uniformly. They do not inherit creation-time
+heap facts. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
+specifies that conservative obligation. Failure to prove an observation is a
+located proof obligation, not an unavailable-type or unsupported-format result.
+[Design](DESIGN.md#current-content-assertions) owns remaining precision work.
 
 ## Record alternative absorption
 

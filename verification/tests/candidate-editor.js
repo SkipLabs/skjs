@@ -87,7 +87,9 @@ assert.deepEqual(
     (r) => r.function === target.id,
   );
   assert.equal(edgeResult.location.kind, "edge-obligation");
-  assert.equal(source.slice(...edgeResult.location.pos), "alias");
+  // Dependency-ordered production finds the first bad incoming edge at the
+  // initializer, before the later alias write that also consumes this claim.
+  assert.equal(source.slice(...edgeResult.location.pos), "cell");
   const badEnv = editClaim(
     original,
     fn,

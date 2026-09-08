@@ -10,13 +10,13 @@ cell after the branch test, but SKJS retains the read refinement.
 
 The current verifier distinguishes two checks in `primitive-callbacks.js`:
 
-1. The actual export is rejected because its refined read type and mutable write
-   type do not describe one invariant cell contract. This is a contract boundary.
+1. The actual export reaches a checked incoming-edge obligation for the current
+   contents claimed after the callback. Calls discard such observations.
 2. A manually weakened candidate forgets only reference read refinements, retaining
    SKJS's expression types. It reaches proof checking and fails at the stale read.
 
 The test pins the source location and the runtime result. It does not label the
-original gate rejection as a semantic proof that the program is unsound.
+original proof-search failure as a semantic proof that the program is unsound.
 `stableSnapshot` in [the primitive callback fixture](../stateful-source/primitive-callbacks.ts) verifies and returns
 true: it tests and returns the same immutable value saved before the callback.
 
@@ -34,15 +34,17 @@ TypeScript checker rejects the stale return.
 
 `null-tests.js` checks that the original exit-cell union is exported with both
 alternatives; Lean absorbs its redundant arm into the existing Boolean invariant.
-Standalone refined contracts inside the loop remain outside the profile. A manual
-candidate forgets four such read refinements while preserving the exit union;
+Standalone current-content assertions inside the loop now reach graph checking. A manual
+diagnostic candidate forgets four such observations while preserving the exit union;
 the unchanged singleton expression claim then fails proof search. The test also
 executes all three inputs. The safe `compoundContinue` example uses a checked
 read callback to avoid exporting a retained property refinement; every loop back
 edge rechecks its supplied invariant.
 
-The original reports `? — non-invariant cell contract`; the diagnostic candidate
-reports a proof-search failure at the unchanged singleton read. Given fresh AST
+The original now reports a located proof obligation; the diagnostic candidate
+reports a proof-search failure at the unchanged singleton read. The remaining
+[design milestone](../../DESIGN.md#committed-integration-milestone) audits the exact
+failure against positive controls for compound/negated guards. Given fresh AST
 and raw claims, the shared [candidate generator](compound-write-candidate.js)
 prints candidate claims on stdout and exact edits on stderr:
 
@@ -67,7 +69,7 @@ rejects the stale return. This covers the opposite refinement outcome from
 `compound-write-refinement.ts`, not a new independent unsoundness mechanism.
 
 The exit-cell union is exported with both alternatives and simplifies to the
-Boolean invariant. Standalone refined contracts inside the loop still encounter
-the interpretation boundary. `write-observations.js` checks the complete normal
-export, the false claim at the actual post-write read, all three runtime inputs,
-and this distinction between an interpretation limitation and a counterexample.
+Boolean invariant. Standalone current-content assertions now reach checked
+obligations. `write-observations.js` checks the complete normal export, the false
+claim at the actual post-write read, all three runtime inputs, and the distinction
+between an unproved obligation and a runtime counterexample.

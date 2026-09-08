@@ -22,6 +22,7 @@ deriving instance ToJson, FromJson for Rule
 deriving instance ToJson, FromJson for ProgramCertificates.Evidence
 deriving instance ToJson, FromJson for HeapFacts.Literal
 deriving instance ToJson, FromJson for HeapFacts.Fact
+deriving instance ToJson, FromJson for HeapLinks.Link
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
 deriving instance ToJson, FromJson for NodeEvidence
@@ -92,7 +93,7 @@ def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
   | .observedRead _ _ | .knownValue _ _ => true
 
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.version == 3 && c.certificate.all (fun n =>
+  c.version == 4 && c.certificate.all (fun n =>
     validEvidence r.types.length n.expression &&
     (n.effect.map (validEffect r.types.length)).getD true &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
@@ -161,10 +162,12 @@ def withDiagnostic (message : String) (fields : List (String × Json)) : String 
     (("version", toJson (1 : Nat)) :: fields)).compress
 
 def failureDiagnostic (r : Request) (fuel : Nat)
-    (origins : List (Option DiagnosticOrigin)) (e : Failure) : List (String × Json) := Id.run do
+    (origins : List (Option DiagnosticOrigin)) (e : Failure)
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
   let atNode := fun l => Json.mkObj [
     ("label",toJson l), ("origin",toJson ((origins[l]?).bind id)),
-    ("node",toJson r.program[l]?), ("claim",toJson r.claims[l]?)]
+    ("node",toJson r.program[l]?), ("claim",toJson r.claims[l]?),
+    ("requiredKnowledge",toJson (requirements.lookup l))]
   let phase := match e with
     | .rejected => "certificate-check"
     | .claimCount => "request-validation"
@@ -206,10 +209,11 @@ def produceJson (request : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := [])
     (origins : List (Option DiagnosticOrigin) := [])
-    (searchLabels : Option (List Nat) := none) : Except String Json := do
+    (searchLabels : Option (List Nat) := none)
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : Except String Json := do
   let r ← decodeRequest request
   let C ← match produce (graph r) (searchLabels.getD (List.range r.types.length)) fuel
-      r.result r.program r.claims r.start [] r.inputs suggestions known with
+      r.result r.program r.claims r.start [] r.inputs suggestions known requirements with
     | .ok c => pure c
     | .error e =>
       let location := match e with
@@ -221,8 +225,8 @@ def produceJson (request : Json) (fuel : Nat)
           | none => ""
         | _ => ""
       throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
-        (failureDiagnostic r fuel origins e))
-  let response := toJson (Response.mk 3 C)
+        (failureDiagnostic r fuel origins e requirements))
+  let response := toJson (Response.mk 4 C)
   verifyJson request response
   return response
 
