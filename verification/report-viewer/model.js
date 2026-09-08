@@ -336,7 +336,13 @@ function fromBundle(bundle) {
     // already marks that place. Falling back to a claim at the same position
     // keeps older reports, where no gap was recorded, locatable.
     const failed =
-      location.kind === "missing-expression-claim"
+      // A required type the producer never decoded: no obligation was reached,
+      // so this attaches to the claim that is missing one, not to a judgement.
+      location.kind === "unavailable-type-claim"
+        ? location.start !== undefined
+          ? f.entries.find((e) => e.pos[0] === location.start)
+          : f.exprs.find(samePos)
+        : location.kind === "missing-expression-claim"
         ? f.gaps.find(samePos) || f.exprs.find(samePos)
         : location.kind === "missing-environment-claim"
           ? f.gaps.find((g) => g.pos[0] === location.start) ||
@@ -355,6 +361,7 @@ function fromBundle(bundle) {
         result.detail || "Proof search did not establish this obligation.";
       failed.failureKind = location.kind;
       failed.failureBinding = location.binding || "";
+      failed.failureStage = result.stage || "";
       // Which obligation stopped here — a return contract at a return statement
       // is not the expression's own claim, even though they share a span.
       failed.failureRole =

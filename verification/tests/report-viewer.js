@@ -390,6 +390,53 @@ const marks = require("../report-viewer/marks.js");
   assert.equal(marks.bracket(5), "╰───╯");
 }
 
+// A required type the producer never exported: extraction stops before any
+// obligation, so it is not a failed search and not a disagreement.
+{
+  const unavailable = structuredClone(bundle);
+  unavailable.manifest.functions[0].entries = [
+    { id: "f0e0", pos: [start, end], bindings: [{ name: "cell", type: "(unavailable)", raw: { unsupported: true } }] },
+  ];
+  unavailable.manifest.results = [
+    {
+      function: "f0",
+      status: "not-established",
+      detail: "reject: source environment obligation at 3: unavailable claimed binding 'cell'",
+      stage: "source-extraction",
+      location: { kind: "unavailable-type-claim", start, binding: "cell" },
+    },
+  ];
+  const f = fromBundle(unavailable).functions[0];
+  assert.equal(f.entries[0].failureKind, "unavailable-type-claim");
+  assert.equal(f.entries[0].failureBinding, "cell");
+  assert.equal(f.entries[0].failureStage, "source-extraction");
+  assert.equal(f.exprs[0].failure, undefined);
+  assert.equal(marks.proofMark(f)[0], "?");
+  assert.equal(marks.outcomeGroup(f).label, "could not be checked");
+  assert.equal(marks.outcome(f, { collection: null }).disagrees, false);
+  assert.equal(marks.outcome(f, { collection: null }).attention, false);
+  assert.equal(marks.roleTag("unavailable-type-claim"), "type unavailable");
+  // The same kind can name an expression instead of a statement entry.
+  const atExpression = structuredClone(unavailable);
+  atExpression.manifest.results[0].location = {
+    kind: "unavailable-type-claim",
+    pos: claim.pos,
+  };
+  assert.equal(
+    fromBundle(atExpression).functions[0].exprs[0].failureKind,
+    "unavailable-type-claim",
+  );
+  // Verified functions and failed searches keep their own groups.
+  assert.equal(
+    marks.outcomeGroup({ status: "verified", collection: "complete" }).label,
+    "verified",
+  );
+  assert.equal(
+    marks.outcomeGroup({ status: "not-established", collection: "complete" }).label,
+    "proof search failed",
+  );
+}
+
 /* ---------- claim types in surface syntax ---------- */
 const surface = require("../tools/claim-types.js");
 

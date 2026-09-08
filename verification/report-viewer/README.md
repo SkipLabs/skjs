@@ -145,6 +145,23 @@ not justified. Environment conversion failures mark the statement entry.
 Unsupported source expressions carry **?**: conversion stopped before checking
 the candidate, so this is not a verdict on an edit.
 
+When the producer exported no usable type for something extraction needed, the
+report says **required type unavailable** and names the binding, marked **?**:
+no proof obligation was reached, so this is neither a failed search nor a
+statement about whether the claim would hold. The producer does have a type
+there; it is outside what the claim format expresses — a union of object
+branches, say, where a cell claim is one invariant contract — so the sentinel is
+a limit of the format rather than a gap in the producer's analysis. The reader takes the binding and
+the statement from the report's `unavailable-type-claim` location rather than
+inferring them, keeps that explanation separate from proof obligations, and
+synthesizes no sequent for it. An entry that stopped checking shows its
+undecoded claims whatever the **unsupported bindings** tick says, since there
+they are the finding.
+
+The header tally groups by what happened — verified, proof search failed, could
+not be checked, not run — rather than by recorded status, so a function whose
+type was never exported is not counted as a failed proof.
+
 When verification stopped because a claim it needed is absent, the marker says
 so — **verification needed a claim here**, on the gap that already marks that
 place, naming the binding when one is missing from an environment. This reports

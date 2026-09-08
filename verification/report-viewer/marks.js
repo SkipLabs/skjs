@@ -50,6 +50,7 @@ function commentStartLine(source, starts, from, floor) {
 const INCOMPLETE_INPUT = new Set([
   "missing-expression-claim",
   "missing-environment-claim",
+  "unavailable-type-claim",
   "source-limitation",
 ]);
 
@@ -68,6 +69,7 @@ const proofSymbol = (failureKind) =>
 // A mark says which obligation stopped there when the record names a specific
 // one. Without that, it stays silent rather than implying the claim is at fault.
 const ROLE_TAG = {
+  "unavailable-type-claim": "type unavailable",
   "return-contract": "return contract",
   "binding-annotation": "binding annotation",
   "closure-entry": "closure entry",
@@ -82,6 +84,11 @@ function proofMark(f) {
       "?",
       "the source fragment gate rejected this file, so nothing was checked",
     ];
+  if (f.result?.location?.kind === "unavailable-type-claim")
+    return [
+      "?",
+      "a type this needed was never decoded by the producer, so no obligation was reached",
+    ];
   if (f.status === "not-established")
     return INCOMPLETE_INPUT.has(f.result?.location?.kind)
       ? [
@@ -93,6 +100,20 @@ function proofMark(f) {
     return ["·", "stale: the candidate changed after this result"];
   return ["·", "no verifier was available when this ran"];
 }
+
+// Grouping for the tally: what actually happened, which is the proof symbol. A
+// function whose required type was never exported did not fail a proof search,
+// and saying so in a count would be as wrong as saying it in a panel.
+const OUTCOME_GROUP = {
+  "✓": "verified",
+  "✗": "proof search failed",
+  "?": "could not be checked",
+  "·": "not run",
+};
+const outcomeGroup = (f) => {
+  const [symbol] = proofMark(f);
+  return { key: symbol, label: OUTCOME_GROUP[symbol] || proofLabel(f.status) };
+};
 
 const PRODUCER_MARK = {
   complete: ["✓", "SKJS finished checking this function"],
@@ -222,7 +243,7 @@ function sourceMarks(rep, f, options) {
       // A claim proof search stopped at is still a claim: it reads the same,
       // with the proof outcome added in the symbols the function pill uses.
       mark: failed ? proofSymbol(e.failureKind) : "",
-      tag: failed ? roleTag(e.failureRole) : "",
+      tag: failed ? roleTag(e.failureRole || e.failureKind) : "",
       id: "e" + i,
       cls: "expr" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
@@ -267,9 +288,11 @@ function sourceMarks(rep, f, options) {
 
   f.entries.forEach((e, i) => {
     if (!e.pos) return;
-    const shown = e.bindings.filter((b) => unsupported || !isNoise(b));
-    const list = density === "key" ? shown.filter((b) => e.changed.has(b.name)) : shown;
     const failed = failedIn(e);
+    // An undecoded claim is normally noise. Where checking stopped at this
+    // statement it is the finding, so it shows whatever the toggle says.
+    const shown = e.bindings.filter((b) => unsupported || failed || !isNoise(b));
+    const list = density === "key" ? shown.filter((b) => e.changed.has(b.name)) : shown;
     if (!list.length && !failed) return;
     const line = at(e.pos[0]),
       col = e.pos[0] - starts[line];
@@ -282,7 +305,7 @@ function sourceMarks(rep, f, options) {
         list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
         (e.recovery ? recMark : ""),
       mark: failed ? proofSymbol(e.failureKind) : "",
-      tag: failed ? roleTag(e.failureRole) : "",
+      tag: failed ? roleTag(e.failureRole || e.failureKind) : "",
       id: "n" + i,
       cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
@@ -353,6 +376,7 @@ if (typeof module !== "undefined")
     proofSymbol,
     roleTag,
     proofMark,
+    outcomeGroup,
     outcome,
     producerMarks,
     isNoise,

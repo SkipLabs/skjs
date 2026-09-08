@@ -162,6 +162,8 @@ function renderWarning(warning, f) {
   warning.textContent =
     failure?.kind === "source-limitation"
       ? "⚠ Verification unavailable: the marked source expression is outside the supported fragment. This is not a verdict on your edited claim."
+      : failure?.kind === "unavailable-type-claim"
+        ? "⚠ A type this needed was never exported, so checking stopped before any proof obligation. That is not a failed proof."
       : missingClaim
         ? "⚠ Verification needs a claim this report does not contain. The marked place is where extraction stopped, not a claim that was disproved."
         : failure
@@ -172,6 +174,8 @@ function renderWarning(warning, f) {
     jump.textContent =
       failure.kind === "source-limitation"
         ? "Show unsupported expression"
+        : failure.kind === "unavailable-type-claim"
+          ? "Show the unavailable claim"
         : missingClaim
           ? "Show the missing claim"
           : "Show failed obligation";
@@ -564,6 +568,7 @@ const FAILURE_TITLE = {
   "source-limitation": "Unsupported source expression",
   "missing-expression-claim": "Verification needed a claim here",
   "missing-environment-claim": "Verification needed a claim here",
+  "unavailable-type-claim": "Required type unavailable",
 };
 // Used when no structured record was emitted: the reason has to come from the
 // failure kind alone.
@@ -574,20 +579,47 @@ const FAILURE_REASON = {
     "Extraction needed a claimed type for this expression and the report has none.",
   "missing-environment-claim":
     "Extraction needed the environment claimed at this statement and the report has none.",
+  "unavailable-type-claim":
+    "The producer's type here is outside what the claim format can express, so it exported none and no proof obligation was reached. That is a limit of the format, not a statement about the program.",
   "edge-obligation":
     "An incoming edge did not justify the environment used at this expression.",
   "environment-obligation": "The verifier could not use this statement environment.",
 };
+// Claims the producer never decoded cannot be used, whatever else is wrong here.
+// Naming them is a fact from this report, not a diagnosis of the failure.
+function undecodedIn(item) {
+  return item.kind === "environment" && Array.isArray(item.bindings)
+    ? item.bindings.filter((b) => b.unavailable).map((b) => b.name)
+    : [];
+}
+
 function failureHtml(f, item) {
   const view = obligationReader.obligationView(f.obligation);
-  const title = FAILURE_TITLE[item.failureKind] || "Proof search failed here";
+  // Only a record says which phase stopped. Without one, saying "proof search"
+  // would name a phase this reader does not know: extraction and claim decoding
+  // fail here too, before any search.
+  const title =
+    FAILURE_TITLE[item.failureKind] ||
+    (view?.phase === "proof-search"
+      ? "Proof search failed here"
+      : "Checking stopped here");
+  const undecoded = undecodedIn(item);
   const reason =
     (view && view.what) ||
-    (item.failureKind === "missing-environment-claim" && item.failureBinding
+    (item.failureKind === "unavailable-type-claim" && item.failureBinding
+      ? "The producer's type for ‘" +
+        item.failureBinding +
+        "’ here is outside what the claim format can express, so it exported " +
+        "none and extraction stopped before any proof obligation. That is a " +
+        "limit of the format, not a statement about the program."
+      : item.failureKind === "missing-environment-claim" && item.failureBinding
       ? "The environment claimed at this statement does not include the binding ‘" +
         item.failureBinding +
         "’, which extraction needed."
-      : FAILURE_REASON[item.failureKind]) ||
+      : // Without a structured record the verifier's own sentence is the most
+        // specific thing there is, so it is the reason rather than a footnote.
+        FAILURE_REASON[item.failureKind] ||
+        (item.failure || "").replace(/^reject: /, "")) ||
     "This is where checking stopped.";
   return (
     '<div class="failure-note"><div class="status-line"><b>' +
@@ -599,10 +631,19 @@ function failureHtml(f, item) {
     "</div><p>" +
     esc(reason) +
     "</p>" +
+    (undecoded.length
+      ? '<div class="note">This environment carries no usable type for <b>' +
+        undecoded.map(esc).join("</b>, <b>") +
+        "</b>: the producer had one, and it was outside what the claim format " +
+        "expresses. Nothing here can be checked until a claim is supplied.</div>"
+      : "") +
     (view ? obligationHtml(view) : "") +
     '<details class="disc"><summary>record</summary><pre class="raw">' +
     esc(item.failure) +
     "</pre>" +
+    (item.failureStage
+      ? '<dl class="kv"><dt>stage</dt><dd>' + esc(item.failureStage) + "</dd></dl>"
+      : "") +
     (view
       ? '<dl class="kv">' +
         (view.term ? "<dt>term</dt><dd>" + esc(view.term) + "</dd>" : "") +
@@ -773,17 +814,31 @@ function renderShell() {
     tally.functions +
     (tally.functions === 1 ? " function" : " functions") +
     "</span>" +
-    Object.entries(tally.status)
+    // Grouped by what actually happened rather than by recorded status: a
+    // function whose required type was never exported did not fail a search.
+    [
+      ...rep.functions
+        .reduce((groups, f) => {
+          const { key, label } = outcomeGroup(f);
+          groups.set(key, { key, label, count: (groups.get(key)?.count || 0) + 1 });
+          return groups;
+        }, new Map())
+        .values(),
+    ]
       .map(
-        ([status, n]) =>
+        (group) =>
           '<button class="tallybtn ' +
-          statusClass(status) +
-          '" data-status="' +
-          esc(status) +
+          (group.key === "✓"
+            ? "st-ok"
+            : group.key === "·"
+              ? "st-none"
+              : "st-attn") +
+          '" data-outcome="' +
+          esc(group.key) +
           '">' +
-          n +
+          group.count +
           " " +
-          esc(proofLabel(status)) +
+          esc(group.label) +
           "</button>",
       )
       .join("") +
@@ -794,13 +849,13 @@ function renderShell() {
         "</button>"
       : "");
   el("tally")
-    .querySelectorAll("[data-status],[data-gaps]")
+    .querySelectorAll("[data-outcome],[data-gaps]")
     .forEach((b) =>
       b.addEventListener("click", () =>
         jumpToFunction(
           b.dataset.gaps
             ? (f) => f.gaps.length > 0
-            : (f) => f.status === b.dataset.status,
+            : (f) => outcomeGroup(f).key === b.dataset.outcome,
         ),
       ),
     );
