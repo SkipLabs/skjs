@@ -2,7 +2,7 @@
 "use strict";
 const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
 const {spawnSync}=require("child_process");
-const {hash,render,fromSkjs}=require("../tools/annotate-source.js");
+const {hash,render,fromSkjs,compareClaims}=require("../tools/annotate-source.js");
 const [claimsPath,fileKey,verifier]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
@@ -21,6 +21,25 @@ try {
   test("comment injection stays inside report",()=>{const r=structuredClone(report);r.functions[0].expressions[0].type='*/ throw "bad"; /*\n';assert(render(source,r).includes('*\\/'));});
   test("return line break remains unchanged",()=>{const s=source.replace("return x","return\nx"),r=structuredClone(report);r.source.sha256=hash(s);r.functions[0].entries=[];r.functions[0].expressions=[];assert(render(s,r).includes("return\nx"));});
   test("stored generic statuses cannot establish verification",()=>{const r=structuredClone(report);r.results=[{status:"verified"}];assert(!render(source,r).includes("verification=verified"));});
+  test("comparison ignores stored statuses and provenance changes",()=>{const r=structuredClone(report);r.results=[{status:"verified"}];r.producer="manual";assert.deepEqual(compareClaims(source,report,r).changes,[]);});
+  test("comparison reports added removed and changed claims",()=>{
+    const r=structuredClone(report);r.functions[0].entries=[];r.functions[0].expressions[0].type="true";
+    const changes=compareClaims(source,report,r).changes;
+    assert.equal(changes.find(c=>c.kind==="entry").status,"removed");
+    assert.equal(changes.find(c=>c.kind==="expression").status,"changed");
+    assert.equal(compareClaims(source,r,report).changes.find(c=>c.kind==="entry").status,"added");
+    assert(render(source,r,null,{claimChanges:changes}).includes("claim edit: changed expression"));
+  });
+  test("comparison rejects stale or mismatched baseline",()=>{
+    const r=structuredClone(report);r.source.sha256="stale";assert.throws(()=>compareClaims(source,r,report),/fingerprint/);
+    r.source.file="other.ts";assert.throws(()=>compareClaims(source,r,report),/identity/);
+  });
+  test("comparison ignores object property and binding order",()=>{
+    const a=structuredClone(report),b=structuredClone(report);
+    a.functions[0].entries[0].bindings.push({name:"z",type:"null"});
+    b.functions[0].entries[0].bindings=[{type:"null",name:"z"},{type:"boolean",name:"x"}];
+    assert.deepEqual(compareClaims(source,a,b).changes,[]);
+  });
   const script=path.resolve(__dirname,"../tools/annotate-source.js");
   const generic=path.join(tmp,"generic.ts"), gp=path.join(tmp,"generic.json"), go=path.join(tmp,"generic.annotated.ts");
   fs.writeFileSync(generic,source);fs.writeFileSync(gp,JSON.stringify(report));

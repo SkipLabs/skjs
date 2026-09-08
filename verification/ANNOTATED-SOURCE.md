@@ -176,3 +176,36 @@ verification against the unchanged source. Missing or incorrect required claims
 still fail the independent checker. An actual source type error cannot be made
 sound by changing its claims. Report comments are display-only; editing those
 comments does not supply evidence. Source edits require fresh spans and claims.
+
+## Reviewing a repair against a baseline
+
+Keep the original report and edit a separate copy of its **input claims**, then
+pass the original report's JSON manifest as `--baseline`:
+
+```sh
+node verification/tools/annotate-source.js input.ts --claims repaired-claims.json \
+  --producer manual-repair --baseline partial.annotated.ts.json \
+  --verify verification/lean/.lake/build/bin/verifier --out repaired.annotated.ts
+```
+
+The new annotated copy marks added, changed and removed claim sites. Its manifest
+contains `comparison.changes`, with the before/after candidate values, function
+identity and original source span. This compares signatures, entry environments
+and expression types; collection metadata and saved verification results do not
+count as claim changes. Entry binding order and JSON object property order are
+immaterial. Raw type payloads are compared when available, otherwise display
+strings are compared. This is a structural comparison, not semantic type equality.
+
+Both reports must attach to the same source identity and exact source bytes.
+The baseline manifest's digest is retained and checked by `--check-fresh`.
+Producer names remain descriptive provenance. Neither that digest nor the
+comparison authenticates the baseline or turns its stored results into evidence.
+`--verify` freshly produces and independently checks the current claims;
+omitting it still produces a claims-only comparison. An empty comparison never
+implies that the function is verified.
+
+The regression suite removes a required entry claim from a valid function,
+checks failure, restores the original claim, then checks success. It also inserts
+a fake saved success into the baseline and confirms that a still-incomplete
+candidate continues to fail. This exercises repair of missing information,
+without claiming that erroneous source can be repaired by false annotations.

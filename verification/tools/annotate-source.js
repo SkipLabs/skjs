@@ -13,6 +13,7 @@ function comment(x) {
     const lines=["Display-only claim report; not certificate input.",`producer=${x.producer}`,
       `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
       ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
+      ...(x.claimChanges ? [`Claim edits against baseline: ${x.claimChanges.length}; before/after values are in the manifest.`] : []),
       "Function results cover modeled obligations, not every exported claim.",
       "Original spans are before annotation. Full details are in the companion JSON manifest."];
     return "/* @verify-report\n * "+lines.map(safeText).join("\n * ")+"\n */\n";
@@ -114,6 +115,8 @@ function render(source, report, results=null, identity={}) {
     }
   }
   for(const gap of coverage(source,report))add(gap.pos[0],{kind:"gap",originalSpan:gap.pos,detail:gap.status});
+  for(const change of identity.claimChanges||[])add(change.span[0],{kind:"gap",originalSpan:change.span,
+    detail:`claim edit: ${change.status} ${change.kind}; see manifest for before/after`});
   // No new line terminators: preserve return/throw/async automatic-semicolon behavior.
   // Hashbang and BOM, when present, must remain at the beginning of the file.
   const headerAt=source.startsWith("#!") ? (source.indexOf("\n")<0 ? source.length : source.indexOf("\n")+1)
@@ -159,6 +162,40 @@ function coverage(source,report) {
   return gaps;
 }
 
+// Compare candidates, never saved proof results. Object property order is immaterial.
+const canonical = x => JSON.stringify(normalize(x));
+function normalize(x) {
+  if(Array.isArray(x))return x.map(normalize);
+  if(x && typeof x==="object")return Object.fromEntries(Object.keys(x).sort().map(k=>[k,normalize(x[k])]));
+  return x;
+}
+function compareClaims(source,baseline,current) {
+  if(baseline.source?.file!==current.source?.file)throw Error("baseline source identity mismatch");
+  render(source,baseline);render(source,current); // Includes exact source digest and attachment validation.
+  const sites=report=> {
+    const out=new Map();
+    for(const f of report.functions) {
+      const put=(kind,span,value)=>out.set(`${f.namePos.join(":")}:${kind}:${kind==="entry"?span[0]:span.join(":")}`,
+        {kind,function:f.name,span,value});
+      put("function",f.namePos,f.signature||null);
+      for(const e of f.entries)put("entry",e.pos,
+        e.bindings.map(b=>({name:b.name,type:b.raw??b.type})).sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0));
+      for(const e of f.expressions)put("expression",e.pos,e.raw??e.type);
+    }
+    return out;
+  };
+  const before=sites(baseline),after=sites(current),changes=[];
+  for(const key of new Set([...before.keys(),...after.keys()])) {
+    const a=before.get(key),b=after.get(key);
+    if(a&&b&&canonical(a.value)===canonical(b.value))continue;
+    const {value,...site}=b||a;
+    changes.push({...site,status:!a?"added":!b?"removed":"changed",
+      ...(a?{before:a.value}:{}),...(b?{after:b.value}:{})});
+  }
+  changes.sort((a,b)=>a.span[0]-b.span[0]||a.kind.localeCompare(b.kind));
+  return {baselineProducer:baseline.producer,changes};
+}
+
 function run(executable,args) {
   const r=spawnSync(executable,args,{encoding:"utf8",timeout:120000,maxBuffer:32*1024*1024});
   if(r.error || r.signal)throw Error(`tool execution failed: ${r.error?.message || r.signal}`);
@@ -195,6 +232,7 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth) {
 function checkFresh(output) {
   const m=JSON.parse(fs.readFileSync(output+".json","utf8"));
   const checks=[[output,m.annotatedSha256],[m.sourcePath,m.source.sha256],[m.claimsPath,m.claimsSha256]];
+  if(m.baselinePath)checks.push([m.baselinePath,m.baselineSha256]);
   if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
   if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
   if(m.parserSha256)checks.push([path.join(__dirname,"parse-source.js"),m.parserSha256]);
@@ -206,7 +244,7 @@ function main(args) {
   if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
   const sourcePath=args.shift(), options={format:"skjs",producer:"skjs",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.js source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
-  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics"]);
+  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline"]);
   while(args.length) {
     const key=args.shift()?.replace(/^--/,"");
     if(!allowed.has(key)||!args.length)throw Error(`invalid option ${key}`);
@@ -223,18 +261,24 @@ function main(args) {
   const report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : input;
   // Validate attachment before running any expensive proof generation.
   render(source,report);
-  let results=null, identity={claimsSha256:hash(bytes)};
+  let results=null, identity={claimsSha256:hash(bytes)}, comparison=null;
+  if(options.baseline) {
+    const baselineBytes=fs.readFileSync(options.baseline);
+    comparison=compareClaims(source,JSON.parse(baselineBytes),report);
+    identity.baselineSha256=hash(baselineBytes);
+  }
   if(options.verify) {
     const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth));
     results=verified.results;identity={...identity,...verified.identity};
   }
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
   if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
-  const annotated=render(source,report,results,identity);
+  const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{})});
   const data={version:1,sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
+    ...(comparison?{baselinePath:path.resolve(options.baseline),comparison}:{}),
     gaps:coverage(source,report),functions:report.functions,results};
   fs.writeFileSync(output,annotated,{flag:"wx"});
   try {fs.writeFileSync(manifest,JSON.stringify(data,null,2)+"\n",{flag:"wx"});}
@@ -242,4 +286,4 @@ function main(args) {
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
 if(require.main===module)try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
-module.exports={hash,fromSkjs,render,coverage,verifySkjs,main};
+module.exports={hash,fromSkjs,render,coverage,compareClaims,verifySkjs,main};
