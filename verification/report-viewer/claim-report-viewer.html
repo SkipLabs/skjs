@@ -25,7 +25,7 @@
         <span class="livedot"></span>
         <select id="livefile" aria-label="Source file"></select>
       </label>
-      <label class="tog live" id="verifywrap" hidden><input type="checkbox" id="liveverify"> verify</label>
+      <label class="tog live" id="verifywrap" hidden><input type="checkbox" id="liveverify"> verify on collection</label>
       <button class="filebtn" id="load">Load report…</button>
       <input type="file" id="file" accept=".ts,.txt,.json" hidden>
     </div>
@@ -33,6 +33,14 @@
 
   <label>Find function <input id="fnsearch" type="search" placeholder="Name…"></label>
   <div class="fnstrip" id="fnstrip"></div>
+  <section class="panel" id="candidate-panel" hidden>
+    <h2>Claim candidate · source unchanged</h2>
+    <div class="detail">
+      <div id="candidate-status" role="status"></div>
+      <div><button id="verify-candidate">Verify candidate</button> <button id="export-candidate">Export bundle</button> <button id="restore-candidate">Restore original claims</button></div>
+      <p>Reverification uses the candidate below, without running the producer. Loading another report replaces this workspace; export your edits first.</p>
+    </div>
+  </section>
 
   <div class="grid">
     <section class="panel">
@@ -51,6 +59,7 @@
           absent claim is the finding. A dotted underline marks a <b>recovery claim</b>, from a recovery-quality collection snapshot.</p>
         </div>
       </details>
+      <div id="verification-warning" role="status" hidden></div>
       <div class="code" id="code"></div>
     </section>
 
@@ -121,4 +130,6 @@
   /* @verify-report kind=entry; id=f0e4; unsupported=this; entry { this: (unavailable), x: null } @164:177 */ return /* @verify-report kind=expression; id=f0x10; expr "null" @171:177 */ "null";
 }</script>
 <script src="model.js"></script>
+<script src="candidate.js"></script>
+<script src="editor.js"></script>
 <script src="viewer.js"></script>

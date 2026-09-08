@@ -109,7 +109,8 @@ function renderCode() {
   f.exprs.forEach((e, i) => {
     if (!e.pos) return;
     const shown = rep.source.slice(e.pos[0], e.pos[1]);
-    if (state.density === "key") {
+    const failed = f.status === "not-established" && !!e.failure;
+    if (state.density === "key" && !failed) {
       if (
         f.exprs.some(
           (other) =>
@@ -133,11 +134,13 @@ function renderCode() {
         ? (starts[ln + 1] ?? rep.source.length) - starts[ln] - 1
         : e.pos[1] - starts[ln],
       label:
+        (failed ? "⚠ " : "") +
         shortType(e.type) +
+        (failed ? " · proof not established" : "") +
         (multiline ? " ↳ multiline" : "") +
         (e.recovery ? recMark : ""),
       id: "e" + i,
-      cls: "expr" + (e.recovery ? " rec" : ""),
+      cls: "expr" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
   });
   f.gaps.forEach((g, i) => {
@@ -206,6 +209,26 @@ function renderCode() {
       out += blank + rowText(row.items) + "\n";
   }
   el("code").innerHTML = '<pre class="pre">' + out + "</pre>";
+  const warning = el("verification-warning");
+  warning.hidden = f.status !== "not-established";
+  if (!warning.hidden) {
+    const failed = f.exprs.findIndex((e) => e.failure);
+    warning.textContent =
+      failed >= 0
+        ? "⚠ Proof not established at the marked expression. Other claims are not individually classified."
+        : "⚠ Function verification not established. The verifier has not identified a source expression to mark.";
+    if (failed >= 0) {
+      const jump = document.createElement("button");
+      jump.textContent = "Show failed obligation";
+      jump.addEventListener("click", () => {
+        select("e" + failed);
+        el("code")
+          .querySelector('[data-id="e' + failed + '"]')
+          ?.scrollIntoView({ block: "center" });
+      });
+      warning.append(jump);
+    }
+  }
   el("codehead").textContent = "Source — " + rep.file.split("/").pop();
   document.querySelectorAll(".lab").forEach((b) => {
     b.addEventListener("click", () => select(b.dataset.id));
@@ -307,6 +330,11 @@ function select(id) {
   el("inspector").scrollIntoView({ block: "nearest" });
   const src = state.report.source;
   let h = "";
+  if (f.status === "not-established" && item.failure)
+    h +=
+      '<div class="failure-note"><b>⚠ Proof not established here</b><p>This identifies the expression obligation where proof search stopped. It does not prove the claim false; its environment or source annotation may also be involved.</p><pre class="raw">' +
+      esc(item.failure) +
+      "</pre></div>";
   if (item.kind === "gap") {
     h += '<div class="status-line"><b>' + esc(item.detail) + "</b></div>";
     h += idLine(item);
@@ -411,6 +439,7 @@ function select(id) {
         "</pre></details>";
   }
   el("detail").innerHTML = h;
+  renderEditor(f, item);
   el("detail")
     .querySelectorAll("[data-nested]")
     .forEach((b) =>
@@ -516,7 +545,8 @@ function renderShell() {
 }
 
 let loadVersion = 0;
-async function load(text, isSample, sampleNote) {
+async function load(text, isSample, sampleNote, keepCandidate = false) {
+  if (!keepCandidate && !canReplaceCandidate()) return;
   const version = ++loadVersion;
   try {
     const input =
@@ -532,6 +562,12 @@ async function load(text, isSample, sampleNote) {
         b.toString(16).padStart(2, "0"),
       ).join("");
       if (version !== loadVersion) return;
+      if (
+        input.candidate &&
+        (hash !== input.candidate.sourceSha256 ||
+          input.candidate.file !== input.manifest?.source?.file)
+      )
+        throw new Error("Candidate source identity mismatch");
       if (hash !== input.manifest?.source?.sha256)
         throw new Error("Source fingerprint mismatch");
     }
@@ -540,7 +576,25 @@ async function load(text, isSample, sampleNote) {
     if (!rep.functions.length)
       throw new Error("no @verify-report function annotations found");
     rep.sample = isSample ? sampleNote || "sample report" : null;
+    if (!keepCandidate) {
+      candidateState.candidate =
+        typeof input === "object" && input.candidate
+          ? structuredClone(input.candidate)
+          : null;
+      candidateState.original = candidateState.candidate
+        ? structuredClone(input.originalCandidate || input.candidate)
+        : null;
+      candidateState.saved = JSON.stringify(candidateState.candidate);
+      candidateState.revision++;
+    }
+    candidateState.bundle = typeof input === "object" ? input : null;
     state.report = rep;
+    if (input.draftUnrendered)
+      for (const f of rep.functions) {
+        f.status = "stale";
+        f.detail =
+          "Saved draft differs from this last successful preview. Apply or verify the candidate.";
+      }
     state.fn = 0;
     state.selected = null;
     el("fnsearch").value = "";
@@ -552,9 +606,11 @@ async function load(text, isSample, sampleNote) {
     renderShell();
     renderCode();
     renderFlow();
+    renderCandidateStatus();
   } catch (err) {
     if (version !== loadVersion) return;
     state.report = null;
+    el("candidate-panel").hidden = true;
     for (const id of ["fnstrip", "flow", "detail", "prov", "diagnostics"])
       el(id).replaceChildren();
     el("code").innerHTML =
@@ -651,6 +707,10 @@ async function connectLive() {
     const run = async () => {
       const file = sel.value;
       if (!file) return;
+      if (!canReplaceCandidate()) {
+        sel.value = state.report?.file || "";
+        return;
+      }
       const request = ++activeRequest;
       loadVersion++;
       document.body.classList.add("busy");
@@ -695,6 +755,7 @@ connectLive();
 
 setDensity(state.density);
 function pickSample(which) {
+  if (!canReplaceCandidate()) return;
   activeRequest++;
   document.body.classList.remove("busy");
   el("s-clean").setAttribute("aria-pressed", String(which === "clean"));
@@ -746,3 +807,5 @@ function groupLines(items) {
   }
   return grouped;
 }
+
+initializeCandidateEditor();

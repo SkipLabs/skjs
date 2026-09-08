@@ -646,3 +646,33 @@ footer {
     overflow: auto;
   }
 }
+
+#detail textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: 12px var(--mono);
+  background: var(--surface);
+  color: var(--ink);
+}
+#candidate-panel {
+  margin-bottom: 12px;
+}
+
+.lab.failed {
+  color: var(--warn);
+  background: var(--warn-soft, #fff0db);
+  border: 2px solid var(--warn);
+  border-radius: 4px;
+  padding: 1px 3px;
+}
+#verification-warning,
+.failure-note {
+  border-left: 4px solid var(--warn);
+  background: var(--sunken);
+  padding: 12px;
+  color: var(--ink);
+}
+#verification-warning button {
+  display: block;
+  margin-top: 8px;
+}

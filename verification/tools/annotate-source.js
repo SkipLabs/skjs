@@ -310,7 +310,11 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
       const ap=path.join(temp,"ast.json"), cp=path.join(temp,"claims.json"), ep=path.join(temp,"evidence.json");
       fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
       const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
-      if(produced.status!==0)return {status:"not-established",detail:(produced.stderr||produced.stdout).trim()};
+      if(produced.status!==0) {
+        const detail=(produced.stderr||produced.stdout).trim();
+        const located=/^(?:reject: )?(?:source expression obligation|closure expression claim) at \[(\d+),(\d+)\):/.exec(detail);
+        return {status:"not-established",detail,...(located ? {location:{kind:"expression-obligation",pos:[Number(located[1]),Number(located[2])]}} : {})};
+      }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};
       return {status:"verified",scope:"modeled function and required claims",certificateSha256:hash(fs.readFileSync(ep))};

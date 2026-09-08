@@ -58,6 +58,12 @@ A binding the producer could not decode has no claimed type at all and reads
 `(unavailable)`; it is named in the `unsupported` field rather than given an
 invented type. The manifest preserves every original type payload either way.
 
+A failed function result may include `location: {kind: "expression-obligation",
+pos: [start, end]}` when the verifier reports an exact source span. This locates
+the first failed proof-search obligation, not a proof that the claim is false
+or an exhaustive list of invalid claims. Without a location, readers must keep
+the warning at function level; graph labels are not source expression indexes.
+
 Manifest functions include a `pos: [start, end]` range for the full source function,
 using original UTF-16 offsets. A reader can therefore focus a function without
 reconstructing its boundaries from display comments.

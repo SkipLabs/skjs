@@ -48,6 +48,20 @@ adapter for the display format, with only the data present in those comments.
 - Function statuses cover modeled obligations, not every displayed producer claim.
   Fingerprints are available under Provenance.
 
+### Verification warnings
+
+When proof search reports an expression obligation's exact source span, that
+claim gets an amber **⚠ proof not established** marker in both density modes.
+A banner offers **Show failed obligation**; selection shows the diagnostic.
+This is the first reported failure, not an exhaustive classification of claims.
+Failure may involve the claimed type, its environment, a source annotation, or
+search limitations; the marker does not mean the claim has been disproved.
+
+If no source span is available (including internal edge failures and older
+verifier results), only the function-level warning appears. The reader never
+interprets a graph node number as an expression index. Editing makes prior results
+stale and removes their active failure markers until a fresh check completes.
+
 ## Implementation
 
 `model.js` reads structured bundles and adapts legacy comments. `viewer.js` owns
@@ -59,12 +73,42 @@ in manifests use the same original UTF-16 offsets as expression claims.
 Run `node verification/tests/report-viewer.js` for model regression checks. They
 also run under `make verify`; report-writer tests exercise the manifest producer.
 
-## Editing direction (not implemented)
+## Claim editing
 
-Claim editing should come first: edit a structured sidecar candidate in the
-inspector, retain the original producer snapshot, mark affected results stale,
-and verify against unchanged source without rerunning SKJS. Manual edits need
-separate provenance. Recollection must not silently overwrite them.
+Live reports include an editable candidate in the producer's encoding. Select an
+expression or entry environment and open **Edit candidate JSON**. The original
+producer value remains available alongside the editor. **Apply candidate edit**
+validates the candidate and refreshes the report; it does not establish the claim.
+
+**Verify candidate** runs the existing independent consumer against unchanged
+source, without rerunning SKJS. Editing conservatively invalidates all function
+results. Failed validation leaves the candidate available for correction and the
+last successful display marked stale. Source fingerprint changes block checking.
+The first editor supports existing expression types and entire entry binding
+arrays. It uses JSON; adding new claim sites and a richer type editor are future work.
+
+**Export bundle** saves the source snapshot, candidate, original claims and display
+manifest together. Import it with **Load report** to continue. Unexported candidate
+edits block switching reports until exported or restored. Typed JSON takes effect
+only on **Apply**; switching selections discards unapplied textarea edits.
+**Restore original claims** restores the baseline and clears verification results.
+Neither operation writes the source file or replaces the producer's claim file.
+
+The candidate wrapper is `{format, file, sourceSha256, claims}`. Supported formats
+are `skjs` and `source-claims`; the latter uses the existing normalized sidecar
+language. For CLI use, save the `claims` member and pass it to `annotate-source.js`
+with the matching `--format`. Legacy annotated-only reports are read-only because
+they do not preserve a verifier input. Live candidate verification requires the
+local server; standalone viewing and bundle export remain available offline.
+
+`candidate.js` handles immutable candidate updates; `editor.js` owns the editing
+workspace and its revision/verification lifecycle. The server's JSON POST
+`/api/candidate` validates source identity and invokes the existing report writer
+and optional verifier. Candidate inputs and stored results are never trusted proof
+evidence. The candidate tests exercise real verification with a deliberately
+unavailable producer binary, a false claim, and a stale source fingerprint.
+
+## Source editing direction (not implemented)
 
 Source editing should use an editor document with decorations, not embedded report
 comments. Decorations can move with edits while remaining visibly stale. Changed

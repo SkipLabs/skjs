@@ -124,16 +124,96 @@ async function analyse(relative, verify) {
       .digest("hex");
     if (bundle.manifest.source.sha256 !== digest)
       throw new Error("Report source identity mismatch");
-    return { source, ...bundle };
+    return {
+      source,
+      ...bundle,
+      candidate: {
+        format: "skjs",
+        file: relative,
+        sourceSha256: digest,
+        claims: JSON.parse(run.stdout).filter((f) => f.file === relative),
+      },
+    };
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }
+}
+
+async function candidateReport(candidate, verify) {
+  if (
+    !candidate ||
+    !["skjs", "source-claims"].includes(candidate.format) ||
+    typeof candidate.file !== "string"
+  )
+    throw new Error("Unsupported candidate format");
+  const sourcePath = await repositoryPath(candidate.file);
+  const source = await fs.readFile(sourcePath, "utf8");
+  const digest = require("node:crypto")
+    .createHash("sha256")
+    .update(source)
+    .digest("hex");
+  if (digest !== candidate.sourceSha256)
+    throw new Error(
+      "Source changed since this candidate was collected; reload before editing",
+    );
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-candidate-"));
+  try {
+    const claims = path.join(tmp, "candidate.json");
+    await fs.writeFile(claims, JSON.stringify(candidate.claims));
+    const args = [
+      "verification/tools/annotate-source.js",
+      candidate.file,
+      "--claims",
+      claims,
+      "--format",
+      candidate.format,
+      "--producer",
+      "manual candidate",
+      "--stdout",
+      "json",
+    ];
+    if (verify) {
+      if (!(await hasVerifier())) throw new Error("Verifier unavailable");
+      args.push("--verify", VERIFIER);
+    }
+    const result = await execFile(process.execPath, args, {
+      cwd: REPO,
+      timeout: 120000,
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    if (source !== (await fs.readFile(sourcePath, "utf8")))
+      throw new Error("Source changed while checking candidate");
+    return { source, ...JSON.parse(result.stdout), candidate };
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+}
+
+async function readCandidate(req) {
+  if (
+    req.method !== "POST" ||
+    !req.headers["content-type"]?.startsWith("application/json")
+  )
+    throw new Error("Candidate checks require a JSON POST");
+  const origin = req.headers.origin;
+  if (origin && origin !== `http://${req.headers.host}`)
+    throw new Error("Cross-origin candidate requests are not allowed");
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 16 * 1024 * 1024) throw new Error("Candidate exceeds 16 MiB");
+    chunks.push(chunk);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 const assets = new Map([
   ["/", ["claim-report-viewer.html", "text/html"]],
   ["/viewer.js", ["viewer.js", "text/javascript"]],
   ["/model.js", ["model.js", "text/javascript"]],
+  ["/candidate.js", ["candidate.js", "text/javascript"]],
+  ["/editor.js", ["editor.js", "text/javascript"]],
   ["/viewer.css", ["viewer.css", "text/css"]],
 ]);
 const send = (res, status, data, type = "application/json") => {
@@ -146,50 +226,68 @@ const send = (res, status, data, type = "application/json") => {
 
 // Bound concurrency: expensive runs do not block file loading or health checks.
 let analysing = false;
-http
-  .createServer(async (req, res) => {
-    const url = new URL(req.url, "http://localhost");
-    try {
-      if (url.pathname === "/api/health")
-        return send(res, 200, { verifier: await hasVerifier() });
-      if (url.pathname === "/api/files")
-        return send(res, 200, {
-          files: await listTs("verification/tests/programs"),
-        });
-      if (url.pathname === "/api/analyse") {
-        if (analysing)
-          return send(res, 409, {
-            error:
-              "A collection is already running. Try again when it finishes.",
-          });
-        analysing = true;
-        try {
-          return send(
-            res,
-            200,
-            await analyse(
-              url.searchParams.get("path") || "",
-              url.searchParams.get("verify") === "1",
-            ),
-          );
-        } finally {
-          analysing = false;
-        }
-      }
-      const asset = assets.get(url.pathname);
-      if (!asset) return send(res, 404, { error: "Not found" });
-      return send(
-        res,
-        200,
-        await fs.readFile(path.join(__dirname, asset[0])),
-        asset[1],
-      );
-    } catch (error) {
-      send(res, 500, {
-        error: String(error.stderr || error.message).slice(0, 4000),
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, "http://localhost");
+  try {
+    if (url.pathname === "/api/health")
+      return send(res, 200, { verifier: await hasVerifier() });
+    if (url.pathname === "/api/files")
+      return send(res, 200, {
+        files: await listTs("verification/tests/programs"),
       });
+    if (url.pathname === "/api/analyse") {
+      if (analysing)
+        return send(res, 409, {
+          error: "A collection is already running. Try again when it finishes.",
+        });
+      analysing = true;
+      try {
+        return send(
+          res,
+          200,
+          await analyse(
+            url.searchParams.get("path") || "",
+            url.searchParams.get("verify") === "1",
+          ),
+        );
+      } finally {
+        analysing = false;
+      }
     }
-  })
-  .listen(PORT, "127.0.0.1", () =>
+    if (url.pathname === "/api/candidate") {
+      const input = await readCandidate(req);
+      if (analysing)
+        return send(res, 409, {
+          error: "Another operation is running; try again shortly",
+        });
+      analysing = true;
+      try {
+        return send(
+          res,
+          200,
+          await candidateReport(input.candidate, input.verify === true),
+        );
+      } finally {
+        analysing = false;
+      }
+    }
+    const asset = assets.get(url.pathname);
+    if (!asset) return send(res, 404, { error: "Not found" });
+    return send(
+      res,
+      200,
+      await fs.readFile(path.join(__dirname, asset[0])),
+      asset[1],
+    );
+  } catch (error) {
+    send(res, 500, {
+      error: String(error.stderr || error.message).slice(0, 4000),
+    });
+  }
+});
+if (require.main === module)
+  server.listen(PORT, "127.0.0.1", () =>
     console.log(`Claim report reader on http://localhost:${PORT}`),
   );
+
+module.exports = { candidateReport };

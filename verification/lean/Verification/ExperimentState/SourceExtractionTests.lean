@@ -417,7 +417,7 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 #print axioms early_return_trace
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
-private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[]⟩
+private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[]⟩
 #guard captureRequired.obligations.length == 4
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
   (List.range 19) 19 10 captureRequired.obligations)

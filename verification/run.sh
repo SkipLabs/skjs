@@ -276,6 +276,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     fail=$((fail + 1))
   fi
   if ! node verification/tests/report-viewer.js; then fail=$((fail + 1)); fi
+  if ! node verification/tests/candidate-editor.js "$WORK/closures.claims"; then fail=$((fail + 1)); fi
   CELLS="verification/tests/stateful-source/cell-contracts.ts"
   if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.setup.err"; then
     echo "FAIL: cell contract export setup"

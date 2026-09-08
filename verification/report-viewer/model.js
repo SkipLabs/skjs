@@ -280,6 +280,21 @@ function fromBundle(bundle) {
       previous = new Map(e.bindings.map((b) => [b.name, b.type]));
     }
   }
+  for (const f of functions) {
+    const result = m.results?.find((r) => r.function === f.id);
+    const location = result?.location;
+    if (
+      f.status === "not-established" &&
+      location?.kind === "expression-obligation"
+    ) {
+      const failed = f.exprs.find(
+        (e) => JSON.stringify(e.pos) === JSON.stringify(location.pos),
+      );
+      if (failed)
+        failed.failure =
+          result.detail || "Proof search did not establish this obligation.";
+    }
+  }
   functions.sort((a, b) => a.start - b.start);
   const unattached = gaps.filter(
     (g) => !functions.some((f) => g.pos[0] >= f.start && g.pos[1] <= f.end),
@@ -303,7 +318,10 @@ function fromBundle(bundle) {
     functions,
     file: m.source.file,
     producer: m.producer,
-    diagnostics: m.diagnostics || "",
+    diagnostics:
+      (bundle.originalDiagnostics && m.diagnostics
+        ? "Original producer snapshot:\n"
+        : "") + (m.diagnostics || ""),
     meta: {
       "source-sha256": m.source.sha256,
       ...Object.fromEntries(

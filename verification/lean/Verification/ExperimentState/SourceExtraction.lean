@@ -46,14 +46,22 @@ private structure Built where
   program : Program := []
   claims : List (PointClaim Nat) := []
   obligations : List ExpressionClaims.Required := []
+  origins : List (Option Span) := []
 
 private abbrev Compiler := StateT Built (Except String)
 
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
     Compiler Target := do
   let s : Built ← get
-  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations)
+  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations (s.origins ++ [none]))
   return ⟨s.program.length, none⟩
+
+/-- Diagnostic metadata only; never part of the certified request. -/
+private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
+    Compiler Target := do
+  let target ← emit t k Γ A
+  modify fun s => { s with origins := s.origins.set target.label (some pos) }
+  return target
 
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
 slots at their already checked types while projecting the supplied named slots. -/
@@ -184,25 +192,25 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     let i ← match scope.idxOf? name with
       | some i => pure i
       | none => throw s!"unbound or uninitialized source variable '{name}'"
-    emit (.var i) (.bind next) Γ A
-  | .lit _ v => emit (← SourceTypes.value v) (.bind next) Γ A
+    emitAt e.span (.var i) (.bind next) Γ A
+  | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A
   | .alloc _ a | .read _ a =>
     let B ← exprType fc a
     let op := match e with | .alloc .. => Tm.alloc | _ => Tm.read
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
-    let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
+    let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
   | .lam .. =>
     let t ← closureExpr fc scope Γ e
-    emit t.term (.bind next) Γ A
+    emitAt e.span t.term (.bind next) Γ A
   | .app _ callee arg =>
     let B ← exprType fc callee
     let C ← exprType fc arg
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
-    let call ← emit (.app (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A
+    let call ← emitAt e.span (.app (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A
     let right ← compileExpr fc (""::scope) (B::Γ) arg call
     compileExpr fc scope Γ callee right
   | .write _ receiver rhs =>
@@ -211,8 +219,8 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     -- JS assignment returns its evaluated RHS; the calculus write returns null.
-    let result ← emit (.var 0) (.bind drop) (C::B::Γ) A
-    let write ← emit (.write (.var 1) (.var 0)) (.effect result) (C::B::Γ) [0]
+    let result ← emitAt e.span (.var 0) (.bind drop) (C::B::Γ) A
+    let write ← emitAt e.span (.write (.var 1) (.var 0)) (.effect result) (C::B::Γ) [0]
     let right ← compileExpr fc (""::scope) (B::Γ) rhs write
     compileExpr fc scope Γ receiver right
 termination_by e
@@ -273,7 +281,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       if !rest.isEmpty then throw "statements after return are outside the current source slice"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
-      let done ← emit (.var 0) .ret (A::Γ) R
+      let done ← emitAt e.span (.var 0) .ret (A::Γ) R
       compileExpr fc scope Γ e done
     | .cst pos name annot e :: rest =>
       if scope.contains name then throw s!"duplicate or shadowing local declaration '{name}'"
@@ -281,7 +289,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       let A ← exprType fc e
       let B ← match annot with | none => pure A | some ty => SourceInput.translate ty
       let next ← body fuel fc R (name::scope) rest tail loopTargets
-      let annotation ← emit (.var 0) (.effect next) (A::Γ) B
+      let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B
       compileExpr fc scope Γ e annotation
     | .ite pos cond thn els :: rest =>
       let Γ ← env fc pos.1 scope
@@ -338,6 +346,7 @@ termination_by stmts => sizeOf stmts
 
 structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
+  origins : List (Option Span) := []
 
 def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
@@ -362,7 +371,7 @@ def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Exce
   let (entry, built) ← (do
     let first ← body (traversalBudget f.body) fc R scope f.body none none
     emit .nul (.effect first) inputs [0]).run {}
-  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations⟩
+  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations, built.origins⟩
 
 /-- Existing wire callers pass through the SKJS adapter. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/
@@ -410,7 +419,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     (List.range r.types.length) r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence

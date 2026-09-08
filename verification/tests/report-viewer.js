@@ -78,3 +78,31 @@ for (const file of ["typeof_narrow.accepted", "inverted_narrowing.rejected"]) {
 console.log(
   "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, and legacy samples passed",
 );
+
+const failureBundle = structuredClone(bundle);
+failureBundle.manifest.results = [
+  {
+    function: "f0",
+    status: "not-established",
+    detail: "proof search stopped",
+    location: { kind: "expression-obligation", pos: claim.pos },
+  },
+];
+assert.equal(
+  fromBundle(failureBundle).functions[0].exprs[0].failure,
+  "proof search stopped",
+);
+delete failureBundle.manifest.results[0].location;
+assert.equal(
+  fromBundle(failureBundle).functions[0].exprs[0].failure,
+  undefined,
+);
+failureBundle.manifest.results[0].location = {
+  kind: "expression-obligation",
+  pos: claim.pos,
+};
+failureBundle.manifest.results[0].status = "verified";
+assert.equal(
+  fromBundle(failureBundle).functions[0].exprs[0].failure,
+  undefined,
+);
