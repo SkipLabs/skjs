@@ -607,3 +607,26 @@ consumer then rejects the stale singleton read at its exact source span. These
 are distinct findings, not a claim that arbitrary reference refinements are
 supported. The stable-snapshot counterpart verifies using immutable local
 refinement, even though the callback mutates the captured cell.
+
+### Negated Boolean conditions
+
+The source adapter lowers `!e` to the existing Boolean conditional
+`if e then false else true`. It evaluates the operand once and requires its claim
+as well as the result claim. Repeated negations of an immutable variable preserve
+its identity: odd parity swaps branch destinations and recovers the original
+Boolean before binding the refinement witness. The same implementation handles
+loop heads. Closure branches use `ifBoolVar` with the corresponding swapped arms.
+An effectful condition supplies no alias refinement.
+
+This adds no semantic primitive or trusted typing rule. Null equality remains a
+separate next step: the existing `ifTag` rule checks a uniform answer, whereas
+`null | boolean` needs a general tag partition and justified outgoing environments.
+The current rules also leave singleton negation results such as `!true : false`
+unproved; ordinary Boolean results and negated variable refinements are supported.
+
+The negation integration also supplies a concrete completeness gap in the
+producer: `while (!flag) { return true; } return flag;` always returns true, but
+SKJS forgets the loop-exit refinement and rejects the `true` annotation. Repairing
+only the exit binding and returned-expression claim makes the program verifiable
+with the existing calculus rules. The regression uses the ordinary partial
+export without `--keep-going`, and independently checks the produced evidence.

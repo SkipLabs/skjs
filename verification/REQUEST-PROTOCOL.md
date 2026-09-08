@@ -206,7 +206,11 @@ and checks that it contains only Boolean clauses. Both arms share the compiled
 continuation. Slot maps remove saved conditions and arm-local bindings on exit.
 Nested branches, missing/empty arms and early-return arms are supported.
 
-Direct Boolean variable tests refine the tested binding on their outgoing edges.
+Direct and repeatedly negated Boolean variable tests refine the tested binding on their outgoing edges.
+Negation lowers to `ite e false true`. For odd parity, the compiler recovers the
+original variable value and swaps destinations; it never re-evaluates the source
+operand. This also applies to loop conditions. Non-Boolean truthiness and
+singleton negation result proofs remain unsupported.
 The compiler uses `branchBind`: dispatch pushes the actual tested Boolean, then
 applies the target map. For `if (x)`, `x` selects this pushed slot; other variables
 select their old slots. The consumer checks the Boolean singleton against the
@@ -361,7 +365,8 @@ with `pos`, `result` (the enclosing result annotation), `cond`, `then` and `else
 Terminal arms recursively end in returns; prefixes may contain consts, effects
 and branches whose arms both fall through.
 Its position selects the checked entry environment, not an expression claim.
-Variable conditions use `ifBoolVar`; other Boolean conditions use `ifBool`.
+Variable conditions (including negations, with swapped arms for odd parity) use
+`ifBoolVar`; other Boolean conditions use `ifBool`.
 Arm statement claims are checked against those justified contexts.
 
 For fall-through branches, `ifBody` has the administrative null result type and

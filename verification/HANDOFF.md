@@ -119,3 +119,40 @@ Concurrent viewer addressing/navigation edits are another agent's work; they
 were not part of this fragment increment. Inspect the working tree before
 staging. The full verification suite passed with the fragment extension; targeted
 normalized callback round-trip tests passed as well.
+
+## Follow-up: Boolean negation
+
+`SourceInput.Expr.not` accepts the existing parser's `not` form. The compiler
+lowers Boolean negation to `ite e false true`, evaluating `e` once. No calculus
+rules, semantics, evidence format, or source type profile changed. `emitBranch`
+shares polarity handling between branches and loops: repeated negations of an
+immutable variable recover that variable's value before `branchBind`, and swap
+the destinations for odd parity. Closure branches use the same polarity analysis
+with the existing `ifBoolVar` rule. Effectful tests do not refine aliases.
+
+`tests/negation.js` checks real exports, independent and normalized consumption,
+missing operand claims, fabricated result and branch claims, non-Boolean input,
+and changed polarity against old evidence. The source fixture includes closures,
+a mutating callback, double negation, and both call and variable loop conditions.
+
+Next: null tests need an explicit general tag-refinement typing rule plus checked
+evidence and soundness, then graph edge refinement. Existing `ifTag` only handles
+a statically uniform answer; it cannot split `null | boolean`. Do not simulate
+that split by trusting SKJS's narrowed environments. Even for Boolean negation,
+singleton results such as `!true : false` are not yet established by this lowering:
+the current conditional rule asks for both branches at the result type. This is
+an incompleteness of the available derivations, not an unsoundness finding.
+
+The variable-loop probe found an actual producer incompleteness case and lives
+separately in `tests/counterexamples/negated-loop-exit.ts`: SKJS rejects the return
+annotation, but the normal partial export is repairable. `negation.js` changes
+only the final `flag` binding and returned-expression claim to `true`, produces
+and independently checks evidence, and rejects a wrong `false` exit binding.
+This gives 14 focused checks. The viewer lists this file under producer-rejected
+claim repair, not under examples accepted by SKJS. No checker implementation was
+modified. Callback work was committed as `8a004be7`; this negation follow-up is
+separate from the concurrent viewer work.
+
+Validation for this follow-up: `lake build` passed all 93 jobs, with no `sorryAx`
+in the build output; `make verify` passed, including all 14 negation/loop-repair
+checks. JavaScript syntax, shell syntax and `git diff --check` also passed.

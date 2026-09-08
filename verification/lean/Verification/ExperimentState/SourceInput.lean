@@ -18,6 +18,7 @@ def translate (j : Json) : Except String (Ty Nat) := do
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Wire.Val)
+  | not (pos : Span) (e : Expr)
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
   | write (pos : Span) (receiver rhs : Expr)
@@ -34,7 +35,7 @@ inductive Expr where
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p => p
-  | .var p _ | .lit p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
+  | .var p _ | .lit p _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -67,6 +68,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   match ← jStr (← jField j "k") with
   | "id" => return .var p (← jStr (← jField j "name"))
   | "lit" => return .lit p (← decodeVal (← jField j "lit"))
+  | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
   | "read" => return .read p (← decodeExpr (← jField j "e"))
   | "lambda" =>

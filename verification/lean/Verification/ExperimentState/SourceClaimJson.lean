@@ -65,7 +65,7 @@ private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private def exprSites : SourceInput.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
-  | .alloc p e | .read p e | .lam p _ _ _ e => joinSites ([],[p]) (exprSites e)
+  | .not p e | .alloc p e | .read p e | .lam p _ _ _ e => joinSites ([],[p]) (exprSites e)
   | .write p a b | .app p a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
   | .done _ => ([],[])

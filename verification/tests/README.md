@@ -32,3 +32,5 @@ To promote a boundary example, add a positive integration test using real claims
 and the independent consumer, then move it into the supported group and remove
 its expected rejection. Promotion depends on implemented semantics and checking,
 not merely on the parser accepting the syntax.
+
+`negation.js` checks Boolean negation and reversed immutable refinements in branches, closures and loops, including forged claims and an effectful operand.

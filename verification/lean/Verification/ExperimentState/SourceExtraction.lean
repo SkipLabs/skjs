@@ -9,7 +9,7 @@ and claims; evidence never supplies the program it is checked against.
 The currently supported source slice is deliberately small: primitive parameters,
 initialized consts, branches, variables, null/boolean literals and local plain
 cells (allocation, reads and assignments), expression-bodied closures and calls,
-with every path returning. Boolean variable tests refine the tested binding.
+with every path returning. Boolean variable tests, including negations, refine the tested binding.
 Active-name shadowing is not yet supported. This compiler remains a reviewed
 extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.ExperimentState.SourceExtraction
@@ -80,6 +80,13 @@ private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List St
     | some A => pure A
     | none => throw "internal closure slot mismatch"
 
+/-- Negations of an immutable variable retain its identity and reverse the
+branch polarity. Arbitrary expressions deliberately carry no alias refinement. -/
+private def conditionVariable (scope : List String) : SourceInput.Expr → Option (Nat × Bool)
+  | .var _ name => (scope.idxOf? name).map (·, false)
+  | .not _ e => (conditionVariable scope e).map fun (i, reversed) => (i, !reversed)
+  | _ => none
+
 /-- Lower expressions inside lambda bodies without losing their individual
 claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -99,6 +106,11 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
       | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
+  | .not _ a => do
+    let a ← closureExpr fc scope Γ a
+    pure (DirectProof.node Γ (.ite a.term .fls .tru) [1,2] .ifBool
+      [a, DirectProof.cast Γ [1,2] (DirectProof.node Γ .fls [2] .flsLit),
+       DirectProof.cast Γ [1,2] (DirectProof.node Γ .tru [1] .truLit)])
   | .alloc _ a => do
     let [.refs B []] := PositiveRules.expand SourceTypes.graph A
       | throw "allocation claim must name a cell contract"
@@ -152,16 +164,17 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     for (B,i) in H.zipIdx do
       modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
     let c ← closureExpr fc scope H cond
-    match cond with
-    | .var _ name =>
-      let some i := scope.idxOf? name | throw "unbound closure condition"
+    match conditionVariable scope cond with
+    | some (i, reversed) =>
       let T := H.set i [1]
       let F := H.set i [2]
-      let t ← closureExpr fc scope T thn
-      let e ← closureExpr fc scope F els
-      pure (DirectProof.node H (.ite c.term t.term e.term) A (.ifBoolVar [1] [2])
-        [DirectProof.cast T A t,DirectProof.cast F A e])
-    | _ =>
+      let t ← closureExpr fc scope (if reversed then F else T) thn
+      let e ← closureExpr fc scope (if reversed then T else F) els
+      let yes := if reversed then e else t
+      let no := if reversed then t else e
+      pure (DirectProof.node H (.ite (.var i) yes.term no.term) A (.ifBoolVar [1] [2])
+        [DirectProof.cast T A yes,DirectProof.cast F A no])
+    | none =>
       let t ← closureExpr fc scope H thn
       let e ← closureExpr fc scope H els
       pure (DirectProof.node H (.ite c.term t.term e.term) A .ifBool
@@ -198,9 +211,12 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
       | none => throw s!"unbound or uninitialized source variable '{name}'"
     emitAt e.span (.var i) (.bind next) Γ A
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A
-  | .alloc _ a | .read _ a =>
+  | .alloc _ a | .read _ a | .not _ a =>
     let B ← exprType fc a
-    let op := match e with | .alloc .. => Tm.alloc | _ => Tm.read
+    let op := match e with
+      | .alloc .. => Tm.alloc
+      | .not .. => fun t => Tm.ite t .fls .tru
+      | _ => Tm.read
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
@@ -252,11 +268,31 @@ private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) 
 branch witness. In particular, an impossible opposite edge must not force a
 contradictory replacement of an otherwise valid immutable binding. -/
 private def testedSlot (scope : List String) (Γ : List (Ty Nat)) (cond : SourceInput.Expr) : Option Nat :=
-  match cond with
-  | .var _ name => do
-    let i ← scope.idxOf? name
+  do
+    let (i, _) ← conditionVariable scope cond
     if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
-  | _ => none
+
+/-- Share polarity handling between conditionals and loop heads. The saved
+condition is in slot zero. Only a syntactically identified immutable variable
+may be replaced by the recovered Boolean witness. -/
+private def emitBranch (scope : List String) (Γ : List (Ty Nat)) (cond : SourceInput.Expr)
+    (A : Ty Nat) (yes no : Target) : Compiler Target := do
+  let tested := testedSlot scope Γ cond
+  -- Branch on the saved value; the edge maps discard its older copy and
+  -- retain the new refinement slot supplied by branchBind.
+  let adapt := fun t =>
+    let mapped := branchMapping scope.length tested t
+    ⟨mapped.label, some ((mapped.mapping.getD []).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+  -- Recover the original variable before binding the refinement witness.
+  -- Swapping successors preserves the source condition's polarity.
+  let reversed := (conditionVariable scope cond).any Prod.snd
+  let test := if reversed then Tm.ite (.var 0) .fls .tru else .var 0
+  let branchType := if reversed then [1,2] else A
+  let node ← emitAt cond.span test
+    (.branchBind (adapt (if reversed then no else yes)) (adapt (if reversed then yes else no)))
+    (A::Γ) branchType
+  return node
 
 /-- The nearest enclosing loop, with the lexical scope at each destination. -/
 private structure LoopTargets where
@@ -303,14 +339,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
         pure (some (next,scope))
       let yes ← body fuel fc R scope thn continuation loopTargets
       let no ← body fuel fc R scope (els.getD []) continuation loopTargets
-      let tested := testedSlot scope Γ cond
-      -- Branch on the saved value; the edge maps discard its older copy and
-      -- retain the new refinement slot supplied by branchBind.
-      let adapt := fun t =>
-        let mapped := branchMapping scope.length tested t
-        ⟨mapped.label, some ((mapped.mapping.getD []).map
-          (fun i => if i == 0 then 0 else i+1))⟩
-      let node ← emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+      let node ← emitBranch scope Γ cond A yes no
       compileExpr fc scope Γ cond node
     | .loop pos cond loopBody :: rest =>
       let Γ ← env fc pos.1 scope
@@ -323,12 +352,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
         pure (some (next,scope))
       let yes ← body fuel fc R scope loopBody (some (head,scope)) (some ⟨(head,scope),continuation⟩)
       let no ← leave scope continuation
-      let tested := testedSlot scope Γ cond
-      let adapt := fun t =>
-        let mapped := branchMapping scope.length tested t
-        ⟨mapped.label, some ((mapped.mapping.getD []).map
-          (fun i => if i == 0 then 0 else i+1))⟩
-      let branch ← emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+      let branch ← emitBranch scope Γ cond A yes no
       let condition ← compileExpr fc scope Γ cond branch
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
       return head

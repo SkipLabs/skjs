@@ -102,6 +102,18 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   done
   if ! node verification/tests/primitive-callbacks.js "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER" \
        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"; then exit 1; fi
+  NEGATION="verification/tests/stateful-source/negation.ts"
+  if ! { node verification/tools/parse-source.js "$NEGATION" > "$WORK/negation.ast" &&
+         skjs_check "$NEGATION" > "$WORK/negation.claims"; } 2> "$WORK/negation.err"; then
+    echo "FAIL: negation fixture setup"; cat "$WORK/negation.err"; exit 1
+  fi
+  LOOP_EXIT="verification/tests/counterexamples/negated-loop-exit.ts"
+  if ! node verification/tools/parse-source.js "$LOOP_EXIT" > "$WORK/loop-exit.ast"; then exit 1; fi
+  if skjs_check "$LOOP_EXIT" > "$WORK/loop-exit.claims" 2> "$WORK/loop-exit.err"; then
+    echo "FAIL: SKJS unexpectedly accepts the loop-exit incompleteness witness"; exit 1
+  fi
+  if ! node verification/tests/negation.js "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER" \
+       "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT"; then exit 1; fi
   LOOPS="verification/tests/stateful-source/loops.ts"
   if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
          skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then

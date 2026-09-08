@@ -8,12 +8,16 @@ const supported = [
   "loops",
   "loop-transfers",
   "primitive-callbacks",
+  "negation",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const groups = [
   { label: "Current verifier examples", files: supported },
   {
     label: "Claim repair · producer rejects",
-    files: ["verification/tests/partial-claims.ts"],
+    files: [
+      "verification/tests/partial-claims.ts",
+      "verification/tests/counterexamples/negated-loop-exit.ts",
+    ],
   },
   {
     label: "Counterexamples · SKJS accepts",

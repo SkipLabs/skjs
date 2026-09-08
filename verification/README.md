@@ -39,8 +39,9 @@ The source adapter supports **functions with primitive parameters, initialized `
 bindings, nested branches, `while` loops and returns**, local cells, and bounded expression
 closures and calls. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from
-direct Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
-commands and limitations. Closures have one null/Boolean primitive argument and a
+direct or negated Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
+commands and limitations. Boolean `!` evaluates its operand once; singleton
+negation results such as `!true : false` remain outside the current derivations. Closures have one null/Boolean primitive argument and a
 primitive result; expression bodies compose literals, variables, cell operations
 and calls. Straight-line blocks support local consts, effects and a final return,
 with checked statement environments.
@@ -124,3 +125,9 @@ is accepted by SKJS but returns false where its annotation requires true.
 refined-reference contract from a stale expression claim that fails proof checking
 after those reference refinements are forgotten. See the
 [counterexample notes](tests/counterexamples/README.md).
+
+[negation.ts](tests/stateful-source/negation.ts) adds negated conditions, closures
+and loops. [The loop-exit example](tests/counterexamples/negated-loop-exit.ts)
+is rejected by SKJS but verifies after repairing its final binding and expression
+claims to `true`. The regression consumes normal-mode partial claims and checks
+the resulting certificate independently.
