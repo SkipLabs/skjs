@@ -26,7 +26,10 @@ private def envCore (fc : SourceClaims.Function) (pos : Nat) (scope : List Strin
   if !distinct (vars.map Prod.fst) then throw s!"duplicate environment binding at {pos}"
   scope.mapM fun name => do
     match vars.lookup name with
-    | some t => SourceClaims.resolve t
+    | some t => (SourceClaims.resolve t).mapError fun msg =>
+        if msg == "type claim unavailable from producer" then
+          s!"unavailable claimed binding '{name}' at {pos}"
+        else msg
     | none => throw s!"missing claimed binding '{name}' at {pos}"
 
 private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
@@ -117,6 +120,47 @@ private def nullTestPlan (Γ : List (Ty Nat)) (slot : Nat) (equal : Bool) (A : T
       [DirectProof.cast H A (DirectProof.node H value B rule)])
   pure (DirectProof.node Γ term A (.unionVar slot) children)
 
+/-- Shared conditional proof construction for statement branches, ternaries and
+short-circuit operators. Branch builders retain their own source claims; a
+logical operator's constant arm is administrative and needs no invented claim. -/
+private def conditionalPlan (scope : List String) (H : List (Ty Nat)) (A : Ty Nat)
+    (cond : SourceInput.Expr) (c : DirectProof.Plan)
+    (yesBranch noBranch : List String → List (Ty Nat) → Compiler DirectProof.Plan) :
+    Compiler DirectProof.Plan := do
+  if let some (i, equal) := nullConditionVariable scope cond then
+    let some C := H[i]? | throw "internal closure null-guard slot mismatch"
+    -- Preserve the evaluated predicate and its claims in an anonymous slot.
+    let K := c.type :: H
+    let tested := i+1
+    let T := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul true)
+    let F := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul false)
+    let t ← yesBranch (""::scope) (if equal then T else F)
+    let e ← noBranch (""::scope) (if equal then F else T)
+    let yes := if equal then t else e
+    let no := if equal then e else t
+    let term := Tm.ite (.test .isNul (.var tested)) yes.term no.term
+    let children := C.map fun label =>
+      let L := K.set tested [label]
+      let q := decide (Answers SourceTypes.graph [label] .isNul true)
+      DirectProof.node L term A (if q then .ifTrue else .ifFalse)
+        [DirectProof.cast L A (if q then yes else no)]
+    pure (DirectProof.letE H c (DirectProof.node K term A (.unionVar tested) children))
+  else
+    match conditionVariable scope cond with
+    | some (i, reversed) =>
+      let T := H.set i [1]
+      let F := H.set i [2]
+      let t ← yesBranch scope (if reversed then F else T)
+      let e ← noBranch scope (if reversed then T else F)
+      let yes := if reversed then e else t
+      let no := if reversed then t else e
+      pure (DirectProof.node H (.ite (.var i) yes.term no.term) A (.ifBoolVar [1] [2])
+        [DirectProof.cast T A yes,DirectProof.cast F A no])
+    | none =>
+      let t ← yesBranch scope H
+      let e ← noBranch scope H
+      pure (DirectProof.ifE SourceTypes.graph H A c t e)
+
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -142,6 +186,14 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     let H := right.type::left.type::Γ
     let result ← nullTestPlan H (if testLeft then 1 else 0) equal A
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
+  | .logical _ andOp left right => do
+    let l ← closureExpr fc scope Γ left
+    let constant := fun (_ : List String) H => pure
+      (if andOp then DirectProof.node H .fls [2] .flsLit
+       else DirectProof.node H .tru [1] .truLit)
+    let rhs := fun names types => closureExpr fc names types right
+    conditionalPlan scope Γ A left l
+      (if andOp then rhs else constant) (if andOp then constant else rhs)
   | .coalesce _ left right => do
     let l ← closureExpr fc scope Γ left
     let K := l.type :: Γ
@@ -217,39 +269,9 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
       for (B,i) in H.zipIdx do
         modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
     let c ← closureExpr fc scope H cond
-    if let some (i, equal) := nullConditionVariable scope cond then
-      let some C := H[i]? | throw "internal closure null-guard slot mismatch"
-      -- Preserve the evaluated predicate and its claims in an anonymous slot.
-      let K := c.type :: H
-      let tested := i+1
-      let T := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul true)
-      let F := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul false)
-      let t ← closureExpr fc (""::scope) (if equal then T else F) thn
-      let e ← closureExpr fc (""::scope) (if equal then F else T) els
-      let yes := if equal then t else e
-      let no := if equal then e else t
-      let term := Tm.ite (.test .isNul (.var tested)) yes.term no.term
-      let children := C.map fun label =>
-        let L := K.set tested [label]
-        let q := decide (Answers SourceTypes.graph [label] .isNul true)
-        DirectProof.node L term A (if q then .ifTrue else .ifFalse)
-          [DirectProof.cast L A (if q then yes else no)]
-      pure (DirectProof.letE H c (DirectProof.node K term A (.unionVar tested) children))
-    else
-      match conditionVariable scope cond with
-      | some (i, reversed) =>
-        let T := H.set i [1]
-        let F := H.set i [2]
-        let t ← closureExpr fc scope (if reversed then F else T) thn
-        let e ← closureExpr fc scope (if reversed then T else F) els
-        let yes := if reversed then e else t
-        let no := if reversed then t else e
-        pure (DirectProof.node H (.ite (.var i) yes.term no.term) A (.ifBoolVar [1] [2])
-          [DirectProof.cast T A yes,DirectProof.cast F A no])
-      | none =>
-        let t ← closureExpr fc scope H thn
-        let e ← closureExpr fc scope H els
-        pure (DirectProof.ifE SourceTypes.graph H A c t e)
+    conditionalPlan scope H A cond c
+      (fun names types => closureExpr fc names types thn)
+      (fun names types => closureExpr fc names types els)
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
@@ -293,7 +315,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .lam .. | .ifBody _ none .. | .coalesce .. =>
+  | .lam .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A
   | .nullTest _ equal testLeft left right =>
@@ -385,6 +407,53 @@ private def emitBranch (scope : List String) (Γ : List (Ty Nat)) (cond : Source
     (A::Γ) branchType
   return node
 
+/-- Facts justified on the path to a short-circuit operand. Only immutable
+source bindings are refined; every generated edge checks this candidate context.
+A true conjunction / false disjunction establishes both operand outcomes. The
+other outcomes deliberately retain the input context rather than compute a join. -/
+private def conditionContext (scope : List String) (Γ : List (Ty Nat))
+    (cond : SourceInput.Expr) (answer : Bool) : List (Ty Nat) :=
+  match cond with
+  | .not _ e => conditionContext scope Γ e (!answer)
+  | .logical _ andOp left right =>
+    if answer == andOp then
+      conditionContext scope (conditionContext scope Γ left answer) right answer
+    else Γ
+  | _ =>
+    if let some (i, equal) := nullConditionVariable scope cond then
+      Γ.set i (BranchRefinement.tagSlice SourceTypes.graph (Γ[i]?.getD []) .isNul (answer == equal))
+    else if let some i := testedSlot scope Γ cond then
+      Γ.set i (if answer then [1] else [2])
+    else Γ
+
+private def compoundCondition : SourceInput.Expr → Bool
+  | .logical .. => true
+  | .not _ e => compoundCondition e
+  | _ => false
+
+/-- Compile compound conditions as short-circuit edges. The full source
+expression still has an independent claimed typing obligation; the runtime
+traverses its operands once instead of evaluating it and then replaying it. -/
+private def compileCondition (fc : SourceClaims.Function) (scope : List String)
+    (Γ : List (Ty Nat)) (cond : SourceInput.Expr) (yes no : Target) : Compiler Target := do
+  let simple := do
+    let A ← exprType fc cond
+    let node ← emitBranch scope Γ cond A yes no
+    compileExpr fc scope Γ cond node
+  match cond with
+  | .logical _ andOp left right =>
+    let _ ← closureExpr fc scope Γ cond
+    let H := conditionContext scope Γ left andOp
+    let rhs ← compileCondition fc scope H right yes no
+    compileCondition fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
+  | .not _ e =>
+    if compoundCondition e then
+      let _ ← closureExpr fc scope Γ cond
+      compileCondition fc scope Γ e no yes
+    else simple
+  | _ => simple
+termination_by cond
+
 /-- The nearest enclosing loop, with the lexical scope at each destination. -/
 private structure LoopTargets where
   again : Target × List String
@@ -424,17 +493,14 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       compileExpr fc scope Γ e annotation
     | .ite pos cond thn els :: rest =>
       let Γ ← env fc pos.1 scope
-      let A ← exprType fc cond
       let continuation ← if rest.isEmpty then pure tail else do
         let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
       let yes ← body fuel fc R scope thn continuation loopTargets
       let no ← body fuel fc R scope (els.getD []) continuation loopTargets
-      let node ← emitBranch scope Γ cond A yes no
-      compileExpr fc scope Γ cond node
+      compileCondition fc scope Γ cond yes no
     | .loop pos cond loopBody :: rest =>
       let Γ ← env fc pos.1 scope
-      let A ← exprType fc cond
       -- Reserve a stable label for incoming and back edges. Replace its stub
       -- before returning; the completed program is independently checked.
       let head ← emitAt cond.span .nul .ret Γ [0]
@@ -443,8 +509,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
         pure (some (next,scope))
       let yes ← body fuel fc R scope loopBody (some (head,scope)) (some ⟨(head,scope),continuation⟩)
       let no ← leave scope continuation
-      let branch ← emitBranch scope Γ cond A yes no
-      let condition ← compileExpr fc scope Γ cond branch
+      let condition ← compileCondition fc scope Γ cond yes no
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
       return head
     | .effect pos e :: rest =>

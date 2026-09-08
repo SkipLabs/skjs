@@ -84,6 +84,28 @@ function typeText(t) {
   return JSON.stringify(t);
 }
 
+// Advisory exporter metadata is bound to an exact claim address. Ignore stale,
+// malformed and ambiguous entries; none can turn an unavailable type into evidence.
+function unavailableTypes(f) {
+  const missing=t=>t && t.unsupported===true && Object.keys(t).length===1;
+  const key=d=>JSON.stringify([d.kind,d.pos,d.binding]);
+  const claims=new Map(), reasons=new Map();
+  const add=(d,t)=>{if(missing(t))claims.set(key(d),(claims.get(key(d))||0)+1);};
+  for(const p of f.params)add({kind:"parameter",binding:p.name},p.type);
+  add({kind:"result"},f.retType);
+  for(const e of f.envs)for(const v of e.vars)add({kind:"entry",pos:e.pos,binding:v.name},v.type);
+  for(const e of f.exprs)add({kind:"expression",pos:e.pos},e.type);
+  for(const d of Array.isArray(f.unavailableTypes)?f.unavailableTypes:[]) {
+    if(!d || typeof d.reason!=="string" || !/^[a-z][a-z0-9-]{0,79}$/.test(d.reason))continue;
+    if(!["parameter","result","entry","expression"].includes(d.kind))continue;
+    const entry={kind:d.kind,...(["entry","expression"].includes(d.kind)?{pos:d.pos}:{}),
+      ...(["entry","parameter"].includes(d.kind)?{binding:d.binding}:{}),reason:d.reason};
+    const k=key(entry);
+    if(claims.get(k)===1)reasons.set(k,reasons.has(k)?null:entry);
+  }
+  return [...reasons.values()].filter(Boolean);
+}
+
 function fromSkjs(source, file, claims, producer) {
   if(!Array.isArray(claims))throw Error("expected SKJS file claims");
   const files=claims.filter(f=>f.file === file);
@@ -91,13 +113,14 @@ function fromSkjs(source, file, claims, producer) {
   return {version:1,source:{file,sha256:hash(source)},producer,
     functions:files[0].functions.map(f=>({name:f.name,namePos:f.namePos,
       ...(f.collection ? {collection:f.collection} : {}),
+      unavailableTypes:unavailableTypes(f),
       signature:{params:f.params,retType:f.retType},
       entries:f.envs.map(e=>({pos:e.pos,bindings:e.vars.map(v=>({name:v.name,type:typeText(v.type),raw:v.type}))})),
       expressions:f.exprs.map(e=>({pos:e.pos,type:typeText(e.type),raw:e.type}))}))};
 }
 
 function fromSourceClaims(source,file,input,producer) {
-  if(input.version!==1||input.profile!=="stateful-source-75-v1"||input.file!==file||input.sourceSha256!==hash(source))
+  if(![1,2].includes(input.version)||input.profile!==`stateful-source-75-v${input.version}`||input.file!==file||input.sourceSha256!==hash(source))
     throw Error("source-claim profile or source identity mismatch");
   const primitive=mask=>["null","true","false"].filter((_,i)=>mask&(1<<i)).join(" | ")||"never";
   const label=i=>i<3?["null","true","false"][i]:i<11?`Ref<${primitive(i-3)}>`:`(${primitive([1,0,2,3,4,5,6,7][Math.floor((i-11)/8)])} => ${primitive((i-11)%8)})`;
@@ -105,15 +128,28 @@ function fromSourceClaims(source,file,input,producer) {
     if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=75||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
     return A.map(label).join(" | ")||"never";
   };
+  const point=b=> {
+    if(Object.hasOwn(b,"current")!==(input.version===2))throw Error("current-content field does not match source-claim version");
+    const ordinary=type(b.type);
+    if(b.current==null)return {type:ordinary,raw:b.type};
+    if(input.version!==2||b.type.length!==1||b.type[0]<3||b.type[0]>=11||
+       !Array.isArray(b.current)||b.current.some(i=>i>=3))throw Error("invalid current-content assertion");
+    return {type:`{ value: ${b.type[0]===9?"boolean":primitive(b.type[0]-3)} = (${type(b.current)}) }`,
+      raw:{type:b.type,current:b.current}};
+  };
+  const parameter=b=> {
+    if(b.current!=null)throw Error("function parameters cannot carry current-content assertions");
+    return {name:b.name,type:point(b).type};
+  };
   const sf=parse(source,file),entries=new Map();
   const walk=n=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);ts.forEachChild(n,walk);};walk(sf);
   return {version:1,source:{file,sha256:input.sourceSha256},producer,
     functions:input.functions.map(f=>({name:f.name,namePos:f.namePos,
-      signature:{params:f.params.map(b=>({name:b.name,type:type(b.type)})),retType:type(f.result)},
+      signature:{params:f.params.map(parameter),retType:type(f.result)},
       entries:f.entries.map(e=> {
         if(!entries.has(e.start))throw Error("source entry claim is not attached to a statement");
-        return {pos:[e.start,entries.get(e.start)],bindings:e.bindings.map(b=>({name:b.name,type:type(b.type),raw:b.type}))};
-      }),expressions:f.expressions.map(e=>({pos:e.pos,type:type(e.type),raw:e.type}))}))};
+        return {pos:[e.start,entries.get(e.start)],bindings:e.bindings.map(b=>({name:b.name,...point(b)}))};
+      }),expressions:f.expressions.map(e=>({pos:e.pos,...point(e)}))}))};
 }
 
 function attachConversion(source,report,sidecarBytes,conversion) {
@@ -314,6 +350,9 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
       const c=normalized ? clone(claims) : clone(claims).filter(g=>g.file===file);
       const selected=normalized ? c : c[0];
       selected.functions=selected.functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
+      const refusals=normalized ? [] : unavailableTypes(selected.functions[0]);
+      // Metadata is for reporting only, excluded from verifier input and its digest.
+      if(!normalized)for(const g of selected.functions)delete g.unavailableTypes;
       const ap=path.join(temp,"ast.json"), cp=path.join(temp,"claims.json"), ep=path.join(temp,"evidence.json");
       fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
       const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
@@ -331,17 +370,30 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
         const absentBinding=environment && /^missing claimed binding '([^']*)' at \d+$/.exec(environment[2]);
         // A fragment limitation reported without a span still says checking never
         // started on this function; it is not a failed proof search.
+        const unavailableBinding=environment && /^unavailable claimed binding '([^']*)' at \d+$/.exec(environment[2]);
+        const unavailableType=unavailableBinding || /type claim unavailable from producer$/.test(detail);
+        const nonInvariant=/cell read and write types do not describe the same invariant$/.test(detail);
+        const currentContents=/current-content assertion requires heap-aware source evidence(?: \(binding '[^']*'\))?$/.test(detail);
         const outsideSlice=/outside the [^:]*slice\.?$/.test(detail);
-        const location=located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :
+        const location=unavailableType ? {kind:"unavailable-type-claim",
+          ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :
+            located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : (nonInvariant || currentContents) ? {kind:"source-limitation",reason:currentContents?"current-content-assertion":"non-invariant-cell-contract",
+          ...(environment ? {start:Number(environment[1])} : located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :
           absentExpr ? {kind:"missing-expression-claim",pos:[Number(absentExpr[1]),Number(absentExpr[2])]} :
           absentEnv ? {kind:"missing-environment-claim",start:Number(environment[1])} :
           absentBinding ? {kind:"missing-environment-claim",start:Number(environment[1]),binding:absentBinding[1]} :
           environment ? {kind:"environment-obligation",start:Number(environment[1])} :
           outsideSlice ? {kind:"source-limitation"} : null;
+        if(unavailableType && location) {
+          const matches=refusals.filter(d=>unavailableBinding ?
+            d.kind==="entry"&&d.pos[0]===location.start&&d.binding===location.binding :
+            located ? d.kind==="expression"&&JSON.stringify(d.pos)===JSON.stringify(location.pos) : false);
+          if(matches.length===1)location.reason=matches[0].reason;
+        }
         // Bind node-local IDs to this exact function, source, and selected claims.
         const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
           namePos:f.namePos,sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}} : null;
-        return {status:"not-established",detail,...(location ? {location} : {}),
+        return {status:"not-established",detail,...((unavailableType || nonInvariant || currentContents) ? {stage:"source-extraction"} : {}),...(location ? {location} : {}),
           ...(obligation ? {obligation} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);

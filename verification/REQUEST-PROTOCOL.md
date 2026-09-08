@@ -6,6 +6,9 @@ consumer boundary for extracted programs. It is **not** a decoder for SKJS's
 source-associated claims, and it does not certify TypeScript text by itself.
 
 Raw requests and the source modes below use the same executable and consumer.
+This document owns calculus request/evidence formats and SKJS source AST/export
+encoding. [SOURCE-CLAIMS](SOURCE-CLAIMS.md) owns independent sidecar schemas,
+conversion and repairs; [diagnostics](OBLIGATION-DIAGNOSTICS.md) owns failure metadata.
 
 ## Run a request
 
@@ -157,7 +160,9 @@ literals. Every path must return. Types
 may be null, boolean, true, false, unions of these, or bottom. Source parameters
 remain primitive. Local annotations and function results can additionally union
 the cell and function contracts described below. Every union arm is decoded
-strictly; unsupported arms are never omitted. Other constructs
+strictly. A redundant record arm may be absorbed into an existing invariant
+alternative by the checked read/write rule below; unsupported encodings are
+never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the slice
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 
@@ -289,7 +294,19 @@ field bounds of fresh object literals without replacing their expression claims
 with declaration annotations. Faithfulness of this bounded export to SKJS's
 internal types is not a Lean theorem.
 
-`CellClaims.translate` validates this shape and requires the read and write
+A supported multi-branch object is serialized as multiple `record` or `function`
+atoms in the same `atoms` list. Every branch must export successfully; one
+unsupported branch makes the whole type unavailable. No JSON constructor or
+version change is needed, and the report retains the alternatives exactly.
+
+`CellUnion.translate` validates all record atoms and absorbs a non-invariant
+contract only into an existing invariant arm with weaker read requirements and
+the same write invariant. Remaining arms must satisfy the invariant-cell check;
+[Source claims](SOURCE-CLAIMS.md#record-alternative-absorption) specifies the
+exact normalization law and its proof scope. This is not a widening
+of a standalone refined cell claim.
+
+`CellClaims.translate` validates a single-record shape and requires the read and write
 types to normalize to the same supported primitive set. Unknown fields and
 unsupported types are rejected. Its theorem connects both supplied primitive
 types to that set's meaning. The cell interpretation is an invariant
@@ -380,6 +397,13 @@ Boolean-variable and null-tag refinements use the existing rules, while general
 conditions use ordinary Boolean elimination. Effects execute in the condition
 and selected arm only. No new calculus rule or source type label is introduced.
 
+Short-circuit operators retain the binary AST shape
+`{"k":"bin","pos":[start,end],"op":"&&"|"||","l":...,"r":...}`.
+The expression and both operands require claims; the left operand must be Boolean.
+Statement guards use graph paths while retaining the complete condition claim.
+The [derived typing forms](PROGRAM-TYPING.md#derived-source-forms) specify their
+proof construction and evaluation order.
+
 Null coalescing uses `{"k":"coalesce","pos":[start,end],"left":...,"right":...}`.
 The overall expression and both operands select exact expression claims. Lowering
 saves the left result in a let slot, then uses null-tag testing and `unionVar`
@@ -406,8 +430,8 @@ bindings out of the continuation. Empty falling arms resume directly. The
 existing branch rule justifies the surviving path's immutable Boolean
 refinement, including at the continuation's supplied entry environment. No new
 AST tag, type claim or calculus rule is needed. General partially returning
-nested arms, unreachable continuations and active-name shadowing remain gated. Field tests that produce unequal
-read/write claims remain outside the invariant-cell slice.
+nested arms, unreachable continuations and active-name shadowing remain gated. Standalone field-test claims with unequal read/write meanings remain outside
+the invariant-cell slice; exact union absorption does not admit them on their own.
 
 For closure expressions the producer follows explicit proof recipes, retaining
 the initializer's claimed type at each source let and choosing known types for

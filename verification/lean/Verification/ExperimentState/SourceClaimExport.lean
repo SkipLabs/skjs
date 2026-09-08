@@ -40,7 +40,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     let mut params : List Binding := []
     for (name,raw) in c.params do
       match SourceInput.translate raw with
-      | .ok A => params := params ++ [⟨name,A⟩]
+      | .ok A => params := params ++ [⟨name,A,none⟩]
       | .error e => omissions := omissions ++ [issue f (bindingSite "parameter" name) raw e]
     let result ← match SourceInput.translate c.ret with
       | .ok A => pure (some A)
@@ -59,8 +59,8 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
         continue
       let mut bindings : List Binding := []
       for (name,raw) in bs do
-        match SourceInput.translate raw with
-        | .ok A => bindings := bindings ++ [⟨name,A⟩]
+        match SourceInput.translatePoint raw with
+        | .ok A => bindings := bindings ++ [⟨name,A.type,A.current⟩]
         | .error e => omissions := omissions ++ [issue f (bindingSite "binding" name start) raw e]
       entries := entries ++ [⟨start,bindings⟩]
     let mut expressions : List Expression := []
@@ -69,11 +69,11 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
       if !sites.2.contains pos then
         omissions := omissions ++ [issue f site raw "expression not present in lowered source"]
         continue
-      match SourceInput.translate raw with
-      | .ok A => expressions := expressions ++ [⟨pos,A⟩]
+      match SourceInput.translatePoint raw with
+      | .ok A => expressions := expressions ++ [⟨pos,A.type,A.current⟩]
       | .error e => omissions := omissions ++ [issue f site raw e]
     functions := functions ++ [⟨f.name,f.namePos,params,result,entries,expressions⟩]
-  let d : Document := ⟨1,"stateful-source-75-v1",fileKey,
+  let d : Document := ⟨2,"stateful-source-75-v2",fileKey,
     ← jStr (← jField ast "sourceSha256"),functions⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
   let _ ← SourceClaimJson.decode (toJson d)

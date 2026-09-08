@@ -4,7 +4,11 @@
 syntactic program-typing rules for the stateful language. Its fundamental theorem
 connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
-These are the program rules used by the current verifier.
+The ordinary and graph rules below are used by the current verifier. The
+[current-content rules](#current-content-rules-semantic-layer) are separately
+proved semantic rules awaiting graph-certificate integration. This document owns
+rule statements, side conditions, soundness scope and evidence construction;
+[Design](DESIGN.md) owns the integration roadmap.
 
 ## Judgments and constructor views
 
@@ -159,7 +163,7 @@ The general evaluation-context lemma `bind` composes computations across heap
 changes and future worlds. The typing theorem is an induction on derivations;
 none of its constructor rules has a semantic safety premise.
 
-## Integration test and remaining work
+## Integration example
 
 `ProgramTypingTests.lean` derives safety for a program equivalent to:
 
@@ -507,13 +511,140 @@ closure control-flow slice. It does not retain observations of mutable propertie
 The finite-label split is a source-profile strategy, not a new semantic rule for
 arbitrary mixed-shape type labels.
 
+## Current-content rules (semantic layer)
+
+The finite [type and assertion syntax](POSITIVE-TYPES.md#state-assertion-grammar)
+is defined alongside the ordinary type grammar. This section owns its rules.
+
+These rules are proved in [HeapObservations.lean](lean/Verification/ExperimentState/HeapObservations.lean)
+and [HeapFacts.lean](lean/Verification/ExperimentState/HeapFacts.lean).
+[HeapExpressionRules.lean](lean/Verification/ExperimentState/HeapExpressionRules.lean)
+checks finite expression evidence against them. They are not additional `HasTy`
+constructors or accepted graph-certificate forms yet.
+The [semantic reference](SEMANTICS.md#current-content-assertions-and-postconditions)
+defines `Obs`, `ObservedRef`, and `SafePost`; ordinary immutable-value branch
+observations above must not be confused with these mutable-heap assertions.
+
+All rules below assume an admissible world and satisfying initial heap. Write
+$\widehat R(n,W,v)=R(v)$ for a heap-independent content predicate, and require
+$R(v)$ to imply that $v$ is a value. The observed-read rule is:
+
+$$
+\frac{\operatorname{Obs}(h,\ell,R)}
+ {\operatorname{SafePost}(\widehat R,Q,n,W,h,\mathsf{read}(\ell))},
+\qquad Q(h',v)\equiv h'=h\land h'(\ell)=v.
+$$
+
+`read_contents` proves this: its result type gives $R(v)$, and its postcondition
+preserves the entire heap, hence other observations. For a value $v$ permitted by
+the invariant $B$, the write rule is:
+
+$$
+\frac{\operatorname{Ref}(B)(n,W,\ell)\quad B(n,W,v)\quad\operatorname{isVal}(v)}
+ {\operatorname{SafePost}(\mathsf{Null},Q,n,W,h,\mathsf{write}(\ell,v))},
+\qquad Q(h',u)\equiv h'=h[\ell:=v]\land u=\mathsf{null}.
+$$
+
+`write_observed` requires `Adm B`. It needs no old-content premise. `write_new`
+establishes the new observation; `write_frame` preserves a fact at another
+location only with proved runtime inequality. A write through an alias has the
+same effect. Allocation uses `alloc_observed` to return an invariant reference
+and the exact appended heap; `alloc_new` and `alloc_frame` give the fresh fact and
+preservation of existing facts.
+
+| Rule | Premise and consequence |
+| --- | --- |
+| `test_refines` | A current lookup links the tested value to the cell; a predicate on that value then refines current contents. An old snapshot alone does not suffice. |
+| `call_forget` | Ordinary arrow membership supplies result safety and heap-invariant preservation, with postcondition `True`. It supplies no retained observation. |
+| `bind` | For an evaluation context that lifts steps, its continuation receives the actual resulting heap, value membership and postcondition in the future world at the remaining budget. |
+| `consequence` | Implication weakens the result family and postcondition. |
+| `write_then_read` | Composing write, bind, beta and read proves that the immediate subsequent read returns the written value; there is no ownership or non-escape premise. |
+
+The finite assertion layer represents a fact as a slot $i$ and a set $R$ of
+null/Boolean literals. Its meaning is:
+
+$$
+\operatorname{Holds}(\Delta,\rho,h)
+\equiv \forall(i,R)\in\Delta.\;
+\exists\ell,v.\ \rho(i)=\ell\land h(\ell)=v\land v\in R.
+$$
+
+For a slot map $m$, the executable entailment check uses this sufficient rule:
+
+$$
+\frac{\forall(i,R)\in\Delta.\;\exists(j,S)\in\Sigma.\ j=m(i)\land S\subseteq R}
+ {\operatorname{Holds}(\Sigma,\rho,h)\Longrightarrow
+  \operatorname{Holds}(\Delta,\operatorname{mapEnv}(m,\rho),h)}.
+$$
+
+`HeapFacts.check_sound` proves it. Repeated slot mappings retain aliases; different
+slots do not prove disjoint locations. `shift_holds` transports facts when a bind
+pushes a result. The finite `read` rule preserves facts. `write` conservatively
+drops all old facts and establishes the written literal. `alloc` preserves shifted
+old facts and adds the fresh cell at the result slot. These are semantic rules;
+source compilation must still supply and check their graph-level use.
+
+### Checked expression postconditions
+
+`HeapKnowledge.Knowledge` pairs the cell facts above with immutable slot facts
+$V$, interpreted as $\forall(i,R)\in V.\;\rho(i)\in R$. This distinction is
+necessary when the producer claims a wide type for a read: the ordinary type
+remains unchanged, while a proved fact about the returned value can justify a
+narrower subsequent return contract. Mutation invalidates cell contents, not
+values already read into immutable slots.
+
+For $K=(\Delta,V)$, write $K(\rho,h)$ for the conjunction of these assertions.
+`checkStep_sound` establishes:
+
+$$
+\frac{\operatorname{checkStep}(G,(\Gamma,t,A),K,e)=\operatorname{some}(K')
+\quad\operatorname{EnvOk}(\Gamma,\rho,n,W)\quad K(\rho,h)}
+{\operatorname{SafePost}(\llbracket A\rrbracket,
+  \lambda(h',v).\,K'(v::\rho,h'),n,W,h,t[\rho])}.
+$$
+
+As above, the initial world must be admissible and the heap must satisfy it.
+The checker binds evidence to the requested expression and type and checks scope.
+It computes a guaranteed output, not an assumed postcondition:
+
+| Evidence | Guaranteed output in the result-pushed frame |
+| --- | --- |
+| Pure value or variable copy | Preserve both fact sets; copies also duplicate facts about the selected slot at result slot zero. Lambda bodies require ordinary typing, without captured heap facts. |
+| Observed read | Preserve both sets and record the result's literal set. That set must fit the requested ordinary result type. |
+| Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
+| Allocation | Check ordinary allocation evidence, preserve old facts, and add the fresh cell's initial contents. |
+| Write | Check ordinary write evidence, discard all old cell facts, record the written contents and the null result, and preserve immutable facts. |
+| Ordinary expression, including calls | Check ordinary evidence, discard all cell facts, and preserve only immutable facts. |
+
+The current write-evidence form also requires a cell observation locating the
+receiver. This is a conservative checker restriction; the semantic write rule
+above needs no old-content assertion. Primitive result sets are finite
+null/Boolean literal lists. `HeapKnowledge.check_sound` and `project_checked`
+justify transfer and alias-preserving projection along executable slot maps.
+
+[HeapExpressionTests.lean](lean/Verification/ExperimentState/HeapExpressionTests.lean)
+uses the actual source type graph to check allocation, write, mapped transfer,
+wide read and precise return, with negative tests for stale contents, invalid
+storage writes, fabricated facts and changed expressions. These are expression
+and transfer checks; they do **not** establish whole-source acceptance. Graph
+state invariants and every incoming edge must still carry these postconditions,
+and source claims must be bound to the corresponding checked facts.
+
+[WriteRefinedRead.lean](lean/Verification/ExperimentState/WriteRefinedRead.lean)
+assembles allocation, postcondition-aware composition and `write_then_read` to
+prove an allocate-false/write-true/read body safe at true in every admissible
+initial heap. A separate five-step execution establishes its returned value.
+Its null-argument wrapper inhabits `null → true`; the source fixture itself has
+no parameters. [The fixture notes](tests/skjs-incomplete/README.md) distinguish
+this model proof from the still-unavailable source certificate.
+
 ## Producing evidence from supplied claims
 
 `CertificateProducer.lean` accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry
 context and the expression result type. These are annotations in this Lean
-interface, not a change to SKJS's exported claim format. Relating source claims
-to these annotations is still extraction work.
+interface, not SKJS wire types. The source adapter supplies them for the supported
+slice; new source forms require the corresponding extraction obligations.
 
 `produce` builds expression derivation trees and per-slot subtype evidence for
 every actual edge. It does not infer or repair point invariants. Its inputs also
@@ -586,6 +717,8 @@ through the existing verifier binary. Source extraction correctness, producer
 completeness and integration of extended source claims remain outside these
 results.
 
+## Derived source forms
+
 `BooleanConditionalTests.lean` checks the ordinary conditional through serialized
 requests and direct recipes. Its execution traces cover both outcomes after an
 alias write and a condition that writes then reads a cell. Invalid condition
@@ -599,6 +732,21 @@ trusted proof-search step.
 Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known null-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
+For Boolean left operands, logical AND and OR use the derived forms:
+
+$$
+a\mathbin{\&\&}b\;\equiv\;\mathsf{if}\ a\ \mathsf{then}\ b\ \mathsf{else}\ \mathsf{false},
+\qquad
+a\mathbin{\Vert}b\;\equiv\;\mathsf{if}\ a\ \mathsf{then}\ \mathsf{true}\ \mathsf{else}\ b.
+$$
+
+They share the source conditional proof builder, including null refinement within
+the right operand;
+the synthetic constant arm requires a literal proof, not a source claim.
+At statement guards the source compiler instead emits short-circuit graph paths,
+whose Boolean/null observations justify the intermediate and successor contexts.
+It also checks the complete expression claim using the derived expression form.
+Thus graph decomposition cannot silently discard the producer's condition type.
 
 
 Closure branches whose two arms fall through require no additional typing rule.

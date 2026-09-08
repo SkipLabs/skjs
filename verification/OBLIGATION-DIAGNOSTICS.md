@@ -102,10 +102,9 @@ can have the same destination label and different maps; `edgeIndex` identifies
 which obligation failed. Refinement must be interpreted together with the
 observation, not as ordinary subtyping of `available` alone.
 
-## Visualization handoff
+## Display contract
 
-The protocol and report adapter are implemented; the viewer is intentionally
-unchanged. The visualization agent should:
+Readers of the diagnostic record should:
 
 1. Prefer `obligation` to inferring a failure role from a span or source AST.
 2. Present the available assumptions and required conclusion. For edges, expose
@@ -130,3 +129,67 @@ an `in / claim / out` triple or infer their roles in the viewer.
 repair of the return example, identical spans with different obligations,
 selected maps on shared-destination branches, input fingerprints, and unsupported
 record versions. It runs under `make verify-test`.
+
+## Source-extraction failures
+
+Some attempts stop before a calculus obligation can be constructed. Their report
+has `status: "not-established"`, `stage: "source-extraction"`, and a `location`:
+
+| Location kind | Meaning | Outcome |
+| --- | --- | --- |
+| `unavailable-type-claim` | A required producer type is the exact `{ "unsupported": true }` sentinel. | **? — required type unavailable** |
+| `source-limitation` | The claim is present, but the source consumer cannot handle it. | **? — could not check** |
+
+Neither outcome is a failed proof search or a judgement that the claim is false.
+Malformed types are not treated as unavailable sentinels. Unused unavailable
+bindings do not prevent verification.
+
+Environment locations use `start` and, when identified, `binding`; expression
+locations use `pos`. A signature failure may have neither. Attach only to the
+reported site. These failures carry no calculus `obligation`: do not synthesize
+a sequent or infer a culpable expression from a known runtime counterexample.
+
+### Reason vocabulary
+
+Reasons explain source-extraction limits; they are not evidence and do not change
+the classification above. Exporter reasons are optional metadata in
+`functions[i].unavailableTypes`. The report copies a reason to `location.reason`
+only for an unambiguous required entry binding or expression, and excludes that
+metadata from verifier input. Missing, malformed, stale, ambiguous, or unfamiliar
+reasons must not affect verification; readers use a generic explanation when
+necessary.
+
+For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emits:
+
+| Reason | Emitted when |
+| --- | --- |
+| `unsupported-type` | A primitive or unit is outside the export format, an object occurs in a position that does not admit one, or a clause has no representable types. |
+| `unsupported-object-branch` | An object branch fits neither the cell-record nor the function encoding, or the object has no branches. |
+| `unexpanded-type` | An object still carries an unexpanded type. |
+| `type-parameter` | A clause carries a universally quantified type parameter. |
+| `union-of-clauses` | The type has more than one clause, outside the bounded encoding. |
+| `unbound-inference-variable` | An isolated unconstrained inference variable has no binding in the function's substitution snapshot. |
+| `constrained-inference-variable` | Inference variables cannot be followed as a single isolated unconstrained variable. |
+| `fuel-exhausted` | Bounded type export exhausts its recursion fuel, independently of proof-search fuel. |
+
+Representable object branches are exported as separate union atoms. Multiple
+branches alone are not a refusal reason. An unsupported branch causes refusal
+of the whole type rather than a partial export.
+
+For `source-limitation`, the report adapter emits these consumer-limit reasons.
+The raw claim is available; these are not exporter refusals:
+
+| Reason | Meaning |
+| --- | --- |
+| `non-invariant-cell-contract` | The direct source adapter cannot consume a standalone cell record with unequal read/write meanings. |
+| `current-content-assertion` | An independent sidecar preserves a current-content predicate, but graph evidence cannot yet justify the required observation. |
+
+The [source-claim protocol](SOURCE-CLAIMS.md#current-content-assertions)
+specifies current-content representation; [the design](DESIGN.md#current-content-assertions)
+specifies its semantics and integration status.
+
+[Annotated-source tests](tests/annotated-source.js) check reason transport and
+classification; [viewer tests](tests/report-viewer.js) cover known, unknown, and
+absent reasons. [Source-claim export tests](tests/source-claim-export.js) check
+that observations survive conversion and report a consumer limit rather than
+being silently erased.

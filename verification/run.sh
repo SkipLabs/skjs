@@ -164,9 +164,28 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   if skjs_check "$NULL_EXIT" > "$WORK/null-exit.claims" 2> "$WORK/null-exit.err"; then
     echo "FAIL: SKJS unexpectedly accepts the null loop-exit witness"; exit 1
   fi
+  COMPOUND_STALE="verification/tests/skjs-unsound/compound-write-refinement.ts"
+  if ! { node verification/tools/parse-source.js "$COMPOUND_STALE" > "$WORK/compound-stale.ast" &&
+         skjs_check "$COMPOUND_STALE" > "$WORK/compound-stale.claims"; } 2> "$WORK/compound-stale.err"; then
+    echo "FAIL: compound stale-refinement fixture setup"; cat "$WORK/compound-stale.err"; exit 1
+  fi
   if ! run_test "Null predicates" node verification/tests/null-tests.js "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER" \
        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD" \
-       "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"; then exit 1; fi
+       "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT" \
+       "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"; then exit 1; fi
+  WRITE_REFINED="verification/tests/skjs-incomplete/write-refined-read.ts"
+  if ! node verification/tools/parse-source.js "$WRITE_REFINED" > "$WORK/write-refined.ast"; then exit 1; fi
+  if skjs_check "$WRITE_REFINED" > "$WORK/write-refined.claims" 2> "$WORK/write-refined.err"; then
+    write_status=0
+  else
+    write_status=$?
+  fi
+  if [ "$write_status" -ne 2 ]; then
+    echo "FAIL: expected SKJS type rejection for write-refined-read, got $write_status"; cat "$WORK/write-refined.err"; exit 1
+  fi
+  if ! run_test "Write observations and producer witnesses" node verification/tests/write-observations.js \
+       "$WORK/write-refined.ast" "$WORK/write-refined.claims" "$WRITE_REFINED" \
+       "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" "$VERIFIER"; then exit 1; fi
   LOOPS="verification/tests/stateful-source/loops.ts"
   if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
          skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then

@@ -23,6 +23,56 @@ try {
     const p=run(verifier,["--produce-source-claims",ap,out,file,ep,"10"]);assert.equal(p.status,0,p.stderr);
     const c=run(verifier,["--check-stateful-source",ap,claimsPath,file,ep]);assert.equal(c.status,0,c.stderr);
   });
+  test("current contents export separately from the storage invariant",()=>{
+    const raw=JSON.parse(fs.readFileSync(claimsPath));
+    const selected=raw.find(f=>f.file===file);
+    let changed;
+    for(const f of selected.functions) {
+      const expr=f.exprs.find(e=>e.type?.atoms?.length===1 && e.type.atoms[0].a==="record");
+      if(!expr)continue;
+      const field=expr.type.atoms[0].fields[0];
+      field.write={top:false,atoms:[{a:"boolean"}]};
+      field.read={top:false,atoms:[{a:"booleanlit",v:"true"}]};
+      changed={name:f.name,pos:expr.pos};break;
+    }
+    assert(changed,"fixture must contain a cell expression");
+    const cp=path.join(tmp,"current.raw.json"),op=path.join(tmp,"current.json");
+    fs.writeFileSync(cp,JSON.stringify(raw));
+    const r=convert(file,cp,op);assert.equal(r.status,0,r.stderr);
+    const d=JSON.parse(fs.readFileSync(op));
+    assert.equal(d.version,2);assert.equal(d.profile,"stateful-source-75-v2");
+    const point=d.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
+    assert.deepEqual(point.type,[9]);assert.deepEqual(point.current,[1]);
+    const omissions=JSON.parse(fs.readFileSync(op+".conversion.json")).omissions;
+    assert(!omissions.some(o=>o.function===changed.name&&JSON.stringify(o.site.pos)===JSON.stringify(changed.pos)));
+    const checked=run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
+    assert.notEqual(checked.status,0,"current contents must never be silently erased");
+    assert(checked.stderr.includes("current-content assertion requires heap-aware source evidence"),checked.stderr);
+    const {fromSourceClaims}=require("../tools/annotate-source.js");
+    const report=fromSourceClaims(fs.readFileSync(file,"utf8"),file,d,"candidate");
+    const shown=report.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
+    assert(shown.type.includes(" = (true)"));
+    assert.deepEqual(shown.raw,{type:[9],current:[1]});
+    const {verifySkjs}=require("../tools/annotate-source.js");
+    const result=verifySkjs(file,fs.readFileSync(file,"utf8"),d,file,report,verifier,10,true)
+      .results[report.functions.findIndex(f=>f.name===changed.name)];
+    assert.equal(result.stage,"source-extraction");
+    assert.equal(result.location.kind,"source-limitation");
+    assert.equal(result.location.reason,"current-content-assertion");
+    const check=()=>run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
+    point.current=[];fs.writeFileSync(op,JSON.stringify(d));
+    const empty=check();assert.notEqual(empty.status,0);
+    assert(empty.stderr.includes("current-content assertion requires heap-aware source evidence"),empty.stderr);
+    point.current=[9];fs.writeFileSync(op,JSON.stringify(d));
+    const invalid=check();assert.notEqual(invalid.status,0);
+    assert(invalid.stderr.includes("invalid source claims"),invalid.stderr);
+    delete point.current;fs.writeFileSync(op,JSON.stringify(d));
+    assert.notEqual(check().status,0,"version 2 requires explicit assertion fields");
+    point.current=[1];d.version=1;d.profile="stateful-source-75-v1";
+    fs.writeFileSync(op,JSON.stringify(d));
+    const legacy=check();assert.notEqual(legacy.status,0);
+    assert(legacy.stderr.includes("version 1 cannot carry current-content assertions"),legacy.stderr);
+  });
   test("existing output is not overwritten",()=>assert.notEqual(convert(file,claimsPath,out).status,0));
   const partial=path.join(tmp,"partial.json"),pa=path.join(tmp,"partial.ast.json");
   test("normal first-error snapshot converts without recovery",()=>{const r=convert(partialFile,partialPath,partial,["--diagnostics",diagnostics]);assert.equal(r.status,0,r.stderr);});

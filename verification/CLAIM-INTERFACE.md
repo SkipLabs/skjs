@@ -43,11 +43,10 @@ Conceptually the document contains:
 | Entry claims | Statement identity and a map from binding IDs to type references. |
 | Expression claims | Expression identity and its type reference. |
 
-The arbitrary-graph encoding remains to be implemented; the implemented
-`stateful-source-75-v1` sidecar fixes the graph and retains current name/position
-identities. It should use strict field and
-reference validation, including duplicate rejection, as the request consumer
-already does. Producer names and source-level display names are optional
+The arbitrary-graph encoding remains to be implemented. The
+[implemented sidecar](SOURCE-CLAIMS.md) fixes the graph and retains current
+name/position identities. It already validates fields and references strictly,
+including duplicate rejection; the proposal must preserve those checks. Producer names and source-level display names are optional
 provenance, never typing assumptions. An independently supplied graph does not
 expand the source adapter's supported language: every used source type and
 operation still needs a supported translation and its required checks.
@@ -57,7 +56,7 @@ operation still needs a supported translation and its required checks.
 The current in-memory interface is bounded by `SourceTypes.graph` (75 labels);
 it is not yet the arbitrary-graph document described above. Names and positions
 also retain the current source adapter's scope restrictions. It removes producer
-type JSON from claim consumption without prematurely freezing a sidecar format.
+type JSON from claim consumption through the implemented bounded sidecar format.
 Source annotations still use the current source AST type decoder.
 
 A candidate carries either a decoded calculus type or an explicit decoding

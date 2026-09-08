@@ -1,6 +1,8 @@
 # Positive types: reference constraints and checked normalization
 
-This specifies the maintained type representation and subtype rules. Lean
+This specifies the maintained type representation, state-assertion grammar and
+subtype rules. [State assertions](#state-assertion-grammar) extend point claims;
+they are separate from ordinary types and their normalization. Lean
 proves positive normalization preserves recursive type semantics, the declarative
 rules are sound, and the certificate checker is sound and complete for those
 rules. A first closed null/boolean source slice is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
@@ -81,6 +83,66 @@ model, `refs null [bool]` has a zero-budget witness but has no members at any
 positive budget. A nested analogue has a witness at budget one in a satisfying
 cyclic heap. These are checked examples, so replacing all such clauses by
 bottom would be an incorrect normalization.
+
+## State-assertion grammar
+
+Point claims can combine ordinary types with facts about the current execution
+state. The following notation describes the finite assertion layer; it does not
+add constructors to the ordinary type grammar above. Let $x$ name an environment
+slot, $A$ and $B$ be ordinary types, and $R$ be a finite literal set:
+
+$$
+\begin{aligned}
+a &::= \mathsf{null}\mid\mathsf{true}\mid\mathsf{false},\\
+R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
+J &::= \top\mid x:A\mid\operatorname{cell}(x,R)
+       \mid\operatorname{val}(x,R)\mid J\land J.
+\end{aligned}
+$$
+
+| Assertion | What it states |
+| --- | --- |
+| $x:A$ | The value in slot $x$ belongs to the ordinary type $A$, interpreted against the current world and budget. |
+| $\operatorname{cell}(x,R)$ | Slot $x$ holds a location whose current heap contents belong to $R$. It does not specify or change that location's storage invariant. |
+| $\operatorname{val}(x,R)$ | The immutable value in slot $x$ belongs to $R$. This is a snapshot fact, independent of subsequent heap mutation. |
+| $\top$, $J_1\land J_2$ | No requirement, or both requirements. Conjunction does not assert ownership or disjoint locations. |
+
+An empty literal set is an impossible content/value predicate, not an absent
+assertion. There is no general assertion disjunction, negation or quantifier in
+this finite grammar. The union within $R$ permits alternatives for one value;
+it does not express correlations between different slots. Numbers and predicates
+on nested references are not part of the implemented literal language.
+
+The notation requested for source claims is an abbreviation:
+
+$$
+x:\{\mathsf{value}:B=R\}
+\quad\equiv\quad
+x:\mathsf{ref}(B)\ \land\ \operatorname{cell}(x,R).
+$$
+
+Here $\mathsf{ref}(B)$ abbreviates the ordinary clause
+$\mathsf{refs}(B;)$, with no additional reference conjuncts. In displayed source
+claims, the right side of `=` uses type-like spelling for the finite predicate:
+`true` denotes $\{\mathsf{true}\}$ and `boolean` denotes
+$\{\mathsf{true},\mathsf{false}\}$. Thus `{ value: boolean = true }` combines
+`ref(boolean)` with a current-cell fact. It is neither `ref(true)` nor an
+ordinary type operand that can be inserted into arrows or recursive type bodies.
+Forgetting the cell assertion leaves `ref(boolean)` and loses information.
+
+The implementation stores these conjunctions as an ordinary context $\Gamma$
+plus `HeapKnowledge.Knowledge`: cell facts $\Delta$ and immutable-value facts $V$.
+The grammar is mathematical notation for those components, not a new JSON or
+TypeScript parser. `cell` corresponds to `HeapFacts.Holds`; `val` corresponds to
+`HeapKnowledge.ValueHolds`. A source expression assertion uses its evaluated
+result in place of $x$.
+
+[Semantics](SEMANTICS.md#current-content-assertions-and-postconditions) defines
+heap observations and their relationship to the world and satisfying heap.
+[Program typing](PROGRAM-TYPING.md#checked-expression-postconditions) owns the
+checked rules and fact transfer. [Source claims](SOURCE-CLAIMS.md#current-content-assertions)
+owns the wire encoding and its restrictions. Expression checking is proved;
+whole-source graph propagation of these facts remains integration work.
 
 ## Recursive normalization
 

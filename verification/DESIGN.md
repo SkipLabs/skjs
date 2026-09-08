@@ -10,18 +10,129 @@ certificate consumer, and a source adapter for parameterized null/boolean functi
 The extraction format may change to provide the program points, binding identities and exact
 types needed by the chosen calculus.
 
-This document records the architecture, established commitments, trust boundary
-and remaining work. Details live in:
+This document owns architecture, design decisions, trust boundaries, priorities,
+and integration status. The [documentation map](README.md#documentation-ownership)
+assigns mathematical rules, semantic definitions, wire formats, and user workflows
+to their detailed references. Link to those definitions rather than duplicating
+them here.
 
-| Document | Responsibility |
-| --- | --- |
-| [README](README.md) | Running the current pipeline and locating its implementation. |
-| [SEMANTICS](SEMANTICS.md) | Worlds, heap invariants, operational safety and recursive interpretation. |
-| [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type grammar, normalization, declarative subtype rules and their certificates. |
-| [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program rules, graph claims, slot maps, certificate production and mathematical statements. |
-| [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Structured failure metadata and the visualization handoff; diagnostic data is not proof evidence. |
-| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Versioned stateful requests, independent evidence checking and CLI usage. |
-| [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Proposed producer-independent source-claim interface and comment attachment rules; not yet implemented. |
+## Corpus-led priorities
+
+Prioritise known unsoundness over adding syntax for its own sake. Auditability wins over raw language
+coverage: a milestone should expose a witnessed bad claim or settle a concrete
+semantic obstacle. Operator integration is useful
+when it makes those witnesses reachable; it is not itself the next priority.
+
+The evidence source is branch `docs/type-soundness-corpus`, reviewed here at
+`bf20814b4c0bfc72305e9e58411e13da68f94bca`. Its
+[ledger](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/ledger.yaml)
+records statuses; the deep dives explain causes and the issue reports link runnable
+reproductions. The corpus models SKJS revision `bafdcf7c` (2026-08-05), so its
+verdicts must be rechecked against the binary used by this pipeline. It is a source
+of targets, not an assumption that the current checker still has every defect.
+The independent calculus need not reproduce or prove SKJS's inference machinery.
+
+### Immediate targets with the existing stateful foundation
+
+Issues #597/#598/#599 and deep dives F/H are the first group to cover systematically.
+The existing captured-write example and the direct-write compound example cover
+instances of this known mutation/refinement family; they are not new bug discoveries.
+Two further targets offer more value now than another unrelated expression form:
+
+| Next target | What the verifier should expose | Work and boundary |
+| --- | --- | --- |
+| **1. Both directions of alias writes — `L-MUT-ALIAS`, deep dive H.** [Corpus report](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/narrowed-alias-stale-write.md). | A narrow alias cannot promise Boolean contents while another alias may legally write null; conversely, writing through a wide alias cannot preserve the original view's non-null read fact. | Reduce to locally allocated `{ value: null \| boolean }` cells and explicit aliases. The calculus already has shared locations and invariant references. Expect an unjustified alias contract in the first direction and a stale read in the reverse direction; pin the actual failing obligation. Do not introduce covariant mutable views to accept the original export. |
+| **2. A closure reads under its creation-time narrowing — `L-STALE-READ`, deep dive F.** [Corpus report](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/stale-closure-reads-narrowing.md). | A reader created while a cell is non-null cannot promise a Boolean result after another write stores null. This differs from a callback that writes and leaves the caller's refinement stale. | Use the report's field-level variant, a local primitive cell and a unary null-argument reader. No mutable lexical binding or external object parameter is needed. Exercise the arrow guarantee over every admissible future heap: a creation-time observation is not a permanent captured invariant. |
+
+Boolean/null reductions of these three programs (both alias directions and the
+captured reader), and of the loop target below, were checked on 2026-09-08 with
+the current SKJS binary. All four were accepted in normal collection mode, had
+no unavailable named binding or expression types needed by the reductions, and
+returned null at a declared Boolean result (using true as the seed where needed).
+Unused `this` exports were excluded from that claim-availability check. These
+probes confirm known failures survive the reduction; they do not establish that
+the current verifier already reaches a semantic rejection of the raw claims.
+In particular, refined cell read/write pairs still encounter the invariant-profile
+boundary. Preserve the original export and label any weakened candidate separately.
+
+For both targets add a positive counterpart: two aliases retaining the same
+invariant contract, and a reader that either returns a saved immutable snapshot or
+checks for null at invocation. This guards against obtaining negative coverage
+merely by refusing all useful programs involving cells or closures.
+
+### Next fragment extension: mutable locals, aimed at a known loop failure
+
+**3. `L-LOOP-CARRIED`, deep dive F**, is the next substantial source extension.
+The [corpus witness](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/loop-carried-narrowing-stale.md)
+and the older design's reduced example need no numbers, strings, general calls or
+new loop construct after reduction:
+
+```ts
+function loopCarried(): boolean {
+  let value: null | boolean = true;
+  let second: boolean = false;
+  if (value !== null) {
+    while (true) {
+      const saved: boolean = value;
+      if (second) { return saved; }
+      value = null;
+      second = true;
+    }
+  }
+  return false;
+}
+```
+
+SKJS accepts this reduction and it returns null on the second iteration. The
+missing feature is initialized mutable lexical bindings and assignment; loops,
+back edges, primitive claims and local allocation already exist. The target is a
+failed loop-head/back-edge obligation or the stale read it justifies, not an
+unsupported-`let` error. A counterpart that checks the value inside the loop must
+verify, with supplied invariants on every incoming edge and no fixed-point inference.
+
+Before implementing `let`, specify binding identity, storage and initialization
+once, including capture. The existing stable heap contracts provide a cell-based foundation. A captured variable must denote a
+shared location, not the value it held when the closure was created. If uncaptured
+locals use graph slots instead, treat that as a deliberate lowering choice with
+explicit restrictions and a capture story, not an implicit representation change
+when a lambda happens to appear. Explain how point claims about current values
+relate to stable storage contracts, and which observations an assignment or call
+invalidates. Do not confuse discarding stale refinements with preserving the
+storage guarantees of every live alias. Keep shadowing and uninitialized bindings
+gated until their identities and initialization obligations are supported.
+
+**4. Captured mutable locals — #599, `L-STALE-READ` and `L-CAPT-EVOLVE`.** After
+that storage decision, port the whole-local variants and
+[the evolving-binding witness](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/evolving-capture-unchecked.md).
+Test both a captured writer invalidating the caller and a captured reader whose
+creation-time narrowing expires. Start with explicitly annotated primitive
+bindings. An evolving `let x = null` needs a supplied storage contract covering
+later writes; its initial value claim alone is not that contract. Add such producer
+information or make its absence explicit, rather than inferring a lifetime union
+or treating the initializer as a permanent invariant.
+
+### Valuable later targets and the traps they introduce
+
+| Target | Why keep it on the list | Why it follows the mutation targets |
+| --- | --- | --- |
+| **Incomparable function signatures are not disjoint — `L-INTER-BOT`.** [Witness](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/tfun-inter-incomparable-not-disjoint.md). | Directly exercises the positive calculus's function intersections. Begin with a calculus witness: one checked constant-null closure inhabits both a null-domain arrow and a Boolean-domain arrow. | Source integration needs richer callable claims and a sound identity/comparison story to reproduce the equality branch. Extensional arrow membership does not establish JavaScript function identity. Do not add intersection completeness or unrestricted arrow-result merging as a prerequisite. |
+| **Numeric false disjointness — `L-LIT`, deep dive G.** [Witness family](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/beyond-precision-numeric-literals.md). | Distinct decimal spellings can denote the same binary64 value, making a claimed unreachable branch live. It tests runtime grounding independently of mutation. | The current calculus does not model numbers; the historical numeric success is not present coverage. Ground literal conversion, equality, signed zero and underflow first. Do not interpret decimal spellings as distinct mathematical integers. General truthiness and arithmetic are separate additions. |
+| **Callability/absence, getters and void.** `F-CABSENT`, `ACCESSOR-METHOD`, `L-SEQ`. | The corpus has concrete reachable-never and non-callable-call witnesses. | They require object-shape guarantees, accessor execution, or an explicit distinction between void as a typing convention and undefined as a value. Preserve the external-object boundary; do not trust structural declarations or treat void as a disjoint runtime tag. |
+| **Inference-state and expansion failures.** `MR-1`, `C-FREEZE-CACHE`, `L-SUB-TSINST`, `E-EXPKEY`. | Wrong inferred types remain valid verifier targets even when their cause is a cache or substitution bug. | Select a concrete escaping wrong claim whose ground types fit the calculus. This pipeline should check that consequence, not model SKJS caches, rollback or its entire generic inference algorithm. Universal generic certification needs separate rules; checking one ground instance does not supply it. |
+
+### Completion criteria for every corpus target
+
+Record the existing issue/ledger identity, corpus revision and reduced program.
+Recheck SKJS acceptance and execute the reduction to establish the contradicting
+value or stuck operation. Inspect the actual normal-mode export before extending
+syntax; do not depend on `--keep-going`. Distinguish an unsupported type or missing
+claim from failure of an actual typing/edge obligation. If a manual candidate is
+needed, preserve the original, state every repair, and retain the false claim the
+experiment is intended to challenge. Include an independently checked positive
+counterpart and pin the expected negative obligation. New syntax or rules should
+be justified by the next named target and reuse the existing semantic contracts
+where possible. The corpus is also a regression source: a new spelling of #598
+is useful coverage, but must not be counted as a newly discovered unsoundness.
 
 ## Chosen architecture
 
@@ -64,7 +175,7 @@ as calculus type labels or explicit decoding failures. `SkjsSourceClaims` is an
 adapter into that interface. Source annotations remain separate requirements.
 Direct callers use `extractNormalizedFn`; used labels are bounds checked against
 the current fixed source graph. The strict
-[`stateful-source-75-v1` sidecar](SOURCE-CLAIMS.md) now exposes the same boundary
+[independent source sidecar](SOURCE-CLAIMS.md) now exposes the same boundary
 through the CLI, with source identity, site and label validation. Both input
 paths reconstruct requests for the same proved evidence consumer. Arbitrary
 graph documents and TypeScript comment input remain future steps of
@@ -354,6 +465,18 @@ only an explicit single `value` data property, with no getters, setters, spreads
 or computed keys. Cell parameters remain rejected: an external object needs
 a separate plain-data boundary that its structural annotation cannot establish.
 
+Object branches are exported faithfully as separate atoms in the existing union
+format. [CellUnion.lean](lean/Verification/ExperimentState/CellUnion.lean) validates
+all record arms before allowing a redundant arm to be absorbed by an **existing
+invariant arm**. No malformed arm or unsupported field type is dropped.
+
+Absorption widens the read requirement only at an unchanged storage invariant;
+all surviving arms must be invariant contracts. The exact schema law and its
+scope are in [Source claims](SOURCE-CLAIMS.md#record-alternative-absorption).
+It does not give mutable observations a lifetime guarantee or prove equivalence
+with SKJS's internal object semantics. Standalone observations follow the
+[current-content integration plan](#current-content-assertions).
+
 Fresh object literals carry synthetic indexes and inference-variable field
 bounds internally. Export records the former and reads the latter from the
 function's substitution snapshot, without changing inference. Only isolated,
@@ -458,6 +581,93 @@ field may make SKJS export unequal read/write types in an arm. Those claims are
 still rejected by the invariant-cell decoder; immutable-slot refinement does
 not establish retained heap refinements. Loops in top-level function bodies now
 use the graph translation described below; closure loops remain unconnected.
+
+### Current-content assertions
+
+The design keeps persistent storage contracts and current heap facts separate.
+`{ value: boolean = true }` records a Boolean storage invariant and currently true
+contents. Observations are duplicable facts, not ownership permissions; they
+neither narrow the world's invariant nor confer write authority.
+[Semantics](SEMANTICS.md#current-content-assertions-and-postconditions) defines their
+meaning, including heap satisfaction and the budget-zero boundary.
+[Program typing](PROGRAM-TYPING.md#current-content-rules-semantic-layer) gives the
+proved operation rules, entailment check and mathematical statements.
+
+**Implemented:** semantic read/write/allocation/composition rules, a finite
+slot-based heap/value-fact entailment check, sound finite expression-evidence
+checking with effect postconditions, and
+[version-2 sidecar export](SOURCE-CLAIMS.md#current-content-assertions). Required
+observations still fail explicitly in source consumption: graph typing and
+certificate propagation do not yet carry heap facts. The
+[write-then-read witness](tests/skjs-incomplete/README.md) has a model-level proof,
+not an accepted source certificate. Conversion preserves SKJS's actual claims;
+it does not substitute verifier-derived precision.
+
+The remaining graph integration must keep ordinary value types and an additional
+heap-fact context separate. Expression postconditions must reach continuations,
+and every incoming edge must justify the supplied facts under its slot mapping,
+including loop back edges. Start conservatively: writes discard old facts and
+establish the written contents; ordinary calls discard heap observations. Reads
+and allocation preserve facts as justified by their semantic rules.
+
+Three constraints govern later precision improvements. Possible aliases cannot
+be framed merely because their variable names differ. An immutable snapshot
+survives mutation, but its former equality with a cell's contents does not. A
+lambda cannot inherit a creation-time observation as a guarantee for every future
+invocation. Selective retention needs proved noninterference or postconditions.
+Receiver and right-hand-side effects must precede a write's new fact; getters and
+concurrent interference remain outside the plain-data model.
+
+#### Committed integration milestone
+
+This is the next integration priority, before extending unrelated source features.
+The completion target is the original, unedited exports for `staleCapturedCell`,
+`staleCompound` and `staleFlip`, together with positive write/read and snapshot
+controls. Additional standalone semantic proofs or a renamed limitation message
+do not complete this milestone.
+
+The current diagnostic has three concrete causes: `SkjsSourceClaims.translate`
+still uses the ordinary-type decoder at program points; `SourceClaimJson.pointCandidate`
+explicitly rejects a non-null `current`; and `ControlFlow.checkNode` checks ordinary
+expression evidence without heap postconditions. Supporting export and expression
+proofs have not removed any of these source-consumption barriers.
+
+Implement and validate the following sequence:
+
+1. **Graph evidence and soundness.** Extend the maintained graph certificate and
+   state invariant with separate cell/value facts and checked expression
+   postconditions. Use `HeapExpressionRules.checkStep`; check fact entailment on
+   every executable edge and slot mapping, including entry and loop back edges.
+   Supplied input facts must be justified, never simply assumed. Preserve the
+   ordinary type-checking obligations and the graph safety theorem.
+2. **Guards and effects.** Connect a tested read to its cell while that relation
+   remains valid, so true/false and compound/negated guards justify branch-entry
+   observations. Invalidate heap facts and read-to-cell relations across writes
+   and unknown calls; establish new contents after a checked write. Preserve
+   immutable snapshots and pure administrative copies. A closure body must not
+   inherit an observation from its creation point. Check direct writes, aliases,
+   captured writers and effects during condition evaluation.
+3. **Source consumption and evidence production.** Represent point candidates as
+   ordinary types plus required observations, bind both to their source origins,
+   and connect raw SKJS `translatePoint` and version-2 sidecars to the same graph
+   consumer. Generate evidence through the existing source-guided producer;
+   check all incoming edges against supplied merge/loop assertions rather than
+   infer loop invariants. Keep ordinary function signatures on the ordinary-type
+   path. Remove the two point-claim gates only when their observations are checked.
+4. **End-to-end diagnostics and regression tests.** The three original exports
+   must reach checked obligations without weakening their claims. A stale
+   post-write/call assertion must produce a located, unproved obligation rather
+   than `non-invariant cell contract` or another unsupported-observation gate.
+   The safe `writeRefinedRead` function must verify with a documented repaired
+   candidate where SKJS omitted or supplied an inadequate claim; existing
+   immutable-snapshot controls must remain verified. Pin the obligation's source
+   association and test both raw-export and independent-sidecar routes. Run
+   `lake build` and `make verify`, and update source-support status only on success.
+
+A failed proof search remains an unproved obligation, not a semantic disproof.
+Runtime witnesses independently establish the three unsoundness examples. If a
+new blocker prevents this milestone, document the concrete missing rule or
+counterexample instead of treating another preparatory layer as completion.
 
 ### Source while loops: supplied head claims and checked back edges
 
@@ -598,9 +808,8 @@ that guarantee. `make verify` remains the experiment's source-facing command.
 The source graph contains all 64 unary arrows between subsets of null, true and
 false. `FunctionClaims.translate_exact` proves the selected arrow's domain and
 codomain interpretations. Existing application and lambda rules discharge their
-obligations; no operational constructor or semantic axiom was added. The source
-profile is `stateful-source-75-v1` (three primitives, eight cell contracts and
-64 arrow contracts).
+obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the fixed label table and
+profile version.
 
 Source-mode search uses labels in the function's request and required-expression
 sequents, plus primitive labels. Vocabulary construction includes their operand
@@ -609,15 +818,10 @@ a completeness claim. Enumerating every unused arrow at each subtype query was
 already expensive in this small table; expanding a fixed profile must not silently
 expand every local search problem.
 
-[The captured-refinement counterexample](tests/skjs-unsound/captured-refinement.ts)
-is accepted by SKJS but returns false on input true despite declaring a true
-result. Its original refined reference export is rejected at the invariant-cell
-boundary (read true versus write boolean). A separate manual-candidate experiment
-forgets those reference read refinements while preserving expression claims; the
-consumer then rejects the stale singleton read at its exact source span. These
-are distinct findings, not a claim that arbitrary reference refinements are
-supported. The stable-snapshot counterpart verifies using immutable local
-refinement, even though the callback mutates the captured cell.
+The [captured-refinement fixture](tests/skjs-unsound/README.md) pairs a known stale
+read with a verified immutable snapshot. It distinguishes the raw contract boundary
+from a failed obligation after explicit candidate edits; neither an unsupported
+contract nor failed search alone is the runtime counterexample.
 
 ### Negated Boolean conditions
 
@@ -706,3 +910,16 @@ null refinement; reads and calls confer no retained alias. Both operand claims
 remain required. Undefined remains outside the source profile. Examples use
 named cell/callback fallback contracts because the current exporter can leave
 compound inferred alternatives unsupported; the consumer does not approximate them.
+
+Boolean short-circuit operators reuse the existing conditional rules and source
+proof builder. Statement guards use checked graph paths and retain the complete
+condition claim as a separate obligation; no condition type is discarded by
+lowering. This extends syntax without changing refinement semantics or adding
+truthiness. See [derived forms](PROGRAM-TYPING.md#derived-source-forms),
+[AST encoding](REQUEST-PROTOCOL.md#expression-closures-and-calls), and the
+[regression index](tests/README.md) for their respective details.
+
+The [compound-write witness](tests/skjs-unsound/README.md) connects that syntax
+to known issue #598. Its runtime counterexample, original interpretation limit,
+and explicitly edited diagnostic candidate are documented with the fixture;
+a boundary rejection is not evidence of unsoundness.

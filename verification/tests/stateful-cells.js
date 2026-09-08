@@ -30,6 +30,29 @@ try {
   expect("produce cell source certificates",run("--produce-stateful-source",ast,claims),true);
   const evidence=JSON.parse(fs.readFileSync(path.join(tmp,"evidence"),"utf8"));
   expect("independent cell consumer",run("--check-stateful-source",ast,claims,evidence),true);
+  // The exporter retains every alternative; only an existing invariant arm
+  // may absorb another arm with stronger read/write requirements.
+  for (const reverse of [false,true]) {
+    const c=clone(claims),e=source(ast,"aliasWrite").body[0].init;
+    const t=at(c,"aliasWrite",e).type,narrow=clone(t.atoms[0]);
+    narrow.fields[0].read=lit("true");
+    t.atoms=reverse?[narrow,...t.atoms]:[...t.atoms,narrow];
+    expect(`redundant read/write union, reverse=${reverse}`,run("--produce-stateful-source",ast,c),true);
+    expect(`same checked certificate after exact absorption, reverse=${reverse}`,run("--check-stateful-source",ast,c,evidence),true);
+  }
+  for (const [name,edit] of [
+    ["read variance cannot be reversed",a=>{a.fields[0].read={top:false,atoms:[{a:"boolean"},{a:"null"}]};}],
+    ["write variance cannot be reversed",a=>{a.fields[0].write=lit("true");}],
+    ["unsupported primitive arm cannot be erased",a=>{a.fields[0].read={top:false,atoms:[{a:"string"}]};}],
+    ["optional field cannot be erased",a=>{a.fields[0].optional=true;}],
+    ["real index cannot be erased",a=>{a.indexes.string="present";}],
+    ["callable requirement cannot be erased",a=>{a.call="present";}],
+  ]) {
+    const c=clone(claims),t=at(c,"aliasWrite",source(ast,"aliasWrite").body[0].init).type;
+    const arm=clone(t.atoms[0]);edit(arm);t.atoms.push(arm);
+    expect(name,run("--produce-stateful-source",ast,c),false);
+    expect(`${name} (consumer)`,run("--check-stateful-source",ast,c,evidence),false);
+  }
   const cases=[
     ["cell parameter boundary",(a,c)=>{const t=source(a,"aliasWrite").body[0].annot;source(a,"aliasWrite").params[0].type=clone(t);fun(c,"aliasWrite").params[0].type=clone(t);}],
     ["initializer subexpression claim",(a,c)=>{at(c,"aliasWrite",source(a,"aliasWrite").body[0].init.e).type=lit("true");}],

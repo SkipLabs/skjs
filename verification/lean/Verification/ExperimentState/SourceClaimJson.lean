@@ -9,6 +9,7 @@ open Lean ProgramTyping RequestJson SourceExtraction
 structure Binding where
   name : String
   type : List Nat
+  current : Option (List Nat) := none
   deriving ToJson, FromJson
 structure Entry where
   start : Nat
@@ -17,6 +18,7 @@ structure Entry where
 structure Expression where
   pos : Span
   type : List Nat
+  current : Option (List Nat) := none
   deriving ToJson, FromJson
 structure Function where
   name : String
@@ -34,26 +36,66 @@ structure Document where
   functions : List Function
   deriving ToJson, FromJson
 
+/-- A current-content assertion cannot be turned into an ordinary value type.
+Until the graph evidence carries heap facts, required observations fail closed.
+The export retains the assertion so a consumer can check it without re-extraction. -/
+private def pointCandidate (A : List Nat) (current : Option (List Nat)) : SourceClaims.Candidate :=
+  match current with
+  | none => .ok A
+  | some _ => .error "current-content assertion requires heap-aware source evidence"
+
 def Function.normalized (f : Function) : SourceClaims.Function :=
-  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,.ok b.type)),.ok f.result,
-    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,.ok b.type)))),
-    f.expressions.map (fun e => (e.pos,.ok e.type))⟩
+  ⟨f.name,f.namePos,f.params.map (fun b => (b.name,pointCandidate b.type b.current)),.ok f.result,
+    f.entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,pointCandidate b.type b.current)))),
+    f.expressions.map (fun e => (e.pos,pointCandidate e.type e.current))⟩
 
 private def validType (A : List Nat) : Bool :=
   validTy SourceTypes.types.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
+private def validCurrent (A : List Nat) (current : Option (List Nat)) : Bool :=
+  match current with
+  | none => true
+  | some R =>
+    (match A with | [r] => 3 ≤ r && r < 11 | _ => false) &&
+      validType R && R.all (· < 3)
 private def validBindings (bs : List Binding) : Bool :=
-  (bs.map (·.name)).eraseDups.length == bs.length && bs.all (fun b => !b.name.isEmpty && validType b.type)
+  (bs.map (·.name)).eraseDups.length == bs.length && bs.all (fun b => !b.name.isEmpty && validType b.type && validCurrent b.type b.current)
 private def validSpan (p : Span) : Bool := p.1 < p.2
 private def validFunction (f : Function) : Bool :=
-  !f.name.isEmpty && validSpan f.namePos && validBindings f.params && validType f.result &&
+  !f.name.isEmpty && validSpan f.namePos && validBindings f.params && f.params.all (fun b => b.current.isNone) && validType f.result &&
   (f.entries.map (·.start)).eraseDups.length == f.entries.length &&
   (f.expressions.map (·.pos)).eraseDups.length == f.expressions.length &&
   f.entries.all (fun e => validBindings e.bindings) &&
-  f.expressions.all (fun e => validSpan e.pos && validType e.type)
+  f.expressions.all (fun e => validSpan e.pos && validType e.type && validCurrent e.type e.current)
 
 def decode (j : Json) : Except String Document := do
+  -- Version 1 has no assertion fields. Decode it strictly in its own shape by
+  -- adding only the known absent fields before the version-2 structural check.
+  let legacy := (← (← jField j "version").getNat?) == 1
+  let j ← if legacy then do
+      if (← jStr (← jField j "profile")) != "stateful-source-75-v1" then
+        throw "unsupported source-claim profile or version"
+      let addCurrent := fun (x : Json) => do
+        let o ← x.getObj?
+        if (o.toList.any (fun p => p.1 == "current")) then throw "version 1 cannot carry current-content assertions"
+        pure (Json.mkObj (o.toList ++ [("current",Json.null)]))
+      let mut root := (← j.getObj?).toList
+      let functions ← (← jArr j "functions").mapM fun f => do
+        let params ← (← jArr f "params").mapM addCurrent
+        let expressions ← (← jArr f "expressions").mapM addCurrent
+        let entries ← (← jArr f "entries").mapM fun e => do
+          let bindings ← (← jArr e "bindings").mapM addCurrent
+          return Json.mkObj ((← e.getObj?).toList.map fun (k,v) =>
+            (k,if k == "bindings" then toJson bindings else v))
+        return Json.mkObj ((← f.getObj?).toList.map fun (k,v) =>
+          (k,if k == "params" then toJson params else if k == "expressions" then toJson expressions
+             else if k == "entries" then toJson entries else v))
+      root := root.map fun (k,v) => (k,if k == "functions" then toJson functions else v)
+      pure (Json.mkObj root)
+    else pure j
   let d : Document ← decodeStrict j
-  if d.version != 1 || d.profile != "stateful-source-75-v1" then throw "unsupported source-claim profile or version"
+  if !(d.version == 1 && d.profile == "stateful-source-75-v1") &&
+      !(d.version == 2 && d.profile == "stateful-source-75-v2") then
+    throw "unsupported source-claim profile or version"
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"
   if !d.functions.all validFunction then throw "invalid source claims: duplicate identity, span, binding or type labels"
@@ -66,7 +108,7 @@ private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private def exprSites : SourceInput.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
   | .not p e | .alloc p e | .read p e | .lam p _ _ _ e => joinSites ([],[p]) (exprSites e)
-  | .write p a b | .app p a b | .nullTest p _ _ a b | .coalesce p a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .write p a b | .app p a b | .nullTest p _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
   | .done _ => ([],[])
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[]) (joinSites (exprSites a) (exprSites b))

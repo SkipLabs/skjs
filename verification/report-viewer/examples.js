@@ -24,11 +24,15 @@ const groups = [
       "verification/tests/skjs-incomplete/negated-loop-exit.ts",
       "verification/tests/skjs-incomplete/singleton-negation.ts",
       "verification/tests/skjs-incomplete/null-loop-exit.ts",
+      "verification/tests/skjs-incomplete/write-refined-read.ts",
     ],
   },
   {
     label: "SKJS unsound · unsafe programs accepted",
-    files: ["verification/tests/skjs-unsound/captured-refinement.ts"],
+    files: [
+      "verification/tests/skjs-unsound/captured-refinement.ts",
+      "verification/tests/skjs-unsound/compound-write-refinement.ts",
+    ],
   },
   {
     label: "Unsupported examples · expected limitations",

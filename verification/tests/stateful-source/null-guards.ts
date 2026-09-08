@@ -231,3 +231,119 @@ function coalesceAlias(value: null | boolean): null | boolean {
 function coalesceNested(left: null | boolean, right: null | boolean): boolean {
   return left ?? right ?? false;
 }
+
+/** The right operand uses the non-null refinement established by the left. */
+function logicalNullAnd(value: null | boolean): boolean {
+  return value !== null && value;
+}
+
+/** The right operand of OR runs on the failed null test, where value is Boolean. */
+function logicalNullOr(value: null | boolean): boolean {
+  return value === null || value;
+}
+
+/** Short-circuiting prevents a read through a null local reference. */
+function logicalCell(present: boolean, value: boolean): boolean {
+  const cell: null | { value: boolean } = present ? { value: value } : null;
+  return cell !== null && cell.value;
+}
+
+/** A captured guard keeps its null refinement inside a checked closure. */
+function logicalClosure(value: null | boolean): boolean {
+  const choose: (unit: null) => boolean = (unit: null): boolean =>
+    value !== null && !value;
+  return choose(null);
+}
+
+/** AND must skip the write when its left operand is false. */
+function logicalAndWrite(value: boolean): boolean {
+  const cell: { value: boolean } = { value: false };
+  const result: boolean = value && (cell.value = true);
+  return cell.value;
+}
+
+/** OR must skip the write when its left operand is true. */
+function logicalOrWrite(value: boolean): boolean {
+  const cell: { value: boolean } = { value: false };
+  const result: boolean = value || (cell.value = true);
+  return cell.value;
+}
+
+/** The left-hand call must run once, even when the right operand runs too. */
+function logicalOnce(value: boolean): boolean {
+  const cell: { value: boolean } = { value: value };
+  const flip: (unit: null) => boolean = (unit: null): boolean => {
+    cell.value = !cell.value;
+    return cell.value;
+  };
+  return flip(null) || cell.value;
+}
+
+/** Nested short-circuit expressions retain their separate claims and scopes. */
+function logicalNested(left: boolean, right: boolean): boolean {
+  return (left && right) || !left;
+}
+
+/** Both conjuncts hold on entry to the statement body. */
+function compoundIf(value: null | boolean, flag: boolean): boolean {
+  if (value !== null && flag) {
+    return value;
+  }
+  return false;
+}
+
+/** A failed disjunction establishes that both operands failed. */
+function compoundOr(value: null | boolean, flag: boolean): boolean {
+  if (value === null || flag) {
+    return false;
+  }
+  return value;
+}
+
+/** Negating the whole guard swaps its successors, not its evaluation order. */
+function negatedCompound(value: null | boolean, flag: boolean): boolean {
+  if (!(value === null || flag)) {
+    return value;
+  }
+  return false;
+}
+
+/** A guard in the right operand also supplies the body-entry refinement. */
+function rightCompound(value: null | boolean, flag: boolean): boolean {
+  if (flag && value !== null) {
+    return value;
+  }
+  return false;
+}
+
+/** The loop body receives the non-null fact established by its compound head. */
+function compoundLoop(value: null | boolean, flag: boolean): boolean {
+  while (value !== null && flag) {
+    return value;
+  }
+  return false;
+}
+
+/** A call reads the current cell on every back edge, without a retained property fact. */
+function compoundContinue(value: null | boolean): boolean {
+  const cell: { value: boolean } = { value: true };
+  const again: (unit: null) => boolean = (unit: null): boolean => cell.value;
+  while (value !== null && again(null)) {
+    cell.value = false;
+    continue;
+  }
+  return cell.value;
+}
+
+/** An effectful left operand runs once before the right-hand null guard. */
+function compoundEffect(value: null | boolean, flag: boolean): boolean {
+  const cell: { value: boolean } = { value: flag };
+  const flip: (unit: null) => boolean = (unit: null): boolean => {
+    cell.value = !cell.value;
+    return cell.value;
+  };
+  if (flip(null) && value !== null) {
+    return value;
+  }
+  return cell.value;
+}

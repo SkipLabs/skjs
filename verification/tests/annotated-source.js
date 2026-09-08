@@ -40,6 +40,30 @@ try {
     b.functions[0].entries[0].bindings=[{type:"null",name:"z"},{type:"boolean",name:"x"}];
     assert.deepEqual(compareClaims(source,a,b).changes,[]);
   });
+  test("unavailable reasons identify claims, ignore stale metadata, and preserve unknown codes",()=>{
+    const raw=[{file:"test.ts",functions:[{name:"f",namePos:[ns,ns+1],
+      params:[{name:"x",type:{unsupported:true}}],retType:{unsupported:true},
+      envs:[{pos:[es-7,es+2],vars:[{name:"x",type:{unsupported:true}},{name:"y",type:{unsupported:true}}]}],
+      exprs:[{pos:[es,es+1],type:{unsupported:true}}],
+      unavailableTypes:[
+        {kind:"parameter",binding:"x",reason:"unexpanded-type"},
+        {kind:"result",reason:"unsupported-type"},
+        {kind:"entry",pos:[es-7,es+2],binding:"x",reason:"multi-branch-object"},
+        {kind:"entry",pos:[es-7,es+2],binding:"y",reason:"future-reason"},
+        {kind:"expression",pos:[es,es+1],reason:"fuel-exhausted"}]}]}];
+    const get=()=>fromSkjs(source,"test.ts",raw,"skjs").functions[0].unavailableTypes;
+    assert.equal(get().length,5);
+    assert.equal(get()[3].reason,"future-reason");
+    const f=raw[0].functions[0];
+    f.envs[0].vars[0].type={top:false,atoms:[{a:"boolean"}]};
+    assert(!get().some(d=>d.kind==="entry"&&d.binding==="x"));
+    f.unavailableTypes.push({...f.unavailableTypes[3],reason:"conflicting-reason"});
+    assert(!get().some(d=>d.kind==="entry"&&d.binding==="y"));
+    f.unavailableTypes.push(null,{kind:"expression",pos:null,reason:"bad"});
+    assert.equal(get().length,3);
+    delete f.unavailableTypes;
+    assert.deepEqual(get(),[]);
+  });
   const script=path.resolve(__dirname,"../tools/annotate-source.js");
   const generic=path.join(tmp,"generic.ts"), gp=path.join(tmp,"generic.json"), go=path.join(tmp,"generic.annotated.ts");
   fs.writeFileSync(generic,source);fs.writeFileSync(gp,JSON.stringify(report));

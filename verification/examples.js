@@ -48,11 +48,15 @@ const incompleteInput = new Set([
 function outcome(result) {
   if (!result) return ["?", "no producer claim"];
   if (result.status === "verified") return ["✓", "verified"];
+  if (result.location?.reason === "non-invariant-cell-contract")
+    return ["?", "non-invariant cell contract"];
   if (
     result.status === "unsupported" ||
     result.location?.kind === "source-limitation"
   )
     return ["?", "unsupported source"];
+  if (result.location?.kind === "unavailable-type-claim")
+    return ["?", "required type unavailable"];
   if (incompleteInput.has(result.location?.kind))
     return ["?", "required claim missing"];
   return ["✗", "proof search failed"];

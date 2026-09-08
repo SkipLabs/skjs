@@ -8,7 +8,6 @@ assume SKJS or proof search is sound.
 There is one maintained calculus and verifier. Its implementation lives in
 `lean/Verification/ExperimentState/` (the directory name is historical).
 [DESIGN.md](DESIGN.md) describes the architecture and trust boundary.
-The [handoff note](HANDOFF.md) records the consolidation checkpoint and deferred items.
 
 ## Run
 
@@ -98,6 +97,12 @@ require expression claims. Only the selected arm executes; conditions may have
 effects. The null-guard examples dynamically select nullable cells and callbacks
 and then read or call them after a guard.
 
+Short-circuit `a && b` and `a || b` require Boolean left operands, evaluate the
+right only when selected, and preserve all operand/result claim obligations.
+Immutable Boolean/null guards can refine the right operand and statement
+successors. This adds neither general JavaScript truthiness nor retained property
+facts; [Program typing](PROGRAM-TYPING.md#derived-source-forms) gives the rules.
+
 Null coalescing (`a ?? b`) evaluates and saves `a` once, selecting `b` only for
 null. In particular, false is preserved. It works with supported primitive, cell
 and function unions, inside closures too. An immutable variable on the left is
@@ -147,24 +152,48 @@ requires trust in source parsing, extraction, the semantic definitions and Lean'
 execution infrastructure. Source extraction is reviewed, not proved equivalent
 to JavaScript. Accepted functions do not certify every unused displayed claim.
 
-## Code and proof guides
+## Documentation ownership
 
-| Location | Responsibility |
-|---|---|
-| [SourceEncoding.lean](lean/Verification/ExperimentState/SourceEncoding.lean) | Primitive wire data and JSON helpers; accepted encodings have exact-translation lemmas. |
-| [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean) | Decoded source AST and claims. |
-| [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean) | Compile source into graph nodes, point claims and closure obligations. |
-| [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) | Produce and independently check exact requests and evidence. |
-| [SEMANTICS.md](SEMANTICS.md) | Values, execution, worlds and safety. |
-| [POSITIVE-TYPES.md](POSITIVE-TYPES.md) | Type normalization, declarative rules and certificates. |
-| [PROGRAM-TYPING.md](PROGRAM-TYPING.md) | Program typing rules and soundness. |
-| [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) | Graph and source verification commands. |
-| [SOURCE-CLAIMS.md](SOURCE-CLAIMS.md) | Producer-independent editable source claims and export. |
-| [tests/README.md](tests/README.md) | Current regression coverage and explicit boundaries. |
+Each document owns one layer. Keep definitions and detailed examples in that
+owner; other documents link to them and give only the context their readers need.
+
+| Document | Owns |
+| --- | --- |
+| This README | Commands, a concise supported-fragment overview, and navigation. |
+| [DESIGN](DESIGN.md) | Architecture, trust boundary, decisions, corpus-led priorities and integration status. |
+| [SEMANTICS](SEMANTICS.md) | Values, execution, worlds, heap satisfaction, membership and safety predicates. |
+| [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
+| [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. Semantic rules awaiting integration are marked separately. |
+| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Calculus request/evidence JSON, verifier CLI, and SKJS source AST/export encoding. |
+| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | Implemented independent sidecar schemas, conversion, source identity and repair workflow. |
+| [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Explicitly unimplemented arbitrary-graph and comment-input proposals; links to implemented subsets. |
+| [ANNOTATED-SOURCE](ANNOTATED-SOURCE.md) | Report output, manifest, annotations, provenance and freshness. |
+| [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source locations, outcome classification and reason vocabulary. |
+| [Viewer README](report-viewer/README.md) | Viewer/editor UX, local server, implementation structure and browser integration. |
+| [Test index](tests/README.md) and linked corpus READMEs | Regression coverage, runnable witnesses, producer/runtime outcomes and exact candidate repairs. |
+
+When adding a rule, put its mathematical statement and proof scope in
+`PROGRAM-TYPING` (or `POSITIVE-TYPES` for subtyping). New semantic predicates go
+in `SEMANTICS`; wire fields go in the relevant protocol document. Update `DESIGN`
+with the decision and remaining integration, not a second rule specification.
+Keep corpus mechanics with the examples. Distinguish **exportable**, **proved in
+the model**, and **accepted by the source checker** wherever those statuses differ.
+Avoid temporary paths, task handoffs and duplicate version tables in maintained
+docs. Lean definitions and tests remain the implementation evidence; cite them.
+
+The source boundary starts in
+[SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean) and
+[SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean);
+[RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) checks the
+resulting requests and evidence.
 
 `tools/export-source-claims.js` converts an existing SKJS export into editable
 calculus-label claims. Conversion records unsupported candidates and provenance;
-it does not itself establish verification.
+it does not itself establish verification. Version-2 sidecars also preserve
+current-content assertions such as `{ value: boolean = (true) }`, separately from
+the storage invariant. They can be exported and displayed; required observations
+remain gated until graph certificates carry heap facts. See
+[Current-content assertions](DESIGN.md#current-content-assertions).
 
 ## Primitive callbacks and a producer counterexample
 
@@ -178,6 +207,10 @@ is accepted by SKJS but returns false where its annotation requires true.
 [Its test](tests/primitive-callbacks.js) distinguishes the original unsupported
 refined-reference contract from a stale expression claim that fails proof checking
 after those reference refinements are forgotten. See the
+[unsoundness notes](tests/skjs-unsound/README.md).
+[The compound-write example](tests/skjs-unsound/compound-write-refinement.ts)
+exercises known stale-field refinement after a direct write. Its runtime evidence,
+original claim boundary and explicit diagnostic candidate are recorded in the
 [unsoundness notes](tests/skjs-unsound/README.md).
 
 [negation.ts](tests/stateful-source/negation.ts) adds negated conditions, closures

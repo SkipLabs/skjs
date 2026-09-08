@@ -120,6 +120,12 @@ fun buildFunTypeClaims(
  */
 /***************************************************************************/
 
+// Reasons are diagnostics, serialized beside claims, never inside a type.
+class ClaimExport(json: String, reason: String)
+fun claimUnavailable(reason: String): ClaimExport {
+  ClaimExport(claimUnsupported, reason)
+}
+
 const claimUnsupported: String = "{\"unsupported\": true}";
 
 fun claimKindName(kind: TPrimValueKind): ?String {
@@ -132,30 +138,30 @@ fun claimKindName(kind: TPrimValueKind): ?String {
   }
 }
 
-// Pushes the atoms of `sty` onto `acc`. Returns false if `sty` is outside the fragment.
+// Pushes the atoms of `sty` onto `acc`. Returns a refusal reason, or the empty string on success.
 fun claimPushAtoms(
   sty: SType,
   acc: mutable Vector<String>,
   records: Bool,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
-): Bool {
+): String {
   sty match {
   | TPrimUnit(TNull(), _) ->
     acc.push(jsonObj(Array[("a", jsonStr("null"))]));
-    true
+    ""
   | TPrimUnit(TUndefined(), _) ->
     acc.push(jsonObj(Array[("a", jsonStr("undefined"))]));
-    true
-  | TPrimUnit(TVoid(), _) -> false
+    ""
+  | TPrimUnit(TVoid(), _) -> "unsupported-type"
   | TPrimValue(kind, litsOpt, _) ->
     claimKindName(kind) match {
-    | None() -> false
+    | None() -> "unsupported-type"
     | Some(tag) ->
       litsOpt match {
       | None() ->
         acc.push(jsonObj(Array[("a", jsonStr(tag))]));
-        true
+        ""
       | Some(lits) ->
         for (lit in lits) {
           acc.push(
@@ -164,25 +170,30 @@ fun claimPushAtoms(
             ),
           )
         };
-        true
+        ""
       }
     }
   | obj @ TObject _ ->
-    if (records) {
-      claimCellRecordJson(obj, values, fuel) match {
-      | Some(atom) ->
-        acc.push(atom);
-        true
-      | None() ->
-        claimFunctionJson(obj, values, fuel) match {
-        | Some(atom) ->
-          acc.push(atom);
-          true
-        | None() -> false
+    if (obj.unexpandedType.isSome()) {
+      "unexpanded-type"
+    } else if (records) {
+      // Branches are alternatives, preserved as separate union atoms. Never
+      // emit a partial union when any branch cannot be represented.
+      branches = obj.getBranches();
+      reason = if (branches.isEmpty()) "unsupported-object-branch" else "";
+      for (fields in branches) {
+        claimCellBranchJson(fields, values, fuel) match {
+        | Some(atom) -> acc.push(atom)
+        | None() ->
+          claimFunctionBranchJson(fields, values, fuel) match {
+          | Some(atom) -> acc.push(atom)
+          | None() -> !reason = "unsupported-object-branch"
+          }
         }
-      }
+      };
+      reason
     } else {
-      false
+      "unsupported-type"
     }
   }
 }
@@ -192,9 +203,9 @@ fun claimTypeJsonBounded(
   records: Bool,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
-): String {
+): ClaimExport {
   if (fuel <= 0) {
-    claimUnsupported
+    claimUnavailable("fuel-exhausted")
   } else if (!ty.insts.isEmpty()) {
     // Only an isolated, bound, unconstrained inference variable can be read
     // from the snapshot. Do not approximate constraints or expand named types.
@@ -204,246 +215,229 @@ fun claimTypeJsonBounded(
       | Some(SVOpen(bound))
       | Some(SVClosed(bound)) ->
         claimTypeJsonBounded(bound, records, values, fuel - 1)
-      | None() -> claimUnsupported
+      | None() -> claimUnavailable("unbound-inference-variable")
       }
-    | _ -> claimUnsupported
+    | _ -> claimUnavailable("constrained-inference-variable")
     }
   } else if (ty.clauses.isTop()) {
-    "{\"top\": true, \"atoms\": []}"
+    ClaimExport("{\"top\": true, \"atoms\": []}", "")
   } else {
     atoms = mutable Vector<String>[];
-    ok = true;
+    reason = "";
     nClauses = 0;
     for (clause in ty.clauses) {
       !nClauses = nClauses + 1;
       if (clause.vars.size() != 0) {
         // A universally quantified type parameter: outside the fragment.
-        !ok = false
+        !reason = "type-parameter"
       };
       clause.stypes match {
-      | None() -> !ok = false
+      | None() -> !reason = "unsupported-type"
       | Some(stypes) ->
         for (sty in stypes) {
-          if (!claimPushAtoms(sty, atoms, records, values, fuel - 1)) {
-            !ok = false
+          refusal = claimPushAtoms(sty, atoms, records, values, fuel - 1);
+          if (reason == "" && refusal != "") {
+            !reason = refusal
           }
         }
       }
     };
     // `never` is zero clauses; more than one clause is a DNF outside the fragment.
     if (nClauses > 1) {
-      !ok = false
+      !reason = "union-of-clauses"
     };
-    if (ok) {
-      `{"top": false, "atoms": ${jsonArr(atoms)}}`
+    if (reason == "") {
+      ClaimExport(`{"top": false, "atoms": ${jsonArr(atoms)}}`, "")
     } else {
-      claimUnsupported
+      claimUnavailable(reason)
     }
   }
 }
 
-// A deliberately bounded record export: one public `value` field, no real index,
+// A deliberately bounded record branch: one public `value` field, no real index,
 // symbol, array, call or construct requirements. Preserve read and write types
 // separately; the verifier decides whether they justify an invariant cell.
 // Primitive-only recursive calls bound serialization even for recursive types.
-fun claimCellRecordJson(
-  obj: TObject,
+fun claimCellBranchJson(
+  fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
 ): ?String {
-  branches = obj.getBranches();
-  if (obj.unexpandedType.isSome() || branches.size() != 1) {
+  callMode = fields.call match {
+  | CUnknown() -> Some("unknown")
+  | CAbsent() -> Some("absent")
+  | _ ->
+    None() // Positive callability is outside the plain-cell fragment.
+  };
+  newMode = fields.new match {
+  | CUnknown() -> Some("unknown")
+  | CAbsent() -> Some("absent")
+  | _ ->
+    None() // Positive constructibility is outside the plain-cell fragment.
+  };
+  if (
+    fields.isArray == Some(true) ||
+    !fields.symbolFields.isEmpty() ||
+    fields.hasNonSyntheticIndex() ||
+    callMode.isNone() ||
+    newMode.isNone()
+  ) {
     None()
   } else {
-    fields = branches[0];
-    callMode = fields.call match {
-    | CUnknown() -> Some("unknown")
-    | CAbsent() -> Some("absent")
-    | _ ->
-      None() // Positive callability is outside the plain-cell fragment.
-    };
-    newMode = fields.new match {
-    | CUnknown() -> Some("unknown")
-    | CAbsent() -> Some("absent")
-    | _ ->
-      None() // Positive constructibility is outside the plain-cell fragment.
-    };
-    if (
-      fields.isArray == Some(true) ||
-      !fields.symbolFields.isEmpty() ||
-      fields.hasNonSyntheticIndex() ||
-      callMode.isNone() ||
-      newMode.isNone()
-    ) {
-      None()
-    } else {
-      entries = mutable Vector<String>[];
-      ok = true;
-      for (field in fields.fields) {
-        if (field.name.value != "value" || !(field.access is FAPublic())) {
-          !ok = false
-        };
-        read = claimTypeJsonBounded(field.get, false, values, fuel);
-        write = claimTypeJsonBounded(field.set, false, values, fuel);
-        if (read == claimUnsupported || write == claimUnsupported) {
-          !ok = false
-        };
-        entries.push(
-          jsonObj(
-            Array[
-              ("name", jsonStr(field.name.value)),
-              ("optional", if (field.isOptional) "true" else "false"),
-              ("read", read),
-              ("write", write),
-            ],
-          ),
-        )
+    entries = mutable Vector<String>[];
+    ok = true;
+    for (field in fields.fields) {
+      if (field.name.value != "value" || !(field.access is FAPublic())) {
+        !ok = false
       };
-      if (ok && entries.size() == 1) {
-        Some(
-          jsonObj(
-            Array[
-              ("a", jsonStr("record")),
-              ("fields", jsonArr(entries)),
-              // Synthetic indexes are inference bookkeeping, excluded from
-              // runtime field lookup. Record their presence, not their TVars.
-              (
-                "indexes",
-                jsonObj(
-                  Array[
-                    (
-                      "string",
-                      jsonStr(
-                        if (fields.stringIndex.isSome()) "synthetic" else {
-                          "absent"
-                        },
-                      ),
+      read = claimTypeJsonBounded(field.get, false, values, fuel).json;
+      write = claimTypeJsonBounded(field.set, false, values, fuel).json;
+      if (read == claimUnsupported || write == claimUnsupported) {
+        !ok = false
+      };
+      entries.push(
+        jsonObj(
+          Array[
+            ("name", jsonStr(field.name.value)),
+            ("optional", if (field.isOptional) "true" else "false"),
+            ("read", read),
+            ("write", write),
+          ],
+        ),
+      )
+    };
+    if (ok && entries.size() == 1) {
+      Some(
+        jsonObj(
+          Array[
+            ("a", jsonStr("record")),
+            ("fields", jsonArr(entries)),
+            // Synthetic indexes are inference bookkeeping, excluded from
+            // runtime field lookup. Record their presence, not their TVars.
+            (
+              "indexes",
+              jsonObj(
+                Array[
+                  (
+                    "string",
+                    jsonStr(
+                      if (fields.stringIndex.isSome()) "synthetic" else {
+                        "absent"
+                      },
                     ),
-                    (
-                      "number",
-                      jsonStr(
-                        if (fields.numberIndex.isSome()) "synthetic" else {
-                          "absent"
-                        },
-                      ),
+                  ),
+                  (
+                    "number",
+                    jsonStr(
+                      if (fields.numberIndex.isSome()) "synthetic" else {
+                        "absent"
+                      },
                     ),
-                    (
-                      "symbol",
-                      jsonStr(
-                        if (fields.symbolIndex.isSome()) "synthetic" else {
-                          "absent"
-                        },
-                      ),
+                  ),
+                  (
+                    "symbol",
+                    jsonStr(
+                      if (fields.symbolIndex.isSome()) "synthetic" else {
+                        "absent"
+                      },
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              (
-                "call",
-                jsonStr(
-                  callMode match {
-                  | Some(mode) -> mode
-                  | None() -> "unknown"
-                  },
-                ),
+            ),
+            (
+              "call",
+              jsonStr(
+                callMode match {
+                | Some(mode) -> mode
+                | None() -> "unknown"
+                },
               ),
-              (
-                "construct",
-                jsonStr(
-                  newMode match {
-                  | Some(mode) -> mode
-                  | None() -> "unknown"
-                  },
-                ),
+            ),
+            (
+              "construct",
+              jsonStr(
+                newMode match {
+                | Some(mode) -> mode
+                | None() -> "unknown"
+                },
               ),
-              (
-                "array",
-                jsonStr(
-                  if (fields.isArray == Some(false)) "absent" else "unknown",
-                ),
+            ),
+            (
+              "array",
+              jsonStr(
+                if (fields.isArray == Some(false)) "absent" else "unknown",
               ),
-            ],
-          ),
-        )
-      } else {
-        None()
-      }
+            ),
+          ],
+        ),
+      )
+    } else {
+      None()
     }
   }
 }
 
 // One free unary call signature with primitive operands. No methods, generics,
 // optional/rest parameters, object fields or construct requirements are erased.
-fun claimFunctionJson(
-  obj: TObject,
+fun claimFunctionBranchJson(
+  fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
 ): ?String {
-  branches = obj.getBranches();
-  if (obj.unexpandedType.isSome() || branches.size() != 1) {
+  if (
+    !fields.fields.isEmpty() ||
+    !fields.symbolFields.isEmpty() ||
+    fields.stringIndex.isSome() ||
+    fields.numberIndex.isSome() ||
+    fields.symbolIndex.isSome() ||
+    fields.isArray == Some(true) ||
+    !(fields.new is CAbsent() || fields.new is CUnknown())
+  ) {
     None()
   } else {
-    fields = branches[0];
-    if (
-      !fields.fields.isEmpty() ||
-      !fields.symbolFields.isEmpty() ||
-      fields.stringIndex.isSome() ||
-      fields.numberIndex.isSome() ||
-      fields.symbolIndex.isSome() ||
-      fields.isArray == Some(true) ||
-      !(fields.new is CAbsent() || fields.new is CUnknown())
-    ) {
-      None()
-    } else {
-      fields.call match {
-      | CPresent(TFuns(f, _)) ->
-        if (
-          !f.tparams.isEmpty() ||
-          !(f.thisParam is NoThis()) ||
-          f.params.size() != 1 ||
-          !f.optionalParams.isEmpty() ||
-          f.spreadParam.isSome()
-        ) {
+    fields.call match {
+    | CPresent(TFuns(f, _)) ->
+      if (
+        !f.tparams.isEmpty() ||
+        !(f.thisParam is NoThis()) ||
+        f.params.size() != 1 ||
+        !f.optionalParams.isEmpty() ||
+        f.spreadParam.isSome()
+      ) {
+        None()
+      } else {
+        arg = claimTypeJsonBounded(f.params[0], false, values, fuel).json;
+        ret = claimTypeJsonBounded(f.retType, false, values, fuel).json;
+        if (arg == claimUnsupported || ret == claimUnsupported) {
           None()
         } else {
-          arg = claimTypeJsonBounded(f.params[0], false, values, fuel);
-          ret = claimTypeJsonBounded(f.retType, false, values, fuel);
-          if (arg == claimUnsupported || ret == claimUnsupported) {
-            None()
-          } else {
-            Some(
-              jsonObj(
-                Array[
-                  ("a", jsonStr("function")),
-                  ("params", jsonArr(Array[arg])),
-                  ("result", ret),
-                  (
-                    "construct",
-                    jsonStr(
-                      if (fields.new is CAbsent()) "absent" else "unknown",
-                    ),
+          Some(
+            jsonObj(
+              Array[
+                ("a", jsonStr("function")),
+                ("params", jsonArr(Array[arg])),
+                ("result", ret),
+                (
+                  "construct",
+                  jsonStr(if (fields.new is CAbsent()) "absent" else "unknown"),
+                ),
+                (
+                  "array",
+                  jsonStr(
+                    if (fields.isArray == Some(false)) "absent" else {
+                      "unknown"
+                    },
                   ),
-                  (
-                    "array",
-                    jsonStr(
-                      if (fields.isArray == Some(false)) "absent" else {
-                        "unknown"
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            )
-          }
+                ),
+              ],
+            ),
+          )
         }
-      | _ -> None()
       }
+    | _ -> None()
     }
   }
-}
-
-fun claimTypeJson(ty: TType, values: SortedMap<TVarID, SubstValue>): String {
-  claimTypeJsonBounded(ty, true, values, 64)
 }
 
 /***************************************************************************/
@@ -454,99 +448,160 @@ fun claimPosJson(pos: PosRange, symbols: Map<SymbolicPos, Int>): String {
   `[${pos.getStart(symbols).value}, ${pos.getEnd(symbols).value}]`
 }
 
+// Addresses are scoped to this function's name/namePos. Only failed exports
+// contribute metadata; successful function fallback must never carry a refusal.
+fun claimTypeAtJson(
+  ty: TType,
+  values: SortedMap<TVarID, SubstValue>,
+  address: Array<(String, String)>,
+  unavailable: mutable Vector<String>,
+): String {
+  result = claimTypeJsonBounded(ty, true, values, 64);
+  if (result.reason != "") {
+    unavailable.push(
+      jsonObj(address.concat(Array[("reason", jsonStr(result.reason))])),
+    )
+  };
+  result.json
+}
+
 fun funTypeClaimsJson(
   fc: FunTypeClaims,
   symbols: Map<SymbolicPos, Int>,
 ): String {
-  jsonObj(
-    Array[
-      ("name", jsonStr(fc.name)),
-      ("namePos", claimPosJson(fc.namePos, symbols)),
-      (
-        "collection",
-        jsonObj(
-          Array[
-            (
-              "completion",
-              jsonStr(
-                if (fc.aborted) {
-                  "aborted"
-                } else {
-                  "complete"
-                },
-              ),
+  unavailable = mutable Vector<String>[];
+  fields = Array[
+    ("name", jsonStr(fc.name)),
+    ("namePos", claimPosJson(fc.namePos, symbols)),
+    (
+      "collection",
+      jsonObj(
+        Array[
+          (
+            "completion",
+            jsonStr(
+              if (fc.aborted) {
+                "aborted"
+              } else {
+                "complete"
+              },
             ),
-            (
-              "quality",
-              jsonStr(
-                if (fc.recovered) {
-                  "recovery"
-                } else {
-                  "unverified"
-                },
-              ),
-            ),
-            ("mode", jsonStr(fc.mode)),
-            (
-              "visitedExpressions",
-              jsonArr(fc.visitedExpressions.map(p -> claimPosJson(p, symbols))),
-            ),
-          ],
-        ),
-      ),
-      (
-        "params",
-        jsonArr(
-          fc.params.map(p ->
-            jsonObj(
-              Array[
-                ("name", jsonStr(p.name)),
-                ("type", claimTypeJson(p.type, fc.substValues)),
-              ],
-            )
           ),
+          (
+            "quality",
+            jsonStr(
+              if (fc.recovered) {
+                "recovery"
+              } else {
+                "unverified"
+              },
+            ),
+          ),
+          ("mode", jsonStr(fc.mode)),
+          (
+            "visitedExpressions",
+            jsonArr(fc.visitedExpressions.map(p -> claimPosJson(p, symbols))),
+          ),
+        ],
+      ),
+    ),
+    (
+      "params",
+      jsonArr(
+        fc.params.map(p ->
+          jsonObj(
+            Array[
+              ("name", jsonStr(p.name)),
+              (
+                "type",
+                claimTypeAtJson(
+                  p.type,
+                  fc.substValues,
+                  Array[
+                    ("kind", jsonStr("parameter")),
+                    ("binding", jsonStr(p.name)),
+                  ],
+                  unavailable,
+                ),
+              ),
+            ],
+          )
         ),
       ),
-      ("retType", claimTypeJson(fc.retType, fc.substValues)),
-      (
-        "envs",
-        jsonArr(
-          fc.envs.map(e ->
-            jsonObj(
-              Array[
-                ("pos", claimPosJson(e.pos, symbols)),
-                (
-                  "vars",
-                  jsonArr(
-                    e.vars.map(v ->
-                      jsonObj(
-                        Array[
-                          ("name", jsonStr(v.name)),
-                          ("type", claimTypeJson(v.type, fc.substValues)),
-                        ],
-                      )
-                    ),
+    ),
+    (
+      "retType",
+      claimTypeAtJson(
+        fc.retType,
+        fc.substValues,
+        Array[("kind", jsonStr("result"))],
+        unavailable,
+      ),
+    ),
+    (
+      "envs",
+      jsonArr(
+        fc.envs.map(e ->
+          jsonObj(
+            Array[
+              ("pos", claimPosJson(e.pos, symbols)),
+              (
+                "vars",
+                jsonArr(
+                  e.vars.map(v ->
+                    jsonObj(
+                      Array[
+                        ("name", jsonStr(v.name)),
+                        (
+                          "type",
+                          claimTypeAtJson(
+                            v.type,
+                            fc.substValues,
+                            Array[
+                              ("kind", jsonStr("entry")),
+                              ("pos", claimPosJson(e.pos, symbols)),
+                              ("binding", jsonStr(v.name)),
+                            ],
+                            unavailable,
+                          ),
+                        ),
+                      ],
+                    )
                   ),
                 ),
-              ],
-            )
-          ),
+              ),
+            ],
+          )
         ),
       ),
-      (
-        "exprs",
-        jsonArr(
-          fc.exprs.map(x ->
-            jsonObj(
-              Array[
-                ("pos", claimPosJson(x.pos, symbols)),
-                ("type", claimTypeJson(x.type, fc.substValues)),
-              ],
-            )
-          ),
+    ),
+    (
+      "exprs",
+      jsonArr(
+        fc.exprs.map(x ->
+          jsonObj(
+            Array[
+              ("pos", claimPosJson(x.pos, symbols)),
+              (
+                "type",
+                claimTypeAtJson(
+                  x.type,
+                  fc.substValues,
+                  Array[
+                    ("kind", jsonStr("expression")),
+                    ("pos", claimPosJson(x.pos, symbols)),
+                  ],
+                  unavailable,
+                ),
+              ),
+            ],
+          )
         ),
       ),
-    ],
+    ),
+  ];
+  jsonObj(
+    fields.concat(Array[("unavailableTypes", jsonArr(unavailable.toArray()))]),
   )
 }
 

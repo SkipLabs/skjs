@@ -81,6 +81,57 @@ preserves the entire interpretation operator, hence also its recursive fixed
 point. No cycle is unfolded during normalization. See the grammar and equations
 in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 
+## Current-content assertions and postconditions
+
+The [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) defines the
+notation and its separation from ordinary types. This section gives its meaning.
+
+A world records a location's persistent storage contract, while a heap records
+its current contents. Both a true heap and a false heap can satisfy the same
+Boolean world. A point claim `{ value: B = R }` combines the invariant reference
+with a current-content predicate:
+
+$$
+\operatorname{Obs}(h,\ell,R)
+\equiv \exists v.\ h(\ell)=v \land R(v),
+\qquad
+\operatorname{ObservedRef}(B,R,n,W,h,\ell)
+\equiv \operatorname{Ref}(B)(n,W,\ell)\land\operatorname{Obs}(h,\ell,R).
+$$
+
+`ObservedRef` in [HeapObservations.lean](lean/Verification/ExperimentState/HeapObservations.lean)
+is used with `HeapOk(n,W,h)`. For primitive predicates this requires the contents
+to satisfy both the storage invariant and the observation. Consequently
+`{ value: true = false }` is inconsistent in a satisfying heap at every positive
+budget. The raw predicate without `HeapOk` does not enforce that connection;
+the invariant check is vacuous at budget zero. Giving the conjunction meaning
+does not require a syntactic subtype relation between `R` and `B`.
+
+The right side of `=` is a predicate, not an initializer or a future-read promise.
+Only null/Boolean predicates are exported today; numeric notation illustrates a
+future extension. These assertions are duplicable facts, not exclusive write
+permissions. This is a chosen plain-cell interpretation, not a theorem equating
+SKJS's internal types with heap assertions.
+
+`SafePost T Q n W h e` strengthens `Safe T n W h e`: at a positive-budget final
+value it additionally requires `Q h e`; its step case uses exactly the same
+operational step, truncated-world extension, admissibility and heap satisfaction.
+At budget zero it is true. The `postcondition` theorem proves `Q` for an actual
+terminating execution observed with one remaining level; divergence is permitted.
+`erase` yields ordinary safety, and `forget` embeds ordinary safety with `Q = True`.
+
+[HeapObservationTests.lean](lean/Verification/ExperimentState/HeapObservationTests.lean)
+proves the important counterexamples. `observation_not_a_value_type` excludes
+representing current contents by a heap-independent value family.
+`observation_does_not_narrow_invariant` gives a Boolean cell currently true that
+is not `Ref true`. `callback_counterexample` supplies an inhabited heap and an
+ordinarily typed captured writer that destroys the true observation. Thus an
+ordinary arrow cannot promise preservation of captured current contents.
+
+[Program typing](PROGRAM-TYPING.md#current-content-rules-semantic-layer) specifies
+the operation and composition rules using this predicate;
+[Design](DESIGN.md#current-content-assertions) owns the graph-integration plan.
+
 ## What the checked development establishes
 
 - `Rules.lean` gives the operational rules for functions, application, heap
@@ -139,15 +190,11 @@ require keeping separator searches or a second subtyping implementation.
 
 ## Remaining scope
 
-Program/claim extraction and integration of extended source claims remain.
-The [versioned request protocol](REQUEST-PROTOCOL.md) exposes the stateful
-consumer through the existing verifier binary, with checked decoded-request
-safety. A bounded in-memory producer now builds
-checked evidence from supplied point annotations, with exact claim fidelity.
-Global graph execution safety includes explicit edge slot mappings for scope
-changes, reordering and alias retention. Graph-backed closure bodies remain an
-extension. The proved program rules currently use known shape answers per overload;
-general branch-environment refinement remains to be supplied. Mutable objects and refinements need a specified policy beyond invariant
-cells. Parameters, bounded polymorphism, difference and negation require
-additional syntax and sound rules; no generics result is claimed merely from
-being able to define quantification over semantic families.
+The bounded source adapter and graph consumer are connected; their guarantees
+are described in [Program typing](PROGRAM-TYPING.md) and the
+[request protocol](REQUEST-PROTOCOL.md). This does not prove source-to-graph
+correspondence. Graph-backed closures and propagation of current-content facts
+remain integration work. Type parameters, bounded polymorphism, and general
+difference/negation require further syntax and sound rules; definability of
+quantification over semantic families alone is not a generics result.
+[Design](DESIGN.md#later-feature-gates) owns the feature roadmap and priorities.

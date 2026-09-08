@@ -11,6 +11,8 @@ claims for the viewer's corpus, without the repairs or corruptions used in tests
 | `stateful-source.js` / `stateful-source/basic.ts` | Real certificates, branches and shared continuations, exact singletons, source annotations, parameter contracts, incoming-edge refinements, missing/duplicate claims, lexical scope and input identities. |
 | `stateful-cells.js`, `stateful-closures.js` | Allocation, alias writes, reads, captures, returned closures, inner claims and corrupted certificates. |
 | `stateful-loops.js`, `stateful-loop-transfers.js` | Supplied loop invariants, back edges, nested scope, early returns, break and continue. |
+| `null-tests.js` | Null predicates, coalescing, logical expressions and compound guard edges; required claims, merge rejection, effect order, loop back edges and a direct-write stale-refinement counterexample. |
+| `write-observations.js` | Post-write precision and negated stale-refinement witnesses: SKJS/TypeScript results, execution, source shape for the Lean observation proof, and the current checker limitation. |
 | `primitive-callbacks.js` | Primitive domains, contravariant call contracts, returned writers, a stale captured-refinement witness and a verified immutable-snapshot counterpart. |
 | `source-claims.js`, `source-claim-export.js` | Producer-independent claims, conversion fidelity and source association. |
 | `partial-claims.js` | Partial collections without recovery, optional keep-going quality and diagnostics. |
@@ -42,7 +44,7 @@ not merely on the parser accepting the syntax.
 Producer examples are separated by the direction of the failure:
 
 - [`skjs-unsound/`](skjs-unsound/README.md): SKJS accepts a program with a runtime type counterexample.
-- [`skjs-incomplete/`](skjs-incomplete/README.md): SKJS rejects a safe program whose repaired claims the verifier establishes.
+- [`skjs-incomplete/`](skjs-incomplete/README.md): SKJS rejects a safe program; each entry distinguishes accepted repaired claims from model-only proofs or remaining verifier limits.
 
 `partial-claims.ts` remains a separate collection/repair exercise; a producer
 rejection alone does not establish incompleteness.
@@ -55,8 +57,6 @@ limitation from a soundness result. Loop examples should say when termination is
 not established. Comments are part of the displayed source, so the tests always
 regenerate claims rather than reuse offsets from an older source version.
 
-`null-tests.js` covers strict null comparisons, both operand orders, callbacks,
-effectful operands and independent evidence. `stateful-source/null-guards.ts` is a
-maintained graph-refinement example checked against real SKJS claims by that
-suite, including guarded returns and loop transfers. Unsupported fixtures are
-checked separately at their syntax/type gates.
+The [null-guard fixture](stateful-source/null-guards.ts) exercises the graph
+refinement path against real SKJS claims, including guarded returns and loop
+transfers. Unsupported fixtures are checked separately at their syntax/type gates.

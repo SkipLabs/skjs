@@ -99,7 +99,7 @@ assert.deepEqual(
   const envReport = await candidateReport(badEnv, true);
   assert.deepEqual(
     envReport.manifest.results.find((r) => r.function === target.id).location,
-    { kind: "environment-obligation", start: env.pos[0] },
+    { kind: "unavailable-type-claim", start: env.pos[0], binding: "seed" },
   );
   const outsideFile = "verification/tests/unsupported/typeof_narrow.ts";
   const outsideSource = fs.readFileSync(outsideFile, "utf8");

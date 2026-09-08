@@ -1,6 +1,6 @@
 # Producer-independent source sidecars
 
-The `stateful-source-75-v1` profile supplies types directly from the current
+The `stateful-source-75-v2` profile supplies types directly from the current
 calculus source graph. It contains no SKJS type atoms, inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
@@ -28,27 +28,28 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 
 ```json
 {
-  "version": 1,
-  "profile": "stateful-source-75-v1",
+  "version": 2,
+  "profile": "stateful-source-75-v2",
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
   "functions": [{
     "name": "identity",
     "namePos": [9, 17],
-    "params": [{"name": "flag", "type": [1, 2]}],
+    "params": [{"name": "flag", "type": [1, 2], "current": null}],
     "result": [1, 2],
     "entries": [{
       "start": 43,
-      "bindings": [{"name": "flag", "type": [1, 2]}]
+      "bindings": [{"name": "flag", "type": [1, 2], "current": null}]
     }],
-    "expressions": [{"pos": [50, 54], "type": [1, 2]}]
+    "expressions": [{"pos": [50, 54], "type": [1, 2], "current": null}]
   }]
 }
 ```
 
-This profile replaces `stateful-source-19-v1`; regenerate older sidecars. Labels
-0–18 retain their meaning, but the profile now includes all 64 arrows between
-primitive subsets. It does not add arbitrary higher-order function contracts.
+Version 2 adds an explicit `current` field to bindings and expressions without
+changing the 75 type labels. Version-1 (`stateful-source-75-v1`) documents remain
+readable in their exact old shape, without that field; adding it to version 1 is
+rejected. Older 19-label sidecars must be regenerated.
 
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
@@ -87,6 +88,63 @@ export policy and need not be consumed. A successful function result establishes
 the modeled obligations, not every candidate in its environment. This sidecar
 therefore does not yet implement the proposed comment frontend's stricter
 requirement to consume every directive.
+
+## Current-content assertions
+
+The [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) defines the
+combined notation; this section specifies its sidecar encoding.
+
+Bindings and expressions have a required `current` field: `null` means no
+additional assertion; otherwise it is a sorted, duplicate-free list of primitive
+labels (`0` null, `1` true, `2` false). With a non-null assertion, `type` must be
+exactly one invariant-reference label, from 3 through 10. For example:
+
+```json
+{"name":"cell","type":[9],"current":[1]}
+```
+
+This displays as `{ value: boolean = (true) }`. The storage invariant and current
+predicate are distinct; their [semantic meaning](SEMANTICS.md#current-content-assertions-and-postconditions)
+is not a persistent read/write capability. An empty `current` array denotes the
+empty predicate and is not absence. Function parameters require `current: null`;
+ordinary arrows do not acquire creation-time heap assumptions or postconditions.
+Numbers, nested predicates, and correlated unions of differently refined
+references remain outside this profile.
+
+`SourceInput.translatePoint` preserves a supported standalone record refinement
+as its write-invariant reference plus its read-content predicate. Conversion does
+not manufacture stronger producer claims. Required observations currently fail
+with `current-content assertion requires heap-aware source evidence`; they are
+never silently erased. Export/display support and graph-certificate support are
+separate. [Design](DESIGN.md#current-content-assertions) records the remaining
+integration, and [diagnostics](OBLIGATION-DIAGNOSTICS.md#reason-vocabulary) owns the
+report reason vocabulary.
+
+## Record alternative absorption
+
+Before ordinary invariant-cell translation, `CellUnion.translate` validates every
+record alternative. It may absorb an arm only into an existing invariant arm,
+with a weaker read requirement and **the same** write invariant. Writing `C(R,W)`
+for the schema's read/write requirements, the sufficient rule is:
+
+$$
+\frac{R_1 \subseteq R_2 \qquad W_1 = W_2}
+     {C(R_1,W_1) \preceq C(R_2,W_2)},
+\qquad
+C(R_1,W) \lor C(R_2,W) \equiv C(R_2,W).
+$$
+
+The equality uses the premise on the left. `covers_sound` and `normalize_exact`
+prove the implication and union preservation for the capability schema. This is
+an input-normalization law, not a new declarative program-typing rule or a proved
+correspondence to SKJS. All surviving ordinary arms must have equal read/write
+meanings; malformed or unsupported arms are never dropped.
+
+Different write invariants must not be absorbed: a Boolean-world cell currently
+true need not be `Ref true`. Thus `C(true,boolean) | C(true,true)` cannot become
+`C(true,true)` under the point interpretation. `observed_union_absorb` separately
+proves observation absorption at a fixed invariant. The corresponding model
+counterexample and normalizer regression live in `HeapObservationTests.lean`.
 
 ## Source identity and trust
 

@@ -1,4 +1,5 @@
 import Verification.ExperimentState.FunctionClaims
+import Verification.ExperimentState.CellUnion
 
 /-! Stateful source syntax and raw claims. Types remain JSON until consumed, so
 unsupported unused claims do not become invented types. Cell annotations and
@@ -6,26 +7,46 @@ claims use the same bounded contract decoder. -/
 namespace Verification.ExperimentState.SourceInput
 open Lean ProgramTyping PositiveRules
 
-/-- Decode every union arm with its existing strict contract decoder. An
-unsupported arm rejects the whole type; no projection or widening is allowed.
+/-- Validate every union arm. Record alternatives may absorb a redundant
+read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
+Other unsupported arms reject the whole type; no projection is allowed.
 Record fields and arrow inputs/results retain their bounded primitive decoders. -/
 def translate (j : Json) : Except String (Ty Nat) := do
+  if j == Json.mkObj [("unsupported", toJson true)] then
+    throw "type claim unavailable from producer"
   CellClaims.fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then throw "top is outside the source slice"
   let atoms ← jArr j "atoms"
-  let arms ← atoms.mapM fun atom => do
+  let tagged ← atoms.mapM fun atom => do return (← jStr (← jField atom "a"),atom)
+  let records ← CellUnion.translate ((tagged.filter (fun p => p.1 == "record")).map (·.2))
+  let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
-    | "record" =>
-      let A ← CellClaims.translate single
-      pure [CellClaims.referenceLabel A]
     | "function" => FunctionClaims.translate single
     | _ => SourceTypes.translate (← CellClaims.primitive single)
-  return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
+  return (records ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
+
+/-- A point assertion separates the persistent reference type from a current
+contents predicate. It is never accepted by erasing `current`. Ordinary function
+signatures and nested function operands continue to use `translate`. -/
+structure PointType where
+  type : Ty Nat
+  current : Option (Ty Nat) := none
+
+def translatePoint (j : Json) : Except String PointType := do
+  -- Preserve the existing exact union translation when it succeeds.
+  match translate j with
+  | .ok A => return ⟨A,none⟩
+  | .error original =>
+    let .ok f := CellClaims.decode j | throw original
+    let R ← SourceTypes.translate f.read
+    let W ← SourceTypes.translate f.write
+    return ⟨[CellClaims.referenceLabel W],some R⟩
 
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Wire.Val)
+  | logical (pos : Span) (andOp : Bool) (left right : Expr)
   | coalesce (pos : Span) (left right : Expr)
   | nullTest (pos : Span) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
@@ -46,7 +67,7 @@ inductive Expr where
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .nullTest p _ _ _ _ | .coalesce p _ _ => p
+  | .ifBody p _ _ _ _ | .done p | .nullTest p _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .var p _ | .lit p _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
@@ -82,8 +103,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "lit" => return .lit p (← decodeVal (← jField j "lit"))
   | "bin" =>
     let op ← jStr (← jField j "op")
+    if op == "&&" || op == "||" then
+      return .logical p (op == "&&") (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
     if op != "===" && op != "!==" then
-      throw s!"unsupported source expression at [{p.1},{p.2}): only strict equality with a null literal is supported"
+      throw s!"unsupported source expression at [{p.1},{p.2}): only strict equality with a null literal or Boolean &&/|| is supported"
     let left ← decodeExpr (← jField j "l")
     let right ← decodeExpr (← jField j "r")
     match left, right with
