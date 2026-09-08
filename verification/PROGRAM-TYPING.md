@@ -532,3 +532,40 @@ the justified false refinement; it does not have to discard this fact as a
 shared join would. `early_return_trace` checks both outcomes of an extracted
 closure: an early return skips the later write, while the other arm executes it.
 General partially returning nested arms remain gated.
+
+
+A local continuation shared by multiple paths is a derived construction:
+
+$$
+\frac{\Gamma,u:N\vdash_G k:R\qquad
+      \Gamma,j:(N\to R)\vdash_G b:R}
+     {\Gamma\vdash_G
+       \mathsf{let}\ j=(\lambda u.k)\ \mathsf{in}\ b:R}.
+$$
+
+`ContinuationSharing.share_typed` proves this from lambda introduction and let.
+The body $k$ occurs once; $b$ can call $j$ from multiple branches. There is no
+new primitive jump, recursive binding or certificate rule. The binder notation
+above is named; the Lean terms use slot zero for each newly introduced binder.
+For a null argument the continuation uses captured immutable bindings and
+stable reference contracts, and reads the current heap at each call. It does
+not inherit a calling path's later refinements of captured bindings.
+The checked example has two paths calling the same reader continuation and
+one early-return path bypassing it. This is a calculus construction; source
+lowering of general partially returning nested arms remains gated.
+
+
+Later refinements can instead be passed as explicit continuation arguments:
+
+$$
+\frac{\Delta\vdash_G j:A\to R\qquad\Delta\vdash_G v:A}
+     {\Delta\vdash_G j(v):R}.
+$$
+
+This is ordinary application. The continuation body is checked once under its
+parameter contract $A$; each call must establish that contract in its own context
+$\Delta$. `passed_refinement_paths` checks two surviving paths into one
+`false → boolean` continuation, with explicit failures for an unrefined argument
+or the wrong slot. Passing this one refined value is established; translating
+arbitrary supplied entry environments into continuation parameters is not yet
+implemented.
