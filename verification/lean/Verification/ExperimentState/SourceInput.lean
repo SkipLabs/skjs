@@ -23,8 +23,11 @@ inductive Expr where
   | write (pos : Span) (receiver rhs : Expr)
   | lam (pos : Span) (name : String) (arg result : Json) (body : Expr)
   | app (pos : Span) (callee arg : Expr)
+  /-- The return statement's entry environment; the expression retains its own span. -/
+  | atEnv (pos : Span) (body : Expr)
 
 def Expr.span : Expr → Span
+  | .atEnv _ body => body.span
   | .var p _ | .lit p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
@@ -60,6 +63,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "lambda" =>
     return .lam p (← jStr (← jField j "name")) (← jField j "arg")
       (← jField j "result") (← decodeExpr (← jField j "body"))
+  | "returnBody" => return .atEnv p (← decodeExpr (← jField j "e"))
   | "apply" => return .app p (← decodeExpr (← jField j "callee")) (← decodeExpr (← jField j "arg"))
   | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
   | _ => throw "expression outside the stateful source slice"

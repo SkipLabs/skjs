@@ -220,8 +220,8 @@ verification/run.sh --build --suite stateful-source
 
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
-loops, mutable declarations and block-bodied closures are not connected yet; their raw request
-tests remain calculus tests.
+loops, mutable declarations and closure blocks with local statements or branches
+are not connected yet; their raw request tests remain calculus tests.
 
 ## Record-contract export boundary
 
@@ -325,8 +325,14 @@ literals, variables, cell allocation, reads, assignments and calls, including
 nested expression arrows under the same signature limits. Each expression's
 claim is checked as a separate exact sequent in its lexical context. The body
 also has to satisfy the declared result. A narrower body claim with a wider
-result annotation is supported when both judgments are derivable. Block bodies
-and shadowing parameters remain gated.
+result annotation is supported when both judgments are derivable. A block with
+exactly one `return e;` is supported too. The AST represents its body as
+`{"k":"returnBody","pos":[start,end],"e":...}`. The statement span selects its
+exported environment, whose bindings must each be justified by a variable typing
+proof under the captured context and parameter. The expression is checked using
+that supplied environment, including when it forgets precision. Missing entry
+claims and unjustified types on unused bindings are rejected. Blocks with local
+statements or branches, and shadowing parameters, remain gated.
 
 Source bundle version 3 carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and

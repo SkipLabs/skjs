@@ -450,9 +450,18 @@ verify both an alias write followed by a captured read and a write inside a
 closure that returns its RHS. Corrupt body, receiver, signature
 and call claims are rejected by production and independent consumption.
 
-Block bodies remain gated. They need statement claims and a call/body
-interface for graph execution; they must not be supported by duplicating graph
-continuations or dropping internal claims. Binding identities must become
+Single-return blocks (`{ return e; }`) also use ordinary lambda terms. Their
+return statement's supplied environment $H$ is checked against the captured
+context and parameter $\Gamma$: for each slot $i$ with type $H_i$, supplemental
+evidence must derive $\Gamma \vdash_G \operatorname{var}(i) : H_i$.
+The return expression is then checked under $H$.
+This checks unused claimed bindings too, and permits justified weakening.
+The wrapper introduces no execution step; a graph-equality regression ties the
+block form to the existing captured-read execution trace.
+
+Blocks with local statements or branches remain gated. They need statement
+claims and a call/body interface for graph execution; they must not be supported
+by duplicating graph continuations or dropping internal claims. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Source loops also remain
 unconnected; their raw-calculus tests do not establish source integration.
 

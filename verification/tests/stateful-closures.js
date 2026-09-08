@@ -78,9 +78,20 @@ try {
     fc.exprs.find(q=>q.pos[0]===e.pos[0] && q.pos[1]===e.pos[1]).type=lit("true");
     expect("composite write result claim (consumer)",run("--check-stateful-source",ast,c,evidence),false);
   }
+  for (const [name,edit] of [
+    ["missing block entry claim", (fc,pos)=>{fc.envs=fc.envs.filter(q=>q.pos[0]!==pos[0]);}],
+    ["missing block parameter", (fc,pos)=>{fc.envs.find(q=>q.pos[0]===pos[0]).vars=fc.envs.find(q=>q.pos[0]===pos[0]).vars.filter(v=>v.name!=="unit");}],
+    ["unjustified block entry", (fc,pos)=>{fc.envs.find(q=>q.pos[0]===pos[0]).vars.find(v=>v.name==="unit").type=lit("true");}],
+  ]) {
+    const c=clone(claims),f=ast.functions.find(f=>f.name==="blockReader");
+    const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="blockReader");
+    edit(fc,f.body[1].init.body.pos);
+    expect(name,run("--produce-stateful-source",ast,c),false);
+    expect(`${name} (consumer)`,run("--check-stateful-source",ast,c,evidence),false);
+  }
   const parser=path.resolve(__dirname,"../tools/parse-source.js");
   for(const [name,closure] of [
-    ["block closure gated","(u: null): boolean => { return true; }"],
+    ["multi-statement closure gated","(u: null): boolean => { const x = true; return x; }"],
     ["async closure gated","async (u: null): Promise<boolean> => true"],
     ["optional closure parameter gated","(u?: null): boolean => true"],
     ["generic closure gated","<T>(u: T): T => u"],

@@ -77,6 +77,14 @@ private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
     -- Compiling a under the extended scope avoids substituting open terms.
     pure (.app (.lam (.app (.lam (.app (.lam (.var 1))
       (.write (.var 1) (.var 0)))) a)) r)
+  | .atEnv pos body => do
+    let H ← env fc pos.1 scope
+    -- Every supplied entry binding must follow from the calling context.
+    -- The body is checked under H, even if its claims forget useful precision.
+    for (B,i) in H.zipIdx do
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩⟩] }
+    let b ← closureExpr fc scope H body
+    pure b
   | .lam pos name arg ret body => do
     if scope.contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← SourceTypes.translate (← decodeTy arg)
@@ -110,6 +118,7 @@ private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
+  | .atEnv .. => throw "statement environment wrapper is only supported inside a closure"
   | .lam .. =>
     let t ← closureExpr fc scope Γ e
     emit t (.bind next) Γ A

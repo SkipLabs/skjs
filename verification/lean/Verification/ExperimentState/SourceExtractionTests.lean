@@ -320,4 +320,27 @@ theorem closure_write_trace : ControlFlow.Execution writerProgram 26 []
 
 #print axioms closure_write_trace
 
+-- A single-return block has the same execution as its expression body, but
+-- adds proof obligations for the supplied statement environment.
+private def blockCaptureFn : SourceInput.Fn :=
+  { captureFn with body := captureFn.body.map fun st => match st with
+    | .cst pos name annot (.lam lp param arg ret body) =>
+      .cst pos name annot (.lam lp param arg ret (.atEnv (11,16) body))
+    | st => st }
+private def blockCaptureClaims (unitTy : Json) : SourceInput.Claims :=
+  { captureClaims with envs := captureClaims.envs ++
+    [(11,[("unit",unitTy),("cell",cellWire)])] }
+#guard is ((extractFn blockCaptureFn (blockCaptureClaims (wireTy ⟨false,[.null]⟩))).map
+  (·.program)) captureProgram
+private def blockObligations (unitTy : Json) : Except String Unit := do
+  let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    (List.range 19) 19 10 r.obligations
+  pure ()
+#guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
+-- Forgetting parameter precision is allowed; inventing an unused type is not.
+#guard ok (blockObligations (wireTy ⟨false,[.null,.bool]⟩))
+#guard !ok (blockObligations t)
+#guard !ok (extractFn blockCaptureFn captureClaims)
+
 end Verification.ExperimentState.SourceExtractionTests

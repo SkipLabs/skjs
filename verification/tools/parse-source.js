@@ -142,12 +142,21 @@ function expr(node) {
       return { k: "lit", pos: span(node), lit: { a: "numberlit", v: node.text } };
 
     case ts.SyntaxKind.ArrowFunction: {
-      if (!stateful || node.modifiers?.length || node.typeParameters?.length || node.parameters.length !== 1 || ts.isBlock(node.body))
-        fail(node, "expected a unary expression-bodied closure");
+      if (!stateful || node.modifiers?.length || node.typeParameters?.length || node.parameters.length !== 1)
+        fail(node, "expected a unary closure");
       const p = node.parameters[0];
       if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.questionToken || p.dotDotDotToken || p.initializer)
         fail(p, "expected a required closure parameter");
-      return {k:"lambda",pos:span(node),name:p.name.text,arg:typeOf(p.type),result:typeOf(node.type),body:expr(node.body)};
+      let body;
+      if (ts.isBlock(node.body)) {
+        const stmts = node.body.statements;
+        if (stmts.length !== 1 || !ts.isReturnStatement(stmts[0]) || !stmts[0].expression)
+          fail(node.body, "closure block must contain exactly one return expression");
+        body = {k:"returnBody",pos:span(stmts[0]),e:expr(stmts[0].expression)};
+      } else {
+        body = expr(node.body);
+      }
+      return {k:"lambda",pos:span(node),name:p.name.text,arg:typeOf(p.type),result:typeOf(node.type),body};
     }
     case ts.SyntaxKind.ObjectLiteralExpression: {
       if (!stateful || node.properties.length !== 1) fail(node, "expected plain single-field allocation");

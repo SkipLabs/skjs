@@ -43,3 +43,12 @@ function callingBody(): boolean {
   cell.value = false;
   return run(null);
 }
+
+function blockReader(): boolean {
+  const cell: { value: boolean } = { value: true };
+  const read: (unit: null) => boolean = (unit: null): boolean => {
+    return cell.value;
+  };
+  cell.value = false;
+  return read(null);
+}
