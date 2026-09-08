@@ -39,10 +39,12 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
   let es ← rs.zipIdx.mapM fun (r,index) => do
     let j := r.sequent
-    let candidate := match r.plan with
+    let candidate : Option (Evidence Nat) := match r.plan with
       | some plan => DirectProof.render G pool j.context plan
-      | none => CertificateProducer.expressionWith G pool (rs.map (·.sequent)) fuel j.context j.term j.type
-    let some e := candidate
+      | none => CertificateProducer.expressionWith G pool (rs.map Required.sequent) fuel j.context j.term j.type
+    -- Attribute an invalid suggested proof to its own obligation, rather than
+    -- losing the source location in the final aggregate check.
+    let some e := candidate.filter (check G bound j)
       | throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
           [("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
            ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),

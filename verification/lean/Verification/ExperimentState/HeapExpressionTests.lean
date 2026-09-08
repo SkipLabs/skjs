@@ -73,4 +73,15 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 #guard checkStep G narrowWrite beforeWrite
   (.written 0 1 [.fls] [.tru] invalidWrite) == none
 
+-- Pure computational guards frame existing facts; an uncalled lambda may
+-- contain effects, but a call/read/write/allocation is not classified as pure.
+#guard pureTerm (.ite (.test .isNul (.var 0)) .tru .fls)
+#guard pureTerm (.lam (.write (.var 0) .fls))
+#guard !pureTerm (.ite .tru .nul (.write (.var 0) .fls))
+#guard !pureTerm (.test .isNul (.read (.var 0)))
+#guard !pureTerm (.app (.lam .nul) .nul)
+#guard !pureTerm (.alloc .tru)
+
+#print axioms pure_step
+#print axioms pure_frame
 end Verification.ExperimentState.HeapExpressionTests

@@ -624,7 +624,7 @@ concurrent interference remain outside the plain-data model.
 
 #### Committed integration milestone
 
-This is the next integration priority, before extending unrelated source features.
+This milestone is complete.
 The completion target is the original, unedited exports for `staleCapturedCell`,
 `staleCompound` and `staleFlip`, together with positive write/read and snapshot
 controls. Additional standalone semantic proofs or a renamed limitation message
@@ -642,17 +642,26 @@ The three milestones are:
    merges, backedges, empty predicates and changed claims. Ordinary signatures
    retain their existing meaning. Closure observations require uniform invariant
    justification, pending graph-backed closure bodies.
-3. **Original-witness diagnosis — final audit pending.** The three unedited exports
-   now reach proof obligations rather than the former format gates. Audit that each
-   located failure is the intended stale post-write/call assertion, with adequate
-   positive controls for the preceding guards, including compound/negated guards.
-   Keep raw-export and independent-sidecar routes aligned. The safe
-   `writeRefinedRead` and immutable-snapshot controls must remain verified.
+3. **Original-witness diagnosis — implemented.** The three unedited exports each
+   have exactly one failing heap edge: the required observation at the return
+   after the write/callback. Every ordinary expression/edge obligation, external
+   entry, and other heap edge checks. Both source formats report the same site.
+   [The audit](tests/refinement-witnesses.js) also verifies fresh producer claims
+   for [three structurally matched controls](tests/refinement-controls.ts), which
+   remove only the invalidating operation. `writeRefinedRead` and immutable
+   snapshot controls remain verified.
+
+The audit exposed an earlier precision loss hidden behind the first reported
+failure: null tests discarded observations before the valid loop-body entry.
+The existing pure-effect rule now frames heap facts through tests and pure
+conditionals, backed by a reduction-preservation proof. Negated conditions swap
+successors while checking the negation's own claim separately, preserving the
+operand's current-read link. These are general guard mechanisms, not exceptions
+for the witnesses. [Program typing](PROGRAM-TYPING.md#checked-expression-postconditions)
+owns the rule and proof details.
 
 A failed proof search remains an unproved obligation, not a semantic disproof.
-Runtime witnesses independently establish the three unsoundness examples. If a
-new blocker prevents this milestone, document the concrete missing rule or
-counterexample instead of treating another preparatory layer as completion.
+Runtime witnesses independently establish the three unsoundness examples.
 
 ### Source while loops: supplied head claims and checked back edges
 
@@ -810,13 +819,13 @@ contract nor failed search alone is the runtime counterexample.
 
 ### Negated Boolean conditions
 
-The source adapter lowers `!e` to the existing Boolean conditional
-`if e then false else true`. It evaluates the operand once and requires its claim
-as well as the result claim. Repeated negations of an immutable variable preserve
-its identity: odd parity swaps branch destinations and recovers the original
-Boolean before binding the refinement witness. The same implementation handles
-loop heads. Closure branches use `ifBoolVar` with the corresponding swapped arms.
-An effectful condition supplies no alias refinement.
+As a value expression, `!e` lowers to `if e then false else true`. As a graph
+condition, it checks that same expression claim through a supplemental ordinary
+proof, evaluates the operand once and swaps branch destinations. Repeated
+negations therefore preserve both immutable variable identity and justified
+current-read links. Loop conditions use the same mechanism. Closure branches
+use `ifBoolVar` with corresponding swapped arms. Any operand effects still occur
+before dispatch; writes and calls invalidate facts through the ordinary effect rules.
 
 Negation adds no semantic primitive or trusted typing rule. Null equality uses
 the union-elimination and observed-edge mechanisms described below.

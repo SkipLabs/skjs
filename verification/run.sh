@@ -173,6 +173,15 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD" \
        "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT" \
        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"; then exit 1; fi
+  CONTROLS="verification/tests/refinement-controls.ts"
+  if ! { node verification/tools/parse-source.js "$CONTROLS" > "$WORK/refinement-controls.ast" &&
+         skjs_check "$CONTROLS" > "$WORK/refinement-controls.claims"; } 2> "$WORK/refinement-controls.err"; then
+    echo "FAIL: refinement control setup"; cat "$WORK/refinement-controls.err"; exit 1
+  fi
+  if ! run_test "Refinement witness audit" node verification/tests/refinement-witnesses.js "$VERIFIER" \
+       "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE" \
+       "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" \
+       "$WORK/refinement-controls.ast" "$WORK/refinement-controls.claims" "$CONTROLS"; then exit 1; fi
   WRITE_REFINED="verification/tests/skjs-incomplete/write-refined-read.ts"
   if ! node verification/tools/parse-source.js "$WRITE_REFINED" > "$WORK/write-refined.ast"; then exit 1; fi
   if skjs_check "$WRITE_REFINED" > "$WORK/write-refined.claims" 2> "$WORK/write-refined.err"; then

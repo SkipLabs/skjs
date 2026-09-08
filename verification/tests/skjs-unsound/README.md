@@ -15,7 +15,10 @@ The current verifier distinguishes two checks in `primitive-callbacks.js`:
 2. A manually weakened candidate forgets only reference read refinements, retaining
    SKJS's expression types. It reaches proof checking and fails at the stale read.
 
-The test pins the source location and the runtime result. It does not label the
+The cross-format witness audit also checks that this is the only failing heap
+edge, and that every ordinary obligation checks. The matched control removes the
+call, keeps the guard and return read, and verifies with unedited producer claims.
+The tests pin the source location and the runtime result. It does not label the
 original proof-search failure as a semantic proof that the program is unsound.
 `stableSnapshot` in [the primitive callback fixture](../stateful-source/primitive-callbacks.ts) verifies and returns
 true: it tests and returns the same immutable value saved before the callback.
@@ -42,9 +45,11 @@ read callback to avoid exporting a retained property refinement; every loop back
 edge rechecks its supplied invariant.
 
 The original now reports a located proof obligation; the diagnostic candidate
-reports a proof-search failure at the unchanged singleton read. The remaining
-[design milestone](../../DESIGN.md#committed-integration-milestone) audits the exact
-failure against positive controls for compound/negated guards. Given fresh AST
+reports a proof-search failure at the unchanged singleton read. The completed
+[audit](../refinement-witnesses.js) checks every ordinary obligation and heap edge:
+exactly one edge fails, at the post-write return assertion. Structurally matched
+[controls](../refinement-controls.ts) with the mutation removed verify using fresh
+SKJS claims, including the compound and negated guards. Given fresh AST
 and raw claims, the shared [candidate generator](compound-write-candidate.js)
 prints candidate claims on stdout and exact edits on stderr:
 

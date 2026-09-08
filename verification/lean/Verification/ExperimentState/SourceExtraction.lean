@@ -440,15 +440,9 @@ private def emitBranch (scope : List String) (Γ : List (Ty Nat)) (cond : Source
     let mapped := branchMapping scope.length tested t
     ⟨mapped.label, some ((mapped.mapping.getD []).map
       (fun i => if i == 0 then 0 else i+1))⟩
-  -- Recover the original variable before binding the refinement witness.
-  -- Swapping successors preserves the source condition's polarity.
-  let reversed := (conditionVariable scope cond).any Prod.snd
-  let test := if reversed then Tm.ite (.var 0) .fls .tru else .var 0
-  let branchType := if reversed then [1,2] else A
-  let node ← emitAt cond.span test
-    (.branchBind (adapt (if reversed then no else yes)) (adapt (if reversed then yes else no)))
-    (A::Γ) branchType
-  return node
+  -- Negation is handled by swapping successors in compileCondition, so this
+  -- dispatch always observes the saved operand itself, retaining its read link.
+  emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
 
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
@@ -469,11 +463,6 @@ private def conditionContext (scope : List String) (Γ : List (Ty Nat))
       Γ.set i (if answer then [1] else [2])
     else Γ
 
-private def compoundCondition : SourceInput.Expr → Bool
-  | .logical .. => true
-  | .not _ e => compoundCondition e
-  | _ => false
-
 /-- Compile compound conditions as short-circuit edges. The full source
 expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
@@ -490,10 +479,8 @@ private def compileCondition (fc : SourceClaims.Function) (scope : List String)
     let rhs ← compileCondition fc scope H right yes no
     compileCondition fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e =>
-    if compoundCondition e then
-      let _ ← closureExpr fc scope Γ cond
-      compileCondition fc scope Γ e no yes
-    else simple
+    let _ ← closureExpr fc scope Γ cond
+    compileCondition fc scope Γ e no yes
   | _ => simple
 termination_by cond
 

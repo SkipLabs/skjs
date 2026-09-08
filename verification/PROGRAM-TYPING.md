@@ -621,11 +621,31 @@ It computes a guaranteed output, not an assumed postcondition:
 | Evidence | Guaranteed output in the result-pushed frame |
 | --- | --- |
 | Pure value or variable copy | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
+| Pure test or conditional | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented. |
 | Observed read | Preserve facts and links; record the result's literal set and its current read relationship. That set must fit the requested ordinary result type. |
 | Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
 | Allocation | Check ordinary allocation evidence, preserve old facts, and add the fresh cell's initial contents. |
 | Write | Check ordinary write evidence, discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities. |
+
+`pureTerm` includes values, variables, tests of pure terms, and conditionals
+whose condition and both arms are pure. It excludes calls, reads, writes and
+allocation. A lambda's body may have effects because forming the lambda does
+not run it. `pure_step` and `pure_frame` prove:
+
+$$
+\frac{\operatorname{Pure}(t)\quad(h,t)\longrightarrow(h',t')}
+ {h'=h\quad\land\quad\operatorname{Pure}(t')},
+\qquad
+\frac{\operatorname{Pure}(t)\quad\operatorname{Safe}(A,n,W,h,t)\quad\forall v.\,Q(h,v)}
+ {\operatorname{SafePost}(A,Q,n,W,h,t)}.
+$$
+
+This extends the existing pure-effect evidence; it does not add another typing
+rule or certificate constructor. It retains heap observations through null
+predicates without treating an effectful operand as pure. A negated graph guard
+checks its full expression claim separately and swaps the operand's successors;
+it does not invent an equality between a Boolean and its negation.
 
 The current write-evidence form also requires a cell observation locating the
 receiver. This is a conservative checker restriction; the semantic write rule

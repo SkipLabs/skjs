@@ -208,7 +208,37 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R old A ρ n
 operations. These are pure: unlike calls they must not discard cell facts. -/
 def pureTerm : Tm → Bool
   | .var _ => true
+  | .test _ a => pureTerm a
+  | .ite c t e => pureTerm c && pureTerm t && pureTerm e
   | t => isVal t
+
+/-- Purity is closed under actual reduction and rules out every heap change.
+Lambda bodies need not be pure: evaluating a lambda does not call it. -/
+theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
+    h' = h ∧ pureTerm t' = true := by
+  induction hs <;> simp_all [pureTerm,isVal]
+  case testV => split <;> simp [pureTerm,isVal]
+
+theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
+    (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)
+    (he : EnvOk G Γ ρ n W) : pureTerm (instantiate 0 ρ t) = true := by
+  induction t <;> simp_all [pureTerm,isVal,instantiate,checkScope]
+  case var i =>
+    have hi : i < Γ.length := by omega
+    have hv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+    cases h : ρ i <;> simp_all [pureTerm,isVal]
+
+/-- Any heap predicate can be framed across a checked pure computation. -/
+theorem pure_frame {T Q} : ∀ {n W h t}, Safe T n W h t → pureTerm t = true →
+    (∀ v, Q h v) → SafePost T Q n W h t := by
+  intro n; induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hs hp hq
+    rcases hs with ⟨hv,ht⟩ | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl ⟨hv,ht,hq t⟩
+    · obtain ⟨rfl,hp'⟩ := pure_step step hp
+      exact Or.inr ⟨U,_,t',hx,hu,step,hh,ih hs hp' hq⟩
 
 def pureOutput (k : Knowledge) : Tm → Knowledge
   | .var i => copy k i
@@ -226,6 +256,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
       (fun h' v => HeapKnowledge.Holds (pureOutput k t) (push v ρ) h')
       n W h (instantiate 0 ρ t) := by
   have hs := ht.sound n W h ρ he hw hh
+  have hpClosed := pure_instantiate hp hc he
   cases t <;> simp only [pureTerm,isVal] at hp
   all_goals try contradiction
   case var i =>
@@ -234,6 +265,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
     simpa [instantiate,pureOutput] using
       refine_value hv.1 (copy_holds hk) (show Safe (meaning G A) n W h (ρ i) by simpa [instantiate] using hs)
   all_goals first
+    | exact pure_frame hs hpClosed (fun _ => HeapKnowledge.shift_holds hk)
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.nul,by simp,rfl⟩) hs
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.tru,by simp,rfl⟩) hs
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.fls,by simp,rfl⟩) hs
