@@ -39,6 +39,35 @@ theorem shift_holds {k ρ h v} (hk : Holds k ρ h) : Holds (shift k) (push v ρ)
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
   exact hk.2 g hg
 
+/-- Effect-only continuations discard the result slot. Facts about it cannot
+be transferred into the old environment. -/
+def dropFacts (fs : Facts) : Facts :=
+  (fs.filter fun f => 0 < f.slot).map fun f => {f with slot := f.slot - 1}
+
+def dropResult (k : Knowledge) : Knowledge := ⟨dropFacts k.cells,dropFacts k.values⟩
+
+theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
+    Holds (dropResult k) ρ h := by
+  constructor
+  · intro f hf
+    obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
+    have hg := List.mem_filter.mp hg
+    have hp : 0 < g.slot := of_decide_eq_true hg.2
+    have he : push v ρ g.slot = ρ (g.slot - 1) := by
+      cases hs : g.slot with
+      | zero => omega
+      | succ i => rfl
+    simpa [he] using hk.1 g hg.1
+  · intro f hf
+    obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
+    have hg := List.mem_filter.mp hg
+    have hp : 0 < g.slot := of_decide_eq_true hg.2
+    have he : push v ρ g.slot = ρ (g.slot - 1) := by
+      cases hs : g.slot with
+      | zero => omega
+      | succ i => rfl
+    simpa [he] using hk.2 g hg.1
+
 /-- Project facts along an executable slot map. All runtime aliases selected by
 that map are retained; facts about unselected slots are forgotten. -/
 def projectFacts (facts : Facts) (m : PointClaims.Mapping) (count : Nat) : Facts :=

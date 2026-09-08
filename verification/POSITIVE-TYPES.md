@@ -141,8 +141,8 @@ result in place of $x$.
 heap observations and their relationship to the world and satisfying heap.
 [Program typing](PROGRAM-TYPING.md#checked-expression-postconditions) owns the
 checked rules and fact transfer. [Source claims](SOURCE-CLAIMS.md#current-content-assertions)
-owns the wire encoding and its restrictions. Expression checking is proved;
-whole-source graph propagation of these facts remains integration work.
+owns the wire encoding and its restrictions. Expression and graph checking are proved; source-observation consumption and
+automatic evidence production remain integration work.
 
 ## Recursive normalization
 

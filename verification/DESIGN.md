@@ -597,18 +597,22 @@ proved operation rules, entailment check and mathematical statements.
 slot-based heap/value-fact entailment check, sound finite expression-evidence
 checking with effect postconditions, and
 [version-2 sidecar export](SOURCE-CLAIMS.md#current-content-assertions). Required
-observations still fail explicitly in source consumption: graph typing and
-certificate propagation do not yet carry heap facts. The
+observations still fail explicitly in source consumption. The maintained graph
+checker now carries heap facts, checks expression postconditions and incoming-edge
+entailment, and proves graph safety. The source adapter and automatic producer
+have not yet connected supplied observations to that interface. The
 [write-then-read witness](tests/skjs-incomplete/README.md) has a model-level proof,
 not an accepted source certificate. Conversion preserves SKJS's actual claims;
 it does not substitute verifier-derived precision.
 
-The remaining graph integration must keep ordinary value types and an additional
-heap-fact context separate. Expression postconditions must reach continuations,
-and every incoming edge must justify the supplied facts under its slot mapping,
-including loop back edges. Start conservatively: writes discard old facts and
-establish the written contents; ordinary calls discard heap observations. Reads
-and allocation preserve facts as justified by their semantic rules.
+Graph typing keeps ordinary value types and an additional heap-fact context
+separate. Expression postconditions reach continuations, and every incoming edge
+justifies supplied facts under its slot mapping, including loop back edges.
+Writes discard old facts and establish the written contents; ordinary calls
+discard heap observations. Reads and allocation preserve justified facts.
+`HeapGraphTests` checks a complete allocate/write/read/precise-return graph and
+its safety theorem, plus strict JSON evidence and rejected fact/map tampering.
+Guard-to-cell refinement and source production remain the next integration steps.
 
 Three constraints govern later precision improvements. Possible aliases cannot
 be framed merely because their variable names differ. An immutable snapshot
@@ -626,15 +630,15 @@ The completion target is the original, unedited exports for `staleCapturedCell`,
 controls. Additional standalone semantic proofs or a renamed limitation message
 do not complete this milestone.
 
-The current diagnostic has three concrete causes: `SkjsSourceClaims.translate`
-still uses the ordinary-type decoder at program points; `SourceClaimJson.pointCandidate`
-explicitly rejects a non-null `current`; and `ControlFlow.checkNode` checks ordinary
-expression evidence without heap postconditions. Supporting export and expression
-proofs have not removed any of these source-consumption barriers.
+The remaining diagnostic barriers are `SkjsSourceClaims.translate`, which still
+uses the ordinary-type decoder at program points, and `SourceClaimJson.pointCandidate`,
+which explicitly rejects a non-null `current`. The graph-checker barrier has been
+removed: `ControlFlow.checkNode` now checks heap-aware expression evidence and
+all outgoing fact transfers. That does not by itself connect source observations.
 
 Implement and validate the following sequence:
 
-1. **Graph evidence and soundness.** Extend the maintained graph certificate and
+1. **Graph evidence and soundness — implemented.** Extend the maintained graph certificate and
    state invariant with separate cell/value facts and checked expression
    postconditions. Use `HeapExpressionRules.checkStep`; check fact entailment on
    every executable edge and slot mapping, including entry and loop back edges.

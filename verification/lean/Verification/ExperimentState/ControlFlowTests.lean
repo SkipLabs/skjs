@@ -22,12 +22,12 @@ def loop : Program :=
    ⟨callCaptured, .ret⟩]
 
 def loopEvidence : ControlFlow.Certificate (Fin 6) :=
-  [⟨.node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru], [[.subset]]⟩,
-   ⟨ProgramCertificateTests.dispatchEvidence, [[.subset,.subset]]⟩,
-   ⟨callEvidence, [[.subset,.subset],[.subset,.subset]]⟩,
-   ⟨.node ⟨[[3],[2]], .write (.var 1) .fls, [0]⟩ .write
-     [leaf [[3],[2]] (.var 1) [2] .var, leaf [[3],[2]] .fls [1] .fls], [[.subset,.subset]]⟩,
-   ⟨callEvidence, []⟩]
+  [{expression := .node ⟨[], .alloc .tru, [2]⟩ .alloc [leaf [] .tru [1] .tru], edges :=  [[.subset]]},
+   {expression := ProgramCertificateTests.dispatchEvidence, edges :=  [[.subset,.subset]]},
+   {expression := callEvidence, edges :=  [[.subset,.subset],[.subset,.subset]]},
+   {expression := .node ⟨[[3],[2]], .write (.var 1) .fls, [0]⟩ .write
+     [leaf [[3],[2]] (.var 1) [2] .var, leaf [[3],[2]] .fls [1] .fls], edges :=  [[.subset,.subset]]},
+   {expression := callEvidence, edges :=  []}]
 
 #guard checkClosed G [1] loop loopEvidence 0
 
@@ -71,19 +71,19 @@ theorem loop_returns_false : Execution loop 26 [] (.at 0 (fun _ => .nul)) [.fls]
 def diamond : Program :=
   [⟨.tru, .branch 1 2⟩, ⟨.nul, .bind 3⟩, ⟨.fls, .bind 3⟩, ⟨.var 0, .ret⟩]
 def diamondEvidence : ControlFlow.Certificate (Fin 6) :=
-  [⟨leaf [] .tru [1] .tru, [[],[]]⟩,
-   ⟨leaf [] .nul [0] .nul, [[.subset]]⟩,
-   ⟨leaf [] .fls [1] .fls, [[.subset]]⟩,
-   ⟨leaf [[0,1]] (.var 0) [0,1] .var, []⟩]
+  [{expression := leaf [] .tru [1] .tru, edges :=  [[],[]]},
+   {expression := leaf [] .nul [0] .nul, edges :=  [[.subset]]},
+   {expression := leaf [] .fls [1] .fls, edges :=  [[.subset]]},
+   {expression := leaf [[0,1]] (.var 0) [0,1] .var, edges :=  []}]
 #guard checkClosed G [0,1] diamond diamondEvidence 0
 
 -- The false edge is still checked when the condition is literally true.
 #guard !(checkClosed G [0,1] (diamond.set 0 ⟨.tru, .branch 1 99⟩) diamondEvidence 0)
 #guard !(checkClosed G [0,1] diamond
-  (diamondEvidence.set 0 ⟨leaf [] .tru [1] .tru, [[]]⟩) 0)
+  (diamondEvidence.set 0 {expression := leaf [] .tru [1] .tru, edges :=  [[]]}) 0)
 -- Narrowing the supplied merge claim rejects the boolean predecessor.
 #guard !(checkClosed G [0] diamond
-  (diamondEvidence.set 3 ⟨leaf [[0]] (.var 0) [0] .var, []⟩) 0)
+  (diamondEvidence.set 3 {expression := leaf [[0]] (.var 0) [0] .var, edges :=  []}) 0)
 -- Omitted/extra node evidence, changed code and invalid entry points fail.
 #guard !(checkClosed G [1] loop loopEvidence.tail 0)
 #guard !(checkClosed G [1] loop (loopEvidence ++ loopEvidence) 0)
@@ -94,7 +94,7 @@ def diamondEvidence : ControlFlow.Certificate (Fin 6) :=
 
 -- A genuinely nonterminating cycle is accepted without a return requirement.
 def forever : Program := [⟨.nul, .effect 0⟩]
-def foreverEvidence : ControlFlow.Certificate (Fin 6) := [⟨leaf [] .nul [0] .nul, [[]]⟩]
+def foreverEvidence : ControlFlow.Certificate (Fin 6) := [{expression := leaf [] .nul [0] .nul, edges :=  [[]]}]
 theorem forever_safe (n : Nat) : SafeGraph forever (PositiveRules.meaning G []) n
     (ofList []) [] (.at 0 (fun _ => .nul)) :=
   accepted_closed_safe (by cbv : checkClosed G [] forever foreverEvidence 0 = true) n

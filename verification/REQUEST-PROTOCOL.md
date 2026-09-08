@@ -107,11 +107,30 @@ supply a default. The expression and continuation constructors are defined in
 `Language.lean` and `ControlFlow.lean`; their codecs live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
-The evidence file is an object with `version: 2` and `certificate`, a list of
+The evidence file is an object with `version: 3` and `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
+
+All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
+and `output`. `knowledge` and `output` each contain `cells` and `values`, lists of
+`{slot, contents}` facts. `contents` is a list of literal constructors `nul`,
+`tru`, or `fls`. These are finite state assertions, not extra type labels.
+`effect: null` selects ordinary expression evidence; a non-null effect selects
+one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
+`observedRead`, `knownValue`, `allocated`, `written`). Constructor payloads use
+Lean's derived JSON encoding, with strict decode/re-encode checking; the
+[graph regression](lean/Verification/ExperimentState/HeapGraphTests.lean) tests a
+round trip with nonempty facts and effect evidence.
+
+The effect checker binds to the root expression sequent and must establish exactly
+`output`. Each actual outgoing edge checks fact entailment against the destination's
+`knowledge`, in addition to ordinary type coverage. Effect-only continuations drop
+the result slot before transferring facts. External entry requires empty knowledge.
+All type labels in nested effect proofs are bounds checked. The ordinary producer
+currently emits empty fact contexts; automatic production from source observations
+is still pending. See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
 
 The `ifBool` expression rule checks an ordinary `ite` with three premises:
 the Boolean condition, the true arm, and the false arm. Each arm has the root's
@@ -124,8 +143,9 @@ Boolean slot. The lists must expand to the corresponding singleton clauses;
 the arms use precisely the root context with that slot replaced. All payload
 labels are bounds checked. The rule cannot narrow any other binding.
 
-Protocol version 2 requires explicit `inputs`. Raw requests and responses use
-version 2. Source bundles use version 3 to include supplemental expression proofs;
+Request version 2 requires explicit `inputs`. Raw requests use version 2;
+responses use version 3 for checked heap postconditions. Version-2 responses
+are rejected. Source bundles use version 3 to include supplemental expression proofs;
 older source bundles are rejected.
 Decode/re-encode validation rejects unknown fields and missing fields,
 recursively. The JSON parser and codecs still form part of the input-meaning
@@ -175,7 +195,7 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":3,"functions":[...],"obligations":[...]}`, containing ordinary version-2
+`{"version":3,"functions":[...],"obligations":[...]}`, containing version-3
 responses in source function order. `obligations` has one list per function,
 including empty lists, with one evidence tree per reconstructed closure-expression
 or annotation judgment. Counts and root judgments must match exactly. Exported

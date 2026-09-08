@@ -271,7 +271,7 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           (branchTarget (c.type :: c.context) (.boolean false) n 1).map (fun pn => [py,pn]))
       | .tagBind t y n => (branchTarget (c.type :: c.context) (.tag t true) y 0).bind (fun py =>
           (branchTarget (c.type :: c.context) (.tag t false) n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
-    return ⟨e,ps⟩
+    return {expression := e, edges := ps}
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))

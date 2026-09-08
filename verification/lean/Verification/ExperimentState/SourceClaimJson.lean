@@ -37,7 +37,7 @@ structure Document where
   deriving ToJson, FromJson
 
 /-- A current-content assertion cannot be turned into an ordinary value type.
-Until the graph evidence carries heap facts, required observations fail closed.
+Until source observations are connected to heap-aware graph evidence, they fail closed.
 The export retains the assertion so a consumer can check it without re-extraction. -/
 private def pointCandidate (A : List Nat) (current : Option (List Nat)) : SourceClaims.Candidate :=
   match current with

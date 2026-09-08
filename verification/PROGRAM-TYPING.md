@@ -6,7 +6,7 @@ connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption u
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 The ordinary and graph rules below are used by the current verifier. The
 [current-content rules](#current-content-rules-semantic-layer) are separately
-proved semantic rules awaiting graph-certificate integration. This document owns
+proved expression/graph rules awaiting source-observation integration. This document owns
 rule statements, side conditions, soundness scope and evidence construction;
 [Design](DESIGN.md) owns the integration roadmap.
 
@@ -348,7 +348,13 @@ or `branchBind` map indexes the environment **after** pushing the result; effect
 and ordinary branch maps index the unchanged incoming environment.
 
 Node evidence supplies its entry environment, expression type and program
-evidence, and exactly the edge certificates required by its continuation.
+evidence, and exactly the edge certificates required by its continuation. It
+also supplies an input fact context and an output fact context. Checked expression
+evidence must establish the output from the input; every outgoing edge checks
+fact entailment against its destination under the executable slot map. Ordinary
+expressions discard cell facts; the [effect rules](#checked-expression-postconditions)
+justify stronger postconditions. Fact transfer is checked on both branch edges;
+refining a cell from a guard's outcome is not yet implemented.
 `checkGraph` enumerates **every node in the actual program**. It requires one
 certificate per node, binds expression evidence to that node's actual code,
 checks scope, and obtains successor labels directly from the continuation.
@@ -357,7 +363,8 @@ edges are checked even when the condition is a literal, and unreachable nodes
 are checked too. Omitting a predecessor list cannot bypass these obligations.
 
 `checkEntry` checks the graph and requires the start claim to equal a separately
-supplied input context $\Gamma_0$. `accepted_inputs_safe` proves:
+supplied input context $\Gamma_0$, with an empty input fact context.
+`accepted_inputs_safe` proves:
 
 $$
 \begin{gathered}
@@ -376,10 +383,11 @@ The arguments, world, heap and budget are arbitrary subject to these premises.
 `checkClosed` is exactly `checkEntry` with an empty input context;
 `accepted_closed_safe` retains the empty-world, empty-heap corollary.
 `accepted_entry_safe` is the underlying theorem for a checked point and its
-claimed environment.
+claimed environment and heap facts, both of which its caller must establish.
 The proof inducts on execution budget, so it covers cycles without unrolling
 the graph or computing invariants. Expressions use the existing small-step
-relation and safety theorem. Node dispatch and control transfer each consume
+relation, with `SafePost` carrying checked output facts to the continuation.
+Node dispatch and control transfer each consume
 one step; a control-flow cycle cannot masquerade as progress at zero cost.
 
 `Transition.det` proves determinism of this combined machine.
@@ -520,7 +528,8 @@ These rules are proved in [HeapObservations.lean](lean/Verification/ExperimentSt
 and [HeapFacts.lean](lean/Verification/ExperimentState/HeapFacts.lean).
 [HeapExpressionRules.lean](lean/Verification/ExperimentState/HeapExpressionRules.lean)
 checks finite expression evidence against them. They are not additional `HasTy`
-constructors or accepted graph-certificate forms yet.
+constructors. The maintained graph checker now accepts the checked effect forms;
+source-observation consumption and automatic evidence production remain pending.
 The [semantic reference](SEMANTICS.md#current-content-assertions-and-postconditions)
 defines `Obs`, `ObservedRef`, and `SafePost`; ordinary immutable-value branch
 observations above must not be confused with these mutable-heap assertions.
@@ -625,10 +634,14 @@ justify transfer and alias-preserving projection along executable slot maps.
 [HeapExpressionTests.lean](lean/Verification/ExperimentState/HeapExpressionTests.lean)
 uses the actual source type graph to check allocation, write, mapped transfer,
 wide read and precise return, with negative tests for stale contents, invalid
-storage writes, fabricated facts and changed expressions. These are expression
-and transfer checks; they do **not** establish whole-source acceptance. Graph
-state invariants and every incoming edge must still carry these postconditions,
-and source claims must be bound to the corresponding checked facts.
+storage writes, fabricated facts and changed expressions. The maintained graph checker carries the same postconditions in its state
+invariant and checks every incoming edge, including back edges. External entry
+requires empty knowledge; effect-only continuations drop result-slot facts.
+[HeapGraphTests.lean](lean/Verification/ExperimentState/HeapGraphTests.lean) proves
+a complete graph safe, checks its JSON evidence, and rejects fabricated entry
+facts, stale write postconditions and altered maps. These checks do **not** yet
+establish whole-source acceptance: source claims and automatic evidence production
+must still be connected to the corresponding graph facts.
 
 [WriteRefinedRead.lean](lean/Verification/ExperimentState/WriteRefinedRead.lean)
 assembles allocation, postcondition-aware composition and `write_then_read` to

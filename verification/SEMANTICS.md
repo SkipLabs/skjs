@@ -193,8 +193,8 @@ require keeping separator searches or a second subtyping implementation.
 The bounded source adapter and graph consumer are connected; their guarantees
 are described in [Program typing](PROGRAM-TYPING.md) and the
 [request protocol](REQUEST-PROTOCOL.md). This does not prove source-to-graph
-correspondence. Graph-backed closures and propagation of current-content facts
-remain integration work. Type parameters, bounded polymorphism, and general
+correspondence. Graph-backed closures and automatic production of graph evidence
+from source current-content claims remain integration work. Type parameters, bounded polymorphism, and general
 difference/negation require further syntax and sound rules; definability of
 quantification over semantic families alone is not a generics result.
 [Design](DESIGN.md#later-feature-gates) owns the feature roadmap and priorities.

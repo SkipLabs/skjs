@@ -1,4 +1,5 @@
 import Verification.ExperimentState.BranchRefinement
+import Verification.ExperimentState.HeapExpressionRules
 
 /-! A finite control-flow graph over the existing expression language. Expression
 steps use the existing heap machine. Dispatch and transfers are explicit steps,
@@ -35,6 +36,11 @@ abbrev Program := List Node
 structure NodeEvidence (ι : Type) where
   expression : Evidence ι
   edges : List (EdgeEvidence ι)
+  /-- Supplied precondition; incoming edges must establish it. -/
+  knowledge : HeapKnowledge.Knowledge := ⟨[],[]⟩
+  /-- None uses ordinary evidence; some selects a checked effect rule. -/
+  effect : Option (HeapExpressionRules.StepEvidence ι) := none
+  output : HeapKnowledge.Knowledge := ⟨[],[]⟩
 
 abbrev Certificate (ι : Type) := List (NodeEvidence ι)
 def entry (c : NodeEvidence ι) := (claim c.expression).context
@@ -72,34 +78,36 @@ def SafeGraph (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → Stat
 
 /-- Target existence is checked against both the actual graph and its claims. -/
 def checkTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) : Bool :=
+    (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[]⟩) : Bool :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkMapped G Γ (entry c) target.mapping p
+  | some _, some c => checkMapped G Γ (entry c) target.mapping p && HeapKnowledge.check facts c.knowledge target.mapping
   | _, _ => false
 
 def checkBranchTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) : Bool :=
+    (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[]⟩) : Bool :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkObserved G Γ (entry c) 0 o target.mapping p
+  | some _, some c => checkObserved G Γ (entry c) 0 o target.mapping p && HeapKnowledge.check facts c.knowledge target.mapping
   | _, _ => false
 
 
 def checkNode [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι) : Bool :=
   decide ((claim c.expression).term = node.expression) &&
-  checkScope (entry c).length node.expression && checkTree G c.expression &&
+  checkScope (entry c).length node.expression &&
+  decide (HeapExpressionRules.checkStep G (claim c.expression) c.knowledge
+    (c.effect.getD (.ordinary c.expression)) = some c.output) &&
   match node.continuation, c.edges with
   | .ret, [] => decide (result c = Rty)
-  | .bind l, [p] => checkTarget G P C (result c :: entry c) l p
-  | .effect l, [p] => checkTarget G P C (entry c) l p
+  | .bind l, [p] => checkTarget G P C (result c :: entry c) l p c.output
+  | .effect l, [p] => checkTarget G P C (entry c) l p (HeapKnowledge.dropResult c.output)
   | .branch y n, [py,pn] => decide (expand G (result c) = [.bool]) &&
-      checkTarget G P C (entry c) y py && checkTarget G P C (entry c) n pn
+      checkTarget G P C (entry c) y py (HeapKnowledge.dropResult c.output) && checkTarget G P C (entry c) n pn (HeapKnowledge.dropResult c.output)
   | .branchBind y n, [py,pn] => onlyBoolean G (result c) &&
-      checkBranchTarget G P C (result c :: entry c) (.boolean true) y py &&
-      checkBranchTarget G P C (result c :: entry c) (.boolean false) n pn
+      checkBranchTarget G P C (result c :: entry c) (.boolean true) y py c.output &&
+      checkBranchTarget G P C (result c :: entry c) (.boolean false) n pn c.output
   | .tagBind t y n, [py,pn] =>
-      checkBranchTarget G P C (result c :: entry c) (.tag t true) y py &&
-      checkBranchTarget G P C (result c :: entry c) (.tag t false) n pn
+      checkBranchTarget G P C (result c :: entry c) (.tag t true) y py c.output &&
+      checkBranchTarget G P C (result c :: entry c) (.tag t false) n pn c.output
   | _, _ => false
 
 /-- Enumeration comes from the program, not a certificate-supplied edge list. -/
@@ -110,48 +118,57 @@ def checkGraph [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     | some node, some c => checkNode G Rty P C node c
     | _, _ => false)
 
-def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping
+def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
+  ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping ∧ HeapKnowledge.check facts c.knowledge l.mapping = true
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
-    (Γ : List (Ty ι)) (o : Observation) (l : Target) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping
+    (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
+  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping ∧ HeapKnowledge.check facts c.knowledge l.mapping = true
 
 
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
-    (Γ : List (Ty ι)) (A : Ty ι) : Continuation → Prop
+    (Γ : List (Ty ι)) (A : Ty ι) (facts : HeapKnowledge.Knowledge) : Continuation → Prop
   | .ret => A = Rty
-  | .bind l => TargetOk G C (A :: Γ) l
-  | .effect l => TargetOk G C Γ l
-  | .branch y n => Represents G A .bool ∧ TargetOk G C Γ y ∧ TargetOk G C Γ n
+  | .bind l => TargetOk G C (A :: Γ) l facts
+  | .effect l => TargetOk G C Γ l (HeapKnowledge.dropResult facts)
+  | .branch y n => Represents G A .bool ∧ TargetOk G C Γ y (HeapKnowledge.dropResult facts) ∧ TargetOk G C Γ n (HeapKnowledge.dropResult facts)
   | .branchBind y n => onlyBoolean G A = true ∧
-      BranchTargetOk G C (A::Γ) (.boolean true) y ∧ BranchTargetOk G C (A::Γ) (.boolean false) n
-  | .tagBind t y n => BranchTargetOk G C (A::Γ) (.tag t true) y ∧
-      BranchTargetOk G C (A::Γ) (.tag t false) n
+      BranchTargetOk G C (A::Γ) (.boolean true) y facts ∧ BranchTargetOk G C (A::Γ) (.boolean false) n facts
+  | .tagBind t y n => BranchTargetOk G C (A::Γ) (.tag t true) y facts ∧
+      BranchTargetOk G C (A::Γ) (.tag t false) n facts
 
-theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ l p}
-    (hc : checkTarget G P C Γ l p = true) : TargetOk G C Γ l := by
+theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ l p facts}
+    (hc : checkTarget G P C Γ l p facts = true) : TargetOk G C Γ l facts := by
   unfold checkTarget at hc
   split at hc
   · rename_i node c hn he
-    exact ⟨c, he, checkMapped_sound hc⟩
+    simp only [Bool.and_eq_true] at hc
+    exact ⟨c, he, checkMapped_sound hc.1, hc.2⟩
   · contradiction
 
-theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ q l p}
-    (hc : checkBranchTarget G P C Γ q l p = true) : BranchTargetOk G C Γ q l := by
+theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ q l p facts}
+    (hc : checkBranchTarget G P C Γ q l p facts = true) : BranchTargetOk G C Γ q l facts := by
   unfold checkBranchTarget at hc
   split at hc
-  · exact ⟨_, by assumption, checkObserved_sound hc⟩
+  · simp only [Bool.and_eq_true] at hc
+    exact ⟨_, by assumption, checkObserved_sound hc.1, hc.2⟩
   · contradiction
 
+
+def ExpressionOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
+  ∀ n W h ρ, EnvOk G (entry c) ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
+    WorldAdm W → HeapOk n W h → HeapObservations.SafePost (meaning G (result c))
+      (fun h' v => HeapKnowledge.Holds c.output (push v ρ) h') n W h (instantiate 0 ρ t)
 
 theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
     (hc : checkNode G Rty P C node c = true) :
-    HasTy G (entry c) node.expression (result c) ∧
-    ContinuationOk G Rty C (entry c) (result c) node.continuation := by
+    ExpressionOk G c node.expression ∧
+    ContinuationOk G Rty C (entry c) (result c) c.output node.continuation := by
   simp only [checkNode, Bool.and_eq_true, decide_eq_true_eq] at hc
   refine ⟨?_, ?_⟩
-  · simpa only [entry, result, hc.1.1.1] using checkTree_sound c.expression hc.1.2
+  · intro n W h ρ he hf hw hh
+    have ht := HeapExpressionRules.checkStep_sound hc.1.2 he hf hw hh
+    simpa only [entry, result, hc.1.1.1] using ht
   · have hk := hc.2
     split at hk <;> (try (rename_i hcont hedges; rw [hcont]))
     · exact (of_decide_eq_true hk : result c = Rty)
@@ -167,8 +184,8 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {Rty P C node c}
 
 theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
     (hg : checkGraph G Rty P C = true) (hc : C[l]? = some c) :
-    ∃ node : Node, P[l]? = some node ∧ HasTy G (entry c) node.expression (result c) ∧
-      ContinuationOk G Rty C (entry c) (result c) node.continuation := by
+    ∃ node : Node, P[l]? = some node ∧ ExpressionOk G c node.expression ∧
+      ContinuationOk G Rty C (entry c) (result c) c.output node.continuation := by
   simp only [checkGraph, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hg
   have hl : l < P.length := by
     rw [hg.1]
@@ -181,21 +198,23 @@ theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
 /-- A state assertion used only in the global safety proof. -/
 def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
     (n : Nat) (W : WorldT n) (h : Heap) : State → Prop
-  | .at l ρ => ∃ c, C[l]? = some c ∧ EnvOk G (entry c) ρ n W
-  | .eval t ρ k => ∃ Γ A, EnvOk G Γ ρ n W ∧ Safe (meaning G A) n W h t ∧ ContinuationOk G Rty C Γ A k
+  | .at l ρ => ∃ c, C[l]? = some c ∧ EnvOk G (entry c) ρ n W ∧ HeapKnowledge.Holds c.knowledge ρ h
+  | .eval t ρ k => ∃ Γ A out, EnvOk G Γ ρ n W ∧
+      HeapObservations.SafePost (meaning G A) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t ∧
+      ContinuationOk G Rty C Γ A out k
   | .done v => isVal v = true ∧ meaning G Rty n W v
 
-theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h}
-    (ht : TargetOk G C Γ l) (he : EnvOk G Γ ρ n W) : StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
-  obtain ⟨c, hc, hcov⟩ := ht
-  exact ⟨c, hc, hcov.env he⟩
+theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h facts}
+    (ht : TargetOk G C Γ l facts) (he : EnvOk G Γ ρ n W) (hf : HeapKnowledge.Holds facts ρ h) : StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
+  obtain ⟨c, hc, hcov, hfact⟩ := ht
+  exact ⟨c, hc, hcov.env he, HeapKnowledge.check_sound hfact hf⟩
 
-theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h}
-    (ht : BranchTargetOk G C Γ q l) (he : EnvOk G Γ ρ n W)
-    (hq : q.holds (ρ 0)) :
+theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l ρ n W h facts}
+    (ht : BranchTargetOk G C Γ q l facts) (he : EnvOk G Γ ρ n W)
+    (hq : q.holds (ρ 0)) (hf : HeapKnowledge.Holds facts ρ h) :
     StateOk G Rty C n W h (.at l.label (mapEnv l.mapping ρ)) := by
-  obtain ⟨c,hc,hcov⟩ := ht
-  exact ⟨c,hc,hcov.env he hq⟩
+  obtain ⟨c,hc,hcov,hfact⟩ := ht
+  exact ⟨c,hc,hcov.env he hq, HeapKnowledge.check_sound hfact hf⟩
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
 theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
@@ -212,15 +231,15 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
     let U := trunc n (Nat.le_succ n) W
     cases s with
     | «at» l ρ =>
-      obtain ⟨c, hc, he⟩ := hs
+      obtain ⟨c, hc, he, hf⟩ := hs
       obtain ⟨node, hn, ht, hk⟩ := graph_node hg hc
       have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
-        ih U h _ hw' hh' ⟨entry c, result c, he', ht.sound n U h ρ he' hw' hh', hk⟩⟩
+        ih U h _ hw' hh' ⟨entry c, result c, c.output, he', ht n U h ρ he' hf hw' hh', hk⟩⟩
     | done v => exact Or.inl ⟨v, rfl, hs⟩
     | eval t ρ k =>
-      obtain ⟨Γ, A, he, ht, hk⟩ := hs
-      rcases ht with ⟨hv, ha⟩ | ⟨V, h', t', hx, hu, step, hok, hsafe⟩
+      obtain ⟨Γ, A, out, he, ht, hk⟩ := hs
+      rcases ht with ⟨hv, ha, hf⟩ | ⟨V, h', t', hx, hu, step, hok, hsafe⟩
       · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
         have ha' := (meaning_adm G A).down n W t ha
         cases k with
@@ -231,49 +250,49 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C}
             ih U h _ hw' hh' ⟨hv, ha'⟩⟩
         | bind l =>
           exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
-            ih U h _ hw' hh' (target_state hk (he'.push ha'))⟩
+            ih U h _ hw' hh' (target_state hk (he'.push ha') hf)⟩
         | effect l =>
           exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
-            ih U h _ hw' hh' (target_state hk he')⟩
+            ih U h _ hw' hh' (target_state hk he' (HeapKnowledge.dropResult_holds hf))⟩
         | branch y no =>
           have hb := (represents_sem hk.1 (n+1) W t).mp ha
           rcases hb with rfl | rfl
           · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
-              ih U h _ hw' hh' (target_state hk.2.1 he')⟩
+              ih U h _ hw' hh' (target_state hk.2.1 he' (HeapKnowledge.dropResult_holds hf))⟩
           · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
-              ih U h _ hw' hh' (target_state hk.2.2 he')⟩
+              ih U h _ hw' hh' (target_state hk.2.2 he' (HeapKnowledge.dropResult_holds hf))⟩
         | branchBind y no =>
           have hb := onlyBoolean_sound hk.1 ha
           rcases hb with rfl | rfl
           · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
-              ih U h _ hw' hh' (branch_target_state hk.2.1 (he'.push ha') rfl)⟩
+              ih U h _ hw' hh' (branch_target_state hk.2.1 (he'.push ha') rfl hf)⟩
           · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
-              ih U h _ hw' hh' (branch_target_state hk.2.2 (he'.push ha') rfl)⟩
+              ih U h _ hw' hh' (branch_target_state hk.2.2 (he'.push ha') rfl hf)⟩
         | tagBind tag y no =>
           cases htag : tagHolds tag t with
           | true =>
             exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
               ih U h _ hw' hh' (by
-                simpa [htag] using (branch_target_state hk.1 (he'.push ha') htag))⟩
+                simpa [htag] using (branch_target_state hk.1 (he'.push ha') htag hf))⟩
           | false =>
             exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
               ih U h _ hw' hh' (by
-                simpa [htag] using (branch_target_state hk.2 (he'.push ha') htag))⟩
+                simpa [htag] using (branch_target_state hk.2 (he'.push ha') htag hf))⟩
       · exact Or.inr ⟨V, h', .eval t' ρ k, hx, hu, .expr step, hok,
-          ih V h' _ hu hok ⟨Γ,A,he.transfer n (Nat.le_succ n) V hx,hsafe,hk⟩⟩
+          ih V h' _ hu hok ⟨Γ,A,out,he.transfer n (Nat.le_succ n) V hx,hsafe,hk⟩⟩
 
 /-- Safety from any checked entry and concrete environment meeting its claim. -/
 theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C l c}
     (hg : checkGraph G Rty P C = true) (hc : C[l]? = some c)
-    (n W h ρ) (he : EnvOk G (entry c) ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (n W h ρ) (he : EnvOk G (entry c) ρ n W) (hf : HeapKnowledge.Holds c.knowledge ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafeGraph P (meaning G Rty) n W h (.at l ρ) :=
-  state_safe hg n W h _ hw hh ⟨c,hc,he⟩
+  state_safe hg n W h _ hw hh ⟨c,hc,he,hf⟩
 
 /-- The external input contract is independent of the supplied point claims. -/
 def checkEntry [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι)) : Bool :=
   checkGraph G Rty P C && match C[start]? with
-    | some c => decide (entry c = inputs)
+    | some c => decide (entry c = inputs ∧ c.knowledge = ⟨[],[]⟩)
     | none => false
 
 theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C start inputs}
@@ -285,9 +304,10 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C star
   have hx := hc.2
   split at hx
   · rename_i c hc
-    have hem : entry c = inputs := of_decide_eq_true hx
-    apply accepted_entry_safe hg hc n W h ρ _ hw hh
-    simpa only [hem] using he
+    have hem : entry c = inputs ∧ c.knowledge = ⟨[],[]⟩ := of_decide_eq_true hx
+    apply accepted_entry_safe hg hc n W h ρ _ _ hw hh
+    · simpa only [hem.1] using he
+    · rw [hem.2]; exact HeapKnowledge.empty ρ h
   · contradiction
 
 /-- Closed entry is the empty-input instance of the same check. -/

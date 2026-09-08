@@ -20,6 +20,10 @@ deriving instance ToJson, FromJson for PositiveCertificates.Proof
 deriving instance ToJson, FromJson for Sequent
 deriving instance ToJson, FromJson for Rule
 deriving instance ToJson, FromJson for ProgramCertificates.Evidence
+deriving instance ToJson, FromJson for HeapFacts.Literal
+deriving instance ToJson, FromJson for HeapFacts.Fact
+deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
+deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
 deriving instance ToJson, FromJson for NodeEvidence
 deriving instance ToJson, FromJson for PointClaim
 
@@ -83,9 +87,14 @@ decreasing_by
   simp only [ProgramCertificates.Evidence.node.sizeOf_spec]
   omega
 
+def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
+  | .ordinary e | .pure e | .allocated _ _ e | .written _ _ _ _ e => validEvidence bound e
+  | .observedRead _ _ | .knownValue _ _ => true
+
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.version == 2 && c.certificate.all (fun n =>
+  c.version == 3 && c.certificate.all (fun n =>
     validEvidence r.types.length n.expression &&
+    (n.effect.map (validEffect r.types.length)).getD true &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
 
 /-- Semantic JSON equality for strict field checking, independent of object
@@ -213,7 +222,7 @@ def produceJson (request : Json) (fuel : Nat)
         | _ => ""
       throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
         (failureDiagnostic r fuel origins e))
-  let response := toJson (Response.mk 2 C)
+  let response := toJson (Response.mk 3 C)
   verifyJson request response
   return response
 
