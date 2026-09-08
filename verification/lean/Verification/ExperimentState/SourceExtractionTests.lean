@@ -265,6 +265,46 @@ theorem captured_alias_trace : ControlFlow.Execution captureProgram 36 []
 
 #print axioms captured_alias_trace
 
+-- A terminal closure branch adds one conditional step, with each arm occurring
+-- once. The condition reads the heap at call time, after the alias write.
+private def branchCaptureFn : SourceInput.Fn :=
+  { captureFn with body := captureFn.body.map fun st => match st with
+    | .cst pos name annot (.lam lp param arg ret body) =>
+      .cst pos name annot (.lam lp param arg ret
+        (.ifBody (40,49) ret body
+          (.atEnv (41,44) (.lit (42,43) (.vbool true)))
+          (.atEnv (45,48) (.lit (46,47) (.vbool false)))))
+    | st => st }
+private def branchCaptureClaims : SourceInput.Claims :=
+  let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
+  { captureClaims with
+    envs := captureClaims.envs ++ [(40,H),(41,H),(45,H)]
+    exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
+private def branchCaptureProgram : ControlFlow.Program :=
+  captureProgram.set 11 ⟨.lam (.ite (.read (.var 1)) .tru .fls),.bind 10⟩
+#guard is ((extractFn branchCaptureFn branchCaptureClaims).map (·.program)) branchCaptureProgram
+#guard ok (do
+  let r ← extractFn branchCaptureFn branchCaptureClaims
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    (List.range 19) 19 0 r.obligations
+  pure ())
+
+theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 37 []
+    (.at 15 (fun _ => .nul)) [.fls] (.done .fls) := by
+  repeat first
+    | exact ControlFlow.Execution.refl
+    | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
+    | apply ControlFlow.Execution.next (.expr (.beta rfl))
+    | apply ControlFlow.Execution.next (.expr (.iteC (.readV rfl)))
+    | apply ControlFlow.Execution.next (.expr .iteF)
+    | apply ControlFlow.Execution.next (.bind rfl)
+    | apply ControlFlow.Execution.next (.effect rfl)
+    | apply ControlFlow.Execution.next (.ret rfl)
+
+#print axioms terminal_branch_trace
+
 -- Supplemental proofs are necessary even when the whole lambda is typable.
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[]⟩
 #guard captureRequired.obligations.length == 4

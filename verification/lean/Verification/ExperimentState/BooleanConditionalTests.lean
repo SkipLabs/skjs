@@ -41,6 +41,33 @@ private def recipe := DirectProof.node [[0]] (.ite (.var 0) .tru .fls) [0] .ifBo
    DirectProof.node [[0]] .fls [0] .fls]
 #guard ((DirectProof.render G [[0],[1]] [[0]] recipe).map (checkTree G)) == some true
 
+-- Refinement changes only the tested immutable slot. This result needs the
+-- refined rule: the original Boolean input alone does not have type true.
+private def refinedTypes : List (List (PositiveNormalization.Clause (List Nat))) :=
+  [[.boolLit true],[.boolLit false],[.nul]]
+private def RG : NormalGraph Nat := fun i => (refinedTypes[i]?).getD []
+private def refinedYes : Evidence Nat := .node ⟨[[0]],.var 0,[0]⟩ .var []
+private def refinedNo : Evidence Nat := .node ⟨[[1]],.tru,[0]⟩ .truLit []
+private def refinedProof : Evidence Nat :=
+  .node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩ (.ifBoolVar [0] [1]) [refinedYes,refinedNo]
+#guard checkTree RG refinedProof
+#guard ok (roundtrip ⟨2,refinedTypes,[⟨.ite (.var 0) (.var 0) .tru,.ret⟩],
+  [⟨[[0,1]],[0]⟩],[0],0,[[0,1]]⟩)
+#guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
+  (.ifBoolVar [1] [0]) [refinedYes,refinedNo])
+#guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 1) (.var 0) .tru,[0]⟩
+  (.ifBoolVar [0] [1]) [refinedYes,refinedNo])
+#guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
+  (.ifBoolVar [0] [1]) [refinedYes])
+#guard !checkTree RG (.node ⟨[[0,1],[0,1]],.ite (.var 0) (.var 1) .tru,[0]⟩
+  (.ifBoolVar [0] [1]) [.node ⟨[[0],[0]],.var 1,[0]⟩ .var [],
+    .node ⟨[[1],[0,1]],.tru,[0]⟩ .truLit []])
+#guard !validEvidence 3 (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
+  (.ifBoolVar [3] [1]) [refinedYes,refinedNo])
+private def refinedRecipe := DirectProof.node [[0,1]] (.ite (.var 0) (.var 0) .tru) [0]
+  (.ifBoolVar [0] [1]) [DirectProof.var [[0]] 0 [0],DirectProof.node [[1]] .tru [0] .truLit]
+#guard ((DirectProof.render RG [[0],[1],[0,1]] [[0,1]] refinedRecipe).map (checkTree RG)) == some true
+
 -- A captured cell is read when the closure is called, after an alias write.
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1⟩,

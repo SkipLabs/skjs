@@ -90,9 +90,21 @@ $$
 The condition is evaluated once. It may read or mutate the heap; its effects
 precede the selected branch. Both branches must check against the supplied result
 type $A$. No least-upper-bound is computed. Both use the same context: this rule
-does not justify narrowed branch environments. General splitting of a union-typed
-variable into refined branch environments remains to be added at the term level.
-Graph edges already have their own checked Boolean refinement rule.
+does not justify narrowed branch environments. A second rule handles a directly
+tested immutable variable. Write $\Gamma[i:=T]$ for replacing slot $i$'s type:
+
+$$
+\frac{\Gamma(i)=C\quad\operatorname{Boolean}_G(C)
+      \quad\Gamma[i:=\mathsf{True}]\vdash_G t:A
+      \quad\Gamma[i:=\mathsf{False}]\vdash_G e:A}
+     {\Gamma\vdash_G\mathsf{if}\ x_i\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+$$
+
+Here $\mathsf{True}$ and $\mathsf{False}$ must expand to the corresponding singleton
+clauses. `HasTy.ifBoolVar` proves this rule sound: the selected branch's actual
+value justifies the changed slot, and all other slots retain their meanings.
+It neither refines mutable heap contents nor supplies general union splitting.
+Graph edges also have their own checked Boolean refinement rule.
 
 Reference rules use a single invariant operand; eliminating a conjunction to such a reference view
 can be justified by subsumption. No direct multi-contract program rule is assumed.
@@ -482,4 +494,5 @@ results.
 requests and direct recipes. Its execution traces cover both outcomes after an
 alias write and a condition that writes then reads a cell. Invalid condition
 types, invalid arms, omitted premises and exchanged arms are rejected. This is
-calculus coverage; branching source closure blocks remain gated.
+calculus coverage. Source closure blocks now support terminal branches with both
+arms returning, including nested branches and checked entry refinements.

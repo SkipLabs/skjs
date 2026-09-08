@@ -149,18 +149,25 @@ function expr(node) {
         fail(p, "expected a required closure parameter");
       let body;
       if (ts.isBlock(node.body)) {
-        const stmts = node.body.statements.map(stmt);
-        const last = stmts.at(-1);
-        if (!last || last.k !== "return") fail(node.body, "closure block must end in return");
-        body = {k:"returnBody",pos:last.pos,e:last.e};
-        for (let i = stmts.length - 2; i >= 0; --i) {
-          const st = stmts[i];
-          if (st.k !== "const" && st.k !== "effect")
-            fail(node.body, "closure block currently supports only consts, effects and a final return");
-          body = {k:"letBody",pos:st.pos,name:st.k === "const" ? st.name : "",
-            annot:st.k === "const" ? st.annot : null,
-            init:st.k === "const" ? st.init : st.e,body};
-        }
+        const lowerBlock = (stmts) => {
+          const last = stmts.at(-1);
+          let tail;
+          if (last?.k === "return") tail = {k:"returnBody",pos:last.pos,e:last.e};
+          else if (last?.k === "if" && last.else_ !== null)
+            tail = {k:"ifBody",pos:last.pos,result:typeOf(node.type),cond:last.cond,
+              then:lowerBlock(last.then),else_:lowerBlock(last.else_)};
+          else fail(node.body, "closure block must return on both terminal arms");
+          for (let i = stmts.length - 2; i >= 0; --i) {
+            const st = stmts[i];
+            if (st.k !== "const" && st.k !== "effect")
+              fail(node.body, "closure branches must be terminal; fall-through is not supported");
+            tail = {k:"letBody",pos:st.pos,name:st.k === "const" ? st.name : "",
+              annot:st.k === "const" ? st.annot : null,
+              init:st.k === "const" ? st.init : st.e,body:tail};
+          }
+          return tail;
+        };
+        body = lowerBlock(node.body.statements.map(stmt));
       } else {
         body = expr(node.body);
       }

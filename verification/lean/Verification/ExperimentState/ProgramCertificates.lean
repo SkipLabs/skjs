@@ -16,6 +16,7 @@ structure Sequent (ι : Type) where
 inductive Rule (ι : Type) where
   | var | nul | tru | fls | truLit | flsLit | lam | app | letE | alloc | read | write
   | ifBool | ifTrue | ifFalse
+  | ifBoolVar (trueType falseType : Ty ι)
   | sub (proof : PositiveCertificates.Proof ι)
 
 inductive Evidence (ι : Type) where
@@ -53,6 +54,10 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .ifBool, .ite c t e, [jc,jt,je] =>
     jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
     jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
+  | .ifBoolVar T F, .ite (.var i) t e, [jt,je] =>
+    (match j.context[i]? with | some C => Answers G C .isBool true | none => False) ∧
+    Represents G T (.boolLit true) ∧ Represents G F (.boolLit false) ∧
+    jt = ⟨j.context.set i T,t,j.type⟩ ∧ je = ⟨j.context.set i F,e,j.type⟩
   | .ifTrue, .ite (.test tag (.var i)) u _, [ju] =>
     ju = ⟨j.context, u, j.type⟩ ∧
     match j.context[i]? with
@@ -156,6 +161,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     have hcond := hp jc (by simp)
     rw [hΓ, hc] at hcond
     exact .ifBool hcond hb (hp ⟨Γ,t,A⟩ (by simp)) (hp ⟨Γ,e,A⟩ (by simp))
+  · rename_i T F i t e jt je
+    rcases hl with ⟨hb,hT,hF,rfl,rfl⟩
+    split at hb
+    · rename_i C hc
+      exact .ifBoolVar hc hb hT hF (hp ⟨Γ.set i T,t,A⟩ (by simp)) (hp ⟨Γ.set i F,e,A⟩ (by simp))
+    · contradiction
   · rename_i tag i u e ju
     rcases hl with ⟨rfl, hq⟩
     split at hq
@@ -274,6 +285,14 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
       rcases hj with rfl | rfl | rfl
       · exact ihc
+      · exact iht
+      · exact ihe
+  | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
+    apply node_complete (r := .ifBoolVar T F) (js := [⟨Γ.set i T,t,A⟩,⟨Γ.set i F,e,A⟩])
+    · exact ⟨by simpa only [Local, hi] using hb,hT,hF,rfl,rfl⟩
+    · intro j hj
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+      rcases hj with rfl | rfl
       · exact iht
       · exact ihe
   | @ifTag Γ i A tag q u B e hi hq ht he iht ihe =>

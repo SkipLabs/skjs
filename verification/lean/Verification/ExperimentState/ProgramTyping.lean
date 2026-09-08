@@ -59,6 +59,21 @@ theorem EnvOk.push {G : NormalGraph ι} {Γ ρ n W A a} (h : EnvOk G Γ ρ n W)
               subst B; exact ha
     | succ i => exact h.2 i B hi
 
+/-- An equality established by a branch can refine one immutable slot. -/
+theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
+    (h : EnvOk G Γ ρ n W) (hi : Γ[i]? = some A)
+    (hb : meaning G B n W (ρ i)) : EnvOk G (Γ.set i B) ρ n W := by
+  refine ⟨h.1, ?_⟩
+  intro j C hc
+  by_cases hj : j = i
+  · subst j
+    have hi' := (List.getElem?_eq_some_iff.mp hi).1
+    rw [List.getElem?_set_self hi'] at hc
+    cases Option.some.inj hc
+    exact hb
+  · rw [List.getElem?_set_ne (Ne.symm hj)] at hc
+    exact h.2 j C hc
+
 /-- General evaluation-context composition. Contexts are supplied with their
 ordinary small-step congruence rule. -/
 theorem bind {A B : Fam} (C : Tm → Tm)
@@ -116,6 +131,10 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       Represents G N .nul → HasTy G Γ (.write a b) N
   | ifBool : HasTy G Γ c C → Answers G C .isBool true →
       HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
+  | ifBoolVar : Γ[i]? = some C → Answers G C .isBool true →
+      Represents G T (.boolLit true) → Represents G F (.boolLit false) →
+      HasTy G (Γ.set i T) t A → HasTy G (Γ.set i F) e A →
+      HasTy G Γ (.ite (.var i) t e) A
   | ifTag : Γ[i]? = some A → Answers G A tag q →
       (q = true → HasTy G Γ u B) → (q = false → HasTy G Γ e B) →
       HasTy G Γ (.ite (.test tag (.var i)) u e) B
@@ -223,6 +242,28 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           WExt_refl _, WorldAdm_trunc _ hu, .iteF, HeapOk_trunc k U heap hok, ?_⟩
         exact ihe k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+  | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
+    intro n W h ρ henv hw hh
+    have hshape := answers_sound hb (henv.2 i C hi)
+    have shape : ρ i = .tru ∨ ρ i = .fls := by
+      cases hv : ρ i <;> simp_all [tagHolds]
+    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    cases n with
+    | zero => trivial
+    | succ k =>
+      rcases shape with hv | hv
+      · have refined := henv.refine hi ((represents_sem hT (k+1) W (ρ i)).mpr (by simpa [hv, sem, boolT]))
+        rw [hv]
+        refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ t,WExt_refl _,
+          WorldAdm_trunc _ hw,.iteT,HeapOk_trunc k W h hh,?_⟩
+        exact iht k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
+          (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
+      · have refined := henv.refine hi ((represents_sem hF (k+1) W (ρ i)).mpr (by simpa [hv, sem, boolT]))
+        rw [hv]
+        refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ e,WExt_refl _,
+          WorldAdm_trunc _ hw,.iteF,HeapOk_trunc k W h hh,?_⟩
+        exact ihe k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
+          (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
   | @ifTag Γ i A tag q u B e hi hq ht he iht ihe =>
     intro n W h ρ henv hw hh
     have hval := (meaning_value (henv.2 i A hi)).1

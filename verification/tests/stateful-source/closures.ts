@@ -62,3 +62,45 @@ function localBlock(): boolean {
   };
   return run(null);
 }
+
+function branchingClosure(flag: boolean): true {
+  const run: (unit: null) => true = (unit: null): true => {
+    if (flag) {
+      return flag;
+    } else {
+      return true;
+    }
+  };
+  return run(null);
+}
+
+function nestedBranches(flag: boolean, other: boolean): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    const saved: boolean = other;
+    if (flag) {
+      if (saved) {
+        return saved;
+      } else {
+        const result: boolean = false;
+        return result;
+      }
+    } else {
+      return flag;
+    }
+  };
+  return run(null);
+}
+
+function capturedBranch(): boolean {
+  const cell: { value: boolean } = { value: true };
+  const read: (unit: null) => boolean = (unit: null): boolean => cell.value;
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    if (read(null)) {
+      return true;
+    } else {
+      return false;
+    }
+  };
+  cell.value = false;
+  return run(null);
+}

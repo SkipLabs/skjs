@@ -116,7 +116,11 @@ the Boolean condition, the true arm, and the false arm. Each arm has the root's
 context and requested result type. Boolean singleton unions are allowed, while
 null or mixed Boolean/non-Boolean conditions are rejected. The existing
 `ifTrue`/`ifFalse` rules remain the statically decided shape-test rules.
-This adds raw-calculus coverage; source branching closure blocks remain gated.
+The `ifBoolVar` rule carries `trueType` and `falseType` label lists and two
+arm premises. It requires an `ite` whose condition is a variable at an existing
+Boolean slot. The lists must expand to the corresponding singleton clauses;
+the arms use precisely the root context with that slot replaced. All payload
+labels are bounds checked. The rule cannot narrow any other binding.
 
 Protocol version 2 requires explicit `inputs`. Raw requests and responses use
 version 2. Source bundles use version 3 to include supplemental expression proofs;
@@ -227,7 +231,7 @@ verification/run.sh --build --suite stateful-source
 
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
-loops, mutable declarations and closure blocks with branches
+loops, mutable declarations and falling-through closure branches
 are not connected yet; their raw request tests remain calculus tests.
 
 ## Record-contract export boundary
@@ -343,7 +347,14 @@ blocks may precede that return with initialized consts or expression statements.
 an empty name denotes a discarded effect result. The consumer reconstructs
 statement-entry and annotation obligations, retaining initializer precision in
 the bound slot. Anonymous effect slots retain their types independently of the
-export's named environment. Branching blocks and shadowing locals remain gated.
+export's named environment. A terminal `if/else` is represented by `ifBody`,
+with `pos`, `result` (the enclosing result annotation), `cond`, `then` and `else_`.
+Both arms recursively end in returns; prefixes may contain consts and effects.
+Its position selects the checked entry environment, not an expression claim.
+Variable conditions use `ifBoolVar`; other Boolean conditions use `ifBool`.
+Arm statement claims are checked against those justified contexts. Falling-through
+branches and shadowing locals remain gated. Field tests that produce unequal
+read/write claims remain outside the invariant-cell slice.
 
 For closure expressions the producer follows explicit proof recipes, retaining
 the initializer's claimed type at each source let and choosing known types for

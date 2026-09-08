@@ -34,6 +34,13 @@ private def exprType (fc : Claims) (e : SourceInput.Expr) : Except String (Ty Na
   | some t => SourceInput.translate t
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
+/-- A terminal branch uses the enclosing source result annotation, not a
+fabricated expression claim at the if statement's span. -/
+private def closureType (fc : Claims) : SourceInput.Expr → Except String (Ty Nat)
+  | .atEnv _ b | .letBody _ _ _ _ b => closureType fc b
+  | .ifBody _ result _ _ _ => do SourceTypes.translate (← decodeTy result)
+  | e => exprType fc e
+
 private structure Built where
   program : Program := []
   claims : List (PointClaim Nat) := []
@@ -64,7 +71,7 @@ claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
-  let A ← exprType fc e
+  let A ← closureType fc e
   let p ← match e with
   | .var _ name =>
     match scope.idxOf? name with
@@ -121,6 +128,25 @@ private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
     modify fun s => { s with obligations := s.obligations ++ [⟨init.span,annotation.goal,some annotation⟩] }
     let b ← closureExpr fc (name::scope) (I::H) body
     pure (DirectProof.letE H a b)
+  | .ifBody pos _ cond thn els => do
+    let H ← closureEnv fc pos.1 scope Γ
+    for (B,i) in H.zipIdx do
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
+    let c ← closureExpr fc scope H cond
+    match cond with
+    | .var _ name =>
+      let some i := scope.idxOf? name | throw "unbound closure condition"
+      let T := H.set i [1]
+      let F := H.set i [2]
+      let t ← closureExpr fc scope T thn
+      let e ← closureExpr fc scope F els
+      pure (DirectProof.node H (.ite c.term t.term e.term) A (.ifBoolVar [1] [2])
+        [DirectProof.cast T A t,DirectProof.cast F A e])
+    | _ =>
+      let t ← closureExpr fc scope H thn
+      let e ← closureExpr fc scope H els
+      pure (DirectProof.node H (.ite c.term t.term e.term) A .ifBool
+        [c,DirectProof.cast H A t,DirectProof.cast H A e])
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
@@ -161,7 +187,7 @@ private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
-  | .atEnv .. | .letBody .. => throw "statement environment wrapper is only supported inside a closure"
+  | .atEnv .. | .letBody .. | .ifBody .. => throw "statement environment wrapper is only supported inside a closure"
   | .lam .. =>
     let t ← closureExpr fc scope Γ e
     emit t.term (.bind next) Γ A

@@ -88,7 +88,9 @@ primitive result; expression bodies compose literals, variables, cell operations
 and calls. Straight-line blocks support local consts, effects and a final return,
 with checked statement environments.
 Every internal claim has a separately checked typing proof. Source loops, mutable
-variable bindings and blocks with branches remain unconnected.
+variable bindings and falling-through closure branches remain unconnected.
+Terminal closure `if/else` blocks are supported, with both arms returning and
+checked singleton refinement of directly tested immutable Boolean variables.
 
 ## What runs
 

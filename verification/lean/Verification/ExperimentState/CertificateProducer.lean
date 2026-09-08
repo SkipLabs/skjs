@@ -169,6 +169,16 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
       return none
     | .ite c t e =>
+      let refined := do
+        let .var i := c | none
+        let C ← Γ[i]?
+        if !decide (Answers G C .isBool true) then none else do
+          let T ← pool.find? fun T => decide (expand G T = [.boolLit true])
+          let F ← pool.find? fun F => decide (expand G F = [.boolLit false])
+          let pt ← recur (Γ.set i T) t A
+          let pe ← recur (Γ.set i F) e A
+          pure (.node ⟨Γ,.ite c t e,A⟩ (.ifBoolVar T F) [pt,pe])
+      if let some p := refined then return some p
       return pool.findSome? fun C => do
         if !decide (Answers G C .isBool true) then none else do
           let pc ← recur Γ c C

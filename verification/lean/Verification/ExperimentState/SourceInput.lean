@@ -25,10 +25,12 @@ inductive Expr where
   | app (pos : Span) (callee arg : Expr)
   /-- The return statement's entry environment; the expression retains its own span. -/
   | atEnv (pos : Span) (body : Expr)
+  | ifBody (pos : Span) (result : Json) (cond thn els : Expr)
   | letBody (pos : Span) (name : String) (annot : Option Json) (init body : Expr)
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body => body.span
+  | .ifBody p _ _ _ _ => p
   | .var p _ | .lit p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
@@ -64,6 +66,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "lambda" =>
     return .lam p (← jStr (← jField j "name")) (← jField j "arg")
       (← jField j "result") (← decodeExpr (← jField j "body"))
+  | "ifBody" =>
+    return .ifBody p (← jField j "result") (← decodeExpr (← jField j "cond"))
+      (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
   | "letBody" =>
     let annot ← jField j "annot"
     return .letBody p (← jStr (← jField j "name"))

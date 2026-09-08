@@ -102,9 +102,23 @@ try {
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
+  for (const [name,edit] of [
+    ["missing branch entry", (b,fc)=>{fc.envs=fc.envs.filter(q=>q.pos[0]!==b.then.pos[0]);}],
+    ["wrong false-arm refinement", (b,fc)=>{fc.envs.find(q=>q.pos[0]===b.else_.pos[0]).vars.find(v=>v.name==="flag").type=lit("true");}],
+    ["branch cannot narrow parameter", (b,fc)=>{fc.envs.find(q=>q.pos[0]===b.then.pos[0]).vars.find(v=>v.name==="unit").type=lit("true");}],
+    ["branch result annotation checked", b=>{b.result=lit("false");}],
+    ["non-Boolean closure condition", b=>{b.cond={k:"lit",pos:b.cond.pos,lit:{a:"null"}};}],
+  ]) {
+    const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="branchingClosure");
+    const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="branchingClosure");
+    edit(f.body[0].init.body,fc);
+    expect(name,run("--produce-stateful-source",a,c),false);
+    expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
+  }
   const parser=path.resolve(__dirname,"../tools/parse-source.js");
   for(const [name,closure] of [
-    ["branching closure gated","(u: null): boolean => { if (true) { return true; } else { return false; } }"],
+    ["fall-through closure branch gated","(u: null): boolean => { if (true) { const x = true; } return false; }"],
+    ["missing closure else gated","(u: null): boolean => { if (true) { return true; } }"],
     ["async closure gated","async (u: null): Promise<boolean> => true"],
     ["optional closure parameter gated","(u?: null): boolean => true"],
     ["generic closure gated","<T>(u: T): T => u"],

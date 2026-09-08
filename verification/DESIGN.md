@@ -482,11 +482,18 @@ Raw calculus requests retain the general search producer. Measurements and
 reproduction instructions are in [the direct-proof benchmark](benchmarks/direct-proof.md).
 The term calculus also has a proved ordinary Boolean conditional rule, including
 effectful conditions and checks of both arms against a supplied result type.
-It does not refine branch contexts. Source blocks with branches remain gated.
-They need a call/body interface that preserves
-shared continuations; duplicating branches or dropping internal claims would
+The separate `ifBoolVar` rule refines the directly tested immutable slot to its
+Boolean singleton in each arm. Source closure blocks now support terminal
+`if/else`, including nesting, where both arms return. Each statement entry still
+requires evidence for every supplied binding; the enclosing result annotation
+supplies the common arm type. No join is computed and no continuation is duplicated.
+General falling-through closure branches remain gated. They need a call/body
+interface that preserves shared continuations; duplicating branches or dropping internal claims would
 not implement that interface. Binding identities must become
-explicit before supporting hidden, shadowed bindings. Source loops also remain
+explicit before supporting hidden, shadowed bindings. Testing a mutable
+field may make SKJS export unequal read/write types in an arm. Those claims are
+still rejected by the invariant-cell decoder; immutable-slot refinement does
+not establish retained heap refinements. Source loops also remain
 unconnected; their raw-calculus tests do not establish source integration.
 
 ## Later feature gates

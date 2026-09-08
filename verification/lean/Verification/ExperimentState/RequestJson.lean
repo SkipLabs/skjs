@@ -72,7 +72,10 @@ def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
 def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
   | .node j r ps =>
     (j.type :: j.context).all (validTy bound) &&
-    (match r with | .sub p => (proofTypes p).all (validTy bound) | _ => true) &&
+    (match r with
+      | .sub p => (proofTypes p).all (validTy bound)
+      | .ifBoolVar T F => validTy bound T && validTy bound F
+      | _ => true) &&
     ps.attach.all (fun p => validEvidence bound p.val)
 termination_by e => sizeOf e
 decreasing_by
