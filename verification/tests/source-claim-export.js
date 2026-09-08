@@ -57,5 +57,41 @@ try {
   test("duplicate claims fail conversion rather than being merged",()=>{
     const raw=JSON.parse(fs.readFileSync(partialPath));const selected=raw.find(f=>f.file===partialFile);selected.functions.push(selected.functions[0]);const cp=path.join(tmp,"duplicate.json");fs.writeFileSync(cp,JSON.stringify(raw));assert.notEqual(convert(partialFile,cp,path.join(tmp,"duplicate-out.json")).status,0);
   });
+  const annotate=path.resolve(__dirname,"../tools/annotate-source.js");
+  const report=(claims,out,extra=[])=>run(process.execPath,[annotate,partialFile,"--format","source-claims","--claims",claims,"--out",out,...extra]);
+  const partialReport=path.join(tmp,"partial.annotated.ts");
+  test("converted reports show original collection and fresh results",()=>{
+    const r=report(partial,partialReport,["--conversion",partial+".conversion.json","--verify",verifier]);assert.equal(r.status,0,r.stderr);
+    const text=fs.readFileSync(partialReport,"utf8"),m=JSON.parse(fs.readFileSync(partialReport+".json"));
+    assert(text.includes("original SKJS collection=aborted"));assert(text.includes("statement not visited"));assert(text.includes("expression entered without a type result"));
+    assert.equal(m.conversion.diagnostics,pm.diagnostics);
+    assert.equal(m.results[m.functions.findIndex(f=>f.name==="complete")].status,"verified");
+    assert.notEqual(m.results[m.functions.findIndex(f=>f.name==="annotationFailure")].status,"verified");
+  });
+  test("converted recovery candidates stay visibly marked",()=>{
+    const rp=path.join(tmp,"recovery.json"),out=path.join(tmp,"recovery.annotated.ts"),r=report(rp,out,["--conversion",rp+".conversion.json"]);
+    assert.equal(r.status,0,r.stderr);const text=fs.readFileSync(out,"utf8");assert(text.includes("quality=recovery"));assert(text.includes("recovery claim"));
+  });
+  test("conversion omissions are distinct from unfinished expressions",()=>{
+    const cp=path.join(tmp,"unsupported.json"),out=path.join(tmp,"omitted.annotated.ts"),r=report(cp,out,["--conversion",cp+".conversion.json"]);assert.equal(r.status,0,r.stderr);
+    const m=JSON.parse(fs.readFileSync(out+".json")),f=m.functions.find(f=>f.name==="complete"),pos=f.collectionSnapshot.expressions[0].pos;
+    assert(m.gaps.some(g=>JSON.stringify(g.pos)===JSON.stringify(pos)&&g.status.includes("omitted during conversion")));
+    assert(!m.gaps.some(g=>JSON.stringify(g.pos)===JSON.stringify(pos)&&g.status==="expression entered without a type result"));
+  });
+  test("edited sidecar cannot inherit original collection labels",()=>{
+    const edited=path.join(tmp,"edited.json"),d=structuredClone(pc);d.functions.find(f=>f.name==="complete").entries=[];fs.writeFileSync(edited,JSON.stringify(d));
+    const bad=report(edited,path.join(tmp,"bad-provenance.ts"),["--conversion",partial+".conversion.json"]);assert.notEqual(bad.status,0);assert(bad.stderr.includes("exact sidecar"));
+    const out=path.join(tmp,"edited.annotated.ts"),good=report(edited,out,["--baseline",partialReport+".json","--verify",verifier]);assert.equal(good.status,0,good.stderr);
+    const m=JSON.parse(fs.readFileSync(out+".json"));assert(m.functions.every(f=>!f.collection));assert.equal(m.comparison.changes.length,1);
+    assert.equal(m.results[m.functions.findIndex(f=>f.name==="complete")].status,"not-established");
+  });
+  test("conversion fingerprint participates in report freshness",()=>{
+    const check=()=>run(process.execPath,[annotate,"--check-fresh",partialReport]);assert.equal(check().status,0);
+    const cp=partial+".conversion.json",bytes=fs.readFileSync(cp);fs.appendFileSync(cp," ");assert.notEqual(check().status,0);fs.writeFileSync(cp,bytes);
+  });
+  test("conversion from another source is rejected",()=>{
+    const m=structuredClone(pm);m.source.sha256="0".repeat(64);const cp=path.join(tmp,"stale-conversion.json");fs.writeFileSync(cp,JSON.stringify(m));
+    const r=report(partial,path.join(tmp,"stale.ts"),["--conversion",cp]);assert.notEqual(r.status,0);assert(r.stderr.includes("identity mismatch"));
+  });
   console.log(`Source claim export: ${passed} passed, 0 failed`);
 } finally {fs.rmSync(tmp,{recursive:true,force:true});}

@@ -216,3 +216,16 @@ without claiming that erroneous source can be repaired by false annotations.
 [producer-independent sidecar](SOURCE-CLAIMS.md), including fresh verification and
 baseline comparison. Unlike `--format report`, this is an input to the Lean
 consumer, with its own versioned schema and source fingerprint.
+
+
+For converted SKJS sidecars, `--conversion claims.json.conversion.json` attaches
+original collection and recovery labels, diagnostic text and conversion omissions
+to the report manifest. It is restricted to `--format source-claims` and to the
+exact original sidecar and source snapshot. The renderer bases visitation gaps
+on the original export, so a type omitted by conversion is not called an
+unfinished expression. All verification results are still obtained freshly
+from the current sidecar, never from the conversion manifest.
+
+After editing claims, use the initial report as `--baseline` instead of attaching
+the old conversion manifest. `--check-fresh` detects changes to an attached
+conversion manifest as well as the report's other inputs.

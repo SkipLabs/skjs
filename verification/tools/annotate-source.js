@@ -14,6 +14,7 @@ function comment(x) {
       `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
       ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
       ...(x.claimChanges ? [`Claim edits against baseline: ${x.claimChanges.length}; before/after values are in the manifest.`] : []),
+      ...(x.conversionOmissions ? [`Conversion omissions: ${x.conversionOmissions.length}; original payloads and reasons are in the manifest.`] : []),
       "Function results cover modeled obligations, not every exported claim.",
       "Original spans are before annotation. Full details are in the companion JSON manifest."];
     return "/* @verify-report\n * "+lines.map(safeText).join("\n * ")+"\n */\n";
@@ -22,7 +23,7 @@ function comment(x) {
   if(x.kind === "function") {
     const signature=x.signature ? `; claimed (${x.signature.params.map(p=>`${p.name}: ${typeText(p.type)}`).join(", ")}) => ${typeText(x.signature.retType)}` : "";
     text=`function ${x.name}; producer=${x.producer}${signature}; verification=${x.verification.status}`;
-    if(x.collection)text+=`; collection=${x.collection.completion}; quality=${x.collection.quality}; mode=${x.collection.mode}`;
+    if(x.collection)text+=`; ${x.collectionSource||""}collection=${x.collection.completion}; quality=${x.collection.quality}; mode=${x.collection.mode}`;
     if(x.verification.detail)text+=`; ${x.verification.detail}`;
   } else if(x.kind === "entry") {
     text=`entry { ${x.bindings.map(b=>`${b.name}: ${b.type}`).join(", ")} }`;
@@ -79,6 +80,34 @@ function fromSourceClaims(source,file,input,producer) {
       }),expressions:f.expressions.map(e=>({pos:e.pos,type:type(e.type),raw:e.type}))}))};
 }
 
+function attachConversion(source,report,sidecarBytes,conversion) {
+  if(conversion.version!==1||conversion.kind!=="skjs-source-claim-conversion")throw Error("unsupported conversion manifest");
+  if(conversion.source?.file!==report.source.file||conversion.source?.sha256!==hash(source))throw Error("conversion source identity mismatch");
+  if(conversion.sidecarSha256!==hash(sidecarBytes))throw Error("conversion manifest does not match the exact sidecar; use a baseline for edited claims");
+  if(!Array.isArray(conversion.omissions))throw Error("invalid conversion omissions");
+  const original=fromSkjs(source,report.source.file,conversion.originalClaims,"skjs");
+  render(source,original); // Validate original spans before using them for collection history.
+  const result=clone(report);
+  for(const f of result.functions) {
+    const old=original.functions.find(g=>g.name===f.name&&g.namePos.join(":")===f.namePos.join(":"));
+    if(!old)throw Error("conversion is missing the original function snapshot");
+    if(old.collection) {
+      f.collection=old.collection;f.collectionSource="original SKJS ";
+      f.collectionSnapshot={entries:old.entries.map(e=>({pos:e.pos})),expressions:old.expressions.map(e=>({pos:e.pos}))};
+    }
+    f.conversionGaps=[];
+    for(const omission of conversion.omissions) {
+      if(omission.function!==f.name||JSON.stringify(omission.namePos)!==JSON.stringify(f.namePos))continue;
+      const pos=omission.site?.pos;
+      if(omission.site?.kind==="expression" && old.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos)) &&
+          !f.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos))) {
+        f.conversionGaps.push({pos,status:`expression claim omitted during conversion: ${omission.reason}`});
+      }
+    }
+  }
+  return result;
+}
+
 function parse(source, file) {
   const sf=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
   if(sf.parseDiagnostics.length)throw Error(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText," "));
@@ -112,7 +141,7 @@ function render(source, report, results=null, identity={}) {
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
     add(node.getStart(sf),{kind:"function",name:f.name,producer:report.producer,
-      collection:f.collection,
+      collection:f.collection,collectionSource:f.collectionSource,
       ...(f.signature ? {signature:f.signature} : {}),
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
     const at=(kind,q)=> {
@@ -161,9 +190,11 @@ function coverage(source,report) {
     if(!ts.isFunctionDeclaration(node)||!node.name||!node.body)continue;
     const f=report.functions.find(f=>f.namePos[0]===node.name.getStart(sf)&&f.namePos[1]===node.name.end);
     if(!f){gaps.push({pos:[node.getStart(sf),node.end],status:"claims unavailable; verification not established"});continue;}
+    const snapshot=f.collectionSnapshot||f;
+    for(const gap of f.conversionGaps||[])gaps.push(gap);
     if(!f.collection)continue;
     for(const pos of f.collection.visitedExpressions||[]) {
-      if(!f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
+      if(!snapshot.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
         if(!Array.isArray(pos)||pos.length!==2||!pos.every(Number.isSafeInteger)||pos[0]<node.getStart(sf)||pos[1]>node.end||pos[0]>=pos[1])throw Error("invalid expression visit span");
         const matches=n=>(n.getStart(sf)===pos[0]&&n.end===pos[1])||ts.forEachChild(n,matches);
         if(!matches(node))throw Error("cannot attach expression visit");
@@ -174,7 +205,7 @@ function coverage(source,report) {
       const walk=n=> {
         if(ts.isFunctionDeclaration(n))return;
         if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isExpressionStatement(n)) &&
-           !f.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
+           !snapshot.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
         ts.forEachChild(n,walk);
       };
       walk(node.body);
@@ -254,6 +285,7 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
 function checkFresh(output) {
   const m=JSON.parse(fs.readFileSync(output+".json","utf8"));
   const checks=[[output,m.annotatedSha256],[m.sourcePath,m.source.sha256],[m.claimsPath,m.claimsSha256]];
+  if(m.conversionPath)checks.push([m.conversionPath,m.conversionSha256]);
   if(m.baselinePath)checks.push([m.baselinePath,m.baselineSha256]);
   if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
   if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
@@ -266,13 +298,13 @@ function main(args) {
   if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
   const sourcePath=args.shift(), options={format:"skjs",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.js source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
-  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline"]);
+  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion"]);
   while(args.length) {
     const key=args.shift()?.replace(/^--/,"");
     if(!allowed.has(key)||!args.length)throw Error(`invalid option ${key}`);
     options[key]=args.shift();
   }
-  options.producer ??= options.format==="skjs" ? "skjs" : "unspecified";
+  options.producer ??= options.conversion ? "skjs (converted)" : options.format==="skjs" ? "skjs" : "unspecified";
   if(!options.claims || !["skjs","report","source-claims"].includes(options.format))throw Error("expected --claims and a supported format");
   if(!/^\d+$/.test(String(options.depth))||!Number.isSafeInteger(Number(options.depth)))throw Error("invalid proof depth");
   if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
@@ -281,10 +313,17 @@ function main(args) {
   if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose a new --out path");
   const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims), input=JSON.parse(bytes);
   const file=options["file-key"] || sourcePath;
-  const report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
+  let report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
+  let conversion=null,conversionBytes=null;
+  if(options.conversion) {
+    if(options.format!=="source-claims")throw Error("--conversion requires --format source-claims");
+    conversionBytes=fs.readFileSync(options.conversion);conversion=JSON.parse(conversionBytes);
+    report=attachConversion(source,report,bytes,conversion);
+  }
   // Validate attachment before running any expensive proof generation.
   render(source,report);
   let results=null, identity={claimsSha256:hash(bytes)}, comparison=null;
+  if(conversion)identity.conversionSha256=hash(conversionBytes);
   if(options.baseline) {
     const baselineBytes=fs.readFileSync(options.baseline);
     comparison=compareClaims(source,JSON.parse(baselineBytes),report);
@@ -296,11 +335,12 @@ function main(args) {
   }
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
   if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
-  const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{})});
+  const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{}),...(conversion?{conversionOmissions:conversion.omissions}:{})});
   const data={version:1,sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
+    ...(conversion?{conversionPath:path.resolve(options.conversion),conversion}:{}),
     ...(comparison?{baselinePath:path.resolve(options.baseline),comparison}:{}),
     gaps:coverage(source,report),functions:report.functions,results};
   fs.writeFileSync(output,annotated,{flag:"wx"});
@@ -309,4 +349,4 @@ function main(args) {
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
 if(require.main===module)try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
-module.exports={hash,fromSkjs,fromSourceClaims,render,coverage,compareClaims,verifySkjs,main};
+module.exports={hash,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs,main};

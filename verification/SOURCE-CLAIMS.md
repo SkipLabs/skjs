@@ -144,9 +144,27 @@ to the original SKJS invocation: recovery metadata survives in the conversion
 manifest and never becomes a proof assumption.
 
 Review that manifest alongside the sidecar, particularly for recovered exports.
-Sidecar reports do not automatically load conversion provenance; their results
-concern the supplied candidates. Keep an initial annotated sidecar report as the
-baseline before editing a copy, then verify and compare the edited copy normally.
+Attach it explicitly when making the initial report:
+
+```sh
+node verification/tools/annotate-source.js input.ts --format source-claims \
+  --claims source-claims.json --conversion source-claims.json.conversion.json \
+  --verify verification/lean/.lake/build/bin/verifier --out initial.annotated.ts
+```
+
+The report shows **original SKJS collection** status and recovery labels,
+retains diagnostics and omissions, and uses the original snapshot to distinguish
+unfinished expressions from claims omitted by conversion. The conversion
+manifest must match both the source identity and the exact sidecar bytes. Its
+fingerprint participates in report freshness checks. These are provenance
+checks, not authentication or proof of the producer's descriptions.
+
+Keep this initial report as the baseline before editing a copy of the sidecar.
+For edited claims, omit `--conversion` and use
+`--baseline initial.annotated.ts.json` with fresh verification. An old conversion
+manifest is rejected for changed sidecar bytes, even whitespace changes: original
+collection labels must not silently describe edited candidates. The baseline
+retains the original history while the new report describes current claims.
 The initial SKJS export has no source digest, so matching it to the chosen source
 snapshot still requires care: conversion checks function/site identities but
 cannot detect every stale raw export whose offsets happen to remain valid. The
