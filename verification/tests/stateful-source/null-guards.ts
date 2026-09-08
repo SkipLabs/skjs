@@ -179,3 +179,55 @@ function capturedTernary(value: null | boolean): boolean {
     value !== null ? value : false;
   return choose(null);
 }
+
+/** Null selects the fallback; false is already a value and must survive. */
+function coalesceBoolean(value: null | boolean): boolean {
+  return value ?? true;
+}
+
+/** A fallback allocation turns an optional local cell into a usable cell. */
+function coalesceCell(present: boolean, value: boolean): boolean {
+  const optional: null | { value: boolean } = present ? { value: value } : null;
+  const fallback: { value: boolean } = { value: false };
+  const cell: { value: boolean } = optional ?? fallback;
+  return cell.value;
+}
+
+/** Select one of two checked closures without an external callback assumption. */
+function coalesceCallback(present: boolean, value: boolean): boolean {
+  const optional: null | ((x: boolean) => boolean) = present
+    ? (x: boolean): boolean => !x
+    : null;
+  const fallback: (x: boolean) => boolean = (x: boolean): boolean => x;
+  const callback: (x: boolean) => boolean = optional ?? fallback;
+  return callback(value);
+}
+
+/** The fallback write runs only for null, including when the left value is false. */
+function coalesceWrite(value: null | boolean): boolean {
+  const cell: { value: boolean } = { value: false };
+  const result: boolean = value ?? (cell.value = true);
+  return cell.value;
+}
+
+/** A call on the left toggles a cell: repeating it would change the result. */
+function coalesceOnce(value: boolean): boolean {
+  const cell: { value: boolean } = { value: value };
+  const left: (unit: null) => null = (unit: null): null => {
+    cell.value = !cell.value;
+    return null;
+  };
+  return left(null) ?? cell.value;
+}
+
+/** In the fallback the immutable input is known to be null, even in a closure. */
+function coalesceAlias(value: null | boolean): null | boolean {
+  const choose: (unit: null) => null | boolean = (unit: null): null | boolean =>
+    value ?? value;
+  return choose(null);
+}
+
+/** Nested coalescing preserves both operand scopes and short-circuit choices. */
+function coalesceNested(left: null | boolean, right: null | boolean): boolean {
+  return left ?? right ?? false;
+}

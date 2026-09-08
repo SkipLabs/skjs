@@ -596,6 +596,9 @@ Source ternaries reuse these rules and the existing null-tag union elimination.
 Their own expression claim supplies the result type; both arm claims are checked
 under the corresponding refined context. This introduces no additional rule or
 trusted proof-search step.
+Null coalescing is likewise a derived form: a let saves the left value, and
+`unionVar` with known null-tag conditionals selects the fallback or saved value.
+No truthiness rule is involved; false remains a result of the left operand.
 
 
 Closure branches whose two arms fall through require no additional typing rule.

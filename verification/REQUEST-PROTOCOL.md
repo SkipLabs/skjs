@@ -380,6 +380,15 @@ Boolean-variable and null-tag refinements use the existing rules, while general
 conditions use ordinary Boolean elimination. Effects execute in the condition
 and selected arm only. No new calculus rule or source type label is introduced.
 
+Null coalescing uses `{"k":"coalesce","pos":[start,end],"left":...,"right":...}`.
+The overall expression and both operands select exact expression claims. Lowering
+saves the left result in a let slot, then uses null-tag testing and `unionVar`
+to check the fallback or return the saved value. False takes the latter path.
+For a syntactic immutable variable on the left, its name refers to the saved slot
+inside the fallback; its original slot becomes anonymous. This exposes the proved
+null refinement without claiming an alias for reads or calls. The source profile
+excludes undefined, so testing null covers every admitted nullish value.
+
 For fall-through branches, `ifBody` has the administrative null result type and
 each arm ends in `{"k":"doneBody","pos":[start,end]}`. The sentinel is not a
 source expression or a claimed JavaScript result. A `seqBody` with `pos`, `init`

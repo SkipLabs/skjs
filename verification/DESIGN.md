@@ -697,3 +697,12 @@ synthetic statement-entry environment. This supports dynamically chosen local
 nullable cells and callbacks without changing the external-value boundary or
 adding a typing rule. Effectful conditions and selected-arm effects retain their
 ordinary sequential evaluation.
+
+Null coalescing uses the same existing null-tag and union-elimination rules:
+save the left operand once, evaluate the fallback only for null, otherwise return
+the saved value (including false). The fallback may allocate, write or call.
+For an immutable variable operand, moving its name to the saved slot exposes its
+null refinement; reads and calls confer no retained alias. Both operand claims
+remain required. Undefined remains outside the source profile. Examples use
+named cell/callback fallback contracts because the current exporter can leave
+compound inferred alternatives unsupported; the consumer does not approximate them.

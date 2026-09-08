@@ -26,6 +26,7 @@ def translate (j : Json) : Except String (Ty Nat) := do
 inductive Expr where
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Wire.Val)
+  | coalesce (pos : Span) (left right : Expr)
   | nullTest (pos : Span) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
   | alloc (pos : Span) (e : Expr)
@@ -45,7 +46,7 @@ inductive Expr where
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .nullTest p _ _ _ _ => p
+  | .ifBody p _ _ _ _ | .done p | .nullTest p _ _ _ _ | .coalesce p _ _ => p
   | .var p _ | .lit p _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
@@ -89,6 +90,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     | _, .lit _ .vnull => return .nullTest p (op == "===") true left right
     | .lit _ .vnull, _ => return .nullTest p (op == "===") false left right
     | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null literal operand"
+  | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
   | "read" => return .read p (← decodeExpr (← jField j "e"))

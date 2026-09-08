@@ -209,23 +209,79 @@ try {
   );
   const ternary = guardAst.functions.find((f) => f.name === "ternaryGuard")
     .body[0].e;
-  for (const [label, pos] of [
-    ["result", ternary.pos],
-    ["arm", ternary.else_.pos],
+  const coalesce = guardAst.functions.find((f) => f.name === "coalesceBoolean")
+    .body[0].e;
+  for (const [name, sites] of [
+    [
+      "ternaryGuard",
+      [
+        ["result", ternary.pos],
+        ["arm", ternary.else_.pos],
+      ],
+    ],
+    [
+      "coalesceBoolean",
+      [
+        ["result", coalesce.pos],
+        ["left", coalesce.left.pos],
+        ["right", coalesce.right.pos],
+      ],
+    ],
   ]) {
-    const missing = structuredClone(guardClaims);
-    const f = missing
-      .find((f) => f.file === guardFile)
-      .functions.find((f) => f.name === "ternaryGuard");
-    f.exprs = f.exprs.filter((e) => e.pos[0] !== pos[0] || e.pos[1] !== pos[1]);
-    for (const mode of ["--produce-stateful-source", "--check-stateful-source"])
-      expect(
-        `ternary ${label} claim required (${mode})`,
-        run(mode, guardAst, missing, guardEvidence, guardFile),
-        false,
-        "no claimed type",
+    for (const [label, pos] of sites) {
+      const missing = structuredClone(guardClaims);
+      const f = missing
+        .find((f) => f.file === guardFile)
+        .functions.find((f) => f.name === name);
+      f.exprs = f.exprs.filter(
+        (e) => e.pos[0] !== pos[0] || e.pos[1] !== pos[1],
       );
+      for (const mode of [
+        "--produce-stateful-source",
+        "--check-stateful-source",
+      ])
+        expect(
+          `${name} ${label} claim required (${mode})`,
+          run(mode, guardAst, missing, guardEvidence, guardFile),
+          false,
+          "no claimed type",
+        );
+    }
   }
+  const wrongCoalesce = structuredClone(guardClaims);
+  const coalesceFn = wrongCoalesce
+    .find((f) => f.file === guardFile)
+    .functions.find((f) => f.name === "coalesceBoolean");
+  coalesceFn.exprs.find(
+    (e) => e.pos[0] === coalesce.pos[0] && e.pos[1] === coalesce.pos[1],
+  ).type = { top: false, atoms: [{ a: "booleanlit", v: "true" }] };
+  expect(
+    "coalescing cannot discard a false left value",
+    run(
+      "--produce-stateful-source",
+      guardAst,
+      wrongCoalesce,
+      undefined,
+      guardFile,
+    ),
+    false,
+  );
+  const swappedCoalesce = structuredClone(guardAst);
+  const swapped = swappedCoalesce.functions.find(
+    (f) => f.name === "coalesceBoolean",
+  ).body[0].e;
+  [swapped.left, swapped.right] = [swapped.right, swapped.left];
+  expect(
+    "old evidence rejects swapped coalescing operands",
+    run(
+      "--check-stateful-source",
+      swappedCoalesce,
+      guardClaims,
+      guardEvidence,
+      guardFile,
+    ),
+    false,
+  );
   const narrowedTernary = structuredClone(guardClaims);
   const ternaryFn = narrowedTernary
     .find((f) => f.file === guardFile)
@@ -281,6 +337,14 @@ try {
     ])
       assert.equal(guardContext[name](value), value === null ? false : value);
     assert.equal(guardContext.loopGuard(value), false);
+    assert.equal(guardContext.coalesceBoolean(value), value ?? true);
+    assert.equal(guardContext.coalesceWrite(value), value === null);
+    assert.equal(guardContext.coalesceAlias(value), value);
+    for (const right of [null, true, false])
+      assert.equal(
+        guardContext.coalesceNested(value, right),
+        value ?? right ?? false,
+      );
   }
   for (const value of [true, false]) {
     assert.equal(guardContext.nullableCellRead(value), value);
@@ -288,8 +352,14 @@ try {
     assert.equal(guardContext.nullableCellWrite(value), true);
     assert.equal(guardContext.optionalCallback(value), !value);
     assert.equal(guardContext.ternaryEffects(value), !value);
+    assert.equal(guardContext.coalesceOnce(value), !value);
     for (const present of [true, false]) {
       assert.equal(guardContext.chosenCell(present, value), present && value);
+      assert.equal(guardContext.coalesceCell(present, value), present && value);
+      assert.equal(
+        guardContext.coalesceCallback(present, value),
+        present ? !value : value,
+      );
       assert.equal(
         guardContext.chosenCallback(present, value),
         present && !value,

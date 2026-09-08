@@ -225,6 +225,8 @@ function expr(node) {
       return { k: "not", pos: span(node), e: expr(node.operand) };
 
     case ts.SyntaxKind.BinaryExpression: {
+      if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+        return {k: "coalesce", pos: span(node), left: expr(node.left), right: expr(node.right)};
       if (node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
         if (!ts.isPropertyAccessExpression(node.left) || node.left.questionDotToken || node.left.name.text !== "value")
           fail(node.left, "only cell.value assignments are supported");

@@ -98,6 +98,14 @@ require expression claims. Only the selected arm executes; conditions may have
 effects. The null-guard examples dynamically select nullable cells and callbacks
 and then read or call them after a guard.
 
+Null coalescing (`a ?? b`) evaluates and saves `a` once, selecting `b` only for
+null. In particular, false is preserved. It works with supported primitive, cell
+and function unions, inside closures too. An immutable variable on the left is
+refined to null in the fallback; property reads receive no retained refinement.
+Both operand claims remain required. Undefined is outside the source profile.
+Named, explicitly typed cell/callback fallbacks avoid compound inferred claims
+that the current SKJS exporter cannot yet represent.
+
 Source annotations and claims can also form unions of the supported primitive,
 cell and unary function types, such as nullable local cells and optional function
 results. Every arm keeps its existing validation; unsupported arms are rejected.

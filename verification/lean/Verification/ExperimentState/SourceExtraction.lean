@@ -142,6 +142,23 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     let H := right.type::left.type::Γ
     let result ← nullTestPlan H (if testLeft then 1 else 0) equal A
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
+  | .coalesce _ left right => do
+    let l ← closureExpr fc scope Γ left
+    let K := l.type :: Γ
+    let H := (BranchRefinement.tagSlice SourceTypes.graph l.type .isNul true) :: Γ
+    -- A named immutable left operand is identical to the saved value. Move its
+    -- name to that slot for the fallback; no mutable read is given an alias.
+    let rightScope := match left with
+      | .var _ name => name :: scope.map (fun n => if n == name then "" else n)
+      | _ => "" :: scope
+    let r ← closureExpr fc rightScope H right
+    let term := Tm.ite (.test .isNul (.var 0)) r.term (.var 0)
+    let children := l.type.map fun label =>
+      let L := [label] :: Γ
+      let q := decide (Answers SourceTypes.graph [label] .isNul true)
+      let selected := if q then DirectProof.cast L A r else DirectProof.var L 0 A
+      DirectProof.node L term A (if q then .ifTrue else .ifFalse) [selected]
+    pure (DirectProof.letE Γ l (DirectProof.node K term A (.unionVar 0) children))
   | .not _ a => do
     let a ← closureExpr fc scope Γ a
     pure (DirectProof.ifE SourceTypes.graph Γ A a
@@ -276,7 +293,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .lam .. | .ifBody _ none .. =>
+  | .lam .. | .ifBody _ none .. | .coalesce .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A
   | .nullTest _ equal testLeft left right =>
