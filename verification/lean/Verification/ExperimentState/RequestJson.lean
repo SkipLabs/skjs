@@ -30,6 +30,8 @@ structure Request where
   claims : List (PointClaim Nat)
   result : Ty Nat
   start : Nat
+  /-- External argument contract, in slot order; independent of point claims. -/
+  inputs : List (Ty Nat)
   deriving ToJson, FromJson
 
 structure Response where
@@ -52,8 +54,9 @@ def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
 /-- The total Lean graph's out-of-range default must not become an accidental
 meaning for an invalid serialized type reference. -/
 def validRequest (r : Request) : Bool :=
-  r.version == 1 && (r.types.flatMap id |>.flatMap clauseTypes).all (validTy r.types.length) &&
-  r.claims.all (validClaim r.types.length) && validTy r.types.length r.result
+  r.version == 2 && (r.types.flatMap id |>.flatMap clauseTypes).all (validTy r.types.length) &&
+  r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
+  r.inputs.all (validTy r.types.length)
 
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .empty => []
@@ -78,7 +81,7 @@ decreasing_by
   omega
 
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.version == 1 && c.certificate.all (fun n =>
+  c.version == 2 && c.certificate.all (fun n =>
     validEvidence r.types.length n.expression &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
 
@@ -109,7 +112,7 @@ def decodeResponse (r : Request) (j : Json) : Except String Response := do
 /-- This check remains independent of the producer and its search settings. -/
 def verify (r : Request) (c : Response) : Bool :=
   validRequest r && validResponse r c &&
-    CertificateProducer.accept (graph r) r.result r.program r.claims c.certificate r.start
+    CertificateProducer.accept (graph r) r.result r.program r.claims c.certificate r.start r.inputs
 
 def verifyJson (request evidence : Json) : Except String Unit :=
   match decodeRequest request with
@@ -137,18 +140,27 @@ Fuel bounds search only; it is not part of the certified request. -/
 def produceJson (request : Json) (fuel : Nat) : Except String Json := do
   let r ← decodeRequest request
   let C ← match produce (graph r) (List.range r.types.length) fuel
-      r.result r.program r.claims r.start with
+      r.result r.program r.claims r.start [] r.inputs with
     | .ok c => pure c
     | .error e => throw s!"evidence search failed (unsupported or unjustified): {reprStr e}"
-  let response := toJson (Response.mk 1 C)
+  let response := toJson (Response.mk 2 C)
   verifyJson request response
   return response
 
-theorem verify_safe {r : Request} {c : Response} (hc : verify r c = true) (n : Nat) :
+theorem verify_safe {r : Request} {c : Response} (hc : verify r c = true) (n W h ρ)
+    (he : EnvOk (graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
+  simp only [verify, Bool.and_eq_true] at hc
+  exact CertificateProducer.accepted_from_inputs hc.2 n W h ρ he hw hh
+
+/-- Empty input contracts retain the closed-invocation corollary. -/
+theorem verify_closed_safe {r : Request} {c : Response}
+    (hc : verify r c = true) (hi : r.inputs = []) (n : Nat) :
     SafeGraph r.program (meaning (graph r) r.result) n (ofList []) []
       (.at r.start (fun _ => .nul)) := by
-  simp only [verify, Bool.and_eq_true] at hc
-  exact CertificateProducer.accepted_safe hc.2 n
+  apply verify_safe hc n _ [] _ _ WorldAdm_nil (emptyHeapOk n)
+  rw [hi]
+  exact ⟨fun _ => trivial, by simp⟩
 
 theorem verify_claims {r : Request} {c : Response} (hc : verify r c = true) :
     c.certificate.map signature = r.claims := by
@@ -161,13 +173,14 @@ theorem verifyJson_safe {request evidence : Json}
     (h : verifyJson request evidence = .ok ()) :
     ∃ r c, decodeRequest request = .ok r ∧ decodeResponse r evidence = .ok c ∧
       c.certificate.map signature = r.claims ∧
-      ∀ n, SafeGraph r.program (meaning (graph r) r.result) n (ofList []) []
-        (.at r.start (fun _ => .nul)) := by
+      ∀ n W h ρ, EnvOk (graph r) r.inputs ρ n W → WorldAdm W → HeapOk n W h →
+        SafeGraph r.program (meaning (graph r) r.result) n W h (.at r.start ρ) := by
   obtain ⟨r,c,hr,hc,hv⟩ := verifyJson_checked h
   exact ⟨r,c,hr,hc,verify_claims hv,verify_safe hv⟩
 
 #print axioms verifyJson_safe
 #print axioms verifyJson_checked
+#print axioms verify_closed_safe
 #print axioms verify_safe
 #print axioms verify_claims
 end Verification.ExperimentState.RequestJson

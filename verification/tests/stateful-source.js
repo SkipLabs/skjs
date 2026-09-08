@@ -15,6 +15,8 @@ const branchAst = a => a.functions.find(f => f.name === "mergeWithLocals");
 const branchClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "mergeWithLocals");
 const refinedAst = a => a.functions.find(f => f.name === "narrowVariable");
 const refinedClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "narrowVariable");
+const parameterAst = a => a.functions.find(f => f.name === "selectParameter");
+const parameterClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "selectParameter");
 const ty = v => ({ top: false, atoms: [{ a: "booleanlit", v }] });
 let passed = 0;
 function run(mode, a, c, evidence) {
@@ -82,6 +84,19 @@ try {
       const arm = refinedAst(a).body.find(s => s.k === "if").then[0];
       refinedClaims(c).envs.find(e => e.pos[0] === arm.pos[0]).vars.find(v => v.name === "other").type = ty("true");
     }, "evidence search failed"],
+    ["narrow claimed parameter signature", (a,c) => { parameterClaims(c).params[1].type = ty("true"); }, "claimed parameter type differs"],
+    ["parameter claim count", (a,c) => { parameterClaims(c).params.pop(); }, "parameter claim count mismatch"],
+    ["parameter claim order", (a,c) => { parameterClaims(c).params.reverse(); }, "parameter claim name or order mismatch"],
+    ["duplicate source parameter", a => { parameterAst(a).params[1].name = "first"; }, "duplicate source parameter name"],
+    ["unjustified entry refinement", (a,c) => {
+      const initial = parameterAst(a).body[0].pos[0];
+      parameterClaims(c).envs.find(e => e.pos[0] === initial).vars.find(v => v.name === "second").type = ty("true");
+    }, "evidence search failed"],
+    ["missing parameter entry binding", (a,c) => {
+      const initial = parameterAst(a).body[0].pos[0];
+      const env = parameterClaims(c).envs.find(e => e.pos[0] === initial);
+      env.vars = env.vars.filter(v => v.name !== "second");
+    }, "missing claimed binding"],
     ["AST identity mismatch", a => { a.file = "other.ts"; }, "AST file key mismatch"],
   ];
   for (const [name, alter, message] of cases) {

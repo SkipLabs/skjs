@@ -79,3 +79,34 @@ function refineThenMerge(): boolean {
   }
   return condition;
 }
+
+function selectParameter(first: null, second: boolean): boolean {
+  const copy: boolean = second;
+  return copy;
+}
+
+function narrowParameter(condition: boolean, value: null): boolean {
+  if (condition) {
+    const yes: true = condition;
+    return yes;
+  } else {
+    return condition;
+  }
+}
+
+function parameterMerge(condition: boolean, value: null): null {
+  if (condition) {
+    const yes: true = condition;
+  } else {
+    const no: false = condition;
+  }
+  return value;
+}
+
+function singletonParameter(exact: true): true {
+  return exact;
+}
+
+function unionParameter(value: null | boolean): null | boolean {
+  return value;
+}

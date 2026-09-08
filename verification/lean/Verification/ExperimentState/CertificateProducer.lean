@@ -16,11 +16,12 @@ def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
 
 /-- Claims are part of the request, not facts the producer may replace. -/
 def accept [DecidableEq ι] (G : NormalGraph ι) (R : Ty ι) (P : Program)
-    (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat) : Bool :=
-  decide (C.map signature = claims) && checkClosed G R P C start
+    (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
+    (inputs : List (Ty ι) := []) : Bool :=
+  decide (C.map signature = claims) && checkEntry G R P C start inputs
 
-theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {R P claims C start}
-    (hc : accept G R P claims C start = true) : C.map signature = claims :=
+theorem accept_claims [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs}
+    (hc : accept G R P claims C start inputs = true) : C.map signature = claims :=
   by
     simp only [accept, Bool.and_eq_true, decide_eq_true_eq] at hc
     exact hc.1
@@ -31,6 +32,13 @@ theorem accepted_safe [DecidableEq ι] {G : NormalGraph ι} {R P claims C start}
   by
     simp only [accept, Bool.and_eq_true] at hc
     exact accepted_closed_safe hc.2 n
+
+theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {R P claims C start inputs}
+    (hc : accept G R P claims C start inputs = true) (n W h ρ)
+    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafeGraph P (meaning G R) n W h (.at start ρ) := by
+  simp only [accept, Bool.and_eq_true] at hc
+  exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh
 
 /-- Small arrow search: source, domain union, and pairwise compatible codomain
 combination. The checker, not this search strategy, defines the rules. -/
@@ -220,14 +228,14 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
-    (start : Nat) (hints : List (Ty ι) := []) : Except Failure (ControlFlow.Certificate ι) :=
-  match produceRaw G (vocabulary G labels claims hints) fuel P claims with
+    (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := []) : Except Failure (ControlFlow.Certificate ι) :=
+  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims with
   | .error e => .error e
-  | .ok C => if accept G R P claims C start then .ok C else .error .rejected
+  | .ok C => if accept G R P claims C start inputs then .ok C else .error .rejected
 
-theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints C}
-    (h : produce G labels fuel R P claims start hints = .ok C) :
-    accept G R P claims C start = true := by
+theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs C}
+    (h : produce G labels fuel R P claims start hints inputs = .ok C) :
+    accept G R P claims C start inputs = true := by
   unfold produce at h
   split at h
   · contradiction
@@ -235,6 +243,7 @@ theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P c
     · cases h; assumption
     · contradiction
 
+#print axioms accepted_from_inputs
 #print axioms accepted_safe
 #print axioms produce_checked
 end Verification.ExperimentState.CertificateProducer

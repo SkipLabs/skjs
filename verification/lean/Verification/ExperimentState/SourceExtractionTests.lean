@@ -22,7 +22,7 @@ private def is [BEq α] (r : Except String α) (expected : α) : Bool :=
 #guard (meet .bool (.boolLit true) : List (Clause (List Nat))) == [.boolLit true]
 
 private def request (t : Tm) (A : Ty Nat) : Request :=
-  ⟨1, SourceTypes.types, [⟨t,.ret⟩], [⟨[],A⟩], A, 0⟩
+  ⟨2, SourceTypes.types, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
 #guard ok (RequestJson.produceJson (toJson (request .tru [1])) 5)
 #guard ok (RequestJson.produceJson (toJson (request .fls [2])) 5)
 #guard ok (RequestJson.produceJson (toJson (request .tru [1,2])) 5)
@@ -132,5 +132,29 @@ private def variableClaims (q : Bool) : FunTypeClaims :=
 #guard is ((extractFn (variableFn false) (variableClaims false)).map runRequest) (some .fls)
 #guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn true) (variableClaims true))) 8)
 #guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn false) (variableClaims false))) 8)
+
+-- Source input slots follow declaration order, independently of export order
+-- inside each environment. Newly declared locals still push ahead of them.
+private def parameterFn : Verification.Fn :=
+  ⟨"parameters",(0,1),[⟨"first",⟨false,[.null]⟩⟩,⟨"second",⟨false,[.bool]⟩⟩],
+    ⟨false,[.bool]⟩,[.ret (2,5) (.var (4,5) "second")]⟩
+private def parameterClaims : FunTypeClaims :=
+  ⟨"parameters",(0,1),[("first",some ⟨false,[.null]⟩),("second",some ⟨false,[.bool]⟩)],
+    some ⟨false,[.bool]⟩,
+    [(2,[("second",some ⟨false,[.bool]⟩),("first",some ⟨false,[.null]⟩)])],
+    [((4,5),some ⟨false,[.bool]⟩)]⟩
+private def runArguments (r : Request) (vs : List Tm) :=
+  runPrimitive 100 r.program r.start (fun i => vs[i]?.getD .nul)
+#guard is ((extractFn parameterFn parameterClaims).map (·.inputs)) [[0],[1,2]]
+#guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.tru])) (some .tru)
+#guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.fls])) (some .fls)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn parameterFn parameterClaims)) 8)
+
+-- Even if all internal claims consistently narrow the parameter to true,
+-- the separate source-signature entry edge must reject that narrowing.
+private def narrowedEntry : FunTypeClaims := { parameterClaims with
+  envs := [(2,[("first",some ⟨false,[.null]⟩),("second",some t)])]
+  exprs := [((4,5),some t)] }
+#guard !ok (do RequestJson.produceJson (toJson (← extractFn parameterFn narrowedEntry)) 8)
 
 end Verification.ExperimentState.SourceExtractionTests

@@ -281,23 +281,27 @@ Every target must exist in both the program and the certificate. Both branch
 edges are checked even when the condition is a literal, and unreachable nodes
 are checked too. Omitting a predecessor list cannot bypass these obligations.
 
-`checkClosed` also requires a valid start label with an empty entry environment.
-`accepted_closed_safe` proves global safety for every execution budget. In the
-formula below, the initial heap and world are empty and the initial environment
-is the closed default environment:
+`checkEntry` checks the graph and requires the start claim to equal a separately
+supplied input context $\Gamma_0$. `accepted_inputs_safe` proves:
 
 $$
 \begin{gathered}
-\operatorname{checkClosed}(G,R,P,C,\ell)=\mathsf{true}
+\operatorname{checkEntry}(G,R,P,C,\ell,\Gamma_0)=\mathsf{true}
+\\
+\land\;\operatorname{EnvOk}_G(\Gamma_0,\rho,n,W)
+\land\;\operatorname{WorldAdm}(W)
+\land\;\operatorname{HeapOk}(n,W,h)
 \\
 \Longrightarrow\quad
-\forall n.\;\operatorname{SafeGraph}_P
-  (\llbracket R\rrbracket_G,n,W_{\varnothing},[],\operatorname{at}(\ell,\rho_{\varnothing})).
+\operatorname{SafeGraph}_P(\llbracket R\rrbracket_G,n,W,h,\operatorname{at}(\ell,\rho)).
 \end{gathered}
 $$
 
-The stronger `accepted_entry_safe` accepts any concrete environment meeting the
-selected entry's supplied claim, in any admissible world and satisfying heap.
+The arguments, world, heap and budget are arbitrary subject to these premises.
+`checkClosed` is exactly `checkEntry` with an empty input context;
+`accepted_closed_safe` retains the empty-world, empty-heap corollary.
+`accepted_entry_safe` is the underlying theorem for a checked point and its
+claimed environment.
 The proof inducts on execution budget, so it covers cycles without unrolling
 the graph or computing invariants. Expressions use the existing small-step
 relation and safety theorem. Node dispatch and control transfer each consume
@@ -321,8 +325,8 @@ merge narrowing, missing or extra node evidence, changed code and invalid starts
 
 The graph layer does not change the type-family or expression semantics.
 Closures still contain expression-language bodies, not graph-backed function
-bodies. Boolean result refinement is proved as described below. A closed primitive
-source slice is connected; broader source extraction remains integration work. The next section supplies
+bodies. Boolean result refinement is proved as described below. A primitive source slice with parameters
+is connected; broader source extraction remains integration work. The next section supplies
 an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
 describes its serialized consumer boundary. No graph-level completeness theorem is claimed here; the
 program-evidence and edge-evidence completeness results above retain their
@@ -404,30 +408,32 @@ it does not enumerate arbitrary intermediate types, transitivity derivations,
 or arbitrary nested arrow-combination proofs.
 
 The final `accept` check binds the evidence to **all the requested point claims**
-as well as calling `checkClosed` on the actual program. Thus a valid certificate
+as well as calling `checkEntry` on the actual program and external input context. Thus a valid certificate
 for different annotations is rejected. Lean proves:
 
 $$
 \begin{gathered}
-\operatorname{produce}(G,I,f,R,P,Q,\ell,H)=\operatorname{ok}(C)
+\operatorname{produce}(G,I,f,R,P,Q,\ell,H,\Gamma_0)=\operatorname{ok}(C)
 \\
 \Longrightarrow\quad
-\operatorname{accept}(G,R,P,Q,C,\ell)=\mathsf{true},
+\operatorname{accept}(G,R,P,Q,C,\ell,\Gamma_0)=\mathsf{true},
 \\
-\operatorname{accept}(G,R,P,Q,C,\ell)=\mathsf{true}
+\operatorname{accept}(G,R,P,Q,C,\ell,\Gamma_0)=\mathsf{true}
 \\
 \Longrightarrow\quad
 \operatorname{claims}(C)=Q
 \;\land\;
-\operatorname{checkClosed}(G,R,P,C,\ell)=\mathsf{true}.
+\operatorname{checkEntry}(G,R,P,C,\ell,\Gamma_0)=\mathsf{true}.
 \end{gathered}
 $$
 
 Here $I$ enumerates labels, $f$ bounds expression search depth, $Q$ contains the
-supplied point annotations, and $H$ contains optional type hints. Search fuel is
+supplied point annotations, $H$ contains optional type hints, and $\Gamma_0$ is
+the independent input contract. Search fuel is
 not an execution budget and never occurs in the typing rules or certificates.
 `produce_checked` proves the first implication; `accept_claims` proves claim
-fidelity, and `accepted_safe` obtains global safety from the consumer alone.
+fidelity, and `accepted_from_inputs` obtains safety for arbitrary typed arguments
+from the consumer alone. `accepted_safe` is its closed-entry counterpart.
 The producer can be replaced without changing the soundness argument.
 
 Failure reports a claim-count mismatch, an expression label, an edge's source

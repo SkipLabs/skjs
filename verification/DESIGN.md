@@ -6,7 +6,7 @@ candidate types and invariants; acceptance requires derivations in an independen
 calculus whose rules are proved sound against its execution model.
 
 The chosen architecture has a stateful positive-type calculus, a serialized
-certificate consumer, and a first source adapter for closed null/boolean functions.
+certificate consumer, and a source adapter for parameterized null/boolean functions.
 The broader primitive F0 corpus still runs through its existing entry point.
 This is an integration stage, not a compatibility requirement: the extraction
 format may change to provide the program points, binding identities and exact
@@ -162,7 +162,7 @@ separator searches, alternative models or a semantic-completeness project.
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
 | Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
-| Source-facing integration | Closed null/boolean functions with branches and shared joins reach the stateful consumer. Primitive type translation is proved exact; source compilation remains trusted. Broader source constructs remain. |
+| Source-facing integration | Parameterized null/boolean functions with branches and shared joins reach the stateful consumer. Primitive type translation is proved exact; source compilation remains trusted. Broader source constructs remain. |
 
 Certificate completeness means **every declarative derivation has accepted
 finite evidence**. It does not mean every inclusion true in the semantic model
@@ -333,9 +333,9 @@ Full TypeScript formalization is not a prerequisite.
 
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
-consumer. It accepts closed functions containing initialized `const` declarations,
+consumer. It accepts primitive parameters, initialized `const` declarations,
 nested boolean branches and returns, with variables and null/boolean literals. Every
-path must return. It rejects parameters, active-name shadowing, statements after
+path must return. It rejects active-name shadowing, source calls, statements after
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
@@ -367,10 +367,15 @@ Its true/false singleton can therefore justify SKJS's claimed refinement.
 Untested bindings still require ordinary incoming subtype proofs. This does
 not infer refinements for aliases, property reads or general predicates.
 
-The next entry-interface step is parameterized functions: the graph already has
-safety from any typed entry environment, but the source consumer currently
-requires a closed entry. After that, connect the already modeled cells and
-closures. Binding identities must become explicit before supporting hidden,
+Protocol version 2 makes the source parameter types an explicit input contract.
+The exporter’s parameter signature is checked for matching names, order and types.
+A synthetic entry edge must justify the first supplied point claim from that
+contract. Lean proves safety for any typed input environment, admissible world
+and satisfying heap. Source parameter slots follow declaration order, with
+locals pushed ahead of them. This certifies the function body; source calls and
+graph-backed callable closures remain separate integration work.
+
+Next, connect the already modeled cells and closures. Binding identities must become explicit before supporting hidden,
 shadowed bindings; exported names alone cannot distinguish them. Change the extraction/export format when needed; preserving F0 compatibility is not a goal.
 Source loops and a closure observing an alias write must eventually run
 through production and independent consumption with negative claim tests.

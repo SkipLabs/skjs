@@ -17,21 +17,21 @@ def types : List (List (PositiveNormalization.Clause (List Nat))) :=
 def natClaim (c : PointClaim (Fin 6)) : PointClaim Nat :=
   ⟨c.context.map (List.map Fin.val), c.type.map Fin.val⟩
 
-def mappedRequest : Request := ⟨1, types, CertificateProducerTests.mapped,
-  CertificateProducerTests.mappedClaims.map natClaim, [1], 0⟩
+def mappedRequest : Request := ⟨2, types, CertificateProducerTests.mapped,
+  CertificateProducerTests.mappedClaims.map natClaim, [1], 0, []⟩
 
-def loopRequest : Request := ⟨1, types, ControlFlowTests.loop,
-  CertificateProducerTests.loopClaims.map natClaim, [1], 0⟩
+def loopRequest : Request := ⟨2, types, ControlFlowTests.loop,
+  CertificateProducerTests.loopClaims.map natClaim, [1], 0, []⟩
 
-def diamondRequest : Request := ⟨1, types, CertificateProducerTests.mappedDiamond,
-  CertificateProducerTests.mappedDiamondClaims.map natClaim, [0,1], 0⟩
+def diamondRequest : Request := ⟨2, types, CertificateProducerTests.mappedDiamond,
+  CertificateProducerTests.mappedDiamondClaims.map natClaim, [0,1], 0, []⟩
 
 /-- This request forces a structural overload subsumption certificate, including
 its cyclic relation table and union-domain arrow evidence, through JSON. -/
-def overloadRequest : Request := ⟨1, types,
+def overloadRequest : Request := ⟨2, types,
   [⟨.alloc .tru, .bind 1⟩, ⟨ProgramTypingTests.dispatch, .bind 2⟩,
    ⟨.var 0, .bind ⟨3,some [0,2]⟩⟩, ⟨.app (.var 0) .nul, .ret⟩],
-  [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0⟩
+  [⟨[],[2]⟩, ⟨[[2]],[3]⟩, ⟨[[3],[2]],[4]⟩, ⟨[[4],[2]],[0,1]⟩], [0,1], 0, []⟩
 
 def ok (r : Except String α) : Bool := match r with
   | .ok _ => true
@@ -61,7 +61,7 @@ def response : Json := match produceJson (toJson mappedRequest) 12 with
 #guard !(ok (verifyJson (toJson { mappedRequest with program := (mappedRequest.program.set 0 ⟨.alloc .tru, .bind ⟨1,some [0,99]⟩⟩) }) response))
 
 -- Reject versions and dangling labels even in unused type definitions.
-#guard !(ok (decodeRequest (toJson { mappedRequest with version := 2 })))
+#guard !(ok (decodeRequest (toJson { mappedRequest with version := 1 })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with types := (mappedRequest.types ++ [[PositiveNormalization.Clause.refs [99] []]]) })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with result := [99] })))
 #guard !(ok (decodeRequest (toJson { mappedRequest with claims := [⟨[[99]],[1]⟩] })))
@@ -80,13 +80,13 @@ private def omitField (j : Json) (key : String) : Json :=
 #guard !(ok (decodeRequest (changeField (toJson mappedRequest) "unsupported" (.bool true))))
 #guard !(ok (decodeRequest (omitField (toJson mappedRequest) "claims")))
 #guard !(ok (decodeRequest (changeField (toJson mappedRequest) "start" (.str "0"))))
-#guard !(ok (verifyJson (toJson mappedRequest) (changeField response "version" (toJson (2 : Nat)))))
+#guard !(ok (verifyJson (toJson mappedRequest) (changeField response "version" (toJson (1 : Nat)))))
 #guard !(ok (verifyJson (toJson mappedRequest) (changeField response "certificate" (toJson ([] : List Nat)))))
 #guard !(ok (verifyJson (toJson mappedRequest) (changeField response "unchecked" (.bool true))))
 #guard !(ok (verifyJson (toJson mappedRequest) (.str "accept")))
 
 -- Reject labels hidden in evidence, including transitivity intermediates.
-#guard !(validResponse mappedRequest ⟨1,[⟨.node ⟨[],.nul,[0]⟩
+#guard !(validResponse mappedRequest ⟨2,[⟨.node ⟨[],.nul,[0]⟩
   (.sub (.trans [99] .subset .subset)) [],[]⟩]⟩)
 
 -- Defaults and unsupported source refinements cannot silently enter the format.
@@ -101,5 +101,20 @@ private def reverseFields : Json → Json
 #guard ok (verifyJson (reverseFields (toJson mappedRequest)) (reverseFields response))
 #guard !(sameJson (Json.mkObj [("x",toJson (0 : Nat))])
   (Json.mkObj [("x",toJson (0 : Nat)),("y",toJson (1 : Nat))]))
+
+-- External inputs are checked independently of the entry point claim.
+def inputRequest : Request := ⟨2, [[.bool]], [⟨.var 0,.ret⟩], [⟨[[0]],[0]⟩], [0],0,[[0]]⟩
+#guard ok (roundtrip inputRequest)
+#guard !ok (roundtrip { inputRequest with inputs := [] })
+#guard !ok (roundtrip { inputRequest with inputs := [[0],[0]] })
+#guard !ok (decodeRequest (toJson { inputRequest with inputs := [[99]] }))
+#guard !ok (decodeRequest (omitField (toJson inputRequest) "inputs"))
+#guard !ok (decodeRequest (toJson { inputRequest with version := 1 }))
+-- The generalized theorem also covers stateful arguments, not just primitive
+-- source parameters. The input reference may belong to any satisfying heap.
+def referenceInput : Request := ⟨2, [[.bool],[.refs [0] []]],
+  [⟨.read (.var 0),.ret⟩], [⟨[[1]],[0]⟩], [0],0,[[1]]⟩
+#guard ok (roundtrip referenceInput)
+#guard !ok (roundtrip { referenceInput with inputs := [[0]] })
 
 end Verification.ExperimentState.RequestJsonTests

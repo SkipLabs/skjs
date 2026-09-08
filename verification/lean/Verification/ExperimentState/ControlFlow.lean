@@ -245,25 +245,36 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C l c}
     SafeGraph P (meaning G Rty) n W h (.at l ρ) :=
   state_safe hg n W h _ hw hh ⟨c,hc,he⟩
 
-/-- A closed invocation must designate an existing entry with an empty context. -/
+/-- The external input contract is independent of the supplied point claims. -/
+def checkEntry [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
+    (P : Program) (C : Certificate ι) (start : Nat) (inputs : List (Ty ι)) : Bool :=
+  checkGraph G Rty P C && match C[start]? with
+    | some c => decide (entry c = inputs)
+    | none => false
+
+theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C start inputs}
+    (hc : checkEntry G Rty P C start inputs = true) (n W h ρ)
+    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafeGraph P (meaning G Rty) n W h (.at start ρ) := by
+  simp only [checkEntry, Bool.and_eq_true] at hc
+  have hg := hc.1
+  have hx := hc.2
+  split at hx
+  · rename_i c hc
+    have hem : entry c = inputs := of_decide_eq_true hx
+    apply accepted_entry_safe hg hc n W h ρ _ hw hh
+    simpa only [hem] using he
+  · contradiction
+
+/-- Closed entry is the empty-input instance of the same check. -/
 def checkClosed [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
     (P : Program) (C : Certificate ι) (start : Nat) : Bool :=
-  checkGraph G Rty P C && match C[start]? with
-    | some c => decide (entry c = [])
-    | none => false
+  checkEntry G Rty P C start []
 
 theorem accepted_closed_safe [DecidableEq ι] {G : NormalGraph ι} {Rty P C start}
     (hc : checkClosed G Rty P C start = true) (n : Nat) :
     SafeGraph P (meaning G Rty) n (ofList []) [] (.at start (fun _ => .nul)) := by
-  simp only [checkClosed, Bool.and_eq_true] at hc
-  have hx := hc.2
-  split at hx
-  · rename_i c he
-    have hem : entry c = [] := of_decide_eq_true hx
-    apply accepted_entry_safe hc.1 he n _ [] _ _ WorldAdm_nil (emptyHeapOk n)
-    rw [hem]
-    exact ⟨fun _ => trivial, by simp⟩
-  · contradiction
+  exact accepted_inputs_safe hc n _ [] _ ⟨fun _ => trivial, by simp⟩ WorldAdm_nil (emptyHeapOk n)
 
 theorem Transition.det {P h s h₁ s₁ h₂ s₂}
     (ha : Transition P h s h₁ s₁) (hb : Transition P h s h₂ s₂) : h₁ = h₂ ∧ s₁ = s₂ := by
@@ -369,5 +380,6 @@ theorem accepted_result [DecidableEq ι] {G : NormalGraph ι} {Rty P C start k h
 #print axioms accepted_result
 #print axioms accepted_no_stuck
 #print axioms accepted_entry_safe
+#print axioms accepted_inputs_safe
 #print axioms accepted_closed_safe
 end Verification.ExperimentState.ControlFlow

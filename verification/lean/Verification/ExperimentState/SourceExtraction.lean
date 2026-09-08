@@ -5,7 +5,7 @@ initialized local bindings. Supplied expression types and source annotations
 become distinct obligations. The consumer reconstructs the request from source
 and claims; evidence never supplies the program it is checked against.
 
-The currently supported source slice is deliberately small: closed functions,
+The currently supported source slice is deliberately small: primitive parameters,
 initialized consts, branches, variables and null/boolean literals, with every
 path returning. Boolean variable tests refine the tested binding. Active-name
 shadowing is not yet supported. This compiler remains a reviewed extraction boundary, not a proved
@@ -117,7 +117,17 @@ termination_by stmts => sizeOf stmts
 
 def extractFn (f : Verification.Fn) (fc : FunTypeClaims) : Except String Request := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
-  if !f.params.isEmpty || !fc.params.isEmpty then throw "the current source slice requires closed functions"
+  let scope := f.params.map (·.name)
+  if !distinct scope then throw "duplicate source parameter name"
+  if f.params.length != fc.params.length then throw "parameter claim count mismatch"
+  let inputs ← f.params.mapM (fun p => SourceTypes.translate p.ty)
+  for (p, (name, claimed)) in f.params.zip fc.params do
+    if p.name != name then throw "parameter claim name or order mismatch"
+    let A ← SourceTypes.translate p.ty
+    let B ← match claimed with
+      | some t => SourceTypes.translate t
+      | none => throw "unsupported claimed parameter type"
+    if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
   if !distinct (fc.envs.map Prod.fst) || !distinct (fc.exprs.map Prod.fst) then
     throw "duplicate statement or expression claim"
   let R ← SourceTypes.translate f.ret
@@ -125,8 +135,10 @@ def extractFn (f : Verification.Fn) (fc : FunTypeClaims) : Except String Request
     | some t => SourceTypes.translate t
     | none => throw "unsupported claimed return type"
   if R != claimedR then throw "claimed return type differs from the source annotation"
-  let (entry, built) ← (body (traversalBudget f.body) fc R [] f.body none).run {}
-  return ⟨1, SourceTypes.types, built.program, built.claims, R, entry.label⟩
+  let (entry, built) ← (do
+    let first ← body (traversalBudget f.body) fc R scope f.body none
+    emit .nul (.effect first) inputs [0]).run {}
+  return ⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩
 
 def extract (ast claims : Json) (fileKey : String) : Except String (List Request) := do
   if (← jStr (← jField ast "file")) != fileKey then throw "AST file key mismatch"
@@ -152,7 +164,7 @@ structure Bundle where
   deriving ToJson, FromJson
 
 def checkRequests (rs : List Request) (b : Bundle) : Bool :=
-  b.version == 1 && rs.length == b.functions.length &&
+  b.version == 2 && rs.length == b.functions.length &&
     (rs.zip b.functions).all (fun (r,c) => verify r c)
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
@@ -166,7 +178,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let cs ← rs.mapM fun r => do
     let j ← RequestJson.produceJson (toJson r) fuel
     decodeResponse r j
-  let evidence := toJson (Bundle.mk 1 cs)
+  let evidence := toJson (Bundle.mk 2 cs)
   checkJson ast claims fileKey evidence
   return evidence
 
@@ -192,11 +204,11 @@ theorem checkJson_checked {ast claims evidence : Json} {fileKey : String}
 /-- Every accepted extracted function has the existing all-budget guarantee.
 This does not assert semantic preservation of the source compiler. -/
 theorem checkRequests_safe {rs : List Request} {b : Bundle}
-    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (n : Nat) :
-    SafeGraph r.program (meaning (RequestJson.graph r) r.result) n (ofList []) []
-      (.at r.start (fun _ => .nul)) := by
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (n W heap ρ)
+    (he : EnvOk (RequestJson.graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    SafeGraph r.program (meaning (RequestJson.graph r) r.result) n W heap (.at r.start ρ) := by
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  exact verify_safe (h.2 _ hm) n
+  exact verify_safe (h.2 _ hm) n W heap ρ he hw hh
 
 #print axioms checkJson_checked
 #print axioms checkRequests_safe

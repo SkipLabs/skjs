@@ -6,7 +6,7 @@ independently and checks that those claims justify the program's typing.
 
 The implemented fragment is called **F0**: first-order functions over primitive
 values, with type narrowing. A stateful calculus and certificate consumer are
-also implemented, with a first source adapter for closed null/boolean functions. Verification
+also implemented, with a source adapter for parameterized null/boolean functions. Verification
 runs separately from ordinary SKJS checking.
 
 ## Run
@@ -75,7 +75,7 @@ The same verifier binary can produce and independently check serialized
 stateful calculus evidence. See [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) for a
 complete minimal request and commands. This interface takes an extracted graph
 and point annotations. A source mode also connects the independent parser and
-SKJS exports to this consumer for **closed functions with initialized `const`
+SKJS exports to this consumer for **functions with primitive parameters, initialized `const`
 bindings, nested branches and returns**, using variables, null and boolean
 literals. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from

@@ -20,12 +20,13 @@ Save this minimal request as `request.json`:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "types": [["nul"]],
   "program": [{"expression": "nul", "continuation": "ret"}],
   "claims": [{"context": [], "type": [0]}],
   "result": [0],
-  "start": 0
+  "start": 0,
+  "inputs": []
 }
 ```
 
@@ -49,12 +50,13 @@ All fields are explicit; object field order is immaterial.
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Exactly `1`. |
+| `version` | Exactly `2`. |
 | `types` | A finite array of normalized type-graph nodes. Its array positions are type labels. |
 | `program` | A finite array of calculus nodes. Its positions are control-flow labels. |
 | `claims` | One entry context and expression-result type per program node, in the same order. |
 | `result` | The required result type of the graph. |
-| `start` | The designated control-flow entry label, whose claimed context must be empty. |
+| `start` | The designated control-flow entry label. |
+| `inputs` | External argument types in slot order. The designated entry context must equal this contract. Use `[]` for closed invocation. |
 
 A type is a list of type labels, interpreted as their union. The empty list
 means bottom. Every label, including labels in unused type definitions and
@@ -103,29 +105,28 @@ supply a default. The expression and continuation constructors are defined in
 `Language.lean` and `ControlFlow.lean`; their codecs live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
-The evidence file is an object with `version: 1` and `certificate`, a list of
+The evidence file is an object with `version: 2` and `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
-The codec names and fields are part of protocol version 1. The `boolLit` clause
-and `truLit`/`flsLit` evidence rules, followed by the `branchBind` continuation,
-extend this initial protocol additively:
-existing tags retain their meaning, and older consumers reject the new tags. A change to their
-meaning or shape requires an explicit protocol decision. Decode/re-encode
-validation rejects unknown fields and missing fields, recursively, rather than
-silently ignoring future flags or defaulting omitted fields. The JSON parser
-and codecs still form part of the input-meaning boundary; round-trip tests are
-not a proof of fidelity to external source text.
+Protocol version 2 requires explicit `inputs`. Requests, responses and source
+bundles use version 2; version 1 is rejected. There is one maintained protocol.
+Decode/re-encode validation rejects unknown fields and missing fields,
+recursively. The JSON parser and codecs still form part of the input-meaning
+boundary; round-trip tests are not a proof of fidelity to external source text.
 
 ## Proved boundary and validation
 
 `verifyJson_checked` proves that JSON acceptance yields the two decoded objects
 and a successful `verify` check. `verify_claims` proves equality of the requested
 point annotations and the certificate's annotations. `verify_safe` establishes
-global modeled safety at every observation budget. It reuses the graph theorem,
-including its treatment of cycles, heap changes and explicit slot maps.
+global modeled safety at every observation budget, for **any** argument
+environment satisfying `inputs`, admissible world and satisfying heap. The input
+contract is a premise, not inferred from SKJS's point claims. `verify_closed_safe`
+specializes this to `inputs: []` and the empty heap. The theorem reuses graph
+safety, including cycles, heap changes and explicit slot maps.
 
 `produceJson` serializes generated evidence and submits it through the same JSON
 consumer before returning it. The safety theorem does not require using this
@@ -139,11 +140,11 @@ required data. They also check that object field order does not matter.
 
 ## Source mode
 
-The adapter accepts closed functions with initialized `const` declarations,
+The adapter accepts primitive parameters, initialized `const` declarations,
 nested boolean branches and returns, using variable expressions and null/boolean
 literals. Every path must return. Types
 may be null, boolean, true, false, unions of these, or bottom. Other constructs
-are rejected by the current slice gate, including parameters, active-name
+are rejected by the current slice gate, including source calls, closures, active-name
 shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 
 Generate an AST with `tools/parse-source.js`, and claims with SKJS's
@@ -155,7 +156,7 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":1,"functions":[...]}`, containing ordinary responses in source
+`{"version":2,"functions":[...]}`, containing ordinary responses in source
 function order. Exported function order does not matter. The checking command
 reconstructs the requests itself and does not run the producer.
 
@@ -167,6 +168,17 @@ return requirements are separate synthetic-node obligations. Statement claims
 supply entry contexts, and every initialized local slot requires a claimed type.
 Unused extra exported bindings, such as the implicit `this`, do not create local
 slots. Duplicate claim keys are rejected.
+
+Parameter slots follow source declaration order; local declarations push ahead
+of them. The exporter’s duplicate parameter signature must match source names,
+order and exact translated types. The request's `inputs` come from source
+annotations. A synthetic entry node carries those types and its outgoing edge
+must justify the first supplied statement environment. Narrowing a parameter in
+that first claim therefore cannot turn into an unproved input assumption.
+
+The guarantee covers function bodies for all arguments satisfying their
+annotations. It does not yet provide source-level calls, graph-backed callable
+closures, or verification of external callers.
 
 An `if` evaluates its condition once, keeps the exact exported expression claim,
 and checks that it contains only Boolean clauses. Both arms share the compiled
