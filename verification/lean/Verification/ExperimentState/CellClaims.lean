@@ -123,6 +123,35 @@ theorem translate_exact {j : Json} {A u v}
   obtain ⟨f,hf,hc⟩ := translate_checked h
   exact ⟨f,hf,agreeContract_exact hc hv n W⟩
 
+/-- The eight canonical primitive invariants have fixed reference labels. -/
+def referenceLabel (A : Ty Nat) : Nat :=
+  3 + (if A.contains 0 then 1 else 0) +
+    (if A.contains 1 then 2 else 0) + (if A.contains 2 then 4 else 0)
+
+theorem reference_encode (t : Core.Ty) :
+    expand SourceTypes.graph [referenceLabel (SourceTypes.encode t)] =
+      [.refs (SourceTypes.encode t) []] := by
+  cases hn : SourceTypes.admits t .vnull <;>
+    cases ht : SourceTypes.admits t (.vbool true) <;>
+    cases hf : SourceTypes.admits t (.vbool false) <;>
+    simp [referenceLabel, SourceTypes.encode, hn, ht, hf, expand,
+      SourceTypes.graph, SourceTypes.types]
+
+/-- The graph label used by source extraction denotes exactly the accepted
+cell invariant, at every world and budget. -/
+theorem reference_exact {j : Json} {A} (h : translate j = .ok A) (n W v) :
+    meaning SourceTypes.graph [referenceLabel A] n W v ↔ interpretation A n W v := by
+  obtain ⟨f,_,hc⟩ := translate_checked h
+  have ht := (agreeContract_checked hc).1
+  unfold SourceTypes.translate at ht
+  split at ht
+  · cases ht
+    rw [expand_sem, reference_encode]
+    simp [PositiveNormalization.semList, Tower.setSem, PositiveNormalization.sem,
+      ReferenceConjunctions.refsT, interpretation]
+  · contradiction
+
+#print axioms reference_exact
 #print axioms translate_exact
 #print axioms agreeContract_exact
 end Verification.ExperimentState.CellClaims

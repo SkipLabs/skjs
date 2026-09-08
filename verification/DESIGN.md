@@ -334,13 +334,15 @@ Full TypeScript formalization is not a prerequisite.
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
 consumer. It accepts primitive parameters, initialized `const` declarations,
-nested boolean branches and returns, with variables and null/boolean literals. Every
+nested boolean branches and returns, with variables, null/boolean literals,
+plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments. Every
 path must return. It rejects active-name shadowing, source calls, statements after
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
-null, boolean, their singleton types, unions and bottom exactly into three graph
-labels: null, true and false. Lean proves the translation preserves primitive
+null, boolean, their singleton types, unions and bottom exactly into three
+primitive labels: null, true and false. Eight further labels represent invariant
+references to the subsets of these values. Lean proves the translation preserves primitive
 membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
 
@@ -385,10 +387,14 @@ field passes; a readonly Boolean field has `never` writes and fails this
 particular invariant-cell gate. Readonly objects need a different capability
 interface; this rejection does not mean they are unsafe.
 
-The theorem preserves both primitive sides of an accepted contract. It is not
+Theorems preserve both primitive sides of an accepted contract and show that
+the chosen reference label denotes exactly that invariant. This is not
 an equivalence theorem for TypeScript records and calculus references. Record
 annotations cannot distinguish data properties from accessors. Establishing
-plain-data allocation remains a source-gate and representation obligation.
+plain-data allocation is the source gate’s responsibility. The parser accepts
+only an explicit single `value` data property, with no getters, setters, spreads
+or computed keys. Cell parameters remain rejected: an external object needs
+a separate plain-data boundary that its structural annotation cannot establish.
 
 Fresh object literals carry synthetic indexes and inference-variable field
 bounds internally. Export records the former and reads the latter from the
@@ -399,11 +405,19 @@ expression claims at Boolean and singleton contracts, contextual field growth,
 and preservation of both aliases' contracts after a write. This export mapping
 is explicit but is not a proved correspondence with SKJS's internal semantics.
 
-Next, lower plain object allocation,
-property reads and writes while preserving consumed expression claims and
-JavaScript evaluation order. Cell source programs are not yet accepted by the
-program consumer. Closures follow that slice. Binding identities must become explicit before supporting hidden,
-shadowed bindings; exported names alone cannot distinguish them. Change the extraction/export format when needed; preserving F0 compatibility is not a goal.
+Cell programs now pass through source extraction, certificate production and
+independent consumption. [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean)
+decodes this source slice separately from the primitive corpus syntax and
+routes record types through the contract gate. Every nested expression retains
+its own supplied claim. Expression lowering saves intermediate values in
+anonymous slots and evaluates the receiver before the RHS. A write uses the
+existing calculus rule, then returns the saved RHS to match JavaScript assignment
+semantics; temporary slots are discarded by explicit edge maps. An execution
+regression checks the extracted alias-assignment graph's heap and result.
+
+Next, integrate closures capturing these cells. Binding identities must become
+explicit before supporting hidden, shadowed bindings; exported names alone
+cannot distinguish them. Extraction/export formats may change as needed.
 Source loops and a closure observing an alias write must eventually run
 through production and independent consumption with negative claim tests.
 Their existing raw-calculus tests do not establish source integration. Merges

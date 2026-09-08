@@ -261,12 +261,35 @@ internal types is not a Lean theorem.
 `CellClaims.translate` validates this shape and requires the read and write
 types to normalize to the same supported primitive set. Unknown fields and
 unsupported types are rejected. Its theorem connects both supplied primitive
-types to that set's meaning. The candidate cell interpretation is an invariant
+types to that set's meaning. The cell interpretation is an invariant
 reference to that meaning; the theorem does not yet establish a TypeScript
 record-to-reference correspondence or exclude accessor-backed runtime objects.
 
 `cell_claim_tests` exercises real SKJS exports and corrupted contracts as part
 of `make verify`. Allocation probes check Boolean, singleton and contextually
-widened field bounds; the alias-write probe retains both named cell contracts. The source
-compiler still rejects cell syntax. Plain-data allocation, property reads/writes
-and their source correspondence are the next integration work.
+widened field bounds; the alias-write probe retains both named cell contracts.
+Source cells now reach certificate production and independent consumption.
+Their source correspondence remains a reviewed compilation obligation.
+
+## Cell source lowering
+
+Use `parse-source.js <file.ts> --stateful` for the extended source gate. It accepts
+only plain `{ value: e }` allocations, `.value` reads and assignments, with the
+required invariant-cell contracts above. Methods, accessors, computed keys,
+spreads, extra fields and optional access are rejected. Cell parameters are
+also rejected until a plain-data boundary for external objects is supplied.
+
+The stateful input decoder keeps types separate from the earlier primitive AST.
+Every initializer, receiver, RHS, read and assignment expression consumes its
+own claimed type. The request graph uses the three primitive labels and eight
+reference labels, one for each primitive invariant. `CellClaims.reference_exact`
+proves that the selected label has exactly the accepted invariant's meaning.
+
+Expression nodes bind evaluated values into temporary slots. The compiler
+executes the receiver before the RHS and executes each once. A calculus write
+returns null; the subsequent node returns the saved RHS, preserving JavaScript's
+assignment-expression result. Destination maps remove temporary slots while
+preserving live source bindings. Cell effects can occur in branches and nested
+expressions; the existing node and incoming-edge checks justify their claims.
+The reference invariant is stable across writes; no heap-content refinement or
+analysis is added.

@@ -17,6 +17,7 @@ const path = require("path");
 const ts = require("typescript");
 
 let sourceFile = null;
+const stateful = process.argv.includes("--stateful");
 
 function fail(node, msg) {
   const start = node ? node.getStart(sourceFile) : 0;
@@ -41,6 +42,17 @@ function atomsOfTypeNode(node, acc) {
     case ts.SyntaxKind.UnionType:
       node.types.forEach((t) => atomsOfTypeNode(t, acc));
       return;
+    case ts.SyntaxKind.TypeLiteral: {
+      if (!stateful || node.members.length !== 1) fail(node, "expected a single cell field");
+      const f = node.members[0];
+      if (!ts.isPropertySignature(f) || !ts.isIdentifier(f.name) || f.name.text !== "value" ||
+          f.questionToken || (f.modifiers && f.modifiers.length)) fail(f, "expected required mutable value field");
+      const t = typeOf(f.type);
+      acc.push({a: "record", fields: [{name: "value", optional: false, read: t, write: t}],
+        indexes: {string: "absent", number: "absent", symbol: "absent"},
+        call: "unknown", construct: "unknown", array: "unknown"});
+      return;
+    }
     case ts.SyntaxKind.StringKeyword:
       acc.push({ a: "string" });
       return;
@@ -120,6 +132,16 @@ function expr(node) {
       if (!DECIMAL.test(node.text)) fail(node, "non-decimal numeric literal");
       return { k: "lit", pos: span(node), lit: { a: "numberlit", v: node.text } };
 
+    case ts.SyntaxKind.ObjectLiteralExpression: {
+      if (!stateful || node.properties.length !== 1) fail(node, "expected plain single-field allocation");
+      const f = node.properties[0];
+      if (!ts.isPropertyAssignment(f) || !ts.isIdentifier(f.name) || f.name.text !== "value")
+        fail(f, "expected plain value property; no accessors, methods or spreads");
+      return {k: "alloc", pos: span(node), e: expr(f.initializer)};
+    }
+    case ts.SyntaxKind.PropertyAccessExpression:
+      if (!stateful || node.questionDotToken || node.name.text !== "value") fail(node, "expected cell.value");
+      return {k: "read", pos: span(node), e: expr(node.expression)};
     case ts.SyntaxKind.TypeOfExpression:
       return { k: "typeof", pos: span(node), e: expr(node.expression) };
 
@@ -130,6 +152,11 @@ function expr(node) {
       return { k: "not", pos: span(node), e: expr(node.operand) };
 
     case ts.SyntaxKind.BinaryExpression: {
+      if (stateful && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        if (!ts.isPropertyAccessExpression(node.left) || node.left.questionDotToken || node.left.name.text !== "value")
+          fail(node.left, "only cell.value assignments are supported");
+        return {k: "write", pos: span(node), receiver: expr(node.left.expression), rhs: expr(node.right)};
+      }
       const ops = {
         [ts.SyntaxKind.EqualsEqualsEqualsToken]: "===",
         [ts.SyntaxKind.ExclamationEqualsEqualsToken]: "!==",
@@ -171,6 +198,9 @@ function block(node) {
 
 function stmt(node) {
   switch (node.kind) {
+    case ts.SyntaxKind.ExpressionStatement:
+      if (!stateful) fail(node, "expression statements outside the fragment");
+      return {k: "effect", pos: span(node), e: expr(node.expression)};
     case ts.SyntaxKind.ReturnStatement:
       if (!node.expression) fail(node, "a bare `return` is outside the fragment");
       return { k: "return", pos: span(node), e: expr(node.expression) };
@@ -241,7 +271,7 @@ function functionDecl(node) {
 function main() {
   const file = process.argv[2];
   if (!file) {
-    process.stderr.write("usage: parse-source.js <file.ts>\n");
+    process.stderr.write("usage: parse-source.js <file.ts> [--stateful]\n");
     process.exit(2);
   }
   const text = fs.readFileSync(file, "utf8");
