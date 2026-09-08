@@ -94,8 +94,9 @@ with checked statement environments.
 Every internal claim has a separately checked typing proof. Top-level function
 bodies support block-bodied `while`, including nesting and early returns. Supplied
 head invariants are checked on entry and every back edge; conditions are evaluated
-anew. Mutable variable bindings, loops inside closures, `break`/`continue`, and
-general partially returning nested closure arms remain gated.
+anew. Unlabeled `break` and `continue` use checked scope-dropping transfers to
+the nearest loop exit or head. Mutable variable bindings, loops inside closures,
+labeled transfers and general partially returning nested closure arms remain gated.
 Terminal closure `if/else` blocks are supported, with both arms returning and
 checked singleton refinement of directly tested immutable Boolean variables.
 Branches whose two arms fall through share one continuation using ordinary let

@@ -236,15 +236,39 @@ private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) 
   ⟨target.label, some ((target.mapping.getD (List.range width)).map fun i =>
     if tested == some i then 0 else i+1)⟩
 
+/-- Keep a pre-existing singleton fact rather than replacing it with the
+branch witness. In particular, an impossible opposite edge must not force a
+contradictory replacement of an otherwise valid immutable binding. -/
+private def testedSlot (scope : List String) (Γ : List (Ty Nat)) (cond : SourceInput.Expr) : Option Nat :=
+  match cond with
+  | .var _ name => do
+    let i ← scope.idxOf? name
+    if Γ[i]? == some [1] || Γ[i]? == some [2] then none else some i
+  | _ => none
+
+/-- The nearest enclosing loop, with the lexical scope at each destination. -/
+private structure LoopTargets where
+  again : Target × List String
+  done : Option (Target × List String)
+
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
 private def body : Nat → SourceClaims.Function → Ty Nat → List String → List SourceInput.Stmt →
-    Option (Target × List String) → Compiler Target
-  | 0, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
-  | fuel+1, fc, R, scope, stmts, tail => do
+    Option (Target × List String) → Option LoopTargets → Compiler Target
+  | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
+  | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
     match stmts with
     | [] => leave scope tail
+    | .brk pos :: rest | .cont pos :: rest =>
+      if !rest.isEmpty then throw "statements after break or continue are outside the current source slice"
+      let some targets := loopTargets | throw "break or continue outside a source loop"
+      let Γ ← env fc pos.1 scope
+      let destination := match stmts with
+        | .brk _ :: _ => targets.done
+        | _ => some targets.again
+      let next ← leave scope destination
+      emit .nul (.effect next) Γ [0]
     | .ret pos e :: rest =>
       if !rest.isEmpty then throw "statements after return are outside the current source slice"
       let Γ ← env fc pos.1 scope
@@ -256,18 +280,18 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
       let B ← match annot with | none => pure A | some ty => SourceInput.translate ty
-      let next ← body fuel fc R (name::scope) rest tail
+      let next ← body fuel fc R (name::scope) rest tail loopTargets
       let annotation ← emit (.var 0) (.effect next) (A::Γ) B
       compileExpr fc scope Γ e annotation
     | .ite pos cond thn els :: rest =>
       let Γ ← env fc pos.1 scope
       let A ← exprType fc cond
       let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail
+        let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
-      let yes ← body fuel fc R scope thn continuation
-      let no ← body fuel fc R scope (els.getD []) continuation
-      let tested := match cond with | .var _ name => scope.idxOf? name | _ => none
+      let yes ← body fuel fc R scope thn continuation loopTargets
+      let no ← body fuel fc R scope (els.getD []) continuation loopTargets
+      let tested := testedSlot scope Γ cond
       -- Branch on the saved value; the edge maps discard its older copy and
       -- retain the new refinement slot supplied by branchBind.
       let adapt := fun t =>
@@ -283,11 +307,11 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       -- before returning; the completed program is independently checked.
       let head ← emit .nul .ret Γ [0]
       let continuation ← if rest.isEmpty then pure tail else do
-        let next ← body fuel fc R scope rest tail
+        let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
-      let yes ← body fuel fc R scope loopBody (some (head,scope))
+      let yes ← body fuel fc R scope loopBody (some (head,scope)) (some ⟨(head,scope),continuation⟩)
       let no ← leave scope continuation
-      let tested := match cond with | .var _ name => scope.idxOf? name | _ => none
+      let tested := testedSlot scope Γ cond
       let adapt := fun t =>
         let mapped := branchMapping scope.length tested t
         ⟨mapped.label, some ((mapped.mapping.getD []).map
@@ -298,13 +322,13 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       return head
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
-      let next ← body fuel fc R scope rest tail
+      let next ← body fuel fc R scope rest tail loopTargets
       let drop := ⟨next.label, some ((next.mapping.getD (List.range Γ.length)).map (·+1))⟩
       compileExpr fc scope Γ e drop
 
 private def traversalBudget : List SourceInput.Stmt → Nat
   | [] => 1
-  | .ret .. :: rest | .cst .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .brk .. :: rest | .cont .. :: rest | .ret .. :: rest | .cst .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
   | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
@@ -336,7 +360,7 @@ def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Exce
   let claimedR ← SourceClaims.resolve fc.ret
   if R != claimedR then throw "claimed return type differs from the source annotation"
   let (entry, built) ← (do
-    let first ← body (traversalBudget f.body) fc R scope f.body none
+    let first ← body (traversalBudget f.body) fc R scope f.body none none
     emit .nul (.effect first) inputs [0]).run {}
   return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations⟩
 

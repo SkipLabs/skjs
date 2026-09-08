@@ -33,8 +33,8 @@ try {
     fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(ep,JSON.stringify(evidence));const checked=exec(verifier,["--check-source-claims",ap,out,file,ep]);assert.equal(checked.status,0,checked.stderr);
   });
   for(const [name,text] of [
-    ["break remains gated","while (true) { break; } return null;"],
-    ["continue remains gated","while (true) { continue; } return null;"],
+    ["break outside a loop gated","break; return null;"],
+    ["continue outside a loop gated","continue; return null;"],
     ["nonblock loop body gated","while (false) return null; return null;"],
     ["for remains gated","for (;;) {} return null;"],
     ["closure loop remains gated","const f: (x: null) => null = (x: null): null => { while (false) {} return null; }; return null;"]

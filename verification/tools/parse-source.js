@@ -161,7 +161,7 @@ function expr(node) {
         const lowerPrefix = (stmts, tail, allowReturn = false) => {
           for (let i = stmts.length - 1; i >= 0; --i) {
             const st = stmts[i];
-            if (st.k === "while") fail(node, "loops inside closures require a graph-backed call/body interface");
+            if (["while","break","continue"].includes(st.k)) fail(node, "loops inside closures require a graph-backed call/body interface");
             if (st.k === "if") {
               const yes = st.then, no = st.else_ ?? [];
               const arm = xs => lowerPrefix(xs, {k:"doneBody",pos:st.pos});
@@ -295,6 +295,15 @@ function stmt(node) {
         annot: d.type ? typeOf(d.type) : null,
         init: expr(d.initializer),
       };
+    }
+
+    case ts.SyntaxKind.BreakStatement:
+    case ts.SyntaxKind.ContinueStatement: {
+      if (!stateful || node.label) fail(node, "only unlabeled loop transfers are supported");
+      let parent = node.parent;
+      while (parent && !ts.isFunctionLike(parent) && !ts.isWhileStatement(parent)) parent = parent.parent;
+      if (!parent || !ts.isWhileStatement(parent)) fail(node, "break or continue outside a supported loop");
+      return {k:ts.isBreakStatement(node)?"break":"continue",pos:span(node)};
     }
 
     case ts.SyntaxKind.WhileStatement:

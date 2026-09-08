@@ -72,6 +72,7 @@ private def exprSites : SourceInput.Expr → Sites
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[]) (joinSites (exprSites a) (exprSites b))
   | .ifBody p _ a b c => joinSites ([p.1],[]) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : SourceInput.Stmt → Sites
+  | .brk p | .cont p => ([p.1],[])
   | .ret p e | .cst p _ _ e | .effect p e => joinSites ([p.1],[]) (exprSites e)
   | .loop p c body => joinSites ([p.1],[]) (joinSites (exprSites c)
       (body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])))

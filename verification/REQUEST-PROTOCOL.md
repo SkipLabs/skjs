@@ -239,8 +239,9 @@ verification/run.sh --build --suite stateful-source
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
 `while` loops now use supplied head environments with independently checked
-initial and back edges. Tests also cover repeated condition calls, dropping body
-locals and rejected back-edge evidence. Mutable declarations, loops inside
+initial and back edges. Unlabeled break/continue compile to checked mapped
+transfers to the nearest loop exit/head. Tests also cover repeated condition
+calls, dropping body locals and rejected transfer evidence. Mutable declarations, loops inside
 closures and general partially returning nested closure arms remain gated.
 
 ## Record-contract export boundary

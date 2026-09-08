@@ -539,8 +539,8 @@ checked singleton transfer; mutable-field refinements acquire no new lifetime.
 No invariant inference, type join, semantic rule or certificate format is added.
 
 Nested loops, empty bodies and early returns are supported in top-level function
-bodies. `break`, `continue`, other loop forms, non-block bodies and loops inside
-closures remain gated. Even a syntactically always-true loop currently needs an
+bodies. Unlabeled `break` and `continue` now have explicit checked transfers.
+Labels, other loop forms, non-block bodies and loops inside closures remain gated. Even a syntactically always-true loop currently needs an
 explicit continuation for its false edge. Acceptance is safety, not termination:
 a well-typed loop may run forever.
 
@@ -553,6 +553,32 @@ false. Integration tests reject missing head claims, unjustified narrowing,
 missing back-edge evidence, escaped body locals and reused evidence for changed
 bodies. Runtime samples agree on the terminating examples. These bounded checks
 do not constitute a general source-to-graph preservation theorem.
+
+### Break and continue: scoped transfer targets
+
+Each nested loop supplies its own pair of destinations: `continue` targets that
+loop's head, and `break` targets its exit continuation. Compiling a nested loop's
+following statements restores the enclosing loop's targets. Neither transfer can
+cross a closure boundary. Both are ordinary null/effect graph nodes: their
+supplied statement environments are checked on entry, and their mapped outgoing
+edges must justify the destination's supplied environment. The slot map drops
+locals introduced inside the loop or branch; it does not assume destination
+claims or retain an obsolete mutable-field refinement.
+
+Already-known immutable Boolean singleton facts are preserved when forming a
+branch map, rather than overwritten with an opposite-branch witness. This avoids
+unnecessary rejection on impossible edges and uses existing transfer rules.
+Unlabeled transfers are supported; labels, transfers outside a loop, and statements
+after an unconditional transfer remain gated in this source slice.
+
+The real `loop-transfers.ts` fixture checks writes before break/continue,
+conditional transfers, and the nearest target in nested loops. Negative tests
+remove transfer environments or outgoing evidence, give a false exit claim, and
+try to escape a body local. `LoopTransferTests.lean` checks the extracted graphs
+and proves two operational traces: an inner break reaches the outer body's return,
+and continue drops a local alias before reevaluating a captured-cell condition.
+These proofs use the existing machine and safety rules; no new calculus form or
+certificate constructor is introduced.
 
 ### Shared local continuations: checked construction, source gate unchanged
 

@@ -40,6 +40,8 @@ inductive Stmt where
   | ret (pos : Span) (e : Expr)
   | cst (pos : Span) (name : String) (annot : Option Json) (init : Expr)
   | ite (pos : Span) (cond : Expr) (thn : List Stmt) (els : Option (List Stmt))
+  | brk (pos : Span)
+  | cont (pos : Span)
   | loop (pos : Span) (cond : Expr) (body : List Stmt)
   | effect (pos : Span) (e : Expr)
 
@@ -94,6 +96,8 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     let a ← jField j "annot"
     return .cst p (← jStr (← jField j "name")) (if a == .null then none else some a)
       (← decodeExpr (← jField j "init"))
+  | "break" => return .brk p
+  | "continue" => return .cont p
   | "while" => return .loop p (← decodeExpr (← jField j "cond")) (← (← jArr j "body").mapM decodeStmt)
   | "if" =>
     let thn ← (← jArr j "then").mapM decodeStmt

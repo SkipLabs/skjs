@@ -250,6 +250,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     echo "FAIL: loop source test setup"; cat "$WORK/loops.setup.err"; exit 1
   fi
   if ! node verification/tests/stateful-loops.js "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"; then exit 1; fi
+  TRANSFERS="verification/tests/stateful-source/loop-transfers.ts"
+  if ! { node verification/tools/parse-source.js "$TRANSFERS" --stateful > "$WORK/transfers.ast" &&
+         skjs_check "$TRANSFERS" > "$WORK/transfers.claims"; } 2> "$WORK/transfers.setup.err"; then
+    echo "FAIL: loop transfer setup"; cat "$WORK/transfers.setup.err"; exit 1
+  fi
+  if ! node verification/tests/stateful-loop-transfers.js "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"; then exit 1; fi
   if ! node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
   PARTIAL=verification/tests/partial-claims.ts
   skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
