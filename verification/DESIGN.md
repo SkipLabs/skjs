@@ -22,6 +22,7 @@ and remaining work. Details live in:
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type grammar, normalization, declarative subtype rules and their certificates. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program rules, graph claims, slot maps, certificate production and mathematical statements. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Versioned stateful requests, independent evidence checking and CLI usage. |
+| [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Proposed producer-independent source-claim interface and comment attachment rules; not yet implemented. |
 
 ## Chosen architecture
 
@@ -58,6 +59,14 @@ node alone does not establish that its environment can hold: entry and incoming
 edge obligations are essential. The graph checker enumerates the actual
 program, including both branch destinations, so omitted evidence cannot hide an
 edge obligation.
+
+The source compiler now consumes `SourceClaims.Function`: candidates expressed
+as calculus type labels or explicit decoding failures. `SkjsSourceClaims` is an
+adapter into that interface. Source annotations remain separate requirements.
+Direct callers use `extractNormalizedFn`; used labels are bounds checked against
+the current fixed source graph. This is the first implemented step of
+[the independent claim interface](CLAIM-INTERFACE.md), not yet a new wire format
+or a TypeScript comment parser.
 
 ### Derivations define acceptance
 
@@ -507,6 +516,33 @@ field may make SKJS export unequal read/write types in an arm. Those claims are
 still rejected by the invariant-cell decoder; immutable-slot refinement does
 not establish retained heap refinements. Source loops also remain
 unconnected; their raw-calculus tests do not establish source integration.
+
+### Shared local continuations: checked construction, source gate unchanged
+
+`ContinuationSharing.lean` establishes the next construction using existing
+lambda, let and application rules. Define a continuation once as a local
+function, then call it from each surviving path of a partially returning branch.
+`share_typed` derives the typing rule without extending the calculus or evidence
+format. Direct certificate construction and serialized consumption both check.
+Execution proofs distinguish early return, resume after writing a captured cell,
+and resume without writing. The continuation observes the heap when called.
+
+This is not yet a source translation. A null-argument continuation captures the
+pre-branch immutable context and stable cell contracts. It cannot assume later
+refinements merely because its call sites establish them. To support supplied
+join claims stronger than that captured context, pass the relevant values at
+checked types or provide an explicit continuation-entry interface. That is the
+next integration decision; duplicating the continuation or assuming its claims
+at definition time would bypass it.
+
+The explicit-argument case is now checked too. `passed_refinement_paths` uses
+one continuation of type `false → boolean`, defined before the branches. Two
+surviving paths prove that their argument is false; the continuation can use its
+parameter at that type. Passing the original unrefined Boolean or a different
+Boolean slot is rejected. This needs an additional internal arrow label, not a
+new semantic type constructor. Generalizing to several supplied entry bindings
+still needs a chosen argument layout and checked binding transfer in source
+lowering. The current source gates remain unchanged.
 
 ## Later feature gates
 

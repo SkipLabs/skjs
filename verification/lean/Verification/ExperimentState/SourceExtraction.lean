@@ -1,4 +1,4 @@
-import Verification.ExperimentState.SourceInput
+import Verification.ExperimentState.SkjsSourceClaims
 import Verification.ExperimentState.ExpressionClaims
 
 /-! First source adapter for the stateful consumer. Names are resolved against
@@ -18,7 +18,7 @@ open SourceInput
 
 private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs.length
 
-private def env (fc : Claims) (pos : Nat) (scope : List String) :
+private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
     Except String (List (Ty Nat)) := do
   let vars ← match fc.envs.lookup pos with
     | some vars => pure vars
@@ -26,17 +26,17 @@ private def env (fc : Claims) (pos : Nat) (scope : List String) :
   if !distinct (vars.map Prod.fst) then throw s!"duplicate environment binding at {pos}"
   scope.mapM fun name => do
     match vars.lookup name with
-    | some t => SourceInput.translate t
+    | some t => SourceClaims.resolve t
     | none => throw s!"missing claimed binding '{name}' at {pos}"
 
-private def exprType (fc : Claims) (e : SourceInput.Expr) : Except String (Ty Nat) := do
+private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Except String (Ty Nat) := do
   match fc.exprs.lookup e.span with
-  | some t => SourceInput.translate t
+  | some t => SourceClaims.resolve t
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
 /-- A terminal branch uses the enclosing source result annotation, not a
 fabricated expression claim at the if statement's span. -/
-private def closureType (fc : Claims) : SourceInput.Expr → Except String (Ty Nat)
+private def closureType (fc : SourceClaims.Function) : SourceInput.Expr → Except String (Ty Nat)
   | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
   | .done _ => pure [0]
   | .ifBody _ result _ _ _ => do SourceTypes.translate (← decodeTy result)
@@ -57,7 +57,7 @@ private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
 
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
 slots at their already checked types while projecting the supplied named slots. -/
-private def closureEnv (fc : Claims) (pos : Nat) (scope : List String)
+private def closureEnv (fc : SourceClaims.Function) (pos : Nat) (scope : List String)
     (Γ : List (Ty Nat)) : Except String (List (Ty Nat)) := do
   let names := scope.filter (· != "")
   let H ← env fc pos names
@@ -70,7 +70,7 @@ private def closureEnv (fc : Claims) (pos : Nat) (scope : List String)
 /-- Lower expressions inside lambda bodies without losing their individual
 claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
-private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
+private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
   let p ← match e with
@@ -176,7 +176,7 @@ termination_by e
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
-private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
+private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) (next : Target) : Compiler Target := do
   let A ← exprType fc e
   match e with
@@ -239,7 +239,7 @@ private def branchMapping (width : Nat) (tested : Option Nat) (target : Target) 
 /-- Compile the continuation once, then point both arms at it. Allocation order
 is intentionally independent of source order; `start` records the real entry.
 Fuel bounds structural traversal, not execution or certificate search. -/
-private def body : Nat → Claims → Ty Nat → List String → List SourceInput.Stmt →
+private def body : Nat → SourceClaims.Function → Ty Nat → List String → List SourceInput.Stmt →
     Option (Target × List String) → Compiler Target
   | 0, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail => do
@@ -294,7 +294,7 @@ termination_by stmts => sizeOf stmts
 structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
 
-def extractFn (f : SourceInput.Fn) (fc : Claims) : Except String SourceRequest := do
+def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope := f.params.map (·.name)
   if !distinct scope then throw "duplicate source parameter name"
@@ -307,17 +307,22 @@ def extractFn (f : SourceInput.Fn) (fc : Claims) : Except String SourceRequest :
   for (p, (name, claimed)) in f.params.zip fc.params do
     if p.name != name then throw "parameter claim name or order mismatch"
     let A ← SourceInput.translate p.ty
-    let B ← SourceInput.translate claimed
+    let B ← SourceClaims.resolve claimed
     if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
   if !distinct (fc.envs.map Prod.fst) || !distinct (fc.exprs.map Prod.fst) then
     throw "duplicate statement or expression claim"
   let R ← SourceInput.translate f.ret
-  let claimedR ← SourceInput.translate fc.ret
+  let claimedR ← SourceClaims.resolve fc.ret
   if R != claimedR then throw "claimed return type differs from the source annotation"
   let (entry, built) ← (do
     let first ← body (traversalBudget f.body) fc R scope f.body none
     emit .nul (.effect first) inputs [0]).run {}
   return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations⟩
+
+/-- Existing wire callers pass through the SKJS adapter. Other producers can
+supply normalized candidates directly to extractNormalizedFn. -/
+def extractFn (f : SourceInput.Fn) (fc : SourceInput.Claims) : Except String SourceRequest :=
+  extractNormalizedFn f (SkjsSourceClaims.translate fc)
 
 def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   if (← jStr (← jField ast "file")) != fileKey then throw "AST file key mismatch"
