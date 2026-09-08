@@ -496,8 +496,16 @@ operand order. The original condition runs once and its operand/result claims
 remain obligations. A subsequent lookup of that immutable variable supplies the
 value for tag dispatch; no source call or property read is repeated. Maps retain
 the observed value in the target binding and discard saved condition temporaries.
-Null-refined closure environments and retained property-read refinements remain
-outside this integration.
+Closure null guards use existing `unionVar` and `ifTag` evidence instead of a new
+rule. The condition is evaluated into an anonymous slot. The immutable tested
+slot is split into its primitive labels; each label has a known tag answer and
+checks the selected arm. Source arm-entry and expression claims remain separate
+obligations in the corresponding filtered contexts. The final ordinary term
+certificate checks the complete construction. This supports parameters, captured
+immutable values, negations and effects in the selected arm within the existing
+closure control-flow slice. It does not retain observations of mutable properties.
+The finite-label split is a source-profile strategy, not a new semantic rule for
+arbitrary mixed-shape type labels.
 
 ## Producing evidence from supplied claims
 

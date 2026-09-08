@@ -664,5 +664,12 @@ value. No property read or call is repeated or granted a retained refinement.
 loop bodies and break. `tests/skjs-incomplete/null-loop-exit.ts` is rejected by
 SKJS, but repairing its final entry and expression claims permits independent
 verification of the null-tested loop exit, including `continue`. This proves
-type safety, not termination for the null input. Null-based refinement inside
-closure environments remains separate integration work.
+type safety, not termination for the null input.
+
+Closure null guards now use existing union elimination and known-tag conditional
+rules. The original condition is evaluated and saved before splitting the tested
+immutable slot. Each primitive label checks the selected arm; supplied arm-entry
+and expression claims are still independently required. This adds a source-directed
+proof recipe, not another typing rule or graph-backed closure body. Parameters,
+captures, negation and effects in the selected arm are covered. Retained property
+refinements and closure loops remain outside this slice.

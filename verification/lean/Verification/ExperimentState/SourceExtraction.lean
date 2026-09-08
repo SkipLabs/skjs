@@ -199,20 +199,39 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     for (B,i) in H.zipIdx do
       modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
     let c ← closureExpr fc scope H cond
-    match conditionVariable scope cond with
-    | some (i, reversed) =>
-      let T := H.set i [1]
-      let F := H.set i [2]
-      let t ← closureExpr fc scope (if reversed then F else T) thn
-      let e ← closureExpr fc scope (if reversed then T else F) els
-      let yes := if reversed then e else t
-      let no := if reversed then t else e
-      pure (DirectProof.node H (.ite (.var i) yes.term no.term) A (.ifBoolVar [1] [2])
-        [DirectProof.cast T A yes,DirectProof.cast F A no])
-    | none =>
-      let t ← closureExpr fc scope H thn
-      let e ← closureExpr fc scope H els
-      pure (DirectProof.ifE SourceTypes.graph H A c t e)
+    if let some (i, equal) := nullConditionVariable scope cond then
+      let some C := H[i]? | throw "internal closure null-guard slot mismatch"
+      -- Preserve the evaluated predicate and its claims in an anonymous slot.
+      let K := c.type :: H
+      let tested := i+1
+      let T := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul true)
+      let F := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul false)
+      let t ← closureExpr fc (""::scope) (if equal then T else F) thn
+      let e ← closureExpr fc (""::scope) (if equal then F else T) els
+      let yes := if equal then t else e
+      let no := if equal then e else t
+      let term := Tm.ite (.test .isNul (.var tested)) yes.term no.term
+      let children := C.map fun label =>
+        let L := K.set tested [label]
+        let q := decide (Answers SourceTypes.graph [label] .isNul true)
+        DirectProof.node L term A (if q then .ifTrue else .ifFalse)
+          [DirectProof.cast L A (if q then yes else no)]
+      pure (DirectProof.letE H c (DirectProof.node K term A (.unionVar tested) children))
+    else
+      match conditionVariable scope cond with
+      | some (i, reversed) =>
+        let T := H.set i [1]
+        let F := H.set i [2]
+        let t ← closureExpr fc scope (if reversed then F else T) thn
+        let e ← closureExpr fc scope (if reversed then T else F) els
+        let yes := if reversed then e else t
+        let no := if reversed then t else e
+        pure (DirectProof.node H (.ite (.var i) yes.term no.term) A (.ifBoolVar [1] [2])
+          [DirectProof.cast T A yes,DirectProof.cast F A no])
+      | none =>
+        let t ← closureExpr fc scope H thn
+        let e ← closureExpr fc scope H els
+        pure (DirectProof.ifE SourceTypes.graph H A c t e)
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do

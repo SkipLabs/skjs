@@ -155,6 +155,58 @@ try {
     ),
     true,
   );
+  const exportedGuards = spawnSync(
+    verifier,
+    ["--export-source-claims", guardAstPath, guardClaimsPath, guardFile],
+    { encoding: "utf8", timeout: 30000 },
+  );
+  assert.equal(exportedGuards.status, 0, exportedGuards.stderr);
+  const normalizedGuards = JSON.parse(exportedGuards.stdout).claims;
+  expect(
+    "normalized null guards produce evidence",
+    run(
+      "--produce-source-claims",
+      guardAst,
+      normalizedGuards,
+      undefined,
+      guardFile,
+    ),
+    true,
+  );
+  const normalizedGuardEvidence = JSON.parse(
+    fs.readFileSync(tmp + "/evidence.json"),
+  );
+  expect(
+    "normalized null guards independently consumed",
+    run(
+      "--check-source-claims",
+      guardAst,
+      normalizedGuards,
+      normalizedGuardEvidence,
+      guardFile,
+    ),
+    true,
+  );
+  const missingInner = structuredClone(guardClaims);
+  const callback = missingInner
+    .find((f) => f.file === guardFile)
+    .functions.find((f) => f.name === "callbackGuard");
+  const guardText = fs.readFileSync(guardFile, "utf8");
+  const inner = callback.exprs.find((e) => guardText.slice(...e.pos) === "x");
+  assert(inner);
+  callback.exprs = callback.exprs.filter((e) => e !== inner);
+  expect(
+    "closure guard still requires its operand claim",
+    run(
+      "--produce-stateful-source",
+      guardAst,
+      missingInner,
+      undefined,
+      guardFile,
+    ),
+    false,
+    "no claimed type",
+  );
   const reversedGuard = structuredClone(guardAst);
   reversedGuard.functions[0].body[0].cond.op = "!==";
   expect(
@@ -184,6 +236,9 @@ try {
       "presentGuard",
       "negatedGuard",
       "olderGuard",
+      "callbackGuard",
+      "capturedGuard",
+      "effectfulCallbackGuard",
     ])
       assert.equal(guardContext[name](value), value === null ? false : value);
     assert.equal(guardContext.loopGuard(value), false);

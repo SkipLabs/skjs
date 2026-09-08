@@ -86,14 +86,16 @@ Strict `===` and `!==` comparisons with a null literal work as expressions,
 including inside callbacks. In top-level branches and loops, direct immutable
 variable tests also refine the outgoing environment, including negations and
 either operand order. `stateful-source/null-guards.ts` illustrates guarded returns,
-older-slot mappings, loop bodies and break. The separate
+older-slot mappings, loop bodies and break. Null guards also refine nullable
+parameters and captured immutable values in supported closure branches, including
+negation and effects in the selected arm. The separate
 `skjs-incomplete/null-loop-exit.ts` demonstrates independently verifiable repaired
 loop-exit claims after a null test and `continue`.
 
 The source fragment is smaller than the calculus. General strings/numbers,
 `typeof`, other equality tests, mutable bindings, generics and general overloads
-are not currently source-verifiable. Null-based environment refinement inside
-closures and retained refinement of property reads remain unsupported. The parser
+are not currently source-verifiable. Retained refinement of property reads
+remains unsupported. The parser
 can represent some syntax that the Lean adapter subsequently rejects. Such
 rejection is a limitation, not evidence that a producer claim is false.
 

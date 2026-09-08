@@ -433,6 +433,8 @@ evidence from the conservatively tag-filtered type for slot zero, and ordinary
 subtype evidence from the unchanged type for every other slot. Both destinations
 are checked. The observation comes from execution, never from evidence.
 
-`tests/stateful-source/null-guards.ts` exercises this integration. Null-refined
-closure environments, other strict comparisons, and loose equality remain
-source boundaries.
+`tests/stateful-source/null-guards.ts` exercises this integration. Closure null
+guards use existing expression certificate forms (`letE`, `unionVar`, `ifTrue` /
+`ifFalse`), preserving condition evaluation and all source claims. No new closure
+wire form is needed. Other strict comparisons, loose equality, retained property
+refinement and loops inside closures remain source boundaries.
