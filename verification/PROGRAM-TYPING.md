@@ -119,7 +119,8 @@ Here $\mathsf{True}$ and $\mathsf{False}$ must expand to the corresponding singl
 clauses. `HasTy.ifBoolVar` proves this rule sound: the selected branch's actual
 value justifies the changed slot, and all other slots retain their meanings.
 It neither refines mutable heap contents nor supplies general union splitting.
-Graph edges also have their own checked Boolean refinement rule.
+Graph edges use the common [observation-based refinement contract](#refinement-under-an-observed-outcome)
+below, currently connected to Boolean dispatch.
 
 Reference rules use a single invariant operand; eliminating a conjunction to such a reference view
 can be justified by subsumption. No direct multi-contract program rule is assumed.
@@ -403,53 +404,81 @@ program-evidence and edge-evidence completeness results above retain their
 stated scope.
 
 
-### Boolean result refinement
+### Refinement under an observed outcome
 
 [BranchRefinement.lean](lean/Verification/ExperimentState/BranchRefinement.lean)
-justifies the `branchBind` continuation. Let $B_q$ denote the singleton family
-containing the Boolean $q$. Its schematic node rule is:
+uses one contract for Boolean equality and tag observations. An observation $o$
+is either equality to a Boolean value or the result of a runtime tag test.
+Define the semantic obligation:
 
 $$
-\frac{
-  \Gamma\vdash_G e:A
-  \quad \operatorname{OnlyBoolean}(G,A)
-  \quad B_{\mathsf{true}}::\Gamma\Rightarrow_{m_y}\Delta_y
-  \quad B_{\mathsf{false}}::\Gamma\Rightarrow_{m_n}\Delta_n
-}{
-  \operatorname{NodeOk}_G(\Gamma,e,\operatorname{branchBind}(y,m_y;n,m_n))
-}.
+A\preceq_o B
+\quad\Longleftrightarrow\quad
+\forall n,W,v.\;
+\bigl(v\in\llbracket A\rrbracket_{n,W}\land o(v)\bigr)
+\Longrightarrow v\in\llbracket B\rrbracket_{n,W}.
 $$
 
-The edge relation checks each target slot. Selecting the pushed slot requires
-that its target type contain $q$; selecting an older slot requires an ordinary
-subtype derivation from that slot's incoming type. `booleanMember` checks the
-first obligation directly against expanded Boolean clauses, so no synthetic
-type-graph node is needed for $B_q$. Maps, bounds and target existence are checked
-as usual. The wire evidence uses `subset` as the canonical marker for a slot
-justified by this branch observation; in that position it invokes the singleton
-membership check, not ordinary subset subtyping.
+This is `ObservedSub`. The destination type $B$ is supplied. The contract does
+not require computing a canonical intersection, difference, or filtered type.
+It is a semantic specification; the executable checker uses sufficient finite
+checks, not a semantic oracle. No completeness of these checks is claimed.
 
-The load-bearing theorem is environment preservation under the observation:
+`ObservedCovers` checks each destination slot selected by a map $m$. For the
+tested slot $i$, it requires $\Gamma(i)\preceq_o\Delta(j)$; other selected slots
+require ordinary subtyping. The common environment theorem is:
 
 $$
 \frac{
  \operatorname{EnvOk}_G(\Gamma,\rho,n,W)
- \quad \rho(i)=q
- \quad \operatorname{RefinedCovers}_G(\Gamma,\Delta,i,q,m)
+ \quad o(\rho(i))
+ \quad \operatorname{ObservedCovers}_G(\Gamma,\Delta,i,o,m)
 }{
  \operatorname{EnvOk}_G(\Delta,\operatorname{mapEnv}(m,\rho),n,W)
 }.
 $$
 
-`state_safe` applies this after pushing the actual tested value, with $i=0$.
-This retains the graph's all-budget safety and deterministic execution proofs,
-including cyclic graphs. Both edges are checked. Heap contents are not refined.
+`checkObserved` checks slot existence, map and evidence lengths, and each of
+these obligations. `checkObserved_sound` and `ObservedCovers.env` prove the
+common path. The observation is established by execution, never accepted as a
+producer assertion. Heap contents are not refined.
 
-For `if (x)`, the source compiler maps the target binding for `x` to the newly
-pushed result of evaluating `x`: the same immutable value, now justified as true
-or false. Other bindings retain their old slots. This supports direct Boolean
-variable tests, including joins after the refined arms; it does not establish
-refinements for related aliases, property reads, or general predicates.
+Two implementations discharge the tested-slot obligation:
+
+- **Boolean equality:** `booleanMember` checks that the supplied destination
+  contains the observed Boolean. `subset` is the canonical evidence marker for
+  this check, not an ordinary subset derivation. No synthetic singleton label
+  is needed.
+- **Tag outcome:** `tagSlice` discards a label only if every clause contradicts
+  the observation, then checks an ordinary subtype certificate from the remaining
+  labels to the supplied destination. Mixed-shape labels are retained intact.
+  Filtering is a conservative algorithm, not the definition of `ObservedSub`.
+  A more precise algorithm can implement the same contract without changing the
+  edge or environment rule.
+
+For the current primitive profile, null filtering gives:
+
+$$
+F_{\mathrm{null},\mathrm{true}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{null},
+\qquad
+F_{\mathrm{null},\mathrm{false}}(\mathrm{null}\lor\mathrm{bool})=\mathrm{bool}.
+$$
+
+A regression also proves a semantic refinement of a mixed label that the current
+filtering checker cannot establish. This records the precision boundary explicitly.
+A Boolean shape test does not establish equality to `true`; these observations
+have separate tests to prevent conflation.
+
+The existing `branchBind` dispatch now uses this common checker and environment
+theorem with a Boolean observation of the actual pushed value. Its all-budget
+safety and deterministic execution proofs still apply, including cyclic graphs.
+The source compiler maps a tested immutable Boolean variable to that pushed
+value and preserves the other slot identities. Negations swap branch polarity.
+
+Tag observations are implemented and proved at the edge layer, but tag dispatch
+and source lowering are not integrated yet. The null-guard example remains an
+expected verification limitation. Its integration must supply the observation
+from actual execution while preserving all original condition/operand claims.
 
 ## Producing evidence from supplied claims
 

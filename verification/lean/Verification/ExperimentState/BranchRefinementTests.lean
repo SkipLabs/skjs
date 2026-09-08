@@ -7,18 +7,65 @@ private def ok (r : Except String α) : Bool := match r with
   | .ok _ => true
   | .error _ => false
 
--- Slot zero is justified by the branch observation. Slot one is not refined.
-#guard checkRefined SourceTypes.graph [[1,2],[1,2]] [[1],[1,2]] 0 true
-  (some [0,1]) [.subset,.subset]
-#guard !checkRefined SourceTypes.graph [[1,2],[1,2]] [[2],[1,2]] 0 true
-  (some [0,1]) [.subset,.subset]
-#guard !checkRefined SourceTypes.graph [[1,2],[1,2]] [[1],[1]] 0 true
-  (some [0,1]) [.subset,.subset]
-#guard !checkRefined SourceTypes.graph [[1,2],[1,2]] [[1],[1,2]] 0 true
+-- Tag observations split explicit unions without inventing a new type label.
+#guard tagSlice SourceTypes.graph [0,1,2] .isNul true == [0]
+#guard tagSlice SourceTypes.graph [0,1,2] .isNul false == [1,2]
+#guard tagSlice SourceTypes.graph [0,1,2] .isBool true == [1,2]
+#guard tagSlice SourceTypes.graph [0] .isNul false == []
+-- Mixed labels are retained intact, rather than narrowed unsoundly by head shape.
+private def mixed : PositiveGraphs.NormalGraph Nat := fun _ => [.nul,.bool]
+#guard tagSlice mixed [0] .isNul true == [0]
+#guard tagSlice mixed [0] .isNul false == [0]
+
+-- An older immutable slot can be refined and reordered; unrelated slots cannot.
+#guard checkObserved SourceTypes.graph [[1,2],[0,1,2]] [[0],[1,2]] 1 (.tag .isNul true)
   (some [1,0]) [.subset,.subset]
-#guard !checkRefined SourceTypes.graph [[1,2]] [[1]] 0 true (some [9]) [.subset]
-#guard !checkRefined SourceTypes.graph [[1,2]] [[1]] 0 true (some [0]) []
-#guard !checkRefined SourceTypes.graph [[1,2]] [[1]] 0 true (some [0,0]) [.subset]
+#guard checkObserved SourceTypes.graph [[1,2],[0,1,2]] [[1,2],[1,2]] 1 (.tag .isNul false)
+  (some [1,0]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2],[0,1,2]] [[0],[1,2]] 1 (.tag .isNul false)
+  (some [1,0]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2],[0,1,2]] [[0],[1]] 1 (.tag .isNul true)
+  (some [1,0]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2],[0,1,2]] [[0],[1,2]] 1 (.tag .isNul true)
+  (some [0,1]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[0,1,2]] [[0]] 9 (.tag .isNul true)
+  none [.subset]
+#guard !checkObserved SourceTypes.graph [[0,1,2]] [[0]] 0 (.tag .isNul true)
+  (some [9]) [.subset]
+#guard !checkObserved SourceTypes.graph [[0,1,2]] [[0]] 0 (.tag .isNul true)
+  none []
+
+-- Boolean identity and a Boolean shape observation are different facts.
+#guard checkObserved SourceTypes.graph [[1,2]] [[1]] 0 (.boolean true) none [.subset]
+#guard !checkObserved SourceTypes.graph [[1,2]] [[1]] 0 (.tag .isBool true) none [.subset]
+-- Observation metadata must identify an existing slot, including forgotten slots.
+#guard !checkObserved SourceTypes.graph [] [] 0 (.boolean true) none []
+#guard !checkObserved SourceTypes.graph [] [] 0 (.tag .isNul true) none []
+#guard checkObserved SourceTypes.graph [[0,1,2]] [] 0 (.tag .isNul true) none []
+-- Filtering's precision limit does not restrict the semantic obligation.
+private def mixedWithNull : PositiveGraphs.NormalGraph Nat
+  | 0 => [.nul,.bool]
+  | _ => [.nul]
+#guard !checkObservedSub mixedWithNull [0] [1] (.tag .isNul true) .subset
+example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
+  intro n W v _ ho
+  have hn : v = .nul := by cases v <;> simp_all [Observation.holds, tagHolds]
+  subst v
+  apply (PositiveRules.expand_sem _ _ _ _ _).mpr
+  exact ⟨.nul, by simp [PositiveRules.expand, mixedWithNull], rfl⟩
+
+-- Slot zero is justified by the branch observation. Slot one is not refined.
+#guard checkObserved SourceTypes.graph [[1,2],[1,2]] [[1],[1,2]] 0 (.boolean true)
+  (some [0,1]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2],[1,2]] [[2],[1,2]] 0 (.boolean true)
+  (some [0,1]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2],[1,2]] [[1],[1]] 0 (.boolean true)
+  (some [0,1]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2],[1,2]] [[1],[1,2]] 0 (.boolean true)
+  (some [1,0]) [.subset,.subset]
+#guard !checkObserved SourceTypes.graph [[1,2]] [[1]] 0 (.boolean true) (some [9]) [.subset]
+#guard !checkObserved SourceTypes.graph [[1,2]] [[1]] 0 (.boolean true) (some [0]) []
+#guard !checkObserved SourceTypes.graph [[1,2]] [[1]] 0 (.boolean true) (some [0,0]) [.subset]
 
 private def request (v : Tm) : Request :=
   ⟨2, SourceTypes.types,

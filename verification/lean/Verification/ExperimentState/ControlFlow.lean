@@ -73,7 +73,7 @@ def checkTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certifi
 def checkBranchTarget [DecidableEq ι] (G : NormalGraph ι) (P : Program) (C : Certificate ι)
     (Γ : List (Ty ι)) (q : Bool) (target : Target) (p : EdgeEvidence ι) : Bool :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkRefined G Γ (entry c) 0 q target.mapping p
+  | some _, some c => checkObserved G Γ (entry c) 0 (.boolean q) target.mapping p
   | _, _ => false
 
 
@@ -105,7 +105,7 @@ def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : Li
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (q : Bool) (l : Target) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ RefinedCovers G Γ (entry c) 0 q l.mapping
+  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 (.boolean q) l.mapping
 
 
 def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι) (C : Certificate ι)
@@ -129,7 +129,7 @@ theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {P C Γ q l p}
     (hc : checkBranchTarget G P C Γ q l p = true) : BranchTargetOk G C Γ q l := by
   unfold checkBranchTarget at hc
   split at hc
-  · exact ⟨_, by assumption, checkRefined_sound hc⟩
+  · exact ⟨_, by assumption, checkObserved_sound hc⟩
   · contradiction
 
 

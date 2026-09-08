@@ -144,8 +144,10 @@ or a termination requirement.
 Closures currently contain expression-language bodies, not graph-backed bodies.
 A graph loop surrounding closure calls is supported; a loop inside a closure
 body is not thereby expressible. General branch-environment refinement is also
-outside the current program rules; immutable Boolean slots have a specific
-refinement rule, alongside known shape answers per overload.
+outside the current program rules. Graph dispatch currently supplies Boolean
+observations to the common immutable-slot refinement rule; tag observations
+have a proved edge checker but are not yet connected to dispatch. Expression
+typing also supports known shape answers per overload.
 
 ### Rule boundaries justified by counterexamples
 
@@ -309,11 +311,21 @@ binding preservation remain part of the reviewed compiler boundary.
 
 The result-binding branch rule and its environment-transfer theorem are proved
 in [BranchRefinement.lean](lean/Verification/ExperimentState/BranchRefinement.lean),
-with mathematical rules in [PROGRAM-TYPING](PROGRAM-TYPING.md#boolean-result-refinement).
+with mathematical rules in [PROGRAM-TYPING](PROGRAM-TYPING.md#refinement-under-an-observed-outcome).
 For `if (x)`, the source compiler maps `x` to the tested value on each edge.
 Its true/false singleton can therefore justify SKJS's claimed refinement.
 Untested bindings still require ordinary incoming subtype proofs. This does
 not infer refinements for aliases, property reads or general predicates.
+
+Boolean equality and tag outcomes use one observation contract: every value of
+the incoming type satisfying the observation must belong to the supplied target
+type (`ObservedSub`). One mapped-edge checker and environment theorem handle
+both. The current tag check conservatively filters whole labels and checks a
+subtype certificate; this algorithm may become more precise without changing
+the contract or adding another edge rule. A test proves a valid mixed-label
+refinement that this algorithm cannot yet check. Tag dispatch and source null
+guards remain integration work; observations must come from execution, never
+from producer assertions. No arbitrary predicate framework is introduced.
 
 Protocol version 2 makes the source parameter types an explicit input contract.
 The exporter’s parameter signature is checked for matching names, order and types.
@@ -645,8 +657,10 @@ required and both expressions evaluate in order. Existing `ifTag` plus `unionVar
 prove the lowered predicate. Tests exercise both operand orders and polarities,
 independent consumption, omitted alternatives, and forged claims.
 
-Graph-edge null refinement remains the next step. The accepted SKJS program in
+Connecting tag observations to graph dispatch and source lowering remains the
+next step; the shared edge checker is proved as described
+[in PROGRAM-TYPING](PROGRAM-TYPING.md#refinement-under-an-observed-outcome). The accepted SKJS program in
 `tests/unsupported/null-guard.ts` reaches a precise incoming-edge failure: predicate
 typing succeeds but does not yet transport the tested variable's partition to the
-successor. This limitation must be resolved in the checked edge rules, not by
-accepting the producer's narrowed environment without proof.
+successor. Dispatch must supply the actual observation required by the shared
+edge theorem; the producer's narrowed environment alone is not evidence.

@@ -220,28 +220,29 @@ inductive Failure where
   | rejected
   deriving DecidableEq, Repr
 
+/-- Ordinary and observed edges share slot selection and coverage search. The
+observation comes from graph dispatch, never from supplied point annotations. -/
 def edge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
-    (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target) : Option (EdgeEvidence ι) := do
-  let c ← claims[target.label]?
-  if let some slots := target.mapping then
-    if slots.length != c.context.length then failure
-  (List.range c.context.length).mapM fun i => do
-    let A ← Γ[slot target.mapping i]?
-    let B ← c.context[i]?
-    subtype G pool A B
-
-def branchEdge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
-    (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (q : Bool) (target : Target) :
+    (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
+    (observed : Option (Nat × BranchRefinement.Observation) := none) :
     Option (EdgeEvidence ι) := do
   let c ← claims[target.label]?
+  if let some (tested, _) := observed then
+    if Γ[tested]?.isNone then failure
   if let some slots := target.mapping then
     if slots.length != c.context.length then failure
   (List.range c.context.length).mapM fun i => do
     let A ← Γ[slot target.mapping i]?
     let B ← c.context[i]?
-    if slot target.mapping i == 0 then
-      if BranchRefinement.booleanMember G B q then pure .subset else failure
-    else subtype G pool A B
+    match observed with
+    | some (tested, o) =>
+      if slot target.mapping i == tested then
+        match o with
+        | .boolean q =>
+          if BranchRefinement.booleanMember G B q then pure .subset else failure
+        | .tag t q => subtype G pool (BranchRefinement.tagSlice G A t q) B
+      else subtype G pool A B
+    | none => subtype G pool A B
 
 
 def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
@@ -257,7 +258,7 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let target := fun Γ t => match edge G pool claims Γ t with
       | some p => Except.ok p
       | none => Except.error (Failure.edge l t.label)
-    let branchTarget := fun Γ q t => match branchEdge G pool claims Γ q t with
+    let branchTarget := fun Γ q t => match edge G pool claims Γ t (some (0, .boolean q)) with
       | some p => Except.ok p
       | none => Except.error (Failure.edge l t.label)
     let ps ← (match node.continuation with
