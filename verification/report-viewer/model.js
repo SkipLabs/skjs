@@ -383,6 +383,9 @@ function fromBundle(bundle) {
       (bundle.originalDiagnostics && m.diagnostics
         ? "Original producer snapshot:\n"
         : "") + (m.diagnostics || ""),
+    // What produced this report and when, as reported by the local runner. It
+    // records that a command ran, not that anything was established.
+    collection: bundle.collection || null,
     meta: {
       "source-sha256": m.source.sha256,
       ...Object.fromEntries(

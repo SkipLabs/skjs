@@ -85,6 +85,10 @@ async function analyse(relative, verify) {
   const source = await fs.readFile(sourcePath, "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
   const options = { cwd: REPO, timeout: 120000, maxBuffer: 32 * 1024 * 1024 };
+  // Every request runs the producer: nothing here is cached or reused. The
+  // reader shows when it ran, so a displayed report is never mistaken for an
+  // older one.
+  const startedAt = Date.now();
   try {
     let run;
     try {
@@ -160,6 +164,17 @@ async function analyse(relative, verify) {
     return {
       source,
       ...bundle,
+      collection: {
+        producer: "skjs",
+        producerRun: true,
+        command:
+          (process.env.SKJS_BIN || "target/host/dev/skjs") +
+          " check --emit-skjs-type-claims " +
+          relative,
+        ranAt: new Date(startedAt).toISOString(),
+        durationMs: Date.now() - startedAt,
+        verified: Boolean(verify),
+      },
       candidate: {
         format: "skjs",
         file: relative,
@@ -173,6 +188,7 @@ async function analyse(relative, verify) {
 }
 
 async function candidateReport(candidate, verify) {
+  const startedAt = Date.now();
   if (
     !candidate ||
     !["skjs", "source-claims"].includes(candidate.format) ||
@@ -216,7 +232,19 @@ async function candidateReport(candidate, verify) {
     });
     if (source !== (await fs.readFile(sourcePath, "utf8")))
       throw new Error("Source changed while checking candidate");
-    return { source, ...JSON.parse(result.stdout), candidate };
+    // The producer is not run here: this report is the edited candidate.
+    return {
+      source,
+      ...JSON.parse(result.stdout),
+      collection: {
+        producer: "edited candidate",
+        producerRun: false,
+        ranAt: new Date(startedAt).toISOString(),
+        durationMs: Date.now() - startedAt,
+        verified: Boolean(verify),
+      },
+      candidate,
+    };
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

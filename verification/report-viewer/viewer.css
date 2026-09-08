@@ -267,6 +267,12 @@ kbd {
 .tog.live input[type="search"]::placeholder {
   color: var(--ink-3);
 }
+.collected {
+  color: var(--ok);
+}
+.collected.none {
+  color: var(--ink-3);
+}
 .livedot {
   width: 7px;
   height: 7px;
@@ -654,11 +660,6 @@ footer {
 }
 .drop.on {
   display: grid;
-}
-.sample-note {
-  font-size: 11.5px;
-  color: var(--ink-3);
-  font-family: var(--mono);
 }
 @media (prefers-reduced-motion: reduce) {
   * {

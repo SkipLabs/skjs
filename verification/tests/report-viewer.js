@@ -95,7 +95,7 @@ assert.equal(parseReport(annotated).source, source);
 assert.equal(parseReport(annotated).functions[0].exprs[0].type, claim.type);
 for (const file of ["basic", "partial"]) {
   const sample = fs.readFileSync(
-    `verification/report-viewer/samples/${file}.annotated.ts`,
+    `verification/tests/annotated/${file}.annotated.ts`,
     "utf8",
   );
   const parsed = parseReport(sample);

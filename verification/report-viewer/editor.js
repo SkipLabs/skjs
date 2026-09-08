@@ -140,7 +140,7 @@ async function checkCandidate(verify) {
       candidateState.bundle?.manifest.diagnostics || "";
     bundle.originalDiagnostics = true;
     bundle.originalCandidate = candidateState.original;
-    await load(bundle, false, null, true);
+    await load(bundle, true);
     const index = state.report.functions.findIndex((f) => f.name === fn);
     if (index >= 0) state.fn = index;
     renderShell();

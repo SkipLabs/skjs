@@ -410,10 +410,9 @@ function clearSelection() {
 function applyPendingMark() {
   const wanted = state.pendingMark;
   if (!wanted || !state.report) return;
-  // Reports arrive in any order, and a bundled sample can carry the same ids as
-  // the file a link names. Wait for the named report rather than applying the
-  // mark to whichever report renders first.
-  if (state.pendingFile && state.report.sample) return;
+  // Reports arrive in any order. Wait for the file the link names rather than
+  // applying its mark to whichever report renders first.
+  if (state.pendingFile && state.report.file !== state.pendingFile) return;
   const found = findMark(state.report, wanted);
   // Keep the request until the report holding that id loads, or until the
   // reader asks for something else.
@@ -690,16 +689,27 @@ function select(id) {
 }
 
 /* ---------- header, functions, provenance ---------- */
+// Whether the producer actually ran for what is on screen, and when. A report
+// read from a file carries no such record, and says so rather than implying one.
+const clock = (iso) => {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleTimeString();
+};
+function collectedLine(rep) {
+  const c = rep.collection;
+  if (!c) return ' · <span class="collected none">no collection record</span>';
+  const when = clock(c.ranAt);
+  return (
+    ' · <span class="collected">' +
+    (c.producerRun ? "skjs ran" : "producer not run") +
+    (when ? " at " + esc(when) : "") +
+    "</span>"
+  );
+}
 function renderShell() {
   const rep = state.report;
   el("srcline").innerHTML =
-    "<b>" +
-    esc(rep.file) +
-    "</b> · producer " +
-    esc(rep.producer) +
-    (rep.sample
-      ? ' · <span class="sample-note">' + esc(rep.sample) + "</span>"
-      : "");
+    "<b>" + esc(rep.file) + "</b> · producer " + esc(rep.producer) + collectedLine(rep);
   el("diagnostics").textContent =
     rep.diagnostics || "No diagnostic text in this report.";
   // What the report records, at a glance. Each count moves to the next function
@@ -788,7 +798,31 @@ function renderShell() {
     );
   filterFunctions();
   const f = rep.functions[state.fn];
+  const collected = rep.collection;
   let p =
+    '<dl class="kv"><dt>collection</dt><dd>' +
+    (collected
+      ? esc(
+          (collected.producerRun
+            ? "skjs ran for this report"
+            : "the producer did not run; these are candidate claims") +
+            (collected.ranAt ? " at " + clock(collected.ranAt) : "") +
+            (typeof collected.durationMs === "number"
+              ? " in " + (collected.durationMs / 1000).toFixed(1) + " s"
+              : ""),
+        ) +
+        "</dd><dt>verification</dt><dd>" +
+        (collected.verified
+          ? "the independent consumer was run"
+          : "not requested for this collection")
+      : "this report was read from a file; it records no collection run") +
+    "</dd></dl>";
+  if (collected?.command)
+    p +=
+      '<details><summary>Producer command</summary><pre class="raw">' +
+      esc(collected.command) +
+      "</pre></details>";
+  p +=
     '<div class="status-line ' +
     statusClass(f ? f.status : "") +
     '"><i class="dot"></i> verification <b>' +
@@ -831,7 +865,7 @@ function renderShell() {
 }
 
 let loadVersion = 0;
-async function load(text, isSample, sampleNote, keepCandidate = false) {
+async function load(text, keepCandidate = false) {
   if (!keepCandidate && !canReplaceCandidate()) return;
   const version = ++loadVersion;
   try {
@@ -861,7 +895,6 @@ async function load(text, isSample, sampleNote, keepCandidate = false) {
       typeof input === "string" ? parseReport(input) : fromBundle(input);
     if (!rep.functions.length)
       throw new Error("no @verify-report function annotations found");
-    rep.sample = isSample ? sampleNote || "sample report" : null;
     if (!keepCandidate) {
       candidateState.candidate =
         typeof input === "object" && input.candidate
@@ -884,9 +917,6 @@ async function load(text, isSample, sampleNote, keepCandidate = false) {
     state.fn = 0;
     state.selected = null;
     el("fnsearch").value = "";
-    if (!isSample)
-      for (const id of ["s-clean", "s-gaps"])
-        el(id).setAttribute("aria-pressed", "false");
     el("detail").innerHTML =
       '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
     renderShell();
@@ -934,7 +964,7 @@ el("file").addEventListener("change", (e) => {
     state.pendingMark = "";
     activeRequest++;
     document.body.classList.remove("busy");
-    return load(t, false);
+    return load(t);
   });
 });
 const drop = el("drop");
@@ -954,7 +984,7 @@ window.addEventListener("drop", (e) => {
       state.pendingMark = "";
       activeRequest++;
       document.body.classList.remove("busy");
-      return load(t, false);
+      return load(t);
     });
 });
 
@@ -1030,7 +1060,7 @@ async function connectLive() {
         const data = await res.json();
         if (request !== activeRequest) return;
         if (data.error) throw new Error(data.error.split("\n")[0]);
-        await load(data, false);
+        await load(data);
         syncLocation();
       } catch (err) {
         if (request !== activeRequest) return;
@@ -1094,36 +1124,12 @@ async function connectLive() {
     if (!wanted) sel.value = files[0];
     if (sel.value) run();
   } catch (e) {
-    /* not served locally: samples and drag-and-drop only */
+    /* not served locally: loading a report file is still available */
   }
 }
 connectLive();
 
 setDensity(state.density);
-function pickSample(which) {
-  if (!canReplaceCandidate()) return;
-  activeRequest++;
-  document.body.classList.remove("busy");
-  el("s-clean").setAttribute("aria-pressed", String(which === "clean"));
-  el("s-gaps").setAttribute("aria-pressed", String(which === "gaps"));
-  load(
-    document.getElementById(which === "gaps" ? "sample2" : "sample")
-      .textContent,
-    true,
-    which === "gaps"
-      ? "real report for a program SKJS rejects"
-      : "real report for a program SKJS accepts",
-  );
-}
-for (const [id, which] of [
-  ["s-clean", "clean"],
-  ["s-gaps", "gaps"],
-])
-  el(id).addEventListener("click", () => {
-    state.pendingMark = "";
-    pickSample(which);
-  });
-pickSample("clean");
 
 function shortType(type) {
   if (type.startsWith("{")) return "structured type — inspect";

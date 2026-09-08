@@ -37,7 +37,8 @@ collection and cleans temporary reports up on success and failure.
 `SKJS_REPO`, `SKJS_BIN`, `SKJS_IMAGE` and `PORT` configure the local runner.
 
 The HTML can also be opened directly, with its sibling JS and CSS files present.
-It includes two example reports. **Load report** and drag-and-drop accept either
+It then starts empty: there are no bundled example reports, and nothing is shown
+until one is read. **Load report** and drag-and-drop accept either
 an annotated `.ts` file or a JSON bundle containing `{source, manifest}`. The
 latter preserves exact producer encodings, diagnostics and function ranges.
 A manifest alone does not contain source text. Bundle imports check the source
@@ -46,6 +47,10 @@ adapter for the display format, with only the data present in those comments.
 
 ## Reading dense reports
 
+- The header says whether the producer ran for what is on screen, and when.
+  Provenance gives the exact command, how long it took, and whether the
+  independent consumer was run. A report read from a file records no such run and
+  says so. Every collection runs the producer again; nothing is cached.
 - The header tallies what the report records: functions, their recorded statuses,
   and total gaps. Each count moves to the next function it describes, selecting
   that function's failure or first gap. Counts summarize stored outcomes only.
@@ -177,7 +182,7 @@ source suites as `make verify`. **Claim repair** contains the deliberately
 rejected partial-collection exercise. **Unsupported examples** contains expected
 source limitations and never implies those programs are verified.
 
-The standalone samples also use current fixtures: `basic.ts` (recorded verified
-functions) and `partial-claims.ts` (a mix of missing claims and a verified function).
-Their stored statuses are report data, not fresh evidence. Loading arbitrary
-repository source through `?file=relative/path.ts` remains supported.
+Loading arbitrary repository source through `?file=relative/path.ts`, or through
+the path field, remains supported. Annotated copies of `basic.ts` and
+`partial-claims.ts` are kept in `../tests/annotated/` as fixtures for the
+comment-format reader; they are test inputs, not example reports.
