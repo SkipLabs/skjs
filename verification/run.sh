@@ -244,6 +244,12 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$CLOSURES" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
+  LOOPS="verification/tests/stateful-source/loops.ts"
+  if ! { node verification/tools/parse-source.js "$LOOPS" --stateful > "$WORK/loops.ast" &&
+         skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then
+    echo "FAIL: loop source test setup"; cat "$WORK/loops.setup.err"; exit 1
+  fi
+  if ! node verification/tests/stateful-loops.js "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"; then exit 1; fi
   if ! node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
   PARTIAL=verification/tests/partial-claims.ts
   skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"

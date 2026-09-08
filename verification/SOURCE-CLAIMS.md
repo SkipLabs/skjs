@@ -49,7 +49,8 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
 claims use complete spans. Sites must occur in the named function's decoded
-body, including supported closure bodies. The existing extractor resolves names
+body, including loop heads and supported closure bodies. A loop-head entry is
+the invariant candidate checked on initial entry and every back edge. The existing extractor resolves names
 against initialized lexical bindings and retains its shadowing restrictions.
 This version does not yet introduce declaration IDs.
 

@@ -53,7 +53,7 @@ try {
   test("edited annotated copy is stale",()=>{fs.appendFileSync(go," ");assert.notEqual(cli(["--check-fresh",go]).status,0);});
   test("already annotated source is rejected",()=>{const s=render(source,report),r=structuredClone(report);r.source.sha256=hash(s);assert.throws(()=>render(s,r),/already contains/);});
   test("unsupported source is distinguished from failed proof search",()=>{
-    const text="function gated(): null { while (true) {} return null; }\n";
+    const text="function gated(): null { for (;;) {} return null; }\n";
     const input=path.join(tmp,"gated.ts"),cp=path.join(tmp,"gated.json"),out=path.join(tmp,"gated.annotated.ts");
     fs.writeFileSync(input,text);
     fs.writeFileSync(cp,JSON.stringify([{file:input,functions:[{name:"gated",namePos:[9,14],params:[],retType:{top:false,atoms:[{a:"null"}]},envs:[],exprs:[]}]}]));

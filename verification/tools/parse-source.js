@@ -161,6 +161,7 @@ function expr(node) {
         const lowerPrefix = (stmts, tail, allowReturn = false) => {
           for (let i = stmts.length - 1; i >= 0; --i) {
             const st = stmts[i];
+            if (st.k === "while") fail(node, "loops inside closures require a graph-backed call/body interface");
             if (st.k === "if") {
               const yes = st.then, no = st.else_ ?? [];
               const arm = xs => lowerPrefix(xs, {k:"doneBody",pos:st.pos});
@@ -295,6 +296,10 @@ function stmt(node) {
         init: expr(d.initializer),
       };
     }
+
+    case ts.SyntaxKind.WhileStatement:
+      if (!stateful) fail(node, "while loops outside the fragment");
+      return {k:"while",pos:span(node),cond:expr(node.expression),body:block(node.statement)};
 
     case ts.SyntaxKind.IfStatement:
       if (node.elseStatement && node.elseStatement.kind !== ts.SyntaxKind.Block) {

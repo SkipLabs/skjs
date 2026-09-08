@@ -276,6 +276,26 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
           (fun i => if i == 0 then 0 else i+1))⟩
       let node ← emit (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
       compileExpr fc scope Γ cond node
+    | .loop pos cond loopBody :: rest =>
+      let Γ ← env fc pos.1 scope
+      let A ← exprType fc cond
+      -- Reserve a stable label for incoming and back edges. Replace its stub
+      -- before returning; the completed program is independently checked.
+      let head ← emit .nul .ret Γ [0]
+      let continuation ← if rest.isEmpty then pure tail else do
+        let next ← body fuel fc R scope rest tail
+        pure (some (next,scope))
+      let yes ← body fuel fc R scope loopBody (some (head,scope))
+      let no ← leave scope continuation
+      let tested := match cond with | .var _ name => scope.idxOf? name | _ => none
+      let adapt := fun t =>
+        let mapped := branchMapping scope.length tested t
+        ⟨mapped.label, some ((mapped.mapping.getD []).map
+          (fun i => if i == 0 then 0 else i+1))⟩
+      let branch ← emit (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+      let condition ← compileExpr fc scope Γ cond branch
+      modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
+      return head
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
       let next ← body fuel fc R scope rest tail
@@ -285,6 +305,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
 private def traversalBudget : List SourceInput.Stmt → Nat
   | [] => 1
   | .ret .. :: rest | .cst .. :: rest | .effect .. :: rest => 1 + traversalBudget rest
+  | .loop _ _ loopBody :: rest => 1 + traversalBudget loopBody + traversalBudget rest
   | .ite _ _ thn none :: rest => 2 + traversalBudget thn + traversalBudget rest
   | .ite _ _ thn (some els) :: rest =>
       1 + traversalBudget thn + traversalBudget els + traversalBudget rest

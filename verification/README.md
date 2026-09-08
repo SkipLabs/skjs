@@ -83,7 +83,7 @@ stateful calculus evidence. See [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) for a
 complete minimal request and commands. This interface takes an extracted graph
 and point annotations. A source mode also connects the independent parser and
 SKJS exports to this consumer for **functions with primitive parameters, initialized `const`
-bindings, nested branches and returns**, local cells, and bounded expression
+bindings, nested branches, `while` loops and returns**, local cells, and bounded expression
 closures and calls. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from
 direct Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
@@ -91,8 +91,11 @@ commands and limitations. Closures currently have one null argument and a
 primitive result; expression bodies compose literals, variables, cell operations
 and calls. Straight-line blocks support local consts, effects and a final return,
 with checked statement environments.
-Every internal claim has a separately checked typing proof. Source loops, mutable
-variable bindings and general partially returning nested closure arms remain unconnected.
+Every internal claim has a separately checked typing proof. Top-level function
+bodies support block-bodied `while`, including nesting and early returns. Supplied
+head invariants are checked on entry and every back edge; conditions are evaluated
+anew. Mutable variable bindings, loops inside closures, `break`/`continue`, and
+general partially returning nested closure arms remain gated.
 Terminal closure `if/else` blocks are supported, with both arms returning and
 checked singleton refinement of directly tested immutable Boolean variables.
 Branches whose two arms fall through share one continuation using ordinary let

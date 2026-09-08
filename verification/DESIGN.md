@@ -349,9 +349,10 @@ Full TypeScript formalization is not a prerequisite.
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
 consumer. It accepts primitive parameters, initialized `const` declarations,
-nested boolean branches and returns, with variables, null/boolean literals,
+nested boolean branches, block-bodied `while` loops and returns, with variables, null/boolean literals,
 plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
-and the bounded local closures and calls described below. Every path must return.
+and the bounded local closures and calls described below. Every syntactic exit
+path must reach an explicit return; loops may diverge.
 It rejects active-name shadowing, calls to named top-level functions, statements after
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 
@@ -517,8 +518,41 @@ control-flow translation or call/body interface. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Testing a mutable
 field may make SKJS export unequal read/write types in an arm. Those claims are
 still rejected by the invariant-cell decoder; immutable-slot refinement does
-not establish retained heap refinements. Source loops also remain
-unconnected; their raw-calculus tests do not establish source integration.
+not establish retained heap refinements. Loops in top-level function bodies now
+use the graph translation described below; closure loops remain unconnected.
+
+### Source while loops: supplied head claims and checked back edges
+
+A `while` statement has a stable head label with its supplied entry environment.
+The compiler reserves that label, compiles the body with a back-edge continuation,
+and connects the head to evaluation of the condition. The completed graph is
+then checked independently. An administrative null/effect node anchors the head;
+it makes no source-level state change. The condition's expression graph executes
+on every visit, including calls and effects, rather than retaining the previous
+Boolean result.
+
+The true edge enters the body and the false edge reaches the surrounding
+continuation. Falling out of the body drops its local slots before returning to
+the head. Both the initial incoming edge and every back edge must justify the
+same supplied invariant. Direct immutable-variable tests use the existing
+checked singleton transfer; mutable-field refinements acquire no new lifetime.
+No invariant inference, type join, semantic rule or certificate format is added.
+
+Nested loops, empty bodies and early returns are supported in top-level function
+bodies. `break`, `continue`, other loop forms, non-block bodies and loops inside
+closures remain gated. Even a syntactically always-true loop currently needs an
+explicit continuation for its false edge. Acceptance is safety, not termination:
+a well-typed loop may run forever.
+
+The real SKJS fixture `tests/stateful-source/loops.ts` covers zero iterations,
+nested early returns, and a finite loop whose condition calls a captured-cell
+reader and whose body writes through a local alias. `WhileSourceTests.lean`
+checks the extracted graph and proves the finite execution trace, including
+repeated condition evaluation, the alias write, local-slot removal and return of
+false. Integration tests reject missing head claims, unjustified narrowing,
+missing back-edge evidence, escaped body locals and reused evidence for changed
+bodies. Runtime samples agree on the terminating examples. These bounded checks
+do not constitute a general source-to-graph preservation theorem.
 
 ### Shared local continuations: checked construction, source gate unchanged
 

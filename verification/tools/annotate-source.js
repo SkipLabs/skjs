@@ -204,7 +204,7 @@ function coverage(source,report) {
     if(f.collection.completion==="aborted") {
       const walk=n=> {
         if(ts.isFunctionDeclaration(n))return;
-        if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isExpressionStatement(n)) &&
+        if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isWhileStatement(n)||ts.isExpressionStatement(n)) &&
            !snapshot.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
         ts.forEachChild(n,walk);
       };
