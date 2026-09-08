@@ -111,7 +111,7 @@ try {
   test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json"));assert(m.results.every(x=>x.status==="verified"));assert(m.results.every(x=>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
   test("false claim is not called refuted or verified",()=>{
     const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
-    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),fileKey,"--stateful"],{encoding:"utf8"});
+    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
     const body=JSON.parse(parsed.stdout).functions.find(f=>f.name==="capturedRead").body[1].init.body;
     const p=f.exprs.find(e=>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(p);

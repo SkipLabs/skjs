@@ -92,9 +92,44 @@ function addClaim(candidate, fn, site, value) {
   } else throw new Error("Unsupported claim site");
   return next;
 }
+function addFunction(candidate, fn, contract) {
+  if (!fn.candidateMissing)
+    throw new Error("Select a function without a candidate");
+  if (
+    !contract ||
+    !Array.isArray(contract.params) ||
+    !("result" in contract) ||
+    contract.params.length !== fn.parameters.length ||
+    contract.params.some(
+      (p, i) => !p || p.name !== fn.parameters[i] || !("type" in p),
+    )
+  )
+    throw new Error(
+      "Supply params in source order, each with name and type, and a result type",
+    );
+  const next = structuredClone(candidate);
+  const file =
+    next.format === "skjs"
+      ? next.claims.find((f) => f.file === next.file)
+      : next.claims;
+  if (!file) throw new Error("Candidate has no matching source file");
+  if (file.functions.some((f) => f.namePos[0] === fn.namePos[0]))
+    throw new Error("Function candidate already exists");
+  const header = {
+    name: fn.name,
+    namePos: fn.namePos,
+    params: contract.params,
+  };
+  file.functions.push(
+    next.format === "skjs"
+      ? { ...header, retType: contract.result, envs: [], exprs: [] }
+      : { ...header, result: contract.result, entries: [], expressions: [] },
+  );
+  return next;
+}
 function claimValue(candidate, fn, item) {
   const slot = claimSlot(candidate, fn, item);
   return slot.object[slot.key];
 }
 if (typeof module !== "undefined")
-  module.exports = { claimValue, editClaim, addClaim };
+  module.exports = { claimValue, editClaim, addClaim, addFunction };

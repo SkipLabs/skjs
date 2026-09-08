@@ -7,7 +7,7 @@ interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
 
 ```sh
-node verification/tools/parse-source.js input.ts --stateful > ast.json
+node verification/tools/parse-source.js input.ts > ast.json
 verification/lean/.lake/build/bin/verifier --produce-source-claims \
   ast.json source-claims.json input.ts evidence.json 10
 verification/lean/.lake/build/bin/verifier --check-source-claims \

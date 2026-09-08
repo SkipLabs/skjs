@@ -2,8 +2,7 @@
 
 The stateful development in [ExperimentState](lean/Verification/ExperimentState)
 provides the semantic foundation for the positive-type rules specified in
-[POSITIVE-TYPES.md](POSITIVE-TYPES.md). It is independent of the production F0
-verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
+[POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. Extraction for the extended
 language remains an integration obligation.
 

@@ -294,7 +294,7 @@ function run(executable,args) {
 function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, normalized=false) {
   const parser=path.join(__dirname,"parse-source.js"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
-    const p=run(process.execPath,[parser,sourcePath,"--stateful"]);
+    const p=run(process.execPath,[parser,sourcePath]);
     const identity={verifierSha256:hash(fs.readFileSync(verifier)),parserSha256:hash(fs.readFileSync(parser))};
     if(p.status!==0) {
       if(!p.stderr.startsWith("gate:"))throw Error(`source parser failed: ${p.stderr}`);
@@ -312,8 +312,11 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
       const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
       if(produced.status!==0) {
         const detail=(produced.stderr||produced.stdout).trim();
-        const located=/^(?:reject: )?(?:source expression obligation|closure expression claim) at \[(\d+),(\d+)\):/.exec(detail);
-        return {status:"not-established",detail,...(located ? {location:{kind:"expression-obligation",pos:[Number(located[1]),Number(located[2])]}} : {})};
+        const located=/^(?:reject: )?(source expression obligation|closure expression claim|source incoming edge obligation|unsupported source expression) at \[(\d+),(\d+)\):/.exec(detail);
+        const environment=/^(?:reject: )?source environment obligation at (\d+):/.exec(detail);
+        const location=located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :
+          environment ? {kind:"environment-obligation",start:Number(environment[1])} : null;
+        return {status:"not-established",detail,...(location ? {location} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};
@@ -403,6 +406,9 @@ function main(args) {
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
     ...(conversion?{conversionPath:path.resolve(options.conversion),conversion}:{}),
     ...(comparison?{baselinePath:path.resolve(options.baseline),comparison}:{}),
+    missingFunctions:functionNodes.filter(n=>n.name && n.body && !report.functions.some(f=>f.namePos[0]===n.name.getStart())).map(n=>({
+      name:n.name.text,namePos:[n.name.getStart(),n.name.end],pos:[n.getStart(),n.end],
+      parameters:n.parameters.map(p=>p.name.getText()),missingSites:missingClaimSites(n,{entries:[],expressions:[]})})),
     gaps:coverage(source,report),
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
       ...((node)=>({pos:[node.getStart(),node.end],missingSites:missingClaimSites(node,f)}))(

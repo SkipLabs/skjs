@@ -4,7 +4,7 @@
 syntactic program-typing rules for the stateful language. Its fundamental theorem
 connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
-This development is independent of the production F0 verifier.
+These are the program rules used by the current verifier.
 
 ## Judgments and constructor views
 

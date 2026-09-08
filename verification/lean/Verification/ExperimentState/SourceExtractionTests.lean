@@ -34,7 +34,7 @@ private def request (t : Tm) (A : Ty Nat) : Request :=
 #guard !PositiveCertificates.checkClause SourceTypes.graph [] [] (.boolLit true) (.boolLit false)
 
 -- Primitive fixture types use the same JSON schema as real source claims.
-private def wireTy (t : Core.Ty) : Json := Json.mkObj [("top", toJson t.top),
+private def wireTy (t : Wire.Ty) : Json := Json.mkObj [("top", toJson t.top),
   ("atoms", toJson (t.atoms.map fun a => match a with
     | .null => Json.mkObj [("a",toJson "null")]
     | .bool => Json.mkObj [("a",toJson "boolean")]

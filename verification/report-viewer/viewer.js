@@ -136,7 +136,11 @@ function renderCode() {
       label:
         (failed ? "⚠ " : "") +
         shortType(e.type) +
-        (failed ? " · proof not established" : "") +
+        (failed
+          ? e.failureKind === "source-limitation"
+            ? " · unsupported source"
+            : " · proof not established"
+          : "") +
         (multiline ? " ↳ multiline" : "") +
         (e.recovery ? recMark : ""),
       id: "e" + i,
@@ -169,7 +173,8 @@ function renderCode() {
       state.density === "key"
         ? shown.filter((b) => e.changed.has(b.name))
         : shown;
-    if (!list.length) return;
+    const failed = f.status === "not-established" && !!e.failure;
+    if (!list.length && !failed) return;
     const ln = lineOfPos(e.pos[0]),
       col = e.pos[0] - starts[ln];
     entryItems.push({
@@ -178,10 +183,12 @@ function renderCode() {
       col,
       end: col,
       label:
+        (failed ? "⚠ " : "") +
         list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
+        (failed ? " · proof not established" : "") +
         (e.recovery ? recMark : ""),
       id: "n" + i,
-      cls: "entry" + (e.recovery ? " rec" : ""),
+      cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
   });
 
@@ -212,21 +219,35 @@ function renderCode() {
   const warning = el("verification-warning");
   warning.hidden = f.status !== "not-established";
   if (!warning.hidden) {
-    const failed = f.exprs.findIndex((e) => e.failure);
+    const expression = f.exprs.findIndex((e) => e.failure);
+    const entry = f.entries.findIndex((e) => e.failure);
+    const failedId =
+      expression >= 0 ? "e" + expression : entry >= 0 ? "n" + entry : null;
     warning.textContent =
-      failed >= 0
-        ? "⚠ Proof not established at the marked expression. Other claims are not individually classified."
-        : "⚠ Function verification not established. The verifier has not identified a source expression to mark.";
-    if (failed >= 0) {
+      expression >= 0 && f.exprs[expression].failureKind === "source-limitation"
+        ? "⚠ Verification unavailable: the marked source expression is outside the supported fragment. This is not a verdict on your edited claim."
+        : failedId
+          ? "⚠ Proof not established at the marked obligation. Other claims are not individually classified."
+          : "⚠ Function verification not established. No claim location is available for this diagnostic.";
+    if (failedId) {
       const jump = document.createElement("button");
-      jump.textContent = "Show failed obligation";
+      jump.textContent =
+        expression >= 0 &&
+        f.exprs[expression].failureKind === "source-limitation"
+          ? "Show unsupported expression"
+          : "Show failed obligation";
       jump.addEventListener("click", () => {
-        select("e" + failed);
+        select(failedId);
         el("code")
-          .querySelector('[data-id="e' + failed + '"]')
+          .querySelector('[data-id="' + failedId + '"]')
           ?.scrollIntoView({ block: "center" });
       });
       warning.append(jump);
+    } else if (f.detail) {
+      const detail = document.createElement("pre");
+      detail.className = "raw";
+      detail.textContent = f.detail;
+      warning.append(detail);
     }
   }
   el("codehead").textContent = "Source — " + rep.file.split("/").pop();
@@ -330,11 +351,26 @@ function select(id) {
   el("inspector").scrollIntoView({ block: "nearest" });
   const src = state.report.source;
   let h = "";
-  if (f.status === "not-established" && item.failure)
+  if (f.status === "not-established" && item.failure) {
+    const explanation =
+      item.failureKind === "source-limitation"
+        ? "Source conversion stopped at this unsupported expression, before checking the candidate’s proof obligations."
+        : item.failureKind === "edge-obligation"
+          ? "An incoming edge did not justify the environment used at this expression. The incoming value or destination environment may be involved."
+          : item.failureKind === "environment-obligation"
+            ? "The verifier could not use this statement environment."
+            : "This identifies the expression obligation where checking stopped. Its environment or source annotation may also be involved.";
     h +=
-      '<div class="failure-note"><b>⚠ Proof not established here</b><p>This identifies the expression obligation where proof search stopped. It does not prove the claim false; its environment or source annotation may also be involved.</p><pre class="raw">' +
+      '<div class="failure-note"><b>⚠ ' +
+      (item.failureKind === "source-limitation"
+        ? "Unsupported source expression"
+        : "Proof not established here") +
+      "</b><p>" +
+      explanation +
+      ' This does not prove the claim false.</p><pre class="raw">' +
       esc(item.failure) +
       "</pre></div>";
+  }
   if (item.kind === "gap") {
     h += '<div class="status-line"><b>' + esc(item.detail) + "</b></div>";
     h += idLine(item);
@@ -344,7 +380,7 @@ function select(id) {
       '<div class="note">This report marks a gap or change: ' +
       "collection, conversion, or comparison left a finding. This does not establish runtime unreachability or verification failure.</div>";
     el("detail").innerHTML = h;
-    renderMissingEditor(f,item.pos);
+    renderMissingEditor(f, item.pos);
     document
       .querySelectorAll(".lab")
       .forEach((x) => x.classList.toggle("on", x.dataset.id === id));
@@ -678,25 +714,35 @@ async function connectLive() {
     if (!h.ok) return;
     const info = await h.json();
     const r = await fetch("api/files", { cache: "no-store" });
-    const { files } = await r.json();
+    const { files, groups = [{ label: "Current verifier examples", files }] } =
+      await r.json();
     if (!files.length) return;
     const sel = el("livefile");
     sel.innerHTML =
       '<option value="">Open source…</option>' +
-      files
+      groups
         .map(
-          (f) =>
-            '<option value="' +
-            esc(f) +
+          (group) =>
+            '<optgroup label="' +
+            esc(group.label) +
             '">' +
-            esc(f.replace(/^verification\/tests\//, "")) +
-            "</option>",
+            group.files
+              .map(
+                (f) =>
+                  '<option value="' +
+                  esc(f) +
+                  '">' +
+                  esc(f.split("/").pop()) +
+                  "</option>",
+              )
+              .join("") +
+            "</optgroup>",
         )
         .join("");
     el("livewrap").hidden = false;
     const wanted = new URLSearchParams(location.search).get("file");
     if (wanted) {
-      if (!files.includes(wanted)) {
+      if (!groups.some((g) => g.files.includes(wanted))) {
         const option = document.createElement("option");
         option.value = wanted;
         option.textContent = wanted;
@@ -747,6 +793,7 @@ async function connectLive() {
     el("liveverify").addEventListener("change", () => {
       if (sel.value) run();
     });
+    if (!wanted) sel.value = files[0];
     if (sel.value) run();
   } catch (e) {
     /* not served locally: samples and drag-and-drop only */

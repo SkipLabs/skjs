@@ -163,10 +163,12 @@ async function checkCandidate(verify) {
         ? "Candidate check completed. See each function’s recorded result."
         : "Candidate applied. Not yet verified.",
     );
+    return true;
   } catch (error) {
     renderCandidateStatus(
       "Candidate retained, but the operation failed: " + error.message,
     );
+    return false;
   } finally {
     candidateState.running = false;
     el("add-claim").disabled = false;
@@ -214,6 +216,10 @@ function initializeCandidateEditor() {
 
 function renderMissingEditor(fn, region) {
   if (!candidateState.candidate || candidateState.running) return;
+  if (fn.candidateMissing) {
+    renderFunctionEditor(fn);
+    return;
+  }
   const sites = (fn.missingSites || []).filter(
     (s) => !region || (s.pos[0] >= region[0] && s.pos[1] <= region[1]),
   );
@@ -223,8 +229,7 @@ function renderMissingEditor(fn, region) {
   box.append(title);
   if (!sites.length) {
     const note = document.createElement("p");
-    note.textContent =
-      "No missing attachment sites listed here. Adding an entire function candidate is not supported.";
+    note.textContent = "No missing attachment sites listed here.";
     box.append(note);
     el("detail").append(box);
     return;
@@ -285,5 +290,44 @@ function renderMissingEditor(fn, region) {
     }
   });
   box.append(selectSite, preview, textarea, apply, error);
+  el("detail").append(box);
+}
+
+function renderFunctionEditor(fn) {
+  const box = document.createElement("section");
+  const title = document.createElement("h3");
+  title.textContent = "Add function candidate: " + fn.name;
+  const note = document.createElement("p");
+  note.textContent =
+    "Supply a JSON contract with params (names and types in source order) and result. Types use the current candidate encoding. The verifier checks them against source annotations; none are inferred here.";
+  const names = document.createElement("p");
+  names.textContent = "Parameters: " + (fn.parameters.join(", ") || "none");
+  const text = document.createElement("textarea");
+  text.rows = 10;
+  text.setAttribute("aria-label", "Function contract JSON");
+  text.placeholder = '{"params": [...], "result": ...}';
+  const apply = document.createElement("button");
+  apply.textContent = "Add function candidate";
+  const error = document.createElement("div");
+  error.setAttribute("role", "status");
+  apply.addEventListener("click", async () => {
+    try {
+      if (candidateState.running)
+        throw new Error("Wait for the current operation to finish");
+      candidateState.candidate = addFunction(
+        candidateState.candidate,
+        fn,
+        JSON.parse(text.value),
+      );
+      candidateState.revision++;
+      state.selected = null;
+      invalidateCandidate();
+      if (await checkCandidate(false))
+        renderMissingEditor(state.report.functions[state.fn]);
+    } catch (e) {
+      error.textContent = e.message;
+    }
+  });
+  box.append(title, note, names, text, apply, error);
   el("detail").append(box);
 }

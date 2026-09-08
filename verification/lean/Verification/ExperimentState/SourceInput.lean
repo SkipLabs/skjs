@@ -17,7 +17,7 @@ def translate (j : Json) : Except String (Ty Nat) := do
 
 inductive Expr where
   | var (pos : Span) (name : String)
-  | lit (pos : Span) (v : Core.Val)
+  | lit (pos : Span) (v : Wire.Val)
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
   | write (pos : Span) (receiver rhs : Expr)
@@ -85,7 +85,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "returnBody" => return .atEnv p (← decodeExpr (← jField j "e"))
   | "apply" => return .app p (← decodeExpr (← jField j "callee")) (← decodeExpr (← jField j "arg"))
   | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
-  | _ => throw "expression outside the stateful source slice"
+  | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful source slice"
 
 partial def decodeStmt (j : Json) : Except String Stmt := do
   let p ← jSpan j "pos"

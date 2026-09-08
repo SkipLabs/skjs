@@ -63,6 +63,16 @@ pos: [start, end]}` when the verifier reports an exact source span. This locates
 the first failed proof-search obligation, not a proof that the claim is false
 or an exhaustive list of invalid claims. Without a location, readers must keep
 the warning at function level; graph labels are not source expression indexes.
+Other location kinds are `edge-obligation` (the destination expression span),
+`environment-obligation` (a statement-entry `start` offset), and
+`source-limitation` (an unsupported source expression span). The last indicates
+source conversion stopped before proof checking; it is not a failed claim.
+
+The manifest also exposes `missingFunctions`: source declarations without a
+function candidate, with `name`, `namePos`, full `pos`, parameter names in source
+order, and `missingSites`. These are parser-derived repair hints, not inferred
+types or verified facts. The reader validates their spans before presenting them;
+adding a contract still requires fresh source-based checking.
 
 Manifest functions also expose `missingSites`: parser-identified expression and
 statement-entry spans without a candidate claim, each with a `kind` (`expression`

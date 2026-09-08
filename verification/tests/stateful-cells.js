@@ -57,7 +57,7 @@ try {
     ["optional access gate","const c = { value: true }; return c?.value;"],
   ]) {
     const file=path.join(tmp,"gate.ts");fs.writeFileSync(file,`function gated(): boolean { ${body} }`);
-    const r=spawnSync(process.execPath,[parser,file,"--stateful"],{encoding:"utf8"});
+    const r=spawnSync(process.execPath,[parser,file],{encoding:"utf8"});
     if(r.error || r.signal || r.status !== 1 || !r.stderr.includes("gate:")) throw Error(`${name}: ${r.stderr}`);
     passed++;console.log(`  ${name}: OK`);
   }

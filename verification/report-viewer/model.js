@@ -217,6 +217,15 @@ function fromBundle(bundle) {
       throw new Error("Invalid claim source span");
     return pos;
   };
+  const missingSites = (f, pos) =>
+    (f.missingSites || []).map((site) => {
+      if (!["expression", "environment"].includes(site.kind))
+        throw new Error("Invalid missing claim kind");
+      span(site.pos);
+      if (site.pos[0] < pos[0] || site.pos[1] > pos[1])
+        throw new Error("Missing site outside function");
+      return site;
+    });
   const raw = (x) => (x === undefined ? null : JSON.stringify(x, null, 2));
   const gaps = [
     ...(m.gaps || []),
@@ -232,14 +241,7 @@ function fromBundle(bundle) {
     const recovery = f.collection?.quality === "recovery";
     return {
       ...f,
-      missingSites: (f.missingSites || []).map((site) => {
-        if (!["expression", "environment"].includes(site.kind))
-          throw new Error("Invalid missing claim kind");
-        span(site.pos);
-        if (site.pos[0] < pos[0] || site.pos[1] > pos[1])
-          throw new Error("Missing site outside function");
-        return site;
-      }),
+      missingSites: missingSites(f, pos),
       start: pos[0],
       end: pos[1],
       signature: f.signature ? JSON.stringify(f.signature) : null,
@@ -291,17 +293,56 @@ function fromBundle(bundle) {
   for (const f of functions) {
     const result = m.results?.find((r) => r.function === f.id);
     const location = result?.location;
-    if (
-      f.status === "not-established" &&
-      location?.kind === "expression-obligation"
-    ) {
-      const failed = f.exprs.find(
-        (e) => JSON.stringify(e.pos) === JSON.stringify(location.pos),
-      );
-      if (failed)
-        failed.failure =
-          result.detail || "Proof search did not establish this obligation.";
+    if (f.status !== "not-established" || !location) continue;
+    const failed =
+      location.kind === "environment-obligation"
+        ? f.entries.find((e) => e.pos[0] === location.start)
+        : [
+              "expression-obligation",
+              "edge-obligation",
+              "source-limitation",
+            ].includes(location.kind)
+          ? f.exprs.find(
+              (e) => JSON.stringify(e.pos) === JSON.stringify(location.pos),
+            )
+          : null;
+    if (failed) {
+      failed.failure =
+        result.detail || "Proof search did not establish this obligation.";
+      failed.failureKind = location.kind;
     }
+  }
+
+  for (const f of m.missingFunctions || []) {
+    const pos = span(f.pos);
+    span(f.namePos);
+    if (
+      f.namePos[0] < pos[0] ||
+      f.namePos[1] > pos[1] ||
+      functions.some((existing) => existing.namePos?.[0] === f.namePos[0])
+    )
+      throw new Error("Invalid missing function identity");
+    if (
+      !Array.isArray(f.parameters) ||
+      f.parameters.some((p) => typeof p !== "string")
+    )
+      throw new Error("Invalid missing function parameters");
+    functions.push({
+      ...f,
+      id: `missing-${f.namePos[0]}`,
+      start: pos[0],
+      end: pos[1],
+      candidateMissing: true,
+      missingSites: missingSites(f, pos),
+      status: "not-established",
+      detail:
+        "No function candidate supplied. Add its contract before adding point claims.",
+      entries: [],
+      exprs: [],
+      gaps: gaps
+        .filter((g) => g.pos[0] >= pos[0] && g.pos[1] <= pos[1])
+        .map((g) => ({ ...g, detail: g.status })),
+    });
   }
   functions.sort((a, b) => a.start - b.start);
   const unattached = gaps.filter(

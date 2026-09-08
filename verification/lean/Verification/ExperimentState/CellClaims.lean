@@ -16,7 +16,7 @@ private def plainMode (j : Json) (name : String) : Except String Unit := do
   let mode ← jStr (← jField j name)
   if mode != "unknown" && mode != "absent" then throw s!"unsupported cell object mode: {name}"
 
-def primitive (j : Json) : Except String Core.Ty := do
+def primitive (j : Json) : Except String Wire.Ty := do
   fieldsExactly j ["top","atoms"]
   for atom in ← jArr j "atoms" do
     let tag ← jStr (← jField atom "a")
@@ -26,8 +26,8 @@ def primitive (j : Json) : Except String Core.Ty := do
   decodeTy j
 
 structure FieldClaim where
-  read : Core.Ty
-  write : Core.Ty
+  read : Wire.Ty
+  write : Wire.Ty
 
 /-- The accepted record is interpreted as one required slot named `value`.
 The schema cannot distinguish data properties from accessors; the source gate
@@ -66,7 +66,7 @@ def decode (j : Json) : Except String FieldClaim := do
 
 /-- Equality is after exact primitive normalization. No widening of either side
 is allowed; readonly fields and different read/write contracts are rejected. -/
-def agreeContract (read write : Core.Ty) : Except String (Ty Nat) := do
+def agreeContract (read write : Wire.Ty) : Except String (Ty Nat) := do
   let A ← SourceTypes.translate read
   let B ← SourceTypes.translate write
   if A = B then return A
@@ -76,7 +76,7 @@ def translate (j : Json) : Except String (Ty Nat) := do
   let f ← decode j
   agreeContract f.read f.write
 
-theorem agreeContract_checked {read write : Core.Ty} {A}
+theorem agreeContract_checked {read write : Wire.Ty} {A}
     (h : agreeContract read write = .ok A) :
     SourceTypes.translate read = .ok A ∧ SourceTypes.translate write = .ok A := by
   unfold agreeContract at h
@@ -108,18 +108,18 @@ def interpretation (A : Ty Nat) : Fam := refT (meaning SourceTypes.graph A)
 
 /-- The accepted invariant preserves both supplied primitive membership tests,
 using the existing exact translation theorem. No new semantic axioms are used. -/
-theorem agreeContract_exact {read write : Core.Ty} {A u v}
+theorem agreeContract_exact {read write : Wire.Ty} {A u v}
     (h : agreeContract read write = .ok A) (hv : SourceTypes.value u = .ok v) (n W) :
-    (Core.mem u read ↔ meaning SourceTypes.graph A n W v) ∧
-    (Core.mem u write ↔ meaning SourceTypes.graph A n W v) := by
+    (Wire.mem u read ↔ meaning SourceTypes.graph A n W v) ∧
+    (Wire.mem u write ↔ meaning SourceTypes.graph A n W v) := by
   obtain ⟨hr,hw⟩ := agreeContract_checked h
   exact ⟨SourceTypes.translate_exact hr hv n W, SourceTypes.translate_exact hw hv n W⟩
 
 theorem translate_exact {j : Json} {A u v}
     (h : translate j = .ok A) (hv : SourceTypes.value u = .ok v) (n W) :
     ∃ f, decode j = .ok f ∧
-      (Core.mem u f.read ↔ meaning SourceTypes.graph A n W v) ∧
-      (Core.mem u f.write ↔ meaning SourceTypes.graph A n W v) := by
+      (Wire.mem u f.read ↔ meaning SourceTypes.graph A n W v) ∧
+      (Wire.mem u f.write ↔ meaning SourceTypes.graph A n W v) := by
   obtain ⟨f,hf,hc⟩ := translate_checked h
   exact ⟨f,hf,agreeContract_exact hc hv n W⟩
 
@@ -128,7 +128,7 @@ def referenceLabel (A : Ty Nat) : Nat :=
   3 + (if A.contains 0 then 1 else 0) +
     (if A.contains 1 then 2 else 0) + (if A.contains 2 then 4 else 0)
 
-theorem reference_encode (t : Core.Ty) :
+theorem reference_encode (t : Wire.Ty) :
     expand SourceTypes.graph [referenceLabel (SourceTypes.encode t)] =
       [.refs (SourceTypes.encode t) []] := by
   cases hn : SourceTypes.admits t .vnull <;>

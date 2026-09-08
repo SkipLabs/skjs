@@ -7,7 +7,7 @@ namespace Verification.ExperimentState.FunctionClaims
 open Lean ProgramTyping PositiveRules
 
 structure Signature where
-  result : Core.Ty
+  result : Wire.Ty
 
 def decode (j : Json) : Except String Signature := do
   CellClaims.fieldsExactly j ["top","atoms"]
@@ -31,7 +31,7 @@ def label (A : Ty Nat) : Nat := 8 + CellClaims.referenceLabel A
 def translate (j : Json) : Except String (Ty Nat) := do
   return [label (← result j)]
 
-theorem label_encode (t : Core.Ty) :
+theorem label_encode (t : Wire.Ty) :
     expand SourceTypes.graph [label (SourceTypes.encode t)] =
       [.arrs [([0],SourceTypes.encode t)]] := by
   cases hn : SourceTypes.admits t .vnull <;>
@@ -41,7 +41,7 @@ theorem label_encode (t : Core.Ty) :
       expand, SourceTypes.graph, SourceTypes.types]
 
 /-- Exact constructor interpretation; no semantic normalization of arrows. -/
-theorem meaning_encode (t : Core.Ty) (n W v) :
+theorem meaning_encode (t : Wire.Ty) (n W v) :
     meaning SourceTypes.graph [label (SourceTypes.encode t)] n W v ↔
       arrowT (meaning SourceTypes.graph [0]) (meaning SourceTypes.graph (SourceTypes.encode t)) n W v := by
   rw [expand_sem, label_encode]

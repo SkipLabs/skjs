@@ -97,6 +97,13 @@ try {
       const env = parameterClaims(c).envs.find(e => e.pos[0] === initial);
       env.vars = env.vars.filter(v => v.name !== "second");
     }, "missing claimed binding"],
+    ["shifted function identity", (a,c) => { fn(c).namePos[0]++; }, "missing claims for"],
+    ["missing function claims", (a,c) => { c.find(f => f.file === fileKey).functions.pop(); }, "function claim count mismatch"],
+    ["renamed claim file", (a,c) => { c.find(f => f.file === fileKey).file += ".other"; }, "exactly one matching claim file"],
+    ["never expression claim", (a,c) => { fn(c).exprs[0].type = {top:false,atoms:[]}; }, "evidence search failed"],
+    ["never incoming binding", (a,c) => {
+      fn(c).envs.find(e => e.pos[0] === a.functions[0].body[1].pos[0]).vars.find(v => v.name === "x").type = {top:false,atoms:[]};
+    }, "evidence search failed"],
     ["AST identity mismatch", a => { a.file = "other.ts"; }, "AST file key mismatch"],
   ];
   for (const [name, alter, message] of cases) {

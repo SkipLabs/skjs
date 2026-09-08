@@ -18,7 +18,7 @@ open SourceInput
 
 private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs.length
 
-private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
+private def envCore (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
     Except String (List (Ty Nat)) := do
   let vars ← match fc.envs.lookup pos with
     | some vars => pure vars
@@ -29,9 +29,14 @@ private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
     | some t => SourceClaims.resolve t
     | none => throw s!"missing claimed binding '{name}' at {pos}"
 
+private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List String) :
+    Except String (List (Ty Nat)) :=
+  (envCore fc pos scope).mapError fun msg => s!"source environment obligation at {pos}: {msg}"
+
 private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Except String (Ty Nat) := do
   match fc.exprs.lookup e.span with
-  | some t => SourceClaims.resolve t
+  | some t => (SourceClaims.resolve t).mapError fun msg =>
+      s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
   | none => throw s!"no claimed type for the expression at {spanStr e.span}"
 
 /-- A terminal branch uses the enclosing source result annotation, not a
@@ -306,14 +311,14 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
         let mapped := branchMapping scope.length tested t
         ⟨mapped.label, some ((mapped.mapping.getD []).map
           (fun i => if i == 0 then 0 else i+1))⟩
-      let node ← emit (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+      let node ← emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
       compileExpr fc scope Γ cond node
     | .loop pos cond loopBody :: rest =>
       let Γ ← env fc pos.1 scope
       let A ← exprType fc cond
       -- Reserve a stable label for incoming and back edges. Replace its stub
       -- before returning; the completed program is independently checked.
-      let head ← emit .nul .ret Γ [0]
+      let head ← emitAt cond.span .nul .ret Γ [0]
       let continuation ← if rest.isEmpty then pure tail else do
         let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
@@ -324,7 +329,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
         let mapped := branchMapping scope.length tested t
         ⟨mapped.label, some ((mapped.mapping.getD []).map
           (fun i => if i == 0 then 0 else i+1))⟩
-      let branch ← emit (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
+      let branch ← emitAt cond.span (.var 0) (.branchBind (adapt yes) (adapt no)) (A::Γ) A
       let condition ← compileExpr fc scope Γ cond branch
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
       return head

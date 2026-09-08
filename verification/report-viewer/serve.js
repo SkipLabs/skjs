@@ -13,31 +13,13 @@ const REPO = path.resolve(
 );
 const VERIFIER = "verification/lean/.lake/build/bin/verifier";
 const PORT = Number(process.env.PORT || 8731);
-const excluded = new Set(["node_modules", ".git", "target", ".lake"]);
+const examples = require("./examples.js");
 
 async function repositoryPath(relative) {
   const resolved = await fs.realpath(path.resolve(REPO, relative));
   if (!resolved.startsWith((await fs.realpath(REPO)) + path.sep))
     throw new Error("Path outside the repository");
   return resolved;
-}
-
-async function listTs(dir) {
-  const files = [];
-  for (const entry of await fs.readdir(await repositoryPath(dir), {
-    withFileTypes: true,
-  })) {
-    const relative = path.join(dir, entry.name);
-    if (entry.isDirectory() && !excluded.has(entry.name))
-      files.push(...(await listTs(relative)));
-    else if (
-      entry.isFile() &&
-      entry.name.endsWith(".ts") &&
-      !entry.name.endsWith(".d.ts")
-    )
-      files.push(relative);
-  }
-  return files.sort();
 }
 
 async function hasVerifier() {
@@ -233,7 +215,8 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { verifier: await hasVerifier() });
     if (url.pathname === "/api/files")
       return send(res, 200, {
-        files: await listTs("verification/tests/programs"),
+        files: examples.supported,
+        groups: examples.groups,
       });
     if (url.pathname === "/api/analyse") {
       if (analysing)

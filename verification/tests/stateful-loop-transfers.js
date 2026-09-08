@@ -36,7 +36,7 @@ try {
     ["labeled break","while (true) { break outer; } return null;"],
     ["labeled continue","while (true) { continue outer; } return null;"],
     ["closure cannot break its caller's loop","while (true) { const f = (x: null): null => { break; return null; }; } return null;"]
-  ])test(`${name} gated`,()=>{const p=path.join(tmp,"gated.ts");fs.writeFileSync(p,`function gated(): null { ${body} }`);assert.notEqual(exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),p,"--stateful"]).status,0);});
+  ])test(`${name} gated`,()=>{const p=path.join(tmp,"gated.ts");fs.writeFileSync(p,`function gated(): null { ${body} }`);assert.notEqual(exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),p]).status,0);});
   test("source runtime distinguishes nearest-loop exits and branch transfers",()=>{
     const js=ts.transpileModule(fs.readFileSync(file,"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     const values=vm.runInNewContext(js+"; JSON.stringify([stopAfterWrite(),continueAfterWrite(),nestedBreak(true),nestedBreak(false),branchContinue(true),branchContinue(false)])",{},{timeout:2000});

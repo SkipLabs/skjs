@@ -7,9 +7,7 @@ calculus whose rules are proved sound against its execution model.
 
 The chosen architecture has a stateful positive-type calculus, a serialized
 certificate consumer, and a source adapter for parameterized null/boolean functions.
-The broader primitive F0 corpus still runs through its existing entry point.
-This is an integration stage, not a compatibility requirement: the extraction
-format may change to provide the program points, binding identities and exact
+The extraction format may change to provide the program points, binding identities and exact
 types needed by the chosen calculus.
 
 This document records the architecture, established commitments, trust boundary
@@ -17,7 +15,7 @@ and remaining work. Details live in:
 
 | Document | Responsibility |
 | --- | --- |
-| [README](README.md) | Running the existing F0 pipeline and locating its implementation. |
+| [README](README.md) | Running the current pipeline and locating its implementation. |
 | [SEMANTICS](SEMANTICS.md) | Worlds, heap invariants, operational safety and recursive interpretation. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type grammar, normalization, declarative subtype rules and their certificates. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program rules, graph claims, slot maps, certificate production and mathematical statements. |
@@ -194,96 +192,28 @@ dependencies use Lean's standard `propext`, `Classical.choice` and `Quot.sound`.
 This does not remove the need to review what the definitions and theorem
 statements mean.
 
-## Running F0 integration
-
-The existing pipeline independently parses TypeScript with the TypeScript
-compiler API, obtains SKJS claims, and checks them using `Verify.lean` and the
-F0 calculus in `Calculus/`. F0 has primitive types, first-order calls and
-narrowing. Its `meet` and `diff` operations belong to that primitive calculus;
-they are not established operations of the stateful positive-type model.
-
-For example:
-
-```ts
-function describe(x: string | number): string {
-  if (typeof x === "string") {
-    return x;
-  }
-  return "a number";
-}
-```
-
-The parameter and return requirements come from the independently parsed source.
-SKJS proposes the environments at the branch and returns. The F0 verifier derives
-the branch refinement itself and checks that it covers the supplied successor
-claim. It then checks each returned expression against the source return type.
-An unjustifiably narrowed claim fails on an incoming edge.
-
-`Verify.lean` constructs and discharges obligations in the same traversal.
-`Obligation.discharge_sound` justifies successful comparisons;
-`checkFile_sound` establishes typing of the lowered program; `Core.sound`
-establishes its modeled execution safety. The file-level result is:
-
-```text
-checkFile funs claims = .ok () → ProgOk (lowerProg funs)
-```
-
-This is a theorem about the compiled calculus program. It does not by itself
-prove that compilation preserves source execution.
-
-### Source association and claim validation
+## Source association and claim validation
 
 `--emit-skjs-type-claims` exports file entries containing function names and
 spans, claimed signatures, expression types and statement-entry environments.
-The verifier checks duplicated signatures against source annotations and checks
-the body against the source requirements regardless. Expression lookup uses the
-full span; environment lookup uses the statement start because the parsers differ
-on trailing semicolons. [JsonDecode.lean](lean/Verification/JsonDecode.lean)
-defines the exact current format.
+The adapter compares signatures with independently parsed source annotations.
+Expression lookup uses full spans; environment lookup uses statement starts
+because the parsers differ on trailing semicolons. Primitive wire decoding lives
+in [SourceEncoding.lean](lean/Verification/ExperimentState/SourceEncoding.lean);
+cell and function contracts have separate bounded decoders. This input encoding
+is not a second calculus or an executable source model.
 
-The F0 type encoding is `{top, atoms}`, with an explicit unsupported marker.
-Required unsupported expression or signature types reject verification.
-Unsupported environment bindings are omitted; a binding needed by a checked
-expression must still be available and justified. This encoding is not the
-stateful type-graph or certificate protocol.
+Required unsupported types cause rejection. Extra unused producer data can remain
+visible in reports without becoming verified facts. Positions associate claims
+with syntax; they do not authorize edits to source or establish semantic truth.
+Duplicate identities, missing required claims and mismatched source signatures
+are checked independently of proof search.
 
-Positions associate claims with independently parsed syntax; they do not
-authenticate source contents. Extra entries need not be consumed. Whatever data
-lookup returns must satisfy the obligations for the actual AST. There is no
-claim cache or production certification command; the harness generates claims
-for each run.
-
-Program certification and claim validation are related but distinct. Acceptance
-establishes program typing and the required claim relations, not agreement with
-SKJS's internal state or exactness of every reported type. A wider claim may be
-valid. The duplicated-signature check also rejects inconsistencies that would
-not necessarily undermine program safety by themselves.
-
-### Lexical binding and unreachable source
-
-F0 lowering allocates fresh slots and resolves lexical bindings. This is
-semantically significant even when all affected bindings have the same type:
-
-```ts
-const x = "outer";
-if (b) { const x = "inner"; }
-return x; // must read the outer binding
-```
-
-Declarations bind throughout their blocks. A read before an inner declaration
-must resolve to that uninitialized binding, not an outer variable of the same
-name. Lowering therefore distinguishes block-wide **resolution** from the
-statement-entry **visibility** used to interpret SKJS's named environment claims.
-Hidden live bindings retain the types needed when their scopes become visible
-again. The current justification relies on F0's immutable bindings; it must not
-be reused as a mutation/refinement preservation argument.
-
-F0 omits statements that cannot execute, while still accounting for their
-declarations during name resolution. SKJS checks those statements and may emit
-claims that F0 does not consume. The stateful graph checker, by contrast, checks
-every node present in its input graph, including unreachable nodes. Extraction
-must explicitly specify which source statements become graph nodes; these two
-facts do not establish a source dead-code policy for the extended integration.
+The extractor resolves initialized bindings to slots and checks scope-dropping
+edge mappings. Active-name shadowing is rejected. Statements after unconditional
+`return`, `break` or `continue` are outside the current source slice. The graph
+consumer checks every node supplied to it, even unreachable ones; that theorem
+does not by itself justify changing the source adapter's policy.
 
 ## Trust boundary
 
@@ -315,18 +245,16 @@ contexts and expression-result annotations against the certificate, then invokes
 the graph checker. This closes substitution of a different request *within that
 interface*. It does not prove source extraction or the meaning of external JSON.
 
-Numeric agreement is a known limitation of the running F0 model. Numbers use
-double bit patterns with signed zero normalized; NaN truthiness and value
-equality do not fully match JavaScript. A `number` parameter can receive NaN even
-without arithmetic in the fragment. The Node sampler does not settle these
-cases. The stateful fragment currently has null and boolean primitives, so its
-proofs do not resolve that F0 limitation either.
+The current source adapter accepts only null and boolean primitives. Numeric
+and string examples are boundary tests, not certified successes. Adding these
+primitives requires checking their semantics against JavaScript, including
+numeric precision, NaN and signed zero; accepting their wire encoding alone
+would not settle that obligation.
 
 ### Optional: prove source-to-graph preservation
 
-Lean has access to the F0 source AST and its compiled graph. Some translation
+Lean has access to the current source AST and its compiled graph. Translation
 trust can therefore move into proofs; it is not inherently outside Lean's reach.
-The same approach can guide the extended extractor.
 
 1. **Structural properties.** Prove successor validity, freshness and binding
    resolution under explicit source well-formedness assumptions. Include
@@ -426,8 +354,7 @@ is explicit but is not a proved correspondence with SKJS's internal semantics.
 
 Cell programs now pass through source extraction, certificate production and
 independent consumption. [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean)
-decodes this source slice separately from the primitive corpus syntax and
-routes record types through the contract gate. Every nested expression retains
+decodes the source AST and routes record types through the contract gate. Every nested expression retains
 its own supplied claim. Expression lowering saves intermediate values in
 anonymous slots and evaluates the receiver before the RHS. A write uses the
 existing calculus rule, then returns the saved RHS to match JavaScript assignment
@@ -639,12 +566,13 @@ overload derivations and recursive references, with corrupted requests and
 evidence rejected. The mapped captured-cell example has both an automatically
 accepted certificate and an operational trace returning the changed boolean.
 
-For the running source pipeline, `make verify-programs` exercises programs,
-`make verify-claims` mutates valid claim sets, and `make verify` also runs the stateful source suite.
-The [beyond_precision](tests/programs/known-unsound/beyond_precision.ts) fixture
-is a concrete case where verification rejects SKJS's unsound numeric narrowing.
-Runtime checks sample calls in Node; they do not prove equivalence with the model.
-There is no standing test establishing exporter faithfulness to SKJS internals.
+For the source pipeline, `make verify` exercises real exports, altered claims,
+source identity checks, evidence corruption, partial collections and the reader.
+[Boundary examples](tests/unsupported) must reject for an expected limitation;
+they are not evidence that the verifier can analyze the unsupported feature.
+The numeric-precision fixture remains a future target, with no current claim of
+catching its unsound narrowing. Operational Lean examples check modeled behavior;
+there is no standing test establishing exporter faithfulness to SKJS internals.
 
 Use Lean checks for Lean development and pipeline checks for extraction or
 certificate integration. The repository-wide SKJS tests concern changes to SKJS

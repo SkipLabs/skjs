@@ -1,12 +1,11 @@
 # Stateful calculus request protocol
 
-The existing verifier binary now accepts a versioned JSON request for the
+The verifier accepts a versioned JSON request for the
 stateful calculus, separately from its derivation certificate. This is a
 consumer boundary for extracted programs. It is **not** a decoder for SKJS's
 source-associated claims, and it does not certify TypeScript text by itself.
 
-Raw request mode and the source adapter below use the same executable. The
-existing F0 invocation is also available during integration.
+Raw requests and the source modes below use the same executable and consumer.
 
 ## Run a request
 
@@ -228,7 +227,7 @@ Source extraction remains trusted for evaluation order, lexical binding and
 claim association. The all-budget safety theorem applies to the extracted
 graph, not directly to TypeScript execution. The parser is still the existing
 independent parser; its format and the claim export can change as the broader
-stateful slice requires. There is no F0 compatibility obligation.
+stateful slice requires. There is no compatibility obligation to a retired fragment.
 
 `make verify` runs the real-export integration suite. To run only that suite:
 
@@ -298,7 +297,7 @@ Their source correspondence remains a reviewed compilation obligation.
 
 ## Cell source lowering
 
-Use `parse-source.js <file.ts> --stateful` for the extended source gate. It accepts
+Use `parse-source.js <file.ts>` for the extended source gate. It accepts
 only plain `{ value: e }` allocations, `.value` reads and assignments, with the
 required invariant-cell contracts above. Methods, accessors, computed keys,
 spreads, extra fields and optional access are rejected. Cell parameters are

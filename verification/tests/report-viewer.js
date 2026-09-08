@@ -65,15 +65,36 @@ missing.manifest.gaps = [
   { id: "g0", pos: [start, source.length - 1], status: "claims unavailable" },
 ];
 assert.equal(fromBundle(missing).functions[0].gaps.length, 1);
+const missingFunctionBundle = structuredClone(missing);
+missingFunctionBundle.manifest.missingFunctions = [
+  {
+    name: "f",
+    namePos: manifest.functions[0].namePos,
+    pos: [start, source.length - 1],
+    parameters: ["x"],
+    missingSites: [{ kind: "expression", pos: claim.pos }],
+  },
+];
+assert.equal(
+  fromBundle(missingFunctionBundle).functions[0].candidateMissing,
+  true,
+);
+const invalidMissing = structuredClone(missingFunctionBundle);
+invalidMissing.manifest.missingFunctions[0].missingSites[0].pos = [0, 1];
+assert.throws(() => fromBundle(invalidMissing), /outside function/);
+invalidMissing.manifest.missingFunctions[0].namePos = [0, 1];
+assert.throws(() => fromBundle(invalidMissing), /identity/);
 const annotated = render(source, manifest);
 assert.equal(parseReport(annotated).source, source);
 assert.equal(parseReport(annotated).functions[0].exprs[0].type, claim.type);
-for (const file of ["typeof_narrow.accepted", "inverted_narrowing.rejected"]) {
+for (const file of ["basic", "partial"]) {
   const sample = fs.readFileSync(
     `verification/report-viewer/samples/${file}.annotated.ts`,
     "utf8",
   );
-  assert.equal(parseReport(sample).functions.length, 1);
+  const parsed = parseReport(sample);
+  assert(parsed.functions.length > 0);
+  assert.equal(parsed.source, fs.readFileSync(parsed.file, "utf8"));
 }
 console.log(
   "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, and legacy samples passed",
@@ -91,6 +112,24 @@ failureBundle.manifest.results = [
 assert.equal(
   fromBundle(failureBundle).functions[0].exprs[0].failure,
   "proof search stopped",
+);
+for (const kind of ["edge-obligation", "source-limitation"]) {
+  failureBundle.manifest.results[0].location.kind = kind;
+  assert.equal(
+    fromBundle(failureBundle).functions[0].exprs[0].failureKind,
+    kind,
+  );
+}
+failureBundle.manifest.functions[0].entries = [
+  { pos: [start, end], bindings: [] },
+];
+failureBundle.manifest.results[0].location = {
+  kind: "environment-obligation",
+  start,
+};
+assert.equal(
+  fromBundle(failureBundle).functions[0].entries[0].failureKind,
+  "environment-obligation",
 );
 delete failureBundle.manifest.results[0].location;
 assert.equal(

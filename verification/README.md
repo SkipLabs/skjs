@@ -1,88 +1,41 @@
-# Verification experiment
+# Independent claim verification
 
-This experiment checks SKJS's type assignments with a small verifier written
-in Lean. SKJS exports **type claims**; the verifier reads the source
-independently and checks that those claims justify the program's typing.
+This pipeline checks supplied types and program-point invariants against an
+independent calculus. SKJS is one claim producer; producer-independent candidates
+use the same source adapter and independently checked certificates. We do not
+assume SKJS or proof search is sound.
 
-The implemented fragment is called **F0**: first-order functions over primitive
-values, with type narrowing. A stateful calculus and certificate consumer are
-also implemented, with a source adapter for parameterized null/boolean functions. Verification
-runs separately from ordinary SKJS checking.
-
-Generate a separate source copy showing producer claims and optional fresh
-verification results with [annotated source reports](ANNOTATED-SOURCE.md).
-Reports preserve the original input and include a fingerprinted JSON manifest.
+There is one maintained calculus and verifier. Its implementation lives in
+`lean/Verification/ExperimentState/` (the directory name is historical).
+[DESIGN.md](DESIGN.md) describes the architecture and trust boundary.
+The [handoff note](HANDOFF.md) records the consolidation checkpoint and deferred items.
 
 ## Run
 
-Prerequisites are Node, the Lean toolchain pinned in
-[lean-toolchain](lean/lean-toolchain), and Docker (or a devcontainer).
-Install the JavaScript dependency and build SKJS before the first run:
+Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), and Docker
+(or a devcontainer). Install tools and build SKJS once:
 
 ```sh
 (cd verification/tools && npm install)
 make build-in-docker
+make verify
 ```
 
-Then run:
+`make verify` builds Lean and runs source integration, altered-claim and
+certificate tests, boundary examples, partial exports, and report/editor tests.
+Use `VERBOSE=1` for build details. Without rebuilding Lean:
 
 ```sh
-make verify-programs
+verification/run.sh
+verification/run.sh --skjs target/host/dev/skjs.some-variant
 ```
 
-This builds the Lean verifier and checks the TypeScript program corpus using
-the existing SKJS binary. Rebuild SKJS after changing its implementation.
-Progress appears immediately, with a result for each file:
+Rebuild SKJS when its implementation changes. Repository-wide `make test` checks
+SKJS itself; it is not required for changes confined to the verifier or reports.
 
-```text
-Building verifier...
-Checking TypeScript programs...
-  programs/accept/bool_ops.ts ... verified
-  ...
-Programs: 15 passed, 0 failed
-```
+## Current source fragment
 
-Failures include diagnostics. For additional details and build output:
-
-```sh
-make verify-programs VERBOSE=1
-```
-
-The verifier's claim validation tests run separately. They start with a valid
-SKJS claim set and alter it to test individual validation requirements:
-
-```sh
-make verify-claims       # claim validation tests
-make verify              # corpus, claim validation and stateful source integration
-```
-
-These are regression tests that exercise different things: the
-TypeScript corpus tests the pipeline on real programs; claim validation tests
-target the verifier's response to supplied claims. The stateful source suite also
-checks real exports through certificate production and independent consumption.
-The cell source suite certifies allocation, aliasing, reads and writes, including
-assignment results. Closure tests cover captures, calls after alias writes,
-returned closures, and bodies that write, allocate or call another closure. Separate contract tests exercise the read/write export boundary. Use the combined command for
-the full experiment check.
-
-To run tests without rebuilding the verifier:
-
-```sh
-verification/run.sh early_return
-verification/run.sh --verbose
-verification/run.sh --skjs target/host/dev/skjs.some-variant early_return
-```
-
-`make verify` is the stable command as coverage grows.
-F0 is a name for language coverage, not a version of the public command.
-
-## Stateful calculus requests
-
-The same verifier binary can produce and independently check serialized
-stateful calculus evidence. See [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) for a
-complete minimal request and commands. This interface takes an extracted graph
-and point annotations. A source mode also connects the independent parser and
-SKJS exports to this consumer for **functions with primitive parameters, initialized `const`
+The source adapter supports **functions with primitive parameters, initialized `const`
 bindings, nested branches, `while` loops and returns**, local cells, and bounded expression
 closures and calls. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from
@@ -105,112 +58,55 @@ Early-return tests also work when one arm returns on every path and the other
 contains no returns. Only the surviving path executes the continuation, with
 its checked Boolean refinement and without the falling arm's local bindings.
 
-## What runs
 
-1. [parse-source.js](tools/parse-source.js) uses the TypeScript parser to produce an
-   independent syntax tree. It rejects constructs outside the fragment.
-2. SKJS checks the source and emits its claims with `--emit-skjs-type-claims`.
-3. The [Lean verifier](lean/Verification/Verify.lean) checks those claims
-   against the source and the calculus's rules.
-4. [runtime-check.js](tools/runtime-check.js) runs selected calls in Node and
-   checks their returned values against the source return types.
+The source fragment is smaller than the calculus. General strings/numbers,
+`typeof`, equality tests, mutable bindings, generics and general overloads are
+not currently source-verifiable. The parser can represent some syntax that the
+Lean adapter subsequently rejects. Such rejection is a limitation, not evidence
+that a producer claim is false.
 
-The Node step is a test, not part of the proof. It samples argument values,
-with at most 24 combinations per function; it does not compare complete
-execution traces with the Lean evaluator.
+## Reports and examples
 
-## What is supported
+Start the local viewer with:
 
-The source fragment has `string`, `number`, `boolean`, `null`, `undefined`,
-literal types and unions. Functions have annotated parameters and return types
-and may call other functions in the same file.
+```sh
+node verification/report-viewer/serve.js
+```
 
-Statements are `const`, `if` and `return`. Expressions include variables,
-literals, `typeof`, `===`, `!==`, `!`, `&&`, `||` and function calls.
-Conditions and boolean operators require booleans; the harness passes
-`--truthiness boolean` to SKJS.
-
-There are no mutable locals, loops, objects, closures or generics. Branches
-may fall through and merge; a function may not fall off the end without
-returning. Statements that cannot run are not part of the verified program and
-carry none of its obligations. A declaration binds throughout its block, so
-reading one before its declaration is rejected, as it is in JavaScript.
+Open the printed URL. The default group contains current-verifier examples.
+Separate groups contain claim-repair exercises and explicitly unsupported
+examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
+See the [reader guide](report-viewer/README.md) and
+[annotated report format](ANNOTATED-SOURCE.md).
 
 ## What is established
 
-The Lean development proves that verifier acceptance implies the program
-satisfies the calculus's typing rules. Calculus soundness then guarantees that,
-under its execution model, a call with arguments inside the declared parameter
-types cannot get stuck and any returned value is inside the declared return
-type. Termination is not guaranteed.
+1. An independent TypeScript parser emits source syntax and positions.
+2. A producer supplies candidate types and environments.
+3. Lean reconstructs a calculus request, including source annotation obligations.
+4. Proof search proposes evidence; the independent consumer checks it against
+   that exact request. Acceptance implies typing and modeled execution safety.
 
-Applying that result to JavaScript also depends on the parser, decoders,
-toolchain and fidelity of the execution model. Numeric edge cases still need
-attention; the current Node samples are not a complete model validation.
+Termination is not guaranteed. Applying the safety result to JavaScript still
+requires trust in source parsing, extraction, the semantic definitions and Lean's
+execution infrastructure. Source extraction is reviewed, not proved equivalent
+to JavaScript. Accepted functions do not certify every unused displayed claim.
 
-Acceptance does not prove that the claims faithfully describe SKJS's internal
-state, or that every inconsistent claim set would be rejected. The
-[design document](DESIGN.md) explains these distinctions,
-the proof boundary and what extending the fragment requires.
+## Code and proof guides
 
-## Tests
-
-| Location | Expected result |
+| Location | Responsibility |
 |---|---|
-| [tests/programs/accept](tests/programs/accept) | SKJS and verification accept; sampled Node calls satisfy the return types. |
-| [tests/programs/reject](tests/programs/reject) | SKJS rejects an ordinary type error. |
-| [tests/programs/outside](tests/programs/outside) | The independent front end rejects an unsupported construct. |
-| [tests/programs/known-unsound](tests/programs/known-unsound) | SKJS accepts, verification rejects for the expected reason, and Node finds a violation. |
-| [type-claims.js](tests/type-claims.js) | Altered claims or source identifiers fail the intended checks. |
-
-The last group tests the receiver of the claims, not the exporter.
-It distinguishes obligations from input validation. There is no standing test
-that deliberately breaks SKJS and checks whether the resulting mistake shows up
-in its claims.
-
-## Code map
-
-To find the languages and their meaning, read `Values.lean`, `Types.lean`, and
-`Programs.lean`. These define the calculus. `SourceAst.lean` defines the supported
-TypeScript source representation; `Lowering.lean` compiles it into the calculus.
-These files contain definitions without proof developments, and they are the
-ones the soundness statement reaches. The
-[design document](DESIGN.md#reviewing-the-definitions) explains this boundary.
-
-| File | Responsibility |
-|---|---|
-| [Values.lean](lean/Verification/Calculus/Values.lean) | Shared runtime values. No project imports. |
-| [Types.lean](lean/Verification/Calculus/Types.lean) | Type syntax and its meaning as sets of values. |
-| [Programs.lean](lean/Verification/Calculus/Programs.lean) | Core calculus: expressions, control-flow graphs, and their execution semantics. |
-| [SourceAst.lean](lean/Verification/SourceAst.lean) | TypeScript source AST with locations. |
-| [Lowering.lean](lean/Verification/Lowering.lean) | Source AST → control-flow graph, resolving lexical binding to slots. Start at `lowerProg`. |
-| [TypeOperations.lean](lean/Verification/Calculus/TypeOperations.lean) | Type constructors, comparisons, intersection and difference, with correctness proofs. |
-| [Narrowing.lean](lean/Verification/Calculus/Narrowing.lean) | Type environments, branch refinement and its correctness proofs. |
-| [Typing.lean](lean/Verification/Calculus/Typing.lean) | Environment implication, edge and node typing, and program soundness. |
-| [Calculus.lean](lean/Verification/Calculus.lean) | Import-only entry point for the calculus modules. |
-| [Obligation.lean](lean/Verification/Obligation.lean) | The relations to establish, their meaning, and a proved discharge procedure. |
-| [Verify.lean](lean/Verification/Verify.lean) | Assign each node the claim at the statement it came from, discharge the node and edge obligations, and prove acceptance implies typing. |
-| [SkjsTypeClaims.lean](lean/Verification/SkjsTypeClaims.lean) | The claim format, claim lookup and signature input validation. |
-| [JsonDecode.lean](lean/Verification/JsonDecode.lean) | JSON decoding. |
-| [Tests/](lean/Verification/Tests) | One test file per module, named after it; each header says what it pins and whether it is trusted. Built with the verifier. |
-| [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) | Emit SKJS's claims: expression types, statement environments and function signatures. |
-| [run.sh](run.sh) | Build when requested, run the corpus and claim validation tests, and report results. |
-
-One directory is a design investigation rather than part of the verifier. It
-builds with everything else but is not yet used by the production verifier.
-
-| Directory | Responsibility |
-|---|---|
-| [ExperimentState/](lean/Verification/ExperimentState) | The semantics the calculus is heading toward: stratified worlds, the guarded fixed point, mutable state and operational safety. Guide in [SEMANTICS.md](SEMANTICS.md); positive normalization, declarative subtype rules and checked certificates in [POSITIVE-TYPES.md](POSITIVE-TYPES.md); proved program rules in [PROGRAM-TYPING.md](PROGRAM-TYPING.md). |
-
-Annotated reports also accept `--baseline previous.annotated.ts.json` to review
-claim repairs against the same source snapshot, with fresh independent checking
-when `--verify` is supplied. See [repair comparison](ANNOTATED-SOURCE.md#reviewing-a-repair-against-a-baseline).
-
-[Producer-independent source sidecars](SOURCE-CLAIMS.md) can supply calculus-label
-claims directly to the same source extractor and independent consumer, without
-SKJS type JSON.
+| [SourceEncoding.lean](lean/Verification/ExperimentState/SourceEncoding.lean) | Primitive wire data and JSON helpers; accepted encodings have exact-translation lemmas. |
+| [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean) | Decoded source AST and claims. |
+| [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean) | Compile source into graph nodes, point claims and closure obligations. |
+| [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) | Produce and independently check exact requests and evidence. |
+| [SEMANTICS.md](SEMANTICS.md) | Values, execution, worlds and safety. |
+| [POSITIVE-TYPES.md](POSITIVE-TYPES.md) | Type normalization, declarative rules and certificates. |
+| [PROGRAM-TYPING.md](PROGRAM-TYPING.md) | Program typing rules and soundness. |
+| [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) | Graph and source verification commands. |
+| [SOURCE-CLAIMS.md](SOURCE-CLAIMS.md) | Producer-independent editable source claims and export. |
+| [tests/README.md](tests/README.md) | Current regression coverage and explicit boundaries. |
 
 `tools/export-source-claims.js` converts an existing SKJS export into editable
-calculus-label claims, recording unsupported candidates and original collection
-provenance in a companion manifest. It does not rerun SKJS or verify the claims.
+calculus-label claims. Conversion records unsupported candidates and provenance;
+it does not itself establish verification.

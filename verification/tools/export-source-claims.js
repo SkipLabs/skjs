@@ -25,7 +25,7 @@ function main(args) {
   const parser=path.resolve(__dirname,"parse-source.js"),temp=fs.mkdtempSync(path.join(os.tmpdir(),"source-export-"));
   const diagnostics=opts.diagnostics?fs.readFileSync(opts.diagnostics,"utf8"):null;
   try {
-    const ast=JSON.parse(run(process.execPath,[parser,sourcePath,"--stateful"]));
+    const ast=JSON.parse(run(process.execPath,[parser,sourcePath]));
     const file=opts["file-key"]||sourcePath;ast.file=file;
     if(ast.sourceSha256!==hash(source))throw Error("source changed during parsing");
     const ap=path.join(temp,"ast.json"),cp=path.join(temp,"claims.json");

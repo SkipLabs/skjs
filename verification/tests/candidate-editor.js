@@ -7,6 +7,7 @@ const {
   claimValue,
   editClaim,
   addClaim,
+  addFunction,
 } = require("../report-viewer/candidate.js");
 process.env.SKJS_BIN = "/no-producer-in-candidate-tests";
 const { candidateReport } = require("../report-viewer/serve.js");
@@ -76,6 +77,64 @@ assert.deepEqual(
     rejected.manifest.results.find((r) => r.function === target.id).location,
     { kind: "expression-obligation", pos: expression.pos },
   );
+  const edgeClaims = structuredClone(original);
+  const edgeFn = edgeClaims.claims
+    .find((f) => f.file === file)
+    .functions.find((f) => f.name === fn.name);
+  edgeFn.envs[2].vars[0].type = wrong;
+  const edgeReport = await candidateReport(edgeClaims, true);
+  const edgeResult = edgeReport.manifest.results.find(
+    (r) => r.function === target.id,
+  );
+  assert.equal(edgeResult.location.kind, "edge-obligation");
+  assert.equal(source.slice(...edgeResult.location.pos), "alias");
+  const badEnv = editClaim(
+    original,
+    fn,
+    env,
+    claimValue(original, fn, env).map((b) =>
+      b.name === "seed" ? { ...b, type: { unsupported: true } } : b,
+    ),
+  );
+  const envReport = await candidateReport(badEnv, true);
+  assert.deepEqual(
+    envReport.manifest.results.find((r) => r.function === target.id).location,
+    { kind: "environment-obligation", start: env.pos[0] },
+  );
+  const outsideFile = "verification/tests/unsupported/calls_and_consts.ts";
+  const outsideSource = fs.readFileSync(outsideFile, "utf8");
+  const nameStart = outsideSource.indexOf("label");
+  const conditionStart = outsideSource.indexOf("x === null");
+  const outsideReport = await candidateReport(
+    {
+      format: "source-claims",
+      file: outsideFile,
+      sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
+      claims: {
+        version: 1,
+        profile: "stateful-source-19-v1",
+        file: outsideFile,
+        sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
+        functions: [
+          {
+            name: "label",
+            namePos: [nameStart, nameStart + 5],
+            params: [],
+            result: [0],
+            entries: [],
+            expressions: [
+              { pos: [conditionStart, conditionStart + 10], type: [1, 2] },
+            ],
+          },
+        ],
+      },
+    },
+    true,
+  );
+  assert.deepEqual(outsideReport.manifest.results[0].location, {
+    kind: "source-limitation",
+    pos: [conditionStart, conditionStart + 10],
+  });
   // Repair missing information in a sound program without collecting again.
   const incomplete = structuredClone(original);
   const incompleteFn = incomplete.claims
@@ -160,13 +219,99 @@ assert.deepEqual(
   );
   assert.deepEqual(claimValue(normalizedRepair, fn, item), [0]);
   assert.deepEqual(claimValue(normalizedRepair, fn, env), []);
+  // Repair a whole missing function, keeping its contract separate from point claims.
+  const withoutFunction = structuredClone(original);
+  withoutFunction.claims.find((f) => f.file === file).functions =
+    withoutFunction.claims
+      .find((f) => f.file === file)
+      .functions.filter((f) => f.name !== fn.name);
+  const missingReport = await candidateReport(withoutFunction, false);
+  const missingFunction = missingReport.manifest.missingFunctions.find(
+    (f) => f.name === fn.name,
+  );
+  assert(missingFunction);
+  const missingModel = { ...missingFunction, candidateMissing: true };
+  const contract = { params: fn.params, result: fn.retType };
+  assert.throws(
+    () =>
+      addFunction(withoutFunction, missingModel, { ...contract, params: [] }),
+    /source order/,
+  );
+  assert.throws(
+    () =>
+      addFunction(
+        withoutFunction,
+        { ...missingModel, candidateMissing: false },
+        contract,
+      ),
+    /without a candidate/,
+  );
+  let restored = addFunction(withoutFunction, missingModel, contract);
+  assert.throws(
+    () => addFunction(restored, missingModel, contract),
+    /already exists/,
+  );
+  assert.equal(
+    withoutFunction.claims
+      .find((f) => f.file === file)
+      .functions.some((f) => f.name === fn.name),
+    false,
+  );
+  for (const e of fn.exprs) {
+    const site = missingFunction.missingSites.find(
+      (s) =>
+        s.kind === "expression" &&
+        JSON.stringify(s.pos) === JSON.stringify(e.pos),
+    );
+    assert(site, "missing expression repair site " + e.pos);
+    restored = addClaim(restored, missingModel, site, e.type);
+  }
+  for (const e of fn.envs) {
+    const site = missingFunction.missingSites.find(
+      (s) => s.kind === "environment" && s.pos[0] === e.pos[0],
+    );
+    assert(site, "missing environment repair site " + e.pos);
+    restored = addClaim(restored, missingModel, site, e.vars);
+  }
+  const restoredReport = await candidateReport(restored, true);
+  assert(restoredReport.manifest.results.every((r) => r.status === "verified"));
+  assert(
+    !restoredReport.manifest.missingFunctions.some((f) => f.name === fn.name),
+  );
+  const wrongContract = structuredClone(restored);
+  wrongContract.claims
+    .find((f) => f.file === file)
+    .functions.find((f) => f.name === fn.name).retType = wrong;
+  const wrongReport = await candidateReport(wrongContract, true);
+  assert(
+    wrongReport.manifest.results.some(
+      (r) =>
+        r.status === "not-established" && /return type differs/.test(r.detail),
+    ),
+  );
+  const normalizedFunction = addFunction(
+    { ...normalized, claims: { functions: [] } },
+    missingModel,
+    {
+      params: fn.params.map((p) => ({ name: p.name, type: [1, 2] })),
+      result: [1, 2],
+    },
+  );
+  assert.deepEqual(normalizedFunction.claims.functions[0], {
+    name: fn.name,
+    namePos: fn.namePos,
+    params: fn.params.map((p) => ({ name: p.name, type: [1, 2] })),
+    result: [1, 2],
+    entries: [],
+    expressions: [],
+  });
   await assert.rejects(
     candidateReport({ ...original, sourceSha256: "stale" }, true),
     /Source changed/,
   );
   assert.equal(fs.readFileSync(file, "utf8"), source);
   console.log(
-    "Candidate editor: immutable baseline, preview, fresh verification, false claim, stale source and missing-claim repair checks passed",
+    "Candidate editor: immutable baseline, preview, fresh verification, false claim, stale source, missing-claim and whole-function repair checks passed",
   );
 })().catch((e) => {
   console.error(e);

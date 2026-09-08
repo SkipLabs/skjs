@@ -9,7 +9,7 @@ try {
   const source="function identity(flag: boolean): boolean { return flag; }\n";
   const file=path.join(tmp,"source.ts"),ap=path.join(tmp,"ast.json"),cp=path.join(tmp,"claims.json"),ep=path.join(tmp,"evidence.json");
   fs.writeFileSync(file,source);
-  const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file,"--stateful"]);
+  const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);
   assert.equal(parsed.status,0,parsed.stderr);const ast=JSON.parse(parsed.stdout);fs.writeFileSync(ap,parsed.stdout);
   const f=ast.functions[0],pos=f.body[0].e.pos;
   const doc={version:1,profile:"stateful-source-19-v1",file,sourceSha256:hash(source),functions:[{
@@ -65,7 +65,7 @@ try {
     const text="function captured(): boolean { const cell: { value: boolean } = { value: true }; const read: (x: null) => boolean = (x: null): boolean => cell.value; cell.value = false; return read(null); }\n";
     const sf=path.join(tmp,"captured.ts"),sa=path.join(tmp,"captured.ast.json"),sc=path.join(tmp,"captured.claims.json"),se=path.join(tmp,"captured.evidence.json");
     fs.writeFileSync(sf,text);
-    const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),sf,"--stateful"]);assert.equal(p.status,0,p.stderr);
+    const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),sf]);assert.equal(p.status,0,p.stderr);
     const a=JSON.parse(p.stdout),f=a.functions[0],expressions=[],entries=[],scope=[];
     const labels={cell:[9],read:[17],x:[0]};
     const expr=e=>{

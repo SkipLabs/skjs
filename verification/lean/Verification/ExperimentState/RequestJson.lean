@@ -153,6 +153,9 @@ def produceJson (request : Json) (fuel : Nat)
         | .expression label => match (origins[label]?).bind id with
           | some (start, stop) => s!"source expression obligation at [{start},{stop}): "
           | none => ""
+        | .edge _ destination => match (origins[destination]?).bind id with
+          | some (start, stop) => s!"source incoming edge obligation at [{start},{stop}): "
+          | none => ""
         | _ => ""
       throw s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
   let response := toJson (Response.mk 2 C)

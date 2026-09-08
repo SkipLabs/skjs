@@ -88,19 +88,9 @@ check-file-in-docker:
 
 # Verification (verification/DESIGN.md, verification/README.md).
 # Use VERBOSE=1 for detailed diagnostics and build output.
-.PHONY: verify verify-programs verify-claims
+.PHONY: verify
 verify:
 	@./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose)
-
-verify-programs:
-	@./verification/run.sh --build $(if $(filter 1,$(VERBOSE)),--verbose)
-
-verify-claims:
-	@./verification/run.sh --build --suite claims $(if $(filter 1,$(VERBOSE)),--verbose)
-
-.PHONY: clean
-clean:
-	skargo clean
 
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh

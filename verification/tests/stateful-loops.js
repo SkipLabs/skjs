@@ -38,7 +38,7 @@ try {
     ["nonblock loop body gated","while (false) return null; return null;"],
     ["for remains gated","for (;;) {} return null;"],
     ["closure loop remains gated","const f: (x: null) => null = (x: null): null => { while (false) {} return null; }; return null;"]
-  ])test(name,()=>{const file=path.join(tmp,"gated.ts");fs.writeFileSync(file,`function gated(): null { ${text} }`);const r=exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file,"--stateful"]);assert.notEqual(r.status,0);assert(r.stderr.startsWith("gate:"));});
+  ])test(name,()=>{const file=path.join(tmp,"gated.ts");fs.writeFileSync(file,`function gated(): null { ${text} }`);const r=exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);assert.notEqual(r.status,0);assert(r.stderr.startsWith("gate:"));});
   test("runtime samples agree on zero iterations, one write and nested return",()=>{
     const js=ts.transpileModule(fs.readFileSync(file,"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
     const actual=vm.runInNewContext(js+"; JSON.stringify([zeroTrips(false),oneWrite(),nested(false),nested(true)])",{},{timeout:2000});

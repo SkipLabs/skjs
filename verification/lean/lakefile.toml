@@ -3,7 +3,7 @@ defaultTargets = ["verifier", "Verification", "cell_claim_tests"]
 
 [[lean_lib]]
 name = "Verification"
-globs = ["Verification", "Verification.Tests.+", "Verification.ExperimentState.+"]
+globs = ["Verification", "Verification.ExperimentState.+"]
 
 [[lean_exe]]
 name = "verifier"

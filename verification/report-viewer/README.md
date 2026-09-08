@@ -57,8 +57,13 @@ This is the first reported failure, not an exhaustive classification of claims.
 Failure may involve the claimed type, its environment, a source annotation, or
 search limitations; the marker does not mean the claim has been disproved.
 
-If no source span is available (including internal edge failures and older
-verifier results), only the function-level warning appears. The reader never
+Incoming-edge failures mark the destination expression whose environment was
+not justified. Environment conversion failures mark the statement entry.
+Unsupported source expressions instead say **unsupported source**: conversion
+stopped before checking the candidate, so this is not a verdict on an edit.
+
+If no source location is available (including older verifier results), the
+function-level warning displays the diagnostic directly. The reader never
 interprets a graph node number as an expression index. Editing makes prior results
 stale and removes their active failure markers until a fresh check completes.
 
@@ -95,8 +100,13 @@ Possible attachment sites are not necessarily required proof obligations.
 
 Manually added claims have no original producer value; the inspector says so.
 After applying, the new claim is selectable and editable normally. Restore removes
-all additions along with other manual edits. Creating an entire missing function
-candidate (its parameter and result contracts) is not yet supported.
+all additions along with other manual edits.
+
+A source function with no candidate appears in the function list. Select it and
+choose **Add missing claim…** to supply `{params, result}`. Parameter names and
+order come from the source; types use the selected candidate encoding. Adding the
+contract reveals that function's missing point-claim sites. No point claims are
+invented, and fresh verification checks the contract against source annotations.
 
 **Export bundle** saves the source snapshot, candidate, original claims and display
 manifest together. Import it with **Load report** to continue. Unexported candidate
@@ -131,3 +141,15 @@ results only for the exact source revision and candidate revision analysed.
 Current report IDs identify records within one snapshot. They are not stable
 identities across edits; reattachment requires syntax and binding identity as well
 as offset mapping. Moving an annotation is not evidence that its claim remains valid.
+
+## Example selection
+
+The live picker defaults to **Current verifier examples**, tested by the same
+source suites as `make verify`. **Claim repair** contains the deliberately
+rejected partial-collection exercise. **Unsupported examples** contains expected
+source limitations and never implies those programs are verified.
+
+The standalone samples also use current fixtures: `basic.ts` (recorded verified
+functions) and `partial-claims.ts` (a mix of missing claims and a verified function).
+Their stored statuses are report data, not fresh evidence. Loading arbitrary
+repository source through `?file=relative/path.ts` remains supported.
