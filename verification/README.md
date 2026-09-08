@@ -92,6 +92,13 @@ negation and effects in the selected arm. The separate
 `skjs-incomplete/null-loop-exit.ts` demonstrates independently verifiable repaired
 loop-exit claims after a null test and `continue`.
 
+Source annotations and claims can also form unions of the supported primitive,
+cell and unary function types, such as nullable local cells and optional function
+results. Every arm keeps its existing validation; unsupported arms are rejected.
+Cell fields and arrow inputs/results remain primitive. External cell/function
+parameters remain gated: structural annotations do not establish their runtime
+origin or behavior. The examples use locally allocated cells and checked closures.
+
 The source fragment is smaller than the calculus. General strings/numbers,
 `typeof`, other equality tests, mutable bindings, generics and general overloads
 are not currently source-verifiable. Retained refinement of property reads

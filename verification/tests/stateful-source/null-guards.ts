@@ -84,3 +84,63 @@ function effectfulCallbackGuard(value: null | boolean): boolean {
   const result: boolean = choose(value);
   return cell.value;
 }
+
+/** A null guard exposes the existing stable cell contract before a read. */
+function nullableCellRead(value: boolean): boolean {
+  const cell: null | { value: boolean } = { value: value };
+  if (cell === null) {
+    return false;
+  }
+  return cell.value;
+}
+
+/** Refining the reference permits a write, without narrowing its contents. */
+function nullableCellWrite(value: boolean): boolean {
+  const cell: null | { value: boolean } = { value: value };
+  if (cell !== null) {
+    cell.value = true;
+    return cell.value;
+  }
+  return false;
+}
+
+/** A callback can guard a captured nullable reference and safely read it. */
+function capturedNullableCell(value: boolean): boolean {
+  const cell: null | { value: boolean } = { value: value };
+  const read: (unit: null) => boolean = (unit: null): boolean => {
+    if (cell === null) {
+      return false;
+    } else {
+      return cell.value;
+    }
+  };
+  return read(null);
+}
+
+/** A null guard exposes an already-supported unary primitive call contract. */
+function optionalCallback(value: boolean): boolean {
+  const callback: null | ((x: boolean) => boolean) = (x: boolean): boolean =>
+    !x;
+  if (callback === null) {
+    return false;
+  }
+  return callback(value);
+}
+
+/** Both null and a locally allocated cell satisfy the declared union result. */
+function maybeCell(present: boolean): null | { value: boolean } {
+  if (present) {
+    const cell: { value: boolean } = { value: present };
+    return cell;
+  }
+  return null;
+}
+
+/** An optional function result comes from a locally checked closure or null. */
+function maybeCallback(present: boolean): null | ((x: boolean) => boolean) {
+  if (present) {
+    const callback: (x: boolean) => boolean = (x: boolean): boolean => !x;
+    return callback;
+  }
+  return null;
+}

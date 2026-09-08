@@ -594,4 +594,22 @@ private def forged : ProgramCertificates.Evidence Nat :=
 #guard !ok (ExpressionClaims.produce SourceTypes.graph [0,1,2] 19 4
   [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim"⟩])
 
+-- Source unions compose already-supported atoms, preserving every arm's checks.
+private def joined (types : List Json) : Json := Json.mkObj [
+  ("top",toJson false), ("atoms",toJson (types.flatMap fun j =>
+    ((jArr j "atoms").toOption.getD [])))]
+#guard is (SourceInput.translate (joined [wireTy ⟨false,[.null]⟩,cellWire])) [0,9]
+#guard is (SourceInput.translate (joined [cellWire,wireTy ⟨false,[.null]⟩,cellWire])) [0,9]
+#guard is (SourceInput.translate (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,17]
+#guard !ok (SourceInput.translate (joined [cellWire,wireTy ⟨false,[.str]⟩]))
+#guard !ok (SourceInput.translate (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]))
+
+-- Mixed unions do not bypass the external-object/callable origin boundary.
+#guard (match extractFn
+    { branchFn true with params := [⟨"external",joined [wireTy ⟨false,[.null]⟩,cellWire]⟩] }
+    { branchClaims true with params := [("external",joined [wireTy ⟨false,[.null]⟩,cellWire])] } with
+  | .error e => e == "cell or function parameters require an external-value boundary not yet supported"
+  | .ok _ => false)
+#guard !ok (SourceInput.translate (joined [wireTy ⟨false,[.str]⟩,cellWire]))
+
 end Verification.ExperimentState.SourceExtractionTests

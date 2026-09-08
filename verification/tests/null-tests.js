@@ -243,6 +243,16 @@ try {
       assert.equal(guardContext[name](value), value === null ? false : value);
     assert.equal(guardContext.loopGuard(value), false);
   }
+  for (const value of [true, false]) {
+    assert.equal(guardContext.nullableCellRead(value), value);
+    assert.equal(guardContext.capturedNullableCell(value), value);
+    assert.equal(guardContext.nullableCellWrite(value), true);
+    assert.equal(guardContext.optionalCallback(value), !value);
+  }
+  assert.equal(guardContext.maybeCell(false), null);
+  assert.equal(guardContext.maybeCell(true).value, true);
+  assert.equal(guardContext.maybeCallback(false), null);
+  assert.equal(guardContext.maybeCallback(true)(false), true);
   const exitAst = JSON.parse(fs.readFileSync(exitAstPath));
   const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath));
   expect(

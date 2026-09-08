@@ -673,3 +673,20 @@ and expression claims are still independently required. This adds a source-direc
 proof recipe, not another typing rule or graph-backed closure body. Parameters,
 captures, negation and effects in the selected arm are covered. Retained property
 refinements and closure loops remain outside this slice.
+
+
+### Compositional unions at the source boundary
+
+`SourceInput.translate` now decodes each union atom through its existing primitive,
+cell or function decoder, then canonicalizes the combined labels. It rejects the
+entire type if any arm fails. This needs no new graph label or semantic rule:
+label lists already denote unions. Cell fields and arrow inputs/results retain
+their primitive-only decoders; nested records and richer callable contracts are
+not enabled by this change.
+
+Locally allocated nullable cells and optional checked-closure results exercise
+the extension. External cell/function parameters remain rejected: annotations
+alone cannot exclude accessors or establish a callable implementation. A regression
+checks that adding null to such a parameter does not evade this boundary. The
+null-guard examples include local annotation checks and functions that return
+null on one path and a locally created cell or closure on another.

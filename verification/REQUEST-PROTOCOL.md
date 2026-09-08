@@ -154,7 +154,10 @@ required data. They also check that object field order does not matter.
 The adapter accepts primitive parameters, initialized `const` declarations,
 nested boolean branches and returns, using variable expressions and null/boolean
 literals. Every path must return. Types
-may be null, boolean, true, false, unions of these, or bottom. Other constructs
+may be null, boolean, true, false, unions of these, or bottom. Source parameters
+remain primitive. Local annotations and function results can additionally union
+the cell and function contracts described below. Every union arm is decoded
+strictly; unsupported arms are never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the slice
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 

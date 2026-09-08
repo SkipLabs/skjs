@@ -60,7 +60,11 @@ This version does not yet introduce declaration IDs.
 
 Type references are sorted, duplicate-free lists of labels. The list denotes a
 union; `[]` denotes `never`, `[1,2]` denotes `boolean`, and `[0,1,2]` denotes
-`null | boolean`. The profile fixes the graph to `SourceTypes.types`:
+`null | boolean`. The source decoder also accepts unions mixing supported cell
+and function atoms with primitives; the profile itself does not change. For
+example, `[0,9]` represents a nullable Boolean cell. Existing limits on external
+cell/function parameters, primitive field contracts and primitive arrow inputs
+and results remain in force. The profile fixes the graph to `SourceTypes.types`:
 
 | Labels | Meaning |
 | --- | --- |

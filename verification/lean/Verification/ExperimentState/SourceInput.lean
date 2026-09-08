@@ -6,14 +6,22 @@ claims use the same bounded contract decoder. -/
 namespace Verification.ExperimentState.SourceInput
 open Lean ProgramTyping PositiveRules
 
+/-- Decode every union arm with its existing strict contract decoder. An
+unsupported arm rejects the whole type; no projection or widening is allowed.
+Record fields and arrow inputs/results retain their bounded primitive decoders. -/
 def translate (j : Json) : Except String (Ty Nat) := do
+  CellClaims.fieldsExactly j ["top","atoms"]
+  if ← (← jField j "top").getBool? then throw "top is outside the source slice"
   let atoms ← jArr j "atoms"
-  if atoms.any (fun a => (a.getObjValAs? String "a").toOption == some "record") then
-    let A ← CellClaims.translate j
-    return [CellClaims.referenceLabel A]
-  else if atoms.any (fun a => (a.getObjValAs? String "a").toOption == some "function") then
-    FunctionClaims.translate j
-  else SourceTypes.translate (← decodeTy j)
+  let arms ← atoms.mapM fun atom => do
+    let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
+    match ← jStr (← jField atom "a") with
+    | "record" =>
+      let A ← CellClaims.translate single
+      pure [CellClaims.referenceLabel A]
+    | "function" => FunctionClaims.translate single
+    | _ => SourceTypes.translate (← CellClaims.primitive single)
+  return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 inductive Expr where
   | var (pos : Span) (name : String)
