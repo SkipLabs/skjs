@@ -68,8 +68,6 @@ adapter for the display format, with only the data present in those comments.
   expressions have a marker on their first line; selection shows the complete span.
 - Long types are abbreviated; unfamiliar JSON types say **structured type —
   inspect**, rather than guessing a type from part of their encoding.
-- The optional program-point table compares environments in source order. Its
-  line buttons select the corresponding entry claim.
 - Each function shows both outcomes: **SKJS ✓ · proof ✓**. The first is the
   producer's own outcome for that function, which depends on the source file
   alone and therefore stands until the source changes. The second is what proof

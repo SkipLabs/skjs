@@ -54,7 +54,7 @@
           in <code>cell.value</code> the inner bracket is <code>cell</code> and the outer one is
           <code>cell.value</code>, so they get their own rows.</p>
           <p><span class="k-n">╵</span> above a statement: the claimed types of the bindings in
-          scope at that point. In <em>Compact</em>, environments show changes from the preceding entry in source order. This comparison does not describe control-flow edges. Literal restatements and nested expressions are hidden. Select an outer expression to inspect its nested claims, or choose Every claim.</p>
+          scope at that point. In <em>Compact</em>, environments show what changed since the preceding entry in source order, which is not a claim about control-flow edges. Literal restatements and nested expressions are hidden. Select an outer expression to inspect its nested claims, or choose Every claim.</p>
           <p><b>Keyboard</b>: <kbd>j</kbd>/<kbd>k</kbd> (or <kbd>↓</kbd>/<kbd>↑</kbd>) step through the
           marks as drawn, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears the selection.
           The address bar names the selected claim by its manifest id, so a view can be reopened or quoted.</p>
@@ -70,23 +70,17 @@
     </section>
 
     <div class="rail">
-      <details class="panel"><summary>Compare all program points (source order)</summary>
-        <div class="flow" id="flow"></div>
-        <div class="legend">
-          <span><i class="sw" style="background:var(--claim-soft);border:1px solid var(--claim-line)"></i> changed here</span>
-          <span><i class="sw" style="background:var(--sunken);border:1px solid var(--edge-2)"></i> carried over</span>
-        </div>
-      </details>
       <section class="panel" id="inspector">
         <h2>Selection</h2>
         <div class="detail" id="detail"><div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div></div>
       </section>
-      <section class="panel">
-        <h2>Provenance</h2>
-        <div class="detail" id="prov"></div>
-      </section>
     </div>
   </div>
+
+  <section class="panel provenance">
+    <h2>Provenance</h2>
+    <div class="detail" id="prov"></div>
+  </section>
 
   <footer>
     Reads the <span style="font-family:var(--mono)">@verify-report</span> annotated source produced by

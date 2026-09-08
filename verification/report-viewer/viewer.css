@@ -130,6 +130,14 @@ h1 {
   font-weight: 500;
   color: var(--ink);
 }
+/* Provenance is consulted, not read: a full-width band under the source, so the
+   rail belongs to the selection. */
+.provenance {
+  margin-top: 18px;
+}
+.provenance .detail {
+  max-width: 70ch;
+}
 .tally {
   font-family: var(--sans);
   font-size: 12px;
@@ -394,7 +402,8 @@ kbd {
 /* ---- layout ---- */
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.95fr);
+  /* The rail now holds the selection alone, so the source gets the width. */
+  grid-template-columns: minmax(0, 2.1fr) minmax(300px, 0.8fr);
   gap: 18px;
   align-items: start;
 }
@@ -515,62 +524,6 @@ kbd {
 }
 .kw {
   color: var(--ink-2);
-}
-
-/* ---- narrowing table ---- */
-.flow {
-  padding: 12px 14px 16px;
-  overflow-x: auto;
-}
-table {
-  border-collapse: collapse;
-  font-family: var(--mono);
-  font-size: 12px;
-  width: 100%;
-}
-th,
-td {
-  text-align: left;
-  padding: 6px 9px;
-  border-bottom: 1px solid var(--edge);
-  white-space: nowrap;
-}
-th {
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  font-weight: 500;
-}
-td.bind {
-  color: var(--ink);
-  font-weight: 500;
-}
-td.same {
-  color: var(--ink-3);
-}
-td.chg {
-  color: var(--claim);
-  background: var(--claim-soft);
-  font-weight: 500;
-}
-.legend {
-  display: flex;
-  gap: 14px;
-  padding: 0 14px 14px;
-  font-size: 11.5px;
-  color: var(--ink-3);
-}
-.legend span {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-.sw {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  display: inline-block;
 }
 
 /* ---- detail ---- */

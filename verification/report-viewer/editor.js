@@ -142,7 +142,6 @@ async function checkCandidate() {
     if (index >= 0) state.fn = index;
     renderShell();
     renderCode();
-    renderFlow();
     if (selected) {
       const f = state.report.functions[state.fn];
       const expressions = selected.kind === "expression";

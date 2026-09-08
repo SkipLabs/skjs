@@ -386,52 +386,6 @@ function rowText(items) {
   return out;
 }
 
-/* ---------- narrowing table ---------- */
-function renderFlow() {
-  const f = state.report.functions[state.fn];
-  const starts = lineStarts(state.report.source);
-  const lineOf = (p) => lineAt(starts, p) + 1;
-  const entries = f.entries.filter((e) => e.pos);
-  if (!entries.length) {
-    el("flow").innerHTML =
-      '<div class="empty">No environment claims in this function.</div>';
-    return;
-  }
-  const names = [];
-  for (const e of entries)
-    for (const b of e.bindings)
-      if ((state.unsupported || !isNoise(b)) && !names.includes(b.name))
-        names.push(b.name);
-  let h =
-    "<table><thead><tr><th>at</th>" +
-    names.map((n) => "<th>" + esc(n) + "</th>").join("") +
-    "</tr></thead><tbody>";
-  const prev = new Map();
-  for (const e of entries) {
-    h +=
-      '<tr><td class="bind"><button data-entry="' +
-      f.entries.indexOf(e) +
-      '">line ' +
-      lineOf(e.pos[0]) +
-      "</button></td>";
-    for (const nm of names) {
-      const b = e.bindings.find((x) => x.name === nm);
-      const t = b ? b.type : "—";
-      const cls = b && t !== prev.get(nm) ? "chg" : "same";
-      h += '<td class="' + cls + '">' + esc(t) + "</td>";
-      if (b) prev.set(nm, t);
-    }
-    h += "</tr>";
-  }
-  h += "</tbody></table>";
-  el("flow").innerHTML = h;
-  el("flow")
-    .querySelectorAll("[data-entry]")
-    .forEach((b) =>
-      b.addEventListener("click", () => select("n" + b.dataset.entry)),
-    );
-}
-
 /* ---------- addressing the current view ---------- */
 // The URL names the file, whether verification was requested, and the selected
 // mark by its manifest id, so a view can be reopened or quoted. A link is a
@@ -479,7 +433,6 @@ function applyPendingMark() {
     state.fn = found.fn;
     renderShell();
     renderCode();
-    renderFlow();
   }
   if (found.id) {
     // A linked claim can be one Compact hides. Show every claim for this view
@@ -518,7 +471,6 @@ function jumpToFunction(matches) {
     state.selectedId = null;
     renderShell();
     renderCode();
-    renderFlow();
     const f = fns[at];
     const failed = f.exprs.findIndex((e) => e.failure);
     const failedEntry = f.entries.findIndex((e) => e.failure);
@@ -548,7 +500,6 @@ function moveFunction(step) {
     '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
   renderShell();
   renderCode();
-  renderFlow();
   syncLocation();
 }
 
@@ -964,7 +915,6 @@ function renderShell() {
           '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
         renderShell();
         renderCode();
-        renderFlow();
         syncLocation();
       }),
     );
@@ -1131,14 +1081,13 @@ async function load(text, keepCandidate = false) {
       '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
     renderShell();
     renderCode();
-    renderFlow();
     renderCandidateStatus();
     applyPendingMark();
   } catch (err) {
     if (version !== loadVersion) return;
     state.report = null;
     el("candidate-panel").hidden = true;
-    for (const id of ["fnstrip", "flow", "detail", "prov"])
+    for (const id of ["fnstrip", "detail", "prov"])
       el(id).replaceChildren();
     el("code").innerHTML =
       '<div class="empty">Could not read that file: ' +
@@ -1172,7 +1121,6 @@ el("t-uns").addEventListener("change", (e) => {
   store.set("uns", state.unsupported);
   if (state.report) {
     renderCode();
-    renderFlow();
   }
 });
 el("load").addEventListener("click", () => el("file").click());
@@ -1283,7 +1231,7 @@ async function connectLive() {
       } catch (err) {
         if (request !== activeRequest) return;
         state.report = null;
-        for (const id of ["fnstrip", "flow", "detail", "prov"])
+        for (const id of ["fnstrip", "detail", "prov"])
           el(id).replaceChildren();
         el("code").innerHTML =
           '<div class="empty">' +
