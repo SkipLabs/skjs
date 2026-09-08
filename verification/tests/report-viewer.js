@@ -390,6 +390,162 @@ const marks = require("../report-viewer/marks.js");
   assert.equal(marks.bracket(5), "╰───╯");
 }
 
+/* ---------- claim types in surface syntax ---------- */
+const surface = require("../report-viewer/types.js");
+
+{
+  const cell = (read, write) => ({
+    top: false,
+    atoms: [
+      {
+        a: "record",
+        fields: [{ name: "value", optional: false, read, write }],
+        indexes: { string: "synthetic", number: "absent", symbol: "synthetic" },
+        call: "absent",
+        construct: "absent",
+        array: "absent",
+      },
+    ],
+  });
+  const of = (...atoms) => ({ top: false, atoms });
+  const boolean = of({ a: "boolean" });
+  const trueLit = of({ a: "booleanlit", v: "true" });
+  const shapes = [
+    boolean,
+    of({ a: "null" }),
+    of({ a: "null" }, { a: "boolean" }),
+    trueLit,
+    of({ a: "stringlit", v: 'a "quoted" value' }),
+    of({ a: "numberlit", v: "3" }),
+    { top: true, atoms: [] },
+    { top: false, atoms: [] },
+    cell(boolean, boolean),
+    cell(trueLit, boolean),
+    of({
+      a: "function",
+      params: [boolean],
+      result: of({ a: "null" }),
+      construct: "unknown",
+      array: "unknown",
+    }),
+  ];
+  const printed = shapes.map((t) => surface.printType(t).text);
+  assert.deepEqual(printed, [
+    "boolean",
+    "null",
+    "null | boolean",
+    "true",
+    '"a \\"quoted\\" value"',
+    "3",
+    "unknown",
+    "never",
+    "{ value: boolean }",
+    "{ value: read true write boolean }",
+    "(boolean) => null",
+  ]);
+  // Everything printed exactly must read back as the encoding it came from.
+  for (const [i, type] of shapes.entries())
+    assert(surface.roundTrips(type), "round trip: " + printed[i]);
+
+  // Editing replaces what the surface names and keeps what it does not: index
+  // signatures and call shapes are the original's, never this reader's.
+  const original = cell(trueLit, boolean);
+  const edited = surface.parseType("{ value: boolean }", original);
+  assert.deepEqual(edited.atoms[0].indexes, original.atoms[0].indexes);
+  assert.deepEqual(edited.atoms[0].fields[0].read, edited.atoms[0].fields[0].write);
+  assert.equal(surface.printType(edited).text, "{ value: boolean }");
+  assert.deepEqual(surface.parseType("true | null", boolean), {
+    top: false,
+    atoms: [{ a: "booleanlit", v: "true" }, { a: "null" }],
+  });
+
+  // A structural type with nothing to edit against is refused rather than
+  // guessed at, and so is syntax this reader does not accept.
+  assert.throws(
+    () => surface.parseType("{ value: boolean }", boolean),
+    /existing object type/,
+  );
+  assert.throws(() => surface.parseType("(boolean) => null", boolean), /existing function/);
+  assert.throws(() => surface.parseType("boolean &", boolean), /unexpected/);
+  assert.throws(() => surface.parseType("{ value boolean }", original), /expected :/);
+  assert.throws(
+    () => surface.parseType("{ nope: boolean }", original),
+    /no field 'nope'/,
+  );
+  // Dropping a field is expressible, so it is allowed.
+  assert.deepEqual(surface.parseType("{ }", original).atoms[0].fields, []);
+  assert.throws(() => surface.parseType("boolean boolean", boolean), /after the type/);
+
+  // An encoding this reader cannot name is summarized, and then not editable.
+  const exotic = of({ a: "tuple", parts: [] });
+  assert.equal(surface.printType(exotic).exact, false);
+  assert.equal(surface.printType(exotic).text, "«tuple»");
+  assert.equal(surface.roundTrips(exotic), false);
+  assert.equal(surface.printType({ unsupported: true }).text, "(unavailable)");
+  assert.equal(surface.roundTrips({ unsupported: true }), false);
+}
+
+// A whole claim: one expression's type, or a statement environment. A binding
+// the producer could not decode rides along rather than pushing the environment
+// back into JSON, and cannot be given a type here.
+{
+  const boolean = { top: false, atoms: [{ a: "boolean" }] };
+  const union = { top: false, atoms: [{ a: "boolean" }, { a: "null" }] };
+  const cell = {
+    top: false,
+    atoms: [
+      {
+        a: "record",
+        fields: [{ name: "value", optional: false, read: boolean, write: boolean }],
+        indexes: { string: "absent", number: "absent", symbol: "absent" },
+        call: "unknown",
+        construct: "unknown",
+        array: "unknown",
+      },
+    ],
+  };
+  const env = [
+    { name: "this", type: { unsupported: true } },
+    { name: "value", type: union },
+    { name: "cell", type: cell },
+  ];
+  const text = surface.printClaimValue("environment", env);
+  assert.equal(
+    text,
+    "this: (unavailable), value: boolean | null, cell: { value: boolean }",
+  );
+  assert.deepEqual(surface.readClaimValue("environment", text, env), env);
+  assert.equal(surface.printClaimValue("expression", union), "boolean | null");
+  assert.deepEqual(
+    surface.readClaimValue("expression", "true", union),
+    { top: false, atoms: [{ a: "booleanlit", v: "true" }] },
+  );
+  // An undecoded claim has nothing to edit against, and is not invented here.
+  assert.equal(surface.printClaimValue("expression", { unsupported: true }), "(unavailable)");
+  assert.throws(
+    () => surface.readClaimValue("environment", "this: boolean, value: null, cell: { value: boolean }", env),
+    /could not decode 'this'/,
+  );
+  // An expression claim that was never decoded can still be given a type that
+  // needs no original to edit against.
+  assert.deepEqual(
+    surface.readClaimValue("expression", "null", { unsupported: true }),
+    { top: false, atoms: [{ a: "null" }] },
+  );
+  assert.throws(
+    () => surface.readClaimValue("expression", "{ value: boolean }", { unsupported: true }),
+    /existing object type/,
+  );
+  // The binding set is the original's: none added, none dropped, none doubled.
+  for (const [bad, complaint] of [
+    ["value: null", /binding 'this' is missing/],
+    ["this: (unavailable), value: null, cell: { value: boolean }, extra: null", /not a binding/],
+    ["this: (unavailable), value: null, value: null, cell: { value: boolean }", /appears twice/],
+    ["this: (unavailable), value, cell: { value: boolean }", /needs a name and a type/],
+  ])
+    assert.throws(() => surface.readClaimValue("environment", bad, env), complaint);
+}
+
 /* ---------- obligation diagnostics, as the panel reads them ---------- */
 const ob = require("../report-viewer/obligation.js");
 
@@ -565,7 +721,7 @@ const ob = require("../report-viewer/obligation.js");
 }
 
 console.log(
-  "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, addressing, source marks, obligations, and legacy comment reports passed",
+  "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, addressing, source marks, surface types, obligations, and legacy comment reports passed",
 );
 
 const failureBundle = structuredClone(bundle);

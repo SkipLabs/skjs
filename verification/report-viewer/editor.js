@@ -49,6 +49,10 @@ function renderCandidateStatus(message) {
   el("restore-candidate").disabled = candidateState.running || !changed;
   el("export-candidate").disabled = candidateState.running;
 }
+// Claims are edited in the syntax they are written in; types.js prints and reads
+// them. The producer's encoding stays one disclosure away, and is the only way
+// to edit something this reader cannot name. Nothing is applied until the text
+// reads back into an encoding.
 function renderEditor(fn, item) {
   if (!candidateState.candidate || candidateState.running) return;
   let current, original;
@@ -63,21 +67,57 @@ function renderEditor(fn, item) {
     original = undefined;
   }
   const editor = document.createElement("details");
+  editor.open = true;
   const summary = document.createElement("summary");
-  summary.textContent = "Edit candidate JSON";
+  summary.textContent = "Edit this claim";
   editor.append(summary);
+  const surface = surfaceTypes.printClaimValue(item.kind, current);
   const note = document.createElement("p");
-  note.textContent =
-    "Edit the type encoding (or the entry binding array). Apply validates attachment but does not verify the claim.";
+  note.textContent = surface
+    ? item.kind === "expression"
+      ? "Write the claimed type. Applying checks it; it does not make it true."
+      : "Write each binding as name: type. Applying checks the result; it does not make it true."
+    : "This encoding has no surface form in this reader, so it is edited as the producer's JSON.";
   editor.append(note);
-  const textarea = document.createElement("textarea");
-  textarea.rows = 10;
-  textarea.setAttribute("aria-label", "Candidate claim JSON");
-  textarea.value = JSON.stringify(current, null, 2);
-  editor.append(textarea);
+
+  const field = document.createElement(surface ? "input" : "textarea");
+  field.setAttribute("aria-label", surface ? "Claimed type" : "Candidate claim JSON");
+  if (surface) field.value = surface;
+  else {
+    field.rows = 10;
+    field.value = JSON.stringify(current, null, 2);
+  }
+  const error = document.createElement("div");
+  error.setAttribute("role", "status");
+  error.className = "field-error";
+  const apply = document.createElement("button");
+  apply.textContent = "Apply candidate edit";
+
+  // Parsed on every keystroke: an edit that does not read back cannot be applied.
+  const read = () =>
+    surface
+      ? surfaceTypes.readClaimValue(item.kind, field.value, current)
+      : JSON.parse(field.value);
+  const validate = () => {
+    try {
+      read();
+      error.textContent = "";
+      apply.disabled = false;
+      field.classList.remove("invalid");
+      return true;
+    } catch (e) {
+      error.textContent = e.message;
+      apply.disabled = true;
+      field.classList.add("invalid");
+      return false;
+    }
+  };
+  field.addEventListener("input", validate);
+  editor.append(field, error);
+
   const before = document.createElement("details");
   const label = document.createElement("summary");
-  label.textContent = "Original producer claim";
+  label.textContent = "Producer encoding";
   const raw = document.createElement("pre");
   raw.className = "raw";
   raw.textContent =
@@ -86,21 +126,13 @@ function renderEditor(fn, item) {
       : JSON.stringify(original, null, 2);
   before.append(label, raw);
   editor.append(before);
-  const apply = document.createElement("button");
-  apply.textContent = "Apply candidate edit";
-  const error = document.createElement("div");
-  error.setAttribute("role", "status");
+
   apply.addEventListener("click", async () => {
     try {
       if (candidateState.running)
         throw new Error("Wait for the running operation to finish");
-      const next = editClaim(
-        candidateState.candidate,
-        fn,
-        item,
-        JSON.parse(textarea.value),
-      );
-      candidateState.candidate = next;
+      if (!validate()) return;
+      candidateState.candidate = editClaim(candidateState.candidate, fn, item, read());
       candidateState.revision++;
       invalidateCandidate();
       await checkCandidate();
@@ -108,9 +140,10 @@ function renderEditor(fn, item) {
       error.textContent = e.message;
     }
   });
-  editor.append(apply, error);
+  editor.append(apply);
   el("detail").append(editor);
 }
+
 function invalidateCandidate() {
   // Conservative first version: all results belong to the previous candidate.
   for (const fn of state.report.functions) {

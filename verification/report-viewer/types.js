@@ -1,0 +1,346 @@
+"use strict";
+/* Claim types in surface syntax.
+ *
+ * The producer's encoding is exact and unreadable: a cell holding a boolean is
+ * three hundred bytes of JSON. This prints it as `{ value: boolean }` and reads
+ * that back, so claims can be inspected and edited in the syntax they were
+ * written in.
+ *
+ * Surface syntax cannot express everything the encoding carries — index
+ * signatures, call and construct shapes, and whatever a future producer adds.
+ * Rather than invent those on the way back, parsing edits an existing encoding:
+ * what the surface names is replaced, what it does not name is preserved. A
+ * type with no original to edit against is only parseable when the surface
+ * determines it completely. `report-viewer.js` checks the round trip over every
+ * claim in the corpus.
+ */
+
+// One namespace, and nothing else in the page's shared scope: these files are
+// plain scripts, and a bare `typeText` here would silently replace another's.
+const surfaceTypes = (() => {
+const PRIMITIVE = ["null", "boolean", "string", "number", "undefined"];
+const LITERAL = { booleanlit: 1, stringlit: 1, numberlit: 1, numlit: 1 };
+
+/* ---------- printing ---------- */
+function atomText(atom, state) {
+  if (!atom || typeof atom !== "object") {
+    state.exact = false;
+    return String(atom);
+  }
+  if (atom.unsupported === true) {
+    state.exact = false;
+    return "(unavailable)";
+  }
+  if (PRIMITIVE.includes(atom.a) && Object.keys(atom).join() === "a")
+    return atom.a;
+  if (atom.a === "booleanlit" && ["true", "false"].includes(atom.v))
+    return atom.v;
+  if (atom.a === "stringlit" && typeof atom.v === "string")
+    return JSON.stringify(atom.v);
+  if ((atom.a === "numberlit" || atom.a === "numlit") && Number.isFinite(Number(atom.v)))
+    return String(atom.v);
+  if (atom.a === "record" && Array.isArray(atom.fields))
+    return (
+      "{ " +
+      atom.fields
+        .map((field) => {
+          const name = field.name + (field.optional ? "?" : "");
+          const read = typeText(field.read, state);
+          const write = typeText(field.write, state);
+          // A cell whose read and write types differ is not a TypeScript shape,
+          // and it is exactly what a stale refinement looks like. Say both.
+          return read === write
+            ? name + ": " + read
+            : name + ": read " + read + " write " + write;
+        })
+        .join(", ") +
+      " }"
+    );
+  if (atom.a === "function" && Array.isArray(atom.params))
+    return (
+      "(" +
+      atom.params.map((p) => typeText(p, state)).join(", ") +
+      ") => " +
+      typeText(atom.result, state)
+    );
+  state.exact = false;
+  return atom.a ? "«" + atom.a + "»" : "«type»";
+}
+
+function typeText(type, state) {
+  if (type === undefined || type === null) {
+    state.exact = false;
+    return "«missing»";
+  }
+  if (typeof type === "string") return type; // already a display string
+  if (type.unsupported === true) {
+    state.exact = false;
+    return "(unavailable)";
+  }
+  if (type.top === true) return "unknown";
+  const atoms = Array.isArray(type.atoms) ? type.atoms : null;
+  if (!atoms) {
+    state.exact = false;
+    return "«type»";
+  }
+  if (!atoms.length) return "never";
+  return atoms.map((atom) => atomText(atom, state)).join(" | ");
+}
+
+// `exact` says the text names everything the encoding holds except structure
+// this reader preserves rather than shows; it is false where something had to
+// be summarized, and such a type must not be edited through the surface.
+function printType(type) {
+  const state = { exact: true };
+  const text = typeText(type, state);
+  return { text, exact: state.exact };
+}
+
+/* ---------- reading ---------- */
+class TypeSyntaxError extends Error {}
+
+function tokenize(text) {
+  const tokens = [];
+  const re =
+    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}(),:|?]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?/g;
+  let at = 0,
+    m;
+  while ((m = re.exec(text))) {
+    if (m.index !== at)
+      throw new TypeSyntaxError("unexpected character at " + at);
+    at = m.index + m[0].length;
+    if (!/^\s+$/.test(m[0])) tokens.push(m[0]);
+  }
+  if (at !== text.length)
+    throw new TypeSyntaxError("unexpected character at " + at);
+  return tokens;
+}
+
+function parseType(text, template) {
+  const tokens = tokenize(String(text));
+  let i = 0;
+  const peek = () => tokens[i];
+  const take = (expected) => {
+    if (expected !== undefined && tokens[i] !== expected)
+      throw new TypeSyntaxError(
+        "expected " + expected + " but found " + (tokens[i] ?? "end of type"),
+      );
+    return tokens[i++];
+  };
+  // Templates supply what the surface does not name. A union is matched by atom
+  // kind, taking the first template atom of that kind; order is not assumed.
+  const templateAtom = (from, kind) =>
+    (from && Array.isArray(from.atoms) ? from.atoms : []).find((a) => a.a === kind) ||
+    null;
+
+  const union = (from) => {
+    if (peek() === "unknown") {
+      take();
+      return { top: true, atoms: [] };
+    }
+    if (peek() === "never") {
+      take();
+      return { top: false, atoms: [] };
+    }
+    const atoms = [atom(from)];
+    while (peek() === "|") {
+      take("|");
+      atoms.push(atom(from));
+    }
+    return { top: false, atoms };
+  };
+
+  const atom = (from) => {
+    const token = peek();
+    if (token === undefined) throw new TypeSyntaxError("type expected");
+    if (PRIMITIVE.includes(token)) return { a: take() };
+    if (token === "true" || token === "false")
+      return { a: "booleanlit", v: take() };
+    if (/^["']/.test(token)) {
+      // A double-quoted token is already JSON; a single-quoted one becomes JSON
+      // by swapping which quote is escaped.
+      const raw = take();
+      const json =
+        raw[0] === '"'
+          ? raw
+          : '"' + raw.slice(1, -1).replace(/\\'/g, "'").replace(/"/g, '\\"') + '"';
+      return { a: "stringlit", v: JSON.parse(json) };
+    }
+    if (/^-?\d/.test(token)) return { a: "numberlit", v: take() };
+    if (token === "{") return record(from);
+    if (token === "(") return arrow(from);
+    throw new TypeSyntaxError("unexpected " + token);
+  };
+
+  const record = (from) => {
+    const base = templateAtom(from, "record");
+    if (!base)
+      throw new TypeSyntaxError(
+        "an object type can only be edited from an existing object type",
+      );
+    take("{");
+    const fields = [];
+    while (peek() !== "}") {
+      const name = take();
+      const optional = peek() === "?" ? (take("?"), true) : false;
+      take(":");
+      // A name the original does not have would take another field's hidden
+      // structure. Dropping a field is expressible; inventing one is not.
+      const original = (base.fields || []).find((f) => f.name === name);
+      if (!original)
+        throw new TypeSyntaxError(
+          "this object type has no field '" + name + "'",
+        );
+      let read, write;
+      if (peek() === "read") {
+        take("read");
+        read = union(original.read);
+        take("write");
+        write = union(original.write);
+      } else {
+        read = union(original.read);
+        write = structuredClone(read);
+      }
+      fields.push({ ...original, name, optional, read, write });
+      if (peek() === ",") take(",");
+      else break;
+    }
+    take("}");
+    // Everything the surface does not name — indexes, call, construct, array —
+    // is the original's, not this reader's invention.
+    return { ...base, a: "record", fields };
+  };
+
+  const arrow = (from) => {
+    const base = templateAtom(from, "function");
+    if (!base)
+      throw new TypeSyntaxError(
+        "a function type can only be edited from an existing function type",
+      );
+    take("(");
+    const params = [];
+    while (peek() !== ")") {
+      params.push(union((base.params || [])[params.length]));
+      if (peek() === ",") take(",");
+      else break;
+    }
+    take(")");
+    take("=>");
+    const result = union(base.result);
+    return { ...base, a: "function", params, result };
+  };
+
+  const value = union(template);
+  if (i !== tokens.length)
+    throw new TypeSyntaxError("unexpected " + tokens[i] + " after the type");
+  return value;
+}
+
+// Surface editing is offered only where the text says everything and reading it
+// back returns the encoding it came from.
+function roundTrips(type) {
+  const printed = printType(type);
+  if (!printed.exact) return false;
+  try {
+    return JSON.stringify(parseType(printed.text, type)) === JSON.stringify(type);
+  } catch (e) {
+    return false;
+  }
+}
+
+// One namespace either way: a module in the tests, a single global in the page,
+// so no script has to declare a name another script already owns.
+
+  /* ---------- a whole claim, not just one type ---------- */
+  // A binding the producer could not decode has no surface form and no claim to
+  // edit. It is carried through as it is, so one such binding does not push a
+  // whole environment back into JSON.
+  const UNAVAILABLE = "(unavailable)";
+  const undecoded = (type) => Boolean(type) && type.unsupported === true;
+
+  function printClaimValue(kind, value) {
+    if (kind === "expression")
+      return undecoded(value)
+        ? UNAVAILABLE
+        : roundTrips(value)
+          ? printType(value).text
+          : null;
+    if (!Array.isArray(value) || !value.length) return null;
+    if (!value.every((b) => b && typeof b.name === "string" && (undecoded(b.type) || roundTrips(b.type))))
+      return null;
+    return value
+      .map((b) => b.name + ": " + (undecoded(b.type) ? UNAVAILABLE : printType(b.type).text))
+      .join(", ");
+  }
+
+  // Splits on commas outside braces and parentheses, so a binding's own type can
+  // contain either.
+  function splitBindings(text) {
+    const parts = [];
+    let depth = 0,
+      start = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === "{" || c === "(") depth++;
+      else if (c === "}" || c === ")") depth--;
+      else if (c === "," && depth === 0) {
+        parts.push(text.slice(start, i));
+        start = i + 1;
+      }
+    }
+    parts.push(text.slice(start));
+    return parts;
+  }
+
+  function readClaimValue(kind, text, current) {
+    if (kind === "expression") {
+      if (String(text).trim() === UNAVAILABLE) {
+        if (undecoded(current)) return current;
+        throw new TypeSyntaxError("a claim cannot be made unavailable here");
+      }
+      return parseType(text, current);
+    }
+    const written = new Map();
+    for (const part of splitBindings(String(text))) {
+      const at = part.indexOf(":");
+      if (at < 0)
+        throw new TypeSyntaxError("each binding needs a name and a type: " + part.trim());
+      const name = part.slice(0, at).trim();
+      if (!name) throw new TypeSyntaxError("a binding needs a name");
+      if (written.has(name))
+        throw new TypeSyntaxError("binding '" + name + "' appears twice");
+      written.set(name, part.slice(at + 1));
+    }
+    const names = (current || []).map((b) => b.name);
+    for (const name of written.keys())
+      if (!names.includes(name))
+        throw new TypeSyntaxError("'" + name + "' is not a binding of this environment");
+    for (const name of names)
+      if (!written.has(name)) throw new TypeSyntaxError("binding '" + name + "' is missing");
+    return current.map((b) => {
+      const value = written.get(b.name).trim();
+      if (undecoded(b.type)) {
+        // Its type was never decoded, so there is nothing here to edit against.
+        if (value !== UNAVAILABLE)
+          throw new TypeSyntaxError(
+            "the producer could not decode '" +
+              b.name +
+              "'; give it a type in the producer encoding, not here",
+          );
+        return b;
+      }
+      return { ...b, type: parseType(value, b.type) };
+    });
+  }
+
+  return {
+    printType,
+    parseType,
+    roundTrips,
+    printClaimValue,
+    readClaimValue,
+    TypeSyntaxError,
+  };
+})();
+
+if (typeof module !== "undefined") module.exports = surfaceTypes;

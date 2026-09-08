@@ -106,6 +106,20 @@ try {
     assert.deepEqual(fs.readdirSync(tmp),before);
   });
   const real=fs.readFileSync(fileKey,"utf8"), claims=JSON.parse(fs.readFileSync(claimsPath));
+  // Surface syntax is what a reader edits claims in, so it has to determine the
+  // producer's encoding exactly. Check that on every type in a real export.
+  test("every exported claim type survives printing and reading back",()=>{
+    const {printType,parseType}=require("../report-viewer/types.js");
+    const types=[];
+    const walk=f=>{for(const e of f.exprs||[])types.push(e.type);
+      for(const env of f.envs||[])for(const v of env.vars||[])types.push(v.type);
+      for(const p of f.params||[])types.push(p.type); types.push(f.retType);};
+    for(const file of claims)for(const f of file.functions)walk(f);
+    const printable=types.filter(t=>t&&!t.unsupported&&printType(t).exact);
+    assert(printable.length>50,`only ${printable.length} printable types`);
+    for(const type of printable)
+      assert.deepEqual(parseType(printType(type).text,type),type,printType(type).text);
+  });
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");
   test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json"));assert(m.results.every(x=>x.status==="verified"));assert(m.results.every(x=>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});

@@ -272,6 +272,7 @@ const assets = new Map([
   ["/", ["claim-report-viewer.html", "text/html"]],
   ["/viewer.js", ["viewer.js", "text/javascript"]],
   ["/model.js", ["model.js", "text/javascript"]],
+  ["/types.js", ["types.js", "text/javascript"]],
   ["/marks.js", ["marks.js", "text/javascript"]],
   ["/obligation.js", ["obligation.js", "text/javascript"]],
   ["/candidate.js", ["candidate.js", "text/javascript"]],

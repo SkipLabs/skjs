@@ -8,6 +8,7 @@
  * exercise it without a browser.
  */
 
+const obligationReader = (() => {
 const OBLIGATION_VERSION = 1;
 
 // Roles come from extraction. An unknown role stays generic rather than being
@@ -205,8 +206,7 @@ function obligationView(ob) {
   return view;
 }
 
-if (typeof module !== "undefined")
-  module.exports = {
+  return {
     OBLIGATION_VERSION,
     typeText,
     clauseText,
@@ -215,3 +215,6 @@ if (typeof module !== "undefined")
     obligationView,
     roleView,
   };
+})();
+
+if (typeof module !== "undefined") module.exports = obligationReader;

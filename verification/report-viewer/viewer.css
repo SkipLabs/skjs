@@ -300,6 +300,23 @@ kbd {
   margin: 0;
   color: var(--ink-2);
 }
+#detail input[aria-label="Claimed type"] {
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--edge-2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
+#detail .invalid {
+  border-color: var(--bad);
+}
+.field-error {
+  color: var(--bad);
+  font-size: 12px;
+}
 .slotwrap {
   overflow-x: auto;
 }

@@ -171,7 +171,9 @@ const GAP_LABEL = {
 const gapLabel = (g) => GAP_LABEL[g.reason] || g.detail;
 
 function shortType(type) {
-  if (type.startsWith("{")) return "structured type — inspect";
+  // Surface syntax reads as a type; a raw producer encoding does not, and only
+  // appears when this reader cannot name it.
+  if (/^\{\s*"/.test(type)) return "structured type — inspect";
   return type.length > 64 ? type.slice(0, 61) + "…" : type;
 }
 

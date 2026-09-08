@@ -1,4 +1,10 @@
 "use strict";
+// Surface type printing lives in types.js.
+const SURFACE =
+  typeof module !== "undefined" ? require("./types.js") : surfaceTypes;
+// Not named printType: types.js already owns that name in the page's one scope.
+const printSurface = (type) => SURFACE.printType(type);
+
 /* ---------- reading the annotated format ---------- */
 const RE_COMMENT = /\/\*\s*@verify-report([\s\S]*?)\*\//g;
 
@@ -197,6 +203,18 @@ function parseReport(annotated) {
   return rep;
 }
 
+// A function's contract, in the same syntax as its claims.
+function signatureText(signature) {
+  const part = (type) => {
+    const printed = printSurface(type);
+    return printed.exact ? printed.text : JSON.stringify(type);
+  };
+  const params = (signature.params || [])
+    .map((p) => (p.name ? p.name + ": " : "") + part(p.type))
+    .join(", ");
+  return "(" + params + ") => " + part(signature.retType);
+}
+
 function fromBundle(bundle) {
   const { source, manifest: m } = bundle;
   if (
@@ -227,6 +245,14 @@ function fromBundle(bundle) {
       return site;
     });
   const raw = (x) => (x === undefined ? null : JSON.stringify(x, null, 2));
+  // Claims are shown in the syntax they were written in. The producer's display
+  // string is the fallback: it is what a report carries when there is no
+  // encoding to print, and the exact encoding stays available beside it.
+  const display = (encoding, fallback) => {
+    if (encoding === undefined || encoding === null) return fallback;
+    const printed = printSurface(encoding);
+    return printed.exact ? printed.text : fallback;
+  };
   const gaps = [
     ...(m.gaps || []),
     ...(m.comparison?.changes || []).map((c, i) => ({
@@ -244,7 +270,7 @@ function fromBundle(bundle) {
       missingSites: missingSites(f, pos),
       start: pos[0],
       end: pos[1],
-      signature: f.signature ? JSON.stringify(f.signature) : null,
+      signature: f.signature ? signatureText(f.signature) : null,
       status: result?.status || "not-run",
       // The diagnostic is what a reader needs; the whole record stays available
       // for provenance, and neither is evidence.
@@ -262,6 +288,8 @@ function fromBundle(bundle) {
         changed: new Set(),
         bindings: e.bindings.map((b) => ({
           ...b,
+          type: display(b.raw, b.type),
+          encoding: b.raw ?? null,
           raw: raw(b.raw),
           unavailable: b.raw?.unsupported === true,
         })),
@@ -270,6 +298,8 @@ function fromBundle(bundle) {
         ...e,
         pos: span(e.pos),
         recovery,
+        type: display(e.raw, e.type),
+        encoding: e.raw ?? null,
         raw: raw(e.raw),
       })),
       gaps: gaps
@@ -477,6 +507,7 @@ function reportLink({ file, mark }) {
 
 if (typeof module !== "undefined")
   module.exports = {
+    signatureText,
     parseReport,
     fromBundle,
     renderType,

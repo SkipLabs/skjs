@@ -560,7 +560,7 @@ const FAILURE_REASON = {
   "environment-obligation": "The verifier could not use this statement environment.",
 };
 function failureHtml(f, item) {
-  const view = obligationView(f.obligation);
+  const view = obligationReader.obligationView(f.obligation);
   const title = FAILURE_TITLE[item.failureKind] || "Proof search failed here";
   const reason =
     (view && view.what) ||

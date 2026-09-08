@@ -68,8 +68,11 @@ adapter for the display format, with only the data present in those comments.
   containing statement's entry claims, and nested expression claims.
 - **Every claim** includes nested expressions and literal restatements. Multiline
   expressions have a marker on their first line; selection shows the complete span.
-- Long types are abbreviated; unfamiliar JSON types say **structured type —
-  inspect**, rather than guessing a type from part of their encoding.
+- Claims read in surface syntax — `{ value: boolean }`, `(boolean) => null`,
+  `true | null` — printed from the producer's encoding rather than from prose.
+  A cell whose read and write types differ says both: `{ value: read true write
+  boolean }`. Long types are abbreviated, and an encoding this reader cannot name
+  says **structured type — inspect** rather than guessing at part of it.
 - Each function shows both outcomes: **SKJS ✓ · proof ✓**. The first is the
   producer's own outcome for that function, which depends on the source file
   alone and therefore stands until the source changes. The second is what proof
@@ -149,7 +152,8 @@ stale and removes their active failure markers until a fresh check completes.
 
 ## Implementation
 
-`model.js` reads structured bundles and adapts legacy comments. `obligation.js`
+`types.js` prints claim types in surface syntax and reads them back. `model.js`
+reads structured bundles and adapts legacy comments. `obligation.js`
 reads an obligation diagnostic into the rows a panel shows. `marks.js`
 decides what the source view shows — which claims are drawn at what position,
 the outcome symbols, the producer's diagnostic positions — as pure functions the
@@ -196,6 +200,17 @@ the panel asks for its `{params, result}` contract. Parameter names and
 order come from the source; types use the selected candidate encoding. Adding the
 contract reveals that function's missing point-claim sites. No point claims are
 invented, and fresh verification checks the contract against source annotations.
+
+Claims are edited in that same syntax. The text is parsed on every keystroke and
+applying is refused until it reads back into an encoding, so a typo cannot be
+saved. Reading it back edits the claim it came from: what the surface names is
+replaced, and what it cannot name — index signatures, call and construct shapes —
+is the original's, never invented here. Naming a field the original does not have
+is refused for the same reason; dropping one is allowed, since the surface says
+so. A type this reader cannot print exactly is edited as the producer's JSON, as
+before. `report-viewer.js` checks that printing and reading back returns the same
+encoding for every shape, and `annotated-source.js` checks it over every claim in
+a real export.
 
 **Save report…** writes the source snapshot, candidate, original claims and display
 manifest together; **Load report…** reads one back. Both sit with the other
