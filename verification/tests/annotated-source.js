@@ -2,7 +2,7 @@
 "use strict";
 const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
 const {spawnSync}=require("child_process");
-const {hash,render,fromSkjs,compareClaims}=require("../tools/annotate-source.js");
+const {hash,render,fromSkjs,compareClaims,typeText}=require("../tools/annotate-source.js");
 const [claimsPath,fileKey,verifier]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
@@ -59,6 +59,51 @@ try {
     fs.writeFileSync(cp,JSON.stringify([{file:input,functions:[{name:"gated",namePos:[9,14],params:[],retType:{top:false,atoms:[{a:"null"}]},envs:[],exprs:[]}]}]));
     const r=cli([input,"--claims",cp,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);
     assert.equal(JSON.parse(fs.readFileSync(out+".json")).results[0].status,"unsupported");
+  });
+  test("every claim annotation carries its kind and a manifest id",()=>{
+    const marks=render(source,report).split("@verify-report").slice(2);
+    assert(marks.length>=2);
+    for(const m of marks)assert(/^ kind=(entry|expression|function|gap); (reason=[a-z0-9-]+; )?id=[a-z0-9]+; /.test(m),m.slice(0,60));
+  });
+  test("gap reason is a slug that survives rewording the prose",()=>{
+    const r=structuredClone(report);r.functions[0].expressions=[];
+    const marks=render(source,r).split("@verify-report").slice(2);
+    assert(!marks.some(m=>m.includes("reason=")));
+    const changes=compareClaims(source,report,r).changes;
+    const edit=render(source,r,null,{claimChanges:changes}).split("@verify-report").find(m=>m.includes("claim edit:"));
+    assert(edit.includes("reason=claim-edit"));
+  });
+  test("literal types are displayed as literals, not as encodings",()=>{
+    const r=structuredClone(report);
+    r.functions[0].expressions[0].type=typeText({top:false,atoms:[{a:"stringlit",v:"a"},{a:"numberlit",v:"3"},{a:"null"}]});
+    const text=render(source,r);
+    assert(text.includes('expr "a" | 3 | null'),text);
+  });
+  test("an unrecognised type payload is preserved rather than abbreviated away",()=>{
+    const t={top:false,atoms:[{a:"objectlit",v:{x:1}}]};
+    assert.equal(typeText(t),JSON.stringify(t));
+  });
+  test("bindings without a decoded type are named in the annotation",()=>{
+    const r=structuredClone(report);
+    r.functions[0].entries[0].bindings.push({name:"this",type:typeText({unsupported:true}),raw:{unsupported:true}});
+    const entry=render(source,r).split("@verify-report").find(m=>m.includes("kind=entry"));
+    assert(entry.includes("unsupported=this"),entry);
+    assert(entry.includes("this: (unavailable)"),entry);
+  });
+  test("annotation ids resolve to manifest records",()=>{
+    const r=cli([generic,"--claims",gp,"--format","report","--stdout","json"]);
+    assert.equal(r.status,0,r.stderr);
+    const {annotated,manifest}=JSON.parse(r.stdout);
+    const ids=[...annotated.matchAll(/id=([a-z0-9]+);/g)].map(m=>m[1]);
+    assert(ids.length>=3);
+    const known=new Set([...manifest.functions.flatMap(f=>[f.id,...f.entries.map(e=>e.id),...f.expressions.map(e=>e.id)]),
+      ...manifest.gaps.map(g=>g.id)]);
+    for(const id of ids)assert(known.has(id),id);
+  });
+  test("stdout mode leaves no files behind",()=>{
+    const before=fs.readdirSync(tmp);
+    assert.equal(cli([generic,"--claims",gp,"--format","report","--stdout","json"]).status,0);
+    assert.deepEqual(fs.readdirSync(tmp),before);
   });
   const real=fs.readFileSync(fileKey,"utf8"), claims=JSON.parse(fs.readFileSync(claimsPath));
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));

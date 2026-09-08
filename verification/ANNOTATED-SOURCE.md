@@ -22,19 +22,57 @@ set proof-search depth (default 10).
 A typical excerpt looks like:
 
 ```ts
-/* @verify-report function copyTrue; producer=skjs; claimed () => boolean; verification=verified */
+/* @verify-report kind=function; id=f0; function copyTrue; producer=skjs; claimed () => boolean; verification=verified */
 function copyTrue(): boolean {
-  /* @verify-report entry { x: true } @57:77 */
-  const y: boolean = /* @verify-report expr true @76:77 */ x;
+  /* @verify-report kind=entry; id=f0e0; entry { x: true } @57:77 */
+  const y: boolean = /* @verify-report kind=expression; id=f0x0; expr true @76:77 */ x;
   return y;
 }
 ```
 
 This excerpt illustrates the notation, not a complete program. The real report
 includes all exported entries and expressions, including unused bindings. Spans
-refer to the original source before annotation. Primitive types have concise
-names; other encodings remain explicit JSON so requirements are not silently
-discarded for display. The manifest also preserves the original type payloads.
+refer to the original source before annotation.
+
+## Machine-readable fields
+
+Every annotation begins with `name=value; ` fields, before prose written for
+people. The header lists them as `annotation-fields`, so a reader can tell which
+fields a report was written with. A consumer should read the fields and treat the
+prose as text that may be reworded.
+
+| Field | On | Meaning |
+| --- | --- | --- |
+| `kind` | every annotation | `function`, `entry`, `expression` or `gap`. |
+| `id` | every annotation | Joins this mark to its record in the manifest: `f0`, `f0e3`, `f0x7`, `g2`. |
+| `reason` | gaps | Why nothing is claimed here, as a stable slug: `statement-not-visited`, `expression-without-type`, `claims-unavailable`, `claim-edit`. |
+| `unsupported` | entries | Bindings in that environment whose exported payload could not be decoded, joined by `+`. |
+
+Manifest records carry the same `id`, so a tool can display a mark and look up
+its exact producer payload without matching on positions or prose.
+
+Types are displayed as the types they are: primitive names, and literal types as
+the literal (`"string"`, `3`, `true`). An encoding the display decoder does not
+recognize is kept verbatim as JSON, so a requirement is never silently dropped.
+A binding the producer could not decode has no claimed type at all and reads
+`(unavailable)`; it is named in the `unsupported` field rather than given an
+invented type. The manifest preserves every original type payload either way.
+
+Manifest functions include a `pos: [start, end]` range for the full source function,
+using original UTF-16 offsets. A reader can therefore focus a function without
+reconstructing its boundaries from display comments.
+
+`--stdout json` writes `{"annotated": …, "manifest": …}` to standard output and
+creates no files, for callers that render a report without keeping one.
+
+## Reading a report
+
+`report-viewer/claim-report-viewer.html` reads an annotated file and draws each
+claim as a bracket under the span it is about, with a table of how the bindings
+narrow. It is a reader for this output, with the same standing: display only.
+Its companion `report-viewer/serve.js` runs SKJS and this generator on a chosen
+file so a report can be produced and read in one step. See
+[report-viewer/README.md](report-viewer/README.md).
 
 ## What verification results mean
 

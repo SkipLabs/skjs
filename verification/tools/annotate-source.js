@@ -7,10 +7,31 @@ const {spawnSync} = require("child_process");
 const ts = require("typescript");
 const hash = data => crypto.createHash("sha256").update(data).digest("hex");
 const clone = x => JSON.parse(JSON.stringify(x));
-const safeText = x => JSON.stringify(String(x)).slice(1,-1).replace(/\*\//g,"*\\/").replace(/[\u2028\u2029]/g,c=>c==="\u2028"?"\\u2028":"\\u2029");
+// Escapes what could end or break the comment; a quote cannot, and a string
+// literal reads better unescaped. A backslash stays doubled, so the text is
+// still decodable: "\\" is one backslash, '"' is one quote.
+const safeText = x => JSON.stringify(String(x)).slice(1,-1).replace(/\\"/g,'"').replace(/\*\//g,"*\\/").replace(/[\u2028\u2029]/g,c=>c==="\u2028"?"\\u2028":"\\u2029");
+// Every annotation carries its kind, a stable id joining it to the manifest, and,
+// for a gap, the reason as a slug. The prose stays: these comments are read by
+// people as well as by tools, and a reworded sentence must not break a reader.
+const reasons = {
+  "statement not visited":"statement-not-visited",
+  "expression entered without a type result":"expression-without-type",
+  "claims unavailable; verification not established":"claims-unavailable"};
+const reasonSlug = detail => reasons[detail] ||
+  (/^claim edit:/.test(detail) ? "claim-edit"
+   : detail.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").split("-").slice(0,4).join("-"));
+function fields(x) {
+  const parts=["kind="+x.kind];
+  if(x.kind === "gap")parts.push("reason="+reasonSlug(x.detail));
+  if(x.id)parts.push("id="+x.id);
+  if(x.unsupported && x.unsupported.length)parts.push("unsupported="+x.unsupported.join("+"));
+  return parts.join("; ")+"; ";
+}
 function comment(x) {
   if(x.kind === "report") {
-    const lines=["Display-only claim report; not certificate input.",`producer=${x.producer}`,
+    const lines=["Display-only claim report; not certificate input.",
+      "annotation-fields=kind,reason,id,unsupported",`producer=${x.producer}`,
       `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
       ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
       ...(x.claimChanges ? [`Claim edits against baseline: ${x.claimChanges.length}; before/after values are in the manifest.`] : []),
@@ -31,16 +52,25 @@ function comment(x) {
   else text=`expr ${x.type}`;
   if(x.quality === "recovery")text+="; recovery claim";
   if(x.originalSpan)text+=` @${x.originalSpan[0]}:${x.originalSpan[1]}`;
-  return `/* @verify-report ${safeText(text)} */ `;
+  return `/* @verify-report ${safeText(fields(x)+text)} */ `;
 }
 
 function typeText(t) {
   if(typeof t==="string")return t;
+  // A binding the producer could not decode has no claimed type. Name the
+  // absence instead of printing an encoding that reads like a type; the exact
+  // payload stays in the manifest, joined by the annotation id.
+  if(t && t.unsupported === true && Object.keys(t).length === 1)return "(unavailable)";
   // Abbreviate only exact primitive encodings. Preserve every other type verbatim.
   if(t && t.top === false && Object.keys(t).sort().join() === "atoms,top" && Array.isArray(t.atoms)) {
     const names=t.atoms.map(a=> {
       if(Object.keys(a).join() === "a" && ["null","boolean","string","number","undefined"].includes(a.a))return a.a;
-      if(Object.keys(a).sort().join() === "a,v" && a.a === "booleanlit" && ["true","false"].includes(a.v))return a.v;
+      if(Object.keys(a).sort().join() !== "a,v")return null;
+      // Literal types are displayed as the literal they are. Nothing is dropped:
+      // the exact payload stays in the manifest, joined by the annotation id.
+      if(a.a === "booleanlit" && ["true","false"].includes(a.v))return a.v;
+      if(a.a === "stringlit" && typeof a.v === "string")return JSON.stringify(a.v);
+      if((a.a === "numberlit" || a.a === "numlit") && Number.isFinite(Number(a.v)))return String(a.v);
       return null;
     });
     if(names.every(x=>x!==null))return names.length ? names.join(" | ") : "never";
@@ -130,6 +160,9 @@ function render(source, report, results=null, identity={}) {
   walk(sf);
   const insertions=new Map(), seen=new Set();
   function add(pos,data){insertions.set(pos,(insertions.get(pos)||"")+comment(data));}
+  // Ids are positional and deterministic, so the manifest and the annotations
+  // agree without either having to re-derive spans.
+  const idOf=(kind,i,j)=>kind==="function" ? `f${i}` : kind==="gap" ? `g${i}` : `f${i}${kind==="entry"?"e":"x"}${j}`;
   const checkSpan = p => {
     if(!Array.isArray(p)||p.length!==2||!p.every(Number.isSafeInteger)||p[0]<0||p[0]>=p[1]||p[1]>source.length)
       throw Error("invalid source span");
@@ -140,7 +173,7 @@ function render(source, report, results=null, identity={}) {
     if(!node || node.name.text!==f.name || seen.has(`fn:${key}`))throw Error("missing or duplicate function identity");
     seen.add(`fn:${key}`);
     if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
-    add(node.getStart(sf),{kind:"function",name:f.name,producer:report.producer,
+    add(node.getStart(sf),{kind:"function",id:idOf("function",index),name:f.name,producer:report.producer,
       collection:f.collection,collectionSource:f.collectionSource,
       ...(f.signature ? {signature:f.signature} : {}),
       ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
@@ -151,22 +184,26 @@ function render(source, report, results=null, identity={}) {
       const k=`${key}:${kind}:${q.pos[0]}:${kind==="expression" ? q.pos[1] : ""}`;
       if(seen.has(k))throw Error("duplicate claim attachment");seen.add(k);
     };
-    for(const q of f.entries) {
+    for(const [j,q] of f.entries.entries()) {
       at("entry",q);
       if(!Array.isArray(q.bindings)||new Set(q.bindings.map(b=>b.name)).size!==q.bindings.length ||
          q.bindings.some(b=>typeof b.name!=="string"||typeof b.type!=="string"))throw Error("invalid entry bindings");
-      add(q.pos[0],{kind:"entry",originalSpan:q.pos,producer:report.producer,
-        quality:f.collection?.quality,bindings:q.bindings.map(({name,type})=>({name,type})),status:"producer-claim"});
+      add(q.pos[0],{kind:"entry",id:idOf("entry",index,j),originalSpan:q.pos,producer:report.producer,
+        quality:f.collection?.quality,bindings:q.bindings.map(({name,type})=>({name,type})),
+        unsupported:q.bindings.filter(b=>b.raw&&b.raw.unsupported).map(b=>b.name),status:"producer-claim"});
     }
-    for(const q of f.expressions) {
+    for(const [j,q] of f.expressions.entries()) {
       at("expression",q);
       if(typeof q.type!=="string")throw Error("invalid expression claim");
-      add(q.pos[0],{kind:"expression",originalSpan:q.pos,producer:report.producer,quality:f.collection?.quality,type:q.type,status:"producer-claim"});
+      add(q.pos[0],{kind:"expression",id:idOf("expression",index,j),originalSpan:q.pos,producer:report.producer,
+        quality:f.collection?.quality,type:q.type,status:"producer-claim"});
     }
   }
-  for(const gap of coverage(source,report))add(gap.pos[0],{kind:"gap",originalSpan:gap.pos,detail:gap.status});
-  for(const change of identity.claimChanges||[])add(change.span[0],{kind:"gap",originalSpan:change.span,
-    detail:`claim edit: ${change.status} ${change.kind}; see manifest for before/after`});
+  const gaps=coverage(source,report);
+  for(const gap of gaps)add(gap.pos[0],{kind:"gap",id:gap.id,originalSpan:gap.pos,detail:gap.status});
+  for(const [i,change] of (identity.claimChanges||[]).entries())add(change.span[0],
+    {kind:"gap",id:idOf("gap",gaps.length+i),originalSpan:change.span,
+     detail:`claim edit: ${change.status} ${change.kind}; see manifest for before/after`});
   // No new line terminators: preserve return/throw/async automatic-semicolon behavior.
   // Hashbang and BOM, when present, must remain at the beginning of the file.
   const headerAt=source.startsWith("#!") ? (source.indexOf("\n")<0 ? source.length : source.indexOf("\n")+1)
@@ -211,7 +248,8 @@ function coverage(source,report) {
       walk(node.body);
     }
   }
-  return gaps;
+  // One id per gap, assigned in one place so every gap kind is joinable to the manifest.
+  return gaps.map((g,i)=>({id:`g${i}`,...g}));
 }
 
 // Compare candidates, never saved proof results. Object property order is immaterial.
@@ -298,7 +336,7 @@ function main(args) {
   if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
   const sourcePath=args.shift(), options={format:"skjs",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.js source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
-  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion"]);
+  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion","stdout"]);
   while(args.length) {
     const key=args.shift()?.replace(/^--/,"");
     if(!allowed.has(key)||!args.length)throw Error(`invalid option ${key}`);
@@ -310,7 +348,8 @@ function main(args) {
   if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
   const output=options.out || sourcePath.replace(/\.ts$/,"")+".annotated.ts", manifest=output+".json";
   if([sourcePath,options.claims,options.verify].filter(Boolean).some(p=>path.resolve(p)===path.resolve(output)))throw Error("output must differ from inputs");
-  if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose a new --out path");
+  // Nothing is written in stdout mode, so an existing report there is not a conflict.
+  if(options.stdout!=="json" && (fs.existsSync(output)||fs.existsSync(manifest)))throw Error("output already exists; choose a new --out path");
   const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims), input=JSON.parse(bytes);
   const file=options["file-key"] || sourcePath;
   let report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
@@ -336,17 +375,28 @@ function main(args) {
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
   if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
   const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{}),...(conversion?{conversionOmissions:conversion.omissions}:{})});
+  const functionNodes=parse(source,report.source.file).statements.filter(ts.isFunctionDeclaration);
   const data={version:1,sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
     ...(conversion?{conversionPath:path.resolve(options.conversion),conversion}:{}),
     ...(comparison?{baselinePath:path.resolve(options.baseline),comparison}:{}),
-    gaps:coverage(source,report),functions:report.functions,results};
+    gaps:coverage(source,report),
+    functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
+      pos:(node=>[node.getStart(),node.end])(functionNodes.find(n=>n.name?.getStart()===f.namePos[0])),
+      entries:f.entries.map((e,j)=>({id:`f${i}e${j}`,...e})),
+      expressions:f.expressions.map((e,j)=>({id:`f${i}x${j}`,...e}))})),
+    results:results ? results.map((r,i)=>({function:`f${i}`,...r})) : results};
+  if(options.stdout === "json"){
+    // For callers that want the report without leaving files behind.
+    process.stdout.write(JSON.stringify({annotated,manifest:data})+"\n");
+    return;
+  }
   fs.writeFileSync(output,annotated,{flag:"wx"});
   try {fs.writeFileSync(manifest,JSON.stringify(data,null,2)+"\n",{flag:"wx"});}
   catch(e){fs.unlinkSync(output);throw e;}
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
 if(require.main===module)try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
-module.exports={hash,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs,main};
+module.exports={hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs,main};
