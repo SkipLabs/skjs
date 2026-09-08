@@ -168,6 +168,13 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       if decide (Answers G B tag false) then
         return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
       return none
+    | .ite c t e =>
+      return pool.findSome? fun C => do
+        if !decide (Answers G C .isBool true) then none else do
+          let pc ← recur Γ c C
+          let pt ← recur Γ t A
+          let pe ← recur Γ e A
+          pure (.node ⟨Γ,.ite c t e,A⟩ .ifBool [pc,pt,pe])
     | _ => return none
 
 /-- Raw calculus callers need not supply source-derived search suggestions. -/

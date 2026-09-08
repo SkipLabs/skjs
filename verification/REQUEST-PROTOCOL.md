@@ -111,6 +111,13 @@ one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
+The `ifBool` expression rule checks an ordinary `ite` with three premises:
+the Boolean condition, the true arm, and the false arm. Each arm has the root's
+context and requested result type. Boolean singleton unions are allowed, while
+null or mixed Boolean/non-Boolean conditions are rejected. The existing
+`ifTrue`/`ifFalse` rules remain the statically decided shape-test rules.
+This adds raw-calculus coverage; source branching closure blocks remain gated.
+
 Protocol version 2 requires explicit `inputs`. Raw requests and responses use
 version 2. Source bundles use version 3 to include supplemental expression proofs;
 older source bundles are rejected.

@@ -73,10 +73,28 @@ $$
      {\Gamma\vdash_G\mathsf{if}\ k(x)\ \mathsf{then}\ u\ \mathsf{else}\ e:B}.
 $$
 
-This rule checks each overload body under its own argument type. It handles
-shape dispatch between overloads. General splitting of a union-typed variable
-into refined branch environments remains to be added. Reference rules use a
-single invariant operand; eliminating a conjunction to such a reference view
+The shape-test rule checks each overload body under its own argument type. It
+handles shape dispatch between overloads.
+
+Ordinary Boolean conditionals use a separate rule. Define
+$\operatorname{Boolean}_G(C)$ as
+$\operatorname{Answers}_G(C,\mathsf{isBool},\mathsf{true})$; this accepts Boolean
+singleton unions as well as the Boolean clause.
+
+$$
+\frac{\Gamma\vdash_G c:C\quad\operatorname{Boolean}_G(C)
+      \quad\Gamma\vdash_G t:A\quad\Gamma\vdash_G e:A}
+     {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+$$
+
+The condition is evaluated once. It may read or mutate the heap; its effects
+precede the selected branch. Both branches must check against the supplied result
+type $A$. No least-upper-bound is computed. Both use the same context: this rule
+does not justify narrowed branch environments. General splitting of a union-typed
+variable into refined branch environments remains to be added at the term level.
+Graph edges already have their own checked Boolean refinement rule.
+
+Reference rules use a single invariant operand; eliminating a conjunction to such a reference view
 can be justified by subsumption. No direct multi-contract program rule is assumed.
 
 ## Binding and soundness
@@ -459,3 +477,9 @@ The [serialized request protocol](REQUEST-PROTOCOL.md) now exposes this boundary
 through the existing verifier binary. Source extraction correctness, producer
 completeness and integration of extended source claims remain outside these
 results.
+
+`BooleanConditionalTests.lean` checks the ordinary conditional through serialized
+requests and direct recipes. Its execution traces cover both outcomes after an
+alias write and a condition that writes then reads a cell. Invalid condition
+types, invalid arms, omitted premises and exchanged arms are rejected. This is
+calculus coverage; branching source closure blocks remain gated.

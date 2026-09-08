@@ -15,7 +15,7 @@ structure Sequent (ι : Type) where
 
 inductive Rule (ι : Type) where
   | var | nul | tru | fls | truLit | flsLit | lam | app | letE | alloc | read | write
-  | ifTrue | ifFalse
+  | ifBool | ifTrue | ifFalse
   | sub (proof : PositiveCertificates.Proof ι)
 
 inductive Evidence (ι : Type) where
@@ -50,6 +50,9 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .write, .write a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
     Represents G ja.type (.refs jb.type []) ∧ Represents G j.type .nul
+  | .ifBool, .ite c t e, [jc,jt,je] =>
+    jc.context = j.context ∧ jc.term = c ∧ Answers G jc.type .isBool true ∧
+    jt = ⟨j.context,t,j.type⟩ ∧ je = ⟨j.context,e,j.type⟩
   | .ifTrue, .ite (.test tag (.var i)) u _, [ju] =>
     ju = ⟨j.context, u, j.type⟩ ∧
     match j.context[i]? with
@@ -148,6 +151,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     rw [hΓa, hta] at ha
     rw [hΓb, htb] at hb
     exact .write ha hr hb hn
+  · rename_i c t e jc jt je
+    rcases hl with ⟨hΓ, hc, hb, rfl, rfl⟩
+    have hcond := hp jc (by simp)
+    rw [hΓ, hc] at hcond
+    exact .ifBool hcond hb (hp ⟨Γ,t,A⟩ (by simp)) (hp ⟨Γ,e,A⟩ (by simp))
   · rename_i tag i u e ju
     rcases hl with ⟨rfl, hq⟩
     split at hq
@@ -259,6 +267,15 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     rcases hj with rfl | rfl
     · exact iha
     · exact ihb
+  | @ifBool Γ c C t A e hc hb ht he ihc iht ihe =>
+    apply node_complete (r := .ifBool) (js := [⟨Γ,c,C⟩,⟨Γ,t,A⟩,⟨Γ,e,A⟩])
+    · exact ⟨rfl,rfl,hb,rfl,rfl⟩
+    · intro j hj
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+      rcases hj with rfl | rfl | rfl
+      · exact ihc
+      · exact iht
+      · exact ihe
   | @ifTag Γ i A tag q u B e hi hq ht he iht ihe =>
     cases q with
     | true =>

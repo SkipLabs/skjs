@@ -114,6 +114,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | read : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ (.read a) A
   | write : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ b A →
       Represents G N .nul → HasTy G Γ (.write a b) N
+  | ifBool : HasTy G Γ c C → Answers G C .isBool true →
+      HasTy G Γ t A → HasTy G Γ e A → HasTy G Γ (.ite c t e) A
   | ifTag : Γ[i]? = some A → Answers G A tag q →
       (q = true → HasTy G Γ u B) → (q = false → HasTy G Γ e B) →
       HasTy G Γ (.ite (.test tag (.var i)) u e) B
@@ -199,6 +201,28 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     obtain ⟨l, c, rfl, hl, hag⟩ := ((represents_sem hr k V av).mp ha'').1
     apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hl hag hb'
+  | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>
+    intro n W h ρ henv hw hh
+    apply bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC
+      n W h _ hw hh (ihc n W h ρ henv hw hh)
+    intro j hj U hx hu heap v hok hv ha
+    have hb := answers_sound hbool ha
+    have shape : v = .tru ∨ v = .fls := by cases v <;> simp_all [tagHolds]
+    rcases shape with rfl | rfl
+    · cases j with
+      | zero => trivial
+      | succ k =>
+        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ t,
+          WExt_refl _, WorldAdm_trunc _ hu, .iteT, HeapOk_trunc k U heap hok, ?_⟩
+        exact iht k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
+          _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+    · cases j with
+      | zero => trivial
+      | succ k =>
+        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ e,
+          WExt_refl _, WorldAdm_trunc _ hu, .iteF, HeapOk_trunc k U heap hok, ?_⟩
+        exact ihe k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
+          _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
   | @ifTag Γ i A tag q u B e hi hq ht he iht ihe =>
     intro n W h ρ henv hw hh
     have hval := (meaning_value (henv.2 i A hi)).1

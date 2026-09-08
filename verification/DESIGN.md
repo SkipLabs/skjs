@@ -480,7 +480,10 @@ when producing the graph certificate; the ordinary consumer checks them again.
 Recipes do not appear in the wire protocol or change the calculus's rules.
 Raw calculus requests retain the general search producer. Measurements and
 reproduction instructions are in [the direct-proof benchmark](benchmarks/direct-proof.md).
-Blocks with branches remain gated. They need a call/body interface that preserves
+The term calculus also has a proved ordinary Boolean conditional rule, including
+effectful conditions and checks of both arms against a supplied result type.
+It does not refine branch contexts. Source blocks with branches remain gated.
+They need a call/body interface that preserves
 shared continuations; duplicating branches or dropping internal claims would
 not implement that interface. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Source loops also remain
