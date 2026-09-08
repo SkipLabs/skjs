@@ -7,7 +7,8 @@ and claims; evidence never supplies the program it is checked against.
 
 The currently supported source slice is deliberately small: primitive parameters,
 initialized consts, branches, variables, null/boolean literals and local plain
-cells (allocation, reads and assignments), with every
+cells (allocation, reads and assignments), bounded reader closures and calls,
+with every
 path returning. Boolean variable tests refine the tested binding. Active-name
 shadowing is not yet supported. This compiler remains a reviewed extraction boundary, not a proved
 TypeScript semantics. Its output is checked by the proved calculus consumer. -/
@@ -45,6 +46,30 @@ private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
   set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]))
   return ⟨s.program.length, none⟩
 
+/-- The first closure slice has no internal statement environments. Its body
+claim is the declared result, so the existing lambda premise checks that exact
+claim. A read receiver must retain the exact captured-slot contract. -/
+private def closureBody (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
+    (e : SourceInput.Expr) (R : Ty Nat) : Except String Tm := do
+  if (← exprType fc e) != R then
+    throw "closure body claim must match its declared result in this slice"
+  let resolve := fun name => do
+    match scope.idxOf? name with
+    | some i => pure i
+    | none => throw s!"unbound or uninitialized closure variable '{name}'"
+  match e with
+  | .var _ name => return .var (← resolve name)
+  | .lit _ v => SourceTypes.value v
+  | .read _ receiver =>
+    match receiver with
+    | .var _ name =>
+      let i ← resolve name
+      let C ← exprType fc receiver
+      if Γ[i]? != some C then throw "closure receiver claim differs from its captured binding"
+      return .read (.var i)
+    | _ => throw "closure read must use a captured variable"
+  | _ => throw "closure body outside the value/read source slice"
+
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
@@ -65,6 +90,22 @@ private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
+  | .lam _ name arg ret body =>
+    if scope.contains name then throw "shadowing closure parameter is outside the source slice"
+    let D ← SourceTypes.translate (← decodeTy arg)
+    if D != [0] then throw "source closures currently require a null argument"
+    let R ← SourceTypes.translate (← decodeTy ret)
+    if A != [FunctionClaims.label R] then throw "closure signature claim differs from source annotations"
+    let t ← closureBody fc (name::scope) (D::Γ) body R
+    emit (.lam t) (.bind next) Γ A
+  | .app _ callee arg =>
+    let B ← exprType fc callee
+    let C ← exprType fc arg
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let call ← emit (.app (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A
+    let right ← compileExpr fc (""::scope) (B::Γ) arg call
+    compileExpr fc scope Γ callee right
   | .write _ receiver rhs =>
     let B ← exprType fc receiver
     let C ← exprType fc rhs
@@ -160,7 +201,7 @@ def extractFn (f : SourceInput.Fn) (fc : Claims) : Except String Request := do
   -- Cell origins must be plain allocations in this source slice. Structural
   -- parameter annotations alone cannot rule out JavaScript accessors.
   if inputs.any (fun A => A.any (· ≥ 3)) then
-    throw "cell parameters require a plain-data boundary not yet supported"
+    throw "cell or function parameters require an external-value boundary not yet supported"
   for (p, (name, claimed)) in f.params.zip fc.params do
     if p.name != name then throw "parameter claim name or order mismatch"
     let A ← SourceInput.translate p.ty

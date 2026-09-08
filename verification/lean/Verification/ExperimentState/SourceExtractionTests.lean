@@ -212,4 +212,57 @@ theorem cell_assignment_trace : ControlFlow.Execution cellProgram 24 []
 
 #print axioms cell_assignment_trace
 
+private def functionWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
+  [("a",toJson "function"),("params",toJson [wireTy ⟨false,[.null]⟩]),
+   ("result",wireTy ⟨false,[.bool]⟩),("construct",toJson "unknown"),("array",toJson "unknown")]])]
+private def captureFn : SourceInput.Fn :=
+  ⟨"capture",(0,1),[],wireTy ⟨false,[.bool]⟩,
+    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) (.lit (5,6) (.vbool true))),
+     .cst (8,9) "reader" (some functionWire)
+       (.lam (10,15) "unit" (wireTy ⟨false,[.null]⟩) (wireTy ⟨false,[.bool]⟩)
+         (.read (12,15) (.var (12,13) "cell"))),
+     .cst (16,17) "alias" (some cellWire) (.var (18,19) "cell"),
+     .effect (20,25) (.write (20,25) (.var (20,21) "alias") (.lit (24,25) (.vbool false))),
+     .ret (26,33) (.app (28,33) (.var (28,29) "reader") (.lit (32,33) .vnull))]⟩
+private def captureClaims : SourceInput.Claims :=
+  let B := wireTy ⟨false,[.bool]⟩
+  ⟨"capture",(0,1),[],B,
+   [(2,[]),(8,[("cell",cellWire)]),(16,[("cell",cellWire),("reader",functionWire)]),
+    (20,[("cell",cellWire),("reader",functionWire),("alias",cellWire)]),
+    (26,[("cell",cellWire),("reader",functionWire),("alias",cellWire)])],
+   [((4,7),cellWire),((5,6),t),((10,15),functionWire),((12,15),B),((12,13),cellWire),
+    ((18,19),cellWire),((20,25),b),((20,21),cellWire),((24,25),b),
+    ((28,33),B),((28,29),functionWire),((32,33),wireTy ⟨false,[.null]⟩)]⟩
+private def captureRequest : Request :=
+  (SourceExtraction.extractFn captureFn captureClaims).toOption.getD (request .nul [0])
+#guard ok (SourceExtraction.extractFn captureFn captureClaims)
+#guard ok (RequestJson.produceJson (toJson captureRequest) 10)
+private def captureProgram : ControlFlow.Program :=
+  [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4,5]⟩⟩,
+   ⟨.nul,.bind 1⟩, ⟨.var 1,.bind 2⟩,
+   ⟨.var 0,.bind ⟨3,some [3,4,5]⟩⟩, ⟨.write (.var 1) (.var 0),.effect 4⟩,
+   ⟨.fls,.bind 5⟩, ⟨.var 0,.bind 6⟩, ⟨.var 0,.effect 7⟩, ⟨.var 1,.bind 8⟩,
+   ⟨.var 0,.effect 9⟩, ⟨.lam (.read (.var 1)),.bind 10⟩,
+   ⟨.var 0,.effect 11⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩⟩,
+   ⟨.tru,.bind 13⟩, ⟨.nul,.effect 14⟩]
+#guard captureRequest.program == captureProgram
+#guard captureRequest.start == 15
+
+/-- The extracted closure reads after the alias write and returns false.
+The graph-equality guards above tie this trace to the source compiler regression. -/
+theorem captured_alias_trace : ControlFlow.Execution captureProgram 36 []
+    (.at 15 (fun _ => .nul)) [.fls] (.done .fls) := by
+  repeat first
+    | exact ControlFlow.Execution.refl
+    | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
+    | apply ControlFlow.Execution.next (.expr (.beta rfl))
+    | apply ControlFlow.Execution.next (.expr (.readV rfl))
+    | apply ControlFlow.Execution.next (.bind rfl)
+    | apply ControlFlow.Execution.next (.effect rfl)
+    | apply ControlFlow.Execution.next (.ret rfl)
+
+#print axioms captured_alias_trace
+
 end Verification.ExperimentState.SourceExtractionTests

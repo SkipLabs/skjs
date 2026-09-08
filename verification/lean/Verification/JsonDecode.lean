@@ -79,7 +79,12 @@ def decodeTyOpt (j : Json) : Except String (Option Ty) := do
   | .ok _ => return none
   | .error _ =>
     let top ← (← jField j "top").getBool?
-    let atoms ← (← jArr j "atoms").mapM decodeAtom
+    let raw ← jArr j "atoms"
+    -- These exported types belong to the stateful decoder. Keep them explicitly
+    -- unsupported in the primitive corpus, including unused callee claims.
+    if raw.any (fun a => [some "record", some "function"].contains
+        ((a.getObjValAs? String "a").toOption)) then return none
+    let atoms ← raw.mapM decodeAtom
     return some { top := top, atoms := atoms }
 
 def decodeTy (j : Json) : Except String Ty := do

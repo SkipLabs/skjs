@@ -150,7 +150,13 @@ fun claimPushAtoms(
       | Some(atom) ->
         acc.push(atom);
         true
-      | None() -> false
+      | None() ->
+        claimFunctionJson(obj, values, fuel) match {
+        | Some(atom) ->
+          acc.push(atom);
+          true
+        | None() -> false
+        }
       }
     } else {
       false
@@ -338,6 +344,76 @@ fun claimCellRecordJson(
         )
       } else {
         None()
+      }
+    }
+  }
+}
+
+// One free unary call signature with primitive operands. No methods, generics,
+// optional/rest parameters, object fields or construct requirements are erased.
+fun claimFunctionJson(
+  obj: TObject,
+  values: SortedMap<TVarID, SubstValue>,
+  fuel: Int,
+): ?String {
+  branches = obj.getBranches();
+  if (obj.unexpandedType.isSome() || branches.size() != 1) {
+    None()
+  } else {
+    fields = branches[0];
+    if (
+      !fields.fields.isEmpty() ||
+      !fields.symbolFields.isEmpty() ||
+      fields.stringIndex.isSome() ||
+      fields.numberIndex.isSome() ||
+      fields.symbolIndex.isSome() ||
+      fields.isArray == Some(true) ||
+      !(fields.new is CAbsent() || fields.new is CUnknown())
+    ) {
+      None()
+    } else {
+      fields.call match {
+      | CPresent(TFuns(f, _)) ->
+        if (
+          !f.tparams.isEmpty() ||
+          !(f.thisParam is NoThis()) ||
+          f.params.size() != 1 ||
+          !f.optionalParams.isEmpty() ||
+          f.spreadParam.isSome()
+        ) {
+          None()
+        } else {
+          arg = claimTypeJsonBounded(f.params[0], false, values, fuel);
+          ret = claimTypeJsonBounded(f.retType, false, values, fuel);
+          if (arg == claimUnsupported || ret == claimUnsupported) {
+            None()
+          } else {
+            Some(
+              jsonObj(
+                Array[
+                  ("a", jsonStr("function")),
+                  ("params", jsonArr(Array[arg])),
+                  ("result", ret),
+                  (
+                    "construct",
+                    jsonStr(
+                      if (fields.new is CAbsent()) "absent" else "unknown",
+                    ),
+                  ),
+                  (
+                    "array",
+                    jsonStr(
+                      if (fields.isArray == Some(false)) "absent" else {
+                        "unknown"
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            )
+          }
+        }
+      | _ -> None()
       }
     }
   }

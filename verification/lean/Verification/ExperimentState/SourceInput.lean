@@ -1,4 +1,4 @@
-import Verification.ExperimentState.CellClaims
+import Verification.ExperimentState.FunctionClaims
 
 /-! Stateful source syntax and raw claims. Types remain JSON until consumed, so
 unsupported unused claims do not become invented types. Cell annotations and
@@ -11,6 +11,8 @@ def translate (j : Json) : Except String (Ty Nat) := do
   if atoms.any (fun a => (a.getObjValAs? String "a").toOption == some "record") then
     let A ← CellClaims.translate j
     return [CellClaims.referenceLabel A]
+  else if atoms.any (fun a => (a.getObjValAs? String "a").toOption == some "function") then
+    FunctionClaims.translate j
   else SourceTypes.translate (← decodeTy j)
 
 inductive Expr where
@@ -19,10 +21,11 @@ inductive Expr where
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
   | write (pos : Span) (receiver rhs : Expr)
-  deriving Repr
+  | lam (pos : Span) (name : String) (arg result : Json) (body : Expr)
+  | app (pos : Span) (callee arg : Expr)
 
 def Expr.span : Expr → Span
-  | .var p _ | .lit p _ | .alloc p _ | .read p _ | .write p _ _ => p
+  | .var p _ | .lit p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -54,6 +57,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "lit" => return .lit p (← decodeVal (← jField j "lit"))
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
   | "read" => return .read p (← decodeExpr (← jField j "e"))
+  | "lambda" =>
+    return .lam p (← jStr (← jField j "name")) (← jField j "arg")
+      (← jField j "result") (← decodeExpr (← jField j "body"))
+  | "apply" => return .app p (← decodeExpr (← jField j "callee")) (← decodeExpr (← jField j "arg"))
   | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
   | _ => throw "expression outside the stateful source slice"
 

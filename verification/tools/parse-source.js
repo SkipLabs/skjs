@@ -42,6 +42,15 @@ function atomsOfTypeNode(node, acc) {
     case ts.SyntaxKind.UnionType:
       node.types.forEach((t) => atomsOfTypeNode(t, acc));
       return;
+    case ts.SyntaxKind.FunctionType: {
+      if (!stateful || node.typeParameters?.length || node.parameters.length !== 1)
+        fail(node, "expected a free unary function type");
+      const p = node.parameters[0];
+      if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.questionToken || p.dotDotDotToken || p.initializer)
+        fail(p, "expected a required ordinary parameter");
+      acc.push({a:"function",params:[typeOf(p.type)],result:typeOf(node.type),construct:"unknown",array:"unknown"});
+      return;
+    }
     case ts.SyntaxKind.TypeLiteral: {
       if (!stateful || node.members.length !== 1) fail(node, "expected a single cell field");
       const f = node.members[0];
@@ -132,6 +141,14 @@ function expr(node) {
       if (!DECIMAL.test(node.text)) fail(node, "non-decimal numeric literal");
       return { k: "lit", pos: span(node), lit: { a: "numberlit", v: node.text } };
 
+    case ts.SyntaxKind.ArrowFunction: {
+      if (!stateful || node.modifiers?.length || node.typeParameters?.length || node.parameters.length !== 1 || ts.isBlock(node.body))
+        fail(node, "expected a unary expression-bodied closure");
+      const p = node.parameters[0];
+      if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.questionToken || p.dotDotDotToken || p.initializer)
+        fail(p, "expected a required closure parameter");
+      return {k:"lambda",pos:span(node),name:p.name.text,arg:typeOf(p.type),result:typeOf(node.type),body:expr(node.body)};
+    }
     case ts.SyntaxKind.ObjectLiteralExpression: {
       if (!stateful || node.properties.length !== 1) fail(node, "expected plain single-field allocation");
       const f = node.properties[0];
@@ -169,6 +186,11 @@ function expr(node) {
     }
 
     case ts.SyntaxKind.CallExpression: {
+      if (stateful) {
+        if (node.questionDotToken || node.typeArguments?.length || node.arguments.length !== 1 || ts.isSpreadElement(node.arguments[0]))
+          fail(node, "expected one ordinary call argument");
+        return {k:"apply",pos:span(node),callee:expr(node.expression),arg:expr(node.arguments[0])};
+      }
       if (node.expression.kind !== ts.SyntaxKind.Identifier) {
         fail(node, "only calls to a named top-level function are in the fragment");
       }

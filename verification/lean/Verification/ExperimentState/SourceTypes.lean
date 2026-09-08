@@ -11,7 +11,11 @@ open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 def types : List (List (Clause (List Nat))) :=
   [[.nul], [.boolLit true], [.boolLit false],
    [.refs [] []], [.refs [0] []], [.refs [1] []], [.refs [0,1] []],
-   [.refs [2] []], [.refs [0,2] []], [.refs [1,2] []], [.refs [0,1,2] []]]
+   [.refs [2] []], [.refs [0,2] []], [.refs [1,2] []], [.refs [0,1,2] []],
+   [.arrs [([0],[])]], [.arrs [([0],[0])]],
+   [.arrs [([0],[1])]], [.arrs [([0],[0,1])]],
+   [.arrs [([0],[2])]], [.arrs [([0],[0,2])]],
+   [.arrs [([0],[1,2])]], [.arrs [([0],[0,1,2])]]]
 def graph : NormalGraph Nat := fun i => types[i]?.getD []
 
 def admits (t : Core.Ty) (v : Core.Val) : Bool := t.atoms.any (Core.inhabits v)

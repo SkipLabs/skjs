@@ -57,7 +57,8 @@ TypeScript corpus tests the pipeline on real programs; claim validation tests
 target the verifier's response to supplied claims. The stateful source suite also
 checks real exports through certificate production and independent consumption.
 The cell source suite certifies allocation, aliasing, reads and writes, including
-assignment results. Separate contract tests exercise the read/write export boundary. Use the combined command for
+assignment results. Closure tests cover captures, calls after alias writes, and
+returned closures. Separate contract tests exercise the read/write export boundary. Use the combined command for
 the full experiment check.
 
 To run tests without rebuilding the verifier:
@@ -78,11 +79,13 @@ stateful calculus evidence. See [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md) for a
 complete minimal request and commands. This interface takes an extracted graph
 and point annotations. A source mode also connects the independent parser and
 SKJS exports to this consumer for **functions with primitive parameters, initialized `const`
-bindings, nested branches and returns**, using variables, null and boolean
-literals. Both falling-through arms share one continuation.
+bindings, nested branches and returns**, local cells, and bounded reader
+closures and calls. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from
 direct Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
-commands and limitations; source loops, closures and mutation are not connected yet.
+commands and limitations. Closures currently have one null argument and a
+literal, variable or captured-cell read body. Source loops, mutable variable
+bindings and block-bodied closures remain unconnected.
 
 ## What runs
 

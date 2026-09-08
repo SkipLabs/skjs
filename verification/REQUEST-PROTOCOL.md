@@ -177,8 +177,8 @@ must justify the first supplied statement environment. Narrowing a parameter in
 that first claim therefore cannot turn into an unproved input assumption.
 
 The guarantee covers function bodies for all arguments satisfying their
-annotations. It does not yet provide source-level calls, graph-backed callable
-closures, or verification of external callers.
+annotations. Local expression closures and calls are supported below; graph-backed
+closure bodies and verification of external callers remain outside this slice.
 
 An `if` evaluates its condition once, keeps the exact exported expression claim,
 and checks that it contains only Boolean clauses. Both arms share the compiled
@@ -216,7 +216,7 @@ verification/run.sh --build --suite stateful-source
 
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
-loops, mutable declarations and closures are not connected yet; their raw request
+loops, mutable declarations and block-bodied closures are not connected yet; their raw request
 tests remain calculus tests.
 
 ## Record-contract export boundary
@@ -293,3 +293,41 @@ preserving live source bindings. Cell effects can occur in branches and nested
 expressions; the existing node and incoming-edge checks justify their claims.
 The reference invariant is stable across writes; no heap-content refinement or
 analysis is added.
+
+## Reader closures and calls
+
+The bounded function atom is:
+
+```json
+{
+  "a": "function",
+  "params": [{"top": false, "atoms": [{"a": "null"}]}],
+  "result": {"top": false, "atoms": [{"a": "boolean"}]},
+  "construct": "unknown",
+  "array": "unknown"
+}
+```
+
+The exporter preserves one free required parameter and the result. It rejects
+`this` requirements, generics, optional/rest parameters, fields, indexes, positive
+construct requirements and nested operand types. The Lean source slice further
+requires the parameter to be exactly null and the result to be a supported
+primitive set. `FunctionClaims.translate_exact` identifies the selected label's
+meaning with the corresponding arrow in the existing world-indexed semantics.
+This does not assert equivalence with SKJS's full structural function types.
+
+Source arrows require explicit parameter and result annotations. Their bodies
+are literals, variables or `.value` reads of captured variables. Body claims
+must equal the declared result type, and read-receiver claims must equal the
+captured binding's type. Thus the ordinary lambda premise checks the exact body
+claim; no internal claim is silently skipped. Wider result annotations paired
+with narrower body claims are outside this initial slice. Block bodies,
+shadowing parameters and more complex bodies remain gated.
+
+A closure is lowered to a lambda with its parameter in slot zero and captures
+shifted by one. Calls accept one ordinary argument and evaluate callee then
+argument, preserving both claims. Closures may be stored in local constants,
+called after alias writes, or returned. External function parameters and named
+top-level calls remain outside this source slice. Capture and source evaluation
+order remain part of the reviewed compiler boundary; calculus lambda/application
+soundness is proved.

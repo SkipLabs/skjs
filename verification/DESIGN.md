@@ -162,7 +162,7 @@ separator searches, alternative models or a semantic-completeness project.
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
 | Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
-| Source-facing integration | Parameterized null/boolean functions with branches and shared joins reach the stateful consumer. Primitive type translation is proved exact; source compilation remains trusted. Broader source constructs remain. |
+| Source-facing integration | Primitive inputs, branches, local cells and bounded reader closures reach the stateful consumer. Primitive, cell-label and function-label translations have exact interpretation theorems; source compilation remains trusted. |
 
 Certificate completeness means **every declarative derivation has accepted
 finite evidence**. It does not mean every inclusion true in the semantic model
@@ -335,14 +335,16 @@ Full TypeScript formalization is not a prerequisite.
 connects independently parsed source and actual SKJS exports to the stateful
 consumer. It accepts primitive parameters, initialized `const` declarations,
 nested boolean branches and returns, with variables, null/boolean literals,
-plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments. Every
-path must return. It rejects active-name shadowing, source calls, statements after
+plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
+and the bounded local closures and calls described below. Every path must return.
+It rejects active-name shadowing, calls to named top-level functions, statements after
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, boolean, their singleton types, unions and bottom exactly into three
 primitive labels: null, true and false. Eight further labels represent invariant
-references to the subsets of these values. Lean proves the translation preserves primitive
+references to the subsets of these values; eight function labels represent
+null-argument arrows returning those subsets. Lean proves the translation preserves primitive
 membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
 
@@ -374,8 +376,9 @@ The exporter’s parameter signature is checked for matching names, order and ty
 A synthetic entry edge must justify the first supplied point claim from that
 contract. Lean proves safety for any typed input environment, admissible world
 and satisfying heap. Source parameter slots follow declaration order, with
-locals pushed ahead of them. This certifies the function body; source calls and
-graph-backed callable closures remain separate integration work.
+locals pushed ahead of them. This certifies the function body. Local expression
+closures use the existing lambda/application rules; graph-backed closure bodies
+and external callers remain separate integration work.
 
 The cell-contract boundary is implemented in
 [CellClaims.lean](lean/Verification/ExperimentState/CellClaims.lean). SKJS exports
@@ -415,14 +418,31 @@ existing calculus rule, then returns the saved RHS to match JavaScript assignmen
 semantics; temporary slots are discarded by explicit edge maps. An execution
 regression checks the extracted alias-assignment graph's heap and result.
 
-Next, integrate closures capturing these cells. Binding identities must become
-explicit before supporting hidden, shadowed bindings; exported names alone
-cannot distinguish them. Extraction/export formats may change as needed.
-Source loops and a closure observing an alias write must eventually run
-through production and independent consumption with negative claim tests.
-Their existing raw-calculus tests do not establish source integration. Merges
-already have real-export integration tests, with additional compiler regressions
-for branch selection, shared continuations and scope-exit transfers.
+The first closure slice is connected through
+[FunctionClaims.lean](lean/Verification/ExperimentState/FunctionClaims.lean).
+It accepts explicitly typed unary arrows with a null argument and a primitive
+result. Bodies are literals, variables or a single read of a captured variable.
+The body expression claim must equal the declared result; for a read, the
+receiver claim must equal its captured slot's contract. These are explicit
+coverage gates, not restrictions of the calculus's lambda rule. In particular,
+a narrower body claim with a wider return annotation is currently gated.
+
+The source closure becomes an ordinary lambda over the captured environment.
+Its parameter occupies slot zero; captured bindings shift by one. Calls evaluate
+the callee and argument once in that order. The existing lambda and application
+rules establish safety, including future heaps after alias writes. No capture
+analysis, new store model or additional semantic axiom is introduced. Real-export
+tests cover capture of older slots, calls after alias writes and returned
+closures. A checked execution trace, tied to the extracted graph by an equality
+regression, returns the changed cell value. Corrupt body, receiver, signature
+and call claims are rejected by production and independent consumption.
+
+Next, extend closure-body coverage while retaining a checked obligation for
+every consumed claim. Block bodies need statement claims and a call/body
+interface for graph execution; they must not be supported by duplicating graph
+continuations or dropping internal claims. Binding identities must become
+explicit before supporting hidden, shadowed bindings. Source loops also remain
+unconnected; their raw-calculus tests do not establish source integration.
 
 ## Later feature gates
 

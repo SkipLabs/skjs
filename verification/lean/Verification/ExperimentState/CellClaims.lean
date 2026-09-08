@@ -7,7 +7,7 @@ excludes arrays, callable objects, accessors and hidden object behavior. -/
 namespace Verification.ExperimentState.CellClaims
 open Lean ProgramTyping PositiveRules
 
-private def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
+def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
   let fields ← j.getObj?
   if fields.toList.length != keys.length || !(fields.toList.all (fun p => keys.contains p.1)) then
     throw "unexpected fields in the cell record claim"
@@ -16,7 +16,7 @@ private def plainMode (j : Json) (name : String) : Except String Unit := do
   let mode ← jStr (← jField j name)
   if mode != "unknown" && mode != "absent" then throw s!"unsupported cell object mode: {name}"
 
-private def primitive (j : Json) : Except String Core.Ty := do
+def primitive (j : Json) : Except String Core.Ty := do
   fieldsExactly j ["top","atoms"]
   for atom in ← jArr j "atoms" do
     let tag ← jStr (← jField atom "a")

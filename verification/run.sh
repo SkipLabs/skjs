@@ -231,6 +231,17 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$CELL_SOURCE" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
+  CLOSURES="verification/tests/stateful-source/closures.ts"
+  if ! { node verification/tools/parse-source.js "$CLOSURES" --stateful > "$WORK/closures.ast" &&
+         skjs_check "$CLOSURES" > "$WORK/closures.claims"; } 2> "$WORK/closures.setup.err"; then
+    echo "FAIL: closure source test setup"
+    cat "$WORK/closures.setup.err"
+    exit 1
+  fi
+  if ! node verification/tests/stateful-closures.js "$WORK/closures.ast" "$WORK/closures.claims" \
+       "$CLOSURES" "$VERIFIER"; then
+    fail=$((fail + 1))
+  fi
   CELLS="verification/tests/stateful-source/cell-contracts.ts"
   if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.setup.err"; then
     echo "FAIL: cell contract export setup"
