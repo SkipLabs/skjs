@@ -1,0 +1,76 @@
+import Verification.ExperimentState.HeapExpressionRules
+import Verification.ExperimentState.SourceTypes
+
+/-! Execute the checked rules on the same primitive/reference graph used by the
+source pipeline. These exercise evidence validation, not hand-assumed HasTy
+premises. Full source/CFG acceptance still requires checked edge integration. -/
+namespace Verification.ExperimentState.HeapExpressionTests
+open ProgramCertificates HeapExpressionRules HeapKnowledge
+
+private def G := SourceTypes.graph
+private def boolTy : List Nat := [1,2]
+private def refBool : List Nat := [9]
+private def writeClaim : Sequent Nat :=
+  ⟨[refBool,boolTy],.write (.var 0) (.var 1),[0]⟩
+private def writeProof : Evidence Nat := .node writeClaim .write
+  [.node ⟨writeClaim.context,.var 0,refBool⟩ .var [],
+   .node ⟨writeClaim.context,.var 1,boolTy⟩ .var []]
+private def beforeWrite : Knowledge :=
+  ⟨[⟨0,[.fls]⟩,⟨2,[.fls]⟩],[⟨1,[.tru]⟩,⟨3,[.fls]⟩]⟩
+private def afterWrite := writeOutput beforeWrite 0 [.tru]
+
+-- The storage contract permits true; current contents are separately updated.
+#guard checkStep G writeClaim beforeWrite
+  (.written 0 1 [.fls] [.tru] writeProof) == some afterWrite
+-- An old alias fact is discarded, but immutable snapshots survive the write.
+#guard afterWrite.cells == [⟨1,[.tru]⟩]
+#guard afterWrite.values == [⟨0,[.nul]⟩,⟨2,[.tru]⟩,⟨4,[.fls]⟩]
+#guard checkStep G writeClaim beforeWrite
+  (.written 0 1 [.fls] [.fls] writeProof) == none
+
+-- Transfer selects the written cell. Its old false observation cannot survive.
+private def afterEdge := HeapKnowledge.project afterWrite (some [1]) 1
+#guard HeapKnowledge.check afterWrite afterEdge (some [1])
+#guard afterEdge.cells == [⟨0,[.tru]⟩]
+#guard !(HeapKnowledge.check afterWrite ⟨[⟨0,[.fls]⟩],[]⟩ (some [1]))
+
+-- Check a producer's wider Boolean read claim, then use the precise immutable
+-- result to discharge a true return contract. A stale false claim is rejected.
+private def readClaim : Sequent Nat := ⟨[refBool],.read (.var 0),boolTy⟩
+private def afterRead := readOutput afterEdge [.tru]
+#guard checkStep G readClaim afterEdge (.observedRead 0 [.tru]) == some afterRead
+#guard checkStep G {readClaim with type := [2]} afterEdge (.observedRead 0 [.tru]) == none
+#guard checkStep G readClaim afterEdge (.observedRead 0 [.fls]) == none
+#guard (checkStep G ⟨[boolTy,refBool],.var 0,[1]⟩ afterRead (.knownValue 0 [.tru])).isSome
+#guard checkStep G ⟨[boolTy,refBool],.var 0,[2]⟩ afterRead (.knownValue 0 [.tru]) == none
+-- A certificate cannot change the expression or use an out-of-scope fact.
+#guard checkStep G {readClaim with term := .nul} afterEdge (.observedRead 0 [.tru]) == none
+#guard checkStep G {readClaim with context := []} afterEdge (.observedRead 0 [.tru]) == none
+
+private def allocClaim : Sequent Nat := ⟨[boolTy],.alloc (.var 0),refBool⟩
+private def allocProof : Evidence Nat := .node allocClaim .alloc
+  [.node ⟨[boolTy],.var 0,boolTy⟩ .var []]
+#guard checkStep G allocClaim ⟨[],[⟨0,[.fls]⟩]⟩ (.allocated 0 [.fls] allocProof) ==
+  some (allocOutput ⟨[],[⟨0,[.fls]⟩]⟩ [.fls])
+-- No initializer fact can be fabricated by the evidence.
+#guard checkStep G allocClaim ⟨[],[]⟩ (.allocated 0 [.fls] allocProof) == none
+
+-- Administrative source copies preserve the cell fact through aliasing.
+private def copyClaim : Sequent Nat := ⟨[refBool],.var 0,refBool⟩
+private def copyProof : Evidence Nat := .node copyClaim .var []
+#guard checkStep G copyClaim afterEdge (.pure copyProof) == some (copy afterEdge 0)
+#guard (copy afterEdge 0).cells == [⟨0,[.tru]⟩,⟨1,[.tru]⟩]
+-- Ordinary evidence promises no heap preservation, even for a known write.
+#guard checkStep G writeClaim beforeWrite (.ordinary writeProof) ==
+  some (ordinaryOutput beforeWrite)
+#guard (ordinaryOutput beforeWrite).cells == []
+-- Observations never authorize a write forbidden by the storage invariant.
+private def narrowWrite : Sequent Nat :=
+  ⟨[[5],boolTy],.write (.var 0) (.var 1),[0]⟩
+private def invalidWrite : Evidence Nat := .node narrowWrite .write
+  [.node ⟨narrowWrite.context,.var 0,[5]⟩ .var [],
+   .node ⟨narrowWrite.context,.var 1,boolTy⟩ .var []]
+#guard checkStep G narrowWrite beforeWrite
+  (.written 0 1 [.fls] [.tru] invalidWrite) == none
+
+end Verification.ExperimentState.HeapExpressionTests
