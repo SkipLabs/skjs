@@ -90,6 +90,9 @@ adapter for the display format, with only the data present in those comments.
 - **SKJS errors** shows the producer's own diagnostics inline, under the exact
   spans they name, including the notes that accompany an error. They describe
   SKJS's run over the source and are neither claims nor verification results.
+  Provenance keeps the verbatim text under **Producer diagnostics**, with a count
+  and a note about any the source view is not showing — a diagnostic for another
+  function in the file, or the tick being off.
 - Coverage gaps remain visible in both densities. **Not visited by producer**
   describes collection, not runtime unreachability. Recovery describes the quality
   of a collection snapshot, not necessarily when an individual claim was emitted.

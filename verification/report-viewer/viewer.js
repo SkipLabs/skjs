@@ -888,8 +888,6 @@ function renderShell() {
   const rep = state.report;
   el("srcline").innerHTML =
     "<b>" + esc(rep.file) + "</b> · producer " + esc(rep.producer) + collectedLine(rep);
-  el("diagnostics").textContent =
-    rep.diagnostics || "No diagnostic text in this report.";
   // What the report records, at a glance. Each count moves to the next function
   // it describes: with many functions, finding the unfinished ones is the first
   // thing a reader wants. Counts summarize recorded outcomes, not evidence.
@@ -991,6 +989,34 @@ function renderShell() {
           : "not requested for this collection")
       : "this report was read from a file; it records no collection run") +
     "</dd></dl>";
+  // The producer's own output, kept where the rest of "what produced this" is.
+  // Most of it is drawn inline; this says what the source view is not showing.
+  if (rep.diagnostics && rep.diagnostics.trim()) {
+    const marks = producerMarks(rep);
+    const inFunction = marks.filter(
+      (m) => m.pos[0] >= (f?.start ?? 0) && m.pos[1] <= (f?.end ?? rep.source.length),
+    ).length;
+    const shown = state.producerErrors ? inFunction : 0;
+    const hidden = marks.length - shown;
+    p +=
+      "<details><summary>Producer diagnostics (" +
+      marks.length +
+      ")</summary>" +
+      (hidden
+        ? '<div class="note">' +
+          (hidden === 1 ? "One is" : hidden + " are") +
+          " not drawn in the source view: " +
+          (state.producerErrors
+            ? hidden === 1
+              ? "it belongs to another function in this file."
+              : "they belong to other functions in this file."
+            : "switch on SKJS errors to see the ones in this function.") +
+          "</div>"
+        : "") +
+      '<pre class="raw">' +
+      esc(rep.diagnostics) +
+      "</pre></details>";
+  }
   if (collected?.command)
     p +=
       '<details><summary>Producer command</summary><pre class="raw">' +
@@ -1112,7 +1138,7 @@ async function load(text, keepCandidate = false) {
     if (version !== loadVersion) return;
     state.report = null;
     el("candidate-panel").hidden = true;
-    for (const id of ["fnstrip", "flow", "detail", "prov", "diagnostics"])
+    for (const id of ["fnstrip", "flow", "detail", "prov"])
       el(id).replaceChildren();
     el("code").innerHTML =
       '<div class="empty">Could not read that file: ' +
@@ -1135,7 +1161,10 @@ el("t-err").checked = state.producerErrors;
 el("t-err").addEventListener("change", (e) => {
   state.producerErrors = e.target.checked;
   store.set("errs", state.producerErrors);
-  if (state.report) renderCode();
+  if (state.report) {
+    renderCode();
+    renderShell();
+  }
 });
 el("t-uns").checked = state.unsupported;
 el("t-uns").addEventListener("change", (e) => {
@@ -1254,7 +1283,7 @@ async function connectLive() {
       } catch (err) {
         if (request !== activeRequest) return;
         state.report = null;
-        for (const id of ["fnstrip", "flow", "detail", "prov", "diagnostics"])
+        for (const id of ["fnstrip", "flow", "detail", "prov"])
           el(id).replaceChildren();
         el("code").innerHTML =
           '<div class="empty">' +
