@@ -84,8 +84,19 @@ validates the candidate and refreshes the report; it does not establish the clai
 source, without rerunning SKJS. Editing conservatively invalidates all function
 results. Failed validation leaves the candidate available for correction and the
 last successful display marked stale. Source fingerprint changes block checking.
-The first editor supports existing expression types and entire entry binding
-arrays. It uses JSON; adding new claim sites and a richer type editor are future work.
+The editor supports expression types and entire entry binding arrays. It uses
+JSON; a richer type editor is future work.
+
+**Add missing claim…** lists parser-identified expression and statement-entry
+locations in the selected function. Select a site, enter its type encoding or
+binding array, and apply it. Selecting a collection gap offers the sites within
+that gap. No offsets need to be entered, and no type is inferred or defaulted.
+Possible attachment sites are not necessarily required proof obligations.
+
+Manually added claims have no original producer value; the inspector says so.
+After applying, the new claim is selectable and editable normally. Restore removes
+all additions along with other manual edits. Creating an entire missing function
+candidate (its parameter and result contracts) is not yet supported.
 
 **Export bundle** saves the source snapshot, candidate, original claims and display
 manifest together. Import it with **Load report** to continue. Unexported candidate

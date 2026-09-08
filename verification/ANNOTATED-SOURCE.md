@@ -64,6 +64,12 @@ the first failed proof-search obligation, not a proof that the claim is false
 or an exhaustive list of invalid claims. Without a location, readers must keep
 the warning at function level; graph labels are not source expression indexes.
 
+Manifest functions also expose `missingSites`: parser-identified expression and
+statement-entry spans without a candidate claim, each with a `kind` (`expression`
+or `environment`) and `syntax` label. These are possible attachment locations,
+not a declaration that verification needs a claim at every one. A reader may use
+them for manual repair; the source adapter and verifier still validate the input.
+
 Manifest functions include a `pos: [start, end]` range for the full source function,
 using original UTF-16 offsets. A reader can therefore focus a function without
 reconstructing its boundaries from display comments.

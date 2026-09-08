@@ -232,6 +232,14 @@ function fromBundle(bundle) {
     const recovery = f.collection?.quality === "recovery";
     return {
       ...f,
+      missingSites: (f.missingSites || []).map((site) => {
+        if (!["expression", "environment"].includes(site.kind))
+          throw new Error("Invalid missing claim kind");
+        span(site.pos);
+        if (site.pos[0] < pos[0] || site.pos[1] > pos[1])
+          throw new Error("Missing site outside function");
+        return site;
+      }),
       start: pos[0],
       end: pos[1],
       signature: f.signature ? JSON.stringify(f.signature) : null,

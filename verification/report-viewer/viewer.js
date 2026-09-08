@@ -344,6 +344,7 @@ function select(id) {
       '<div class="note">This report marks a gap or change: ' +
       "collection, conversion, or comparison left a finding. This does not establish runtime unreachability or verification failure.</div>";
     el("detail").innerHTML = h;
+    renderMissingEditor(f,item.pos);
     document
       .querySelectorAll(".lab")
       .forEach((x) => x.classList.toggle("on", x.dataset.id === id));

@@ -336,6 +336,23 @@ function checkFresh(output) {
   console.log("Snapshot fingerprints match. This is not proof verification.");
 }
 
+// These are possible attachment sites, not obligations inferred by this reader.
+// The existing source adapter and verifier decide which claims are required.
+function missingClaimSites(node, f) {
+  const sites=[];
+  const walk=n=> {
+    if(ts.isFunctionDeclaration(n)||ts.isTypeNode(n))return;
+    const pos=[n.getStart(),n.end];
+    if(ts.isStatement(n) && !ts.isBlock(n) && !f.entries.some(e=>e.pos[0]===pos[0]))
+      sites.push({kind:"environment",pos,syntax:ts.isVariableStatement(n)?"VariableStatement":ts.SyntaxKind[n.kind]});
+    if(ts.isExpressionNode(n) && !f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1]))
+      sites.push({kind:"expression",pos,syntax:ts.SyntaxKind[n.kind]});
+    ts.forEachChild(n,walk);
+  };
+  if(node.body) walk(node.body);
+  return sites.sort((a,b)=>a.pos[0]-b.pos[0]||a.pos[1]-b.pos[1]);
+}
+
 function main(args) {
   if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
   const sourcePath=args.shift(), options={format:"skjs",depth:10};
@@ -388,7 +405,8 @@ function main(args) {
     ...(comparison?{baselinePath:path.resolve(options.baseline),comparison}:{}),
     gaps:coverage(source,report),
     functions:report.functions.map((f,i)=>({id:`f${i}`,...f,
-      pos:(node=>[node.getStart(),node.end])(functionNodes.find(n=>n.name?.getStart()===f.namePos[0])),
+      ...((node)=>({pos:[node.getStart(),node.end],missingSites:missingClaimSites(node,f)}))(
+        functionNodes.find(n=>n.name?.getStart()===f.namePos[0])),
       entries:f.entries.map((e,j)=>({id:`f${i}e${j}`,...e})),
       expressions:f.expressions.map((e,j)=>({id:`f${i}x${j}`,...e}))})),
     results:results ? results.map((r,i)=>({function:`f${i}`,...r})) : results};

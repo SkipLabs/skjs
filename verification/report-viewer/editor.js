@@ -30,6 +30,7 @@ function renderCandidateStatus(message) {
     (changed
       ? "Manual candidate; original producer claims retained."
       : "Original claims. Select an expression or environment to edit its encoding.");
+  el("add-claim").disabled = candidateState.running;
   el("verify-candidate").disabled = candidateState.running;
   el("restore-candidate").disabled = candidateState.running;
 }
@@ -38,9 +39,13 @@ function renderEditor(fn, item) {
   let current, original;
   try {
     current = claimValue(candidateState.candidate, fn, item);
-    original = claimValue(candidateState.original, fn, item);
   } catch {
     return;
+  }
+  try {
+    original = claimValue(candidateState.original, fn, item);
+  } catch {
+    original = undefined;
   }
   const editor = document.createElement("details");
   const summary = document.createElement("summary");
@@ -60,7 +65,10 @@ function renderEditor(fn, item) {
   label.textContent = "Original producer claim";
   const raw = document.createElement("pre");
   raw.className = "raw";
-  raw.textContent = JSON.stringify(original, null, 2);
+  raw.textContent =
+    original === undefined
+      ? "No original claim at this site; this claim was added manually."
+      : JSON.stringify(original, null, 2);
   before.append(label, raw);
   editor.append(before);
   const apply = document.createElement("button");
@@ -161,11 +169,18 @@ async function checkCandidate(verify) {
     );
   } finally {
     candidateState.running = false;
+    el("add-claim").disabled = false;
     el("verify-candidate").disabled = false;
     el("restore-candidate").disabled = false;
   }
 }
 function initializeCandidateEditor() {
+  el("add-claim").addEventListener("click", () => {
+    if (!state.report) return;
+    el("detail").replaceChildren();
+    renderMissingEditor(state.report.functions[state.fn]);
+    el("inspector").scrollIntoView({ block: "nearest" });
+  });
   el("verify-candidate").addEventListener("click", () => checkCandidate(true));
   el("restore-candidate").addEventListener("click", async () => {
     candidateState.candidate = structuredClone(candidateState.original);
@@ -195,4 +210,80 @@ function initializeCandidateEditor() {
       "Candidate bundle exported; original claims included. Source unchanged.",
     );
   });
+}
+
+function renderMissingEditor(fn, region) {
+  if (!candidateState.candidate || candidateState.running) return;
+  const sites = (fn.missingSites || []).filter(
+    (s) => !region || (s.pos[0] >= region[0] && s.pos[1] <= region[1]),
+  );
+  const box = document.createElement("section");
+  const title = document.createElement("h3");
+  title.textContent = "Add a missing claim";
+  box.append(title);
+  if (!sites.length) {
+    const note = document.createElement("p");
+    note.textContent =
+      "No missing attachment sites listed here. Adding an entire function candidate is not supported.";
+    box.append(note);
+    el("detail").append(box);
+    return;
+  }
+  const note = document.createElement("p");
+  note.textContent =
+    "These are source attachment sites, not necessarily required proof obligations. Supply a type or entry binding array; no type is inferred for you.";
+  box.append(note);
+  const selectSite = document.createElement("select");
+  selectSite.setAttribute("aria-label", "Missing claim site");
+  const source = state.report.source,
+    starts = lineStarts(source);
+  for (const [i, site] of sites.entries()) {
+    const option = document.createElement("option");
+    option.value = i;
+    option.textContent = `${site.kind} · line ${lineAt(starts, site.pos[0]) + 1} · ${source
+      .slice(...site.pos)
+      .replace(/\s+/g, " ")
+      .slice(0, 80)}`;
+    selectSite.append(option);
+  }
+  const preview = document.createElement("pre");
+  preview.className = "raw";
+  const textarea = document.createElement("textarea");
+  textarea.rows = 8;
+  textarea.setAttribute("aria-label", "New claim JSON");
+  const show = () => {
+    preview.textContent = source.slice(...sites[+selectSite.value].pos);
+    textarea.value = "";
+    textarea.placeholder =
+      sites[+selectSite.value].kind === "environment"
+        ? "Array of {name, type} bindings"
+        : "Type encoding in the candidate format";
+  };
+  selectSite.addEventListener("change", show);
+  show();
+  const apply = document.createElement("button");
+  apply.textContent = "Add candidate claim";
+  const error = document.createElement("div");
+  error.setAttribute("role", "status");
+  apply.addEventListener("click", async () => {
+    try {
+      if (candidateState.running)
+        throw new Error("Wait for the running check to finish");
+      const site = sites[+selectSite.value];
+      candidateState.candidate = addClaim(
+        candidateState.candidate,
+        fn,
+        site,
+        JSON.parse(textarea.value),
+      );
+      candidateState.revision++;
+      state.selected = { ...site };
+      invalidateCandidate();
+      await checkCandidate(false);
+    } catch (e) {
+      error.textContent = e.message;
+    }
+  });
+  box.append(selectSite, preview, textarea, apply, error);
+  el("detail").append(box);
 }
