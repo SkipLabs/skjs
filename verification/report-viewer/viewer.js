@@ -716,12 +716,37 @@ function obligationHtml(view) {
     view.kind === "edge-coverage"
       ? "<tr><th>slot</th><th>carried here</th><th>required there</th></tr>"
       : "<tr><th>slot</th><th>available</th></tr>";
+  // Current-content facts sit in their own table: a slot's contract and what it
+  // holds right now are different statements, and the contracts can agree while
+  // these do not. Highlighted only when they are the remaining difference.
+  const knowledge = view.knowledge?.length
+    ? '<div class="slotwrap"><table class="slots">' +
+      "<tr><th>slot</th><th>" +
+      (view.kind === "edge-coverage"
+        ? "current contents required there"
+        : "current contents required here") +
+      "</th></tr>" +
+      view.knowledge
+        .map(
+          (row) =>
+            '<tr class="' +
+            (view.knowledgeIsTheDifference ? "differs" : "") +
+            '"><td>slot ' +
+            row.slot +
+            "</td><td>" +
+            esc(row.what) +
+            "</td></tr>",
+        )
+        .join("") +
+      "</table></div>"
+    : "";
   return (
     '<div class="obligation">' +
     '<div class="slotwrap"><table class="slots">' +
     head +
     rows +
     "</table></div>" +
+    knowledge +
     (view.conclusion
       ? '<dl class="kv"><dt>must establish</dt><dd>' +
         esc(view.conclusion) +

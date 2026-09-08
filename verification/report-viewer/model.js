@@ -329,6 +329,13 @@ function fromBundle(bundle) {
     const result = m.results?.find((r) => r.function === f.id);
     const location = result?.location;
     if (f.status !== "not-established" || !location) continue;
+    // Where a location does not land on a claim, the record's own environment
+    // offset says which statement entry it belongs to.
+    const entryStart = (result, location) =>
+      result.obligation?.destination?.origin?.environmentStart ??
+      result.obligation?.source?.origin?.environmentStart ??
+      location.start ??
+      (Array.isArray(location.pos) ? location.pos[0] : undefined);
     const samePos = (x) =>
       location.pos !== undefined &&
       JSON.stringify(x.pos) === JSON.stringify(location.pos);
@@ -354,7 +361,11 @@ function fromBundle(bundle) {
                   "edge-obligation",
                   "source-limitation",
                 ].includes(location.kind)
-              ? f.exprs.find(samePos)
+              ? // A span names an expression claim when there is one. An edge
+                // into a statement checkpoint has none: its destination is the
+                // entry, which the record names.
+                f.exprs.find(samePos) ||
+                f.entries.find((e) => e.pos[0] === entryStart(result, location))
               : null;
     if (failed) {
       failed.failure =
@@ -364,7 +375,14 @@ function fromBundle(bundle) {
       failed.failureStage = result.stage || "";
       // Which obligation stopped here — a return contract at a return statement
       // is not the expression's own claim, even though they share a span.
+      // For an edge, the role that describes where this attached is the
+      // destination's; `source` describes the other end.
+      const destination = result.obligation?.destination?.origin;
       failed.failureRole =
+        (destination &&
+        destination.environmentStart === failed.pos?.[0]
+          ? destination.role
+          : "") ||
         result.obligation?.source?.origin?.role ||
         result.obligation?.origin?.role ||
         "";

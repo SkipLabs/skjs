@@ -34,6 +34,10 @@ const ROLE = {
     title: "Closure result",
     what: "The closure body had to establish the result its contract declares. The span may be the whole lambda rather than its body.",
   },
+  "heap-observation": {
+    title: "Current-content assertion",
+    what: "The cell facts asserted at this statement had to follow from the incoming edge. Every statement entry is a full local interface: only what is claimed there crosses it.",
+  },
   "tag-dispatch": {
     title: "Tag dispatch",
     what: "This obligation comes from a tag test. What follows had to hold under the branch that test selects, read together with the observation rather than as plain subtyping.",
@@ -98,6 +102,35 @@ function typeText(types, labels, depth = 3) {
     .join(" | ");
 }
 
+/* ---------- current-content requirements ---------- */
+// A slot's type is its standing contract; knowledge is a statement about the
+// heap as it is at this point. Two ends can agree on every contract and still
+// differ here, so these facts are shown in their own right rather than folded
+// into the slot table. See ../OBLIGATION-DIAGNOSTICS.md.
+const LITERAL = { nul: "null", tru: "true", fls: "false" };
+const contentsText = (contents) =>
+  !Array.isArray(contents) || !contents.length
+    ? "never"
+    : contents.map((l) => LITERAL[l] || String(l)).join(" | ");
+
+function knowledgeRows(knowledge) {
+  if (!knowledge) return [];
+  const rows = [];
+  for (const f of knowledge.cells || [])
+    rows.push({ slot: f.slot, what: "cell holds " + contentsText(f.contents) });
+  for (const f of knowledge.values || [])
+    rows.push({ slot: f.slot, what: "value is " + contentsText(f.contents) });
+  // A link relates two slots, so it is listed against the slot it constrains.
+  for (const g of knowledge.links || [])
+    rows.push({
+      slot: g.value,
+      what: g.alias
+        ? "same value as slot " + g.cell
+        : "read of the cell in slot " + g.cell,
+    });
+  return rows;
+}
+
 // Terms are shown technically: this is the calculus's own encoding, and naming
 // it after a source construct would be a guess.
 function termText(term) {
@@ -119,7 +152,14 @@ function mapContext(available, mapping) {
 function obligationView(ob) {
   if (!ob || ob.version !== OBLIGATION_VERSION) return null;
   const types = ob.types || [];
-  const origin = ob.source?.origin || ob.origin || null;
+  // An edge fails at what its destination required, so a destination role that
+  // names something specific describes it. A generic destination leaves the
+  // source end to describe it, which is where a dispatch role sits.
+  const specific = (o) => o && o.role && o.role !== "node-typing";
+  const origin =
+    ob.kind === "edge-coverage" && specific(ob.destination?.origin)
+      ? ob.destination.origin
+      : ob.source?.origin || ob.origin || null;
   const role = roleView(origin?.role);
   const view = {
     kind: ob.kind,
@@ -139,6 +179,10 @@ function obligationView(ob) {
     endpoints: [],
     observation: null,
     note: "",
+    // What the failing end required of the heap as it is, and whether that is
+    // all that separates the two ends.
+    knowledge: [],
+    knowledgeIsTheDifference: false,
   };
 
   if (ob.kind === "edge-coverage") {
@@ -178,10 +222,19 @@ function obligationView(ob) {
         " on slot " +
         (tag.slot ?? 0) +
         ". That is the edge's premise, not a claim that execution took it.";
+    view.knowledge = knowledgeRows(ob.destination?.requiredKnowledge);
+    const differing = view.rows.find((r) => r.differs);
+    // Nothing here says which end is at fault; it says where the two ends stop
+    // agreeing, which is all the record supports.
+    view.knowledgeIsTheDifference = !differing && view.knowledge.length > 0;
     view.note =
-      "Slot " +
-      (view.rows.find((r) => r.differs)?.slot ?? "—") +
-      " is where the available context and the destination's claim differ." +
+      (differing
+        ? "Slot " +
+          differing.slot +
+          " is where the available context and the destination's claim differ."
+        : view.knowledgeIsTheDifference
+          ? "Every slot's contract already agrees. What this edge had to establish beyond them is the current-content requirement above."
+          : "The available context and the destination's claim agree on every slot.") +
       (ob.edgeIndex === undefined
         ? ""
         : " Both branch edges can share a destination; this is edge " +
@@ -203,6 +256,8 @@ function obligationView(ob) {
   }));
   view.term = termText(sequent.term);
   view.conclusion = typeText(types, sequent.type);
+  // A node obligation records its own required facts, when it has any.
+  view.knowledge = knowledgeRows(ob.source?.requiredKnowledge);
   return view;
 }
 
@@ -211,6 +266,8 @@ function obligationView(ob) {
     typeText,
     clauseText,
     termText,
+    contentsText,
+    knowledgeRows,
     mapContext,
     obligationView,
     roleView,

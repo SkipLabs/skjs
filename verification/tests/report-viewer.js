@@ -736,6 +736,66 @@ const ob = require("../report-viewer/obligation.js");
       ["to", [20, 24]],
     ],
   );
+  // An edge into a statement checkpoint has no expression claim at its span: it
+  // is described by what its destination required, and attaches to that entry.
+  const checkpoint = structuredClone(record);
+  checkpoint.source.origin = { pos: [1, 5], role: "binding-annotation" };
+  checkpoint.destination.origin = {
+    pos: [10, 20],
+    environmentStart: 10,
+    role: "heap-observation",
+  };
+  const checkpointView = ob.obligationView(checkpoint);
+  assert.equal(checkpointView.title, "Current-content assertion");
+  assert.equal(checkpointView.environmentStart, 10);
+  assert.deepEqual(
+    checkpointView.endpoints.map((e) => e.origin.pos),
+    [
+      [1, 5],
+      [10, 20],
+    ],
+  );
+  // Two ends can agree on every contract and still differ on what the heap
+  // holds. Without the required facts the table looks unanimous, so they are
+  // shown, and named as the remaining difference only when they are one.
+  assert.deepEqual(checkpointView.knowledge, []);
+  const observed = structuredClone(checkpoint);
+  observed.transfer.available = observed.destination.claim.context;
+  observed.transfer.target.mapping = null;
+  observed.destination.requiredKnowledge = {
+    cells: [{ slot: 1, contents: ["tru"] }],
+    values: [{ slot: 0, contents: ["nul", "fls"] }],
+    links: [{ cell: 1, value: 0, alias: false }],
+  };
+  const observedView = ob.obligationView(observed);
+  assert.equal(
+    observedView.rows.every((r) => !r.differs),
+    true,
+  );
+  assert.deepEqual(
+    observedView.knowledge.map((r) => [r.slot, r.what]),
+    [
+      [1, "cell holds true"],
+      [0, "value is null | false"],
+      [0, "read of the cell in slot 1"],
+    ],
+  );
+  assert.equal(observedView.knowledgeIsTheDifference, true);
+  assert.match(observedView.note, /Every slot's contract already agrees/);
+  // A differing contract is still reported as the difference it is.
+  const both = structuredClone(observed);
+  both.transfer.available = [[2], [0]];
+  const bothView = ob.obligationView(both);
+  assert.equal(bothView.knowledgeIsTheDifference, false);
+  assert.match(bothView.note, /Slot 0 is where/);
+  assert.equal(bothView.knowledge.length, 3);
+  // An alias link reads as an equality between slots, not as a heap read.
+  assert.equal(
+    ob.knowledgeRows({ links: [{ cell: 3, value: 2, alias: true }] })[0].what,
+    "same value as slot 3",
+  );
+  assert.equal(ob.contentsText([]), "never");
+
   // Tag dispatch observes the same slot, and reads the same way.
   const tagged = structuredClone(record);
   delete tagged.transfer.booleanObservation;
