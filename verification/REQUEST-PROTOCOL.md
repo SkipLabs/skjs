@@ -220,7 +220,7 @@ verification/run.sh --build --suite stateful-source
 
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
-loops, mutable declarations and closure blocks with local statements or branches
+loops, mutable declarations and closure blocks with branches
 are not connected yet; their raw request tests remain calculus tests.
 
 ## Record-contract export boundary
@@ -331,8 +331,19 @@ exactly one `return e;` is supported too. The AST represents its body as
 exported environment, whose bindings must each be justified by a variable typing
 proof under the captured context and parameter. The expression is checked using
 that supplied environment, including when it forgets precision. Missing entry
-claims and unjustified types on unused bindings are rejected. Blocks with local
-statements or branches, and shadowing parameters, remain gated.
+claims and unjustified types on unused bindings are rejected. Straight-line
+blocks may precede that return with initialized consts or expression statements. These use `letBody` nodes with `pos`, `name`, `annot`, `init` and `body`;
+an empty name denotes a discarded effect result. The consumer reconstructs
+statement-entry and annotation obligations, retaining initializer precision in
+the bound slot. Anonymous effect slots retain their types independently of the
+export's named environment. Branching blocks and shadowing locals remain gated.
+
+For closure expressions the producer follows explicit proof recipes, retaining
+the initializer's claimed type at each source let and choosing known types for
+administrative temporaries. Context changes become explicit variable coercions.
+Only subtype obligations still require search. It can reuse an already produced
+supplemental proof with an exact matching root judgment in the graph certificate.
+The independent consumer and source bundle format are unchanged.
 
 Source bundle version 3 carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and

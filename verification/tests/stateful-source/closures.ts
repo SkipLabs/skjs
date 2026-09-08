@@ -52,3 +52,13 @@ function blockReader(): boolean {
   cell.value = false;
   return read(null);
 }
+
+function localBlock(): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    const cell: { value: boolean } = { value: true };
+    const saved: boolean = false;
+    cell.value = saved;
+    return cell.value;
+  };
+  return run(null);
+}

@@ -71,11 +71,12 @@ try {
     expect(`${name} internal claim`,run("--produce-stateful-source",a,c),false);
     expect(`${name} internal claim (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
-  // A failed composite search can be expensive; consumer rejection requires no search.
+  // Direct construction must reject the false composite claim without speculative search.
   {
     const c=clone(claims),f=ast.functions.find(f=>f.name==="writingBody");
     const e=f.body[1].init.body,fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="writingBody");
     fc.exprs.find(q=>q.pos[0]===e.pos[0] && q.pos[1]===e.pos[1]).type=lit("true");
+    expect("composite write result claim",run("--produce-stateful-source",ast,c),false);
     expect("composite write result claim (consumer)",run("--check-stateful-source",ast,c,evidence),false);
   }
   for (const [name,edit] of [
@@ -89,9 +90,21 @@ try {
     expect(name,run("--produce-stateful-source",ast,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",ast,c,evidence),false);
   }
+  for (const [name,edit] of [
+    ["missing local statement claim", (a,fc)=>{const p=a.body[0].init.body.body.pos;fc.envs=fc.envs.filter(q=>q.pos[0]!==p[0]);}],
+    ["wrong local annotation", a=>{a.body[0].init.body.body.annot=lit("true");}],
+    ["shadowing local gated", a=>{a.body[0].init.body.body.name="cell";}],
+    ["unjustified local entry", (a,fc)=>{const p=a.body[0].init.body.body.body.pos;fc.envs.find(q=>q.pos[0]===p[0]).vars.find(v=>v.name==="saved").type=lit("true");}],
+  ]) {
+    const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="localBlock");
+    const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="localBlock");
+    edit(f,fc);
+    expect(name,run("--produce-stateful-source",a,c),false);
+    expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
+  }
   const parser=path.resolve(__dirname,"../tools/parse-source.js");
   for(const [name,closure] of [
-    ["multi-statement closure gated","(u: null): boolean => { const x = true; return x; }"],
+    ["branching closure gated","(u: null): boolean => { if (true) { return true; } else { return false; } }"],
     ["async closure gated","async (u: null): Promise<boolean> => true"],
     ["optional closure parameter gated","(u?: null): boolean => true"],
     ["generic closure gated","<T>(u: T): T => u"],

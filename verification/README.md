@@ -85,9 +85,10 @@ Boolean singleton claims are translated exactly, including refinements from
 direct Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
 commands and limitations. Closures currently have one null argument and a
 primitive result; expression bodies compose literals, variables, cell operations
-and calls. Single-return blocks are supported with checked statement environments.
+and calls. Straight-line blocks support local consts, effects and a final return,
+with checked statement environments.
 Every internal claim has a separately checked typing proof. Source loops, mutable
-variable bindings and blocks with local statements or branches remain unconnected.
+variable bindings and blocks with branches remain unconnected.
 
 ## What runs
 

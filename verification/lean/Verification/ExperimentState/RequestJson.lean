@@ -137,10 +137,12 @@ theorem verifyJson_checked {request evidence : Json}
 
 /-- Produce and serialize, then pass through the same independent JSON consumer.
 Fuel bounds search only; it is not part of the certified request. -/
-def produceJson (request : Json) (fuel : Nat) : Except String Json := do
+def produceJson (request : Json) (fuel : Nat)
+    (suggestions : List (ProgramCertificates.Sequent Nat) := [])
+    (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
   let r ← decodeRequest request
   let C ← match produce (graph r) (List.range r.types.length) fuel
-      r.result r.program r.claims r.start [] r.inputs with
+      r.result r.program r.claims r.start [] r.inputs suggestions known with
     | .ok c => pure c
     | .error e => throw s!"evidence search failed (unsupported or unjustified): {reprStr e}"
   let response := toJson (Response.mk 2 C)

@@ -459,9 +459,30 @@ This checks unused claimed bindings too, and permits justified weakening.
 The wrapper introduces no execution step; a graph-equality regression ties the
 block form to the existing captured-read execution trace.
 
-Blocks with local statements or branches remain gated. They need statement
-claims and a call/body interface for graph execution; they must not be supported
-by duplicating graph continuations or dropping internal claims. Binding identities must become
+Straight-line blocks also support initialized `const` declarations and expression
+statements before the final return. Each statement entry uses the same checked
+environment obligations. Local annotations are separate obligations; bindings
+retain the initializer's claimed precision. Sequential composition uses the
+existing let rule, with one occurrence of the continuation. Effect results occupy
+anonymous slots, preserved at their established types across subsequent named
+statement environments. An execution regression checks a saved local, a write,
+and a final read across these slots.
+
+Source extraction now retains an untrusted proof recipe for each closure
+expression and administrative let. The initializer's claim fixes a source let's
+intermediate type. `DirectProof.render` follows that structure, adapting variable
+leaves to the actual context through explicit subtype coercions. It does not
+search alternative intermediate types or import the recipe's claimed context as
+an assumption. Subtype obligations still use the ordinary subtype producer.
+
+Supplemental obligations are proved first. Exact matching root proofs are reused
+when producing the graph certificate; the ordinary consumer checks them again.
+Recipes do not appear in the wire protocol or change the calculus's rules.
+Raw calculus requests retain the general search producer. Measurements and
+reproduction instructions are in [the direct-proof benchmark](benchmarks/direct-proof.md).
+Blocks with branches remain gated. They need a call/body interface that preserves
+shared continuations; duplicating branches or dropping internal claims would
+not implement that interface. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Source loops also remain
 unconnected; their raw-calculus tests do not establish source integration.
 

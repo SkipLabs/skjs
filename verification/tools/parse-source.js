@@ -149,10 +149,18 @@ function expr(node) {
         fail(p, "expected a required closure parameter");
       let body;
       if (ts.isBlock(node.body)) {
-        const stmts = node.body.statements;
-        if (stmts.length !== 1 || !ts.isReturnStatement(stmts[0]) || !stmts[0].expression)
-          fail(node.body, "closure block must contain exactly one return expression");
-        body = {k:"returnBody",pos:span(stmts[0]),e:expr(stmts[0].expression)};
+        const stmts = node.body.statements.map(stmt);
+        const last = stmts.at(-1);
+        if (!last || last.k !== "return") fail(node.body, "closure block must end in return");
+        body = {k:"returnBody",pos:last.pos,e:last.e};
+        for (let i = stmts.length - 2; i >= 0; --i) {
+          const st = stmts[i];
+          if (st.k !== "const" && st.k !== "effect")
+            fail(node.body, "closure block currently supports only consts, effects and a final return");
+          body = {k:"letBody",pos:st.pos,name:st.k === "const" ? st.name : "",
+            annot:st.k === "const" ? st.annot : null,
+            init:st.k === "const" ? st.init : st.e,body};
+        }
       } else {
         body = expr(node.body);
       }

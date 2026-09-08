@@ -1,4 +1,5 @@
 import Verification.ExperimentState.RequestJson
+import Verification.ExperimentState.DirectProof
 
 /-! Exact, independently checked expression sequents. These supplement the
 whole-program certificate when source expressions occur inside lambda bodies.
@@ -9,6 +10,7 @@ open ProgramTyping ProgramCertificates PositiveRules PositiveGraphs PositiveNorm
 structure Required where
   pos : Nat × Nat
   sequent : Sequent Nat
+  plan : Option DirectProof.Plan := none
 
 def check (G : NormalGraph Nat) (bound : Nat) (j : Sequent Nat) (e : Evidence Nat) : Bool :=
   validEvidence bound e && decide (claim e = j) &&
@@ -36,7 +38,10 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
   let es ← rs.mapM fun r => do
     let j := r.sequent
-    let some e := CertificateProducer.expression G pool fuel j.context j.term j.type
+    let candidate := match r.plan with
+      | some plan => DirectProof.render G pool j.context plan
+      | none => CertificateProducer.expressionWith G pool (rs.map (·.sequent)) fuel j.context j.term j.type
+    let some e := candidate
       | throw s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
     return e
   if checkAll G bound rs es then return es

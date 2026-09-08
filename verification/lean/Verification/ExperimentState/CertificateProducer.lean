@@ -99,13 +99,16 @@ instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool
     Decidable (Answers G B tag q) := by unfold Answers; infer_instance
 
 /-- Search ordinary typing rules. Every recursive expression request decreases
-search fuel, including implicit let typing. No execution budget is inspected. -/
-def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
+search fuel, including implicit let typing. Suggestions only prioritize candidate
+types; every premise is proved in the actual context, even when the suggestion
+came from a different context. No execution budget is inspected. -/
+def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
+    (suggestions : List (Sequent ι)) :
     Nat → List (Ty ι) → Tm → Ty ι → Option (ProgramCertificates.Evidence ι)
   | 0, _, _, _ => none
   | fuel+1, Γ, t, A => Id.run do
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
-    let recur := expression G pool fuel
+    let recur := expressionWith G pool suggestions fuel
     match t with
     | .var i => return (Γ[i]?).bind fun B => coerce G pool (leaf B .var) A
     | .nul | .tru | .fls =>
@@ -121,7 +124,13 @@ def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
         coerce G pool (.node ⟨Γ,t,F⟩ .lam ps) A
     | .app f a =>
       if let .lam b := f then
-        if let some e := pool.findSome? (fun B => do
+        let exactTypes := suggestions.reverse.filterMap fun j =>
+          if j.context == Γ && j.term == a then some j.type else none
+        let termTypes := suggestions.reverse.filterMap fun j =>
+          if j.term == a then some j.type else none
+        let variableType := match a with | .var i => (Γ[i]?).toList | _ => []
+        let preferred := variableType ++ exactTypes ++ termTypes
+        if let some e := (preferred ++ pool).eraseDups.findSome? (fun B => do
           let ea ← recur Γ a B
           let eb ← recur (B :: Γ) b A
           return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb]) then return some e
@@ -160,6 +169,10 @@ def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :
         return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
       return none
     | _ => return none
+
+/-- Raw calculus callers need not supply source-derived search suggestions. -/
+def expression [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι)) :=
+  expressionWith G pool []
 
 /-- Gather graph labels, recursive operands and supplied union types. Hints may
 add intermediate types; they cannot change claims or bypass evidence checking. -/
@@ -204,12 +217,15 @@ def branchEdge [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
 
 
 def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
-    (fuel : Nat) (P : Program) (claims : List (PointClaim ι)) :
+    (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
+    (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := []) :
     Except Failure (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
   P.zipIdx |>.mapM fun (node, l) => do
     let some c := claims[l]? | throw .claimCount
-    let some e := expression G pool fuel c.context node.expression c.type | throw (.expression l)
+    let cached := known.find? fun e => claim e == ⟨c.context,node.expression,c.type⟩
+    let candidate := cached.orElse fun _ => expressionWith G pool suggestions fuel c.context node.expression c.type
+    let some e := candidate | throw (.expression l)
     let target := fun Γ t => match edge G pool claims Γ t with
       | some p => Except.ok p
       | none => Except.error (Failure.edge l t.label)
@@ -228,13 +244,14 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
-    (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := []) : Except Failure (ControlFlow.Certificate ι) :=
-  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims with
+    (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
+    (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := []) : Except Failure (ControlFlow.Certificate ι) :=
+  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known with
   | .error e => .error e
   | .ok C => if accept G R P claims C start inputs then .ok C else .error .rejected
 
-theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs C}
-    (h : produce G labels fuel R P claims start hints inputs = .ok C) :
+theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known C}
+    (h : produce G labels fuel R P claims start hints inputs suggestions known = .ok C) :
     accept G R P claims C start inputs = true := by
   unfold produce at h
   split at h

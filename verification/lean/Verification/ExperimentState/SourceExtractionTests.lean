@@ -343,4 +343,75 @@ private def blockObligations (unitTy : Json) : Except String Unit := do
 #guard !ok (blockObligations t)
 #guard !ok (extractFn blockCaptureFn captureClaims)
 
+private def localWriterFn : SourceInput.Fn :=
+  { writerFn with body := writerFn.body.map fun st => match st with
+    | .cst pos name annot (.lam lp param arg ret _) =>
+      .cst pos name annot (.lam lp param arg ret
+        (.letBody (30,31) "saved" (some (wireTy ⟨false,[.bool]⟩))
+          (.lit (32,33) (.vbool false))
+          (.letBody (34,35) "" none
+            (.write (36,39) (.var (36,37) "cell") (.var (38,39) "saved"))
+            (.atEnv (40,43) (.read (41,43) (.var (41,42) "cell"))))))
+    | st => st }
+private def localWriterClaims : SourceInput.Claims :=
+  let N := wireTy ⟨false,[.null]⟩
+  let B := wireTy ⟨false,[.bool]⟩
+  { writerClaims with
+    envs := writerClaims.envs ++
+      [(30,[("unit",N),("cell",cellWire)]),
+       (34,[("unit",N),("cell",cellWire),("saved",B)]),
+       (40,[("unit",N),("cell",cellWire),("saved",B)])]
+    exprs := writerClaims.exprs ++
+      [((32,33),b),((36,39),B),((36,37),cellWire),((38,39),B),
+       ((41,43),B),((41,42),cellWire)] }
+private def localWriterProgram : ControlFlow.Program :=
+  let write : Tm := .app (.lam (.app (.lam (.app (.lam (.var 1))
+    (.write (.var 1) (.var 0)))) (.var 1))) (.var 2)
+  writerProgram.set 5
+    ⟨.lam (.app (.lam (.app (.lam (.read (.var 3))) write)) .fls),.bind 4⟩
+#guard is ((extractFn localWriterFn localWriterClaims).map (·.program)) localWriterProgram
+
+/-- A saved local is used by the write and survives the anonymous effect slot. -/
+theorem local_writer_trace : ControlFlow.Execution localWriterProgram 29 []
+    (.at 9 (fun _ => .nul)) [.fls] (.done .fls) := by
+  repeat first
+    | exact ControlFlow.Execution.refl
+    | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.beta rfl))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.beta rfl)))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.writeV rfl (by decide)))))
+    | apply ControlFlow.Execution.next (.expr (.readV rfl))
+    | apply ControlFlow.Execution.next (.bind rfl)
+    | apply ControlFlow.Execution.next (.effect rfl)
+    | apply ControlFlow.Execution.next (.ret rfl)
+
+#print axioms local_writer_trace
+
+-- A suggested intermediate type cannot turn false into true.
+#guard !(CertificateProducer.expressionWith SourceTypes.graph [[1],[2],[1,2]]
+  [⟨[],.fls,[1]⟩] 4 [] (.app (.lam (.var 0)) .fls) [1]).isSome
+
+-- Direct recipes preserve supplied types while rebuilding proofs in the actual context.
+private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
+#guard ((DirectProof.render SourceTypes.graph [[1],[2],[1,2]] [[2]] widenedVariable).map
+  (fun e => ProgramCertificates.checkTree SourceTypes.graph e)) == some true
+#guard !(DirectProof.render SourceTypes.graph [[1],[2],[1,2]] [[2]]
+  (DirectProof.var [[1]] 0 [1])).isSome
+
+-- All supported closure obligations now have recipes and require no expression-search fuel.
+#guard ok (do
+  let r ← extractFn localWriterFn localWriterClaims
+  if r.obligations.any (fun q => q.plan.isNone) then throw "missing recipe"
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    (List.range 19) 19 0 r.obligations
+  pure ())
+
+-- A forged recipe or reused certificate is still rejected by the ordinary checker.
+private def forged : ProgramCertificates.Evidence Nat :=
+  .node ⟨[],.fls,[1]⟩ .truLit []
+#guard !ok (RequestJson.produceJson (toJson (request .fls [1])) 4 [] [forged])
+#guard !ok (ExpressionClaims.produce SourceTypes.graph [0,1,2] 19 4
+  [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit)⟩])
+
 end Verification.ExperimentState.SourceExtractionTests

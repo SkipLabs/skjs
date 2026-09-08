@@ -47,44 +47,85 @@ private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
   set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations)
   return ⟨s.program.length, none⟩
 
+/-- Statement claims name source bindings only. Preserve anonymous evaluation
+slots at their already checked types while projecting the supplied named slots. -/
+private def closureEnv (fc : Claims) (pos : Nat) (scope : List String)
+    (Γ : List (Ty Nat)) : Except String (List (Ty Nat)) := do
+  let names := scope.filter (· != "")
+  let H ← env fc pos names
+  (scope.zipIdx).mapM fun (name,i) => do
+    let A := if name == "" then Γ[i]? else H[names.idxOf name]?
+    match A with
+    | some A => pure A
+    | none => throw "internal closure slot mismatch"
+
 /-- Lower expressions inside lambda bodies without losing their individual
 claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
-    (e : SourceInput.Expr) : Compiler Tm := do
+    (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
   let A ← exprType fc e
-  let t ← match e with
+  let p ← match e with
   | .var _ name =>
     match scope.idxOf? name with
-    | some i => pure (.var i)
+    | some i => pure (DirectProof.var Γ i A)
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
-  | .lit _ v => SourceTypes.value v
+  | .lit _ v => do
+    let t ← SourceTypes.value v
+    let (B,r) ← match t with
+      | .nul => pure ([0],ProgramCertificates.Rule.nul)
+      | .tru => pure ([1],ProgramCertificates.Rule.truLit)
+      | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
+      | _ => throw "unsupported closure literal"
+    pure (DirectProof.node Γ t B r)
   | .alloc _ a => do
+    let [.refs B []] := PositiveRules.expand SourceTypes.graph A
+      | throw "allocation claim must name a cell contract"
     let a ← closureExpr fc scope Γ a
-    pure (.alloc a)
+    pure (DirectProof.node Γ (.alloc a.term) A .alloc [DirectProof.cast Γ B a])
   | .read _ a => do
     let a ← closureExpr fc scope Γ a
-    pure (.read a)
+    let [.refs B []] := PositiveRules.expand SourceTypes.graph a.type
+      | throw "read receiver must name a cell contract"
+    pure (DirectProof.node Γ (.read a.term) B .read [a])
   | .app _ f a => do
     let f ← closureExpr fc scope Γ f
     let a ← closureExpr fc scope Γ a
-    pure (.app f a)
+    let [.arrs [(D,R)]] := PositiveRules.expand SourceTypes.graph f.type
+      | throw "callee must name a unary source arrow"
+    pure (DirectProof.node Γ (.app f.term a.term) R .app [f,DirectProof.cast Γ D a])
   | .write _ receiver rhs => do
     let B ← exprType fc receiver
+    let [.refs D []] := PositiveRules.expand SourceTypes.graph B
+      | throw "write receiver must name a cell contract"
     let r ← closureExpr fc scope Γ receiver
     let a ← closureExpr fc (""::scope) (B::Γ) rhs
-    -- let receiver = r; let rhs = a; let ignored = write receiver rhs; rhs.
-    -- Compiling a under the extended scope avoids substituting open terms.
-    pure (.app (.lam (.app (.lam (.app (.lam (.var 1))
-      (.write (.var 1) (.var 0)))) a)) r)
-  | .atEnv pos body => do
-    let H ← env fc pos.1 scope
-    -- Every supplied entry binding must follow from the calling context.
-    -- The body is checked under H, even if its claims forget useful precision.
+    let C := a.type
+    let H := C::B::Γ
+    let write := DirectProof.node H (.write (.var 1) (.var 0)) [0] .write
+      [DirectProof.var H 1 B,DirectProof.cast H D (DirectProof.var H 0 C)]
+    let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 C)
+    pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) a done))
+  | .letBody pos name annot init body => do
+    if name != "" && scope.contains name then
+      throw "duplicate or shadowing closure local"
+    let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
-      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩⟩] }
-    let b ← closureExpr fc scope H body
-    pure b
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
+    let I ← exprType fc init
+    let B ← match annot with
+      | some ty => SourceInput.translate ty
+      | none => pure I
+    let a ← closureExpr fc scope H init
+    let annotation := DirectProof.cast H B a
+    modify fun s => { s with obligations := s.obligations ++ [⟨init.span,annotation.goal,some annotation⟩] }
+    let b ← closureExpr fc (name::scope) (I::H) body
+    pure (DirectProof.letE H a b)
+  | .atEnv pos body => do
+    let H ← closureEnv fc pos.1 scope Γ
+    for (B,i) in H.zipIdx do
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
+    closureExpr fc scope H body
   | .lam pos name arg ret body => do
     if scope.contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← SourceTypes.translate (← decodeTy arg)
@@ -92,10 +133,12 @@ private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
     let R ← SourceTypes.translate (← decodeTy ret)
     if A != [FunctionClaims.label R] then throw "closure signature claim differs from source annotations"
     let b ← closureExpr fc (name::scope) (D::Γ) body
-    modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨D::Γ,b,R⟩⟩] }
-    pure (.lam b)
-  modify fun s => { s with obligations := s.obligations ++ [⟨e.span,⟨Γ,t,A⟩⟩] }
-  return t
+    let annotation := DirectProof.cast (D::Γ) R b
+    modify fun s => { s with obligations := s.obligations ++ [⟨pos,annotation.goal,some annotation⟩] }
+    pure (DirectProof.node Γ (.lam b.term) A .lam [annotation])
+  let plan := DirectProof.cast Γ A p
+  modify fun s => { s with obligations := s.obligations ++ [⟨e.span,plan.goal,some plan⟩] }
+  return plan
 termination_by e
 
 /-- Each expression leaves its result in slot zero and preserves the original
@@ -118,10 +161,10 @@ private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
-  | .atEnv .. => throw "statement environment wrapper is only supported inside a closure"
+  | .atEnv .. | .letBody .. => throw "statement environment wrapper is only supported inside a closure"
   | .lam .. =>
     let t ← closureExpr fc scope Γ e
-    emit t (.bind next) Γ A
+    emit t.term (.bind next) Γ A
   | .app _ callee arg =>
     let B ← exprType fc callee
     let C ← exprType fc arg
@@ -282,11 +325,11 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except 
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except String Json := do
   let rs ← extract ast claims fileKey
-  let cs ← rs.mapM fun r => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel
-    decodeResponse r.toRequest j
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     (List.range r.types.length) r.types.length fuel r.obligations
+  let cs ← (rs.zip es).mapM fun (r,proofs) => do
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs
+    decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence
   return evidence
