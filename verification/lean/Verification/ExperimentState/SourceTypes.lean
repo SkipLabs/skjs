@@ -7,15 +7,20 @@ that current wire format in the stateful calculus, not an earlier evaluator. -/
 namespace Verification.ExperimentState.SourceTypes
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 
--- Source booleans use both singleton labels, so unions have a canonical form.
+-- Canonical subsets, indexed by null/true/false bits. Keep null-argument
+-- arrows first, so existing cell and null-arrow labels retain their meaning.
+def primitiveTypes : List (Ty Nat) :=
+  [[],[0],[1],[0,1],[2],[0,2],[1,2],[0,1,2]]
+
+def argumentTypes : List (Ty Nat) :=
+  [[0],[],[1],[0,1],[2],[0,2],[1,2],[0,1,2]]
+
 def types : List (List (Clause (List Nat))) :=
-  [[.nul], [.boolLit true], [.boolLit false],
-   [.refs [] []], [.refs [0] []], [.refs [1] []], [.refs [0,1] []],
-   [.refs [2] []], [.refs [0,2] []], [.refs [1,2] []], [.refs [0,1,2] []],
-   [.arrs [([0],[])]], [.arrs [([0],[0])]],
-   [.arrs [([0],[1])]], [.arrs [([0],[0,1])]],
-   [.arrs [([0],[2])]], [.arrs [([0],[0,2])]],
-   [.arrs [([0],[1,2])]], [.arrs [([0],[0,1,2])]]]
+  [[.nul], [.boolLit true], [.boolLit false]] ++
+  primitiveTypes.map (fun A => [.refs A []]) ++
+  argumentTypes.flatMap (fun D => primitiveTypes.map (fun R => [.arrs [(D,R)]]))
+#guard types.length == 75
+
 def graph : NormalGraph Nat := fun i => types[i]?.getD []
 
 def admits (t : Wire.Ty) (v : Wire.Val) : Bool := t.atoms.any (Wire.inhabits v)
@@ -48,7 +53,7 @@ theorem encode_meaning (t : Wire.Ty) (n W v) :
   rw [expand_sem]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;>
-    simp [encode, hn, ht, hf, expand, graph, types, semList, Tower.setSem, sem, nulT]
+    simp [encode, hn, ht, hf, expand, graph, types, primitiveTypes, argumentTypes, semList, Tower.setSem, sem, nulT]
 
 /-- Supported wire-value membership is preserved in both directions. -/
 theorem translate_exact {t : Wire.Ty} {A u v}

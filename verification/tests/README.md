@@ -8,6 +8,7 @@ its implementation in `lean/Verification/ExperimentState/`.
 | `stateful-source.js` / `stateful-source/basic.ts` | Real certificates, branches and shared continuations, exact singletons, source annotations, parameter contracts, incoming-edge refinements, missing/duplicate claims, lexical scope and input identities. |
 | `stateful-cells.js`, `stateful-closures.js` | Allocation, alias writes, reads, captures, returned closures, inner claims and corrupted certificates. |
 | `stateful-loops.js`, `stateful-loop-transfers.js` | Supplied loop invariants, back edges, nested scope, early returns, break and continue. |
+| `primitive-callbacks.js` | Primitive domains, contravariant call contracts, returned writers, a stale captured-refinement witness and a verified immutable-snapshot counterpart. |
 | `source-claims.js`, `source-claim-export.js` | Producer-independent claims, conversion fidelity and source association. |
 | `partial-claims.js` | Partial collections without recovery, optional keep-going quality and diagnostics. |
 | `annotated-source.js`, `report-viewer.js`, `candidate-editor.js` | Source-preserving display, failure locations and independent candidate repair. |

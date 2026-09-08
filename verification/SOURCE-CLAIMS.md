@@ -1,6 +1,6 @@
 # Producer-independent source sidecars
 
-The `stateful-source-19-v1` profile supplies types directly from the current
+The `stateful-source-75-v1` profile supplies types directly from the current
 calculus source graph. It contains no SKJS type atoms, inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
@@ -29,7 +29,7 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 ```json
 {
   "version": 1,
-  "profile": "stateful-source-19-v1",
+  "profile": "stateful-source-75-v1",
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
   "functions": [{
@@ -45,6 +45,10 @@ identity, SHA-256 digest and UTF-16 source positions before use:
   }]
 }
 ```
+
+This profile replaces `stateful-source-19-v1`; regenerate older sidecars. Labels
+0–18 retain their meaning, but the profile now includes all 64 arrows between
+primitive subsets. It does not add arbitrary higher-order function contracts.
 
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
@@ -62,7 +66,7 @@ union; `[]` denotes `never`, `[1,2]` denotes `boolean`, and `[0,1,2]` denotes
 | --- | --- |
 | `0`, `1`, `2` | `null`, `true`, `false`, respectively |
 | `3 + m`, for `0 ≤ m < 8` | `Ref<U(m)>`, an invariant plain cell contract |
-| `11 + m`, for `0 ≤ m < 8` | Unary arrow `null → U(m)` |
+| `11 + 8d + r`, for `0 ≤ d,r < 8` | Unary arrow `U(D[d]) → U(r)`, where `D = [1,0,2,3,4,5,6,7]` |
 
 `U(m)` is the union selected by the mask: bit 0 selects null, bit 1 true, and bit
 2 false. Thus label `9` is `Ref<boolean>` and label `17` is `null → boolean`.

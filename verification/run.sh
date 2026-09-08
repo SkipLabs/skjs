@@ -91,6 +91,17 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$CLOSURES" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
+  CALLBACKS="verification/tests/stateful-source/primitive-callbacks.ts"
+  COUNTEREXAMPLE="verification/tests/counterexamples/captured-refinement.ts"
+  for pair in "$CALLBACKS:callbacks" "$COUNTEREXAMPLE:counterexample"; do
+    source_file="${pair%:*}"; fixture="${pair##*:}"
+    if ! { node verification/tools/parse-source.js "$source_file" > "$WORK/$fixture.ast" &&
+           skjs_check "$source_file" > "$WORK/$fixture.claims"; } 2> "$WORK/$fixture.err"; then
+      echo "FAIL: callback fixture setup"; cat "$WORK/$fixture.err"; exit 1
+    fi
+  done
+  if ! node verification/tests/primitive-callbacks.js "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER" \
+       "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"; then exit 1; fi
   LOOPS="verification/tests/stateful-source/loops.ts"
   if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
          skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then

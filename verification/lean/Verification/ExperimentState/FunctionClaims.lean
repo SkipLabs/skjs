@@ -1,12 +1,13 @@
 import Verification.ExperimentState.CellClaims
 
 /-! Bounded free unary function contracts. The initial callable source slice has
-one null argument and a primitive result; no optional/rest/this behavior or
+one null/boolean primitive argument and result; no optional/rest/this behavior or
 object requirements are projected away by this decoder. -/
 namespace Verification.ExperimentState.FunctionClaims
 open Lean ProgramTyping PositiveRules
 
 structure Signature where
+  argument : Wire.Ty
   result : Wire.Ty
 
 def decode (j : Json) : Except String Signature := do
@@ -19,63 +20,69 @@ def decode (j : Json) : Except String Signature := do
     let mode ← jStr (← jField a key)
     if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
   let [arg] ← jArr a "params" | throw "expected one required function parameter"
-  let A ← SourceTypes.translate (← CellClaims.primitive arg)
-  if A != [0] then throw "source closures currently require a null argument"
-  return ⟨← CellClaims.primitive (← jField a "result")⟩
+  return ⟨← CellClaims.primitive arg, ← CellClaims.primitive (← jField a "result")⟩
 
-def result (j : Json) : Except String (Ty Nat) := do
-  SourceTypes.translate (← decode j).result
+/-- Both sides are checked independently; unsupported inputs are never erased. -/
+def signature (j : Json) : Except String (Ty Nat × Ty Nat) := do
+  let s ← decode j
+  return (← SourceTypes.translate s.argument, ← SourceTypes.translate s.result)
 
-def label (A : Ty Nat) : Nat := 8 + CellClaims.referenceLabel A
+def argumentIndex (D : Ty Nat) : Nat :=
+  let bits := CellClaims.referenceLabel D - 3
+  if bits == 1 then 0 else if bits == 0 then 1 else bits
+
+def label (D R : Ty Nat) : Nat :=
+  8 + CellClaims.referenceLabel R + 8 * argumentIndex D
 
 def translate (j : Json) : Except String (Ty Nat) := do
-  return [label (← result j)]
+  let (D,R) ← signature j
+  return [label D R]
 
-theorem label_encode (t : Wire.Ty) :
-    expand SourceTypes.graph [label (SourceTypes.encode t)] =
-      [.arrs [([0],SourceTypes.encode t)]] := by
-  cases hn : SourceTypes.admits t .vnull <;>
-    cases ht : SourceTypes.admits t (.vbool true) <;>
-    cases hf : SourceTypes.admits t (.vbool false) <;>
-    simp [label, CellClaims.referenceLabel, SourceTypes.encode, hn, ht, hf,
-      expand, SourceTypes.graph, SourceTypes.types]
+theorem label_encode (d r : Wire.Ty) :
+    expand SourceTypes.graph [label (SourceTypes.encode d) (SourceTypes.encode r)] =
+      [.arrs [(SourceTypes.encode d,SourceTypes.encode r)]] := by
+  cases dn : SourceTypes.admits d .vnull <;>
+    cases dt : SourceTypes.admits d (.vbool true) <;>
+    cases df : SourceTypes.admits d (.vbool false) <;>
+    cases rn : SourceTypes.admits r .vnull <;>
+    cases rt : SourceTypes.admits r (.vbool true) <;>
+    cases rf : SourceTypes.admits r (.vbool false) <;>
+    simp [label, argumentIndex, CellClaims.referenceLabel, SourceTypes.encode,
+      dn,dt,df,rn,rt,rf,expand,SourceTypes.graph,SourceTypes.types,
+      SourceTypes.primitiveTypes,SourceTypes.argumentTypes]
 
-/-- Exact constructor interpretation; no semantic normalization of arrows. -/
-theorem meaning_encode (t : Wire.Ty) (n W v) :
-    meaning SourceTypes.graph [label (SourceTypes.encode t)] n W v ↔
-      arrowT (meaning SourceTypes.graph [0]) (meaning SourceTypes.graph (SourceTypes.encode t)) n W v := by
+/-- Exact arrow interpretation, including its contravariant domain. -/
+theorem meaning_encode (d r : Wire.Ty) (n W v) :
+    meaning SourceTypes.graph [label (SourceTypes.encode d) (SourceTypes.encode r)] n W v ↔
+      arrowT (meaning SourceTypes.graph (SourceTypes.encode d))
+        (meaning SourceTypes.graph (SourceTypes.encode r)) n W v := by
   rw [expand_sem, label_encode]
   simpa [PositiveNormalization.semList, Tower.setSem, PositiveNormalization.sem] using
-    arrowsT_singleton (meaning SourceTypes.graph [0])
-      (meaning SourceTypes.graph (SourceTypes.encode t)) n W v
-
-theorem result_checked {j : Json} {A} (h : result j = .ok A) :
-    ∃ s, decode j = .ok s ∧ SourceTypes.translate s.result = .ok A := by
-  unfold result at h
-  cases hd : decode j with
-  | error e => simp only [hd] at h; contradiction
-  | ok s =>
-    simp only [hd] at h
-    exact ⟨s,rfl,h⟩
+    arrowsT_singleton (meaning SourceTypes.graph (SourceTypes.encode d))
+      (meaning SourceTypes.graph (SourceTypes.encode r)) n W v
 
 theorem translate_exact {j : Json} {F} (h : translate j = .ok F) (n W v) :
-    ∃ A, result j = .ok A ∧
+    ∃ D R, signature j = .ok (D,R) ∧
       (meaning SourceTypes.graph F n W v ↔
-        arrowT (meaning SourceTypes.graph [0]) (meaning SourceTypes.graph A) n W v) := by
-  unfold translate at h
-  cases hr : result j with
-  | error e => simp only [hr] at h; contradiction
-  | ok A =>
-    simp only [hr] at h
-    change Except.ok [label A] = Except.ok F at h
-    cases h
-    refine ⟨A,rfl,?_⟩
-    obtain ⟨s,_,ht⟩ := result_checked hr
-    unfold SourceTypes.translate at ht
-    split at ht
-    · cases ht
-      exact meaning_encode s.result n W v
-    · contradiction
+        arrowT (meaning SourceTypes.graph D) (meaning SourceTypes.graph R) n W v) := by
+  unfold translate signature at h
+  cases hd : decode j with
+  | error e => simp [hd, Bind.bind, Except.bind] at h
+  | ok s =>
+    cases ha : SourceTypes.translate s.argument with
+    | error e => simp [hd,ha, Bind.bind, Except.bind] at h
+    | ok D =>
+      cases hr : SourceTypes.translate s.result with
+      | error e => simp [hd,ha,hr, Bind.bind, Except.bind] at h
+      | ok R =>
+        simp only [hd,ha,hr,Bind.bind,Pure.pure,Except.bind,Except.pure] at h
+        cases h
+        refine ⟨D,R,by simp [signature,hd,ha,hr,Bind.bind,Pure.pure,Except.bind,Except.pure],?_⟩
+        unfold SourceTypes.translate at ha hr
+        split at ha <;> try contradiction
+        split at hr <;> try contradiction
+        cases ha; cases hr
+        exact meaning_encode s.argument s.result n W v
 
 #print axioms translate_exact
 #print axioms meaning_encode

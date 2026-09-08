@@ -98,3 +98,24 @@ names the currently selected file: the picker currently does not rewrite it.
 
 Keep these limitations explicit. No new agent coordination or background task
 has been created; this file is the handoff record.
+
+## Follow-up: primitive callback domains
+
+Consolidation was committed as `7fa0d808`. The next fragment increment adds all
+primitive unary domains/codomains without changing the calculus term language.
+The source profile is now `stateful-source-75-v1`; regenerate old normalized
+sidecars. `FunctionClaims.translate_exact` checks both domain and codomain.
+Source-mode search uses `SourceRequest.searchLabels`; this is a heuristic only,
+and consumers continue to check the complete graph and exact obligations.
+
+`primitive-callbacks.js` covers raw and normalized certificates, contravariant
+contracts, wrong arguments, and the captured-refinement witness. The original
+SKJS counterexample is gated by unequal reference read/write types; a separately
+weakened candidate fails at the stale read obligation. Do not conflate those
+results. The immutable-snapshot counterpart verifies. Callback and counterexample
+files are linked from the main README and included in the viewer groups.
+
+Concurrent viewer addressing/navigation edits are another agent's work; they
+were not part of this fragment increment. Inspect the working tree before
+staging. The full verification suite passed with the fragment extension; targeted
+normalized callback round-trip tests passed as well.

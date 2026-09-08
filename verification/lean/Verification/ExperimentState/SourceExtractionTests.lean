@@ -10,6 +10,15 @@ private def ok (r : Except String α) : Bool := match r with
 private def is [BEq α] (r : Except String α) (expected : α) : Bool :=
   match r with | .ok a => a == expected | .error _ => false
 
+-- Exercise the source-specific vocabulary, not every unrelated signature in
+-- the fixed profile. The independent checker still receives the full graph.
+private def produceSourceJson (j : Json) (fuel : Nat)
+    (suggestions : List (ProgramCertificates.Sequent Nat) := [])
+    (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
+  let r ← decodeRequest j
+  let source : SourceRequest := ⟨r,[],[]⟩
+  RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
+
 -- Exact finite-set translation, including normalization of unions.
 #guard is (SourceTypes.translate ⟨false,[.bool]⟩) ([1,2])
 #guard is (SourceTypes.translate ⟨false,[.boolLit true]⟩) ([1])
@@ -23,11 +32,11 @@ private def is [BEq α] (r : Except String α) (expected : α) : Bool :=
 
 private def request (t : Tm) (A : Ty Nat) : Request :=
   ⟨2, SourceTypes.types, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
-#guard ok (RequestJson.produceJson (toJson (request .tru [1])) 5)
-#guard ok (RequestJson.produceJson (toJson (request .fls [2])) 5)
-#guard ok (RequestJson.produceJson (toJson (request .tru [1,2])) 5)
-#guard !ok (RequestJson.produceJson (toJson (request .tru [2])) 5)
-#guard !ok (RequestJson.produceJson (toJson (request .fls [1])) 5)
+#guard ok (produceSourceJson (toJson (request .tru [1])) 5)
+#guard ok (produceSourceJson (toJson (request .fls [2])) 5)
+#guard ok (produceSourceJson (toJson (request .tru [1,2])) 5)
+#guard !ok (produceSourceJson (toJson (request .tru [2])) 5)
+#guard !ok (produceSourceJson (toJson (request .fls [1])) 5)
 
 #guard PositiveCertificates.checkClause SourceTypes.graph [] [] (.boolLit true) .bool
 #guard !PositiveCertificates.checkClause SourceTypes.graph [] [] .bool (.boolLit true)
@@ -51,7 +60,7 @@ private def fc : SourceInput.Claims := ⟨"f",(0,1),[],t,
   [(2,[]),(6,[("x",t)]),(10,[("x",t),("y",b)])],
   [((4,5),t),((8,9),b),((12,13),t)]⟩
 #guard is ((extractFn f fc).map (fun r => r.program[1]?.map ControlFlow.Node.expression)) ((some (.var 1)))
-#guard ok (do RequestJson.produceJson (toJson (← extractFn f fc).toRequest) 6)
+#guard ok (do produceSourceJson (toJson (← extractFn f fc).toRequest) 6)
 -- Test execution of this primitive subset uses the calculus's substitution and
 -- simultaneous environment transfer. It is a compiler regression, not a source
 -- preservation proof or a second maintained evaluator.
@@ -90,8 +99,8 @@ private def branchClaims (q : Bool) : SourceInput.Claims :=
 
 #guard is ((extractFn (branchFn true) (branchClaims true)).map runRequest) (some .tru)
 #guard is ((extractFn (branchFn false) (branchClaims false)).map runRequest) (some .tru)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (branchFn true) (branchClaims true)).toRequest) 8)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (branchFn false) (branchClaims false)).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn (branchFn true) (branchClaims true)).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn (branchFn false) (branchClaims false)).toRequest) 8)
 
 -- A shared continuation has exactly one return node, with two predecessors
 -- reaching its source-expression node. Continuation duplication fails this test.
@@ -114,8 +123,8 @@ private def choiceClaims (q : Bool) : SourceInput.Claims :=
     [((4,5),(wireTy ⟨false,[.boolLit q]⟩)),((8,9),t),((12,13),b)]⟩
 #guard is ((extractFn (choiceFn true) (choiceClaims true)).map runRequest) (some .tru)
 #guard is ((extractFn (choiceFn false) (choiceClaims false)).map runRequest) (some .fls)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn true) (choiceClaims true)).toRequest) 8)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn false) (choiceClaims false)).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn (choiceFn true) (choiceClaims true)).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn (choiceFn false) (choiceClaims false)).toRequest) 8)
 
 -- The tested binding is older than another local, so the refinement map must
 -- select its copied value rather than refine whichever slot happens to be first.
@@ -137,8 +146,8 @@ private def variableClaims (q : Bool) : SourceInput.Claims :=
      ((12,13),bool),((16,17),t),((20,21),b)]⟩
 #guard is ((extractFn (variableFn true) (variableClaims true)).map runRequest) (some .tru)
 #guard is ((extractFn (variableFn false) (variableClaims false)).map runRequest) (some .fls)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn true) (variableClaims true)).toRequest) 8)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn false) (variableClaims false)).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn (variableFn true) (variableClaims true)).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn (variableFn false) (variableClaims false)).toRequest) 8)
 
 -- Source input slots follow declaration order, independently of export order
 -- inside each environment. Newly declared locals still push ahead of them.
@@ -155,14 +164,14 @@ private def runArguments (r : SourceRequest) (vs : List Tm) :=
 #guard is ((extractFn parameterFn parameterClaims).map (·.inputs)) [[0],[1,2]]
 #guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.tru])) (some .tru)
 #guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.fls])) (some .fls)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn parameterFn parameterClaims).toRequest) 8)
+#guard ok (do produceSourceJson (toJson (← extractFn parameterFn parameterClaims).toRequest) 8)
 
 -- Even if all internal claims consistently narrow the parameter to true,
 -- the separate source-signature entry edge must reject that narrowing.
 private def narrowedEntry : SourceInput.Claims := { parameterClaims with
   envs := [(2,[("first",(wireTy ⟨false,[.null]⟩)),("second",t)])]
   exprs := [((4,5),t)] }
-#guard !ok (do RequestJson.produceJson (toJson (← extractFn parameterFn narrowedEntry).toRequest) 8)
+#guard !ok (do produceSourceJson (toJson (← extractFn parameterFn narrowedEntry).toRequest) 8)
 
 private def cellWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
   [("a",toJson "record"),("fields",toJson [Json.mkObj [("name",toJson "value"),
@@ -186,7 +195,7 @@ private def cellClaims : SourceInput.Claims :=
 private def cellRequest : Request :=
   (SourceExtraction.extractFn cellFn cellClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn cellFn cellClaims)
-#guard ok (RequestJson.produceJson (toJson cellRequest) 8)
+#guard ok (produceSourceJson (toJson cellRequest) 8)
 
 private def cellProgram : ControlFlow.Program :=
   [⟨.var 0,.ret⟩,
@@ -236,7 +245,7 @@ private def captureClaims : SourceInput.Claims :=
 private def captureRequest : Request :=
   (SourceExtraction.extractFn captureFn captureClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn captureFn captureClaims)
-#guard ok (RequestJson.produceJson (toJson captureRequest) 10)
+#guard ok (produceSourceJson (toJson captureRequest) 10)
 private def captureProgram : ControlFlow.Program :=
   [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4,5]⟩⟩,
    ⟨.nul,.bind 1⟩, ⟨.var 1,.bind 2⟩,
@@ -286,7 +295,7 @@ private def branchCaptureProgram : ControlFlow.Program :=
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    (List.range 19) 19 0 r.obligations
+    r.searchLabels SourceTypes.types.length 0 r.obligations
   pure ())
 
 theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 37 []
@@ -334,7 +343,7 @@ private def joinedCaptureProgram : ControlFlow.Program :=
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    (List.range 19) 19 0 r.obligations
+    r.searchLabels SourceTypes.types.length 0 r.obligations
   pure ())
 
 theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 44 []
@@ -391,7 +400,7 @@ private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
 #guard [true,false].all fun q => ok (do
   let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    (List.range 19) 19 0 r.obligations
+    r.searchLabels SourceTypes.types.length 0 r.obligations
   pure ())
 
 theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgram q)
@@ -420,14 +429,14 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[]⟩
 #guard captureRequired.obligations.length == 4
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
-  (List.range 19) 19 10 captureRequired.obligations)
+  captureRequired.searchLabels SourceTypes.types.length 10 captureRequired.obligations)
 private def narrowedCapture : SourceInput.Claims :=
   { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
     (pos, if pos == (12,15) then t else ty) }
-#guard ok (do RequestJson.produceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
+#guard ok (do produceSourceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
 #guard !ok (do
   let r ← extractFn captureFn narrowedCapture
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) (List.range 19) 19 10 r.obligations)
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels SourceTypes.types.length 10 r.obligations)
 
 private def writerFn : SourceInput.Fn :=
   ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
@@ -453,8 +462,8 @@ private def writerProgram : ControlFlow.Program :=
 #guard is ((extractFn writerFn writerClaims).map (·.start)) 9
 #guard ok (do
   let r ← extractFn writerFn writerClaims
-  let _ ← RequestJson.produceJson (toJson r.toRequest) 10
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) (List.range 19) 19 10 r.obligations)
+  let _ ← produceSourceJson (toJson r.toRequest) 10
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels SourceTypes.types.length 10 r.obligations)
 
 /-- Calling the extracted writer changes the heap and returns its RHS, not null. -/
 theorem closure_write_trace : ControlFlow.Execution writerProgram 26 []
@@ -486,7 +495,7 @@ private def blockCaptureClaims (unitTy : Json) : SourceInput.Claims :=
 private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    (List.range 19) 19 10 r.obligations
+    r.searchLabels SourceTypes.types.length 10 r.obligations
   pure ()
 #guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
 -- Forgetting parameter precision is allowed; inventing an unused type is not.
@@ -555,13 +564,13 @@ private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
   let r ← extractFn localWriterFn localWriterClaims
   if r.obligations.any (fun q => q.plan.isNone) then throw "missing recipe"
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    (List.range 19) 19 0 r.obligations
+    r.searchLabels SourceTypes.types.length 0 r.obligations
   pure ())
 
 -- A forged recipe or reused certificate is still rejected by the ordinary checker.
 private def forged : ProgramCertificates.Evidence Nat :=
   .node ⟨[],.fls,[1]⟩ .truLit []
-#guard !ok (RequestJson.produceJson (toJson (request .fls [1])) 4 [] [forged])
+#guard !ok (produceSourceJson (toJson (request .fls [1])) 4 [] [forged])
 #guard !ok (ExpressionClaims.produce SourceTypes.graph [0,1,2] 19 4
   [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit)⟩])
 

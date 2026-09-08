@@ -1,14 +1,23 @@
 "use strict";
 
 // These files are exercised through the current source consumer by run.sh.
-const supported = ["basic", "cells", "closures", "loops", "loop-transfers"].map(
-  (name) => `verification/tests/stateful-source/${name}.ts`,
-);
+const supported = [
+  "basic",
+  "cells",
+  "closures",
+  "loops",
+  "loop-transfers",
+  "primitive-callbacks",
+].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const groups = [
   { label: "Current verifier examples", files: supported },
   {
     label: "Claim repair · producer rejects",
     files: ["verification/tests/partial-claims.ts"],
+  },
+  {
+    label: "Counterexamples · SKJS accepts",
+    files: ["verification/tests/counterexamples/captured-refinement.ts"],
   },
   {
     label: "Unsupported examples · expected limitations",

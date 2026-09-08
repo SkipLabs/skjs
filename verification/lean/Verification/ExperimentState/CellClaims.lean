@@ -135,7 +135,7 @@ theorem reference_encode (t : Wire.Ty) :
     cases ht : SourceTypes.admits t (.vbool true) <;>
     cases hf : SourceTypes.admits t (.vbool false) <;>
     simp [referenceLabel, SourceTypes.encode, hn, ht, hf, expand,
-      SourceTypes.graph, SourceTypes.types]
+      SourceTypes.graph, SourceTypes.types, SourceTypes.primitiveTypes, SourceTypes.argumentTypes]
 
 /-- The graph label used by source extraction denotes exactly the accepted
 cell invariant, at every world and budget. -/

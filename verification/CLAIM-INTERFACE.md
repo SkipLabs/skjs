@@ -44,7 +44,7 @@ Conceptually the document contains:
 | Expression claims | Expression identity and its type reference. |
 
 The arbitrary-graph encoding remains to be implemented; the implemented
-`stateful-source-19-v1` sidecar fixes the graph and retains current name/position
+`stateful-source-75-v1` sidecar fixes the graph and retains current name/position
 identities. It should use strict field and
 reference validation, including duplicate rejection, as the request consumer
 already does. Producer names and source-level display names are optional
@@ -54,7 +54,7 @@ operation still needs a supported translation and its required checks.
 
 ### Implemented first step
 
-The current in-memory interface is bounded by `SourceTypes.graph` (19 labels);
+The current in-memory interface is bounded by `SourceTypes.graph` (75 labels);
 it is not yet the arbitrary-graph document described above. Names and positions
 also retain the current source adapter's scope restrictions. It removes producer
 type JSON from claim consumption without prematurely freezing a sidecar format.

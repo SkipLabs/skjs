@@ -12,7 +12,7 @@ try {
   const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);
   assert.equal(parsed.status,0,parsed.stderr);const ast=JSON.parse(parsed.stdout);fs.writeFileSync(ap,parsed.stdout);
   const f=ast.functions[0],pos=f.body[0].e.pos;
-  const doc={version:1,profile:"stateful-source-19-v1",file,sourceSha256:hash(source),functions:[{
+  const doc={version:1,profile:"stateful-source-75-v1",file,sourceSha256:hash(source),functions:[{
     name:f.name,namePos:f.namePos,params:[{name:"flag",type:[1,2]}],result:[1,2],
     entries:[{start:f.body[0].pos[0],bindings:[{name:"flag",type:[1,2]}]}],expressions:[{pos,type:[1,2]}]}]};
   fs.writeFileSync(cp,JSON.stringify(doc));
@@ -29,7 +29,8 @@ try {
   mutate("stale source fingerprint rejected",d=>d.sourceSha256="0".repeat(64));
   mutate("different source identity rejected",d=>d.file="elsewhere.ts");
   mutate("unsupported graph profile rejected",d=>d.profile="arbitrary");
-  mutate("out-of-range labels rejected even in unused bindings",d=>d.functions[0].entries[0].bindings.push({name:"unused",type:[19]}));
+  mutate("retired profile is rejected",d=>d.profile="stateful-source-19-v1");
+  mutate("out-of-range labels rejected even in unused bindings",d=>d.functions[0].entries[0].bindings.push({name:"unused",type:[75]}));
   mutate("duplicate labels rejected",d=>d.functions[0].result=[1,1,2]);
   mutate("noncanonical label order rejected",d=>d.functions[0].result=[2,1]);
   mutate("duplicate entry sites rejected",d=>d.functions[0].entries.push(d.functions[0].entries[0]));

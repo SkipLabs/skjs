@@ -2,7 +2,7 @@
 # The object language
 
 The operational foundation of the stateful type development. It is compiled
-and tested, but is not yet the production verifier's language.
+and tested, and is the current verifier's language.
 
 An untyped call-by-value calculus with a mutable heap: lambda, application, two
 constants, and allocate/read/write. Values are terms, so worlds, heaps and the

@@ -112,7 +112,7 @@ assert.deepEqual(
       sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
       claims: {
         version: 1,
-        profile: "stateful-source-19-v1",
+        profile: "stateful-source-75-v1",
         file: outsideFile,
         sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
         functions: [

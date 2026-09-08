@@ -63,7 +63,7 @@ as calculus type labels or explicit decoding failures. `SkjsSourceClaims` is an
 adapter into that interface. Source annotations remain separate requirements.
 Direct callers use `extractNormalizedFn`; used labels are bounds checked against
 the current fixed source graph. The strict
-[`stateful-source-19-v1` sidecar](SOURCE-CLAIMS.md) now exposes the same boundary
+[`stateful-source-75-v1` sidecar](SOURCE-CLAIMS.md) now exposes the same boundary
 through the CLI, with source identity, site and label validation. Both input
 paths reconstruct requests for the same proved evidence consumer. Arbitrary
 graph documents and TypeScript comment input remain future steps of
@@ -363,7 +363,7 @@ regression checks the extracted alias-assignment graph's heap and result.
 
 The first closure slice is connected through
 [FunctionClaims.lean](lean/Verification/ExperimentState/FunctionClaims.lean).
-It accepts explicitly typed unary arrows with a null argument and a primitive
+It accepts explicitly typed unary arrows with a null/Boolean primitive argument and a primitive
 result. Bodies compose literals, variables, cell allocation, reads, assignments,
 and calls, including nested expression arrows with the same signature limits.
 An internal expression claim can differ from the declared result: both are
@@ -581,3 +581,29 @@ itself; they are not evidence for an otherwise unchanged Lean model.
 The eventual user-facing command must report certified success only after the
 consumer accepts. `--emit-skjs-type-claims` currently emits claims without making
 that guarantee. `make verify` remains the experiment's source-facing command.
+
+### Primitive callback integration
+
+The source graph contains all 64 unary arrows between subsets of null, true and
+false. `FunctionClaims.translate_exact` proves the selected arrow's domain and
+codomain interpretations. Existing application and lambda rules discharge their
+obligations; no operational constructor or semantic axiom was added. The source
+profile is `stateful-source-75-v1` (three primitives, eight cell contracts and
+64 arrow contracts).
+
+Source-mode search uses labels in the function's request and required-expression
+sequents, plus primitive labels. Vocabulary construction includes their operand
+types. This is a search restriction, not a restriction on consumer checking or
+a completeness claim. Enumerating every unused arrow at each subtype query was
+already expensive in this small table; expanding a fixed profile must not silently
+expand every local search problem.
+
+[The captured-refinement counterexample](tests/counterexamples/captured-refinement.ts)
+is accepted by SKJS but returns false on input true despite declaring a true
+result. Its original refined reference export is rejected at the invariant-cell
+boundary (read true versus write boolean). A separate manual-candidate experiment
+forgets those reference read refinements while preserving expression claims; the
+consumer then rejects the stale singleton read at its exact source span. These
+are distinct findings, not a claim that arbitrary reference refinements are
+supported. The stable-snapshot counterpart verifies using immutable local
+refinement, even though the callback mutates the captured cell.

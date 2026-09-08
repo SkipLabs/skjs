@@ -40,7 +40,7 @@ bindings, nested branches, `while` loops and returns**, local cells, and bounded
 closures and calls. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from
 direct Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
-commands and limitations. Closures currently have one null argument and a
+commands and limitations. Closures have one null/Boolean primitive argument and a
 primitive result; expression bodies compose literals, variables, cell operations
 and calls. Straight-line blocks support local consts, effects and a final return,
 with checked statement environments.
@@ -74,8 +74,8 @@ node verification/report-viewer/serve.js
 ```
 
 Open the printed URL. The default group contains current-verifier examples.
-Separate groups contain claim-repair exercises and explicitly unsupported
-examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
+Separate groups contain claim-repair exercises, SKJS counterexamples, and
+explicitly unsupported examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
 See the [reader guide](report-viewer/README.md) and
 [annotated report format](ANNOTATED-SOURCE.md).
 
@@ -110,3 +110,17 @@ to JavaScript. Accepted functions do not certify every unused displayed claim.
 `tools/export-source-claims.js` converts an existing SKJS export into editable
 calculus-label claims. Conversion records unsupported candidates and provenance;
 it does not itself establish verification.
+
+## Primitive callbacks and a producer counterexample
+
+[primitive-callbacks.ts](tests/stateful-source/primitive-callbacks.ts) covers
+Boolean/union identity callbacks, captured writers, returned writers and a
+contravariant function assignment. `stableSnapshot` shows why an immutable value
+saved before a callback remains safe after the callback mutates its source cell.
+
+[The captured-refinement example](tests/counterexamples/captured-refinement.ts)
+is accepted by SKJS but returns false where its annotation requires true.
+[Its test](tests/primitive-callbacks.js) distinguishes the original unsupported
+refined-reference contract from a stale expression claim that fails proof checking
+after those reference refinements are forgotten. See the
+[counterexample notes](tests/counterexamples/README.md).

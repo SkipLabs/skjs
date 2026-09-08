@@ -143,9 +143,10 @@ Fuel bounds search only; it is not part of the certified request. -/
 def produceJson (request : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := [])
-    (origins : List (Option (Nat × Nat)) := []) : Except String Json := do
+    (origins : List (Option (Nat × Nat)) := [])
+    (searchLabels : Option (List Nat) := none) : Except String Json := do
   let r ← decodeRequest request
-  let C ← match produce (graph r) (List.range r.types.length) fuel
+  let C ← match produce (graph r) (searchLabels.getD (List.range r.types.length)) fuel
       r.result r.program r.claims r.start [] r.inputs suggestions known with
     | .ok c => pure c
     | .error e =>

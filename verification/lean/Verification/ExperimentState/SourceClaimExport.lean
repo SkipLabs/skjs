@@ -73,7 +73,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
       | .ok A => expressions := expressions ++ [⟨pos,A⟩]
       | .error e => omissions := omissions ++ [issue f site raw e]
     functions := functions ++ [⟨f.name,f.namePos,params,result,entries,expressions⟩]
-  let d : Document := ⟨1,"stateful-source-19-v1",fileKey,
+  let d : Document := ⟨1,"stateful-source-75-v1",fileKey,
     ← jStr (← jField ast "sourceSha256"),functions⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
   let _ ← SourceClaimJson.decode (toJson d)

@@ -174,9 +174,8 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
   | .lam pos name arg ret body => do
     if scope.contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← SourceTypes.translate (← decodeTy arg)
-    if D != [0] then throw "source closures currently require a null argument"
     let R ← SourceTypes.translate (← decodeTy ret)
-    if A != [FunctionClaims.label R] then throw "closure signature claim differs from source annotations"
+    if A != [FunctionClaims.label D R] then throw "closure signature claim differs from source annotations"
     let b ← closureExpr fc (name::scope) (D::Γ) body
     let annotation := DirectProof.cast (D::Γ) R b
     modify fun s => { s with obligations := s.obligations ++ [⟨pos,annotation.goal,some annotation⟩] }
@@ -353,6 +352,14 @@ structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
   origins : List (Option Span) := []
 
+/-- Search hints only. The fixed source graph's arrow/reference operands contain
+primitive labels; avoid considering all unrelated signatures at every coercion.
+The consumer still checks against the complete graph and the exact request. -/
+def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
+  ([0,1,2] ++ r.result ++ r.inputs.flatten ++
+    r.claims.flatMap (fun (c : PointClaim Nat) => c.type ++ c.context.flatten) ++
+    r.obligations.flatMap (fun (o : ExpressionClaims.Required) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
+
 def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope := f.params.map (·.name)
@@ -422,9 +429,9 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except String Json := do
   let rs ← extract ast claims fileKey
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    (List.range r.types.length) r.types.length fuel r.obligations
+    r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels)
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence

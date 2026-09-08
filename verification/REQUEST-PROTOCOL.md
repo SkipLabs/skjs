@@ -335,8 +335,8 @@ The bounded function atom is:
 The exporter preserves one free required parameter and the result. It rejects
 `this` requirements, generics, optional/rest parameters, fields, indexes, positive
 construct requirements and nested operand types. The Lean source slice further
-requires the parameter to be exactly null and the result to be a supported
-primitive set. `FunctionClaims.translate_exact` identifies the selected label's
+requires both the parameter and result to be supported primitive sets over
+null, true and false. `FunctionClaims.translate_exact` identifies the selected label's
 meaning with the corresponding arrow in the existing world-indexed semantics.
 This does not assert equivalence with SKJS's full structural function types.
 

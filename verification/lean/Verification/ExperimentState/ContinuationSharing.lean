@@ -47,7 +47,7 @@ private def term : Tm := share (.read (.var 1))
     (.app (.var 0) .nul))
 #guard recipe.term == term
 private def proof : Option (Evidence Nat) :=
-  DirectProof.render SourceTypes.graph (CertificateProducer.vocabulary SourceTypes.graph (List.range 19) [] [[1,2]]) Γ recipe
+  DirectProof.render SourceTypes.graph (CertificateProducer.vocabulary SourceTypes.graph [0,1,2,9,17] [] [[1,2]]) Γ recipe
 #guard (proof.map (checkTree SourceTypes.graph)) == some true
 
 private def program : Program := [⟨.alloc .tru,.bind 1⟩,⟨term,.ret⟩]
@@ -56,7 +56,7 @@ private def request : Request :=
 private def accepted : Except String Unit := do
   let some p := proof | throw "missing direct proof"
   let wire ← Json.parse (toJson request).compress
-  let e ← produceJson wire 10 [] [p]
+  let e ← produceJson wire 10 [] [p] [] (some [0,1,2,9,17,SourceTypes.types.length])
   verifyJson wire (← Json.parse e.compress)
 #guard match accepted with | .ok _ => true | .error _ => false
 
@@ -80,7 +80,7 @@ theorem shared_paths (a b : Bool) : Execution program
 
 -- A shared continuation cannot promise a singleton result from a Boolean cell.
 #guard !(DirectProof.render SourceTypes.graph
-  (CertificateProducer.vocabulary SourceTypes.graph (List.range 19) [] [[1,2]]) Γ
+  (CertificateProducer.vocabulary SourceTypes.graph [0,1,2,9,17] [] [[1,2]]) Γ
   (DirectProof.cast Γ [1] recipe)).isSome
 
 -- The promise is checked where the continuation is defined, not invented from
@@ -94,12 +94,13 @@ theorem shared_paths (a b : Bool) : Execution program
 private def refinedTypes := SourceTypes.types ++ [[PositiveNormalization.Clause.arrs [([2],[1,2])]]]
 private def refinedGraph : PositiveGraphs.NormalGraph Nat := fun i => refinedTypes[i]?.getD []
 private def outer : List (Ty Nat) := [[1,2],[1,2]]
-private def inside : List (Ty Nat) := [19]::outer
+private def extraLabel := SourceTypes.types.length
+private def inside : List (Ty Nat) := [extraLabel]::outer
 private def refinedCall (Δ : List (Ty Nat)) (i : Nat) :=
   DirectProof.node Δ (.app (.var 0) (.var i)) [1,2] .app
-    [DirectProof.var Δ 0 [19],DirectProof.var Δ i [2]]
+    [DirectProof.var Δ 0 [extraLabel],DirectProof.var Δ i [2]]
 private def refinedRecipe : DirectProof.Plan :=
-  let k := DirectProof.node outer (.lam (.var 0)) [19] .lam
+  let k := DirectProof.node outer (.lam (.var 0)) [extraLabel] .lam
     [DirectProof.var ([2]::outer) 0 [1,2]]
   let yes := inside.set 2 [1]
   let no := inside.set 2 [2]
@@ -107,7 +108,7 @@ private def refinedRecipe : DirectProof.Plan :=
     [1,2] (.ifBoolVar [1] [2])
     [DirectProof.cast yes [1,2] (DirectProof.node yes .tru [1] .truLit),refinedCall no 2]
   DirectProof.letE outer k (choose inside 1 arm arm)
-private def refinedPool := CertificateProducer.vocabulary refinedGraph (List.range 20) [] [[1,2]]
+private def refinedPool := CertificateProducer.vocabulary refinedGraph [0,1,2,extraLabel] [] [[1,2]]
 private def refinedProof := DirectProof.render refinedGraph refinedPool outer refinedRecipe
 #guard (refinedProof.map (checkTree refinedGraph)) == some true
 -- Neither the unrefined slot nor a different Boolean slot meets the contract.
@@ -124,7 +125,7 @@ private def refinedProgram : Program := [⟨refinedTerm,.ret⟩]
   let some p := refinedProof | throw "missing refinement proof"
   let r : Request := ⟨2,refinedTypes,refinedProgram,[⟨outer,[1,2]⟩],[1,2],0,outer⟩
   let wire := toJson r
-  let e ← produceJson wire 10 [] [p]
+  let e ← produceJson wire 10 [] [p] [] (some [0,1,2,9,17,SourceTypes.types.length])
   verifyJson wire (← Json.parse e.compress)) with
   | .ok _ => true | .error _ => false
 
