@@ -256,6 +256,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
      ! cmp -s "$WORK/partial.plain.err" "$WORK/partial.err"; then
     echo "FAIL: partial export changed ordinary diagnostics or exit status"; exit 1
   fi
+  if ! node verification/tests/source-claim-export.js "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL" "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"; then exit 1; fi
   if ! node verification/tests/partial-claims.js "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"; then
     exit 1
   fi

@@ -77,6 +77,9 @@ private partial def stmtSites : SourceInput.Stmt → Sites
     joinSites ([p.1],[]) (joinSites (exprSites c)
       ((a ++ b.getD []).foldl (fun s st => joinSites s (stmtSites st)) ([],[])))
 
+def functionSites (f : SourceInput.Fn) : List Nat × List Span :=
+  f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
+
 def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   let d ← decode claims
   if d.file != fileKey || (← jStr (← jField ast "file")) != fileKey then throw "source claim file identity mismatch"
@@ -89,7 +92,7 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
     let c ← match d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
       | some c => pure c
       | none => throw s!"missing claims for '{f.name}'"
-    let sites := f.body.foldl (fun s st => joinSites s (stmtSites st)) ([],[])
+    let sites := functionSites f
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"

@@ -1,4 +1,4 @@
-import Verification.ExperimentState.SourceClaimJson
+import Verification.ExperimentState.SourceClaimExport
 
 /-! File interfaces to raw calculus requests and to the supported source adapter.
 Source parsing remains external; source-mode checking reconstructs its request. -/
@@ -31,6 +31,14 @@ def produceFile (requestPath evidencePath : String) (fuel : Nat) : IO UInt32 := 
       IO.println s!"checked evidence written: {evidencePath}"
       return 0
     catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
+
+/-- Conversion writes JSON to stdout; callers decide where to save the two artifacts. -/
+def exportSourceClaims (astPath claimsPath fileKey : String) : IO UInt32 := do
+  let ast ← readJson astPath
+  let claims ← readJson claimsPath
+  match (do SourceClaimExport.convert (← ast) (← claims) fileKey) with
+  | .ok converted => IO.println converted.compress; return 0
+  | .error e => IO.eprintln s!"reject: {e}"; return 1
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat) (normalized : Bool := false) : IO UInt32 := do

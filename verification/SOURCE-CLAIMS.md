@@ -106,8 +106,55 @@ they are not sidecar proof assumptions. Claims-only reports are displays, not
 schema certification: `--verify` invokes the authoritative strict Lean decoder.
 
 The generic `--format report` remains a separate display-only format. The new
-sidecar is also distinct from SKJS export JSON. There is no automatic SKJS-to-
-sidecar converter yet; this step provides the independent input boundary before
-adding conversion or comment editing. The regression suite supplies handwritten
+sidecar is also distinct from SKJS export JSON. The converter below reuses the
+existing type decoder; comment editing remains a future step. The regression
+suite supplies handwritten
 claims for primitive parameters and for a mutable cell captured by a closure,
 and checks malformed inputs, missing claims, false refinements and old evidence.
+
+## Converting an existing SKJS export
+
+```sh
+node verification/tools/export-source-claims.js input.ts --claims skjs-claims.json \
+  --diagnostics diagnostics.txt --out source-claims.json
+```
+
+The command uses the current source parser and Lean's existing SKJS type decoder.
+It never invokes SKJS or enables recovery. `--diagnostics` is optional; use
+`--file-key` if the raw export identifies the file differently from the input
+path. `--verifier` selects the executable implementing conversion.
+
+Two files are written, without modifying inputs or overwriting existing outputs:
+
+- `source-claims.json`: editable calculus-label candidates.
+- `source-claims.json.conversion.json`: original raw claims, function collection
+  metadata, exact optional diagnostics, input/tool fingerprints and all omissions.
+
+Unsupported binding or expression types are omitted with their original payload
+and decoder error recorded. An unsupported signature omits that function rather
+than inventing parameter or result types. Entries and expressions absent from
+the lowered source are also recorded as omissions. These include raw export
+sites not used by the source adapter; they do not necessarily indicate errors.
+Malformed inputs and duplicate identities are rejected instead of merged.
+
+Conversion can succeed on an aborted first-error snapshot. It preserves the
+available candidates and does not fill missing obligations. Independent checking
+still rejects missing required claims. The optional `--keep-going` mode belongs
+to the original SKJS invocation: recovery metadata survives in the conversion
+manifest and never becomes a proof assumption.
+
+Review that manifest alongside the sidecar, particularly for recovered exports.
+Sidecar reports do not automatically load conversion provenance; their results
+concern the supplied candidates. Keep an initial annotated sidecar report as the
+baseline before editing a copy, then verify and compare the edited copy normally.
+The initial SKJS export has no source digest, so matching it to the chosen source
+snapshot still requires care: conversion checks function/site identities but
+cannot detect every stale raw export whose offsets happen to remain valid. The
+resulting sidecar is bound to the source snapshot used for conversion.
+
+The exporter is a candidate producer, outside the acceptance foundation. For the
+real closure corpus, regression tests check evidence in both directions: evidence
+produced from SKJS claims is accepted against converted claims, and evidence from
+the converted claims is accepted against the original SKJS input. Other tests
+cover normal failure snapshots, explicit recovery, preserved diagnostics and
+unsupported types remaining missing obligations.

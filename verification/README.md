@@ -206,3 +206,7 @@ when `--verify` is supplied. See [repair comparison](ANNOTATED-SOURCE.md#reviewi
 [Producer-independent source sidecars](SOURCE-CLAIMS.md) can supply calculus-label
 claims directly to the same source extractor and independent consumer, without
 SKJS type JSON.
+
+`tools/export-source-claims.js` converts an existing SKJS export into editable
+calculus-label claims, recording unsupported candidates and original collection
+provenance in a companion manifest. It does not rerun SKJS or verify the claims.

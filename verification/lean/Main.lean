@@ -52,6 +52,8 @@ def run (astPath typeClaimsPath fileKey : String) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--export-source-claims", astPath, claimsPath, fileKey] =>
+      ExperimentState.RequestCli.exportSourceClaims astPath claimsPath fileKey
   | ["--check-source-claims", astPath, claimsPath, fileKey, evidencePath] =>
       ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath none true
   | ["--produce-source-claims", astPath, claimsPath, fileKey, evidencePath, depth] =>
@@ -78,5 +80,6 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "       verifier --produce-stateful-source <ast.json> <claims.json> <file-key> <evidence.json> <depth>"
       IO.eprintln "       verifier --check-stateful-source <ast.json> <claims.json> <file-key> <evidence.json>"
       IO.eprintln "       verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
+      IO.eprintln "       verifier --export-source-claims <ast.json> <skjs-claims.json> <file-key>"
       IO.eprintln "       verifier --check-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json>"
       return 2
