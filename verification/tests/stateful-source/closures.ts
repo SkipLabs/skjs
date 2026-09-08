@@ -17,3 +17,29 @@ function escapingReader(seed: boolean): (unit: null) => boolean {
   const cell: { value: boolean } = { value: seed };
   return (unit: null): boolean => cell.value;
 }
+
+function widenedBody(): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => true;
+  return run(null);
+}
+
+function writingBody(): boolean {
+  const cell: { value: boolean } = { value: true };
+  const run: (unit: null) => boolean = (unit: null): boolean =>
+    (cell.value = false);
+  return run(null);
+}
+
+function allocatingBody(): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean =>
+    ({ value: true }).value;
+  return run(null);
+}
+
+function callingBody(): boolean {
+  const cell: { value: boolean } = { value: true };
+  const read: (unit: null) => boolean = (unit: null): boolean => cell.value;
+  const run: (unit: null) => boolean = (unit: null): boolean => read(null);
+  cell.value = false;
+  return run(null);
+}

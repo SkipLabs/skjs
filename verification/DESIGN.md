@@ -75,6 +75,8 @@ whether evidence is found, never the obligations for accepting it.
 
 The producer may be incomplete or replaced entirely. Failure means unsupported
 or unjustified within that search; it does not prove that no derivation exists.
+The depth limit is not a work limit: failed searches for composite closure-write
+claims can be expensive. Independent checking does not run this search.
 The consumer must remain usable with evidence from any producer.
 
 ## Established calculus commitments
@@ -162,7 +164,7 @@ separator searches, alternative models or a semantic-completeness project.
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
 | Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
-| Source-facing integration | Primitive inputs, branches, local cells and bounded reader closures reach the stateful consumer. Primitive, cell-label and function-label translations have exact interpretation theorems; source compilation remains trusted. |
+| Source-facing integration | Primitive inputs, branches, local cells and bounded expression closures reach the stateful consumer. Primitive, cell-label and function-label translations have exact interpretation theorems; source compilation remains trusted. |
 
 Certificate completeness means **every declarative derivation has accepted
 finite evidence**. It does not mean every inclusion true in the semantic model
@@ -421,24 +423,34 @@ regression checks the extracted alias-assignment graph's heap and result.
 The first closure slice is connected through
 [FunctionClaims.lean](lean/Verification/ExperimentState/FunctionClaims.lean).
 It accepts explicitly typed unary arrows with a null argument and a primitive
-result. Bodies are literals, variables or a single read of a captured variable.
-The body expression claim must equal the declared result; for a read, the
-receiver claim must equal its captured slot's contract. These are explicit
-coverage gates, not restrictions of the calculus's lambda rule. In particular,
-a narrower body claim with a wider return annotation is currently gated.
+result. Bodies compose literals, variables, cell allocation, reads, assignments,
+and calls, including nested expression arrows with the same signature limits.
+An internal expression claim can differ from the declared result: both are
+checked independently.
+
+[ExpressionClaims.lean](lean/Verification/ExperimentState/ExpressionClaims.lean)
+checks supplemental sequents for every closure-body expression, using its exact
+lexical context, lowered term and supplied type. Source annotations produce
+additional result obligations. The source consumer reconstructs this ordered
+list, requires exactly one proof per entry, and checks each using the existing
+program typing rules. `checkRequests_obligations` proves those sequents derivable;
+the whole-program certificate separately supplies execution safety. These
+supplemental proofs do not establish source semantic preservation: attaching
+the right terms and contexts remains part of the trusted compiler.
 
 The source closure becomes an ordinary lambda over the captured environment.
 Its parameter occupies slot zero; captured bindings shift by one. Calls evaluate
 the callee and argument once in that order. The existing lambda and application
 rules establish safety, including future heaps after alias writes. No capture
 analysis, new store model or additional semantic axiom is introduced. Real-export
-tests cover capture of older slots, calls after alias writes and returned
-closures. A checked execution trace, tied to the extracted graph by an equality
-regression, returns the changed cell value. Corrupt body, receiver, signature
+tests cover capture of older slots, calls after alias writes, returned
+closures, allocation and assignment inside closures, and narrower body claims.
+Checked execution traces, tied to extracted graphs by equality regressions,
+verify both an alias write followed by a captured read and a write inside a
+closure that returns its RHS. Corrupt body, receiver, signature
 and call claims are rejected by production and independent consumption.
 
-Next, extend closure-body coverage while retaining a checked obligation for
-every consumed claim. Block bodies need statement claims and a call/body
+Block bodies remain gated. They need statement claims and a call/body
 interface for graph execution; they must not be supported by duplicating graph
 continuations or dropping internal claims. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Source loops also remain

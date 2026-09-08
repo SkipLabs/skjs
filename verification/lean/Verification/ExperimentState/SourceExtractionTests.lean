@@ -51,7 +51,7 @@ private def fc : SourceInput.Claims := ⟨"f",(0,1),[],t,
   [(2,[]),(6,[("x",t)]),(10,[("x",t),("y",b)])],
   [((4,5),t),((8,9),b),((12,13),t)]⟩
 #guard is ((extractFn f fc).map (fun r => r.program[1]?.map ControlFlow.Node.expression)) ((some (.var 1)))
-#guard ok (do RequestJson.produceJson (toJson (← extractFn f fc)) 6)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn f fc).toRequest) 6)
 -- Test execution of this primitive subset uses the calculus's substitution and
 -- simultaneous environment transfer. It is a compiler regression, not a source
 -- preservation proof or a second maintained evaluator.
@@ -72,7 +72,7 @@ private def runPrimitive : Nat → ControlFlow.Program → Nat → Env → Optio
         let target ← match v with | .tru => some yes | .fls => some no | _ => none
         runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping (push v ρ))
 
-private def runRequest (r : Request) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
+private def runRequest (r : SourceRequest) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
 
 private def branchFn (q : Bool) : SourceInput.Fn :=
   ⟨"branch",(0,1),[],t,
@@ -90,8 +90,8 @@ private def branchClaims (q : Bool) : SourceInput.Claims :=
 
 #guard is ((extractFn (branchFn true) (branchClaims true)).map runRequest) (some .tru)
 #guard is ((extractFn (branchFn false) (branchClaims false)).map runRequest) (some .tru)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (branchFn true) (branchClaims true))) 8)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (branchFn false) (branchClaims false))) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (branchFn true) (branchClaims true)).toRequest) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (branchFn false) (branchClaims false)).toRequest) 8)
 
 -- A shared continuation has exactly one return node, with two predecessors
 -- reaching its source-expression node. Continuation duplication fails this test.
@@ -114,8 +114,8 @@ private def choiceClaims (q : Bool) : SourceInput.Claims :=
     [((4,5),(wireTy ⟨false,[.boolLit q]⟩)),((8,9),t),((12,13),b)]⟩
 #guard is ((extractFn (choiceFn true) (choiceClaims true)).map runRequest) (some .tru)
 #guard is ((extractFn (choiceFn false) (choiceClaims false)).map runRequest) (some .fls)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn true) (choiceClaims true))) 8)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn false) (choiceClaims false))) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn true) (choiceClaims true)).toRequest) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (choiceFn false) (choiceClaims false)).toRequest) 8)
 
 -- The tested binding is older than another local, so the refinement map must
 -- select its copied value rather than refine whichever slot happens to be first.
@@ -137,8 +137,8 @@ private def variableClaims (q : Bool) : SourceInput.Claims :=
      ((12,13),bool),((16,17),t),((20,21),b)]⟩
 #guard is ((extractFn (variableFn true) (variableClaims true)).map runRequest) (some .tru)
 #guard is ((extractFn (variableFn false) (variableClaims false)).map runRequest) (some .fls)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn true) (variableClaims true))) 8)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn false) (variableClaims false))) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn true) (variableClaims true)).toRequest) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn (variableFn false) (variableClaims false)).toRequest) 8)
 
 -- Source input slots follow declaration order, independently of export order
 -- inside each environment. Newly declared locals still push ahead of them.
@@ -150,19 +150,19 @@ private def parameterClaims : SourceInput.Claims :=
     (wireTy ⟨false,[.bool]⟩),
     [(2,[("second",(wireTy ⟨false,[.bool]⟩)),("first",(wireTy ⟨false,[.null]⟩))])],
     [((4,5),(wireTy ⟨false,[.bool]⟩))]⟩
-private def runArguments (r : Request) (vs : List Tm) :=
+private def runArguments (r : SourceRequest) (vs : List Tm) :=
   runPrimitive 100 r.program r.start (fun i => vs[i]?.getD .nul)
 #guard is ((extractFn parameterFn parameterClaims).map (·.inputs)) [[0],[1,2]]
 #guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.tru])) (some .tru)
 #guard is ((extractFn parameterFn parameterClaims).map (fun r => runArguments r [.nul,.fls])) (some .fls)
-#guard ok (do RequestJson.produceJson (toJson (← extractFn parameterFn parameterClaims)) 8)
+#guard ok (do RequestJson.produceJson (toJson (← extractFn parameterFn parameterClaims).toRequest) 8)
 
 -- Even if all internal claims consistently narrow the parameter to true,
 -- the separate source-signature entry edge must reject that narrowing.
 private def narrowedEntry : SourceInput.Claims := { parameterClaims with
   envs := [(2,[("first",(wireTy ⟨false,[.null]⟩)),("second",t)])]
   exprs := [((4,5),t)] }
-#guard !ok (do RequestJson.produceJson (toJson (← extractFn parameterFn narrowedEntry)) 8)
+#guard !ok (do RequestJson.produceJson (toJson (← extractFn parameterFn narrowedEntry).toRequest) 8)
 
 private def cellWire : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
   [("a",toJson "record"),("fields",toJson [Json.mkObj [("name",toJson "value"),
@@ -184,7 +184,7 @@ private def cellClaims : SourceInput.Claims :=
    [((4,7),cellWire),((5,6),t),((10,11),cellWire),
     ((14,19),b),((14,15),cellWire),((18,19),b)]⟩
 private def cellRequest : Request :=
-  (SourceExtraction.extractFn cellFn cellClaims).toOption.getD (request .nul [0])
+  (SourceExtraction.extractFn cellFn cellClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn cellFn cellClaims)
 #guard ok (RequestJson.produceJson (toJson cellRequest) 8)
 
@@ -234,7 +234,7 @@ private def captureClaims : SourceInput.Claims :=
     ((18,19),cellWire),((20,25),b),((20,21),cellWire),((24,25),b),
     ((28,33),B),((28,29),functionWire),((32,33),wireTy ⟨false,[.null]⟩)]⟩
 private def captureRequest : Request :=
-  (SourceExtraction.extractFn captureFn captureClaims).toOption.getD (request .nul [0])
+  (SourceExtraction.extractFn captureFn captureClaims).map (·.toRequest) |>.toOption.getD (request .nul [0])
 #guard ok (SourceExtraction.extractFn captureFn captureClaims)
 #guard ok (RequestJson.produceJson (toJson captureRequest) 10)
 private def captureProgram : ControlFlow.Program :=
@@ -264,5 +264,60 @@ theorem captured_alias_trace : ControlFlow.Execution captureProgram 36 []
     | apply ControlFlow.Execution.next (.ret rfl)
 
 #print axioms captured_alias_trace
+
+-- Supplemental proofs are necessary even when the whole lambda is typable.
+private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[]⟩
+#guard captureRequired.obligations.length == 4
+#guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
+  (List.range 19) 19 10 captureRequired.obligations)
+private def narrowedCapture : SourceInput.Claims :=
+  { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
+    (pos, if pos == (12,15) then t else ty) }
+#guard ok (do RequestJson.produceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
+#guard !ok (do
+  let r ← extractFn captureFn narrowedCapture
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) (List.range 19) 19 10 r.obligations)
+
+private def writerFn : SourceInput.Fn :=
+  ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
+    [.cst (2,3) "cell" (some cellWire) (.alloc (4,7) (.lit (5,6) (.vbool true))),
+     .cst (8,9) "writer" (some functionWire)
+       (.lam (10,19) "unit" (wireTy ⟨false,[.null]⟩) (wireTy ⟨false,[.bool]⟩)
+         (.write (12,19) (.var (12,13) "cell") (.lit (18,19) (.vbool false)))),
+     .ret (20,27) (.app (22,27) (.var (22,23) "writer") (.lit (26,27) .vnull))]⟩
+private def writerClaims : SourceInput.Claims :=
+  ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
+   [(2,[]),(8,[("cell",cellWire)]),(20,[("cell",cellWire),("writer",functionWire)])],
+   [((4,7),cellWire),((5,6),t),((10,19),functionWire),((12,19),b),
+    ((12,13),cellWire),((18,19),b),((22,27),wireTy ⟨false,[.bool]⟩),
+    ((22,23),functionWire),((26,27),wireTy ⟨false,[.null]⟩)]⟩
+private def writerProgram : ControlFlow.Program :=
+  [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩⟩,
+   ⟨.nul,.bind 1⟩, ⟨.var 0,.bind 2⟩, ⟨.var 0,.effect 3⟩,
+   ⟨.lam (.app (.lam (.app (.lam (.app (.lam (.var 1))
+       (.write (.var 1) (.var 0)))) .fls)) (.var 1)),.bind 4⟩,
+   ⟨.var 0,.effect 5⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩⟩,
+   ⟨.tru,.bind 7⟩, ⟨.nul,.effect 8⟩]
+#guard is ((extractFn writerFn writerClaims).map (·.program)) writerProgram
+#guard is ((extractFn writerFn writerClaims).map (·.start)) 9
+#guard ok (do
+  let r ← extractFn writerFn writerClaims
+  let _ ← RequestJson.produceJson (toJson r.toRequest) 10
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) (List.range 19) 19 10 r.obligations)
+
+/-- Calling the extracted writer changes the heap and returns its RHS, not null. -/
+theorem closure_write_trace : ControlFlow.Execution writerProgram 26 []
+    (.at 9 (fun _ => .nul)) [.fls] (.done .fls) := by
+  repeat first
+    | exact ControlFlow.Execution.refl
+    | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.beta rfl))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.writeV rfl (by decide))))
+    | apply ControlFlow.Execution.next (.bind rfl)
+    | apply ControlFlow.Execution.next (.effect rfl)
+    | apply ControlFlow.Execution.next (.ret rfl)
+
+#print axioms closure_write_trace
 
 end Verification.ExperimentState.SourceExtractionTests

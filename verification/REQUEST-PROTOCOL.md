@@ -111,8 +111,9 @@ one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
-Protocol version 2 requires explicit `inputs`. Requests, responses and source
-bundles use version 2; version 1 is rejected. There is one maintained protocol.
+Protocol version 2 requires explicit `inputs`. Raw requests and responses use
+version 2. Source bundles use version 3 to include supplemental expression proofs;
+older source bundles are rejected.
 Decode/re-encode validation rejects unknown fields and missing fields,
 recursively. The JSON parser and codecs still form part of the input-meaning
 boundary; round-trip tests are not a proof of fidelity to external source text.
@@ -144,8 +145,8 @@ The adapter accepts primitive parameters, initialized `const` declarations,
 nested boolean branches and returns, using variable expressions and null/boolean
 literals. Every path must return. Types
 may be null, boolean, true, false, unions of these, or bottom. Other constructs
-are rejected by the current slice gate, including source calls, closures, active-name
-shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
+are covered by the cell and closure extensions below or rejected by the slice
+gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 
 Generate an AST with `tools/parse-source.js`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:
@@ -156,9 +157,12 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":2,"functions":[...]}`, containing ordinary responses in source
-function order. Exported function order does not matter. The checking command
-reconstructs the requests itself and does not run the producer.
+`{"version":3,"functions":[...],"obligations":[...]}`, containing ordinary version-2
+responses in source function order. `obligations` has one list per function,
+including empty lists, with one evidence tree per reconstructed closure-expression
+or annotation judgment. Counts and root judgments must match exactly. Exported
+function order does not matter. The checking command reconstructs both the
+requests and required judgments itself and does not run the producer.
 
 The adapter represents boolean as the union of exact true and false labels.
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) proves
@@ -294,7 +298,7 @@ expressions; the existing node and incoming-edge checks justify their claims.
 The reference invariant is stable across writes; no heap-content refinement or
 analysis is added.
 
-## Reader closures and calls
+## Expression closures and calls
 
 The bounded function atom is:
 
@@ -316,13 +320,21 @@ primitive set. `FunctionClaims.translate_exact` identifies the selected label's
 meaning with the corresponding arrow in the existing world-indexed semantics.
 This does not assert equivalence with SKJS's full structural function types.
 
-Source arrows require explicit parameter and result annotations. Their bodies
-are literals, variables or `.value` reads of captured variables. Body claims
-must equal the declared result type, and read-receiver claims must equal the
-captured binding's type. Thus the ordinary lambda premise checks the exact body
-claim; no internal claim is silently skipped. Wider result annotations paired
-with narrower body claims are outside this initial slice. Block bodies,
-shadowing parameters and more complex bodies remain gated.
+Source arrows require explicit parameter and result annotations. Bodies compose
+literals, variables, cell allocation, reads, assignments and calls, including
+nested expression arrows under the same signature limits. Each expression's
+claim is checked as a separate exact sequent in its lexical context. The body
+also has to satisfy the declared result. A narrower body claim with a wider
+result annotation is supported when both judgments are derivable. Block bodies
+and shadowing parameters remain gated.
+
+Source bundle version 3 carries these supplemental proofs alongside the graph
+certificates. The consumer checks their syntax, scope, exact root judgment and
+rule derivation using `ExpressionClaims.checkAll`. Dropping a proof, adding a
+proof or substituting a valid proof of a different judgment is rejected.
+Assignments save the receiver and RHS once, perform the calculus write, and
+return the saved RHS; anonymous slots preserve lexical binding and evaluation
+order. The whole lambda is also checked by the ordinary program certificate.
 
 A closure is lowered to a lambda with its parameter in slot zero and captures
 shifted by one. Calls accept one ordinary argument and evaluate callee then

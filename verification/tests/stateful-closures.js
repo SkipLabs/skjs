@@ -42,6 +42,42 @@ try {
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
+  // Each source function has an ordered list of exact supplemental sequents.
+  if(evidence.version!==3 || evidence.obligations.length!==ast.functions.length ||
+     evidence.obligations.some(es=>es.length===0)) throw Error("missing expression obligations");
+  for(const [name,edit] of [
+    ["old source bundle rejected", e=>{e.version=2;}],
+    ["missing obligation lists", e=>{delete e.obligations;}],
+    ["missing function obligations", e=>{e.obligations.pop();}],
+    ["missing expression proof", e=>{e.obligations[0].pop();}],
+    ["extra expression proof", e=>{e.obligations[0].push(e.obligations[0][0]);}],
+    ["valid proof for wrong sequent", e=>{e.obligations[0][1]=clone(e.obligations[0][0]);}],
+    ["changed expression context", e=>{e.obligations[0][0].node.claim.context=[];}],
+    ["changed expression result", e=>{e.obligations[0][0].node.claim.type=[1];}],
+  ]) {
+    const e=clone(evidence);edit(e);
+    expect(name,run("--check-stateful-source",ast,claims,e),false);
+  }
+  for(const [name,select] of [
+    ["writingBody", e=>e.body.rhs],
+    ["allocatingBody", e=>e.body.e.e],
+    ["callingBody", e=>e.body.arg],
+  ]) {
+    const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name===name);
+    const closure=f.body.filter(s=>s.init && s.init.k==="lambda").at(-1).init;
+    const e=select(closure),fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name===name);
+    const claim=fc.exprs.find(q=>q.pos[0]===e.pos[0] && q.pos[1]===e.pos[1]);
+    claim.type=lit(name==="allocatingBody" ? "false" : "true");
+    expect(`${name} internal claim`,run("--produce-stateful-source",a,c),false);
+    expect(`${name} internal claim (consumer)`,run("--check-stateful-source",a,c,evidence),false);
+  }
+  // A failed composite search can be expensive; consumer rejection requires no search.
+  {
+    const c=clone(claims),f=ast.functions.find(f=>f.name==="writingBody");
+    const e=f.body[1].init.body,fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="writingBody");
+    fc.exprs.find(q=>q.pos[0]===e.pos[0] && q.pos[1]===e.pos[1]).type=lit("true");
+    expect("composite write result claim (consumer)",run("--check-stateful-source",ast,c,evidence),false);
+  }
   const parser=path.resolve(__dirname,"../tools/parse-source.js");
   for(const [name,closure] of [
     ["block closure gated","(u: null): boolean => { return true; }"],

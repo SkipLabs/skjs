@@ -1,4 +1,5 @@
 import Verification.ExperimentState.SourceInput
+import Verification.ExperimentState.ExpressionClaims
 
 /-! First source adapter for the stateful consumer. Names are resolved against
 initialized local bindings. Supplied expression types and source annotations
@@ -7,11 +8,10 @@ and claims; evidence never supplies the program it is checked against.
 
 The currently supported source slice is deliberately small: primitive parameters,
 initialized consts, branches, variables, null/boolean literals and local plain
-cells (allocation, reads and assignments), bounded reader closures and calls,
-with every
-path returning. Boolean variable tests refine the tested binding. Active-name
-shadowing is not yet supported. This compiler remains a reviewed extraction boundary, not a proved
-TypeScript semantics. Its output is checked by the proved calculus consumer. -/
+cells (allocation, reads and assignments), expression-bodied closures and calls,
+with every path returning. Boolean variable tests refine the tested binding.
+Active-name shadowing is not yet supported. This compiler remains a reviewed
+extraction boundary, not a proved TypeScript semantics. Its output is checked by the proved calculus consumer. -/
 namespace Verification.ExperimentState.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
 open SourceInput
@@ -37,38 +37,58 @@ private def exprType (fc : Claims) (e : SourceInput.Expr) : Except String (Ty Na
 private structure Built where
   program : Program := []
   claims : List (PointClaim Nat) := []
+  obligations : List ExpressionClaims.Required := []
 
 private abbrev Compiler := StateT Built (Except String)
 
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
     Compiler Target := do
-  let s ← get
-  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]))
+  let s : Built ← get
+  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations)
   return ⟨s.program.length, none⟩
 
-/-- The first closure slice has no internal statement environments. Its body
-claim is the declared result, so the existing lambda premise checks that exact
-claim. A read receiver must retain the exact captured-slot contract. -/
-private def closureBody (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
-    (e : SourceInput.Expr) (R : Ty Nat) : Except String Tm := do
-  if (← exprType fc e) != R then
-    throw "closure body claim must match its declared result in this slice"
-  let resolve := fun name => do
+/-- Lower expressions inside lambda bodies without losing their individual
+claims. Requirements use the lexical context at the occurrence; synthetic let
+slots are introduced only after the operand supplying their type is checked. -/
+private def closureExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
+    (e : SourceInput.Expr) : Compiler Tm := do
+  let A ← exprType fc e
+  let t ← match e with
+  | .var _ name =>
     match scope.idxOf? name with
-    | some i => pure i
+    | some i => pure (.var i)
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
-  match e with
-  | .var _ name => return .var (← resolve name)
   | .lit _ v => SourceTypes.value v
-  | .read _ receiver =>
-    match receiver with
-    | .var _ name =>
-      let i ← resolve name
-      let C ← exprType fc receiver
-      if Γ[i]? != some C then throw "closure receiver claim differs from its captured binding"
-      return .read (.var i)
-    | _ => throw "closure read must use a captured variable"
-  | _ => throw "closure body outside the value/read source slice"
+  | .alloc _ a => do
+    let a ← closureExpr fc scope Γ a
+    pure (.alloc a)
+  | .read _ a => do
+    let a ← closureExpr fc scope Γ a
+    pure (.read a)
+  | .app _ f a => do
+    let f ← closureExpr fc scope Γ f
+    let a ← closureExpr fc scope Γ a
+    pure (.app f a)
+  | .write _ receiver rhs => do
+    let B ← exprType fc receiver
+    let r ← closureExpr fc scope Γ receiver
+    let a ← closureExpr fc (""::scope) (B::Γ) rhs
+    -- let receiver = r; let rhs = a; let ignored = write receiver rhs; rhs.
+    -- Compiling a under the extended scope avoids substituting open terms.
+    pure (.app (.lam (.app (.lam (.app (.lam (.var 1))
+      (.write (.var 1) (.var 0)))) a)) r)
+  | .lam pos name arg ret body => do
+    if scope.contains name then throw "shadowing closure parameter is outside the source slice"
+    let D ← SourceTypes.translate (← decodeTy arg)
+    if D != [0] then throw "source closures currently require a null argument"
+    let R ← SourceTypes.translate (← decodeTy ret)
+    if A != [FunctionClaims.label R] then throw "closure signature claim differs from source annotations"
+    let b ← closureExpr fc (name::scope) (D::Γ) body
+    modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨D::Γ,b,R⟩⟩] }
+    pure (.lam b)
+  modify fun s => { s with obligations := s.obligations ++ [⟨e.span,⟨Γ,t,A⟩⟩] }
+  return t
+termination_by e
 
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
@@ -90,14 +110,9 @@ private def compileExpr (fc : Claims) (scope : List String) (Γ : List (Ty Nat))
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emit (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
-  | .lam _ name arg ret body =>
-    if scope.contains name then throw "shadowing closure parameter is outside the source slice"
-    let D ← SourceTypes.translate (← decodeTy arg)
-    if D != [0] then throw "source closures currently require a null argument"
-    let R ← SourceTypes.translate (← decodeTy ret)
-    if A != [FunctionClaims.label R] then throw "closure signature claim differs from source annotations"
-    let t ← closureBody fc (name::scope) (D::Γ) body R
-    emit (.lam t) (.bind next) Γ A
+  | .lam .. =>
+    let t ← closureExpr fc scope Γ e
+    emit t (.bind next) Γ A
   | .app _ callee arg =>
     let B ← exprType fc callee
     let C ← exprType fc arg
@@ -192,7 +207,10 @@ private def traversalBudget : List SourceInput.Stmt → Nat
 termination_by stmts => sizeOf stmts
 
 
-def extractFn (f : SourceInput.Fn) (fc : Claims) : Except String Request := do
+structure SourceRequest extends Request where
+  obligations : List ExpressionClaims.Required
+
+def extractFn (f : SourceInput.Fn) (fc : Claims) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope := f.params.map (·.name)
   if !distinct scope then throw "duplicate source parameter name"
@@ -215,9 +233,9 @@ def extractFn (f : SourceInput.Fn) (fc : Claims) : Except String Request := do
   let (entry, built) ← (do
     let first ← body (traversalBudget f.body) fc R scope f.body none
     emit .nul (.effect first) inputs [0]).run {}
-  return ⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩
+  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations⟩
 
-def extract (ast claims : Json) (fileKey : String) : Except String (List Request) := do
+def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   if (← jStr (← jField ast "file")) != fileKey then throw "AST file key mismatch"
   let files ← claims.getArr?
   let selected ← files.toList.filterM fun f => do return (← jStr (← jField f "file")) == fileKey
@@ -238,11 +256,14 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List Request
 structure Bundle where
   version : Nat
   functions : List Response
+  obligations : List (List (ProgramCertificates.Evidence Nat))
   deriving ToJson, FromJson
 
-def checkRequests (rs : List Request) (b : Bundle) : Bool :=
-  b.version == 2 && rs.length == b.functions.length &&
-    (rs.zip b.functions).all (fun (r,c) => verify r c)
+def checkRequests (rs : List SourceRequest) (b : Bundle) : Bool :=
+  b.version == 3 && rs.length == b.functions.length && rs.length == b.obligations.length &&
+    (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c) &&
+    (rs.zip b.obligations).all (fun (r,es) =>
+      ExpressionClaims.checkAll (RequestJson.graph r.toRequest) r.types.length r.obligations es)
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
   let rs ← extract ast claims fileKey
@@ -253,9 +274,11 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except String Json := do
   let rs ← extract ast claims fileKey
   let cs ← rs.mapM fun r => do
-    let j ← RequestJson.produceJson (toJson r) fuel
-    decodeResponse r j
-  let evidence := toJson (Bundle.mk 2 cs)
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel
+    decodeResponse r.toRequest j
+  let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    (List.range r.types.length) r.types.length fuel r.obligations
+  let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence
   return evidence
 
@@ -280,13 +303,22 @@ theorem checkJson_checked {ast claims evidence : Json} {fileKey : String}
 
 /-- Every accepted extracted function has the existing all-budget guarantee.
 This does not assert semantic preservation of the source compiler. -/
-theorem checkRequests_safe {rs : List Request} {b : Bundle}
+theorem checkRequests_safe {rs : List SourceRequest} {b : Bundle}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions) (n W heap ρ)
-    (he : EnvOk (RequestJson.graph r) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
-    SafeGraph r.program (meaning (RequestJson.graph r) r.result) n W heap (.at r.start ρ) := by
+    (he : EnvOk (RequestJson.graph r.toRequest) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    SafeGraph r.program (meaning (RequestJson.graph r.toRequest) r.result) n W heap (.at r.start ρ) := by
   simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
-  exact verify_safe (h.2 _ hm) n W heap ρ he hw hh
+  exact verify_safe (h.1.2 _ hm) n W heap ρ he hw hh
 
+/-- Every supplemental claim is a derivable sequent in the same calculus. -/
+theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
+    (h : checkRequests rs b = true) {r es} (hm : (r,es) ∈ rs.zip b.obligations)
+    {q e} (hq : (q,e) ∈ r.obligations.zip es) :
+    HasTy (RequestJson.graph r.toRequest) q.sequent.context q.sequent.term q.sequent.type := by
+  simp only [checkRequests, Bool.and_eq_true, List.all_eq_true] at h
+  exact ExpressionClaims.checkAll_sound (h.2 _ hm) hq
+
+#print axioms checkRequests_obligations
 #print axioms checkJson_checked
 #print axioms checkRequests_safe
 end Verification.ExperimentState.SourceExtraction
