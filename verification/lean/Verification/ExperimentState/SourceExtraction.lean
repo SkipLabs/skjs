@@ -44,7 +44,7 @@ fabricated expression claim at the if statement's span. -/
 private def closureType (fc : SourceClaims.Function) : SourceInput.Expr → Except String (Ty Nat)
   | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
   | .done _ => pure [0]
-  | .ifBody _ result _ _ _ => do SourceTypes.translate (← decodeTy result)
+  | .ifBody _ (some result) _ _ _ => do SourceTypes.translate (← decodeTy result)
   | e => exprType fc e
 
 private structure Built where
@@ -117,8 +117,8 @@ private def nullTestPlan (Γ : List (Ty Nat)) (slot : Nat) (equal : Bool) (A : T
       [DirectProof.cast H A (DirectProof.node H value B rule)])
   pure (DirectProof.node Γ term A (.unionVar slot) children)
 
-/-- Lower expressions inside lambda bodies without losing their individual
-claims. Requirements use the lexical context at the occurrence; synthetic let
+/-- Build compositional proofs for lambda bodies and source ternaries without
+losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
@@ -194,10 +194,11 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     modify fun s => { s with obligations := s.obligations ++ [⟨init.span,annotation.goal,some annotation,"binding-annotation"⟩] }
     let b ← closureExpr fc (name::scope) (I::H) body
     pure (DirectProof.letE H a b)
-  | .ifBody pos _ cond thn els => do
-    let H ← closureEnv fc pos.1 scope Γ
-    for (B,i) in H.zipIdx do
-      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
+  | .ifBody pos result cond thn els => do
+    let H ← if result.isSome then closureEnv fc pos.1 scope Γ else pure Γ
+    if result.isSome then
+      for (B,i) in H.zipIdx do
+        modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
     let c ← closureExpr fc scope H cond
     if let some (i, equal) := nullConditionVariable scope cond then
       let some C := H[i]? | throw "internal closure null-guard slot mismatch"
@@ -274,8 +275,8 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
       (fun i => if i == 0 then 0 else i+1))⟩
     let node ← emitAt e.span (op (.var 0)) (.bind drop) (B::Γ) A
     compileExpr fc scope Γ a node
-  | .atEnv .. | .letBody .. | .ifBody .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .lam .. =>
+  | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
+  | .lam .. | .ifBody _ none .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A
   | .nullTest _ equal testLeft left right =>

@@ -92,6 +92,12 @@ negation and effects in the selected arm. The separate
 `skjs-incomplete/null-loop-exit.ts` demonstrates independently verifiable repaired
 loop-exit claims after a null test and `continue`.
 
+Conditional expressions (`c ? a : b`) use the same checked Boolean and null
+refinements, including inside closures. Their result, condition and both arms
+require expression claims. Only the selected arm executes; conditions may have
+effects. The null-guard examples dynamically select nullable cells and callbacks
+and then read or call them after a guard.
+
 Source annotations and claims can also form unions of the supported primitive,
 cell and unary function types, such as nullable local cells and optional function
 results. Every arm keeps its existing validation; unsupported arms are rejected.

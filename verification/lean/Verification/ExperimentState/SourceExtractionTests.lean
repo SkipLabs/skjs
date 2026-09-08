@@ -300,7 +300,7 @@ private def branchCaptureFn : SourceInput.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
     | .cst pos name annot (.lam lp param arg ret body) =>
       .cst pos name annot (.lam lp param arg ret
-        (.ifBody (40,49) ret body
+        (.ifBody (40,49) (some ret) body
           (.atEnv (41,44) (.lit (42,43) (.vbool true)))
           (.atEnv (45,48) (.lit (46,47) (.vbool false)))))
     | st => st }
@@ -342,7 +342,7 @@ private def joinedCaptureFn : SourceInput.Fn :=
     | .cst pos name annot (.lam lp param arg ret body) =>
       .cst pos name annot (.lam lp param arg ret
         (.seqBody (40,49)
-          (.ifBody (40,49) N body (.done (41,42))
+          (.ifBody (40,49) (some N) body (.done (41,42))
             (.letBody (43,48) "" none
               (.write (44,47) (.var (44,45) "cell") (.lit (46,47) (.vbool true)))
               (.done (48,49))))
@@ -391,7 +391,7 @@ private def earlyCaptureFn (q : Bool) : SourceInput.Fn :=
   { captureFn with body := captureFn.body.map fun st => match st with
     | .cst pos name annot (.lam lp param arg ret body) =>
       .cst pos name annot (.lam lp param arg ret
-        (.ifBody (40,59) ret body
+        (.ifBody (40,59) (some ret) body
           (.atEnv (41,44) (.lit (42,43) (.vbool true)))
           (.seqBody (45,59)
             (.letBody (45,50) "" none

@@ -121,6 +121,10 @@ function expr(node) {
       // the key. Nested parentheses widen again at each level.
       return { ...expr(node.expression), pos: span(node) };
 
+    case ts.SyntaxKind.ConditionalExpression:
+      return {k: "conditional", pos: span(node), cond: expr(node.condition),
+        then: expr(node.whenTrue), else_: expr(node.whenFalse)};
+
     case ts.SyntaxKind.Identifier:
       if (node.text === "undefined") {
         return { k: "lit", pos: span(node), lit: { a: "undefined" } };

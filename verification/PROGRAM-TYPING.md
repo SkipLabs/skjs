@@ -592,6 +592,10 @@ alias write and a condition that writes then reads a cell. Invalid condition
 types, invalid arms, omitted premises and exchanged arms are rejected. This is
 calculus coverage. Source closure blocks now support terminal branches with both
 arms returning, including nested branches and checked entry refinements.
+Source ternaries reuse these rules and the existing null-tag union elimination.
+Their own expression claim supplies the result type; both arm claims are checked
+under the corresponding refined context. This introduces no additional rule or
+trusted proof-search step.
 
 
 Closure branches whose two arms fall through require no additional typing rule.

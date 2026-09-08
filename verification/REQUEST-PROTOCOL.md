@@ -372,6 +372,14 @@ Variable conditions (including negations, with swapped arms for odd parity) use
 `ifBoolVar`; other Boolean conditions use `ifBool`.
 Arm statement claims are checked against those justified contexts.
 
+Source ternaries use `{"k":"conditional","pos":[start,end],"cond":...,"then":...,"else_":...}`.
+Unlike the statement wrapper, this node selects its own expression claim, not a
+statement-entry environment. Its condition and both arms retain their exact
+expression claims. Internally both forms share conditional proof construction:
+Boolean-variable and null-tag refinements use the existing rules, while general
+conditions use ordinary Boolean elimination. Effects execute in the condition
+and selected arm only. No new calculus rule or source type label is introduced.
+
 For fall-through branches, `ifBody` has the administrative null result type and
 each arm ends in `{"k":"doneBody","pos":[start,end]}`. The sentinel is not a
 source expression or a claimed JavaScript result. A `seqBody` with `pos`, `init`

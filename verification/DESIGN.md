@@ -690,3 +690,10 @@ alone cannot exclude accessors or establish a callable implementation. A regress
 checks that adding null to such a parameter does not evade this boundary. The
 null-guard examples include local annotation checks and functions that return
 null on one path and a locally created cell or closure on another.
+
+Source ternary expressions now share the closure conditional proof construction.
+They require their own result claim and each operand claim, rather than a
+synthetic statement-entry environment. This supports dynamically chosen local
+nullable cells and callbacks without changing the external-value boundary or
+adding a typing rule. Effectful conditions and selected-arm effects retain their
+ordinary sequential evaluation.

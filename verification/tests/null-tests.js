@@ -207,6 +207,43 @@ try {
     false,
     "no claimed type",
   );
+  const ternary = guardAst.functions.find((f) => f.name === "ternaryGuard")
+    .body[0].e;
+  for (const [label, pos] of [
+    ["result", ternary.pos],
+    ["arm", ternary.else_.pos],
+  ]) {
+    const missing = structuredClone(guardClaims);
+    const f = missing
+      .find((f) => f.file === guardFile)
+      .functions.find((f) => f.name === "ternaryGuard");
+    f.exprs = f.exprs.filter((e) => e.pos[0] !== pos[0] || e.pos[1] !== pos[1]);
+    for (const mode of ["--produce-stateful-source", "--check-stateful-source"])
+      expect(
+        `ternary ${label} claim required (${mode})`,
+        run(mode, guardAst, missing, guardEvidence, guardFile),
+        false,
+        "no claimed type",
+      );
+  }
+  const narrowedTernary = structuredClone(guardClaims);
+  const ternaryFn = narrowedTernary
+    .find((f) => f.file === guardFile)
+    .functions.find((f) => f.name === "ternaryGuard");
+  ternaryFn.exprs.find(
+    (e) => e.pos[0] === ternary.pos[0] && e.pos[1] === ternary.pos[1],
+  ).type = { top: false, atoms: [{ a: "null" }] };
+  expect(
+    "ternary result cannot invent null",
+    run(
+      "--produce-stateful-source",
+      guardAst,
+      narrowedTernary,
+      undefined,
+      guardFile,
+    ),
+    false,
+  );
   const reversedGuard = structuredClone(guardAst);
   reversedGuard.functions[0].body[0].cond.op = "!==";
   expect(
@@ -233,6 +270,8 @@ try {
   for (const value of [null, true, false]) {
     for (const name of [
       "nullGuard",
+      "ternaryGuard",
+      "capturedTernary",
       "presentGuard",
       "negatedGuard",
       "olderGuard",
@@ -248,6 +287,14 @@ try {
     assert.equal(guardContext.capturedNullableCell(value), value);
     assert.equal(guardContext.nullableCellWrite(value), true);
     assert.equal(guardContext.optionalCallback(value), !value);
+    assert.equal(guardContext.ternaryEffects(value), !value);
+    for (const present of [true, false]) {
+      assert.equal(guardContext.chosenCell(present, value), present && value);
+      assert.equal(
+        guardContext.chosenCallback(present, value),
+        present && !value,
+      );
+    }
   }
   assert.equal(guardContext.maybeCell(false), null);
   assert.equal(guardContext.maybeCell(true).value, true);

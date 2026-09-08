@@ -144,3 +144,38 @@ function maybeCallback(present: boolean): null | ((x: boolean) => boolean) {
   }
   return null;
 }
+
+/** A ternary refines its nullable input in the selected expression arm. */
+function ternaryGuard(value: null | boolean): boolean {
+  return value === null ? false : value;
+}
+
+/** Allocate only on the present path, then guard the resulting local union. */
+function chosenCell(present: boolean, value: boolean): boolean {
+  const cell: null | { value: boolean } = present ? { value: value } : null;
+  return cell === null ? false : cell.value;
+}
+
+/** Choose a checked callback dynamically; the null arm never calls it. */
+function chosenCallback(present: boolean, value: boolean): boolean {
+  const callback: null | ((x: boolean) => boolean) = present
+    ? (x: boolean): boolean => !x
+    : null;
+  return callback === null ? false : callback(value);
+}
+
+/** Evaluate an effectful condition once and only execute its selected arm. */
+function ternaryEffects(value: boolean): boolean {
+  const cell: { value: boolean } = { value: false };
+  const result: boolean = (cell.value = value)
+    ? (cell.value = false)
+    : (cell.value = true);
+  return cell.value;
+}
+
+/** The same ternary proof construction works inside a captured closure. */
+function capturedTernary(value: null | boolean): boolean {
+  const choose: (unit: null) => boolean = (unit: null): boolean =>
+    value !== null ? value : false;
+  return choose(null);
+}

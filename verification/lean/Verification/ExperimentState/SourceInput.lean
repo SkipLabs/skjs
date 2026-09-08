@@ -38,7 +38,9 @@ inductive Expr where
   /-- Administrative completion and sequencing; neither invents a source expression claim. -/
   | done (pos : Span)
   | seqBody (pos : Span) (init body : Expr)
-  | ifBody (pos : Span) (result : Json) (cond thn els : Expr)
+  /-- Some result denotes a lowered statement conditional with an entry claim;
+  none denotes a source ternary whose own expression claim supplies its result. -/
+  | ifBody (pos : Span) (result : Option Json) (cond thn els : Expr)
   | letBody (pos : Span) (name : String) (annot : Option Json) (init body : Expr)
 
 def Expr.span : Expr → Span
@@ -96,7 +98,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "doneBody" => return .done p
   | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "ifBody" =>
-    return .ifBody p (← jField j "result") (← decodeExpr (← jField j "cond"))
+    return .ifBody p (some (← jField j "result")) (← decodeExpr (← jField j "cond"))
+      (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
+  | "conditional" =>
+    return .ifBody p none (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
   | "letBody" =>
     let annot ← jField j "annot"
