@@ -2053,6 +2053,9 @@ extension class TypeChecker {
     mostPrecise: Bool,
     isLValue: Bool = false,
   ): TType {
+    if (getConfig(tcenv.context).emitSkjsTypeClaims && !isLValue) {
+      tcenv.claimedExprVisits.push(e.pos)
+    };
     key = (e.pos, mostPrecise, isLValue);
     tcenv.exprTypes.maybeGet(key) match {
     | Some(_ty) ->

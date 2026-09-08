@@ -9,6 +9,10 @@ values, with type narrowing. A stateful calculus and certificate consumer are
 also implemented, with a source adapter for parameterized null/boolean functions. Verification
 runs separately from ordinary SKJS checking.
 
+Generate a separate source copy showing producer claims and optional fresh
+verification results with [annotated source reports](ANNOTATED-SOURCE.md).
+Reports preserve the original input and include a fingerprinted JSON manifest.
+
 ## Run
 
 Prerequisites are Node, the Lean toolchain pinned in

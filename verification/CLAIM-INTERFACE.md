@@ -9,6 +9,11 @@ still accepts SKJS exports. The independent calculus request and
 certificate checker already exist; this proposal changes how source claims reach
 that boundary, not which semantic rules establish acceptance.
 
+A [display-only annotated report generator](ANNOTATED-SOURCE.md) is now available.
+It accepts SKJS exports or an independent display-claim document and can freshly
+verify SKJS-backed functions. Its `@verify-report` comments are output, not the
+claim-input notation proposed here. Stored report statuses never supply evidence.
+
 ## One claim model, multiple representations
 
 A source-claim document associates candidate types with source expressions and
@@ -188,3 +193,9 @@ interpretation would not verify the written claim. Moving claims into comments
 neither enlarges the allowed assumptions nor proves these source-boundary steps.
 The independent evidence consumer and semantic soundness theorems remain the
 foundation for the resulting calculus judgments.
+
+SKJS also exports partial function snapshots on normal first-error body failures.
+The optional `collection` metadata records completion, checking mode, recovery
+quality and expression visits. It is provenance only, ignored by proof checking;
+missing required claims remain missing obligations. See
+[partial reports and repair](ANNOTATED-SOURCE.md#rejected-programs-and-partial-collection).

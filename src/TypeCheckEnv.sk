@@ -175,6 +175,8 @@ mutable class TCEnv private {
   // Type-claim recording (--emit-skjs-type-claims): the environment held on
   // entry to each statement, in check order. Empty unless emitSkjsTypeClaims is set.
   claimedEnvs: mutable Vector<TypeClaimEnv> = mutable Vector[],
+  // Visits survive an aborted expression whose result was never cached.
+  claimedExprVisits: mutable Vector<PosRange> = mutable Vector[],
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(

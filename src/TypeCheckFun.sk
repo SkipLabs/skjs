@@ -239,6 +239,7 @@ extension class TypeChecker {
     fd: FunDefWithModifiers<SimpleFieldName>,
     cgNode: CGNode,
   ): void {
+    claimErrorsBefore = subst.results.errors.size();
     for (modifier in fd.modifiers.modifiers) {
       modifier match {
       | ModAsync(pos) -> !fd.isAsync = Some(pos)
@@ -349,29 +350,56 @@ extension class TypeChecker {
       this.retType match {
       | None() -> void
       | Some(retType) ->
-        (_, term) = this.block(tcenv, body);
-        if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
-          subst.error(
-            Array[
-              (
-                fdPos,
-                "Not all code paths return a value, and the return type does not include 'undefined'",
-              ),
-            ],
-            TSCode(2366),
-          )
+        checkBody = () -> {
+          (_, term) = this.block(tcenv, body);
+          if (
+            term.mayFallthrough &&
+            !this.isVoid(tcenv, this.isAsync, retType)
+          ) {
+            subst.error(
+              Array[
+                (
+                  fdPos,
+                  "Not all code paths return a value, and the return type does not include 'undefined'",
+                ),
+              ],
+              TSCode(2366),
+            )
+          };
+          if (getConfig(tcenv.context).buildCfg) {
+            cfg = CFGBuilder::build(
+              cgNode.id.toString(),
+              fdPos,
+              typedParams,
+              retType,
+              body,
+              tcenv.exprTypes,
+              tcenv.stmtTerminations,
+            );
+            tcenv.results.!cfgs[cgNode] = cfg
+          };
         };
-        if (getConfig(tcenv.context).buildCfg) {
-          cfg = CFGBuilder::build(
-            cgNode.id.toString(),
-            fdPos,
-            typedParams,
-            retType,
-            body,
-            tcenv.exprTypes,
-            tcenv.stmtTerminations,
-          );
-          tcenv.results.!cfgs[cgNode] = cfg
+        if (getConfig(tcenv.context).emitSkjsTypeClaims) {
+          // Preserve the first-error snapshot, then rethrow: this is recording,
+          // not recovery. Non-typing exceptions retain their ordinary behavior.
+          try {
+            checkBody()
+          } catch {
+          | exn @ ErrorExn(_) ->
+            tcenv.results.!typeClaims[cgNode] = buildFunTypeClaims(
+              fd.name.getName(),
+              fdPos,
+              typedParams,
+              retType,
+              tcenv,
+              true,
+              claimErrorsBefore,
+            );
+            throw exn
+          | exn -> throw exn
+          }
+        } else {
+          checkBody()
         };
         if (getConfig(tcenv.context).emitSkjsTypeClaims) {
           tcenv.results.!typeClaims[cgNode] = buildFunTypeClaims(
@@ -380,6 +408,8 @@ extension class TypeChecker {
             typedParams,
             retType,
             tcenv,
+            false,
+            claimErrorsBefore,
           )
         }
       }

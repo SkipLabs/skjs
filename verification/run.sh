@@ -64,17 +64,19 @@ if [ "$BUILD" -eq 1 ]; then
   fi
 fi
 
-skjs_check() { # $1 = repo-relative .ts path; claims on stdout, errors on stderr
+skjs_run() { # CLI options, then repo-relative source path
   if [ -n "${DEVCONTAINER:-}" ]; then
     "$SKJS_BIN" check --import-stubs import-stubs --truthiness boolean \
-      --emit-skjs-type-claims "$1"
+      "$@"
   else
     docker run --rm -v "$REPO:/work/skjs" -v "$SKIP_DIR:/work/skip" \
       -w /work/skjs "$DOCKER_IMAGE" \
       "$SKJS_BIN" check --import-stubs import-stubs --truthiness boolean \
-      --emit-skjs-type-claims "$1"
+      "$@"
   fi
 }
+
+skjs_check() { skjs_run --emit-skjs-type-claims "$1"; }
 
 pass=0; fail=0
 report() { # $1 = OK|FAIL, $2 = file, $3 = detail
@@ -240,6 +242,23 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   fi
   if ! node verification/tests/stateful-closures.js "$WORK/closures.ast" "$WORK/closures.claims" \
        "$CLOSURES" "$VERIFIER"; then
+    fail=$((fail + 1))
+  fi
+  PARTIAL=verification/tests/partial-claims.ts
+  skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
+  plain_status=$?
+  skjs_check "$PARTIAL" > "$WORK/partial.claims" 2> "$WORK/partial.err"
+  partial_status=$?
+  skjs_run --emit-skjs-type-claims --keep-going "$PARTIAL" > "$WORK/recovery.claims" 2> "$WORK/recovery.err"
+  recovery_status=$?
+  if [ "$plain_status" -eq 0 ] || [ "$plain_status" -ne "$partial_status" ] || [ "$recovery_status" -eq 0 ] ||
+     ! cmp -s "$WORK/partial.plain.err" "$WORK/partial.err"; then
+    echo "FAIL: partial export changed ordinary diagnostics or exit status"; exit 1
+  fi
+  if ! node verification/tests/partial-claims.js "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"; then
+    exit 1
+  fi
+  if ! node verification/tests/annotated-source.js "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
   CELLS="verification/tests/stateful-source/cell-contracts.ts"

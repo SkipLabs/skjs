@@ -1,0 +1,245 @@
+#!/usr/bin/env node
+"use strict";
+
+// Display-only reports. These comments are never certificate input.
+const fs = require("fs"), path = require("path"), os = require("os"), crypto = require("crypto");
+const {spawnSync} = require("child_process");
+const ts = require("typescript");
+const hash = data => crypto.createHash("sha256").update(data).digest("hex");
+const clone = x => JSON.parse(JSON.stringify(x));
+const safeText = x => JSON.stringify(String(x)).slice(1,-1).replace(/\*\//g,"*\\/").replace(/[\u2028\u2029]/g,c=>c==="\u2028"?"\\u2028":"\\u2029");
+function comment(x) {
+  if(x.kind === "report") {
+    const lines=["Display-only claim report; not certificate input.",`producer=${x.producer}`,
+      `source=${x.source.file}`,`source-sha256=${x.source.sha256}`,
+      ...Object.entries(x).filter(([k])=>k.endsWith("Sha256")).map(([k,v])=>`${k}=${v}`),
+      "Function results cover modeled obligations, not every exported claim.",
+      "Original spans are before annotation. Full details are in the companion JSON manifest."];
+    return "/* @verify-report\n * "+lines.map(safeText).join("\n * ")+"\n */\n";
+  }
+  let text;
+  if(x.kind === "function") {
+    const signature=x.signature ? `; claimed (${x.signature.params.map(p=>`${p.name}: ${typeText(p.type)}`).join(", ")}) => ${typeText(x.signature.retType)}` : "";
+    text=`function ${x.name}; producer=${x.producer}${signature}; verification=${x.verification.status}`;
+    if(x.collection)text+=`; collection=${x.collection.completion}; quality=${x.collection.quality}; mode=${x.collection.mode}`;
+    if(x.verification.detail)text+=`; ${x.verification.detail}`;
+  } else if(x.kind === "entry") {
+    text=`entry { ${x.bindings.map(b=>`${b.name}: ${b.type}`).join(", ")} }`;
+  } else if(x.kind === "gap")text=x.detail;
+  else text=`expr ${x.type}`;
+  if(x.quality === "recovery")text+="; recovery claim";
+  if(x.originalSpan)text+=` @${x.originalSpan[0]}:${x.originalSpan[1]}`;
+  return `/* @verify-report ${safeText(text)} */ `;
+}
+
+function typeText(t) {
+  // Abbreviate only exact primitive encodings. Preserve every other type verbatim.
+  if(t && t.top === false && Object.keys(t).sort().join() === "atoms,top" && Array.isArray(t.atoms)) {
+    const names=t.atoms.map(a=> {
+      if(Object.keys(a).join() === "a" && ["null","boolean","string","number","undefined"].includes(a.a))return a.a;
+      if(Object.keys(a).sort().join() === "a,v" && a.a === "booleanlit" && ["true","false"].includes(a.v))return a.v;
+      return null;
+    });
+    if(names.every(x=>x!==null))return names.length ? names.join(" | ") : "never";
+  }
+  return JSON.stringify(t);
+}
+
+function fromSkjs(source, file, claims, producer) {
+  if(!Array.isArray(claims))throw Error("expected SKJS file claims");
+  const files=claims.filter(f=>f.file === file);
+  if(files.length!==1)throw Error("expected exactly one matching claim file");
+  return {version:1,source:{file,sha256:hash(source)},producer,
+    functions:files[0].functions.map(f=>({name:f.name,namePos:f.namePos,
+      ...(f.collection ? {collection:f.collection} : {}),
+      signature:{params:f.params,retType:f.retType},
+      entries:f.envs.map(e=>({pos:e.pos,bindings:e.vars.map(v=>({name:v.name,type:typeText(v.type),raw:v.type}))})),
+      expressions:f.exprs.map(e=>({pos:e.pos,type:typeText(e.type),raw:e.type}))}))};
+}
+
+function parse(source, file) {
+  const sf=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+  if(sf.parseDiagnostics.length)throw Error(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText," "));
+  return sf;
+}
+function render(source, report, results=null, identity={}) {
+  if(report.version!==1 || report.source?.sha256!==hash(source))throw Error("report source fingerprint mismatch");
+  if(typeof report.producer!=="string" || !report.producer || !Array.isArray(report.functions))throw Error("invalid report header");
+  if(results && results.length!==report.functions.length)throw Error("result count mismatch");
+  const scanner=ts.createScanner(ts.ScriptTarget.Latest,false,ts.LanguageVariant.Standard,source);
+  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFileToken;k=scanner.scan())
+    if((k===ts.SyntaxKind.MultiLineCommentTrivia || k===ts.SyntaxKind.SingleLineCommentTrivia) &&
+       /@verify-report\b/.test(scanner.getTokenText()))throw Error("source already contains report annotations; use the original source");
+  const sf=parse(source,report.source.file), functions=new Map(), starts=new Set(), spans=new Set();
+  function walk(n) {
+    starts.add(n.getStart(sf));spans.add(`${n.getStart(sf)}:${n.end}`);
+    if(ts.isFunctionDeclaration(n)&&n.name)functions.set(`${n.name.getStart(sf)}:${n.name.end}`,n);
+    ts.forEachChild(n,walk);
+  }
+  walk(sf);
+  const insertions=new Map(), seen=new Set();
+  function add(pos,data){insertions.set(pos,(insertions.get(pos)||"")+comment(data));}
+  const checkSpan = p => {
+    if(!Array.isArray(p)||p.length!==2||!p.every(Number.isSafeInteger)||p[0]<0||p[0]>=p[1]||p[1]>source.length)
+      throw Error("invalid source span");
+  };
+  for(const [index,f] of report.functions.entries()) {
+    checkSpan(f.namePos);
+    const key=f.namePos.join(":"), node=functions.get(key);
+    if(!node || node.name.text!==f.name || seen.has(`fn:${key}`))throw Error("missing or duplicate function identity");
+    seen.add(`fn:${key}`);
+    if(!Array.isArray(f.entries)||!Array.isArray(f.expressions))throw Error("invalid function claims");
+    add(node.getStart(sf),{kind:"function",name:f.name,producer:report.producer,
+      collection:f.collection,
+      ...(f.signature ? {signature:f.signature} : {}),
+      ...(results ? {verification:results[index]} : {verification:{status:"not-run"}})});
+    const at=(kind,q)=> {
+      checkSpan(q.pos);
+      if(q.pos[0]<node.getStart(sf)||q.pos[1]>node.end||!starts.has(q.pos[0]) ||
+          (kind==="expression" && !spans.has(q.pos.join(":"))))throw Error(`cannot attach ${kind} claim at ${q.pos}`);
+      const k=`${key}:${kind}:${q.pos[0]}:${kind==="expression" ? q.pos[1] : ""}`;
+      if(seen.has(k))throw Error("duplicate claim attachment");seen.add(k);
+    };
+    for(const q of f.entries) {
+      at("entry",q);
+      if(!Array.isArray(q.bindings)||new Set(q.bindings.map(b=>b.name)).size!==q.bindings.length ||
+         q.bindings.some(b=>typeof b.name!=="string"||typeof b.type!=="string"))throw Error("invalid entry bindings");
+      add(q.pos[0],{kind:"entry",originalSpan:q.pos,producer:report.producer,
+        quality:f.collection?.quality,bindings:q.bindings.map(({name,type})=>({name,type})),status:"producer-claim"});
+    }
+    for(const q of f.expressions) {
+      at("expression",q);
+      if(typeof q.type!=="string")throw Error("invalid expression claim");
+      add(q.pos[0],{kind:"expression",originalSpan:q.pos,producer:report.producer,quality:f.collection?.quality,type:q.type,status:"producer-claim"});
+    }
+  }
+  for(const gap of coverage(source,report))add(gap.pos[0],{kind:"gap",originalSpan:gap.pos,detail:gap.status});
+  // No new line terminators: preserve return/throw/async automatic-semicolon behavior.
+  // Hashbang and BOM, when present, must remain at the beginning of the file.
+  const headerAt=source.startsWith("#!") ? (source.indexOf("\n")<0 ? source.length : source.indexOf("\n")+1)
+    : source.charCodeAt(0)===0xfeff ? 1 : 0;
+  const header=comment({kind:"report",version:1,source:report.source,producer:report.producer,
+    notice:"Display only. Results cover modeled function obligations, not every exported claim. Re-extract and verify after edits.",...identity});
+  insertions.set(headerAt,header+(insertions.get(headerAt)||""));
+  let text=source;
+  for(const [pos,data] of [...insertions].sort((a,b)=>b[0]-a[0]))text=text.slice(0,pos)+data+text.slice(pos);
+  // Compare AST structure and every token's source spelling after adding comments.
+  const shape=(n,s)=>[n.kind,...(n.getChildCount(s) ? n.getChildren(s).map(c=>shape(c,s)) : [n.getText(s)])];
+  const annotated=parse(text,report.source.file);
+  if(JSON.stringify(shape(sf,sf))!==JSON.stringify(shape(annotated,annotated)))throw Error("annotation changed the source AST");
+  return text;
+}
+
+// Absence is meaningful only when the producer explicitly records collection progress.
+function coverage(source,report) {
+  const sf=parse(source,report.source.file), gaps=[];
+  for(const node of sf.statements) {
+    if(!ts.isFunctionDeclaration(node)||!node.name||!node.body)continue;
+    const f=report.functions.find(f=>f.namePos[0]===node.name.getStart(sf)&&f.namePos[1]===node.name.end);
+    if(!f){gaps.push({pos:[node.getStart(sf),node.end],status:"claims unavailable; verification not established"});continue;}
+    if(!f.collection)continue;
+    for(const pos of f.collection.visitedExpressions||[]) {
+      if(!f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
+        if(!Array.isArray(pos)||pos.length!==2||!pos.every(Number.isSafeInteger)||pos[0]<node.getStart(sf)||pos[1]>node.end||pos[0]>=pos[1])throw Error("invalid expression visit span");
+        const matches=n=>(n.getStart(sf)===pos[0]&&n.end===pos[1])||ts.forEachChild(n,matches);
+        if(!matches(node))throw Error("cannot attach expression visit");
+        gaps.push({pos,status:"expression entered without a type result"});
+      }
+    }
+    if(f.collection.completion==="aborted") {
+      const walk=n=> {
+        if(ts.isFunctionDeclaration(n))return;
+        if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isExpressionStatement(n)) &&
+           !f.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
+        ts.forEachChild(n,walk);
+      };
+      walk(node.body);
+    }
+  }
+  return gaps;
+}
+
+function run(executable,args) {
+  const r=spawnSync(executable,args,{encoding:"utf8",timeout:120000,maxBuffer:32*1024*1024});
+  if(r.error || r.signal)throw Error(`tool execution failed: ${r.error?.message || r.signal}`);
+  return r;
+}
+function verifySkjs(sourcePath, source, claims, file, report, verifier, depth) {
+  const parser=path.join(__dirname,"parse-source.js"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
+  try {
+    const p=run(process.execPath,[parser,sourcePath,"--stateful"]);
+    const identity={verifierSha256:hash(fs.readFileSync(verifier)),parserSha256:hash(fs.readFileSync(parser))};
+    if(p.status!==0) {
+      if(!p.stderr.startsWith("gate:"))throw Error(`source parser failed: ${p.stderr}`);
+      return {identity,results:report.functions.map(()=>({status:"unsupported",detail:p.stderr.trim()}))};
+    }
+    const ast=JSON.parse(p.stdout);ast.file=file;
+    const results=report.functions.map(f=> {
+      const a=clone(ast);a.functions=a.functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
+      if(a.functions.length!==1)throw Error("function identity mismatch during verification");
+      const c=clone(claims).filter(g=>g.file===file);
+      c[0].functions=c[0].functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
+      const ap=path.join(temp,"ast.json"), cp=path.join(temp,"claims.json"), ep=path.join(temp,"evidence.json");
+      fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
+      const produced=run(verifier,["--produce-stateful-source",ap,cp,file,ep,String(depth)]);
+      if(produced.status!==0)return {status:"not-established",detail:(produced.stderr||produced.stdout).trim()};
+      const checked=run(verifier,["--check-stateful-source",ap,cp,file,ep]);
+      if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};
+      return {status:"verified",scope:"modeled function and required claims",certificateSha256:hash(fs.readFileSync(ep))};
+    });
+    if(fs.readFileSync(sourcePath,"utf8")!==source)throw Error("source changed during verification");
+    return {identity,results};
+  } finally {fs.rmSync(temp,{recursive:true,force:true});}
+}
+
+function checkFresh(output) {
+  const m=JSON.parse(fs.readFileSync(output+".json","utf8"));
+  const checks=[[output,m.annotatedSha256],[m.sourcePath,m.source.sha256],[m.claimsPath,m.claimsSha256]];
+  if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
+  if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
+  if(m.parserSha256)checks.push([path.join(__dirname,"parse-source.js"),m.parserSha256]);
+  for(const [file,digest] of checks)if(hash(fs.readFileSync(file))!==digest)throw Error(`stale report: ${file}`);
+  console.log("Snapshot fingerprints match. This is not proof verification.");
+}
+
+function main(args) {
+  if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
+  const sourcePath=args.shift(), options={format:"skjs",producer:"skjs",depth:10};
+  if(!sourcePath)throw Error("usage: annotate-source.js source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
+  const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics"]);
+  while(args.length) {
+    const key=args.shift()?.replace(/^--/,"");
+    if(!allowed.has(key)||!args.length)throw Error(`invalid option ${key}`);
+    options[key]=args.shift();
+  }
+  if(!options.claims || !["skjs","report"].includes(options.format))throw Error("expected --claims and a supported format");
+  if(!/^\d+$/.test(String(options.depth))||!Number.isSafeInteger(Number(options.depth)))throw Error("invalid proof depth");
+  if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
+  const output=options.out || sourcePath.replace(/\.ts$/,"")+".annotated.ts", manifest=output+".json";
+  if([sourcePath,options.claims,options.verify].filter(Boolean).some(p=>path.resolve(p)===path.resolve(output)))throw Error("output must differ from inputs");
+  if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose a new --out path");
+  const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims), input=JSON.parse(bytes);
+  const file=options["file-key"] || sourcePath;
+  const report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : input;
+  // Validate attachment before running any expensive proof generation.
+  render(source,report);
+  let results=null, identity={claimsSha256:hash(bytes)};
+  if(options.verify) {
+    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth));
+    results=verified.results;identity={...identity,...verified.identity};
+  }
+  const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
+  if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
+  const annotated=render(source,report,results,identity);
+  const data={version:1,sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
+    ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
+    ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
+    ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),
+    gaps:coverage(source,report),functions:report.functions,results};
+  fs.writeFileSync(output,annotated,{flag:"wx"});
+  try {fs.writeFileSync(manifest,JSON.stringify(data,null,2)+"\n",{flag:"wx"});}
+  catch(e){fs.unlinkSync(output);throw e;}
+  console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
+}
+if(require.main===module)try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
+module.exports={hash,fromSkjs,render,coverage,verifySkjs,main};

@@ -36,12 +36,16 @@ class FunTypeClaims(
   retType: TType,
   envs: Array<TypeClaimEnv>,
   exprs: Array<TypeClaimExpr>,
-  // Snapshot after checking the body. Export may read existing bounds but
-  // cannot solve, seal or grow inference variables.
+  // Snapshot at successful completion or a body error that aborts checking.
+  // Export reads existing bounds; it cannot solve, seal or grow inference variables.
   substValues: SortedMap<TVarID, SubstValue>,
+  aborted: Bool,
+  recovered: Bool,
+  mode: String,
+  visitedExpressions: Array<PosRange>,
 )
 
-// Collects the claims for one function once its body has been checked.
+// Collects the claims at completion or abort without resuming type checking.
 // Reads only what the checker already computed.
 fun buildFunTypeClaims(
   name: String,
@@ -49,6 +53,8 @@ fun buildFunTypeClaims(
   typedParams: Array<(Pattern, TType)>,
   retType: TType,
   tcenv: mutable TCEnv,
+  aborted: Bool,
+  errorsBefore: Int,
 ): FunTypeClaims {
   params = typedParams.map(p ->
     TypeClaimParam(
@@ -76,6 +82,19 @@ fun buildFunTypeClaims(
   for (kv in byPos.items()) {
     exprs.push(TypeClaimExpr(kv.i0, kv.i1))
   };
+  visits = SortedMap<PosRange, Bool>[];
+  for (pos in tcenv.claimedExprVisits) {
+    !visits[pos] = true
+  };
+  visited = mutable Vector<PosRange>[];
+  for (pos in visits.keys()) {
+    visited.push(pos)
+  };
+  mode = tcenv.results.errorHandling match {
+  | EHDefault() -> "normal"
+  | EHKeepGoing() -> "keep-going"
+  | EHBacktrace() -> "backtrace"
+  };
   FunTypeClaims(
     name,
     namePos,
@@ -84,6 +103,10 @@ fun buildFunTypeClaims(
     tcenv.claimedEnvs.toArray(),
     exprs.toArray(),
     tcenv.subst.values,
+    aborted,
+    tcenv.results.errors.size() > errorsBefore,
+    mode,
+    visited.toArray(),
   )
 }
 
@@ -439,6 +462,38 @@ fun funTypeClaimsJson(
     Array[
       ("name", jsonStr(fc.name)),
       ("namePos", claimPosJson(fc.namePos, symbols)),
+      (
+        "collection",
+        jsonObj(
+          Array[
+            (
+              "completion",
+              jsonStr(
+                if (fc.aborted) {
+                  "aborted"
+                } else {
+                  "complete"
+                },
+              ),
+            ),
+            (
+              "quality",
+              jsonStr(
+                if (fc.recovered) {
+                  "recovery"
+                } else {
+                  "unverified"
+                },
+              ),
+            ),
+            ("mode", jsonStr(fc.mode)),
+            (
+              "visitedExpressions",
+              jsonArr(fc.visitedExpressions.map(p -> claimPosJson(p, symbols))),
+            ),
+          ],
+        ),
+      ),
       (
         "params",
         jsonArr(
