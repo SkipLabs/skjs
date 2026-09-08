@@ -61,7 +61,10 @@ its checked Boolean refinement and without the falling arm's local bindings.
 
 
 The source fragment is smaller than the calculus. General strings/numbers,
-`typeof`, equality tests, mutable bindings, generics and general overloads are
+Strict `===` and `!==` comparisons with a null literal now work as expressions,
+including inside callbacks. Refinements of the tested variable on outgoing graph
+edges are not yet supported; `unsupported/null-guard.ts` records that boundary.
+`typeof`, other equality tests, mutable bindings, generics and general overloads are
 not currently source-verifiable. The parser can represent some syntax that the
 Lean adapter subsequently rejects. Such rejection is a limitation, not evidence
 that a producer claim is false.

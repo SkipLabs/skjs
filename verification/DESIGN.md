@@ -630,3 +630,23 @@ SKJS forgets the loop-exit refinement and rejects the `true` annotation. Repairi
 only the exit binding and returned-expression claim makes the program verifiable
 with the existing calculus rules. The regression uses the ordinary partial
 export without `--keep-going`, and independently checks the produced evidence.
+
+### Null predicates through union elimination
+
+`HasTy.unionVar` eliminates one variable's finite union by checking the same term
+and result under every singleton-label alternative. Its soundness proof selects
+the alternative containing the actual immutable value; no semantic budget enters
+the rule. The ordinary evidence checker enforces complete coverage and unchanged
+other bindings. Derivation-to-evidence completeness is extended with this rule.
+
+The source adapter now checks strict equality/inequality against a null literal,
+including inside callbacks and with effectful operands. Both operand claims are
+required and both expressions evaluate in order. Existing `ifTag` plus `unionVar`
+prove the lowered predicate. Tests exercise both operand orders and polarities,
+independent consumption, omitted alternatives, and forged claims.
+
+Graph-edge null refinement remains the next step. The accepted SKJS program in
+`tests/unsupported/null-guard.ts` reaches a precise incoming-edge failure: predicate
+typing succeeds but does not yet transport the tested variable's partition to the
+successor. This limitation must be resolved in the checked edge rules, not by
+accepting the producer's narrowed environment without proof.

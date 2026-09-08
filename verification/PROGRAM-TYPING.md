@@ -178,6 +178,31 @@ satisfying heap. A separate execution theorem confirms it returns `false` from
 an empty heap; the safety proof does not depend on that trace. A negative theorem
 rules out any typing derivation for applying null as a function.
 
+## Eliminating a variable's union type
+
+A finite union can be split in one immutable environment slot. Write $[a]$ for
+one graph label viewed as a type. Every member must establish the same term and
+result; all other slots retain their original types:
+
+$$
+\frac{\Gamma(i)=C\qquad
+      \forall a\in C.\;\Gamma[i:=[a]]\vdash_G t:A}
+     {\Gamma\vdash_G t:A}.
+$$
+
+`unionVar i` carries one premise for each label in $C$, in list order. The checker
+rejects missing alternatives, changed terms/results, and changes to unrelated
+bindings. An empty union needs no premises because that input environment has
+no inhabitants. Soundness chooses the member containing the actual immutable
+value and applies that premise's existing world-indexed soundness theorem.
+There is no runtime case split added by this rule and no join computation.
+
+Combined with `ifTag`, this checks a term such as
+`if isNull(x) then true else x` under `x : Null | Bool`, at result `Bool`.
+Proof search uses the rule for tag tests over explicit unions of labels. It does
+not repeatedly split a singleton label whose graph definition itself contains
+mixed shapes; that representation needs additional decomposition rules.
+
 ## Executable program evidence
 
 `ProgramCertificates.lean` checks finite evidence trees. Each node contains a

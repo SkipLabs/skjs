@@ -61,6 +61,11 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       let pt ← renderAt G pool depth (Γ.set i T) t
       let pe ← renderAt G pool depth (Γ.set i F) e
       pure (.node ⟨Γ,j.term,j.type⟩ (.ifBoolVar T F) [pt,pe])
+    | .unionVar i, _, children =>
+      let C ← Γ[i]?
+      if C.length != children.length then none else do
+        let ps ← (C.zip children).mapM fun (a,p) => renderAt G pool depth (Γ.set i [a]) p
+        pure (.node ⟨Γ,j.term,j.type⟩ (.unionVar i) ps)
     | _, _, _ =>
       let es ← children.attach.mapM fun q => renderAt G pool depth Γ q.val
       pure (.node ⟨Γ,j.term,j.type⟩ r es)

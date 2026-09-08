@@ -50,3 +50,8 @@ or rejection being tested; for unsupported examples, distinguish the adapter's
 limitation from a soundness result. Loop examples should say when termination is
 not established. Comments are part of the displayed source, so the tests always
 regenerate claims rather than reuse offsets from an older source version.
+
+`null-tests.js` covers strict null comparisons, both operand orders, callbacks,
+effectful operands and independent evidence. `unsupported/null-guard.ts` is a
+separate graph-refinement limitation checked against real SKJS claims by that
+suite; the other unsupported fixtures are checked at their syntax/type gates.

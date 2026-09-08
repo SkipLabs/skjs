@@ -167,7 +167,12 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         return (recur Γ u A).map fun p => .node ⟨Γ,t,A⟩ .ifTrue [p]
       if decide (Answers G B tag false) then
         return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
-      return none
+      -- Split only an explicit union. A singleton whose graph clause itself
+      -- mixes shapes is not made smaller by repeating this rule.
+      if B.length ≤ 1 then return none
+      return do
+        let ps ← B.mapM fun a => recur (Γ.set i [a]) t A
+        pure (.node ⟨Γ,t,A⟩ (.unionVar i) ps)
     | .ite c t e =>
       let known := pool.findSome? fun C => do
         let [.boolLit q] := expand G C | none

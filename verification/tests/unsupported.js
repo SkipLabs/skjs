@@ -8,9 +8,10 @@ const { spawnSync } = require("node:child_process");
 const verifier = process.argv[2];
 const dir = "verification/tests/unsupported";
 const cases = {
-  "calls_and_consts.ts": "expression outside the stateful source slice",
+  "calls_and_consts.ts":
+    "source type outside the null/boolean/singleton source slice",
   "typeof_narrow.ts": "expression outside the stateful source slice",
-  "beyond_precision.ts": "expression outside the stateful source slice",
+  "beyond_precision.ts": "equality requires a null literal operand",
   "mutable_binding.ts": "only `const` bindings",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));
@@ -25,7 +26,9 @@ try {
       .readdirSync(dir)
       .filter((f) => f.endsWith(".ts"))
       .sort(),
-    Object.keys(cases).sort(),
+    // This file needs real claims to reach its edge-obligation boundary;
+    // null-tests.js checks it in the full suite below.
+    [...Object.keys(cases), "null-guard.ts"].sort(),
   );
   for (const [name, reason] of Object.entries(cases)) {
     const file = dir + "/" + name;
@@ -35,10 +38,23 @@ try {
     ]);
     if (result.status === 0) {
       fs.writeFileSync(tmp + "/ast.json", result.stdout);
-      // Decoding the unsupported source must fail before any candidate is needed.
+      // Supply signatures so newly supported syntax can reach the type gate.
+      // No invented statement/expression claims should be needed for these cases.
       fs.writeFileSync(
         tmp + "/claims.json",
-        JSON.stringify([{ file, functions: [] }]),
+        JSON.stringify([
+          {
+            file,
+            functions: JSON.parse(result.stdout).functions.map((f) => ({
+              name: f.name,
+              namePos: f.namePos,
+              params: f.params,
+              retType: f.retType,
+              envs: [],
+              exprs: [],
+            })),
+          },
+        ]),
       );
       result = run(verifier, [
         "--produce-stateful-source",

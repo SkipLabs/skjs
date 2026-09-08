@@ -101,10 +101,10 @@ assert.deepEqual(
     envReport.manifest.results.find((r) => r.function === target.id).location,
     { kind: "environment-obligation", start: env.pos[0] },
   );
-  const outsideFile = "verification/tests/unsupported/calls_and_consts.ts";
+  const outsideFile = "verification/tests/unsupported/typeof_narrow.ts";
   const outsideSource = fs.readFileSync(outsideFile, "utf8");
-  const nameStart = outsideSource.indexOf("label");
-  const conditionStart = outsideSource.indexOf("x === null");
+  const nameStart = outsideSource.indexOf("describe");
+  const conditionStart = outsideSource.indexOf("typeof x");
   const outsideReport = await candidateReport(
     {
       format: "source-claims",
@@ -117,13 +117,13 @@ assert.deepEqual(
         sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
         functions: [
           {
-            name: "label",
-            namePos: [nameStart, nameStart + 5],
+            name: "describe",
+            namePos: [nameStart, nameStart + 8],
             params: [],
             result: [0],
             entries: [],
             expressions: [
-              { pos: [conditionStart, conditionStart + 10], type: [1, 2] },
+              { pos: [conditionStart, conditionStart + 8], type: [1, 2] },
             ],
           },
         ],
@@ -133,7 +133,7 @@ assert.deepEqual(
   );
   assert.deepEqual(outsideReport.manifest.results[0].location, {
     kind: "source-limitation",
-    pos: [conditionStart, conditionStart + 10],
+    pos: [conditionStart, conditionStart + 8],
   });
   // Repair missing information in a sound program without collecting again.
   const incomplete = structuredClone(original);

@@ -103,6 +103,33 @@ theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
 
 #print axioms known_condition_effects_preserved
 
+-- A tag test can split an explicit null/Boolean union without a semantic join.
+private def nullTypes : List (List (PositiveNormalization.Clause (List Nat))) :=
+  [[.nul],[.boolLit true],[.boolLit false]]
+private def NG : NormalGraph Nat := fun i => (nullTypes[i]?).getD []
+private def nullGuard : Tm := .ite (.test .isNul (.var 0)) .tru (.var 0)
+private def nullProof : Evidence Nat :=
+  (CertificateProducer.expression NG [[0],[1],[2],[1,2],[0,1,2]] 10 [[0,1,2],[2]] nullGuard [1,2]).getD
+    (.node ⟨[],.nul,[]⟩ .nul [])
+#guard checkTree NG nullProof
+#guard ok (roundtrip ⟨2,nullTypes,[⟨nullGuard,.ret⟩],
+  [⟨[[0,1,2]],[1,2]⟩],[1,2],0,[[0,1,2]]⟩)
+-- The evidence cannot omit a union member or alter an unrelated binding.
+#guard !(match nullProof with
+  | .node j _ ps => checkTree NG (.node j (.unionVar 0) ps.tail))
+#guard !(match nullProof with
+  | .node j r ps => checkTree NG (.node j r (ps.map fun p => match p with
+      | .node k r children => .node {k with context := k.context.set 1 [1]} r children)))
+#guard !(match nullProof with
+  | .node j _ ps => checkTree NG (.node j (.unionVar 1) ps))
+#guard !checkTree NG (.node ⟨[],.nul,[0]⟩ (.unionVar 0) [])
+-- An empty union has no inhabitants; this is elimination from an impossible input.
+#guard checkTree NG (.node ⟨[[]],.read .nul,[1]⟩ (.unionVar 0) [])
+-- Packing different shapes into a single graph label is not split by this search.
+#guard !ok (roundtrip ⟨2,[[.nul,.boolLit true],[.boolLit true]],
+  [⟨.ite (.test .isNul (.var 0)) .tru (.var 0),.ret⟩],
+  [⟨[[0]],[1]⟩],[1],0,[[0]]⟩)
+
 -- A captured cell is read when the closure is called, after an alias write.
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1⟩,

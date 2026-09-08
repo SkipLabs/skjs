@@ -141,6 +141,10 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | ifTag : Γ[i]? = some A → Answers G A tag q →
       (q = true → HasTy G Γ u B) → (q = false → HasTy G Γ e B) →
       HasTy G Γ (.ite (.test tag (.var i)) u e) B
+  /-- Eliminate a finite union in one immutable environment slot. Every member
+  must establish the same term and result, without changing other bindings. -/
+  | unionVar : Γ[i]? = some C →
+      (∀ a ∈ C, HasTy G (Γ.set i [a]) t A) → HasTy G Γ t A
   | sub : HasTy G Γ t A → PositiveCertificates.check G A B cert = true → HasTy G Γ t B
 
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
@@ -310,6 +314,11 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
           exact ihe (htag.symm.trans he) k _ h ρ
             (henv.transfer k (by omega) _ (WExt_refl _))
             (WorldAdm_trunc _ hw) (by simpa only [trunc_trunc] using HeapOk_trunc k _ h (HeapOk_trunc (k+1) W h hh))
+  | @unionVar Γ i C t A hi ht ih =>
+    intro n W h ρ henv hw hh
+    obtain ⟨a, ha, hv⟩ := henv.2 i C hi
+    apply ih a ha n W h ρ (henv.refine hi ?_) hw hh
+    exact ⟨a, by simp, hv⟩
   | sub ht hc ih =>
     intro n W h ρ he hw hh
     exact Safe_mono n (fun k _ V v hv => (PositiveCertificates.check_sound hc).sound k V v hv)

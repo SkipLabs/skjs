@@ -1,7 +1,7 @@
 /**
  * Future source-coverage example: narrow a nullable string and choose a
- * fallback. Strings and null equality are outside the current source verifier,
- * so this fixture tests an explicit boundary.
+ * fallback. Null equality is supported, but strings remain outside the source
+ * verifier, so this fixture still tests a type boundary.
  */
 function label(x: string | null): string {
   const fallback: string = "missing";

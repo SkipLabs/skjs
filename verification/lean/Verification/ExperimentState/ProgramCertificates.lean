@@ -18,6 +18,7 @@ inductive Rule (ι : Type) where
   | ifBool | ifTrue | ifFalse
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
+  | unionVar (slot : Nat)
   | sub (proof : PositiveCertificates.Proof ι)
 
 inductive Evidence (ι : Type) where
@@ -71,6 +72,10 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     je = ⟨j.context, e, j.type⟩ ∧
     match j.context[i]? with
     | some A => Answers G A tag false
+    | none => False
+  | .unionVar i, _, ps =>
+    match j.context[i]? with
+    | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
     | none => False
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
@@ -187,6 +192,15 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     split at hq
     · rename_i D hd
       exact .ifTag hd hq (by intro h; cases h) (fun _ => hp ⟨Γ, e, A⟩ (by simp))
+    · contradiction
+  · rename_i t ps i
+    split at hl
+    · rename_i C hi
+      apply HasTy.unionVar hi
+      intro a ha
+      apply hp ⟨Γ.set i [a], _, A⟩
+      rw [hl]
+      exact List.mem_map.mpr ⟨a,ha,rfl⟩
     · contradiction
   · rename_i proof t jt
     rcases hl with ⟨hΓ, ht, hc⟩
@@ -322,6 +336,13 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       apply node_complete (r := .ifFalse) (js := [⟨Γ,e,B⟩])
       · simpa only [Local, hi, true_and] using hq
       · simpa using ihe rfl
+  | @unionVar Γ i C t A hi ht ih =>
+    apply node_complete (r := .unionVar i)
+      (js := C.map (fun a => ⟨Γ.set i [a], t, A⟩))
+    · simp [Local,hi]
+    · intro j hj
+      obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hj
+      exact ih a ha
   | @sub Γ t A B cert ht hc ih =>
     apply node_complete (G := G) (j := ⟨Γ, t, B⟩) (r := .sub cert) (js := [⟨Γ,t,A⟩]) ⟨rfl,rfl,hc⟩
     simpa using ih

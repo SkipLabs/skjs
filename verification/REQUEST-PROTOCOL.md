@@ -411,3 +411,17 @@ called after alias writes, or returned. External function parameters and named
 top-level calls remain outside this source slice. Capture and source evaluation
 order remain part of the reviewed compiler boundary; calculus lambda/application
 soundness is proved.
+
+### Null predicates
+
+Source binary forms with `op` equal to `===` or `!==` are accepted when either
+operand is a null literal. Both operands are evaluated in source order and both
+retain their expression obligations. The comparison lowers to an existing null
+shape test and Boolean conditional over the saved operand. `unionVar` evidence
+allows tag dispatch over a primitive union; no new term or reference semantics
+is introduced. The same lowering is available inside a unary closure.
+
+This currently establishes predicate results, not the tested variable's narrowed
+type at graph successors. `tests/unsupported/null-guard.ts` is accepted by SKJS
+but rejected at an incoming-edge obligation by the current verifier. Other strict
+comparisons and loose equality remain explicit source boundaries.

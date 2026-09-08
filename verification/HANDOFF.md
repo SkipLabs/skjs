@@ -194,3 +194,32 @@ after repairing claims). Each directory has its own explanation. The old mixed
 `tests/counterexamples/` directory is removed. Test harnesses and viewer groups
 use the new paths. The general `partial-claims.ts` repair exercise stays separate:
 not every rejected program demonstrates incompleteness.
+
+## Follow-up: union elimination and null predicates
+
+Added `HasTy.unionVar` and matching finite evidence, semantic soundness, and
+proof-to-evidence completeness. The rule requires the same term/result for every
+member of one immutable variable's type; other bindings are unchanged. Search
+uses it only for a tag test over an explicit multi-label union, avoiding repeated
+splits of a singleton with mixed graph clauses. `DirectProof.renderAt` rebuilds
+member premises in their refined contexts. `PROGRAM-TYPING.md` gives the math.
+
+Source `nullTest` accepts only `===`/`!==` with a syntactic null literal on either
+side. It preserves both operand claims and left-to-right evaluation. A saved
+operand feeds the existing tag/conditional terms; closures have source-directed
+union evidence. No source type profile or term semantics changed.
+
+`null-tests.ts` documents six source functions; `null-tests.js` has 11 checks for
+real exports, normalized and independent consumption, polarity, missing/false
+claims, runtime results and effects. `BooleanConditionalTests` exercises union
+coverage, unchanged other slots, impossible inputs, and the mixed-single-label
+search limit. `unsupported/null-guard.ts` pins the next task: prove checked graph
+edges that refine the tested variable. It currently fails at an incoming-edge
+obligation, not at syntax decoding. The syntax-only boundary harness now supplies
+signatures so `calls_and_consts.ts` reaches its remaining unsupported string-type
+gate; null guard itself needs real claims and is checked by `null-tests.js`.
+
+Validation: Lean built all 93 jobs with no `sorryAx`, and `make verify` passed,
+including the 11 null-predicate checks. The candidate-editor diagnostic test now
+uses `typeof x` instead of newly supported `x === null` to exercise an unsupported
+expression span. Concurrent viewer/report UI changes remain separate.

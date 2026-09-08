@@ -9,6 +9,7 @@ const supported = [
   "loop-transfers",
   "primitive-callbacks",
   "negation",
+  "null-tests",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const groups = [
   { label: "Current verifier examples", files: supported },
@@ -34,6 +35,7 @@ const groups = [
       "typeof_narrow",
       "mutable_binding",
       "beyond_precision",
+      "null-guard",
     ].map((name) => `verification/tests/unsupported/${name}.ts`),
   },
 ];

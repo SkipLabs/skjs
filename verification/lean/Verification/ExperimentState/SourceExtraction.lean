@@ -87,6 +87,25 @@ private def conditionVariable (scope : List String) : SourceInput.Expr → Optio
   | .not _ e => (conditionVariable scope e).map fun (i, reversed) => (i, !reversed)
   | _ => none
 
+private def nullTestTerm (equal : Bool) (slot : Nat) : Tm :=
+  .ite (.test .isNul (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
+
+/-- The fixed source graph has a uniform head shape at each label. Splitting
+its explicit union lets the ordinary tag rule prove each alternative. -/
+private def nullTestPlan (Γ : List (Ty Nat)) (slot : Nat) (equal : Bool) (A : Ty Nat) :
+    Except String DirectProof.Plan := do
+  let some C := Γ[slot]? | throw "internal null-test slot mismatch"
+  let term := nullTestTerm equal slot
+  let children ← C.mapM fun a => do
+    let H := Γ.set slot [a]
+    let q := decide (Answers SourceTypes.graph [a] .isNul true)
+    let value := if q == equal then Tm.tru else .fls
+    let B := if q == equal then [1] else [2]
+    let rule := if q == equal then ProgramCertificates.Rule.truLit else .flsLit
+    pure (DirectProof.node H term A (if q then .ifTrue else .ifFalse)
+      [DirectProof.cast H A (DirectProof.node H value B rule)])
+  pure (DirectProof.node Γ term A (.unionVar slot) children)
+
 /-- Lower expressions inside lambda bodies without losing their individual
 claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -106,6 +125,12 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
       | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
+  | .nullTest _ equal testLeft left right => do
+    let left ← closureExpr fc scope Γ left
+    let right ← closureExpr fc (""::scope) (left.type::Γ) right
+    let H := right.type::left.type::Γ
+    let result ← nullTestPlan H (if testLeft then 1 else 0) equal A
+    pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .not _ a => do
     let a ← closureExpr fc scope Γ a
     pure (DirectProof.ifE SourceTypes.graph Γ A a
@@ -223,6 +248,14 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
   | .lam .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A
+  | .nullTest _ equal testLeft left right =>
+    let B ← exprType fc left
+    let C ← exprType fc right
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+2))⟩
+    let test ← emitAt e.span (nullTestTerm equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
+    let right ← compileExpr fc (""::scope) (B::Γ) right test
+    compileExpr fc scope Γ left right
   | .app _ callee arg =>
     let B ← exprType fc callee
     let C ← exprType fc arg

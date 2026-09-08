@@ -120,6 +120,17 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   if ! node verification/tests/negation.js "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER" \
        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT" \
        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"; then exit 1; fi
+  NULL_TESTS="verification/tests/stateful-source/null-tests.ts"
+  NULL_GUARD="verification/tests/unsupported/null-guard.ts"
+  for pair in "$NULL_TESTS:null-tests" "$NULL_GUARD:null-guard"; do
+    source_file="${pair%:*}"; fixture="${pair##*:}"
+    if ! { node verification/tools/parse-source.js "$source_file" > "$WORK/$fixture.ast" &&
+           skjs_check "$source_file" > "$WORK/$fixture.claims"; } 2> "$WORK/$fixture.err"; then
+      echo "FAIL: null-test fixture setup"; cat "$WORK/$fixture.err"; exit 1
+    fi
+  done
+  if ! node verification/tests/null-tests.js "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER" \
+       "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"; then exit 1; fi
   LOOPS="verification/tests/stateful-source/loops.ts"
   if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
          skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then
