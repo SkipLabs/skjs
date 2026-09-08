@@ -137,10 +137,21 @@ function packRows(items) {
       rows.push(row);
     }
     row.items.push(it);
-    row.free = it.col + Math.max(1, it.end - it.col) + 1 + it.label.length + 1;
+    row.free =
+      it.col +
+      Math.max(1, it.end - it.col) +
+      1 +
+      it.label.length +
+      (it.mark ? it.mark.length + 1 : 0) +
+      1;
   }
   return rows;
 }
+// The same symbols the function pill uses: ✗ searched and failed, ? could not
+// properly try. A claim carries one only where checking stopped.
+const proofSymbol = (failureKind) =>
+  INCOMPLETE_INPUT.has(failureKind) ? "?" : "✗";
+
 function renderCode() {
   const rep = state.report,
     f = rep.functions[state.fn];
@@ -177,15 +188,12 @@ function renderCode() {
         ? (starts[ln + 1] ?? rep.source.length) - starts[ln] - 1
         : e.pos[1] - starts[ln],
       label:
-        (failed ? "⚠ " : "") +
         shortType(e.type) +
-        (failed
-          ? e.failureKind === "source-limitation"
-            ? " · unsupported source"
-            : " · proof search failed"
-          : "") +
         (multiline ? " ↳ multiline" : "") +
         (e.recovery ? recMark : ""),
+      // A claim that proof search stopped at is still a claim: it reads the
+      // same, with the proof outcome added in the symbols used above.
+      mark: failed ? proofSymbol(e.failureKind) : "",
       id: "e" + i,
       cls: "expr" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
@@ -249,10 +257,9 @@ function renderCode() {
       col,
       end: col,
       label:
-        (failed ? "⚠ " : "") +
         list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
-        (failed ? " · proof search failed" : "") +
         (e.recovery ? recMark : ""),
+      mark: failed ? proofSymbol(e.failureKind) : "",
       id: "n" + i,
       cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
@@ -380,8 +387,9 @@ function rowText(items) {
       it.id +
       '" role="button" tabindex="0">' +
       esc(it.label) +
+      (it.mark ? ' <b class="pm">' + esc(it.mark) + "</b>" : "") +
       "</span>";
-    cur = it.col + w + 1 + it.label.length;
+    cur = it.col + w + 1 + it.label.length + (it.mark ? it.mark.length + 1 : 0);
   }
   return out;
 }

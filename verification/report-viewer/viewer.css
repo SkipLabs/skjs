@@ -283,6 +283,8 @@ kbd {
 }
 .lab.err {
   color: var(--bad);
+  font-weight: 400;
+  background: transparent;
 }
 .lab.err:hover,
 .lab.err.on {
@@ -483,12 +485,16 @@ kbd {
 .br {
   color: var(--claim-line);
 }
+/* Claims are the point of the page: they carry weight and a tint of their own,
+   while the producer's diagnostics stay quiet beside them. No horizontal
+   padding — these sit in a monospace grid, and padding would shift the column. */
 .lab {
   font: inherit;
   font-variant-ligatures: none;
   white-space: pre;
   color: var(--claim);
-  background: transparent;
+  font-weight: 600;
+  background: var(--claim-soft);
   border: 0;
   border-bottom: 1px solid transparent;
   padding: 0;
@@ -503,7 +509,8 @@ kbd {
   border-bottom-color: var(--claim);
 }
 .lab.entry {
-  color: var(--ink-2);
+  color: var(--claim);
+  font-weight: 500;
 }
 .lab.gap {
   color: var(--warn);
@@ -520,7 +527,12 @@ kbd {
 }
 .lab.entry:hover,
 .lab.entry.on {
-  border-bottom-color: var(--ink-2);
+  border-bottom-color: var(--claim);
+}
+/* The proof outcome for the claim checking stopped at. */
+.lab .pm {
+  color: var(--warn);
+  font-weight: 700;
 }
 .kw {
   color: var(--ink-2);
@@ -725,12 +737,8 @@ footer {
   margin-bottom: 12px;
 }
 
-.lab.failed {
-  color: var(--warn);
-  background: var(--warn-soft, #fff0db);
-  border: 2px solid var(--warn);
-  border-radius: 4px;
-  padding: 1px 3px;
+.lab.gap {
+  background: var(--warn-soft);
 }
 #verification-warning,
 .failure-note {

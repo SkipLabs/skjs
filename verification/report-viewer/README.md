@@ -62,6 +62,8 @@ adapter for the display format, with only the data present in those comments.
 - **Compact** shows outer expression claims and environment changes from the
   preceding entry in source order. It hides literal restatements. This is not a
   claim about control-flow edges, narrowing, or the identity of shadowed bindings.
+- Claims carry the page: they are tinted and weighted, so they read against the
+  code and against the producer's diagnostics beside them.
 - Select an expression to see its full type, exact source text, original payload,
   containing statement's entry claims, and nested expression claims.
 - **Every claim** includes nested expressions and literal restatements. Multiline
@@ -99,17 +101,20 @@ adapter for the display format, with only the data present in those comments.
 
 ### Verification warnings
 
-When proof search reports an expression obligation's exact source span, that
-claim gets an amber **⚠ proof not established** marker in both density modes.
-A banner offers **Show failed obligation**; selection shows the diagnostic.
-This is the first reported failure, not an exhaustive classification of claims.
-Failure may involve the claimed type, its environment, a source annotation, or
-search limitations; the marker does not mean the claim has been disproved.
+When proof search reports an obligation's exact source span, the claim there
+reads as it always does and carries the proof symbol after it — **✗** where
+search failed, **?** where it could not properly try — the same symbols the
+function pill uses. A failed claim is still a claim, so it is not drawn as a
+different kind of thing. A banner offers **Show failed obligation**; selection
+shows the diagnostic. This is the first reported failure, not an exhaustive
+classification of claims. Failure may involve the claimed type, its environment,
+a source annotation, or search limitations; the symbol never means the claim has
+been disproved.
 
 Incoming-edge failures mark the destination expression whose environment was
 not justified. Environment conversion failures mark the statement entry.
-Unsupported source expressions instead say **unsupported source**: conversion
-stopped before checking the candidate, so this is not a verdict on an edit.
+Unsupported source expressions carry **?**: conversion stopped before checking
+the candidate, so this is not a verdict on an edit.
 
 When verification stopped because a claim it needed is absent, the marker says
 so — **verification needed a claim here**, on the gap that already marks that
