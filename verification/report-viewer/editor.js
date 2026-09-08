@@ -19,19 +19,25 @@ function canReplaceCandidate() {
   }
   return true;
 }
+// The workspace has no panel of its own: saving and restoring sit with the other
+// report-wide actions, and editing happens where the claim is selected. This
+// line only speaks when there is something to say about the candidate.
 function renderCandidateStatus(message) {
-  el("candidate-panel").hidden = !candidateState.candidate;
-  if (!candidateState.candidate) return;
+  const editable = Boolean(candidateState.candidate);
+  for (const id of ["export-candidate", "restore-candidate"])
+    el(id).hidden = !editable;
+  if (!editable) {
+    el("candidate-status").hidden = true;
+    return;
+  }
   const changed =
     JSON.stringify(candidateState.candidate) !==
     JSON.stringify(candidateState.original);
-  el("candidate-status").textContent =
-    message ||
-    (changed
-      ? "Manual candidate; original producer claims retained."
-      : "Original claims. Select an expression or environment to edit its encoding.");
-  el("add-claim").disabled = candidateState.running;
-  el("restore-candidate").disabled = candidateState.running;
+  const text = message || (changed ? "Edited candidate; the producer's original claims are kept." : "");
+  el("candidate-status").textContent = text;
+  el("candidate-status").hidden = !text;
+  el("restore-candidate").disabled = candidateState.running || !changed;
+  el("export-candidate").disabled = candidateState.running;
 }
 function renderEditor(fn, item) {
   if (!candidateState.candidate || candidateState.running) return;
@@ -165,17 +171,10 @@ async function checkCandidate() {
     return false;
   } finally {
     candidateState.running = false;
-    el("add-claim").disabled = false;
     el("restore-candidate").disabled = false;
   }
 }
 function initializeCandidateEditor() {
-  el("add-claim").addEventListener("click", () => {
-    if (!state.report) return;
-    el("detail").replaceChildren();
-    renderMissingEditor(state.report.functions[state.fn]);
-    el("inspector").scrollIntoView({ block: "nearest" });
-  });
   el("restore-candidate").addEventListener("click", async () => {
     candidateState.candidate = structuredClone(candidateState.original);
     candidateState.revision++;
@@ -201,7 +200,7 @@ function initializeCandidateEditor() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     candidateState.saved = JSON.stringify(candidateState.candidate);
     renderCandidateStatus(
-      "Candidate bundle exported; original claims included. Source unchanged.",
+      "Report saved, with the original claims included. Source unchanged.",
     );
   });
 }
@@ -220,6 +219,8 @@ function renderMissingEditor(fn, region) {
   title.textContent = "Add a missing claim";
   box.append(title);
   if (!sites.length) {
+    // Only worth saying when the reader asked about a particular place.
+    if (!region) return;
     const note = document.createElement("p");
     note.textContent = "No missing attachment sites listed here.";
     box.append(note);

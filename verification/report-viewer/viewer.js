@@ -415,11 +415,21 @@ function syncLocation() {
   }
 }
 
+// With no claim selected, the panel offers what can be added to this function:
+// its contract when it has no candidate at all, otherwise its attachment sites.
+function showFunctionWorkspace() {
+  el("detail").replaceChildren();
+  const f = state.report?.functions[state.fn];
+  if (f) renderMissingEditor(f);
+  if (!el("detail").children.length)
+    el("detail").innerHTML =
+      '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
+}
+
 function clearSelection() {
   state.selected = null;
   state.selectedId = null;
-  el("detail").innerHTML =
-    '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
+  showFunctionWorkspace();
   document.querySelectorAll(".lab.on").forEach((x) => x.classList.remove("on"));
   syncLocation();
 }
@@ -504,8 +514,7 @@ function moveFunction(step) {
   state.fn = (state.fn + step + count) % count;
   state.selected = null;
   state.selectedId = null;
-  el("detail").innerHTML =
-    '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
+  showFunctionWorkspace();
   renderShell();
   renderCode();
   syncLocation();
@@ -919,8 +928,7 @@ function renderShell() {
         state.fn = +b.dataset.i;
         state.selected = null;
         state.selectedId = null;
-        el("detail").innerHTML =
-          '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
+        showFunctionWorkspace();
         renderShell();
         renderCode();
         syncLocation();
@@ -1085,16 +1093,17 @@ async function load(text, keepCandidate = false) {
     state.fn = 0;
     state.selected = null;
     el("fnsearch").value = "";
-    el("detail").innerHTML =
-      '<div class="empty">Select a claim in the source to see its span and the raw producer encoding.</div>';
     renderShell();
     renderCode();
     renderCandidateStatus();
+    showFunctionWorkspace();
     applyPendingMark();
   } catch (err) {
     if (version !== loadVersion) return;
     state.report = null;
-    el("candidate-panel").hidden = true;
+    for (const id of ["export-candidate", "restore-candidate"])
+      el(id).hidden = true;
+    el("candidate-status").hidden = true;
     for (const id of ["fnstrip", "detail", "prov"])
       el(id).replaceChildren();
     el("code").innerHTML =

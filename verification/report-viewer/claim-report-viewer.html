@@ -28,20 +28,15 @@
         <datalist id="pathlist"></datalist>
       </label>
       <button class="filebtn" id="load">Load report…</button>
+      <button class="filebtn" id="export-candidate" hidden>Save report…</button>
+      <button class="filebtn" id="restore-candidate" hidden>Restore original claims</button>
       <input type="file" id="file" accept=".ts,.txt,.json" hidden>
     </div>
   </header>
 
   <label>Find function <input id="fnsearch" type="search" placeholder="Name…"></label>
   <div class="fnstrip" id="fnstrip"></div>
-  <section class="panel" id="candidate-panel" hidden>
-    <h2>Claim candidate · source unchanged</h2>
-    <div class="detail">
-      <div id="candidate-status" role="status"></div>
-      <div><button id="add-claim">Add missing claim…</button> <button id="export-candidate">Export bundle</button> <button id="restore-candidate">Restore original claims</button></div>
-      <p>Every applied edit is checked immediately, using the candidate below and without running the producer. Loading another report replaces this workspace; export your edits first.</p>
-    </div>
-  </section>
+  <div id="candidate-status" class="candidate-status" role="status" hidden></div>
 
   <div class="grid">
     <section class="panel">

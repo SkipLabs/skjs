@@ -39,7 +39,7 @@ collection and cleans temporary reports up on success and failure.
 
 The HTML can also be opened directly, with its sibling JS and CSS files present.
 It then starts empty: there are no bundled example reports, and nothing is shown
-until one is read. **Load report** and drag-and-drop accept either
+until one is read. **Load report…** and drag-and-drop accept either
 an annotated `.ts` file or a JSON bundle containing `{source, manifest}`. The
 latter preserves exact producer encodings, diagnostics and function ranges.
 A manifest alone does not contain source text. Bundle imports check the source
@@ -140,8 +140,9 @@ also run under `make verify`; report-writer tests exercise the manifest producer
 
 ## Claim editing
 
-Live reports include an editable candidate in the producer's encoding. Select an
-expression or entry environment and open **Edit candidate JSON**. The original
+Live reports include an editable candidate in the producer's encoding. There is
+no separate workspace panel: select an expression or entry environment and open
+**Edit candidate JSON** on it. The original
 producer value remains available alongside the editor. **Apply candidate edit**
 validates the candidate, checks it, and refreshes the report. A check that
 succeeds establishes the modeled obligations for that function; it does not make
@@ -154,25 +155,27 @@ last successful display marked stale. Source fingerprint changes block checking.
 The editor supports expression types and entire entry binding arrays. It uses
 JSON; a richer type editor is future work.
 
-**Add missing claim…** lists parser-identified expression and statement-entry
-locations in the selected function. Select a site, enter its type encoding or
-binding array, and apply it. Selecting a collection gap offers the sites within
-that gap. No offsets need to be entered, and no type is inferred or defaulted.
-Possible attachment sites are not necessarily required proof obligations.
+Adding a claim happens where the missing one is. Select a coverage gap and the
+Selection panel offers the attachment sites inside it; with nothing selected, it
+lists the parser-identified expression and statement-entry locations for the
+whole function. Enter a type encoding or binding array and apply it. No offsets
+need to be entered, and no type is inferred or defaulted. Possible attachment
+sites are not necessarily required proof obligations.
 
 Manually added claims have no original producer value; the inspector says so.
 After applying, the new claim is selectable and editable normally. Restore removes
 all additions along with other manual edits.
 
 A source function with no candidate appears in the function list. Select it and
-choose **Add missing claim…** to supply `{params, result}`. Parameter names and
+the panel asks for its `{params, result}` contract. Parameter names and
 order come from the source; types use the selected candidate encoding. Adding the
 contract reveals that function's missing point-claim sites. No point claims are
 invented, and fresh verification checks the contract against source annotations.
 
-**Export bundle** saves the source snapshot, candidate, original claims and display
-manifest together. Import it with **Load report** to continue. Unexported candidate
-edits block switching reports until exported or restored. Typed JSON takes effect
+**Save report…** writes the source snapshot, candidate, original claims and display
+manifest together; **Load report…** reads one back. Both sit with the other
+report-wide actions, alongside **Restore original claims**. Unsaved candidate
+edits block switching reports until saved or restored. Typed JSON takes effect
 only on **Apply**; switching selections discards unapplied textarea edits.
 **Restore original claims** restores the baseline and clears verification results.
 Neither operation writes the source file or replaces the producer's claim file.
