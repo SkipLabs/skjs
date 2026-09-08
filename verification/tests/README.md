@@ -15,6 +15,7 @@ claims for the viewer's corpus, without the repairs or corruptions used in tests
 | `source-claims.js`, `source-claim-export.js` | Producer-independent claims, conversion fidelity and source association. |
 | `partial-claims.js` | Partial collections without recovery, optional keep-going quality and diagnostics. |
 | `annotated-source.js`, `report-viewer.js`, `candidate-editor.js` | Source-preserving display, failure locations and independent candidate repair. |
+| `obligation-diagnostics.js` | Distinct obligations sharing a return span, claim repair combinations, selected edge mappings, version handling and report identity. |
 | `unsupported.js` / `unsupported/` | Explicit source boundaries, rejected for the expected reason. |
 
 The reader's supported example group lists files exercised by these source

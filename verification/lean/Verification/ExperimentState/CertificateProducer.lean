@@ -216,7 +216,7 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
 inductive Failure where
   | claimCount
   | expression (label : Nat)
-  | edge (source : Nat) (destination : Nat)
+  | edge (source : Nat) (destination : Nat) (edgeIndex : Nat)
   | rejected
   deriving DecidableEq, Repr
 
@@ -255,20 +255,20 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let cached := known.find? fun e => claim e == ⟨c.context,node.expression,c.type⟩
     let candidate := cached.orElse fun _ => expressionWith G pool suggestions fuel c.context node.expression c.type
     let some e := candidate | throw (.expression l)
-    let target := fun Γ t => match edge G pool claims Γ t with
+    let target := fun Γ t index => match edge G pool claims Γ t with
       | some p => Except.ok p
-      | none => Except.error (Failure.edge l t.label)
-    let branchTarget := fun Γ q t => match edge G pool claims Γ t (some (0, .boolean q)) with
+      | none => Except.error (Failure.edge l t.label index)
+    let branchTarget := fun Γ q t index => match edge G pool claims Γ t (some (0, .boolean q)) with
       | some p => Except.ok p
-      | none => Except.error (Failure.edge l t.label)
+      | none => Except.error (Failure.edge l t.label index)
     let ps ← (match node.continuation with
       | .ret => pure []
-      | .bind t => (target (c.type :: c.context) t).map (fun p => [p])
-      | .effect t => (target c.context t).map (fun p => [p])
-      | .branch y n => (target c.context y).bind (fun py =>
-          (target c.context n).map (fun pn => [py,pn]))
-      | .branchBind y n => (branchTarget (c.type :: c.context) true y).bind (fun py =>
-          (branchTarget (c.type :: c.context) false n).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
+      | .bind t => (target (c.type :: c.context) t 0).map (fun p => [p])
+      | .effect t => (target c.context t 0).map (fun p => [p])
+      | .branch y n => (target c.context y 0).bind (fun py =>
+          (target c.context n 1).map (fun pn => [py,pn]))
+      | .branchBind y n => (branchTarget (c.type :: c.context) true y 0).bind (fun py =>
+          (branchTarget (c.type :: c.context) false n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
     return ⟨e,ps⟩
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)

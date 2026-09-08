@@ -291,6 +291,7 @@ function run(executable,args) {
   if(r.error || r.signal)throw Error(`tool execution failed: ${r.error?.message || r.signal}`);
   return r;
 }
+const {readDiagnostic}=require("./obligation-diagnostic.js");
 function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, normalized=false) {
   const parser=path.join(__dirname,"parse-source.js"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
@@ -311,7 +312,9 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
       fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
       const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
       if(produced.status!==0) {
-        const detail=(produced.stderr||produced.stdout).trim();
+        const rawDetail=(produced.stderr||produced.stdout).trim();
+        const diagnostic=readDiagnostic(rawDetail);
+        const detail=diagnostic ? rawDetail.split("\nobligation-diagnostic: ")[0] : rawDetail;
         const located=/^(?:reject: )?(source expression obligation|closure expression claim|source incoming edge obligation|unsupported source expression) at \[(\d+),(\d+)\):/.exec(detail);
         const environment=/^(?:reject: )?source environment obligation at (\d+): (.*)$/.exec(detail);
         // A claim the extractor needed and did not find is a different finding
@@ -329,7 +332,11 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
           absentBinding ? {kind:"missing-environment-claim",start:Number(environment[1]),binding:absentBinding[1]} :
           environment ? {kind:"environment-obligation",start:Number(environment[1])} :
           outsideSlice ? {kind:"source-limitation"} : null;
-        return {status:"not-established",detail,...(location ? {location} : {})};
+        // Bind node-local IDs to this exact function, source, and selected claims.
+        const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
+          namePos:f.namePos,sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}} : null;
+        return {status:"not-established",detail,...(location ? {location} : {}),
+          ...(obligation ? {obligation} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};

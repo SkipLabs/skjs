@@ -51,7 +51,7 @@ private structure Built where
   program : Program := []
   claims : List (PointClaim Nat) := []
   obligations : List ExpressionClaims.Required := []
-  origins : List (Option Span) := []
+  origins : List (Option DiagnosticOrigin) := []
 
 private abbrev Compiler := StateT Built (Except String)
 
@@ -62,10 +62,11 @@ private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
   return ⟨s.program.length, none⟩
 
 /-- Diagnostic metadata only; never part of the certified request. -/
-private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
+private def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat)
+    (role : String := "node-typing") (environmentStart : Option Nat := none) :
     Compiler Target := do
   let target ← emit t k Γ A
-  modify fun s => { s with origins := s.origins.set target.label (some pos) }
+  modify fun s => { s with origins := s.origins.set target.label (some ⟨pos,role,environmentStart⟩) }
   return target
 
 /-- Statement claims name source bindings only. Preserve anonymous evaluation
@@ -173,20 +174,20 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
       throw "duplicate or shadowing closure local"
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
-      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
     let I ← exprType fc init
     let B ← match annot with
       | some ty => SourceInput.translate ty
       | none => pure I
     let a ← closureExpr fc scope H init
     let annotation := DirectProof.cast H B a
-    modify fun s => { s with obligations := s.obligations ++ [⟨init.span,annotation.goal,some annotation⟩] }
+    modify fun s => { s with obligations := s.obligations ++ [⟨init.span,annotation.goal,some annotation,"binding-annotation"⟩] }
     let b ← closureExpr fc (name::scope) (I::H) body
     pure (DirectProof.letE H a b)
   | .ifBody pos _ cond thn els => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
-      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
     let c ← closureExpr fc scope H cond
     match conditionVariable scope cond with
     | some (i, reversed) =>
@@ -205,7 +206,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
   | .atEnv pos body => do
     let H ← closureEnv fc pos.1 scope Γ
     for (B,i) in H.zipIdx do
-      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B)⟩] }
+      modify fun s => { s with obligations := s.obligations ++ [⟨pos,⟨Γ,.var i,B⟩,some (DirectProof.var Γ i B),"closure-entry"⟩] }
     closureExpr fc scope H body
   | .lam pos name arg ret body => do
     if scope.contains name then throw "shadowing closure parameter is outside the source slice"
@@ -214,10 +215,10 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List String) (Γ :
     if A != [FunctionClaims.label D R] then throw "closure signature claim differs from source annotations"
     let b ← closureExpr fc (name::scope) (D::Γ) body
     let annotation := DirectProof.cast (D::Γ) R b
-    modify fun s => { s with obligations := s.obligations ++ [⟨pos,annotation.goal,some annotation⟩] }
+    modify fun s => { s with obligations := s.obligations ++ [⟨pos,annotation.goal,some annotation,"closure-result"⟩] }
     pure (DirectProof.node Γ (.lam b.term) A .lam [annotation])
   let plan := DirectProof.cast Γ A p
-  modify fun s => { s with obligations := s.obligations ++ [⟨e.span,plan.goal,some plan⟩] }
+  modify fun s => { s with obligations := s.obligations ++ [⟨e.span,plan.goal,some plan,"expression-claim"⟩] }
   return plan
 termination_by e
 
@@ -352,7 +353,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       if !rest.isEmpty then throw "statements after return are outside the current source slice"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
-      let done ← emitAt e.span (.var 0) .ret (A::Γ) R
+      let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
       compileExpr fc scope Γ e done
     | .cst pos name annot e :: rest =>
       if scope.contains name then throw s!"duplicate or shadowing local declaration '{name}'"
@@ -360,7 +361,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       let A ← exprType fc e
       let B ← match annot with | none => pure A | some ty => SourceInput.translate ty
       let next ← body fuel fc R (name::scope) rest tail loopTargets
-      let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B
+      let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
       compileExpr fc scope Γ e annotation
     | .ite pos cond thn els :: rest =>
       let Γ ← env fc pos.1 scope
@@ -405,7 +406,7 @@ termination_by stmts => sizeOf stmts
 
 structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
-  origins : List (Option Span) := []
+  origins : List (Option DiagnosticOrigin) := []
 
 /-- Search hints only. The fixed source graph's arrow/reference operands contain
 primitive labels; avoid considering all unrelated signatures at every coercion.

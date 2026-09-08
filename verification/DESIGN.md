@@ -19,6 +19,7 @@ and remaining work. Details live in:
 | [SEMANTICS](SEMANTICS.md) | Worlds, heap invariants, operational safety and recursive interpretation. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type grammar, normalization, declarative subtype rules and their certificates. |
 | [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program rules, graph claims, slot maps, certificate production and mathematical statements. |
+| [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Structured failure metadata and the visualization handoff; diagnostic data is not proof evidence. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Versioned stateful requests, independent evidence checking and CLI usage. |
 | [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Proposed producer-independent source-claim interface and comment attachment rules; not yet implemented. |
 

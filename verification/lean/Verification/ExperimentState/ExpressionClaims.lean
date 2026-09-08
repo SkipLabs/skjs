@@ -5,12 +5,13 @@ import Verification.ExperimentState.DirectProof
 whole-program certificate when source expressions occur inside lambda bodies.
 The consumer uses existing declarative rules, never producer success alone. -/
 namespace Verification.ExperimentState.ExpressionClaims
-open ProgramTyping ProgramCertificates PositiveRules PositiveGraphs PositiveNormalization RequestJson
+open Lean ProgramTyping ProgramCertificates PositiveRules PositiveGraphs PositiveNormalization RequestJson
 
 structure Required where
   pos : Nat × Nat
   sequent : Sequent Nat
   plan : Option DirectProof.Plan := none
+  role : String := "expression-claim"
 
 def check (G : NormalGraph Nat) (bound : Nat) (j : Sequent Nat) (e : Evidence Nat) : Bool :=
   validEvidence bound e && decide (claim e = j) &&
@@ -36,16 +37,24 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
     (rs : List Required) : Except String (List (Evidence Nat)) := do
   let pool := CertificateProducer.vocabulary G labels []
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
-  let es ← rs.mapM fun r => do
+  let es ← rs.zipIdx.mapM fun (r,index) => do
     let j := r.sequent
     let candidate := match r.plan with
       | some plan => DirectProof.render G pool j.context plan
       | none => CertificateProducer.expressionWith G pool (rs.map (·.sequent)) fuel j.context j.term j.type
     let some e := candidate
-      | throw s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
+      | throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
+          [("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
+           ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),
+           ("origin",toJson (DiagnosticOrigin.mk r.pos r.role none)),
+           ("sequent",toJson j),("fuel",toJson fuel),
+           ("types",toJson ((List.range bound).map G))])
     return e
   if checkAll G bound rs es then return es
-  throw "closure expression evidence failed independent checking"
+  throw (withDiagnostic "closure expression evidence failed independent checking"
+    [("kind",toJson "production-failure"),("phase",toJson "certificate-check"),
+     ("outcome",toJson "not-established"),("fuel",toJson fuel),
+     ("types",toJson ((List.range bound).map G))])
 
 #print axioms checkAll_sound
 end Verification.ExperimentState.ExpressionClaims

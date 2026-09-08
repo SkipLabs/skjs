@@ -190,6 +190,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     exit 1
   fi
   run_test "Annotated source reports" node verification/tests/annotated-source.js "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
+  run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.js "$VERIFIER"
   run_test "Report viewer" node verification/tests/report-viewer.js
   run_test "Candidate editing" node verification/tests/candidate-editor.js "$WORK/closures.claims"
   CELLS="verification/tests/stateful-source/cell-contracts.ts"

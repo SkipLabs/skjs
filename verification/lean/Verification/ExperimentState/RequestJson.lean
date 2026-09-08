@@ -138,12 +138,61 @@ theorem verifyJson_checked {request evidence : Json}
       · exact ⟨_,_,by assumption,by assumption,by assumption⟩
       · contradiction
 
+/-- Source provenance is explanatory only; it is excluded from certificates. -/
+structure DiagnosticOrigin where
+  pos : Nat × Nat
+  role : String := "node-typing"
+  environmentStart : Option Nat := none
+  deriving ToJson
+
+/-- One machine-readable record on stderr, following the human-readable error.
+This transport leaves successful evidence JSON and the proof protocol unchanged. -/
+def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
+  message ++ "\nobligation-diagnostic: " ++ (Json.mkObj
+    (("version", toJson (1 : Nat)) :: fields)).compress
+
+def failureDiagnostic (r : Request) (fuel : Nat)
+    (origins : List (Option DiagnosticOrigin)) (e : Failure) : List (String × Json) := Id.run do
+  let atNode := fun l => Json.mkObj [
+    ("label",toJson l), ("origin",toJson ((origins[l]?).bind id)),
+    ("node",toJson r.program[l]?), ("claim",toJson r.claims[l]?)]
+  let phase := match e with
+    | .rejected => "certificate-check"
+    | .claimCount => "request-validation"
+    | _ => "proof-search"
+  let common := [("phase",toJson phase),("outcome",toJson "not-established"),
+    ("fuel",toJson fuel),("types",toJson r.types),("requiredResult",toJson r.result)]
+  match e with
+  | .expression label =>
+    let goal := do
+      let node ← r.program[label]?
+      let c ← r.claims[label]?
+      pure (Sequent.mk c.context node.expression c.type)
+    return common ++ [("kind",toJson "node-typing"),("id",toJson s!"node:{label}"),
+      ("source",atNode label),("sequent",toJson goal)]
+  | .edge source destination index =>
+    let transfer := do
+      let node ← r.program[source]?
+      let c ← r.claims[source]?
+      let (available, target, observation) ← (match node.continuation with
+        | .bind t => some (c.type :: c.context, t, (none : Option Bool))
+        | .effect t => some (c.context, t, none)
+        | .branch y n => some (c.context, if index == 0 then y else n, none)
+        | .branchBind y n => some (c.type :: c.context, if index == 0 then y else n, some (index == 0))
+        | .ret => none)
+      pure (Json.mkObj [("available",toJson available),("target",toJson target),
+        ("booleanObservation",toJson observation)])
+    return common ++ [("kind",toJson "edge-coverage"),("id",toJson s!"edge:{source}:{index}"),
+      ("edgeIndex",toJson index),("source",atNode source),("destination",atNode destination),
+      ("transfer",toJson transfer)]
+  | _ => return common ++ [("kind",toJson "production-failure"),("failure",toJson (reprStr e))]
+
 /-- Produce and serialize, then pass through the same independent JSON consumer.
 Fuel bounds search only; it is not part of the certified request. -/
 def produceJson (request : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := [])
-    (origins : List (Option (Nat × Nat)) := [])
+    (origins : List (Option DiagnosticOrigin) := [])
     (searchLabels : Option (List Nat) := none) : Except String Json := do
   let r ← decodeRequest request
   let C ← match produce (graph r) (searchLabels.getD (List.range r.types.length)) fuel
@@ -152,13 +201,14 @@ def produceJson (request : Json) (fuel : Nat)
     | .error e =>
       let location := match e with
         | .expression label => match (origins[label]?).bind id with
-          | some (start, stop) => s!"source expression obligation at [{start},{stop}): "
+          | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
           | none => ""
-        | .edge _ destination => match (origins[destination]?).bind id with
-          | some (start, stop) => s!"source incoming edge obligation at [{start},{stop}): "
+        | .edge _ destination _ => match (origins[destination]?).bind id with
+          | some o => s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): "
           | none => ""
         | _ => ""
-      throw s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
+      throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
+        (failureDiagnostic r fuel origins e))
   let response := toJson (Response.mk 2 C)
   verifyJson request response
   return response

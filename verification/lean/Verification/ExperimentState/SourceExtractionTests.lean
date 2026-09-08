@@ -589,6 +589,6 @@ private def forged : ProgramCertificates.Evidence Nat :=
   .node ⟨[],.fls,[1]⟩ .truLit []
 #guard !ok (produceSourceJson (toJson (request .fls [1])) 4 [] [forged])
 #guard !ok (ExpressionClaims.produce SourceTypes.graph [0,1,2] 19 4
-  [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit)⟩])
+  [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim"⟩])
 
 end Verification.ExperimentState.SourceExtractionTests

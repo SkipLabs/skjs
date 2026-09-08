@@ -68,6 +68,14 @@ Other location kinds are `edge-obligation` (the destination expression span),
 `source-limitation` (an unsupported source expression span). The last indicates
 source conversion stopped before proof checking; it is not a failed claim.
 
+A proof-search failure can additionally include `obligation`, a version-1 structured
+record described in [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md). It identifies
+the actual sequent or selected mapped edge, with extraction-provided roles and
+source provenance. Prefer it to guessing a failure role from `location` or the
+TypeScript AST. The old `location` remains a fallback for readers without support
+and for failures not yet carrying structured metadata. No record is evidence
+that a claim is false or that an individual premise has been proved.
+
 Two kinds report a claim the extractor needed and did not find, which is a
 different finding from a search that failed: `missing-expression-claim` (the
 expression span with no claimed type) and `missing-environment-claim` (a

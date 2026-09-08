@@ -91,6 +91,17 @@ try {
     fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({version:1,profile:doc.profile,file:sf,sourceSha256:hash(text),functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
     const checked=run(verifier,["--check-source-claims",sa,sc,sf,se]);assert.equal(checked.status,0,checked.stderr);
+    const bad=JSON.parse(fs.readFileSync(sc,"utf8"));
+    const bodyPos=f.body[1].init.body.pos;
+    bad.functions[0].expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1];
+    fs.writeFileSync(sc,JSON.stringify(bad));
+    const failed=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);
+    assert.notEqual(failed.status,0);
+    const diagnostic=require("../tools/obligation-diagnostic.js").readDiagnostic(failed.stderr);
+    assert.equal(diagnostic.kind,"expression-claim");
+    assert.equal(diagnostic.origin.role,"expression-claim");
+    assert.deepEqual(diagnostic.origin.pos,bodyPos);
+    assert.deepEqual(diagnostic.sequent.type,[1]);
   });
   console.log(`Source claims: ${passed} passed, 0 failed`);
 } finally {fs.rmSync(tmp,{recursive:true,force:true});}
