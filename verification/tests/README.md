@@ -34,3 +34,19 @@ its expected rejection. Promotion depends on implemented semantics and checking,
 not merely on the parser accepting the syntax.
 
 `negation.js` checks Boolean negation and reversed immutable refinements in branches, closures and loops, including forged claims and an effectful operand.
+
+Producer examples are separated by the direction of the failure:
+
+- [`skjs-unsound/`](skjs-unsound/README.md): SKJS accepts a program with a runtime type counterexample.
+- [`skjs-incomplete/`](skjs-incomplete/README.md): SKJS rejects a safe program whose repaired claims the verifier establishes.
+
+`partial-claims.ts` remains a separate collection/repair exercise; a producer
+rejection alone does not establish incompleteness.
+
+Each example function has a doc comment explaining the behavior or proof
+obligation it illustrates. Keep these comments alongside new examples. For
+producer failures, state the expected runtime behavior and the exact claim repair
+or rejection being tested; for unsupported examples, distinguish the adapter's
+limitation from a soundness result. Loop examples should say when termination is
+not established. Comments are part of the displayed source, so the tests always
+regenerate claims rather than reuse offsets from an older source version.

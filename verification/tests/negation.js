@@ -14,6 +14,9 @@ const [
   exitAstPath,
   exitClaimsPath,
   exitFile,
+  singletonAstPath,
+  singletonClaimsPath,
+  singletonFile,
 ] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath));
 const claims = JSON.parse(fs.readFileSync(claimsPath));
@@ -190,10 +193,70 @@ try {
     false,
     "evidence search failed",
   );
+  const singletonAst = JSON.parse(fs.readFileSync(singletonAstPath));
+  const singletonClaims = JSON.parse(fs.readFileSync(singletonClaimsPath));
+  const singletonFn = singletonClaims.find((f) => f.file === singletonFile)
+    .functions[0];
+  assert.equal(singletonFn.collection.completion, "aborted");
+  assert.equal(singletonFn.collection.mode, "normal");
+  expect(
+    "SKJS singleton negation claim too broad",
+    run(
+      "--produce-stateful-source",
+      singletonAst,
+      singletonClaims,
+      undefined,
+      singletonFile,
+    ),
+    false,
+    "evidence search failed",
+  );
+  const negated = singletonFn.exprs.find(
+    (e) => e.pos[0] === singletonAst.functions[0].body[0].e.pos[0],
+  );
+  negated.type = singleton(false);
+  expect(
+    "singleton negation repaired by one expression claim",
+    run(
+      "--produce-stateful-source",
+      singletonAst,
+      singletonClaims,
+      undefined,
+      singletonFile,
+    ),
+    true,
+  );
+  const singletonEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  expect(
+    "singleton repair independently consumed",
+    run(
+      "--check-stateful-source",
+      singletonAst,
+      singletonClaims,
+      singletonEvidence,
+      singletonFile,
+    ),
+    true,
+  );
+  negated.type = singleton(true);
+  expect(
+    "wrong singleton negation rejected",
+    run(
+      "--produce-stateful-source",
+      singletonAst,
+      singletonClaims,
+      undefined,
+      singletonFile,
+    ),
+    false,
+    "evidence search failed",
+  );
   const context = vm.createContext({});
   vm.runInContext(
     ts.transpileModule(
-      fs.readFileSync(file, "utf8") + "\n" + fs.readFileSync(exitFile, "utf8"),
+      [file, exitFile, singletonFile]
+        .map((f) => fs.readFileSync(f, "utf8"))
+        .join("\n"),
       { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
     ).outputText,
     context,
@@ -210,6 +273,9 @@ try {
     assert.equal(context.negatedClosure(flag), true);
     assert.equal(context.negatedVariableLoop(flag), true);
   }
+  assert.equal(context.negateSingleton(true), false);
+  assert.equal(context.singletonClosure(), false);
+  assert.equal(context.effectfulSingletonCondition(), false);
   passed++;
   console.log(`Negation: ${passed} passed`);
 } finally {

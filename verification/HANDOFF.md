@@ -144,7 +144,7 @@ the current conditional rule asks for both branches at the result type. This is
 an incompleteness of the available derivations, not an unsoundness finding.
 
 The variable-loop probe found an actual producer incompleteness case and lives
-separately in `tests/counterexamples/negated-loop-exit.ts`: SKJS rejects the return
+separately in `tests/skjs-incomplete/negated-loop-exit.ts`: SKJS rejects the return
 annotation, but the normal partial export is repairable. `negation.js` changes
 only the final `flag` binding and returned-expression claim to `true`, produces
 and independently checks evidence, and rejects a wrong `false` exit binding.
@@ -156,3 +156,41 @@ separate from the concurrent viewer work.
 Validation for this follow-up: `lake build` passed all 93 jobs, with no `sorryAx`
 in the build output; `make verify` passed, including all 14 negation/loop-repair
 checks. JavaScript syntax, shell syntax and `git diff --check` also passed.
+
+## Follow-up: known Boolean conditions
+
+Negation was committed as `2c6ad1bb`. `HasTy.ifKnown` now checks a condition at a
+Boolean singleton type and checks the selected arm. `ProgramCertificates.Local`,
+its soundness proof and derivation-to-evidence completeness proof include the
+rule. The JSON constructor is derived as usual; no type profile or term semantics
+changed. Source-directed plans and ordinary proof search both produce this rule.
+The condition remains in the term and evaluates normally: a Lean execution proof
+checks that its write occurs even when only one arm is typable.
+
+This resolves the singleton-negation limitation in the previous checkpoint.
+`PROGRAM-TYPING.md` gives the rule in mathematical form. Literal negation is tested
+with complete producer-neutral source claims in `SourceExtractionTests`; current
+SKJS constant folding can omit the literal operand claim, so real exports of
+`!true` may still need that missing claim supplied. This is a collection gap,
+not a reason to omit the operand obligation.
+
+The new `skjs-incomplete/singleton-negation.ts` is rejected by SKJS, which widens
+`!flag` to Boolean despite `flag : true`. The test repairs only that expression
+claim to `false`, independently consumes the resulting certificate, and rejects
+the opposite replacement. The existing negation suite now has 18 checks. Null
+tests still need general tag partitioning and corresponding checked graph edges;
+`ifKnown` alone does not provide that refinement.
+
+Validation: `lake build` passed all 93 jobs, with standard axioms and no `sorryAx`.
+`make verify` passed, including the 18 negation/repair checks. The focused suite
+finishes in approximately half a second locally; its subprocess timeout remains
+30 seconds. The known-condition execution theorem depends only on `propext`.
+
+## Producer example directories
+
+Examples now live in `tests/skjs-unsound/` (accepted with a runtime type
+counterexample) and `tests/skjs-incomplete/` (rejected but independently verifiable
+after repairing claims). Each directory has its own explanation. The old mixed
+`tests/counterexamples/` directory is removed. Test harnesses and viewer groups
+use the new paths. The general `partial-claims.ts` repair exercise stays separate:
+not every rejected program demonstrates incompleteness.

@@ -598,7 +598,7 @@ a completeness claim. Enumerating every unused arrow at each subtype query was
 already expensive in this small table; expanding a fixed profile must not silently
 expand every local search problem.
 
-[The captured-refinement counterexample](tests/counterexamples/captured-refinement.ts)
+[The captured-refinement counterexample](tests/skjs-unsound/captured-refinement.ts)
 is accepted by SKJS but returns false on input true despite declaring a true
 result. Its original refined reference export is rejected at the invariant-cell
 boundary (read true versus write boolean). A separate manual-candidate experiment
@@ -621,8 +621,8 @@ An effectful condition supplies no alias refinement.
 This adds no semantic primitive or trusted typing rule. Null equality remains a
 separate next step: the existing `ifTag` rule checks a uniform answer, whereas
 `null | boolean` needs a general tag partition and justified outgoing environments.
-The current rules also leave singleton negation results such as `!true : false`
-unproved; ordinary Boolean results and negated variable refinements are supported.
+The `ifKnown` rule now establishes singleton negation results as well: its
+condition proof determines the reachable arm, while preserving condition effects.
 
 The negation integration also supplies a concrete completeness gap in the
 producer: `while (!flag) { return true; } return flag;` always returns true, but

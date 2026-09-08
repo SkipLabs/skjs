@@ -14,14 +14,18 @@ const groups = [
   { label: "Current verifier examples", files: supported },
   {
     label: "Claim repair · producer rejects",
+    files: ["verification/tests/partial-claims.ts"],
+  },
+  {
+    label: "SKJS incomplete · safe programs rejected",
     files: [
-      "verification/tests/partial-claims.ts",
-      "verification/tests/counterexamples/negated-loop-exit.ts",
+      "verification/tests/skjs-incomplete/negated-loop-exit.ts",
+      "verification/tests/skjs-incomplete/singleton-negation.ts",
     ],
   },
   {
-    label: "Counterexamples · SKJS accepts",
-    files: ["verification/tests/counterexamples/captured-refinement.ts"],
+    label: "SKJS unsound · unsafe programs accepted",
+    files: ["verification/tests/skjs-unsound/captured-refinement.ts"],
   },
   {
     label: "Unsupported examples · expected limitations",

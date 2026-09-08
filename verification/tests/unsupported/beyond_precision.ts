@@ -1,10 +1,10 @@
-// SKJS accepts this program (issue #781). Both spellings denote the double
-// 2^53, so `x === y` is TRUE at runtime and the branch returns a number
-// through a `string` return type. SKJS reaches the branch with `x` narrowed
-// to `never`, because it intersects the two literal spellings as text.
-//
-// Numeric types and equality are outside the current verifier. This fixture
-// records a future soundness target; its current rejection is only a gate.
+/**
+ * Future unsoundness target (issue #781): both numeric literals round to the
+ * same JavaScript number. Equality can therefore return a number through the
+ * string annotation, despite SKJS treating the branch input as never. The
+ * current verifier rejects unsupported numeric types; that gate alone is not
+ * an unsoundness proof.
+ */
 function h(x: 9007199254740993, y: 9007199254740992): string {
   if (x === y) {
     return x;

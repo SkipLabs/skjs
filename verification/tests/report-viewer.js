@@ -93,15 +93,68 @@ assert.throws(() => fromBundle(invalidMissing), /identity/);
 const annotated = render(source, manifest);
 assert.equal(parseReport(annotated).source, source);
 assert.equal(parseReport(annotated).functions[0].exprs[0].type, claim.type);
-for (const file of ["basic", "partial"]) {
-  const sample = fs.readFileSync(
-    `verification/tests/annotated/${file}.annotated.ts`,
-    "utf8",
+// Realistic comment-format input, built here rather than stored: a rejected
+// snapshot with a recovery label, an unvisited statement and an undecodable
+// binding. Reading it back must recover the exact source, including non-ASCII.
+{
+  const text =
+    "// 🌍\nfunction partial(): boolean {\n  const x: boolean = true;\n  return x;\n}\n";
+  const nameAt = text.indexOf("partial"),
+    first = text.indexOf("const");
+  const report = {
+    version: 1,
+    producer: "skjs",
+    source: { file: "partial.ts", sha256: hash(text) },
+    functions: [
+      {
+        name: "partial",
+        namePos: [nameAt, nameAt + 7],
+        collection: {
+          completion: "aborted",
+          quality: "recovery",
+          mode: "keep-going",
+          visitedExpressions: [],
+        },
+        entries: [
+          {
+            pos: [first, text.indexOf(";", first) + 1],
+            bindings: [
+              {
+                name: "this",
+                type: "(unavailable)",
+                raw: { unsupported: true },
+              },
+            ],
+          },
+        ],
+        expressions: [
+          {
+            pos: [text.indexOf("true"), text.indexOf("true") + 4],
+            type: "true",
+          },
+        ],
+      },
+    ],
+  };
+  const parsed = parseReport(render(text, report));
+  assert.equal(parsed.source, text);
+  assert.equal(hash(parsed.source), parsed.meta["source-sha256"]);
+  assert.equal(parsed.file, "partial.ts");
+  const partialFn = parsed.functions[0];
+  assert.equal(partialFn.name, "partial");
+  assert.equal(partialFn.quality, "recovery");
+  assert.equal(partialFn.collection, "aborted");
+  assert.equal(partialFn.exprs[0].recovery, true);
+  assert.equal(partialFn.entries[0].bindings[0].unavailable, true);
+  const unvisited = partialFn.gaps.find(
+    (g) => g.reason === "statement-not-visited",
   );
-  const parsed = parseReport(sample);
-  assert(parsed.functions.length > 0);
-  assert.equal(parsed.source, fs.readFileSync(parsed.file, "utf8"));
+  assert(unvisited);
+  assert.equal(text.slice(...unvisited.pos), "return x;");
+  assert.equal(partialFn.id, "f0");
+  assert.equal(partialFn.exprs[0].id, "f0x0");
 }
+
 // Marks are addressed by the writer's manifest id, not by their position in a
 // function's lists: a link or a quoted id must survive changed claims.
 const addressed = fromBundle(bundle);

@@ -40,8 +40,8 @@ bindings, nested branches, `while` loops and returns**, local cells, and bounded
 closures and calls. Both falling-through arms share one continuation.
 Boolean singleton claims are translated exactly, including refinements from
 direct or negated Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
-commands and limitations. Boolean `!` evaluates its operand once; singleton
-negation results such as `!true : false` remain outside the current derivations. Closures have one null/Boolean primitive argument and a
+commands and limitations. Boolean `!` evaluates its operand once; singleton results are checked using
+the proved `ifKnown` rule. Closures have one null/Boolean primitive argument and a
 primitive result; expression bodies compose literals, variables, cell operations
 and calls. Straight-line blocks support local consts, effects and a final return,
 with checked statement environments.
@@ -75,7 +75,7 @@ node verification/report-viewer/serve.js
 ```
 
 Open the printed URL. The default group contains current-verifier examples.
-Separate groups contain claim-repair exercises, SKJS counterexamples, and
+Separate groups contain claim-repair exercises, SKJS unsoundness examples, SKJS incompleteness examples, and
 explicitly unsupported examples. Arbitrary repository source can be selected with `?file=relative/path.ts`.
 See the [reader guide](report-viewer/README.md) and
 [annotated report format](ANNOTATED-SOURCE.md).
@@ -119,15 +119,15 @@ Boolean/union identity callbacks, captured writers, returned writers and a
 contravariant function assignment. `stableSnapshot` shows why an immutable value
 saved before a callback remains safe after the callback mutates its source cell.
 
-[The captured-refinement example](tests/counterexamples/captured-refinement.ts)
+[The captured-refinement example](tests/skjs-unsound/captured-refinement.ts)
 is accepted by SKJS but returns false where its annotation requires true.
 [Its test](tests/primitive-callbacks.js) distinguishes the original unsupported
 refined-reference contract from a stale expression claim that fails proof checking
 after those reference refinements are forgotten. See the
-[counterexample notes](tests/counterexamples/README.md).
+[unsoundness notes](tests/skjs-unsound/README.md).
 
 [negation.ts](tests/stateful-source/negation.ts) adds negated conditions, closures
-and loops. [The loop-exit example](tests/counterexamples/negated-loop-exit.ts)
+and loops. [The loop-exit example](tests/skjs-incomplete/negated-loop-exit.ts)
 is rejected by SKJS but verifies after repairing its final binding and expression
 claims to `true`. The regression consumes normal-mode partial claims and checks
 the resulting certificate independently.
