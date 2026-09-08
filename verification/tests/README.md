@@ -56,6 +56,7 @@ not established. Comments are part of the displayed source, so the tests always
 regenerate claims rather than reuse offsets from an older source version.
 
 `null-tests.js` covers strict null comparisons, both operand orders, callbacks,
-effectful operands and independent evidence. `unsupported/null-guard.ts` is a
-separate graph-refinement limitation checked against real SKJS claims by that
-suite; the other unsupported fixtures are checked at their syntax/type gates.
+effectful operands and independent evidence. `stateful-source/null-guards.ts` is a
+maintained graph-refinement example checked against real SKJS claims by that
+suite, including guarded returns and loop transfers. Unsupported fixtures are
+checked separately at their syntax/type gates.

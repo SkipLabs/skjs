@@ -475,10 +475,29 @@ safety and deterministic execution proofs still apply, including cyclic graphs.
 The source compiler maps a tested immutable Boolean variable to that pushed
 value and preserves the other slot identities. Negations swap branch polarity.
 
-Tag observations are implemented and proved at the edge layer, but tag dispatch
-and source lowering are not integrated yet. The null-guard example remains an
-expected verification limitation. Its integration must supply the observation
-from actual execution while preserving all original condition/operand claims.
+The `tagBind` continuation tests the actual returned value, pushes that value,
+and selects the matching edge. Its schematic rule is:
+
+$$
+\frac{\Gamma\vdash_G e:A
+\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_y,0,\operatorname{tag}(t,\mathsf{true}),m_y)
+\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_n,0,\operatorname{tag}(t,\mathsf{false}),m_n)}
+{\operatorname{NodeOk}_G(\Gamma,e,\operatorname{tagBind}(t;y,m_y;n,m_n))}.
+$$
+
+Both edges are checked. Unlike Boolean dispatch, tag dispatch accepts any typed
+value. Safety and deterministic execution use the actual `tagHolds` outcome;
+the certificate cannot supply it. `tagBind` shares the observed-edge checker
+and environment theorem with `branchBind`.
+
+Source branches and loop heads use null tag dispatch only for syntactically
+identified immutable variables, including repeated negations and either null
+operand order. The original condition runs once and its operand/result claims
+remain obligations. A subsequent lookup of that immutable variable supplies the
+value for tag dispatch; no source call or property read is repeated. Maps retain
+the observed value in the target binding and discard saved condition temporaries.
+Null-refined closure environments and retained property-read refinements remain
+outside this integration.
 
 ## Producing evidence from supplied claims
 

@@ -96,4 +96,24 @@ private def roundtrip (r : Request) : Except String Unit := do
 #guard ok (roundtrip ⟨2,SourceTypes.types,
   [⟨.tru,.bind 1⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩,⟨.var 0,.ret⟩],
   [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[]⟩)
+-- Tag dispatch uses the same observed edge checker and retains the value itself.
+private def tagRequest : Request :=
+  ⟨2,SourceTypes.types,
+    [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩,
+     ⟨.fls,.ret⟩,⟨.var 0,.ret⟩],
+    [⟨[[0,1,2]],[0,1,2]⟩,⟨[[0]],[1,2]⟩,⟨[[1,2]],[1,2]⟩],
+    [1,2],0,[[0,1,2]]⟩
+#guard ok (roundtrip tagRequest)
+#guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
+  ⟨.var 0,.tagBind .isBool ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩) })
+#guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
+  ⟨.var 0,.tagBind .isNul ⟨1,some [1]⟩ ⟨2,some [0]⟩⟩) })
+#guard !ok (roundtrip { tagRequest with program := (tagRequest.program.set 0
+  ⟨.var 0,.tagBind .isNul 99 ⟨2,some [0]⟩⟩) })
+-- Dispatch operates on the value, even at an empty heap or without an alias map.
+example : Transition [] [] (.eval .nul (fun _ => .nul) (.tagBind .isNul 1 2)) []
+    (.at 1 (PointClaims.mapEnv none (push .nul (fun _ => .nul)))) := .tagBind rfl
+example : Transition [] [] (.eval .fls (fun _ => .nul) (.tagBind .isNul 1 2)) []
+    (.at 2 (PointClaims.mapEnv none (push .fls (fun _ => .nul)))) := .tagBind rfl
+
 end Verification.ExperimentState.BranchRefinementTests

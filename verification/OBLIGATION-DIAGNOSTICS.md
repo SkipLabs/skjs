@@ -67,7 +67,7 @@ The kind identifies the obligation collection, not a claim of semantic blame.
 - `role`: assigned where extraction creates the obligation.
 - `environmentStart`: optional source statement-entry offset, only where known.
 
-Current roles are `node-typing`, `return-contract`, `binding-annotation`,
+Current roles are `tag-dispatch`, `node-typing`, `return-contract`, `binding-annotation`,
 `expression-claim`, `closure-entry`, and `closure-result`. The generic
 `node-typing` role deliberately does not guess a more specific source purpose.
 Unknown roles should display a generic obligation, not a guessed explanation.
@@ -92,6 +92,10 @@ An `edge-coverage` record includes `source` and `destination` node records,
 - `booleanObservation`: true/false for a result-binding Boolean branch; otherwise
   null. The observed slot is 0. This is the premise of that edge, **not** a claim
   that execution has actually taken the edge.
+
+- `tagObservation`: `{test, answer, slot: 0}` for tag dispatch; otherwise null.
+  Like Boolean observations, this describes the selected edge's premise, not an
+  assertion that runtime took it. This additive field uses the existing tag encoding.
 
 The destination requirement is `destination.claim.context`. Both branch edges
 can have the same destination label and different maps; `edgeIndex` identifies
@@ -118,8 +122,8 @@ No recursive proof-search trace, minimal failing premise, or complete dependency
 graph is promised. Extraction/type-decoding/missing-claim failures and some
 independent consumer failures still use the existing diagnostic path. An origin
 does not identify every contributing source claim or prove any premise separately.
-There are no retained mutable-heap observations. Future tag dispatch, overloads,
-and generics should extend explicit obligation data rather than force them into
+There are no retained mutable-heap observations. Future overloads and generics
+should extend explicit obligation data rather than force them into
 an `in / claim / out` triple or infer their roles in the viewer.
 
 `tests/obligation-diagnostics.js` exercises the three partial repairs and full

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Null predicates are checked independently; graph-edge refinements remain gated.
+// Null predicates and immutable-variable guard edges are independently checked.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -14,6 +14,9 @@ const [
   guardAstPath,
   guardClaimsPath,
   guardFile,
+  exitAstPath,
+  exitClaimsPath,
+  exitFile,
 ] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath));
 const claims = JSON.parse(fs.readFileSync(claimsPath));
@@ -122,17 +125,116 @@ try {
     false,
   );
   expect(
-    "null guard edge refinement remains a verifier limit",
+    "null guards produce evidence for branch and loop refinements",
     run(
       "--produce-stateful-source",
       JSON.parse(fs.readFileSync(guardAstPath)),
       JSON.parse(fs.readFileSync(guardClaimsPath)),
       undefined,
       guardFile,
+      exitAstPath,
+      exitClaimsPath,
+      exitFile,
+    ),
+    true,
+  );
+  const guardAst = JSON.parse(fs.readFileSync(guardAstPath));
+  const guardClaims = JSON.parse(fs.readFileSync(guardClaimsPath));
+  const guardEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  expect(
+    "null guard independent consumption",
+    run(
+      "--check-stateful-source",
+      guardAst,
+      guardClaims,
+      guardEvidence,
+      guardFile,
+      exitAstPath,
+      exitClaimsPath,
+      exitFile,
+    ),
+    true,
+  );
+  const reversedGuard = structuredClone(guardAst);
+  reversedGuard.functions[0].body[0].cond.op = "!==";
+  expect(
+    "null guard evidence rejects a changed observation",
+    run(
+      "--check-stateful-source",
+      reversedGuard,
+      guardClaims,
+      guardEvidence,
+      guardFile,
+      exitAstPath,
+      exitClaimsPath,
+      exitFile,
     ),
     false,
-    "source incoming edge obligation",
   );
+  const guardContext = vm.createContext({});
+  vm.runInContext(
+    ts.transpileModule(fs.readFileSync(guardFile, "utf8"), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText,
+    guardContext,
+  );
+  for (const value of [null, true, false]) {
+    for (const name of [
+      "nullGuard",
+      "presentGuard",
+      "negatedGuard",
+      "olderGuard",
+    ])
+      assert.equal(guardContext[name](value), value === null ? false : value);
+    assert.equal(guardContext.loopGuard(value), false);
+  }
+  const exitAst = JSON.parse(fs.readFileSync(exitAstPath));
+  const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath));
+  expect(
+    "SKJS null loop-exit claims are insufficient",
+    run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
+    false,
+  );
+  const repaired = structuredClone(exitClaims);
+  const exitFn = repaired.find((f) => f.file === exitFile).functions[0];
+  const ret = exitAst.functions[0].body[1];
+  const boolean = { top: false, atoms: [{ a: "boolean" }] };
+  exitFn.envs
+    .find((e) => e.pos[0] === ret.pos[0])
+    .vars.find((v) => v.name === "value").type = boolean;
+  exitFn.exprs.find((e) => e.pos[0] === ret.e.pos[0]).type = boolean;
+  expect(
+    "repaired null loop-exit claims produce evidence",
+    run("--produce-stateful-source", exitAst, repaired, undefined, exitFile),
+    true,
+  );
+  const exitEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  expect(
+    "null loop-exit repair is independently consumed",
+    run("--check-stateful-source", exitAst, repaired, exitEvidence, exitFile),
+    true,
+  );
+  const wrong = structuredClone(repaired);
+  wrong
+    .find((f) => f.file === exitFile)
+    .functions[0].envs.find((e) => e.pos[0] === ret.pos[0])
+    .vars.find((v) => v.name === "value").type = {
+    top: false,
+    atoms: [{ a: "null" }],
+  };
+  expect(
+    "null loop-exit cannot retain the opposite refinement",
+    run("--produce-stateful-source", exitAst, wrong, undefined, exitFile),
+    false,
+  );
+  vm.runInContext(
+    ts.transpileModule(fs.readFileSync(exitFile, "utf8"), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText,
+    guardContext,
+  );
+  for (const value of [true, false])
+    assert.equal(guardContext.exitGuard(value), value);
   const context = vm.createContext({});
   vm.runInContext(
     ts.transpileModule(fs.readFileSync(file, "utf8"), {

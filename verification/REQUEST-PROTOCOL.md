@@ -421,7 +421,18 @@ shape test and Boolean conditional over the saved operand. `unionVar` evidence
 allows tag dispatch over a primitive union; no new term or reference semantics
 is introduced. The same lowering is available inside a unary closure.
 
-This currently establishes predicate results, not the tested variable's narrowed
-type at graph successors. `tests/unsupported/null-guard.ts` is accepted by SKJS
-but rejected at an incoming-edge obligation by the current verifier. Other strict
-comparisons and loose equality remain explicit source boundaries.
+Top-level branches and loop heads also refine a syntactically identified immutable
+variable. Negations and either null operand order are supported. The original
+condition and its claims are checked before tag dispatch on the same immutable
+value; reads and calls cannot supply an alias refinement.
+
+The graph encoding is `{"tagBind":{"test":"isNul","yes":TARGET,"no":TARGET}}`.
+Tags use the existing term-tag encoding. Dispatch pushes the observed value;
+maps select from that extended environment. Each edge carries ordinary subtype
+evidence from the conservatively tag-filtered type for slot zero, and ordinary
+subtype evidence from the unchanged type for every other slot. Both destinations
+are checked. The observation comes from execution, never from evidence.
+
+`tests/stateful-source/null-guards.ts` exercises this integration. Null-refined
+closure environments, other strict comparisons, and loose equality remain
+source boundaries.

@@ -179,9 +179,13 @@ def failureDiagnostic (r : Request) (fuel : Nat)
         | .effect t => some (c.context, t, none)
         | .branch y n => some (c.context, if index == 0 then y else n, none)
         | .branchBind y n => some (c.type :: c.context, if index == 0 then y else n, some (index == 0))
+        | .tagBind _ y n => some (c.type :: c.context, if index == 0 then y else n, none)
         | .ret => none)
       pure (Json.mkObj [("available",toJson available),("target",toJson target),
-        ("booleanObservation",toJson observation)])
+        ("booleanObservation",toJson observation),
+        ("tagObservation",match node.continuation with
+          | .tagBind t _ _ => Json.mkObj [("test",toJson t),("answer",toJson (index == 0)),("slot",toJson (0 : Nat))]
+          | _ => Json.null)])
     return common ++ [("kind",toJson "edge-coverage"),("id",toJson s!"edge:{source}:{index}"),
       ("edgeIndex",toJson index),("source",atNode source),("destination",atNode destination),
       ("transfer",toJson transfer)]

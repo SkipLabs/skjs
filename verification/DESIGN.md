@@ -146,8 +146,7 @@ Closures currently contain expression-language bodies, not graph-backed bodies.
 A graph loop surrounding closure calls is supported; a loop inside a closure
 body is not thereby expressible. General branch-environment refinement is also
 outside the current program rules. Graph dispatch currently supplies Boolean
-observations to the common immutable-slot refinement rule; tag observations
-have a proved edge checker but are not yet connected to dispatch. Expression
+and tag observations to the common immutable-slot refinement rule. Expression
 typing also supports known shape answers per overload.
 
 ### Rule boundaries justified by counterexamples
@@ -324,9 +323,8 @@ type (`ObservedSub`). One mapped-edge checker and environment theorem handle
 both. The current tag check conservatively filters whole labels and checks a
 subtype certificate; this algorithm may become more precise without changing
 the contract or adding another edge rule. A test proves a valid mixed-label
-refinement that this algorithm cannot yet check. Tag dispatch and source null
-guards remain integration work; observations must come from execution, never
-from producer assertions. No arbitrary predicate framework is introduced.
+refinement that this algorithm cannot yet check. Boolean and tag dispatch
+supply observations from execution, never from producer assertions. No arbitrary predicate framework is introduced.
 
 Protocol version 2 makes the source parameter types an explicit input contract.
 The exporter’s parameter signature is checked for matching names, order and types.
@@ -631,9 +629,8 @@ Boolean before binding the refinement witness. The same implementation handles
 loop heads. Closure branches use `ifBoolVar` with the corresponding swapped arms.
 An effectful condition supplies no alias refinement.
 
-This adds no semantic primitive or trusted typing rule. Null equality remains a
-separate next step: the existing `ifTag` rule checks a uniform answer, whereas
-`null | boolean` needs a general tag partition and justified outgoing environments.
+Negation adds no semantic primitive or trusted typing rule. Null equality uses
+the union-elimination and observed-edge mechanisms described below.
 The `ifKnown` rule now establishes singleton negation results as well: its
 condition proof determines the reachable arm, while preserving condition effects.
 
@@ -658,10 +655,14 @@ required and both expressions evaluate in order. Existing `ifTag` plus `unionVar
 prove the lowered predicate. Tests exercise both operand orders and polarities,
 independent consumption, omitted alternatives, and forged claims.
 
-Connecting tag observations to graph dispatch and source lowering remains the
-next step; the shared edge checker is proved as described
-[in PROGRAM-TYPING](PROGRAM-TYPING.md#refinement-under-an-observed-outcome). The accepted SKJS program in
-`tests/unsupported/null-guard.ts` reaches a precise incoming-edge failure: predicate
-typing succeeds but does not yet transport the tested variable's partition to the
-successor. Dispatch must supply the actual observation required by the shared
-edge theorem; the producer's narrowed environment alone is not evidence.
+Tag dispatch now uses the shared observed-edge checker in the graph safety proof.
+Top-level null guards and loop conditions refine syntactically identified immutable
+variables, including negations and either operand order. Source evaluation and all
+predicate claims are preserved; a subsequent immutable lookup supplies the observed
+value. No property read or call is repeated or granted a retained refinement.
+`tests/stateful-source/null-guards.ts` exercises guarded returns, older bindings,
+loop bodies and break. `tests/skjs-incomplete/null-loop-exit.ts` is rejected by
+SKJS, but repairing its final entry and expression claims permits independent
+verification of the null-tested loop exit, including `continue`. This proves
+type safety, not termination for the null input. Null-based refinement inside
+closure environments remains separate integration work.

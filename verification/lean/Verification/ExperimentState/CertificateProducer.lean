@@ -258,7 +258,7 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let target := fun Γ t index => match edge G pool claims Γ t with
       | some p => Except.ok p
       | none => Except.error (Failure.edge l t.label index)
-    let branchTarget := fun Γ q t index => match edge G pool claims Γ t (some (0, .boolean q)) with
+    let branchTarget := fun Γ o t index => match edge G pool claims Γ t (some (0, o)) with
       | some p => Except.ok p
       | none => Except.error (Failure.edge l t.label index)
     let ps ← (match node.continuation with
@@ -267,8 +267,10 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       | .effect t => (target c.context t 0).map (fun p => [p])
       | .branch y n => (target c.context y 0).bind (fun py =>
           (target c.context n 1).map (fun pn => [py,pn]))
-      | .branchBind y n => (branchTarget (c.type :: c.context) true y 0).bind (fun py =>
-          (branchTarget (c.type :: c.context) false n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
+      | .branchBind y n => (branchTarget (c.type :: c.context) (.boolean true) y 0).bind (fun py =>
+          (branchTarget (c.type :: c.context) (.boolean false) n 1).map (fun pn => [py,pn]))
+      | .tagBind t y n => (branchTarget (c.type :: c.context) (.tag t true) y 0).bind (fun py =>
+          (branchTarget (c.type :: c.context) (.tag t false) n 1).map (fun pn => [py,pn])) : Except Failure (List (EdgeEvidence ι)))
     return ⟨e,ps⟩
 
 def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)

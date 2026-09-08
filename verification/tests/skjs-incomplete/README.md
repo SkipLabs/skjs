@@ -20,3 +20,10 @@ change SKJS's behavior or infer correctness from SKJS's diagnostic.
 makes its declared `false` result independently verifiable. The `ifKnown` rule
 checks the condition's singleton type before selecting the false-valued arm;
 the test rejects the opposite claimed result. Normal partial collection suffices.
+
+`null-loop-exit.ts` isolates the same issue for `while (value === null) { continue; }`.
+For Boolean inputs the loop is skipped; null diverges. Reaching the return therefore
+implies a Boolean value. SKJS rejects it. `null-tests.js` repairs the final entry
+binding and returned-expression claim to `boolean`, independently checks the
+certificate, and rejects an opposite null exit refinement. No keep-going export
+or termination claim is involved.

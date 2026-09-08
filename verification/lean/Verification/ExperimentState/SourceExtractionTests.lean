@@ -97,6 +97,9 @@ private def runPrimitive : Nat → ControlFlow.Program → Nat → Env → Optio
       | .branchBind yes no =>
         let target ← match v with | .tru => some yes | .fls => some no | _ => none
         runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping (push v ρ))
+      | .tagBind tag yes no =>
+        let target := if tagHolds tag v then yes else no
+        runPrimitive fuel P target.label (PointClaims.mapEnv target.mapping (push v ρ))
 
 private def runRequest (r : SourceRequest) : Option Tm := runPrimitive 100 r.program r.start (fun _ => .nul)
 
@@ -124,7 +127,7 @@ private def branchClaims (q : Bool) : SourceInput.Claims :=
 private def targets : ControlFlow.Continuation → List Nat
   | .ret => []
   | .bind t | .effect t => [t.label]
-  | .branch y n | .branchBind y n => [y.label,n.label]
+  | .branch y n | .branchBind y n | .tagBind _ y n => [y.label,n.label]
 #guard is ((extractFn (branchFn true) (branchClaims true)).map fun r =>
   (r.program.filter (fun n => n.continuation == .ret)).length) 1
 #guard is ((extractFn (branchFn true) (branchClaims true)).map fun r =>

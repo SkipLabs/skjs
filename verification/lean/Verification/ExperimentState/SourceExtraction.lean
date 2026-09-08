@@ -88,6 +88,16 @@ private def conditionVariable (scope : List String) : SourceInput.Expr → Optio
   | .not _ e => (conditionVariable scope e).map fun (i, reversed) => (i, !reversed)
   | _ => none
 
+/-- Only a syntactic immutable variable retains an alias to the observed value.
+Reads and calls deliberately do not qualify, even if their types look stable. -/
+private def nullConditionVariable (scope : List String) : SourceInput.Expr → Option (Nat × Bool)
+  | .not _ e => (nullConditionVariable scope e).map fun (i, equal) => (i, !equal)
+  | .nullTest _ equal testLeft left right =>
+    match (if testLeft then left else right) with
+    | .var _ name => (scope.idxOf? name).map (·, equal)
+    | _ => none
+  | _ => none
+
 private def nullTestTerm (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test .isNul (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
 
@@ -309,6 +319,18 @@ condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
 private def emitBranch (scope : List String) (Γ : List (Ty Nat)) (cond : SourceInput.Expr)
     (A : Ty Nat) (yes no : Target) : Compiler Target := do
+  if let some (i, equal) := nullConditionVariable scope cond then
+    let some C := Γ[i]? | throw "internal null-guard slot mismatch"
+    let adapt := fun t =>
+      let mapped := branchMapping scope.length (some i) t
+      ⟨mapped.label, some ((mapped.mapping.getD []).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+    -- The source predicate has already run and all operand claims were checked.
+    -- Reading the same immutable variable observes its tag without repeating
+    -- any source expression or trusting the saved Boolean's annotation.
+    return ← emitAt cond.span (.var (i+1))
+      (.tagBind .isNul (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
+      (A::Γ) C "tag-dispatch"
   let tested := testedSlot scope Γ cond
   -- Branch on the saved value; the edge maps discard its older copy and
   -- retain the new refinement slot supplied by branchBind.

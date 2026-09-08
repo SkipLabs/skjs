@@ -141,6 +141,27 @@ try {
     assert.equal(d.transfer.booleanObservation, false);
     assert.deepEqual(d.transfer.available, [[2], [0], [2]]);
     assert.deepEqual(d.destination.claim.context, [[0]]);
+    request.program[0].continuation = {
+      tagBind: {
+        test: "isNul",
+        yes: { label: 1, mapping: [0] },
+        no: { label: 1, mapping: [2] },
+      },
+    };
+    fs.writeFileSync(rp, JSON.stringify(request));
+    const tagged = spawnSync(verifier, ["--produce-stateful", rp, ep, "6"], {
+      encoding: "utf8",
+    });
+    assert.notEqual(tagged.status, 0);
+    const td = readDiagnostic(tagged.stderr);
+    assert(td, tagged.stderr);
+    assert.equal(td.edgeIndex, 1);
+    assert.equal(td.transfer.booleanObservation, null);
+    assert.deepEqual(td.transfer.tagObservation, {
+      test: "isNul",
+      answer: false,
+      slot: 0,
+    });
   });
   test("unknown malformed and duplicate diagnostic records are not interpreted", () => {
     const line =

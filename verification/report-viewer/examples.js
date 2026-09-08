@@ -10,6 +10,7 @@ const supported = [
   "primitive-callbacks",
   "negation",
   "null-tests",
+  "null-guards",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const groups = [
   { label: "Current verifier examples", files: supported },
@@ -22,6 +23,7 @@ const groups = [
     files: [
       "verification/tests/skjs-incomplete/negated-loop-exit.ts",
       "verification/tests/skjs-incomplete/singleton-negation.ts",
+      "verification/tests/skjs-incomplete/null-loop-exit.ts",
     ],
   },
   {
@@ -35,7 +37,6 @@ const groups = [
       "typeof_narrow",
       "mutable_binding",
       "beyond_precision",
-      "null-guard",
     ].map((name) => `verification/tests/unsupported/${name}.ts`),
   },
 ];

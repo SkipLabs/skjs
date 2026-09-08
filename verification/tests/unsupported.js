@@ -28,7 +28,7 @@ try {
       .sort(),
     // This file needs real claims to reach its edge-obligation boundary;
     // null-tests.js checks it in the full suite below.
-    [...Object.keys(cases), "null-guard.ts"].sort(),
+    Object.keys(cases).sort(),
   );
   for (const [name, reason] of Object.entries(cases)) {
     const file = dir + "/" + name;

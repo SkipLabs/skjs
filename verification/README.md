@@ -82,14 +82,20 @@ contains no returns. Only the surviving path executes the continuation, with
 its checked Boolean refinement and without the falling arm's local bindings.
 
 
+Strict `===` and `!==` comparisons with a null literal work as expressions,
+including inside callbacks. In top-level branches and loops, direct immutable
+variable tests also refine the outgoing environment, including negations and
+either operand order. `stateful-source/null-guards.ts` illustrates guarded returns,
+older-slot mappings, loop bodies and break. The separate
+`skjs-incomplete/null-loop-exit.ts` demonstrates independently verifiable repaired
+loop-exit claims after a null test and `continue`.
+
 The source fragment is smaller than the calculus. General strings/numbers,
-Strict `===` and `!==` comparisons with a null literal now work as expressions,
-including inside callbacks. Refinements of the tested variable on outgoing graph
-edges are not yet supported; `unsupported/null-guard.ts` records that boundary.
-`typeof`, other equality tests, mutable bindings, generics and general overloads are
-not currently source-verifiable. The parser can represent some syntax that the
-Lean adapter subsequently rejects. Such rejection is a limitation, not evidence
-that a producer claim is false.
+`typeof`, other equality tests, mutable bindings, generics and general overloads
+are not currently source-verifiable. Null-based environment refinement inside
+closures and retained refinement of property reads remain unsupported. The parser
+can represent some syntax that the Lean adapter subsequently rejects. Such
+rejection is a limitation, not evidence that a producer claim is false.
 
 ## Reports and examples
 

@@ -151,7 +151,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT" \
        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"; then exit 1; fi
   NULL_TESTS="verification/tests/stateful-source/null-tests.ts"
-  NULL_GUARD="verification/tests/unsupported/null-guard.ts"
+  NULL_GUARD="verification/tests/stateful-source/null-guards.ts"
   for pair in "$NULL_TESTS:null-tests" "$NULL_GUARD:null-guard"; do
     source_file="${pair%:*}"; fixture="${pair##*:}"
     if ! { node verification/tools/parse-source.js "$source_file" > "$WORK/$fixture.ast" &&
@@ -159,8 +159,14 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
       echo "FAIL: null-test fixture setup"; cat "$WORK/$fixture.err"; exit 1
     fi
   done
+  NULL_EXIT="verification/tests/skjs-incomplete/null-loop-exit.ts"
+  if ! node verification/tools/parse-source.js "$NULL_EXIT" > "$WORK/null-exit.ast"; then exit 1; fi
+  if skjs_check "$NULL_EXIT" > "$WORK/null-exit.claims" 2> "$WORK/null-exit.err"; then
+    echo "FAIL: SKJS unexpectedly accepts the null loop-exit witness"; exit 1
+  fi
   if ! run_test "Null predicates" node verification/tests/null-tests.js "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER" \
-       "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"; then exit 1; fi
+       "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD" \
+       "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"; then exit 1; fi
   LOOPS="verification/tests/stateful-source/loops.ts"
   if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
          skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then
