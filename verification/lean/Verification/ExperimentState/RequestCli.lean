@@ -1,4 +1,4 @@
-import Verification.ExperimentState.SourceExtraction
+import Verification.ExperimentState.SourceClaimJson
 
 /-! File interfaces to raw calculus requests and to the supported source adapter.
 Source parsing remains external; source-mode checking reconstructs its request. -/
@@ -33,7 +33,7 @@ def produceFile (requestPath evidencePath : String) (fuel : Nat) : IO UInt32 := 
     catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
-    (fuel : Option Nat) : IO UInt32 := do
+    (fuel : Option Nat) (normalized : Bool := false) : IO UInt32 := do
   if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
     IO.eprintln "reject: evidence output must differ from the input files"
     return 1
@@ -42,12 +42,16 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
   match fuel with
   | none =>
     let evidence ← readJson evidencePath
-    let checked := do SourceExtraction.checkJson (← ast) (← claims) fileKey (← evidence)
+    let checked := do
+      let check := if normalized then SourceClaimJson.checkJson else SourceExtraction.checkJson
+      check (← ast) (← claims) fileKey (← evidence)
     match checked with
     | .ok () => IO.println s!"accept: stateful source {fileKey}"; return 0
     | .error e => IO.eprintln s!"reject: {e}"; return 1
   | some depth =>
-    let produced := do SourceExtraction.produceJson (← ast) (← claims) fileKey depth
+    let produced := do
+      let produce := if normalized then SourceClaimJson.produceJson else SourceExtraction.produceJson
+      produce (← ast) (← claims) fileKey depth
     match produced with
     | .error e => IO.eprintln s!"reject: {e}"; return 1
     | .ok evidence =>

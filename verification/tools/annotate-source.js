@@ -34,6 +34,7 @@ function comment(x) {
 }
 
 function typeText(t) {
+  if(typeof t==="string")return t;
   // Abbreviate only exact primitive encodings. Preserve every other type verbatim.
   if(t && t.top === false && Object.keys(t).sort().join() === "atoms,top" && Array.isArray(t.atoms)) {
     const names=t.atoms.map(a=> {
@@ -56,6 +57,26 @@ function fromSkjs(source, file, claims, producer) {
       signature:{params:f.params,retType:f.retType},
       entries:f.envs.map(e=>({pos:e.pos,bindings:e.vars.map(v=>({name:v.name,type:typeText(v.type),raw:v.type}))})),
       expressions:f.exprs.map(e=>({pos:e.pos,type:typeText(e.type),raw:e.type}))}))};
+}
+
+function fromSourceClaims(source,file,input,producer) {
+  if(input.version!==1||input.profile!=="stateful-source-19-v1"||input.file!==file||input.sourceSha256!==hash(source))
+    throw Error("source-claim profile or source identity mismatch");
+  const primitive=mask=>["null","true","false"].filter((_,i)=>mask&(1<<i)).join(" | ")||"never";
+  const label=i=>i<3?["null","true","false"][i]:i<11?`Ref<${primitive(i-3)}>`:`(null => ${primitive(i-11)})`;
+  const type=A=> {
+    if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=19||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
+    return A.map(label).join(" | ")||"never";
+  };
+  const sf=parse(source,file),entries=new Map();
+  const walk=n=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);ts.forEachChild(n,walk);};walk(sf);
+  return {version:1,source:{file,sha256:input.sourceSha256},producer,
+    functions:input.functions.map(f=>({name:f.name,namePos:f.namePos,
+      signature:{params:f.params.map(b=>({name:b.name,type:type(b.type)})),retType:type(f.result)},
+      entries:f.entries.map(e=> {
+        if(!entries.has(e.start))throw Error("source entry claim is not attached to a statement");
+        return {pos:[e.start,entries.get(e.start)],bindings:e.bindings.map(b=>({name:b.name,type:type(b.type),raw:b.type}))};
+      }),expressions:f.expressions.map(e=>({pos:e.pos,type:type(e.type),raw:e.type}))}))};
 }
 
 function parse(source, file) {
@@ -201,7 +222,7 @@ function run(executable,args) {
   if(r.error || r.signal)throw Error(`tool execution failed: ${r.error?.message || r.signal}`);
   return r;
 }
-function verifySkjs(sourcePath, source, claims, file, report, verifier, depth) {
+function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, normalized=false) {
   const parser=path.join(__dirname,"parse-source.js"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
     const p=run(process.execPath,[parser,sourcePath,"--stateful"]);
@@ -214,13 +235,14 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth) {
     const results=report.functions.map(f=> {
       const a=clone(ast);a.functions=a.functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
       if(a.functions.length!==1)throw Error("function identity mismatch during verification");
-      const c=clone(claims).filter(g=>g.file===file);
-      c[0].functions=c[0].functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
+      const c=normalized ? clone(claims) : clone(claims).filter(g=>g.file===file);
+      const selected=normalized ? c : c[0];
+      selected.functions=selected.functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
       const ap=path.join(temp,"ast.json"), cp=path.join(temp,"claims.json"), ep=path.join(temp,"evidence.json");
       fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));
-      const produced=run(verifier,["--produce-stateful-source",ap,cp,file,ep,String(depth)]);
+      const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
       if(produced.status!==0)return {status:"not-established",detail:(produced.stderr||produced.stdout).trim()};
-      const checked=run(verifier,["--check-stateful-source",ap,cp,file,ep]);
+      const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};
       return {status:"verified",scope:"modeled function and required claims",certificateSha256:hash(fs.readFileSync(ep))};
     });
@@ -242,7 +264,7 @@ function checkFresh(output) {
 
 function main(args) {
   if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
-  const sourcePath=args.shift(), options={format:"skjs",producer:"skjs",depth:10};
+  const sourcePath=args.shift(), options={format:"skjs",depth:10};
   if(!sourcePath)throw Error("usage: annotate-source.js source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
   const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline"]);
   while(args.length) {
@@ -250,7 +272,8 @@ function main(args) {
     if(!allowed.has(key)||!args.length)throw Error(`invalid option ${key}`);
     options[key]=args.shift();
   }
-  if(!options.claims || !["skjs","report"].includes(options.format))throw Error("expected --claims and a supported format");
+  options.producer ??= options.format==="skjs" ? "skjs" : "unspecified";
+  if(!options.claims || !["skjs","report","source-claims"].includes(options.format))throw Error("expected --claims and a supported format");
   if(!/^\d+$/.test(String(options.depth))||!Number.isSafeInteger(Number(options.depth)))throw Error("invalid proof depth");
   if(options.format==="report"&&options.verify)throw Error("verification of generic report inputs needs a producer adapter; stored statuses are never trusted");
   const output=options.out || sourcePath.replace(/\.ts$/,"")+".annotated.ts", manifest=output+".json";
@@ -258,7 +281,7 @@ function main(args) {
   if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose a new --out path");
   const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims), input=JSON.parse(bytes);
   const file=options["file-key"] || sourcePath;
-  const report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : input;
+  const report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
   // Validate attachment before running any expensive proof generation.
   render(source,report);
   let results=null, identity={claimsSha256:hash(bytes)}, comparison=null;
@@ -268,7 +291,7 @@ function main(args) {
     identity.baselineSha256=hash(baselineBytes);
   }
   if(options.verify) {
-    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth));
+    const verified=verifySkjs(sourcePath,source,input,file,report,path.resolve(options.verify),Number(options.depth),options.format==="source-claims");
     results=verified.results;identity={...identity,...verified.identity};
   }
   const diagnostics=options.diagnostics ? fs.readFileSync(options.diagnostics,"utf8") : null;
@@ -286,4 +309,4 @@ function main(args) {
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
 if(require.main===module)try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
-module.exports={hash,fromSkjs,render,coverage,compareClaims,verifySkjs,main};
+module.exports={hash,fromSkjs,fromSourceClaims,render,coverage,compareClaims,verifySkjs,main};

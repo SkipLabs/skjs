@@ -202,3 +202,7 @@ builds with everything else but is not yet used by the production verifier.
 Annotated reports also accept `--baseline previous.annotated.ts.json` to review
 claim repairs against the same source snapshot, with fresh independent checking
 when `--verify` is supplied. See [repair comparison](ANNOTATED-SOURCE.md#reviewing-a-repair-against-a-baseline).
+
+[Producer-independent source sidecars](SOURCE-CLAIMS.md) can supply calculus-label
+claims directly to the same source extractor and independent consumer, without
+SKJS type JSON.

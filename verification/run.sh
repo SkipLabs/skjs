@@ -244,6 +244,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$CLOSURES" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
+  if ! node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
   PARTIAL=verification/tests/partial-claims.ts
   skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
   plain_status=$?

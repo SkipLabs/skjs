@@ -5,7 +5,8 @@
          verifier --produce-stateful <request.json> <evidence.json> <search-depth>
          verifier --check-stateful <request.json> <evidence.json>
 
-  Stateful source mode reconstructs calculus requests from AST and SKJS claims.
+  Stateful source modes reconstruct calculus requests from AST and either SKJS
+  claims or producer-independent calculus-label sidecars.
 
   Exit 0 accepts the claims; any other exit rejects them. Rejection is the
   only failure mode: the checker never reports a program as accepted on the
@@ -51,6 +52,12 @@ def run (astPath typeClaimsPath fileKey : String) : IO UInt32 := do
 
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--check-source-claims", astPath, claimsPath, fileKey, evidencePath] =>
+      ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath none true
+  | ["--produce-source-claims", astPath, claimsPath, fileKey, evidencePath, depth] =>
+      match depth.toNat? with
+      | some fuel => ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath (some fuel) true
+      | none => IO.eprintln "reject: search depth must be a natural number"; return 2
   | ["--check-stateful-source", astPath, claimsPath, fileKey, evidencePath] =>
       ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath none
   | ["--produce-stateful-source", astPath, claimsPath, fileKey, evidencePath, depth] =>
@@ -70,4 +77,6 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "       verifier --check-stateful <request.json> <evidence.json>"
       IO.eprintln "       verifier --produce-stateful-source <ast.json> <claims.json> <file-key> <evidence.json> <depth>"
       IO.eprintln "       verifier --check-stateful-source <ast.json> <claims.json> <file-key> <evidence.json>"
+      IO.eprintln "       verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
+      IO.eprintln "       verifier --check-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json>"
       return 2

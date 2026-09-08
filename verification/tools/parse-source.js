@@ -367,7 +367,7 @@ function main() {
     return functionDecl(s);
   });
   if (functions.length === 0) fail(null, "no functions in file");
-  process.stdout.write(JSON.stringify({ file, functions }, null, 1));
+  process.stdout.write(JSON.stringify({ file, sourceSha256: require("crypto").createHash("sha256").update(text).digest("hex"), functions }, null, 1));
 }
 
 try {

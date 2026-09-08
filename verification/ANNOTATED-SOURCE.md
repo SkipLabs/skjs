@@ -209,3 +209,10 @@ checks failure, restores the original claim, then checks success. It also insert
 a fake saved success into the baseline and confirms that a still-incomplete
 candidate continues to fail. This exercises repair of missing information,
 without claiming that erroneous source can be repaired by false annotations.
+
+## Calculus-label claim inputs
+
+`--format source-claims` accepts the strict bounded
+[producer-independent sidecar](SOURCE-CLAIMS.md), including fresh verification and
+baseline comparison. Unlike `--format report`, this is an input to the Lean
+consumer, with its own versioned schema and source fingerprint.

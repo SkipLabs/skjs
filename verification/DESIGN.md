@@ -64,9 +64,12 @@ The source compiler now consumes `SourceClaims.Function`: candidates expressed
 as calculus type labels or explicit decoding failures. `SkjsSourceClaims` is an
 adapter into that interface. Source annotations remain separate requirements.
 Direct callers use `extractNormalizedFn`; used labels are bounds checked against
-the current fixed source graph. This is the first implemented step of
-[the independent claim interface](CLAIM-INTERFACE.md), not yet a new wire format
-or a TypeScript comment parser.
+the current fixed source graph. The strict
+[`stateful-source-19-v1` sidecar](SOURCE-CLAIMS.md) now exposes the same boundary
+through the CLI, with source identity, site and label validation. Both input
+paths reconstruct requests for the same proved evidence consumer. Arbitrary
+graph documents and TypeScript comment input remain future steps of
+[the independent claim interface](CLAIM-INTERFACE.md).
 
 ### Derivations define acceptance
 

@@ -1,11 +1,13 @@
 # Producer-independent source claims
 
 The comment notation and serialized source-claim schema below are proposals;
-there is no implemented comment frontend yet. The in-memory consumption boundary
+there is no implemented comment frontend yet. A strict, bounded
+[calculus-label sidecar](SOURCE-CLAIMS.md) is now implemented separately from the
+arbitrary-graph proposal below. The in-memory consumption boundary
 is now separated: `SourceClaims.Function` contains calculus type candidates, and
 `SkjsSourceClaims.translate` adapts SKJS exports before source extraction.
-`extractNormalizedFn` accepts those candidates directly. The existing source CLI
-still accepts SKJS exports. The independent calculus request and
+`extractNormalizedFn` accepts those candidates directly. The source CLI accepts SKJS exports and, through separate modes, the bounded
+producer-independent sidecar. The independent calculus request and
 certificate checker already exist; this proposal changes how source claims reach
 that boundary, not which semantic rules establish acceptance.
 
@@ -41,7 +43,9 @@ Conceptually the document contains:
 | Entry claims | Statement identity and a map from binding IDs to type references. |
 | Expression claims | Expression identity and its type reference. |
 
-The concrete encoding remains to be implemented. It should use strict field and
+The arbitrary-graph encoding remains to be implemented; the implemented
+`stateful-source-19-v1` sidecar fixes the graph and retains current name/position
+identities. It should use strict field and
 reference validation, including duplicate rejection, as the request consumer
 already does. Producer names and source-level display names are optional
 provenance, never typing assumptions. An independently supplied graph does not
