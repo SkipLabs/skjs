@@ -320,11 +320,15 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
         const absentExpr=/^(?:reject: )?no claimed type for the expression at \[(\d+),(\d+)\)$/.exec(detail);
         const absentEnv=environment && /^missing statement environment at \d+$/.test(environment[2]);
         const absentBinding=environment && /^missing claimed binding '([^']*)' at \d+$/.exec(environment[2]);
+        // A fragment limitation reported without a span still says checking never
+        // started on this function; it is not a failed proof search.
+        const outsideSlice=/outside the [^:]*slice\.?$/.test(detail);
         const location=located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :
           absentExpr ? {kind:"missing-expression-claim",pos:[Number(absentExpr[1]),Number(absentExpr[2])]} :
           absentEnv ? {kind:"missing-environment-claim",start:Number(environment[1])} :
           absentBinding ? {kind:"missing-environment-claim",start:Number(environment[1]),binding:absentBinding[1]} :
-          environment ? {kind:"environment-obligation",start:Number(environment[1])} : null;
+          environment ? {kind:"environment-obligation",start:Number(environment[1])} :
+          outsideSlice ? {kind:"source-limitation"} : null;
         return {status:"not-established",detail,...(location ? {location} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);

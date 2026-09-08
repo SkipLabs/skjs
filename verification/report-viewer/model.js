@@ -298,6 +298,7 @@ function fromBundle(bundle) {
     const location = result?.location;
     if (f.status !== "not-established" || !location) continue;
     const samePos = (x) =>
+      location.pos !== undefined &&
       JSON.stringify(x.pos) === JSON.stringify(location.pos);
     // A claim the verifier needed and did not find belongs on the gap that
     // already marks that place. Falling back to a claim at the same position
@@ -447,22 +448,21 @@ function summarize(functions) {
   return tally;
 }
 
-// A report link names the source file, whether it was collected with
-// verification, and optionally one mark. It is a request to reopen that view,
-// never a record that anything was established.
+// A report link names the source file and optionally one mark. It is a request
+// to reopen that view, never a record that anything was established. Older links
+// carrying a verify flag still work: verification is no longer optional, so the
+// flag is read and ignored.
 function parseReportLink(search, hash) {
   const params = new URLSearchParams(search || "");
   return {
     file: params.get("file") || "",
-    verify: params.get("verify") === "1",
     mark: (hash || "").replace(/^#/, "") || "",
   };
 }
 
-function reportLink({ file, verify, mark }) {
+function reportLink({ file, mark }) {
   const params = new URLSearchParams();
   if (file) params.set("file", file);
-  if (verify) params.set("verify", "1");
   const query = params.toString();
   return (query ? "?" + query : "") + (mark ? "#" + mark : "");
 }

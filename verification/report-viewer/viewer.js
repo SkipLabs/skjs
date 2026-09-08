@@ -34,9 +34,33 @@ const store = {
 };
 state.density = store.get("density", "key");
 state.unsupported = store.get("uns", false);
+state.producerErrors = store.get("errs", true);
 
 // A binding the producer could not decode carries no claim. It is real information
 // about coverage, but it is not a type, so it stays out of the default view.
+// SKJS reports its own errors against the source, with 1-based columns and an
+// exclusive end. They are the producer's diagnostics, shown where they point;
+// nothing here is a claim or a verification result.
+function producerMarks(rep) {
+  const marks = [];
+  if (!rep.diagnostics) return marks;
+  const starts = lineStarts(rep.source);
+  const re = /^File "([^"]+)", line (\d+), character (\d+)-(\d+):\r?\n([^\n]*)/gm;
+  let m;
+  while ((m = re.exec(rep.diagnostics))) {
+    const [, file, line, from, to, text] = m;
+    if (rep.file && !file.endsWith(rep.file)) continue;
+    const ln = Number(line) - 1;
+    if (!(ln >= 0 && ln < starts.length)) continue;
+    const lineEnd =
+      ln + 1 < starts.length ? starts[ln + 1] - 1 : rep.source.length;
+    const start = Math.min(starts[ln] + Number(from) - 1, lineEnd);
+    const end = Math.min(Math.max(starts[ln] + Number(to) - 1, start + 1), lineEnd);
+    marks.push({ pos: [start, end], text: text.trim(), line: ln });
+  }
+  return marks;
+}
+
 const isNoise = (b) =>
   b.unavailable || b.type === "unsupported" || b.type === "(unavailable)";
 // Gaps read better as a short phrase than as the generator's sentence.
@@ -64,15 +88,28 @@ const KW =
   /^(function|return|if|else|const|let|var|typeof|instanceof|new|class|interface|type|export|import|from|extends|implements|for|while|do|switch|case|default|break|continue|throw|try|catch|finally|this|void|as|in|of|async|await|yield)$/;
 const TY =
   /^(string|number|boolean|null|undefined|never|unknown|any|true|false|object|symbol|bigint)$/;
-function hi(line) {
+// Block comments span lines, so highlighting carries state from one line to the
+// next: a doc comment above a function must not be coloured as code.
+function hi(line, state = { block: false }) {
+  let out = "";
+  if (state.block) {
+    const close = line.indexOf("*/");
+    const chunk = close < 0 ? line : line.slice(0, close + 2);
+    out += '<span class="t-com">' + esc(chunk) + "</span>";
+    if (close < 0) return out;
+    state.block = false;
+    line = line.slice(close + 2);
+  }
   const re =
-    /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\b\d[\w.]*|[A-Za-z_$][\w$]*|\s+|[^\w\s]+)/g;
-  let out = "",
-    m;
+    /(\/\*[\s\S]*?\*\/|\/\*[\s\S]*$|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*|\b\d[\w.]*|[A-Za-z_$][\w$]*|\s+|[^\w\s]+)/g;
+  let m;
   while ((m = re.exec(line))) {
     const s = m[0];
     let cls = "";
-    if (/^["'`]/.test(s)) cls = "t-str";
+    if (s.startsWith("/*")) {
+      if (!s.endsWith("*/")) state.block = true;
+      cls = "t-com";
+    } else if (/^["'`]/.test(s)) cls = "t-str";
     else if (s.startsWith("//")) cls = "t-com";
     else if (/^\d/.test(s)) cls = "t-num";
     else if (/^[A-Za-z_$]/.test(s))
@@ -145,7 +182,7 @@ function renderCode() {
         (failed
           ? e.failureKind === "source-limitation"
             ? " · unsupported source"
-            : " · proof not established"
+            : " · proof search failed"
           : "") +
         (multiline ? " ↳ multiline" : "") +
         (e.recovery ? recMark : ""),
@@ -179,6 +216,21 @@ function renderCode() {
       cls: "gap" + (needed ? " failed" : ""),
     });
   });
+  if (state.producerErrors)
+    for (const [i, mark] of producerMarks(rep).entries()) {
+      if (mark.pos[0] < (f.start || 0) || mark.pos[1] > (f.end ?? rep.source.length))
+        continue;
+      const ln = lineOfPos(mark.pos[0]);
+      items.push({
+        kind: "error",
+        line: ln,
+        col: mark.pos[0] - starts[ln],
+        end: Math.max(mark.pos[1] - starts[ln], mark.pos[0] - starts[ln] + 1),
+        label: mark.text.length > 72 ? mark.text.slice(0, 69) + "…" : mark.text,
+        id: "p" + i,
+        cls: "err",
+      });
+    }
   const entryItems = [];
   f.entries.forEach((e, i) => {
     if (!e.pos) return;
@@ -199,7 +251,7 @@ function renderCode() {
       label:
         (failed ? "⚠ " : "") +
         list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
-        (failed ? " · proof not established" : "") +
+        (failed ? " · proof search failed" : "") +
         (e.recovery ? recMark : ""),
       id: "n" + i,
       cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
@@ -215,8 +267,14 @@ function renderCode() {
     '<span class="num">' + pad(gutter - String(n).length) + n + " </span>";
   const blank = '<span class="num">' + pad(gutter + 1) + "</span>";
   let out = "";
+  // Highlighting state runs down the rendered lines, not the whole file: a
+  // function shown on its own starts outside any comment.
+  const highlighting = { block: false };
+  const previousEnd = rep.functions
+    .filter((other) => other !== f && other.end <= (f.start || 0))
+    .reduce((furthest, other) => Math.max(furthest, other.end), 0);
   for (
-    let ln = lineOfPos(f.start || 0);
+    let ln = commentStartLine(rep.source, starts, f.start || 0, previousEnd);
     ln <= lineOfPos(Math.max(0, (f.end ?? rep.source.length) - 1));
     ln++
   ) {
@@ -228,7 +286,7 @@ function renderCode() {
       out += blank + rowText(row.items) + "\n";
       marks.push(...row.items.map((it) => it.id));
     }
-    out += num(ln + 1) + hi(text) + "\n";
+    out += num(ln + 1) + hi(text, highlighting) + "\n";
     for (const row of packRows(claimRows.get(ln) || [])) {
       out += blank + rowText(row.items) + "\n";
       marks.push(...row.items.map((it) => it.id));
@@ -268,8 +326,8 @@ function renderCode() {
         : missingClaim
           ? "⚠ Verification needs a claim this report does not contain. The marked place is where extraction stopped, not a claim that was disproved."
           : failedId
-            ? "⚠ Proof not established at the marked obligation. Other claims are not individually classified."
-            : "⚠ Function verification not established. No claim location is available for this diagnostic.";
+            ? "⚠ Proof search failed at the marked obligation. Other claims are not individually classified."
+            : "⚠ Proof search failed for this function. No claim location is available for this diagnostic.";
     if (failedId) {
       const jump = document.createElement("button");
       jump.textContent =
@@ -311,7 +369,7 @@ function rowText(items) {
     const w = Math.max(1, it.end - it.col);
     out +=
       '<span class="br' +
-      (it.kind === "gap" ? " gapbr" : "") +
+      (it.kind === "gap" ? " gapbr" : it.kind === "error" ? " errbr" : "") +
       '">' +
       bracket(w) +
       "</span> ";
@@ -382,7 +440,6 @@ function syncLocation() {
   const live = el("livewrap");
   const link = reportLink({
     file: live && !live.hidden ? el("livefile").value : "",
-    verify: !el("verifywrap").hidden && el("liveverify").checked,
     mark: state.report
       ? markIdOf(state.report, state.fn, state.selectedId)
       : "",
@@ -529,6 +586,24 @@ function select(id) {
   const f = state.report.functions[state.fn];
   state.selectedId = id;
   syncLocation();
+  if (id[0] === "p") {
+    const mark = producerMarks(state.report)[+id.slice(1)];
+    state.selected = { kind: "producer-diagnostic", ...mark };
+    el("detail").innerHTML =
+      '<div class="status-line"><b>SKJS diagnostic</b></div>' +
+      '<pre class="raw">' +
+      esc(mark.text) +
+      "</pre>" +
+      '<pre class="raw">' +
+      esc(state.report.source.slice(mark.pos[0], mark.pos[1])) +
+      "</pre>" +
+      '<div class="note">This is the producer reporting on its own run, not a ' +
+      "claim and not a verification result. It depends on the source file only.</div>";
+    document
+      .querySelectorAll(".lab")
+      .forEach((x) => x.classList.toggle("on", x.dataset.id === id));
+    return;
+  }
   const idx = +id.slice(1);
   const item =
     id[0] === "e"
@@ -565,7 +640,7 @@ function select(id) {
         : item.failureKind === "missing-expression-claim" ||
             item.failureKind === "missing-environment-claim"
           ? "Verification needed a claim here"
-          : "Proof not established here") +
+          : "Proof search failed here") +
       "</b><p>" +
       explanation +
       ' This does not prove the claim false.</p><pre class="raw">' +
@@ -689,6 +764,9 @@ function select(id) {
 }
 
 /* ---------- header, functions, provenance ---------- */
+// A stamp marks a function whose certificate the independent consumer checked
+// for this report, in this session. A status that only comes from a file is
+// shown as recorded, not stamped: a stored status is never evidence.
 // Whether the producer actually ran for what is on screen, and when. A report
 // read from a file carries no such record, and says so rather than implying one.
 const clock = (iso) => {
@@ -706,6 +784,106 @@ function collectedLine(rep) {
     "</span>"
   );
 }
+
+function stampFor(f, rep) {
+  if (
+    f.status === "not-established" &&
+    f.collection === "complete" &&
+    !INCOMPLETE_INPUT.has(f.result?.location?.kind)
+  )
+    return (
+      '<span class="attention" title="SKJS accepted this function and proof search did not establish it. That is either an unsound acceptance or a limit of these rules; it is not a disproof." aria-hidden="true">⚠</span>'
+    );
+  if (f.status !== "verified") return '<i class="dot"></i>';
+  const fresh = rep.collection?.verified === true;
+  return (
+    '<span class="stamp' +
+    (fresh ? "" : " recorded") +
+    '" title="' +
+    (fresh
+      ? "A certificate for this function's modeled obligations was checked by the independent consumer for this report."
+      : "Recorded in the report as verified. No consumer run backs what you are looking at.") +
+    '" aria-hidden="true">✓</span>'
+  );
+}
+
+// What each side said about this function, spelled out rather than encoded in a
+// colour: the producer's own outcome, then what proof search found. They are
+// different questions, so both are shown even when they agree.
+//
+// The producer really does reject; the verifier never disproves. "?" therefore
+// means no proof was found, not that the claim is false.
+const PRODUCER_MARK = {
+  complete: ["✓", "SKJS finished checking this function"],
+  aborted: ["✗", "SKJS stopped inside this function"],
+};
+// The same outcomes in words, for the tally and the panels.
+const PROOF_LABEL = {
+  verified: "verified",
+  "not-established": "proof search failed",
+  unsupported: "unsupported source",
+  "not-run": "not run",
+  stale: "stale after an edit",
+};
+const proofLabel = (status) => PROOF_LABEL[status] || status;
+// ✓ proved, ✗ searched and failed, ? could not properly try. The last covers a
+// claim the extractor needed and did not find — typically because the producer
+// stopped before annotating everywhere — and source outside the fragment.
+// ✗ still means no proof was found, never that the claim is false.
+const INCOMPLETE_INPUT = new Set([
+  "missing-expression-claim",
+  "missing-environment-claim",
+  "source-limitation",
+]);
+function proofMark(f) {
+  if (f.status === "verified") return ["✓", "a certificate was checked"];
+  if (f.status === "unsupported")
+    return ["?", "the source fragment gate rejected this file, so nothing was checked"];
+  if (f.status === "not-established")
+    return INCOMPLETE_INPUT.has(f.result?.location?.kind)
+      ? [
+          "?",
+          "checking could not proceed: a claim it needed is missing, or the source is outside the fragment",
+        ]
+      : ["✗", "proof search failed; that is not a disproof of the claim"];
+  if (f.status === "stale")
+    return ["·", "stale: the candidate changed after this result"];
+  return ["·", "verification was not requested"];
+}
+
+function outcomePair(f, rep) {
+  const producer = PRODUCER_MARK[f.collection] || ["·", "no producer outcome recorded"];
+  const proof = proofMark(f);
+  // The two tools disagree when one concluded something the other did not.
+  // Nothing is claimed either way when proof search never reached a verdict.
+  const concluded = !INCOMPLETE_INPUT.has(f.result?.location?.kind);
+  const disagrees =
+    concluded &&
+    ((f.collection === "complete" && f.status === "not-established") ||
+      (f.collection === "aborted" && f.status === "verified"));
+  return (
+    '<span class="pair' +
+    (disagrees ? " warn" : "") +
+    '" title="' +
+    esc(
+      // SKJS reads only the source, so its outcome holds for as long as the
+      // source does. Proof search reads the claims, so an edit can change it.
+      "SKJS: " +
+        producer[1] +
+        ". This depends on the source file only, which is unchanged. Proof: " +
+        proof[1] +
+        ". This depends on the claims.",
+    ) +
+    '" aria-label="' +
+    esc("SKJS " + producer[1] + "; proof " + proof[1]) +
+    '">SKJS ' +
+    producer[0] +
+    " · proof " +
+    proof[0] +
+    "</span>"
+  );
+}
+
 function renderShell() {
   const rep = state.report;
   el("srcline").innerHTML =
@@ -731,7 +909,7 @@ function renderShell() {
           '">' +
           n +
           " " +
-          esc(status) +
+          esc(proofLabel(status)) +
           "</button>",
       )
       .join("") +
@@ -762,15 +940,11 @@ function renderShell() {
         '" type="button" aria-pressed="' +
         (i === state.fn) +
         '">' +
-        '<i class="dot"></i><span class="nm">' +
+        stampFor(f, rep) +
+        '<span class="nm">' +
         esc(f.name) +
         "</span>" +
-        '<span class="sig">' +
-        esc(f.status) +
-        "</span>" +
-        (f.collection && f.collection !== "complete"
-          ? '<span class="sig warn">claims ' + esc(f.collection) + "</span>"
-          : "") +
+        outcomePair(f, rep) +
         (f.gaps.length
           ? '<span class="sig warn">' +
             f.gaps.length +
@@ -805,7 +979,7 @@ function renderShell() {
       ? esc(
           (collected.producerRun
             ? "skjs ran for this report"
-            : "the producer did not run; these are candidate claims") +
+            : "the producer did not run; these are candidate claims, and SKJS's own outcome still holds for this unchanged source") +
             (collected.ranAt ? " at " + clock(collected.ranAt) : "") +
             (typeof collected.durationMs === "number"
               ? " in " + (collected.durationMs / 1000).toFixed(1) + " s"
@@ -825,9 +999,12 @@ function renderShell() {
   p +=
     '<div class="status-line ' +
     statusClass(f ? f.status : "") +
-    '"><i class="dot"></i> verification <b>' +
-    esc(f ? f.status : "—") +
-    "</b> (recorded result)</div>";
+    '">' +
+    (f ? stampFor(f, rep) : '<i class="dot"></i>') +
+    " verification <b>" +
+    esc(f ? proofLabel(f.status) : "—") +
+    "</b> (recorded result)</div>" +
+    (f ? '<div class="status-line">' + outcomePair(f, rep) + "</div>" : "");
   if (f?.signature)
     p +=
       '<details><summary>Producer function signature</summary><pre class="raw">' +
@@ -842,10 +1019,17 @@ function renderShell() {
       "</pre></details>";
   if (f && f.collection)
     p +=
-      '<dl class="kv"><dt>claims</dt><dd>' +
-      esc(f.collection) +
-      (f.quality ? " · " + esc(f.quality) : "") +
-      (f.mode ? " · " + esc(f.mode) : "") +
+      '<dl class="kv"><dt>producer snapshot</dt><dd>' +
+      esc(
+        (f.collection === "complete"
+          ? "complete"
+          : "partial — the producer stopped collecting for this function") +
+          (f.quality ? " · " + f.quality : "") +
+          (f.mode ? " · " + f.mode : ""),
+      ) +
+      (collected && collected.producerRun === false
+        ? "<br>This describes the original collection, not the edited candidate on screen."
+        : "") +
       "</dd></dl>";
   p += '<details><summary>Snapshot fingerprints</summary><dl class="kv">';
   for (const [k, v] of Object.entries(rep.meta))
@@ -947,6 +1131,12 @@ function setDensity(d, persist = true) {
 }
 el("d-key").addEventListener("click", () => setDensity("key"));
 el("d-all").addEventListener("click", () => setDensity("all"));
+el("t-err").checked = state.producerErrors;
+el("t-err").addEventListener("change", (e) => {
+  state.producerErrors = e.target.checked;
+  store.set("errs", state.producerErrors);
+  if (state.report) renderCode();
+});
 el("t-uns").checked = state.unsupported;
 el("t-uns").addEventListener("change", (e) => {
   state.unsupported = e.target.checked;
@@ -1034,11 +1224,13 @@ async function connectLive() {
     };
     const wanted = new URLSearchParams(location.search).get("file");
     if (wanted) offerFile(wanted);
-    el("verifywrap").hidden = !info.verifier;
-    // A link that recorded "collected with verification" reopens that way, so
-    // the view it names is the view that comes back.
-    if (info.verifier && parseReportLink(location.search, "").verify)
-      el("liveverify").checked = true;
+    // Verification is not optional: the server runs it whenever a verifier is
+    // present, so there is nothing here to switch on.
+    if (!info.verifier)
+      el("srcline").insertAdjacentHTML(
+        "beforeend",
+        ' · <span class="collected none">no verifier built; claims only</span>',
+      );
     const run = async () => {
       const file = sel.value;
       if (!file) return;
@@ -1052,10 +1244,7 @@ async function connectLive() {
       el("codehead").textContent =
         "Running SKJS on " + file.split("/").pop() + "…";
       try {
-        const q =
-          "api/analyse?path=" +
-          encodeURIComponent(file) +
-          (el("liveverify").checked ? "&verify=1" : "");
+        const q = "api/analyse?path=" + encodeURIComponent(file);
         const res = await fetch(q, { cache: "no-store" });
         const data = await res.json();
         if (request !== activeRequest) return;
@@ -1117,10 +1306,7 @@ async function connectLive() {
       run();
     });
     suggest();
-    el("liveverify").addEventListener("change", () => {
-      state.pendingMark = "";
-      if (sel.value) run();
-    });
+
     if (!wanted) sel.value = files[0];
     if (sel.value) run();
   } catch (e) {
@@ -1156,6 +1342,22 @@ function lineAt(starts, pos) {
     else hi = mid;
   }
   return lo;
+}
+// Claim spans start at the declaration, but a comment written directly above a
+// function belongs to it for whoever is reading. Show that block, stopping at a
+// blank line or at anything that is not a comment, so a neighbour's trailing
+// comment is never attributed here.
+const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
+function commentStartLine(source, starts, from, floor) {
+  const lineText = (n) =>
+    source.slice(starts[n], n + 1 < starts.length ? starts[n + 1] - 1 : source.length);
+  let line = lineAt(starts, from);
+  while (line > 0 && starts[line - 1] >= floor) {
+    const text = lineText(line - 1);
+    if (!text.trim() || !COMMENT_LINE.test(text)) break;
+    line--;
+  }
+  return line;
 }
 function groupLines(items) {
   const grouped = new Map();

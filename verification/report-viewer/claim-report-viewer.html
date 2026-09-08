@@ -17,6 +17,7 @@
         <button id="d-key" aria-pressed="true">Compact</button>
         <button id="d-all" aria-pressed="false">Every claim</button>
       </div>
+      <label class="tog"><input type="checkbox" id="t-err"> SKJS errors</label>
       <label class="tog"><input type="checkbox" id="t-uns"> unsupported bindings</label>
       <label class="tog live" id="livewrap" hidden>
         <span class="livedot"></span>
@@ -26,7 +27,6 @@
         <input id="livepath" type="search" list="pathlist" placeholder="Open any repository path…" aria-label="Repository source path" autocomplete="off">
         <datalist id="pathlist"></datalist>
       </label>
-      <label class="tog live" id="verifywrap" hidden><input type="checkbox" id="liveverify"> verify on collection</label>
       <button class="filebtn" id="load">Load report…</button>
       <input type="file" id="file" accept=".ts,.txt,.json" hidden>
     </div>
@@ -38,8 +38,8 @@
     <h2>Claim candidate · source unchanged</h2>
     <div class="detail">
       <div id="candidate-status" role="status"></div>
-      <div><button id="add-claim">Add missing claim…</button> <button id="verify-candidate">Verify candidate</button> <button id="export-candidate">Export bundle</button> <button id="restore-candidate">Restore original claims</button></div>
-      <p>Reverification uses the candidate below, without running the producer. Loading another report replaces this workspace; export your edits first.</p>
+      <div><button id="add-claim">Add missing claim…</button> <button id="export-candidate">Export bundle</button> <button id="restore-candidate">Restore original claims</button></div>
+      <p>Every applied edit is checked immediately, using the candidate below and without running the producer. Loading another report replaces this workspace; export your edits first.</p>
     </div>
   </section>
 

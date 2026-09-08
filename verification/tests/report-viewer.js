@@ -204,25 +204,21 @@ assert.deepEqual(summarize(addressed.functions), {
   gaps: 0,
   status: { "not-run": 1 },
 });
+// A link from an older session may still carry a verification flag; it is read
+// and ignored, because verification is no longer something to switch on.
 assert.deepEqual(parseReportLink("?file=a/b.ts&verify=1", "#f0x0"), {
   file: "a/b.ts",
-  verify: true,
   mark: "f0x0",
 });
-assert.deepEqual(parseReportLink("", ""), {
-  file: "",
-  verify: false,
-  mark: "",
-});
-assert.equal(parseReportLink("?file=a.ts", "").verify, false);
+assert.deepEqual(parseReportLink("", ""), { file: "", mark: "" });
 assert.equal(
-  reportLink({ file: "a/b.ts", verify: true, mark: "f0x0" }),
-  "?file=a%2Fb.ts&verify=1#f0x0",
+  reportLink({ file: "a/b.ts", mark: "f0x0" }),
+  "?file=a%2Fb.ts#f0x0",
 );
-assert.equal(reportLink({ file: "", verify: false, mark: "" }), "");
-assert.equal(reportLink({ file: "", verify: false, mark: "g2" }), "#g2");
+assert.equal(reportLink({ file: "", mark: "" }), "");
+assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 {
-  const round = { file: "verification/x.ts", verify: false, mark: "f1e2" };
+  const round = { file: "verification/x.ts", mark: "f1e2" };
   const link = reportLink(round);
   assert.deepEqual(
     parseReportLink(link.split("#")[0], "#" + link.split("#")[1]),

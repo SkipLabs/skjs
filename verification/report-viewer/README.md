@@ -12,9 +12,10 @@ node verification/report-viewer/serve.js # http://localhost:8731
 
 Select an example to collect claims with SKJS, or type any repository-relative
 path into **Open any repository path…**; it suggests matching `.ts` sources as
-you type, and a full path works whether or not it is listed. Tick **verify** to
-run the independent consumer. Rejected programs still show their partial claims
-and producer diagnostics. Links can select any repository source, for example:
+you type, and a full path works whether or not it is listed. The independent
+consumer runs whenever a verifier is built — on load, and again after every
+applied edit — so nothing is displayed as a result without having been checked.
+Rejected programs still show their partial claims and producer diagnostics. Links can select any repository source, for example:
 `http://localhost:8731/?file=verification/tests/stateful-source/closures.ts`.
 
 The example groups come from `examples.js`, re-read for each page load, so
@@ -69,6 +70,26 @@ adapter for the display format, with only the data present in those comments.
   inspect**, rather than guessing a type from part of their encoding.
 - The optional program-point table compares environments in source order. Its
   line buttons select the corresponding entry claim.
+- Each function shows both outcomes: **SKJS ✓ · proof ✓**. The first is the
+  producer's own outcome for that function, which depends on the source file
+  alone and therefore stands until the source changes. The second is what proof
+  search found over the claims, which an edit can change: **✓** proved, **✗**
+  searched and failed, **?** could not properly try (a claim it needed is
+  missing, or the source is outside the fragment), **·** not run. **✗** never
+  means the claim is false.
+- A disagreement is amber: SKJS accepted a function nothing could prove (which
+  is either an unsound acceptance or a limit of these rules, and carries ⚠), or
+  SKJS rejected one that a checked certificate covers. Where nothing was
+  concluded — a **?** — there is no disagreement to show.
+- A verified function carries a stamp. A solid stamp means the independent
+  consumer checked a certificate for this report; a dashed one means the status
+  was recorded in a file and nothing was checked for what you are looking at.
+  Either way it covers the function's modeled obligations, not every claim.
+- Provenance spells the producer's snapshot out: complete, or partial because it
+  stopped collecting inside that function.
+- **SKJS errors** shows the producer's own diagnostics inline, under the exact
+  spans they name, including the notes that accompany an error. They describe
+  SKJS's run over the source and are neither claims nor verification results.
 - Coverage gaps remain visible in both densities. **Not visited by producer**
   describes collection, not runtime unreachability. Recovery describes the quality
   of a collection snapshot, not necessarily when an individual claim was emitted.
@@ -116,11 +137,13 @@ also run under `make verify`; report-writer tests exercise the manifest producer
 Live reports include an editable candidate in the producer's encoding. Select an
 expression or entry environment and open **Edit candidate JSON**. The original
 producer value remains available alongside the editor. **Apply candidate edit**
-validates the candidate and refreshes the report; it does not establish the claim.
+validates the candidate, checks it, and refreshes the report. A check that
+succeeds establishes the modeled obligations for that function; it does not make
+the producer's original claims true.
 
-**Verify candidate** runs the existing independent consumer against unchanged
-source, without rerunning SKJS. Editing conservatively invalidates all function
-results. Failed validation leaves the candidate available for correction and the
+Applying an edit runs the independent consumer against unchanged source, without
+rerunning SKJS: an unchecked candidate is never displayed as a result. Editing
+conservatively invalidates all function results first. Failed validation leaves the candidate available for correction and the
 last successful display marked stale. Source fingerprint changes block checking.
 The editor supports expression types and entire entry binding arrays. It uses
 JSON; a richer type editor is future work.
@@ -183,6 +206,6 @@ rejected partial-collection exercise. **Unsupported examples** contains expected
 source limitations and never implies those programs are verified.
 
 Loading arbitrary repository source through `?file=relative/path.ts`, or through
-the path field, remains supported. Annotated copies of `basic.ts` and
-`partial-claims.ts` are kept in `../tests/annotated/` as fixtures for the
-comment-format reader; they are test inputs, not example reports.
+the path field, remains supported. No annotated copies are stored in the tree:
+the comment-format reader is exercised against reports the test writes in
+memory, so nothing generated goes stale against the sources it came from.

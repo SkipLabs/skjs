@@ -31,7 +31,6 @@ function renderCandidateStatus(message) {
       ? "Manual candidate; original producer claims retained."
       : "Original claims. Select an expression or environment to edit its encoding.");
   el("add-claim").disabled = candidateState.running;
-  el("verify-candidate").disabled = candidateState.running;
   el("restore-candidate").disabled = candidateState.running;
 }
 function renderEditor(fn, item) {
@@ -88,7 +87,7 @@ function renderEditor(fn, item) {
       candidateState.candidate = next;
       candidateState.revision++;
       invalidateCandidate();
-      await checkCandidate(false);
+      await checkCandidate();
     } catch (e) {
       error.textContent = e.message;
     }
@@ -114,22 +113,20 @@ function invalidateCandidate() {
     "Candidate changed. Previous verification results are stale.",
   );
 }
-async function checkCandidate(verify) {
+// Applying an edit and checking it are one step: a candidate that has not been
+// checked is not worth displaying as a result.
+async function checkCandidate() {
   if (candidateState.running || !candidateState.candidate) return;
   const revision = candidateState.revision;
   const fn = state.report.functions[state.fn]?.name;
   const selected = state.selected;
   candidateState.running = true;
-  renderCandidateStatus(
-    verify
-      ? "Verifying candidate without running SKJS…"
-      : "Validating candidate attachment…",
-  );
+  renderCandidateStatus("Checking the candidate, without running SKJS…");
   try {
     const response = await fetch("api/candidate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ candidate: candidateState.candidate, verify }),
+      body: JSON.stringify({ candidate: candidateState.candidate }),
     });
     const bundle = await response.json();
     if (revision !== candidateState.revision) return;
@@ -159,9 +156,7 @@ async function checkCandidate(verify) {
       }
     }
     renderCandidateStatus(
-      verify
-        ? "Candidate check completed. See each function’s recorded result."
-        : "Candidate applied. Not yet verified.",
+      "Candidate checked. See each function’s recorded result.",
     );
     return true;
   } catch (error) {
@@ -172,7 +167,6 @@ async function checkCandidate(verify) {
   } finally {
     candidateState.running = false;
     el("add-claim").disabled = false;
-    el("verify-candidate").disabled = false;
     el("restore-candidate").disabled = false;
   }
 }
@@ -183,13 +177,12 @@ function initializeCandidateEditor() {
     renderMissingEditor(state.report.functions[state.fn]);
     el("inspector").scrollIntoView({ block: "nearest" });
   });
-  el("verify-candidate").addEventListener("click", () => checkCandidate(true));
   el("restore-candidate").addEventListener("click", async () => {
     candidateState.candidate = structuredClone(candidateState.original);
     candidateState.revision++;
     invalidateCandidate();
     candidateState.saved = JSON.stringify(candidateState.candidate);
-    await checkCandidate(false);
+    await checkCandidate();
   });
   el("export-candidate").addEventListener("click", () => {
     if (!candidateState.bundle || candidateState.running) return;
@@ -284,7 +277,7 @@ function renderMissingEditor(fn, region) {
       candidateState.revision++;
       state.selected = { ...site };
       invalidateCandidate();
-      await checkCandidate(false);
+      await checkCandidate();
     } catch (e) {
       error.textContent = e.message;
     }
@@ -322,7 +315,7 @@ function renderFunctionEditor(fn) {
       candidateState.revision++;
       state.selected = null;
       invalidateCandidate();
-      if (await checkCandidate(false))
+      if (await checkCandidate())
         renderMissingEditor(state.report.functions[state.fn]);
     } catch (e) {
       error.textContent = e.message;

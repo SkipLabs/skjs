@@ -80,7 +80,9 @@ async function hasVerifier() {
   );
 }
 
-async function analyse(relative, verify) {
+// Verification is not an option the caller turns on: if a verifier is present it
+// runs, so what is displayed is always checked against the claims on screen.
+async function analyse(relative) {
   const sourcePath = await repositoryPath(relative);
   const source = await fs.readFile(sourcePath, "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
@@ -144,13 +146,8 @@ async function analyse(relative, verify) {
       await fs.writeFile(diagnostics, run.stderr);
       args.push("--diagnostics", diagnostics);
     }
-    if (verify) {
-      if (!(await hasVerifier()))
-        throw new Error(
-          "Verification requested, but the verifier is unavailable",
-        );
-      args.push("--verify", VERIFIER);
-    }
+    const verify = await hasVerifier();
+    if (verify) args.push("--verify", VERIFIER);
     const result = await execFile(process.execPath, args, options);
     const bundle = JSON.parse(result.stdout);
     if (source !== (await fs.readFile(sourcePath, "utf8")))
@@ -187,7 +184,7 @@ async function analyse(relative, verify) {
   }
 }
 
-async function candidateReport(candidate, verify) {
+async function candidateReport(candidate, verify = true) {
   const startedAt = Date.now();
   if (
     !candidate ||
@@ -221,10 +218,9 @@ async function candidateReport(candidate, verify) {
       "--stdout",
       "json",
     ];
-    if (verify) {
-      if (!(await hasVerifier())) throw new Error("Verifier unavailable");
-      args.push("--verify", VERIFIER);
-    }
+    if (verify && !(await hasVerifier()))
+      throw new Error("Verifier unavailable");
+    if (verify) args.push("--verify", VERIFIER);
     const result = await execFile(process.execPath, args, {
       cwd: REPO,
       timeout: 120000,
@@ -320,10 +316,7 @@ const server = http.createServer(async (req, res) => {
         return send(
           res,
           200,
-          await analyse(
-            url.searchParams.get("path") || "",
-            url.searchParams.get("verify") === "1",
-          ),
+          await analyse(url.searchParams.get("path") || ""),
         );
       } finally {
         analysing = false;
@@ -340,7 +333,7 @@ const server = http.createServer(async (req, res) => {
         return send(
           res,
           200,
-          await candidateReport(input.candidate, input.verify === true),
+          await candidateReport(input.candidate, input.verify !== false),
         );
       } finally {
         analysing = false;

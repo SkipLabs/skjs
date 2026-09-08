@@ -273,6 +273,60 @@ kbd {
 .collected.none {
   color: var(--ink-3);
 }
+.lab.err {
+  color: var(--bad);
+}
+.lab.err:hover,
+.lab.err.on {
+  border-bottom-color: var(--bad);
+}
+.br.errbr {
+  color: var(--bad);
+}
+
+/* Both outcomes, spelled out. Amber marks a disagreement between them. */
+.pair {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.pair.warn {
+  color: var(--warn);
+  font-weight: 500;
+}
+.attention {
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+
+/* A checked certificate, marked where the eye lands first. */
+.stamp {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ok);
+  border-radius: 50%;
+  color: var(--ok);
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 600;
+  background: var(--ok-soft);
+}
+.stamp.recorded {
+  border-style: dashed;
+  border-color: var(--edge-2);
+  color: var(--ink-3);
+  background: transparent;
+}
+.status-line .stamp {
+  margin-right: 2px;
+}
 .livedot {
   width: 7px;
   height: 7px;
