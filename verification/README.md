@@ -55,7 +55,9 @@ make verify              # corpus, claim validation and stateful source integrat
 These are regression tests that exercise different things: the
 TypeScript corpus tests the pipeline on real programs; claim validation tests
 target the verifier's response to supplied claims. The stateful source suite also
-checks real exports through certificate production and independent consumption. Use the combined command for
+checks real exports through certificate production and independent consumption.
+A separate cell-contract test checks the read/write export boundary; it does
+not yet certify cell source programs. Use the combined command for
 the full experiment check.
 
 To run tests without rebuilding the verifier:

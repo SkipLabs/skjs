@@ -375,7 +375,29 @@ and satisfying heap. Source parameter slots follow declaration order, with
 locals pushed ahead of them. This certifies the function body; source calls and
 graph-backed callable closures remain separate integration work.
 
-Next, connect the already modeled cells and closures. Binding identities must become explicit before supporting hidden,
+The cell-contract boundary is implemented in
+[CellClaims.lean](lean/Verification/ExperimentState/CellClaims.lean). SKJS exports
+a bounded single-field record with separate read/write types, optionality and
+object-mode flags. The Lean gate requires a required `value` field and equal
+read/write meanings after exact primitive normalization. A mutable Boolean
+field passes; a readonly Boolean field has `never` writes and fails this
+particular invariant-cell gate. Readonly objects need a different capability
+interface; this rejection does not mean they are unsafe.
+
+The theorem preserves both primitive sides of an accepted contract. It is not
+an equivalence theorem for TypeScript records and calculus references. Record
+annotations cannot distinguish data properties from accessors. Establishing
+plain-data allocation remains a source-gate and representation obligation.
+
+The allocation/alias-write probe preserves Boolean contracts for both aliases
+after the write, but the fresh object literal's expression claim is still
+unsupported. The test records that gap explicitly. Replacing that expression
+claim with the declaration's annotation would change what is being verified.
+
+Next, resolve the fresh-allocation export, then lower plain object allocation,
+property reads and writes while preserving consumed expression claims and
+JavaScript evaluation order. Cell source programs are not yet accepted by the
+program consumer. Closures follow that slice. Binding identities must become explicit before supporting hidden,
 shadowed bindings; exported names alone cannot distinguish them. Change the extraction/export format when needed; preserving F0 compatibility is not a goal.
 Source loops and a closure observing an alias write must eventually run
 through production and independent consumption with negative claim tests.

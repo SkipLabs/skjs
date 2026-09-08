@@ -220,6 +220,16 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
        "$BASE" "$VERIFIER"; then
     fail=$((fail + 1))
   fi
+  CELLS="verification/tests/stateful-source/cell-contracts.ts"
+  if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.setup.err"; then
+    echo "FAIL: cell contract export setup"
+    cat "$WORK/cell.setup.err"
+    exit 1
+  fi
+  if ! "$REPO/verification/lean/.lake/build/bin/cell_claim_tests" "$WORK/cell.claims" "$CELLS"; then
+    fail=$((fail + 1))
+  fi
+
 fi
 
 [ "$fail" -eq 0 ]

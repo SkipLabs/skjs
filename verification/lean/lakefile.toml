@@ -1,5 +1,5 @@
 name = "verification"
-defaultTargets = ["verifier", "Verification"]
+defaultTargets = ["verifier", "Verification", "cell_claim_tests"]
 
 [[lean_lib]]
 name = "Verification"
@@ -8,3 +8,7 @@ globs = ["Verification", "Verification.Tests.+", "Verification.ExperimentState.+
 [[lean_exe]]
 name = "verifier"
 root = "Main"
+
+[[lean_exe]]
+name = "cell_claim_tests"
+root = "Verification.ExperimentState.CellClaimIntegration"

@@ -218,3 +218,42 @@ The suite checks production and independent consumption, then corrupts expressio
 claims, incoming environments, source annotations and input identities. Source
 loops, mutable declarations and closures are not connected yet; their raw request
 tests remain calculus tests.
+
+## Record-contract export boundary
+
+The SKJS claim exporter additionally supports this bounded record atom:
+
+```json
+{
+  "a": "record",
+  "fields": [{
+    "name": "value",
+    "optional": false,
+    "read": {"top": false, "atoms": [{"a": "boolean"}]},
+    "write": {"top": false, "atoms": [{"a": "boolean"}]}
+  }],
+  "call": "unknown",
+  "construct": "unknown",
+  "array": "unknown"
+}
+```
+
+This is an SKJS export atom, **not** a new calculus type-graph clause. It records
+permissions rather than choosing a heap invariant. The bounded exporter rejects
+extra fields, symbols, indexes, positive callable/array requirements and nested
+or unresolved field types. It preserves readonly setters as `never` and marks
+optional fields explicitly. `unknown` and `absent` object modes are distinct
+exports, though both are compatible with the future plain-cell interpretation.
+
+`CellClaims.translate` validates this shape and requires the read and write
+types to normalize to the same supported primitive set. Unknown fields and
+unsupported types are rejected. Its theorem connects both supplied primitive
+types to that set's meaning. The candidate cell interpretation is an invariant
+reference to that meaning; the theorem does not yet establish a TypeScript
+record-to-reference correspondence or exclude accessor-backed runtime objects.
+
+`cell_claim_tests` exercises real SKJS exports and corrupted contracts as part
+of `make verify`. The allocation/alias-write probe retains the named cell
+contracts, while the object literal's own claim remains unsupported. The source
+compiler still rejects cell syntax. Plain-data allocation, property reads/writes
+and their source correspondence are the next integration work.

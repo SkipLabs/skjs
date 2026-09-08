@@ -106,7 +106,11 @@ fun claimKindName(kind: TPrimValueKind): ?String {
 }
 
 // Pushes the atoms of `sty` onto `acc`. Returns false if `sty` is outside the fragment.
-fun claimPushAtoms(sty: SType, acc: mutable Vector<String>): Bool {
+fun claimPushAtoms(
+  sty: SType,
+  acc: mutable Vector<String>,
+  records: Bool,
+): Bool {
   sty match {
   | TPrimUnit(TNull(), _) ->
     acc.push(jsonObj(Array[("a", jsonStr("null"))]));
@@ -134,11 +138,21 @@ fun claimPushAtoms(sty: SType, acc: mutable Vector<String>): Bool {
         true
       }
     }
-  | TObject _ -> false
+  | obj @ TObject _ ->
+    if (records) {
+      claimCellRecordJson(obj) match {
+      | Some(atom) ->
+        acc.push(atom);
+        true
+      | None() -> false
+      }
+    } else {
+      false
+    }
   }
 }
 
-fun claimTypeJson(ty: TType): String {
+fun claimTypeJsonBounded(ty: TType, records: Bool): String {
   if (!ty.insts.isEmpty()) {
     // Unexpanded instances, type variables and intersections are outside the fragment.
     claimUnsupported
@@ -158,7 +172,7 @@ fun claimTypeJson(ty: TType): String {
       | None() -> !ok = false
       | Some(stypes) ->
         for (sty in stypes) {
-          if (!claimPushAtoms(sty, atoms)) {
+          if (!claimPushAtoms(sty, atoms, records)) {
             !ok = false
           }
         }
@@ -174,6 +188,105 @@ fun claimTypeJson(ty: TType): String {
       claimUnsupported
     }
   }
+}
+
+// A deliberately bounded record export: one public `value` field, no index,
+// symbol, array, call or construct requirements. Preserve read and write types
+// separately; the verifier decides whether they justify an invariant cell.
+// Primitive-only recursive calls bound serialization even for recursive types.
+fun claimCellRecordJson(obj: TObject): ?String {
+  branches = obj.getBranches();
+  if (obj.unexpandedType.isSome() || branches.size() != 1) {
+    None()
+  } else {
+    fields = branches[0];
+    callMode = fields.call match {
+    | CUnknown() -> Some("unknown")
+    | CAbsent() -> Some("absent")
+    | _ ->
+      None() // Positive callability is outside the plain-cell fragment.
+    };
+    newMode = fields.new match {
+    | CUnknown() -> Some("unknown")
+    | CAbsent() -> Some("absent")
+    | _ ->
+      None() // Positive constructibility is outside the plain-cell fragment.
+    };
+    if (
+      fields.isArray == Some(true) ||
+      !fields.symbolFields.isEmpty() ||
+      fields.stringIndex.isSome() ||
+      fields.numberIndex.isSome() ||
+      fields.symbolIndex.isSome() ||
+      callMode.isNone() ||
+      newMode.isNone()
+    ) {
+      None()
+    } else {
+      entries = mutable Vector<String>[];
+      ok = true;
+      for (field in fields.fields) {
+        if (field.name.value != "value" || !(field.access is FAPublic())) {
+          !ok = false
+        };
+        read = claimTypeJsonBounded(field.get, false);
+        write = claimTypeJsonBounded(field.set, false);
+        if (read == claimUnsupported || write == claimUnsupported) {
+          !ok = false
+        };
+        entries.push(
+          jsonObj(
+            Array[
+              ("name", jsonStr(field.name.value)),
+              ("optional", if (field.isOptional) "true" else "false"),
+              ("read", read),
+              ("write", write),
+            ],
+          ),
+        )
+      };
+      if (ok && entries.size() == 1) {
+        Some(
+          jsonObj(
+            Array[
+              ("a", jsonStr("record")),
+              ("fields", jsonArr(entries)),
+              (
+                "call",
+                jsonStr(
+                  callMode match {
+                  | Some(mode) -> mode
+                  | None() -> "unknown"
+                  },
+                ),
+              ),
+              (
+                "construct",
+                jsonStr(
+                  newMode match {
+                  | Some(mode) -> mode
+                  | None() -> "unknown"
+                  },
+                ),
+              ),
+              (
+                "array",
+                jsonStr(
+                  if (fields.isArray == Some(false)) "absent" else "unknown",
+                ),
+              ),
+            ],
+          ),
+        )
+      } else {
+        None()
+      }
+    }
+  }
+}
+
+fun claimTypeJson(ty: TType): String {
+  claimTypeJsonBounded(ty, true)
 }
 
 /***************************************************************************/
