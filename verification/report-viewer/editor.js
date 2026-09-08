@@ -16,18 +16,29 @@ const candidateState = {
   running: false,
   saved: null,
 };
-function canReplaceCandidate() {
-  if (
-    candidateState.running ||
-    (candidateState.candidate &&
-      JSON.stringify(candidateState.candidate) !== candidateState.saved)
-  ) {
-    el("candidate-status").textContent =
-      "Save the report or restore the original claims before loading another. Wait for any running check to finish.";
+// Unsaved edits are worth a question, not a refusal: silently declining to open
+// another report reads as the picker being broken.
+function canReplaceCandidate(opening) {
+  const say = (message) => {
+    el("candidate-status").textContent = message;
     el("candidate-status").hidden = false;
+  };
+  if (candidateState.running) {
+    say("Wait for the running check to finish.");
     return false;
   }
-  return true;
+  const edited =
+    candidateState.candidate &&
+    JSON.stringify(candidateState.candidate) !== candidateState.saved;
+  if (!edited) return true;
+  const discard = window.confirm(
+    "Your claim edits have not been saved. Discard them" +
+      (opening ? " and open " + opening : "") +
+      "?",
+  );
+  if (!discard)
+    say("Edits kept. Save the report to keep them, or restore the original claims.");
+  return discard;
 }
 // The workspace has no panel of its own: saving and restoring sit with the other
 // report-wide actions, and editing happens where the claim is selected. This
@@ -210,7 +221,7 @@ async function checkCandidate() {
       candidateState.bundle?.manifest.diagnostics || "";
     bundle.originalDiagnostics = true;
     bundle.originalCandidate = candidateState.original;
-    await load(bundle, true);
+    await load(bundle, { keepCandidate: true });
     const index = state.report.functions.findIndex((f) => f.name === fn);
     if (index >= 0) state.fn = index;
     renderShell();

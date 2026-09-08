@@ -462,21 +462,41 @@ function select(id) {
       h +=
         '<div class="note">Recovery claim: from a recovery-quality snapshot. ' +
         "Displayed for orientation, never as evidence.</div>";
-    const entry = f.entries
-      .filter(
-        (e) => e.pos && e.pos[0] <= item.pos[0] && e.pos[1] >= item.pos[1],
-      )
-      .sort((a, b) => a.pos[1] - a.pos[0] - (b.pos[1] - b.pos[0]))[0];
-    if (entry)
+    // The environment this expression is checked against. It is selectable from
+    // here whether or not it is drawn: Compact hides an entry where nothing
+    // changed, and that is exactly the entry a repair often has to carry — a
+    // return contract fails on the value returned, while the fact it needs
+    // belongs to the environment that value was read in.
+    //
+    // Where the obligation record names that entry, take its word for it rather
+    // than inferring one from spans.
+    const named =
+      item.failure &&
+      obligationReader.obligationView(f.obligation)?.environmentStart;
+    const entryIndex =
+      (named !== null && named !== undefined
+        ? f.entries
+            .map((e, i) => ({ e, i }))
+            .find(({ e }) => e.pos && e.pos[0] === named)
+        : null) ||
+      f.entries
+        .map((e, i) => ({ e, i }))
+        .filter(
+          ({ e }) => e.pos && e.pos[0] <= item.pos[0] && e.pos[1] >= item.pos[1],
+        )
+        .sort((a, b) => a.e.pos[1] - a.e.pos[0] - (b.e.pos[1] - b.e.pos[0]))[0];
+    if (entryIndex)
       h +=
         '<details open><summary>Containing statement entry claims</summary><pre class="raw">' +
         esc(
-          entry.bindings
+          entryIndex.e.bindings
             .filter((b) => state.unsupported || !isNoise(b))
             .map((b) => b.name + ": " + b.type)
             .join("\n"),
         ) +
-        "</pre></details>";
+        '</pre><button data-entry="' +
+        entryIndex.i +
+        '">Select this environment</button></details>';
     const nested = f.exprs
       .map((e, i) => ({ e, i }))
       .filter(
@@ -537,6 +557,11 @@ function select(id) {
   }
   el("detail").innerHTML = h;
   renderEditor(f, item);
+  el("detail")
+    .querySelectorAll("[data-entry]")
+    .forEach((b) =>
+      b.addEventListener("click", () => select("n" + b.dataset.entry)),
+    );
   el("detail")
     .querySelectorAll("[data-endpoint]")
     .forEach((b) =>
@@ -1008,8 +1033,10 @@ function renderShell() {
 }
 
 let loadVersion = 0;
-async function load(text, keepCandidate = false) {
-  if (!keepCandidate && !canReplaceCandidate()) return;
+// `asked` says the caller already put the question about unsaved edits, so it is
+// not put twice for one action.
+async function load(text, { keepCandidate = false, opening = "", asked = false } = {}) {
+  if (!keepCandidate && !asked && !canReplaceCandidate(opening)) return;
   const version = ++loadVersion;
   try {
     const input =
@@ -1116,7 +1143,7 @@ el("file").addEventListener("change", (e) => {
     state.pendingMark = "";
     activeRequest++;
     document.body.classList.remove("busy");
-    return load(t);
+    return load(t, { opening: f.name });
   });
 });
 const drop = el("drop");
@@ -1136,7 +1163,7 @@ window.addEventListener("drop", (e) => {
       state.pendingMark = "";
       activeRequest++;
       document.body.classList.remove("busy");
-      return load(t);
+      return load(t, { opening: f.name });
     });
 });
 
@@ -1196,7 +1223,7 @@ async function connectLive() {
     const run = async () => {
       const file = sel.value;
       if (!file) return;
-      if (!canReplaceCandidate()) {
+      if (!canReplaceCandidate(file.split("/").pop())) {
         sel.value = state.report?.file || "";
         return;
       }
@@ -1211,7 +1238,7 @@ async function connectLive() {
         const data = await res.json();
         if (request !== activeRequest) return;
         if (data.error) throw new Error(data.error.split("\n")[0]);
-        await load(data);
+        await load(data, { asked: true });
         syncLocation();
       } catch (err) {
         if (request !== activeRequest) return;

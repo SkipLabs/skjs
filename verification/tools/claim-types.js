@@ -49,11 +49,13 @@ function atomText(atom, state) {
           const name = field.name + (field.optional ? "?" : "");
           const read = typeText(field.read, state);
           const write = typeText(field.write, state);
-          // A cell whose read and write types differ is not a TypeScript shape,
-          // and it is exactly what a stale refinement looks like. Say both.
+          // A read type that differs from the write type is an assertion about
+          // the cell's current contents, distinct from the storage invariant it
+          // is written against. SOURCE-CLAIMS.md writes that `invariant =
+          // (current)`; the two are not a read/write capability.
           return read === write
             ? name + ": " + read
-            : name + ": read " + read + " write " + write;
+            : name + ": " + write + " = (" + read + ")";
         })
         .join(", ") +
       " }"
@@ -104,7 +106,7 @@ class TypeSyntaxError extends Error {}
 function tokenize(text) {
   const tokens = [];
   const re =
-    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}(),:|?]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?/g;
+    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}(),:|?=]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?/g;
   let at = 0,
     m;
   while ((m = re.exec(text))) {
@@ -193,16 +195,18 @@ function parseType(text, template) {
         throw new TypeSyntaxError(
           "this object type has no field '" + name + "'",
         );
+      // `invariant = (current)` asserts contents against the storage invariant;
+      // a bare type asserts both at once. Parentheses are the documented form
+      // and are optional here, since a current predicate is a plain union.
       let read, write;
-      if (peek() === "read") {
-        take("read");
+      write = union(original.write);
+      if (peek() === "=") {
+        take("=");
+        const parenthesized = peek() === "(";
+        if (parenthesized) take("(");
         read = union(original.read);
-        take("write");
-        write = union(original.write);
-      } else {
-        read = union(original.read);
-        write = structuredClone(read);
-      }
+        if (parenthesized) take(")");
+      } else read = structuredClone(write);
       fields.push({ ...original, name, optional, read, write });
       if (peek() === ",") take(",");
       else break;

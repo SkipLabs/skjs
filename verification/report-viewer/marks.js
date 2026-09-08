@@ -200,6 +200,27 @@ function shortType(type) {
 
 // One mark per claim, gap or producer diagnostic in this function, positioned
 // by line and column. `entries` are drawn above their line and `items` below.
+// The entry an expression obligation is checked against. Where the record names
+// it, that is the answer; otherwise it is the innermost entry containing the
+// expression. Both are facts about the report, not a claim about what is wrong.
+function companionEntry(f) {
+  const failing = (f.exprs || []).find((e) => e.failure);
+  if (!failing) return -1;
+  const named = f.obligation?.source?.origin?.environmentStart;
+  const entries = f.entries || [];
+  if (named !== null && named !== undefined) {
+    const at = entries.findIndex((e) => e.pos && e.pos[0] === named);
+    if (at >= 0) return at;
+  }
+  let best = -1;
+  entries.forEach((e, i) => {
+    if (!e.pos || e.pos[0] > failing.pos[0] || e.pos[1] < failing.pos[1]) return;
+    if (best < 0 || e.pos[1] - e.pos[0] < entries[best].pos[1] - entries[best].pos[0])
+      best = i;
+  });
+  return best;
+}
+
 function sourceMarks(rep, f, options) {
   const { density = "key", unsupported = false, producerErrors = true } = options || {};
   const source = rep.source;
@@ -211,6 +232,10 @@ function sourceMarks(rep, f, options) {
   const recMark = f.quality === "recovery" ? "" : "  (recovery)";
   const items = [];
   const entries = [];
+  // Both sides of a failed obligation stay on screen. Compact hides an entry
+  // where nothing changed, which is often the very environment the marked claim
+  // is checked against.
+  const companion = f.status === "not-established" ? companionEntry(f) : -1;
 
   f.exprs.forEach((e, i) => {
     if (!e.pos) return;
@@ -289,11 +314,18 @@ function sourceMarks(rep, f, options) {
   f.entries.forEach((e, i) => {
     if (!e.pos) return;
     const failed = failedIn(e);
+    const involved = failed || i === companion;
     // An undecoded claim is normally noise. Where checking stopped at this
     // statement it is the finding, so it shows whatever the toggle says.
     const shown = e.bindings.filter((b) => unsupported || failed || !isNoise(b));
-    const list = density === "key" ? shown.filter((b) => e.changed.has(b.name)) : shown;
-    if (!list.length && !failed) return;
+    // An entry the marked claim is checked against shows what it claims, not
+    // only what changed there: nothing changing is exactly why it can be the
+    // side that has to.
+    const list =
+      density === "key" && !involved
+        ? shown.filter((b) => e.changed.has(b.name))
+        : shown;
+    if (!list.length && !involved) return;
     const line = at(e.pos[0]),
       col = e.pos[0] - starts[line];
     entries.push({
@@ -384,6 +416,7 @@ if (typeof module !== "undefined")
     shortType,
     sourceMarks,
     firstFailure,
+    companionEntry,
     bracket,
     markWidth,
     packRows,

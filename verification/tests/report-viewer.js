@@ -487,7 +487,7 @@ const surface = require("../tools/claim-types.js");
     "unknown",
     "never",
     "{ value: boolean }",
-    "{ value: read true write boolean }",
+    "{ value: boolean = (true) }",
     "(boolean) => null",
   ]);
   // A printed type must read back, against the type it came from, as exactly
@@ -495,6 +495,26 @@ const surface = require("../tools/claim-types.js");
   // shapes or optionality, which reading takes from the original.
   for (const [i, type] of shapes.entries())
     assert(surface.roundTrips(type), "round trip: " + printed[i]);
+
+  // A current-content assertion is written against the storage invariant, and
+  // reads back as the read/write pair the producer encodes it with. Parentheses
+  // are the documented form; a bare union is accepted too.
+  {
+    const plain = cell(boolean, boolean);
+    const observed = surface.parseType("{ value: boolean = (true) }", plain);
+    assert.deepEqual(observed.atoms[0].fields[0].read, trueLit);
+    assert.deepEqual(observed.atoms[0].fields[0].write, boolean);
+    assert.equal(surface.printType(observed).text, "{ value: boolean = (true) }");
+    assert.deepEqual(
+      surface.parseType("{ value: boolean = true }", plain),
+      observed,
+    );
+    // Dropping the assertion says both at once again.
+    assert.deepEqual(
+      surface.parseType("{ value: boolean }", observed).atoms[0].fields[0].read,
+      boolean,
+    );
+  }
 
   // Editing replaces what the surface names and keeps what it does not: index
   // signatures and call shapes are the original's, never this reader's.
