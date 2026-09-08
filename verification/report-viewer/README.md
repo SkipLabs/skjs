@@ -203,8 +203,11 @@ invented, and fresh verification checks the contract against source annotations.
 
 Claims are edited in that same syntax. The text is parsed on every keystroke and
 applying is refused until it reads back into an encoding, so a typo cannot be
-saved. Reading it back edits the claim it came from: what the surface names is
-replaced, and what it cannot name — index signatures, call and construct shapes —
+saved. <kbd>Enter</kbd> applies the claim field; where the editor is a JSON
+textarea, <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Enter</kbd> applies and Enter still
+makes a newline. Reading it back edits the claim it came from: what the surface
+names is replaced, and what it cannot name — index signatures, call and
+construct shapes —
 is the original's, never invented here. Naming a field the original does not have
 is refused for the same reason; dropping one is allowed, since the surface says
 so. A type this reader cannot print exactly is edited as the producer's JSON, as

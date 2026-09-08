@@ -53,6 +53,18 @@ function renderCandidateStatus(message) {
 // them. The producer's encoding stays one disclosure away, and is the only way
 // to edit something this reader cannot name. Nothing is applied until the text
 // reads back into an encoding.
+
+// Enter applies a single-line field; a textarea needs Command or Control with
+// it, so a newline still works where one belongs.
+function applyOnEnter(field, apply) {
+  field.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (field.tagName === "TEXTAREA" && !(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    if (!apply.disabled) apply.click();
+  });
+}
+
 function renderEditor(fn, item) {
   if (!candidateState.candidate || candidateState.running) return;
   let current, original;
@@ -113,6 +125,7 @@ function renderEditor(fn, item) {
     }
   };
   field.addEventListener("input", validate);
+  applyOnEnter(field, apply);
   editor.append(field, error);
 
   const before = document.createElement("details");
@@ -325,6 +338,7 @@ function renderMissingEditor(fn, region) {
       error.textContent = e.message;
     }
   });
+  applyOnEnter(textarea, apply);
   box.append(selectSite, preview, textarea, apply, error);
   el("detail").append(box);
 }
@@ -364,6 +378,7 @@ function renderFunctionEditor(fn) {
       error.textContent = e.message;
     }
   });
+  applyOnEnter(text, apply);
   box.append(title, note, names, text, apply, error);
   el("detail").append(box);
 }
