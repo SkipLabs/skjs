@@ -132,3 +132,41 @@ function nestedFallThrough(flag: boolean, other: boolean): boolean {
   };
   return run(null);
 }
+
+function earlyReturn(flag: boolean): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    if (flag) {
+      return flag;
+    }
+    return flag;
+  };
+  return run(null);
+}
+
+function earlyReturnElse(flag: boolean): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    const cell: { value: boolean } = { value: true };
+    if (flag) {
+      const saved: boolean = false;
+      cell.value = saved;
+    } else {
+      return flag;
+    }
+    const saved: boolean = cell.value;
+    return saved;
+  };
+  return run(null);
+}
+
+function successiveReturns(flag: boolean, other: boolean): boolean {
+  const run: (unit: null) => boolean = (unit: null): boolean => {
+    if (flag) {
+      return flag;
+    }
+    if (other) {
+      return other;
+    }
+    return other;
+  };
+  return run(null);
+}

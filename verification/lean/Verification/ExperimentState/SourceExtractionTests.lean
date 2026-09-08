@@ -357,6 +357,65 @@ theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 4
 
 #print axioms shared_continuation_trace
 
+-- The same extracted conditional must skip its continuation on early return.
+private def earlyCaptureFn (q : Bool) : SourceInput.Fn :=
+  { captureFn with body := captureFn.body.map fun st => match st with
+    | .cst pos name annot (.lam lp param arg ret body) =>
+      .cst pos name annot (.lam lp param arg ret
+        (.ifBody (40,59) ret body
+          (.atEnv (41,44) (.lit (42,43) (.vbool true)))
+          (.seqBody (45,59)
+            (.letBody (45,50) "" none
+              (.write (46,49) (.var (46,47) "cell") (.lit (48,49) (.vbool false)))
+              (.done (50,51)))
+            (.atEnv (52,55) (.read (53,55) (.var (53,54) "cell"))))))
+    | .effect pos (.write wp receiver (.lit lp _)) =>
+      .effect pos (.write wp receiver (.lit lp (.vbool q)))
+    | st => st }
+private def earlyCaptureClaims (q : Bool) : SourceInput.Claims :=
+  let H := [("unit",wireTy ⟨false,[.null]⟩),("cell",cellWire)]
+  { captureClaims with
+    envs := captureClaims.envs ++ [(40,H),(41,H),(45,H),(52,H)]
+    exprs := (captureClaims.exprs.map fun (pos,A) =>
+      (pos,if pos == (24,25) || pos == (20,25) then (if q then t else b) else A)) ++
+      [((42,43),t),((46,49),b),((46,47),cellWire),((48,49),b),
+       ((53,55),wireTy ⟨false,[.bool]⟩),((53,54),cellWire)] }
+private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
+  let assignment := Tm.app (.lam (.app (.lam (.app (.lam (.var 1))
+    (.write (.var 1) (.var 0)))) .fls)) (.var 1)
+  (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5⟩).set 11
+    ⟨.lam (.ite (.read (.var 1)) .tru
+      (.app (.lam (.read (.var 2))) (.app (.lam .nul) assignment))),.bind 10⟩
+#guard [true,false].all fun q =>
+  is ((extractFn (earlyCaptureFn q) (earlyCaptureClaims q)).map (·.program)) (earlyCaptureProgram q)
+#guard [true,false].all fun q => ok (do
+  let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
+    (List.range 19) 19 0 r.obligations
+  pure ())
+
+theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgram q)
+    (if q then 37 else 44) [] (.at 15 (fun _ => .nul))
+    [if q then .tru else .fls] (.done (if q then .tru else .fls)) := by
+  cases q <;> repeat first
+    | exact ControlFlow.Execution.refl
+    | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
+    | apply ControlFlow.Execution.next (.expr (.beta rfl))
+    | apply ControlFlow.Execution.next (.expr (.iteC (.readV rfl)))
+    | apply ControlFlow.Execution.next (.expr .iteT)
+    | apply ControlFlow.Execution.next (.expr .iteF)
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.beta rfl))))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.appR rfl (.writeV rfl (by decide))))))
+    | apply ControlFlow.Execution.next (.expr (.appR rfl (.beta rfl)))
+    | apply ControlFlow.Execution.next (.expr (.readV rfl))
+    | apply ControlFlow.Execution.next (.bind rfl)
+    | apply ControlFlow.Execution.next (.effect rfl)
+    | apply ControlFlow.Execution.next (.ret rfl)
+
+#print axioms early_return_trace
+
 -- Supplemental proofs are necessary even when the whole lambda is typable.
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[]⟩
 #guard captureRequired.obligations.length == 4

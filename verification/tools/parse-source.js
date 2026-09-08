@@ -151,19 +151,37 @@ function expr(node) {
       if (ts.isBlock(node.body)) {
         const nullType = {top:false,atoms:[{a:"null"}]};
         // Both fall-through arms finish before the one shared continuation.
-        const lowerPrefix = (stmts, tail) => {
+        const hasReturn = xs => xs.some(st => st.k === "return" ||
+          (st.k === "if" && (hasReturn(st.then) || hasReturn(st.else_ ?? []))));
+        const returns = xs => {
+          const last = xs.at(-1);
+          return last?.k === "return" || (last?.k === "if" &&
+            returns(last.then) && returns(last.else_ ?? []));
+        };
+        const lowerPrefix = (stmts, tail, allowReturn = false) => {
           for (let i = stmts.length - 1; i >= 0; --i) {
             const st = stmts[i];
             if (st.k === "if") {
+              const yes = st.then, no = st.else_ ?? [];
               const arm = xs => lowerPrefix(xs, {k:"doneBody",pos:st.pos});
-              const init = {k:"ifBody",pos:st.pos,result:nullType,cond:st.cond,
-                then:arm(st.then),else_:arm(st.else_ ?? [])};
-              tail = {k:"seqBody",pos:st.pos,init,body:tail};
+              if (!hasReturn(yes) && !hasReturn(no)) {
+                const init = {k:"ifBody",pos:st.pos,result:nullType,cond:st.cond,
+                  then:arm(yes),else_:arm(no)};
+                tail = {k:"seqBody",pos:st.pos,init,body:tail};
+              } else if (allowReturn &&
+                  ((returns(yes) && !hasReturn(no)) || (returns(no) && !hasReturn(yes)))) {
+                // Finish the falling arm in its own scope before the continuation.
+                const resume = xs => xs.length === 0 ? tail :
+                  {k:"seqBody",pos:st.pos,init:arm(xs),body:tail};
+                tail = {k:"ifBody",pos:st.pos,result:typeOf(node.type),cond:st.cond,
+                  then:returns(yes) ? lowerBlock(yes) : resume(yes),
+                  else_:returns(no) ? lowerBlock(no) : resume(no)};
+              } else fail(node.body, "closure branch needs one returning arm and one return-free arm");
             } else if (st.k === "const" || st.k === "effect") {
               tail = {k:"letBody",pos:st.pos,name:st.k === "const" ? st.name : "",
                 annot:st.k === "const" ? st.annot : null,
                 init:st.k === "const" ? st.init : st.e,body:tail};
-            } else fail(node.body, "mixed return/fall-through closure branches are not supported");
+            } else fail(node.body, "statements after an unconditional return are outside the closure slice");
           }
           return tail;
         };
@@ -175,7 +193,7 @@ function expr(node) {
             tail = {k:"ifBody",pos:last.pos,result:typeOf(node.type),cond:last.cond,
               then:lowerBlock(last.then),else_:lowerBlock(last.else_)};
           else fail(node.body, "closure block must return on both terminal arms");
-          return lowerPrefix(stmts.slice(0,-1),tail);
+          return lowerPrefix(stmts.slice(0,-1),tail,true);
         };
         body = lowerBlock(node.body.statements.map(stmt));
       } else {

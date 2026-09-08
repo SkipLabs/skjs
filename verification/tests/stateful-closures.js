@@ -127,9 +127,32 @@ try {
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
+  for (const [name,edit] of [
+    ["missing early-return continuation entry", (b,fc)=>{fc.envs=fc.envs.filter(q=>q.pos[0]!==b.else_.pos[0]);}],
+    ["wrong surviving-arm refinement", (b,fc)=>{fc.envs.find(q=>q.pos[0]===b.else_.pos[0]).vars.find(v=>v.name==="flag").type=lit("true");}],
+    ["early return expression claim checked", (b,fc)=>{const pos=b.then.e.pos;fc.exprs.find(q=>q.pos[0]===pos[0]&&q.pos[1]===pos[1]).type=lit("false");}],
+  ]) {
+    const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="earlyReturn");
+    const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="earlyReturn");
+    edit(f.body[0].init.body,fc);
+    expect(name,run("--produce-stateful-source",a,c),false);
+    expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
+  }
+  {
+    const b=ast.functions.find(f=>f.name==="earlyReturn").body[0].init.body;
+    if(b.k!=="ifBody" || b.then.k!=="returnBody" || b.else_.k!=="returnBody" ||
+       b.then.pos[0]===b.else_.pos[0]) throw Error("early return must select two distinct returns");
+    passed++;console.log("  early return keeps continuation in surviving arm: OK");
+    const c=ast.functions.find(f=>f.name==="earlyReturnElse").body[0].init.body.body;
+    if(c.k!=="ifBody" || c.else_.k!=="returnBody" || c.then.k!=="seqBody" ||
+       c.then.init.k!=="letBody" || c.then.body.k!=="letBody" ||
+       c.then.init.name!=="saved" || c.then.body.name!=="saved")
+      throw Error("falling arm and continuation need separate local scopes");
+    passed++;console.log("  falling arm local scope ends before continuation: OK");
+  }
   const parser=path.resolve(__dirname,"../tools/parse-source.js");
   for(const [name,closure] of [
-    ["mixed return/fall-through closure branch gated","(u: null): boolean => { if (true) { return true; } return false; }"],
+    ["partially returning nested arm gated","(u: null): boolean => { if (true) { if (true) { return true; } } return false; }"],
     ["missing closure else gated","(u: null): boolean => { if (true) { return true; } }"],
     ["async closure gated","async (u: null): Promise<boolean> => true"],
     ["optional closure parameter gated","(u?: null): boolean => true"],

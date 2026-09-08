@@ -515,4 +515,20 @@ bindings and singleton refinements cannot become assumptions at the join.
 The continuation occurs once, so nested branching does not duplicate its term.
 `shared_continuation_trace` ties the extracted graph to a 44-step execution in
 which the selected arm writes true before the shared read returns true.
-Mixed return/fall-through branches still need a broader control-flow interface.
+
+An early-return branch with one fully returning arm and one return-free arm
+uses the same conditional rules. For example, `if (c) { return r; } else { s; } k`
+has the extracted shape
+
+$$
+\mathsf{if}\ c\ \mathsf{then}\ r\ \mathsf{else}\quad
+(\mathsf{let}\ z=s\ \mathsf{in}\ k).
+$$
+
+Here $s$ completes with administrative null, and its local bindings stay inside
+$s$. Both $r$ and the surviving sequence check at the supplied function result
+type. When $c$ tests an immutable Boolean variable, the surviving sequence uses
+the justified false refinement; it does not have to discard this fact as a
+shared join would. `early_return_trace` checks both outcomes of an extracted
+closure: an early return skips the later write, while the other arm executes it.
+General partially returning nested arms remain gated.

@@ -495,9 +495,13 @@ continuation has the pre-branch immutable bindings and stable cell contracts;
 its supplied entry environment must follow from those types. No branch-specific
 refinement is retained. This is a sufficient, deliberately conservative join
 check, not a computation of the strongest common type. Empty arms and nested
-fall-through branches use the same construction. Mixed return/fall-through
-branches and loops inside closures remain gated pending a broader call/body
-interface. Binding identities must become
+fall-through branches use the same construction. An early-return branch is also supported when one arm returns on every path
+and the other contains no returns. The continuation occurs only in the surviving
+arm, after a scoped sequence that drops that arm's locals. It may use the
+surviving arm's checked immutable-variable refinement. Successive early-return
+tests compose without copying the continuation. More general partially returning
+nested arms and loops inside closures remain gated; they need a broader
+control-flow translation or call/body interface. Binding identities must become
 explicit before supporting hidden, shadowed bindings. Testing a mutable
 field may make SKJS export unequal read/write types in an arm. Those claims are
 still rejected by the invariant-cell decoder; immutable-slot refinement does

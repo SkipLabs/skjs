@@ -231,7 +231,7 @@ verification/run.sh --build --suite stateful-source
 
 The suite checks production and independent consumption, then corrupts expression
 claims, incoming environments, source annotations and input identities. Source
-loops, mutable declarations and mixed return/fall-through closure branches
+loops, mutable declarations and general partially returning nested closure arms
 are not connected yet; their raw request tests remain calculus tests.
 
 ## Record-contract export boundary
@@ -363,8 +363,16 @@ continuation. The continuation uses an anonymous result slot plus the outer
 context; arm-local slots cannot escape. No synthetic source expression claim
 is requested for either administrative node. Their generated typing obligations
 are nevertheless independently checked, as are every source expression and
-statement-entry environment. Mixed return/fall-through branches and shadowing
-locals remain gated. Field tests that produce unequal
+statement-entry environment.
+
+When one arm returns on every path and the other is return-free, the parser
+places the continuation only inside the surviving `ifBody` arm. A nonempty
+falling arm is first compiled to a `seqBody` initializer, keeping its local
+bindings out of the continuation. Empty falling arms resume directly. The
+existing branch rule justifies the surviving path's immutable Boolean
+refinement, including at the continuation's supplied entry environment. No new
+AST tag, type claim or calculus rule is needed. General partially returning
+nested arms, unreachable continuations and active-name shadowing remain gated. Field tests that produce unequal
 read/write claims remain outside the invariant-cell slice.
 
 For closure expressions the producer follows explicit proof recipes, retaining
