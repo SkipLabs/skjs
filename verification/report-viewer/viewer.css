@@ -288,6 +288,64 @@ kbd {
   color: var(--bad);
 }
 
+/* The obligation: what was available, and what had to follow. */
+.obligation {
+  border-left: 3px solid var(--edge-2);
+  padding-left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.obligation p {
+  margin: 0;
+  color: var(--ink-2);
+}
+.slotwrap {
+  overflow-x: auto;
+}
+table.slots {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  width: 100%;
+  white-space: nowrap;
+}
+.slotnote {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--ink-3);
+  white-space: normal;
+}
+table.slots th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+table.slots th,
+table.slots td {
+  padding: 3px 8px 3px 0;
+  border-bottom: 1px solid var(--edge);
+  vertical-align: top;
+}
+table.slots tr.differs td {
+  color: var(--warn);
+  font-weight: 500;
+}
+.ends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lab .tag {
+  font-size: 0.85em;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
 /* Both outcomes, spelled out. Amber marks a disagreement between them. */
 .pair {
   font-family: var(--mono);

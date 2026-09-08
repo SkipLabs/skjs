@@ -250,6 +250,8 @@ function fromBundle(bundle) {
       // for provenance, and neither is evidence.
       detail: result?.detail || "",
       result: result || null,
+      // Explanatory metadata about an unsuccessful attempt, kept as recorded.
+      obligation: result?.obligation || null,
       collection: f.collection?.completion || "",
       quality: f.collection?.quality || "",
       mode: f.collection?.mode || "",
@@ -323,6 +325,12 @@ function fromBundle(bundle) {
         result.detail || "Proof search did not establish this obligation.";
       failed.failureKind = location.kind;
       failed.failureBinding = location.binding || "";
+      // Which obligation stopped here — a return contract at a return statement
+      // is not the expression's own claim, even though they share a span.
+      failed.failureRole =
+        result.obligation?.source?.origin?.role ||
+        result.obligation?.origin?.role ||
+        "";
     }
   }
 

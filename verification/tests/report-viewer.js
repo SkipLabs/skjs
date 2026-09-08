@@ -390,8 +390,182 @@ const marks = require("../report-viewer/marks.js");
   assert.equal(marks.bracket(5), "╰───╯");
 }
 
+/* ---------- obligation diagnostics, as the panel reads them ---------- */
+const ob = require("../report-viewer/obligation.js");
+
+// Types are label lists into the record's own table, read as a union. The graph
+// is finite but may be cyclic, so rendering stops rather than recursing.
+{
+  const types = [
+    ["nul"],
+    [{ boolLit: { value: true } }],
+    [{ boolLit: { value: false } }],
+    [{ refs: { first: [1, 2], rest: [] } }],
+    [{ arrs: { arrows: [[[0], [1, 2]]] } }],
+    [{ mystery: 7 }],
+    [{ refs: { first: [6], rest: [] } }],
+  ];
+  types.push([{ refs: { first: [7], rest: [] } }]);
+  assert.equal(ob.typeText(types, [1, 2]), "true | false");
+  assert.equal(ob.typeText(types, []), "never");
+  assert.equal(ob.typeText(types, [0]), "null");
+  assert.equal(ob.typeText(types, [3]), "Ref<true | false>");
+  assert.equal(ob.typeText(types, [4]), "(null) => true | false");
+  assert.equal(ob.typeText(types, [5]), JSON.stringify({ mystery: 7 }));
+  assert.equal(ob.typeText(types, [99]), "type 99");
+  assert.match(ob.typeText(types, [6], 2), /…/);
+  assert.equal(ob.typeText(types, "nonsense"), "(no type recorded)");
+  assert.equal(ob.termText({ var: { i: 2 } }), "slot 2");
+  assert.equal(ob.termText("nul"), "nul");
+}
+
+// A return contract: the claim can be sound and still not establish the result.
+{
+  const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
+  const record = {
+    version: 1,
+    kind: "node-typing",
+    phase: "proof-search",
+    outcome: "not-established",
+    fuel: 10,
+    id: "node:1",
+    types,
+    requiredResult: [1],
+    sequent: { context: [[1, 2], [1, 2]], term: { var: { i: 0 } }, type: [1] },
+    source: {
+      label: 1,
+      node: { continuation: "ret", expression: { var: { i: 0 } } },
+      claim: { context: [[1, 2], [1, 2]], type: [1] },
+      origin: { pos: [370, 374], role: "return-contract", environmentStart: 363 },
+    },
+  };
+  const view = ob.obligationView(record);
+  assert.equal(view.title, "Return contract");
+  assert.equal(view.role, "return-contract");
+  assert.equal(view.conclusion, "true");
+  assert.equal(view.requiredResult, "true");
+  assert.equal(view.term, "slot 0");
+  assert.deepEqual(
+    view.rows.map((r) => [r.slot, r.have, r.note]),
+    [
+      [0, "true | false", "the value being returned"],
+      [1, "true | false", ""],
+    ],
+  );
+  assert.equal(view.environmentStart, 363);
+  // A record from a version this reader does not know is not interpreted.
+  assert.equal(ob.obligationView({ ...record, version: 2 }), null);
+  assert.equal(ob.obligationView(null), null);
+  // An unknown role stays generic rather than being guessed into a story.
+  const odd = structuredClone(record);
+  odd.source.origin.role = "future-role";
+  assert.equal(ob.obligationView(odd).title, "Obligation at this point");
+  assert.match(ob.obligationView(odd).what, /not one this reader knows/);
+  // Only a return contract names slot 0 as the returned value.
+  const plain = structuredClone(record);
+  plain.source.origin.role = "expression-claim";
+  assert.equal(ob.obligationView(plain).rows[0].note, "");
+}
+
+// An edge: the destination map acts on the available context, and the slots
+// that differ are the ones to look at. The observation is the edge's premise.
+{
+  const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
+  const record = {
+    version: 1,
+    kind: "edge-coverage",
+    phase: "proof-search",
+    outcome: "not-established",
+    fuel: 10,
+    id: "edge:8:1",
+    types,
+    edgeIndex: 1,
+    source: { label: 8, origin: { pos: [10, 14], role: "expression-claim" } },
+    destination: {
+      label: 7,
+      claim: { context: [[1], [0]] },
+      origin: { pos: [20, 24], role: "node-typing" },
+    },
+    transfer: {
+      available: [[0], [1, 2], [1]],
+      target: { label: 7, mapping: [2, 0] },
+      booleanObservation: true,
+    },
+  };
+  const view = ob.obligationView(record);
+  assert.equal(view.kindLabel, "edge coverage");
+  assert.deepEqual(
+    view.rows.map((r) => [r.slot, r.have, r.need, r.differs]),
+    [
+      [0, "true", "true", false],
+      [1, "null", "null", false],
+    ],
+  );
+  assert.match(view.observation, /slot 0 is true/);
+  assert.match(view.observation, /not a claim that execution took it/);
+  assert.match(view.note, /edge 1/);
+  assert.deepEqual(
+    view.endpoints.map((e) => [e.end, e.origin.pos]),
+    [
+      ["from", [10, 14]],
+      ["to", [20, 24]],
+    ],
+  );
+  // Tag dispatch observes the same slot, and reads the same way.
+  const tagged = structuredClone(record);
+  delete tagged.transfer.booleanObservation;
+  tagged.transfer.tagObservation = { test: "nul", answer: false, slot: 0 };
+  tagged.source.origin.role = "tag-dispatch";
+  const tagView = ob.obligationView(tagged);
+  assert.equal(tagView.title, "Tag dispatch");
+  assert.match(tagView.observation, /tag test nul answers false on slot 0/);
+  assert.match(tagView.observation, /not a claim that execution took it/);
+  // An identity map selects the available context unchanged.
+  assert.deepEqual(ob.mapContext([[1], [2]], null), [[1], [2]]);
+  const mismatched = structuredClone(record);
+  mismatched.transfer.target.mapping = [0, 1];
+  assert.deepEqual(
+    ob.obligationView(mismatched).rows.map((r) => r.differs),
+    [true, true],
+  );
+}
+
+// The mark says which obligation stopped there, and stays silent when the role
+// is generic: a claim must not be labelled as the wrong one.
+{
+  const source = "function f(): true {\n  return flag;\n}\n";
+  const rep = { source, file: "f.ts", collection: { verified: true } };
+  const failing = {
+    pos: [source.indexOf("flag"), source.indexOf("flag") + 4],
+    type: "boolean",
+    failure: "reject",
+    failureKind: "expression-obligation",
+    failureRole: "return-contract",
+  };
+  const fn = {
+    status: "not-established",
+    collection: "aborted",
+    start: 0,
+    end: source.length,
+    exprs: [failing],
+    entries: [],
+    gaps: [],
+  };
+  const [mark] = marks.sourceMarks(rep, fn, { density: "key" }).items;
+  assert.equal(mark.label, "boolean");
+  assert.equal(mark.mark, "✗");
+  assert.equal(mark.tag, "return contract");
+  assert.equal(marks.roleTag("node-typing"), "");
+  assert.equal(marks.roleTag("expression-claim"), "");
+  // Packing counts the tag, or the next mark would sit on top of it.
+  assert.equal(
+    marks.markWidth({ col: 0, end: 4, label: "boolean", mark: "✗", tag: "return contract" }),
+    4 + 1 + 7 + 2 + 16,
+  );
+}
+
 console.log(
-  "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, addressing, source marks, and legacy comment reports passed",
+  "Report viewer: structured payloads, UTF-16/multiline spans, gaps, comparison, addressing, source marks, obligations, and legacy comment reports passed",
 );
 
 const failureBundle = structuredClone(bundle);

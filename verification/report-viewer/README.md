@@ -99,6 +99,26 @@ adapter for the display format, with only the data present in those comments.
 - Function statuses cover modeled obligations, not every displayed producer claim.
   Fingerprints are available under Provenance.
 
+### Why verification stopped
+
+Where the verifier emits a structured obligation diagnostic, the Selection panel
+shows what it had and what had to follow: the available slots, the conclusion
+required of them, and — for an edge — the same context carried to the
+destination, with the differing slots marked and both endpoints selectable. The
+role is taken from the record, never guessed from the span: a **return contract**
+at a `return` is a different obligation from the returned expression's own claim,
+even though they share a span, so a sound claim is not labelled as the culprit. A
+mark names its role when the record gives a specific one and stays silent when it
+does not.
+
+Types are rendered through the record's own graph table; a clause this reader
+does not know is shown as its encoding rather than guessed at, and recursion
+through references and arrows stops with an ellipsis. Ids are local to one
+attempt: they identify nothing after an edit. The record is explanatory metadata
+about an unsuccessful attempt — never evidence, and never a statement that a
+claim is false. Failures without a record keep the existing wording. See
+[OBLIGATION-DIAGNOSTICS](../OBLIGATION-DIAGNOSTICS.md).
+
 ### Verification warnings
 
 When proof search reports an obligation's exact source span, the claim there
@@ -129,7 +149,8 @@ stale and removes their active failure markers until a fresh check completes.
 
 ## Implementation
 
-`model.js` reads structured bundles and adapts legacy comments. `marks.js`
+`model.js` reads structured bundles and adapts legacy comments. `obligation.js`
+reads an obligation diagnostic into the rows a panel shows. `marks.js`
 decides what the source view shows — which claims are drawn at what position,
 the outcome symbols, the producer's diagnostic positions — as pure functions the
 tests exercise without a browser. `viewer.js` owns selection, events and

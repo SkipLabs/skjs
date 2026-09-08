@@ -210,8 +210,9 @@ function rowText(items) {
       '" role="button" tabindex="0">' +
       esc(it.label) +
       (it.mark ? ' <b class="pm">' + esc(it.mark) + "</b>" : "") +
+      (it.tag ? ' <span class="tag">' + esc(it.tag) + "</span>" : "") +
       "</span>";
-    cur = it.col + w + 1 + it.label.length + (it.mark ? it.mark.length + 1 : 0);
+    cur = it.col + markWidth(it) - 1;
   }
   return out;
 }
@@ -405,38 +406,8 @@ function select(id) {
   el("inspector").scrollIntoView({ block: "nearest" });
   const src = state.report.source;
   let h = "";
-  if (f.status === "not-established" && item.failure) {
-    const explanation =
-      item.failureKind === "source-limitation"
-        ? "Source conversion stopped at this unsupported expression, before checking the candidate’s proof obligations."
-        : item.failureKind === "missing-expression-claim"
-          ? "Extraction needed a claimed type for this expression and the report has none. Supplying one is what makes checking possible; it does not make the claim true."
-          : item.failureKind === "missing-environment-claim"
-            ? (item.failureBinding
-                ? "The environment claimed at this statement does not include the binding ‘" +
-                  esc(item.failureBinding) +
-                  "’, which extraction needed."
-                : "Extraction needed the environment claimed at this statement and the report has none.") +
-              " Supplying it is what makes checking possible; it does not make the claim true."
-        : item.failureKind === "edge-obligation"
-          ? "An incoming edge did not justify the environment used at this expression. The incoming value or destination environment may be involved."
-          : item.failureKind === "environment-obligation"
-            ? "The verifier could not use this statement environment."
-            : "This identifies the expression obligation where checking stopped. Its environment or source annotation may also be involved.";
-    h +=
-      '<div class="failure-note"><b>⚠ ' +
-      (item.failureKind === "source-limitation"
-        ? "Unsupported source expression"
-        : item.failureKind === "missing-expression-claim" ||
-            item.failureKind === "missing-environment-claim"
-          ? "Verification needed a claim here"
-          : "Proof search failed here") +
-      "</b><p>" +
-      explanation +
-      ' This does not prove the claim false.</p><pre class="raw">' +
-      esc(item.failure) +
-      "</pre></div>";
-  }
+  if (f.status === "not-established" && item.failure)
+    h += failureHtml(f, item);
   if (item.kind === "gap") {
     h += '<div class="status-line"><b>' + esc(item.detail) + "</b></div>";
     h += idLine(item);
@@ -544,6 +515,20 @@ function select(id) {
   el("detail").innerHTML = h;
   renderEditor(f, item);
   el("detail")
+    .querySelectorAll("[data-endpoint]")
+    .forEach((b) =>
+      b.addEventListener("click", () => {
+        const [from, to] = b.dataset.endpoint.split(",").map(Number);
+        const expr = f.exprs.findIndex(
+          (e) => e.pos && e.pos[0] === from && e.pos[1] === to,
+        );
+        const entry = f.entries.findIndex((e) => e.pos && e.pos[0] === from);
+        if (expr >= 0) select("e" + expr);
+        else if (entry >= 0) select("n" + entry);
+        revealSelected();
+      }),
+    );
+  el("detail")
     .querySelectorAll("[data-nested]")
     .forEach((b) =>
       b.addEventListener("click", () => select(b.dataset.nested)),
@@ -551,6 +536,146 @@ function select(id) {
   document
     .querySelectorAll(".lab")
     .forEach((x) => x.classList.toggle("on", x.dataset.id === id));
+}
+
+// What happened, why, and then the obligation itself. The verifier's own
+// sentence and the epistemic caveat are kept, one disclosure down: they are the
+// same for every failure, and repeating them above the table buries it.
+const FAILURE_TITLE = {
+  "source-limitation": "Unsupported source expression",
+  "missing-expression-claim": "Verification needed a claim here",
+  "missing-environment-claim": "Verification needed a claim here",
+};
+// Used when no structured record was emitted: the reason has to come from the
+// failure kind alone.
+const FAILURE_REASON = {
+  "source-limitation":
+    "Source conversion stopped at this unsupported expression, before checking any proof obligation.",
+  "missing-expression-claim":
+    "Extraction needed a claimed type for this expression and the report has none.",
+  "missing-environment-claim":
+    "Extraction needed the environment claimed at this statement and the report has none.",
+  "edge-obligation":
+    "An incoming edge did not justify the environment used at this expression.",
+  "environment-obligation": "The verifier could not use this statement environment.",
+};
+function failureHtml(f, item) {
+  const view = obligationView(f.obligation);
+  const title = FAILURE_TITLE[item.failureKind] || "Proof search failed here";
+  const reason =
+    (view && view.what) ||
+    (item.failureKind === "missing-environment-claim" && item.failureBinding
+      ? "The environment claimed at this statement does not include the binding ‘" +
+        item.failureBinding +
+        "’, which extraction needed."
+      : FAILURE_REASON[item.failureKind]) ||
+    "This is where checking stopped.";
+  return (
+    '<div class="failure-note"><div class="status-line"><b>' +
+    esc(title) +
+    "</b>" +
+    (view && view.role && view.title !== "Obligation at this point"
+      ? ' <span class="tag">' + esc(view.title.toLowerCase()) + "</span>"
+      : "") +
+    "</div><p>" +
+    esc(reason) +
+    "</p>" +
+    (view ? obligationHtml(view) : "") +
+    '<details class="disc"><summary>record</summary><pre class="raw">' +
+    esc(item.failure) +
+    "</pre>" +
+    (view
+      ? '<dl class="kv">' +
+        (view.term ? "<dt>term</dt><dd>" + esc(view.term) + "</dd>" : "") +
+        (view.id ? "<dt>id</dt><dd>" + esc(view.id) + "</dd>" : "") +
+        "<dt>phase</dt><dd>" +
+        esc(view.phase || "—") +
+        "</dd><dt>search depth</dt><dd>" +
+        esc(String(view.fuel ?? "—")) +
+        "</dd></dl>"
+      : "") +
+    '<div class="note">This is the first failure reported, and explanatory ' +
+    "metadata about one unsuccessful attempt. It does not prove the claim false. " +
+    "Ids are local to this attempt and do not survive an edit.</div>" +
+    "</details></div>"
+  );
+}
+
+// The obligation as a table: what was available, what had to follow.
+function obligationHtml(view) {
+  if (!view) return "";
+  // The rail is narrow, so the slot's note rides under its name and the types
+  // keep their own line: a type broken across lines is harder to read than one
+  // that scrolls.
+  const slotCell = (row) =>
+    "<td>slot " +
+    row.slot +
+    (row.note ? '<div class="slotnote">' + esc(row.note) + "</div>" : "") +
+    "</td>";
+  const rows = view.rows
+    .map((row) =>
+      view.kind === "edge-coverage"
+        ? '<tr class="' +
+          (row.differs ? "differs" : "") +
+          '">' +
+          slotCell(row) +
+          "<td>" +
+          esc(row.have) +
+          "</td><td>" +
+          esc(row.need) +
+          "</td></tr>"
+        : "<tr>" + slotCell(row) + "<td>" + esc(row.have) + "</td></tr>",
+    )
+    .join("");
+  const head =
+    view.kind === "edge-coverage"
+      ? "<tr><th>slot</th><th>carried here</th><th>required there</th></tr>"
+      : "<tr><th>slot</th><th>available</th></tr>";
+  return (
+    '<div class="obligation">' +
+    '<div class="slotwrap"><table class="slots">' +
+    head +
+    rows +
+    "</table></div>" +
+    (view.conclusion
+      ? '<dl class="kv"><dt>must establish</dt><dd>' +
+        esc(view.conclusion) +
+        "</dd>" +
+        // Only worth a line when it is not the conclusion already shown.
+        (view.requiredResult && view.requiredResult !== view.conclusion
+          ? "<dt>function result</dt><dd>" + esc(view.requiredResult) + "</dd>"
+          : "") +
+        "</dl>"
+      : "") +
+    (view.observation ? '<div class="note">' + esc(view.observation) + "</div>" : "") +
+    (view.note ? '<div class="note">' + esc(view.note) + "</div>" : "") +
+    endpointsHtml(view) +
+    "</div>"
+  );
+}
+
+// Both ends of an edge, selectable when the report actually holds a claim there.
+function endpointsHtml(view) {
+  const ends = view.endpoints.filter((e) => e.origin?.pos);
+  if (!ends.length) return "";
+  return (
+    '<div class="ends">' +
+    ends
+      .map(
+        (e) =>
+          '<button data-endpoint="' +
+          e.origin.pos.join(",") +
+          '">' +
+          (e.end === "from" ? "from " : "to ") +
+          esc(
+            state.report.source.slice(e.origin.pos[0], e.origin.pos[1]).trim() ||
+              "point " + e.label,
+          ) +
+          "</button>",
+      )
+      .join("") +
+    "</div>"
+  );
 }
 
 /* ---------- header, functions, provenance ---------- */

@@ -65,6 +65,16 @@ const proofLabel = (status) => PROOF_LABEL[status] || status;
 const proofSymbol = (failureKind) =>
   INCOMPLETE_INPUT.has(failureKind) ? "?" : "✗";
 
+// A mark says which obligation stopped there when the record names a specific
+// one. Without that, it stays silent rather than implying the claim is at fault.
+const ROLE_TAG = {
+  "return-contract": "return contract",
+  "binding-annotation": "binding annotation",
+  "closure-entry": "closure entry",
+  "closure-result": "closure result",
+};
+const roleTag = (role) => ROLE_TAG[role] || "";
+
 function proofMark(f) {
   if (f.status === "verified") return ["✓", "a certificate was checked"];
   if (f.status === "unsupported")
@@ -210,6 +220,7 @@ function sourceMarks(rep, f, options) {
       // A claim proof search stopped at is still a claim: it reads the same,
       // with the proof outcome added in the symbols the function pill uses.
       mark: failed ? proofSymbol(e.failureKind) : "",
+      tag: failed ? roleTag(e.failureRole) : "",
       id: "e" + i,
       cls: "expr" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
@@ -269,6 +280,7 @@ function sourceMarks(rep, f, options) {
         list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
         (e.recovery ? recMark : ""),
       mark: failed ? proofSymbol(e.failureKind) : "",
+      tag: failed ? roleTag(e.failureRole) : "",
       id: "n" + i,
       cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
     });
@@ -300,7 +312,11 @@ function bracket(w) {
 // Width counts the bracket, the label and any proof symbol: these sit in a
 // monospace grid, and a row that miscounts would overlap the next mark.
 const markWidth = (it) =>
-  Math.max(1, it.end - it.col) + 1 + it.label.length + (it.mark ? it.mark.length + 1 : 0);
+  Math.max(1, it.end - it.col) +
+  1 +
+  it.label.length +
+  (it.mark ? it.mark.length + 1 : 0) +
+  (it.tag ? it.tag.length + 1 : 0);
 
 function packRows(items) {
   const rows = [];
@@ -333,6 +349,7 @@ if (typeof module !== "undefined")
     commentStartLine,
     proofLabel,
     proofSymbol,
+    roleTag,
     proofMark,
     outcome,
     producerMarks,
