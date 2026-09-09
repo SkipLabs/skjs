@@ -1119,6 +1119,10 @@ async function load(text, { keepCandidate = false, opening = "", asked = false }
         : null;
       candidateState.saved = JSON.stringify(candidateState.candidate);
       candidateState.revision++;
+      // A different report is a different question; what was announced about
+      // the last one says nothing about this one.
+      candidateState.announced.clear();
+      el("verified-requester").hidden = true;
     }
     candidateState.bundle = typeof input === "object" ? input : null;
     state.report = rep;

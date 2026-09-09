@@ -15,6 +15,9 @@ const candidateState = {
   revision: 0,
   running: false,
   saved: null,
+  // Functions already announced as verified, so the moment is announced once
+  // and not on every later check that finds the same thing.
+  announced: new Set(),
 };
 // Unsaved edits are worth a question, not a refusal: silently declining to open
 // another report reads as the picker being broken.
@@ -212,6 +215,39 @@ function invalidateCandidate() {
 }
 // Applying an edit and checking it are one step: a candidate that has not been
 // checked is not worth displaying as a result.
+// What the check found, rather than where to go and look for it. The line this
+// goes to is kept on screen, so it can answer the question it used to defer.
+function checkedSummary() {
+  const functions = state.report?.functions || [];
+  const said = (status) => status.replace(/-/g, " ");
+  if (functions.length === 1)
+    return functions[0].name + " " + said(functions[0].status);
+  const counts = new Map();
+  for (const f of functions) counts.set(f.status, (counts.get(f.status) || 0) + 1);
+  return [...counts]
+    .map(([status, n]) => n + " " + said(status))
+    .join(", ");
+}
+
+// Reaching verified is what the reader is working towards, and by then they are
+// usually down at the source with every badge scrolled off. Say it once, in the
+// middle of the window, and let any click or key dismiss it.
+function announceVerified() {
+  const box = el("verified-requester");
+  const reached = (state.report?.functions || []).filter(
+    (f) => f.status === "verified" && !candidateState.announced.has(f.name),
+  );
+  if (!reached.length) return;
+  for (const f of reached) candidateState.announced.add(f.name);
+  box.textContent =
+    reached.length === 1 ? reached[0].name + " verified" : "Verified";
+  box.hidden = false;
+  clearTimeout(announceVerified.timer);
+  announceVerified.timer = setTimeout(() => {
+    box.hidden = true;
+  }, 4000);
+}
+
 async function checkCandidate() {
   if (candidateState.running || !candidateState.candidate) return;
   const revision = candidateState.revision;
@@ -251,9 +287,8 @@ async function checkCandidate() {
         select((expressions ? "e" : "n") + i);
       }
     }
-    renderCandidateStatus(
-      "Candidate checked. See each function’s recorded result.",
-    );
+    renderCandidateStatus("Candidate checked: " + checkedSummary());
+    announceVerified();
     return true;
   } catch (error) {
     renderCandidateStatus(
@@ -266,6 +301,12 @@ async function checkCandidate() {
   }
 }
 function initializeCandidateEditor() {
+  const dismiss = () => {
+    el("verified-requester").hidden = true;
+    clearTimeout(announceVerified.timer);
+  };
+  el("verified-requester").addEventListener("click", dismiss);
+  document.addEventListener("keydown", dismiss, { capture: true });
   el("restore-candidate").addEventListener("click", async () => {
     candidateState.candidate = structuredClone(candidateState.original);
     candidateState.revision++;

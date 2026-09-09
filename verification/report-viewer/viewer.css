@@ -798,6 +798,47 @@ footer {
   color: var(--ink-2);
   margin: 0 0 12px;
 }
+/* The verdict and the work sit at opposite ends of one scroll, so a reader who
+   applies a claim down at the source cannot see what came of it. Keep the
+   function badges and the checker's own line above the source as it moves. */
+.sticky-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  padding-top: 6px;
+  background: var(--paper);
+  border-bottom: 1px solid transparent;
+}
+/* Reaching a verified result is the moment the reader is working towards, and
+   it is announced once. Said in the middle of the window because that is where
+   the eye is, not where the badges live. */
+.requester {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 12px 22px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ok);
+  background: var(--ok-soft);
+  border: 1px solid var(--ok);
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .requester {
+    animation: requester-in 160ms ease-out;
+  }
+}
+@keyframes requester-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
 
 .lab.gap {
   background: var(--warn-soft);
