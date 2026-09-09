@@ -13,6 +13,12 @@ open ProgramTyping ProgramCertificates SourceTypes PositiveRules HeapExpressionR
 -- Unknown operands cannot silently lose labels during selection.
 #guard CellClaims.referenceLabel [999] == types.length
 #guard FunctionClaims.label [999] [75] == types.length
+-- A location under two contracts has a label of its own, in either order, and
+-- is not the plain cell; under three it has none, and lands past the table.
+#guard label (.refs [0] [[1,2]]) < types.length
+#guard label (.refs [1,2] [[0]]) < types.length
+#guard label (.refs [0] [[1,2]]) != CellClaims.referenceLabel [0]
+#guard label (.refs [0] [[1,2],[1]]) == types.length
 
 private def undefProof : Evidence Nat := .node ⟨[],.undef,[75]⟩ .undef []
 #guard checkTree graph undefProof

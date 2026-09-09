@@ -123,6 +123,35 @@ theorem translate_exact {j : Json} {A u v}
   obtain ⟨f,hf,hc⟩ := translate_checked h
   exact ⟨f,hf,agreeContract_exact hc hv n W⟩
 
+/-- A conjunction is written inside the atom that carries one, as `and`. The
+operands are the same single-contract atoms, decoded by the same decoder: the
+key is removed and each part checked on its own, so nothing here relaxes what a
+contract may be. -/
+private def conjuncts (atom : Json) : Except String (List Json) := do
+  let fields ← atom.getObj?
+  let plain := Json.mkObj (fields.toList.filter (fun p => p.1 != "and"))
+  match atom.getObjVal? "and" with
+  | .error _ => return [plain]
+  | .ok rest =>
+    let others ← rest.getArr?
+    if others.isEmpty then throw "an empty conjunction is not a contract"
+    for other in others.toList do
+      if (other.getObjVal? "and").toOption.isSome then
+        throw "nested conjunction in a cell contract"
+    return plain :: others.toList
+
+/-- The label of a location under every contract in the conjunction. The graph
+is the authority on which conjunctions exist: it holds pairs, and one it does
+not hold is refused here by name rather than left as an index past the table. -/
+def conjunctionLabel (atom : Json) : Except String Nat := do
+  let parts ← conjuncts atom
+  let types ← parts.mapM fun part =>
+    translate (Json.mkObj [("top",toJson false),("atoms",toJson [part])])
+  let first :: rest := types | throw "an empty conjunction is not a contract"
+  let label := SourceTypes.label (.refs first rest)
+  if label < SourceTypes.types.length then return label
+  throw s!"a conjunction of {types.length} contracts has no label in the source graph"
+
 /-- Select the exact generated reference node; unsupported operands never
 silently project down to a smaller invariant. -/
 def referenceLabel (A : Ty Nat) : Nat := SourceTypes.label (.refs A [])
@@ -132,7 +161,8 @@ theorem reference_encode (t : Wire.Ty) :
       [.refs (SourceTypes.encode t) []] := by
   apply SourceTypes.label_exact
   apply SourceTypes.compound_mem
-  exact List.mem_append_left _ (List.mem_map.mpr ⟨_,SourceTypes.encode_mem t,rfl⟩)
+  exact List.mem_append_left _
+    (List.mem_append_left _ (List.mem_map.mpr ⟨_,SourceTypes.encode_mem t,rfl⟩))
 
 /-- The graph label used by source extraction denotes exactly the accepted
 cell invariant, at every world and budget. -/

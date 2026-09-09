@@ -27,10 +27,15 @@ def allArgumentTypes : List (Ty Nat) :=
   argumentTypes ++ primitiveTypes.map (· ++ [75])
 def compoundTypes : List (List (Clause (List Nat))) :=
   allPrimitiveTypes.map (fun A => [.refs A []]) ++
-  allArgumentTypes.flatMap (fun D => allPrimitiveTypes.map (fun R => [.arrs [(D,R)]]))
+  allArgumentTypes.flatMap (fun D => allPrimitiveTypes.map (fun R => [.arrs [(D,R)]])) ++
+  -- Appended last, so every label already in use keeps its index. A location
+  -- under two invariant contracts at once; both orders are generated, since
+  -- they denote the same conjunction but are different clauses to a lookup, and
+  -- having both spares every caller a canonical ordering.
+  allPrimitiveTypes.flatMap (fun A => allPrimitiveTypes.map (fun B => [.refs A [B]]))
 def types : List (List (Clause (List Nat))) :=
   baseTypes ++ [[.undef]] ++ compoundTypes.filter (fun c => !baseTypes.contains c)
-#guard types.length == 276
+#guard types.length == 532
 
 def isPrimitive (i : Nat) : Bool := i < 3 || i == 75
 

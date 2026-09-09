@@ -40,7 +40,7 @@ const produce = (ap = astPath, cp = claimsPath, mode = "stateful-source") =>
 const check = (mode, cp) =>
   run(verifier, [`--check-${mode}`, astPath, cp, file, evidence]);
 try {
-  test("display table equals all 276 maintained Lean labels", () => {
+  test("display table equals all 532 maintained Lean labels", () => {
     const r = run(
       "lake",
       ["env", "lean", "--run", path.resolve(__dirname, "source-profile.lean")],
@@ -48,7 +48,7 @@ try {
     );
     accepted(r);
     assert.deepEqual(JSON.parse(r.stdout), profile.types);
-    assert.equal(profile.types.length, 276);
+    assert.equal(profile.types.length, 532);
     assert.equal(profile.typeText([75]), "undefined");
   });
   test("all undefined functions have complete normal-mode producer claims", () => {

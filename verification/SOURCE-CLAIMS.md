@@ -1,6 +1,6 @@
 # Producer-independent source sidecars
 
-The `stateful-source-276-v2` profile supplies types directly from the current
+The `stateful-source-532-v2` profile supplies types directly from the current
 calculus source graph. It contains no SKJS type atoms, inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
@@ -29,7 +29,7 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 ```json
 {
   "version": 2,
-  "profile": "stateful-source-276-v2",
+  "profile": "stateful-source-532-v2",
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
   "functions": [{
@@ -46,7 +46,7 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 }
 ```
 
-`stateful-source-276-v2` is the only accepted profile. Every point carries an
+`stateful-source-532-v2` is the only accepted profile. Every point carries an
 explicit `current` field, and documents written for an earlier profile must be
 regenerated rather than upgraded in place.
 
@@ -74,13 +74,44 @@ and results remain in force. The profile fixes the graph to `SourceTypes.types`:
 | `75` | `undefined` |
 | `76`–`83` | References whose primitive operand includes undefined |
 | `84`–`275` | Arrows with undefined in the domain, codomain, or both |
+| `276`–`531` | A location under two invariant contracts at once, `Ref<A> & Ref<B>` |
 
 `U(m)` is the union selected by the mask: bit 0 selects null, bit 1 true, and bit
 2 false. Thus label `9` is `Ref<boolean>` and label `17` is `null → boolean`.
-The 276-label table covers all 16 primitive subsets, 16 reference contracts and
-256 unary arrows. `SourceTypes.types` defines its exact order; selectors look up
+The 532-label table covers all 16 primitive subsets, 16 reference contracts, 256
+unary arrows and the 256 ordered pairs of reference contracts. Both orders of a
+pair are generated: they denote the same conjunction but are distinct clauses to
+a lookup, so having both spares every caller a canonical ordering. `SourceTypes.types` defines its exact order; selectors look up
 the whole clause and Lean proves exactness. The display mirror is tested against
 the entire Lean table. Earlier profiles and evidence must be regenerated.
+
+## Conjunction
+
+An atom list is a union: its members are alternatives. Conjunction is not
+written there, because it is not a union of anything. It is written inside the
+atom kinds that have one, which is where the clause language puts it: `refs`
+carries a first contract and the rest, `arrs` carries a list of signatures, and
+`nul`, `bool`, `boolLit` and `undef` carry nothing. So an atom may carry `and`,
+a list of further atoms of the same kind:
+
+```json
+{ "a": "record", "fields": [ ... ], "and": [ { "a": "record", "fields": [ ... ] } ] }
+```
+
+which is `Ref<A> & Ref<B>`: one location meeting both contracts invariantly. An
+absent or empty `and` is the ordinary single-contract atom, unchanged.
+
+The rule that keeps this honest is that the format may not be able to say more
+than the clause language can hold. `and` on a primitive atom is refused, because
+no clause conjoins primitives and a decoder would have to invent a meaning for
+it. `and` on a function atom is the shape a multi-signature arrow will take, and
+is refused for now by the source parser, since the graph has no label for one.
+
+It may say more than the *graph* holds, and that is different: three conjoined
+contracts are a clause the graph does not generate, so the label lookup returns
+an out-of-range index and the claim is refused rather than quietly becoming a
+smaller contract. Exceeding the table is caught; exceeding the language would
+not be.
 
 These are calculus contracts; the source boundary still checks that allocations
 and operations justify their interpretation. An array of several reference or

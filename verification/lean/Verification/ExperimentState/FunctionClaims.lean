@@ -38,6 +38,7 @@ theorem label_encode (d r : Wire.Ty) :
       [.arrs [(SourceTypes.encode d,SourceTypes.encode r)]] := by
   apply SourceTypes.label_exact
   apply SourceTypes.compound_mem
+  apply List.mem_append_left
   apply List.mem_append_right
   exact List.mem_flatMap.mpr ⟨_,SourceTypes.encode_argument_mem d,
     List.mem_map.mpr ⟨_,SourceTypes.encode_mem r,rfl⟩⟩

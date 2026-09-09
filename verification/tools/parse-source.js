@@ -61,6 +61,27 @@ function atomsOfTypeNode(node, acc) {
         call: "unknown", construct: "unknown", array: "unknown"});
       return;
     }
+    case ts.SyntaxKind.IntersectionType: {
+      // Union is the atom list; conjunction lives inside the atom kinds that
+      // have one, mirroring the clause language, where only a location under
+      // several contracts and a function with several signatures conjoin.
+      // Nothing else does, so nothing else may be written here: a format that
+      // could say `null & boolean` would be saying something no clause holds.
+      const parts = node.types.map((operand) => {
+        const one = [];
+        atomsOfTypeNode(operand, one);
+        if (one.length !== 1)
+          fail(operand, "an intersection operand must be a single type");
+        if (one[0].and) fail(operand, "nested intersection outside the fragment");
+        return one[0];
+      });
+      if (parts.some((p) => p.a !== parts[0].a))
+        fail(node, "intersection operands must have the same shape");
+      if (parts[0].a !== "record")
+        fail(node, `intersection of ${parts[0].a} types is outside the fragment`);
+      acc.push({ ...parts[0], and: parts.slice(1) });
+      return;
+    }
     case ts.SyntaxKind.NeverKeyword:
       // The empty union: no atoms. Nothing inhabits it, so it contributes
       // nothing to the alternatives a value of this type may take.

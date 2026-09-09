@@ -63,7 +63,7 @@ private def validFunction (f : Function) : Bool :=
 
 def decode (j : Json) : Except String Document := do
   let d : Document ← decodeStrict j
-  if !(d.version == 2 && d.profile == "stateful-source-276-v2") then
+  if !(d.version == 2 && d.profile == "stateful-source-532-v2") then
     throw "unsupported source-claim profile or version"
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"

@@ -12,7 +12,7 @@ try {
   const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);
   assert.equal(parsed.status,0,parsed.stderr);const ast=JSON.parse(parsed.stdout);fs.writeFileSync(ap,parsed.stdout);
   const f=ast.functions[0],pos=f.body[0].e.pos;
-  const doc={version:2,profile:"stateful-source-276-v2",file,sourceSha256:hash(source),functions:[{
+  const doc={version:2,profile:"stateful-source-532-v2",file,sourceSha256:hash(source),functions:[{
     name:f.name,namePos:f.namePos,params:[{name:"flag",type:[1,2],current:null}],result:[1,2],
     entries:[{start:f.body[0].pos[0],bindings:[{name:"flag",type:[1,2],current:null}]}],
     expressions:[{pos,type:[1,2],current:null}]}]};
@@ -32,7 +32,7 @@ try {
   mutate("unsupported graph profile rejected",d=>d.profile="arbitrary");
   mutate("retired profile is rejected",d=>d.profile="stateful-source-19-v1");
   mutate("previous primitive profile is rejected",d=>d.profile="stateful-source-75-v2");
-  mutate("out-of-range labels rejected even in unused bindings",d=>d.functions[0].entries[0].bindings.push({name:"unused",type:[276],current:null}));
+  mutate("out-of-range labels rejected even in unused bindings",d=>d.functions[0].entries[0].bindings.push({name:"unused",type:[532],current:null}));
   mutate("duplicate labels rejected",d=>d.functions[0].result=[1,1,2]);
   mutate("noncanonical label order rejected",d=>d.functions[0].result=[2,1]);
   mutate("duplicate entry sites rejected",d=>d.functions[0].entries.push(d.functions[0].entries[0]));

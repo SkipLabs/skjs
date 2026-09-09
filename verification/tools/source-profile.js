@@ -7,6 +7,7 @@ const primitiveTypes = Array.from({ length: 16 }, (_, mask) =>
 );
 const argumentsInOrder = [1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const ref = (A) => [{ refs: { first: A, rest: [] } }];
+const refPair = (A, B) => [{ refs: { first: A, rest: [B] } }];
 const arrow = (D, R) => [{ arrs: { arrows: [[D, R]] } }];
 const old = [
   ["nul"],
@@ -25,13 +26,15 @@ const compounds = [
   ...argumentsInOrder.flatMap((d) =>
     primitiveTypes.map((r) => arrow(primitiveTypes[d], r)),
   ),
+  // Last, so every label already in use keeps its index.
+  ...primitiveTypes.flatMap((a) => primitiveTypes.map((b) => refPair(a, b))),
 ];
 const types = [
   ...old,
   ["undef"],
   ...compounds.filter((c) => !existing.has(JSON.stringify(c))),
 ];
-const name = "stateful-source-276-v2";
+const name = "stateful-source-532-v2";
 const primitiveNames = new Map([
   [0, "null"],
   [1, "true"],
@@ -44,7 +47,10 @@ function typeText(A) {
 function labelText(i) {
   if (primitiveNames.has(i)) return primitiveNames.get(i);
   const c = types[i]?.[0];
-  if (c?.refs) return `Ref<${typeText(c.refs.first)}>`;
+  if (c?.refs)
+    return [c.refs.first, ...c.refs.rest]
+      .map((operand) => `Ref<${typeText(operand)}>`)
+      .join(" & ");
   if (c?.arrs) {
     const [D, R] = c.arrs.arrows[0];
     return `(${typeText(D)} => ${typeText(R)})`;

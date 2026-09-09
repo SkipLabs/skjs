@@ -40,7 +40,7 @@ try {
     fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(file,cp,op);assert.equal(r.status,0,r.stderr);
     const d=JSON.parse(fs.readFileSync(op));
-    assert.equal(d.version,2);assert.equal(d.profile,"stateful-source-276-v2");
+    assert.equal(d.version,2);assert.equal(d.profile,"stateful-source-532-v2");
     const point=d.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert.deepEqual(point.type,[9]);assert.deepEqual(point.current,[1]);
     const omissions=JSON.parse(fs.readFileSync(op+".conversion.json")).omissions;

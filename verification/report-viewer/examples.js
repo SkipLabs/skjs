@@ -9,6 +9,7 @@ const supported = [
   "loops",
   "loop-transfers",
   "primitive-callbacks",
+  "cell-conjunction",
   "negation",
   "null-tests",
   "null-guards",

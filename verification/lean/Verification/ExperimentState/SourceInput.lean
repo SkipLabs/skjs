@@ -18,13 +18,20 @@ def translate (j : Json) : Except String (Ty Nat) := do
   if ← (← jField j "top").getBool? then throw "top is outside the source slice"
   let atoms ← jArr j "atoms"
   let tagged ← atoms.mapM fun atom => do return (← jStr (← jField atom "a"),atom)
-  let records ← CellUnion.translate ((tagged.filter (fun p => p.1 == "record")).map (·.2))
+  -- A conjunction is one arm of the union, not a union of its own, so each
+  -- contributes a single label. Absorption applies to the plain arms, which is
+  -- where two contracts can subsume one another.
+  let (conjoined, plain) :=
+    ((tagged.filter (fun p => p.1 == "record")).map (·.2)).partition
+      (fun a => (a.getObjVal? "and").toOption.isSome)
+  let records ← CellUnion.translate plain
+  let conjunctions ← conjoined.mapM fun a => do return [← CellClaims.conjunctionLabel a]
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
     | "function" => FunctionClaims.translate single
     | _ => SourceTypes.translate (← CellClaims.primitive single)
-  return (records ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
+  return (records ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
 
 /-- A point assertion separates the persistent reference type from a current
 contents predicate. It is never accepted by erasing `current`. Ordinary function
