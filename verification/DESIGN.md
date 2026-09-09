@@ -766,6 +766,73 @@ new semantic type constructor. Generalizing to several supplied entry bindings
 still needs a chosen argument layout and checked binding transfer in source
 lowering. The current source gates remain unchanged.
 
+### Set-valued clause covering
+
+Covering matches one source clause against one *single* target clause. A source
+clause can be contained in the union of several target clauses without being
+contained in any one of them, and no rule sees that.
+
+The `bool` instance of this is closed. `bool` is the only clause of the language
+whose inhabitants are a finite set that is not already a singleton, so it is the
+only one that decomposes syntactically, and splitting a source `bool` into the
+pair of singletons before matching keeps `Covers` clause-to-clause while letting
+one source clause be discharged by several target clauses. The rule is specified
+in [POSITIVE-TYPES.md](POSITIVE-TYPES.md). SKJS gets the same answer by
+normalising `bool` to `true | false` before comparing, and does so *before it
+exports claims*, so no source file can carry the distinction: the guards beside
+the rule are its only possible coverage.
+
+What remains open is the general shape. Two parts of it are known and neither
+yields to a normalisation:
+
+- An arrow clause against a union of arrow clauses, or a reference clause whose
+  covering target varies by world. Closing these needs a genuinely set-valued
+  covering relation, with a semantic argument per constructor. That changes the
+  arity of `Covers` and re-threads `Covers.sound`, `checkClause`, its
+  monotonicity and completeness lemmas, and the `Arrow` machinery.
+- `Arrow.union`, whose rule is
+  $\mathit{Arrow}\,L\,a\,d\to\mathit{Arrow}\,L\,b\,d\to\mathit{Arrow}\,L\,(a{+}{+}b)\,d$,
+  decomposes an arrow domain by *label list*. A `bool` domain that must be
+  covered by different arrows of an intersection therefore stays out of reach
+  even after the split, because `bool` is a single label whose decomposition is
+  into clauses rather than labels. The witness is
+  $((\mathsf{true}\to\mathsf{null})\land(\mathsf{false}\to\mathsf{null}))\le
+  (\mathsf{bool}\to\mathsf{null})$.
+
+Nothing currently exercises either part, so there is no witness pressing for the
+work; it is recorded so the `bool` repair is not mistaken for a general one.
+
+### Optional: a vacuity escape for reference conjunctions
+
+`Ref null ∧ Ref bool ≤ Ref (null ∨ bool)` is true in the model and not
+derivable. A reference clause is a conjunction of contracts a single location
+must meet invariantly, so contradictory operands make the source empty from
+budget 1 upward, and an empty type is below everything. At budget 0 all
+reference types coincide, so the inclusion holds at every budget. `Covers`'s
+reference rule asks that each target operand be matched invariantly by some
+source operand and has no escape for a vacuously empty source — exactly the
+escape `Arrow.empty` provides on the arrow side. SKJS accepts these.
+
+Incompleteness only, in the safe direction, and nothing in the corpus needs it.
+Worth doing if the reference rule is being touched anyway.
+
+### Optional: let the producer nest `combine`
+
+`CertificateProducer.arrowSearch` builds arrow meets only as
+`combine(.source p, .source q)`, never a `combine` whose child is itself a
+`combine`. A three-way meet needing the nested shape is derivable by `Arrow` and
+unreachable by the search: `--produce-stateful` rejects
+$(\mathsf{null}\to\mathsf{null}\lor F)\land(\mathsf{null}\to\mathsf{null}\lor R)
+\land(\mathsf{null}\to F\lor R)\le(\mathsf{null}\to\bot)$ at fuel 20000,
+while `--check-stateful` accepts a hand-built certificate for the identical
+request.
+
+Nothing about the rules is wrong and nothing unsound follows; the checker is the
+trusted component and behaves correctly. The consequence is methodological and
+applies to every measurement made with the producer: a `reject:` means *no
+derivation was found*, not *no derivation exists*, so a rejection is evidence
+about the rules only once the shape needed has been ruled out by hand.
+
 ## Later feature gates
 
 Extend coverage in response to concrete programs or unjustified claims. Each

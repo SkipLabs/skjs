@@ -24,7 +24,7 @@
  * naming `never`: SKJS computes `((x: true) => null) & ((x: false) => null)` as
  * `never`, so a function declared to return it may also complete. That type is
  * inhabited — `(x: boolean) => null` is a member — so the collapse is wrong on
- * its own terms. See ../../SUBTYPING.md.
+ * its own terms. E1 in ../../SUBTYPING.md is where that is being pursued.
  *
  * The source fragment gates the `never` keyword, so nothing here reaches a
  * proof obligation. This is a producer counterexample, not a repair exercise.

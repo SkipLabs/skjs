@@ -8,8 +8,7 @@
  * contravariantly, accepts `never <= null`, then compares the results and
  * reports that `null` is not assignable to `boolean`. TypeScript rejects the
  * same binding for the same reason, so this is an annotation that is true in
- * the model and that neither TypeScript checker accepts. See F1 in
- * ../../SUBTYPING.md.
+ * the model and that neither TypeScript checker accepts.
  */
 function emptyDomainEscape(): null {
   const g: (x: never) => boolean = (x: null): null => null;
