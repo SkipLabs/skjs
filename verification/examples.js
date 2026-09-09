@@ -71,12 +71,18 @@ function outcome(result) {
     return ["?", "required claim missing"];
   return ["✗", "proof search failed"];
 }
-// Colors supplement the labels; logs and NO_COLOR output stay plain.
+// Colors supplement the labels; logs and NO_COLOR output stay plain. A worker
+// writes to a pipe, so its own stdout is never a terminal: whether to colour is
+// the parent's decision and travels with the work rather than being asked again
+// somewhere it cannot be answered.
+const colorEnv = process.env.VERIFY_COLOR;
 function color(code, text, stream = process.stdout) {
-  return stream.isTTY && process.env.TERM !== "dumb" && !process.env.NO_COLOR
-    ? `\x1b[${code}m${text}\x1b[0m`
-    : text;
+  const wanted = colorEnv
+    ? colorEnv === "1"
+    : stream.isTTY && process.env.TERM !== "dumb" && !process.env.NO_COLOR;
+  return wanted ? `\x1b[${code}m${text}\x1b[0m` : text;
 }
+const colorForWorkers = color(0, "x") === "x" ? "0" : "1";
 function marked(mark, text) {
   return color(mark === "✓" ? 32 : mark === "✗" ? 31 : 33, text);
 }
@@ -234,7 +240,7 @@ try {
         outputs
           .map(
             (out, index) =>
-              `${quote(process.execPath)} ${quote(__filename)} --shard ${index}:${width} --claims ${quote(shared)} ${flags} > ${quote(out)} &`,
+              `VERIFY_COLOR=${colorForWorkers} ${quote(process.execPath)} ${quote(__filename)} --shard ${index}:${width} --claims ${quote(shared)} ${flags} > ${quote(out)} &`,
           )
           .join("\n") + "\nwait",
       ]);
