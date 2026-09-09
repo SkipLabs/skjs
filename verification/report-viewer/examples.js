@@ -25,6 +25,7 @@ const groups = [
       "verification/tests/skjs-incomplete/singleton-negation.ts",
       "verification/tests/skjs-incomplete/null-loop-exit.ts",
       "verification/tests/skjs-incomplete/write-refined-read.ts",
+      "verification/tests/skjs-incomplete/empty-domain-escape.ts",
     ],
   },
   {
@@ -32,6 +33,7 @@ const groups = [
     files: [
       "verification/tests/skjs-unsound/captured-refinement.ts",
       "verification/tests/skjs-unsound/compound-write-refinement.ts",
+      "verification/tests/skjs-unsound/never-completes.ts",
     ],
   },
   {

@@ -61,6 +61,10 @@ function atomsOfTypeNode(node, acc) {
         call: "unknown", construct: "unknown", array: "unknown"});
       return;
     }
+    case ts.SyntaxKind.NeverKeyword:
+      // The empty union: no atoms. Nothing inhabits it, so it contributes
+      // nothing to the alternatives a value of this type may take.
+      return;
     case ts.SyntaxKind.StringKeyword:
       acc.push({ a: "string" });
       return;
