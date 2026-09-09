@@ -89,20 +89,36 @@ try {
     console.log(marked("✓", "✓ Lean build passed"));
   }
   console.log("\nExample outcomes — original SKJS claims; no repairs applied");
+  // One producer run for every example. A container start costs more than
+  // checking any of these files, so the loop used to spend most of its time
+  // starting containers; the claim array names each file, so one run serves
+  // them all.
+  const sources = [...new Set(groups.flatMap((g) => g.files))];
+  const collected = run("bash", [
+    "verification/skjs.sh",
+    "--emit-skjs-type-claims",
+    ...sources,
+  ]);
+  const claims = JSON.parse(collected.stdout);
+  if (!Array.isArray(claims))
+    throw Error("producer did not return a claim array");
+  // Diagnostics stay with the file they belong to. SKJS prefixes each with the
+  // path it is about, so the combined stream partitions on those markers.
+  const diagnostics = new Map();
+  {
+    let current = null;
+    for (const line of (collected.stderr || "").split("\n")) {
+      const named = /^File "(?:\/work\/skjs\/)?(.*?)",/.exec(line);
+      if (named && sources.includes(named[1])) current = named[1];
+      if (current) diagnostics.set(current, (diagnostics.get(current) || "") + line + "\n");
+    }
+  }
   for (const group of groups) {
     console.log("\n" + group.label);
     for (const file of group.files) {
       console.log("  " + file);
       files++;
       try {
-        const collected = run("bash", [
-          "verification/skjs.sh",
-          "--emit-skjs-type-claims",
-          file,
-        ]);
-        const claims = JSON.parse(collected.stdout);
-        if (!Array.isArray(claims))
-          throw Error("producer did not return a claim array");
         const source = fs.readFileSync(file, "utf8");
         const report = fromSkjs(source, file, claims, "skjs");
         const { results } = verifySkjs(
@@ -149,7 +165,8 @@ try {
           if (verbose && result?.detail)
             console.log("      " + result.detail.replace(/\n/g, "\n      "));
         }
-        if (verbose && collected.stderr) process.stdout.write(collected.stderr);
+        if (verbose && diagnostics.has(file))
+          process.stdout.write(diagnostics.get(file));
       } catch (error) {
         errors++;
         console.log(color(31, "    ✗ runner error: " + error.message));

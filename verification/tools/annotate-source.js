@@ -339,13 +339,44 @@ const {readDiagnostic}=require("./obligation-diagnostic.js");
 function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, normalized=false) {
   const parser=path.join(__dirname,"parse-source.js"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
-    const p=run(process.execPath,[parser,sourcePath]);
+    // Called rather than spawned: a node start costs more than the parse, and
+    // this runs once per source. The parser's own file is still hashed into the
+    // identity, so what ran is recorded either way.
     const identity={verifierSha256:hash(fs.readFileSync(verifier)),parserSha256:hash(fs.readFileSync(parser))};
-    if(p.status!==0) {
-      if(!p.stderr.startsWith("gate:"))throw Error(`source parser failed: ${p.stderr}`);
-      return {identity,results:report.functions.map(()=>({status:"unsupported",detail:p.stderr.trim()}))};
+    let ast;
+    try {
+      ast=parseSource.parseFile(sourcePath);
+    } catch(error) {
+      const detail=String(error.message||error);
+      if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
+      return {identity,results:report.functions.map(()=>({status:"unsupported",detail:detail.trim()}))};
     }
-    const ast=JSON.parse(p.stdout);ast.file=file;
+    ast.file=file;
+    // Whole file first. The per-function pass below exists to attribute a
+    // failure to the function it belongs to; when nothing fails there is
+    // nothing to attribute, and one produce/check covers every function in the
+    // file. That is the same evidence, from the same two commands, at two
+    // processes instead of two per function.
+    const whole=(()=>{
+      const c=normalized ? clone(claims) : clone(claims).filter(g=>g.file===file);
+      if(!normalized) {
+        const selected=c[0];
+        if(!selected)return null;
+        for(const g of selected.functions)delete g.unavailableTypes;
+      }
+      const ap=path.join(temp,"whole.ast.json"), cp=path.join(temp,"whole.claims.json"), ep=path.join(temp,"whole.evidence.json");
+      fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(cp,JSON.stringify(c));
+      const produced=run(verifier,[normalized?"--produce-source-claims":"--produce-stateful-source",ap,cp,file,ep,String(depth)]);
+      if(produced.status!==0)return null;
+      const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
+      if(checked.status!==0)return null;
+      const certificateSha256=hash(fs.readFileSync(ep));
+      return report.functions.map(()=>({status:"verified",scope:"modeled function and required claims",certificateSha256}));
+    })();
+    if(whole) {
+      if(fs.readFileSync(sourcePath,"utf8")!==source)throw Error("source changed during verification");
+      return {identity,results:whole};
+    }
     const results=report.functions.map(f=> {
       const a=clone(ast);a.functions=a.functions.filter(g=>g.name===f.name && JSON.stringify(g.namePos)===JSON.stringify(f.namePos));
       if(a.functions.length!==1)throw Error("function identity mismatch during verification");

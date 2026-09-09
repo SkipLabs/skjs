@@ -18,7 +18,10 @@ skjs_run() { # CLI options, then repo-relative source path
   fi
 }
 
-skjs_check() { skjs_run --emit-skjs-type-claims "$1"; }
+# One invocation can carry many sources, and the claim array names each file.
+# A container start costs more than checking a small file, so batching callers
+# should pass every source at once rather than looping.
+skjs_check() { skjs_run --emit-skjs-type-claims "$@"; }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   skjs_run "$@"

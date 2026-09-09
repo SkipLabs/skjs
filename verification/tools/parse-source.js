@@ -352,12 +352,9 @@ function functionDecl(node) {
 
 /* ---------------------------------------------------------------- main --- */
 
-function main() {
-  const file = process.argv[2];
-  if (!file) {
-    process.stderr.write("usage: parse-source.js <file.ts>\n");
-    process.exit(2);
-  }
+// The same parse, as a call. A gate is an Error whose message begins "gate: ",
+// which is what the command writes to stderr, so both callers see one wording.
+function parseFile(file) {
   const text = fs.readFileSync(file, "utf8");
   sourceFile = ts.createSourceFile(
     path.basename(file),
@@ -377,7 +374,16 @@ function main() {
     return functionDecl(s);
   });
   if (functions.length === 0) fail(null, "no functions in file");
-  process.stdout.write(JSON.stringify({ file, sourceSha256: require("crypto").createHash("sha256").update(text).digest("hex"), functions }, null, 1));
+  return { file, sourceSha256: require("crypto").createHash("sha256").update(text).digest("hex"), functions };
+}
+
+function main() {
+  const file = process.argv[2];
+  if (!file) {
+    process.stderr.write("usage: parse-source.js <file.ts>\n");
+    process.exit(2);
+  }
+  process.stdout.write(JSON.stringify(parseFile(file), null, 1));
 }
 
 // Run as a command, or lend the type translation to another trusted tool. The
@@ -391,5 +397,5 @@ if (require.main === module) {
     process.exit(1);
   }
 } else {
-  module.exports = { typeOf, atomsOfTypeNode };
+  module.exports = { typeOf, atomsOfTypeNode, parseFile };
 }
