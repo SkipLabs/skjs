@@ -320,7 +320,7 @@ function renderMissingEditor(fn, region) {
   }
   const note = document.createElement("p");
   note.textContent =
-    "These are source attachment sites, not necessarily required proof obligations. Supply a type, or for an environment a type for every name in scope; no type is inferred for you.";
+    "These are source attachment sites, not necessarily required proof obligations. Where the source already says what belongs here — a binding's annotation, a literal's own word — that is offered as a starting point, selected so it can be typed over. It is the source's claim, not an inferred one, and applying still has to check it.";
   box.append(note);
   const selectSite = document.createElement("select");
   selectSite.setAttribute("aria-label", "Missing claim site");
@@ -390,6 +390,25 @@ function renderMissingEditor(fn, region) {
       field.classList.add("invalid");
     }
   };
+  // What the source already says belongs here. For an environment that is the
+  // annotations of the names in scope; for an expression that writes a literal,
+  // the literal's own word. Neither is inferred: both are read straight off the
+  // source, and the claim still has to be checked once applied. Anywhere else
+  // there is nothing to offer and the field stays empty.
+  const LITERAL = new Set(["null", "true", "false"]);
+  const templateFor = (site) => {
+    if (site.kind === "environment")
+      return (
+        surfaceTypes.printClaimValue("environment", site.bindings || []) || ""
+      );
+    const written = source.slice(...site.pos).trim();
+    return LITERAL.has(written) ? written : "";
+  };
+  // Selected, so the first keystroke replaces it rather than appending to it.
+  const focusField = () => {
+    field.focus();
+    if (field.select) field.select();
+  };
   const show = (focus) => {
     const site = sites[+selectSite.value];
     const mode = surfaceMode(site);
@@ -408,6 +427,7 @@ function renderMissingEditor(fn, region) {
         field.blur();
       }
     });
+    field.value = mode.surface ? templateFor(site) : "";
     fieldBox.replaceChildren(field);
     apply.disabled = false;
     error.textContent = "";
@@ -427,7 +447,7 @@ function renderMissingEditor(fn, region) {
       : site.kind === "environment"
         ? "Array of {name, type} bindings"
         : "Type encoding in the candidate format";
-    if (focus) field.focus();
+    if (focus) focusField();
   };
   selectSite.addEventListener("change", () => show(true));
   show(false);
@@ -462,7 +482,7 @@ function renderMissingEditor(fn, region) {
   // rather than in show(). Asking about one place is a request to write there;
   // the workspace listing every site is not, and taking the caret there would
   // steal it on load.
-  if (region) field.focus();
+  if (region) focusField();
 }
 
 function renderFunctionEditor(fn) {
