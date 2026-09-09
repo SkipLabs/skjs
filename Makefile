@@ -89,8 +89,12 @@ check-file-in-docker:
 # Verification (verification/DESIGN.md, verification/README.md).
 # Use VERBOSE=1 for detailed diagnostics and build output.
 .PHONY: verify verify-test verify-examples
-verify: verify-test
-	@node verification/examples.js $(if $(filter 1,$(VERBOSE)),--verbose)
+# Both halves check the same sources, so they share one container rather than
+# starting one each. Whoever starts it removes it; the halves only borrow it.
+verify:
+	@bash -c 'source verification/skjs.sh; skjs_start || true; trap skjs_shutdown EXIT; \
+	  ./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose) && \
+	  node verification/examples.js $(if $(filter 1,$(VERBOSE)),--verbose)' 
 
 verify-test:
 	@./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose)

@@ -2,6 +2,7 @@
 // Report original producer claims, without repairing them or running mutation tests.
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 const ts = require("./tools/node_modules/typescript");
 const { fromSkjs, verifySkjs } = require("./tools/annotate-source.js");
@@ -10,13 +11,22 @@ const root = path.resolve(__dirname, "..");
 process.chdir(root);
 let build = false,
   verbose = false,
+  shard = null,
+  claimsPath = null,
   binary = process.env.SKJS_BIN;
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg === "--build") build = true;
   else if (arg === "--verbose") verbose = true;
   else if (arg === "--skjs" && process.argv[i + 1]) binary = process.argv[++i];
-  else throw Error("usage: examples.js [--build] [--verbose] [--skjs BIN]");
+  // A worker checks the files of one shard and reports them as data. The parent
+  // hands it the claims so the producer still runs exactly once for the run.
+  else if (arg === "--shard" && process.argv[i + 1]) shard = process.argv[++i];
+  else if (arg === "--claims" && process.argv[i + 1]) claimsPath = process.argv[++i];
+  else
+    throw Error(
+      "usage: examples.js [--build] [--verbose] [--skjs BIN] [--shard i:n --claims FILE]",
+    );
 }
 const verifier = path.join(__dirname, "lean/.lake/build/bin/verifier");
 function run(command, args) {
@@ -88,17 +98,20 @@ try {
     if (verbose) process.stdout.write(r.stdout);
     console.log(marked("✓", "✓ Lean build passed"));
   }
-  console.log("\nExample outcomes — original SKJS claims; no repairs applied");
+  if (!shard)
+    console.log("\nExample outcomes — original SKJS claims; no repairs applied");
   // One producer run for every example. A container start costs more than
   // checking any of these files, so the loop used to spend most of its time
   // starting containers; the claim array names each file, so one run serves
   // them all.
   const sources = [...new Set(groups.flatMap((g) => g.files))];
-  const collected = run("bash", [
-    "verification/skjs.sh",
-    "--emit-skjs-type-claims",
-    ...sources,
-  ]);
+  const collected = claimsPath
+    ? { stdout: fs.readFileSync(claimsPath, "utf8"), stderr: "" }
+    : run("bash", [
+        "verification/skjs.sh",
+        "--emit-skjs-type-claims",
+        ...sources,
+      ]);
   const claims = JSON.parse(collected.stdout);
   if (!Array.isArray(claims))
     throw Error("producer did not return a claim array");
@@ -113,11 +126,19 @@ try {
       if (current) diagnostics.set(current, (diagnostics.get(current) || "") + line + "\n");
     }
   }
-  for (const group of groups) {
-    console.log("\n" + group.label);
-    for (const file of group.files) {
-      console.log("  " + file);
-      files++;
+  // Each file is checked on its own and reports what it found, so the work can
+  // be spread across processes and still be printed in the order it was
+  // written. Counting happens where the lines are merged, not where they are
+  // produced, so a worker and a plain run agree.
+  const examine = (file) => {
+    const lines = [];
+    const tally = {
+      verified: 0, failed: 0, unavailable: 0, unexpected: 0, errors: 0,
+      producerAccepted: 0, producerRejected: 0, producerUnknown: 0,
+    };
+    const say = (text) => lines.push(String(text).replace(/\n$/, ""));
+    let verified = 0, failed = 0, unavailable = 0, unexpected = 0, errors = 0,
+      producerAccepted = 0, producerRejected = 0, producerUnknown = 0;
       try {
         const source = fs.readFileSync(file, "utf8");
         const report = fromSkjs(source, file, claims, "skjs");
@@ -159,18 +180,89 @@ try {
           const disagrees =
             (producer === "complete" && mark === "✗") ||
             (producer === "aborted" && accepted);
-          console.log(
+          say(
             `    ${f.name.text}: SKJS ${marked(producerMark, producerMark)} · proof ${marked(mark, `${mark} — ${label}`)}${disagrees ? color(33, " ⚠ outcomes differ") : ""}${matches ? "" : color(31, " ✗ unexpected outcome")}`,
           );
           if (verbose && result?.detail)
-            console.log("      " + result.detail.replace(/\n/g, "\n      "));
+            say("      " + result.detail.replace(/\n/g, "\n      "));
         }
-        if (verbose && diagnostics.has(file))
-          process.stdout.write(diagnostics.get(file));
+
       } catch (error) {
         errors++;
-        console.log(color(31, "    ✗ runner error: " + error.message));
+        say(color(31, "    ✗ runner error: " + error.message));
       }
+
+    Object.assign(tally, { verified, failed, unavailable, unexpected, errors,
+      producerAccepted, producerRejected, producerUnknown });
+    return { lines, tally };
+  };
+
+  // A worker reports its shard as data and leaves the presentation alone.
+  if (shard) {
+    const [index, total] = shard.split(":").map(Number);
+    for (const [at, file] of sources.entries())
+      if (at % total === index)
+        process.stdout.write(JSON.stringify({ file, ...examine(file) }) + "\n");
+    process.exit(0);
+  }
+
+  // Files are independent, so they are checked together and merged in order.
+  const width = Math.max(1, Math.min(os.cpus().length, sources.length, 8));
+  const findings = new Map();
+  if (width > 1 && sources.length > 1) {
+    const shared = path.join(os.tmpdir(), `example-claims-${process.pid}.json`);
+    fs.writeFileSync(shared, collected.stdout);
+    // Started together and waited for once. Spawning them one at a time would
+    // run them one at a time, which is slower than not sharding at all: each
+    // worker would pay its own start before the next could begin.
+    const quote = (text) => JSON.stringify(String(text));
+    const outputs = [];
+    for (let index = 0; index < width; index++)
+      outputs.push(path.join(os.tmpdir(), `example-shard-${process.pid}-${index}.json`));
+    const flags = [
+      ...(verbose ? ["--verbose"] : []),
+      ...(binary ? ["--skjs", binary] : []),
+    ].map(quote).join(" ");
+    try {
+      run("bash", [
+        "-c",
+        outputs
+          .map(
+            (out, index) =>
+              `${quote(process.execPath)} ${quote(__filename)} --shard ${index}:${width} --claims ${quote(shared)} ${flags} > ${quote(out)} &`,
+          )
+          .join("\n") + "\nwait",
+      ]);
+      for (const out of outputs)
+        for (const line of fs.readFileSync(out, "utf8").split("\n").filter((l) => l.startsWith("{"))) {
+          const found = JSON.parse(line);
+          findings.set(found.file, found);
+        }
+    } finally {
+      fs.rmSync(shared, { force: true });
+      for (const out of outputs) fs.rmSync(out, { force: true });
+    }
+  }
+
+  for (const group of groups) {
+    console.log("\n" + group.label);
+    for (const file of group.files) {
+      console.log("  " + file);
+      files++;
+      const found = findings.get(file) || { file, ...examine(file) };
+      for (const line of found.lines) console.log(line);
+      // Producer diagnostics belong to the run that collected them, not to a
+      // worker that was handed the claims afterwards.
+      if (verbose && diagnostics.has(file))
+        process.stdout.write(diagnostics.get(file));
+      verified += found.tally.verified;
+      failed += found.tally.failed;
+      unavailable += found.tally.unavailable;
+      unexpected += found.tally.unexpected;
+      errors += found.tally.errors;
+      producerAccepted += found.tally.producerAccepted;
+      producerRejected += found.tally.producerRejected;
+      producerUnknown += found.tally.producerUnknown;
     }
   }
 } catch (error) {

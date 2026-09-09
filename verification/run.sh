@@ -59,6 +59,7 @@ finish() {
     status_line 33 "  ⚠ Run stopped early; remaining suites were not run."
   fi
   echo "  Elapsed: $((SECONDS - started_at))s"
+  skjs_shutdown
   rm -rf "$WORK"
 }
 trap finish EXIT
@@ -112,6 +113,8 @@ if [ "$BUILD" -eq 1 ]; then
 fi
 
 source "$REPO/verification/skjs.sh"
+# One container for the whole run, started before anything forks.
+skjs_start || echo "warning: no shared container; each check will start its own"
 
 # A fixture is a parsed source and the producer's claims for it, under one name.
 # Building one is a precondition rather than a test: with no fixture there is
