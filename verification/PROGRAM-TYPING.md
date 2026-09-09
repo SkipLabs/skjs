@@ -25,6 +25,7 @@ rule statements, side conditions, soundness scope and evidence construction;
 | $k$ | one of the four shape tests |
 | $A$, $B$, $C$ | types, each a finite list of graph labels read as their union |
 | $R$ | a finite set of constants |
+| $\operatorname{lits}(A)$ | the constants $A$ denotes, defined only for a primitive $A$ (`literals`) |
 | $G$ | the normalized positive graph |
 | $\Gamma$ | a typing context, one type per variable |
 | $\Pi$, $\Sigma$ | the [equality and heap parts](#checked-expression-postconditions) of the assertion state |
@@ -755,11 +756,20 @@ $$
   \dashv \Pi\;;\;\Sigma,\;r\mapsto R}
 $$
 
-**Reading** leaves the heap alone and records where the result came from: $r$ now
-holds what the cell $x$ names holds, which is what a later test of $r$ needs in
-order to refine $x$ itself. The ordinary rule claims nothing about the contents.
-The observed rule additionally consumes a points-to atom already in $\Sigma$ and
-returns it as an equality on the result:
+**Reading** has two rules for the same term, and neither subsumes the other.
+
+The first applies whenever the read types and $x$'s type is a plain reference. It
+claims nothing about the contents; what it records is where the result came from,
+$r$ now holding what the cell $x$ names holds — which is what a later test of $r$
+needs in order to refine $x$ itself.
+
+The second applies when $\Sigma$ already holds an atom for $x$ and the result type
+is primitive. It consumes that atom and returns it as an equality on the result.
+It needs no typing derivation: the atom and its premise establish the result type
+between them, which is why its first premise is a membership in $\Sigma$ rather
+than a judgment. Writing $\operatorname{lits}(A)$ for the constants a type
+denotes — defined only when $A$ is primitive, so the premise also fails for a
+reference or an arrow result:
 
 $$
 \frac{\Gamma\vdash_G\operatorname{read}(x):A\qquad\Gamma(x)=\operatorname{Ref}B}
@@ -768,11 +778,47 @@ $$
 $$
 
 $$
-\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq A}
+\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq\operatorname{lits}(A)}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}(x):A
   \dashv \Pi,\;r=R\;;\;
    \Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
 $$
+
+Two fixtures show the difference. In
+[`write-refined-read.ts`](tests/skjs-incomplete/write-refined-read.ts),
+
+```ts
+const cell: { value: boolean } = { value: false };
+cell.value = true;
+return cell.value;
+```
+
+the allocation leaves $\Sigma$ holding $\mathit{cell}\mapsto\{\mathsf{false}\}$
+and the write replaces it with $\mathit{cell}\mapsto\{\mathsf{true}\}$. At the
+read that atom is present and the result type is `boolean`, whose constants
+include $\mathsf{true}$, so the second rule applies and returns
+$r=\mathsf{true}$ — a fact the wider claimed type does not carry, and enough for
+a return contract demanding exactly $\mathsf{true}$.
+
+In [`captured-refinement.ts`](tests/skjs-unsound/captured-refinement.ts) the same
+read follows a call:
+
+```ts
+const done: null = reset(false);
+return cell.value;
+```
+
+The call empties $\Sigma$, so no atom for `cell` remains and only the first rule
+applies: the read is well typed and records where its value came from, but
+establishes nothing about the contents. Nothing about what `cell` holds is
+provable at that point, whatever the claimed type says.
+
+Each covers cases the other does not. Reading a $\operatorname{Ref}(\operatorname{Ref}B)$
+has no primitive result, so only the first applies; a variable whose type is a
+union of references does not meet the first rule's plain-reference premise, so
+where an atom exists only the second does. Where both apply the second yields
+strictly more, the evidence records which was used, and soundness does not depend
+on the choice — only precision does.
 
 **Writing** stores $y$'s value in the cell $x$ names. The result is `null`. It
 establishes the new contents for $x$ and every variable recorded equal to it, and
