@@ -46,10 +46,9 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 }
 ```
 
-Version 2 adds an explicit `current` field to bindings and expressions without
-changing the 75 type labels. Version-1 (`stateful-source-75-v1`) documents remain
-readable in their exact old shape, without that field; adding it to version 1 is
-rejected. Older 19-label sidecars must be regenerated.
+`stateful-source-75-v2` is the only accepted profile. Every point carries an
+explicit `current` field, and documents written for an earlier profile must be
+regenerated rather than upgraded in place.
 
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression

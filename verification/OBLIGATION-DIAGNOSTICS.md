@@ -15,7 +15,8 @@ obligation-diagnostic: {"version":1,...}
 
 `verification/tools/obligation-diagnostic.js` reads the record without parsing the
 human sentence. Unknown versions, malformed records, and duplicate records are
-not interpreted. Legacy failures still have human text and optional `location`.
+not interpreted. Failures that reach no calculus obligation carry human text and
+an optional `location` instead of a record.
 Absence of a structured record never changes a failure into success.
 
 `annotate-source.js` preserves recognized records as `results[i].obligation` and
@@ -184,10 +185,9 @@ same origin role for uniform invariant justification. These are proof failures,
 not exporter refusals. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
 owns their interpretation.
 
-The report reader retains `non-invariant-cell-contract` and
-`current-content-assertion` for older reports. The latter gate is no longer emitted
-by the maintained source consumer. An unequal-contract error can still arise in
-an ordinary type/signature or unsupported record union; standalone point
+`non-invariant-cell-contract` remains the one `source-limitation` reason the
+report reader classifies. An unequal-contract error can still arise in an
+ordinary type/signature or unsupported record union; standalone point
 observations take the assertion path.
 
 [Annotated-source tests](tests/annotated-source.js) check reason transport and

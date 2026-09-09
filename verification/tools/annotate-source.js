@@ -120,7 +120,7 @@ function fromSkjs(source, file, claims, producer) {
 }
 
 function fromSourceClaims(source,file,input,producer) {
-  if(![1,2].includes(input.version)||input.profile!==`stateful-source-75-v${input.version}`||input.file!==file||input.sourceSha256!==hash(source))
+  if(input.version!==2||input.profile!=="stateful-source-75-v2"||input.file!==file||input.sourceSha256!==hash(source))
     throw Error("source-claim profile or source identity mismatch");
   const primitive=mask=>["null","true","false"].filter((_,i)=>mask&(1<<i)).join(" | ")||"never";
   const label=i=>i<3?["null","true","false"][i]:i<11?`Ref<${primitive(i-3)}>`:`(${primitive([1,0,2,3,4,5,6,7][Math.floor((i-11)/8)])} => ${primitive((i-11)%8)})`;
@@ -129,10 +129,10 @@ function fromSourceClaims(source,file,input,producer) {
     return A.map(label).join(" | ")||"never";
   };
   const point=b=> {
-    if(Object.hasOwn(b,"current")!==(input.version===2))throw Error("current-content field does not match source-claim version");
+    if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
     const ordinary=type(b.type);
     if(b.current==null)return {type:ordinary,raw:b.type};
-    if(input.version!==2||b.type.length!==1||b.type[0]<3||b.type[0]>=11||
+    if(b.type.length!==1||b.type[0]<3||b.type[0]>=11||
        !Array.isArray(b.current)||b.current.some(i=>i>=3))throw Error("invalid current-content assertion");
     return {type:`{ value: ${b.type[0]===9?"boolean":primitive(b.type[0]-3)} = (${type(b.current)}) }`,
       raw:{type:b.type,current:b.current}};
@@ -373,11 +373,10 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
         const unavailableBinding=environment && /^unavailable claimed binding '([^']*)' at \d+$/.exec(environment[2]);
         const unavailableType=unavailableBinding || /type claim unavailable from producer$/.test(detail);
         const nonInvariant=/cell read and write types do not describe the same invariant$/.test(detail);
-        const currentContents=/current-content assertion requires heap-aware source evidence(?: \(binding '[^']*'\))?$/.test(detail);
         const outsideSlice=/outside the [^:]*slice\.?$/.test(detail);
         const location=unavailableType ? {kind:"unavailable-type-claim",
           ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :
-            located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : (nonInvariant || currentContents) ? {kind:"source-limitation",reason:currentContents?"current-content-assertion":"non-invariant-cell-contract",
+            located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : nonInvariant ? {kind:"source-limitation",reason:"non-invariant-cell-contract",
           ...(environment ? {start:Number(environment[1])} : located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :
           absentExpr ? {kind:"missing-expression-claim",pos:[Number(absentExpr[1]),Number(absentExpr[2])]} :
           absentEnv ? {kind:"missing-environment-claim",start:Number(environment[1])} :
@@ -393,7 +392,7 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
         // Bind node-local IDs to this exact function, source, and selected claims.
         const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
           namePos:f.namePos,sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}} : null;
-        return {status:"not-established",detail,...((unavailableType || nonInvariant || currentContents) ? {stage:"source-extraction"} : {}),...(location ? {location} : {}),
+        return {status:"not-established",detail,...((unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),...(location ? {location} : {}),
           ...(obligation ? {obligation} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);

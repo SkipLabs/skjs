@@ -71,7 +71,7 @@ try {
     point.current=[1];d.version=1;d.profile="stateful-source-75-v1";
     fs.writeFileSync(op,JSON.stringify(d));
     const legacy=check();assert.notEqual(legacy.status,0);
-    assert(legacy.stderr.includes("version 1 cannot carry current-content assertions"),legacy.stderr);
+    assert(legacy.stderr.includes("unsupported source-claim profile or version"),legacy.stderr);
   });
   test("existing output is not overwritten",()=>assert.notEqual(convert(file,claimsPath,out).status,0));
   const partial=path.join(tmp,"partial.json"),pa=path.join(tmp,"partial.ast.json");

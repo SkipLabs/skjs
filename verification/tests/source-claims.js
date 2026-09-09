@@ -12,9 +12,10 @@ try {
   const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);
   assert.equal(parsed.status,0,parsed.stderr);const ast=JSON.parse(parsed.stdout);fs.writeFileSync(ap,parsed.stdout);
   const f=ast.functions[0],pos=f.body[0].e.pos;
-  const doc={version:1,profile:"stateful-source-75-v1",file,sourceSha256:hash(source),functions:[{
-    name:f.name,namePos:f.namePos,params:[{name:"flag",type:[1,2]}],result:[1,2],
-    entries:[{start:f.body[0].pos[0],bindings:[{name:"flag",type:[1,2]}]}],expressions:[{pos,type:[1,2]}]}]};
+  const doc={version:2,profile:"stateful-source-75-v2",file,sourceSha256:hash(source),functions:[{
+    name:f.name,namePos:f.namePos,params:[{name:"flag",type:[1,2],current:null}],result:[1,2],
+    entries:[{start:f.body[0].pos[0],bindings:[{name:"flag",type:[1,2],current:null}]}],
+    expressions:[{pos,type:[1,2],current:null}]}]};
   fs.writeFileSync(cp,JSON.stringify(doc));
   const produce=()=>run(verifier,["--produce-source-claims",ap,cp,file,ep,"6"]);
   const check=()=>run(verifier,["--check-source-claims",ap,cp,file,ep]);
@@ -81,14 +82,14 @@ try {
         case "apply":type=[1,2];expr(e.callee);expr(e.arg);break;
         default:throw Error(`unexpected fixture expression ${e.k}`);
       }
-      expressions.push({pos:e.pos,type});
+      expressions.push({pos:e.pos,type,current:null});
     };
     for(const st of f.body) {
       entries.push({start:st.pos[0],bindings:structuredClone(scope)});
       expr(st.init||st.e);
-      if(st.k==="const")scope.push({name:st.name,type:labels[st.name]});
+      if(st.k==="const")scope.push({name:st.name,type:labels[st.name],current:null});
     }
-    fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({version:1,profile:doc.profile,file:sf,sourceSha256:hash(text),functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
+    fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({version:2,profile:doc.profile,file:sf,sourceSha256:hash(text),functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
     const checked=run(verifier,["--check-source-claims",sa,sc,sf,se]);assert.equal(checked.status,0,checked.stderr);
     const bad=JSON.parse(fs.readFileSync(sc,"utf8"));
@@ -105,11 +106,7 @@ try {
     // A closure's heap observation must follow from its invariant for every call.
     // The earlier true allocation cannot justify a permanent true read capability.
     const observed=JSON.parse(fs.readFileSync(sc,"utf8"));
-    observed.version=2;observed.profile="stateful-source-75-v2";
     const cf=observed.functions[0];
-    for(const b of cf.params)b.current=null;
-    for(const e of cf.entries)for(const b of e.bindings)b.current=null;
-    for(const e of cf.expressions)e.current=null;
     cf.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1,2];
     const receiver=cf.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(f.body[1].init.body.e.pos));
     receiver.current=[1,2];fs.writeFileSync(sc,JSON.stringify(observed));

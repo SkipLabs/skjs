@@ -32,23 +32,23 @@ try {
   const f = JSON.parse(parsed.stdout).functions[0],
     pos = f.body[0].e.pos;
   const base = {
-    version: 1,
-    profile: "stateful-source-75-v1",
+    version: 2,
+    profile: "stateful-source-75-v2",
     file,
     sourceSha256: hash(source),
     functions: [
       {
         name: f.name,
         namePos: f.namePos,
-        params: [{ name: "flag", type: [1] }],
+        params: [{ name: "flag", type: [1], current: null }],
         result: [1],
         entries: [
           {
             start: f.body[0].pos[0],
-            bindings: [{ name: "flag", type: [1, 2] }],
+            bindings: [{ name: "flag", type: [1, 2], current: null }],
           },
         ],
-        expressions: [{ pos, type: [1, 2] }],
+        expressions: [{ pos, type: [1, 2], current: null }],
       },
     ],
   };

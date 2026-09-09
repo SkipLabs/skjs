@@ -62,33 +62,8 @@ private def validFunction (f : Function) : Bool :=
   f.expressions.all (fun e => validSpan e.pos && validType e.type && validCurrent e.type e.current)
 
 def decode (j : Json) : Except String Document := do
-  -- Version 1 has no assertion fields. Decode it strictly in its own shape by
-  -- adding only the known absent fields before the version-2 structural check.
-  let legacy := (← (← jField j "version").getNat?) == 1
-  let j ← if legacy then do
-      if (← jStr (← jField j "profile")) != "stateful-source-75-v1" then
-        throw "unsupported source-claim profile or version"
-      let addCurrent := fun (x : Json) => do
-        let o ← x.getObj?
-        if (o.toList.any (fun p => p.1 == "current")) then throw "version 1 cannot carry current-content assertions"
-        pure (Json.mkObj (o.toList ++ [("current",Json.null)]))
-      let mut root := (← j.getObj?).toList
-      let functions ← (← jArr j "functions").mapM fun f => do
-        let params ← (← jArr f "params").mapM addCurrent
-        let expressions ← (← jArr f "expressions").mapM addCurrent
-        let entries ← (← jArr f "entries").mapM fun e => do
-          let bindings ← (← jArr e "bindings").mapM addCurrent
-          return Json.mkObj ((← e.getObj?).toList.map fun (k,v) =>
-            (k,if k == "bindings" then toJson bindings else v))
-        return Json.mkObj ((← f.getObj?).toList.map fun (k,v) =>
-          (k,if k == "params" then toJson params else if k == "expressions" then toJson expressions
-             else if k == "entries" then toJson entries else v))
-      root := root.map fun (k,v) => (k,if k == "functions" then toJson functions else v)
-      pure (Json.mkObj root)
-    else pure j
   let d : Document ← decodeStrict j
-  if !(d.version == 1 && d.profile == "stateful-source-75-v1") &&
-      !(d.version == 2 && d.profile == "stateful-source-75-v2") then
+  if !(d.version == 2 && d.profile == "stateful-source-75-v2") then
     throw "unsupported source-claim profile or version"
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"

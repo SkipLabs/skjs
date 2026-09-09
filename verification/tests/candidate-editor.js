@@ -113,8 +113,8 @@ assert.deepEqual(
       file: outsideFile,
       sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
       claims: {
-        version: 1,
-        profile: "stateful-source-75-v1",
+        version: 2,
+        profile: "stateful-source-75-v2",
         file: outsideFile,
         sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
         functions: [
@@ -125,7 +125,11 @@ assert.deepEqual(
             result: [0],
             entries: [],
             expressions: [
-              { pos: [conditionStart, conditionStart + 8], type: [1, 2] },
+              {
+                pos: [conditionStart, conditionStart + 8],
+                type: [1, 2],
+                current: null,
+              },
             ],
           },
         ],
