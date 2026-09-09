@@ -30,7 +30,7 @@ function fixture(body, param = "") {
     expressions = [];
   const binding = (name) => ({
     name,
-    type: name === "cell" ? [9] : [1, 2],
+    type: name === "cell" ? [4] : [1, 2],
     current: null,
   });
   const expr = (e) => {
@@ -43,7 +43,7 @@ function fixture(body, param = "") {
         type = e.lit.v === "true" ? [1] : e.lit.v === "false" ? [2] : [0];
         break;
       case "alloc":
-        type = [9];
+        type = [4];
         expr(e.e);
         break;
       case "read":
@@ -81,8 +81,16 @@ function fixture(body, param = "") {
     f.params.map((p) => p.name),
   );
   const doc = {
-    version: 2,
-    profile: "stateful-source-532-v2",
+    version: 3,
+    profile: "stateful-source-v3",
+    // The primitives, then the Boolean cell at label 4.
+    types: [
+      ["nul"],
+      [{ boolLit: { value: true } }],
+      [{ boolLit: { value: false } }],
+      ["undef"],
+      [{ refs: { first: [1, 2], rest: [] } }],
+    ],
     file,
     sourceSha256: hash(source),
     functions: [
@@ -105,7 +113,7 @@ function fixture(body, param = "") {
     ),
   });
   const rawType = (b) =>
-    b.type[0] === 9
+    b.type[0] === 4
       ? {
           top: false,
           atoms: [

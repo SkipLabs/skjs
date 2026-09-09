@@ -22,40 +22,9 @@ private def distinct [BEq α] (xs : List α) : Bool := xs.eraseDups.length == xs
 order, and an unnamed one can never match a source identifier. -/
 private def names (scope : List Descriptor) : List String := scope.map (·.name)
 
-private def envCore (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
-    Except String (List (Ty Nat)) := do
-  let vars ← match fc.envs.lookup pos with
-    | some vars => pure vars
-    | none => throw s!"missing statement environment at {pos}"
-  if !distinct (vars.map Prod.fst) then throw s!"duplicate environment binding at {pos}"
-  scope.mapM fun d => do
-    let name := d.name
-    match vars.lookup name with
-    | some t => (SourceClaims.resolve t).mapError fun msg =>
-        if msg == "type claim unavailable from producer" then
-          s!"unavailable claimed binding '{name}' at {pos}"
-        else msg
-    | none => throw s!"missing claimed binding '{name}' at {pos}"
-
-private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
-    Except String (List (Ty Nat)) :=
-  (envCore fc pos scope).mapError fun msg => s!"source environment obligation at {pos}: {msg}"
-
-private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Except String (Ty Nat) := do
-  match fc.exprs.lookup e.span with
-  | some t => (SourceClaims.resolve t).mapError fun msg =>
-      s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
-  | none => throw s!"no claimed type for the expression at {spanStr e.span}"
-
-/-- A terminal branch uses the enclosing source result annotation, not a
-fabricated expression claim at the if statement's span. -/
-private def closureType (fc : SourceClaims.Function) : SourceInput.Expr → Except String (Ty Nat)
-  | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
-  | .done _ => pure [0]
-  | .ifBody _ (some result) _ _ _ => do SourceTypes.translate (← decodeTy result)
-  | e => exprType fc e
-
 private structure Built where
+  /-- The graph under construction: the claims' table, grown by annotations. -/
+  types : SourceTypes.Table
   program : Program := []
   claims : List (PointClaim Nat) := []
   obligations : List ExpressionClaims.Required := []
@@ -66,10 +35,54 @@ private structure Built where
 
 private abbrev Compiler := StateT Built (Except String)
 
+private def table : Compiler SourceTypes.Table := do return (← get).types
+
+private def lower (m : SourceTypes.Lowering α) : Compiler α := do
+  let s ← get
+  let (a, T) ← m.run s.types
+  set { s with types := T }
+  return a
+
+private def envCore (bound : Nat) (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
+    Except String (List (Ty Nat)) := do
+  let vars ← match fc.envs.lookup pos with
+    | some vars => pure vars
+    | none => throw s!"missing statement environment at {pos}"
+  if !distinct (vars.map Prod.fst) then throw s!"duplicate environment binding at {pos}"
+  scope.mapM fun d => do
+    let name := d.name
+    match vars.lookup name with
+    | some t => (SourceClaims.resolve bound t).mapError fun msg =>
+        if msg == "type claim unavailable from producer" then
+          s!"unavailable claimed binding '{name}' at {pos}"
+        else msg
+    | none => throw s!"missing claimed binding '{name}' at {pos}"
+
+private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
+    Compiler (List (Ty Nat)) := do
+  (envCore (← table).length fc pos scope).mapError fun msg =>
+    s!"source environment obligation at {pos}: {msg}"
+
+private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Compiler (Ty Nat) := do
+  match fc.exprs.lookup e.span with
+  | some t => (SourceClaims.resolve (← table).length t).mapError fun msg =>
+      s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
+  | none => throw s!"no claimed type for the expression at {spanStr e.span}"
+
+/-- A terminal branch uses the enclosing source result annotation, not a
+fabricated expression claim at the if statement's span. -/
+private def closureType (fc : SourceClaims.Function) : SourceInput.Expr → Compiler (Ty Nat)
+  | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
+  | .done _ => pure [0]
+  | .ifBody _ (some result) _ _ _ => do SourceTypes.translate (← decodeTy result)
+  | e => exprType fc e
+
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
     Compiler Target := do
   let s : Built ← get
-  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations (s.sourceMap ++ [none]) s.assertions s.cuts)
+  set { s with program := s.program ++ [(⟨t,k⟩ : ControlFlow.Node)]
+               claims := s.claims ++ [(⟨Γ,A⟩ : PointClaim Nat)]
+               sourceMap := s.sourceMap ++ [none] }
   return ⟨s.program.length, none⟩
 
 /-- Record this node's source map entry. Explanatory only; never part of the
@@ -98,14 +111,15 @@ private def checkpoint (pos : Span) (Γ : List (Ty Nat)) (facts : HeapFacts.Fact
   modify fun s => { s with assertions := s.assertions ++ [(t.label,⟨facts,[],[]⟩)] }
   return t
 
-private def contents (A : Ty Nat) : Except String (List HeapFacts.Literal) := do
-  if !RequestJson.validTy SourceTypes.types.length A then throw "invalid current-content type label"
-  let some R := HeapKnowledge.literals SourceTypes.graph A
+private def contents (A : Ty Nat) : Compiler (List HeapFacts.Literal) := do
+  let T ← table
+  if !RequestJson.validTy T.length A then throw "invalid current-content type label"
+  let some R := HeapKnowledge.literals (SourceTypes.graph T) A
     | throw "current-content predicate must be a finite primitive type"
   return R
 
 private def entryFacts (fc : SourceClaims.Function) (pos : Nat) (scope : List Descriptor) :
-    Except String HeapFacts.Facts := do
+    Compiler HeapFacts.Facts := do
   let cs := (fc.entryCurrent.lookup pos).getD []
   scope.zipIdx.foldlM (fun facts (d,i) => do
     let name := d.name
@@ -128,7 +142,7 @@ calls. Require their declared storage contract to imply such an observation
 uniformly; this is a located proof obligation, never a discarded assertion. -/
 private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
   let _ ← contents R
-  let [.refs W []] := PositiveRules.expand SourceTypes.graph A
+  let [.refs W []] := PositiveRules.expand (SourceTypes.graph (← table)) A
     | throw "current-content assertion requires a single cell contract"
   let plan := DirectProof.var [W] 0 R
   obligation pos plan.goal (some plan) "heap-observation" [d]
@@ -169,15 +183,15 @@ private def unitConditionVariable (scope : List Descriptor) : SourceInput.Expr �
 private def unitTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
 
-/-- The fixed source graph has a uniform head shape at each label. Splitting
-its explicit union lets the ordinary tag rule prove each alternative. -/
-private def unitTestPlan (tag : Tag) (Γ : List (Ty Nat)) (slot : Nat) (equal : Bool) (A : Ty Nat) :
-    Except String DirectProof.Plan := do
+/-- Every source label has a uniform head shape. Splitting the explicit union
+lets the ordinary tag rule prove each alternative. -/
+private def unitTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : List (Ty Nat)) (slot : Nat)
+    (equal : Bool) (A : Ty Nat) : Except String DirectProof.Plan := do
   let some C := Γ[slot]? | throw "internal null-test slot mismatch"
   let term := unitTestTerm tag equal slot
   let children ← C.mapM fun a => do
     let H := Γ.set slot [a]
-    let q := decide (Answers SourceTypes.graph [a] tag true)
+    let q := decide (Answers G [a] tag true)
     let value := if q == equal then Tm.tru else .fls
     let B := if q == equal then [1] else [2]
     let rule := if q == equal then ProgramCertificates.Rule.truLit else .flsLit
@@ -192,13 +206,14 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
     (cond : SourceInput.Expr) (c : DirectProof.Plan)
     (yesBranch noBranch : List Descriptor → List (Ty Nat) → Compiler DirectProof.Plan) :
     Compiler DirectProof.Plan := do
+  let G := SourceTypes.graph (← table)
   if let some (i, tag, equal) := unitConditionVariable scope cond then
     let some C := H[i]? | throw "internal closure null-guard slot mismatch"
     -- Preserve the evaluated predicate and its claims in an anonymous slot.
     let K := c.type :: H
     let tested := i+1
-    let T := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C tag true)
-    let F := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C tag false)
+    let T := K.set tested (BranchRefinement.tagSlice G C tag true)
+    let F := K.set tested (BranchRefinement.tagSlice G C tag false)
     let t ← yesBranch (⟨"",some cond.span⟩::scope) (if equal then T else F)
     let e ← noBranch (⟨"",some cond.span⟩::scope) (if equal then F else T)
     let yes := if equal then t else e
@@ -206,7 +221,7 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
     let term := Tm.ite (.test tag (.var tested)) yes.term no.term
     let children := C.map fun label =>
       let L := K.set tested [label]
-      let q := decide (Answers SourceTypes.graph [label] tag true)
+      let q := decide (Answers G [label] tag true)
       DirectProof.node L term A (if q then .ifTrue else .ifFalse)
         [DirectProof.cast L A (if q then yes else no)]
     pure (DirectProof.letE H c (DirectProof.node K term A (.unionVar tested) children))
@@ -224,7 +239,7 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
     | none =>
       let t ← yesBranch scope H
       let e ← noBranch scope H
-      pure (DirectProof.ifE SourceTypes.graph H A c t e)
+      pure (DirectProof.ifE G H A c t e)
 
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
@@ -232,6 +247,7 @@ slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
   let A ← closureType fc e
+  let G := SourceTypes.graph (← table)
   if let some R := fc.exprCurrent.lookup e.span then
     persistentObservation ⟨"",some e.span⟩ e.span A R
   let p ← match e with
@@ -243,7 +259,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let t ← SourceTypes.value v
     let (B,r) ← match t with
       | .nul => pure ([0],ProgramCertificates.Rule.nul)
-      | .undef => pure ([75],ProgramCertificates.Rule.undef)
+      | .undef => pure ([3],ProgramCertificates.Rule.undef)
       | .tru => pure ([1],ProgramCertificates.Rule.truLit)
       | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
       | _ => throw "unsupported closure literal"
@@ -253,7 +269,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let left ← closureExpr fc scope Γ left
     let right ← closureExpr fc (⟨"",some leftSpan⟩::scope) (left.type::Γ) right
     let H := right.type::left.type::Γ
-    let result ← unitTestPlan tag H (if testLeft then 1 else 0) equal A
+    let result ← unitTestPlan G tag H (if testLeft then 1 else 0) equal A
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .logical _ andOp left right => do
     let l ← closureExpr fc scope Γ left
@@ -266,7 +282,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .coalesce _ left right => do
     let l ← closureExpr fc scope Γ left
     let K := l.type :: Γ
-    let H := (BranchRefinement.tagSlice SourceTypes.graph l.type .isNullish true) :: Γ
+    let H := (BranchRefinement.tagSlice G l.type .isNullish true) :: Γ
     -- A named immutable left operand is identical to the saved value. Move its
     -- name to that slot for the fallback; no mutable read is given an alias.
     let rightScope := match left with
@@ -277,33 +293,33 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let term := Tm.ite (.test .isNullish (.var 0)) r.term (.var 0)
     let children := l.type.map fun label =>
       let L := [label] :: Γ
-      let q := decide (Answers SourceTypes.graph [label] .isNullish true)
+      let q := decide (Answers G [label] .isNullish true)
       let selected := if q then DirectProof.cast L A r else DirectProof.var L 0 A
       DirectProof.node L term A (if q then .ifTrue else .ifFalse) [selected]
     pure (DirectProof.letE Γ l (DirectProof.node K term A (.unionVar 0) children))
   | .not _ a => do
     let a ← closureExpr fc scope Γ a
-    pure (DirectProof.ifE SourceTypes.graph Γ A a
+    pure (DirectProof.ifE G Γ A a
       (DirectProof.node Γ .fls [2] .flsLit) (DirectProof.node Γ .tru [1] .truLit))
   | .alloc _ a => do
-    let [.refs B []] := PositiveRules.expand SourceTypes.graph A
+    let [.refs B []] := PositiveRules.expand G A
       | throw "allocation claim must name a cell contract"
     let a ← closureExpr fc scope Γ a
     pure (DirectProof.node Γ (.alloc a.term) A .alloc [DirectProof.cast Γ B a])
   | .read _ a => do
     let a ← closureExpr fc scope Γ a
-    let [.refs B []] := PositiveRules.expand SourceTypes.graph a.type
+    let [.refs B []] := PositiveRules.expand G a.type
       | throw "read receiver must name a cell contract"
     pure (DirectProof.node Γ (.read a.term) B .read [a])
   | .app _ f a => do
     let f ← closureExpr fc scope Γ f
     let a ← closureExpr fc scope Γ a
-    let [.arrs [(D,R)]] := PositiveRules.expand SourceTypes.graph f.type
+    let [.arrs [(D,R)]] := PositiveRules.expand G f.type
       | throw "callee must name a unary source arrow"
     pure (DirectProof.node Γ (.app f.term a.term) R .app [f,DirectProof.cast Γ D a])
   | .write _ receiver rhs => do
     let B ← exprType fc receiver
-    let [.refs D []] := PositiveRules.expand SourceTypes.graph B
+    let [.refs D []] := PositiveRules.expand G B
       | throw "write receiver must name a cell contract"
     let r ← closureExpr fc scope Γ receiver
     let a ← closureExpr fc (⟨"",some receiver.span⟩::scope) (B::Γ) rhs
@@ -327,7 +343,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     let I ← exprType fc init
     let B ← match annot with
-      | some ty => SourceInput.translate ty
+      | some ty => lower (SourceInput.translate ty)
       | none => pure I
     let a ← closureExpr fc scope H init
     let annotation := DirectProof.cast H B a
@@ -353,7 +369,8 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     if (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← SourceTypes.translate (← decodeTy arg)
     let R ← SourceTypes.translate (← decodeTy ret)
-    if A != [FunctionClaims.label D R] then throw "closure signature claim differs from source annotations"
+    if A != [SourceTypes.label (← table) (.arrs [(D,R)])] then
+      throw "closure signature claim differs from source annotations"
     let b ← closureExpr fc (⟨name,some pos⟩::scope) (D::Γ) body
     let annotation := DirectProof.cast (D::Γ) R b
     obligation pos annotation.goal (some annotation) "closure-result" (⟨name,some pos⟩::scope)
@@ -491,17 +508,17 @@ private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : So
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
 other outcomes deliberately retain the input context rather than compute a join. -/
-private def conditionContext (scope : List Descriptor) (Γ : List (Ty Nat))
+private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List Descriptor) (Γ : List (Ty Nat))
     (cond : SourceInput.Expr) (answer : Bool) : List (Ty Nat) :=
   match cond with
-  | .not _ e => conditionContext scope Γ e (!answer)
+  | .not _ e => conditionContext G scope Γ e (!answer)
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext scope (conditionContext scope Γ left answer) right answer
+      conditionContext G scope (conditionContext G scope Γ left answer) right answer
     else Γ
   | _ =>
     if let some (i, tag, equal) := unitConditionVariable scope cond then
-      Γ.set i (BranchRefinement.tagSlice SourceTypes.graph (Γ[i]?.getD []) tag (answer == equal))
+      Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       Γ.set i (if answer then [1] else [2])
     else Γ
@@ -518,7 +535,7 @@ private def compileCondition (fc : SourceClaims.Function) (scope : List Descript
   match cond with
   | .logical _ andOp left right =>
     let _ ← closureExpr fc scope Γ cond
-    let H := conditionContext scope Γ left andOp
+    let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp
     let rhs ← compileCondition fc scope H right yes no
     compileCondition fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e =>
@@ -562,7 +579,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       if (names scope).contains name then throw s!"duplicate or shadowing local declaration '{name}'"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
-      let B ← match annot with | none => pure A | some ty => SourceInput.translate ty
+      let B ← match annot with | none => pure A | some ty => lower (SourceInput.translate ty)
       let next ← body fuel fc R (⟨name,some pos⟩::scope) rest tail loopTargets
       let annotation ← emitAt e.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
         (scope := ⟨name,some e.span⟩::scope)
@@ -626,45 +643,50 @@ structure SourceRequest extends Request where
   /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
   cuts : List Nat := []
 
-/-- Search hints only. The fixed source graph's arrow/reference operands contain
-primitive labels; avoid considering all unrelated signatures at every coercion.
-The consumer still checks against the complete graph and the exact request. -/
+/-- Search hints only: the primitives and the labels the request mentions, so
+a coercion does not consider every unrelated signature in the table. The
+consumer still checks against the complete graph and the exact request. -/
 def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
-  ([0,1,2] ++ r.result ++ r.inputs.flatten ++
+  ([0,1,2,3] ++ r.result ++ r.inputs.flatten ++
     r.claims.flatMap (fun (c : PointClaim Nat) => c.type ++ c.context.flatten) ++
     r.obligations.flatMap (fun (o : ExpressionClaims.Required) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
 
-def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Except String SourceRequest := do
+/-- The table is the one the claims were lowered into; annotations the claims
+did not mention grow it, and the request carries the result. -/
+def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : SourceClaims.Function) :
+    Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List Descriptor := f.params.map (fun p => ⟨p.name,none⟩)
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the source slice"
   if !distinct (names scope) then throw "duplicate source parameter name"
   if f.params.length != fc.params.length then throw "parameter claim count mismatch"
-  let inputs ← f.params.mapM (fun p => SourceInput.translate p.ty)
-  -- Cell sourceMap must be plain allocations in this source slice. Structural
-  -- parameter annotations alone cannot rule out JavaScript accessors.
-  if inputs.any (fun A => A.any (fun i => !SourceTypes.isPrimitive i)) then
-    throw "cell or function parameters require an external-value boundary not yet supported"
-  for (p, (name, claimed)) in f.params.zip fc.params do
-    if p.name != name then throw "parameter claim name or order mismatch"
-    let A ← SourceInput.translate p.ty
-    let B ← SourceClaims.resolve claimed
-    if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
   if !distinct (fc.envs.map Prod.fst) || !distinct (fc.exprs.map Prod.fst) then
     throw "duplicate statement or expression claim"
-  let R ← SourceInput.translate f.ret
-  let claimedR ← SourceClaims.resolve fc.ret
-  if R != claimedR then throw "claimed return type differs from the source annotation"
-  let (entry, built) ← (do
+  let ((inputs, R, entry), built) ← (do
+    let inputs ← f.params.mapM (fun (p : SourceInput.Param) => lower (SourceInput.translate p.ty))
+    -- Cell sourceMap must be plain allocations in this source slice. Structural
+    -- parameter annotations alone cannot rule out JavaScript accessors.
+    if inputs.any (fun A => A.any (fun i => !SourceTypes.isPrimitive i)) then
+      throw "cell or function parameters require an external-value boundary not yet supported"
+    for ((p, A), (name, claimed)) in (f.params.zip inputs).zip fc.params do
+      if p.name != name then throw "parameter claim name or order mismatch"
+      let B ← SourceClaims.resolve (← table).length claimed
+      if A != B then throw s!"claimed parameter type differs from the source annotation for '{name}'"
+    let R ← lower (SourceInput.translate f.ret)
+    let claimedR ← SourceClaims.resolve (← table).length fc.ret
+    if R != claimedR then throw "claimed return type differs from the source annotation"
     let first ← body (traversalBudget f.body) fc R scope f.body none none
-    emit .nul (.effect first) inputs [0]).run {}
-  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations, built.sourceMap, built.assertions, built.cuts⟩
+    let entry ← emit .nul (.effect first) inputs [0]
+    return (inputs, R, entry)).run { types := T }
+  return ⟨⟨2, built.types, built.program, built.claims, R, entry.label, inputs⟩,
+    built.obligations, built.sourceMap, built.assertions, built.cuts⟩
 
-/-- Existing wire callers pass through the SKJS adapter. Other producers can
+/-- One function's wire claims, lowered into a fresh table. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/
-def extractFn (f : SourceInput.Fn) (fc : SourceInput.Claims) : Except String SourceRequest :=
-  extractNormalizedFn f (SkjsSourceClaims.translate fc)
+def extractFn (f : SourceInput.Fn) (fc : SourceInput.Claims) : Except String SourceRequest := do
+  let (fc, T) ← (SkjsSourceClaims.translate fc).run SourceTypes.initial
+  extractNormalizedFn T f fc
 
 def extract (ast claims : Json) (fileKey : String) : Except String (List SourceRequest) := do
   if (← jStr (← jField ast "file")) != fileKey then throw "AST file key mismatch"
@@ -677,11 +699,14 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
   if !distinct (fs.map (fun f => (f.name, f.namePos))) then throw "duplicate source function identities"
   if !distinct (cs.map (fun f => (f.name, f.namePos))) then throw "duplicate function claims"
   if fs.length != cs.length then throw "function claim count mismatch"
-  fs.mapM fun f => do
-    let fc ← match cs.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
-      | some c => pure c
-      | none => throw s!"missing claims for '{f.name}'"
-    extractFn f fc
+  -- One table for the file, lowered in source declaration order so that the
+  -- neutral export of the same claims names the same labels.
+  let lower (f : SourceInput.Fn) : SourceTypes.Lowering (SourceInput.Fn × SourceClaims.Function) := do
+    let some c := cs.find? (fun c => c.name == f.name && c.namePos == f.namePos)
+      | throw s!"missing claims for '{f.name}'"
+    return (f, ← SkjsSourceClaims.translate c)
+  let (lowered, T) ← (fs.mapM lower).run SourceTypes.initial
+  lowered.mapM fun (f, fc) => extractNormalizedFn T f fc
 
 /-- Evidence order is source declaration order, independent of export order. -/
 structure Bundle where

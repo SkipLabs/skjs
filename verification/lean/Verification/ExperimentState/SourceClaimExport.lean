@@ -12,6 +12,48 @@ private def issue (f : SourceInput.Fn) (site raw : Json) (reason : String) : Jso
 private def bindingSite (kind name : String) (start : Nat := 0) : Json :=
   Json.mkObj [("kind",toJson kind),("name",toJson name),("start",toJson start)]
 
+/-- The same adapter the raw path uses lowers the candidates, so both paths
+name the same labels; here each failure becomes an omission. -/
+private def convertFunction (f : SourceInput.Fn) (c : SourceInput.Claims) :
+    SourceTypes.Lowering (Option Function × List Json) := do
+  let fc ← SkjsSourceClaims.translate c
+  let mut omissions : List Json := []
+  let mut params : List Binding := []
+  for ((name,raw),(_,candidate)) in c.params.zip fc.params do
+    match candidate with
+    | .ok A => params := params ++ [⟨name,A,none⟩]
+    | .error e => omissions := omissions ++ [issue f (bindingSite "parameter" name) raw e]
+  let result ← match fc.ret with
+    | .ok A => pure (some A)
+    | .error e =>
+      omissions := omissions ++ [issue f (toJson "result") c.ret e]
+      pure none
+  let some result := result | return (none, omissions)
+  if params.length != c.params.length then return (none, omissions)
+  let sites := functionSites f
+  let mut entries : List Entry := []
+  for ((start,bs),(_,candidates)) in c.envs.zip fc.envs do
+    if !sites.1.contains start then
+      omissions := omissions ++ [issue f (bindingSite "entry" "" start) (toJson bs) "entry not present in lowered source"]
+      continue
+    let current := (fc.entryCurrent.lookup start).getD []
+    let mut bindings : List Binding := []
+    for ((name,raw),(_,candidate)) in bs.zip candidates do
+      match candidate with
+      | .ok A => bindings := bindings ++ [⟨name,A,current.lookup name⟩]
+      | .error e => omissions := omissions ++ [issue f (bindingSite "binding" name start) raw e]
+    entries := entries ++ [⟨start,bindings⟩]
+  let mut expressions : List Expression := []
+  for ((pos,raw),(_,candidate)) in c.exprs.zip fc.exprs do
+    let site := Json.mkObj [("kind",toJson "expression"),("pos",toJson pos)]
+    if !sites.2.contains pos then
+      omissions := omissions ++ [issue f site raw "expression not present in lowered source"]
+      continue
+    match candidate with
+    | .ok A => expressions := expressions ++ [⟨pos,A,fc.exprCurrent.lookup pos⟩]
+    | .error e => omissions := omissions ++ [issue f site raw e]
+  return (some ⟨f.name,f.namePos,params,result,entries,expressions⟩, omissions)
+
 /-- Returns a sidecar plus explicit omissions. The caller retains the raw export
 and collection metadata separately; neither is admitted as proof evidence. -/
 def convert (ast claims : Json) (fileKey : String) : Except String Json := do
@@ -28,6 +70,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     throw "claim function identity is absent from source"
   let mut functions : List Function := []
   let mut omissions : List Json := []
+  let mut types := SourceTypes.initial
   for f in fs do
     let some c := cs.find? (fun c => c.name == f.name && c.namePos == f.namePos) |
       omissions := omissions ++ [issue f (toJson "function") .null "function claims unavailable"]
@@ -37,44 +80,14 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
         (c.params.map Prod.fst).eraseDups.length != c.params.length ||
         !c.envs.all (fun (_,bs) => (bs.map Prod.fst).eraseDups.length == bs.length) then
       throw "duplicate source claim sites or bindings"
-    let mut params : List Binding := []
-    for (name,raw) in c.params do
-      match SourceInput.translate raw with
-      | .ok A => params := params ++ [⟨name,A,none⟩]
-      | .error e => omissions := omissions ++ [issue f (bindingSite "parameter" name) raw e]
-    let result ← match SourceInput.translate c.ret with
-      | .ok A => pure (some A)
-      | .error e =>
-        omissions := omissions ++ [issue f (toJson "result") c.ret e]
-        pure none
-    if params.length != c.params.length || result.isNone then
+    let ((converted, omitted), grown) ← (convertFunction f c).run types
+    types := grown
+    omissions := omissions ++ omitted
+    match converted with
+    | some fn => functions := functions ++ [fn]
+    | none =>
       omissions := omissions ++ [issue f (toJson "function") .null "function omitted: signature has unavailable types"]
-      continue
-    let some result := result | throw "unavailable function result"
-    let sites := functionSites f
-    let mut entries : List Entry := []
-    for (start,bs) in c.envs do
-      if !sites.1.contains start then
-        omissions := omissions ++ [issue f (bindingSite "entry" "" start) (toJson bs) "entry not present in lowered source"]
-        continue
-      let mut bindings : List Binding := []
-      for (name,raw) in bs do
-        match SourceInput.translatePoint raw with
-        | .ok A => bindings := bindings ++ [⟨name,A.type,A.current⟩]
-        | .error e => omissions := omissions ++ [issue f (bindingSite "binding" name start) raw e]
-      entries := entries ++ [⟨start,bindings⟩]
-    let mut expressions : List Expression := []
-    for (pos,raw) in c.exprs do
-      let site := Json.mkObj [("kind",toJson "expression"),("pos",toJson pos)]
-      if !sites.2.contains pos then
-        omissions := omissions ++ [issue f site raw "expression not present in lowered source"]
-        continue
-      match SourceInput.translatePoint raw with
-      | .ok A => expressions := expressions ++ [⟨pos,A.type,A.current⟩]
-      | .error e => omissions := omissions ++ [issue f site raw e]
-    functions := functions ++ [⟨f.name,f.namePos,params,result,entries,expressions⟩]
-  let d : Document := ⟨2,"stateful-source-532-v2",fileKey,
-    ← jStr (← jField ast "sourceSha256"),functions⟩
+  let d : Document := ⟨3,profile,fileKey,← jStr (← jField ast "sourceSha256"),types,functions⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
   let _ ← SourceClaimJson.decode (toJson d)
   return Json.mkObj [("claims",toJson d),("omissions",toJson omissions)]

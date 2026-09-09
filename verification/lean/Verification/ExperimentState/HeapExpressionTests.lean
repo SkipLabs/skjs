@@ -1,15 +1,16 @@
 import Verification.ExperimentState.HeapExpressionRules
 import Verification.ExperimentState.SourceTypes
 
-/-! Execute the checked rules on the same primitive/reference graph used by the
-source pipeline. These exercise evidence validation, not hand-assumed HasTy
+/-! Execute the checked rules on a primitive/reference graph of the kind the
+source pipeline builds. These exercise evidence validation, not hand-assumed HasTy
 premises. Full source/CFG acceptance still requires checked edge integration. -/
 namespace Verification.ExperimentState.HeapExpressionTests
 open ProgramCertificates HeapExpressionRules HeapKnowledge
 
-private def G := SourceTypes.graph
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [1,2] []]]
+private def G := SourceTypes.graph T
 private def boolTy : List Nat := [1,2]
-private def refBool : List Nat := [9]
+private def refBool : List Nat := [4]
 private def writeClaim : Sequent Nat :=
   ⟨[refBool,boolTy],.write (.var 0) (.var 1),[0]⟩
 private def writeProof : Evidence Nat := .node writeClaim .write

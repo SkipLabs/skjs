@@ -122,20 +122,25 @@ function fromSkjs(source, file, claims, producer) {
       expressions:f.exprs.map(e=>({pos:e.pos,type:typeText(e.type),raw:e.type}))}))};
 }
 
+// Labels index the document's own type table; the first four rows are the
+// primitives null, true, false and undefined.
 function fromSourceClaims(source,file,input,producer) {
-  const profile=require("./source-profile.js");
-  if(input.version!==2||input.profile!==profile.name||input.file!==file||input.sourceSha256!==hash(source))
+  const {typeText:labelText}=require("../report-viewer/obligation.js");
+  if(input.version!==3||input.profile!=="stateful-source-v3"||input.file!==file||input.sourceSha256!==hash(source))
     throw Error("source-claim profile or source identity mismatch");
+  const types=input.types;
+  if(!Array.isArray(types)||types.length<4)throw Error("invalid source type table");
   const type=A=> {
-    if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=profile.types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
-    return profile.typeText(A);
+    if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
+    return labelText(types,A);
   };
   const point=b=> {
     if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
     const ordinary=type(b.type);
     if(b.current==null)return {type:ordinary,raw:b.type};
-    const invariant=b.type.length===1 ? profile.types[b.type[0]]?.[0]?.refs?.first : null;
-    if(!invariant||!Array.isArray(b.current)||b.current.some(i=>!profile.primitiveLabels.includes(i)))throw Error("invalid current-content assertion");
+    const clause=b.type.length===1 ? types[b.type[0]]?.[0]?.refs : null;
+    const invariant=clause&&!(clause.rest||[]).length ? clause.first : null;
+    if(!invariant||!Array.isArray(b.current)||b.current.some(i=>!Number.isInteger(i)||i<0||i>=4))throw Error("invalid current-content assertion");
     return {type:`{ value: ${String(invariant)==="1,2"?"boolean":type(invariant)} = (${type(b.current)}) }`,
       raw:{type:b.type,current:b.current}};
   };

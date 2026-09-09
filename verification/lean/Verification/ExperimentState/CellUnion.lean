@@ -70,10 +70,10 @@ def decode (atom : Json) : Except String Contract := do
 
 /-- All arms are validated before absorption, including their field and object
 modes. A remaining non-invariant arm rejects the entire union. -/
-def translate (atoms : List Json) : Except String (List (Ty Nat)) := do
-  let cs ← atoms.mapM decode
+def translate (atoms : List Json) : SourceTypes.Lowering (List (Ty Nat)) := do
+  let cs ← liftM (atoms.mapM decode : Except String (List Contract))
   (normalize cs).mapM fun c => do
-    if c.read == c.write then return [CellClaims.referenceLabel c.read]
+    if c.read == c.write then return [← CellClaims.reference c.read]
     throw "cell read and write types do not describe the same invariant"
 
 #print axioms normalize_exact

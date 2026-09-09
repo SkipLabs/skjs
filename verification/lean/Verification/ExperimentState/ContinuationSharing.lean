@@ -21,20 +21,24 @@ theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph
   subst p
   exact hk
 
-private def Γ : List (Ty Nat) := [[9],[1,2],[1,2]]
-private def H : List (Ty Nat) := [17]::Γ
+/-- The primitives, a Boolean cell, a null-to-Boolean arrow and a null-to-true arrow. -/
+private def T : SourceTypes.Table :=
+  SourceTypes.initial ++ [[.refs [1,2] []],[.arrs [([0],[1,2])]],[.arrs [([0],[1])]]]
+private def G := SourceTypes.graph T
+private def Γ : List (Ty Nat) := [[4],[1,2],[1,2]]
+private def H : List (Ty Nat) := [5]::Γ
 private def call (Δ : List (Ty Nat)) (i : Nat) : DirectProof.Plan :=
   DirectProof.node Δ (.app (.var i) .nul) [1,2] .app
-    [DirectProof.var Δ i [17],DirectProof.node Δ .nul [0] .nul]
+    [DirectProof.var Δ i [5],DirectProof.node Δ .nul [0] .nul]
 private def choose (Δ : List (Ty Nat)) (i : Nat) (t e : DirectProof.Plan) :=
   DirectProof.node Δ (.ite (.var i) t.term e.term) [1,2] .ifBool
     [DirectProof.var Δ i [1,2],t,e]
 private def recipe : DirectProof.Plan :=
   let K := [0]::Γ
-  let k := DirectProof.node Γ (.lam (.read (.var 1))) [17] .lam
-    [DirectProof.node K (.read (.var 1)) [1,2] .read [DirectProof.var K 1 [9]]]
+  let k := DirectProof.node Γ (.lam (.read (.var 1))) [5] .lam
+    [DirectProof.node K (.read (.var 1)) [1,2] .read [DirectProof.var K 1 [4]]]
   let write := DirectProof.node H (.write (.var 1) .fls) [0] .write
-    [DirectProof.var H 1 [9],
+    [DirectProof.var H 1 [4],
      DirectProof.cast H [1,2] (DirectProof.node H .fls [2] .flsLit)]
   let updated := DirectProof.letE H write (call ([0]::H) 1)
   let body := choose H 2 (choose H 3
@@ -47,16 +51,16 @@ private def term : Tm := share (.read (.var 1))
     (.app (.var 0) .nul))
 #guard recipe.term == term
 private def proof : Option (Evidence Nat) :=
-  DirectProof.render SourceTypes.graph (CertificateProducer.vocabulary SourceTypes.graph [0,1,2,9,17] [] [[1,2]]) Γ recipe
-#guard (proof.map (checkTree SourceTypes.graph)) == some true
+  DirectProof.render G (CertificateProducer.vocabulary G [0,1,2,4,5] [] [[1,2]]) Γ recipe
+#guard (proof.map (checkTree G)) == some true
 
 private def program : Program := [⟨.alloc .tru,.bind 1⟩,⟨term,.ret⟩]
 private def request : Request :=
-  ⟨2,SourceTypes.types,program,[⟨[[1,2],[1,2]],[9]⟩,⟨Γ,[1,2]⟩],[1,2],0,[[1,2],[1,2]]⟩
+  ⟨2,T,program,[⟨[[1,2],[1,2]],[4]⟩,⟨Γ,[1,2]⟩],[1,2],0,[[1,2],[1,2]]⟩
 private def accepted : Except String Unit := do
   let some p := proof | throw "missing direct proof"
   let wire ← Json.parse (toJson request).compress
-  let e ← produceJson wire 10 [] [p] [] (some [0,1,2,9,17,SourceTypes.types.length])
+  let e ← produceJson wire 10 [] [p] [] (some [0,1,2,4,5,T.length])
   verifyJson wire (← Json.parse e.compress)
 #guard match accepted with | .ok _ => true | .error _ => false
 
@@ -79,22 +83,22 @@ theorem shared_paths (a b : Bool) : Execution program
     | apply Execution.next (.ret rfl)
 
 -- A shared continuation cannot promise a singleton result from a Boolean cell.
-#guard !(DirectProof.render SourceTypes.graph
-  (CertificateProducer.vocabulary SourceTypes.graph [0,1,2,9,17] [] [[1,2]]) Γ
+#guard !(DirectProof.render G
+  (CertificateProducer.vocabulary G [0,1,2,4,5] [] [[1,2]]) Γ
   (DirectProof.cast Γ [1] recipe)).isSome
 
 -- The promise is checked where the continuation is defined, not invented from
 -- the paths on which it may later be called.
-#guard !checkTree SourceTypes.graph (.node ⟨Γ,.lam (.read (.var 1)),[13]⟩ .lam
+#guard !checkTree G (.node ⟨Γ,.lam (.read (.var 1)),[6]⟩ .lam
   [.node ⟨[0]::Γ,.read (.var 1),[1,2]⟩ .read
-    [.node ⟨[0]::Γ,.var 1,[9]⟩ .var []]])
+    [.node ⟨[0]::Γ,.var 1,[4]⟩ .var []]])
 
 -- A later refinement is passed as a checked argument, not retroactively added
 -- to the captured environment. Both surviving paths reach the same definition.
-private def refinedTypes := SourceTypes.types ++ [[PositiveNormalization.Clause.arrs [([2],[1,2])]]]
+private def refinedTypes := T ++ [[PositiveNormalization.Clause.arrs [([2],[1,2])]]]
 private def refinedGraph : PositiveGraphs.NormalGraph Nat := fun i => refinedTypes[i]?.getD []
 private def outer : List (Ty Nat) := [[1,2],[1,2]]
-private def extraLabel := SourceTypes.types.length
+private def extraLabel := T.length
 private def inside : List (Ty Nat) := [extraLabel]::outer
 private def refinedCall (Δ : List (Ty Nat)) (i : Nat) :=
   DirectProof.node Δ (.app (.var 0) (.var i)) [1,2] .app
@@ -125,7 +129,7 @@ private def refinedProgram : Program := [⟨refinedTerm,.ret⟩]
   let some p := refinedProof | throw "missing refinement proof"
   let r : Request := ⟨2,refinedTypes,refinedProgram,[⟨outer,[1,2]⟩],[1,2],0,outer⟩
   let wire := toJson r
-  let e ← produceJson wire 10 [] [p] [] (some [0,1,2,9,17,SourceTypes.types.length])
+  let e ← produceJson wire 10 [] [p] [] (some [0,1,2,4,5,T.length])
   verifyJson wire (← Json.parse e.compress)) with
   | .ok _ => true | .error _ => false
 

@@ -20,11 +20,11 @@ structure Function where
   entryCurrent : List (Nat × List (String × Ty Nat)) := []
   exprCurrent : List (Span × Ty Nat) := []
 
-/-- This source adapter uses SourceTypes.graph, not an arbitrary supplied graph.
-Even direct callers must not turn an out-of-range label into its empty default. -/
-def resolve (c : Candidate) : Except String (Ty Nat) := do
+/-- Labels are checked against the request's own table, so even a direct caller
+cannot turn an out-of-range label into its empty default. -/
+def resolve (bound : Nat) (c : Candidate) : Except String (Ty Nat) := do
   let A ← c
-  if RequestJson.validTy SourceTypes.types.length A then pure A
+  if RequestJson.validTy bound A then pure A
   else throw "source claim contains an out-of-range type label"
 
 end Verification.ExperimentState.SourceClaims

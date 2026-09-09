@@ -10,7 +10,6 @@ const { spawnSync } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
 const ts = require("../tools/node_modules/typescript");
 const { fromSourceClaims } = require("../tools/annotate-source");
-const profile = require("../tools/source-profile");
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath));
 const claims = JSON.parse(fs.readFileSync(claimsPath));
@@ -40,17 +39,6 @@ const produce = (ap = astPath, cp = claimsPath, mode = "stateful-source") =>
 const check = (mode, cp) =>
   run(verifier, [`--check-${mode}`, astPath, cp, file, evidence]);
 try {
-  test("display table equals all 532 maintained Lean labels", () => {
-    const r = run(
-      "lake",
-      ["env", "lean", "--run", path.resolve(__dirname, "source-profile.lean")],
-      path.resolve(__dirname, "../lean"),
-    );
-    accepted(r);
-    assert.deepEqual(JSON.parse(r.stdout), profile.types);
-    assert.equal(profile.types.length, 532);
-    assert.equal(profile.typeText([75]), "undefined");
-  });
   test("all undefined functions have complete normal-mode producer claims", () => {
     const functions = claims.find((c) => c.file === file).functions;
     assert.equal(functions.length, ast.functions.length);
@@ -83,10 +71,32 @@ try {
     ]);
     accepted(r);
     const doc = JSON.parse(fs.readFileSync(normalized));
-    assert.equal(doc.profile, profile.name);
+    assert.equal(doc.profile, "stateful-source-v3");
+    // The table starts with the primitives and holds one row per compound
+    // type the fixture mentions, each a single clause over earlier labels.
+    assert.deepEqual(doc.types.slice(0, 4), [
+      ["nul"],
+      [{ boolLit: { value: true } }],
+      [{ boolLit: { value: false } }],
+      ["undef"],
+    ]);
+    assert(doc.types.length > 4 && doc.types.length < 20, doc.types.length);
+    for (const [i, row] of doc.types.entries()) {
+      assert.equal(row.length, 1);
+      const operands = row[0].refs
+        ? [row[0].refs.first, ...row[0].refs.rest]
+        : row[0].arrs
+          ? row[0].arrs.arrows.flat()
+          : [];
+      assert(
+        operands.every((A) => A.every((j) => j < i)),
+        JSON.stringify(row),
+      );
+    }
+    assert.equal(new Set(doc.types.map(JSON.stringify)).size, doc.types.length);
     const identity = doc.functions.find((f) => f.name === "undefinedIdentity");
-    assert.deepEqual(identity.params[0].type, [75]);
-    assert.deepEqual(identity.result, [75]);
+    assert.deepEqual(identity.params[0].type, [3]);
+    assert.deepEqual(identity.result, [3]);
     const shown = fromSourceClaims(source, file, doc, "candidate");
     assert.equal(
       shown.functions.find((f) => f.name === identity.name).signature.retType,
@@ -133,9 +143,7 @@ try {
   test("a precise undefined read requires a supplied current observation", () => {
     const c = candidate("undefinedCurrent", (f, a) => {
       const ret = a.body.at(-1);
-      f.expressions.find((e) => String(e.pos) === String(ret.e.pos)).type = [
-        75,
-      ];
+      f.expressions.find((e) => String(e.pos) === String(ret.e.pos)).type = [3];
     });
     rejects(c);
     const f = c.doc.functions[0],
@@ -144,7 +152,7 @@ try {
         .body.at(-1);
     f.entries
       .find((e) => e.start === ret.pos[0])
-      .bindings.find((b) => b.name === "cell").current = [75];
+      .bindings.find((b) => b.name === "cell").current = [3];
     fs.writeFileSync(c.cp, JSON.stringify(c.doc));
     accepted(produce(c.ap, c.cp, "source-claims"));
     f.entries
@@ -187,9 +195,9 @@ try {
       .find((f) => f.name === "undefinedCurrent")
       .entries.find((e) => e.start === ret.pos[0])
       .bindings.find((b) => b.name === "cell");
-    assert.deepEqual(b.current, [75]);
-    assert.deepEqual(profile.types[b.type[0]], [
-      { refs: { first: [1, 2, 75], rest: [] } },
+    assert.deepEqual(b.current, [3]);
+    assert.deepEqual(doc.types[b.type[0]], [
+      { refs: { first: [1, 2, 3], rest: [] } },
     ]);
     accepted(produce(astPath, cp));
     accepted(check("source-claims", out));

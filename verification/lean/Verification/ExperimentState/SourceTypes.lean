@@ -1,64 +1,96 @@
 import Verification.ExperimentState.SourceEncoding
 import Verification.ExperimentState.RequestJson
 
-/-! Exact translation of the supported source/claim type encoding. The shared
-input decoder represents primitive unions as Wire.Ty; this module interprets
-that current wire format in the stateful calculus, not an earlier evaluator. -/
+/-! Source types and the graph they are checked against. A program's graph is a
+table of clause rows in label order. It starts with the four primitive values
+and grows by interning each compound type the program mentions, so a label
+exists only because something used it, and a clause the table lacks has no
+label rather than a wrong one. Primitive unions translate exactly into the
+fixed first four labels. -/
 namespace Verification.ExperimentState.SourceTypes
 open ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 
--- Canonical subsets, indexed by null/true/false bits. Keep null-argument
--- arrows first, so existing cell and null-arrow labels retain their meaning.
-def primitiveTypes : List (Ty Nat) :=
-  [[],[0],[1],[0,1],[2],[0,2],[1,2],[0,1,2]]
+abbrev Table := List (List (Clause (List Nat)))
 
-def argumentTypes : List (Ty Nat) :=
-  [[0],[],[1],[0,1],[2],[0,2],[1,2],[0,1,2]]
+/-- Labels 0 to 3: null, true, false, undefined. -/
+def initial : Table := [[.nul],[.boolLit true],[.boolLit false],[.undef]]
 
-def baseTypes : List (List (Clause (List Nat))) :=
-  [[.nul], [.boolLit true], [.boolLit false]] ++
-  primitiveTypes.map (fun A => [.refs A []]) ++
-  argumentTypes.flatMap (fun D => primitiveTypes.map (fun R => [.arrs [(D,R)]]))
-/-- Keep every existing label stable. Undefined is label 75; append all missing
-reference and unary-arrow combinations over the four primitive values. -/
-def allPrimitiveTypes : List (Ty Nat) :=
-  primitiveTypes ++ primitiveTypes.map (· ++ [75])
-def allArgumentTypes : List (Ty Nat) :=
-  argumentTypes ++ primitiveTypes.map (· ++ [75])
-def compoundTypes : List (List (Clause (List Nat))) :=
-  allPrimitiveTypes.map (fun A => [.refs A []]) ++
-  allArgumentTypes.flatMap (fun D => allPrimitiveTypes.map (fun R => [.arrs [(D,R)]])) ++
-  -- Appended last, so every label already in use keeps its index. A location
-  -- under two invariant contracts at once; both orders are generated, since
-  -- they denote the same conjunction but are different clauses to a lookup, and
-  -- having both spares every caller a canonical ordering.
-  allPrimitiveTypes.flatMap (fun A => allPrimitiveTypes.map (fun B => [.refs A [B]]))
-def types : List (List (Clause (List Nat))) :=
-  baseTypes ++ [[.undef]] ++ compoundTypes.filter (fun c => !baseTypes.contains c)
-#guard types.length == 532
+def isPrimitive (i : Nat) : Bool := i < initial.length
 
-def isPrimitive (i : Nat) : Bool := i < 3 || i == 75
+def graph (T : Table) : NormalGraph Nat := fun i => T[i]?.getD []
 
-/-- A missing clause gets an out-of-range label, never a different contract. -/
-def label (c : Clause (Ty Nat)) : Nat := types.idxOf [c]
+/-- A missing clause gets the table length, never a different contract. -/
+def label (T : Table) (c : Clause (List Nat)) : Nat := T.idxOf [c]
 
-theorem compound_mem {c} (hc : [c] ∈ compoundTypes) : [c] ∈ types := by
-  by_cases hb : [c] ∈ baseTypes
-  · exact List.mem_append_left _ (List.mem_append_left _ hb)
-  · exact List.mem_append_right _ (List.mem_filter.mpr ⟨hc,by simpa using hb⟩)
+/-- Give a clause a row if it lacks one. Appending keeps every existing label. -/
+def intern (T : Table) (c : Clause (List Nat)) : Table :=
+  if [c] ∈ T then T else T ++ [[c]]
 
+/-- Translation grows the table as it goes. -/
+abbrev Lowering := StateT Table (Except String)
 
-def graph : NormalGraph Nat := fun i => types[i]?.getD []
+def use (c : Clause (List Nat)) : Lowering Nat :=
+  modifyGet fun T => let T' := intern T c; (label T' c, T')
 
-@[simp] theorem graph_nul : graph 0 = [.nul] := rfl
-@[simp] theorem graph_tru : graph 1 = [.boolLit true] := rfl
-@[simp] theorem graph_fls : graph 2 = [.boolLit false] := rfl
-@[simp] theorem graph_undef : graph 75 = [.undef] := rfl
+/-- Keep the table as it was when a translation fails, so a rejected candidate
+leaves no rows behind. -/
+def attempt (m : Lowering α) : Lowering (Except String α) := fun T =>
+  match m.run T with
+  | .ok (a, T') => .ok (.ok a, T')
+  | .error e => .ok (.error e, T)
 
-theorem label_exact {c} (hc : [c] ∈ types) : expand graph [label c] = [c] := by
+theorem use_run (c : Clause (List Nat)) (T : Table) :
+    (use c).run T = .ok (label (intern T c) c, intern T c) := rfl
+
+theorem attempt_run (m : Lowering α) (T : Table) :
+    (attempt m).run T = .ok (match m.run T with
+      | .ok (a, T') => (.ok a, T') | .error e => (.error e, T)) := by
+  unfold attempt StateT.run
+  split <;> simp_all
+
+theorem mem_intern (T : Table) (c : Clause (List Nat)) : [c] ∈ intern T c := by
+  unfold intern
+  split
+  · assumption
+  · exact List.mem_append_right _ (List.mem_singleton.mpr rfl)
+
+theorem intern_prefix (T : Table) (c : Clause (List Nat)) : T <+: intern T c := by
+  unfold intern
+  split
+  · exact List.prefix_rfl
+  · exact List.prefix_append _ _
+
+theorem mem_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : [d] ∈ T) :
+    [d] ∈ T' := h.subset hd
+
+/-- Labels already in use keep their index in every later table. -/
+theorem label_of_prefix {T T' : Table} {d : Clause (List Nat)} (h : T <+: T') (hd : [d] ∈ T) :
+    label T' d = label T d := by
+  obtain ⟨l, rfl⟩ := h
+  simp [label, List.idxOf_append, hd]
+
+theorem use_spec {c : Clause (List Nat)} {T T' : Table} {l : Nat}
+    (h : (use c).run T = .ok (l, T')) : [c] ∈ T' ∧ l = label T' c ∧ T <+: T' := by
+  rw [use_run] at h
+  cases h
+  exact ⟨mem_intern T c, rfl, intern_prefix T c⟩
+
+theorem label_exact {T : Table} {c : Clause (List Nat)} (hc : [c] ∈ T) :
+    expand (graph T) [label T c] = [c] := by
   have hi := List.idxOf_lt_length_iff.mpr hc
   have hx := List.getElem?_eq_some_iff.mpr ⟨hi,List.getElem_idxOf hi⟩
   simp [expand,graph,label,hx]
+
+/-- A labelled clause means exactly that clause, read over the same table. -/
+theorem label_meaning {T : Table} {c : Clause (List Nat)} (hc : [c] ∈ T) (n W v) :
+    meaning (graph T) [label T c] n W v ↔ sem (meaning (graph T)) c n W v := by
+  rw [expand_sem, label_exact hc]
+  simp [semList, Tower.setSem]
+
+theorem graph_initial {T : Table} (h : initial <+: T) {i : Nat} (hi : i < initial.length) :
+    graph T i = initial[i] := by
+  obtain ⟨l, rfl⟩ := h
+  simp [graph, List.getElem?_append_left hi, List.getElem?_eq_getElem hi]
 
 def admits (t : Wire.Ty) (v : Wire.Val) : Bool := t.atoms.any (Wire.inhabits v)
 
@@ -66,7 +98,7 @@ def encode (t : Wire.Ty) : Ty Nat :=
   (if admits t .vnull then [0] else []) ++
   (if admits t (.vbool true) then [1] else []) ++
   (if admits t (.vbool false) then [2] else []) ++
-  (if admits t .vundef then [75] else [])
+  (if admits t .vundef then [3] else [])
 
 def supportedAtom : Wire.Atom → Bool
   | .null | .undef | .bool | .boolLit _ => true
@@ -83,39 +115,33 @@ def value : Wire.Val → Except String Tm
   | .vbool false => .ok .fls
   | _ => .error "source literal outside the null/undefined/boolean source slice"
 
-theorem encode_mem (t : Wire.Ty) : encode t ∈ allPrimitiveTypes := by
-  cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
-    cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode,hn,ht,hf,hu,allPrimitiveTypes,primitiveTypes]
-
-theorem encode_argument_mem (t : Wire.Ty) : encode t ∈ allArgumentTypes := by
-  cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
-    cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode,hn,ht,hf,hu,allArgumentTypes,argumentTypes,primitiveTypes]
-
 /-- This characterization also rules out extra nonprimitive modeled values. -/
-theorem encode_meaning (t : Wire.Ty) (n W v) :
-    meaning graph (encode t) n W v ↔
+theorem encode_meaning {T : Table} (h : initial <+: T) (t : Wire.Ty) (n W v) :
+    meaning (graph T) (encode t) n W v ↔
       (admits t .vnull = true ∧ v = .nul) ∨
       (admits t (.vbool true) = true ∧ v = .tru) ∨
       (admits t (.vbool false) = true ∧ v = .fls) ∨
       (admits t .vundef = true ∧ v = .undef) := by
+  have h0 : graph T 0 = [.nul] := graph_initial h (by decide)
+  have h1 : graph T 1 = [.boolLit true] := graph_initial h (by decide)
+  have h2 : graph T 2 = [.boolLit false] := graph_initial h (by decide)
+  have h3 : graph T 3 = [.undef] := graph_initial h (by decide)
   rw [expand_sem]
   cases hn : admits t .vnull <;> cases ht : admits t (.vbool true) <;>
     cases hf : admits t (.vbool false) <;> cases hu : admits t .vundef <;>
-    simp [encode, hn, ht, hf, hu, expand, semList, Tower.setSem, sem, nulT, undefT]
+    simp [encode, hn, ht, hf, hu, expand, h0, h1, h2, h3, semList, Tower.setSem, sem, nulT, undefT]
 
 /-- Supported wire-value membership is preserved in both directions. -/
-theorem translate_exact {t : Wire.Ty} {A u v}
+theorem translate_exact {T : Table} (hT : initial <+: T) {t : Wire.Ty} {A u v}
     (ht : translate t = .ok A) (hv : value u = .ok v) (n W) :
-    Wire.mem u t ↔ meaning graph A n W v := by
+    Wire.mem u t ↔ meaning (graph T) A n W v := by
   unfold translate at ht
   split at ht
   · rename_i h
     simp only [Bool.and_eq_true] at h
     have htop : t.top = false := by simpa using h.1
     cases ht
-    rw [encode_meaning]
+    rw [encode_meaning hT]
     cases u <;> simp only [value] at hv
     all_goals try contradiction
     · cases hv
@@ -127,4 +153,5 @@ theorem translate_exact {t : Wire.Ty} {A u v}
   · contradiction
 
 #print axioms translate_exact
+#print axioms label_meaning
 end Verification.ExperimentState.SourceTypes

@@ -7,16 +7,17 @@ No current-content fact is assumed at the function's external entry. -/
 set_option maxRecDepth 65536
 namespace Verification.ExperimentState.HeapGuardTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
-private def G := SourceTypes.graph
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [1,2] []]]
+private def G := SourceTypes.graph T
 private def R : List HeapFacts.Literal := [.tru,.fls]
 private def empty : Knowledge := ⟨[],[],[]⟩
 private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) : Evidence Nat :=
   .node ⟨Γ,t,A⟩ r []
-private def allocProof : Evidence Nat := .node ⟨[[1,2]],.alloc (.var 0),[9]⟩ .alloc
+private def allocProof : Evidence Nat := .node ⟨[[1,2]],.alloc (.var 0),[4]⟩ .alloc
   [leaf [[1,2]] (.var 0) [1,2] .var]
 private def allocated := allocOutput empty R
 private def readResult := readOutput allocated 0 R
-private def copyProof := leaf [[1,2],[9],[1,2]] (.var 0) [1,2] .var
+private def copyProof := leaf [[1,2],[4],[1,2]] (.var 0) [1,2] .var
 private def copied := copy readResult 0
 private def yes : Knowledge := ⟨[⟨0,[.tru]⟩],[],[]⟩
 private def no : Knowledge := ⟨[⟨0,[.fls]⟩],[],[]⟩
@@ -30,14 +31,14 @@ def program : Program :=
 def certificate : ControlFlow.Certificate Nat :=
   [{expression := allocProof, edges := [[.subset,.subset]],
     effect := some (.allocated 0 R allocProof), output := allocated},
-   {expression := leaf [[9],[1,2]] (.read (.var 0)) [1,2] .read,
+   {expression := leaf [[4],[1,2]] (.read (.var 0)) [1,2] .read,
     edges := [[.subset,.subset,.subset]], knowledge := allocated,
     effect := some (.observedRead 0 R), output := readResult},
    {expression := copyProof, edges := [[.subset],[.subset]], knowledge := readResult,
     effect := some (.pure copyProof), output := copied},
-   {expression := leaf [[9]] (.read (.var 0)) [1] .read, edges := [[.subset]],
+   {expression := leaf [[4]] (.read (.var 0)) [1] .read, edges := [[.subset]],
     knowledge := yes, effect := some (.observedRead 0 [.tru]), output := readOutput yes 0 [.tru]},
-   {expression := leaf [[9]] (.read (.var 0)) [2] .read, edges := [[.subset]],
+   {expression := leaf [[4]] (.read (.var 0)) [2] .read, edges := [[.subset]],
     knowledge := no, effect := some (.observedRead 0 [.fls]), output := readOutput no 0 [.fls]},
    {expression := leaf [[1,2]] (.var 0) [1,2] .var, edges := []}]
 

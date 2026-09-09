@@ -1,8 +1,8 @@
 /**
- * A location under two invariant contracts at once. Both contracts denote the
- * same set of values, so the conjunction is inhabited and behaves as either
- * operand: the annotation lowers to a two-operand reference clause, and
- * covering shows it equivalent to the plain cell the producer claims.
+ * A location under two invariant contracts at once. Conjunction is commutative
+ * and idempotent, so the operands are sorted and deduplicated before the
+ * reference clause is interned: two spellings of one contract lower to the
+ * plain cell the producer claims.
  */
 function sameContractTwice(seed: boolean): boolean {
   const cell: { value: boolean } & { value: boolean } = { value: seed };

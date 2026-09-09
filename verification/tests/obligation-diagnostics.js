@@ -32,8 +32,14 @@ try {
   const f = JSON.parse(parsed.stdout).functions[0],
     pos = f.body[0].e.pos;
   const base = {
-    version: 2,
-    profile: "stateful-source-532-v2",
+    version: 3,
+    profile: "stateful-source-v3",
+    types: [
+      ["nul"],
+      [{ boolLit: { value: true } }],
+      [{ boolLit: { value: false } }],
+      ["undef"],
+    ],
     file,
     sourceSha256: hash(source),
     functions: [

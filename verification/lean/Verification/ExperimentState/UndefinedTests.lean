@@ -1,49 +1,53 @@
 import Verification.ExperimentState.SourceExtraction
 
-/-! Exact undefined contracts and checked rules. The source suite separately
-exercises exported claims and execution; these checks pin the consumer itself. -/
+/-! Exact undefined contracts, table growth and checked rules. The source suite
+separately exercises exported claims and execution; these pin the consumer. -/
 namespace Verification.ExperimentState.UndefinedTests
 open ProgramTyping ProgramCertificates SourceTypes PositiveRules HeapExpressionRules
 
-#guard encode ⟨false,[.undef]⟩ == [75]
-#guard encode ⟨false,[.null,.bool,.undef]⟩ == [0,1,2,75]
-#guard CellClaims.referenceLabel [75] != CellClaims.referenceLabel []
-#guard FunctionClaims.label [75] [1,2] != FunctionClaims.label [] [1,2]
-#guard FunctionClaims.label [1,2] [75] != FunctionClaims.label [1,2] []
--- Unknown operands cannot silently lose labels during selection.
-#guard CellClaims.referenceLabel [999] == types.length
-#guard FunctionClaims.label [999] [75] == types.length
--- A location under two contracts has a label of its own, in either order, and
--- is not the plain cell; under three it has none, and lands past the table.
-#guard label (.refs [0] [[1,2]]) < types.length
-#guard label (.refs [1,2] [[0]]) < types.length
-#guard label (.refs [0] [[1,2]]) != CellClaims.referenceLabel [0]
-#guard label (.refs [0] [[1,2],[1]]) == types.length
+#guard encode ⟨false,[.undef]⟩ == [3]
+#guard encode ⟨false,[.null,.bool,.undef]⟩ == [0,1,2,3]
 
-private def undefProof : Evidence Nat := .node ⟨[],.undef,[75]⟩ .undef []
-#guard checkTree graph undefProof
-#guard !checkTree graph (.node ⟨[],.undef,[0]⟩ .undef [])
+-- Interning gives distinct contracts distinct labels, returns a known label
+-- without a new row, and never lets undefined collapse into a smaller operand.
+private def lowered : Except String (List Nat × Table) :=
+  (do return [← CellClaims.reference [3], ← CellClaims.reference [], ← use (.arrs [([3],[1,2])]),
+      ← use (.arrs [([],[1,2])]), ← CellClaims.reference [3]]).run initial
+#guard lowered.toOption.map (·.1) == some [4,5,6,7,4]
+#guard lowered.toOption.map (·.2.length) == some 8
+-- A clause the table lacks is out of range, never a different contract.
+#guard label initial (.refs [3] []) == initial.length
+-- A location under two contracts has a label of its own, not the plain cell's.
+private def pair := intern initial (.refs [0] [[1,2]])
+#guard label pair (.refs [0] [[1,2]]) == 4
+#guard label pair (.refs [0] []) == pair.length
+
+private def G := graph initial
+private def undefProof : Evidence Nat := .node ⟨[],.undef,[3]⟩ .undef []
+#guard checkTree G undefProof
+#guard !checkTree G (.node ⟨[],.undef,[0]⟩ .undef [])
 #guard (pureOutput ⟨[],[],[]⟩ .undef).values == [⟨0,[.undef]⟩]
-#guard HeapKnowledge.literals graph [0,75] == some [.nul,.undef]
+#guard HeapKnowledge.literals G [0,3] == some [.nul,.undef]
 
-private def write (A : Ty Nat) : Evidence Nat :=
-  let Ref := [CellClaims.referenceLabel A]
-  let Γ := [Ref,[75]]
-  .node ⟨Γ,.write (.var 0) (.var 1),[0]⟩ .write
+private def write (A : Ty Nat) : Bool :=
+  let T := intern initial (.refs A [])
+  let Ref := [label T (.refs A [])]
+  let Γ := [Ref,[3]]
+  checkTree (graph T) (.node ⟨Γ,.write (.var 0) (.var 1),[0]⟩ .write
     [.node ⟨Γ,.var 0,Ref⟩ .var [],.node ⟨Γ,.var 1,A⟩ (.sub .subset)
-      [.node ⟨Γ,.var 1,[75]⟩ .var []]]
+      [.node ⟨Γ,.var 1,[3]⟩ .var []]])
 -- The write rule requires the RHS at the invariant, so a direct singleton
 -- storage contract accepts undefined and a Boolean one cannot.
-#guard checkTree graph (write [75])
-#guard checkTree graph (write [1,2,75])
-#guard !checkTree graph (write [1,2])
+#guard write [3]
+#guard write [1,2,3]
+#guard !write [1,2]
 
-#guard decide (Answers graph [0,75] .isNullish true)
-#guard !decide (Answers graph [0,75] .isNul true)
-#guard !decide (Answers graph [0,75] .isUndef true)
-#guard BranchRefinement.tagSlice graph [0,1,2,75] .isUndef true == [75]
-#guard BranchRefinement.tagSlice graph [0,1,2,75] .isNul false == [1,2,75]
-#guard BranchRefinement.tagSlice graph [0,1,2,75] .isNullish false == [1,2]
+#guard decide (Answers G [0,3] .isNullish true)
+#guard !decide (Answers G [0,3] .isNul true)
+#guard !decide (Answers G [0,3] .isUndef true)
+#guard BranchRefinement.tagSlice G [0,1,2,3] .isUndef true == [3]
+#guard BranchRefinement.tagSlice G [0,1,2,3] .isNul false == [1,2,3]
+#guard BranchRefinement.tagSlice G [0,1,2,3] .isNullish false == [1,2]
 
 #print axioms SourceTypes.translate_exact
 #print axioms CellClaims.reference_exact

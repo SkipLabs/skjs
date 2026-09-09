@@ -40,9 +40,9 @@ try {
     fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(file,cp,op);assert.equal(r.status,0,r.stderr);
     const d=JSON.parse(fs.readFileSync(op));
-    assert.equal(d.version,2);assert.equal(d.profile,"stateful-source-532-v2");
+    assert.equal(d.version,3);assert.equal(d.profile,"stateful-source-v3");
     const point=d.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
-    assert.deepEqual(point.type,[9]);assert.deepEqual(point.current,[1]);
+    assert.deepEqual(d.types[point.type[0]],[{refs:{first:[1,2],rest:[]}}]);assert.equal(point.type.length,1);assert.deepEqual(point.current,[1]);
     const omissions=JSON.parse(fs.readFileSync(op+".conversion.json")).omissions;
     assert(!omissions.some(o=>o.function===changed.name&&JSON.stringify(o.site.pos)===JSON.stringify(changed.pos)));
     const checked=run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
@@ -53,7 +53,7 @@ try {
     const report=fromSourceClaims(fs.readFileSync(file,"utf8"),file,d,"candidate");
     const shown=report.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert(shown.type.includes(" = (true)"));
-    assert.deepEqual(shown.raw,{type:[9],current:[1]});
+    assert.deepEqual(shown.raw,{type:point.type,current:[1]});
     const {verifySkjs}=require("../tools/annotate-source.js");
     const result=verifySkjs(file,fs.readFileSync(file,"utf8"),d,file,report,verifier,10,true)
       .results[report.functions.findIndex(f=>f.name===changed.name)];
@@ -63,7 +63,7 @@ try {
     assert.notEqual(run(verifier,["--check-source-claims",ap,op,file,ep]).status,0,"old evidence cannot erase an impossible observation");
     const empty=check();assert.notEqual(empty.status,0);
     assert(empty.stderr.includes("obligation-diagnostic:"),empty.stderr);
-    point.current=[9];fs.writeFileSync(op,JSON.stringify(d));
+    point.current=point.type.slice();fs.writeFileSync(op,JSON.stringify(d));
     const invalid=check();assert.notEqual(invalid.status,0);
     assert(invalid.stderr.includes("invalid source claims"),invalid.stderr);
     delete point.current;fs.writeFileSync(op,JSON.stringify(d));

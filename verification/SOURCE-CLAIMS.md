@@ -1,8 +1,8 @@
 # Producer-independent source sidecars
 
-The `stateful-source-532-v2` profile supplies types directly from the current
-calculus source graph. It contains no SKJS type atoms, inferred bounds or stored
-proof results. A human or another producer can write it. This is a bounded
+The `stateful-source-v3` profile supplies types directly as calculus labels into
+a type table the document carries. It contains no SKJS type atoms, inferred
+bounds or stored proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
 
@@ -28,10 +28,11 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 
 ```json
 {
-  "version": 2,
-  "profile": "stateful-source-532-v2",
+  "version": 3,
+  "profile": "stateful-source-v3",
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
+  "types": [["nul"], [{"boolLit": {"value": true}}], [{"boolLit": {"value": false}}], ["undef"]],
   "functions": [{
     "name": "identity",
     "namePos": [9, 17],
@@ -46,9 +47,10 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 }
 ```
 
-`stateful-source-532-v2` is the only accepted profile. Every point carries an
-explicit `current` field, and documents written for an earlier profile must be
-regenerated rather than upgraded in place.
+`stateful-source-v3` is the only accepted profile. Every point carries an
+explicit `current` field. Documents written for an earlier profile, including
+the fixed-table `stateful-source-532-v2`, are rejected and must be regenerated
+rather than upgraded in place.
 
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
@@ -58,32 +60,34 @@ the invariant candidate checked on initial entry and every back edge. The existi
 against initialized lexical bindings and retains its shadowing restrictions.
 This version does not yet introduce declaration IDs.
 
-Type references are sorted, duplicate-free lists of labels. The list denotes a
-union; `[]` denotes `never`, `[1,2]` denotes `boolean`, and `[0,1,2]` denotes
-`null | boolean`. The source decoder also accepts unions mixing supported cell
-and function atoms with primitives; the profile itself does not change. For
-example, `[0,9]` represents a nullable Boolean cell. Existing limits on external
-cell/function parameters, primitive field contracts and primitive arrow inputs
-and results remain in force. The profile fixes the graph to `SourceTypes.types`:
+Type references are sorted, duplicate-free lists of labels into the document's
+`types` table, read as a union: `[]` denotes `never`, `[1,2]` denotes `boolean`,
+and `[0,1,2]` denotes `null | boolean`. The source decoder also accepts unions
+mixing supported cell and function atoms with primitives. Existing limits on
+external cell/function parameters, primitive field contracts and primitive
+arrow inputs and results remain in force.
 
-| Labels | Meaning |
-| --- | --- |
-| `0`, `1`, `2` | `null`, `true`, `false`, respectively |
-| `3 + m`, for `0 ≤ m < 8` | `Ref<U(m)>`, an invariant plain cell contract |
-| `11 + 8d + r`, for `0 ≤ d,r < 8` | Unary arrow `U(D[d]) → U(r)`, where `D = [1,0,2,3,4,5,6,7]` |
-| `75` | `undefined` |
-| `76`–`83` | References whose primitive operand includes undefined |
-| `84`–`275` | Arrows with undefined in the domain, codomain, or both |
-| `276`–`531` | A location under two invariant contracts at once, `Ref<A> & Ref<B>` |
+The table is the graph the functions are checked against. Row `i` is the list
+of clauses that label `i` denotes, and a clause names its operands as label
+lists into the same table:
 
-`U(m)` is the union selected by the mask: bit 0 selects null, bit 1 true, and bit
-2 false. Thus label `9` is `Ref<boolean>` and label `17` is `null → boolean`.
-The 532-label table covers all 16 primitive subsets, 16 reference contracts, 256
-unary arrows and the 256 ordered pairs of reference contracts. Both orders of a
-pair are generated: they denote the same conjunction but are distinct clauses to
-a lookup, so having both spares every caller a canonical ordering. `SourceTypes.types` defines its exact order; selectors look up
-the whole clause and Lean proves exactness. The display mirror is tested against
-the entire Lean table. Earlier profiles and evidence must be regenerated.
+| Row | Clause | Meaning |
+| --- | --- | --- |
+| `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"` | The primitives, fixed |
+| any | `{"refs": {"first": A, "rest": []}}` | `Ref<A>`, an invariant plain cell holding the union `A` |
+| any | `{"refs": {"first": A, "rest": [B, ...]}}` | One location under every listed contract, `Ref<A> & Ref<B>` |
+| any | `{"arrs": {"arrows": [[D, R]]}}` | The unary arrow `D => R` |
+
+The table starts with the four primitives and holds one further row per compound
+type the source mentions, in order of first use: a compound type gets a row the
+first time it is translated and the same label afterwards, so equal types share
+a label and no row exists that nothing uses. Labels are names, not meanings:
+`[4]` is `Ref<boolean>` in a document whose row 4 says so, and the checker's
+theorems hold for every table (`HasTy.sound` is graph-generic). Any table that
+starts with the primitives and refers only to its own labels is accepted;
+`SourceTypes.label_meaning` proves that a labelled clause means exactly that
+clause. The exporter writes the table it built, and `--produce` may grow a
+request's table further with annotations the claims did not mention.
 
 ## Conjunction
 
@@ -105,13 +109,14 @@ The rule that keeps this honest is that the format may not be able to say more
 than the clause language can hold. `and` on a primitive atom is refused, because
 no clause conjoins primitives and a decoder would have to invent a meaning for
 it. `and` on a function atom is the shape a multi-signature arrow will take, and
-is refused for now by the source parser, since the graph has no label for one.
+is refused for now by the source parser, since the arrow lowering takes one
+signature.
 
-It may say more than the *graph* holds, and that is different: three conjoined
-contracts are a clause the graph does not generate, so the label lookup returns
-an out-of-range index and the claim is refused rather than quietly becoming a
-smaller contract. Exceeding the table is caught; exceeding the language would
-not be.
+A conjunction lowers to one `refs` row. Conjunction is commutative and
+idempotent, so the operands are sorted and deduplicated before the row is
+interned: the two spellings of a pair share a label, and a conjunction of one
+contract is the plain cell. Any number of operands is one row, so nothing here
+depends on how many contracts a location is under.
 
 These are calculus contracts; the source boundary still checks that allocations
 and operations justify their interpretation. An array of several reference or
@@ -134,11 +139,12 @@ combined notation; this section specifies its sidecar encoding.
 
 Bindings and expressions have a required `current` field: `null` means no
 additional assertion; otherwise it is a sorted, duplicate-free list of primitive
-labels (`0` null, `1` true, `2` false, `75` undefined). With a non-null assertion,
-`type` must be exactly one generated invariant-reference label. For example:
+labels (`0` null, `1` true, `2` false, `3` undefined). With a non-null assertion,
+`type` must be exactly one single-contract reference label. For example, in a
+document whose row 4 is `Ref<boolean>`:
 
 ```json
-{"name":"cell","type":[9],"current":[1]}
+{"name":"cell","type":[4],"current":[1]}
 ```
 
 This displays as `{ value: boolean = (true) }`. The storage invariant and current

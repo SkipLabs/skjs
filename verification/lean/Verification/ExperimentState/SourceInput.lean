@@ -11,7 +11,7 @@ open Lean ProgramTyping PositiveRules
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
 Record fields and arrow inputs/results retain their bounded primitive decoders. -/
-def translate (j : Json) : Except String (Ty Nat) := do
+def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
   CellClaims.fieldsExactly j ["top","atoms"]
@@ -25,7 +25,7 @@ def translate (j : Json) : Except String (Ty Nat) := do
     ((tagged.filter (fun p => p.1 == "record")).map (·.2)).partition
       (fun a => (a.getObjVal? "and").toOption.isSome)
   let records ← CellUnion.translate plain
-  let conjunctions ← conjoined.mapM fun a => do return [← CellClaims.conjunctionLabel a]
+  let conjunctions ← conjoined.mapM fun a => do return [← CellClaims.conjunction a]
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
@@ -40,15 +40,15 @@ structure PointType where
   type : Ty Nat
   current : Option (Ty Nat) := none
 
-def translatePoint (j : Json) : Except String PointType := do
+def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
   -- Preserve the existing exact union translation when it succeeds.
-  match translate j with
+  match ← SourceTypes.attempt (translate j) with
   | .ok A => return ⟨A,none⟩
   | .error original =>
     let .ok f := CellClaims.decode j | throw original
     let R ← SourceTypes.translate f.read
     let W ← SourceTypes.translate f.write
-    return ⟨[CellClaims.referenceLabel W],some R⟩
+    return ⟨[← CellClaims.reference W],some R⟩
 
 inductive Expr where
   | var (pos : Span) (name : String)

@@ -10,7 +10,8 @@ set_option maxHeartbeats 2000000
 namespace Verification.ExperimentState.HeapGraphTests
 open ProgramTyping ProgramCertificates ControlFlow HeapKnowledge HeapExpressionRules
 
-private def G := SourceTypes.graph
+private def T : SourceTypes.Table := SourceTypes.initial ++ [[.refs [1,2] []]]
+private def G := SourceTypes.graph T
 private def leaf (Γ : List (List Nat)) (t : Tm) (A : List Nat) (r : Rule Nat) : Evidence Nat :=
   .node ⟨Γ,t,A⟩ r []
 private def widen (e : Evidence Nat) : Evidence Nat :=
@@ -21,10 +22,10 @@ def program : Program :=
    ⟨.write (.var 1) (.var 0),.effect ⟨4,some [1]⟩⟩,
    ⟨.read (.var 0),.bind 5⟩,⟨.var 0,.ret⟩]
 
-private def allocProof : Evidence Nat := .node ⟨[[2]],.alloc (.var 0),[9]⟩ .alloc
+private def allocProof : Evidence Nat := .node ⟨[[2]],.alloc (.var 0),[4]⟩ .alloc
   [widen (leaf [[2]] (.var 0) [2] .var)]
-private def writeProof : Evidence Nat := .node ⟨[[1],[9],[2]],.write (.var 1) (.var 0),[0]⟩ .write
-  [leaf [[1],[9],[2]] (.var 1) [9] .var, widen (leaf [[1],[9],[2]] (.var 0) [1] .var)]
+private def writeProof : Evidence Nat := .node ⟨[[1],[4],[2]],.write (.var 1) (.var 0),[0]⟩ .write
+  [leaf [[1],[4],[2]] (.var 1) [4] .var, widen (leaf [[1],[4],[2]] (.var 0) [1] .var)]
 private def allocated : Knowledge := allocOutput ⟨[],[],[]⟩ [.fls]
 private def beforeWrite := pureOutput allocated .tru
 private def written := writeOutput beforeWrite 1 [.tru]
@@ -35,13 +36,13 @@ def certificate : ControlFlow.Certificate Nat :=
   [{expression := leaf [] .fls [2] .flsLit, edges := [[.subset]]},
    {expression := allocProof, edges := [[.subset,.subset]],
     effect := some (.allocated 0 [.fls] allocProof), output := allocated},
-   {expression := leaf [[9],[2]] .tru [1] .truLit, edges := [[.subset,.subset,.subset]],
-    knowledge := allocated, effect := some (.pure (leaf [[9],[2]] .tru [1] .truLit)), output := beforeWrite},
+   {expression := leaf [[4],[2]] .tru [1] .truLit, edges := [[.subset,.subset,.subset]],
+    knowledge := allocated, effect := some (.pure (leaf [[4],[2]] .tru [1] .truLit)), output := beforeWrite},
    {expression := writeProof, edges := [[.subset]], knowledge := beforeWrite,
     effect := some (.written 1 0 [.tru] writeProof), output := written},
-   {expression := leaf [[9]] (.read (.var 0)) [1,2] .read, edges := [[.subset,.subset]],
+   {expression := leaf [[4]] (.read (.var 0)) [1,2] .read, edges := [[.subset,.subset]],
     knowledge := beforeRead, effect := some (.observedRead 0 [.tru]), output := readResult},
-   {expression := leaf [[1,2],[9]] (.var 0) [1] .var, edges := [], knowledge := readResult,
+   {expression := leaf [[1,2],[4]] (.var 0) [1] .var, edges := [], knowledge := readResult,
     effect := some (.knownValue 0 [.tru]), output := withResult (copy readResult 0) [.tru]}]
 
 #guard checkClosed G [1] program certificate 0
@@ -64,7 +65,7 @@ theorem safe (n : Nat) : SafeGraph program (PositiveRules.meaning G [1]) n
 
 -- A back edge must re-establish the head's facts just like the first edge.
 private def cycleProgram := program.set 5 ⟨.var 0,.effect ⟨4,some [1]⟩⟩
-private def cycleValue := leaf [[1,2],[9]] (.var 0) [1,2] .var
+private def cycleValue := leaf [[1,2],[4]] (.var 0) [1,2] .var
 private def cycleCertificate := certificate.set 5
   {expression := cycleValue, edges := [[.subset]], knowledge := readResult,
    effect := some (.pure cycleValue), output := copy readResult 0}
@@ -77,7 +78,7 @@ private def cycleCertificate := certificate.set 5
 
 -- The external checker consumes the same facts and effects through strict JSON.
 private def request : RequestJson.Request :=
-  ⟨2,SourceTypes.types,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
+  ⟨2,T,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
 private def response : RequestJson.Response := ⟨6,certificate⟩
 #guard RequestJson.verify request response
 #guard match RequestJson.verifyJson (Lean.toJson request) (Lean.toJson response) with

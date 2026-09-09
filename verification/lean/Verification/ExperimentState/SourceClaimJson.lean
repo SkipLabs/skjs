@@ -1,6 +1,7 @@
 import Verification.ExperimentState.SourceExtraction
 
-/-! Strict producer-independent sidecars for the fixed source graph. The external
+/-! Strict producer-independent sidecars. A document carries its own type table,
+which its labels index; the primitives are its first four rows. The external
 parser supplies the source fingerprint; this module checks agreement, not hashing
 or the parser's semantic correctness. Saved statuses are not part of the schema. -/
 namespace Verification.ExperimentState.SourceClaimJson
@@ -33,8 +34,11 @@ structure Document where
   profile : String
   file : String
   sourceSha256 : String
+  types : SourceTypes.Table
   functions : List Function
   deriving ToJson, FromJson
+
+def profile : String := "stateful-source-v3"
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
   ⟨f.name,f.namePos,f.params.map (fun b => (b.name,.ok b.type)),.ok f.result,
@@ -43,31 +47,39 @@ def Function.normalized (f : Function) : SourceClaims.Function :=
     f.entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·))),
     f.expressions.filterMap (fun e => e.current.map (e.pos,·))⟩
 
-private def validType (A : List Nat) : Bool :=
-  validTy SourceTypes.types.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
-private def validCurrent (A : List Nat) (current : Option (List Nat)) : Bool :=
+/-- The table starts with the primitives and refers only to its own labels. -/
+private def validTable (T : SourceTypes.Table) : Bool :=
+  SourceTypes.initial.isPrefixOf T && (T.flatMap id |>.flatMap clauseTypes).all (validTy T.length)
+private def validType (T : SourceTypes.Table) (A : List Nat) : Bool :=
+  validTy T.length A && A == A.mergeSort (· ≤ ·) && A.eraseDups == A
+private def validCurrent (T : SourceTypes.Table) (A : List Nat) (current : Option (List Nat)) : Bool :=
   match current with
   | none => true
   | some R =>
-    (match PositiveRules.expand SourceTypes.graph A with | [.refs _ []] => true | _ => false) &&
-      validType R && R.all SourceTypes.isPrimitive
-private def validBindings (bs : List Binding) : Bool :=
-  (bs.map (·.name)).eraseDups.length == bs.length && bs.all (fun b => !b.name.isEmpty && validType b.type && validCurrent b.type b.current)
+    (match PositiveRules.expand (SourceTypes.graph T) A with | [.refs _ []] => true | _ => false) &&
+      validType T R && R.all SourceTypes.isPrimitive
+private def validBindings (T : SourceTypes.Table) (bs : List Binding) : Bool :=
+  (bs.map (·.name)).eraseDups.length == bs.length &&
+    bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current)
 private def validSpan (p : Span) : Bool := p.1 < p.2
-private def validFunction (f : Function) : Bool :=
-  !f.name.isEmpty && validSpan f.namePos && validBindings f.params && f.params.all (fun b => b.current.isNone) && validType f.result &&
+private def validFunction (T : SourceTypes.Table) (f : Function) : Bool :=
+  !f.name.isEmpty && validSpan f.namePos && validBindings T f.params &&
+  f.params.all (fun b => b.current.isNone) && validType T f.result &&
   (f.entries.map (·.start)).eraseDups.length == f.entries.length &&
   (f.expressions.map (·.pos)).eraseDups.length == f.expressions.length &&
-  f.entries.all (fun e => validBindings e.bindings) &&
-  f.expressions.all (fun e => validSpan e.pos && validType e.type && validCurrent e.type e.current)
+  f.entries.all (fun e => validBindings T e.bindings) &&
+  f.expressions.all (fun e => validSpan e.pos && validType T e.type && validCurrent T e.type e.current)
 
 def decode (j : Json) : Except String Document := do
   let d : Document ← decodeStrict j
-  if !(d.version == 2 && d.profile == "stateful-source-532-v2") then
+  if !(d.version == 3 && d.profile == profile) then
     throw "unsupported source-claim profile or version"
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"
-  if !d.functions.all validFunction then throw "invalid source claims: duplicate identity, span, binding or type labels"
+  if !validTable d.types then
+    throw "invalid source claims: the type table must start with the primitives and refer only to its own labels"
+  if !d.functions.all (validFunction d.types) then
+    throw "invalid source claims: duplicate identity, span, binding or type labels"
   if (d.functions.map (fun f => (f.name,f.namePos))).eraseDups.length != d.functions.length then
     throw "duplicate function claims"
   return d
@@ -110,7 +122,7 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
     if !c.entries.all (fun e => sites.1.contains e.start) ||
         !c.expressions.all (fun e => sites.2.contains e.pos) then
       throw "claim site is not an entry or expression of the named source function"
-    extractNormalizedFn f c.normalized
+    extractNormalizedFn d.types f c.normalized
 
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json) : Except String Unit := do
   let rs ← extract ast claims fileKey

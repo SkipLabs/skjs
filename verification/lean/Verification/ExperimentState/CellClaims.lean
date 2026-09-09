@@ -5,7 +5,7 @@ not lower TypeScript objects. It validates a bounded export and refuses to pick
 one side when SKJS's read and write types differ. The plain-cell interpretation
 excludes arrays, callable objects, accessors and hidden object behavior. -/
 namespace Verification.ExperimentState.CellClaims
-open Lean ProgramTyping PositiveRules
+open Lean ProgramTyping PositiveRules SourceTypes
 
 def fieldsExactly (j : Json) (keys : List String) : Except String Unit := do
   let fields ← j.getObj?
@@ -104,24 +104,24 @@ theorem translate_checked {j : Json} {A} (h : translate j = .ok A) :
     simp only [hd] at h
     exact ⟨f,rfl,h⟩
 
-def interpretation (A : Ty Nat) : Fam := refT (meaning SourceTypes.graph A)
+def interpretation (T : Table) (A : Ty Nat) : Fam := refT (meaning (graph T) A)
 
 /-- The accepted invariant preserves both supplied primitive membership tests,
 using the existing exact translation theorem. No new semantic axioms are used. -/
-theorem agreeContract_exact {read write : Wire.Ty} {A u v}
+theorem agreeContract_exact {T : Table} (hT : initial <+: T) {read write : Wire.Ty} {A u v}
     (h : agreeContract read write = .ok A) (hv : SourceTypes.value u = .ok v) (n W) :
-    (Wire.mem u read ↔ meaning SourceTypes.graph A n W v) ∧
-    (Wire.mem u write ↔ meaning SourceTypes.graph A n W v) := by
+    (Wire.mem u read ↔ meaning (graph T) A n W v) ∧
+    (Wire.mem u write ↔ meaning (graph T) A n W v) := by
   obtain ⟨hr,hw⟩ := agreeContract_checked h
-  exact ⟨SourceTypes.translate_exact hr hv n W, SourceTypes.translate_exact hw hv n W⟩
+  exact ⟨SourceTypes.translate_exact hT hr hv n W, SourceTypes.translate_exact hT hw hv n W⟩
 
-theorem translate_exact {j : Json} {A u v}
+theorem translate_exact {T : Table} (hT : initial <+: T) {j : Json} {A u v}
     (h : translate j = .ok A) (hv : SourceTypes.value u = .ok v) (n W) :
     ∃ f, decode j = .ok f ∧
-      (Wire.mem u f.read ↔ meaning SourceTypes.graph A n W v) ∧
-      (Wire.mem u f.write ↔ meaning SourceTypes.graph A n W v) := by
+      (Wire.mem u f.read ↔ meaning (graph T) A n W v) ∧
+      (Wire.mem u f.write ↔ meaning (graph T) A n W v) := by
   obtain ⟨f,hf,hc⟩ := translate_checked h
-  exact ⟨f,hf,agreeContract_exact hc hv n W⟩
+  exact ⟨f,hf,agreeContract_exact hT hc hv n W⟩
 
 /-- A conjunction is written inside the atom that carries one, as `and`. The
 operands are the same single-contract atoms, decoded by the same decoder: the
@@ -140,43 +140,37 @@ private def conjuncts (atom : Json) : Except String (List Json) := do
         throw "nested conjunction in a cell contract"
     return plain :: others.toList
 
-/-- The label of a location under every contract in the conjunction. The graph
-is the authority on which conjunctions exist: it holds pairs, and one it does
-not hold is refused here by name rather than left as an index past the table. -/
-def conjunctionLabel (atom : Json) : Except String Nat := do
+/-- The label of a location under one contract. -/
+def reference (A : Ty Nat) : Lowering Nat := use (.refs A [])
+
+private def before : List Nat → List Nat → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | a :: as, b :: bs => a < b || (a == b && before as bs)
+
+/-- A location under every contract in the conjunction. Conjunction is
+commutative and idempotent, so the operands are sorted and deduplicated, and a
+conjunction of one contract is the plain cell. -/
+def conjunction (atom : Json) : Lowering Nat := do
   let parts ← conjuncts atom
   let types ← parts.mapM fun part =>
     translate (Json.mkObj [("top",toJson false),("atoms",toJson [part])])
-  let first :: rest := types | throw "an empty conjunction is not a contract"
-  let label := SourceTypes.label (.refs first rest)
-  if label < SourceTypes.types.length then return label
-  throw s!"a conjunction of {types.length} contracts has no label in the source graph"
+  let first :: rest := (types.mergeSort before).eraseDups
+    | throw "an empty conjunction is not a contract"
+  use (.refs first rest)
 
-/-- Select the exact generated reference node; unsupported operands never
-silently project down to a smaller invariant. -/
-def referenceLabel (A : Ty Nat) : Nat := SourceTypes.label (.refs A [])
+/-- The reference label denotes exactly the cell invariant, over any table
+holding its row, at every world and budget. -/
+theorem reference_exact {T : Table} {A : Ty Nat} (hm : [.refs A []] ∈ T) (n W v) :
+    meaning (graph T) [label T (.refs A [])] n W v ↔ interpretation T A n W v := by
+  rw [label_meaning hm]
+  simp [PositiveNormalization.sem, ReferenceConjunctions.refsT, interpretation]
 
-theorem reference_encode (t : Wire.Ty) :
-    expand SourceTypes.graph [referenceLabel (SourceTypes.encode t)] =
-      [.refs (SourceTypes.encode t) []] := by
-  apply SourceTypes.label_exact
-  apply SourceTypes.compound_mem
-  exact List.mem_append_left _
-    (List.mem_append_left _ (List.mem_map.mpr ⟨_,SourceTypes.encode_mem t,rfl⟩))
-
-/-- The graph label used by source extraction denotes exactly the accepted
-cell invariant, at every world and budget. -/
-theorem reference_exact {j : Json} {A} (h : translate j = .ok A) (n W v) :
-    meaning SourceTypes.graph [referenceLabel A] n W v ↔ interpretation A n W v := by
-  obtain ⟨f,_,hc⟩ := translate_checked h
-  have ht := (agreeContract_checked hc).1
-  unfold SourceTypes.translate at ht
-  split at ht
-  · cases ht
-    rw [expand_sem, reference_encode]
-    simp [PositiveNormalization.semList, Tower.setSem, PositiveNormalization.sem,
-      ReferenceConjunctions.refsT, interpretation]
-  · contradiction
+/-- Interning a reference yields a table holding its row and its label there. -/
+theorem reference_run {A : Ty Nat} {T T' : Table} {l}
+    (h : (reference A).run T = .ok (l, T')) :
+    [.refs A []] ∈ T' ∧ l = label T' (.refs A []) ∧ T <+: T' :=
+  use_spec h
 
 #print axioms reference_exact
 #print axioms translate_exact

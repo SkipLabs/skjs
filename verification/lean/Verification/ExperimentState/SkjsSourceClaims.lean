@@ -2,17 +2,25 @@ import Verification.ExperimentState.SourceClaims
 import Verification.ExperimentState.SourceInput
 
 /-! Decode SKJS type candidates once, before the source compiler consumes them.
-The compiler's claim interface itself does not depend on this wire encoding. -/
+The compiler's claim interface itself does not depend on this wire encoding.
+Every candidate is attempted on its own: a rejected one is kept as its failure
+and leaves no rows in the table. -/
 namespace Verification.ExperimentState.SkjsSourceClaims
+open SourceTypes
 
-def translate (c : SourceInput.Claims) : SourceClaims.Function :=
-  let point := fun ty => (SourceInput.translatePoint ty).map (·.type)
-  let current := fun ty => (SourceInput.translatePoint ty).toOption.bind (·.current)
-  let bindings := fun xs => xs.map fun (name,ty) => (name,point ty)
-  ⟨c.name,c.namePos,c.params.map (fun (n,t) => (n,SourceInput.translate t)),SourceInput.translate c.ret,
-   c.envs.map (fun (pos,vars) => (pos,bindings vars)),
-   c.exprs.map (fun (pos,ty) => (pos,point ty)),
-   c.envs.map (fun (pos,vars) => (pos,vars.filterMap fun (n,t) => (current t).map (n,·))),
-   c.exprs.filterMap (fun (pos,ty) => (current ty).map (pos,·))⟩
+def translate (c : SourceInput.Claims) : Lowering SourceClaims.Function := do
+  let candidate := fun ty => attempt (SourceInput.translate ty)
+  let point := fun ty => attempt (SourceInput.translatePoint ty)
+  let params ← c.params.mapM fun (name,ty) => do return (name, ← candidate ty)
+  let ret ← candidate c.ret
+  let envs ← c.envs.mapM fun (pos,vars) => do
+    return (pos, ← vars.mapM fun (name,ty) => do return (name, ← point ty))
+  let exprs ← c.exprs.mapM fun (pos,ty) => do return (pos, ← point ty)
+  let current := fun (p : Except String SourceInput.PointType) => p.toOption.bind (·.current)
+  return ⟨c.name,c.namePos,params,ret,
+    envs.map (fun (pos,vars) => (pos, vars.map fun (name,p) => (name, p.map (·.type)))),
+    exprs.map (fun (pos,p) => (pos, p.map (·.type))),
+    envs.map (fun (pos,vars) => (pos, vars.filterMap fun (name,p) => (current p).map (name,·))),
+    exprs.filterMap (fun (pos,p) => (current p).map (pos,·))⟩
 
 end Verification.ExperimentState.SkjsSourceClaims

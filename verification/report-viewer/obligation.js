@@ -72,6 +72,7 @@ const KIND_LABEL = {
 function clauseText(types, clause, depth) {
   if (clause === "nul") return "null";
   if (clause === "bool") return "boolean";
+  if (clause === "undef") return "undefined";
   if (clause && clause.boolLit) return String(clause.boolLit.value);
   if (depth <= 0) return "…";
   if (clause && clause.refs) {

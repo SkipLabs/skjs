@@ -174,7 +174,7 @@ The source compiler now consumes `SourceClaims.Function`: candidates expressed
 as calculus type labels or explicit decoding failures. `SkjsSourceClaims` is an
 adapter into that interface. Source annotations remain separate requirements.
 Direct callers use `extractNormalizedFn`; used labels are bounds checked against
-the current fixed source graph. The strict
+the request's own type table. The strict
 [independent source sidecar](SOURCE-CLAIMS.md) now exposes the same boundary
 through the CLI, with source identity, site and label validation. Both input
 paths reconstruct requests for the same proved evidence consumer. Arbitrary
@@ -406,11 +406,13 @@ an explicit return, and unsupported types. This is a coverage gate for this slic
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, undefined, boolean, their singleton types, unions and bottom exactly into
-four primitive labels. Sixteen further labels represent invariant references to
-subsets of these values, and 256 represent the unary arrows between them.
-Clause lookup selects the complete contract, with exactness proved in Lean; it
-cannot silently discard undefined from an operand. Lean proves the translation preserves primitive
-membership. Singleton clause and typing rules have been added with soundness
+four primitive labels, and interns each compound type a program mentions, an
+invariant reference, a conjunction of references or a unary arrow, as one row
+of the request's own type table. A label exists only because something used
+it, and `label_meaning` proves a labelled clause means exactly that clause over
+any table holding the row; a clause the table lacks has no label rather than a
+smaller one, so undefined cannot be silently discarded from an operand. Lean
+proves the translation preserves primitive membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
 
 Undefined is supported in required cell fields, primitive callbacks, explicit
@@ -893,18 +895,18 @@ that guarantee. `make verify` remains the experiment's source-facing command.
 
 ### Primitive callback integration
 
-The source graph contains all 256 unary arrows between subsets of null, undefined, true and
-false. `FunctionClaims.translate_exact` proves the selected arrow's domain and
-codomain interpretations. Existing application and lambda rules discharge their
-obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the fixed label table and
+A unary arrow between primitive unions is one interned row of the request's
+table. `FunctionClaims.arrow_exact` proves the row's domain and codomain
+interpretations. Existing application and lambda rules discharge their
+obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the table encoding and
 profile version.
 
 Source-mode search uses labels in the function's request and required-expression
 sequents, plus primitive labels. Vocabulary construction includes their operand
 types. This is a search restriction, not a restriction on consumer checking or
-a completeness claim. Enumerating every unused arrow at each subtype query was
-already expensive in this small table; expanding a fixed profile must not silently
-expand every local search problem.
+a completeness claim. A request's table holds only what its file mentions, but
+enumerating every unused arrow at each subtype query was already expensive at
+that size; a larger file must not silently expand every local search problem.
 
 The [captured-refinement fixture](tests/skjs-unsound/README.md) pairs a known stale
 read with a verified immutable snapshot. It distinguishes the raw contract boundary

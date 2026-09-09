@@ -30,17 +30,18 @@ private def produceSourceJson (j : Json) (fuel : Nat)
 #guard (meet (.boolLit true) (.boolLit false) : List (Clause (List Nat))) == []
 #guard (meet .bool (.boolLit true) : List (Clause (List Nat))) == [.boolLit true]
 
+private def G0 := SourceTypes.graph SourceTypes.initial
 private def request (t : Tm) (A : Ty Nat) : Request :=
-  ⟨2, SourceTypes.types, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
+  ⟨2, SourceTypes.initial, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
 #guard ok (produceSourceJson (toJson (request .tru [1])) 5)
 #guard ok (produceSourceJson (toJson (request .fls [2])) 5)
 #guard ok (produceSourceJson (toJson (request .tru [1,2])) 5)
 #guard !ok (produceSourceJson (toJson (request .tru [2])) 5)
 #guard !ok (produceSourceJson (toJson (request .fls [1])) 5)
 
-#guard PositiveCertificates.checkClause SourceTypes.graph [] [] (.boolLit true) .bool
-#guard !PositiveCertificates.checkClause SourceTypes.graph [] [] .bool (.boolLit true)
-#guard !PositiveCertificates.checkClause SourceTypes.graph [] [] (.boolLit true) (.boolLit false)
+#guard PositiveCertificates.checkClause G0 [] [] (.boolLit true) .bool
+#guard !PositiveCertificates.checkClause G0 [] [] .bool (.boolLit true)
+#guard !PositiveCertificates.checkClause G0 [] [] (.boolLit true) (.boolLit false)
 
 -- Primitive fixture types use the same JSON schema as real source claims.
 private def wireTy (t : Wire.Ty) : Json := Json.mkObj [("top", toJson t.top),
@@ -62,7 +63,7 @@ private def checkLiteralNegation (q : Bool) : Except String Unit := do
   let j := toJson r.toRequest
   verifyJson j (← produceSourceJson j 10)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels SourceTypes.types.length 10 r.obligations
+    r.searchLabels r.types.length 10 r.obligations
   pure ()
 #guard ok (checkLiteralNegation true)
 #guard ok (checkLiteralNegation false)
@@ -315,7 +316,7 @@ private def branchCaptureProgram : ControlFlow.Program :=
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels SourceTypes.types.length 0 r.obligations
+    r.searchLabels r.types.length 0 r.obligations
   pure ())
 
 theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 37 []
@@ -363,7 +364,7 @@ private def joinedCaptureProgram : ControlFlow.Program :=
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels SourceTypes.types.length 0 r.obligations
+    r.searchLabels r.types.length 0 r.obligations
   pure ())
 
 theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 44 []
@@ -420,7 +421,7 @@ private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
 #guard [true,false].all fun q => ok (do
   let r ← extractFn (earlyCaptureFn q) (earlyCaptureClaims q)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels SourceTypes.types.length 0 r.obligations
+    r.searchLabels r.types.length 0 r.obligations
   pure ())
 
 theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgram q)
@@ -449,14 +450,14 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[]⟩
 #guard captureRequired.obligations.length == 4
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
-  captureRequired.searchLabels SourceTypes.types.length 10 captureRequired.obligations)
+  captureRequired.searchLabels captureRequest.types.length 10 captureRequired.obligations)
 private def narrowedCapture : SourceInput.Claims :=
   { captureClaims with exprs := captureClaims.exprs.map fun (pos,ty) =>
     (pos, if pos == (12,15) then t else ty) }
 #guard ok (do produceSourceJson (toJson (← extractFn captureFn narrowedCapture).toRequest) 10)
 #guard !ok (do
   let r ← extractFn captureFn narrowedCapture
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels SourceTypes.types.length 10 r.obligations)
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 10 r.obligations)
 
 private def writerFn : SourceInput.Fn :=
   ⟨"writer",(0,1),[],wireTy ⟨false,[.bool]⟩,
@@ -483,7 +484,7 @@ private def writerProgram : ControlFlow.Program :=
 #guard ok (do
   let r ← extractFn writerFn writerClaims
   let _ ← produceSourceJson (toJson r.toRequest) 10
-  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels SourceTypes.types.length 10 r.obligations)
+  ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 10 r.obligations)
 
 /-- Calling the extracted writer changes the heap and returns its RHS, not null. -/
 theorem closure_write_trace : ControlFlow.Execution writerProgram 26 []
@@ -515,7 +516,7 @@ private def blockCaptureClaims (unitTy : Json) : SourceInput.Claims :=
 private def blockObligations (unitTy : Json) : Except String Unit := do
   let r ← extractFn blockCaptureFn (blockCaptureClaims unitTy)
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels SourceTypes.types.length 10 r.obligations
+    r.searchLabels r.types.length 10 r.obligations
   pure ()
 #guard ok (blockObligations (wireTy ⟨false,[.null]⟩))
 -- Forgetting parameter precision is allowed; inventing an unused type is not.
@@ -569,14 +570,14 @@ theorem local_writer_trace : ControlFlow.Execution localWriterProgram 29 []
 #print axioms local_writer_trace
 
 -- A suggested intermediate type cannot turn false into true.
-#guard !(CertificateProducer.expressionWith SourceTypes.graph [[1],[2],[1,2]]
+#guard !(CertificateProducer.expressionWith G0 [[1],[2],[1,2]]
   [⟨[],.fls,[1]⟩] 4 [] (.app (.lam (.var 0)) .fls) [1]).isSome
 
 -- Direct recipes preserve supplied types while rebuilding proofs in the actual context.
 private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
-#guard ((DirectProof.render SourceTypes.graph [[1],[2],[1,2]] [[2]] widenedVariable).map
-  (fun e => ProgramCertificates.checkTree SourceTypes.graph e)) == some true
-#guard !(DirectProof.render SourceTypes.graph [[1],[2],[1,2]] [[2]]
+#guard ((DirectProof.render G0 [[1],[2],[1,2]] [[2]] widenedVariable).map
+  (fun e => ProgramCertificates.checkTree G0 e)) == some true
+#guard !(DirectProof.render G0 [[1],[2],[1,2]] [[2]]
   (DirectProof.var [[1]] 0 [1])).isSome
 
 -- All supported closure obligations now have recipes and require no expression-search fuel.
@@ -584,25 +585,29 @@ private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]
   let r ← extractFn localWriterFn localWriterClaims
   if r.obligations.any (fun q => q.plan.isNone) then throw "missing recipe"
   let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
-    r.searchLabels SourceTypes.types.length 0 r.obligations
+    r.searchLabels r.types.length 0 r.obligations
   pure ())
 
 -- A forged recipe or reused certificate is still rejected by the ordinary checker.
 private def forged : ProgramCertificates.Evidence Nat :=
   .node ⟨[],.fls,[1]⟩ .truLit []
 #guard !ok (produceSourceJson (toJson (request .fls [1])) 4 [] [forged])
-#guard !ok (ExpressionClaims.produce SourceTypes.graph [0,1,2] 19 4
+#guard !ok (ExpressionClaims.produce G0 [0,1,2,3] SourceTypes.initial.length 4
   [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim",[]⟩])
 
 -- Source unions compose already-supported atoms, preserving every arm's checks.
+-- Each compound arm is interned once, at the first free label.
 private def joined (types : List Json) : Json := Json.mkObj [
   ("top",toJson false), ("atoms",toJson (types.flatMap fun j =>
     ((jArr j "atoms").toOption.getD [])))]
-#guard is (SourceInput.translate (joined [wireTy ⟨false,[.null]⟩,cellWire])) [0,9]
-#guard is (SourceInput.translate (joined [cellWire,wireTy ⟨false,[.null]⟩,cellWire])) [0,9]
-#guard is (SourceInput.translate (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,17]
-#guard !ok (SourceInput.translate (joined [cellWire,wireTy ⟨false,[.str]⟩]))
-#guard !ok (SourceInput.translate (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]))
+private def lowered (j : Json) : Except String (Ty Nat) :=
+  (SourceInput.translate j).run' SourceTypes.initial
+#guard is (lowered (joined [wireTy ⟨false,[.null]⟩,cellWire])) [0,4]
+#guard is (lowered (joined [cellWire,wireTy ⟨false,[.null]⟩,cellWire])) [0,4]
+#guard is (lowered (joined [wireTy ⟨false,[.null]⟩,functionWire])) [0,4]
+#guard is (lowered (joined [cellWire,functionWire])) [4,5]
+#guard !ok (lowered (joined [cellWire,wireTy ⟨false,[.str]⟩]))
+#guard !ok (lowered (Json.mkObj [("top",toJson true),("atoms",toJson ([] : List Json))]))
 
 -- Mixed unions do not bypass the external-object/callable origin boundary.
 #guard (match extractFn
@@ -610,7 +615,7 @@ private def joined (types : List Json) : Json := Json.mkObj [
     { branchClaims true with params := [("external",joined [wireTy ⟨false,[.null]⟩,cellWire])] } with
   | .error e => e == "cell or function parameters require an external-value boundary not yet supported"
   | .ok _ => false)
-#guard !ok (SourceInput.translate (joined [wireTy ⟨false,[.str]⟩,cellWire]))
+#guard !ok (lowered (joined [wireTy ⟨false,[.str]⟩,cellWire]))
 
 -- A graph-safe certificate can still violate the source's local interfaces.
 -- This specifically tests the consumer, independently of producer scheduling.
@@ -622,7 +627,7 @@ private def localClaims : SourceClaims.Function := {
   name := "local", namePos := (0,1), params := [], ret := .ok [1]
   envs := [(2,[]),(6,[("x",.ok [1,2])])]
   exprs := [((4,5),.ok [1]),((8,9),.ok [1,2])] }
-private def localRequest := (extractNormalizedFn localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
+private def localRequest := (extractNormalizedFn SourceTypes.initial localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
 private def localCertificate (cuts : List Nat) :=
   CertificateProducer.produce (RequestJson.graph localRequest.toRequest)
     localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
@@ -631,7 +636,7 @@ private def globalCertificate := (localCertificate []).toOption.get!
 #guard RequestJson.verify localRequest.toRequest ⟨6,globalCertificate⟩
 #guard !checkAssertions localRequest ⟨6,globalCertificate⟩
 #guard (localCertificate localRequest.cuts).toOption.isNone
-private def repairedLocal := (extractNormalizedFn localFn
+private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
   {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
 #guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
   repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
