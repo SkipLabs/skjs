@@ -63,18 +63,39 @@ finish() {
 }
 trap finish EXIT
 
+# Suites are independent, so they start together and are reported in the order
+# they were written. Output is buffered per suite rather than interleaved, and
+# every suite runs: a failure is counted and reported with the rest instead of
+# ending the run, which is what the summary is for.
+suite_names=()
+suite_pids=()
+suite_logs=()
 run_test() {
   local name="$1"
   shift
-  printf '\n%s\n' "$name"
-  if "$@"; then
-    passed=$((passed + 1))
-    status_line 32 "✓ $name"
-  else
-    failed=$((failed + 1))
-    status_line 31 "✗ $name"
-    return 1
-  fi
+  local index=${#suite_names[@]}
+  local log="$WORK/suite-$index.out"
+  ( "$@" ) > "$log" 2>&1 &
+  suite_names[$index]="$name"
+  suite_pids[$index]=$!
+  suite_logs[$index]="$log"
+}
+
+report_tests() {
+  local index status
+  for ((index = 0; index < ${#suite_names[@]}; index++)); do
+    printf '\n%s\n' "${suite_names[$index]}"
+    wait "${suite_pids[$index]}"
+    status=$?
+    cat "${suite_logs[$index]}"
+    if [ "$status" -eq 0 ]; then
+      passed=$((passed + 1))
+      status_line 32 "✓ ${suite_names[$index]}"
+    else
+      failed=$((failed + 1))
+      status_line 31 "✗ ${suite_names[$index]}"
+    fi
+  done
 }
 
 if [ "$BUILD" -eq 1 ]; then
@@ -92,131 +113,83 @@ fi
 
 source "$REPO/verification/skjs.sh"
 
+# A fixture is a parsed source and the producer's claims for it, under one name.
+# Building one is a precondition rather than a test: with no fixture there is
+# nothing to run, so a failure here stops the run instead of being counted.
+fixture() { # name source-path
+  local name="$1" path="$2"
+  if ! { node verification/tools/parse-source.js "$path" > "$WORK/$name.ast" &&
+         skjs_check "$path" > "$WORK/$name.claims"; } 2> "$WORK/$name.err"; then
+    echo "FAIL: fixture setup for $path"
+    cat "$WORK/$name.err"
+    exit 1
+  fi
+}
+
+# Some witnesses exist because SKJS rejects them, so the rejection is the
+# fixture and an acceptance is the failure. A status may be named where the
+# kind of rejection is itself the point.
+rejected_fixture() { # name source-path [expected status]
+  local name="$1" path="$2" want="${3:-}"
+  node verification/tools/parse-source.js "$path" > "$WORK/$name.ast" || exit 1
+  skjs_check "$path" > "$WORK/$name.claims" 2> "$WORK/$name.err"
+  local got=$?
+  if [ "$got" -eq 0 ] || { [ -n "$want" ] && [ "$got" -ne "$want" ]; }; then
+    echo "FAIL: expected SKJS to reject $path${want:+ with status $want}, got $got"
+    cat "$WORK/$name.err"
+    exit 1
+  fi
+}
+
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
-  if ! run_test "Source boundaries" node verification/tests/unsupported.js "$VERIFIER"; then exit 1; fi
-  BASE="verification/tests/stateful-source/basic.ts"
-  if ! { node verification/tools/parse-source.js "$BASE" > "$WORK/source.ast" &&
-         skjs_check "$BASE" > "$WORK/source.claims"; } 2> "$WORK/source.setup.err"; then
-    echo "FAIL: stateful source test setup"
-    cat "$WORK/source.setup.err"
-    exit 1
-  fi
-  run_test "Source claims and certificates" node verification/tests/stateful-source.js "$WORK/source.ast" "$WORK/source.claims" \
-       "$BASE" "$VERIFIER"
-  CELL_SOURCE="verification/tests/stateful-source/cells.ts"
-  if ! { node verification/tools/parse-source.js "$CELL_SOURCE" > "$WORK/cells.ast" &&
-         skjs_check "$CELL_SOURCE" > "$WORK/cells.claims"; } 2> "$WORK/cells.setup.err"; then
-    echo "FAIL: cell source test setup"
-    cat "$WORK/cells.setup.err"
-    exit 1
-  fi
-  run_test "Mutable cells" node verification/tests/stateful-cells.js "$WORK/cells.ast" "$WORK/cells.claims" \
-       "$CELL_SOURCE" "$VERIFIER"
-  UNDEFINED_SOURCE="verification/tests/stateful-source/undefined.ts"
-  if ! { node verification/tools/parse-source.js "$UNDEFINED_SOURCE" > "$WORK/undefined.ast" &&
-         skjs_check "$UNDEFINED_SOURCE" > "$WORK/undefined.claims"; } 2> "$WORK/undefined.setup.err"; then
-    echo "FAIL: undefined source test setup"; cat "$WORK/undefined.setup.err"; exit 1
-  fi
-  if ! run_test "Undefined values and contracts" node verification/tests/undefined.js "$WORK/undefined.ast" "$WORK/undefined.claims" \
-       "$UNDEFINED_SOURCE" "$VERIFIER"; then exit 1; fi
-  CLOSURES="verification/tests/stateful-source/closures.ts"
-  if ! { node verification/tools/parse-source.js "$CLOSURES" > "$WORK/closures.ast" &&
-         skjs_check "$CLOSURES" > "$WORK/closures.claims"; } 2> "$WORK/closures.setup.err"; then
-    echo "FAIL: closure source test setup"
-    cat "$WORK/closures.setup.err"
-    exit 1
-  fi
-  run_test "Closures" node verification/tests/stateful-closures.js "$WORK/closures.ast" "$WORK/closures.claims" \
-       "$CLOSURES" "$VERIFIER"
-  CALLBACKS="verification/tests/stateful-source/primitive-callbacks.ts"
-  COUNTEREXAMPLE="verification/tests/skjs-unsound/captured-refinement.ts"
-  for pair in "$CALLBACKS:callbacks" "$COUNTEREXAMPLE:counterexample"; do
-    source_file="${pair%:*}"; fixture="${pair##*:}"
-    if ! { node verification/tools/parse-source.js "$source_file" > "$WORK/$fixture.ast" &&
-           skjs_check "$source_file" > "$WORK/$fixture.claims"; } 2> "$WORK/$fixture.err"; then
-      echo "FAIL: callback fixture setup"; cat "$WORK/$fixture.err"; exit 1
-    fi
-  done
-  if ! run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.js "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER" \
-       "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"; then exit 1; fi
-  NEGATION="verification/tests/stateful-source/negation.ts"
-  if ! { node verification/tools/parse-source.js "$NEGATION" > "$WORK/negation.ast" &&
-         skjs_check "$NEGATION" > "$WORK/negation.claims"; } 2> "$WORK/negation.err"; then
-    echo "FAIL: negation fixture setup"; cat "$WORK/negation.err"; exit 1
-  fi
-  LOOP_EXIT="verification/tests/skjs-incomplete/negated-loop-exit.ts"
-  if ! node verification/tools/parse-source.js "$LOOP_EXIT" > "$WORK/loop-exit.ast"; then exit 1; fi
-  if skjs_check "$LOOP_EXIT" > "$WORK/loop-exit.claims" 2> "$WORK/loop-exit.err"; then
-    echo "FAIL: SKJS unexpectedly accepts the loop-exit incompleteness witness"; exit 1
-  fi
-  SINGLETON="verification/tests/skjs-incomplete/singleton-negation.ts"
-  if ! node verification/tools/parse-source.js "$SINGLETON" > "$WORK/singleton.ast"; then exit 1; fi
-  if skjs_check "$SINGLETON" > "$WORK/singleton.claims" 2> "$WORK/singleton.err"; then
-    echo "FAIL: SKJS unexpectedly accepts the singleton-negation witness"; exit 1
-  fi
-  if ! run_test "Negation and claim repair" node verification/tests/negation.js "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER" \
-       "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT" \
-       "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"; then exit 1; fi
-  NULL_TESTS="verification/tests/stateful-source/null-tests.ts"
-  NULL_GUARD="verification/tests/stateful-source/null-guards.ts"
-  for pair in "$NULL_TESTS:null-tests" "$NULL_GUARD:null-guard"; do
-    source_file="${pair%:*}"; fixture="${pair##*:}"
-    if ! { node verification/tools/parse-source.js "$source_file" > "$WORK/$fixture.ast" &&
-           skjs_check "$source_file" > "$WORK/$fixture.claims"; } 2> "$WORK/$fixture.err"; then
-      echo "FAIL: null-test fixture setup"; cat "$WORK/$fixture.err"; exit 1
-    fi
-  done
-  NULL_EXIT="verification/tests/skjs-incomplete/null-loop-exit.ts"
-  if ! node verification/tools/parse-source.js "$NULL_EXIT" > "$WORK/null-exit.ast"; then exit 1; fi
-  if skjs_check "$NULL_EXIT" > "$WORK/null-exit.claims" 2> "$WORK/null-exit.err"; then
-    echo "FAIL: SKJS unexpectedly accepts the null loop-exit witness"; exit 1
-  fi
-  COMPOUND_STALE="verification/tests/skjs-unsound/compound-write-refinement.ts"
-  if ! { node verification/tools/parse-source.js "$COMPOUND_STALE" > "$WORK/compound-stale.ast" &&
-         skjs_check "$COMPOUND_STALE" > "$WORK/compound-stale.claims"; } 2> "$WORK/compound-stale.err"; then
-    echo "FAIL: compound stale-refinement fixture setup"; cat "$WORK/compound-stale.err"; exit 1
-  fi
-  if ! run_test "Null predicates" node verification/tests/null-tests.js "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER" \
-       "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD" \
-       "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT" \
-       "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"; then exit 1; fi
-  CONTROLS="verification/tests/refinement-controls.ts"
-  if ! { node verification/tools/parse-source.js "$CONTROLS" > "$WORK/refinement-controls.ast" &&
-         skjs_check "$CONTROLS" > "$WORK/refinement-controls.claims"; } 2> "$WORK/refinement-controls.err"; then
-    echo "FAIL: refinement control setup"; cat "$WORK/refinement-controls.err"; exit 1
-  fi
-  if ! run_test "Refinement witness audit" node verification/tests/refinement-witnesses.js "$VERIFIER" \
-       "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE" \
-       "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" \
-       "$WORK/refinement-controls.ast" "$WORK/refinement-controls.claims" "$CONTROLS"; then exit 1; fi
-  WRITE_REFINED="verification/tests/skjs-incomplete/write-refined-read.ts"
-  if ! node verification/tools/parse-source.js "$WRITE_REFINED" > "$WORK/write-refined.ast"; then exit 1; fi
-  if skjs_check "$WRITE_REFINED" > "$WORK/write-refined.claims" 2> "$WORK/write-refined.err"; then
-    write_status=0
-  else
-    write_status=$?
-  fi
-  if [ "$write_status" -ne 2 ]; then
-    echo "FAIL: expected SKJS type rejection for write-refined-read, got $write_status"; cat "$WORK/write-refined.err"; exit 1
-  fi
-  if ! run_test "Write observations and producer witnesses" node verification/tests/write-observations.js \
-       "$WORK/write-refined.ast" "$WORK/write-refined.claims" "$WRITE_REFINED" \
-       "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" "$VERIFIER"; then exit 1; fi
-  LOOPS="verification/tests/stateful-source/loops.ts"
-  if ! { node verification/tools/parse-source.js "$LOOPS" > "$WORK/loops.ast" &&
-         skjs_check "$LOOPS" > "$WORK/loops.claims"; } 2> "$WORK/loops.setup.err"; then
-    echo "FAIL: loop source test setup"; cat "$WORK/loops.setup.err"; exit 1
-  fi
-  if ! run_test "While loops" node verification/tests/stateful-loops.js "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"; then exit 1; fi
-  TRANSFERS="verification/tests/stateful-source/loop-transfers.ts"
-  if ! { node verification/tools/parse-source.js "$TRANSFERS" > "$WORK/transfers.ast" &&
-         skjs_check "$TRANSFERS" > "$WORK/transfers.claims"; } 2> "$WORK/transfers.setup.err"; then
-    echo "FAIL: loop transfer setup"; cat "$WORK/transfers.setup.err"; exit 1
-  fi
-  if ! run_test "Break and continue" node verification/tests/stateful-loop-transfers.js "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"; then exit 1; fi
-  if ! run_test "Producer-neutral claims" node verification/tests/source-claims.js "$VERIFIER"; then exit 1; fi
-  if ! run_test "Source heap assertions" node verification/tests/source-heap-claims.js "$VERIFIER"; then exit 1; fi
+  run_test "Source boundaries" node verification/tests/unsupported.js "$VERIFIER"
+
+  BASE=verification/tests/stateful-source/basic.ts
+  CELL_SOURCE=verification/tests/stateful-source/cells.ts
+  UNDEFINED_SOURCE=verification/tests/stateful-source/undefined.ts
+  CLOSURES=verification/tests/stateful-source/closures.ts
+  CALLBACKS=verification/tests/stateful-source/primitive-callbacks.ts
+  COUNTEREXAMPLE=verification/tests/skjs-unsound/captured-refinement.ts
+  NEGATION=verification/tests/stateful-source/negation.ts
+  LOOP_EXIT=verification/tests/skjs-incomplete/negated-loop-exit.ts
+  SINGLETON=verification/tests/skjs-incomplete/singleton-negation.ts
+  NULL_TESTS=verification/tests/stateful-source/null-tests.ts
+  NULL_GUARD=verification/tests/stateful-source/null-guards.ts
+  NULL_EXIT=verification/tests/skjs-incomplete/null-loop-exit.ts
+  COMPOUND_STALE=verification/tests/skjs-unsound/compound-write-refinement.ts
+  CONTROLS=verification/tests/refinement-controls.ts
+  WRITE_REFINED=verification/tests/skjs-incomplete/write-refined-read.ts
+  LOOPS=verification/tests/stateful-source/loops.ts
+  TRANSFERS=verification/tests/stateful-source/loop-transfers.ts
   PARTIAL=verification/tests/partial-claims.ts
+  CELLS=verification/tests/stateful-source/cell-contracts.ts
+
+  # Fixtures are independent and each is dominated by a container start, so
+  # they are built at once rather than in turn. Every one writes under its own
+  # name, and a failure inside a background build still stops the run.
+  building=()
+  build() { "$@" & building+=($!); }
+  build fixture source "$BASE"
+  build fixture cells "$CELL_SOURCE"
+  build fixture undefined "$UNDEFINED_SOURCE"
+  build fixture closures "$CLOSURES"
+  build fixture callbacks "$CALLBACKS"
+  build fixture counterexample "$COUNTEREXAMPLE"
+  build fixture negation "$NEGATION"
+  build fixture null-tests "$NULL_TESTS"
+  build fixture null-guard "$NULL_GUARD"
+  build fixture compound-stale "$COMPOUND_STALE"
+  build fixture refinement-controls "$CONTROLS"
+  build fixture loops "$LOOPS"
+  build fixture transfers "$TRANSFERS"
+  build rejected_fixture loop-exit "$LOOP_EXIT"
+  build rejected_fixture singleton "$SINGLETON"
+  build rejected_fixture null-exit "$NULL_EXIT"
+  build rejected_fixture write-refined "$WRITE_REFINED" 2
+  for pid in "${building[@]}"; do wait "$pid" || exit 1; done
+
+  # The partial export must not change what ordinary checking reports: same
+  # status, same diagnostics, with claims recovered only under --keep-going.
   skjs_run "$PARTIAL" > "$WORK/partial.plain" 2> "$WORK/partial.plain.err"
   plain_status=$?
   skjs_check "$PARTIAL" > "$WORK/partial.claims" 2> "$WORK/partial.err"
@@ -227,22 +200,31 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
      ! cmp -s "$WORK/partial.plain.err" "$WORK/partial.err"; then
     echo "FAIL: partial export changed ordinary diagnostics or exit status"; exit 1
   fi
-  if ! run_test "Claim export" node verification/tests/source-claim-export.js "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL" "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"; then exit 1; fi
-  if ! run_test "Partial collection" node verification/tests/partial-claims.js "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"; then
-    exit 1
+  if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.err"; then
+    echo "FAIL: cell contract export setup"; cat "$WORK/cell.err"; exit 1
   fi
-  run_test "Annotated source reports" node verification/tests/annotated-source.js "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
+
+  run_test "Source claims and certificates" node verification/tests/stateful-source.js        "$WORK/source.ast" "$WORK/source.claims" "$BASE" "$VERIFIER"
+  run_test "Mutable cells" node verification/tests/stateful-cells.js        "$WORK/cells.ast" "$WORK/cells.claims" "$CELL_SOURCE" "$VERIFIER"
+  run_test "Undefined values and contracts" node verification/tests/undefined.js        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
+  run_test "Closures" node verification/tests/stateful-closures.js        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
+  run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.js        "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"
+  run_test "Negation and claim repair" node verification/tests/negation.js        "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER"        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT"        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"
+  run_test "Null predicates" node verification/tests/null-tests.js        "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER"        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"        "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"
+  run_test "Refinement witness audit" node verification/tests/refinement-witnesses.js "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"        "$WORK/refinement-controls.ast" "$WORK/refinement-controls.claims" "$CONTROLS"
+  run_test "Write observations and producer witnesses" node verification/tests/write-observations.js        "$WORK/write-refined.ast" "$WORK/write-refined.claims" "$WRITE_REFINED"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" "$VERIFIER"
+  run_test "While loops" node verification/tests/stateful-loops.js        "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"
+  run_test "Break and continue" node verification/tests/stateful-loop-transfers.js        "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"
+  run_test "Producer-neutral claims" node verification/tests/source-claims.js "$VERIFIER"
+  run_test "Source heap assertions" node verification/tests/source-heap-claims.js "$VERIFIER"
+  run_test "Claim export" node verification/tests/source-claim-export.js        "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL"        "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"
+  run_test "Partial collection" node verification/tests/partial-claims.js        "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"
+  run_test "Annotated source reports" node verification/tests/annotated-source.js        "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.js "$VERIFIER"
   run_test "Report viewer" node verification/tests/report-viewer.js
   run_test "Candidate editing" node verification/tests/candidate-editor.js "$WORK/closures.claims"
-  CELLS="verification/tests/stateful-source/cell-contracts.ts"
-  if ! skjs_check "$CELLS" > "$WORK/cell.claims" 2> "$WORK/cell.setup.err"; then
-    echo "FAIL: cell contract export setup"
-    cat "$WORK/cell.setup.err"
-    exit 1
-  fi
-  run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests" "$WORK/cell.claims" "$CELLS"
-
+  run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
+  report_tests
 fi
 
 completed=1
