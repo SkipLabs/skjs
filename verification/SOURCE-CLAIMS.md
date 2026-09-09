@@ -105,18 +105,28 @@ a list of further atoms of the same kind:
 which is `Ref<A> & Ref<B>`: one location meeting both contracts invariantly. An
 absent or empty `and` is the ordinary single-contract atom, unchanged.
 
-The rule that keeps this honest is that the format may not be able to say more
-than the clause language can hold. `and` on a primitive atom is refused, because
-no clause conjoins primitives and a decoder would have to invent a meaning for
-it. `and` on a function atom is the shape a multi-signature arrow will take, and
-is refused for now by the source parser, since the arrow lowering takes one
-signature.
+or, on a function atom, `(D1 => R1) & (D2 => R2)`: one function meeting every
+signature. The rule that keeps this honest is that the format may not be able
+to say more than the clause language can hold. `and` on a primitive atom is
+refused, because no clause conjoins primitives and a decoder would have to
+invent a meaning for it. Conjunction is associative, so the parser flattens a
+parenthesized intersection into the same list; there is no arity.
 
-A conjunction lowers to one `refs` row. Conjunction is commutative and
+A conjunction of references lowers to one `refs` row. It is commutative and
 idempotent, so the operands are sorted and deduplicated before the row is
 interned: the two spellings of a pair share a label, and a conjunction of one
-contract is the plain cell. Any number of operands is one row, so nothing here
-depends on how many contracts a location is under.
+contract is the plain cell. A conjunction of arrows lowers to one `arrs` row
+with the signatures in declaration order, which is TypeScript's overload
+resolution order; only exact repeats are dropped, so the two spellings are two
+rows that mean the same set.
+
+The lambda rule proves a body once under each claimed signature, and a call
+resolves to the first signature whose parameter admits the argument's claimed
+type, as TypeScript does. Each claimed parameter must lie within the lambda's
+annotated one, so no signature leaves the source's declared domain. Expression
+claims inside the body are one type per site, holding under every signature,
+so a body whose result depends on the signature cannot yet be claimed
+per signature.
 
 These are calculus contracts; the source boundary still checks that allocations
 and operations justify their interpretation. An array of several reference or

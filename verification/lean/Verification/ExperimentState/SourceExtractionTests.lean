@@ -641,4 +641,68 @@ private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
 #guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
   repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 
+-- Conjunction is one row whatever its arity. Reference operands are sorted and
+-- deduplicated, so a repeated contract is the plain cell; overload order is
+-- kept, so the two spellings of an arrow pair are two rows.
+private def conjoined (j : Json) (others : List Json) : Json :=
+  let atom := ((jArr j "atoms").toOption.getD []).headD .null
+  let more := others.map fun o => ((jArr o "atoms").toOption.getD []).headD .null
+  Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
+    (((atom.getObj?).toOption.map (·.toList)).getD [] ++ [("and",toJson more)])])]
+private def cellOf (A : Wire.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
+  [("a",toJson "record"),("fields",toJson [Json.mkObj [("name",toJson "value"),
+    ("optional",toJson false),("read",wireTy A),("write",wireTy A)]]),
+   ("indexes",Json.mkObj [("string",toJson "absent"),("number",toJson "absent"),("symbol",toJson "absent")]),
+   ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]])]
+private def arrowOf (D R : Wire.Ty) : Json := Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj
+  [("a",toJson "function"),("params",toJson [wireTy D]),
+   ("result",wireTy R),("construct",toJson "unknown"),("array",toJson "unknown")]])]
+private def rowOf (j : Json) : Option (List (Clause (List Nat))) :=
+  ((SourceInput.translate j).run SourceTypes.initial).toOption.bind fun (A,T) => A.head?.bind (T[·]?)
+#guard rowOf (conjoined cellWire [cellWire,cellWire]) == some [.refs [1,2] []]
+#guard rowOf (conjoined (cellOf ⟨false,[.boolLit true]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.bool]⟩])
+  == some [.refs [0] [[1],[1,2]]]
+#guard rowOf (conjoined (cellOf ⟨false,[.bool]⟩) [cellOf ⟨false,[.null]⟩,cellOf ⟨false,[.boolLit true]⟩])
+  == some [.refs [0] [[1],[1,2]]]
+private def trueToNull := arrowOf ⟨false,[.boolLit true]⟩ ⟨false,[.null]⟩
+private def falseToNull := arrowOf ⟨false,[.boolLit false]⟩ ⟨false,[.null]⟩
+#guard rowOf (conjoined trueToNull [falseToNull]) == some [.arrs [([1],[0]),([2],[0])]]
+#guard rowOf (conjoined falseToNull [trueToNull]) == some [.arrs [([2],[0]),([1],[0])]]
+#guard rowOf (conjoined trueToNull [trueToNull]) == some [.arrs [([1],[0])]]
+
+-- A lambda claimed at two signatures is proved once per signature; the call
+-- resolves to the first signature admitting its argument.
+private def overloadWire := conjoined trueToNull [falseToNull]
+private def overloadFn : SourceInput.Fn :=
+  ⟨"overload",(0,1),[],wireTy ⟨false,[.null]⟩,
+    [.cst (2,3) "f" (some overloadWire)
+      (.lam (4,9) "x" (wireTy ⟨false,[.bool]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
+     .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) (.vbool true)))]⟩
+private def overloadClaims : SourceInput.Claims :=
+  ⟨"overload",(0,1),[],wireTy ⟨false,[.null]⟩,[(2,[]),(10,[("f",overloadWire)])],
+   [((4,9),overloadWire),((8,9),wireTy ⟨false,[.null]⟩),((12,17),wireTy ⟨false,[.null]⟩),
+    ((12,13),overloadWire),((14,15),t)]⟩
+#guard ok (extractFn overloadFn overloadClaims)
+#guard ok (do
+  let r ← extractFn overloadFn overloadClaims
+  let j := toJson r.toRequest
+  verifyJson j (← produceSourceJson j 10)
+  let _ ← ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 0 r.obligations
+  pure ())
+-- A claimed signature outside the annotated parameter is refused.
+#guard (match extractFn
+    { overloadFn with body := [.cst (2,3) "f" (some overloadWire)
+      (.lam (4,9) "x" (wireTy ⟨false,[.boolLit true]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
+      .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) (.vbool true)))] } overloadClaims with
+  | .error e => e == "closure signature claim is outside the source annotation"
+  | .ok _ => false)
+-- An argument no signature admits fails the call's claim, not silently.
+#guard !ok (do
+  let r ← extractFn { overloadFn with body := [.cst (2,3) "f" (some overloadWire)
+      (.lam (4,9) "x" (wireTy ⟨false,[.bool]⟩) (wireTy ⟨false,[.null]⟩) (.lit (8,9) .vnull)),
+      .ret (10,17) (.app (12,17) (.var (12,13) "f") (.lit (14,15) .vnull))] }
+    { overloadClaims with exprs := overloadClaims.exprs.map fun (pos,ty) =>
+      (pos, if pos == (14,15) then wireTy ⟨false,[.null]⟩ else ty) }
+  produceSourceJson (toJson r.toRequest) 8)
+
 end Verification.ExperimentState.SourceExtractionTests

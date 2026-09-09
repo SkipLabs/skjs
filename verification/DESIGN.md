@@ -517,7 +517,8 @@ regression checks the extracted alias-assignment graph's heap and result.
 The first closure slice is connected through
 [FunctionClaims.lean](lean/Verification/ExperimentState/FunctionClaims.lean).
 It accepts explicitly typed unary arrows with a null/Boolean primitive argument and a primitive
-result. Bodies compose literals, variables, cell allocation, reads, assignments,
+result, singly or as an intersection of signatures proved one by one on the
+body. Bodies compose literals, variables, cell allocation, reads, assignments,
 and calls, including nested expression arrows with the same signature limits.
 An internal expression claim can differ from the declared result: both are
 checked independently.

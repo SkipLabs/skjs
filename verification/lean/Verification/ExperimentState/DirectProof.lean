@@ -53,10 +53,12 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       let ea ← renderAt G pool depth Γ a
       let eb ← renderAt G pool depth ((claim ea).type :: Γ) b
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])
-    | .lam, .lam _, [b] =>
-      let [.arrs [arrow]] := expand G j.type | none
-      let eb ← renderAt G pool depth (arrow.1 :: Γ) b
-      pure (.node ⟨Γ,j.term,j.type⟩ .lam [eb])
+    | .lam, .lam _, bs =>
+      -- One body plan per signature, in the signature order the checker expects.
+      let [.arrs L] := expand G j.type | none
+      if L.length != bs.length then none else do
+        let es ← (L.zip bs).attach.mapM fun q => renderAt G pool depth (q.val.1.1 :: Γ) q.val.2
+        pure (.node ⟨Γ,j.term,j.type⟩ .lam es)
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>
       let pt ← renderAt G pool depth (Γ.set i T) t
       let pe ← renderAt G pool depth (Γ.set i F) e

@@ -15,3 +15,13 @@ function spelledTwoWays(seed: boolean): boolean {
   cell.value = false;
   return cell.value;
 }
+
+/** Conjunction is associative and has no arity: three operands, grouped or not. */
+function underThree(seed: boolean): boolean {
+  const cell: ({ value: boolean } & { value: true | false }) & {
+    value: boolean;
+  } = {
+    value: seed,
+  };
+  return cell.value;
+}

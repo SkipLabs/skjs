@@ -314,8 +314,13 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .app _ f a => do
     let f ← closureExpr fc scope Γ f
     let a ← closureExpr fc scope Γ a
-    let [.arrs [(D,R)]] := PositiveRules.expand G f.type
-      | throw "callee must name a unary source arrow"
+    let [.arrs L] := PositiveRules.expand G f.type
+      | throw "callee must name a source arrow"
+    -- As TypeScript resolves overloads: the first signature whose parameter
+    -- admits the argument's type; failing that, the first, whose obligation
+    -- then reports the mismatch.
+    let some (D,R) := (L.find? fun (D,_) => a.type.all D.contains) <|> L.head?
+      | throw "callee has no signature"
     pure (DirectProof.node Γ (.app f.term a.term) R .app [f,DirectProof.cast Γ D a])
   | .write _ receiver rhs => do
     let B ← exprType fc receiver
@@ -369,12 +374,21 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     if (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← SourceTypes.translate (← decodeTy arg)
     let R ← SourceTypes.translate (← decodeTy ret)
-    if A != [SourceTypes.label (← table) (.arrs [(D,R)])] then
-      throw "closure signature claim differs from source annotations"
-    let b ← closureExpr fc (⟨name,some pos⟩::scope) (D::Γ) body
+    let inner := ⟨name,some pos⟩::scope
+    -- The annotation is one obligation on the body; the claim may be several
+    -- signatures, each proved on the body under its own parameter type, as
+    -- the lambda rule requires. A claimed parameter must lie within the
+    -- annotated one, so no signature leaves the source's declared domain.
+    let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+    if L.isEmpty || !L.all (fun (Di,_) => Di.all D.contains) then
+      throw "closure signature claim is outside the source annotation"
+    let b ← closureExpr fc inner (D::Γ) body
     let annotation := DirectProof.cast (D::Γ) R b
-    obligation pos annotation.goal (some annotation) "closure-result" (⟨name,some pos⟩::scope)
-    pure (DirectProof.node Γ (.lam b.term) A .lam [annotation])
+    obligation pos annotation.goal (some annotation) "closure-result" inner
+    let bodies ← L.mapM fun (Di,Ri) => do
+      if (Di,Ri) == (D,R) then pure annotation
+      else return DirectProof.cast (Di::Γ) Ri (← closureExpr fc inner (Di::Γ) body)
+    pure (DirectProof.node Γ (.lam b.term) A .lam bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
   return plan

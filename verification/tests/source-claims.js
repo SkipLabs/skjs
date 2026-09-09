@@ -47,6 +47,32 @@ try {
   mutate("narrowed entry rejected with old evidence",d=>d.functions[0].entries[0].bindings[0].type=[1]);
   mutate("false expression claim rejected",d=>d.functions[0].expressions[0].type=[1]);
   mutate("changed signature rejected",d=>d.functions[0].result=[1]);
+  test("an intersection of arrows is one row, proved per signature",()=>{
+    const text="function overload(): null { const f: ((x: true) => null) & ((x: false) => null) = (x: boolean): null => null; return f(true); }\n";
+    const sf=path.join(tmp,"overload.ts"),sa=path.join(tmp,"overload.ast.json"),sc=path.join(tmp,"overload.claims.json"),se=path.join(tmp,"overload.evidence.json");
+    const types=[...primitives,[{arrs:{arrows:[[[1],[0]],[[2],[0]]]}}]];
+    // Claims for the parsed program: the lambda and its binding at row 4, the
+    // body at the given type, the call at null.
+    const write=(source,bodyType)=>{
+      fs.writeFileSync(sf,source);
+      const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),sf]);assert.equal(p.status,0,p.stderr);
+      fs.writeFileSync(sa,p.stdout);
+      const f=JSON.parse(p.stdout).functions[0],[cst,ret]=f.body;
+      // The parser writes the second signature under `and` on the first.
+      assert.deepEqual(cst.annot.atoms.map(x=>x.a),["function"]);assert.equal(cst.annot.atoms[0].and.length,1);
+      const expressions=[{pos:cst.init.pos,type:[4],current:null},{pos:cst.init.body.pos,type:bodyType,current:null},
+        {pos:ret.e.pos,type:[0],current:null},{pos:ret.e.callee.pos,type:[4],current:null},{pos:ret.e.arg.pos,type:[1],current:null}];
+      const entries=[{start:cst.pos[0],bindings:[]},{start:ret.pos[0],bindings:[{name:"f",type:[4],current:null}]}];
+      fs.writeFileSync(sc,JSON.stringify({version:3,profile:doc.profile,file:sf,sourceSha256:hash(source),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[0],entries,expressions}]}));
+    };
+    write(text,[0]);
+    const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
+    assert.equal(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
+    // A body that does not meet every signature is refused.
+    write(text.replace("=> null;","=> x;"),[1,2]);
+    const rejected=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(rejected.status,0);
+    assert(rejected.stderr.includes("obligation-diagnostic:"),rejected.stderr);
+  });
   test("existing SKJS source path checks the same evidence",()=>{
     const boolean={top:false,atoms:[{a:"boolean"}]};
     const sk=path.join(tmp,"skjs.json");

@@ -127,7 +127,7 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {j : Json} {A u v}
 operands are the same single-contract atoms, decoded by the same decoder: the
 key is removed and each part checked on its own, so nothing here relaxes what a
 contract may be. -/
-private def conjuncts (atom : Json) : Except String (List Json) := do
+def conjuncts (atom : Json) : Except String (List Json) := do
   let fields ← atom.getObj?
   let plain := Json.mkObj (fields.toList.filter (fun p => p.1 != "and"))
   match atom.getObjVal? "and" with
@@ -143,7 +143,8 @@ private def conjuncts (atom : Json) : Except String (List Json) := do
 /-- The label of a location under one contract. -/
 def reference (A : Ty Nat) : Lowering Nat := use (.refs A [])
 
-private def before : List Nat → List Nat → Bool
+/-- Lexicographic order on label lists, for canonical operand order. -/
+def before : List Nat → List Nat → Bool
   | [], _ => true
   | _ :: _, [] => false
   | a :: as, b :: bs => a < b || (a == b && before as bs)
