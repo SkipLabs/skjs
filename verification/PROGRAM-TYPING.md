@@ -111,18 +111,18 @@ through a reference and an unreachable stuck arm.
 The general Boolean rule requires both branches at the supplied result type
 $A$. No least-upper-bound is computed. Both use the same context: that rule
 does not justify narrowed branch environments. Another rule handles a directly
-tested immutable variable. Write $\Gamma[i:=T]$ for replacing slot $i$'s type:
+tested immutable variable. Write $\Gamma[x:=T]$ for replacing $x$'s type:
 
 $$
-\frac{\Gamma(i)=C\quad\operatorname{Boolean}_G(C)
-      \quad\Gamma[i:=\mathsf{True}]\vdash_G t:A
-      \quad\Gamma[i:=\mathsf{False}]\vdash_G e:A}
-     {\Gamma\vdash_G\mathsf{if}\ x_i\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+\frac{\Gamma(x)=C\quad\operatorname{Boolean}_G(C)
+      \quad\Gamma[x:=\mathsf{True}]\vdash_G t:A
+      \quad\Gamma[x:=\mathsf{False}]\vdash_G e:A}
+     {\Gamma\vdash_G\mathsf{if}\ x\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
 $$
 
 Here $\mathsf{True}$ and $\mathsf{False}$ must expand to the corresponding singleton
 clauses. `HasTy.ifBoolVar` proves this rule sound: the selected branch's actual
-value justifies the changed slot, and all other slots retain their meanings.
+value justifies the changed binding, and all others retain their meanings.
 It neither refines mutable heap contents nor supplies general union splitting.
 Graph edges use the common [observation-based refinement contract](#refinement-under-an-observed-outcome)
 below, currently connected to Boolean dispatch.
@@ -186,13 +186,13 @@ rules out any typing derivation for applying null as a function.
 
 ## Eliminating a variable's union type
 
-A finite union can be split in one immutable environment slot. Write $[a]$ for
+A finite union can be split in one immutable binding. Write $[a]$ for
 one graph label viewed as a type. Every member must establish the same term and
-result; all other slots retain their original types:
+result; all other bindings retain their original types:
 
 $$
-\frac{\Gamma(i)=C\qquad
-      \forall a\in C.\;\Gamma[i:=[a]]\vdash_G t:A}
+\frac{\Gamma(x)=C\qquad
+      \forall a\in C.\;\Gamma[x:=[a]]\vdash_G t:A}
      {\Gamma\vdash_G t:A}.
 $$
 
@@ -627,24 +627,27 @@ $$\Gamma;K\vdash_G t:A\dashv K'$$
 for: in an environment satisfying $\Gamma$ and a heap satisfying $K$, evaluating
 $t$ is safe, its value has type $A$, and the resulting heap satisfies $K'$.
 
-One convention governs every such rule. The postcondition is read in the
-**result-pushed frame**: the value just produced becomes slot $0$, so a fact
-carried over from the precondition names a slot one higher than it did before.
-Write $K{\uparrow}$ for that renumbering, defined by
+Every rule binds the value it produces. Write $r$ for that binding, so a
+postcondition can speak about the result alongside everything already in scope.
 
-$$K{\uparrow}(v::\rho,h)\;\equiv\;K(\rho,h),$$
+Rules below name their bindings, and one paragraph justifies that. Environments
+are positional, and the implementation pushes the result at position $0$, moving
+every existing binding up by one; `HeapKnowledge.shift` performs that
+renumbering and `shift_holds` proves it preserves meaning. Naming the bindings is
+that theorem applied: the precondition may appear unchanged in a postcondition
+because nothing about the old bindings changed except their numbers. A name here
+is a display for a position, not syntax — the calculus has no identifiers — and
+it carries no source scoping; the adapter's own shadowing rules are
+[a separate matter](REQUEST-PROTOCOL.md#source-mode). Positions reappear exactly
+where a certificate carries a permutation, in
+[binding transfer](#supplied-point-claims-and-incoming-edges) and on the wire.
 
-so $K{\uparrow}$ says about the extended environment exactly what $K$ said about
-the original (`HeapKnowledge.shift`, sound by `shift_holds`). Postconditions
-below are built from $K{\uparrow}$ by adding what the operation establishes and
-removing what it invalidates.
-
-Three more abbreviations. $\operatorname{val}(i,R)$ is the immutable fact
-$\rho(i)\in R$; $j\approx_K i$ means $K$'s equality links prove $\rho(j)=\rho(i)$,
-which holds for $i$ itself; and $\operatorname{val}_K(i)=R$ means $R$ is the
-literal set proved for slot $i$, from a value fact or from its ordinary primitive
-type (`valuesAt`). Cell facts $\operatorname{cell}(i,R)$ and links
-$\operatorname{read}(c,v)$, $c=v$ are the
+Three abbreviations. $\operatorname{val}(x,R)$ is the immutable fact
+$\rho(x)\in R$; $y\approx_K x$ means $K$'s equality links prove
+$\rho(y)=\rho(x)$, which holds for $x$ itself; and $\operatorname{val}_K(x)=R$
+means $R$ is the literal set proved for $x$, from a value fact or from its
+ordinary primitive type (`valuesAt`). Cell facts $\operatorname{cell}(x,R)$ and
+links $\operatorname{read}(x,y)$, $x=y$ are the
 [assertion forms](SEMANTICS.md#current-content-assertions-and-postconditions).
 
 ### The reference operations
@@ -656,10 +659,10 @@ not one it assumes.
 **Allocation** creates a cell and invalidates nothing:
 
 $$
-\frac{\Gamma\vdash_G\operatorname{alloc}(x_i):\operatorname{Ref}A
-      \qquad\operatorname{val}_K(i)=R}
-{\Gamma;K\vdash_G\operatorname{alloc}(x_i):\operatorname{Ref}A
-  \dashv K{\uparrow}\land\operatorname{cell}(0,R)}
+\frac{\Gamma\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
+      \qquad\operatorname{val}_K(x)=R}
+{\Gamma;K\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
+  \dashv K\land\operatorname{cell}(r,R)}
 $$
 
 **Reading** preserves the heap and records where the result came from. The
@@ -667,27 +670,27 @@ ordinary rule claims nothing about contents; the observed rule additionally
 consumes a cell fact and returns it as a fact about the value:
 
 $$
-\frac{\Gamma\vdash_G\operatorname{read}(x_i):A\qquad\Gamma(i)=\operatorname{Ref}B}
-{\Gamma;K\vdash_G\operatorname{read}(x_i):A
-  \dashv K{\uparrow}\land\textstyle\bigwedge_{j\approx_K i}\operatorname{read}(j{+}1,0)}
+\frac{\Gamma\vdash_G\operatorname{read}(x):A\qquad\Gamma(x)=\operatorname{Ref}B}
+{\Gamma;K\vdash_G\operatorname{read}(x):A
+  \dashv K\land\textstyle\bigwedge_{y\approx_K x}\operatorname{read}(y,r)}
 $$
 
 $$
-\frac{\operatorname{cell}(i,R)\in K\qquad R\subseteq A}
-{\Gamma;K\vdash_G\operatorname{read}(x_i):A
-  \dashv K{\uparrow}\land\textstyle\bigwedge_{j\approx_K i}\operatorname{read}(j{+}1,0)
-   \land\operatorname{val}(0,R)}
+\frac{\operatorname{cell}(x,R)\in K\qquad R\subseteq A}
+{\Gamma;K\vdash_G\operatorname{read}(x):A
+  \dashv K\land\textstyle\bigwedge_{y\approx_K x}\operatorname{read}(y,r)
+   \land\operatorname{val}(r,R)}
 $$
 
 **Writing** establishes the new contents and destroys every cell fact and read
-link, keeping only immutable values and slot equalities:
+link, keeping only immutable values and binding equalities:
 
 $$
-\frac{\Gamma\vdash_G\operatorname{write}(x_i,x_j):\mathsf{Null}
-      \qquad\operatorname{val}_K(j)=R}
-{\Gamma;K\vdash_G\operatorname{write}(x_i,x_j):\mathsf{Null}
-  \dashv\textstyle\bigwedge_{k\approx_K i}\operatorname{cell}(k{+}1,R)
-   \land\operatorname{val}(0,\{\mathsf{null}\})\land V{\uparrow}\land L^{=}{\uparrow}}
+\frac{\Gamma\vdash_G\operatorname{write}(x,y):\mathsf{Null}
+      \qquad\operatorname{val}_K(y)=R}
+{\Gamma;K\vdash_G\operatorname{write}(x,y):\mathsf{Null}
+  \dashv\textstyle\bigwedge_{z\approx_K x}\operatorname{cell}(z,R)
+   \land\operatorname{val}(r,\{\mathsf{null}\})\land V\land L^{=}}
 $$
 
 **Every other expression**, calls included, keeps only what a call cannot
@@ -695,17 +698,18 @@ falsify:
 
 $$
 \frac{\Gamma\vdash_G t:A}
-{\Gamma;K\vdash_G t:A\dashv V{\uparrow}\land L^{=}{\uparrow}}
+{\Gamma;K\vdash_G t:A\dashv V\land L^{=}}
 $$
 
-Here $V$ is the immutable-value part of $K$ and $L^{=}$ its equality links.
+Here $V$ is the immutable-value part of $K$ and $L^{=}$ its equality links, both
+carried over unchanged.
 
 The shape a type theorist will look for is missing on purpose: **there is no
-frame rule.** A write to slot $i$ discards what is known about slot $k$ even when
-$k\neq i$, because distinct slots are not distinct locations — the assertion
-language can witness that two slots alias, never that they do not. So the
-positive direction is proof-driven and the negative direction is total: the new
-contents propagate exactly to the witnessed aliases $k\approx_K i$, while
+frame rule.** A write through $x$ discards what is known about $z$ even when $z$
+is a different name, because distinct names need not be distinct locations — the
+assertion language can witness that two names alias, never that they do not. So
+the positive direction is proof-driven and the negative direction is total: the
+new contents propagate exactly to the witnessed aliases $z\approx_K x$, while
 everything else is dropped rather than framed around. `write_frame` in the
 semantic layer does preserve a fact at another location, but only from a proved
 runtime inequality, and the finite assertion language cannot state one: its links

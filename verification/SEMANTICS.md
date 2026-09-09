@@ -15,7 +15,8 @@ $$t ::= x_i\mid\lambda t\mid t\,t\mid\mathsf{null}\mid\mathsf{true}\mid\mathsf{f
 \mid\ell\mid\mathsf{alloc}(t)\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
 \mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.$$
 
-Here $x_i$ is a de Bruijn slot, $\ell$ a heap location, and $k$ a shape test
+Here $x_i$ is a variable, given as a de Bruijn position, $\ell$ a heap location,
+and $k$ a shape test
 drawn from $\{\mathsf{isNul},\mathsf{isBool},\mathsf{isRef},\mathsf{isFun}\}$,
 one per type constructor, which is what a source `typeof` amounts to. Values are
 the subset
@@ -27,20 +28,26 @@ about the same objects. There is no `let` constructor: `HasTy.letE` types the
 pattern $(\lambda t)\,t$. `Step_det` proves that a term and heap have at most
 one successor.
 
-Two different things get indexed here, and both run through the whole
-development. A **slot** is a position in the environment $\rho$ — the de Bruijn
-index of a binding. A **location** $\ell$ is an address in the heap $h$. This is
-the usual store/heap pair of an ML-style operational semantics, with slots
-standing in for variable names because the calculus is nameless. A slot may
-*hold* a location: $\rho(i)=\ell$.
+Two different things are named here, and both run through the whole development.
+A **binding** lives in the environment $\rho$; a **location** $\ell$ is an address
+in the heap $h$. This is the usual store/heap pair of an ML-style operational
+semantics. A binding may *hold* a location: $\rho(x)=\ell$.
 
-The assertion layer indexes every fact by slot, because slots are what a checker
-can name; locations arise only during execution and never appear in a program.
-So $\operatorname{cell}(i,R)$ is not a claim about slot $i$'s value but about the
-location that value *is*: there exist $\ell$ and $v$ with $\rho(i)=\ell$,
+Because the calculus is nameless, a binding is really a de Bruijn position, and
+the implementation calls it a **slot**: environments are lists, and pushing a
+value renumbers everything already there. Rules in these documents write names
+for bindings anyway, which reads better and matches the source they describe.
+The two views agree, and `shift_holds` is the theorem that says so: renumbering
+on a push preserves every fact. Positions surface again only where something
+genuinely carries them — a certificate's binding transfer, and the wire format.
+
+Assertions are attached to bindings, because bindings are what a checker can
+name; locations arise only during execution and never appear in a program. So
+$\operatorname{cell}(x,R)$ is not a claim about $x$'s value but about the
+location that value *is*: there exist $\ell$ and $v$ with $\rho(x)=\ell$,
 $h(\ell)=v$ and $v\in R$. That one indirection is where aliasing enters, and it
 is why the checked rules have
-[no frame rule](PROGRAM-TYPING.md#the-reference-operations): two slots can hold
+[no frame rule](PROGRAM-TYPING.md#the-reference-operations): two names can hold
 the same location, and no assertion can say they do not.
 
 Two of these forms are deliberately outside the typing judgment. A location
@@ -167,8 +174,8 @@ future extension. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
 SKJS's internal types with heap assertions.
 
-The finite assertion layer also records two relationships between environment
-slots, interpreted by `HeapLinks.Holds`:
+The finite assertion layer also records two relationships between bindings,
+interpreted by `HeapLinks.Holds`:
 
 $$
 \begin{aligned}
@@ -180,7 +187,7 @@ $$
 
 A read relationship depends on the current heap. Slot equality does not: two
 copied references remain the same location after writes. Allocation preserves
-both relationships; an arbitrary write or call preserves slot equality but may
+both relationships; an arbitrary write or call preserves binding equality but may
 invalidate any read relationship. The checked rules conservatively discard all
 read relationships on writes/calls. The syntax owner is the
 [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar); operational rules
