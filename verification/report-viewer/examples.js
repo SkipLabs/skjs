@@ -27,6 +27,7 @@ const groups = [
       "verification/tests/skjs-incomplete/null-loop-exit.ts",
       "verification/tests/skjs-incomplete/write-refined-read.ts",
       "verification/tests/skjs-incomplete/empty-domain-escape.ts",
+      "verification/tests/skjs-incomplete/undefined-completes.ts",
     ],
   },
   {

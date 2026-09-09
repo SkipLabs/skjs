@@ -45,7 +45,11 @@ function run(command, args) {
 function expectedVerified(file, name) {
   return (
     supported.includes(file) ||
-    (file === "verification/tests/partial-claims.ts" && name === "complete")
+    (file === "verification/tests/partial-claims.ts" && name === "complete") ||
+    // An incompleteness witness that needs no claim repair: SKJS rejects the
+    // annotation and the verifier establishes it from the producer's own
+    // partial export.
+    file === "verification/tests/skjs-incomplete/undefined-completes.ts"
   );
 }
 // Match the visualizer: failure to find a proof is distinct from inability to

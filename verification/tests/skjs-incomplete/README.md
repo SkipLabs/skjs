@@ -47,3 +47,10 @@ incoming write edge justifies the observation and the return statement uses it
 locally. False entry or read claims fail. `write-observations.js` checks these
 outcomes, the source shape, and runtime and producer behavior. The three unsafe
 original exports are independently audited by `refinement-witnesses.js`.
+
+`undefined-completes.ts` is the one entry the verifier establishes with no
+repair at all. A body that completes returns undefined, which is what it
+declares; SKJS rejects it as not returning on every path. The exit carries
+undefined and discharges the annotation directly, so the producer's partial
+export is enough. `skjs-unsound/never-completes.ts` is the same SKJS check
+skipped rather than too strict.
