@@ -157,9 +157,9 @@ try {
   assert.equal(exitFn.collection.completion, "aborted");
   assert.equal(exitFn.collection.mode, "normal");
   expect(
-    "original SKJS loop exit claims verify using the checked branch value",
+    "broad loop exit claim loses the branch refinement at the local boundary",
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
-    true,
+    false,
   );
   const ret = exitAst.functions[0].body.at(-1);
   const binding = exitFn.envs

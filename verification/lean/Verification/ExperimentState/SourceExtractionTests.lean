@@ -16,7 +16,7 @@ private def produceSourceJson (j : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
   let r ← decodeRequest j
-  let source : SourceRequest := ⟨r,[],[],[]⟩
+  let source : SourceRequest := ⟨r,[],[],[],[]⟩
   RequestJson.produceJson j fuel suggestions known [] (some source.searchLabels)
 
 -- Exact finite-set translation, including normalization of unions.
@@ -446,7 +446,7 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
 #print axioms early_return_trace
 
 -- Supplemental proofs are necessary even when the whole lambda is typable.
-private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[]⟩
+private def captureRequired := (extractFn captureFn captureClaims).toOption.getD ⟨captureRequest,[],[],[],[]⟩
 #guard captureRequired.obligations.length == 4
 #guard ok (ExpressionClaims.produce (RequestJson.graph captureRequest)
   captureRequired.searchLabels SourceTypes.types.length 10 captureRequired.obligations)
@@ -611,5 +611,29 @@ private def joined (types : List Json) : Json := Json.mkObj [
   | .error e => e == "cell or function parameters require an external-value boundary not yet supported"
   | .ok _ => false)
 #guard !ok (SourceInput.translate (joined [wireTy ⟨false,[.str]⟩,cellWire]))
+
+-- A graph-safe certificate can still violate the source's local interfaces.
+-- This specifically tests the consumer, independently of producer scheduling.
+private def localFn : SourceInput.Fn :=
+  ⟨"local",(0,1),[],wireTy ⟨false,[.boolLit true]⟩,
+    [.cst (2,3) "x" (some (wireTy ⟨false,[.bool]⟩)) (.lit (4,5) (.vbool true)),
+     .ret (6,9) (.var (8,9) "x")]⟩
+private def localClaims : SourceClaims.Function := {
+  name := "local", namePos := (0,1), params := [], ret := .ok [1]
+  envs := [(2,[]),(6,[("x",.ok [1,2])])]
+  exprs := [((4,5),.ok [1]),((8,9),.ok [1,2])] }
+private def localRequest := (extractNormalizedFn localFn localClaims).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
+private def localCertificate (cuts : List Nat) :=
+  CertificateProducer.produce (RequestJson.graph localRequest.toRequest)
+    localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
+    localRequest.start [] localRequest.inputs [] [] localRequest.assertions cuts
+private def globalCertificate := (localCertificate []).toOption.get!
+#guard RequestJson.verify localRequest.toRequest ⟨5,globalCertificate⟩
+#guard !checkAssertions localRequest ⟨5,globalCertificate⟩
+#guard (localCertificate localRequest.cuts).toOption.isNone
+private def repairedLocal := (extractNormalizedFn localFn
+  {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
+#guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
+  repairedLocal.origins (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 
 end Verification.ExperimentState.SourceExtractionTests

@@ -107,7 +107,7 @@ supply a default. The expression and continuation constructors are defined in
 `Language.lean` and `ControlFlow.lean`; their codecs live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
-The evidence file is an object with `version: 4` and `certificate`, a list of
+The evidence file is an object with `version: 5` and `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
@@ -121,7 +121,7 @@ slot values; `alias: false` means the cell currently contains the value in the
 other slot. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
-`observedRead`, `knownValue`, `allocated`, `written`). Constructor payloads use
+`typedRead`, `observedRead`, `knownValue`, `allocated`, `written`). Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking; the
 [graph regression](lean/Verification/ExperimentState/HeapGraphTests.lean) tests a
 round trip with nonempty facts and effect evidence.
@@ -130,8 +130,10 @@ The effect checker binds to the root expression sequent and must establish exact
 `output`. Each actual outgoing edge checks fact entailment against the destination's
 `knowledge`, in addition to ordinary type coverage. Effect-only continuations drop
 the result slot before transferring facts. External entry requires empty knowledge.
-All type labels in nested effect proofs are bounds checked. The producer derives checked facts along single-predecessor paths. Supplied
-source observations are not yet connected to this interface. See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
+All type labels in nested effect proofs are bounds checked. Within a source
+statement, the producer derives checked facts along administrative paths. The
+source consumer additionally enforces the exact entry interfaces described below.
+See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
 
 The `ifBool` expression rule checks an ordinary `ite` with three premises:
 the Boolean condition, the true arm, and the false arm. Each arm has the root's
@@ -145,7 +147,8 @@ the arms use precisely the root context with that slot replaced. All payload
 labels are bounds checked. The rule cannot narrow any other binding.
 
 Request version 2 requires explicit `inputs`. Raw requests use version 2;
-responses use version 4 for checked heap postconditions. Earlier responses
+responses use version 5 for checked heap postconditions, including ordinary-read
+links and writes without an old-content premise. Earlier responses
 are rejected. Source bundles use version 3 to include supplemental expression proofs;
 older source bundles are rejected.
 Decode/re-encode validation rejects unknown fields and missing fields,
@@ -196,7 +199,7 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":3,"functions":[...],"obligations":[...]}`, containing version-4
+`{"version":3,"functions":[...],"obligations":[...]}`, containing version-5
 responses in source function order. `obligations` has one list per function,
 including empty lists, with one evidence tree per reconstructed closure-expression
 or annotation judgment. Counts and root judgments must match exactly. Exported
@@ -463,11 +466,13 @@ supplemental proof with an exact matching root judgment in the graph certificate
 The independent consumer and source bundle format are unchanged.
 
 Source assertion requirements are reconstructed from the source/claim inputs,
-not read from the certificate. Statement-entry and expression-result checkpoints
-are ordinary graph nodes with additional required knowledge. Source acceptance
-checks that certificate knowledge entails these requirements, alongside the
-ordinary graph and supplemental proofs. Requirements may seed untrusted evidence
-search at merges/loop heads, but every incoming edge is checked. See
+not read from the certificate. Every statement entry requires certificate input
+knowledge to equal exactly its supplied current predicates, with empty value facts
+and links. An entry without observations requires empty knowledge. Expression
+result checkpoints inside the statement require entailment instead. The source
+consumer checks both policies alongside ordinary graph and supplemental proofs;
+every incoming edge is checked. Neither the cut labels nor their interfaces are
+chosen by the certificate. See
 [the source checkpoint rules](PROGRAM-TYPING.md#source-observation-checkpoints).
 
 Source bundle version 3 carries these supplemental proofs alongside the graph

@@ -13,10 +13,9 @@ its `true` return annotation because it forgets the condition's false edge after
 returns true, and reaching the following return entails `flag = true`.
 
 `negation.js` takes SKJS's normal-mode partial export (without `--keep-going`).
-The original broad claims now verify: a checked immutable branch-value fact
-justifies the true result. The test also independently checks an explicit repair
-of the final binding and expression to true and rejects an incorrect false exit
-binding. No SKJS behavior is changed.
+The original broad exit claim does not suffice under local verification. The test
+independently checks an explicit repair of the final binding and expression to
+true and rejects an incorrect false exit binding. No SKJS behavior is changed.
 
 `singleton-negation.ts` is another producer precision gap: SKJS types `!flag` as
 `boolean` even for `flag : true`. Changing just that expression claim to `false`
@@ -41,12 +40,10 @@ proves the modeled body safe at true and separately proves its terminating
 execution. [Program typing](../../PROGRAM-TYPING.md#current-content-rules-semantic-layer)
 documents the rules used by that proof.
 
-The source checker now produces and independently checks a certificate for the
-**original partial claims**, preserving the wider Boolean read claim. It tracks
-the written true value through checked copies of the receiver, then retains the
-read result as an immutable fact for the return contract. A candidate with the
-read explicitly claimed true also verifies; a false read claim is rejected.
-`write-observations.js` checks those outcomes, the source shape, and runtime and
-producer behavior. Supplied current-content assertions in the three unsoundness
-fixtures remain a separate source-consumption task; see
-[Current-content assertions](../../DESIGN.md#current-content-assertions).
+The original broad return-entry claim does not verify locally: it forgets the
+write's current-true fact. An explicit candidate with `{ value: boolean = true }`
+at that entry verifies, even if the read's expression claim stays Boolean. The
+incoming write edge justifies the observation and the return statement uses it
+locally. False entry or read claims fail. `write-observations.js` checks these
+outcomes, the source shape, and runtime and producer behavior. The three unsafe
+original exports are independently audited by `refinement-witnesses.js`.

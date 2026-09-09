@@ -21,12 +21,15 @@ private def afterWrite := writeOutput beforeWrite 0 [.tru]
 
 -- The storage contract permits true; current contents are separately updated.
 #guard checkStep G writeClaim beforeWrite
-  (.written 0 1 [.fls] [.tru] writeProof) == some afterWrite
+  (.written 0 1 [.tru] writeProof) == some afterWrite
+-- Resetting at a source entry may leave no old observation at all.
+#guard checkStep G writeClaim ⟨[],[],[]⟩ (.written 0 1 [.tru,.fls] writeProof) ==
+  some (writeOutput ⟨[],[],[]⟩ 0 [.tru,.fls])
 -- An old alias fact is discarded, but immutable snapshots survive the write.
 #guard afterWrite.cells == [⟨1,[.tru]⟩]
 #guard afterWrite.values == [⟨0,[.nul]⟩,⟨2,[.tru]⟩,⟨4,[.fls]⟩]
 #guard checkStep G writeClaim beforeWrite
-  (.written 0 1 [.fls] [.fls] writeProof) == none
+  (.written 0 1 [.fls] writeProof) == none
 
 -- Transfer selects the written cell. Its old false observation cannot survive.
 private def afterEdge := HeapKnowledge.project afterWrite (some [1]) 1
@@ -37,6 +40,14 @@ private def afterEdge := HeapKnowledge.project afterWrite (some [1]) 1
 -- Check a producer's wider Boolean read claim, then use the precise immutable
 -- result to discharge a true return contract. A stale false claim is rejected.
 private def readClaim : Sequent Nat := ⟨[refBool],.read (.var 0),boolTy⟩
+private def readProof : Evidence Nat := .node readClaim .read
+  [.node ⟨readClaim.context,.var 0,refBool⟩ .var []]
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 boolTy readProof) ==
+  some (readFrame ⟨[],[],[]⟩ 0)
+#guard (readFrame ⟨[],[],[]⟩ 0).links == [⟨1,0,false⟩]
+-- Neither a false storage contract nor a changed read claim can use that proof.
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [1] readProof) == none
+#guard checkStep G {readClaim with type := [1]} ⟨[],[],[]⟩ (.typedRead 0 boolTy readProof) == none
 private def afterRead := readOutput afterEdge 0 [.tru]
 #guard checkStep G readClaim afterEdge (.observedRead 0 [.tru]) == some afterRead
 #guard checkStep G {readClaim with type := [2]} afterEdge (.observedRead 0 [.tru]) == none
@@ -71,7 +82,7 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
   [.node ⟨narrowWrite.context,.var 0,[5]⟩ .var [],
    .node ⟨narrowWrite.context,.var 1,boolTy⟩ .var []]
 #guard checkStep G narrowWrite beforeWrite
-  (.written 0 1 [.fls] [.tru] invalidWrite) == none
+  (.written 0 1 [.tru] invalidWrite) == none
 
 -- Pure computational guards frame existing facts; an uncalled lambda may
 -- contain effects, but a call/read/write/allocation is not classified as pure.

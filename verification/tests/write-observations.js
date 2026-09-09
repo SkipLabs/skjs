@@ -163,17 +163,40 @@ test("negated witness reaches a checked obligation with its original observation
   assert.equal(r.status, "not-established");
   assert.equal(r.obligation.phase, "proof-search");
 });
-test("original and precise read claims verify through checked write postconditions", () => {
+test("the original broad entry claim cannot retain a prior write fact", () => {
+  const r = check(safeFile, safeClaims);
+  assert.equal(r.status, "not-established");
+  assert.equal(r.obligation.phase, "proof-search");
+});
+function observedCandidate(value) {
   const candidate = structuredClone(safeClaims);
+  const f = claim(candidate, safeFile);
+  const ret = safeAst.functions[0].body[2];
+  const cell = f.envs
+    .find((e) => e.pos[0] === ret.pos[0])
+    .vars.find((v) => v.name === "cell");
+  cell.type.atoms[0].fields[0].read = lit(value);
+  return candidate;
+}
+test("an explicit true observation makes the return locally provable", () => {
+  const candidate = observedCandidate(true);
+  // The expression's Boolean claim is a local obligation, not a state cut.
+  assert.deepEqual(
+    at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type,
+    bool,
+  );
+  assert.equal(check(safeFile, candidate).status, "verified");
   at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type =
     lit(true);
-  for (const cs of [safeClaims, candidate]) {
-    const r = check(safeFile, cs);
-    assert.equal(r.status, "verified", r.detail);
-  }
+  assert.equal(check(safeFile, candidate).status, "verified");
+});
+test("a false entry observation fails on the incoming write edge", () => {
+  const r = check(safeFile, observedCandidate(false));
+  assert.equal(r.status, "not-established");
+  assert.equal(r.obligation.phase, "proof-search");
 });
 test("a false read claim cannot override the actual written value", () => {
-  const candidate = structuredClone(safeClaims);
+  const candidate = observedCandidate(true);
   at(claim(candidate, safeFile), safeAst.functions[0].body[2].e.pos).type =
     lit(false);
   const r = check(safeFile, candidate);

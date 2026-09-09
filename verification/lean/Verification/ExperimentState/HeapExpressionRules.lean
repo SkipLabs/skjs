@@ -96,12 +96,17 @@ theorem result_holds {k R ρ h v} (hk : HeapKnowledge.Holds k (push v ρ) h)
   · exact hr
   · exact hk.2.1 f hf
 
+/-- An ordinary typed read preserves the heap and records which cell its result
+came from. This does not claim the cell had any particular contents beforehand. -/
+def readFrame (k : Knowledge) (i : Nat) : Knowledge :=
+  let out := HeapKnowledge.shift k
+  {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false⟩) ++ out.links}
+
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
 precision even when the producer supplied a wider expression type. -/
 def readOutput (k : Knowledge) (i : Nat) (R : List Literal) : Knowledge :=
-  let out := withResult (HeapKnowledge.shift k) R
-  {out with links := (HeapLinks.aliases k.links i).map (fun j => ⟨j+1,0,false⟩) ++ out.links}
+  withResult (readFrame k i) R
 
 theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hm : Fact.mk i R ∈ k.cells) (hc : includes G A R = true)
@@ -122,6 +127,31 @@ theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
       have he := HeapLinks.aliases_eq hk.2.2 hj
       exact ⟨l,he.trans hl,by simpa [push,hp.2] using hv⟩
+    · exact hout.2.2 link hm
+
+theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ n W h}
+    (ht : HasTy G Γ (.read (.var i)) A) (hi : Γ[i]? = some Ref)
+    (hr : Represents G Ref (.refs B []))
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (readFrame k i) (push v ρ) h') n W h (.read (ρ i)) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    obtain ⟨l,c,hl,hlookup,hagree⟩ := ((represents_sem hr _ W (ρ i)).mp (he.2 i Ref hi)).1
+    obtain ⟨v,hv,hmem⟩ := hh.2 l c hlookup
+    have hval := meaning_valOnly G B 0 _ v ((hagree 0 (by omega) _ v).mp (hmem 0 (by omega)))
+    have hs : Safe (meaning G A) (n+1) W h (.read (ρ i)) := by
+      simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
+    rw [hl] at hs ⊢
+    apply one_step rfl hval (.readV hv) _ hs
+    have hout := HeapKnowledge.shift_holds (v := v) hk
+    refine ⟨hout.1,hout.2.1,?_⟩
+    intro link hm
+    rcases List.mem_append.mp hm with hm | hm
+    · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
+      exact ⟨l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
     · exact hout.2.2 link hm
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
@@ -178,31 +208,47 @@ its new contents, and retains immutable values already read into slots. -/
 def writeOutput (k : Knowledge) (i : Nat) (R : List Literal) : Knowledge :=
   ⟨(HeapLinks.aliases k.links i).map (fun j => ⟨j+1,R⟩),⟨0,[.nul]⟩ :: HeapFacts.shift k.values,HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
-theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R old A ρ n W h}
-    (ht : HasTy G Γ (.write (.var i) (.var j)) A)
-    (hm : Fact.mk i old ∈ k.cells) (hr : valuesAt G Γ k j = some R)
+private theorem write_inv {h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
+    (hs : Step h (.write a b) h' t) :
+    ∃ l, a = .loc l ∧ l < h.length ∧ h' = h.set l b ∧ t = .nul := by
+  cases hs with
+  | writeC1 hs => exact False.elim (value_no_step ha hs)
+  | writeC2 _ hs => exact False.elim (value_no_step hb hs)
+  | writeV _ hl => exact ⟨_,rfl,hl,rfl,rfl⟩
+
+/-- The ordinary typing proof guarantees a writable location. An old observation
+is unnecessary: the postcondition depends only on the value being written. -/
+theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R A ρ n W h}
+    (ht : HasTy G Γ (.write (.var i) (.var j)) A) (hi : i < Γ.length)
+    (hr : valuesAt G Γ k j = some R)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (writeOutput k i R) (push v ρ) h')
       n W h (.write (ρ i) (ρ j)) := by
-  obtain ⟨l,v,hl,hlookup,_⟩ := hk.1 _ hm
   obtain ⟨a,ha,hv⟩ := valuesAt_sound hr he hk
   have hvv : isVal (ρ j) = true := by rw [hv]; cases a <;> rfl
-  have hlt := (List.getElem?_eq_some_iff.mp hlookup).1
-  have hs := ht.sound n W h ρ he hw hh
-  simp [instantiate] at hs
-  rw [hl] at hs ⊢
-  apply one_step rfl rfl (.writeV hvv hlt) _ hs
-  refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
-  · intro f hf
-    obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
-    have heq := HeapLinks.aliases_eq hk.2.2 hs
-    exact ⟨l,ρ j,heq.trans hl,write_new hlt,a,ha,hv⟩
-  · intro f hf
-    rcases List.mem_cons.mp hf with rfl | hf
-    · exact ⟨.nul,by simp,rfl⟩
-    · exact (HeapKnowledge.shift_holds (v := .nul) hk).2.1 f hf
+  have hiv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+  have hs : Safe (meaning G A) n W h (.write (ρ i) (ρ j)) := by
+    simpa [instantiate] using ht.sound n W h ρ he hw hh
+  cases n with
+  | zero => trivial
+  | succ n =>
+    have step := hs
+    rcases step with ⟨hbad,_⟩ | ⟨U,h',t',_,_,step,_,_⟩
+    · contradiction
+    · obtain ⟨l,hl,hlt,_,_⟩ := write_inv hiv hvv step
+      rw [hl] at hs ⊢
+      apply one_step rfl rfl (.writeV hvv hlt) _ hs
+      refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
+      · intro f hf
+        obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
+        have heq := HeapLinks.aliases_eq hk.2.2 hs
+        exact ⟨l,ρ j,heq.trans hl,write_new hlt,a,ha,hv⟩
+      · intro f hf
+        rcases List.mem_cons.mp hf with rfl | hf
+        · exact ⟨.nul,by simp,rfl⟩
+        · exact (HeapKnowledge.shift_holds (v := .nul) hk).2.1 f hf
 
 /-- Source lowering inserts variable copies and literal/lambda nodes between
 operations. These are pure: unlike calls they must not discard cell facts. -/
@@ -277,10 +323,11 @@ be changed by an untrusted producer. -/
 inductive StepEvidence (ι : Type) where
   | ordinary (proof : ProgramCertificates.Evidence ι)
   | pure (proof : ProgramCertificates.Evidence ι)
+  | typedRead (slot : Nat) (element : Ty ι) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Literal)
   | knownValue (slot : Nat) (contents : List Literal)
   | allocated (slot : Nat) (contents : List Literal) (proof : ProgramCertificates.Evidence ι)
-  | written (receiver value : Nat) (old contents : List Literal) (proof : ProgramCertificates.Evidence ι)
+  | written (receiver value : Nat) (contents : List Literal) (proof : ProgramCertificates.Evidence ι)
 
 /-- The successful result is the guaranteed postcondition in the result-pushed
 frame. Edge checking must entail the destination's facts from this output;
@@ -294,6 +341,10 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
         checkTree G e = true ∧ pureTerm j.term = true
     then some (pureOutput k j.term) else none
+  | .typedRead i B e =>
+    if claim e = j ∧ checkTree G e = true ∧ j.term = .read (.var i) ∧
+        (j.context[i]?).any (fun Ref => decide (expand G Ref = [.refs B []]))
+    then some (readFrame k i) else none
   | .observedRead i R =>
     if j.term = .read (.var i) ∧ i < j.context.length ∧
         Fact.mk i R ∈ k.cells ∧ includes G j.type R = true
@@ -307,10 +358,10 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
         j.term = .alloc (.var i) ∧ i < j.context.length ∧
         valuesAt G j.context k i = some R
     then some (allocOutput k R) else none
-  | .written i v old R e =>
+  | .written i v R e =>
     if claim e = j ∧ checkTree G e = true ∧
         j.term = .write (.var i) (.var v) ∧ i < j.context.length ∧ v < j.context.length ∧
-        Fact.mk i old ∈ k.cells ∧ valuesAt G j.context k v = some R
+        valuesAt G j.context k v = some R
     then some (writeOutput k i R) else none
 
 theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
@@ -340,6 +391,21 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       rw [hj] at typed
       cases hc
       exact pure_sound typed hpure scope he hk hw hh
+    · contradiction
+  | typedRead i B e =>
+    simp only [checkStep] at hc
+    split at hc
+    · rename_i hp
+      obtain ⟨hj,ht,term,hr⟩ := hp
+      cases hi : j.context[i]? with
+      | none => simp [hi] at hr
+      | some Ref =>
+        have hrep : Represents G Ref (.refs B []) := by simpa [hi, Represents] using hr
+        have typed := checkTree_sound e ht
+        rw [hj,term] at typed
+        cases hc
+        rw [term]
+        simpa [instantiate] using typedRead_sound typed hi hrep he hk hw hh
     · contradiction
   | observedRead i R =>
     simp only [checkStep] at hc
@@ -371,20 +437,22 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       rw [term]
       simpa [instantiate] using alloc_sound typed hr he hk hw hh
     · contradiction
-  | written i v old R e =>
+  | written i v R e =>
     simp only [checkStep] at hc
     split at hc
     · rename_i hp
-      obtain ⟨hj,ht,term,_,_,hm,hr⟩ := hp
+      obtain ⟨hj,ht,term,hi,_,hr⟩ := hp
       have typed := checkTree_sound e ht
       rw [hj] at typed
       rw [term] at typed
       cases hc
       rw [term]
-      simpa [instantiate] using write_sound typed hm hr he hk hw hh
+      simpa [instantiate] using write_sound typed hi hr he hk hw hh
     · contradiction
 
 #print axioms checkStep_sound
+#print axioms typedRead_sound
+#print axioms write_sound
 #print axioms read_sound
 #print axioms value_sound
 #print axioms ordinary_sound

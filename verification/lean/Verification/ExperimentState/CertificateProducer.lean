@@ -263,12 +263,16 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   | _ => pure ()
   if let some e := ordinary then
     match j.term with
+    | .read (.var i) =>
+      if let some Ref := j.context[i]? then
+        if let [.refs B []] := expand G Ref then
+          choices := choices ++ [.typedRead i B e]
     | .alloc (.var i) =>
       if let some R := HeapExpressionRules.valuesAt G j.context k i then
         choices := choices ++ [.allocated i R e]
     | .write (.var i) (.var v) =>
       if let some R := HeapExpressionRules.valuesAt G j.context k v then
-        choices := choices ++ (k.cells.filter fun f => f.slot == i).map fun f => .written i v f.contents R e
+        choices := choices ++ [.written i v R e]
     | _ => pure ()
     choices := choices ++ [.pure e,.ordinary e]
   for effect in choices do
@@ -318,13 +322,14 @@ private def produceNode [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty �
   return {expression := e, edges := ps, knowledge := k, effect := some effect, output := out}
 
 /-- Propagate established postconditions along single-predecessor paths. Entry
-starts empty; merge points use supplied requirements. A node is checked once
+starts empty; source cuts use exactly their supplied requirements, even when
+empty. Other merge points use supplied requirements. A node is checked once
 when its unique predecessor is available; this is dependency scheduling, not invariant iteration.
 Every edge is still checked by the independent consumer. -/
 def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) :
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) :
     Except Failure (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
   let incoming := (List.range P.length).map fun target =>
@@ -340,7 +345,7 @@ def produceRaw [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       let some c := claims[l]? | throw .claimCount
       let required := (requirements.lookup l).getD ⟨[],[],[]⟩
       let mut k := required
-      if l != start then
+      if l != start && !cuts.contains l then
         if let some [(pred,index,target)] := incoming[l]? then
           let some previous := (table[pred]?).getD none | continue
           let some source := P[pred]? | throw .claimCount
@@ -373,14 +378,14 @@ def produce [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : Except Failure (ControlFlow.Certificate ι) :=
-  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements with
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) : Except Failure (ControlFlow.Certificate ι) :=
+  match produceRaw G (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts with
   | .error e => .error e
   | .ok C => if accept G R P claims C start inputs then .ok C
     else .error ((failedEdge P C).getD .rejected)
 
-theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known requirements C}
-    (h : produce G labels fuel R P claims start hints inputs suggestions known requirements = .ok C) :
+theorem produce_checked [DecidableEq ι] {G : NormalGraph ι} {labels fuel R P claims start hints inputs suggestions known requirements cuts C}
+    (h : produce G labels fuel R P claims start hints inputs suggestions known requirements cuts = .ok C) :
     accept G R P claims C start inputs = true := by
   unfold produce at h
   split at h

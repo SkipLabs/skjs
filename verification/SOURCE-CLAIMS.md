@@ -115,9 +115,11 @@ references remain outside this profile.
 as its write-invariant reference plus its read-content predicate. Conversion does
 not manufacture stronger producer claims. Both raw SKJS and sidecar consumers
 bind current predicates to statement-entry or expression-result graph checkpoints.
-All incoming edges must justify them, including loop backedges. The source consumer
-also checks that the certificate has retained the reconstructed requirements;
-changing an assertion invalidates evidence that does not imply it.
+Every statement entry resets to exactly its supplied types and current predicates;
+extra derived facts and links cannot cross it. All incoming edges must justify
+that interface, including loop backedges. Expression claims are local obligations
+within a statement, where checked effects may preserve or derive facts. The
+source consumer enforces both policies independently of evidence production.
 
 Observations inside ordinary closure/compositional proofs require the storage
 invariant to imply the predicate uniformly. They do not inherit creation-time

@@ -38,7 +38,7 @@ def certificate : ControlFlow.Certificate Nat :=
    {expression := leaf [[9],[2]] .tru [1] .truLit, edges := [[.subset,.subset,.subset]],
     knowledge := allocated, effect := some (.pure (leaf [[9],[2]] .tru [1] .truLit)), output := beforeWrite},
    {expression := writeProof, edges := [[.subset]], knowledge := beforeWrite,
-    effect := some (.written 1 0 [.fls] [.tru] writeProof), output := written},
+    effect := some (.written 1 0 [.tru] writeProof), output := written},
    {expression := leaf [[9]] (.read (.var 0)) [1,2] .read, edges := [[.subset,.subset]],
     knowledge := beforeRead, effect := some (.observedRead 0 [.tru]), output := readResult},
    {expression := leaf [[1,2],[9]] (.var 0) [1] .var, edges := [], knowledge := readResult,
@@ -78,7 +78,7 @@ private def cycleCertificate := certificate.set 5
 -- The external checker consumes the same facts and effects through strict JSON.
 private def request : RequestJson.Request :=
   ⟨2,SourceTypes.types,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
-private def response : RequestJson.Response := ⟨4,certificate⟩
+private def response : RequestJson.Response := ⟨5,certificate⟩
 #guard RequestJson.verify request response
 #guard match RequestJson.verifyJson (Lean.toJson request) (Lean.toJson response) with
   | .ok _ => true

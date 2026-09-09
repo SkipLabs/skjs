@@ -148,7 +148,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels) r.assertions
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels) r.assertions r.cuts
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence

@@ -89,11 +89,12 @@ decreasing_by
   omega
 
 def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
-  | .ordinary e | .pure e | .allocated _ _ e | .written _ _ _ _ e => validEvidence bound e
+  | .typedRead _ B e => validTy bound B && validEvidence bound e
+  | .ordinary e | .pure e | .allocated _ _ e | .written _ _ _ e => validEvidence bound e
   | .observedRead _ _ | .knownValue _ _ => true
 
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.version == 4 && c.certificate.all (fun n =>
+  c.version == 5 && c.certificate.all (fun n =>
     validEvidence r.types.length n.expression &&
     (n.effect.map (validEffect r.types.length)).getD true &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
@@ -210,10 +211,10 @@ def produceJson (request : Json) (fuel : Nat)
     (known : List (ProgramCertificates.Evidence Nat) := [])
     (origins : List (Option DiagnosticOrigin) := [])
     (searchLabels : Option (List Nat) := none)
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : Except String Json := do
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) : Except String Json := do
   let r ← decodeRequest request
   let C ← match produce (graph r) (searchLabels.getD (List.range r.types.length)) fuel
-      r.result r.program r.claims r.start [] r.inputs suggestions known requirements with
+      r.result r.program r.claims r.start [] r.inputs suggestions known requirements cuts with
     | .ok c => pure c
     | .error e =>
       let location := match e with
@@ -226,7 +227,7 @@ def produceJson (request : Json) (fuel : Nat)
         | _ => ""
       throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
         (failureDiagnostic r fuel origins e requirements))
-  let response := toJson (Response.mk 4 C)
+  let response := toJson (Response.mk 5 C)
   verifyJson request response
   return response
 

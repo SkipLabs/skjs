@@ -622,11 +622,26 @@ It computes a guaranteed output, not an assumed postcondition:
 | --- | --- |
 | Pure value or variable copy | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
 | Pure test or conditional | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented. |
+| Ordinary typed read | Preserve facts and record read links to the receiver and witnessed aliases; no prior current-content fact is needed. Its result has the supplied type. |
 | Observed read | Preserve facts and links; record the result's literal set and its current read relationship. That set must fit the requested ordinary result type. |
 | Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
 | Allocation | Check ordinary allocation evidence, preserve old facts, and add the fresh cell's initial contents. |
-| Write | Check ordinary write evidence, discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
+| Write | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities. |
+
+The ordinary-read extension uses the same read-link output as the observed-read
+rule, without claiming a more precise literal result. With $r$ the fresh result:
+
+$$
+\frac{\Gamma\vdash\operatorname{read}(x):A\qquad\Gamma(x)=\operatorname{Ref}(B)}
+{\{\Gamma;K\}\ \operatorname{read}(x):A\ \{\uparrow K\land h(x)=r\}}.
+$$
+
+`typedRead_sound` proves this rule; its implementation also records links for
+known aliases of $x$. `write_sound` needs the ordinary write derivation and the
+written value's predicate, with no premise about the old contents. These are
+operation rules within a local segment. At the next statement entry, only the
+supplied interface survives.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
@@ -685,31 +700,55 @@ prove an allocate-false/write-true/read body safe at true in every admissible
 initial heap. A separate five-step execution establishes its returned value.
 Its null-argument wrapper inhabits `null → true`; the source fixture itself has
 no parameters. [The fixture notes](tests/skjs-incomplete/README.md) distinguish
-this model proof from the source certificate now independently produced and
-checked against the original partial SKJS claims.
+this model proof from source verification, which needs an explicit current-true
+claim at the return entry. The original broad entry claim is insufficient.
 
 ### Source observation checkpoints
 
 `SourceClaims.Function` retains ordinary types and separately indexed current
-predicates. Both adapters populate this same interface. The compiler inserts a
-no-op checkpoint at each required source entry and immediately after each
-required expression result. The latter names the actual returned value in slot
-zero, before continuation slot projection. A loop's reserved head also carries
-its required assertion, so backedges cannot bypass it.
+predicates. Both adapters populate this interface. **Every source statement entry
+is a full local interface**, including entries with no current predicates. The
+compiler reconstructs its ordinary context $\Gamma_l$ and knowledge
+$K_l=(\Delta_l,\varnothing,\varnothing)$, where $\Delta_l$ contains exactly the
+supplied current predicates. No immutable-value facts or alias/read links are
+implicitly carried across this boundary. Ordinary reference contracts remain in
+$\Gamma_l$; the calculus always assumes environment and heap well-formedness.
 
-For required knowledge $K_r$ and certificate knowledge $K_c$ at checkpoint $l$:
+For certificate input $K_c$, source acceptance requires:
 
 $$
-\frac{\operatorname{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}
-\qquad K_c(\rho,h)}{K_r(\rho,h)}.
+K_c=K_l.
 $$
 
-`SourceExtraction.checkAssertions_sound` proves this implication.
-`checkRequests` conjoins this check with graph acceptance and supplemental
-expression proofs. Every incoming edge must establish $K_c$, through the ordinary
-graph transfer rule. The producer may suggest facts or choose stronger ones;
-it cannot remove $K_r$ from the source consumer's reconstructed request.
-An empty content predicate remains an impossible observation, not an absent one.
+`SourceExtraction.checkAssertions_cut` proves this equality from acceptance.
+Each incoming edge separately establishes the supplied heap interface (ordinary
+context coverage is checked alongside it):
+
+$$
+\frac{\operatorname{checkKnowledge}(K_{\mathrm{out}},K_l,m)=\mathsf{true}
+\qquad K_{\mathrm{out}}(\rho,h)}{K_l(\rho\circ m,h)}.
+$$
+
+The next statement is checked from $(\Gamma_l,K_l)$, independently of any
+stronger facts proved by predecessors. Loop heads use the same interface on both
+initial and back edges. Empty knowledge means forget all extra facts; an empty
+*content predicate* remains an impossible observation, not an absent one.
+
+**Expression claims are local obligations within a statement, not full-state
+interfaces.** Their supplied result type must be justified at the expression;
+a supplied current predicate is checked at a no-op result checkpoint, naming
+slot zero before projection. Within the statement, the checked effect rules may
+retain its entry assumptions and derive postconditions. Calls and writes forget
+facts according to those rules. Administrative copies do not discard facts.
+Thus a Boolean read claim is compatible with locally proving a true result from
+an explicit entry observation; it does not license recovering an observation
+forgotten at an earlier statement boundary.
+
+At an expression checkpoint, required knowledge is checked by entailment,
+$\operatorname{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}$.
+`checkAssertions_sound` proves the implication. The independent source consumer
+reconstructs both kinds of boundary and checks them alongside graph acceptance
+and supplemental expression proofs; these are not producer-selected policies.
 
 Ordinary compositional expression proofs, including lambda bodies, do not carry
 heap contexts. For a point assertion $\operatorname{ObservedRef}(B,R)$ there,
@@ -733,15 +772,13 @@ loop backedges, and evidence reuse after changing assertions.
 
 ## Producing evidence from supplied claims
 
-The producer selects checked effect evidence and propagates postconditions along
-single-predecessor paths, scheduling a node once its predecessor is available.
-External entry starts with empty heap knowledge. Merge points and loop heads use
-supplied requirements; there is no iteration to infer a loop invariant. The consumer
-independently checks every edge. Single-predecessor nodes may retain stronger
-established facts, provided their incoming edge justifies the complete context.
-Source point types remain unchanged; derived facts can justify narrower later
-obligations even when an intermediate supplied expression type is wide.
-
+The producer selects checked effects and propagates their postconditions along
+single-predecessor administrative paths within a statement. A source entry is
+seeded with exactly its supplied knowledge, without waiting for its predecessors;
+every incoming edge must subsequently justify it. External entry starts empty.
+There is no iteration to infer a loop invariant. The independent source consumer
+enforces the reset, so supplying a graph-safe certificate with extra facts at a
+statement entry still fails source verification.
 
 `CertificateProducer.lean` accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry

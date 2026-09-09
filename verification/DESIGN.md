@@ -596,10 +596,13 @@ proved operation rules, entailment check and mathematical statements.
 **Implemented:** semantic operation rules, finite heap/value facts and alias links,
 checked expression postconditions and graph-edge entailment, and source consumption
 through both raw SKJS claims and [version-2 sidecars](SOURCE-CLAIMS.md#current-content-assertions).
-The compiler binds required observations to actual statement-entry and
-expression-result checkpoints. The consumer reconstructs these requirements and
-checks them independently of evidence production. Loop heads carry supplied
-requirements; backedges must re-establish them. No loop invariant is inferred.
+Every statement entry is an exact local interface: its supplied ordinary types
+and current observations are the whole starting context. Extra derived heap/value
+facts and links are forgotten there, even on single-predecessor paths. The
+consumer enforces this independently of the producer. Expression-result claims
+are checked local obligations within a statement, where effect rules can derive
+postconditions. Loop heads use supplied interfaces; every backedge must establish
+them. No loop invariant is inferred.
 
 Writes establish new contents for recorded aliases and discard other heap facts;
 ordinary calls discard heap observations and read links. Immutable values and
@@ -610,9 +613,15 @@ storage invariant; they cannot retain temporary facts from closure creation.
 [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints) owns the precise
 checkpoint obligations and this conservative closure rule.
 
-The [write-then-read witness](tests/skjs-incomplete/README.md) has an accepted
-source certificate using its original partial claims, as well as a model proof.
-Conversion preserves SKJS's claims; derived facts supplement their precision.
+The [write-then-read witness](tests/skjs-incomplete/README.md) has a model proof
+and an accepted source certificate after explicitly supplying a current-true
+observation at the return entry. Its original broad entry claim does not verify.
+Conversion preserves SKJS's claims; repairs are separate candidates.
+
+The source claim language currently has no slot-equality or read-link assertion.
+Those links are therefore local to a statement. Carrying them across statements
+in a future fragment requires an explicit claim format and checked incoming
+obligations, rather than restoring hidden cross-statement propagation.
 
 Three constraints govern later precision improvements. Possible aliases cannot
 be framed merely because their variable names differ. An immutable snapshot
@@ -637,8 +646,8 @@ The three milestones are:
    graph checker. External entry facts must be justified. Graph safety is proved.
 2. **Source consumption and evidence production — implemented.** Both adapters
    retain the invariant and current predicate. Source checkpoints bind observations
-   to entries/results; the producer uses supplied merge/head requirements and the
-   consumer checks every edge. Tests cover allocation, writes, guarded reads,
+   to entries/results; the consumer enforces exact statement-entry interfaces and
+   checks every incoming edge. Tests cover allocation, writes, guarded reads,
    merges, backedges, empty predicates and changed claims. Ordinary signatures
    retain their existing meaning. Closure observations require uniform invariant
    justification, pending graph-backed closure bodies.
@@ -648,8 +657,9 @@ The three milestones are:
    entry, and other heap edge checks. Both source formats report the same site.
    [The audit](tests/refinement-witnesses.js) also verifies fresh producer claims
    for [three structurally matched controls](tests/refinement-controls.ts), which
-   remove only the invalidating operation. `writeRefinedRead` and immutable
-   snapshot controls remain verified.
+   remove only the invalidating operation. `writeRefinedRead` needs an explicit
+   current-true return-entry claim; its original broad claim is insufficient.
+   Immutable snapshot controls remain verified.
 
 The audit exposed an earlier precision loss hidden behind the first reported
 failure: null tests discarded observations before the valid loop-body entry.

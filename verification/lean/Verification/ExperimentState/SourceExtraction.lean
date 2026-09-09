@@ -56,13 +56,15 @@ private structure Built where
   obligations : List ExpressionClaims.Required := []
   origins : List (Option DiagnosticOrigin) := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
+  /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
+  cuts : List Nat := []
 
 private abbrev Compiler := StateT Built (Except String)
 
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
     Compiler Target := do
   let s : Built ← get
-  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations (s.origins ++ [none]) s.assertions)
+  set (Built.mk (s.program ++ [⟨t,k⟩]) (s.claims ++ [⟨Γ,A⟩]) s.obligations (s.origins ++ [none]) s.assertions s.cuts)
   return ⟨s.program.length, none⟩
 
 /-- Diagnostic metadata only; never part of the certified request. -/
@@ -546,6 +548,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
         modify fun s => { s with
           assertions := s.assertions ++ [(head.label,⟨facts,[],[]⟩)]
           origins := s.origins.set head.label (some ⟨pos,"heap-observation",some pos.1⟩) }
+      modify fun s => { s with cuts := head.label :: s.cuts }
       pure head
     | .effect pos e :: rest =>
       let Γ ← env fc pos.1 scope
@@ -558,7 +561,9 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List String → 
       let pos := match st with
         | .brk p | .cont p | .ret p _ | .cst p _ _ _ | .effect p _ | .loop p _ _ | .ite p _ _ _ => p
       let facts ← entryFacts fc pos.1 scope
-      checkpoint pos (← env fc pos.1 scope) facts target (some pos.1)
+      let entry ← checkpoint pos (← env fc pos.1 scope) facts target (some pos.1)
+      modify fun s => { s with cuts := entry.label :: s.cuts }
+      return entry
 
 private def traversalBudget : List SourceInput.Stmt → Nat
   | [] => 1
@@ -574,6 +579,8 @@ structure SourceRequest extends Request where
   obligations : List ExpressionClaims.Required
   origins : List (Option DiagnosticOrigin) := []
   assertions : List (Nat × HeapKnowledge.Knowledge) := []
+  /-- Full statement-entry interfaces; absent assertions mean empty knowledge. -/
+  cuts : List Nat := []
 
 /-- Search hints only. The fixed source graph's arrow/reference operands contain
 primitive labels; avoid considering all unrelated signatures at every coercion.
@@ -606,7 +613,7 @@ def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Exce
   let (entry, built) ← (do
     let first ← body (traversalBudget f.body) fc R scope f.body none none
     emit .nul (.effect first) inputs [0]).run {}
-  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations, built.origins, built.assertions⟩
+  return ⟨⟨2, SourceTypes.types, built.program, built.claims, R, entry.label, inputs⟩, built.obligations, built.origins, built.assertions, built.cuts⟩
 
 /-- Existing wire callers pass through the SKJS adapter. Other producers can
 supply normalized candidates directly to extractNormalizedFn. -/
@@ -637,18 +644,32 @@ structure Bundle where
   obligations : List (List (ProgramCertificates.Evidence Nat))
   deriving ToJson, FromJson
 
-/-- The source consumer binds required assertions to the reconstructed graph,
-independently of which stronger facts the certificate producer chose. -/
+/-- Statement entries are exact interfaces. Expression observation checkpoints
+inside a statement require entailment but do not reset its local context. -/
 def checkAssertions (r : SourceRequest) (c : Response) : Bool :=
-  r.assertions.all fun (l,k) => match c.certificate[l]? with
+  (r.cuts.all fun l => match c.certificate[l]? with
     | none => false
-    | some n => HeapKnowledge.check n.knowledge k none
+    | some n => n.knowledge == (r.assertions.lookup l).getD ⟨[],[],[]⟩) &&
+  (r.assertions.all fun (l,k) => match c.certificate[l]? with
+    | none => false
+    | some n => HeapKnowledge.check n.knowledge k none)
+
+/-- Accepted source evidence has exactly the supplied knowledge at every
+statement entry, even when that knowledge is empty. -/
+theorem checkAssertions_cut {r : SourceRequest} {c : Response}
+    (hc : checkAssertions r c = true) {l node} (hm : l ∈ r.cuts)
+    (hn : c.certificate[l]? = some node) :
+    node.knowledge = (r.assertions.lookup l).getD ⟨[],[],[]⟩ := by
+  simp only [checkAssertions, Bool.and_eq_true] at hc
+  have h := List.all_eq_true.mp hc.1 l hm
+  simpa [hn] using h
 
 theorem checkAssertions_sound {r : SourceRequest} {c : Response}
     (hc : checkAssertions r c = true) {l k node ρ heap}
     (hm : (l,k) ∈ r.assertions) (hn : c.certificate[l]? = some node)
     (hk : HeapKnowledge.Holds node.knowledge ρ heap) : HeapKnowledge.Holds k ρ heap := by
-  have h := List.all_eq_true.mp hc (l,k) hm
+  simp only [checkAssertions, Bool.and_eq_true] at hc
+  have h := List.all_eq_true.mp hc.2 (l,k) hm
   simp only [hn] at h
   exact HeapKnowledge.check_sound (m := none) h hk
 
@@ -680,7 +701,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let es ← rs.mapM fun r => ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length fuel r.obligations
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels) r.assertions
+    let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.origins (some r.searchLabels) r.assertions r.cuts
     decodeResponse r.toRequest j
   let evidence := toJson (Bundle.mk 3 cs es)
   checkJson ast claims fileKey evidence
@@ -723,6 +744,7 @@ theorem checkRequests_obligations {rs : List SourceRequest} {b : Bundle}
   exact ExpressionClaims.checkAll_sound (h.2 _ hm) hq
 
 #print axioms checkRequests_assertions
+#print axioms checkAssertions_cut
 #print axioms checkAssertions_sound
 #print axioms checkRequests_obligations
 #print axioms checkJson_checked

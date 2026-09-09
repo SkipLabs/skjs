@@ -25,8 +25,8 @@ private def audit (ast claims : Json) (file : String) : Except String (List Stri
     let G := graph r.toRequest
     let es ← ExpressionClaims.produce G r.searchLabels r.types.length 10 r.obligations
     let C ← (produceRaw G (vocabulary G r.searchLabels r.claims r.inputs) 10
-      r.program r.claims [] es r.start r.assertions).mapError reprStr
-    let response := Response.mk 4 C
+      r.program r.claims [] es r.start r.assertions r.cuts).mapError reprStr
+    let response := Response.mk 5 C
     require (validRequest r.toRequest && validResponse r.toRequest response &&
       decide (C.map signature = r.claims) && checkAssertions r response)
       s!"{f.name}: request or supplied-claim mismatch"

@@ -255,6 +255,18 @@ try {
     assert.notEqual(x.check().status, 0);
     rejects(x);
   });
+  test("precise expression claims require an explicit statement-entry observation", () => {
+    const x = fixture(
+      "const cell: { value: boolean } = { value: true }; return cell.value;",
+    );
+    x.expressions.find(
+      (e) => String(e.pos) === String(x.f.body[1].e.pos),
+    ).type = [1];
+    rejects(x);
+    x.current(x.f.body[1], [1]);
+    accepts(x);
+    assert.equal(x.checkRaw().status, 0);
+  });
   test("guarded read facts justify both branch-entry observations", () => {
     const x = fixture(
       "const cell: { value: boolean } = { value: flag }; if (cell.value) { return cell.value; } else { return cell.value; }",

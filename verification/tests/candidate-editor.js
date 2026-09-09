@@ -86,9 +86,9 @@ assert.deepEqual(
   const edgeResult = edgeReport.manifest.results.find(
     (r) => r.function === target.id,
   );
-  assert.equal(edgeResult.location.kind, "edge-obligation");
-  // Dependency-ordered production finds the first bad incoming edge at the
-  // initializer, before the later alias write that also consumes this claim.
+  assert.equal(edgeResult.location.kind, "expression-obligation");
+  // The statement is checked from its supplied environment. Its cell read
+  // fails locally when that environment calls the receiver null.
   assert.equal(source.slice(...edgeResult.location.pos), "cell");
   const badEnv = editClaim(
     original,
