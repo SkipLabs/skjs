@@ -207,7 +207,7 @@ function shortType(type) {
 function companionEntry(f) {
   const failing = (f.exprs || []).find((e) => e.failure);
   if (!failing) return -1;
-  const named = f.obligation?.source?.origin?.environmentStart;
+  const named = f.obligation?.source?.sourceMap?.environmentStart;
   const entries = f.entries || [];
   if (named !== null && named !== undefined) {
     const at = entries.findIndex((e) => e.pos && e.pos[0] === named);

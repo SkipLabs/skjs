@@ -14,7 +14,7 @@ function readDiagnostic(detail) {
     return undefined;
   }
   if (
-    d?.version !== 1 ||
+    d?.version !== 2 ||
     !["proof-search", "certificate-check", "request-validation"].includes(d.phase) ||
     d.outcome !== "not-established" ||
     !Array.isArray(d.types) ||

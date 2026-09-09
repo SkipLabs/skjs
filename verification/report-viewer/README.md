@@ -111,9 +111,9 @@ adapter for the display format, with only the data present in those comments.
 ### Why verification stopped
 
 Where the verifier emits a structured obligation diagnostic, the Selection panel
-shows what it had and what had to follow: the available slots, the conclusion
+shows what it had and what had to follow: the available bindings, the conclusion
 required of them, and — for an edge — the same context carried to the
-destination, with the differing slots marked and both endpoints selectable. The
+destination, with the differing bindings marked and both endpoints selectable. The
 role is taken from the record, never guessed from the span: a **return contract**
 at a `return` is a different obligation from the returned expression's own claim,
 even though they share a span, so a sound claim is not labelled as the culprit. A

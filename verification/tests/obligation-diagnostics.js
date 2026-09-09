@@ -67,13 +67,29 @@ try {
       true,
     ).results[0];
   };
+  // The source map is the reason a reader never shows a slot number, so a live
+  // record must carry one descriptor per context binding, each describable.
+  test("a live diagnostic names every binding in its context", () => {
+    const d = verify([1, 2], [1, 2]).obligation;
+    const map = d.source.sourceMap;
+    assert.equal(map.context.length, d.sequent.context.length);
+    for (const descriptor of map.context)
+      assert(
+        descriptor.name || Array.isArray(descriptor.span),
+        JSON.stringify(descriptor),
+      );
+    assert.deepEqual(
+      map.context.map((x) => x.name),
+      ["", "flag"],
+    );
+  });
   test("broad claims locate the separate return-contract obligation", () => {
     const r = verify([1, 2], [1, 2]);
     assert.equal(r.status, "not-established");
     const d = r.obligation;
-    assert.equal(d.source.origin.role, "return-contract");
-    assert.deepEqual(d.source.origin.pos, pos);
-    assert.equal(d.source.origin.environmentStart, f.body[0].pos[0]);
+    assert.equal(d.source.sourceMap.role, "return-contract");
+    assert.deepEqual(d.source.sourceMap.pos, pos);
+    assert.equal(d.source.sourceMap.environmentStart, f.body[0].pos[0]);
     assert.deepEqual(d.sequent.type, [1]);
     assert.deepEqual(d.sequent.context[0], [1, 2]);
     assert.equal(d.input.sourceSha256, hash(source));
@@ -88,8 +104,8 @@ try {
     const a = verify([1, 2], [1, 2]).obligation,
       b = verify([1, 2], [1]).obligation;
     assert.notEqual(a.id, b.id);
-    assert.equal(b.source.origin.role, "node-typing");
-    assert.deepEqual(a.source.origin.pos, b.source.origin.pos);
+    assert.equal(b.source.sourceMap.role, "node-typing");
+    assert.deepEqual(a.source.sourceMap.pos, b.source.sourceMap.pos);
     assert.deepEqual(b.sequent.context, [[1, 2]]);
     assert.deepEqual(b.sequent.type, [1]);
     assert.notEqual(a.input.claimsSha256, b.input.claimsSha256);
@@ -171,7 +187,7 @@ try {
     assert.equal(readDiagnostic(line + "\n" + line), undefined);
     assert.equal(readDiagnostic("obligation-diagnostic: {"), undefined);
     assert.equal(
-      readDiagnostic(line.replace('"version":1', '"version":99')),
+      readDiagnostic(line.replace('"version":2', '"version":99')),
       undefined,
     );
   });

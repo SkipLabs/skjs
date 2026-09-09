@@ -149,24 +149,51 @@ theorem verifyJson_checked {request evidence : Json}
       · exact ⟨_,_,by assumption,by assumption,by assumption⟩
       · contradiction
 
-/-- Source provenance is explanatory only; it is excluded from certificates. -/
-structure DiagnosticOrigin where
+/-! ## Source maps
+
+A source map says how to describe the graph in the words of the source it was
+lowered from: one entry per graph label, and within an entry one descriptor per
+context binding. Lowering is the only pass that knows both sides, so it is the
+only pass that can record this.
+
+Source maps are explanatory. They have no decoder, never reach a request or a
+certificate, and cannot affect acceptance; a wrong descriptor mislabels a
+message and nothing else. -/
+
+/-- How one context binding is named in the source: a source binding it is
+addressable by, the expression whose value it holds, or both. At least one is
+present — a context this cannot describe is an extraction error, not a slot
+number shown to a reader. -/
+structure Descriptor where
+  name : String := ""
+  span : Option (Nat × Nat) := none
+  deriving ToJson, Repr, DecidableEq
+
+def Descriptor.describes (d : Descriptor) : Bool := d.name != "" || d.span.isSome
+
+/-- One graph label's source map entry. `context` runs in context order. -/
+structure SourceMapEntry where
   pos : Nat × Nat
   role : String := "node-typing"
   environmentStart : Option Nat := none
+  context : List Descriptor := []
   deriving ToJson
+
+/-- The source map for a whole graph: one entry per label, absent where a node
+has no source counterpart. -/
+abbrev SourceMap := List (Option SourceMapEntry)
 
 /-- One machine-readable record on stderr, following the human-readable error.
 This transport leaves successful evidence JSON and the proof protocol unchanged. -/
 def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
   message ++ "\nobligation-diagnostic: " ++ (Json.mkObj
-    (("version", toJson (1 : Nat)) :: fields)).compress
+    (("version", toJson (2 : Nat)) :: fields)).compress
 
 def failureDiagnostic (r : Request) (fuel : Nat)
-    (origins : List (Option DiagnosticOrigin)) (e : Failure)
+    (sourceMap : SourceMap) (e : Failure)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) : List (String × Json) := Id.run do
   let atNode := fun l => Json.mkObj [
-    ("label",toJson l), ("origin",toJson ((origins[l]?).bind id)),
+    ("label",toJson l), ("sourceMap",toJson ((sourceMap[l]?).bind id)),
     ("node",toJson r.program[l]?), ("claim",toJson r.claims[l]?),
     ("requiredKnowledge",toJson (requirements.lookup l))]
   let phase := match e with
@@ -209,7 +236,7 @@ Fuel bounds search only; it is not part of the certified request. -/
 def produceJson (request : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := [])
-    (origins : List (Option DiagnosticOrigin) := [])
+    (sourceMap : SourceMap := [])
     (searchLabels : Option (List Nat) := none)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := []) : Except String Json := do
   let r ← decodeRequest request
@@ -218,15 +245,15 @@ def produceJson (request : Json) (fuel : Nat)
     | .ok c => pure c
     | .error e =>
       let location := match e with
-        | .expression label => match (origins[label]?).bind id with
+        | .expression label => match (sourceMap[label]?).bind id with
           | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
           | none => ""
-        | .edge _ destination _ => match (origins[destination]?).bind id with
+        | .edge _ destination _ => match (sourceMap[destination]?).bind id with
           | some o => s!"source incoming edge obligation at [{o.pos.1},{o.pos.2}): "
           | none => ""
         | _ => ""
       throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
-        (failureDiagnostic r fuel origins e requirements))
+        (failureDiagnostic r fuel sourceMap e requirements))
   let response := toJson (Response.mk 5 C)
   verifyJson request response
   return response

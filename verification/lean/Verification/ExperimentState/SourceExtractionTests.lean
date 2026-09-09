@@ -592,7 +592,7 @@ private def forged : ProgramCertificates.Evidence Nat :=
   .node ⟨[],.fls,[1]⟩ .truLit []
 #guard !ok (produceSourceJson (toJson (request .fls [1])) 4 [] [forged])
 #guard !ok (ExpressionClaims.produce SourceTypes.graph [0,1,2] 19 4
-  [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim"⟩])
+  [⟨(0,1),⟨[],.fls,[1]⟩,some (DirectProof.node [] .fls [1] .truLit),"expression-claim",[]⟩])
 
 -- Source unions compose already-supported atoms, preserving every arm's checks.
 private def joined (types : List Json) : Json := Json.mkObj [
@@ -634,6 +634,6 @@ private def globalCertificate := (localCertificate []).toOption.get!
 private def repairedLocal := (extractNormalizedFn localFn
   {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[]⟩
 #guard ok (RequestJson.produceJson (toJson repairedLocal.toRequest) 8 [] []
-  repairedLocal.origins (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
+  repairedLocal.sourceMap (some repairedLocal.searchLabels) repairedLocal.assertions repairedLocal.cuts)
 
 end Verification.ExperimentState.SourceExtractionTests

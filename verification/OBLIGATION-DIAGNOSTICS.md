@@ -1,4 +1,4 @@
-# Obligation diagnostics (version 1)
+# Obligation diagnostics (version 2)
 
 This is explanatory metadata about an unsuccessful verification attempt, not
 proof evidence and not a judgement that a source claim is false. The independent
@@ -10,7 +10,7 @@ On a structured failure, the verifier emits its existing human-readable error,
 then one line on stderr:
 
 ```text
-obligation-diagnostic: {"version":1,...}
+obligation-diagnostic: {"version":2,...}
 ```
 
 `verification/tools/obligation-diagnostic.js` reads the record without parsing the
@@ -36,7 +36,7 @@ is untrusted display data; it cannot establish verification status.
 
 | Field | Meaning |
 |---|---|
-| `version` | `1`; independent of evidence/request versions. |
+| `version` | `2`; independent of evidence/request versions. |
 | `kind` | `node-typing`, `edge-coverage`, `expression-claim`, or `production-failure`. |
 | `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
 | `outcome` | `not-established`. |
@@ -54,19 +54,37 @@ saved results. They are not necessarily a source statement environment.
 
 A `node-typing` record has:
 
-- `source`: `{label, origin, node, claim}`. `node` includes the expression and
+- `source`: `{label, sourceMap, node, claim}`. `node` includes the expression and
   continuation; `claim` includes its entry context and required expression type.
 - `sequent`: the exact judgement attempted at that node.
 
-An `expression-claim` record has `origin` and `sequent` directly. Its role may
+An `expression-claim` record has `sourceMap` and `sequent` directly. Its role may
 be an expression claim, closure entry check, local annotation or closure result.
 The kind identifies the obligation collection, not a claim of semantic blame.
 
-`origin` is nullable. When present, it contains:
+`sourceMap` is this node's entry in the graph's **source map**: how to describe
+the node, and each of its context bindings, in the words of the source it was
+lowered from. It is nullable. When present, it contains:
 
 - `pos`: source span, in the parser's UTF-16 offsets.
 - `role`: assigned where extraction creates the obligation.
 - `environmentStart`: optional source statement-entry offset, only where known.
+- `context`: one descriptor per context binding, in context order.
+
+A descriptor has `name`, the source binding this one is addressable by, and
+`span`, the source expression whose value it holds; at least one is present.
+Lowering is the only pass that knows both the source and the graph, so it is the
+only pass that can record this, and it fails rather than emit a context it
+cannot describe. **A reader therefore never has to show a position.** Render a
+`name` as itself and a `span` as the source text it covers.
+
+Source maps are explanatory in the strict sense: the structure has no decoder,
+never reaches a request or a certificate, and cannot affect acceptance. A wrong
+descriptor mislabels a message and nothing else. The rule that keeps this clean:
+anything travelling back toward a reader carries source descriptors, anything
+staying inside the calculus carries positions. `sequent.context`,
+`transfer.available` and `target.mapping` are the calculus's own words and stay
+positional; a reader joins them to the descriptors by index.
 
 Current roles are `tag-dispatch`, `node-typing`, `return-contract`, `binding-annotation`,
 `expression-claim`, `closure-entry`, `closure-result`, and `heap-observation`. The generic
@@ -120,7 +138,7 @@ Readers of the diagnostic record should:
 
 No recursive proof-search trace, minimal failing premise, or complete dependency
 graph is promised. Extraction/type-decoding/missing-claim failures and some
-independent consumer failures still use the existing diagnostic path. An origin
+independent consumer failures still use the existing diagnostic path. A source map entry
 does not identify every contributing source claim or prove any premise separately.
 There are no retained mutable-heap observations. Future overloads and generics
 should extend explicit obligation data rather than force them into
@@ -178,10 +196,10 @@ branches alone are not a refusal reason. An unsupported branch causes refusal
 of the whole type rather than a partial export.
 
 Current-content assertions in the supported cell profile now reach checked
-obligations. Graph failures use `edge-coverage`, with destination origin role
+obligations. Graph failures use `edge-coverage`, with destination `sourceMap` role
 `heap-observation`; `requiredKnowledge` at the destination identifies the actual
 cell facts. Ordinary closure/compositional proofs use `expression-claim` with the
-same origin role for uniform invariant justification. These are proof failures,
+same role for uniform invariant justification. These are proof failures,
 not exporter refusals. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
 owns their interpretation.
 

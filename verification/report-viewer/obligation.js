@@ -9,7 +9,7 @@
  */
 
 const obligationReader = (() => {
-const OBLIGATION_VERSION = 1;
+const OBLIGATION_VERSION = 2;
 
 // Roles come from extraction. An unknown role stays generic rather than being
 // guessed into a more specific story.
@@ -102,6 +102,26 @@ function typeText(types, labels, depth = 3) {
     .join(" | ");
 }
 
+/* ---------- source maps ---------- */
+// A descriptor says how one context binding is named in the source: a binding
+// name, or the expression whose value it holds. Extraction guarantees one of the
+// two for every binding and fails rather than emit a context it cannot describe,
+// so a position should never reach a reader. The `slot N` fallback below is for
+// a record that arrives without a source map at all; seeing one means the
+// producer broke that invariant.
+function bindingText(descriptor, source) {
+  if (!descriptor) return "";
+  if (descriptor.name) return descriptor.name;
+  if (!Array.isArray(descriptor.span)) return "";
+  return String(source || "")
+    .slice(descriptor.span[0], descriptor.span[1])
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const bindingsOf = (map, source) =>
+  (map?.context || []).map((d) => bindingText(d, source));
+
 /* ---------- current-content requirements ---------- */
 // A slot's type is its standing contract; knowledge is a statement about the
 // heap as it is at this point. Two ends can agree on every contract and still
@@ -113,20 +133,22 @@ const contentsText = (contents) =>
     ? "never"
     : contents.map((l) => LITERAL[l] || String(l)).join(" | ");
 
-function knowledgeRows(knowledge) {
+function knowledgeRows(knowledge, names = []) {
   if (!knowledge) return [];
+  const of = (slot) => names[slot] || "slot " + slot;
   const rows = [];
   for (const f of knowledge.cells || [])
-    rows.push({ slot: f.slot, what: "cell holds " + contentsText(f.contents) });
+    rows.push({ slot: f.slot, binding: of(f.slot), what: "holds " + contentsText(f.contents) });
   for (const f of knowledge.values || [])
-    rows.push({ slot: f.slot, what: "value is " + contentsText(f.contents) });
-  // A link relates two slots, so it is listed against the slot it constrains.
+    rows.push({ slot: f.slot, binding: of(f.slot), what: "is " + contentsText(f.contents) });
+  // A link relates two bindings, so it is listed against the one it constrains.
   for (const g of knowledge.links || [])
     rows.push({
       slot: g.value,
+      binding: of(g.value),
       what: g.alias
-        ? "same value as slot " + g.cell
-        : "read of the cell in slot " + g.cell,
+        ? "is the same value as " + of(g.cell)
+        : "is a read of " + of(g.cell),
     });
   return rows;
 }
@@ -149,29 +171,29 @@ function mapContext(available, mapping) {
   return mapping.map((slot) => available[slot]);
 }
 
-function obligationView(ob) {
+function obligationView(ob, source = "") {
   if (!ob || ob.version !== OBLIGATION_VERSION) return null;
   const types = ob.types || [];
   // An edge fails at what its destination required, so a destination role that
   // names something specific describes it. A generic destination leaves the
   // source end to describe it, which is where a dispatch role sits.
   const specific = (o) => o && o.role && o.role !== "node-typing";
-  const origin =
-    ob.kind === "edge-coverage" && specific(ob.destination?.origin)
-      ? ob.destination.origin
-      : ob.source?.origin || ob.origin || null;
-  const role = roleView(origin?.role);
+  const sourceMap =
+    ob.kind === "edge-coverage" && specific(ob.destination?.sourceMap)
+      ? ob.destination.sourceMap
+      : ob.source?.sourceMap || ob.sourceMap || null;
+  const role = roleView(sourceMap?.role);
   const view = {
     kind: ob.kind,
     kindLabel: KIND_LABEL[ob.kind] || ob.kind,
-    role: origin?.role || "",
+    role: sourceMap?.role || "",
     title: role.title,
     what: role.what,
     id: ob.id || "",
     fuel: ob.fuel,
     phase: ob.phase,
-    pos: origin?.pos || null,
-    environmentStart: origin?.environmentStart ?? null,
+    pos: sourceMap?.pos || null,
+    environmentStart: sourceMap?.environmentStart ?? null,
     requiredResult: ob.requiredResult
       ? typeText(types, ob.requiredResult)
       : "",
@@ -189,18 +211,20 @@ function obligationView(ob) {
     const available = ob.transfer?.available || [];
     const required = ob.destination?.claim?.context || [];
     const mapped = mapContext(available, ob.transfer?.target?.mapping);
+    const names = bindingsOf(ob.destination?.sourceMap, source);
     view.rows = required.map((need, slot) => ({
       slot,
+      binding: names[slot] || "slot " + slot,
       have: typeText(types, mapped[slot]),
       need: typeText(types, need),
       differs: !sameType(mapped[slot], need),
     }));
     view.conclusion = "";
     view.endpoints = [
-      { end: "from", origin: ob.source?.origin || null, label: ob.source?.label },
+      { end: "from", sourceMap: ob.source?.sourceMap || null, label: ob.source?.label },
       {
         end: "to",
-        origin: ob.destination?.origin || null,
+        sourceMap: ob.destination?.sourceMap || null,
         label: ob.transfer?.target?.label ?? ob.destination?.label,
       },
     ];
@@ -210,7 +234,9 @@ function obligationView(ob) {
     const tag = ob.transfer?.tagObservation;
     if (observed === true || observed === false)
       view.observation =
-        "This edge carries the case where slot 0 is " +
+        "This edge carries the case where " +
+        (names[0] || "slot 0") +
+        " is " +
         observed +
         ". That is the edge's premise, not a claim that execution took it.";
     else if (tag && tag.test !== undefined)
@@ -219,22 +245,21 @@ function obligationView(ob) {
         String(tag.test) +
         " answers " +
         String(tag.answer) +
-        " on slot " +
-        (tag.slot ?? 0) +
+        " on " +
+        (names[tag.slot ?? 0] || "slot " + (tag.slot ?? 0)) +
         ". That is the edge's premise, not a claim that execution took it.";
-    view.knowledge = knowledgeRows(ob.destination?.requiredKnowledge);
+    view.knowledge = knowledgeRows(ob.destination?.requiredKnowledge, names);
     const differing = view.rows.find((r) => r.differs);
     // Nothing here says which end is at fault; it says where the two ends stop
     // agreeing, which is all the record supports.
     view.knowledgeIsTheDifference = !differing && view.knowledge.length > 0;
     view.note =
       (differing
-        ? "Slot " +
-          differing.slot +
+        ? differing.binding +
           " is where the available context and the destination's claim differ."
         : view.knowledgeIsTheDifference
-          ? "Every slot's contract already agrees. What this edge had to establish beyond them is the current-content requirement above."
-          : "The available context and the destination's claim agree on every slot.") +
+          ? "Every binding's contract already agrees. What this edge had to establish beyond them is the current-content requirement above."
+          : "The available context and the destination's claim agree on every binding.") +
       (ob.edgeIndex === undefined
         ? ""
         : " Both branch edges can share a destination; this is edge " +
@@ -244,20 +269,22 @@ function obligationView(ob) {
   }
 
   const sequent = ob.sequent || {};
+  const names = bindingsOf(sourceMap, source);
   view.rows = (sequent.context || []).map((entry, slot) => ({
     slot,
+    binding: names[slot] || "slot " + slot,
     have: typeText(types, entry),
-    // The record says slot 0 holds the saved result at a return contract; every
-    // other slot is a de Bruijn position, not a named source binding.
+    // The source map names the saved result by the expression it came from; the
+    // role is what says that this one is the value being returned.
     note:
-      slot === 0 && origin?.role === "return-contract"
+      slot === 0 && sourceMap?.role === "return-contract"
         ? "the value being returned"
         : "",
   }));
   view.term = termText(sequent.term);
   view.conclusion = typeText(types, sequent.type);
   // A node obligation records its own required facts, when it has any.
-  view.knowledge = knowledgeRows(ob.source?.requiredKnowledge);
+  view.knowledge = knowledgeRows(ob.source?.requiredKnowledge, names);
   return view;
 }
 
@@ -268,6 +295,8 @@ function obligationView(ob) {
     termText,
     contentsText,
     knowledgeRows,
+    bindingText,
+    bindingsOf,
     mapContext,
     obligationView,
     roleView,

@@ -120,9 +120,9 @@ try {
           assert(d, r.stderr);
           assert.equal(d.phase, "proof-search");
           assert.equal(d.kind, "edge-coverage");
-          assert.equal(d.destination.origin.role, "heap-observation");
-          assert.equal(d.destination.origin.environmentStart, ret.pos[0]);
-          assert.deepEqual(d.destination.origin.pos, ret.pos);
+          assert.equal(d.destination.sourceMap.role, "heap-observation");
+          assert.equal(d.destination.sourceMap.environmentStart, ret.pos[0]);
+          assert.deepEqual(d.destination.sourceMap.pos, ret.pos);
           const literal = f.name === "staleFlip" ? "fls" : "tru";
           assert(
             d.destination.requiredKnowledge.cells.some(

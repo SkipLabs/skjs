@@ -12,6 +12,8 @@ structure Required where
   sequent : Sequent Nat
   plan : Option DirectProof.Plan := none
   role : String := "expression-claim"
+  /-- This obligation's source map: one descriptor per context binding. -/
+  context : List Descriptor := []
 
 def check (G : NormalGraph Nat) (bound : Nat) (j : Sequent Nat) (e : Evidence Nat) : Bool :=
   validEvidence bound e && decide (claim e = j) &&
@@ -48,7 +50,7 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
       | throw (withDiagnostic s!"closure expression claim at [{r.pos.1},{r.pos.2}): evidence search failed"
           [("kind",toJson "expression-claim"),("phase",toJson "proof-search"),
            ("outcome",toJson "not-established"),("id",toJson s!"expression:{index}"),
-           ("origin",toJson (DiagnosticOrigin.mk r.pos r.role none)),
+           ("sourceMap",toJson (SourceMapEntry.mk r.pos r.role none r.context)),
            ("sequent",toJson j),("fuel",toJson fuel),
            ("types",toJson ((List.range bound).map G))])
     return e

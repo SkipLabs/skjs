@@ -100,8 +100,8 @@ try {
     assert.notEqual(failed.status,0);
     const diagnostic=require("../tools/obligation-diagnostic.js").readDiagnostic(failed.stderr);
     assert.equal(diagnostic.kind,"expression-claim");
-    assert.equal(diagnostic.origin.role,"expression-claim");
-    assert.deepEqual(diagnostic.origin.pos,bodyPos);
+    assert.equal(diagnostic.sourceMap.role,"expression-claim");
+    assert.deepEqual(diagnostic.sourceMap.pos,bodyPos);
     assert.deepEqual(diagnostic.sequent.type,[1]);
     // A closure's heap observation must follow from its invariant for every call.
     // The earlier true allocation cannot justify a permanent true read capability.
@@ -115,8 +115,8 @@ try {
     assert.notEqual(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
     const stale=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(stale.status,0);
     const observation=require("../tools/obligation-diagnostic.js").readDiagnostic(stale.stderr);
-    assert.equal(observation.origin.role,"heap-observation");
-    assert.deepEqual(observation.origin.pos,receiver.pos);
+    assert.equal(observation.sourceMap.role,"heap-observation");
+    assert.deepEqual(observation.sourceMap.pos,receiver.pos);
     assert.deepEqual(observation.sequent.context,[[1,2]]);
     assert.deepEqual(observation.sequent.type,[1]);
   });

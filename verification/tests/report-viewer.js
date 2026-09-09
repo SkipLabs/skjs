@@ -648,7 +648,7 @@ const ob = require("../report-viewer/obligation.js");
 {
   const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
   const record = {
-    version: 1,
+    version: 2,
     kind: "node-typing",
     phase: "proof-search",
     outcome: "not-established",
@@ -661,7 +661,7 @@ const ob = require("../report-viewer/obligation.js");
       label: 1,
       node: { continuation: "ret", expression: { var: { i: 0 } } },
       claim: { context: [[1, 2], [1, 2]], type: [1] },
-      origin: { pos: [370, 374], role: "return-contract", environmentStart: 363 },
+      sourceMap: { pos: [370, 374], role: "return-contract", environmentStart: 363 },
     },
   };
   const view = ob.obligationView(record);
@@ -679,16 +679,16 @@ const ob = require("../report-viewer/obligation.js");
   );
   assert.equal(view.environmentStart, 363);
   // A record from a version this reader does not know is not interpreted.
-  assert.equal(ob.obligationView({ ...record, version: 2 }), null);
+  assert.equal(ob.obligationView({ ...record, version: 3 }), null);
   assert.equal(ob.obligationView(null), null);
   // An unknown role stays generic rather than being guessed into a story.
   const odd = structuredClone(record);
-  odd.source.origin.role = "future-role";
+  odd.source.sourceMap.role = "future-role";
   assert.equal(ob.obligationView(odd).title, "Obligation at this point");
   assert.match(ob.obligationView(odd).what, /not one this reader knows/);
   // Only a return contract names slot 0 as the returned value.
   const plain = structuredClone(record);
-  plain.source.origin.role = "expression-claim";
+  plain.source.sourceMap.role = "expression-claim";
   assert.equal(ob.obligationView(plain).rows[0].note, "");
 }
 
@@ -697,7 +697,7 @@ const ob = require("../report-viewer/obligation.js");
 {
   const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
   const record = {
-    version: 1,
+    version: 2,
     kind: "edge-coverage",
     phase: "proof-search",
     outcome: "not-established",
@@ -705,11 +705,11 @@ const ob = require("../report-viewer/obligation.js");
     id: "edge:8:1",
     types,
     edgeIndex: 1,
-    source: { label: 8, origin: { pos: [10, 14], role: "expression-claim" } },
+    source: { label: 8, sourceMap: { pos: [10, 14], role: "expression-claim" } },
     destination: {
       label: 7,
       claim: { context: [[1], [0]] },
-      origin: { pos: [20, 24], role: "node-typing" },
+      sourceMap: { pos: [20, 24], role: "node-typing" },
     },
     transfer: {
       available: [[0], [1, 2], [1]],
@@ -730,7 +730,7 @@ const ob = require("../report-viewer/obligation.js");
   assert.match(view.observation, /not a claim that execution took it/);
   assert.match(view.note, /edge 1/);
   assert.deepEqual(
-    view.endpoints.map((e) => [e.end, e.origin.pos]),
+    view.endpoints.map((e) => [e.end, e.sourceMap.pos]),
     [
       ["from", [10, 14]],
       ["to", [20, 24]],
@@ -739,8 +739,8 @@ const ob = require("../report-viewer/obligation.js");
   // An edge into a statement checkpoint has no expression claim at its span: it
   // is described by what its destination required, and attaches to that entry.
   const checkpoint = structuredClone(record);
-  checkpoint.source.origin = { pos: [1, 5], role: "binding-annotation" };
-  checkpoint.destination.origin = {
+  checkpoint.source.sourceMap = { pos: [1, 5], role: "binding-annotation" };
+  checkpoint.destination.sourceMap = {
     pos: [10, 20],
     environmentStart: 10,
     role: "heap-observation",
@@ -749,7 +749,7 @@ const ob = require("../report-viewer/obligation.js");
   assert.equal(checkpointView.title, "Current-content assertion");
   assert.equal(checkpointView.environmentStart, 10);
   assert.deepEqual(
-    checkpointView.endpoints.map((e) => e.origin.pos),
+    checkpointView.endpoints.map((e) => e.sourceMap.pos),
     [
       [1, 5],
       [10, 20],
@@ -773,26 +773,43 @@ const ob = require("../report-viewer/obligation.js");
     true,
   );
   assert.deepEqual(
-    observedView.knowledge.map((r) => [r.slot, r.what]),
+    observedView.knowledge.map((r) => [r.binding, r.what]),
     [
-      [1, "cell holds true"],
-      [0, "value is null | false"],
-      [0, "read of the cell in slot 1"],
+      ["slot 1", "holds true"],
+      ["slot 0", "is null | false"],
+      ["slot 0", "is a read of slot 1"],
     ],
   );
   assert.equal(observedView.knowledgeIsTheDifference, true);
-  assert.match(observedView.note, /Every slot's contract already agrees/);
+  assert.match(observedView.note, /Every binding's contract already agrees/);
   // A differing contract is still reported as the difference it is.
   const both = structuredClone(observed);
   both.transfer.available = [[2], [0]];
   const bothView = ob.obligationView(both);
   assert.equal(bothView.knowledgeIsTheDifference, false);
-  assert.match(bothView.note, /Slot 0 is where/);
+  assert.match(bothView.note, /slot 0 is where/);
   assert.equal(bothView.knowledge.length, 3);
   // An alias link reads as an equality between slots, not as a heap read.
   assert.equal(
     ob.knowledgeRows({ links: [{ cell: 3, value: 2, alias: true }] })[0].what,
-    "same value as slot 3",
+    "is the same value as slot 3",
+  );
+  // With a source map the same fact reads in the words of the source.
+  assert.deepEqual(
+    ob
+      .knowledgeRows({ cells: [{ slot: 1, contents: ["tru"] }] }, ["r", "cell"])
+      .map((x) => [x.binding, x.what]),
+    [["cell", "holds true"]],
+  );
+  // A descriptor is a name, or the expression whose value the binding holds.
+  assert.equal(ob.bindingText({ name: "cell" }, "x"), "cell");
+  assert.equal(
+    ob.bindingText({ name: "", span: [4, 9] }, "let cell = 1;"),
+    "cell",
+  );
+  assert.deepEqual(
+    ob.bindingsOf({ context: [{ name: "seed" }, { name: "", span: [0, 3] }] }, "abc def"),
+    ["seed", "abc"],
   );
   assert.equal(ob.contentsText([]), "never");
 
@@ -800,7 +817,7 @@ const ob = require("../report-viewer/obligation.js");
   const tagged = structuredClone(record);
   delete tagged.transfer.booleanObservation;
   tagged.transfer.tagObservation = { test: "nul", answer: false, slot: 0 };
-  tagged.source.origin.role = "tag-dispatch";
+  tagged.source.sourceMap.role = "tag-dispatch";
   const tagView = ob.obligationView(tagged);
   assert.equal(tagView.title, "Tag dispatch");
   assert.match(tagView.observation, /tag test nul answers false on slot 0/);

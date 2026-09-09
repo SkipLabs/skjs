@@ -47,7 +47,7 @@ private def audit (ast claims : Json) (file : String) : Except String (List Stri
         if !HeapKnowledge.check facts dest.knowledge target.mapping then
           failures := target.label :: failures
     let [failed] := failures | throw s!"{f.name}: expected exactly one failing heap edge, got {failures.length}"
-    let some origin := (r.origins[failed]?).join | throw "unlocated heap edge"
+    let some origin := (r.sourceMap[failed]?).join | throw "unlocated heap edge"
     require (origin.environmentStart == some pos.1 && origin.role == "heap-observation")
       s!"{f.name}: failed before reaching the post-mutation return"
     require (!(accept G r.result r.program r.claims C r.start r.inputs))

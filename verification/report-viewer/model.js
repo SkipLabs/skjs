@@ -332,8 +332,8 @@ function fromBundle(bundle) {
     // Where a location does not land on a claim, the record's own environment
     // offset says which statement entry it belongs to.
     const entryStart = (result, location) =>
-      result.obligation?.destination?.origin?.environmentStart ??
-      result.obligation?.source?.origin?.environmentStart ??
+      result.obligation?.destination?.sourceMap?.environmentStart ??
+      result.obligation?.source?.sourceMap?.environmentStart ??
       location.start ??
       (Array.isArray(location.pos) ? location.pos[0] : undefined);
     const samePos = (x) =>
@@ -377,14 +377,14 @@ function fromBundle(bundle) {
       // is not the expression's own claim, even though they share a span.
       // For an edge, the role that describes where this attached is the
       // destination's; `source` describes the other end.
-      const destination = result.obligation?.destination?.origin;
+      const destination = result.obligation?.destination?.sourceMap;
       failed.failureRole =
         (destination &&
         destination.environmentStart === failed.pos?.[0]
           ? destination.role
           : "") ||
-        result.obligation?.source?.origin?.role ||
-        result.obligation?.origin?.role ||
+        result.obligation?.source?.sourceMap?.role ||
+        result.obligation?.sourceMap?.role ||
         "";
     }
   }

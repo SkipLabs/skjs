@@ -472,7 +472,8 @@ function select(id) {
     // than inferring one from spans.
     const named =
       item.failure &&
-      obligationReader.obligationView(f.obligation)?.environmentStart;
+      obligationReader.obligationView(f.obligation, state.report.source)
+        ?.environmentStart;
     const entryIndex =
       (named !== null && named !== undefined
         ? f.entries
@@ -619,7 +620,7 @@ function undecodedIn(item) {
 }
 
 function failureHtml(f, item) {
-  const view = obligationReader.obligationView(f.obligation);
+  const view = obligationReader.obligationView(f.obligation, state.report.source);
   // Only a record says which phase stopped. Without one, saying "proof search"
   // would name a phase this reader does not know: extraction and claim decoding
   // fail here too, before any search.
@@ -693,8 +694,8 @@ function obligationHtml(view) {
   // keep their own line: a type broken across lines is harder to read than one
   // that scrolls.
   const slotCell = (row) =>
-    "<td>slot " +
-    row.slot +
+    "<td>" +
+    esc(row.binding || "slot " + row.slot) +
     (row.note ? '<div class="slotnote">' + esc(row.note) + "</div>" : "") +
     "</td>";
   const rows = view.rows
@@ -714,14 +715,14 @@ function obligationHtml(view) {
     .join("");
   const head =
     view.kind === "edge-coverage"
-      ? "<tr><th>slot</th><th>carried here</th><th>required there</th></tr>"
-      : "<tr><th>slot</th><th>available</th></tr>";
+      ? "<tr><th>binding</th><th>carried here</th><th>required there</th></tr>"
+      : "<tr><th>binding</th><th>available</th></tr>";
   // Current-content facts sit in their own table: a slot's contract and what it
   // holds right now are different statements, and the contracts can agree while
   // these do not. Highlighted only when they are the remaining difference.
   const knowledge = view.knowledge?.length
     ? '<div class="slotwrap"><table class="slots">' +
-      "<tr><th>slot</th><th>" +
+      "<tr><th>binding</th><th>" +
       (view.kind === "edge-coverage"
         ? "current contents required there"
         : "current contents required here") +
@@ -731,8 +732,8 @@ function obligationHtml(view) {
           (row) =>
             '<tr class="' +
             (view.knowledgeIsTheDifference ? "differs" : "") +
-            '"><td>slot ' +
-            row.slot +
+            '"><td>' +
+            esc(row.binding || "slot " + row.slot) +
             "</td><td>" +
             esc(row.what) +
             "</td></tr>",
@@ -766,7 +767,7 @@ function obligationHtml(view) {
 
 // Both ends of an edge, selectable when the report actually holds a claim there.
 function endpointsHtml(view) {
-  const ends = view.endpoints.filter((e) => e.origin?.pos);
+  const ends = view.endpoints.filter((e) => e.sourceMap?.pos);
   if (!ends.length) return "";
   return (
     '<div class="ends">' +
@@ -774,11 +775,11 @@ function endpointsHtml(view) {
       .map(
         (e) =>
           '<button data-endpoint="' +
-          e.origin.pos.join(",") +
+          e.sourceMap.pos.join(",") +
           '">' +
           (e.end === "from" ? "from " : "to ") +
           esc(
-            state.report.source.slice(e.origin.pos[0], e.origin.pos[1]).trim() ||
+            state.report.source.slice(e.sourceMap.pos[0], e.sourceMap.pos[1]).trim() ||
               "point " + e.label,
           ) +
           "</button>",

@@ -325,7 +325,12 @@ Duplicate identities, missing required claims and mismatched source signatures
 are checked independently of proof search.
 
 The extractor resolves initialized bindings to slots and checks scope-dropping
-edge mappings. Active-name shadowing is rejected. Statements after unconditional
+edge mappings. Because it is the only pass that sees both sides, it also records
+a **source map**: for every graph node, how to describe that node and each of its
+context bindings in the words of the source. Source maps are explanatory, have no
+decoder, and never reach a request or certificate; they are what lets a reader
+speak about `cell` rather than a slot number. See
+[Obligation diagnostics](OBLIGATION-DIAGNOSTICS.md#node-and-expression-obligations). Active-name shadowing is rejected. Statements after unconditional
 `return`, `break` or `continue` are outside the current source slice. The graph
 consumer checks every node supplied to it, even unreachable ones; that theorem
 does not by itself justify changing the source adapter's policy.
