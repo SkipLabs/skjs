@@ -63,74 +63,26 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 
 ## Current source fragment
 
-The source adapter supports **functions with primitive parameters, initialized `const`
-bindings, nested branches, `while` loops and returns**, local cells, and bounded expression
-closures and calls. Both falling-through arms share one continuation.
-Boolean singleton claims are translated exactly, including refinements from
-direct or negated Boolean variable tests. Active-name shadowing remains gated. See the protocol's source-mode
-commands and limitations. Boolean `!` evaluates its operand once; singleton results are checked using
-the proved `ifKnown` rule. Closures have one null/Boolean primitive argument and a
-primitive result; expression bodies compose literals, variables, cell operations
-and calls. Straight-line blocks support local consts, effects and a final return,
-with checked statement environments.
-Every internal claim has a separately checked typing proof. Top-level function
-bodies support block-bodied `while`, including nesting and early returns. Supplied
-head invariants are checked on entry and every back edge; conditions are evaluated
-anew. Unlabeled `break` and `continue` use checked scope-dropping transfers to
-the nearest loop exit or head. Mutable variable bindings, loops inside closures,
-labeled transfers and general partially returning nested closure arms remain gated.
-Terminal closure `if/else` blocks are supported, with both arms returning and
-checked singleton refinement of directly tested immutable Boolean variables.
-Branches whose two arms fall through share one continuation using ordinary let
-composition; arm-local bindings and refinements do not escape the join.
-Early-return tests also work when one arm returns on every path and the other
-contains no returns. Only the surviving path executes the continuation, with
-its checked Boolean refinement and without the falling arm's local bindings.
+The source adapter supports **functions with primitive parameters, initialized
+`const` bindings, nested branches, `while` loops with `break`/`continue`, and
+returns**, over local cells and bounded expression closures and calls. Cell
+fields and arrow inputs and results stay primitive, and annotations may union the
+supported primitive, cell and unary function types. Immutable Boolean and null
+tests refine what follows them, including through `&&`, `||`, `??`, `?:` and
+negation. Every path must reach an explicit return.
 
+Mutable bindings, loops inside closures, external cell and function parameters,
+labeled transfers, active-name shadowing, `typeof`, general strings and numbers,
+generics and overloads are outside it. The fragment is smaller than the calculus,
+and the parser can represent syntax the Lean adapter then rejects: such a
+rejection is a limitation, never evidence that a producer claim is false.
 
-Strict `===` and `!==` comparisons with a null literal work as expressions,
-including inside callbacks. In top-level branches and loops, direct immutable
-variable tests also refine the outgoing environment, including negations and
-either operand order. `stateful-source/null-guards.ts` illustrates guarded returns,
-older-slot mappings, loop bodies and break. Null guards also refine nullable
-parameters and captured immutable values in supported closure branches, including
-negation and effects in the selected arm. The separate
-`skjs-incomplete/null-loop-exit.ts` demonstrates independently verifiable repaired
-loop-exit claims after a null test and `continue`.
-
-Conditional expressions (`c ? a : b`) use the same checked Boolean and null
-refinements, including inside closures. Their result, condition and both arms
-require expression claims. Only the selected arm executes; conditions may have
-effects. The null-guard examples dynamically select nullable cells and callbacks
-and then read or call them after a guard.
-
-Short-circuit `a && b` and `a || b` require Boolean left operands, evaluate the
-right only when selected, and preserve all operand/result claim obligations.
-Immutable Boolean/null guards can refine the right operand and statement
-successors. This adds neither general JavaScript truthiness nor retained property
-facts; [Program typing](PROGRAM-TYPING.md#derived-source-forms) gives the rules.
-
-Null coalescing (`a ?? b`) evaluates and saves `a` once, selecting `b` only for
-null. In particular, false is preserved. It works with supported primitive, cell
-and function unions, inside closures too. An immutable variable on the left is
-refined to null in the fallback; property reads receive no retained refinement.
-Both operand claims remain required. Undefined is outside the source profile.
-Named, explicitly typed cell/callback fallbacks avoid compound inferred claims
-that the current SKJS exporter cannot yet represent.
-
-Source annotations and claims can also form unions of the supported primitive,
-cell and unary function types, such as nullable local cells and optional function
-results. Every arm keeps its existing validation; unsupported arms are rejected.
-Cell fields and arrow inputs/results remain primitive. External cell/function
-parameters remain gated: structural annotations do not establish their runtime
-origin or behavior. The examples use locally allocated cells and checked closures.
-
-The source fragment is smaller than the calculus. General strings/numbers,
-`typeof`, other equality tests, mutable bindings, generics and general overloads
-are not currently source-verifiable. Retained refinement of property reads
-remains unsupported. The parser
-can represent some syntax that the Lean adapter subsequently rejects. Such
-rejection is a limitation, not evidence that a producer claim is false.
+[Design](DESIGN.md#source-integration-current-slice-and-next-milestone) owns what
+is accepted and why, together with the gates and the loop, closure and
+continuation constructions; [the protocol](REQUEST-PROTOCOL.md#source-mode) owns
+the source-mode commands, the type and claim encodings, and their exact
+restrictions. Worked examples of each construct live in
+[the corpus](tests/README.md).
 
 ## Reports and examples
 

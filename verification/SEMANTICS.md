@@ -27,6 +27,22 @@ about the same objects. There is no `let` constructor: `HasTy.letE` types the
 pattern $(\lambda t)\,t$. `Step_det` proves that a term and heap have at most
 one successor.
 
+Two different things get indexed here, and both run through the whole
+development. A **slot** is a position in the environment $\rho$ — the de Bruijn
+index of a binding. A **location** $\ell$ is an address in the heap $h$. This is
+the usual store/heap pair of an ML-style operational semantics, with slots
+standing in for variable names because the calculus is nameless. A slot may
+*hold* a location: $\rho(i)=\ell$.
+
+The assertion layer indexes every fact by slot, because slots are what a checker
+can name; locations arise only during execution and never appear in a program.
+So $\operatorname{cell}(i,R)$ is not a claim about slot $i$'s value but about the
+location that value *is*: there exist $\ell$ and $v$ with $\rho(i)=\ell$,
+$h(\ell)=v$ and $v\in R$. That one indirection is where aliasing enters, and it
+is why the checked rules have
+[no frame rule](PROGRAM-TYPING.md#the-reference-operations): two slots can hold
+the same location, and no assertion can say they do not.
+
 Two of these forms are deliberately outside the typing judgment. A location
 arises only at run time and takes its contract from the world, never from a
 typing rule. A shape test is typed only in the guard of a conditional, by
@@ -79,9 +95,10 @@ correctness/safety, not termination.
 `SafeGraph` is the same predicate one level up, for the machine that runs a
 control-flow graph rather than a single term. Its states are
 
-$$s ::= \mathsf{at}(\ell,\rho)\mid\mathsf{eval}(t,\rho,k)\mid\mathsf{done}(v),$$
+$$s ::= \mathsf{at}(p,\rho)\mid\mathsf{eval}(t,\rho,k)\mid\mathsf{done}(v),$$
 
-where $\ell$ is a node label, $\rho$ an environment of closed values, and $k$ a
+where $p$ is a program point (a node label, not a location), $\rho$ an
+environment of closed values, and $k$ a
 [continuation](PROGRAM-TYPING.md#checked-control-flow-graphs). Entering a node
 instantiates its term against $\rho$; the term then steps as usual; a value meets
 the node's continuation, which either finishes the run or moves to the next label
@@ -89,8 +106,8 @@ with a transformed environment. `SafeGraph P T n W h s` says that at a positive
 budget the state is either $\mathsf{done}(v)$ with $v\in T$, or it can take one
 graph transition, spending a budget and preserving heap satisfaction in an
 admissible future, and remain safe there. `Safe` is the special case with no
-graph. Starting a graph means starting at $\mathsf{at}(\ell,\rho)$ for the entry
-label and the input environment.
+graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
+point and the input environment.
 
 An arrow contains **closed lambdas** whose substituted bodies are safe at every
 smaller budget, every admissible future world, every satisfying heap, and every

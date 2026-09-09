@@ -149,7 +149,7 @@ and when their observation budget decreases.
 `HasTy.sound` proves:
 
 $$
-\Gamma\vdash_G e:A\ \land\ \rho\models_{n,W}\Gamma\ \land\
+\Gamma\vdash_G e:A\ \land\ \operatorname{EnvOk}_G(\Gamma,\rho,n,W)\ \land\
 \operatorname{WorldAdm}(W)\ \land\ \operatorname{HeapOk}(n,W,h)
 \ \Longrightarrow\
 \operatorname{Safe}(\llbracket A\rrbracket_G,n,W,h,\operatorname{close}_{\rho}(e)).
@@ -291,7 +291,7 @@ $$
   \Gamma\preceq_G^{m}\Delta
 }
 \qquad
-(\rho\circ m)(i)=\rho(m_i).
+\operatorname{mapEnv}(m,\rho)(i)=\rho(m_i).
 $$
 
 `checkMapped_sound` proves mapped coverage, and `MappedCovers.env` proves that
@@ -378,23 +378,20 @@ supplied input context $\Gamma_0$, with an empty input fact context.
 
 $$
 \begin{gathered}
-\operatorname{checkEntry}(G,R,P,C,\ell,\Gamma_0)=\mathsf{true}
+\operatorname{checkEntry}(G,R,P,C,p,\Gamma_0)=\mathsf{true}
 \\
 \land\;\operatorname{EnvOk}_G(\Gamma_0,\rho,n,W)
 \land\;\operatorname{WorldAdm}(W)
 \land\;\operatorname{HeapOk}(n,W,h)
 \\
 \Longrightarrow\quad
-\operatorname{SafeGraph}_P(\llbracket R\rrbracket_G,n,W,h,\operatorname{at}(\ell,\rho)).
+\operatorname{SafeGraph}_P(\llbracket R\rrbracket_G,n,W,h,\operatorname{at}(p,\rho)).
 \end{gathered}
 $$
 
-[`SafeGraph` and the machine state $\operatorname{at}(\ell,\rho)$](SEMANTICS.md#computations-and-recursive-types)
+[`SafeGraph` and the machine state $\operatorname{at}(p,\rho)$](SEMANTICS.md#computations-and-recursive-types)
 are the graph-level analogues of `Safe`: the run starts at the entry label with
 the input environment, and stays safe through every transition.
-$\operatorname{EnvOk}_G(\Gamma,\rho,n,W)$ is the environment satisfaction written
-$\rho\models_{n,W}\Gamma$ above.
-
 The arguments, world, heap and budget are arbitrary subject to these premises.
 `checkClosed` is exactly `checkEntry` with an empty input context;
 `accepted_closed_safe` retains the empty-world, empty-heap corollary.
@@ -619,14 +616,127 @@ remains unchanged, while a proved fact about the returned value can justify a
 narrower subsequent return contract. Mutation invalidates cell contents and read-to-cell relationships, not
 values already read into immutable slots or equalities between copied values.
 
-For $K=(\Delta,V,L)$, where $L$ contains read/equality links, write $K(\rho,h)$ for the conjunction of these assertions.
-`checkStep_sound` establishes:
+For $K=(\Delta,V,L)$, where $L$ contains read/equality links, write $K(\rho,h)$ for
+the conjunction of these assertions.
+
+Checking an expression is then a **Hoare typing**: an ordinary typing carrying a
+precondition and a postcondition on the current heap. Write
+
+$$\Gamma;K\vdash_G t:A\dashv K'$$
+
+for: in an environment satisfying $\Gamma$ and a heap satisfying $K$, evaluating
+$t$ is safe, its value has type $A$, and the resulting heap satisfies $K'$.
+
+One convention governs every such rule. The postcondition is read in the
+**result-pushed frame**: the value just produced becomes slot $0$, so a fact
+carried over from the precondition names a slot one higher than it did before.
+Write $K{\uparrow}$ for that renumbering, defined by
+
+$$K{\uparrow}(v::\rho,h)\;\equiv\;K(\rho,h),$$
+
+so $K{\uparrow}$ says about the extended environment exactly what $K$ said about
+the original (`HeapKnowledge.shift`, sound by `shift_holds`). Postconditions
+below are built from $K{\uparrow}$ by adding what the operation establishes and
+removing what it invalidates.
+
+Three more abbreviations. $\operatorname{val}(i,R)$ is the immutable fact
+$\rho(i)\in R$; $j\approx_K i$ means $K$'s equality links prove $\rho(j)=\rho(i)$,
+which holds for $i$ itself; and $\operatorname{val}_K(i)=R$ means $R$ is the
+literal set proved for slot $i$, from a value fact or from its ordinary primitive
+type (`valuesAt`). Cell facts $\operatorname{cell}(i,R)$ and links
+$\operatorname{read}(c,v)$, $c=v$ are the
+[assertion forms](SEMANTICS.md#current-content-assertions-and-postconditions).
+
+### The reference operations
+
+These four rules are the heart of the state discipline. Each is proved in
+`HeapExpressionRules.lean`, and each is the postcondition the checker computes,
+not one it assumes.
+
+**Allocation** creates a cell and invalidates nothing:
+
+$$
+\frac{\Gamma\vdash_G\operatorname{alloc}(x_i):\operatorname{Ref}A
+      \qquad\operatorname{val}_K(i)=R}
+{\Gamma;K\vdash_G\operatorname{alloc}(x_i):\operatorname{Ref}A
+  \dashv K{\uparrow}\land\operatorname{cell}(0,R)}
+$$
+
+**Reading** preserves the heap and records where the result came from. The
+ordinary rule claims nothing about contents; the observed rule additionally
+consumes a cell fact and returns it as a fact about the value:
+
+$$
+\frac{\Gamma\vdash_G\operatorname{read}(x_i):A\qquad\Gamma(i)=\operatorname{Ref}B}
+{\Gamma;K\vdash_G\operatorname{read}(x_i):A
+  \dashv K{\uparrow}\land\textstyle\bigwedge_{j\approx_K i}\operatorname{read}(j{+}1,0)}
+$$
+
+$$
+\frac{\operatorname{cell}(i,R)\in K\qquad R\subseteq A}
+{\Gamma;K\vdash_G\operatorname{read}(x_i):A
+  \dashv K{\uparrow}\land\textstyle\bigwedge_{j\approx_K i}\operatorname{read}(j{+}1,0)
+   \land\operatorname{val}(0,R)}
+$$
+
+**Writing** establishes the new contents and destroys every cell fact and read
+link, keeping only immutable values and slot equalities:
+
+$$
+\frac{\Gamma\vdash_G\operatorname{write}(x_i,x_j):\mathsf{Null}
+      \qquad\operatorname{val}_K(j)=R}
+{\Gamma;K\vdash_G\operatorname{write}(x_i,x_j):\mathsf{Null}
+  \dashv\textstyle\bigwedge_{k\approx_K i}\operatorname{cell}(k{+}1,R)
+   \land\operatorname{val}(0,\{\mathsf{null}\})\land V{\uparrow}\land L^{=}{\uparrow}}
+$$
+
+**Every other expression**, calls included, keeps only what a call cannot
+falsify:
+
+$$
+\frac{\Gamma\vdash_G t:A}
+{\Gamma;K\vdash_G t:A\dashv V{\uparrow}\land L^{=}{\uparrow}}
+$$
+
+Here $V$ is the immutable-value part of $K$ and $L^{=}$ its equality links.
+
+The shape a type theorist will look for is missing on purpose: **there is no
+frame rule.** A write to slot $i$ discards what is known about slot $k$ even when
+$k\neq i$, because distinct slots are not distinct locations — the assertion
+language can witness that two slots alias, never that they do not. So the
+positive direction is proof-driven and the negative direction is total: the new
+contents propagate exactly to the witnessed aliases $k\approx_K i$, while
+everything else is dropped rather than framed around. `write_frame` in the
+semantic layer does preserve a fact at another location, but only from a proved
+runtime inequality, and the finite assertion language cannot state one: its links
+carry equality and no disequality. Preservation for proved-distinct cells is
+therefore not implemented. That is a gap in the assertion language, not a limit
+of the model.
+
+The practical shape of the gap is worth stating. Facts about several cells
+coexist freely: allocation and reads preserve every one of them, so a program
+that allocates three cells knows the contents of all three. The first write
+collapses that set to the written cell and its aliases, and a call empties it.
+So a program that mutates carries current-content knowledge for essentially one
+cell at a time, the one written most recently. Immutable value facts are not
+subject to this at all, which is why a value read out of a cell before a callback
+remains usable after the callback has overwritten that cell.
+
+Two consequences worth naming. Immutable value facts and slot equalities survive
+every operation, because no write or call can falsify $\rho(i)\in R$ or
+$\rho(i)=\rho(j)$ — those are statements about the environment, not the heap.
+And a read link is what later lets an observation of the result refine the cell
+it came from: that is how a guard on `cell.value` refines `cell` itself, and why
+a call, which drops read links, ends such a refinement.
+
+A successful `checkStep` is a derivation of this judgment, and `checkStep_sound`
+is its soundness:
 
 $$
 \frac{\operatorname{checkStep}(G,(\Gamma,t,A),K,e)=\operatorname{some}(K')
-\quad\operatorname{EnvOk}(\Gamma,\rho,n,W)\quad K(\rho,h)}
+\quad\operatorname{EnvOk}_G(\Gamma,\rho,n,W)\quad K(\rho,h)}
 {\operatorname{SafePost}(\llbracket A\rrbracket,
-  \lambda(h',v).\,K'(v::\rho,h'),n,W,h,t[\rho])}.
+  \lambda(h',v).\,K'(v::\rho,h'),n,W,h,\operatorname{close}_{\rho}(t))}.
 $$
 
 As above, the initial world must be admissible and the heap must satisfy it.
@@ -644,19 +754,11 @@ It computes a guaranteed output, not an assumed postcondition:
 | Write | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities. |
 
-The ordinary-read extension uses the same read-link output as the observed-read
-rule, without claiming a more precise literal result. With $r$ the fresh result:
-
-$$
-\frac{\Gamma\vdash\operatorname{read}(x):A\qquad\Gamma(x)=\operatorname{Ref}(B)}
-{\{\Gamma;K\}\ \operatorname{read}(x):A\ \{\uparrow K\land h(x)=r\}}.
-$$
-
-`typedRead_sound` proves this rule; its implementation also records links for
-known aliases of $x$. `write_sound` needs the ordinary write derivation and the
-written value's predicate, with no premise about the old contents. These are
-operation rules within a local segment. At the next statement entry, only the
-supplied interface survives.
+`typedRead_sound`, `read_sound`, `alloc_sound` and `write_sound` prove the four
+rules above. None of them takes a premise about a cell's old contents, and the
+checker's write evidence carries none either. These are operation rules within a
+local segment: at the next statement entry, only the supplied interface
+survives.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
@@ -677,9 +779,7 @@ predicates without treating an effectful operand as pure. A negated graph guard
 checks its full expression claim separately and swaps the operand's successors;
 it does not invent an equality between a Boolean and its negation.
 
-The current write-evidence form also requires a cell observation locating the
-receiver. This is a conservative checker restriction; the semantic write rule
-above needs no old-content assertion. Primitive result sets are finite
+Primitive result sets are finite
 null/Boolean literal lists. `HeapKnowledge.check_sound` and `project_checked`
 justify transfer and alias-preserving projection along executable slot maps.
 
@@ -704,10 +804,11 @@ $$
 The read link must hold in the current heap. `HeapGuardTests.lean` proves a
 complete two-branch graph safe and checks that discarding the link prevents this
 refinement. A slot equality $x=y$ permits a checked write through either alias to
-establish the new contents for both. Other cell observations are discarded;
-preservation for proved-distinct cells is not yet implemented. Read links are
-invalidated by writes/calls, while slot equalities survive. These facts let source
-lowering discard a receiver temporary without losing a write to its original cell.
+establish the new contents for both, as the
+[write rule](#the-reference-operations) above states; every other cell
+observation is discarded. Read links are invalidated by writes and calls, while
+slot equalities survive. Together these let source lowering discard a receiver
+temporary without losing a write to its original cell.
 
 [WriteRefinedRead.lean](lean/Verification/ExperimentState/WriteRefinedRead.lean)
 assembles allocation, postcondition-aware composition and `write_then_read` to
@@ -741,7 +842,7 @@ context coverage is checked alongside it):
 
 $$
 \frac{\operatorname{checkKnowledge}(K_{\mathrm{out}},K_l,m)=\mathsf{true}
-\qquad K_{\mathrm{out}}(\rho,h)}{K_l(\rho\circ m,h)}.
+\qquad K_{\mathrm{out}}(\rho,h)}{K_l(\operatorname{mapEnv}(m,\rho),h)}.
 $$
 
 The next statement is checked from $(\Gamma_l,K_l)$, independently of any
@@ -828,14 +929,14 @@ $$
 \operatorname{produce}(G,I,f,R,P,Q,\ell,H,\Gamma_0)=\operatorname{ok}(C)
 \\
 \Longrightarrow\quad
-\operatorname{accept}(G,R,P,Q,C,\ell,\Gamma_0)=\mathsf{true},
+\operatorname{accept}(G,R,P,Q,C,p,\Gamma_0)=\mathsf{true},
 \\
-\operatorname{accept}(G,R,P,Q,C,\ell,\Gamma_0)=\mathsf{true}
+\operatorname{accept}(G,R,P,Q,C,p,\Gamma_0)=\mathsf{true}
 \\
 \Longrightarrow\quad
 \operatorname{claims}(C)=Q
 \;\land\;
-\operatorname{checkEntry}(G,R,P,C,\ell,\Gamma_0)=\mathsf{true}.
+\operatorname{checkEntry}(G,R,P,C,p,\Gamma_0)=\mathsf{true}.
 \end{gathered}
 $$
 
