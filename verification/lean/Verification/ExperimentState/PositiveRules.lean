@@ -11,6 +11,21 @@ abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table
 abbrev Ops (ι : Type) := List (List ι × List ι)
 def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
 
+/-- Decompose one clause into an exactly equivalent finite union. `bool` is the
+only clause of this language whose inhabitants are a finite set, so it is the
+only one that decomposes: every Boolean value is `true` or `false`. Everything
+else is already its own decomposition. -/
+def splitClause : Clause α → List (Clause α)
+  | .bool => [.boolLit true, .boolLit false]
+  | c => [c]
+
+/-- The clauses a covering obligation must discharge on its left. Splitting the
+source, rather than searching the target for a matching pair, keeps `Covers`
+clause-to-clause while letting one source clause be covered by several target
+clauses. -/
+def sourceClauses (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) :=
+  (expand G S).flatMap splitClause
+
 def meaning (G : NormalGraph ι) (S : List ι) : Fam := setSem (normalDenote G) S
 
 /-- A conservative compatibility check: two union labels can share a value
@@ -37,6 +52,24 @@ theorem expand_sem (G : NormalGraph ι) (S : List ι) (n W v) :
   · rintro ⟨c, hc, hv⟩
     obtain ⟨i, hi, hc⟩ := List.mem_flatMap.mp hc
     exact ⟨i, hi, (unfold_normal G i n W v).mpr ⟨c, hc, hv⟩⟩
+
+/-- The split is meaning preserving, in the same style as `meet_sound` and
+`normalize_sound`: the union of the parts denotes exactly the original clause. -/
+theorem splitClause_sem (X : α → Fam) (c : Clause α) (n W v) :
+    semList X (splitClause c) n W v ↔ sem X c n W v := by
+  cases c
+  all_goals simp [splitClause, semList, setSem, sem, boolT]
+
+theorem source_sem (G : NormalGraph ι) (S : List ι) (n W v) :
+    meaning G S n W v ↔ semList (meaning G) (sourceClauses G S) n W v := by
+  rw [expand_sem G S n W v]
+  constructor
+  · rintro ⟨c, hc, hv⟩
+    obtain ⟨d, hd, hvd⟩ := (splitClause_sem (meaning G) c n W v).mpr hv
+    exact ⟨d, List.mem_flatMap.mpr ⟨c, hc, hd⟩, hvd⟩
+  · rintro ⟨d, hd, hv⟩
+    obtain ⟨c, hc, hd⟩ := List.mem_flatMap.mp hd
+    exact ⟨c, hc, (splitClause_sem (meaning G) c n W v).mp ⟨d, hd, hv⟩⟩
 
 theorem compatible_sound {G : NormalGraph ι} {i k : ι} {n W U v}
     (hi : normalDenote G i n W v) (hk : normalDenote G k n U v) :
@@ -140,8 +173,11 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · exact Or.inl rfl
   · cases hc; exact id
 
+/-- Each split part of each source clause must be covered by some single target
+clause. A `bool` source is therefore discharged by the pair of Boolean singleton
+clauses, or by a single `bool` clause, or by any target containing both. -/
 def Valid (G : NormalGraph ι) (table : Table ι) : Prop :=
-  ∀ p ∈ table, ∀ a ∈ expand G p.1, ∃ b ∈ expand G p.2, Covers G (Rel table) a b
+  ∀ p ∈ table, ∀ a ∈ sourceClauses G p.1, ∃ b ∈ expand G p.2, Covers G (Rel table) a b
 
 def Core (G : NormalGraph ι) (S T : List ι) : Prop :=
   ∃ table, (S, T) ∈ table ∧ Valid G table
@@ -154,7 +190,7 @@ theorem Core.sound {G : NormalGraph ι} {S T} (hc : Core G S T) :
     induction n using Nat.strongRecOn with
     | ind n ih =>
       intro A B hab W v hv
-      obtain ⟨a, ha, hv⟩ := (expand_sem G A n W v).mp hv
+      obtain ⟨a, ha, hv⟩ := (source_sem G A n W v).mp hv
       obtain ⟨b, hb, hcover⟩ := hc (A, B) hab a ha
       exact (expand_sem G B n W v).mpr
         ⟨b, hb, Covers.sound hcover n (fun j hj => ih j hj) W v hv⟩

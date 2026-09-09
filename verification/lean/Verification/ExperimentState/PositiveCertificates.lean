@@ -140,7 +140,8 @@ structure Certificate (ι : Type) where
 set_option synthInstance.maxSize 1024 in
 def checkCore [DecidableEq ι] (G : NormalGraph ι) (S T : List ι) (cert : Certificate ι) : Bool :=
   decide ((S, T) ∈ cert.table ∧ ∀ p ∈ cert.table,
-    ∀ a ∈ expand G p.1, ∃ b ∈ expand G p.2, checkClause G cert.table cert.arrows a b = true)
+    ∀ a ∈ sourceClauses G p.1, ∃ b ∈ expand G p.2,
+      checkClause G cert.table cert.arrows a b = true)
 
 
 theorem checkCore_sound [DecidableEq ι] {G : NormalGraph ι} {S T cert}
@@ -155,9 +156,10 @@ theorem checkCore_complete [DecidableEq ι] {G : NormalGraph ι} {S T}
     (h : Core G S T) : ∃ cert, checkCore G S T cert = true := by
   obtain ⟨table, hm, hv⟩ := h
   have rows : ∀ p ∈ table, ∃ es : Evidence ι,
-      ∀ a ∈ expand G p.1, ∃ b ∈ expand G p.2, checkClause G table es a b = true := by
+      ∀ a ∈ sourceClauses G p.1, ∃ b ∈ expand G p.2,
+        checkClause G table es a b = true := by
     intro p hp
-    apply collect (expand G p.1)
+    apply collect (sourceClauses G p.1)
       (fun a es => ∃ b ∈ expand G p.2, checkClause G table es a b = true)
     · intro a es es' hm ⟨b, hb, hc⟩
       exact ⟨b, hb, checkClause_mono hm hc⟩

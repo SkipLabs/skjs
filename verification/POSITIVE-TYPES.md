@@ -301,10 +301,24 @@ splitting is derivable by finite union composition (`Arrow.split`).
 
 Clause coverage (`Covers`) matches identical atomic shapes, uses the reference
 rule above, and checks every target arrow from the source overload. Union
-coverage expands the clauses under the source labels and matches each by a
-covered clause under the target labels. A core judgment $G\vdash_c S\le T$
-requires a finite table containing $(S,T)$ whose every entry passes this coverage
-rule. All cyclic premises occur under a reference or function constructor.
+coverage expands the clauses under the source labels, *splits* each of them, and
+matches every part by a covered clause under the target labels. A core judgment
+$G\vdash_c S\le T$ requires a finite table containing $(S,T)$ whose every entry
+passes this coverage rule. All cyclic premises occur under a reference or
+function constructor.
+
+Splitting (`splitClause`) replaces a source $\mathsf{bool}$ clause with the pair
+$\mathsf{true},\mathsf{false}$ and leaves every other clause alone. It is
+meaning preserving — `splitClause_sem` proves the union of the parts denotes
+exactly the original clause, and `source_sem` lifts that to a label set — so it
+adds no power beyond the model. It is what lets a single source clause be
+discharged by *several* target clauses while `Covers` itself stays
+clause-to-clause: $\mathsf{bool}\le\mathsf{true}\mid\mathsf{false}$ is derivable
+because each singleton covers one part, and $\mathsf{bool}\le\mathsf{bool}$ still
+is because a $\mathsf{bool}$ target covers both. $\mathsf{bool}\le\mathsf{true}$
+remains underivable. $\mathsf{bool}$ is the only clause of this language with a
+finite set of inhabitants that is not already a singleton, so it is the only one
+that splits.
 
 The final judgment `Sub` adds:
 

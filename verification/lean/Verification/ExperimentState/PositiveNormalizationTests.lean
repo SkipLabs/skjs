@@ -68,6 +68,47 @@ def tripleCert : Certificate (Fin 5) :=
        (.source ([0], [0, 2]))))]⟩
 #guard checkCoreSource TripleG [3] [4] tripleCert
 
+-- A `bool` source clause is covered by the pair of Boolean singleton clauses.
+-- The source side of a coverage obligation splits, so a single source clause
+-- may be discharged by several target clauses.
+def BoolG : PositiveGraphs.Graph (Fin 6) := fun i => match i.val with
+  | 0 => .atom .bool
+  | 1 => .atom (.boolLit true)
+  | 2 => .atom (.boolLit false)
+  | 3 => .atom .nul
+  | 4 => .atom (.refs [0] [])
+  | _ => .atom (.refs [1, 2] [])
+
+#guard PositiveRules.sourceClauses (normalizeGraph BoolG) [0]
+  = [.boolLit true, .boolLit false]
+#guard PositiveRules.sourceClauses (normalizeGraph BoolG) [1] = [.boolLit true]
+#guard checkCoreSource BoolG [0] [1, 2] ⟨[([0], [1, 2])], []⟩
+-- An unrelated further alternative in the target does not disturb the covering.
+#guard checkCoreSource BoolG [0] [1, 2, 3] ⟨[([0], [1, 2, 3])], []⟩
+-- Controls: the directions that were already derivable still are.
+#guard checkCoreSource BoolG [1] [0] ⟨[([1], [0])], []⟩
+#guard checkCoreSource BoolG [0] [0] ⟨[([0], [0])], []⟩
+-- One singleton alone does not cover `bool`, in either polarity.
+#guard !(checkCoreSource BoolG [0] [1] ⟨[([0], [1])], []⟩)
+#guard !(checkCoreSource BoolG [0] [2] ⟨[([0], [2])], []⟩)
+#guard !(checkCoreSource BoolG [0] [3] ⟨[([0], [3])], []⟩)
+-- Splitting the source cannot manufacture a covering of a different shape.
+#guard !(checkCoreSource BoolG [3] [1, 2] ⟨[([3], [1, 2])], []⟩)
+-- Both directions are now derivable, so the invariant reference contracts
+-- `ref bool` and `ref (true | false)` become interchangeable.
+#guard checkCoreSource BoolG [4] [5]
+  ⟨[([4], [5]), ([0], [1, 2]), ([1, 2], [0])], []⟩
+#guard checkCoreSource BoolG [5] [4]
+  ⟨[([5], [4]), ([0], [1, 2]), ([1, 2], [0])], []⟩
+-- A reference to one singleton is still not a reference to `bool`.
+#guard !(checkCoreSource BoolG [4] [5] ⟨[([4], [5]), ([0], [1]), ([1], [0])], []⟩)
+
+theorem checked_boolean_split : FamLe
+    (Tower.setSem (PositiveGraphs.denote BoolG) [0])
+    (Tower.setSem (PositiveGraphs.denote BoolG) [1, 2]) :=
+  accepted_source (by decide : checkCoreSource BoolG [0] [1, 2]
+    ⟨[([0], [1, 2])], []⟩ = true)
+
 -- Explicit structural closure and malformed-evidence checks exercise the
 -- consolidated public checker, rather than just its cyclic-table component.
 #guard checkSource G [0, 0] [1, 0] (.trans [0] .subset .subset)
@@ -98,5 +139,6 @@ theorem nested_inhabited :
   exact ⟨cyclic_heap_ok 1, hn, by simpa [ModelBoundaries.nestedRef] using hb⟩
 
 #print axioms checked_recursive_example
+#print axioms checked_boolean_split
 #print axioms nested_inhabited
 end Verification.ExperimentState.PositiveNormalizationTests
