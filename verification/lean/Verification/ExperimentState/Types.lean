@@ -44,6 +44,9 @@ def refT (T : Fam) : Fam := fun k W v =>
 
 def nulT : Fam := fun _ _ v => v = .nul
 
+/-- The value a function body produces by completing rather than returning. -/
+def undefT : Fam := fun _ _ v => v = .undef
+
 /-- A cell that can actually change observably. -/
 def boolT : Fam := fun _ _ v => v = .tru ∨ v = .fls
 

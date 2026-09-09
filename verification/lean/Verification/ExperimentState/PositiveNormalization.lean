@@ -12,10 +12,13 @@ inductive Clause (α : Type) where
   | refs (first : α) (rest : List α)
   | arrs (arrows : List (α × α))
   | boolLit (value : Bool)
+  /-- The value a body produces by completing rather than returning. -/
+  | undef
   deriving Repr, DecidableEq
 
 def sem (X : α → Fam) : Clause α → Fam
   | .nul => nulT
+  | .undef => undefT
   | .bool => boolT
   | .boolLit b => fun _ _ v => v = (if b then .tru else .fls)
   | .refs a bs => refsT (X a) (bs.map X)
@@ -39,6 +42,7 @@ def eval (X : α → Fam) : Formula α → Fam
 /-- Intersection of clauses: preserve all constraints of the same shape. -/
 def meet : Clause α → Clause α → List (Clause α)
   | .nul, .nul => [.nul]
+  | .undef, .undef => [.undef]
   | .bool, .bool => [.bool]
   | .bool, .boolLit b | .boolLit b, .bool => [.boolLit b]
   | .boolLit a, .boolLit b => if a == b then [.boolLit a] else []
@@ -63,9 +67,11 @@ private theorem nil_sem (X : α → Fam) (n W v) : ¬ semList X [] n W v := by
 
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. => 2 | .arrs .. => 3
+  | .undef => 4
 
 def valueShape : Val → Nat
-  | .nul => 0 | .tru | .fls => 1 | .loc _ => 2 | .lam _ => 3 | _ => 4
+  | .nul => 0 | .tru | .fls => 1 | .loc _ => 2 | .lam _ => 3 | .undef => 4
+  | _ => 5
 
 theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
     (h : sem X c n W v) : valueShape v = shape c := by
@@ -75,6 +81,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
   | boolLit b => cases b <;> cases h <;> rfl
   | refs a bs => obtain ⟨l, _, rfl, _⟩ := h.1; rfl
   | arrs L => obtain ⟨b, rfl, _⟩ := h.1; rfl
+  | undef => cases h; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList X (meet a b) n W v ↔ interT (sem X a) (sem X b) n W v := by
@@ -96,6 +103,7 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
     · rename_i b c
       cases b <;> cases c <;> simp [meet, sem, interT, semList, setSem]
       all_goals intro hv; subst v; simp
+    · simp [meet, singleton_sem, sem, interT]
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
     rw [hm]
@@ -137,6 +145,7 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs => exact adm _ _
   | arrs L => exact arrowsT_adm _
+  | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
     (c : Clause α) (W : WorldT n) (v : Val) : sem X c n W v ↔ sem Y c n W v := by
@@ -144,6 +153,7 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | nul => rfl
   | bool => rfl
   | boolLit _ => rfl
+  | undef => rfl
   | refs a bs => exact congr_below X Y a bs n h W v
   | arrs L => exact arrowsT_congr L _ _ (fun p _ => ⟨h p.1, h p.2⟩) W v
 

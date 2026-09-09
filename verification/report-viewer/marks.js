@@ -330,6 +330,31 @@ function sourceMarks(rep, f, options) {
       });
     });
 
+  // An obligation whose place carries no claim. Always drawn: it is the only
+  // thing on screen saying where the function failed, and there is nothing else
+  // at that position to click.
+  (f.failureSites || []).forEach((site, i) => {
+    const line = at(site.pos[0]);
+    const title =
+      (typeof obligationReader !== "undefined" &&
+        site.failureRole &&
+        obligationReader.roleView(site.failureRole).title) ||
+      "Obligation here";
+    items.push({
+      kind: "failure",
+      line,
+      col: site.pos[0] - starts[line],
+      end:
+        (at(site.pos[1] - 1) === line
+          ? site.pos[1]
+          : lineEndAt(source, starts, line)) - starts[line],
+      label: title.toLowerCase() + " · nothing claimed here",
+      mark: proofSymbol(site.failureKind),
+      id: "u" + i,
+      cls: "gap failed",
+    });
+  });
+
   if (producerErrors)
     producerMarks(rep).forEach((mark, i) => {
       if (mark.pos[0] < (f.start || 0) || mark.pos[1] > (f.end ?? source.length))
@@ -388,6 +413,9 @@ function firstFailure(f) {
     ["e", f.exprs],
     ["n", f.entries],
     ["g", f.gaps],
+    // A located obligation with nothing claimed at its place is still the
+    // failure this function has, and the banner should point at it.
+    ["u", f.failureSites],
   ]) {
     const i = (list || []).findIndex((x) => x.failure);
     if (i >= 0) return { id: prefix + i, item: list[i], kind: list[i].failureKind };

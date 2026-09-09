@@ -42,6 +42,10 @@ const ROLE = {
     title: "Tag dispatch",
     what: "This obligation comes from a tag test. What follows had to hold under the branch that test selects, read together with the observation rather than as plain subtyping.",
   },
+  completion: {
+    title: "Completing without returning",
+    what: "This body can reach its end without returning. Completing produces undefined, and that value still has to establish the function's declared result. Nothing is claimed here for a reader to correct: the annotation is what does not hold.",
+  },
   "node-typing": {
     title: "Obligation at this point",
     what: "The judgement attempted at this point did not follow from the assumptions available.",

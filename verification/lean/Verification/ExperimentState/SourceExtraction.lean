@@ -424,16 +424,21 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
 termination_by e
 
 /-- Leaving a block drops its local slots simultaneously. Active-name shadowing
-is gated until the export can identify hidden bindings independently. -/
-private def leave (scope : List Descriptor) (tail : Option (Target × List Descriptor)) :
-    Except String Target := do
-  let (target, outer) ← match tail with
-    | some t => pure t
-    | none => throw "the current source slice requires a return on every path"
-  let slots ← outer.mapM fun d => match (names scope).idxOf? d.name with
-    | some i => pure i
-    | none => throw s!"internal extraction error: lost outer binding '{d.name}'"
-  return ⟨target.label, some slots⟩
+is gated until the export can identify hidden bindings independently. With no
+continuation the body completes rather than returns, producing `undefined`; that
+is emitted as an exit claiming the declared result, attributed to the function
+because an empty body has no statement to point at. -/
+private def leave (pos : Span) (R : Ty Nat) (scope : List Descriptor)
+    (tail : Option (Target × List Descriptor)) : Compiler Target := do
+  match tail with
+  | none =>
+    let exit ← emitAt pos .undef .ret [] R "completion"
+    return ⟨exit.label, some []⟩
+  | some (target, outer) =>
+    let slots ← outer.mapM fun d => match (names scope).idxOf? d.name with
+      | some i => pure i
+      | none => throw s!"internal extraction error: lost outer binding '{d.name}'"
+    return ⟨target.label, some slots⟩
 
 /-- Branch binding pushes the actual tested value. For a source variable test,
 map that variable to the pushed value (the same immutable value), exposing its
@@ -532,7 +537,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
   | 0, _, _, _, _, _, _ => throw "internal extraction error: exhausted structural traversal"
   | fuel+1, fc, R, scope, stmts, tail, loopTargets => do
     let target ← match stmts with
-    | [] => leave scope tail
+    | [] => leave fc.namePos R scope tail
     | .brk pos :: rest | .cont pos :: rest =>
       if !rest.isEmpty then throw "statements after break or continue are outside the current source slice"
       let some targets := loopTargets | throw "break or continue outside a source loop"
@@ -540,7 +545,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
       let destination := match stmts with
         | .brk _ :: _ => targets.done
         | _ => some targets.again
-      let next ← leave scope destination
+      let next ← leave fc.namePos R scope destination
       emitAt pos .nul (.effect next) Γ [0] (scope := scope)
     | .ret pos e :: rest =>
       if !rest.isEmpty then throw "statements after return are outside the current source slice"
@@ -575,7 +580,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
         let next ← body fuel fc R scope rest tail loopTargets
         pure (some (next,scope))
       let yes ← body fuel fc R scope loopBody (some (head,scope)) (some ⟨(head,scope),continuation⟩)
-      let no ← leave scope continuation
+      let no ← leave fc.namePos R scope continuation
       let condition ← compileCondition fc scope Γ cond yes no
       modify fun s => { s with program := s.program.set head.label ⟨.nul,.effect condition⟩ }
       let facts ← entryFacts fc pos.1 scope

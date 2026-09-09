@@ -65,6 +65,7 @@ set_option synthInstance.maxSize 1024 in
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
     Clause (List ι) → Clause (List ι) → Bool
   | .nul, .nul => true
+  | .undef, .undef => true
   | .bool, .bool => true
   | .boolLit _, .bool => true
   | .boolLit a, .boolLit b => decide (a = b)
@@ -131,6 +132,7 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     exact ⟨es, by simpa only [checkClause, decide_eq_true_eq] using he⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa [checkClause] using h⟩
+  · exact ⟨[], rfl⟩
 
 structure Certificate (ι : Type) where
   table : Table ι

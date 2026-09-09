@@ -426,13 +426,27 @@ function select(id) {
         ? { kind: "gap", ...f.gaps[idx] }
         : id[0] === "m"
           ? { ...f.missingSites[idx], missing: true }
-          : { kind: "environment", ...f.entries[idx] };
+          : id[0] === "u"
+            ? { ...f.failureSites[idx], unclaimed: true }
+            : { kind: "environment", ...f.entries[idx] };
   state.selected = item;
   el("inspector").scrollIntoView({ block: "nearest" });
   const src = state.report.source;
   let h = "";
   if (f.status === "not-established" && item.failure)
     h += failureHtml(f, item);
+  // An obligation at a place with no claim. There is no record to show and
+  // nothing to supply: what failed is the annotation, not a claim about it.
+  if (item.unclaimed) {
+    h += failureHtml(f, item);
+    h +=
+      '<pre class="raw">' + esc(src.slice(item.pos[0], item.pos[1])) + "</pre>";
+    el("detail").innerHTML = h;
+    document
+      .querySelectorAll(".lab")
+      .forEach((x) => x.classList.toggle("on", x.dataset.id === id));
+    return;
+  }
   // A missing site is a place with no claim, so there is no record to show:
   // the panel is the form for supplying one.
   if (item.missing) {

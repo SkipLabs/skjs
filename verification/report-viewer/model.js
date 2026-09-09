@@ -386,6 +386,24 @@ function fromBundle(bundle) {
         result.obligation?.source?.sourceMap?.role ||
         result.obligation?.sourceMap?.role ||
         "";
+    } else if (Array.isArray(location.pos)) {
+      // A failure with a position but nothing claimed there. An obligation the
+      // extractor states about a place the producer never wrote a claim for -
+      // a body that completes, say - is still real and still locatable, so it
+      // gets a mark of its own instead of only a sentence at the top of the
+      // function saying no location is available.
+      f.failureSites = (f.failureSites || []).concat([
+        {
+          pos: span(location.pos),
+          failure:
+            result.detail || "Proof search did not establish this obligation.",
+          failureKind: location.kind,
+          failureRole:
+            result.obligation?.source?.sourceMap?.role ||
+            result.obligation?.sourceMap?.role ||
+            "",
+        },
+      ]);
     }
   }
 

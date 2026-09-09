@@ -56,7 +56,11 @@ try {
     ["duplicate local declaration", a => { a.functions[0].body[1].name = "x"; }, "duplicate or shadowing local declaration"],
     ["duplicate file claims", (a,c) => { c.push(clone(c.find(f => f.file === fileKey))); }, "exactly one matching claim file"],
     ["duplicate source identity", a => { a.functions[1] = clone(a.functions[0]); }, "duplicate source function identities"],
-    ["missing final return", a => { a.functions[0].body.pop(); }, "requires a return on every path"],
+    // Falling off the end is not refused, it is checked: the exit carries the
+    // value a completing body produces, and `undefined` establishes nothing the
+    // source can declare. Asserting on the term pins the reason, not just the
+    // refusal.
+    ["completing body must establish the result", a => { a.functions[0].body.pop(); }, '"term":"undef"'],
     ["unjustified merge claim", (a,c) => {
       const end = branchAst(a).body.at(-1).pos[0];
       branchClaims(c).envs.find(e => e.pos[0] === end).vars.find(v => v.name === "outer").type = ty("false");

@@ -33,6 +33,8 @@ inductive Tm where
   | lam (b : Tm)
   | app (f a : Tm)
   | nul
+  /-- The value a body produces by completing rather than returning. -/
+  | undef
   | tru
   | fls
   | loc (l : Nat)
@@ -49,7 +51,8 @@ abbrev Val := Tm
 
 
 def isVal : Tm → Bool
-  | .lam _ => true | .nul => true | .tru => true | .fls => true | .loc _ => true
+  | .lam _ => true | .nul => true | .undef => true | .tru => true
+  | .fls => true | .loc _ => true
   | _ => false
 
 /-- What a test of a value answers. A test is total on values: every value has
@@ -68,6 +71,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .lam b => .lam (subst (j + 1) a b)
   | .app f x => .app (subst j a f) (subst j a x)
   | .nul => .nul
+  | .undef => .undef
   | .tru => .tru
   | .fls => .fls
   | .loc l => .loc l

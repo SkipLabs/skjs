@@ -137,6 +137,7 @@ theorem Arrow.sound {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) (n : N
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | .nul, .nul => True
+  | .undef, .undef => True
   | .bool, .bool => True
   | .boolLit _, .bool => True
   | .boolLit a, .boolLit b => a = b
@@ -172,6 +173,7 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · exact Or.inr rfl
     · exact Or.inl rfl
   · cases hc; exact id
+  · exact id
 
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton

@@ -36,6 +36,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
   | arrs L => obtain ⟨b, rfl, hb⟩ := hc.1; exact ⟨rfl, hb⟩
+  | undef => subst v; exact ⟨rfl, trivial⟩
 
 theorem meaning_valOnly (G : NormalGraph ι) (A : Ty ι) : ValOnly (meaning G A) :=
   fun _ _ _ h => (meaning_value h).1

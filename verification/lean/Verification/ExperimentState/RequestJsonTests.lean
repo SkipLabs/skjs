@@ -6,6 +6,7 @@ open Lean ProgramTyping ControlFlow CertificateProducer RequestJson
 
 private def toNatClause : PositiveNormalization.Clause (List (Fin 6)) → PositiveNormalization.Clause (List Nat)
   | .nul => .nul
+  | .undef => .undef
   | .bool => .bool
   | .boolLit b => .boolLit b
   | .refs a bs => .refs (a.map Fin.val) (bs.map (List.map Fin.val))
