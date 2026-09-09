@@ -372,9 +372,16 @@ function main() {
   process.stdout.write(JSON.stringify({ file, sourceSha256: require("crypto").createHash("sha256").update(text).digest("hex"), functions }, null, 1));
 }
 
-try {
-  main();
-} catch (e) {
-  process.stderr.write(String(e.message || e) + "\n");
-  process.exit(1);
+// Run as a command, or lend the type translation to another trusted tool. The
+// annotation encoding must have exactly one implementation: a second one would
+// be a second opinion about what a source type means.
+if (require.main === module) {
+  try {
+    main();
+  } catch (e) {
+    process.stderr.write(String(e.message || e) + "\n");
+    process.exit(1);
+  }
+} else {
+  module.exports = { typeOf, atomsOfTypeNode };
 }

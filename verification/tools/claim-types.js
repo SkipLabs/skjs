@@ -298,6 +298,48 @@ function roundTrips(type) {
     return parts;
   }
 
+  // The producer's encoding is wider than the calculus: it has numbers, strings
+  // and `any` because SKJS has them. A claim written in one of those cannot be
+  // checked at all, so saying so where it is typed beats letting it travel and
+  // come back later as a stopped verification. This names what is certainly
+  // outside; the verifier stays the authority on everything else.
+  const FRAGMENT = new Set(["null", "boolean", "booleanlit"]);
+  function outsideFragment(type) {
+    if (undecoded(type)) return "";
+    if (!type || typeof type !== "object" || !Array.isArray(type.atoms))
+      return "";
+    if (type.top) return "any";
+    for (const atom of type.atoms) {
+      if (atom.a === "record") {
+        for (const field of atom.fields || []) {
+          const found =
+            outsideFragment(field.read) || outsideFragment(field.write);
+          if (found) return found;
+        }
+        continue;
+      }
+      if (atom.a === "function") {
+        for (const part of [...(atom.params || []), atom.result]) {
+          const found = outsideFragment(part);
+          if (found) return found;
+        }
+        continue;
+      }
+      if (!FRAGMENT.has(atom.a)) return atom.a;
+    }
+    return "";
+  }
+
+  // A claim value is a type, or for an environment a list of them.
+  function claimOutsideFragment(kind, value) {
+    if (kind === "expression") return outsideFragment(value);
+    for (const binding of value || []) {
+      const found = outsideFragment(binding && binding.type);
+      if (found) return found;
+    }
+    return "";
+  }
+
   function readClaimValue(kind, text, current) {
     if (kind === "expression") {
       if (String(text).trim() === UNAVAILABLE) {
@@ -345,6 +387,7 @@ function roundTrips(type) {
     roundTrips,
     printClaimValue,
     readClaimValue,
+    claimOutsideFragment,
     TypeSyntaxError,
   };
 })();

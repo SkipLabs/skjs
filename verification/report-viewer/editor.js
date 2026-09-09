@@ -3,8 +3,8 @@
  *
  * Provides `candidateState`, `renderEditor`, `renderMissingEditor`,
  * `renderCandidateStatus`, `canReplaceCandidate` and `initializeCandidateEditor`
- * to viewer.js, and uses `state`, `el`, `load`, `select`, `renderShell` and
- * `renderCode` from it, plus the pure edits in candidate.js. A candidate is an
+ * to viewer.js, and uses `state`, `el`, `load`, `select`, `renderShell`,
+ * `renderCode` and `showFunctionWorkspace` from it, plus the pure edits in candidate.js. A candidate is an
  * untrusted input: editing never changes a source snapshot or establishes a
  * result, and every applied edit is checked before it is displayed as one.
  */
@@ -76,6 +76,15 @@ function applyOnEnter(field, apply) {
   });
 }
 
+// What the calculus can express. A claim outside it is not false, it is
+// uncheckable, and the reader should hear that where it is typed rather than
+// seconds later as a stopped verification in different words.
+const outsideFragmentMessage = (atom) =>
+  "'" +
+  atom +
+  "' is outside the checked fragment: types here are null, boolean, true, " +
+  "false, cells of those, and functions between them";
+
 function renderEditor(fn, item) {
   if (!candidateState.candidate || candidateState.running) return;
   let current, original;
@@ -117,10 +126,14 @@ function renderEditor(fn, item) {
   apply.textContent = "Apply candidate edit";
 
   // Parsed on every keystroke: an edit that does not read back cannot be applied.
-  const read = () =>
-    surface
+  const read = () => {
+    const value = surface
       ? surfaceTypes.readClaimValue(item.kind, field.value, current)
       : JSON.parse(field.value);
+    const outside = surfaceTypes.claimOutsideFragment(item.kind, value);
+    if (outside) throw new Error(outsideFragmentMessage(outside));
+    return value;
+  };
   const validate = () => {
     try {
       read();
@@ -307,7 +320,7 @@ function renderMissingEditor(fn, region) {
   }
   const note = document.createElement("p");
   note.textContent =
-    "These are source attachment sites, not necessarily required proof obligations. Supply a type or entry binding array; no type is inferred for you.";
+    "These are source attachment sites, not necessarily required proof obligations. Supply a type, or for an environment a type for every name in scope; no type is inferred for you.";
   box.append(note);
   const selectSite = document.createElement("select");
   selectSite.setAttribute("aria-label", "Missing claim site");
@@ -324,23 +337,100 @@ function renderMissingEditor(fn, region) {
   }
   const preview = document.createElement("pre");
   preview.className = "raw";
-  const textarea = document.createElement("textarea");
-  textarea.rows = 8;
-  textarea.setAttribute("aria-label", "New claim JSON");
-  const show = () => {
-    preview.textContent = source.slice(...sites[+selectSite.value].pos);
-    textarea.value = "";
-    textarea.placeholder =
-      sites[+selectSite.value].kind === "environment"
-        ? "Array of {name, type} bindings"
-        : "Type encoding in the candidate format";
-  };
-  selectSite.addEventListener("change", show);
-  show();
+  const hint = document.createElement("p");
+  hint.className = "note";
+  // The field is rebuilt for each site: a surface claim is one line, so it takes
+  // an input and plain Enter applies it, exactly as editing an existing claim
+  // does. Only the JSON fallback needs a textarea, where Enter is a newline and
+  // applying stays on the button.
+  const fieldBox = document.createElement("div");
+  let field = null;
+  // An environment is written against the names in scope at that statement,
+  // whose source annotations came with the site. Those annotations are the
+  // templates the surface reader needs, not a suggested answer: the type
+  // written here is the reader's, and the verifier still has to be shown it.
+  const surfaceMode = (site) =>
+    site.kind === "expression"
+      ? { surface: true, current: undefined }
+      : Array.isArray(site.bindings) && site.bindings.every((b) => b && b.type)
+        ? { surface: true, current: site.bindings }
+        : { surface: false };
   const apply = document.createElement("button");
   apply.textContent = "Add candidate claim";
   const error = document.createElement("div");
   error.setAttribute("role", "status");
+  // Parsed as it is typed, like editing an existing claim: an entry that cannot
+  // read back, or that the calculus cannot express, is refused here.
+  const read = () => {
+    const site = sites[+selectSite.value];
+    const mode = surfaceMode(site);
+    const value = mode.surface
+      ? surfaceTypes.readClaimValue(site.kind, field.value, mode.current)
+      : JSON.parse(field.value);
+    const outside = surfaceTypes.claimOutsideFragment(site.kind, value);
+    if (outside) throw new Error(outsideFragmentMessage(outside));
+    return value;
+  };
+  const validate = () => {
+    // An untouched field has nothing to say yet.
+    if (!field.value.trim()) {
+      error.textContent = "";
+      apply.disabled = false;
+      field.classList.remove("invalid");
+      return;
+    }
+    try {
+      read();
+      error.textContent = "";
+      apply.disabled = false;
+      field.classList.remove("invalid");
+    } catch (e) {
+      error.textContent = e.message;
+      apply.disabled = true;
+      field.classList.add("invalid");
+    }
+  };
+  const show = (focus) => {
+    const site = sites[+selectSite.value];
+    const mode = surfaceMode(site);
+    preview.textContent = source.slice(...site.pos);
+    field = document.createElement(mode.surface ? "input" : "textarea");
+    if (!mode.surface) field.rows = 8;
+    field.setAttribute(
+      "aria-label",
+      mode.surface ? "New claim" : "New claim JSON",
+    );
+    applyOnEnter(field, apply);
+    field.addEventListener("input", validate);
+    field.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        field.blur();
+      }
+    });
+    fieldBox.replaceChildren(field);
+    apply.disabled = false;
+    error.textContent = "";
+    if (site.kind === "environment") {
+      const names = (site.bindings || []).map((b) => b.name);
+      hint.textContent = !names.length
+        ? "Nothing is in scope here: an empty environment is written as an empty line."
+        : "In scope here: " +
+          names.join(", ") +
+          ". An environment claim binds every one of them.";
+    } else hint.textContent = "";
+    hint.hidden = !hint.textContent;
+    field.placeholder = mode.surface
+      ? site.kind === "environment"
+        ? (site.bindings || []).map((b) => b.name + ": type").join(", ")
+        : "A type, for example null or boolean"
+      : site.kind === "environment"
+        ? "Array of {name, type} bindings"
+        : "Type encoding in the candidate format";
+    if (focus) field.focus();
+  };
+  selectSite.addEventListener("change", () => show(true));
+  show(false);
   apply.addEventListener("click", async () => {
     try {
       if (candidateState.running)
@@ -350,19 +440,29 @@ function renderMissingEditor(fn, region) {
         candidateState.candidate,
         fn,
         site,
-        JSON.parse(textarea.value),
+        read(),
       );
       candidateState.revision++;
-      state.selected = { ...site };
+      // A repair usually needs more than one claim, and the workspace listing
+      // the rest is otherwise reachable only by pressing Escape. So stay on it
+      // while sites remain, and select the new claim only when it was the last.
+      const remaining = (fn.missingSites || []).length > 1;
+      state.selected = remaining ? null : { ...site };
+      if (remaining) state.selectedId = null;
       invalidateCandidate();
       await checkCandidate();
+      if (remaining) showFunctionWorkspace();
     } catch (e) {
       error.textContent = e.message;
     }
   });
-  applyOnEnter(textarea, apply);
-  box.append(selectSite, preview, textarea, apply, error);
+  box.append(selectSite, preview, hint, fieldBox, apply, error);
   el("detail").prepend(box);
+  // Focusing only works once the field is in the document, so it happens here
+  // rather than in show(). Asking about one place is a request to write there;
+  // the workspace listing every site is not, and taking the caret there would
+  // steal it on load.
+  if (region) field.focus();
 }
 
 function renderFunctionEditor(fn) {

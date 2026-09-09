@@ -33,13 +33,27 @@ function claimSlot(candidate, fn, item) {
     key: candidate.format === "skjs" ? "vars" : "bindings",
   };
 }
+// A claim is a type. Both encodings count: a normalized type is a list of graph
+// labels, where the empty list is the empty union, and a producer type is the
+// {top, atoms} form or the marker saying the producer could not decode one.
+// Anything else is not a claim about this site at all; the verifier would reject
+// it later, with a message about a place rather than about what was typed here.
+const claimedType = (t) =>
+  Array.isArray(t)
+    ? t.every((label) => Number.isInteger(label) && label >= 0)
+    : Boolean(t) &&
+      typeof t === "object" &&
+      (t.unsupported === true ||
+        (typeof t.top === "boolean" && Array.isArray(t.atoms)));
 function editClaim(candidate, fn, item, value) {
   const next = structuredClone(candidate);
   const slot = claimSlot(next, fn, item);
   if (
     item.kind === "environment" &&
     (!Array.isArray(value) ||
-      value.some((b) => !b || typeof b.name !== "string" || !("type" in b)))
+      value.some(
+        (b) => !b || typeof b.name !== "string" || !claimedType(b.type),
+      ))
   )
     throw new Error("An environment must be an array of {name, type} bindings");
   slot.object[slot.key] = value;
@@ -65,6 +79,8 @@ function addClaim(candidate, fn, site, value) {
     throw new Error("Adding claims requires an existing function candidate");
   const skjs = next.format === "skjs";
   if (site.kind === "expression") {
+    if (!claimedType(value))
+      throw new Error("An expression claim must be a type");
     const expressions = skjs ? target.exprs : target.expressions;
     if (expressions.some((e) => sameSpan(e.pos, site.pos)))
       throw new Error("An expression claim already exists here");
@@ -72,7 +88,9 @@ function addClaim(candidate, fn, site, value) {
   } else if (site.kind === "environment") {
     if (
       !Array.isArray(value) ||
-      value.some((b) => !b || typeof b.name !== "string" || !("type" in b))
+      value.some(
+        (b) => !b || typeof b.name !== "string" || !claimedType(b.type),
+      )
     )
       throw new Error(
         "An environment must be an array of {name, type} bindings",

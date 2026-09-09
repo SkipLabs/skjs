@@ -5,6 +5,9 @@
 const fs = require("fs"), path = require("path"), os = require("os"), crypto = require("crypto");
 const {spawnSync} = require("child_process");
 const ts = require("typescript");
+// The source annotation encoding has exactly one implementation; a second
+// would be a second opinion about what a source type means.
+const parseSource = require("./parse-source.js");
 const hash = data => crypto.createHash("sha256").update(data).digest("hex");
 const clone = x => JSON.parse(JSON.stringify(x));
 // Escapes what could end or break the comment; a quote cannot, and a string
@@ -418,18 +421,45 @@ function checkFresh(output) {
 
 // These are possible attachment sites, not obligations inferred by this reader.
 // The existing source adapter and verifier decide which claims are required.
+// An environment claim must bind every name in scope, so a reader authoring one
+// needs to know what those names are. Their source annotations come with them:
+// the surface reader cannot write a function or record type without a template,
+// since inventing the fields the surface does not name is what it refuses to do.
+// A type outside the source fragment translates to null, which the reader shows
+// as undecoded rather than guessing at.
+const namedBinding=(name,typeNode)=>{
+  let type=null;
+  try{type=typeNode?parseSource.typeOf(typeNode):null;}catch(e){type=null;}
+  return {name,type};
+};
+const identifiers=nodes=>(nodes||[]).filter(p=>ts.isIdentifier(p.name)).map(p=>[p.name.text,p.type]);
+const declaredBy=n=>ts.isVariableStatement(n)?identifiers(n.declarationList.declarations):[];
+
 function missingClaimSites(node, f) {
   const sites=[];
-  const walk=n=> {
+  const walk=(n,scope)=> {
     if(ts.isFunctionDeclaration(n)||ts.isTypeNode(n))return;
     const pos=[n.getStart(),n.end];
     if(ts.isStatement(n) && !ts.isBlock(n) && !f.entries.some(e=>e.pos[0]===pos[0]))
-      sites.push({kind:"environment",pos,syntax:ts.isVariableStatement(n)?"VariableStatement":ts.SyntaxKind[n.kind]});
+      sites.push({kind:"environment",pos,syntax:ts.isVariableStatement(n)?"VariableStatement":ts.SyntaxKind[n.kind],
+        bindings:scope.map(([name,typeNode])=>namedBinding(name,typeNode))});
     if(ts.isExpressionNode(n) && !f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1]))
       sites.push({kind:"expression",pos,syntax:ts.SyntaxKind[n.kind]});
-    ts.forEachChild(n,walk);
+    // A block is walked in order so that each statement sees only what precedes
+    // it; a lambda adds its own parameter for its body.
+    if(ts.isBlock(n)) {
+      let inner=scope;
+      for(const st of n.statements) { walk(st,inner); inner=inner.concat(declaredBy(st)); }
+      return;
+    }
+    if(ts.isArrowFunction(n)||ts.isFunctionExpression(n)) {
+      const inner=scope.concat(identifiers(n.parameters));
+      ts.forEachChild(n,c=>walk(c,inner));
+      return;
+    }
+    ts.forEachChild(n,c=>walk(c,scope));
   };
-  if(node.body) walk(node.body);
+  if(node.body) walk(node.body,identifiers(node.parameters));
   return sites.sort((a,b)=>a.pos[0]-b.pos[0]||a.pos[1]-b.pos[1]);
 }
 

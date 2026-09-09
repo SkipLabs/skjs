@@ -424,13 +424,31 @@ function select(id) {
       ? { kind: "expression", ...f.exprs[idx] }
       : id[0] === "g"
         ? { kind: "gap", ...f.gaps[idx] }
-        : { kind: "environment", ...f.entries[idx] };
+        : id[0] === "m"
+          ? { ...f.missingSites[idx], missing: true }
+          : { kind: "environment", ...f.entries[idx] };
   state.selected = item;
   el("inspector").scrollIntoView({ block: "nearest" });
   const src = state.report.source;
   let h = "";
   if (f.status === "not-established" && item.failure)
     h += failureHtml(f, item);
+  // A missing site is a place with no claim, so there is no record to show:
+  // the panel is the form for supplying one.
+  if (item.missing) {
+    h += '<div class="status-line"><b>No ' + esc(item.kind) + " claim here</b></div>";
+    h +=
+      '<pre class="raw">' + esc(src.slice(item.pos[0], item.pos[1])) + "</pre>";
+    h +=
+      '<div class="note">This is a source attachment site, not necessarily a ' +
+      "required proof obligation. Nothing here says a claim is wrong; there is none.</div>";
+    el("detail").innerHTML = h;
+    renderMissingEditor(f, item.pos);
+    document
+      .querySelectorAll(".lab")
+      .forEach((x) => x.classList.toggle("on", x.dataset.id === id));
+    return;
+  }
   if (item.kind === "gap") {
     h += '<div class="status-line"><b>' + esc(item.detail) + "</b></div>";
     h += idLine(item);

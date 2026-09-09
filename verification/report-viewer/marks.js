@@ -275,7 +275,19 @@ function sourceMarks(rep, f, options) {
     });
   });
 
+  // A gap and a missing site can be the same place: "the producer did not visit
+  // this statement" and "this statement has no environment claim" are one fact
+  // in two vocabularies. Draw it once, as the site, since that is the one that
+  // can be acted on, and keep the gap's wording on it.
+  const sameSpan = (a, b) => a[0] === b[0] && a[1] === b[1];
+  const gapAt = (site) =>
+    (f.gaps || []).find((g) => sameSpan(g.pos, site.pos)) || null;
+  const missingAt = (g) =>
+    (f.missingSites || []).some((site) => sameSpan(g.pos, site.pos));
+
   f.gaps.forEach((g, i) => {
+    if (missingAt(g) && (density === "all" || f.status === "not-established"))
+      return;
     // Always shown: an absent claim is the finding.
     const line = at(g.pos[0]);
     const failed = failedIn(g);
@@ -294,6 +306,29 @@ function sourceMarks(rep, f, options) {
       cls: "gap" + (failed ? " failed" : ""),
     });
   });
+
+  // A missing claim has no record, so nothing in the source view marked it and
+  // the only way to reach one was the panel with nothing selected. Every claim
+  // always draws them; Compact draws them only where verification is blocked,
+  // which is when an absent claim is the thing to act on.
+  if (density === "all" || f.status === "not-established")
+    (f.missingSites || []).forEach((site, i) => {
+      const gap = gapAt(site);
+      const line = at(site.pos[0]);
+      items.push({
+        kind: "missing",
+        line,
+        col: site.pos[0] - starts[line],
+        end:
+          (at(site.pos[1] - 1) === line
+            ? site.pos[1]
+            : lineEndAt(source, starts, line)) - starts[line],
+        label: "no " + site.kind + " claim" + (gap ? " · " + gapLabel(gap) : ""),
+        mark: gap && failedIn(gap) ? proofSymbol(gap.failureKind) : "",
+        id: "m" + i,
+        cls: "gap missing" + (gap && failedIn(gap) ? " failed" : ""),
+      });
+    });
 
   if (producerErrors)
     producerMarks(rep).forEach((mark, i) => {
