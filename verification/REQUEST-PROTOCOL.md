@@ -79,9 +79,11 @@ Each type-graph node is a union of clauses:
 
 The arrow example contains two domain/result pairs. References and arrow
 operands may point back to the same finite graph, representing guarded regular
-recursion. The request already contains normalized clauses; a source type
-extractor must use the proved normalization interface when translating positive
-formulas. No string, number, generic or unsupported-type
+recursion. The request already contains normalized clauses: this grammar has no conjunction
+above the clause level, so nothing here needs normalizing. A producer that does
+hold positive formulas has a
+[proved normalization interface](POSITIVE-TYPES.md#recursive-normalization) to
+translate them; no current extractor uses it. No string, number, generic or unsupported-type
 fallback is supplied by this protocol.
 
 ## Terms, targets and evidence
@@ -103,13 +105,40 @@ This applies slot zero to null. A mapped bind continuation is:
 Its map acts after pushing the result: target slot zero receives source slot
 zero, and target slot one receives source slot two. `"mapping":null` means
 identity selection. Missing `mapping` is rejected; the protocol does not silently
-supply a default. The expression and continuation constructors are defined in
-`Language.lean` and `ControlFlow.lean`; their codecs live in
+supply a default.
+
+The encoding follows mechanically from the
+[term grammar](SEMANTICS.md#operational-language) and the
+[continuations](PROGRAM-TYPING.md#checked-control-flow-graphs). In full, writing
+`t` for a nested term and `T` for a target object:
+
+| Term | JSON | Continuation | JSON |
+| --- | --- | --- | --- |
+| slot $i$ | `{"var":{"i":0}}` | `ret` | `"ret"` |
+| $\lambda t$ | `{"lam":{"b":t}}` | `bind` | `{"bind":{"next":T}}` |
+| $t\,t$ | `{"app":{"f":t,"a":t}}` | `effect` | `{"effect":{"next":T}}` |
+| null, true, false | `"nul"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
+| location $\ell$ | `{"loc":{"l":0}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
+| $\mathsf{alloc}(t)$ | `{"alloc":{"a":t}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
+| $\mathsf{read}(t)$ | `{"read":{"a":t}}` | | |
+| $\mathsf{write}(t,t)$ | `{"write":{"a":t,"b":t}}` | | |
+| $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
+| $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
+
+Shape tests are `isNul`, `isBool`, `isRef` and `isFun`. A location never appears
+in a supplied program: it arises only during execution. These are Lean's derived
+codecs, so the field names are the constructor's own; they live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
 The evidence file is an object with `version: 5` and `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
-one subtype-evidence list per outgoing edge. Expression sequents repeat their
+one subtype-evidence list per outgoing edge. A derivation node names the
+[typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
+`var`, `nul`, `tru`, `fls`, `truLit`, `flsLit`, `lam`, `app`, `letE`, `alloc`,
+`read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
+`unionVar` or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
+shape-test rule `ifTag`, split so that the evidence records which answer it
+relies on; `truLit` and `flsLit` are the Boolean singleton introductions. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 

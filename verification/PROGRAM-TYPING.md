@@ -4,9 +4,10 @@
 syntactic program-typing rules for the stateful language. Its fundamental theorem
 connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
-The ordinary and graph rules below are used by the current verifier. The
-[current-content rules](#current-content-rules-semantic-layer) are separately
-proved expression/graph rules awaiting source-assertion integration. This document owns
+The ordinary and graph rules below are used by the current verifier, as are the
+[current-content rules](#current-content-rules-semantic-layer): supplied source
+observations reach checked obligations, specified under
+[source observation checkpoints](#source-observation-checkpoints). This document owns
 rule statements, side conditions, soundness scope and evidence construction;
 [Design](DESIGN.md) owns the integration roadmap.
 
@@ -331,15 +332,23 @@ The graph checker below discharges that enumeration obligation.
 ## Checked control-flow graphs
 
 `ControlFlow.lean` adds a finite control-flow graph over the existing expression
-language. Each node contains an expression and one continuation:
+language. A program is a finite list of nodes indexed by label; each node is one
+[term](SEMANTICS.md#operational-language) and one of these six continuations:
 
 | Continuation | Action after evaluating the expression |
 | --- | --- |
-| Return | Return its value as the graph's declared result type. |
-| Bind to a target | Push the value, apply the target slot map, and enter its label. |
-| Effect, then a target | Discard the value, apply the target slot map, and enter its label. |
-| Boolean branch | Select a target according to the Boolean value and apply its slot map. |
-| Result-binding Boolean branch | Select a target, push the tested Boolean, and apply its slot map with a singleton refinement. |
+| `ret` | Return its value as the graph's declared result type. |
+| `bind` to a target | Push the value, apply the target slot map, and enter its label. |
+| `effect`, then a target | Discard the value, apply the target slot map, and enter its label. |
+| `branch` | Select a target according to the Boolean value and apply its slot map. |
+| `branchBind` | Select a target, push the tested Boolean, and apply its slot map with a singleton refinement. |
+| `tagBind` | Test the returned value's shape, select a target, push that value, and apply its slot map with the refinement the answer justifies. |
+
+Conditionals therefore exist at two levels: `if` inside a single node's term, and
+these branch continuations between nodes. Source lowering uses the continuations
+for statement control flow and the term form inside closure bodies and direct
+proofs. It emits every continuation except plain `branch`, which remains
+available to graphs written against the protocol directly.
 
 A target contains its label and an optional slot map. These are executable
 program data, shared by the machine and checker; evidence cannot supply a
@@ -379,6 +388,12 @@ $$
 \operatorname{SafeGraph}_P(\llbracket R\rrbracket_G,n,W,h,\operatorname{at}(\ell,\rho)).
 \end{gathered}
 $$
+
+[`SafeGraph` and the machine state $\operatorname{at}(\ell,\rho)$](SEMANTICS.md#computations-and-recursive-types)
+are the graph-level analogues of `Safe`: the run starts at the entry label with
+the input environment, and stays safe through every transition.
+$\operatorname{EnvOk}_G(\Gamma,\rho,n,W)$ is the environment satisfaction written
+$\rho\models_{n,W}\Gamma$ above.
 
 The arguments, world, heap and budget are arbitrary subject to these premises.
 `checkClosed` is exactly `checkEntry` with an empty input context;

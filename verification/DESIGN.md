@@ -242,7 +242,9 @@ refinement cannot justify a write that violates another alias's storage contract
 ### Control flow and binding transfer
 
 The graph machine evaluates an expression at each node, then returns, binds its
-value, discards it, or branches on a boolean. A destination carries a label and
+value, discards it, or branches. Three of the [six continuations](PROGRAM-TYPING.md#checked-control-flow-graphs)
+branch: on a Boolean, on a Boolean it also binds, or on a shape test of the
+returned value. The two binding forms are where refinement enters. A destination carries a label and
 an optional explicit slot map. Maps select source bindings simultaneously: they
 can reorder, drop bindings or retain aliases. They are executable program data,
 not certificate hints. Each selected binding must have a checked subtype
@@ -400,8 +402,8 @@ an explicit return, and unsupported types. This is a coverage gate for this slic
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, boolean, their singleton types, unions and bottom exactly into three
 primitive labels: null, true and false. Eight further labels represent invariant
-references to the subsets of these values; eight function labels represent
-null-argument arrows returning those subsets. Lean proves the translation preserves primitive
+references to the subsets of these values, and sixty-four represent the unary
+arrows between them. Lean proves the translation preserves primitive
 membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
 

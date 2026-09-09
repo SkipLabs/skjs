@@ -8,10 +8,31 @@ language remains an integration obligation.
 
 ## Operational language
 
-`Language.lean` defines an untyped call-by-value language with functions,
-application, null/booleans, heap locations, allocation, reading, writing, shape
-tests, and conditionals. Values are a subset of terms. `Step_det` proves that a
-term and heap have at most one successor.
+`Language.lean` defines an untyped call-by-value language with a mutable heap.
+This is the whole term syntax:
+
+$$t ::= x_i\mid\lambda t\mid t\,t\mid\mathsf{null}\mid\mathsf{true}\mid\mathsf{false}
+\mid\ell\mid\mathsf{alloc}(t)\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
+\mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.$$
+
+Here $x_i$ is a de Bruijn slot, $\ell$ a heap location, and $k$ a shape test
+drawn from $\{\mathsf{isNul},\mathsf{isBool},\mathsf{isRef},\mathsf{isFun}\}$,
+one per type constructor, which is what a source `typeof` amounts to. Values are
+the subset
+
+$$v ::= \lambda t\mid\mathsf{null}\mid\mathsf{true}\mid\mathsf{false}\mid\ell,$$
+
+and `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
+about the same objects. There is no `let` constructor: `HasTy.letE` types the
+pattern $(\lambda t)\,t$. `Step_det` proves that a term and heap have at most
+one successor.
+
+Two of these forms are deliberately outside the typing judgment. A location
+arises only at run time and takes its contract from the world, never from a
+typing rule. A shape test is typed only in the guard of a conditional, by
+`ifTag`; it has no standalone rule. Of the four tags, only $\mathsf{isNul}$ is
+reachable from the current source fragment, through null comparisons; the others
+keep the test total on values, which the shape lemmas rely on.
 
 Substitution operates on closed substituted values. `Bindings.lean` supplies
 scope and simultaneous closing substitution, including its beta law. The program
@@ -54,6 +75,22 @@ observational equivalence is assumed.
 value belonging to `A`, or it can step with one budget spent, preserving heap
 satisfaction in an admissible extension of the truncated world. This is partial
 correctness/safety, not termination.
+
+`SafeGraph` is the same predicate one level up, for the machine that runs a
+control-flow graph rather than a single term. Its states are
+
+$$s ::= \mathsf{at}(\ell,\rho)\mid\mathsf{eval}(t,\rho,k)\mid\mathsf{done}(v),$$
+
+where $\ell$ is a node label, $\rho$ an environment of closed values, and $k$ a
+[continuation](PROGRAM-TYPING.md#checked-control-flow-graphs). Entering a node
+instantiates its term against $\rho$; the term then steps as usual; a value meets
+the node's continuation, which either finishes the run or moves to the next label
+with a transformed environment. `SafeGraph P T n W h s` says that at a positive
+budget the state is either $\mathsf{done}(v)$ with $v\in T$, or it can take one
+graph transition, spending a budget and preserving heap satisfaction in an
+admissible future, and remain safe there. `Safe` is the special case with no
+graph. Starting a graph means starting at $\mathsf{at}(\ell,\rho)$ for the entry
+label and the input environment.
 
 An arrow contains **closed lambdas** whose substituted bodies are safe at every
 smaller budget, every admissible future world, every satisfying heap, and every

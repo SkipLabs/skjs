@@ -9,77 +9,116 @@ rules. A first closed null/boolean source slice is connected to this consumer. I
 
 ## Representation and mathematical rules
 
-A label names a whole type. A graph body is a finite positive formula:
+A label names a whole type, never a fragment of one. Operands appearing inside a
+body are themselves types, so the syntax has two levels. A **type** is a union of
+graph labels:
 
-$$
-P ::= \bot\mid c\mid P\lor P\mid P\land P.
-$$
+$$A ::= \bot\mid i\mid A\lor A.$$
 
-A clause is an atom, a reference conjunction, or an arrow intersection:
-
-$$
-c ::= \mathsf{null}\mid\mathsf{bool}\mid\mathsf{boolLit}(b)\mid
-       \mathsf{refs}(A;B_1,\ldots,B_k)\mid
-       \mathsf{arrs}((C_1,D_1),\ldots,(C_m,D_m)).
-$$
-
-Here $b$ is true or false. A singleton denotes exactly that boolean value at
-every budget. Its additional atomic rules are
-
-$$
-\mathsf{boolLit}(b)\leq\mathsf{bool},\qquad
-\mathsf{boolLit}(b)\land\mathsf{bool}=\mathsf{boolLit}(b),\qquad
-\mathsf{boolLit}(\mathsf{true})\land\mathsf{boolLit}(\mathsf{false})=\bot.
-$$
-
-Each operand $A,B_i,C_i,D_i$ is a finite union-list of graph labels. The
-reference list is nonempty because $A$ is explicit. It means:
-
-$$
-\llbracket\mathsf{refs}(A;B_1,\ldots,B_k)\rrbracket
-=\llbracket\mathsf{ref}(A)\rrbracket\cap
- \bigcap_i\llbracket\mathsf{ref}(B_i)\rrbracket.
-$$
-
-All conjuncts constrain the **same location and its one stored invariant**.
-They are not multiple separately allocated cells, and they are not replaced
-by a single invariant over the intersection of their operands. A plain
-reference is `refs A []`. Function clauses retain the existing intersection
-of arrows, including the empty overload list, which denotes closed lambdas without call obligations.
-
-Normalization returns a finite union-list of clauses:
+A **clause** constrains one value shape. A value is null, a boolean, a location
+or a closed lambda, and each clause pins exactly one of those:
 
 $$
 \begin{aligned}
-N(\bot)&=[],&N(c)&=[c],\\
-N(P\lor Q)&=N(P)+N(Q),\\
-N(P\land Q)&=\mathop{\mathrm{concat}}_{c\in N(P),d\in N(Q)}\mathrm{meet}(c,d).
+c &::= \mathsf{null}\mid\mathsf{bool}\mid\mathsf{true}\mid\mathsf{false}\mid r\mid f,\\
+r &::= \mathsf{Ref}\,A\mid r\land\mathsf{Ref}\,A,\\
+f &::= \mathsf{fun}\mid f\land(A\to A).
 \end{aligned}
 $$
 
-`meet` discards different outer shapes, preserves identical atoms, and uses:
+| Clause | Denotes |
+| --- | --- |
+| $\mathsf{null}$ | the value null |
+| $\mathsf{bool}$ | true or false |
+| $\mathsf{true}$, $\mathsf{false}$ | exactly that value, at every budget |
+| $\mathsf{Ref}\,A$ | a location whose stored invariant agrees with $A$ |
+| $r\land\mathsf{Ref}\,A$ | the same location, also agreeing with $A$ |
+| $\mathsf{fun}$ | a closed lambda, carrying no call obligation |
+| $f\land(A\to B)$ | also: applied to any argument in $A$, it is safe at $B$ |
+
+$\mathsf{fun}$ is the empty arrow intersection. It is a terminal because an
+intersection of zero arrows cannot be derived from a rule producing arrows, and
+it is a real type: every closed lambda inhabits it. A single arrow $A\to B$
+abbreviates $\mathsf{fun}\land(A\to B)$, since arrow membership already requires
+a closed lambda.
+
+References are asymmetric to arrows here: $r$ always carries a first operand, so
+there is no bare "any location" clause. A cell's operand is the invariant that
+makes it readable and writable at all; the nearest expressible thing is
+$\mathsf{Ref}\,\bot$, which is a constraint rather than an absence.
+
+Every conjunct of an $r$ constrains the **same location and its one stored
+invariant**. They are not several separately allocated cells, and they are not
+replaced by a single invariant over the intersection of their operands. A plain
+reference is a single $\mathsf{Ref}\,A$.
+
+The two Boolean singletons relate to $\mathsf{bool}$ by
+
+$$
+\mathsf{true},\mathsf{false}\leq\mathsf{bool},\qquad
+\mathsf{true}\land\mathsf{bool}=\mathsf{true},\qquad
+\mathsf{true}\land\mathsf{false}=\bot,
+$$
+
+and symmetrically for $\mathsf{false}$.
+
+A graph body is a finite positive formula over clauses:
+
+$$P ::= \bot\mid c\mid P\lor P\mid P\land P.$$
+
+In the Lean development and the [request encoding](REQUEST-PROTOCOL.md#request-fields)
+these clauses are `nul`, `bool`, `boolLit`, `refs` and `arrs`, where a reference
+conjunction is a first operand plus the rest, and an arrow intersection is a
+possibly-empty list of domain/result pairs.
+
+A **normal body** is a union of clauses, with no conjunction above the clause
+level:
+
+$$N ::= \bot\mid c\mid N\lor N.$$
+
+Normalization rewrites a body into that form. It is disjunctive normal form,
+pushing $\land$ down through $\lor$ until every conjunction joins two clauses:
 
 $$
 \begin{aligned}
-\mathrm{meet}(\mathsf{refs}(A;\vec B),\mathsf{refs}(C;\vec D))
-  &=[\mathsf{refs}(A;\vec B+C+\vec D)],\\
-\mathrm{meet}(\mathsf{arrs}(L),\mathsf{arrs}(M))
-  &=[\mathsf{arrs}(L+M)].
+\operatorname{nf}(\bot)&=\bot,&\operatorname{nf}(c)&=c,\\
+\operatorname{nf}(P\lor Q)&=\operatorname{nf}(P)\lor\operatorname{nf}(Q),\\
+\operatorname{nf}(P\land Q)&=\textstyle\bigvee\{\,c\land d\;\mid\;
+   c\ \text{a clause of}\ \operatorname{nf}(P),\
+   d\ \text{a clause of}\ \operatorname{nf}(Q)\,\}.
 \end{aligned}
 $$
 
-Here $+$ denotes list concatenation, with $C$ inserted as one operand.
-Nothing is distributed through a reference operand or an arrow result.
+So the whole procedure reduces to one question: what is the conjunction of two
+clauses? That turns on shapes.
+
+Clauses of **different shapes** meet as $\bot$. A value is null or a boolean or a
+location or a lambda, never two, so nothing satisfies both.
+
+Clauses of the **same structured shape** need no computation: by the grammar
+above, $r\land r'$ is again a reference conjunction and $f\land f'$ again an
+arrow intersection. The operator is the answer, and the two merge lemmas say
+exactly that their meaning is the intersection.
+
+The **primitives** follow their small lattice: $c\land c=c$,
+$\mathsf{bool}\land\mathsf{true}=\mathsf{true}$,
+$\mathsf{bool}\land\mathsf{false}=\mathsf{false}$, and
+$\mathsf{true}\land\mathsf{false}=\bot$.
+
+Nothing is distributed through a reference operand or an arrow result. By the
+grammar this is structural rather than a choice: an operand is a type, already
+normal, so there is no formula down there to normalize. That is also why
+guardedness survives untouched.
 
 For example:
 
 $$
-\mathsf{ref}(A)\land(\mathsf{ref}(B)\lor\mathsf{null})
-\quad\longmapsto\quad[\mathsf{refs}(A;B)].
+\mathsf{Ref}\,A\land(\mathsf{Ref}\,B\lor\mathsf{null})
+\quad\longmapsto\quad\mathsf{Ref}\,A\land\mathsf{Ref}\,B.
 $$
 
 The normalizer retains incompatible reference constraints. In this indexed
-model, `refs null [bool]` has a zero-budget witness but has no members at any
+model, $\mathsf{Ref}\,\mathsf{null}\land\mathsf{Ref}\,\mathsf{bool}$ has a zero-budget witness but has no members at any
 positive budget. A nested analogue has a witness at budget one in a satisfying
 cyclic heap. These are checked examples, so replacing all such clauses by
 bottom would be an incorrect normalization.
@@ -124,8 +163,8 @@ x:\{\mathsf{value}:B=R\}
 x:\mathsf{ref}(B)\ \land\ \operatorname{cell}(x,R).
 $$
 
-Here $\mathsf{ref}(B)$ abbreviates the ordinary clause
-$\mathsf{refs}(B;)$, with no additional reference conjuncts. In displayed source
+Here $\mathsf{ref}(B)$ abbreviates the ordinary clause $\mathsf{Ref}\,B$, with no
+additional reference conjuncts. In displayed source
 claims, the right side of `=` uses type-like spelling for the finite predicate:
 `true` denotes $\{\mathsf{true}\}$ and `boolean` denotes
 $\{\mathsf{true},\mathsf{false}\}$. Thus `{ value: boolean = true }` combines
@@ -146,17 +185,17 @@ result in place of $x$.
 heap observations and their relationship to the world and satisfying heap.
 [Program typing](PROGRAM-TYPING.md#checked-expression-postconditions) owns the
 checked rules and fact transfer. [Source claims](SOURCE-CLAIMS.md#current-content-assertions)
-owns the wire encoding and its restrictions. Expression and graph checking are proved;
-source-observation consumption remains integration work. The producer already
-generates checked heap facts from supported operations.
+owns the wire encoding and its restrictions. Expression checking, graph-edge
+entailment and source consumption of supplied observations are all implemented;
+the producer generates checked heap facts from supported operations.
 
 ## Recursive normalization
 
-A source graph maps each label to a formula; its normal form maps the same
-label to a union-list of clauses:
+A source graph maps each label to a formula $P$; its normal form maps the same
+label to a normal body $N$, one label at a time:
 
 $$
-N(G)(i)=N(G(i)).
+\operatorname{nf}(G)(i)=\operatorname{nf}(G(i)).
 $$
 
 References to other labels occur only inside reference or arrow operands.
@@ -171,13 +210,22 @@ world and value. Consequently, `normalized_layer` proves equality of the whole
 guarded operators. `normalize_recursive` then establishes:
 
 $$
-\llbracket N(G)\rrbracket=\llbracket G\rrbracket.
+\llbracket \operatorname{nf}(G)\rrbracket=\llbracket G\rrbracket.
 $$
 
 This is a general theorem for the explicit graph syntax, not just an example
 or an unrolling to a fixed depth. Arbitrarily nested positive types can be
-presented by naming their guarded operands in the graph. A verified compiler
-from textual type syntax to that graph has not been implemented here.
+presented by naming their guarded operands in the graph.
+
+Nothing in the current pipeline invokes the normalizer. Requests carry normal
+bodies, and the [request grammar](REQUEST-PROTOCOL.md#request-fields) has no
+conjunction above the clause level, so every graph reaching the consumer is
+normal by construction. What is proved here is the interface a producer would
+need if it did hold formula bodies: `checkSource` normalizes and checks, and
+`accepted_source` transports the conclusion back to the original graph's
+denotation, so a checked inclusion never has to be re-justified against the
+unnormalized form. A verified compiler from textual type syntax to a graph, which
+is what would first need that interface, has not been implemented here.
 
 ## Reference rules and usability
 
@@ -185,9 +233,9 @@ For a table of recursive obligations $\Delta$, the new reference-clause
 coverage rule is:
 
 $$
-\frac{\forall B\in(C;\vec D).\;\exists A'\in(A;\vec B).\;
-          \Delta(A',B)\land\Delta(B,A')}
- {\Delta\vdash\mathsf{refs}(A;\vec B)\le\mathsf{refs}(C;\vec D)}.
+\frac{\forall j.\;\exists i.\;\Delta(A_i,C_j)\land\Delta(C_j,A_i)}
+ {\Delta\vdash\textstyle\bigwedge_i\mathsf{Ref}\,A_i
+   \le\bigwedge_j\mathsf{Ref}\,C_j}.
 $$
 
 It justifies every target constraint by an equivalent source constraint. It
@@ -219,9 +267,9 @@ recursive subtype obligations. The judgment $\Delta;L\vdash C\Rightarrow D$
 (`PositiveRules.Arrow`) derives an arrow from a source overload $L$:
 
 $$
-\frac{}{\Delta;L\vdash\varnothing\Rightarrow D}
+\frac{}{\Delta;L\vdash\bot\Rightarrow D}
 \qquad
-\frac{(A,B)\in L\quad\Delta(C,A)\quad(B=\varnothing\lor\Delta(B,D))}
+\frac{(A,B)\in L\quad\Delta(C,A)\quad(B=\bot\lor\Delta(B,D))}
      {\Delta;L\vdash C\Rightarrow D}.
 $$
 
@@ -229,7 +277,7 @@ Union-domain composition and guarded result combination are:
 
 $$
 \frac{\Delta;L\vdash C\Rightarrow D\quad\Delta;L\vdash C'\Rightarrow D}
-     {\Delta;L\vdash C+C'\Rightarrow D}
+     {\Delta;L\vdash C\lor C'\Rightarrow D}
 $$
 
 $$

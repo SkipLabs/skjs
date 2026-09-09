@@ -9,6 +9,13 @@ There is one maintained calculus and verifier. Its implementation lives in
 `lean/Verification/ExperimentState/` (the directory name is historical).
 [DESIGN.md](DESIGN.md) describes the architecture and trust boundary.
 
+The base language everything else is defined over is small, and stated in two
+places. [Terms and values](SEMANTICS.md#operational-language) are the programs
+the indexed model interprets directly; [formulas and clauses](POSITIVE-TYPES.md#representation-and-mathematical-rules)
+are the types a graph label can name. [Control-flow graphs](PROGRAM-TYPING.md#checked-control-flow-graphs)
+and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
+those two rather than alternatives to them.
+
 ## Run
 
 Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), and Docker
@@ -161,9 +168,9 @@ owner; other documents link to them and give only the context their readers need
 | --- | --- |
 | This README | Commands, a concise supported-fragment overview, and navigation. |
 | [DESIGN](DESIGN.md) | Architecture, trust boundary, decisions, corpus-led priorities and integration status. |
-| [SEMANTICS](SEMANTICS.md) | Values, execution, worlds, heap satisfaction, membership and safety predicates. |
+| [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](POSITIVE-TYPES.md) | Type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
-| [PROGRAM-TYPING](PROGRAM-TYPING.md) | Program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. Semantic rules awaiting integration are marked separately. |
+| [PROGRAM-TYPING](PROGRAM-TYPING.md) | The graph program syntax, program/graph rules and their mathematics, side conditions, soundness, derived forms and evidence construction. Semantic rules awaiting integration are marked separately. |
 | [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Calculus request/evidence JSON, verifier CLI, and SKJS source AST/export encoding. |
 | [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | Implemented independent sidecar schemas, conversion, source identity and repair workflow. |
 | [CLAIM-INTERFACE](CLAIM-INTERFACE.md) | Explicitly unimplemented arbitrary-graph and comment-input proposals; links to implemented subsets. |
@@ -191,8 +198,9 @@ resulting requests and evidence.
 calculus-label claims. Conversion records unsupported candidates and provenance;
 it does not itself establish verification. Version-2 sidecars also preserve
 current-content assertions such as `{ value: boolean = (true) }`, separately from
-the storage invariant. They can be exported and displayed; required observations
-remain gated until graph certificates carry heap facts. See
+the storage invariant. Supplied observations are checked obligations: every
+incoming edge, including loop backedges, must establish the assertions claimed at
+a statement entry. See
 [Current-content assertions](DESIGN.md#current-content-assertions).
 
 ## Primitive callbacks and a producer counterexample
