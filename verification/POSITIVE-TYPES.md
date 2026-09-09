@@ -5,7 +5,7 @@ subtype rules. [State assertions](#state-assertion-grammar) extend point claims;
 they are separate from ordinary types and their normalization. Lean
 proves positive normalization preserves recursive type semantics, the declarative
 rules are sound, and the certificate checker is sound and complete for those
-rules. A first closed null/boolean source slice is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
+rules. A first closed null/undefined/boolean source slice is connected to this consumer. Its foundation and integration boundary are in [SEMANTICS.md](SEMANTICS.md).
 
 ## Representation and mathematical rules
 
@@ -15,12 +15,12 @@ graph labels:
 
 $$A ::= \bot\mid i\mid A\lor A.$$
 
-A **clause** constrains one value shape. A value is null, a boolean, a location
+A **clause** constrains one value shape. A value is null, undefined, a boolean, a location
 or a closed lambda, and each clause pins exactly one of those:
 
 $$
 \begin{aligned}
-c &::= \mathsf{null}\mid\mathsf{bool}\mid\mathsf{true}\mid\mathsf{false}\mid r\mid f,\\
+c &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{bool}\mid\mathsf{true}\mid\mathsf{false}\mid r\mid f,\\
 r &::= \mathsf{Ref}\,A\mid r\land\mathsf{Ref}\,A,\\
 f &::= \mathsf{fun}\mid f\land(A\to A).
 \end{aligned}
@@ -29,6 +29,7 @@ $$
 | Clause | Denotes |
 | --- | --- |
 | $\mathsf{null}$ | the value null |
+| $\mathsf{undefined}$ | exactly undefined, at every budget; disjoint from null |
 | $\mathsf{bool}$ | true or false |
 | $\mathsf{true}$, $\mathsf{false}$ | exactly that value, at every budget |
 | $\mathsf{Ref}\,A$ | a location whose stored invariant agrees with $A$ |
@@ -67,7 +68,7 @@ A graph body is a finite positive formula over clauses:
 $$P ::= \bot\mid c\mid P\lor P\mid P\land P.$$
 
 In the Lean development and the [request encoding](REQUEST-PROTOCOL.md#request-fields)
-these clauses are `nul`, `bool`, `boolLit`, `refs` and `arrs`, where a reference
+these clauses are `nul`, `undef`, `bool`, `boolLit`, `refs` and `arrs`, where a reference
 conjunction is a first operand plus the rest, and an arrow intersection is a
 possibly-empty list of domain/result pairs.
 
@@ -92,7 +93,7 @@ $$
 So the whole procedure reduces to one question: what is the conjunction of two
 clauses? That turns on shapes.
 
-Clauses of **different shapes** meet as $\bot$. A value is null or a boolean or a
+Clauses of **different shapes** meet as $\bot$. A value is null, undefined, a boolean, a
 location or a lambda, never two, so nothing satisfies both.
 
 Clauses of the **same structured shape** need no computation: by the grammar
@@ -132,7 +133,7 @@ slots, $A$ and $B$ be ordinary types, and $R$ be a finite set of constants:
 
 $$
 \begin{aligned}
-a &::= \mathsf{null}\mid\mathsf{true}\mid\mathsf{false},\\
+a &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false},\\
 R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
 J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
 \end{aligned}
@@ -376,7 +377,7 @@ The representational blocker for positive intersections of references is
 removed. This graph syntax can retain general finite positive formulas at
 program-type nodes and under guarded recursive reference/arrow operands. The
 extension does not add negation, difference, polymorphism, primitive types other
-than null/boolean, object records, or a surface `extends` language.
+than null/undefined/boolean, object records, or a surface `extends` language.
 
 The program-typing theorem now incorporates these certificates, including an
 overload domain-splitting example. Executable program evidence checking and

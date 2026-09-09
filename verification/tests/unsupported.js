@@ -9,9 +9,9 @@ const verifier = process.argv[2];
 const dir = "verification/tests/unsupported";
 const cases = {
   "calls_and_consts.ts":
-    "source type outside the null/boolean/singleton source slice",
+    "source type outside the null/undefined/boolean/singleton source slice",
   "typeof_narrow.ts": "expression outside the stateful source slice",
-  "beyond_precision.ts": "equality requires a null literal operand",
+  "beyond_precision.ts": "equality requires a null or undefined literal operand",
   "mutable_binding.ts": "only `const` bindings",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));

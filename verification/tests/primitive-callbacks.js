@@ -74,7 +74,7 @@ try {
   );
   assert.equal(exported.status, 0, exported.stderr);
   const normalized = JSON.parse(exported.stdout).claims;
-  assert.equal(normalized.profile, "stateful-source-75-v2");
+  assert.equal(normalized.profile, "stateful-source-276-v2");
   expect(
     "normalized primitive domains round-trip",
     run("--produce-source-claims", ast, normalized),

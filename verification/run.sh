@@ -112,6 +112,13 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   fi
   run_test "Mutable cells" node verification/tests/stateful-cells.js "$WORK/cells.ast" "$WORK/cells.claims" \
        "$CELL_SOURCE" "$VERIFIER"
+  UNDEFINED_SOURCE="verification/tests/stateful-source/undefined.ts"
+  if ! { node verification/tools/parse-source.js "$UNDEFINED_SOURCE" > "$WORK/undefined.ast" &&
+         skjs_check "$UNDEFINED_SOURCE" > "$WORK/undefined.claims"; } 2> "$WORK/undefined.setup.err"; then
+    echo "FAIL: undefined source test setup"; cat "$WORK/undefined.setup.err"; exit 1
+  fi
+  if ! run_test "Undefined values and contracts" node verification/tests/undefined.js "$WORK/undefined.ast" "$WORK/undefined.claims" \
+       "$UNDEFINED_SOURCE" "$VERIFIER"; then exit 1; fi
   CLOSURES="verification/tests/stateful-source/closures.ts"
   if ! { node verification/tools/parse-source.js "$CLOSURES" > "$WORK/closures.ast" &&
          skjs_check "$CLOSURES" > "$WORK/closures.claims"; } 2> "$WORK/closures.setup.err"; then

@@ -289,6 +289,7 @@ theorem pure_frame {T Q} : ∀ {n W h t}, Safe T n W h t → pureTerm t = true �
 def pureOutput (k : Knowledge) : Tm → Knowledge
   | .var i => copy k i
   | .nul => withResult (HeapKnowledge.shift k) [.nul]
+  | .undef => withResult (HeapKnowledge.shift k) [.undef]
   | .tru => withResult (HeapKnowledge.shift k) [.tru]
   | .fls => withResult (HeapKnowledge.shift k) [.fls]
   | _ => HeapKnowledge.shift k
@@ -313,6 +314,7 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
   all_goals first
     | exact pure_frame hs hpClosed (fun _ => HeapKnowledge.shift_holds hk)
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.nul,by simp,rfl⟩) hs
+    | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.undef,by simp,rfl⟩) hs
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.tru,by simp,rfl⟩) hs
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.fls,by simp,rfl⟩) hs
     | exact refine_value rfl (HeapKnowledge.shift_holds hk) hs

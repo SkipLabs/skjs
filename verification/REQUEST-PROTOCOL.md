@@ -117,7 +117,7 @@ The encoding follows mechanically from the
 | slot $i$ | `{"var":{"i":0}}` | `ret` | `"ret"` |
 | $\lambda t$ | `{"lam":{"b":t}}` | `bind` | `{"bind":{"next":T}}` |
 | $t\,t$ | `{"app":{"f":t,"a":t}}` | `effect` | `{"effect":{"next":T}}` |
-| null, true, false | `"nul"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
+| null, undefined, true, false | `"nul"`, `"undef"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
 | location $\ell$ | `{"loc":{"l":0}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
 | $\mathsf{alloc}(t)$ | `{"alloc":{"a":t}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
 | $\mathsf{read}(t)$ | `{"read":{"a":t}}` | | |
@@ -125,16 +125,17 @@ The encoding follows mechanically from the
 | $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
 | $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
 
-Shape tests are `isNul`, `isBool`, `isRef` and `isFun`. A location never appears
+Tests are `isNul`, `isUndef`, `isNullish`, `isBool`, `isRef` and `isFun`.
+`isNullish` accepts null and undefined; false takes its negative branch. A location never appears
 in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
-The evidence file is an object with `version: 5` and `certificate`, a list of
+The evidence file is an object with `version: 6` and `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
-`var`, `nul`, `tru`, `fls`, `truLit`, `flsLit`, `lam`, `app`, `letE`, `alloc`,
+`var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `lam`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar` or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
@@ -145,7 +146,7 @@ this redundancy cannot substitute a different program or different claims.
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
 `{slot, contents}` facts. `contents` is a list of literal constructors `nul`,
-`tru`, or `fls`. `links` is a list of `{cell, value, alias}` objects: `alias: true` means equal
+`undef`, `tru`, or `fls`. `links` is a list of `{cell, value, alias}` objects: `alias: true` means equal
 slot values; `alias: false` means the cell currently contains the value in the
 other slot. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
@@ -176,7 +177,8 @@ the arms use precisely the root context with that slot replaced. All payload
 labels are bounds checked. The rule cannot narrow any other binding.
 
 Request version 2 requires explicit `inputs`. Raw requests use version 2;
-responses use version 5 for checked heap postconditions, including ordinary-read
+responses use version 6, which adds undefined literal evidence and undefined/nullish
+tests to checked heap postconditions, including ordinary-read
 links and writes without an old-content premise. Earlier responses
 are rejected. Source bundles use version 3 to include supplemental expression proofs;
 older source bundles are rejected.
@@ -208,9 +210,9 @@ required data. They also check that object field order does not matter.
 ## Source mode
 
 The adapter accepts primitive parameters, initialized `const` declarations,
-nested boolean branches and returns, using variable expressions and null/boolean
+nested boolean branches and returns, using variable expressions and null/undefined/boolean
 literals. Every path must return. Types
-may be null, boolean, true, false, unions of these, or bottom. Source parameters
+may be null, undefined, boolean, true, false, unions of these, or bottom. Source parameters
 remain primitive. Local annotations and function results can additionally union
 the cell and function contracts described below. Every union arm is decoded
 strictly. A redundant record arm may be absorbed into an existing invariant
@@ -228,7 +230,7 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":3,"functions":[...],"obligations":[...]}`, containing version-5
+`{"version":3,"functions":[...],"obligations":[...]}`, containing version-6
 responses in source function order. `obligations` has one list per function,
 including empty lists, with one evidence tree per reconstructed closure-expression
 or annotation judgment. Counts and root judgments must match exactly. Exported
@@ -383,7 +385,7 @@ also rejected until a plain-data boundary for external objects is supplied.
 
 The stateful input decoder keeps types separate from the earlier primitive AST.
 Every initializer, receiver, RHS, read and assignment expression consumes its
-own claimed type. The request graph uses the three primitive labels and eight
+own claimed type. The request graph uses the four primitive labels and sixteen
 reference labels, one for each primitive invariant. `CellClaims.reference_exact`
 proves that the selected label has exactly the accepted invariant's meaning.
 
@@ -414,7 +416,7 @@ The exporter preserves one free required parameter and the result. It rejects
 `this` requirements, generics, optional/rest parameters, fields, indexes, positive
 construct requirements and nested operand types. The Lean source slice further
 requires both the parameter and result to be supported primitive sets over
-null, true and false. `FunctionClaims.translate_exact` identifies the selected label's
+null, undefined, true and false. `FunctionClaims.translate_exact` identifies the selected label's
 meaning with the corresponding arrow in the existing world-indexed semantics.
 This does not assert equivalence with SKJS's full structural function types.
 
@@ -447,7 +449,7 @@ Source ternaries use `{"k":"conditional","pos":[start,end],"cond":...,"then":...
 Unlike the statement wrapper, this node selects its own expression claim, not a
 statement-entry environment. Its condition and both arms retain their exact
 expression claims. Internally both forms share conditional proof construction:
-Boolean-variable and null-tag refinements use the existing rules, while general
+Boolean-variable and primitive-tag refinements use the existing rules, while general
 conditions use ordinary Boolean elimination. Effects execute in the condition
 and selected arm only. No new calculus rule or source type label is introduced.
 
@@ -460,12 +462,12 @@ proof construction and evaluation order.
 
 Null coalescing uses `{"k":"coalesce","pos":[start,end],"left":...,"right":...}`.
 The overall expression and both operands select exact expression claims. Lowering
-saves the left result in a let slot, then uses null-tag testing and `unionVar`
+saves the left result in a let slot, then uses nullish testing and `unionVar`
 to check the fallback or return the saved value. False takes the latter path.
 For a syntactic immutable variable on the left, its name refers to the saved slot
 inside the fallback; its original slot becomes anonymous. This exposes the proved
-null refinement without claiming an alias for reads or calls. The source profile
-excludes undefined, so testing null covers every admitted nullish value.
+nullish refinement without claiming an alias for reads or calls. Both null and
+undefined select the fallback; false is preserved.
 
 For fall-through branches, `ifBody` has the administrative null result type and
 each arm ends in `{"k":"doneBody","pos":[start,end]}`. The sentinel is not a
@@ -520,17 +522,17 @@ top-level calls remain outside this source slice. Capture and source evaluation
 order remain part of the reviewed compiler boundary; calculus lambda/application
 soundness is proved.
 
-### Null predicates
+### Null and undefined predicates
 
 Source binary forms with `op` equal to `===` or `!==` are accepted when either
-operand is a null literal. Both operands are evaluated in source order and both
-retain their expression obligations. The comparison lowers to an existing null
+operand is a null or undefined literal. Both operands are evaluated in source order and both
+retain their expression obligations. The comparison lowers to the corresponding primitive
 shape test and Boolean conditional over the saved operand. `unionVar` evidence
 allows tag dispatch over a primitive union; no new term or reference semantics
 is introduced. The same lowering is available inside a unary closure.
 
 Top-level branches and loop heads also refine a syntactically identified immutable
-variable. Negations and either null operand order are supported. The original
+variable. Negations and either literal operand order are supported. The original
 condition and its claims are checked before tag dispatch on the same immutable
 value; reads and calls cannot supply an alias refinement.
 

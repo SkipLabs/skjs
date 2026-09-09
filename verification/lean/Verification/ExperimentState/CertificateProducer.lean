@@ -111,8 +111,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     let recur := expressionWith G pool suggestions fuel
     match t with
     | .var i => return (Γ[i]?).bind fun B => coerce G pool (leaf B .var) A
-    | .nul | .tru | .fls =>
-      let r := match t with | .nul => Rule.nul | .tru => .tru | _ => .fls
+    | .nul | .undef | .tru | .fls =>
+      let r := match t with | .nul => Rule.nul | .undef => .undef | .tru => .tru | _ => .fls
       return (A :: pool).findSome? fun B =>
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r

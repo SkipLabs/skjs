@@ -49,8 +49,8 @@ private def validCurrent (A : List Nat) (current : Option (List Nat)) : Bool :=
   match current with
   | none => true
   | some R =>
-    (match A with | [r] => 3 ≤ r && r < 11 | _ => false) &&
-      validType R && R.all (· < 3)
+    (match PositiveRules.expand SourceTypes.graph A with | [.refs _ []] => true | _ => false) &&
+      validType R && R.all SourceTypes.isPrimitive
 private def validBindings (bs : List Binding) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length && bs.all (fun b => !b.name.isEmpty && validType b.type && validCurrent b.type b.current)
 private def validSpan (p : Span) : Bool := p.1 < p.2
@@ -63,7 +63,7 @@ private def validFunction (f : Function) : Bool :=
 
 def decode (j : Json) : Except String Document := do
   let d : Document ← decodeStrict j
-  if !(d.version == 2 && d.profile == "stateful-source-75-v2") then
+  if !(d.version == 2 && d.profile == "stateful-source-276-v2") then
     throw "unsupported source-claim profile or version"
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"
@@ -77,7 +77,7 @@ private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private def exprSites : SourceInput.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
   | .not p e | .alloc p e | .read p e | .lam p _ _ _ e => joinSites ([],[p]) (exprSites e)
-  | .write p a b | .app p a b | .nullTest p _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .write p a b | .app p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
   | .done _ => ([],[])
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[]) (joinSites (exprSites a) (exprSites b))

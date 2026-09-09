@@ -87,7 +87,7 @@ private def omitField (j : Json) (key : String) : Json :=
 #guard !(ok (verifyJson (toJson mappedRequest) (.str "accept")))
 
 -- Reject labels hidden in evidence, including transitivity intermediates.
-#guard !(validResponse mappedRequest ⟨5,[{expression := .node ⟨[],.nul,[0]⟩ (.sub (.trans [99] .subset .subset)) [], edges := []}]⟩)
+#guard !(validResponse mappedRequest ⟨6,[{expression := .node ⟨[],.nul,[0]⟩ (.sub (.trans [99] .subset .subset)) [], edges := []}]⟩)
 
 -- Defaults and unsupported source refinements cannot silently enter the format.
 #guard !(ok (decodeStrict (α := Target) (Json.mkObj [("label",toJson (0 : Nat))])))

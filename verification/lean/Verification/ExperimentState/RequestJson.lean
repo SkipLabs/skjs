@@ -94,7 +94,7 @@ def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
   | .observedRead _ _ | .knownValue _ _ => true
 
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.version == 5 && c.certificate.all (fun n =>
+  c.version == 6 && c.certificate.all (fun n =>
     validEvidence r.types.length n.expression &&
     (n.effect.map (validEffect r.types.length)).getD true &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
@@ -254,7 +254,7 @@ def produceJson (request : Json) (fuel : Nat)
         | _ => ""
       throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
         (failureDiagnostic r fuel sourceMap e requirements))
-  let response := toJson (Response.mk 5 C)
+  let response := toJson (Response.mk 6 C)
   verifyJson request response
   return response
 

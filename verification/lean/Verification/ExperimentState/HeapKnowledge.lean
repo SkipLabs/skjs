@@ -159,6 +159,7 @@ theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h)
 def primitive : List (Clause (Ty ι)) → Option (List Literal)
   | [] => some []
   | .nul :: cs => (primitive cs).map ([.nul] ++ ·)
+  | .undef :: cs => (primitive cs).map ([.undef] ++ ·)
   | .bool :: cs => (primitive cs).map ([.tru,.fls] ++ ·)
   | .boolLit b :: cs => (primitive cs).map ([if b then .tru else .fls] ++ ·)
   | _ => none
@@ -181,7 +182,7 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         have hi := ih hr
         simp only [semList,setSem,List.mem_cons,exists_eq_or_imp] at hi ⊢
         rw [hi]
-        simp [sem,nulT,boolT,Literal.value,apply_ite,exists_or,or_assoc]
+        simp [sem,nulT,undefT,boolT,Literal.value,apply_ite,exists_or,or_assoc]
         all_goals split <;> simp_all [Literal.value]
 
 theorem literals_sem {G : NormalGraph ι} {A R} (h : literals G A = some R) (n W v) :

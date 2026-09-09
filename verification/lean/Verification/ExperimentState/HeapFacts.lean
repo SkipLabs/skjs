@@ -9,14 +9,14 @@ namespace Verification.ExperimentState.HeapFacts
 open ProgramTyping PositiveRules PositiveGraphs HeapObservations
 
 inductive Literal where
-  | nul | tru | fls
+  | nul | undef | tru | fls
   deriving DecidableEq, Repr
 
 def Literal.value : Literal → Tm
-  | .nul => .nul | .tru => .tru | .fls => .fls
+  | .nul => .nul | .undef => .undef | .tru => .tru | .fls => .fls
 
 def Literal.ofTerm : Tm → Option Literal
-  | .nul => some .nul | .tru => some .tru | .fls => some .fls | _ => none
+  | .nul => some .nul | .undef => some .undef | .tru => some .tru | .fls => some .fls | _ => none
 
 structure Fact where
   slot : Nat

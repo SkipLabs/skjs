@@ -27,12 +27,7 @@ def signature (j : Json) : Except String (Ty Nat × Ty Nat) := do
   let s ← decode j
   return (← SourceTypes.translate s.argument, ← SourceTypes.translate s.result)
 
-def argumentIndex (D : Ty Nat) : Nat :=
-  let bits := CellClaims.referenceLabel D - 3
-  if bits == 1 then 0 else if bits == 0 then 1 else bits
-
-def label (D R : Ty Nat) : Nat :=
-  8 + CellClaims.referenceLabel R + 8 * argumentIndex D
+def label (D R : Ty Nat) : Nat := SourceTypes.label (.arrs [(D,R)])
 
 def translate (j : Json) : Except String (Ty Nat) := do
   let (D,R) ← signature j
@@ -41,15 +36,11 @@ def translate (j : Json) : Except String (Ty Nat) := do
 theorem label_encode (d r : Wire.Ty) :
     expand SourceTypes.graph [label (SourceTypes.encode d) (SourceTypes.encode r)] =
       [.arrs [(SourceTypes.encode d,SourceTypes.encode r)]] := by
-  cases dn : SourceTypes.admits d .vnull <;>
-    cases dt : SourceTypes.admits d (.vbool true) <;>
-    cases df : SourceTypes.admits d (.vbool false) <;>
-    cases rn : SourceTypes.admits r .vnull <;>
-    cases rt : SourceTypes.admits r (.vbool true) <;>
-    cases rf : SourceTypes.admits r (.vbool false) <;>
-    simp [label, argumentIndex, CellClaims.referenceLabel, SourceTypes.encode,
-      dn,dt,df,rn,rt,rf,expand,SourceTypes.graph,SourceTypes.types,
-      SourceTypes.primitiveTypes,SourceTypes.argumentTypes]
+  apply SourceTypes.label_exact
+  apply SourceTypes.compound_mem
+  apply List.mem_append_right
+  exact List.mem_flatMap.mpr ⟨_,SourceTypes.encode_argument_mem d,
+    List.mem_map.mpr ⟨_,SourceTypes.encode_mem r,rfl⟩⟩
 
 /-- Exact arrow interpretation, including its contravariant domain. -/
 theorem meaning_encode (d r : Wire.Ty) (n W v) :

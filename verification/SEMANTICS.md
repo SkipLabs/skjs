@@ -11,17 +11,17 @@ language remains an integration obligation.
 `Language.lean` defines an untyped call-by-value language with a mutable heap.
 This is the whole term syntax:
 
-$$t ::= x_i\mid\lambda t\mid t\,t\mid\mathsf{null}\mid\mathsf{true}\mid\mathsf{false}
+$$t ::= x_i\mid\lambda t\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
 \mid\ell\mid\mathsf{alloc}(t)\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
 \mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.$$
 
 Here $x_i$ is a variable, given as a de Bruijn position, $\ell$ a heap location,
 and $k$ a shape test
-drawn from $\{\mathsf{isNul},\mathsf{isBool},\mathsf{isRef},\mathsf{isFun}\}$,
-one per type constructor, which is what a source `typeof` amounts to. Values are
+drawn from $\{\mathsf{isNul},\mathsf{isUndef},\mathsf{isNullish},\mathsf{isBool},\mathsf{isRef},\mathsf{isFun}\}$.
+The nullish test accepts null or undefined; the others recognize individual value shapes. Values are
 the subset
 
-$$v ::= \lambda t\mid\mathsf{null}\mid\mathsf{true}\mid\mathsf{false}\mid\ell,$$
+$$v ::= \lambda t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\ell,$$
 
 and `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
 about the same objects. There is no `let` constructor: `HasTy.letE` types the
@@ -53,9 +53,8 @@ the same location, and no assertion can say they do not.
 Two of these forms are deliberately outside the typing judgment. A location
 arises only at run time and takes its contract from the world, never from a
 typing rule. A shape test is typed only in the guard of a conditional, by
-`ifTag`; it has no standalone rule. Of the four tags, only $\mathsf{isNul}$ is
-reachable from the current source fragment, through null comparisons; the others
-keep the test total on values, which the shape lemmas rely on.
+`ifTag`; it has no standalone rule. The source fragment uses null and undefined tests for strict comparisons, and
+the nullish test for `??`. Every test is total on values.
 
 Substitution operates on closed substituted values. `Bindings.lean` supplies
 scope and simultaneous closing substitution, including its beta law. The program
@@ -169,7 +168,7 @@ the invariant check is vacuous at budget zero. Giving the conjunction meaning
 does not require a syntactic subtype relation between `R` and `B`.
 
 The right side of `=` is a predicate, not an initializer or a future-read promise.
-Only null/Boolean predicates are exported today; numeric notation illustrates a
+Only null/undefined/Boolean predicates are exported today; numeric notation illustrates a
 future extension. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
 SKJS's internal types with heap assertions.

@@ -628,8 +628,8 @@ private def localCertificate (cuts : List Nat) :=
     localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
     localRequest.start [] localRequest.inputs [] [] localRequest.assertions cuts
 private def globalCertificate := (localCertificate []).toOption.get!
-#guard RequestJson.verify localRequest.toRequest ⟨5,globalCertificate⟩
-#guard !checkAssertions localRequest ⟨5,globalCertificate⟩
+#guard RequestJson.verify localRequest.toRequest ⟨6,globalCertificate⟩
+#guard !checkAssertions localRequest ⟨6,globalCertificate⟩
 #guard (localCertificate localRequest.cuts).toOption.isNone
 private def repairedLocal := (extractNormalizedFn localFn
   {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[]⟩

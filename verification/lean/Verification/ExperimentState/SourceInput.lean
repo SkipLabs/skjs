@@ -48,7 +48,7 @@ inductive Expr where
   | lit (pos : Span) (v : Wire.Val)
   | logical (pos : Span) (andOp : Bool) (left right : Expr)
   | coalesce (pos : Span) (left right : Expr)
-  | nullTest (pos : Span) (equal testLeft : Bool) (left right : Expr)
+  | unitTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
   | not (pos : Span) (e : Expr)
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
@@ -67,7 +67,7 @@ inductive Expr where
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
-  | .ifBody p _ _ _ _ | .done p | .nullTest p _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
+  | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
   | .var p _ | .lit p _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
 
 inductive Stmt where
@@ -106,13 +106,15 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     if op == "&&" || op == "||" then
       return .logical p (op == "&&") (← decodeExpr (← jField j "l")) (← decodeExpr (← jField j "r"))
     if op != "===" && op != "!==" then
-      throw s!"unsupported source expression at [{p.1},{p.2}): only strict equality with a null literal or Boolean &&/|| is supported"
+      throw s!"unsupported source expression at [{p.1},{p.2}): only strict equality with a null or undefined literal or Boolean &&/|| is supported"
     let left ← decodeExpr (← jField j "l")
     let right ← decodeExpr (← jField j "r")
     match left, right with
-    | _, .lit _ .vnull => return .nullTest p (op == "===") true left right
-    | .lit _ .vnull, _ => return .nullTest p (op == "===") false left right
-    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null literal operand"
+    | _, .lit _ .vnull => return .unitTest p .isNul (op == "===") true left right
+    | .lit _ .vnull, _ => return .unitTest p .isNul (op == "===") false left right
+    | _, .lit _ .vundef => return .unitTest p .isUndef (op == "===") true left right
+    | .lit _ .vundef, _ => return .unitTest p .isUndef (op == "===") false left right
+    | _, _ => throw s!"unsupported source expression at [{p.1},{p.2}): equality requires a null or undefined literal operand"
   | "coalesce" => return .coalesce p (← decodeExpr (← jField j "left")) (← decodeExpr (← jField j "right"))
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))

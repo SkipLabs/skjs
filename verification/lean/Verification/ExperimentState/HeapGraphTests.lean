@@ -78,7 +78,7 @@ private def cycleCertificate := certificate.set 5
 -- The external checker consumes the same facts and effects through strict JSON.
 private def request : RequestJson.Request :=
   ⟨2,SourceTypes.types,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
-private def response : RequestJson.Response := ⟨5,certificate⟩
+private def response : RequestJson.Response := ⟨6,certificate⟩
 #guard RequestJson.verify request response
 #guard match RequestJson.verifyJson (Lean.toJson request) (Lean.toJson response) with
   | .ok _ => true

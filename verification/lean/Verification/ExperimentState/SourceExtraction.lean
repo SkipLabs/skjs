@@ -158,26 +158,26 @@ private def conditionVariable (scope : List Descriptor) : SourceInput.Expr → O
 
 /-- Only a syntactic immutable variable retains an alias to the observed value.
 Reads and calls deliberately do not qualify, even if their types look stable. -/
-private def nullConditionVariable (scope : List Descriptor) : SourceInput.Expr → Option (Nat × Bool)
-  | .not _ e => (nullConditionVariable scope e).map fun (i, equal) => (i, !equal)
-  | .nullTest _ equal testLeft left right =>
+private def unitConditionVariable (scope : List Descriptor) : SourceInput.Expr → Option (Nat × Tag × Bool)
+  | .not _ e => (unitConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
+  | .unitTest _ tag equal testLeft left right =>
     match (if testLeft then left else right) with
-    | .var _ name => ((names scope).idxOf? name).map (·, equal)
+    | .var _ name => ((names scope).idxOf? name).map (·, tag, equal)
     | _ => none
   | _ => none
 
-private def nullTestTerm (equal : Bool) (slot : Nat) : Tm :=
-  .ite (.test .isNul (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
+private def unitTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
+  .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
 
 /-- The fixed source graph has a uniform head shape at each label. Splitting
 its explicit union lets the ordinary tag rule prove each alternative. -/
-private def nullTestPlan (Γ : List (Ty Nat)) (slot : Nat) (equal : Bool) (A : Ty Nat) :
+private def unitTestPlan (tag : Tag) (Γ : List (Ty Nat)) (slot : Nat) (equal : Bool) (A : Ty Nat) :
     Except String DirectProof.Plan := do
   let some C := Γ[slot]? | throw "internal null-test slot mismatch"
-  let term := nullTestTerm equal slot
+  let term := unitTestTerm tag equal slot
   let children ← C.mapM fun a => do
     let H := Γ.set slot [a]
-    let q := decide (Answers SourceTypes.graph [a] .isNul true)
+    let q := decide (Answers SourceTypes.graph [a] tag true)
     let value := if q == equal then Tm.tru else .fls
     let B := if q == equal then [1] else [2]
     let rule := if q == equal then ProgramCertificates.Rule.truLit else .flsLit
@@ -192,21 +192,21 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
     (cond : SourceInput.Expr) (c : DirectProof.Plan)
     (yesBranch noBranch : List Descriptor → List (Ty Nat) → Compiler DirectProof.Plan) :
     Compiler DirectProof.Plan := do
-  if let some (i, equal) := nullConditionVariable scope cond then
+  if let some (i, tag, equal) := unitConditionVariable scope cond then
     let some C := H[i]? | throw "internal closure null-guard slot mismatch"
     -- Preserve the evaluated predicate and its claims in an anonymous slot.
     let K := c.type :: H
     let tested := i+1
-    let T := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul true)
-    let F := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C .isNul false)
+    let T := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C tag true)
+    let F := K.set tested (BranchRefinement.tagSlice SourceTypes.graph C tag false)
     let t ← yesBranch (⟨"",some cond.span⟩::scope) (if equal then T else F)
     let e ← noBranch (⟨"",some cond.span⟩::scope) (if equal then F else T)
     let yes := if equal then t else e
     let no := if equal then e else t
-    let term := Tm.ite (.test .isNul (.var tested)) yes.term no.term
+    let term := Tm.ite (.test tag (.var tested)) yes.term no.term
     let children := C.map fun label =>
       let L := K.set tested [label]
-      let q := decide (Answers SourceTypes.graph [label] .isNul true)
+      let q := decide (Answers SourceTypes.graph [label] tag true)
       DirectProof.node L term A (if q then .ifTrue else .ifFalse)
         [DirectProof.cast L A (if q then yes else no)]
     pure (DirectProof.letE H c (DirectProof.node K term A (.unionVar tested) children))
@@ -243,16 +243,17 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let t ← SourceTypes.value v
     let (B,r) ← match t with
       | .nul => pure ([0],ProgramCertificates.Rule.nul)
+      | .undef => pure ([75],ProgramCertificates.Rule.undef)
       | .tru => pure ([1],ProgramCertificates.Rule.truLit)
       | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
-  | .nullTest _ equal testLeft left right => do
+  | .unitTest _ tag equal testLeft left right => do
     let leftSpan := left.span
     let left ← closureExpr fc scope Γ left
     let right ← closureExpr fc (⟨"",some leftSpan⟩::scope) (left.type::Γ) right
     let H := right.type::left.type::Γ
-    let result ← nullTestPlan H (if testLeft then 1 else 0) equal A
+    let result ← unitTestPlan tag H (if testLeft then 1 else 0) equal A
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .logical _ andOp left right => do
     let l ← closureExpr fc scope Γ left
@@ -265,7 +266,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .coalesce _ left right => do
     let l ← closureExpr fc scope Γ left
     let K := l.type :: Γ
-    let H := (BranchRefinement.tagSlice SourceTypes.graph l.type .isNul true) :: Γ
+    let H := (BranchRefinement.tagSlice SourceTypes.graph l.type .isNullish true) :: Γ
     -- A named immutable left operand is identical to the saved value. Move its
     -- name to that slot for the fallback; no mutable read is given an alias.
     let rightScope := match left with
@@ -273,10 +274,10 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
           scope.map (fun d => if d.name == name then ⟨"",some left.span⟩ else d)
       | _ => ⟨"",some left.span⟩ :: scope
     let r ← closureExpr fc rightScope H right
-    let term := Tm.ite (.test .isNul (.var 0)) r.term (.var 0)
+    let term := Tm.ite (.test .isNullish (.var 0)) r.term (.var 0)
     let children := l.type.map fun label =>
       let L := [label] :: Γ
-      let q := decide (Answers SourceTypes.graph [label] .isNul true)
+      let q := decide (Answers SourceTypes.graph [label] .isNullish true)
       let selected := if q then DirectProof.cast L A r else DirectProof.var L 0 A
       DirectProof.node L term A (if q then .ifTrue else .ifFalse) [selected]
     pure (DirectProof.letE Γ l (DirectProof.node K term A (.unionVar 0) children))
@@ -318,6 +319,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let b ← closureExpr fc (⟨"",some init.span⟩::scope) (a.type::Γ) body
     pure (DirectProof.letE Γ a b)
   | .letBody pos name annot init body => do
+    if name == "undefined" then throw "shadowing undefined is outside the source slice"
     if name != "" && (names scope).contains name then
       throw "duplicate or shadowing closure local"
     let H ← closureEnv fc pos.1 scope Γ
@@ -347,6 +349,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     closureExpr fc scope H body
   | .lam pos name arg ret body => do
+    if name == "undefined" then throw "shadowing undefined is outside the source slice"
     if (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← SourceTypes.translate (← decodeTy arg)
     let R ← SourceTypes.translate (← decodeTy ret)
@@ -391,12 +394,12 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .lam .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
-  | .nullTest _ equal testLeft left right =>
+  | .unitTest _ tag equal testLeft left right =>
     let B ← exprType fc left
     let C ← exprType fc right
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
-    let test ← emitAt e.span (nullTestTerm equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
+    let test ← emitAt e.span (unitTestTerm tag equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
       (scope := ⟨"",some right.span⟩::⟨"",some left.span⟩::scope)
     let right ← compileExpr fc (⟨"",some left.span⟩::scope) (B::Γ) right test
     compileExpr fc scope Γ left right
@@ -460,7 +463,7 @@ condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
 private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : SourceInput.Expr)
     (A : Ty Nat) (yes no : Target) : Compiler Target := do
-  if let some (i, equal) := nullConditionVariable scope cond then
+  if let some (i, tag, equal) := unitConditionVariable scope cond then
     let some C := Γ[i]? | throw "internal null-guard slot mismatch"
     let adapt := fun t =>
       let mapped := branchMapping scope.length (some i) t
@@ -470,7 +473,7 @@ private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : So
     -- Reading the same immutable variable observes its tag without repeating
     -- any source expression or trusting the saved Boolean's annotation.
     return ← emitAt cond.span (.var (i+1))
-      (.tagBind .isNul (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
+      (.tagBind tag (adapt (if equal then yes else no)) (adapt (if equal then no else yes)))
       (A::Γ) C "tag-dispatch" (scope := ⟨"",some cond.span⟩::scope)
   let tested := testedSlot scope Γ cond
   -- Branch on the saved value; the edge maps discard its older copy and
@@ -497,8 +500,8 @@ private def conditionContext (scope : List Descriptor) (Γ : List (Ty Nat))
       conditionContext scope (conditionContext scope Γ left answer) right answer
     else Γ
   | _ =>
-    if let some (i, equal) := nullConditionVariable scope cond then
-      Γ.set i (BranchRefinement.tagSlice SourceTypes.graph (Γ[i]?.getD []) .isNul (answer == equal))
+    if let some (i, tag, equal) := unitConditionVariable scope cond then
+      Γ.set i (BranchRefinement.tagSlice SourceTypes.graph (Γ[i]?.getD []) tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       Γ.set i (if answer then [1] else [2])
     else Γ
@@ -555,6 +558,7 @@ private def body : Nat → SourceClaims.Function → Ty Nat → List Descriptor 
         (scope := ⟨"",some e.span⟩::scope)
       compileExpr fc scope Γ e done
     | .cst pos name annot e :: rest =>
+      if name == "undefined" then throw "shadowing undefined is outside the source slice"
       if (names scope).contains name then throw s!"duplicate or shadowing local declaration '{name}'"
       let Γ ← env fc pos.1 scope
       let A ← exprType fc e
@@ -633,12 +637,14 @@ def SourceRequest.searchLabels (r : SourceRequest) : List Nat :=
 def extractNormalizedFn (f : SourceInput.Fn) (fc : SourceClaims.Function) : Except String SourceRequest := do
   if f.name != fc.name || f.namePos != fc.namePos then throw "function claim identity mismatch"
   let scope : List Descriptor := f.params.map (fun p => ⟨p.name,none⟩)
+  if f.name == "undefined" || (names scope).contains "undefined" then
+    throw "shadowing undefined is outside the source slice"
   if !distinct (names scope) then throw "duplicate source parameter name"
   if f.params.length != fc.params.length then throw "parameter claim count mismatch"
   let inputs ← f.params.mapM (fun p => SourceInput.translate p.ty)
   -- Cell sourceMap must be plain allocations in this source slice. Structural
   -- parameter annotations alone cannot rule out JavaScript accessors.
-  if inputs.any (fun A => A.any (· ≥ 3)) then
+  if inputs.any (fun A => A.any (fun i => !SourceTypes.isPrimitive i)) then
     throw "cell or function parameters require an external-value boundary not yet supported"
   for (p, (name, claimed)) in f.params.zip fc.params do
     if p.name != name then throw "parameter claim name or order mismatch"

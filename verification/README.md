@@ -16,6 +16,13 @@ are the types a graph label can name. [Control-flow graphs](PROGRAM-TYPING.md#ch
 and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
 those two rather than alternatives to them.
 
+The supported source profile includes null, undefined and Boolean unions, required
+cell fields, and bounded unary callbacks. The
+[undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
+writes, strict comparisons and nullish coalescing. This does not imply support
+for `void`, optional properties or implicit returns; see the
+[current source slice](DESIGN.md#source-integration-current-slice-and-next-milestone).
+
 ## Run
 
 Prerequisites: Node, the pinned [Lean toolchain](lean/lean-toolchain), and Docker

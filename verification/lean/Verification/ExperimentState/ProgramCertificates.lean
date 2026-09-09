@@ -14,7 +14,7 @@ structure Sequent (ι : Type) where
   deriving DecidableEq
 
 inductive Rule (ι : Type) where
-  | var | nul | tru | fls | truLit | flsLit | lam | app | letE | alloc | read | write
+  | var | nul | undef | tru | fls | truLit | flsLit | lam | app | letE | alloc | read | write
   | ifBool | ifTrue | ifFalse
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
@@ -32,6 +32,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   match r, j.term, ps with
   | .var, .var i, [] => j.context[i]? = some j.type
   | .nul, .nul, [] => Represents G j.type .nul
+  | .undef, .undef, [] => Represents G j.type .undef
   | .tru, .tru, [] | .fls, .fls, [] => Represents G j.type .bool
   | .truLit, .tru, [] => Represents G j.type (.boolLit true)
   | .flsLit, .fls, [] => Represents G j.type (.boolLit false)
@@ -121,6 +122,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   split at hl <;> (try dsimp only at *) <;> (try subst t)
   · exact .var hl
   · exact .nul hl
+  · exact .undef hl
   · exact .tru hl
   · exact .fls hl
   · exact .truLit hl
@@ -262,6 +264,7 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   induction ht with
   | var hi => exact node_complete (r := .var) (js := []) hi (by simp)
   | nul hr => exact node_complete (r := .nul) (js := []) hr (by simp)
+  | undef hr => exact node_complete (r := .undef) (js := []) hr (by simp)
   | tru hr => exact node_complete (r := .tru) (js := []) hr (by simp)
   | fls hr => exact node_complete (r := .fls) (js := []) hr (by simp)
   | truLit hr => exact node_complete (r := .truLit) (js := []) hr (by simp)

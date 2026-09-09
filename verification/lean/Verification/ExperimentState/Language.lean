@@ -20,10 +20,10 @@ namespace Verification
 namespace ExperimentState
 
 /-- The shapes a value can have, and so the tests a program can make of one.
-There is one per type constructor, which is what a `typeof` in the source
-language amounts to. -/
+Nullishness groups null and undefined for source coalescing; the other tests
+distinguish individual runtime shapes. -/
 inductive Tag where
-  | isNul | isBool | isRef | isFun
+  | isNul | isBool | isRef | isFun | isUndef | isNullish
   deriving Repr, DecidableEq
 
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
@@ -60,6 +60,8 @@ exactly one shape, which is the fact the shape lemmas of the type semantics
 record on the other side. -/
 def tagHolds : Tag → Val → Bool
   | .isNul, .nul => true
+  | .isUndef, .undef => true
+  | .isNullish, .nul | .isNullish, .undef => true
   | .isBool, .tru => true
   | .isBool, .fls => true
   | .isRef, .loc _ => true

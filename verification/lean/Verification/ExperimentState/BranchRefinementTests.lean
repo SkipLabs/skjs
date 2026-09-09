@@ -76,7 +76,10 @@ private def request (v : Tm) : Request :=
 
 private def roundtrip (r : Request) : Except String Unit := do
   let input ← Json.parse (toJson r).compress
-  let evidence ← RequestJson.produceJson input 8
+  -- Keep this source-profile test bounded to the types it actually mentions.
+  let labels := ([0,1,2] ++ r.result ++ r.inputs.flatten ++
+    r.claims.flatMap (fun (c : CertificateProducer.PointClaim Nat) => c.type ++ c.context.flatten)).eraseDups
+  let evidence ← RequestJson.produceJson input 8 [] [] [] (some labels)
   verifyJson input (← Json.parse evidence.compress)
 
 #guard ok (roundtrip (request .tru))

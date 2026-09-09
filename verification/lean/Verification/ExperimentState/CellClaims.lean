@@ -123,19 +123,16 @@ theorem translate_exact {j : Json} {A u v}
   obtain ⟨f,hf,hc⟩ := translate_checked h
   exact ⟨f,hf,agreeContract_exact hc hv n W⟩
 
-/-- The eight canonical primitive invariants have fixed reference labels. -/
-def referenceLabel (A : Ty Nat) : Nat :=
-  3 + (if A.contains 0 then 1 else 0) +
-    (if A.contains 1 then 2 else 0) + (if A.contains 2 then 4 else 0)
+/-- Select the exact generated reference node; unsupported operands never
+silently project down to a smaller invariant. -/
+def referenceLabel (A : Ty Nat) : Nat := SourceTypes.label (.refs A [])
 
 theorem reference_encode (t : Wire.Ty) :
     expand SourceTypes.graph [referenceLabel (SourceTypes.encode t)] =
       [.refs (SourceTypes.encode t) []] := by
-  cases hn : SourceTypes.admits t .vnull <;>
-    cases ht : SourceTypes.admits t (.vbool true) <;>
-    cases hf : SourceTypes.admits t (.vbool false) <;>
-    simp [referenceLabel, SourceTypes.encode, hn, ht, hf, expand,
-      SourceTypes.graph, SourceTypes.types, SourceTypes.primitiveTypes, SourceTypes.argumentTypes]
+  apply SourceTypes.label_exact
+  apply SourceTypes.compound_mem
+  exact List.mem_append_left _ (List.mem_map.mpr ⟨_,SourceTypes.encode_mem t,rfl⟩)
 
 /-- The graph label used by source extraction denotes exactly the accepted
 cell invariant, at every world and budget. -/

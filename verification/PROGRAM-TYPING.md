@@ -22,7 +22,7 @@ rule statements, side conditions, soundness scope and evidence construction;
 | $c$ | a term in condition position |
 | $\gamma$ | a [clause](POSITIVE-TYPES.md#representation-and-mathematical-rules) |
 | $r$ | the binding a rule gives its result |
-| $k$ | one of the four shape tests |
+| $k$ | one of the tests in [the operational language](SEMANTICS.md#operational-language) |
 | $A$, $B$, $C$ | types, each a finite list of graph labels read as their union |
 | $R$ | a finite set of constants |
 | $\operatorname{lits}(A)$ | the constants $A$ denotes, defined only for a primitive $A$ (`literals`) |
@@ -54,6 +54,8 @@ $$
 \frac{\Gamma(x)=A}{\Gamma\vdash_G x:A}
 \qquad
 \frac{}{\Gamma\vdash_G \mathsf{null}:\mathsf{Null}}
+\qquad
+\frac{}{\Gamma\vdash_G \mathsf{undefined}:\mathsf{Undefined}}
 \qquad
 \frac{}{\Gamma\vdash_G \mathsf{true},\mathsf{false}:\mathsf{Bool}}
 $$
@@ -549,8 +551,8 @@ value. Safety and deterministic execution use the actual `tagHolds` outcome;
 the certificate cannot supply it. `tagBind` shares the observed-edge checker
 and environment theorem with `branchBind`.
 
-Source branches and loop heads use null tag dispatch only for syntactically
-identified immutable variables, including repeated negations and either null
+Source branches and loop heads use null or undefined tag dispatch only for syntactically
+identified immutable variables, including repeated negations and either literal
 operand order. The original condition runs once and its operand/result claims
 remain obligations. A subsequent lookup of that immutable variable supplies the
 value for tag dispatch; no source call or property read is repeated. Maps retain
@@ -625,7 +627,7 @@ preservation of existing facts.
 | `write_then_read` | Composing write, bind, beta and read proves that the immediate subsequent read returns the written value; there is no ownership or non-escape premise. |
 
 The finite assertion layer represents a fact as a slot $i$ and a set $R$ of
-null/Boolean literals. Its meaning is:
+null/undefined/Boolean literals. Its meaning is:
 
 $$
 \operatorname{Holds}(\Delta,\rho,h)
@@ -930,7 +932,7 @@ checks its full expression claim separately and swaps the operand's successors;
 it does not invent an equality between a Boolean and its negation.
 
 Primitive result sets are finite
-null/Boolean literal lists. `HeapKnowledge.check_sound` and `project_checked`
+null/undefined/Boolean literal lists. `HeapKnowledge.check_sound` and `project_checked`
 justify transfer and alias-preserving projection along executable slot maps.
 
 [HeapExpressionTests.lean](lean/Verification/ExperimentState/HeapExpressionTests.lean)
@@ -1138,12 +1140,12 @@ alias write and a condition that writes then reads a cell. Invalid condition
 types, invalid arms, omitted premises and exchanged arms are rejected. This is
 calculus coverage. Source closure blocks now support terminal branches with both
 arms returning, including nested branches and checked entry refinements.
-Source ternaries reuse these rules and the existing null-tag union elimination.
+Source ternaries reuse these rules and the existing primitive-tag union elimination.
 Their own expression claim supplies the result type; both arm claims are checked
 under the corresponding refined context. This introduces no additional rule or
 trusted proof-search step.
 Null coalescing is likewise a derived form: a let saves the left value, and
-`unionVar` with known null-tag conditionals selects the fallback or saved value.
+`unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
 For Boolean left operands, logical AND and OR use the derived forms:
 

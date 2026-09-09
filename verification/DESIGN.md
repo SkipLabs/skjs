@@ -6,7 +6,7 @@ candidate types and invariants; acceptance requires derivations in an independen
 calculus whose rules are proved sound against its execution model.
 
 The chosen architecture has a stateful positive-type calculus, a serialized
-certificate consumer, and a source adapter for parameterized null/boolean functions.
+certificate consumer, and a source adapter for parameterized null/undefined/boolean functions.
 The extraction format may change to provide the program points, binding identities and exact
 types needed by the chosen calculus.
 
@@ -397,7 +397,7 @@ Full TypeScript formalization is not a prerequisite.
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
 consumer. It accepts primitive parameters, initialized `const` declarations,
-nested boolean branches, block-bodied `while` loops and returns, with variables, null/boolean literals,
+nested boolean branches, block-bodied `while` loops and returns, with variables, null/undefined/boolean literals,
 plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
 and the bounded local closures and calls described below. Every syntactic exit
 path must reach an explicit return; loops may diverge.
@@ -405,12 +405,22 @@ It rejects active-name shadowing, calls to named top-level functions, statements
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
-null, boolean, their singleton types, unions and bottom exactly into three
-primitive labels: null, true and false. Eight further labels represent invariant
-references to the subsets of these values, and sixty-four represent the unary
-arrows between them. Lean proves the translation preserves primitive
+null, undefined, boolean, their singleton types, unions and bottom exactly into
+four primitive labels. Sixteen further labels represent invariant references to
+subsets of these values, and 256 represent the unary arrows between them.
+Clause lookup selects the complete contract, with exactness proved in Lean; it
+cannot silently discard undefined from an operand. Lean proves the translation preserves primitive
 membership. Singleton clause and typing rules have been added with soundness
 proofs; no claim is widened from a singleton to boolean.
+
+Undefined is supported in required cell fields, primitive callbacks, explicit
+returns, strict comparisons and nullish coalescing. The
+[undefined fixture](tests/stateful-source/undefined.ts) checks these together with
+alias writes and supplied current-content observations. Statement-entry claims
+remain complete local verification boundaries. This does not yet cover `void`,
+optional-property presence, omitted arguments or implicit returns. Runtime
+bindings named `undefined` are rejected so the source compiler cannot confuse
+a shadowed identifier with the primitive value.
 
 The compiler resolves names to initialized local slots, newest first. Each source
 expression gets its exact exported result claim and its statement's claimed entry
@@ -883,7 +893,7 @@ that guarantee. `make verify` remains the experiment's source-facing command.
 
 ### Primitive callback integration
 
-The source graph contains all 64 unary arrows between subsets of null, true and
+The source graph contains all 256 unary arrows between subsets of null, undefined, true and
 false. `FunctionClaims.translate_exact` proves the selected arrow's domain and
 codomain interpretations. Existing application and lambda rules discharge their
 obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the fixed label table and

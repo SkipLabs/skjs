@@ -96,17 +96,19 @@ theorem bind {A B : Fam} (C : Tm → Tm)
       apply WExt_trans _ hx'
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
-def tagCode : Tag → Nat
-  | .isNul => 0 | .isBool => 1 | .isRef => 2 | .isFun => 3
+def tagShape (tag : Tag) (s : Nat) : Bool :=
+  match tag with
+  | .isNul => s == 0 | .isBool => s == 1 | .isRef => s == 2
+  | .isFun => s == 3 | .isUndef => s == 4 | .isNullish => s == 0 || s == 4
 
 /-- A finite syntactic check; it neither executes a term nor queries membership. -/
 def Answers (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Prop :=
-  ∀ c ∈ expand G A, (shape c == tagCode tag) = q
+  ∀ c ∈ expand G A, tagShape tag (shape c) = q
 
 theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by
   obtain ⟨c, hc, hv⟩ := (expand_sem G A n W v).mp hv
-  have htag : tagHolds tag v = (valueShape v == tagCode tag) := by
+  have htag : tagHolds tag v = tagShape tag (valueShape v) := by
     cases tag <;> cases v <;> rfl
   rw [htag, sem_shape hv]
   exact hq c hc
@@ -117,6 +119,7 @@ variable [DecidableEq ι]
 inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop where
   | var : Γ[i]? = some A → HasTy G Γ (.var i) A
   | nul : Represents G A .nul → HasTy G Γ .nul A
+  | undef : Represents G A .undef → HasTy G Γ .undef A
   | tru : Represents G A .bool → HasTy G Γ .tru A
   | fls : Represents G A .bool → HasTy G Γ .fls A
   | truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
@@ -157,7 +160,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
     exact value_safe _ _ _ _ _ (meaning_value (he.2 _ _ hi)).1 (he.2 _ _ hi)
-  | nul hr =>
+  | nul hr | undef hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
   | tru hr =>

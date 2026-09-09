@@ -105,7 +105,7 @@ try {
       (a) => {
         a.functions[0].body[0].e.r.lit = { a: "booleanlit", v: "true" };
       },
-      "equality requires a null literal operand",
+      "equality requires a null or undefined literal operand",
     ],
     [
       "loose equality remains unsupported",

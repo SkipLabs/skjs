@@ -3,6 +3,7 @@
 // These files are exercised through the current source consumer by run.sh.
 const supported = [
   "basic",
+  "undefined",
   "cells",
   "closures",
   "loops",

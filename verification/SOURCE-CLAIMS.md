@@ -1,6 +1,6 @@
 # Producer-independent source sidecars
 
-The `stateful-source-75-v2` profile supplies types directly from the current
+The `stateful-source-276-v2` profile supplies types directly from the current
 calculus source graph. It contains no SKJS type atoms, inferred bounds or stored
 proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
@@ -29,7 +29,7 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 ```json
 {
   "version": 2,
-  "profile": "stateful-source-75-v2",
+  "profile": "stateful-source-276-v2",
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
   "functions": [{
@@ -46,7 +46,7 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 }
 ```
 
-`stateful-source-75-v2` is the only accepted profile. Every point carries an
+`stateful-source-276-v2` is the only accepted profile. Every point carries an
 explicit `current` field, and documents written for an earlier profile must be
 regenerated rather than upgraded in place.
 
@@ -71,9 +71,17 @@ and results remain in force. The profile fixes the graph to `SourceTypes.types`:
 | `0`, `1`, `2` | `null`, `true`, `false`, respectively |
 | `3 + m`, for `0 ≤ m < 8` | `Ref<U(m)>`, an invariant plain cell contract |
 | `11 + 8d + r`, for `0 ≤ d,r < 8` | Unary arrow `U(D[d]) → U(r)`, where `D = [1,0,2,3,4,5,6,7]` |
+| `75` | `undefined` |
+| `76`–`83` | References whose primitive operand includes undefined |
+| `84`–`275` | Arrows with undefined in the domain, codomain, or both |
 
 `U(m)` is the union selected by the mask: bit 0 selects null, bit 1 true, and bit
 2 false. Thus label `9` is `Ref<boolean>` and label `17` is `null → boolean`.
+The 276-label table covers all 16 primitive subsets, 16 reference contracts and
+256 unary arrows. `SourceTypes.types` defines its exact order; selectors look up
+the whole clause and Lean proves exactness. The display mirror is tested against
+the entire Lean table. Earlier profiles and evidence must be regenerated.
+
 These are calculus contracts; the source boundary still checks that allocations
 and operations justify their interpretation. An array of several reference or
 arrow labels can be decoded, but the source adapter may reject its use where it
@@ -95,8 +103,8 @@ combined notation; this section specifies its sidecar encoding.
 
 Bindings and expressions have a required `current` field: `null` means no
 additional assertion; otherwise it is a sorted, duplicate-free list of primitive
-labels (`0` null, `1` true, `2` false). With a non-null assertion, `type` must be
-exactly one invariant-reference label, from 3 through 10. For example:
+labels (`0` null, `1` true, `2` false, `75` undefined). With a non-null assertion,
+`type` must be exactly one generated invariant-reference label. For example:
 
 ```json
 {"name":"cell","type":[9],"current":[1]}

@@ -123,21 +123,20 @@ function fromSkjs(source, file, claims, producer) {
 }
 
 function fromSourceClaims(source,file,input,producer) {
-  if(input.version!==2||input.profile!=="stateful-source-75-v2"||input.file!==file||input.sourceSha256!==hash(source))
+  const profile=require("./source-profile.js");
+  if(input.version!==2||input.profile!==profile.name||input.file!==file||input.sourceSha256!==hash(source))
     throw Error("source-claim profile or source identity mismatch");
-  const primitive=mask=>["null","true","false"].filter((_,i)=>mask&(1<<i)).join(" | ")||"never";
-  const label=i=>i<3?["null","true","false"][i]:i<11?`Ref<${primitive(i-3)}>`:`(${primitive([1,0,2,3,4,5,6,7][Math.floor((i-11)/8)])} => ${primitive((i-11)%8)})`;
   const type=A=> {
-    if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=75||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
-    return A.map(label).join(" | ")||"never";
+    if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=profile.types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
+    return profile.typeText(A);
   };
   const point=b=> {
     if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
     const ordinary=type(b.type);
     if(b.current==null)return {type:ordinary,raw:b.type};
-    if(b.type.length!==1||b.type[0]<3||b.type[0]>=11||
-       !Array.isArray(b.current)||b.current.some(i=>i>=3))throw Error("invalid current-content assertion");
-    return {type:`{ value: ${b.type[0]===9?"boolean":primitive(b.type[0]-3)} = (${type(b.current)}) }`,
+    const invariant=b.type.length===1 ? profile.types[b.type[0]]?.[0]?.refs?.first : null;
+    if(!invariant||!Array.isArray(b.current)||b.current.some(i=>!profile.primitiveLabels.includes(i)))throw Error("invalid current-content assertion");
+    return {type:`{ value: ${String(invariant)==="1,2"?"boolean":type(invariant)} = (${type(b.current)}) }`,
       raw:{type:b.type,current:b.current}};
   };
   const parameter=b=> {

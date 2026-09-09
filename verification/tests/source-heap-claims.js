@@ -82,7 +82,7 @@ function fixture(body, param = "") {
   );
   const doc = {
     version: 2,
-    profile: "stateful-source-75-v2",
+    profile: "stateful-source-276-v2",
     file,
     sourceSha256: hash(source),
     functions: [

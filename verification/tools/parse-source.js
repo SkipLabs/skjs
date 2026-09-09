@@ -154,6 +154,7 @@ function expr(node) {
       const p = node.parameters[0];
       if (!ts.isIdentifier(p.name) || p.name.text === "this" || p.questionToken || p.dotDotDotToken || p.initializer)
         fail(p, "expected a required closure parameter");
+      if (p.name.text === "undefined") fail(p, "shadowing undefined is outside the fragment");
       let body;
       if (ts.isBlock(node.body)) {
         const nullType = {top:false,atoms:[{a:"null"}]};
@@ -279,6 +280,7 @@ function stmt(node) {
       if (dl.declarations.length !== 1) fail(node, "one binding per `const` in the fragment");
       const d = dl.declarations[0];
       if (d.name.kind !== ts.SyntaxKind.Identifier) fail(d, "destructuring is outside the fragment");
+      if (d.name.text === "undefined") fail(d, "shadowing undefined is outside the fragment");
       if (!d.initializer) fail(d, "a `const` needs an initializer");
       return {
         k: "const",
@@ -323,6 +325,7 @@ function stmt(node) {
 
 function functionDecl(node) {
   if (!node.name) fail(node, "anonymous function");
+  if (node.name.text === "undefined") fail(node, "shadowing undefined is outside the fragment");
   if (node.typeParameters && node.typeParameters.length > 0) {
     fail(node, "generics are outside the fragment");
   }
@@ -332,6 +335,7 @@ function functionDecl(node) {
   if (!node.body) fail(node, "a function must have a body");
   const params = node.parameters.map((p) => {
     if (p.name.kind !== ts.SyntaxKind.Identifier) fail(p, "destructuring parameter");
+    if (p.name.text === "undefined") fail(p, "shadowing undefined is outside the fragment");
     if (p.questionToken) fail(p, "optional parameters are outside the fragment");
     if (p.dotDotDotToken) fail(p, "rest parameters are outside the fragment");
     if (p.initializer) fail(p, "default parameters are outside the fragment");

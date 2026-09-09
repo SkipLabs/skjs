@@ -33,7 +33,7 @@ try {
     pos = f.body[0].e.pos;
   const base = {
     version: 2,
-    profile: "stateful-source-75-v2",
+    profile: "stateful-source-276-v2",
     file,
     sourceSha256: hash(source),
     functions: [

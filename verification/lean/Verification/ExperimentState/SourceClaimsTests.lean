@@ -15,7 +15,7 @@ private def claims : SourceClaims.Function :=
 private def check (c : SourceClaims.Function) : Except String Unit := do
   let r ← extractNormalizedFn source c
   let wire := toJson r.toRequest
-  let evidence ← RequestJson.produceJson wire 6
+  let evidence ← RequestJson.produceJson wire 6 [] [] [] (some r.searchLabels)
   RequestJson.verifyJson wire evidence
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
 #guard ok (check claims)
@@ -34,7 +34,7 @@ private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .
 -- Existing evidence cannot justify a different normalized environment or type.
 private def checkAgainst (c : SourceClaims.Function) : Except String Unit := do
   let original ← extractNormalizedFn source claims
-  let evidence ← RequestJson.produceJson (toJson original.toRequest) 6
+  let evidence ← RequestJson.produceJson (toJson original.toRequest) 6 [] [] [] (some original.searchLabels)
   let changed ← extractNormalizedFn source c
   RequestJson.verifyJson (toJson changed.toRequest) evidence
 #guard !ok (checkAgainst { claims with envs := [(2,[("flag",.ok [2])])] })
