@@ -43,7 +43,7 @@ genuinely carries them — a certificate's binding transfer, and the wire format
 
 Assertions are attached to bindings, because bindings are what a checker can
 name; locations arise only during execution and never appear in a program. So
-$\operatorname{cell}(x,R)$ is not a claim about $x$'s value but about the
+$x\mapsto R$ is not a claim about $x$'s value but about the
 location that value *is*: there exist $\ell$ and $v$ with $\rho(x)=\ell$,
 $h(\ell)=v$ and $v\in R$. That one indirection is where aliasing enters, and it
 is why the checked rules have
@@ -174,24 +174,52 @@ future extension. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
 SKJS's internal types with heap assertions.
 
-The finite assertion layer also records two relationships between bindings,
-interpreted by `HeapLinks.Holds`:
+### What is asserted, and what a heap change can touch
+
+The finite assertion layer records three forms, and they divide on one question:
+does the form mention the heap?
 
 $$
 \begin{aligned}
-\operatorname{read}(x,y)&\equiv
-  \exists\ell.\;\rho(x)=\ell\land h(\ell)=\rho(y),\\
-x=y&\equiv\rho(x)=\rho(y).
+x=R&\equiv\rho(x)\in R,
+  &&\text{a variable equals one of these constants}\\
+x=y&\equiv\rho(x)=\rho(y),
+  &&\text{two variables hold the same value}\\
+x\mapsto R&\equiv
+  \exists\ell\,v.\;\rho(x)=\ell\land h(\ell)=v\land v\in R,
+  &&\text{the cell }x\text{ names holds one of them}\\
+x\mapsto y&\equiv
+  \exists\ell.\;\rho(x)=\ell\land h(\ell)=\rho(y),
+  &&\text{that cell holds the value of }y
 \end{aligned}
 $$
 
-A read relationship depends on the current heap. Slot equality does not: two
-copied references remain the same location after writes. Allocation preserves
-both relationships; an arbitrary write or call preserves binding equality but may
-invalidate any read relationship. The checked rules conservatively discard all
-read relationships on writes/calls. The syntax owner is the
-[assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar); operational rules
-and alias handling belong to [Program typing](PROGRAM-TYPING.md#checked-expression-postconditions).
+Two relations, each taking a finite set of constants or a variable on the right.
+The $=$ atoms mention only $\rho$; the $\mapsto$ atoms mention $h$ as well, and
+that is the only difference that matters. $x=R$ abbreviates the disjunction
+$x=c_1\lor\dots\lor c_k$, an ordinary equality when $R$ is a singleton; its
+meaning is membership, but the assertion is an equality. Write $\Pi$ for a list of them. The last two mention $h$ as
+well. Write $\Sigma$ for a list of those. Both are read as the conjunction of
+their atoms and extended with a comma, exactly as $\Gamma$ is; neither carries
+ownership or disjointness, and the atoms are duplicable, so there is no
+separating conjunction to write.
+
+That division is the whole state discipline. No write and no call can disturb
+$\Pi$, because nothing in $\Pi$ speaks about the heap: two copied references remain
+the same location after any write, and a constant a variable is equal to does not
+change when a cell does. Everything in $\Sigma$ is a claim about the heap as it is
+now, so a write to an unknown location or a call to an unknown function can
+falsify any of it. Allocation is the exception that proves it: a fresh cell
+cannot be one an existing fact names, so allocation preserves both.
+
+`ValueHolds` and the alias branch of `HeapLinks.Holds` interpret $\Pi$;
+`HeapFacts.Holds` and the read branch interpret $\Sigma$. The implementation stores
+them as three lists — cell facts, value facts, and links carrying an `alias`
+flag — so the links list straddles the division: the flag is what says which side
+a link is on. [Program typing](PROGRAM-TYPING.md#the-reference-operations) states
+the rules over $\Pi$ and $\Sigma$; the
+[assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar) owns the notation
+for what a source claim may say.
 
 `SafePost T Q n W h e` strengthens `Safe T n W h e`: at a positive-budget final
 value it additionally requires `Q h e`; its step case uses exactly the same

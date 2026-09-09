@@ -128,25 +128,32 @@ bottom would be an incorrect normalization.
 Point claims can combine ordinary types with facts about the current execution
 state. The following notation describes the finite assertion layer; it does not
 add constructors to the ordinary type grammar above. Let $x$ and $y$ name environment
-slots, $A$ and $B$ be ordinary types, and $R$ be a finite literal set:
+slots, $A$ and $B$ be ordinary types, and $R$ be a finite set of constants:
 
 $$
 \begin{aligned}
 a &::= \mathsf{null}\mid\mathsf{true}\mid\mathsf{false},\\
 R &::= \{a_1,\ldots,a_k\}\quad(k\geq 0),\\
-J &::= \top\mid x:A\mid\operatorname{cell}(x,R)
-       \mid\operatorname{val}(x,R)\mid\operatorname{read}(x,y)\mid x=y\mid J\land J.
+J &::= \top\mid x:A\mid x=R\mid x=y\mid x\mapsto R\mid x\mapsto y\mid J\land J.
 \end{aligned}
 $$
 
 | Assertion | What it states |
 | --- | --- |
-| $x:A$ | The value in slot $x$ belongs to the ordinary type $A$, interpreted against the current world and budget. |
-| $\operatorname{cell}(x,R)$ | Slot $x$ holds a location whose current heap contents belong to $R$. It does not specify or change that location's storage invariant. |
-| $\operatorname{val}(x,R)$ | The immutable value in slot $x$ belongs to $R$. This is a snapshot fact, independent of subsequent heap mutation. |
-| $\operatorname{read}(x,y)$ | Slot $x$ holds a location whose current contents equal the immutable value in slot $y$. A write or call can invalidate this relationship. |
-| $x=y$ | Two slots hold the same immutable value, including the same location when they contain references. Mutation of the heap does not change this equality. |
+| $x:A$ | The value of $x$ belongs to the ordinary type $A$, interpreted against the current world and budget. |
+| $x=R$ | $x$ equals one of the constants in $R$. A statement about the environment, so no heap change can falsify it. |
+| $x=y$ | $x$ and $y$ hold the same value, including the same location when they hold references. Again untouched by heap changes. |
+| $x\mapsto R$ | The cell $x$ names currently holds one of the constants in $R$. It does not specify or change that location's storage invariant. |
+| $x\mapsto y$ | The cell $x$ names currently holds the value of $y$. A write or a call can falsify this. |
 | $\top$, $J_1\land J_2$ | No requirement, or both requirements. Conjunction does not assert ownership or disjoint locations. |
+
+The two relations each take a constant set or a variable on the right, which is
+the whole grammar: $=$ speaks only about the environment, $\mapsto$ about the
+heap as well. That division is what decides survival, and
+[Program typing](PROGRAM-TYPING.md#the-reference-operations) states the rules
+over it. Despite the notation there is no separating conjunction and no
+ownership: these facts are duplicable, and $\mapsto$ carries no claim that the
+cell is unaliased or that the heap holds nothing else.
 
 An empty literal set is an impossible content/value predicate, not an absent
 assertion. There is no general assertion disjunction, negation or quantifier in
@@ -160,7 +167,7 @@ The notation requested for source claims is an abbreviation:
 $$
 x:\{\mathsf{value}:B=R\}
 \quad\equiv\quad
-x:\mathsf{ref}(B)\ \land\ \operatorname{cell}(x,R).
+x:\mathsf{ref}(B)\ \land\ x\mapsto R.
 $$
 
 Here $\mathsf{ref}(B)$ abbreviates the ordinary clause $\mathsf{Ref}\,B$, with no

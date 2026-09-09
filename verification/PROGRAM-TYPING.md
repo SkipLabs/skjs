@@ -11,15 +11,43 @@ observations reach checked obligations, specified under
 rule statements, side conditions, soundness scope and evidence construction;
 [Design](DESIGN.md) owns the integration roadmap.
 
-## Judgments and constructor views
+## Notation
+
+| | Ranges over |
+| --- | --- |
+| $t$, $u$ | [terms](SEMANTICS.md#operational-language) |
+| $t_1$, $t_2$ | a branch's two arms, in that order |
+| $a$, $a'$ | terms, where a rule admits an arbitrary one rather than a variable |
+| $x$, $y$, $z$ | variables, which are terms |
+| $c$ | a term in condition position |
+| $\gamma$ | a [clause](POSITIVE-TYPES.md#representation-and-mathematical-rules) |
+| $r$ | the binding a rule gives its result |
+| $k$ | one of the four shape tests |
+| $A$, $B$, $C$ | types, each a finite list of graph labels read as their union |
+| $R$ | a finite set of constants |
+| $G$ | the normalized positive graph |
+| $\Gamma$ | a typing context, one type per variable |
+| $\Pi$, $\Sigma$ | the [equality and heap parts](#checked-expression-postconditions) of the assertion state |
+| $\rho$, $h$, $W$, $n$ | an environment, heap, world and budget, from [the model](SEMANTICS.md#types-worlds-and-heaps) |
+| $\Delta$ | a target claim environment, and in [POSITIVE-TYPES](POSITIVE-TYPES.md) a table of subtype obligations |
+
+$r$ never names an operand, and a premise can never mention it: it is bound by
+the rule's conclusion and scoped to the postcondition.
+
+## Expressions
+
+Typing a term against the positive graph, with no notion of state. Everything
+later rests on this layer and none of it changes these rules.
+
+### Judgments and constructor views
 
 Fix a normalized positive graph $G$. A type $A$ is a finite list of graph labels,
-interpreted as their union. Write $A\equiv_G c$ when expanding those labels yields
-exactly the singleton clause $[c]$. This is a finite syntactic equality, not a
+interpreted as their union. Write $A\equiv_G\gamma$ when expanding those labels
+yields exactly the singleton clause $[\gamma]$. This is a finite syntactic equality, not a
 semantic-equivalence oracle. Below, writing a constructor as a type abbreviates
 such a view of its graph labels.
 
-The judgment $\Gamma\vdash_G e:A$ is `HasTy`. The rules are:
+The judgment $\Gamma\vdash_G t:A$ is `HasTy`. The rules are:
 
 $$
 \frac{\Gamma(x)=A}{\Gamma\vdash_G x:A}
@@ -38,8 +66,8 @@ $$
 $$
 
 $$
-\frac{\forall(A,B)\in L.\;\Gamma,x:A\vdash_G e:B}
-     {\Gamma\vdash_G \lambda x.e:\bigwedge_{(A,B)\in L}(A\to B)}
+\frac{\forall(A,B)\in L.\;\Gamma,x:A\vdash_G t:B}
+     {\Gamma\vdash_G \lambda x.t:\bigwedge_{(A,B)\in L}(A\to B)}
 \qquad
 \frac{\Gamma\vdash_G f:\bigwedge_{(C,D)\in L}(C\to D)
       \quad(A,B)\in L\quad\Gamma\vdash_G a:A}
@@ -57,15 +85,15 @@ it does not require allocating a type-graph label for that intermediate lambda.
 $$
 \frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{alloc}(a):\mathsf{Ref}(A)}
 \qquad
-\frac{\Gamma\vdash_G r:\mathsf{Ref}(A)}{\Gamma\vdash_G\mathsf{read}(r):A}
+\frac{\Gamma\vdash_G a:\mathsf{Ref}(A)}{\Gamma\vdash_G\mathsf{read}(a):A}
 $$
 
 $$
-\frac{\Gamma\vdash_G r:\mathsf{Ref}(A)\quad\Gamma\vdash_G a:A}
-     {\Gamma\vdash_G\mathsf{write}(r,a):\mathsf{Null}}
+\frac{\Gamma\vdash_G a:\mathsf{Ref}(A)\quad\Gamma\vdash_G a':A}
+     {\Gamma\vdash_G\mathsf{write}(a,a'):\mathsf{Null}}
 \qquad
-\frac{\Gamma\vdash_G e:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
-     {\Gamma\vdash_G e:B}
+\frac{\Gamma\vdash_G t:A\quad\operatorname{check}(G,A,B,p)=\mathsf{true}}
+     {\Gamma\vdash_G t:B}
 $$
 
 For branching, $\operatorname{Answers}_G(A,k,q)$ checks that every expanded
@@ -73,9 +101,9 @@ clause of $A$ gives the same Boolean answer $q$ to shape test $k$:
 
 $$
 \frac{\Gamma(x)=A\quad\operatorname{Answers}_G(A,k,q)
-      \quad(q=\mathsf{true}\Rightarrow\Gamma\vdash_G u:B)
-      \quad(q=\mathsf{false}\Rightarrow\Gamma\vdash_G e:B)}
-     {\Gamma\vdash_G\mathsf{if}\ k(x)\ \mathsf{then}\ u\ \mathsf{else}\ e:B}.
+      \quad(q=\mathsf{true}\Rightarrow\Gamma\vdash_G t_1:B)
+      \quad(q=\mathsf{false}\Rightarrow\Gamma\vdash_G t_2:B)}
+     {\Gamma\vdash_G\mathsf{if}\ k(x)\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:B}.
 $$
 
 The shape-test rule checks each overload body under its own argument type. It
@@ -88,17 +116,17 @@ singleton unions as well as the Boolean clause.
 
 $$
 \frac{\Gamma\vdash_G c:C\quad\operatorname{Boolean}_G(C)
-      \quad\Gamma\vdash_G t:A\quad\Gamma\vdash_G e:A}
-     {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+      \quad\Gamma\vdash_G t_1:A\quad\Gamma\vdash_G t_2:A}
+     {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:A}.
 $$
 
 A condition with a proved singleton type needs only its reachable arm. For
 $q\in\{\mathsf{true},\mathsf{false}\}$, write $B_q$ for a type represented by
-$\mathsf{boolLit}(q)$, and let $t_q$ be $t$ when $q$ is true and $e$ otherwise:
+$\mathsf{boolLit}(q)$, and let $t_q$ select the arm that $q$ reaches:
 
 $$
 \frac{\Gamma\vdash_G c:B_q\qquad\Gamma\vdash_G t_q:A}
-     {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+     {\Gamma\vdash_G\mathsf{if}\ c\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:A}.
 $$
 
 `ifKnown q` carries two proofs: one for the condition at its singleton type,
@@ -115,9 +143,9 @@ tested immutable variable. Write $\Gamma[x:=T]$ for replacing $x$'s type:
 
 $$
 \frac{\Gamma(x)=C\quad\operatorname{Boolean}_G(C)
-      \quad\Gamma[x:=\mathsf{True}]\vdash_G t:A
-      \quad\Gamma[x:=\mathsf{False}]\vdash_G e:A}
-     {\Gamma\vdash_G\mathsf{if}\ x\ \mathsf{then}\ t\ \mathsf{else}\ e:A}.
+      \quad\Gamma[x:=\mathsf{True}]\vdash_G t_1:A
+      \quad\Gamma[x:=\mathsf{False}]\vdash_G t_2:A}
+     {\Gamma\vdash_G\mathsf{if}\ x\ \mathsf{then}\ t_1\ \mathsf{else}\ t_2:A}.
 $$
 
 Here $\mathsf{True}$ and $\mathsf{False}$ must expand to the corresponding singleton
@@ -130,61 +158,7 @@ below, currently connected to Boolean dispatch.
 Reference rules use a single invariant operand; eliminating a conjunction to such a reference view
 can be justified by subsumption. No direct multi-contract program rule is assumed.
 
-## Binding and soundness
-
-`Bindings.lean` defines de Bruijn scope, simultaneous closing substitution, and
-its application law:
-
-$$
-(\operatorname{close}_{\rho}(\lambda x.b))(a)
-\longrightarrow \operatorname{close}_{a::\rho}(b).
-$$
-
-The formal statement is `instantiate_beta`; environment entries must be closed.
-Arrow membership explicitly requires a closed lambda, so every value in a
-positive graph type is both a value and closed (`meaning_value`). Semantic
-environments retain these properties when extended, when their world grows,
-and when their observation budget decreases.
-
-`HasTy.sound` proves:
-
-$$
-\Gamma\vdash_G e:A\ \land\ \operatorname{EnvOk}_G(\Gamma,\rho,n,W)\ \land\
-\operatorname{WorldAdm}(W)\ \land\ \operatorname{HeapOk}(n,W,h)
-\ \Longrightarrow\
-\operatorname{Safe}(\llbracket A\rrbracket_G,n,W,h,\operatorname{close}_{\rho}(e)).
-$$
-
-`HasTy.closed_safe` specializes this to a closed program with an empty typing
-environment. It explicitly requires `Scoped 0 e`: the total semantic environment
-must not silently supply meanings for unbound source variables. Safety is partial
-correctness and absence of stuck execution, not termination.
-
-The general evaluation-context lemma `bind` composes computations across heap
-changes and future worlds. The typing theorem is an induction on derivations;
-none of its constructor rules has a semantic safety premise.
-
-## Integration example
-
-`ProgramTypingTests.lean` derives safety for a program equivalent to:
-
-```text
-let r = alloc true;
-let f = x => if isNull x then read r else null;
-let alias = r;
-write alias false;
-f(true);
-f(null)
-```
-
-One closure has both `Null → Bool` and `Bool → Null`. Before the final call, a
-checked certificate widens that overload to `(Null | Bool) → (Null | Bool)` by
-splitting the union domain. The program is safe in every admissible world and
-satisfying heap. A separate execution theorem confirms it returns `false` from
-an empty heap; the safety proof does not depend on that trace. A negative theorem
-rules out any typing derivation for applying null as a function.
-
-## Eliminating a variable's union type
+### Eliminating a variable's union type
 
 A finite union can be split in one immutable binding. Write $[a]$ for
 one graph label viewed as a type. Every member must establish the same term and
@@ -209,7 +183,61 @@ Proof search uses the rule for tag tests over explicit unions of labels. It does
 not repeatedly split a singleton label whose graph definition itself contains
 mixed shapes; that representation needs additional decomposition rules.
 
-## Executable program evidence
+### Binding and soundness
+
+`Bindings.lean` defines de Bruijn scope, simultaneous closing substitution, and
+its application law:
+
+$$
+(\operatorname{close}_{\rho}(\lambda x.b))(a)
+\longrightarrow \operatorname{close}_{a::\rho}(b).
+$$
+
+The formal statement is `instantiate_beta`; environment entries must be closed.
+Arrow membership explicitly requires a closed lambda, so every value in a
+positive graph type is both a value and closed (`meaning_value`). Semantic
+environments retain these properties when extended, when their world grows,
+and when their observation budget decreases.
+
+`HasTy.sound` proves:
+
+$$
+\Gamma\vdash_G t:A\ \land\ \operatorname{EnvOk}_G(\Gamma,\rho,n,W)\ \land\
+\operatorname{WorldAdm}(W)\ \land\ \operatorname{HeapOk}(n,W,h)
+\ \Longrightarrow\
+\operatorname{Safe}(\llbracket A\rrbracket_G,n,W,h,\operatorname{close}_{\rho}(t)).
+$$
+
+`HasTy.closed_safe` specializes this to a closed program with an empty typing
+environment. It explicitly requires the term to be scoped: the total semantic environment
+must not silently supply meanings for unbound source variables. Safety is partial
+correctness and absence of stuck execution, not termination.
+
+The general evaluation-context lemma `bind` composes computations across heap
+changes and future worlds. The typing theorem is an induction on derivations;
+none of its constructor rules has a semantic safety premise.
+
+### Integration example
+
+`ProgramTypingTests.lean` derives safety for a program equivalent to:
+
+```text
+let r = alloc true;
+let f = x => if isNull x then read r else null;
+let alias = r;
+write alias false;
+f(true);
+f(null)
+```
+
+One closure has both `Null → Bool` and `Bool → Null`. Before the final call, a
+checked certificate widens that overload to `(Null | Bool) → (Null | Bool)` by
+splitting the union domain. The program is safe in every admissible world and
+satisfying heap. A separate execution theorem confirms it returns `false` from
+an empty heap; the safety proof does not depend on that trace. A negative theorem
+rules out any typing derivation for applying null as a function.
+
+### Executable program evidence
 
 `ProgramCertificates.lean` checks finite evidence trees. Each node contains a
 sequent (context, term, result type), a rule name, and its premise trees.
@@ -254,7 +282,12 @@ incorrect writes, malformed subtype evidence, extra premises and unbound variabl
 Its safety theorem is obtained from the successful check, with no embedded typing
 proof in the certificate.
 
-## Supplied point claims and incoming edges
+## Control flow
+
+A finite graph over those expressions: one term per node, an edge discipline
+that transfers bindings, and a certificate that checks every node and edge.
+
+### Supplied point claims and incoming edges
 
 `PointClaims.lean` checks supplied type environments. Write $\Gamma \preceq_G \Delta$
 when every slot in the target claim $\Delta$ has a source slot at the same
@@ -329,7 +362,7 @@ These are local obligations. `checkIncoming` checks the edges it is given;
 it does not establish that they enumerate a graph's actual predecessors.
 The graph checker below discharges that enumeration obligation.
 
-## Checked control-flow graphs
+### Checked control-flow graphs
 
 `ControlFlow.lean` adds a finite control-flow graph over the existing expression
 language. A program is a finite list of nodes indexed by label; each node is one
@@ -429,7 +462,7 @@ program-evidence and edge-evidence completeness results above retain their
 stated scope.
 
 
-### Refinement under an observed outcome
+#### Refinement under an observed outcome
 
 [BranchRefinement.lean](lean/Verification/ExperimentState/BranchRefinement.lean)
 uses one contract for Boolean equality and tag observations. An observation $o$
@@ -504,10 +537,10 @@ The `tagBind` continuation tests the actual returned value, pushes that value,
 and selects the matching edge. Its schematic rule is:
 
 $$
-\frac{\Gamma\vdash_G e:A
-\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_y,0,\operatorname{tag}(t,\mathsf{true}),m_y)
-\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_n,0,\operatorname{tag}(t,\mathsf{false}),m_n)}
-{\operatorname{NodeOk}_G(\Gamma,e,\operatorname{tagBind}(t;y,m_y;n,m_n))}.
+\frac{\Gamma\vdash_G t:A
+\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_y,0,\operatorname{tag}(k,\mathsf{true}),m_y)
+\quad\operatorname{ObservedCovers}_G(A::\Gamma,\Delta_n,0,\operatorname{tag}(k,\mathsf{false}),m_n)}
+{\operatorname{NodeOk}_G(\Gamma,t,\operatorname{tagBind}(k;y,m_y;n,m_n))}.
 $$
 
 Both edges are checked. Unlike Boolean dispatch, tag dispatch accepts any typed
@@ -532,7 +565,14 @@ closure control-flow slice. It does not retain observations of mutable propertie
 The finite-label split is a source-profile strategy, not a new semantic rule for
 arbitrary mixed-shape type labels.
 
-## Current-content rules (semantic layer)
+## State
+
+What is known about the heap and the environment as execution proceeds, layered
+over both of the above: expression typing decides whether an operation is
+admitted, the graph decides where its knowledge travels, and these rules decide
+what it establishes.
+
+### Current-content rules (semantic layer)
 
 The finite [type and assertion syntax](POSITIVE-TYPES.md#state-assertion-grammar)
 is defined alongside the ordinary type grammar. This section owns its rules.
@@ -595,9 +635,9 @@ $$
 For a slot map $m$, the executable entailment check uses this sufficient rule:
 
 $$
-\frac{\forall(i,R)\in\Delta.\;\exists(j,S)\in\Sigma.\ j=m(i)\land S\subseteq R}
+\frac{\forall(i,R)\in\Sigma'.\;\exists(j,S)\in\Sigma.\ j=m(i)\land S\subseteq R}
  {\operatorname{Holds}(\Sigma,\rho,h)\Longrightarrow
-  \operatorname{Holds}(\Delta,\operatorname{mapEnv}(m,\rho),h)}.
+  \operatorname{Holds}(\Sigma',\operatorname{mapEnv}(m,\rho),h)}.
 $$
 
 `HeapFacts.check_sound` proves it. Repeated slot mappings retain aliases; different
@@ -607,7 +647,7 @@ drops all old facts and establishes the written literal. `alloc` preserves shift
 old facts and adds the fresh cell at the result slot. These are semantic rules;
 source compilation must still supply and check their graph-level use.
 
-### Checked expression postconditions
+#### Checked expression postconditions
 
 `HeapKnowledge.Knowledge` pairs the cell facts above with immutable slot facts
 $V$, interpreted as $\forall(i,R)\in V.\;\rho(i)\in R$. This distinction is
@@ -616,16 +656,35 @@ remains unchanged, while a proved fact about the returned value can justify a
 narrower subsequent return contract. Mutation invalidates cell contents and read-to-cell relationships, not
 values already read into immutable slots or equalities between copied values.
 
-For $K=(\Delta,V,L)$, where $L$ contains read/equality links, write $K(\rho,h)$ for
-the conjunction of these assertions.
+The [assertion layer](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch)
+splits in two. $\Pi$ is a conjunction of **equalities** — $x\in\{c_1,\dots,c_k\}$
+between a variable and constants, and $x=y$ between two variables — and mentions
+only the environment. $\Sigma$ is a list of points-to atoms $x\mapsto R$ and
+$x\mapsto y$ — the cell $x$ names currently holds one of those constants, or the
+value of $y$ — and so mentions the heap. Neither relation carries ownership:
+$\mapsto$ here is duplicable and says nothing about what else the heap holds.
 
 Checking an expression is then a **Hoare typing**: an ordinary typing carrying a
-precondition and a postcondition on the current heap. Write
+precondition and a postcondition. Write
 
-$$\Gamma;K\vdash_G t:A\dashv K'$$
+$$\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t:A\dashv \Pi';\Sigma'$$
 
-for: in an environment satisfying $\Gamma$ and a heap satisfying $K$, evaluating
-$t$ is safe, its value has type $A$, and the resulting heap satisfies $K'$.
+for: with variables typed by $\Gamma$, in an environment satisfying $\Pi$ and a
+heap satisfying $\Sigma$, evaluating $t$ is safe, its value has type $A$, and
+binding that value to $r$ leaves a state satisfying $\Pi'$ and $\Sigma'$.
+
+The binder is written $\leftarrow$ rather than $=$, which is already the equality
+assertion these rules produce, and rather than $:=$, since nothing is assigned:
+$r$ is a fresh binding, and it is the graph's `bind` continuation that makes it.
+$r$ is in scope in the postcondition only, so a premise can never mention it.
+
+$\Gamma$ does not appear on the right. It types the variables and is fixed for
+the derivation; only $\Pi$ and $\Sigma$ are transformed. Note that $\Gamma$ and $\Pi$ both
+constrain the environment, in different languages: $\Gamma$ gives each variable a
+graph type, and $\Pi$'s constant equalities refine that for primitives — `valuesAt`
+reads a value fact when there is one and falls back to the variable's type when
+there is not. What $\Pi$ adds beyond $\Gamma$ is equalities *between* variables,
+which a type cannot express.
 
 Every rule binds the value it produces. Write $r$ for that binding, so a
 postcondition can speak about the result alongside everything already in scope.
@@ -642,78 +701,117 @@ it carries no source scoping; the adapter's own shadowing rules are
 where a certificate carries a permutation, in
 [binding transfer](#supplied-point-claims-and-incoming-edges) and on the wire.
 
-Three abbreviations. $\operatorname{val}(x,R)$ is the immutable fact
-$\rho(x)\in R$; $y\approx_K x$ means $K$'s equality links prove
-$\rho(y)=\rho(x)$, which holds for $x$ itself; and $\operatorname{val}_K(x)=R$
-means $R$ is the literal set proved for $x$, from a value fact or from its
-ordinary primitive type (`valuesAt`). Cell facts $\operatorname{cell}(x,R)$ and
-links $\operatorname{read}(x,y)$, $x=y$ are the
-[assertion forms](SEMANTICS.md#current-content-assertions-and-postconditions).
+Two auxiliary forms. $(\Gamma;\Pi)(x)$ looks $x$ up in both contexts, $\Pi$
+first: it is the finite disjunction of constants recorded for $x$ there, or
+failing that the one $\Gamma(x)$ denotes when that type is a finite primitive
+union. It extends the $\Gamma(x)$ of the ordinary rules to the pair, is partial
+in the same way, and is a lookup rather than a search — `valuesAt` computes it in
+that order and `valuesAt_sound` proves the equality it yields.
 
-### The reference operations
+$y\approx_\Pi x$ says $\Pi$ contains the equality $x=y$, or $y$ is $x$ itself. It
+is deliberately not written as an entailment, because it is **one step and not
+the transitive closure**: with $x=y$ and $y=z$ in $\Pi$, the relation holds of
+$y$ and not of $z$ (`HeapLinks.aliases`). A write therefore propagates to the
+directly recorded aliases only. That is sound — `aliases_eq` proves each one
+denotes the same value — and incomplete, and the rules below say $\approx_\Pi$
+rather than $=$ so as not to claim otherwise.
+
+#### The reference operations
 
 These four rules are the heart of the state discipline. Each is proved in
 `HeapExpressionRules.lean`, and each is the postcondition the checker computes,
 not one it assumes.
 
-**Allocation** creates a cell and invalidates nothing:
+Each has an ordinary typing above the line and a Hoare typing below it, which is
+the layering: $\Gamma\vdash_G t:A$ is the
+[judgment of the ordinary rules](#judgments-and-constructor-views), `HasTy`, and
+it knows nothing about state; the conclusion adds what evaluating $t$ does to
+$\Pi$ and $\Sigma$. So an operation is admitted only if it already types, and
+these rules say what it then establishes. $\operatorname{Ref}A$ and
+$\mathsf{Null}$ are [constructor views](#judgments-and-constructor-views): a type
+whose labels expand to exactly that clause.
+
+Here $x$ and $y$ range over variables, where the ordinary rules write $a$ for an
+arbitrary term. A variable is a term, so each premise is an ordinary rule at a
+special case and no kind is mismatched. The reason for the restriction is that
+$\Pi$ and $\Sigma$ speak only about variables: $x=R$, $x\mapsto y$ and
+$z\approx_\Pi x$ all name one. With an arbitrary operand the expression still
+types and the operation still runs, but the postcondition would have nothing to
+name, and the rule would degenerate into the catch-all below. Naming the operand
+buys precision, not soundness.
+
+$r$ is reserved throughout for the result of the operation being typed, and
+never names one of its operands.
+
+**Allocation** puts $x$'s value in a fresh cell and returns it, so the result is
+a reference whose contents are whatever $x$ was known to equal. Nothing already
+known is disturbed: a cell that did not exist cannot be one an existing atom
+names, so all of $\Sigma$ survives.
 
 $$
 \frac{\Gamma\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
-      \qquad\operatorname{val}_K(x)=R}
-{\Gamma;K\vdash_G\operatorname{alloc}(x):\operatorname{Ref}A
-  \dashv K\land\operatorname{cell}(r,R)}
+      \qquad(\Gamma;\Pi)(x)=R}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{alloc}(x):\operatorname{Ref}A
+  \dashv \Pi\;;\;\Sigma,\;r\mapsto R}
 $$
 
-**Reading** preserves the heap and records where the result came from. The
-ordinary rule claims nothing about contents; the observed rule additionally
-consumes a cell fact and returns it as a fact about the value:
+**Reading** leaves the heap alone and records where the result came from: $r$ now
+holds what the cell $x$ names holds, which is what a later test of $r$ needs in
+order to refine $x$ itself. The ordinary rule claims nothing about the contents.
+The observed rule additionally consumes a points-to atom already in $\Sigma$ and
+returns it as an equality on the result:
 
 $$
 \frac{\Gamma\vdash_G\operatorname{read}(x):A\qquad\Gamma(x)=\operatorname{Ref}B}
-{\Gamma;K\vdash_G\operatorname{read}(x):A
-  \dashv K\land\textstyle\bigwedge_{y\approx_K x}\operatorname{read}(y,r)}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}(x):A
+  \dashv \Pi\;;\;\Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
 $$
 
 $$
-\frac{\operatorname{cell}(x,R)\in K\qquad R\subseteq A}
-{\Gamma;K\vdash_G\operatorname{read}(x):A
-  \dashv K\land\textstyle\bigwedge_{y\approx_K x}\operatorname{read}(y,r)
-   \land\operatorname{val}(r,R)}
+\frac{(x\mapsto R)\in\Sigma\qquad R\subseteq A}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{read}(x):A
+  \dashv \Pi,\;r=R\;;\;
+   \Sigma,\{y\mapsto r\mid y\approx_\Pi x\}}
 $$
 
-**Writing** establishes the new contents and destroys every cell fact and read
-link, keeping only immutable values and binding equalities:
+**Writing** stores $y$'s value in the cell $x$ names. The result is `null`. It
+establishes the new contents for $x$ and every variable recorded equal to it, and
+destroys the rest of $\Sigma$ — including atoms about cells that may or may not
+be this one:
 
 $$
 \frac{\Gamma\vdash_G\operatorname{write}(x,y):\mathsf{Null}
-      \qquad\operatorname{val}_K(y)=R}
-{\Gamma;K\vdash_G\operatorname{write}(x,y):\mathsf{Null}
-  \dashv\textstyle\bigwedge_{z\approx_K x}\operatorname{cell}(z,R)
-   \land\operatorname{val}(r,\{\mathsf{null}\})\land V\land L^{=}}
+      \qquad(\Gamma;\Pi)(y)=R}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\operatorname{write}(x,y):\mathsf{Null}
+  \dashv \Pi,\;r=\mathsf{null}\;;\;
+   \{z\mapsto R\mid z\approx_\Pi x\}}
 $$
 
-**Every other expression**, calls included, keeps only what a call cannot
-falsify:
+**Every other expression**, calls included, empties the heap part and leaves the
+equalities untouched:
 
 $$
 \frac{\Gamma\vdash_G t:A}
-{\Gamma;K\vdash_G t:A\dashv V\land L^{=}}
+{\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t:A\dashv \Pi\;;\;\emptyset}
 $$
 
-Here $V$ is the immutable-value part of $K$ and $L^{=}$ its equality links, both
-carried over unchanged.
+$\Pi$ and $\Sigma$ are finite lists of atoms, read as their conjunction and
+extended with a comma, exactly as $\Gamma$ is. $\emptyset$ is the empty heap
+part: nothing is known about any cell. $\Pi$ carries over verbatim, because no
+equality mentions the heap. There is no separating conjunction here — these
+facts are duplicable, and carry no ownership or disjointness.
 
 The shape a type theorist will look for is missing on purpose: **there is no
 frame rule.** A write through $x$ discards what is known about $z$ even when $z$
 is a different name, because distinct names need not be distinct locations — the
-assertion language can witness that two names alias, never that they do not. So
+assertion language can witness that two names are equal, never that they are
+not. So
 the positive direction is proof-driven and the negative direction is total: the
-new contents propagate exactly to the witnessed aliases $z\approx_K x$, while
+new contents propagate exactly to the witnessed aliases $z\approx_\Pi x$, while
 everything else is dropped rather than framed around. `write_frame` in the
 semantic layer does preserve a fact at another location, but only from a proved
-runtime inequality, and the finite assertion language cannot state one: its links
-carry equality and no disequality. Preservation for proved-distinct cells is
+runtime inequality, and $\Pi$ cannot state one: it carries equalities and no
+disequalities. Preservation for proved-distinct cells is
 therefore not implemented. That is a gap in the assertion language, not a limit
 of the model.
 
@@ -722,8 +820,8 @@ coexist freely: allocation and reads preserve every one of them, so a program
 that allocates three cells knows the contents of all three. The first write
 collapses that set to the written cell and its aliases, and a call empties it.
 So a program that mutates carries current-content knowledge for essentially one
-cell at a time, the one written most recently. Immutable value facts are not
-subject to this at all, which is why a value read out of a cell before a callback
+cell at a time, the one written most recently. $\Pi$ is not subject to this at
+all, which is why a value read out of a cell before a callback
 remains usable after the callback has overwritten that cell.
 
 Two consequences worth naming. Immutable value facts and slot equalities survive
@@ -733,6 +831,8 @@ And a read link is what later lets an observation of the result refine the cell
 it came from: that is how a guard on `cell.value` refines `cell` itself, and why
 a call, which drops read links, ends such a refinement.
 
+The implementation keeps $\Pi$ and $\Sigma$ in one `HeapKnowledge.Knowledge`;
+write $K$ for that pair and $K(\rho,h)$ for the conjunction of everything in it.
 A successful `checkStep` is a derivation of this judgment, and `checkStep_sound`
 is its soundness:
 
@@ -801,11 +901,13 @@ same checked graph facts, through the checkpoints below.
 Boolean guards use the following rule, proved by `observeBoolean_holds`:
 
 $$
-\frac{\operatorname{read}(x,y)\quad y=b}
- {\operatorname{cell}(x,\{b\})},\qquad b\in\{\mathsf{true},\mathsf{false}\}.
+\frac{x\mapsto y\quad y=b}
+ {x\mapsto\{b\}},\qquad b\in\{\mathsf{true},\mathsf{false}\}.
 $$
 
-The read link must hold in the current heap. `HeapGuardTests.lean` proves a
+The points-to atom must hold in the current heap. Note that
+$\operatorname{read}(x)$ is the language's read expression; the assertion that
+used to share its name is now $x\mapsto y$. `HeapGuardTests.lean` proves a
 complete two-branch graph safe and checks that discarding the link prevents this
 refinement. A slot equality $x=y$ permits a checked write through either alias to
 establish the new contents for both, as the
@@ -823,7 +925,7 @@ no parameters. [The fixture notes](tests/skjs-incomplete/README.md) distinguish
 this model proof from source verification, which needs an explicit current-true
 claim at the return entry. The original broad entry claim is insufficient.
 
-### Source observation checkpoints
+#### Source observation checkpoints
 
 `SourceClaims.Function` retains ordinary types and separately indexed current
 predicates. Both adapters populate this interface. **Every source statement entry
@@ -890,7 +992,12 @@ not claim that extra precision.
 observations, write invalidation, Boolean read guards, both incoming merge edges,
 loop backedges, and evidence reuse after changing assertions.
 
-## Producing evidence from supplied claims
+## Search and source forms
+
+How evidence is produced for supplied claims, and how source constructs outside
+the core reduce to the rules above.
+
+### Producing evidence from supplied claims
 
 The producer selects checked effects and propagates their postconditions along
 single-predecessor administrative paths within a statement. A source entry is
@@ -945,7 +1052,7 @@ $$
 $$
 
 Here $I$ enumerates labels, $f$ bounds expression search depth, $Q$ contains the
-supplied point annotations, $H$ contains optional type hints, and $\Gamma_0$ is
+supplied point annotations, $\Sigma$ contains optional type hints, and $\Gamma_0$ is
 the independent input contract. Search fuel is
 not an execution budget and never occurs in the typing rules or certificates.
 `produce_checked` proves the first implication; `accept_claims` proves claim
@@ -977,7 +1084,7 @@ through the existing verifier binary. Source extraction correctness, producer
 completeness and integration of extended source claims remain outside these
 results.
 
-## Derived source forms
+### Derived source forms
 
 `BooleanConditionalTests.lean` checks the ordinary conditional through serialized
 requests and direct recipes. Its execution traces cover both outcomes after an
