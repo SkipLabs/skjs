@@ -48,7 +48,9 @@ try {
   mutate("false expression claim rejected",d=>d.functions[0].expressions[0].type=[1]);
   mutate("changed signature rejected",d=>d.functions[0].result=[1]);
   test("an intersection of arrows is one row, proved per signature",()=>{
-    const text="function overload(): null { const f: ((x: true) => null) & ((x: false) => null) = (x: boolean): null => null; return f(true); }\n";
+    // The corpus fixture SKJS refuses, verified from claims that state the
+    // intersection as the source declares it.
+    const fixture="verification/tests/skjs-incomplete/arrow-intersection.ts",text=fs.readFileSync(fixture,"utf8");
     const sf=path.join(tmp,"overload.ts"),sa=path.join(tmp,"overload.ast.json"),sc=path.join(tmp,"overload.claims.json"),se=path.join(tmp,"overload.evidence.json");
     const types=[...primitives,[{arrs:{arrows:[[[1],[0]],[[2],[0]]]}}]];
     // Claims for the parsed program: the lambda and its binding at row 4, the
@@ -69,7 +71,7 @@ try {
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
     assert.equal(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
     // A body that does not meet every signature is refused.
-    write(text.replace("=> null;","=> x;"),[1,2]);
+    write(text.replace("=>\n    null;","=> x;"),[1,2]);
     const rejected=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(rejected.status,0);
     assert(rejected.stderr.includes("obligation-diagnostic:"),rejected.stderr);
   });

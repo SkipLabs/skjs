@@ -356,6 +356,12 @@ function fromBundle(bundle) {
             f.entries.find((e) => e.pos[0] === location.start)
           : location.kind === "environment-obligation"
             ? f.entries.find((e) => e.pos[0] === location.start)
+            : // A parameter claim contradicting its annotation: the first entry
+              // that names the parameter is where the reader sees the claim.
+              location.kind === "parameter-claim"
+              ? f.entries.find((e) =>
+                  e.bindings.some((b) => b.name === location.binding),
+                )
             : [
                   "expression-obligation",
                   "edge-obligation",

@@ -29,6 +29,7 @@ const groups = [
       "verification/tests/skjs-incomplete/write-refined-read.ts",
       "verification/tests/skjs-incomplete/empty-domain-escape.ts",
       "verification/tests/skjs-incomplete/undefined-completes.ts",
+      "verification/tests/skjs-incomplete/arrow-intersection.ts",
     ],
   },
   {
@@ -37,6 +38,7 @@ const groups = [
       "verification/tests/skjs-unsound/captured-refinement.ts",
       "verification/tests/skjs-unsound/compound-write-refinement.ts",
       "verification/tests/skjs-unsound/never-completes.ts",
+      "verification/tests/skjs-unsound/arrow-intersection.ts",
     ],
   },
   {

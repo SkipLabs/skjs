@@ -73,6 +73,8 @@ function outcome(result) {
     return ["?", "required type unavailable"];
   if (incompleteInput.has(result.location?.kind))
     return ["?", "required claim missing"];
+  if (result.location?.kind === "parameter-claim")
+    return ["✗", "parameter claim differs from annotation"];
   return ["✗", "proof search failed"];
 }
 // Colors supplement the labels; logs and NO_COLOR output stay plain. A worker

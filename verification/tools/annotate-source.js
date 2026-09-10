@@ -411,8 +411,11 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
         const unavailableBinding=environment && /^unavailable claimed binding '([^']*)' at \d+$/.exec(environment[2]);
         const unavailableType=unavailableBinding || /type claim unavailable from producer$/.test(detail);
         const nonInvariant=/cell read and write types do not describe the same invariant$/.test(detail);
+        // The producer's parameter claim contradicts the annotation the caller
+        // is held to: a finding about the claim, before any obligation is tried.
+        const parameterClaim=/claimed parameter type differs from the source annotation for '([^']*)'$/.exec(detail);
         const outsideSlice=/outside the [^:]*slice\.?$/.test(detail);
-        const location=unavailableType ? {kind:"unavailable-type-claim",
+        const location=parameterClaim ? {kind:"parameter-claim",binding:parameterClaim[1]} : unavailableType ? {kind:"unavailable-type-claim",
           ...(unavailableBinding ? {start:Number(environment[1]),binding:unavailableBinding[1]} :
             located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : nonInvariant ? {kind:"source-limitation",reason:"non-invariant-cell-contract",
           ...(environment ? {start:Number(environment[1])} : located ? {pos:[Number(located[2]),Number(located[3])]} : {})} : located ? {kind:located[1]==="unsupported source expression" ? "source-limitation" : located[1]==="source incoming edge obligation" ? "edge-obligation" : "expression-obligation",pos:[Number(located[2]),Number(located[3])]} :

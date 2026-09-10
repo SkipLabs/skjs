@@ -54,3 +54,17 @@ declares; SKJS rejects it as not returning on every path. The exit carries
 undefined and discharges the annotation directly, so the producer's partial
 export is enough. `skjs-unsound/never-completes.ts` is the same SKJS check
 skipped rather than too strict.
+
+`arrow-intersection.ts` is a precision gap in the type algebra rather than in a
+refinement. `TFun::inter` computes the intersection of two function types as
+whichever is a subtype of the other, and as `never` when neither is, so a
+function meeting both signatures is refused as "not assignable to type 'never'"
+and keep-going collection exports the binding at the empty type. TypeScript
+accepts the program, which returns null as declared. The verifier lowers the
+intersection to one arrow row with both signatures, proves the lambda under
+each and resolves the call to the first signature admitting its argument;
+`source-claims.js` verifies the fixture from handwritten claims that state the
+intersection as the source declares it, and rejects a body that meets only one
+signature. The producer's own export cannot be repaired into this: the claim
+it would need is the one it computes as empty. The same collapse taken as an
+assumption is `skjs-unsound/arrow-intersection.ts`.

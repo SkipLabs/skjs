@@ -70,6 +70,7 @@ const proofSymbol = (failureKind) =>
 // one. Without that, it stays silent rather than implying the claim is at fault.
 const ROLE_TAG = {
   "unavailable-type-claim": "type unavailable",
+  "parameter-claim": "parameter claim",
   "heap-observation": "current contents",
   "return-contract": "return contract",
   "binding-annotation": "binding annotation",

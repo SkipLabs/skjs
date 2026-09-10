@@ -483,6 +483,12 @@ plain-data allocation is the source gate’s responsibility. The parser accepts
 only an explicit single `value` data property, with no getters, setters, spreads
 or computed keys. Cell parameters remain rejected: an external object needs
 a separate plain-data boundary that its structural annotation cannot establish.
+Arrow parameters are admitted at their annotation, since the annotation is the
+assumption the caller is held to and the soundness theorem takes every input
+as given at its type; an arrow received from outside reaches no cell of the
+body, because the slice passes only primitives, so its contract is exactly
+what it returns on each admitted argument. A producer claim that contradicts
+the annotation is refused by name before any obligation is tried.
 
 Object branches are exported faithfully as separate atoms in the existing union
 format. [CellUnion.lean](lean/Verification/ExperimentState/CellUnion.lean) validates
@@ -980,9 +986,10 @@ their primitive-only decoders; nested records and richer callable contracts are
 not enabled by this change.
 
 Locally allocated nullable cells and optional checked-closure results exercise
-the extension. External cell/function parameters remain rejected: annotations
-alone cannot exclude accessors or establish a callable implementation. A regression
-checks that adding null to such a parameter does not evade this boundary. The
+the extension. External cell parameters remain rejected: annotations alone
+cannot exclude accessors. Arrow parameters are assumed at their annotation. A
+regression checks that adding null to a cell parameter does not evade this
+boundary. The
 null-guard examples include local annotation checks and functions that return
 null on one path and a locally created cell or closure on another.
 

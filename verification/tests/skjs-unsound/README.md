@@ -78,3 +78,18 @@ Boolean invariant. Standalone current-content assertions now reach checked
 obligations. `write-observations.js` checks the complete normal export, the false
 claim at the actual post-write read, all three runtime inputs, and the distinction
 between an unproved obligation and a runtime counterexample.
+
+## An intersection of arrows collapses to never
+
+`arrow-intersection.ts` is accepted by SKJS with no diagnostic. Its parameter
+has an intersection type of two arrows with disjoint domains, which SKJS
+computes as `never` (see the matching incompleteness entry), so the parameter
+is assumed uninhabited and assigning it to an arrow returning boolean passes.
+TypeScript rejects that assignment. `useBoth((x) => null)` returns null against
+the declared boolean result. The verifier assumes an arrow parameter at its
+annotation, as the caller is held to it, and compares the producer's parameter
+claim with that annotation before trying any obligation: SKJS claims the
+parameter empty, the annotation says the two-signature arrow, and the function
+is refused with "claimed parameter type differs from the source annotation".
+The corpus shows this as a parameter claim differing from its annotation, the
+finding itself rather than a failed proof search.

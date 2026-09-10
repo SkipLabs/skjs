@@ -613,7 +613,7 @@ private def lowered (j : Json) : Except String (Ty Nat) :=
 #guard (match extractFn
     { branchFn true with params := [⟨"external",joined [wireTy ⟨false,[.null]⟩,cellWire]⟩] }
     { branchClaims true with params := [("external",joined [wireTy ⟨false,[.null]⟩,cellWire])] } with
-  | .error e => e == "cell or function parameters require an external-value boundary not yet supported"
+  | .error e => e == "cell parameters need an external-value boundary, which is outside the source slice"
   | .ok _ => false)
 #guard !ok (lowered (joined [wireTy ⟨false,[.str]⟩,cellWire]))
 
@@ -704,5 +704,24 @@ private def overloadClaims : SourceInput.Claims :=
     { overloadClaims with exprs := overloadClaims.exprs.map fun (pos,ty) =>
       (pos, if pos == (14,15) then wireTy ⟨false,[.null]⟩ else ty) }
   produceSourceJson (toJson r.toRequest) 8)
+
+-- An arrow parameter is assumed at its annotation and may be called; a claim
+-- that contradicts the annotation is refused by name, and a cell parameter is
+-- still outside the slice.
+private def callerFn : SourceInput.Fn :=
+  ⟨"caller",(0,1),[⟨"a",trueToNull⟩],wireTy ⟨false,[.null]⟩,
+    [.ret (2,9) (.app (4,9) (.var (4,5) "a") (.lit (6,7) (.vbool true)))]⟩
+private def callerClaims : SourceInput.Claims :=
+  ⟨"caller",(0,1),[("a",trueToNull)],wireTy ⟨false,[.null]⟩,[(2,[("a",trueToNull)])],
+   [((4,9),wireTy ⟨false,[.null]⟩),((4,5),trueToNull),((6,7),t)]⟩
+#guard is ((extractFn callerFn callerClaims).map (·.inputs.length)) 1
+#guard ok (do
+  let r ← extractFn callerFn callerClaims
+  let j := toJson r.toRequest
+  verifyJson j (← produceSourceJson j 8))
+#guard (match extractFn callerFn { callerClaims with params := [("a",wireTy ⟨false,[]⟩)] } with
+  | .error e => e == "claimed parameter type differs from the source annotation for 'a'"
+  | .ok _ => false)
+#guard !ok (extractFn { callerFn with params := [⟨"a",cellWire⟩] } { callerClaims with params := [("a",cellWire)] })
 
 end Verification.ExperimentState.SourceExtractionTests

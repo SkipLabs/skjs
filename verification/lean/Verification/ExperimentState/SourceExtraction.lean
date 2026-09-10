@@ -679,10 +679,18 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : Sourc
     throw "duplicate statement or expression claim"
   let ((inputs, R, entry), built) ← (do
     let inputs ← f.params.mapM (fun (p : SourceInput.Param) => lower (SourceInput.translate p.ty))
-    -- Cell sourceMap must be plain allocations in this source slice. Structural
-    -- parameter annotations alone cannot rule out JavaScript accessors.
-    if inputs.any (fun A => A.any (fun i => !SourceTypes.isPrimitive i)) then
-      throw "cell or function parameters require an external-value boundary not yet supported"
+    -- A parameter's annotation is the assumption its caller makes, and the
+    -- soundness theorem takes it as given for every value meeting it. A
+    -- primitive or an arrow can be assumed: an arrow received from outside
+    -- reaches no cell of this body, since the slice passes only primitives,
+    -- so its contract is exactly what it returns on each admitted argument.
+    -- A cell cannot: a structural object annotation does not rule out
+    -- accessors, so the plain-cell interpretation may be false of a value
+    -- that conforms to the annotation. Cells must be allocated here.
+    let G := SourceTypes.graph (← table)
+    if inputs.any (fun A => A.any fun i => match PositiveRules.expand G [i] with
+        | [.refs _ _] => true | _ => false) then
+      throw "cell parameters need an external-value boundary, which is outside the source slice"
     for ((p, A), (name, claimed)) in (f.params.zip inputs).zip fc.params do
       if p.name != name then throw "parameter claim name or order mismatch"
       let B ← SourceClaims.resolve (← table).length claimed
