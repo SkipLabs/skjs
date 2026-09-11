@@ -640,11 +640,38 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     [{ refs: { first: [6], rest: [] } }],
   ];
   types.push([{ refs: { first: [7], rest: [] } }]);
-  assert.equal(ob.typeText(types, [1, 2]), "true | false");
+  // The table's rows 1 and 2 are the literals a source `boolean` lowers to, and
+  // a reference row is printed as the record the source declared.
+  assert.equal(ob.typeText(types, [1, 2]), "boolean");
+  assert.equal(ob.typeText(types, [1]), "true");
+  assert.equal(ob.typeText(types, [0, 1, 2]), "null | boolean");
   assert.equal(ob.typeText(types, []), "never");
   assert.equal(ob.typeText(types, [0]), "null");
-  assert.equal(ob.typeText(types, [3]), "Ref<true | false>");
-  assert.equal(ob.typeText(types, [4]), "(null) => true | false");
+  assert.equal(ob.typeText(types, [3]), "{ value: boolean }");
+  assert.equal(ob.typeText(types, [4]), "(null) => boolean");
+  // A normalized claim is lifted into the structural encoding to be edited,
+  // with the current-content assertion as the cell's read side, and lowered
+  // back, interning the rows the edit needs into the document's own table.
+  const lifted = surface.lift(types, [3], [1]);
+  assert.equal(surface.printType(lifted).text, "{ value: boolean = (true) }");
+  assert.equal(surface.lift(types, [1], [1]), null);
+  const table = structuredClone(types);
+  assert.deepEqual(
+    surface.lower(table, surface.parseType("{ value: boolean = (true) }", lifted)),
+    { type: [3], current: [1] },
+  );
+  assert.deepEqual(surface.lower(table, surface.parseType("{ value: true }", lifted)), {
+    type: [types.length],
+    current: null,
+  });
+  assert.deepEqual(table[types.length], [{ refs: { first: [1], rest: [] } }]);
+  assert.deepEqual(surface.lower(table, surface.parseType("null | boolean", null)), {
+    type: [0, 1, 2],
+    current: null,
+  });
+  assert.deepEqual(surface.lower(table, [0, 3]), { type: [0, 3] });
+  assert.throws(() => surface.lower(table, surface.parseType("unknown", null)), /fragment/);
+  assert.equal(table.length, types.length + 1);
   assert.equal(ob.typeText(types, [5]), JSON.stringify({ mystery: 7 }));
   assert.equal(ob.typeText(types, [99]), "type 99");
   assert.match(ob.typeText(types, [6], 2), /…/);
@@ -683,8 +710,8 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   assert.deepEqual(
     view.rows.map((r: any) => [r.slot, r.have, r.note]),
     [
-      [0, "true | false", "the value being returned"],
-      [1, "true | false", ""],
+      [0, "boolean", "the value being returned"],
+      [1, "boolean", ""],
     ],
   );
   assert.equal(view.environmentStart, 363);

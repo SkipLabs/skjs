@@ -7,6 +7,7 @@
  * exercise it without a browser.
  */
 
+import surface from "../tools/claim-types.mts";
 import type { Span } from "../tools/source-claims.mts";
 
 /** One binding of the context: what was carried, and what was required. */
@@ -138,46 +139,12 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /* ---------- types ---------- */
-// A type is a list of labels into the record's own table, read as their union.
-// Unknown clauses are shown as their encoding rather than guessed at, and
-// recursion through references and arrows is cut off with an ellipsis: the
-// graph is finite but may be cyclic.
-function clauseText(types: any, clause: any, depth: number): any {
-  if (clause === "nul") return "null";
-  if (clause === "bool") return "boolean";
-  if (clause === "undef") return "undefined";
-  if (clause && clause.boolLit) return String(clause.boolLit.value);
-  if (depth <= 0) return "…";
-  if (clause && clause.refs) {
-    const first = typeText(types, clause.refs.first, depth - 1);
-    const rest = (clause.refs.rest || []).length
-      ? " & " + clause.refs.rest.map((r: any) => typeText(types, r, depth - 1)).join(" & ")
-      : "";
-    return "Ref<" + first + ">" + rest;
-  }
-  if (clause && clause.arrs)
-    return (clause.arrs.arrows || [])
-      .map(
-        ([domain, result]: [any, any]) =>
-          "(" +
-          typeText(types, domain, depth - 1) +
-          ") => " +
-          typeText(types, result, depth - 1),
-      )
-      .join(" & ");
-  return JSON.stringify(clause);
-}
-
+// A type is a list of labels into the record's own table, read as their union
+// and printed in the one surface syntax every claim is shown in: lifted into
+// the structural encoding and printed from there.
 function typeText(types: any, labels: any, depth = 3) {
   if (!Array.isArray(labels)) return "(no type recorded)";
-  if (!labels.length) return "never";
-  return labels
-    .map((label) => {
-      const node = types?.[label];
-      if (!Array.isArray(node)) return "type " + label;
-      return node.map((clause) => clauseText(types, clause, depth)).join(" | ");
-    })
-    .join(" | ");
+  return surface.printType(surface.lift(types, labels, null, depth)).text;
 }
 
 /* ---------- source maps ---------- */
@@ -369,7 +336,6 @@ function obligationView(ob: any, source = "") {
   return {
     OBLIGATION_VERSION,
     typeText,
-    clauseText,
     termText,
     contentsText,
     knowledgeRows,

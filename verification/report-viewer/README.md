@@ -89,12 +89,12 @@ original to resolve against, so the surface can only name what it says in full:
 primitives and unions. An object or function type, and any environment, is
 written as the encoding.
 
-Where the encoding is the normalized one, a type is a list of indices into that
-document's own type table — bookkeeping of that document, not something to
-write. So it is chosen from the table by the names the table holds: picking
-`true` and `false` reads back as `true | false`, and picking nothing is the
-empty union. Only rows already in the table can be chosen; naming a type that is
-not one would mean interning it, which is the producer's job.
+A candidate in the normalized encoding is edited the same way, in the same
+editor. Its claims index the document's own type table, so a claim is shown
+lifted into the syntax above and lowered back on apply, with any row the edit
+needs interned into that table as the producer would have on first use. A claim
+with no surface form there — an intersection of contracts, a type that refers
+to itself — is edited as the encoding, as a list of labels.
 
 A place the producer visited and claimed nothing at is selectable, and offers
 the claim that belongs there. A function the candidate says nothing about asks
@@ -168,9 +168,10 @@ end and exercised by `tests/report-viewer.mts` without a browser:
 - `candidate.mts` — immutable candidate edits. Candidate inputs and stored
   results are never trusted proof evidence.
 - `../tools/claim-types.mts` — claim types in surface syntax, printed and read
-  back. `report-viewer.mts` checks that printing and reading back returns the
-  same encoding for every shape, and `annotated-source.mts` checks it over
-  every claim in a real export.
+  back, and the lift and lowering between the normalized encoding and the
+  structural one the surface reads. `report-viewer.mts` checks that printing
+  and reading back returns the same encoding for every shape, and
+  `annotated-source.mts` checks it over every claim in a real export.
 - `serve.mts` — runs the producer and the report writer, and writes drafts. It
   binds to loopback, runs one collection at a time, applies a 120-second
   timeout to each subprocess, rejects source changes detected during

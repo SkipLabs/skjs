@@ -238,11 +238,10 @@ function fromSourceClaims(
     if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
     const ordinary=type(b.type);
     if(b.current==null)return {type:ordinary,raw:b.type};
-    const clause=b.type.length===1 ? (types[b.type[0]!]?.[0] as any)?.refs : null;
-    const invariant=clause&&!(clause.rest||[]).length ? clause.first : null;
-    if(!invariant||!Array.isArray(b.current)||b.current.some((i: number)=>!Number.isInteger(i)||i<0||i>=4))throw Error("invalid current-content assertion");
-    return {type:`{ value: ${String(invariant)==="1,2"?"boolean":type(invariant)} = (${type(b.current)}) }`,
-      raw:{type:b.type,current:b.current}};
+    if(!Array.isArray(b.current)||b.current.some((i: number)=>!Number.isInteger(i)||i<0||i>=4))throw Error("invalid current-content assertion");
+    const lifted=surface.lift(types,b.type,b.current);
+    if(!lifted)throw Error("invalid current-content assertion");
+    return {type:surface.printType(lifted).text,raw:{type:b.type,current:b.current}};
   };
   const parameter=(b: NamedPoint)=> {
     if(b.current!=null)throw Error("function parameters cannot carry current-content assertions");

@@ -92,7 +92,7 @@ try {
     const out=path.join(tmp,"report.ts");
     const r=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.mts"),file,"--claims",cp,"--format","source-claims","--producer","manual","--verify",verifier,"--out",out]);
     assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));
-    assert.equal(m.results[0].status,"verified");assert(fs.readFileSync(out,"utf8").includes("true | false"));
+    assert.equal(m.results[0].status,"verified");assert(fs.readFileSync(out,"utf8").includes("entry { flag: boolean }"));
     const changed=structuredClone(doc);changed.functions[0].expressions[0].type=[1];fs.writeFileSync(cp,JSON.stringify(changed));
     const repaired=path.join(tmp,"changed.ts");
     const compared=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.mts"),file,"--claims",cp,"--format","source-claims","--baseline",out+".json","--verify",verifier,"--out",repaired]);

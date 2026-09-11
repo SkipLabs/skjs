@@ -381,6 +381,137 @@ function roundTrips(type: any) {
     });
   }
 
+  /* ---------- the normalized encoding ---------- */
+  // A candidate in the normalized encoding (SOURCE-CLAIMS.md) is a table of type
+  // rows and claims that index it. There is one editor, and it speaks the
+  // structural encoding above; so a normalized claim is lifted into that to be
+  // shown and lowered back on apply, interning into the document's own table
+  // whatever rows the edit needs, as the producer did on first use.
+
+  // A cell row is read as the one-field object the source declared, and the
+  // current-content assertion, where one is made, as that field's read side:
+  // `{ value: boolean = (true) }`, which POSITIVE-TYPES.md fixes as the source
+  // spelling of `x : ref(boolean) ∧ x ↦ true`.
+  const cell = (types: any, invariant: any, current: any, depth: number) => ({
+    a: "record",
+    fields: [
+      {
+        name: "value",
+        optional: false,
+        read: liftType(types, current ?? invariant, depth),
+        write: liftType(types, invariant, depth),
+      },
+    ],
+  });
+
+  // An intersection of contracts has no surface form; it is shown as text and
+  // stays on the JSON path, like anything else the surface cannot name.
+  const shown = (atoms: any[]) => atoms.map((atom) => printType({ top: false, atoms: [atom] }).text).join(" & ");
+
+  function liftClause(types: any, clause: any, depth: number): any {
+    if (clause === "nul") return { a: "null" };
+    if (clause === "bool") return { a: "boolean" };
+    if (clause === "undef") return { a: "undefined" };
+    if (clause && clause.boolLit) return { a: "booleanlit", v: String(clause.boolLit.value) };
+    // The graph is finite but may be cyclic, so lifting stops rather than recursing.
+    if (depth <= 0) return "…";
+    if (clause && clause.refs) {
+      const cells = [clause.refs.first, ...(clause.refs.rest || [])].map((c) => cell(types, c, null, depth - 1));
+      return cells.length === 1 ? cells[0] : shown(cells);
+    }
+    if (clause && clause.arrs && (clause.arrs.arrows || []).length) {
+      const arrows = clause.arrs.arrows.map(([domain, result]: [any, any]) => ({
+        a: "function",
+        params: [liftType(types, domain, depth - 1)],
+        result: liftType(types, result, depth - 1),
+      }));
+      return arrows.length === 1 ? arrows[0] : shown(arrows);
+    }
+    // Unknown clauses are shown as their encoding rather than guessed at.
+    return JSON.stringify(clause);
+  }
+
+  function liftType(types: any, labels: any, depth: number): any {
+    if (!Array.isArray(labels)) return { top: false, atoms: ["(no type recorded)"] };
+    // Rows 1 and 2 are the fixed literals a source `boolean` is lowered to, so
+    // the pair is read back as the source wrote it.
+    const both = labels.includes(1) && labels.includes(2);
+    const atoms = labels.flatMap((label) => {
+      if (both && label === 2) return [];
+      if (both && label === 1) return [{ a: "boolean" }];
+      const row = types?.[label];
+      if (!Array.isArray(row)) return ["type " + label];
+      return row.map((clause) => liftClause(types, clause, depth));
+    });
+    return { top: false, atoms };
+  }
+
+  // A point, lifted: its type, with the assertion about what the cell holds as
+  // the read side. Null where an assertion is made over a type that cannot
+  // carry one — only a single-contract cell holds anything.
+  function lift(types: any, labels: any, current: any = null, depth = 3) {
+    if (current == null) return liftType(types, labels, depth);
+    const row = Array.isArray(labels) && labels.length === 1 ? types?.[labels[0]] : null;
+    const refs = Array.isArray(row) && row.length === 1 ? (row[0] as any)?.refs : null;
+    if (!refs || (refs.rest || []).length) return null;
+    return { top: false, atoms: [cell(types, refs.first, current, depth - 1)] };
+  }
+
+  function intern(types: any, row: any) {
+    if (!Array.isArray(types)) throw new TypeSyntaxError("this document has no type table to intern into");
+    const key = JSON.stringify(row);
+    const at = types.findIndex((r: any) => JSON.stringify(r) === key);
+    if (at >= 0) return at;
+    types.push(row);
+    return types.length - 1;
+  }
+  const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+
+  function lowerAtom(types: any, atom: any): number[] {
+    if (!atom || typeof atom !== "object") throw new TypeSyntaxError("not a type: " + String(atom));
+    if (atom.a === "null") return [0];
+    if (atom.a === "undefined") return [3];
+    if (atom.a === "boolean") return [1, 2];
+    if (atom.a === "booleanlit") return [String(atom.v) === "true" ? 1 : 2];
+    if (atom.a === "record") {
+      const [field, ...more] = atom.fields || [];
+      if (!field || more.length || field.name !== "value" || field.optional)
+        throw new TypeSyntaxError("a cell is an object with the one field 'value'");
+      if (!same(field.read, field.write))
+        throw new TypeSyntaxError("what a cell holds is asserted at the top of a claim, not inside a type");
+      return [intern(types, [{ refs: { first: lowerType(types, field.write), rest: [] } }])];
+    }
+    if (atom.a === "function") {
+      const [domain, ...more] = atom.params || [];
+      if (!domain || more.length) throw new TypeSyntaxError("a function takes exactly one parameter here");
+      return [intern(types, [{ arrs: { arrows: [[lowerType(types, domain), lowerType(types, atom.result)]] } }])];
+    }
+    throw new TypeSyntaxError("'" + (atom.a || "type") + "' is outside the checked fragment");
+  }
+
+  function lowerType(types: any, type: any): number[] {
+    if (!type || typeof type !== "object" || !Array.isArray(type.atoms)) throw new TypeSyntaxError("not a type");
+    if (type.top) throw new TypeSyntaxError("'unknown' is outside the checked fragment");
+    return Array.from(new Set<number>(type.atoms.flatMap((atom: any) => lowerAtom(types, atom)))).sort((a, b) => a - b);
+  }
+
+  // A point, lowered: the encoding written directly is kept as written, so a
+  // label list comes back alone; a structural type comes back with the
+  // current-content assertion it makes, or `null` for none, as the format
+  // requires one or the other to be said.
+  function lower(types: any, type: any): { type: number[]; current?: number[] | null } {
+    if (Array.isArray(type)) return { type };
+    const [atom, ...more] = (type && type.atoms) || [];
+    const field = !more.length && atom && atom.a === "record" ? (atom.fields || [])[0] : null;
+    if (field && field.name === "value" && !same(field.read, field.write)) {
+      const current = lowerType(types, field.read);
+      if (current.some((l) => l > 3)) throw new TypeSyntaxError("a cell holds null, true, false or undefined");
+      const invariant = { ...type, atoms: [{ ...atom, fields: [{ ...field, read: field.write }] }] };
+      return { type: lowerType(types, invariant), current };
+    }
+    return { type: lowerType(types, type), current: null };
+  }
+
   /* ---------- full printing, for snapshots ---------- */
   // Every part of the encoding reaches the text, so two encodings that differ
   // print differently: modes and index signatures, which the surface syntax
@@ -454,6 +585,8 @@ function roundTrips(type: any) {
     parseType,
     roundTrips,
     printClaimValue,
+    lift,
+    lower,
     readClaimValue,
     claimOutsideFragment,
     TypeSyntaxError,

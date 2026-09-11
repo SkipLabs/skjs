@@ -2,8 +2,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
+import surface from "../tools/claim-types.mts";
 import {
   claimValue,
+  editable,
   editClaim,
   addClaim,
   addFunction,
@@ -59,8 +61,26 @@ assert.deepEqual(
     fn,
     env,
   ),
-  [{ name: "x", type: [1] }],
+  [{ name: "x", type: [1], current: null }],
 );
+// A normalized claim is shown lifted into the structural encoding the one
+// editor speaks, and lowered back on apply, interning into the document's own
+// table the rows the edit needs.
+{
+  const tabled: any = structuredClone(normalized);
+  tabled.claims.types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }], ["undef"]];
+  assert.deepEqual(editable(tabled, fn, item), { top: false, atoms: [{ a: "boolean" }] });
+  const boolean = { top: false, atoms: [{ a: "boolean" }] };
+  const cell = {
+    top: false,
+    atoms: [{ a: "record", fields: [{ name: "value", optional: false, read: { top: false, atoms: [{ a: "booleanlit", v: "true" }] }, write: boolean }] }],
+  };
+  const held = editClaim(tabled, fn, item, cell);
+  assert.deepEqual(held.claims.functions[0].expressions[0], { pos: item.pos, type: [4], current: [1] });
+  assert.deepEqual(held.claims.types[4], [{ refs: { first: [1, 2], rest: [] } }]);
+  assert.equal(surface.printType(editable(held, fn, item)).text, "{ value: boolean = (true) }");
+  assert.equal(tabled.claims.types.length, 4);
+}
 (async () => {
   const preview = await candidateReport(edited, false);
   assert.equal(preview.manifest.results, null);
@@ -312,7 +332,7 @@ assert.deepEqual(
   assert.deepEqual(normalizedFunction.claims.functions[0], {
     name: fn.name,
     namePos: fn.namePos,
-    params: fn.params.map((p: any) => ({ name: p.name, type: [1, 2] })),
+    params: fn.params.map((p: any) => ({ name: p.name, type: [1, 2], current: null })),
     result: [1, 2],
     entries: [],
     expressions: [],
