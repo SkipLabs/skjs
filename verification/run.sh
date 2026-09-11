@@ -158,9 +158,6 @@ snapshot_probes() {
 # runtime and as an error here.
 typecheck() {
   (cd verification/tools && npx tsc -p tsconfig.json &&
-   npx tsc -p tsconfig.annotator.json &&
-   npx tsc -p tsconfig.corpus.json &&
-   npx tsc -p tsconfig.tests.json &&
    npx tsc -p ../report-viewer/tsconfig.json)
 }
 

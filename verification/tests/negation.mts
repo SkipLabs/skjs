@@ -27,16 +27,16 @@ const [
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
 const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/negation-");
-const firstClaim = (c) =>
+const firstClaim = (c: any) =>
   c
-    .find((f) => f.file === file)
-    .functions.find((f) => f.name === "negatedBranch");
-const singleton = (v) => ({
+    .find((f: any) => f.file === file)
+    .functions.find((f: any) => f.name === "negatedBranch");
+const singleton = (v: any) => ({
   top: false,
   atoms: [{ a: "booleanlit", v: String(v) }],
 });
 let passed = 0;
-function run(mode, a, c, evidence?, key = file) {
+function run(mode: string, a: any, c: any, evidence?: any, key = file) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -53,7 +53,7 @@ function run(mode, a, c, evidence?, key = file) {
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
 }
-function expect(name, r, accept, reason = "") {
+function expect(name: string, r: any, accept: any, reason = "") {
   assert.equal(r.status === 0, accept, name + ": " + r.stderr);
   assert((r.stdout + r.stderr).includes(reason), name + ": " + r.stderr);
   console.log("  " + name + ": OK");
@@ -101,7 +101,7 @@ try {
       (a, c) => {
         const pos = a.functions[0].body[0].cond.e.pos;
         firstClaim(c).exprs = firstClaim(c).exprs.filter(
-          (e) => e.pos[0] !== pos[0],
+          (e: any) => e.pos[0] !== pos[0],
         );
       },
       "no claimed type",
@@ -110,7 +110,7 @@ try {
       "negation result cannot be invented",
       (a, c) => {
         const pos = a.functions[0].body[0].cond.pos;
-        firstClaim(c).exprs.find((e) => e.pos[0] === pos[0]).type =
+        firstClaim(c).exprs.find((e: any) => e.pos[0] === pos[0]).type =
           singleton(true);
       },
       "evidence search failed",
@@ -120,8 +120,8 @@ try {
       (a, c) => {
         const start = a.functions[0].body[0].then[0].pos[0];
         firstClaim(c)
-          .envs.find((e) => e.pos[0] === start)
-          .vars.find((v) => v.name === "flag").type = singleton(true);
+          .envs.find((e: any) => e.pos[0] === start)
+          .vars.find((v: any) => v.name === "flag").type = singleton(true);
       },
       "evidence search failed",
     ],
@@ -134,7 +134,7 @@ try {
           pos: operand.pos,
           lit: { a: "null" },
         };
-        firstClaim(c).exprs.find((e) => e.pos[0] === operand.pos[0]).type = {
+        firstClaim(c).exprs.find((e: any) => e.pos[0] === operand.pos[0]).type = {
           top: false,
           atoms: [{ a: "null" }],
         };
@@ -159,7 +159,7 @@ try {
   );
   const exitAst = JSON.parse(fs.readFileSync(exitAstPath, "utf8"));
   const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath, "utf8"));
-  const exitFn = exitClaims.find((f) => f.file === exitFile).functions[0];
+  const exitFn = exitClaims.find((f: any) => f.file === exitFile).functions[0];
   assert.equal(exitFn.collection.completion, "aborted");
   assert.equal(exitFn.collection.mode, "normal");
   expect(
@@ -169,9 +169,9 @@ try {
   );
   const ret = exitAst.functions[0].body.at(-1);
   const binding = exitFn.envs
-    .find((e) => e.pos[0] === ret.pos[0])
-    .vars.find((v) => v.name === "flag");
-  const expression = exitFn.exprs.find((e) => e.pos[0] === ret.e.pos[0]);
+    .find((e: any) => e.pos[0] === ret.pos[0])
+    .vars.find((v: any) => v.name === "flag");
+  const expression = exitFn.exprs.find((e: any) => e.pos[0] === ret.e.pos[0]);
   binding.type = singleton(true);
   expression.type = singleton(true);
   expect(
@@ -200,7 +200,7 @@ try {
   );
   const singletonAst = JSON.parse(fs.readFileSync(singletonAstPath, "utf8"));
   const singletonClaims = JSON.parse(fs.readFileSync(singletonClaimsPath, "utf8"));
-  const singletonFn = singletonClaims.find((f) => f.file === singletonFile)
+  const singletonFn = singletonClaims.find((f: any) => f.file === singletonFile)
     .functions[0];
   assert.equal(singletonFn.collection.completion, "aborted");
   assert.equal(singletonFn.collection.mode, "normal");
@@ -217,7 +217,7 @@ try {
     "evidence search failed",
   );
   const negated = singletonFn.exprs.find(
-    (e) => e.pos[0] === singletonAst.functions[0].body[0].e.pos[0],
+    (e: any) => e.pos[0] === singletonAst.functions[0].body[0].e.pos[0],
   );
   negated.type = singleton(false);
   expect(

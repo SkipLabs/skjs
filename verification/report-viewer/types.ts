@@ -138,6 +138,12 @@ export interface Result {
   /** The function's `id`, not its name: names repeat across files. */
   function: string;
   status: Status;
+  /**
+   * Where checking stopped short of proof search — set when the producer's
+   * claims could not be converted, so the outcome is about the input rather
+   * than about derivability.
+   */
+  stage?: "source-extraction";
   /** The verifier's own message, kept verbatim. */
   detail?: string;
   location?: Failure;
@@ -151,7 +157,10 @@ export interface Manifest {
   producer: Producer | string;
   functions: ReportFunction[];
   gaps?: Gap[];
-  results?: Result[];
+  /** Explicitly `null` when no verifier ran, rather than absent. */
+  results?: Result[] | null;
+  /** The producer's own stderr for this file, kept verbatim for display. */
+  diagnostics?: string;
   missingFunctions?: { name: string; namePos: Span }[];
   /** Fingerprints of what produced this report, for provenance only. */
   claimsSha256?: string;

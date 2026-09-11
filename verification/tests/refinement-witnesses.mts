@@ -27,8 +27,8 @@ const [
 ] = process.argv.slice(2);
 const root = path.resolve(__dirname, "../..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "refinement-witnesses-"));
-const load = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-const run = (exe, args, cwd = root) => {
+const load = (p: any) => JSON.parse(fs.readFileSync(p, "utf8"));
+const run = (exe: string, args: string[], cwd = root) => {
   const r = spawnSync(exe, args, {
     cwd,
     encoding: "utf8",
@@ -38,7 +38,7 @@ const run = (exe, args, cwd = root) => {
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
 };
-const strip = (x) =>
+const strip = (x: any): any =>
   Array.isArray(x)
     ? x.map(strip)
     : x && typeof x === "object"
@@ -49,7 +49,7 @@ const strip = (x) =>
         )
       : x;
 let passed = 0;
-function test(name, f) {
+function test(name: string, f: any) {
   f();
   passed++;
   console.log(`  ${name}: OK`);
@@ -88,7 +88,7 @@ try {
       else expected.body[1].body.shift();
       test(`${f.name}: control retains the exact guard and read`, () =>
         assert.deepEqual(
-          strip(controls.find((c) => c.name === target)),
+          strip(controls.find((c: any) => c.name === target)),
           expected,
         ));
       const arm =
@@ -96,9 +96,9 @@ try {
       const ret = arm.at(-1);
       const a = { ...ast, functions: [f] },
         c = structuredClone(raw);
-      c.find((x) => x.file === file).functions = c
-        .find((x) => x.file === file)
-        .functions.filter((x) => x.name === f.name);
+      c.find((x: any) => x.file === file).functions = c
+        .find((x: any) => x.file === file)
+        .functions.filter((x: any) => x.name === f.name);
       const ax = path.join(tmp, "ast.json"),
         cx = path.join(tmp, "raw.json"),
         sx = path.join(tmp, "sidecar.json"),
@@ -125,7 +125,8 @@ try {
           const d = readDiagnostic(r.stderr);
           assert(d, r.stderr);
           assert.equal(d.phase, "proof-search");
-          assert.equal(d.kind, "edge-coverage");
+          assert(d.kind === "edge-coverage");
+          assert(d.destination.sourceMap && d.destination.requiredKnowledge?.cells);
           assert.equal(d.destination.sourceMap.role, "heap-observation");
           assert.equal(d.destination.sourceMap.environmentStart, ret.pos[0]);
           assert.deepEqual(d.destination.sourceMap.pos, ret.pos);

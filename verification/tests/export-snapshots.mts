@@ -22,20 +22,20 @@ const probes = fs
   .sort();
 const update = process.env.UPDATE_EXPECT === "1";
 
-const span = (pos) => `${pos[0]}-${pos[1]}`;
+const span = (pos: any) => `${pos[0]}-${pos[1]}`;
 // The expression's own text, so a line reads without the source open.
-function excerpt(source, pos) {
+function excerpt(source: string, pos: any) {
   const text = source.slice(pos[0], pos[1]).replace(/\s+/g, " ").trim();
   return text.length > 40 ? text.slice(0, 37) + "..." : text;
 }
-function render(source, fn) {
+function render(source: string, fn: any) {
   const reasons = new Map();
   for (const u of fn.unavailableTypes || [])
     reasons.set(
       [u.kind, u.pos ? span(u.pos) : "", u.binding || ""].join("|"),
       u.reason,
     );
-  const type = (t, kind, pos, binding) => {
+  const type = (t: any, kind: string, pos: any, binding: any) => {
     const reason = reasons.get([kind, pos ? span(pos) : "", binding || ""].join("|"));
     const text = printFull(t);
     return text === "(unavailable)" && reason
@@ -50,14 +50,14 @@ function render(source, fn) {
     "params: " +
       (fn.params.length
         ? fn.params
-            .map((p) => `${p.name}: ${type(p.type, "parameter", null, p.name)}`)
+            .map((p: any) => `${p.name}: ${type(p.type, "parameter", null, p.name)}`)
             .join("; ")
         : "none"),
   );
   lines.push(`result: ${type(fn.retType, "result", null, "")}`);
   // `x!: T` marks a mutable binding; `(declared U)` follows only when the
   // declared type is present and differs from the current narrowed one.
-  const binding = (v, envPos) => {
+  const binding = (v: any, envPos: any) => {
     const name = v.name + (v.mutable ? "!" : "");
     const declared =
       "declared" in v
@@ -69,7 +69,7 @@ function render(source, fn) {
     lines.push(
       `entry ${span(e.pos)}: ` +
         (e.vars.length
-          ? e.vars.map((v) => binding(v, e.pos)).join("; ")
+          ? e.vars.map((v: any) => binding(v, e.pos)).join("; ")
           : "empty"),
     );
   for (const x of fn.exprs)
@@ -87,9 +87,9 @@ let failed = 0;
 for (const name of probes) {
   const file = path.posix.join(dir, name);
   const source = fs.readFileSync(file, "utf8");
-  const entry = claims.find((c) => c.file === file);
+  const entry = claims.find((c: any) => c.file === file);
   const body = entry
-    ? entry.functions.map((fn) => render(source, fn)).join("\n\n")
+    ? entry.functions.map((fn: any) => render(source, fn)).join("\n\n")
     : "(no claims exported for this file)";
   const actual = `# ${name}\n\n${body}\n`;
   const expectedPath = path.join(dir, name.replace(/\.ts$/, ".snap"));

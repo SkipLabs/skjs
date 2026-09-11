@@ -24,24 +24,24 @@ const [
   badFile,
   verifier,
 ] = process.argv.slice(2);
-const load = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
+const load = (p: any) => JSON.parse(fs.readFileSync(p, "utf8"));
 const safeAst = load(safeAstPath),
   safeClaims = load(safeClaimsPath);
 const badAst = load(badAstPath),
   badClaims = load(badClaimsPath);
-const claim = (cs, file, name = "writeRefinedRead") =>
-  cs.find((c) => c.file === file).functions.find((f) => f.name === name);
-const at = (f, pos) =>
-  f.exprs.find((e) => JSON.stringify(e.pos) === JSON.stringify(pos));
+const claim = (cs: any, file: string, name = "writeRefinedRead") =>
+  cs.find((c: any) => c.file === file).functions.find((f: any) => f.name === name);
+const at = (f: any, pos: any) =>
+  f.exprs.find((e: any) => JSON.stringify(e.pos) === JSON.stringify(pos));
 const bool = { top: false, atoms: [{ a: "boolean" }] };
-const lit = (v) => ({ top: false, atoms: [{ a: "booleanlit", v: String(v) }] });
+const lit = (v: any) => ({ top: false, atoms: [{ a: "booleanlit", v: String(v) }] });
 let passed = 0;
-function test(name, f) {
+function test(name: string, f: any) {
   f();
   passed++;
   console.log(`  ${name}: OK`);
 }
-function runtime(file) {
+function runtime(file: string) {
   const context = vm.createContext({});
   vm.runInContext(
     stripTypes(fs.readFileSync(file, "utf8")),
@@ -49,7 +49,7 @@ function runtime(file) {
   );
   return context;
 }
-function check(file, claims, name = "writeRefinedRead") {
+function check(file: string, claims: any, name = "writeRefinedRead") {
   const source = fs.readFileSync(file, "utf8");
   const results = verifySkjs(
     file,
@@ -62,11 +62,11 @@ function check(file, claims, name = "writeRefinedRead") {
   ).results;
   return results[
     claims
-      .find((f) => f.file === file)
-      .functions.findIndex((f) => f.name === name)
+      .find((f: any) => f.file === file)
+      .functions.findIndex((f: any) => f.name === name)
   ];
 }
-function stripPositions(x) {
+function stripPositions(x: any): any {
   if (Array.isArray(x)) return x.map(stripPositions);
   if (x && typeof x === "object")
     return Object.fromEntries(
@@ -136,15 +136,15 @@ test("TypeScript accepts the safe function and rejects the stale false return", 
 });
 test("accepted negated-guard export retains a false read after a true write", () => {
   const f = claim(badClaims, badFile, "staleFlip"),
-    loop = badAst.functions.find((f) => f.name === "staleFlip").body[1];
+    loop = badAst.functions.find((f: any) => f.name === "staleFlip").body[1];
   assert.equal(f.collection.completion, "complete");
   assert.equal(f.collection.mode, "normal");
   assert.deepEqual(f.retType, lit(false));
   assert.deepEqual(loop.body[0].e.rhs.lit, { a: "booleanlit", v: "true" });
   assert.deepEqual(at(f, loop.body[1].e.pos).type, lit(false));
-  const exit = f.envs.at(-1).vars.find((v) => v.name === "cell").type;
+  const exit = f.envs.at(-1).vars.find((v: any) => v.name === "cell").type;
   assert.equal(exit.atoms.length, 2);
-  assert(exit.atoms.every((a) => a.a === "record"));
+  assert(exit.atoms.every((a: any) => a.a === "record"));
 });
 test("negated witness reaches a checked obligation with its original observations", () => {
   const r = check(badFile, badClaims, "staleFlip");
@@ -156,13 +156,13 @@ test("the original broad entry claim cannot retain a prior write fact", () => {
   assert.equal(r.status, "not-established");
   assert.equal(r.obligation.phase, "proof-search");
 });
-function observedCandidate(value) {
+function observedCandidate(value: any) {
   const candidate = structuredClone(safeClaims);
   const f = claim(candidate, safeFile);
   const ret = safeAst.functions[0].body[2];
   const cell = f.envs
-    .find((e) => e.pos[0] === ret.pos[0])
-    .vars.find((v) => v.name === "cell");
+    .find((e: any) => e.pos[0] === ret.pos[0])
+    .vars.find((v: any) => v.name === "cell");
   cell.type.atoms[0].fields[0].read = lit(value);
   return candidate;
 }

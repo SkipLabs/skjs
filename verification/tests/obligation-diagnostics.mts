@@ -5,11 +5,12 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { hash, fromSourceClaims, verifySkjs, } from "../tools/annotate-source.mts";
 import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
+import type { SourceClaims } from "../tools/source-claims.mts";
 const __dirname = path.dirname(import.meta.filename);
 const verifier = path.resolve(process.argv[2]);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "obligation-diagnostics-"));
 let passed = 0;
-const test = (name, f) => {
+const test = (name: string, f: any) => {
   f();
   passed++;
   console.log(`  ${name}: OK`);
@@ -27,7 +28,10 @@ try {
   assert.equal(parsed.status, 0, parsed.stderr);
   const f = JSON.parse(parsed.stdout).functions[0],
     pos = f.body[0].e.pos;
-  const base = {
+  // Typed as the format itself, so an edit that stops being a valid
+  // `stateful-source-v3` document is an error here rather than a verifier
+  // rejection with a confusing message.
+  const base: SourceClaims = {
     version: 3,
     profile: "stateful-source-v3",
     types: [
@@ -54,8 +58,8 @@ try {
       },
     ],
   };
-  const verify = (entry, expression) => {
-    const d = structuredClone(base);
+  const verify = (entry: any, expression: any) => {
+    const d: SourceClaims = structuredClone(base);
     d.functions[0].entries[0].bindings[0].type = entry;
     d.functions[0].expressions[0].type = expression;
     return verifySkjs(
@@ -81,7 +85,7 @@ try {
         JSON.stringify(descriptor),
       );
     assert.deepEqual(
-      map.context.map((x) => x.name),
+      map.context.map((x: any) => x.name),
       ["", "flag"],
     );
   });
@@ -151,7 +155,10 @@ try {
     assert.notEqual(r.status, 0);
     const d = readDiagnostic(r.stderr);
     assert(d, r.stderr);
-    assert.equal(d.kind, "edge-coverage");
+    assert(d.kind === "edge-coverage");
+    // The transfer and the destination's claim are optional in the record and
+    // required by what follows, so assert them rather than assume them.
+    assert(d.transfer && d.destination.claim);
     assert.equal(d.edgeIndex, 1);
     assert.equal(d.source.label, 0);
     assert.equal(d.destination.label, 1);
@@ -173,6 +180,7 @@ try {
     assert.notEqual(tagged.status, 0);
     const td = readDiagnostic(tagged.stderr);
     assert(td, tagged.stderr);
+    assert(td.kind === "edge-coverage" && td.transfer);
     assert.equal(td.edgeIndex, 1);
     assert.equal(td.transfer.booleanObservation, null);
     assert.deepEqual(td.transfer.tagObservation, {

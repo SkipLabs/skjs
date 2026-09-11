@@ -20,7 +20,7 @@ const cases = {
   "mutable_binding.ts": "only `const` bindings",
 };
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-boundaries-"));
-const run = (cmd, args) => {
+const run = (cmd: any, args: string[]) => {
   const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 30000 });
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
@@ -50,7 +50,7 @@ try {
         JSON.stringify([
           {
             file,
-            functions: JSON.parse(result.stdout).functions.map((f) => ({
+            functions: JSON.parse(result.stdout).functions.map((f: any) => ({
               name: f.name,
               namePos: f.namePos,
               params: f.params,

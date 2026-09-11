@@ -6,7 +6,7 @@ import { fromSkjs,render,coverage,verifySkjs,main } from "../tools/annotate-sour
 const [normalPath,recoveryPath,file,verifier,diagnostics]=process.argv.slice(2);
 const normal=JSON.parse(fs.readFileSync(normalPath, "utf8")),recovery=JSON.parse(fs.readFileSync(recoveryPath, "utf8"));
 const source=fs.readFileSync(file,"utf8"), report=fromSkjs(source,file,normal,"skjs");
-const get=(claims,name)=>claims.find(f=>f.file===file).functions.find(f=>f.name===name);
+const get=(claims: any,name: string)=>claims.find((f: any) =>f.file===file).functions.find((f: any) =>f.name===name);
 for(const name of ["annotationFailure","expressionFailure"]) {
   const f=get(normal,name);assert.equal(f.collection.completion,"aborted");
   assert.equal(f.collection.mode,"normal");assert.equal(f.collection.quality,"unverified");
@@ -35,7 +35,7 @@ try {
   fs.writeFileSync(incompletePath,JSON.stringify(incomplete));
   main([file,"--claims",incompletePath,"--verify",verifier,"--out",baseline]);
   const bm=JSON.parse(fs.readFileSync(baseline+".json", "utf8"));
-  const idx=bm.functions.findIndex(f=>f.name==="complete");
+  const idx=bm.functions.findIndex((f: any) =>f.name==="complete");
   assert.equal(bm.results[idx].status,"not-established");
   // A saved success is deliberately forged: comparison must not trust it.
   bm.results[idx]={status:"verified"};fs.writeFileSync(baseline+".json",JSON.stringify(bm));
@@ -43,7 +43,7 @@ try {
   main([file,"--claims",normalPath,"--producer","manual-repair","--baseline",baseline+".json","--verify",verifier,"--out",repaired]);
   const rm=JSON.parse(fs.readFileSync(repaired+".json", "utf8"));
   assert.equal(rm.results[idx].status,"verified");assert(rm.results[idx].certificateSha256);
-  assert(rm.comparison.changes.some(c=>c.function==="complete"&&c.kind==="entry"&&c.status==="added"));
+  assert(rm.comparison.changes.some((c: any) =>c.function==="complete"&&c.kind==="entry"&&c.status==="added"));
   assert.equal(rm.comparison.changes.length,1);
   main(["--check-fresh",repaired]);
   fs.appendFileSync(baseline+".json"," ");

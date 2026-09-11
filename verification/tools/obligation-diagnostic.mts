@@ -22,6 +22,13 @@ export interface SourceMapEntry {
   context: unknown[];
 }
 
+/** The judgement a failure could not establish. */
+export interface Sequent {
+  context: unknown[];
+  expression?: unknown;
+  type?: unknown;
+}
+
 /** A node of the certificate graph, as the failure reports it. */
 export interface DiagnosticNode {
   label: number;
@@ -44,11 +51,11 @@ export interface DiagnosticTransfer {
   tagObservation: { test: unknown; answer: boolean; slot: number } | null;
 }
 
-export interface ObligationDiagnostic {
+/** What every record carries, whatever the failure was. */
+interface Common {
   version: 2;
   phase: Phase;
   outcome: "not-established";
-  kind: Kind;
   /** The proof budget the search was given. */
   fuel: number;
   types: unknown[];
@@ -58,28 +65,6 @@ export interface ObligationDiagnostic {
    * omission to paper over.
    */
   requiredResult?: unknown;
-  /** The node or edge the record is about; absent for a production failure. */
-  id?: string;
-  /** Present for every kind but a production failure. */
-  source?: DiagnosticNode;
-  /** Edge coverage only. */
-  destination?: DiagnosticNode;
-  edgeIndex?: number;
-  transfer?: DiagnosticTransfer | null;
-  /**
-   * Closure expression claims only. Two emitters write these records. The one
-   * in RequestJson.lean reports failures about the certificate graph, where a
-   * failure names labels and the source map is a lookup keyed by one — so it
-   * hangs under the node, and an edge failure, having two nodes, could not put
-   * it anywhere else. The one in ExpressionClaims.lean reports obligations
-   * that are not graph nodes at all: each carries its own `pos` and `role`,
-   * and there is no label to nest under. `kind` is what separates the two.
-   */
-  sourceMap?: SourceMapEntry;
-  /** Node typing and expression claims only. */
-  sequent?: { context: unknown[]; expression?: unknown; type?: unknown } | null;
-  /** Production failure only: what was produced and then rejected. */
-  failure?: string;
   /** Attached by the report writer, not by the verifier. */
   input?: {
     file: string;
@@ -89,6 +74,49 @@ export interface ObligationDiagnostic {
     claimsSha256: string;
   };
 }
+
+/** A node of the certificate graph could not be typed. */
+export interface NodeTyping extends Common {
+  kind: "node-typing";
+  id: string;
+  source: DiagnosticNode;
+  sequent: Sequent | null;
+}
+
+/** An edge's destination was not justified by what its source carries. */
+export interface EdgeCoverage extends Common {
+  kind: "edge-coverage";
+  id: string;
+  edgeIndex: number;
+  source: DiagnosticNode;
+  destination: DiagnosticNode;
+  transfer: DiagnosticTransfer | null;
+}
+
+/**
+ * A closure expression claim did not follow. This failure is raised where the
+ * claim is rather than at a graph node, so it names its place directly instead
+ * of hanging a source map under a node: see `sourceMap` above, and
+ * ExpressionClaims.lean beside `failureDiagnostic` in RequestJson.lean.
+ */
+export interface ExpressionClaimFailure extends Common {
+  kind: "expression-claim";
+  id: string;
+  sourceMap: SourceMapEntry;
+  sequent: Sequent | null;
+}
+
+/** Something was produced and then rejected by the independent check. */
+export interface ProductionFailure extends Common {
+  kind: "production-failure";
+  failure: string;
+}
+
+export type ObligationDiagnostic =
+  | NodeTyping
+  | EdgeCoverage
+  | ExpressionClaimFailure
+  | ProductionFailure;
 
 const PHASES: readonly string[] = [
   "proof-search",

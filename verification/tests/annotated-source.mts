@@ -12,7 +12,7 @@ const __dirname = path.dirname(import.meta.filename);
 const [claimsPath,fileKey,verifier]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
-const test=(name,f)=>{f();passed++;console.log(`  ${name}: OK`);};
+const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
   const source='// Unicode: 😀\nfunction f(x: boolean): boolean { return x; }\n';
   const ns=source.indexOf("f("), es=source.lastIndexOf("x;");
@@ -57,9 +57,11 @@ try {
         {kind:"entry",pos:[es-7,es+2],binding:"x",reason:"multi-branch-object"},
         {kind:"entry",pos:[es-7,es+2],binding:"y",reason:"future-reason"},
         {kind:"expression",pos:[es,es+1],reason:"fuel-exhausted"}]}]}];
-    const get=()=>fromSkjs(source,"test.ts",raw,"skjs").functions[0].unavailableTypes;
+    // The probe always states some, and the assertions below are about how
+    // many: a missing list is a failure, not an empty one.
+    const get=()=>{const u=fromSkjs(source,"test.ts",raw,"skjs").functions[0]!.unavailableTypes;assert(u);return u;};
     assert.equal(get().length,5);
-    assert.equal(get()[3].reason,"future-reason");
+    assert.equal(get()[3]!.reason,"future-reason");
     const f=raw[0].functions[0];
     f.envs[0].vars[0].type={top:false,atoms:[{a:"boolean"}]};
     assert(!get().some(d=>d.kind==="entry"&&d.binding==="x"));
@@ -73,7 +75,7 @@ try {
   const script=path.resolve(__dirname,"../tools/annotate-source.mts");
   const generic=path.join(tmp,"generic.ts"), gp=path.join(tmp,"generic.json"), go=path.join(tmp,"generic.annotated.ts");
   fs.writeFileSync(generic,source);fs.writeFileSync(gp,JSON.stringify(report));
-  const cli=args=>{const r=spawnSync(process.execPath,[script,...args],{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
+  const cli=(args: string[]) =>{const r=spawnSync(process.execPath,[script,...args],{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(String(r.signal));return r;};
   test("generic claims CLI writes separate source and manifest",()=>{const r=cli([generic,"--claims",gp,"--format","report","--out",go]);assert.equal(r.status,0,r.stderr);assert.equal(fs.readFileSync(generic,"utf8"),source);const m=JSON.parse(fs.readFileSync(go+".json", "utf8"));assert.equal(m.annotatedSha256,hash(fs.readFileSync(go)));});
   test("existing report is not overwritten",()=>assert.notEqual(cli([generic,"--claims",gp,"--format","report","--out",go]).status,0));
   test("input cannot be overwritten",()=>assert.notEqual(cli([generic,"--claims",gp,"--format","report","--out",generic]).status,0));
@@ -101,7 +103,7 @@ try {
     assert(!marks.some(m=>m.includes("reason=")));
     const changes=compareClaims(source,report,r).changes;
     const edit=render(source,r,null,{claimChanges:changes}).split("@verify-report").find(m=>m.includes("claim edit:"));
-    assert(edit.includes("reason=claim-edit"));
+    assert(edit && edit.includes("reason=claim-edit"));
   });
   test("literal types are displayed as literals, not as encodings",()=>{
     const r=structuredClone(report);
@@ -117,6 +119,7 @@ try {
     const r: any=structuredClone(report);
     r.functions[0].entries[0].bindings.push({name:"this",type:typeText({unsupported:true}),raw:{unsupported:true}});
     const entry=render(source,r).split("@verify-report").find(m=>m.includes("kind=entry"));
+    assert(entry, "no entry annotation");
     assert(entry.includes("unsupported=this"),entry);
     assert(entry.includes("this: (unavailable)"),entry);
   });
@@ -126,8 +129,8 @@ try {
     const {annotated,manifest}=JSON.parse(r.stdout);
     const ids=[...annotated.matchAll(/id=([a-z0-9]+);/g)].map(m=>m[1]);
     assert(ids.length>=3);
-    const known=new Set([...manifest.functions.flatMap(f=>[f.id,...f.entries.map(e=>e.id),...f.expressions.map(e=>e.id)]),
-      ...manifest.gaps.map(g=>g.id)]);
+    const known=new Set([...manifest.functions.flatMap((f: any) =>[f.id,...f.entries.map((e: any) =>e.id),...f.expressions.map((e: any) =>e.id)]),
+      ...manifest.gaps.map((g: any) =>g.id)]);
     for(const id of ids)assert(known.has(id),id);
   });
   test("stdout mode leaves no files behind",()=>{
@@ -178,8 +181,8 @@ try {
   // producer's encoding exactly. Check that on every type in a real export.
   test("every exported claim type survives printing and reading back",()=>{
     const {printType,parseType}=require("../tools/claim-types.js");
-    const types=[];
-    const walk=f=>{for(const e of f.exprs||[])types.push(e.type);
+    const types: any[]=[];
+    const walk=(f: any) =>{for(const e of f.exprs||[])types.push(e.type);
       for(const env of f.envs||[])for(const v of env.vars||[])types.push(v.type);
       for(const p of f.params||[])types.push(p.type); types.push(f.retType);};
     for(const file of claims)for(const f of file.functions)walk(f);
@@ -190,46 +193,46 @@ try {
   });
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");
-  test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));assert(m.results.every(x=>x.status==="verified"));assert(m.results.every(x=>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
+  test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));assert(m.results.every((x: any) =>x.status==="verified"));assert(m.results.every((x: any) =>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
   // A claim the extractor needed and did not find is a different finding from a
   // proof search that failed, and the report must say which one happened.
   test("an absent required claim is located as a missing claim",()=>{
-    const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
+    const c=structuredClone(claims), f=c.find((f: any) =>f.file===fileKey).functions.find((f: any) =>f.name==="capturedRead");
     const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
-    const body=JSON.parse(parsed.stdout).functions.find(f=>f.name==="capturedRead").body[1].init.body;
-    const removed=f.exprs.find(e=>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(removed);
-    f.exprs=f.exprs.filter(e=>e!==removed);
+    const body=JSON.parse(parsed.stdout).functions.find((f: any) =>f.name==="capturedRead").body[1].init.body;
+    const removed=f.exprs.find((e: any) =>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(removed);
+    f.exprs=f.exprs.filter((e: any) =>e!==removed);
     const cp=path.join(tmp,"absent.json"),op=path.join(tmp,"absent.annotated.ts");fs.writeFileSync(cp,JSON.stringify(c));
     const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
     const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));
-    const result=m.results[m.functions.findIndex(f=>f.name==="capturedRead")];
+    const result=m.results[m.functions.findIndex((f: any) =>f.name==="capturedRead")];
     assert.equal(result.status,"not-established");
     assert.deepEqual(result.location,{kind:"missing-expression-claim",pos:removed.pos});
   });
   test("an absent environment claim names the statement, and a missing binding names itself",()=>{
-    const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
+    const c=structuredClone(claims), f=c.find((f: any) =>f.file===fileKey).functions.find((f: any) =>f.name==="capturedRead");
     const dropped=f.envs[f.envs.length-1];assert(dropped);
     const withoutEnv=structuredClone(c);
-    const g=withoutEnv.find(x=>x.file===fileKey).functions.find(x=>x.name==="capturedRead");
-    g.envs=g.envs.filter(e=>e.pos[0]!==dropped.pos[0]);
+    const g=withoutEnv.find((x: any) =>x.file===fileKey).functions.find((x: any) =>x.name==="capturedRead");
+    g.envs=g.envs.filter((e: any) =>e.pos[0]!==dropped.pos[0]);
     const cp=path.join(tmp,"noenv.json"),op=path.join(tmp,"noenv.annotated.ts");
     fs.writeFileSync(cp,JSON.stringify(withoutEnv));
     const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
     const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));
-    const result=m.results[m.functions.findIndex(x=>x.name==="capturedRead")];
+    const result=m.results[m.functions.findIndex((x: any) =>x.name==="capturedRead")];
     assert.equal(result.location.kind,"missing-environment-claim");
     assert.equal(result.location.start,dropped.pos[0]);
     const withoutBinding=structuredClone(c);
-    const h=withoutBinding.find(x=>x.file===fileKey).functions.find(x=>x.name==="capturedRead");
-    const target=h.envs.find(e=>e.vars.some(v=>v.name!=="this"));assert(target);
-    const name=target.vars.find(v=>v.name!=="this").name;
-    target.vars=target.vars.filter(v=>v.name!==name);
+    const h=withoutBinding.find((x: any) =>x.file===fileKey).functions.find((x: any) =>x.name==="capturedRead");
+    const target=h.envs.find((e: any) =>e.vars.some((v: any) =>v.name!=="this"));assert(target);
+    const name=target.vars.find((v: any) =>v.name!=="this").name;
+    target.vars=target.vars.filter((v: any) =>v.name!==name);
     const bp=path.join(tmp,"nobinding.json"),bo=path.join(tmp,"nobinding.annotated.ts");
     fs.writeFileSync(bp,JSON.stringify(withoutBinding));
     const rb=cli([fileKey,"--claims",bp,"--verify",verifier,"--out",bo]);assert.equal(rb.status,0,rb.stderr);
     const mb=JSON.parse(fs.readFileSync(bo+".json", "utf8"));
-    const rr=mb.results[mb.functions.findIndex(x=>x.name==="capturedRead")];
+    const rr=mb.results[mb.functions.findIndex((x: any) =>x.name==="capturedRead")];
     if(rr.location?.kind==="missing-environment-claim")assert.equal(rr.location.binding,name);
     else assert.equal(rr.status,"not-established");
   });
@@ -246,15 +249,15 @@ try {
     else assert.equal(result.status,"unsupported");
   });
   test("false claim is not called refuted or verified",()=>{
-    const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
+    const c=structuredClone(claims), f=c.find((f: any) =>f.file===fileKey).functions.find((f: any) =>f.name==="capturedRead");
     const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
-    const body=JSON.parse(parsed.stdout).functions.find(f=>f.name==="capturedRead").body[1].init.body;
-    const p=f.exprs.find(e=>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(p);
+    const body=JSON.parse(parsed.stdout).functions.find((f: any) =>f.name==="capturedRead").body[1].init.body;
+    const p=f.exprs.find((e: any) =>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(p);
     p.type={top:false,atoms:[{a:"booleanlit",v:"true"}]};
     const cp=path.join(tmp,"bad.json"),op=path.join(tmp,"bad.annotated.ts");fs.writeFileSync(cp,JSON.stringify(c));
     const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
-    const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));assert.equal(m.results[m.functions.findIndex(f=>f.name==="capturedRead")].status,"not-established");
+    const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));assert.equal(m.results[m.functions.findIndex((f: any) =>f.name==="capturedRead")].status,"not-established");
   });
   console.log(`Annotated source: ${passed} passed, 0 failed`);
 } finally {fs.rmSync(tmp,{recursive:true,force:true});}

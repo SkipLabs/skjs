@@ -11,22 +11,22 @@ const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
 const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "stateful-cells-"));
-const clone = x => JSON.parse(JSON.stringify(x));
-const fun = (c,n) => c.find(f=>f.file===fileKey).functions.find(f=>f.name===n);
-const source = (a,n) => a.functions.find(f=>f.name===n);
-const at = (c,n,e) => fun(c,n).exprs.find(x=>x.pos[0]===e.pos[0] && x.pos[1]===e.pos[1]);
+const clone =(x: any) => JSON.parse(JSON.stringify(x));
+const fun = (c: any,n: any) => c.find((f: any) =>f.file===fileKey).functions.find((f: any) =>f.name===n);
+const source = (a: any,n: any) => a.functions.find((f: any) =>f.name===n);
+const at = (c: any,n: any,e: any) => fun(c,n).exprs.find((x: any) =>x.pos[0]===e.pos[0] && x.pos[1]===e.pos[1]);
 const bool = {top:false,atoms:[{a:"boolean"}]};
-const lit = v => ({top:false,atoms:[{a:"booleanlit",v}]});
+const lit =(v: any) => ({top:false,atoms:[{a:"booleanlit",v}]});
 let passed = 0;
-function run(mode,a,c,evidence?) {
+function run(mode: string,a: any,c: any,evidence?: any) {
   fs.writeFileSync(path.join(tmp,"ast"),JSON.stringify(a));
   fs.writeFileSync(path.join(tmp,"claims"),JSON.stringify(c));
   if(evidence) fs.writeFileSync(path.join(tmp,"evidence"),JSON.stringify(evidence));
   const r=spawnSync(verifier,[mode,path.join(tmp,"ast"),path.join(tmp,"claims"),fileKey,path.join(tmp,"evidence"),...(mode === "--produce-stateful-source" ? ["10"] : [])],{encoding:"utf8"});
-  if(r.error || r.signal) throw r.error || Error(r.signal);
+  if(r.error || r.signal) throw r.error || Error(String(r.signal));
   return r;
 }
-function expect(name,r,accept) {
+function expect(name: string,r: any,accept: any) {
   if((r.status===0)!==accept) throw Error(`${name}: ${r.status}: ${r.stdout}${r.stderr}`);
   console.log(`  ${name}: OK`); passed++;
 }
@@ -60,7 +60,7 @@ try {
   const cases: [string, (a: any, c?: any) => void][] = [
     ["cell parameter boundary",(a,c)=>{const t=source(a,"aliasWrite").body[0].annot;source(a,"aliasWrite").params[0].type=clone(t);fun(c,"aliasWrite").params[0].type=clone(t);}],
     ["initializer subexpression claim",(a,c)=>{at(c,"aliasWrite",source(a,"aliasWrite").body[0].init.e).type=lit("true");}],
-    ["missing allocation subexpression",(a,c)=>{const e=source(a,"aliasWrite").body[0].init.e; fun(c,"aliasWrite").exprs=fun(c,"aliasWrite").exprs.filter(x=>x.pos[0]!==e.pos[0]);}],
+    ["missing allocation subexpression",(a,c)=>{const e=source(a,"aliasWrite").body[0].init.e; fun(c,"aliasWrite").exprs=fun(c,"aliasWrite").exprs.filter((x: any) =>x.pos[0]!==e.pos[0]);}],
     ["allocation invariant cannot narrow",(a,c)=>{const t=at(c,"aliasWrite",source(a,"aliasWrite").body[0].init).type.atoms[0].fields[0];t.read=lit("true");t.write=lit("true");}],
     ["receiver must be a reference",(a,c)=>{at(c,"aliasWrite",source(a,"aliasWrite").body[2].e.receiver).type=bool;}],
     ["write respects invariant",(a,c)=>{const e=source(a,"aliasWrite").body[2].e.rhs;e.lit={a:"null"};at(c,"aliasWrite",e).type={top:false,atoms:[{a:"null"}]};}],

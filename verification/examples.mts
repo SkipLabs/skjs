@@ -13,7 +13,12 @@ const __filename = import.meta.filename;
 const __dirname = path.dirname(__filename);
 // The corpus index is a plain JavaScript module the reader also loads.
 const require = createRequire(import.meta.url);
-const { groups, supported } = require("./report-viewer/examples.js");
+// The corpus index: which files each display group holds, and which of them
+// the reader advertises as source-verifiable.
+const { groups, supported }: {
+  groups: { label: string; files: string[] }[];
+  supported: string[];
+} = require("./report-viewer/examples.js");
 const root = path.resolve(__dirname, "..");
 process.chdir(root);
 let build = false,
@@ -48,7 +53,7 @@ for (let i = 2; i < process.argv.length; i++) {
 const verifier = path.join(__dirname, "lean/.lake/build/bin/verifier");
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "examples-"));
 process.on("exit", () => fs.rmSync(work, { recursive: true, force: true }));
-function run(command, args) {
+function run(command: string, args: string[]) {
   const r = spawnSync(command, args, {
     cwd: root,
     encoding: "utf8",
@@ -61,7 +66,7 @@ function run(command, args) {
 }
 // Expected outcomes are corpus policy, not evidence. The partial fixture contains
 // two invalid definitions and a valid one; a rejection alone proves no bug.
-function expectedVerified(file, name) {
+function expectedVerified(file: string, name: string) {
   return (
     supported.includes(file) ||
     (file === "verification/tests/partial-claims.ts" && name === "complete") ||
@@ -78,7 +83,7 @@ const incompleteInput = new Set([
   "missing-environment-claim",
   "source-limitation",
 ]);
-function outcome(result) {
+function outcome(result: any): [string, string] {
   if (!result) return ["?", "no producer claim"];
   if (result.status === "verified") return ["✓", "verified"];
   if (result.location?.reason === "non-invariant-cell-contract")
@@ -101,14 +106,14 @@ function outcome(result) {
 // the parent's decision and travels with the work rather than being asked again
 // somewhere it cannot be answered.
 const colorEnv = process.env.VERIFY_COLOR;
-function color(code, text, stream: NodeJS.WriteStream = process.stdout) {
+function color(code: number, text: string, stream: NodeJS.WriteStream = process.stdout) {
   const wanted = colorEnv
     ? colorEnv === "1"
     : stream.isTTY && process.env.TERM !== "dumb" && !process.env.NO_COLOR;
   return wanted ? `\x1b[${code}m${text}\x1b[0m` : text;
 }
 const colorForWorkers = color(0, "x") === "x" ? "0" : "1";
-function marked(mark, text) {
+function marked(mark: string, text: string) {
   return color(mark === "✓" ? 32 : mark === "✗" ? 31 : 33, text);
 }
 const started = Date.now();
@@ -181,8 +186,8 @@ try {
   // is one producer run: loading it costs more than reading any one file. A
   // worker loads its own shard, not the whole corpus.
   let mine = sources;
-  const examine = (file) => {
-    const lines = [];
+  const examine = (file: string) => {
+    const lines: string[] = [];
     const tally = {
       verified: 0,
       failed: 0,
@@ -193,7 +198,7 @@ try {
       producerRejected: 0,
       producerUnknown: 0,
     };
-    const say = (text) => lines.push(String(text).replace(/\n$/, ""));
+    const say = (text: unknown) => lines.push(String(text).replace(/\n$/, ""));
     let verified = 0,
       failed = 0,
       unavailable = 0,
@@ -222,7 +227,7 @@ try {
           // Only a file that fails is split, and only to say which function
           // failed; a file that verifies needs no second look.
           const claimed = new Set(doc.functions.map((g) => g.name));
-          const attempt = (document) => {
+          const attempt = (document: unknown) => {
             const astFile = path.join(work, "tsc.ast.json");
             const claimsFile = path.join(work, "tsc.claims.json");
             fs.writeFileSync(astFile, JSON.stringify({ ...ast, file }));
@@ -286,7 +291,7 @@ try {
             : "✗"
           : "·";
         const tscOwn = tscAccepted === null ? "·" : tscAccepted ? "✓" : "✗";
-        const pair = (own, proof, flag) =>
+        const pair = (own: string, proof: string, flag: boolean) =>
           `${marked(own, own)}→${marked(proof, proof)}` +
           (flag && own === "✓" && proof === "✗" ? color(33, " ⚠") : "");
         if (producers.skjs) {
@@ -357,7 +362,7 @@ try {
     // Started together and waited for once. Spawning them one at a time would
     // run them one at a time, which is slower than not sharding at all: each
     // worker would pay its own start before the next could begin.
-    const quote = (text) => JSON.stringify(String(text));
+    const quote = (text: unknown) => JSON.stringify(String(text));
     const outputs = [];
     for (let index = 0; index < width; index++)
       outputs.push(

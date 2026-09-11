@@ -1,8 +1,0 @@
-{
-  // The suites. Same two exceptions as tsconfig.annotator.json, for the same
-  // reasons: each suite is an entry point that decodes a wire document and
-  // reaches into it. They are run by run.sh, not imported by anything.
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "noImplicitAny": false, "strictNullChecks": false },
-  "include": ["../tests/*.mts"]
-}

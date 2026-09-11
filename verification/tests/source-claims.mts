@@ -7,9 +7,9 @@ import { hash } from "../tools/annotate-source.mts";
 import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
 const __dirname = path.dirname(import.meta.filename);
 const verifier=process.argv[2],tmp=fs.mkdtempSync(path.join(os.tmpdir(),"source-claims-"));
-const run=(exe,args)=>{const r=spawnSync(exe,args,{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
+const run=(exe: string,args: string[])=>{const r=spawnSync(exe,args,{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(String(r.signal));return r;};
 let passed=0;
-const test=(name,f)=>{f();passed++;console.log(`  ${name}: OK`);};
+const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
   const source="function identity(flag: boolean): boolean { return flag; }\n";
   const file=path.join(tmp,"source.ts"),ap=path.join(tmp,"ast.json"),cp=path.join(tmp,"claims.json"),ep=path.join(tmp,"evidence.json");
@@ -26,32 +26,32 @@ try {
   const produce=()=>run(verifier,["--produce-source-claims",ap,cp,file,ep,"6"]);
   const check=()=>run(verifier,["--check-source-claims",ap,cp,file,ep]);
   test("handwritten calculus claims produce checked evidence",()=>{const r=produce();assert.equal(r.status,0,r.stderr);assert.equal(check().status,0);});
-  const mutate=(name,edit)=>test(name,()=>{
+  const mutate=(name: string,edit: any)=>test(name,()=>{
     const d=structuredClone(doc);edit(d);fs.writeFileSync(cp,JSON.stringify(d));
     assert.notEqual(check().status,0);assert.notEqual(produce().status,0);
     fs.writeFileSync(cp,JSON.stringify(doc));
   });
-  mutate("unknown fields rejected",d=>d.status="verified");
-  mutate("unknown nested fields rejected",d=>d.functions[0].expressions[0].proof="trusted");
-  mutate("stale source fingerprint rejected",d=>d.sourceSha256="0".repeat(64));
-  mutate("different source identity rejected",d=>d.file="elsewhere.ts");
-  mutate("unsupported graph profile rejected",d=>d.profile="arbitrary");
-  mutate("retired profile is rejected",d=>d.profile="stateful-source-19-v1");
-  mutate("previous fixed-table profile is rejected",d=>d.profile="stateful-source-532-v2");
-  mutate("out-of-range labels rejected even in unused bindings",d=>d.functions[0].entries[0].bindings.push({name:"unused",type:[4],current:null}));
-  mutate("a table without the primitives is rejected",d=>d.types=d.types.slice(1));
-  mutate("a table row referring past the table is rejected",d=>d.types.push([{refs:{first:[9],rest:[]}}]));
-  mutate("duplicate labels rejected",d=>d.functions[0].result=[1,1,2]);
-  mutate("noncanonical label order rejected",d=>d.functions[0].result=[2,1]);
-  mutate("duplicate entry sites rejected",d=>d.functions[0].entries.push(d.functions[0].entries[0]));
-  mutate("duplicate expression sites rejected",d=>d.functions[0].expressions.push(d.functions[0].expressions[0]));
-  mutate("duplicate bindings rejected",d=>d.functions[0].entries[0].bindings.push(d.functions[0].entries[0].bindings[0]));
-  mutate("unrelated entry site rejected",d=>d.functions[0].entries.push({start:0,bindings:[]}));
-  mutate("unrelated expression site rejected",d=>d.functions[0].expressions.push({pos:[0,1],type:[0]}));
-  mutate("missing required entry rejected",d=>d.functions[0].entries=[]);
-  mutate("narrowed entry rejected with old evidence",d=>d.functions[0].entries[0].bindings[0].type=[1]);
-  mutate("false expression claim rejected",d=>d.functions[0].expressions[0].type=[1]);
-  mutate("changed signature rejected",d=>d.functions[0].result=[1]);
+  mutate("unknown fields rejected",(d: any) =>d.status="verified");
+  mutate("unknown nested fields rejected",(d: any) =>d.functions[0].expressions[0].proof="trusted");
+  mutate("stale source fingerprint rejected",(d: any) =>d.sourceSha256="0".repeat(64));
+  mutate("different source identity rejected",(d: any) =>d.file="elsewhere.ts");
+  mutate("unsupported graph profile rejected",(d: any) =>d.profile="arbitrary");
+  mutate("retired profile is rejected",(d: any) =>d.profile="stateful-source-19-v1");
+  mutate("previous fixed-table profile is rejected",(d: any) =>d.profile="stateful-source-532-v2");
+  mutate("out-of-range labels rejected even in unused bindings",(d: any) =>d.functions[0].entries[0].bindings.push({name:"unused",type:[4],current:null}));
+  mutate("a table without the primitives is rejected",(d: any) =>d.types=d.types.slice(1));
+  mutate("a table row referring past the table is rejected",(d: any) =>d.types.push([{refs:{first:[9],rest:[]}}]));
+  mutate("duplicate labels rejected",(d: any) =>d.functions[0].result=[1,1,2]);
+  mutate("noncanonical label order rejected",(d: any) =>d.functions[0].result=[2,1]);
+  mutate("duplicate entry sites rejected",(d: any) =>d.functions[0].entries.push(d.functions[0].entries[0]));
+  mutate("duplicate expression sites rejected",(d: any) =>d.functions[0].expressions.push(d.functions[0].expressions[0]));
+  mutate("duplicate bindings rejected",(d: any) =>d.functions[0].entries[0].bindings.push(d.functions[0].entries[0].bindings[0]));
+  mutate("unrelated entry site rejected",(d: any) =>d.functions[0].entries.push({start:0,bindings:[]}));
+  mutate("unrelated expression site rejected",(d: any) =>d.functions[0].expressions.push({pos:[0,1],type:[0]}));
+  mutate("missing required entry rejected",(d: any) =>d.functions[0].entries=[]);
+  mutate("narrowed entry rejected with old evidence",(d: any) =>d.functions[0].entries[0].bindings[0].type=[1]);
+  mutate("false expression claim rejected",(d: any) =>d.functions[0].expressions[0].type=[1]);
+  mutate("changed signature rejected",(d: any) =>d.functions[0].result=[1]);
   test("an intersection of arrows is one row, proved per signature",()=>{
     // The corpus fixture SKJS refuses, verified from claims that state the
     // intersection as the source declares it.
@@ -60,13 +60,13 @@ try {
     const types=[...primitives,[{arrs:{arrows:[[[1],[0]],[[2],[0]]]}}]];
     // Claims for the parsed program: the lambda and its binding at row 4, the
     // body at the given type, the call at null.
-    const write=(source,bodyType)=>{
+    const write=(source: string,bodyType: any)=>{
       fs.writeFileSync(sf,source);
       const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),sf]);assert.equal(p.status,0,p.stderr);
       fs.writeFileSync(sa,p.stdout);
       const f=JSON.parse(p.stdout).functions[0],[cst,ret]=f.body;
       // The parser writes the second signature under `and` on the first.
-      assert.deepEqual(cst.annot.atoms.map(x=>x.a),["function"]);assert.equal(cst.annot.atoms[0].and.length,1);
+      assert.deepEqual(cst.annot.atoms.map((x: any) =>x.a),["function"]);assert.equal(cst.annot.atoms[0].and.length,1);
       const expressions=[{pos:cst.init.pos,type:[4],current:null},{pos:cst.init.body.pos,type:bodyType,current:null},
         {pos:ret.e.pos,type:[0],current:null},{pos:ret.e.callee.pos,type:[4],current:null},{pos:ret.e.arg.pos,type:[1],current:null}];
       const entries=[{start:cst.pos[0],bindings:[]},{start:ret.pos[0],bindings:[{name:"f",type:[4],current:null}]}];
@@ -105,14 +105,15 @@ try {
     const sf=path.join(tmp,"captured.ts"),sa=path.join(tmp,"captured.ast.json"),sc=path.join(tmp,"captured.claims.json"),se=path.join(tmp,"captured.evidence.json");
     fs.writeFileSync(sf,text);
     const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),sf]);assert.equal(p.status,0,p.stderr);
-    const a=JSON.parse(p.stdout),f=a.functions[0],expressions=[],entries=[],scope=[];
+    const a=JSON.parse(p.stdout),f=a.functions[0];
+    const expressions: any[]=[],entries: any[]=[],scope: any[]=[];
     // The table: the primitives, then the cell at 4 and the reader arrow at 5.
     const types=[...primitives,[{refs:{first:[1,2],rest:[]}}],[{arrs:{arrows:[[[0],[1,2]]]}}]];
     const labels={cell:[4],read:[5],x:[0]};
-    const expr=e=>{
+    const expr=(e: any) =>{
       let type;
       switch(e.k) {
-        case "id":type=labels[e.name];break;
+        case "id":type=(labels as Record<string, number[]>)[e.name];break;
         case "lit":type=e.lit.v==="true"?[1]:e.lit.v==="false"?[2]:[0];break;
         case "alloc":type=[4];expr(e.e);break;
         case "read":type=[1,2];expr(e.e);break;
@@ -126,19 +127,20 @@ try {
     for(const st of f.body) {
       entries.push({start:st.pos[0],bindings:structuredClone(scope)});
       expr(st.init||st.e);
-      if(st.k==="const")scope.push({name:st.name,type:labels[st.name],current:null});
+      if(st.k==="const")scope.push({name:st.name,type:(labels as Record<string, number[]>)[st.name],current:null});
     }
     fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({version:3,profile:doc.profile,file:sf,sourceSha256:hash(text),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
     const checked=run(verifier,["--check-source-claims",sa,sc,sf,se]);assert.equal(checked.status,0,checked.stderr);
     const bad=JSON.parse(fs.readFileSync(sc,"utf8"));
     const bodyPos=f.body[1].init.body.pos;
-    bad.functions[0].expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1];
+    bad.functions[0].expressions.find((e: any) =>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1];
     fs.writeFileSync(sc,JSON.stringify(bad));
     const failed=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);
     assert.notEqual(failed.status,0);
     const diagnostic=readDiagnostic(failed.stderr);
-    assert.equal(diagnostic.kind,"expression-claim");
+    assert(diagnostic?.kind === "expression-claim");
+    assert(diagnostic.sequent);
     assert.equal(diagnostic.sourceMap.role,"expression-claim");
     assert.deepEqual(diagnostic.sourceMap.pos,bodyPos);
     assert.deepEqual(diagnostic.sequent.type,[1]);
@@ -146,14 +148,15 @@ try {
     // The earlier true allocation cannot justify a permanent true read capability.
     const observed=JSON.parse(fs.readFileSync(sc,"utf8"));
     const cf=observed.functions[0];
-    cf.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1,2];
-    const receiver=cf.expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(f.body[1].init.body.e.pos));
+    cf.expressions.find((e: any) =>JSON.stringify(e.pos)===JSON.stringify(bodyPos)).type=[1,2];
+    const receiver=cf.expressions.find((e: any) =>JSON.stringify(e.pos)===JSON.stringify(f.body[1].init.body.e.pos));
     receiver.current=[1,2];fs.writeFileSync(sc,JSON.stringify(observed));
     const broad=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(broad.status,0,broad.stderr);
     receiver.current=[1];fs.writeFileSync(sc,JSON.stringify(observed));
     assert.notEqual(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
     const stale=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(stale.status,0);
     const observation=readDiagnostic(stale.stderr);
+    assert(observation?.kind === "expression-claim" && observation.sequent);
     assert.equal(observation.sourceMap.role,"heap-observation");
     assert.deepEqual(observation.sourceMap.pos,receiver.pos);
     assert.deepEqual(observation.sequent.context,[[1,2]]);

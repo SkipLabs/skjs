@@ -98,22 +98,23 @@ an exporter change needs a place to show, one phenomenon per file.
   `.js` that remains is the reader's own, which the browser loads as plain
   `<script>` and which is not formatted; leave it alone until the reader is
   rewritten with a build step.
-- Every module the node side runs is `.mts` and belongs to a `tsc` project:
-  `tools/tsconfig.json` for the trusted front end, fully strict, and
-  `tsconfig.annotator`, `tsconfig.corpus` and `tsconfig.tests` beside it for
-  the files carried over from JavaScript. Those three turn off exactly two
-  checks — `noImplicitAny`, because their helpers have no signatures, and
-  `strictNullChecks`, because they walk decoded JSON. Nothing else: the other
-  strict checks cost nothing here, which was measured rather than assumed. A
-  new file goes in one of these projects or it is not checked at all, and a
-  file graduates to `tsconfig.json` once its own signatures are written down.
+- Every module the node side runs is `.mts`, and `tools/tsconfig.json` covers
+  all of them — the trusted front end, the corpus driver and the suites — under
+  one fully strict configuration, `noImplicitAny` and `strictNullChecks`
+  included. A new file lands in that project by being where it belongs;
+  nothing is exempt.
+- `tools/source-claims.mts` describes the `stateful-source-v3` wire format, and
+  `report-viewer/types.ts` the report the reader displays. A tool that writes
+  or reads one of those documents is typed against that description rather
+  than against its own idea of the shape, so producer and consumer cannot
+  drift apart silently.
 - The trusted front end is TypeScript on the compiler's own API
   (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
   the tree), type-checked by the `Front-end types` suite. A member that API
   renamed reads as `undefined` rather than failing, so `tsc` over
   `tools/tsconfig.json` is the thing that catches it — run the suite, do not
   reason about it.
-- `tests/tsconfig.mtson` is the regime the corpus is claimed and checked under.
+- `tests/tsconfig.json` is the regime the corpus is claimed and checked under.
   The producers refuse a file no `tsconfig.json` with `"strict": true` claims,
   rather than claiming it under weaker defaults.
 - node, not bun: the compiler's synchronous channel reads the child process's

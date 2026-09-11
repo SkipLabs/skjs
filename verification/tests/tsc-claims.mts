@@ -61,7 +61,7 @@ const expected = {
   "stateful-source/cell-contracts": "out-of-fragment",
 };
 
-const run = (cmd, args) =>
+const run = (cmd: any, args: string[]) =>
   spawnSync(cmd, args, { encoding: "utf8", timeout: 120000 });
 let failures = 0;
 for (const [name, want] of Object.entries(expected)) {

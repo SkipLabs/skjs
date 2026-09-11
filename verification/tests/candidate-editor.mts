@@ -20,10 +20,10 @@ const sourceSha256 = createHash("sha256").update(source).digest("hex");
 const claims = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const original = { format: "skjs", file, sourceSha256, claims };
 const fn = claims
-  .find((f) => f.file === file)
-  .functions.find((f) => f.name === "capturedRead");
+  .find((f: any) => f.file === file)
+  .functions.find((f: any) => f.name === "capturedRead");
 const expression = fn.exprs.find(
-  (e) => source.slice(...e.pos) === "read(null)",
+  (e: any) => source.slice(...e.pos) === "read(null)",
 );
 assert(expression);
 const item = { kind: "expression", pos: expression.pos };
@@ -69,25 +69,25 @@ assert.deepEqual(
   assert.equal(preview.manifest.results, null);
   assert.equal(preview.manifest.producer, "manual candidate");
   const checked = await candidateReport(original, true);
-  assert(checked.manifest.results.every((r) => r.status === "verified"));
+  assert(checked.manifest.results.every((r: any) => r.status === "verified"));
   const rejected = await candidateReport(edited, true);
-  const target = rejected.manifest.functions.find((f) => f.name === fn.name);
+  const target = rejected.manifest.functions.find((f: any) => f.name === fn.name);
   assert.equal(
-    rejected.manifest.results.find((r) => r.function === target.id).status,
+    rejected.manifest.results.find((r: any) => r.function === target.id).status,
     "not-established",
   );
   assert.deepEqual(
-    rejected.manifest.results.find((r) => r.function === target.id).location,
+    rejected.manifest.results.find((r: any) => r.function === target.id).location,
     { kind: "expression-obligation", pos: expression.pos },
   );
   const edgeClaims = structuredClone(original);
   const edgeFn = edgeClaims.claims
-    .find((f) => f.file === file)
-    .functions.find((f) => f.name === fn.name);
+    .find((f: any) => f.file === file)
+    .functions.find((f: any) => f.name === fn.name);
   edgeFn.envs[2].vars[0].type = wrong;
   const edgeReport = await candidateReport(edgeClaims, true);
   const edgeResult = edgeReport.manifest.results.find(
-    (r) => r.function === target.id,
+    (r: any) => r.function === target.id,
   );
   assert.equal(edgeResult.location.kind, "expression-obligation");
   // The statement is checked from its supplied environment. Its cell read
@@ -97,13 +97,13 @@ assert.deepEqual(
     original,
     fn,
     env,
-    claimValue(original, fn, env).map((b) =>
+    claimValue(original, fn, env).map((b: any) =>
       b.name === "seed" ? { ...b, type: { unsupported: true } } : b,
     ),
   );
   const envReport = await candidateReport(badEnv, true);
   assert.deepEqual(
-    envReport.manifest.results.find((r) => r.function === target.id).location,
+    envReport.manifest.results.find((r: any) => r.function === target.id).location,
     { kind: "unavailable-type-claim", start: env.pos[0], binding: "seed" },
   );
   const outsideFile = "verification/tests/unsupported/typeof_narrow.ts";
@@ -153,35 +153,35 @@ assert.deepEqual(
   // Repair missing information in a sound program without collecting again.
   const incomplete = structuredClone(original);
   const incompleteFn = incomplete.claims
-    .find((f) => f.file === file)
-    .functions.find((f) => f.name === fn.name);
+    .find((f: any) => f.file === file)
+    .functions.find((f: any) => f.name === fn.name);
   incompleteFn.envs = incompleteFn.envs.filter(
-    (e) => JSON.stringify(e.pos) !== JSON.stringify(env.pos),
+    (e: any) => JSON.stringify(e.pos) !== JSON.stringify(env.pos),
   );
   incompleteFn.exprs = incompleteFn.exprs.filter(
-    (e) => JSON.stringify(e.pos) !== JSON.stringify(item.pos),
+    (e: any) => JSON.stringify(e.pos) !== JSON.stringify(item.pos),
   );
   const partial = await candidateReport(incomplete, true);
-  const partialFn = partial.manifest.functions.find((f) => f.name === fn.name);
+  const partialFn = partial.manifest.functions.find((f: any) => f.name === fn.name);
   assert.equal(
-    partial.manifest.results.find((r) => r.function === partialFn.id).status,
+    partial.manifest.results.find((r: any) => r.function === partialFn.id).status,
     "not-established",
   );
   const expressionSite = partialFn.missingSites.find(
-    (s) =>
+    (s: any) =>
       s.kind === "expression" &&
       JSON.stringify(s.pos) === JSON.stringify(item.pos),
   );
   const entrySite = partialFn.missingSites.find(
-    (s) => s.kind === "environment" && s.pos[0] === env.pos[0],
+    (s: any) => s.kind === "environment" && s.pos[0] === env.pos[0],
   );
   assert(expressionSite && entrySite);
   assert(
     !partialFn.missingSites.some(
-      (s) => s.pos[0] === source.indexOf("unit: null") + 6,
+      (s: any) => s.pos[0] === source.indexOf("unit: null") + 6,
     ),
   );
-  assert(!partialFn.missingSites.some((s) => s.pos[0] === fn.namePos[0]));
+  assert(!partialFn.missingSites.some((s: any) => s.pos[0] === fn.namePos[0]));
   let repaired = addClaim(
     incomplete,
     partialFn,
@@ -210,13 +210,13 @@ assert.deepEqual(
   );
   assert.throws(() => addClaim(incomplete, partialFn, entrySite, {}), /array/);
   const repairedReport = await candidateReport(repaired, true);
-  assert(repairedReport.manifest.results.every((r) => r.status === "verified"));
+  assert(repairedReport.manifest.results.every((r: any) => r.status === "verified"));
   const repairedFn = repairedReport.manifest.functions.find(
-    (f) => f.name === fn.name,
+    (f: any) => f.name === fn.name,
   );
   assert(
     !repairedFn.missingSites.some(
-      (s) => JSON.stringify(s.pos) === JSON.stringify(item.pos),
+      (s: any) => JSON.stringify(s.pos) === JSON.stringify(item.pos),
     ),
   );
   assert.throws(
@@ -236,13 +236,13 @@ assert.deepEqual(
   assert.deepEqual(claimValue(normalizedRepair, fn, env), []);
   // Repair a whole missing function, keeping its contract separate from point claims.
   const withoutFunction = structuredClone(original);
-  withoutFunction.claims.find((f) => f.file === file).functions =
+  withoutFunction.claims.find((f: any) => f.file === file).functions =
     withoutFunction.claims
-      .find((f) => f.file === file)
-      .functions.filter((f) => f.name !== fn.name);
+      .find((f: any) => f.file === file)
+      .functions.filter((f: any) => f.name !== fn.name);
   const missingReport = await candidateReport(withoutFunction, false);
   const missingFunction = missingReport.manifest.missingFunctions.find(
-    (f) => f.name === fn.name,
+    (f: any) => f.name === fn.name,
   );
   assert(missingFunction);
   const missingModel = { ...missingFunction, candidateMissing: true };
@@ -268,13 +268,13 @@ assert.deepEqual(
   );
   assert.equal(
     withoutFunction.claims
-      .find((f) => f.file === file)
-      .functions.some((f) => f.name === fn.name),
+      .find((f: any) => f.file === file)
+      .functions.some((f: any) => f.name === fn.name),
     false,
   );
   for (const e of fn.exprs) {
     const site = missingFunction.missingSites.find(
-      (s) =>
+      (s: any) =>
         s.kind === "expression" &&
         JSON.stringify(s.pos) === JSON.stringify(e.pos),
     );
@@ -283,24 +283,24 @@ assert.deepEqual(
   }
   for (const e of fn.envs) {
     const site = missingFunction.missingSites.find(
-      (s) => s.kind === "environment" && s.pos[0] === e.pos[0],
+      (s: any) => s.kind === "environment" && s.pos[0] === e.pos[0],
     );
     assert(site, "missing environment repair site " + e.pos);
     restored = addClaim(restored, missingModel, site, e.vars);
   }
   const restoredReport = await candidateReport(restored, true);
-  assert(restoredReport.manifest.results.every((r) => r.status === "verified"));
+  assert(restoredReport.manifest.results.every((r: any) => r.status === "verified"));
   assert(
-    !restoredReport.manifest.missingFunctions.some((f) => f.name === fn.name),
+    !restoredReport.manifest.missingFunctions.some((f: any) => f.name === fn.name),
   );
   const wrongContract = structuredClone(restored);
   wrongContract.claims
-    .find((f) => f.file === file)
-    .functions.find((f) => f.name === fn.name).retType = wrong;
+    .find((f: any) => f.file === file)
+    .functions.find((f: any) => f.name === fn.name).retType = wrong;
   const wrongReport = await candidateReport(wrongContract, true);
   assert(
     wrongReport.manifest.results.some(
-      (r) =>
+      (r: any) =>
         r.status === "not-established" && /return type differs/.test(r.detail),
     ),
   );
@@ -308,14 +308,14 @@ assert.deepEqual(
     { ...normalized, claims: { functions: [] } },
     missingModel,
     {
-      params: fn.params.map((p) => ({ name: p.name, type: [1, 2] })),
+      params: fn.params.map((p: any) => ({ name: p.name, type: [1, 2] })),
       result: [1, 2],
     },
   );
   assert.deepEqual(normalizedFunction.claims.functions[0], {
     name: fn.name,
     namePos: fn.namePos,
-    params: fn.params.map((p) => ({ name: p.name, type: [1, 2] })),
+    params: fn.params.map((p: any) => ({ name: p.name, type: [1, 2] })),
     result: [1, 2],
     entries: [],
     expressions: [],

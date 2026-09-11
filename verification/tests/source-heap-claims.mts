@@ -15,9 +15,9 @@ const __dirname = path.dirname(import.meta.filename);
 
 const verifier = process.argv[2];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-heap-claims-"));
-const run = (args) => spawnSync(verifier, args, { encoding: "utf8" });
+const run = (args: string[]) => spawnSync(verifier, args, { encoding: "utf8" });
 let passed = 0;
-function fixture(body, param = "") {
+function fixture(body: string, param = "") {
   const source = `function example(${param}): boolean { ${body} }\n`;
   const file = path.join(tmp, "source.ts");
   const astPath = path.join(tmp, "ast.json"),
@@ -32,14 +32,14 @@ function fixture(body, param = "") {
   assert.equal(parsed.status, 0, parsed.stderr);
   fs.writeFileSync(astPath, parsed.stdout);
   const f = JSON.parse(parsed.stdout).functions[0];
-  const entries = [],
-    expressions = [];
-  const binding = (name) => ({
+  const entries : any[]=[],
+    expressions: any[] = [];
+  const binding = (name: string) => ({
     name,
     type: name === "cell" ? [4] : [1, 2],
     current: null,
   });
-  const expr = (e) => {
+  const expr = (e: any): any => {
     let type;
     switch (e.k) {
       case "id":
@@ -66,7 +66,7 @@ function fixture(body, param = "") {
     expressions.push({ pos: e.pos, type, current: null });
     return type;
   };
-  const stmts = (ss, names) => {
+  const stmts = (ss: any, names: string[]) => {
     for (const st of ss) {
       entries.push({ start: st.pos[0], bindings: names.map(binding) });
       if (st.k === "if") {
@@ -84,7 +84,7 @@ function fixture(body, param = "") {
   };
   stmts(
     f.body,
-    f.params.map((p) => p.name),
+    f.params.map((p: any) => p.name),
   );
   const doc = {
     version: 3,
@@ -103,22 +103,22 @@ function fixture(body, param = "") {
       {
         name: f.name,
         namePos: f.namePos,
-        params: f.params.map((p) => binding(p.name)),
+        params: f.params.map((p: any) => binding(p.name)),
         result: [1, 2],
         entries,
         expressions,
       },
     ],
   };
-  const primitive = (labels) => ({
+  const primitive = (labels: any) => ({
     top: false,
-    atoms: labels.map((i) =>
+    atoms: labels.map((i: number) =>
       i === 0
         ? { a: "null" }
         : { a: "booleanlit", v: i === 1 ? "true" : "false" },
     ),
   });
-  const rawType = (b) =>
+  const rawType = (b: any) =>
     b.type[0] === 4
       ? {
           top: false,
@@ -181,14 +181,14 @@ function fixture(body, param = "") {
               {
                 name: c.name,
                 namePos: c.namePos,
-                params: c.params.map((b) => ({
+                params: c.params.map((b: any) => ({
                   name: b.name,
                   type: rawType(b),
                 })),
                 retType: primitive(c.result),
                 envs: c.entries.map((e) => ({
                   pos: [e.start, e.start + 1],
-                  vars: e.bindings.map((b) => ({
+                  vars: e.bindings.map((b: any) => ({
                     name: b.name,
                     type: rawType(b),
                   })),
@@ -210,27 +210,27 @@ function fixture(body, param = "") {
         evidencePath,
       ]);
     },
-    current(st, R) {
+    current(st: any, R: any) {
       entries
         .find((e) => e.start === st.pos[0])
-        .bindings.find((b) => b.name === "cell").current = R;
+        .bindings.find((b: any) => b.name === "cell").current = R;
     },
-    result(e, R) {
+    result(e: any, R: any) {
       expressions.find((c) => String(c.pos) === String(e.pos)).current = R;
     },
   };
 }
-function test(name, f) {
+function test(name: string, f: any) {
   f();
   passed++;
   console.log(`  ${name}: OK`);
 }
-function accepts(x) {
+function accepts(x: any) {
   const r = x.produce();
   assert.equal(r.status, 0, r.stderr);
   assert.equal(x.check().status, 0);
 }
-function rejects(x) {
+function rejects(x: any) {
   const r = x.produce();
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /obligation-diagnostic:/);

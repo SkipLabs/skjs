@@ -27,7 +27,7 @@ const tmp = fs.mkdtempSync(os.tmpdir() + "/primitive-callbacks-");
 const clone = structuredClone;
 const nul = { top: false, atoms: [{ a: "null" }] };
 let passed = 0;
-function run(mode, a, c, key = file, evidence?) {
+function run(mode: string, a: any, c: any, key = file, evidence?: any) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -44,13 +44,13 @@ function run(mode, a, c, key = file, evidence?) {
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
 }
-function expect(name, r, accept, reason = "") {
+function expect(name: string, r: any, accept: any, reason = "") {
   assert.equal(r.status === 0, accept, name + ": " + r.stderr);
   assert((r.stdout + r.stderr).includes(reason), name + ": " + r.stderr);
   console.log("  " + name + ": OK");
   passed++;
 }
-function runtime(path) {
+function runtime(path: string) {
   const context = vm.createContext({});
   vm.runInContext(
     stripTypes(fs.readFileSync(path, "utf8")),
@@ -94,14 +94,14 @@ try {
   );
   const a = clone(ast),
     c = clone(claims);
-  const f = a.functions.find((f) => f.name === "booleanIdentity");
+  const f = a.functions.find((f: any) => f.name === "booleanIdentity");
   const call = f.body.at(-1).e;
   const pos = call.arg.pos;
   call.arg = { k: "lit", pos, lit: { a: "null" } };
   c
-    .find((f) => f.file === file)
-    .functions.find((f) => f.name === "booleanIdentity")
-    .exprs.find((e) => JSON.stringify(e.pos) === JSON.stringify(pos)).type =
+    .find((f: any) => f.file === file)
+    .functions.find((f: any) => f.name === "booleanIdentity")
+    .exprs.find((e: any) => JSON.stringify(e.pos) === JSON.stringify(pos)).type =
     nul;
   expect(
     "null does not satisfy Boolean callback domain",
@@ -125,7 +125,7 @@ try {
   // Soundly forget only reference read refinements, retaining every expression claim.
   // This is a manual candidate experiment, not acceptance of the original export.
   const weakened = clone(bad);
-  function forget(x) {
+  function forget(x: any) {
     if (!x || typeof x !== "object") return;
     if (x.a === "record")
       for (const field of x.fields) field.read = clone(field.write);
@@ -141,7 +141,7 @@ try {
   );
   assert(rejected.stderr.includes("evidence search failed"));
   const body = ba.functions[0].body;
-  const stale = body.find((s) => s.k === "if").then.at(-1).e.pos;
+  const stale = body.find((s: any) => s.k === "if").then.at(-1).e.pos;
   assert(rejected.stderr.includes(`[${stale[0]},${stale[1]})`));
   const goodRuntime = runtime(file),
     badRuntime = runtime(badFile);

@@ -1,7 +1,6 @@
 {
-  // The trusted front end, type-checked. `annotate-source.mts` is display
-  // plumbing carried over unannotated and is checked when the viewer it
-  // serves is rewritten.
+  // Everything the node side runs, checked under one strict configuration:
+  // the trusted front end, the corpus driver, and the suites.
   "compilerOptions": {
     "target": "es2022",
     "module": "preserve",
@@ -15,12 +14,5 @@
     "lib": ["es2022"],
     "types": ["node"]
   },
-  "files": [
-    "export-source-claims.mts",
-    "obligation-diagnostic.mts",
-    "parse-source.mts",
-    "tsc-claims.mts",
-    "strip-types.mts",
-    "type-errors.mts"
-  ]
+  "include": ["*.mts", "../examples.mts", "../tests/*.mts"]
 }

@@ -30,6 +30,11 @@ import type { Node, SourceFile } from "typescript/unstable/ast";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { close, parseFile, projectFor } from "./parse-source.mts";
+import type {
+  FunctionClaims,
+  Row,
+  SourceClaims,
+} from "./source-claims.mts";
 import type { Ast, Expr, FunctionAst, Span, Stmt } from "./parse-source.mts";
 
 /* ------------------------------------------------------------- refusal -- */
@@ -224,8 +229,6 @@ function buildIndices(sf: SourceFile): Indices {
 // The document's own type table: the four primitives, then one row per
 // compound type on first use (SOURCE-CLAIMS.md). Rows are interned by exact
 // content, so equal types always share a label.
-
-type Row = unknown[];
 
 function dedupSortInts(xs: number[]): number[] {
   return Array.from(new Set(xs)).sort((a, b) => a - b);
@@ -934,15 +937,6 @@ function omissionRecord(fn: string, site: unknown, err: unknown): Omission {
   };
 }
 
-interface ClaimedFunction {
-  name: string;
-  namePos: Span;
-  params: { name: string; type: number[]; current: null }[];
-  result: number[];
-  entries: { start: number; bindings: { name: string; type: number[]; current: null }[] }[];
-  expressions: { pos: Span; type: number[]; current: null }[];
-}
-
 function processFunction(
   fnJson: FunctionAst,
   fnNode: any,
@@ -951,7 +945,7 @@ function processFunction(
   types: Row[],
   indices: Indices,
   omissions: Omission[],
-): ClaimedFunction | null {
+): FunctionClaims | null {
   const before = omissions.length;
   const name = fnJson.name;
   const params = fnNode.parameters.map((p: any) => {
@@ -989,7 +983,7 @@ function processFunction(
   const sites = functionSites(fnJson); // may throw; the caller catches
   const declCache: DeclCache = new Map(); // one function's memo
 
-  const entries: ClaimedFunction["entries"] = [];
+  const entries: FunctionClaims["entries"] = [];
   for (const start of Array.from(sites.entries).sort((a, b) => a - b)) {
     const stmtNode = indices.stmtByStart.get(start);
     if (!stmtNode) {
@@ -998,7 +992,7 @@ function processFunction(
       );
       continue;
     }
-    const bindings: ClaimedFunction["entries"][number]["bindings"] = [];
+    const bindings: FunctionClaims["entries"][number]["bindings"] = [];
     for (const b of envAtEntry(stmtNode, start, checker, sf)) {
       try {
         bindings.push({
@@ -1015,7 +1009,7 @@ function processFunction(
     entries.push({ start, bindings });
   }
 
-  const expressions: ClaimedFunction["expressions"] = [];
+  const expressions: FunctionClaims["expressions"] = [];
   for (const [key, { pos, kind }] of Array.from(sites.exprs.entries()).sort(
     (a, b) => a[1].pos[0] - b[1].pos[0],
   )) {
@@ -1044,7 +1038,7 @@ function processFunction(
   return {
     name: fnJson.name,
     namePos: fnJson.namePos,
-    params: params as ClaimedFunction["params"],
+    params: params as FunctionClaims["params"],
     result,
     entries,
     expressions,
@@ -1053,17 +1047,8 @@ function processFunction(
 
 /* ------------------------------------------------------------ produce -- */
 
-export interface ClaimsDocument {
-  version: 3;
-  profile: "stateful-source-v3";
-  file: string;
-  sourceSha256: string;
-  types: Row[];
-  functions: ClaimedFunction[];
-}
-
 export interface Produced {
-  doc: ClaimsDocument;
+  doc: SourceClaims;
   omissions: Omission[];
   ast: Ast;
   /** The checker's own verdict, per function: what `tsc --noEmit` would say. */
@@ -1105,7 +1090,7 @@ export function produce(file: string): Produced {
     ["undef"],
   ];
   const omissions: Omission[] = [];
-  const functions: ClaimedFunction[] = [];
+  const functions: FunctionClaims[] = [];
   ast.functions.forEach((fnJson, i) => {
     const before = types.length;
     try {

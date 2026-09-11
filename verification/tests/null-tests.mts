@@ -34,10 +34,10 @@ const [
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
 const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/null-tests-");
-const fn = (c) =>
-  c.find((f) => f.file === file).functions.find((f) => f.name === "isNull");
+const fn = (c: any) =>
+  c.find((f: any) => f.file === file).functions.find((f: any) => f.name === "isNull");
 let passed = 0;
-function run(mode, a, c, evidence?, key = file) {
+function run(mode: string, a: any, c: any, evidence?: any, key = file) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -54,7 +54,7 @@ function run(mode, a, c, evidence?, key = file) {
   assert(!r.error && !r.signal, String(r.error || r.signal));
   return r;
 }
-function expect(name, r, accept, reason = "") {
+function expect(name: string, r: any, accept: any, reason = "") {
   assert.equal(r.status === 0, accept, name + ": " + r.stderr);
   assert((r.stdout + r.stderr).includes(reason), name + ": " + r.stderr);
   console.log("  " + name + ": OK");
@@ -97,7 +97,7 @@ try {
       "null result claim cannot invent true",
       (a, c) => {
         fn(c).exprs.find(
-          (e) => e.pos[0] === a.functions[0].body[0].e.pos[0],
+          (e: any) => e.pos[0] === a.functions[0].body[0].e.pos[0],
         ).type = { top: false, atoms: [{ a: "booleanlit", v: "true" }] };
       },
       "evidence search failed",
@@ -106,7 +106,7 @@ try {
       "null literal operand claim required",
       (a, c) => {
         const pos = a.functions[0].body[0].e.r.pos;
-        fn(c).exprs = fn(c).exprs.filter((e) => e.pos[0] !== pos[0]);
+        fn(c).exprs = fn(c).exprs.filter((e: any) => e.pos[0] !== pos[0]);
       },
       "no claimed type",
     ],
@@ -196,12 +196,12 @@ try {
   );
   const missingInner = structuredClone(guardClaims);
   const callback = missingInner
-    .find((f) => f.file === guardFile)
-    .functions.find((f) => f.name === "callbackGuard");
+    .find((f: any) => f.file === guardFile)
+    .functions.find((f: any) => f.name === "callbackGuard");
   const guardText = fs.readFileSync(guardFile, "utf8");
-  const inner = callback.exprs.find((e) => guardText.slice(...e.pos) === "x");
+  const inner = callback.exprs.find((e: any) => guardText.slice(...e.pos) === "x");
   assert(inner);
-  callback.exprs = callback.exprs.filter((e) => e !== inner);
+  callback.exprs = callback.exprs.filter((e: any) => e !== inner);
   expect(
     "closure guard still requires its operand claim",
     run(
@@ -214,13 +214,13 @@ try {
     false,
     "no claimed type",
   );
-  const ternary = guardAst.functions.find((f) => f.name === "ternaryGuard")
+  const ternary = guardAst.functions.find((f: any) => f.name === "ternaryGuard")
     .body[0].e;
-  const logical = guardAst.functions.find((f) => f.name === "logicalNullAnd")
+  const logical = guardAst.functions.find((f: any) => f.name === "logicalNullAnd")
     .body[0].e;
-  const coalesce = guardAst.functions.find((f) => f.name === "coalesceBoolean")
+  const coalesce = guardAst.functions.find((f: any) => f.name === "coalesceBoolean")
     .body[0].e;
-  const compound = guardAst.functions.find((f) => f.name === "compoundIf")
+  const compound = guardAst.functions.find((f: any) => f.name === "compoundIf")
     .body[0].cond;
   for (const [name, sites] of [
     [
@@ -251,10 +251,10 @@ try {
     for (const [label, pos] of sites) {
       const missing = structuredClone(guardClaims);
       const f = missing
-        .find((f) => f.file === guardFile)
-        .functions.find((f) => f.name === name);
+        .find((f: any) => f.file === guardFile)
+        .functions.find((f: any) => f.name === name);
       f.exprs = f.exprs.filter(
-        (e) => e.pos[0] !== pos[0] || e.pos[1] !== pos[1],
+        (e: any) => e.pos[0] !== pos[0] || e.pos[1] !== pos[1],
       );
       for (const mode of [
         "--produce-stateful-source",
@@ -270,7 +270,7 @@ try {
   }
   const changedLogical = structuredClone(guardAst);
   changedLogical.functions.find(
-    (f) => f.name === "logicalNullAnd",
+    (f: any) => f.name === "logicalNullAnd",
   ).body[0].e.op = "||";
   expect(
     "old evidence rejects changing AND into OR",
@@ -286,15 +286,15 @@ try {
   const nonBooleanLogical = structuredClone(guardAst);
   const nonBooleanClaims = structuredClone(guardClaims);
   const expression = nonBooleanLogical.functions.find(
-    (f) => f.name === "logicalAndWrite",
+    (f: any) => f.name === "logicalAndWrite",
   ).body[1].init;
   const leftPos = expression.l.pos;
   expression.l = { k: "lit", pos: leftPos, lit: { a: "null" } };
   const logicalClaims = nonBooleanClaims
-    .find((f) => f.file === guardFile)
-    .functions.find((f) => f.name === "logicalAndWrite");
+    .find((f: any) => f.file === guardFile)
+    .functions.find((f: any) => f.name === "logicalAndWrite");
   logicalClaims.exprs.find(
-    (e) => e.pos[0] === leftPos[0] && e.pos[1] === leftPos[1],
+    (e: any) => e.pos[0] === leftPos[0] && e.pos[1] === leftPos[1],
   ).type = { top: false, atoms: [{ a: "null" }] };
   expect(
     "logical left operand must be Boolean",
@@ -310,21 +310,21 @@ try {
   for (const [name, entry] of [
     [
       "compoundIf",
-      guardAst.functions.find((f) => f.name === "compoundIf").body[1].pos[0],
+      guardAst.functions.find((f: any) => f.name === "compoundIf").body[1].pos[0],
     ],
     [
       "compoundOr",
-      guardAst.functions.find((f) => f.name === "compoundOr").body[0].then[0]
+      guardAst.functions.find((f: any) => f.name === "compoundOr").body[0].then[0]
         .pos[0],
     ],
   ]) {
     const wrong = structuredClone(guardClaims);
     const f = wrong
-      .find((f) => f.file === guardFile)
-      .functions.find((f) => f.name === name);
+      .find((f: any) => f.file === guardFile)
+      .functions.find((f: any) => f.name === name);
     f.envs
-      .find((e) => e.pos[0] === entry)
-      .vars.find((v) => v.name === "value").type = {
+      .find((e: any) => e.pos[0] === entry)
+      .vars.find((v: any) => v.name === "value").type = {
       top: false,
       atoms: [{ a: "boolean" }],
     };
@@ -336,10 +336,10 @@ try {
   }
   const wrongCompound = structuredClone(guardClaims);
   const compoundClaims = wrongCompound
-    .find((f) => f.file === guardFile)
-    .functions.find((f) => f.name === "compoundIf");
+    .find((f: any) => f.file === guardFile)
+    .functions.find((f: any) => f.name === "compoundIf");
   compoundClaims.exprs.find(
-    (e) => e.pos[0] === compound.pos[0] && e.pos[1] === compound.pos[1],
+    (e: any) => e.pos[0] === compound.pos[0] && e.pos[1] === compound.pos[1],
   ).type = { top: false, atoms: [{ a: "booleanlit", v: "true" }] };
   expect(
     "decomposed condition still checks its complete result claim",
@@ -354,10 +354,10 @@ try {
   );
   const wrongCoalesce = structuredClone(guardClaims);
   const coalesceFn = wrongCoalesce
-    .find((f) => f.file === guardFile)
-    .functions.find((f) => f.name === "coalesceBoolean");
+    .find((f: any) => f.file === guardFile)
+    .functions.find((f: any) => f.name === "coalesceBoolean");
   coalesceFn.exprs.find(
-    (e) => e.pos[0] === coalesce.pos[0] && e.pos[1] === coalesce.pos[1],
+    (e: any) => e.pos[0] === coalesce.pos[0] && e.pos[1] === coalesce.pos[1],
   ).type = { top: false, atoms: [{ a: "booleanlit", v: "true" }] };
   expect(
     "coalescing cannot discard a false left value",
@@ -372,7 +372,7 @@ try {
   );
   const swappedCoalesce = structuredClone(guardAst);
   const swapped = swappedCoalesce.functions.find(
-    (f) => f.name === "coalesceBoolean",
+    (f: any) => f.name === "coalesceBoolean",
   ).body[0].e;
   [swapped.left, swapped.right] = [swapped.right, swapped.left];
   expect(
@@ -388,10 +388,10 @@ try {
   );
   const narrowedTernary = structuredClone(guardClaims);
   const ternaryFn = narrowedTernary
-    .find((f) => f.file === guardFile)
-    .functions.find((f) => f.name === "ternaryGuard");
+    .find((f: any) => f.file === guardFile)
+    .functions.find((f: any) => f.name === "ternaryGuard");
   ternaryFn.exprs.find(
-    (e) => e.pos[0] === ternary.pos[0] && e.pos[1] === ternary.pos[1],
+    (e: any) => e.pos[0] === ternary.pos[0] && e.pos[1] === ternary.pos[1],
   ).type = { top: false, atoms: [{ a: "null" }] };
   expect(
     "ternary result cannot invent null",
@@ -501,11 +501,11 @@ try {
   const staleClaims = JSON.parse(fs.readFileSync(staleClaimsPath, "utf8"));
   // This suite repairs the positive variant; write-observations covers staleFlip.
   staleAst.functions = staleAst.functions.filter(
-    (f) => f.name === "staleCompound",
+    (f: any) => f.name === "staleCompound",
   );
-  staleClaims.find((f) => f.file === staleFile).functions = staleClaims
-    .find((f) => f.file === staleFile)
-    .functions.filter((f) => f.name === "staleCompound");
+  staleClaims.find((f: any) => f.file === staleFile).functions = staleClaims
+    .find((f: any) => f.file === staleFile)
+    .functions.filter((f: any) => f.name === "staleCompound");
   expect(
     "compound stale-read reaches an incoming heap obligation",
     run(
@@ -525,29 +525,29 @@ try {
     staleFile,
   );
   assert.equal(edits.length, 4);
-  const exportedStale = staleClaims.find((f) => f.file === staleFile)
+  const exportedStale = staleClaims.find((f: any) => f.file === staleFile)
     .functions[0];
   const exitEntry = exportedStale.envs.find(
-    (e) => e.pos[0] === staleAst.functions[0].body[2].pos[0],
+    (e: any) => e.pos[0] === staleAst.functions[0].body[2].pos[0],
   );
-  const exitCell = exitEntry.vars.find((v) => v.name === "cell");
+  const exitCell = exitEntry.vars.find((v: any) => v.name === "cell");
   assert.equal(exitCell.type.atoms.length, 2);
-  assert(exitCell.type.atoms.every((a) => a.a === "record"));
+  assert(exitCell.type.atoms.every((a: any) => a.a === "record"));
   assert(
     exitCell.type.atoms.some(
-      (a) =>
+      (a: any) =>
         JSON.stringify(a.fields[0].read) !== JSON.stringify(a.fields[0].write),
     ),
   );
   assert(
     exitCell.type.atoms.some(
-      (a) =>
+      (a: any) =>
         JSON.stringify(a.fields[0].read) === JSON.stringify(a.fields[0].write),
     ),
   );
   assert(
     !exportedStale.unavailableTypes.some(
-      (d) =>
+      (d: any) =>
         d.kind === "entry" &&
         d.pos[0] === exitEntry.pos[0] &&
         d.binding === "cell",
@@ -555,11 +555,11 @@ try {
   );
   // Exercise missing-type metadata independently of the now-exportable union.
   const missingStaleClaims = structuredClone(staleClaims);
-  const missingStale = missingStaleClaims.find((f) => f.file === staleFile)
+  const missingStale = missingStaleClaims.find((f: any) => f.file === staleFile)
     .functions[0];
   missingStale.envs
-    .find((e) => e.pos[0] === exitEntry.pos[0])
-    .vars.find((v) => v.name === "cell").type = { unsupported: true };
+    .find((e: any) => e.pos[0] === exitEntry.pos[0])
+    .vars.find((v: any) => v.name === "cell").type = { unsupported: true };
   missingStale.unavailableTypes.push({
     kind: "entry",
     pos: exitEntry.pos,
@@ -599,7 +599,7 @@ try {
   assert.equal(originalReport.location.reason, "unexpanded-type");
   for (const mode of ["absent", "unknown", "malformed"]) {
     const variant = structuredClone(missingStaleClaims);
-    for (const f of variant.find((f) => f.file === staleFile).functions) {
+    for (const f of variant.find((f: any) => f.file === staleFile).functions) {
       if (mode === "absent") delete f.unavailableTypes;
       else if (mode === "malformed") f.unavailableTypes = { bad: true };
       else for (const d of f.unavailableTypes) d.reason = "future-reason";
@@ -620,21 +620,21 @@ try {
   }
   const candidateReport = fromSkjs(staleText, staleFile, weakened, "candidate");
   assert(
-    !candidateReport.functions[0].unavailableTypes.some(
+    !candidateReport.functions[0]!.unavailableTypes!.some(
       (d) =>
         d.kind === "entry" &&
         d.binding === "cell" &&
-        d.pos[0] === originalReport.location.start,
+        d.pos![0] === originalReport.location.start,
     ),
   );
   // Successful function export follows cell refusal; no refusal may leak through.
-  for (const f of guardClaims.find((f) => f.file === guardFile).functions) {
-    for (const e of f.exprs.filter((e) =>
-      e.type.atoms?.some((a) => a.a === "function"),
+  for (const f of guardClaims.find((f: any) => f.file === guardFile).functions) {
+    for (const e of f.exprs.filter((e: any) =>
+      e.type.atoms?.some((a: any) => a.a === "function"),
     )) {
       assert(
         !f.unavailableTypes.some(
-          (d) =>
+          (d: any) =>
             d.kind === "expression" &&
             JSON.stringify(d.pos) === JSON.stringify(e.pos),
         ),
@@ -648,10 +648,10 @@ try {
   passed++;
   const unavailableExpression = structuredClone(guardClaims);
   unavailableExpression
-    .find((f) => f.file === guardFile)
-    .functions.find((f) => f.name === "ternaryGuard")
+    .find((f: any) => f.file === guardFile)
+    .functions.find((f: any) => f.name === "ternaryGuard")
     .exprs.find(
-      (e) => e.pos[0] === ternary.pos[0] && e.pos[1] === ternary.pos[1],
+      (e: any) => e.pos[0] === ternary.pos[0] && e.pos[1] === ternary.pos[1],
     ).type = { unsupported: true };
   const unavailableReport = fromSkjs(
     guardText,
@@ -714,13 +714,13 @@ try {
     false,
   );
   const repaired = structuredClone(exitClaims);
-  const exitFn = repaired.find((f) => f.file === exitFile).functions[0];
+  const exitFn = repaired.find((f: any) => f.file === exitFile).functions[0];
   const ret = exitAst.functions[0].body[1];
   const boolean = { top: false, atoms: [{ a: "boolean" }] };
   exitFn.envs
-    .find((e) => e.pos[0] === ret.pos[0])
-    .vars.find((v) => v.name === "value").type = boolean;
-  exitFn.exprs.find((e) => e.pos[0] === ret.e.pos[0]).type = boolean;
+    .find((e: any) => e.pos[0] === ret.pos[0])
+    .vars.find((v: any) => v.name === "value").type = boolean;
+  exitFn.exprs.find((e: any) => e.pos[0] === ret.e.pos[0]).type = boolean;
   expect(
     "repaired null loop-exit claims produce evidence",
     run("--produce-stateful-source", exitAst, repaired, undefined, exitFile),
@@ -734,9 +734,9 @@ try {
   );
   const wrong = structuredClone(repaired);
   wrong
-    .find((f) => f.file === exitFile)
-    .functions[0].envs.find((e) => e.pos[0] === ret.pos[0])
-    .vars.find((v) => v.name === "value").type = {
+    .find((f: any) => f.file === exitFile)
+    .functions[0].envs.find((e: any) => e.pos[0] === ret.pos[0])
+    .vars.find((v: any) => v.name === "value").type = {
     top: false,
     atoms: [{ a: "null" }],
   };

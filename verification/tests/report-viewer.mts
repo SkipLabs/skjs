@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { hash, render } from "../tools/annotate-source.mts";
 import { createRequire } from "node:module";
+import type { FailureKind, Manifest } from "../report-viewer/types.ts";
+import type { Span } from "../tools/source-claims.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const {
@@ -25,11 +27,14 @@ const start = source.indexOf("function"),
   expr = source.indexOf("(\n"),
   end = source.indexOf(");") + 1;
 const claim = {
-  pos: [expr, end],
+  pos: [expr, end] as Span,
   type: '{"reference":{"to":7}}',
   raw: { reference: { to: 7 } },
 };
-const manifest = {
+// Typed as the manifest itself, so a fixture that stops being a valid report
+// is an error here rather than a puzzling reader failure. The reader's own
+// view of the format is report-viewer/types.ts.
+const manifest: Manifest = {
   version: 1,
   producer: "manual",
   source: { file: "f.ts", sha256: hash(source) },
@@ -37,8 +42,8 @@ const manifest = {
     {
       id: "f0",
       name: "f",
-      namePos: [source.indexOf("f("), source.indexOf("f(") + 1],
-      pos: [start, source.length - 1],
+      namePos: [source.indexOf("f("), source.indexOf("f(") + 1] as Span,
+      pos: [start, source.length - 1] as Span,
       entries: [],
       expressions: [{ id: "f0x0", ...claim }],
     },
@@ -151,7 +156,7 @@ assert.equal(parseReport(annotated).functions[0].exprs[0].type, claim.type);
   assert.equal(partialFn.exprs[0].recovery, true);
   assert.equal(partialFn.entries[0].bindings[0].unavailable, true);
   const unvisited = partialFn.gaps.find(
-    (g) => g.reason === "statement-not-visited",
+    (g: any) => g.reason === "statement-not-visited",
   );
   assert(unvisited);
   assert.equal(text.slice(...unvisited.pos), "return x;");
@@ -257,7 +262,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 {
   const fresh = { collection: { verified: true } };
   const fromFile = { collection: null };
-  const outcome = (f, rep = fresh) => marks.outcome(f, rep);
+  const outcome = (f: any, rep: any = fresh) => marks.outcome(f, rep);
   const verified = { status: "verified", collection: "complete" };
   assert.deepEqual(
     [outcome(verified).producer[0], outcome(verified).proof[0]],
@@ -293,7 +298,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 {
   const text =
     "// note\nfunction f(x: boolean): boolean {\n  const y: boolean = x;\n  const t: true = true;\n  return y;\n}\n";
-  const at = (s) => [text.indexOf(s), text.indexOf(s) + s.length];
+  const at = (s: any) => [text.indexOf(s), text.indexOf(s) + s.length];
   const literal = [text.lastIndexOf("true"), text.lastIndexOf("true") + 4];
   const rep = { source: text, file: "f.ts", collection: { verified: true } };
   const fn = {
@@ -324,7 +329,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   };
   const compact = marks.sourceMarks(rep, fn, { density: "key" });
   assert.deepEqual(
-    compact.items.map((i) => [i.id, i.label, i.mark]),
+    compact.items.map((i: any) => [i.id, i.label, i.mark]),
     [
       ["e0", "boolean", ""],
       ["e1", "boolean", "✗"],
@@ -334,7 +339,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   const all = marks.sourceMarks(rep, fn, { density: "all", unsupported: true });
   assert.equal(all.entries[0].label, "x: boolean,  this: (unavailable)");
   assert.deepEqual(
-    all.items.map((i) => i.id),
+    all.items.map((i: any) => i.id),
     ["e0", "e1", "e2"],
   );
   assert.equal(marks.firstFailure(fn).id, "e1");
@@ -422,7 +427,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   assert.equal(marks.roleTag("unavailable-type-claim"), "type unavailable");
   // The same kind can name an expression instead of a statement entry.
   const atExpression = structuredClone(unavailable);
-  atExpression.manifest.results[0].location = {
+  atExpression.manifest.results![0].location = {
     kind: "unavailable-type-claim",
     pos: claim.pos,
   };
@@ -445,7 +450,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 
 
 {
-  const cell = (read, write) => ({
+  const cell = (read: any, write: any) => ({
     top: false,
     atoms: [
       {
@@ -458,7 +463,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
       },
     ],
   });
-  const of = (...atoms) => ({ top: false, atoms });
+  const of = (...atoms: any[]) => ({ top: false, atoms });
   const boolean = of({ a: "boolean" });
   const trueLit = of({ a: "booleanlit", v: "true" });
   const shapes = [
@@ -675,7 +680,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   assert.equal(view.requiredResult, "true");
   assert.equal(view.term, "slot 0");
   assert.deepEqual(
-    view.rows.map((r) => [r.slot, r.have, r.note]),
+    view.rows.map((r: any) => [r.slot, r.have, r.note]),
     [
       [0, "true | false", "the value being returned"],
       [1, "true | false", ""],
@@ -724,7 +729,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   const view = ob.obligationView(record);
   assert.equal(view.kindLabel, "edge coverage");
   assert.deepEqual(
-    view.rows.map((r) => [r.slot, r.have, r.need, r.differs]),
+    view.rows.map((r: any) => [r.slot, r.have, r.need, r.differs]),
     [
       [0, "true", "true", false],
       [1, "null", "null", false],
@@ -734,7 +739,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   assert.match(view.observation, /not a claim that execution took it/);
   assert.match(view.note, /edge 1/);
   assert.deepEqual(
-    view.endpoints.map((e) => [e.end, e.sourceMap.pos]),
+    view.endpoints.map((e: any) => [e.end, e.sourceMap.pos]),
     [
       ["from", [10, 14]],
       ["to", [20, 24]],
@@ -753,7 +758,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   assert.equal(checkpointView.title, "Current-content assertion");
   assert.equal(checkpointView.environmentStart, 10);
   assert.deepEqual(
-    checkpointView.endpoints.map((e) => e.sourceMap.pos),
+    checkpointView.endpoints.map((e: any) => e.sourceMap.pos),
     [
       [1, 5],
       [10, 20],
@@ -773,11 +778,11 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   };
   const observedView = ob.obligationView(observed);
   assert.equal(
-    observedView.rows.every((r) => !r.differs),
+    observedView.rows.every((r: any) => !r.differs),
     true,
   );
   assert.deepEqual(
-    observedView.knowledge.map((r) => [r.binding, r.what]),
+    observedView.knowledge.map((r: any) => [r.binding, r.what]),
     [
       ["slot 1", "holds true"],
       ["slot 0", "is null | false"],
@@ -802,7 +807,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   assert.deepEqual(
     ob
       .knowledgeRows({ cells: [{ slot: 1, contents: ["tru"] }] }, ["r", "cell"])
-      .map((x) => [x.binding, x.what]),
+      .map((x: any) => [x.binding, x.what]),
     [["cell", "holds true"]],
   );
   // A descriptor is a name, or the expression whose value the binding holds.
@@ -831,7 +836,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   const mismatched = structuredClone(record);
   mismatched.transfer.target.mapping = [0, 1];
   assert.deepEqual(
-    ob.obligationView(mismatched).rows.map((r) => r.differs),
+    ob.obligationView(mismatched).rows.map((r: any) => r.differs),
     [true, true],
   );
 }
@@ -888,16 +893,16 @@ assert.equal(
   "proof search stopped",
 );
 for (const kind of ["edge-obligation", "source-limitation"]) {
-  failureBundle.manifest.results[0].location.kind = kind;
+  failureBundle.manifest.results![0]!.location!.kind = kind as FailureKind;
   assert.equal(
     fromBundle(failureBundle).functions[0].exprs[0].failureKind,
     kind,
   );
 }
 failureBundle.manifest.functions[0].entries = [
-  { pos: [start, end], bindings: [] },
+  { id: "f0e0", pos: [start, end] as Span, bindings: [] },
 ];
-failureBundle.manifest.results[0].location = {
+failureBundle.manifest.results![0].location = {
   kind: "environment-obligation",
   start,
 };
@@ -905,16 +910,16 @@ assert.equal(
   fromBundle(failureBundle).functions[0].entries[0].failureKind,
   "environment-obligation",
 );
-delete failureBundle.manifest.results[0].location;
+delete failureBundle.manifest.results![0].location;
 assert.equal(
   fromBundle(failureBundle).functions[0].exprs[0].failure,
   undefined,
 );
-failureBundle.manifest.results[0].location = {
+failureBundle.manifest.results![0].location = {
   kind: "expression-obligation",
   pos: claim.pos,
 };
-failureBundle.manifest.results[0].status = "verified";
+failureBundle.manifest.results![0].status = "verified";
 assert.equal(
   fromBundle(failureBundle).functions[0].exprs[0].failure,
   undefined,
@@ -943,7 +948,7 @@ absent.manifest.results = [
   const f = fromBundle(absent).functions[0];
   assert.equal(f.gaps[0].failureKind, "missing-expression-claim");
   assert.match(f.gaps[0].failure, /no claimed type/);
-  assert.equal(f.detail, absent.manifest.results[0].detail);
+  assert.equal(f.detail, absent.manifest.results![0].detail);
   assert.equal(f.result.status, "not-established");
 }
 // Without a gap at that place — an older report — the claim there still carries it.
@@ -958,7 +963,7 @@ const absentEnv = structuredClone(absent);
 absentEnv.manifest.gaps = [
   { id: "g0", pos: [start, end], status: "statement not visited" },
 ];
-absentEnv.manifest.results[0].location = {
+absentEnv.manifest.results![0].location = {
   kind: "missing-environment-claim",
   start,
   binding: "x",

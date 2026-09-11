@@ -1,7 +1,0 @@
-{
-  // The corpus driver, which lives a directory up. Same two exceptions as
-  // tsconfig.annotator.json, for the same reasons.
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "noImplicitAny": false, "strictNullChecks": false },
-  "files": ["../examples.mts"]
-}
