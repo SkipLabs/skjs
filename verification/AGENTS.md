@@ -1,0 +1,99 @@
+# Working in `verification/`
+
+An independent verifier for SKJS's type claims: a calculus with a semantic
+model and soundness proofs in Lean, a checker that validates certificates, and
+a pipeline that lowers a TypeScript function, has SKJS export its claims, and
+asks whether they are derivable. [README.md](README.md) is the entry point;
+[DESIGN.md](DESIGN.md) holds the decisions. Everything below is what an agent
+needs to change things here without breaking the suite's shape.
+
+## Commands
+
+```sh
+make verify                      # from the repo root: build, 22 suites, then the corpus
+make verify-test                 # the suites only
+make verify-examples             # the corpus only
+verification/run.sh --suite all  # the suites, without rebuilding Lean
+lake -d verification/lean build  # the verifier alone
+node verification/examples.js    # the corpus alone
+```
+
+One file end to end, with `$F` a repository-relative path:
+
+```sh
+node verification/tools/parse-source.js $F > ast.json
+bash verification/skjs.sh --emit-skjs-type-claims $F > claims.json
+verification/lean/.lake/build/bin/verifier --produce-stateful-source ast.json claims.json $F evidence.json 10
+```
+
+`skjs.sh` runs SKJS in the `skiplabs/skip` container; inside a devcontainer it
+runs the binary directly. Never invoke `target/host/dev/skjs` yourself.
+
+## The suite's shape, and the rules that keep it
+
+`run.sh` runs 22 suites in about ten seconds because of four decisions. Each
+is a rule for anything added.
+
+- **One container for the run.** `skjs_start` brings it up before anything
+  forks; `skjs_run` and `skjs_check` exec into it. A suite never starts its
+  own container and never calls docker.
+- **One SKJS call per batch.** `skjs check` takes many paths and names each
+  file in its output, and a container exec costs more than checking a small
+  file. Export several sources in one call, never in a loop.
+- **Setup is backgrounded, together.** A fixture is a parsed source plus its
+  claims, built by `fixture` (or `rejected_fixture` when SKJS rejecting the
+  program is the point). Every build goes through `build …`, which forks it,
+  and the script waits for all of them once. Setup placed after that wait is
+  serial and lands on the critical path: put new setup before it, in the
+  batch. Sources that must not go through the source parser, because they
+  use TypeScript outside the fragment, get their own helper, as
+  `snapshot_probes` does.
+- **Suites start together.** A suite is `run_test "Name" command args…`; its
+  output is buffered and reported in order, and a failure is counted, never
+  fatal. A suite reads the fixtures the script built and runs the verifier
+  binary; it does not build Lean, does not run SKJS, and does not run the
+  corpus.
+
+`examples.js` follows the same rules on its own: one producer run for every
+corpus file, one worker per core, and colour decided once in the parent.
+
+## What a result means
+
+- The corpus prints two outcomes per function, `SKJS ✓ · proof ✗`, because
+  they answer different questions. `✗` means proof search found no
+  derivation; it is never a disproof. `?` means the check could not be
+  attempted and is neither agreement nor disagreement.
+- Expected outcomes are policy, in `expectedVerified` in `examples.js`: a
+  witness fixture is expected *not* to verify, and a run fails when any
+  function's outcome contradicts the policy, in either direction.
+- Fixtures under `tests/skjs-unsound/` and `tests/skjs-incomplete/` are
+  findings about SKJS and carry their own comment; the group README says what
+  each tool does with them. Do not "fix" one so that it verifies.
+- A repair is a hand-written candidate edit kept beside the original export,
+  never an automatic widening of SKJS's claims.
+
+## Snapshots of the exporter
+
+`tests/export-snapshots/` holds small probes with SKJS's exported claims
+printed beside them. They are independent of the corpus and may use any
+TypeScript. A change to what the exporter says is a diff in a `.snap` file;
+read it, then regenerate:
+
+```sh
+UPDATE_EXPECT=1 node verification/tests/export-snapshots.js claims.json verification/tests/export-snapshots
+```
+
+where `claims.json` is one `skjs_check` over the directory. Add a probe when
+an exporter change needs a place to show, one phenomenon per file.
+
+## Conventions
+
+- Formatting: `.ts` and `.json` are prettier-formatted (`make fmt` at the
+  root); the `.js` here is not, so do not reformat it.
+- Wire formats are version-locked. A changed format gets a new version and
+  the decoders accept only that version; regenerate documents, never migrate
+  them in place.
+- Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
+  theorem stays in the file. Build only the module you changed while
+  iterating (`lake build Verification.ExperimentState.<Module>`).
+- Docs: a doc-only change needs no suite run; check anchors and prose.

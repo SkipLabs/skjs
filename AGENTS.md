@@ -73,3 +73,4 @@ Read these before starting the relevant task:
 | [Writing Code](docs/writing-code.md) | Before writing or modifying `.sk` or `.ts` files |
 | [Testing](docs/testing.md) | Before writing or modifying tests |
 | [Commits and PRs](docs/commits-and-prs.md) | Before committing or opening a pull request |
+| [Verification](verification/AGENTS.md) | Before touching `verification/`: the independent verifier, its suite's shape and rules, and what its results mean |
