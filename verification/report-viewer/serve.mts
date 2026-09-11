@@ -91,18 +91,30 @@ async function repositoryPath(relative: any) {
  */
 const draftPath = (source: string) => source.replace(/\.tsx?$/, "") + ".candidate.json";
 
-/** The draft beside a source, where one exists and is about that source. */
+/**
+ * The draft beside a source. A draft is about one exact source, so one written
+ * for an earlier version of it describes text that is no longer there and
+ * cannot be shown — but saying nothing would leave a file in the tree that
+ * silently does nothing, so what is wrong with it is reported instead.
+ */
 async function readDraft(absolute: any, sourceSha256: any) {
-  const text = await fs.readFile(draftPath(absolute), "utf8").catch(() => null);
+  const at = draftPath(absolute);
+  const text = await fs.readFile(at, "utf8").catch(() => null);
   if (text === null) return null;
+  const named = path.relative(REPO, at);
+  let draft;
   try {
-    const draft = JSON.parse(text);
-    // A draft for a source that has since changed is stale, and a stale draft
-    // is not shown: its spans describe text that is no longer there.
-    return draft?.sourceSha256 === sourceSha256 ? draft : null;
+    draft = JSON.parse(text);
   } catch {
-    return null;
+    return { stale: `${named} is not readable as a candidate` };
   }
+  if (draft?.sourceSha256 !== sourceSha256)
+    return {
+      stale:
+        `${named} was written for an earlier version of this source, ` +
+        `so it is not shown`,
+    };
+  return { draft };
 }
 
 async function hasVerifier() {
@@ -176,11 +188,11 @@ async function analyse(relative: any, producer = "skjs") {
   const bundle = await collect(relative, producer);
   // The draft, where one is beside the source and is about this source. The
   // reader decides what to do with it; the server only reports that it exists.
-  const draft = await readDraft(
+  const kept = await readDraft(
     await repositoryPath(relative),
     bundle.manifest?.source?.sha256,
   );
-  return draft ? { ...bundle, draft } : bundle;
+  return kept ? { ...bundle, ...kept } : bundle;
 }
 
 async function collect(relative: any, producer = "skjs") {

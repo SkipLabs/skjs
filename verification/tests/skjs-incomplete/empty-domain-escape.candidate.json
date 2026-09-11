@@ -1,0 +1,84 @@
+{
+  "format": "source-claims",
+  "file": "verification/tests/skjs-incomplete/empty-domain-escape.ts",
+  "sourceSha256": "488ba45856aed296470ab3e49cf196e6021531552a5c8b7e77a2bce293afde13",
+  "claims": {
+    "version": 3,
+    "profile": "stateful-source-v3",
+    "file": "verification/tests/skjs-incomplete/empty-domain-escape.ts",
+    "sourceSha256": "488ba45856aed296470ab3e49cf196e6021531552a5c8b7e77a2bce293afde13",
+    "types": [
+      ["nul"],
+      [
+        {
+          "boolLit": {
+            "value": true
+          }
+        }
+      ],
+      [
+        {
+          "boolLit": {
+            "value": false
+          }
+        }
+      ],
+      ["undef"],
+      [
+        {
+          "arrs": {
+            "arrows": [[[], [1, 2]]]
+          }
+        }
+      ],
+      [
+        {
+          "arrs": {
+            "arrows": [[[0], [0]]]
+          }
+        }
+      ]
+    ],
+    "functions": [
+      {
+        "name": "emptyDomainEscape",
+        "namePos": [524, 541],
+        "params": [],
+        "result": [0],
+        "entries": [
+          {
+            "start": 554,
+            "bindings": []
+          },
+          {
+            "start": 614,
+            "bindings": [
+              {
+                "name": "g",
+                "type": [4],
+                "current": null
+              }
+            ]
+          }
+        ],
+        "expressions": [
+          {
+            "pos": [587, 610],
+            "type": [5],
+            "current": null
+          },
+          {
+            "pos": [606, 610],
+            "type": [0],
+            "current": null
+          },
+          {
+            "pos": [621, 625],
+            "type": [0],
+            "current": null
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -7,6 +7,57 @@ below says so, since being rejected by a checker whose annotation holds is what
 makes an example belong here, and what today’s rules can certify is a separate
 fact.
 
+## The repairs kept beside them
+
+Six of these carry a `.candidate.json` next to the source: a claim set the
+verifier establishes, checked, so the reader shows it on opening rather than
+leaving the repair to be rediscovered by hand each time.
+
+| source | the repair |
+|---|---|
+| `negated-loop-exit.ts` | the claims TypeScript's own checker states |
+| `singleton-negation.ts` | the same |
+| `null-loop-exit.ts` | the same |
+| `arrow-intersection.ts` | the same |
+| `write-refined-read.ts` | a current-content assertion at the return entry |
+| `empty-domain-escape.ts` | the closure claimed as what it is, subsumed at the edge |
+
+The first four need nothing invented: where SKJS's claims do not verify and the
+other producer's do, the second producer's claims *are* the repair, and saying
+so is what a two-producer corpus is for.
+
+The last two are the interesting ones, because neither producer can state them.
+
+`write-refined-read.ts` needs the assertion this file's own comment names:
+`cell` holds exactly `true` after the write, independently of its persistent
+Boolean invariant. SKJS's export forgets it and the TypeScript producer states
+no current-content assertions at all, so neither can express the repair even
+though the claim is true and the verifier derives it. The reader prints such a
+claim as `{ value: boolean = (true) }`.
+
+`empty-domain-escape.ts` shows that *where* a claim sits decides whether a rule
+can apply. `Arrow.empty` — an arrow with an empty domain is above every arrow —
+is in the checker's rules (`PositiveRules.lean`) and the producer tries it
+first. Claiming the closure expression itself as `(never) => boolean` still
+fails, because that asks for the body to be typed against `boolean` under an
+uninhabited parameter. Claim the closure as `(null) => null`, what it actually
+is, and let the edge into the statement entry do the subsumption: same program,
+same rules, same declared type, and it verifies.
+
+`undefined-completes.ts` carries no draft because it needs none: SKJS rejects
+the program and its own partial export already establishes it.
+
+Opening one of these in the reader shows `·→✓`: the producer column is `·`
+because the claims on screen are not its, and the proof column is `✓` because
+they check. **Restore the producer's claims** shows what the producer said,
+which is the finding the fixture exists for; it leaves the file alone, because
+a repair belongs to the tree rather than to one session.
+
+A draft is about one exact source, so touching a source makes its draft stale.
+The reader then says so and falls back to the producer's claims, and the `Kept
+drafts` suite fails — re-derive the draft against the source as it is, rather
+than editing the hash.
+
 `negated-loop-exit.ts` demonstrates incompleteness, not unsoundness. SKJS rejects
 its `true` return annotation because it forgets the condition's false edge after
 `while (!flag)`. The function returns true for both Boolean inputs: the loop body

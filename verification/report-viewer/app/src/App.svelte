@@ -182,7 +182,13 @@
       >
     {/if}
     {#if reader.draftPath}
-      <span class="note" title={reader.draftPath}>kept beside the source</span>
+      <span class="note" title={reader.draftPath}>draft beside the source</span>
+      <button
+        class="plain"
+        onclick={() => reader.discard()}
+        disabled={reader.busy}
+        title="deletes {reader.draftPath}">discard it</button
+      >
     {/if}
     {#if !reader.hasVerifier}
       <span class="warn">no verifier built — nothing can be checked</span>
@@ -191,6 +197,9 @@
 
   {#if reader.error}
     <p class="error" role="status">{reader.error}</p>
+  {/if}
+  {#if reader.staleDraft}
+    <p class="stale" role="status">{reader.staleDraft}</p>
   {/if}
 
   {#if reader.report && reader.selected}
@@ -298,6 +307,11 @@
     padding: 8px 14px;
     background: var(--bad-bg);
     color: var(--bad);
+  }
+  .stale {
+    margin: 0;
+    padding: 8px 14px;
+    color: var(--warn);
   }
   .body {
     display: grid;

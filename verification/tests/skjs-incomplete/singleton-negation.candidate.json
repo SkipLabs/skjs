@@ -1,0 +1,67 @@
+{
+  "format": "source-claims",
+  "file": "verification/tests/skjs-incomplete/singleton-negation.ts",
+  "sourceSha256": "3b80de30d8353a83f67f1b68076bf91648111c38fcaf667988b57feaa068f527",
+  "claims": {
+    "version": 3,
+    "profile": "stateful-source-v3",
+    "file": "verification/tests/skjs-incomplete/singleton-negation.ts",
+    "sourceSha256": "3b80de30d8353a83f67f1b68076bf91648111c38fcaf667988b57feaa068f527",
+    "types": [
+      ["nul"],
+      [
+        {
+          "boolLit": {
+            "value": true
+          }
+        }
+      ],
+      [
+        {
+          "boolLit": {
+            "value": false
+          }
+        }
+      ],
+      ["undef"]
+    ],
+    "functions": [
+      {
+        "name": "negateSingleton",
+        "namePos": [257, 272],
+        "params": [
+          {
+            "name": "flag",
+            "type": [1],
+            "current": null
+          }
+        ],
+        "result": [2],
+        "entries": [
+          {
+            "start": 296,
+            "bindings": [
+              {
+                "name": "flag",
+                "type": [1],
+                "current": null
+              }
+            ]
+          }
+        ],
+        "expressions": [
+          {
+            "pos": [303, 308],
+            "type": [2],
+            "current": null
+          },
+          {
+            "pos": [304, 308],
+            "type": [1],
+            "current": null
+          }
+        ]
+      }
+    ]
+  }
+}

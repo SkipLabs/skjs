@@ -58,6 +58,8 @@ export class Reader {
   edited = $state(false);
   /** Where the kept draft sits, once one has been written beside the source. */
   draftPath = $state("");
+  /** Why a draft beside the source was not used, where one was not. */
+  staleDraft = $state("");
 
   /** Only claims whose type the producer could not state. */
   showUnsupported = $state(false);
@@ -142,6 +144,7 @@ export class Reader {
       this.original = bundle.candidate ?? null;
       this.edited = false;
       this.draftPath = "";
+      this.staleDraft = bundle.stale ?? "";
       // A fresh report makes the previous selection meaningless: ids identify
       // records within one snapshot, not the same claim across collections.
       this.selection = this.report.functions.length
@@ -240,7 +243,12 @@ export class Reader {
     }
   }
 
-  /** Put the producer's own claims back, and check them again. */
+  /**
+   * Put the producer's own claims back on screen, and check them again. A
+   * draft beside the source is left alone: it may be a repair that belongs to
+   * the file rather than work in progress, and losing one to a stray click
+   * would be worse than having to ask for it again.
+   */
   async restore() {
     if (!this.original || this.busy) return;
     this.busy = true;
@@ -255,10 +263,13 @@ export class Reader {
     } finally {
       this.busy = false;
     }
-    // The producer's claims are back, so a kept draft is no longer what is on
-    // screen, and leaving it would resume it on the next open. Discarding it
-    // waits for the check to release the reader, since it takes the same guard.
-    if (!this.error && this.draftPath) await this.keep(true);
+  }
+
+  /** Remove the draft beside the source. Deleting a file is always explicit. */
+  async discard() {
+    if (!this.draftPath || this.busy) return;
+    await this.keep(true);
+    if (!this.error) await this.restore();
   }
 
   /**

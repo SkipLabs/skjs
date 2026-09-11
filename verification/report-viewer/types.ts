@@ -208,4 +208,9 @@ export interface Bundle {
    * checked before anything is displayed.
    */
   draft?: Candidate;
+  /**
+   * Why a draft beside the source was not used. A file that silently does
+   * nothing is worse than one that says what is wrong with it.
+   */
+  stale?: string;
 }

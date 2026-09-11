@@ -247,6 +247,9 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Candidate editing" node verification/tests/candidate-editor.mts "$WORK/closures.claims"
   run_test "Export snapshots" node verification/tests/export-snapshots.mts "$WORK/snapshots.claims" "$SNAPSHOTS"
   run_test "TypeScript claims" node verification/tests/tsc-claims.mts "$VERIFIER"
+  # The drafts kept beside corpus sources: still about those sources, and still
+  # verifying. A stale one is ignored by the reader and would go unnoticed here.
+  run_test "Kept drafts" node verification/tests/kept-drafts.mts
   run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
   report_tests
 fi
