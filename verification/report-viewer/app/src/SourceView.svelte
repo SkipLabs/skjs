@@ -49,6 +49,48 @@
     );
   });
 
+  /**
+   * The source a mark is about. A mark's own `col`/`end` stop at the end of its
+   * line, which is right for the bracket it draws; the span itself can cross
+   * several lines, and that is what the code should light up.
+   */
+  function spanOf(id: string): [number, number] | null {
+    const index = Number(id.slice(1));
+    if (!Number.isInteger(index)) return null;
+    const list =
+      id[0] === "e"
+        ? fn.exprs
+        : id[0] === "n"
+          ? fn.entries
+          : id[0] === "g"
+            ? fn.gaps
+            : id[0] === "m"
+              ? (fn.missingSites ?? [])
+              : [];
+    return (list[index] as { pos?: [number, number] })?.pos ?? null;
+  }
+
+  /** Which line is hovered, and the columns the claim covers on it. */
+  let hovered = $state<string | null>(null);
+
+  const lit = $derived.by(() => {
+    const span = spanOf(hovered ?? selectedMark ?? "");
+    const covered = new Map<number, [number, number]>();
+    if (!span) return covered;
+    const starts = lineStarts(report.source);
+    for (let line = lineAt(starts, span[0]); ; line++) {
+      const from = starts[line];
+      if (from === undefined || from >= span[1]) break;
+      const to = starts[line + 1] ?? report.source.length + 1;
+      covered.set(line, [
+        Math.max(span[0] - from, 0),
+        Math.min(span[1], to - 1) - from,
+      ]);
+      if (span[1] <= to) break;
+    }
+    return covered;
+  });
+
   /** The function's own lines, numbered as they are in the file. */
   const lines = $derived.by(() => {
     const starts = lineStarts(report.source);
@@ -67,7 +109,16 @@
   {#each lines as line (line.index)}
     <div class="row">
       <span class="gutter">{line.number}</span>
-      <code class="code">{line.text || " "}</code>
+      <code class="code">
+        {#if lit.has(line.index)}
+          {@const [from, to] = lit.get(line.index)!}
+          <span
+            class="lit"
+            class:selected={!hovered}
+            style="--from:{from}; --to:{to}"
+          ></span>
+        {/if}<span class="text">{line.text || " "}</span>
+      </code>
     </div>
     {#each rowsByLine.get(line.index) ?? [] as packed, depth (depth)}
       <div class="row marks">
@@ -79,6 +130,10 @@
               class:selected={item.id === selectedMark}
               style="--col:{item.col}"
               onclick={() => onselect(item.id)}
+              onpointerenter={() => (hovered = item.id)}
+              onpointerleave={() => (hovered = null)}
+              onfocus={() => (hovered = item.id)}
+              onblur={() => (hovered = null)}
               title={item.label}
             >
               <span class="bracket"
@@ -122,6 +177,24 @@
     color: var(--ink);
     position: relative;
     display: block;
+  }
+  /* The source a claim is about, lit behind the text in the same monospace
+     grid the marks sit in. Hovering a mark lights its span; with nothing
+     hovered, the selected claim keeps its own lit, more faintly. */
+  .lit {
+    position: absolute;
+    left: calc(var(--from) * 1ch);
+    width: calc((var(--to) - var(--from)) * 1ch);
+    top: 0;
+    bottom: 0;
+    border-radius: 2px;
+    background: var(--claim-bg);
+  }
+  .lit.selected {
+    background: var(--accent-bg);
+  }
+  .text {
+    position: relative;
   }
   .marks .code {
     height: 1.5em;
