@@ -238,6 +238,12 @@ declare module "*/obligation.js" {
 
   const reader: {
     obligationView(obligation: unknown, source?: string): ObligationView | null;
+    /**
+     * A type, printed from a document's own graph table: labels index `types`,
+     * and a clause the reader does not know is shown as its encoding rather
+     * than guessed at.
+     */
+    typeText(types: unknown[], labels: number[], depth?: number): string;
   };
   export default reader;
 }

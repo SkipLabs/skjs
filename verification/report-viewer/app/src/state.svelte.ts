@@ -139,9 +139,7 @@ export class Reader {
       const bundle = await checkCandidate(next);
       this.candidate = next;
       this.edited = true;
-      this.bundle = bundle;
-      this.report = fromBundle(bundle);
-      this.collection = bundle.collection ?? null;
+      this.adopt(bundle);
     } catch (e) {
       // A refused candidate stays available for correction, and what was last
       // displayed keeps saying what it said: nothing unchecked is shown as a
@@ -174,14 +172,29 @@ export class Reader {
       const bundle = await checkCandidate($state.snapshot(this.original));
       this.candidate = this.original;
       this.edited = false;
-      this.bundle = bundle;
-      this.report = fromBundle(bundle);
-      this.collection = bundle.collection ?? null;
+      this.adopt(bundle);
     } catch (e) {
       this.error = (e as Error).message;
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Take a rechecked report, keeping the reader looking at the same function.
+   * Ids are local to one snapshot — supplying a contract turns a function the
+   * candidate did not mention into one it does, and its id changes with it — so
+   * the selection is re-resolved by name rather than carried across, and the
+   * mark is dropped, because a mark index means nothing in a different report.
+   */
+  private adopt(bundle: Bundle) {
+    const was = this.selected?.name;
+    this.bundle = bundle;
+    this.report = fromBundle(bundle);
+    this.collection = bundle.collection ?? null;
+    const fn =
+      this.functions.find((f) => f.name === was) ?? this.functions[0] ?? null;
+    this.selection = fn ? { functionId: fn.id, markId: null } : null;
   }
 
   select(functionId: string, markId: string | null = null) {

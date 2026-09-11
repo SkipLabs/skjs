@@ -32,7 +32,7 @@
   <section class="why">
     <header>
       <h2>{view.title || view.kindLabel}</h2>
-      <span class="meta">{view.kindLabel} · fuel {view.fuel}</span>
+      <span class="meta">{view.kindLabel}</span>
     </header>
 
     {#if view.what}
@@ -97,6 +97,13 @@
     {#if view.note}
       <p class="note">{view.note}</p>
     {/if}
+
+    <!-- What the number means, rather than the number on its own. A search
+         that ran out of budget stopped looking; it did not conclude. -->
+    <p class="budget">
+      Proof search was given a budget of {view.fuel}. Failing within it means no
+      derivation was found, never that the claim is false.
+    </p>
   </section>
 {/if}
 
@@ -121,6 +128,12 @@
     color: var(--faint);
     font-size: 11px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .budget {
+    margin: 10px 0 0;
+    max-width: 68ch;
+    color: var(--faint);
+    font-size: 12px;
   }
   .what,
   .note,

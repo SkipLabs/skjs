@@ -9,14 +9,22 @@
    * against the source's own annotations.
    */
   import surface from "../../../tools/claim-types.js";
+  import LabelChooser from "./LabelChooser.svelte";
   import type { ShownFunction } from "../../model.js";
+  import type { Candidate } from "../../types.ts";
 
   let {
     fn,
+    format,
+    types,
     busy,
     onsubmit,
   }: {
     fn: ShownFunction;
+    /** Which encoding the candidate speaks; they are not interchangeable. */
+    format: Candidate["format"];
+    /** The document's own type table, where the encoding indexes one. */
+    types: unknown[];
     busy: boolean;
     onsubmit: (contract: {
       params: { name: string; type: unknown }[];
@@ -27,16 +35,29 @@
   const names = $derived(fn.parameters ?? []);
   let params = $state<string[]>([]);
   let result = $state("");
+  /** The same fields, where types are chosen from the document's table. */
+  let paramLabels = $state<number[][]>([]);
+  let resultLabels = $state<number[]>([]);
 
   $effect(() => {
     params = names.map(() => "");
+    paramLabels = names.map(() => []);
     result = "";
+    resultLabels = [];
   });
 
+  /*
+   * A normalized claim is a list of indices into the document's own type table,
+   * which the surface syntax cannot produce: naming a type that is not already
+   * a row would mean interning it, and that is the producer's job. So these are
+   * written as labels, with the table shown below.
+   */
+  const labelled = $derived(format === "source-claims");
+
   /**
-   * Read one field. There is no original to resolve against, so the surface can
-   * only name what it says in full — a shape it cannot name has to be written
-   * as the producer's encoding.
+   * Read one field, where a type is written rather than chosen. There is no
+   * original to resolve against, so the surface can only name what it says in
+   * full, and a shape it cannot name is written as the producer's encoding.
    */
   function read(text: string): { value?: unknown; error?: string } {
     if (!text.trim()) return { error: "" };
@@ -51,8 +72,13 @@
     }
   }
 
-  const readParams = $derived(params.map(read));
-  const readResult = $derived(read(result));
+  type Read = { value?: unknown; error?: string };
+  const readParams = $derived<Read[]>(
+    labelled ? paramLabels.map((value) => ({ value })) : params.map(read),
+  );
+  const readResult = $derived<Read>(
+    labelled ? { value: resultLabels } : read(result),
+  );
   const ready = $derived(
     readParams.every((p) => "value" in p) && "value" in readResult,
   );
@@ -86,27 +112,43 @@
 
   <div class="fields">
     {#each names as name, i (name)}
-      <label>
+      <div class="field">
         <span>{name}</span>
-        <input
-          type="text"
-          bind:value={params[i]}
-          spellcheck="false"
-          placeholder="boolean"
-        />
-      </label>
+        {#if labelled}
+          <LabelChooser
+            {types}
+            selected={paramLabels[i] ?? []}
+            onchange={(next) => (paramLabels[i] = next)}
+          />
+        {:else}
+          <input
+            type="text"
+            bind:value={params[i]}
+            spellcheck="false"
+            placeholder="boolean"
+          />
+        {/if}
+      </div>
     {:else}
       <p class="faint">It takes no parameters.</p>
     {/each}
-    <label>
+    <div class="field">
       <span>returns</span>
-      <input
-        type="text"
-        bind:value={result}
-        spellcheck="false"
-        placeholder="null"
-      />
-    </label>
+      {#if labelled}
+        <LabelChooser
+          {types}
+          selected={resultLabels}
+          onchange={(next) => (resultLabels = next)}
+        />
+      {:else}
+        <input
+          type="text"
+          bind:value={result}
+          spellcheck="false"
+          placeholder="null"
+        />
+      {/if}
+    </div>
   </div>
 
   <div class="row">
@@ -130,16 +172,16 @@
   }
   .fields {
     display: grid;
-    gap: 6px;
-    max-width: 34rem;
+    gap: 10px;
+    max-width: 40rem;
   }
-  label {
+  .field {
     display: grid;
     grid-template-columns: 10ch 1fr;
-    align-items: center;
+    align-items: baseline;
     gap: 10px;
   }
-  label span {
+  .field span {
     color: var(--faint);
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     text-align: right;

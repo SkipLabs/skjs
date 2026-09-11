@@ -16,26 +16,52 @@
    * rather than letting the attempt fail obscurely.
    */
   import surface from "../../../tools/claim-types.js";
+  import LabelChooser from "./LabelChooser.svelte";
+  import TypeLabels from "./TypeLabels.svelte";
   import type { ClaimSite } from "../../candidate.js";
+  import type { Candidate } from "../../types.ts";
 
   let {
     kind,
     current,
+    format,
+    types,
     busy,
     onapply,
   }: {
     kind: ClaimSite["kind"];
     /** The claim being edited, or undefined where one is being added. */
     current: unknown | undefined;
+    /** Which encoding the candidate speaks; they are not interchangeable. */
+    format: Candidate["format"];
+    /** The document's own type table, where the encoding indexes one. */
+    types: unknown[];
     busy: boolean;
     onapply: (value: unknown) => void;
   } = $props();
 
   const adding = $derived(current === undefined);
+  /*
+   * A normalized claim is a list of indices into the document's own type table,
+   * and the surface syntax cannot produce one: naming a type that is not
+   * already a row would mean interning it, which is the producer's job, not the
+   * reader's. So these are written as labels, with the table shown beside the
+   * field so they can be.
+   */
+  const labelled = $derived(format === "source-claims");
+  /*
+   * An expression claim in that encoding is a set of rows, so it is chosen from
+   * the table rather than written: the indices are the document's business.
+   * An environment is a list of named claims, which has no such shorthand, so
+   * it stays the encoding — and there the labels are shown, because writing it
+   * by hand is what was asked for.
+   */
+  const chosen = $derived(labelled && kind === "expression");
+  let labels = $state<number[]>([]);
 
   /** Surface text where the claim round-trips exactly; null where it does not. */
   const printed = $derived(
-    adding ? null : surface.printClaimValue(kind, current),
+    adding || labelled ? null : surface.printClaimValue(kind, current),
   );
 
   /** Whether the encoding is being written directly, rather than the surface. */
@@ -48,13 +74,15 @@
   $effect(() => {
     kind;
     current;
-    raw = !adding && printed === null;
+    raw = (labelled && !chosen) || (!adding && printed === null);
     text = printed ?? (adding ? "" : JSON.stringify(current, null, 2));
+    labels = Array.isArray(current) ? (current as number[]) : [];
     touched = false;
   });
 
   /** What the text reads back as, or why it does not read back at all. */
   const parsed = $derived.by((): { value?: unknown; error?: string } => {
+    if (chosen) return { value: labels };
     if (!text.trim()) return { error: "" };
     try {
       return {
@@ -88,13 +116,28 @@
     <span class="what">
       {adding ? `add the ${kind} claim` : "claim"}
     </span>
-    <label class="as-raw">
-      <input type="checkbox" bind:checked={raw} disabled={!adding && printed === null} />
-      write the encoding
-    </label>
+    {#if !chosen}
+      <label class="as-raw">
+        <input
+          type="checkbox"
+          bind:checked={raw}
+          disabled={labelled || (!adding && printed === null)}
+        />
+        write the encoding
+      </label>
+    {/if}
   </div>
 
-  {#if raw}
+  {#if chosen}
+    <LabelChooser
+      {types}
+      selected={labels}
+      onchange={(next) => {
+        labels = next;
+        touched = true;
+      }}
+    />
+  {:else if raw}
     <textarea
       bind:value={text}
       oninput={() => (touched = true)}
@@ -104,10 +147,20 @@
       }}
       rows="6"
       spellcheck="false"
-      placeholder={kind === "environment"
-        ? '[{ "name": "x", "type": { "top": false, "atoms": [] } }]'
-        : '{ "top": false, "atoms": [] }'}
+      placeholder={labelled
+        ? kind === "environment"
+          ? '[{ "name": "x", "type": [1, 2] }]'
+          : "[1, 2]"
+        : kind === "environment"
+          ? '[{ "name": "x", "type": { "top": false, "atoms": [] } }]'
+          : '{ "top": false, "atoms": [] }'}
     ></textarea>
+    {#if labelled}
+      <!-- The one place an index is shown: the encoding is being written by
+           hand, and it holds indices. Everywhere else a type is chosen by
+           name. -->
+      <TypeLabels {types} />
+    {/if}
   {:else}
     <input
       type="text"
@@ -124,6 +177,8 @@
     </button>
     {#if touched && parsed.error}
       <span class="bad">{parsed.error}</span>
+    {:else if labelled && !chosen}
+      <span class="faint">a binding's type is chosen from the table below</span>
     {:else if !adding && printed === null && !raw}
       <span class="faint">this encoding has no exact surface syntax</span>
     {:else if ready}

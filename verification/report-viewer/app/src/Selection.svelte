@@ -70,6 +70,11 @@
     return null;
   });
 
+  /** The document's own type table, where the candidate's encoding indexes one. */
+  const types = $derived(
+    ((candidate?.claims as { types?: unknown[] })?.types ?? []) as unknown[],
+  );
+
   /** The candidate's own value at the site, which reading back resolves against. */
   const current = $derived.by(() => {
     if (!candidate || !site || picked?.what === "missing") return undefined;
@@ -95,7 +100,13 @@
       <span class="status">{fn.detail ?? ""}</span>
     </header>
     {#if candidate}
-      <FunctionContract {fn} {busy} onsubmit={oncontract} />
+      <FunctionContract
+        {fn}
+        format={candidate.format}
+        {types}
+        {busy}
+        onsubmit={oncontract}
+      />
     {/if}
   {:else if !picked?.item}
     <p class="empty">
@@ -147,6 +158,8 @@
       <ClaimEditor
         kind={site.kind}
         {current}
+        format={candidate.format}
+        {types}
         {busy}
         onapply={(value) =>
           picked.what === "missing" ? onadd(site, value) : onapply(site, value)}
