@@ -13,7 +13,7 @@ then one line on stderr:
 obligation-diagnostic: {"version":2,...}
 ```
 
-`verification/tools/obligation-diagnostic.js` reads the record without parsing the
+`verification/tools/obligation-diagnostic.mts` reads the record without parsing the
 human sentence. Unknown versions, malformed records, and duplicate records are
 not interpreted. Failures that reach no calculus obligation carry human text and
 an optional `location` instead of a record.

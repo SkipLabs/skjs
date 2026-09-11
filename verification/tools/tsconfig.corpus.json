@@ -1,0 +1,7 @@
+{
+  // The corpus driver, which lives a directory up. Same terms as the annotator
+  // project: carried over from JavaScript, so its helpers have no signatures.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": false, "noImplicitAny": false },
+  "files": ["../examples.mts"]
+}

@@ -363,7 +363,7 @@ function run(executable,args) {
   if(r.error || r.signal)throw Error(`tool execution failed: ${r.error?.message || r.signal}`);
   return r;
 }
-const {readDiagnostic}=require("./obligation-diagnostic.js");
+const {readDiagnostic}=require("./obligation-diagnostic.mts");
 function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, normalized=false) {
   const parser=path.join(__dirname,"parse-source.mts"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {

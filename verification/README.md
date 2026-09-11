@@ -61,8 +61,8 @@ Use `VERBOSE=1` for build details and example diagnostics. Without rebuilding Le
 ```sh
 verification/run.sh
 verification/run.sh --skjs target/host/dev/skjs.some-variant
-node verification/examples.js
-node verification/examples.js --skjs target/host/dev/skjs.some-variant
+node verification/examples.mts
+node verification/examples.mts --skjs target/host/dev/skjs.some-variant
 ```
 
 Rebuild SKJS when its implementation changes. Repository-wide `make test` checks
@@ -153,7 +153,7 @@ The source boundary starts in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean) checks the
 resulting requests and evidence.
 
-`tools/export-source-claims.js` converts an existing SKJS export into editable
+`tools/export-source-claims.mts` converts an existing SKJS export into editable
 calculus-label claims. Conversion records unsupported candidates and provenance;
 it does not itself establish verification. Version-2 sidecars also preserve
 current-content assertions such as `{ value: boolean = (true) }`, separately from

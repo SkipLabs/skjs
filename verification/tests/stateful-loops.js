@@ -29,7 +29,7 @@ try {
     const r=run("--produce-stateful-source",a,c);assert.equal(r.status,0,r.stderr); // A safe infinite loop is permitted.
   });
   test("sidecar conversion preserves cyclic requests",()=>{
-    const out=path.join(tmp,"sidecar.json");const r=exec(process.execPath,[path.resolve(__dirname,"../tools/export-source-claims.js"),file,"--claims",claimsPath,"--out",out,"--verifier",verifier]);assert.equal(r.status,0,r.stderr);
+    const out=path.join(tmp,"sidecar.json");const r=exec(process.execPath,[path.resolve(__dirname,"../tools/export-source-claims.mts"),file,"--claims",claimsPath,"--out",out,"--verifier",verifier]);assert.equal(r.status,0,r.stderr);
     fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(ep,JSON.stringify(evidence));const checked=exec(verifier,["--check-source-claims",ap,out,file,ep]);assert.equal(checked.status,0,checked.stderr);
   });
   for(const [name,text] of [

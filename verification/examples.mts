@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 // Report original producer claims, without repairing them or running mutation tests.
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
-const { spawnSync } = require("node:child_process");
-const { fromSkjs, verifySkjs } = require("./tools/annotate-source.mts");
-const tscClaims = require("./tools/tsc-claims.mts");
-const { projectFor } = require("./tools/parse-source.mts");
-const ts = require(
-  require.resolve("typescript/unstable/ast", {
-    paths: [path.join(__dirname, "tools")],
-  }),
-);
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { fromSkjs, verifySkjs } from "./tools/annotate-source.mts";
+import * as tscClaims from "./tools/tsc-claims.mts";
+import { definedFunctions } from "./tools/parse-source.mts";
+
+const __filename = import.meta.filename;
+const __dirname = path.dirname(__filename);
+// The corpus index is a plain JavaScript module the reader also loads.
+const require = createRequire(import.meta.url);
 const { groups, supported } = require("./report-viewer/examples.js");
 const root = path.resolve(__dirname, "..");
 process.chdir(root);
@@ -41,7 +42,7 @@ for (let i = 2; i < process.argv.length; i++) {
     claimsPath = process.argv[++i];
   else
     throw Error(
-      "usage: examples.js [--build] [--verbose] [--only skjs|tsc] [--skjs BIN] [--shard i:n --claims FILE]",
+      "usage: examples.mts [--build] [--verbose] [--only skjs|tsc] [--skjs BIN] [--shard i:n --claims FILE]",
     );
 }
 const verifier = path.join(__dirname, "lean/.lake/build/bin/verifier");
@@ -100,7 +101,7 @@ function outcome(result) {
 // the parent's decision and travels with the work rather than being asked again
 // somewhere it cannot be answered.
 const colorEnv = process.env.VERIFY_COLOR;
-function color(code, text, stream = process.stdout) {
+function color(code, text, stream: NodeJS.WriteStream = process.stdout) {
   const wanted = colorEnv
     ? colorEnv === "1"
     : stream.isTTY && process.env.TERM !== "dumb" && !process.env.NO_COLOR;
@@ -258,16 +259,12 @@ try {
       const { results } = producers.skjs
         ? verifySkjs(file, source, claims, file, report, verifier, 10)
         : { results: [] };
-      const functions = projectFor(path.resolve(file))
-        .program.getSourceFile(path.resolve(file))
-        .statements.filter(
-          (n) => ts.isFunctionDeclaration(n) && n.name && n.body,
-        );
+      const functions = definedFunctions(file);
       if (!functions.length)
         throw Error("example contains no function definitions");
       for (const f of functions) {
         const index = report.functions.findIndex(
-          (g) => g.name === f.name.text && g.namePos[0] === f.name.getStart(),
+          (g) => g.name === f.name && g.namePos[0] === f.namePos[0],
         );
         const result = index < 0 ? undefined : results[index];
         const accepted = result?.status === "verified";
@@ -283,8 +280,8 @@ try {
         // Each producer answers two questions: did it accept the program,
         // and can the verifier derive the claims it made. They are different
         // questions, so each producer shows both, as `accepted→derived`.
-        const tscProof = fromTsc.has(f.name.text)
-          ? fromTsc.get(f.name.text)
+        const tscProof = fromTsc.has(f.name)
+          ? fromTsc.get(f.name)
             ? "✓"
             : "✗"
           : "·";
@@ -301,13 +298,13 @@ try {
         // off there is no policy to hold anything to.
         const matches =
           !producers.skjs ||
-          (index >= 0 && accepted === expectedVerified(file, f.name.text));
+          (index >= 0 && accepted === expectedVerified(file, f.name));
         if (!matches) unexpected++;
         const disagrees =
           (producer === "complete" && mark === "✗") ||
           (producer === "aborted" && accepted);
         say(
-          `    ${f.name.text}: ` +
+          `    ${f.name}: ` +
             [
               producers.skjs && `SKJS ${pair(producerMark, mark, true)}`,
               producers.tsc && `tsc ${pair(tscOwn, tscProof, false)}`,

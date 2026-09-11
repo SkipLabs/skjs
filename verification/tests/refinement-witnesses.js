@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
-const { readDiagnostic } = require("../tools/obligation-diagnostic.js");
+const { readDiagnostic } = require("../tools/obligation-diagnostic.mts");
 const [
   verifier,
   capturedAst,

@@ -244,7 +244,7 @@ and checks malformed inputs, missing claims, false refinements and old evidence.
 ## Converting an existing SKJS export
 
 ```sh
-node verification/tools/export-source-claims.js input.ts --claims skjs-claims.json \
+node verification/tools/export-source-claims.mts input.ts --claims skjs-claims.json \
   --diagnostics diagnostics.txt --out source-claims.json
 ```
 

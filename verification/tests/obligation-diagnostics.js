@@ -9,7 +9,7 @@ const {
   fromSourceClaims,
   verifySkjs,
 } = require("../tools/annotate-source.mts");
-const { readDiagnostic } = require("../tools/obligation-diagnostic.js");
+const { readDiagnostic } = require("../tools/obligation-diagnostic.mts");
 const verifier = path.resolve(process.argv[2]);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "obligation-diagnostics-"));
 let passed = 0;

@@ -4,7 +4,7 @@ const {spawnSync}=require("child_process");
 const [claimsPath,file,partialPath,partialFile,recoveryPath,verifier,diagnostics]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"claim-export-tests-"));
 const run=(exe,args)=>{const r=spawnSync(exe,args,{encoding:"utf8",timeout:120000,maxBuffer:32*1024*1024});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
-const script=path.resolve(__dirname,"../tools/export-source-claims.js");
+const script=path.resolve(__dirname,"../tools/export-source-claims.mts");
 let passed=0;
 const test=(name,f)=>{f();passed++;console.log(`  ${name}: OK`);};
 const convert=(source,claims,out,extra=[])=>run(process.execPath,[script,source,"--claims",claims,"--out",out,"--verifier",verifier,...extra]);

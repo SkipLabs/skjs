@@ -4,7 +4,7 @@
 // `tools/tsc-claims.mts` states tsc's types at every site of a corpus file as a
 // producer-neutral claims document; this runs that over the corpus and records
 // the verdict per file. The expected verdicts below are policy, the same shape
-// as `expectedVerified` in examples.js: a change here is a change in what one
+// as `expectedVerified` in examples.mts: a change here is a change in what one
 // checker's claims can be derived from, to be read rather than regenerated.
 const fs = require("node:fs");
 const os = require("node:os");

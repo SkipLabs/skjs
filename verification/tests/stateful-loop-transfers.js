@@ -29,7 +29,7 @@ try {
   test("loop body locals cannot escape break",()=>{const a=structuredClone(ast);sf(a,"stopAfterWrite").body[3].e.e.name="alias";assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
   test("consumer rejects a transfer outside any loop",()=>{const a=structuredClone(ast);sf(a,"stopAfterWrite").body[0]={k:"break",pos:sf(a,"stopAfterWrite").body[0].pos};assert.notEqual(run("--produce-stateful-source",a,claims).status,0);});
   test("sidecars preserve transfer environments and checks",()=>{
-    const out=path.join(tmp,"sidecar.json"),r=exec(process.execPath,[path.resolve(__dirname,"../tools/export-source-claims.js"),file,"--claims",claimsPath,"--out",out,"--verifier",verifier]);assert.equal(r.status,0,r.stderr);
+    const out=path.join(tmp,"sidecar.json"),r=exec(process.execPath,[path.resolve(__dirname,"../tools/export-source-claims.mts"),file,"--claims",claimsPath,"--out",out,"--verifier",verifier]);assert.equal(r.status,0,r.stderr);
     fs.writeFileSync(ap,JSON.stringify(ast));fs.writeFileSync(ep,JSON.stringify(evidence));const c=exec(verifier,["--check-source-claims",ap,out,file,ep]);assert.equal(c.status,0,c.stderr);
   });
   for(const [name,body] of [

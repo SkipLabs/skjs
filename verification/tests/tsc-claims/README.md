@@ -37,7 +37,7 @@ path.
 
 ## Reading the corpus column
 
-`examples.js` shows `tsc accepted→derived` beside SKJS's pair. The column
+`examples.mts` shows `tsc accepted→derived` beside SKJS's pair. The column
 carries no ⚠, because a `✗` there is as often this producer's limit as a
 finding: it states no current-content assertions, so every function that reads
 a cell after writing it fails, 56 of 129 in the corpus today. Teaching it to

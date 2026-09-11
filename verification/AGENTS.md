@@ -15,7 +15,7 @@ make verify-test                 # the suites only
 make verify-examples             # the corpus only
 verification/run.sh --suite all  # the suites, without rebuilding Lean
 lake -d verification/lean build  # the verifier alone
-node verification/examples.js    # the corpus alone, both producers
+node verification/examples.mts    # the corpus alone, both producers
 make verify-examples-skjs        # one column at a time; either alone runs
 make verify-examples-tsc         # only that producer
 make viewer                      # the claim report reader on http://localhost:8731
@@ -57,7 +57,7 @@ is a rule for anything added.
   binary; it does not build Lean, does not run SKJS, and does not run the
   corpus.
 
-`examples.js` follows the same rules on its own: one producer run for every
+`examples.mts` follows the same rules on its own: one producer run for every
 corpus file, one worker per core, and colour decided once in the parent.
 
 ## What a result means
@@ -69,7 +69,7 @@ corpus file, one worker per core, and colour decided once in the parent.
   acceptance its own claims do not establish; the tsc column carries none,
   because that producer states no current-content assertions and fails by its
   own limits wherever one is needed.
-- Expected outcomes are policy, in `expectedVerified` in `examples.js`: a
+- Expected outcomes are policy, in `expectedVerified` in `examples.mts`: a
   witness fixture is expected *not* to verify, and a run fails when any
   function's outcome contradicts the policy, in either direction.
 - Fixtures under `tests/skjs-unsound/` and `tests/skjs-incomplete/` are

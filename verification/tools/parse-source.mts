@@ -890,6 +890,32 @@ export function parseFile(file: string): Ast {
 }
 
 /**
+ * The functions a file defines, named and with a body, whether or not the
+ * fragment admits them. A report has to be able to name what it did not
+ * cover, and that is exactly the case a gate rejection would otherwise hide,
+ * so this reads the compiler's tree directly and applies no gate.
+ */
+export function definedFunctions(
+  file: string,
+): { name: string; namePos: Span }[] {
+  const absolute = resolve(file);
+  const source = projectFor(absolute).program.getSourceFile(absolute);
+  if (!source) throw new Error(`the compiler produced no tree for ${file}`);
+  const out: { name: string; namePos: Span }[] = [];
+  for (const statement of source.statements as readonly any[])
+    if (
+      statement.kind === ts.SyntaxKind.FunctionDeclaration &&
+      statement.name &&
+      statement.body
+    )
+      out.push({
+        name: statement.name.text,
+        namePos: [statement.name.getStart(source), statement.name.end],
+      });
+  return out;
+}
+
+/**
  * The fragment's reading of one type annotation, for a trusted tool that has a
  * node and needs the type the gate would give it. The annotation's own file is
  * the place a rejection names, which is why the node carries it.

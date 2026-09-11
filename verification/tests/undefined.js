@@ -61,7 +61,7 @@ try {
   const checkMs = performance.now() - checkedAt;
   test("undefined exports and round-trips through the neutral profile", () => {
     const r = run(process.execPath, [
-      path.resolve(__dirname, "../tools/export-source-claims.js"),
+      path.resolve(__dirname, "../tools/export-source-claims.mts"),
       file,
       "--claims",
       claimsPath,
@@ -181,7 +181,7 @@ try {
     fs.writeFileSync(cp, JSON.stringify(raw));
     accepted(
       run(process.execPath, [
-        path.resolve(__dirname, "../tools/export-source-claims.js"),
+        path.resolve(__dirname, "../tools/export-source-claims.mts"),
         file,
         "--claims",
         cp,

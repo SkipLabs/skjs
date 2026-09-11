@@ -132,7 +132,7 @@ try {
     fs.writeFileSync(sc,JSON.stringify(bad));
     const failed=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);
     assert.notEqual(failed.status,0);
-    const diagnostic=require("../tools/obligation-diagnostic.js").readDiagnostic(failed.stderr);
+    const diagnostic=require("../tools/obligation-diagnostic.mts").readDiagnostic(failed.stderr);
     assert.equal(diagnostic.kind,"expression-claim");
     assert.equal(diagnostic.sourceMap.role,"expression-claim");
     assert.deepEqual(diagnostic.sourceMap.pos,bodyPos);
@@ -148,7 +148,7 @@ try {
     receiver.current=[1];fs.writeFileSync(sc,JSON.stringify(observed));
     assert.notEqual(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
     const stale=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(stale.status,0);
-    const observation=require("../tools/obligation-diagnostic.js").readDiagnostic(stale.stderr);
+    const observation=require("../tools/obligation-diagnostic.mts").readDiagnostic(stale.stderr);
     assert.equal(observation.sourceMap.role,"heap-observation");
     assert.deepEqual(observation.sourceMap.pos,receiver.pos);
     assert.deepEqual(observation.sequent.context,[[1,2]]);

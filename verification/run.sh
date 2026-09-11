@@ -159,6 +159,7 @@ snapshot_probes() {
 typecheck() {
   (cd verification/tools && npx tsc -p tsconfig.json &&
    npx tsc -p tsconfig.annotator.json &&
+   npx tsc -p tsconfig.corpus.json &&
    npx tsc -p ../report-viewer/tsconfig.json)
 }
 

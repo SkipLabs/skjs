@@ -1,11 +1,12 @@
 {
-  // `annotate-source.mts` is display plumbing carried over from JavaScript, and
-  // its helpers are unannotated, so the inference checks are off for it. What
-  // stays on is what matters at this boundary: whether the compiler API members
-  // it names exist. A renamed one reads as `undefined` at runtime rather than
-  // failing — that is how `SyntaxKind.EndOfFileToken` turned a scanner loop
-  // into a hang — and as an error here. It moves into tsconfig.json when the
-  // reader it serves is rewritten.
+  // Files carried over from JavaScript: their helpers have no signatures, so
+  // the inference checks are off. What stays on is the part that matters at
+  // this boundary — whether the compiler API members they name exist. A
+  // renamed one reads as `undefined` at runtime rather than failing (that is
+  // how `SyntaxKind.EndOfFileToken` turned a scanner loop into a hang) and as
+  // an error here. A file graduates to tsconfig.json once its own signatures
+  // are written down; annotate-source.mts is 38 fixes away, most of them a
+  // `const x = []` that needs an element type.
   "extends": "./tsconfig.json",
   "compilerOptions": { "strict": false, "noImplicitAny": false },
   "files": ["annotate-source.mts"]

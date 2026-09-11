@@ -16,6 +16,8 @@
     "types": ["node"]
   },
   "files": [
+    "export-source-claims.mts",
+    "obligation-diagnostic.mts",
     "parse-source.mts",
     "tsc-claims.mts",
     "strip-types.mts",

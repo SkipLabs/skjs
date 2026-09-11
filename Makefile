@@ -94,13 +94,13 @@ check-file-in-docker:
 verify:
 	@bash -c 'source verification/skjs.sh; skjs_start || true; trap skjs_shutdown EXIT; \
 	  ./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose) && \
-	  node verification/examples.js $(if $(filter 1,$(VERBOSE)),--verbose)' 
+	  node verification/examples.mts $(if $(filter 1,$(VERBOSE)),--verbose)' 
 
 verify-test:
 	@./verification/run.sh --build --suite all $(if $(filter 1,$(VERBOSE)),--verbose)
 
 verify-examples:
-	@node verification/examples.js --build $(if $(filter 1,$(VERBOSE)),--verbose)
+	@node verification/examples.mts --build $(if $(filter 1,$(VERBOSE)),--verbose)
 
 # The claim report reader, on loopback. It runs a producer on whatever source
 # is opened and shows the verifier's verdict beside each claim.
@@ -110,10 +110,10 @@ viewer:
 # One producer's column at a time. Both together is the default above; either
 # alone runs only that producer, which is also how one is measured.
 verify-examples-skjs:
-	@node verification/examples.js --only skjs $(if $(filter 1,$(VERBOSE)),--verbose)
+	@node verification/examples.mts --only skjs $(if $(filter 1,$(VERBOSE)),--verbose)
 
 verify-examples-tsc:
-	@node verification/examples.js --only tsc $(if $(filter 1,$(VERBOSE)),--verbose)
+	@node verification/examples.mts --only tsc $(if $(filter 1,$(VERBOSE)),--verbose)
 
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
