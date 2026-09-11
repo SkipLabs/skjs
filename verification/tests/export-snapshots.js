@@ -50,18 +50,30 @@ function render(source, fn) {
         : "none"),
   );
   lines.push(`result: ${type(fn.retType, "result", null, "")}`);
+  // `x!: T` marks a mutable binding; `(declared U)` follows only when the
+  // declared type is present and differs from the current narrowed one.
+  const binding = (v, envPos) => {
+    const name = v.name + (v.mutable ? "!" : "");
+    const declared =
+      "declared" in v
+        ? ` (declared ${type(v.declared, "declared", envPos, v.name)})`
+        : "";
+    return `${name}: ${type(v.type, "entry", envPos, v.name)}${declared}`;
+  };
   for (const e of fn.envs)
     lines.push(
       `entry ${span(e.pos)}: ` +
         (e.vars.length
-          ? e.vars
-              .map((v) => `${v.name}: ${type(v.type, "entry", e.pos, v.name)}`)
-              .join("; ")
+          ? e.vars.map((v) => binding(v, e.pos)).join("; ")
           : "empty"),
     );
   for (const x of fn.exprs)
     lines.push(
       `expr ${span(x.pos)} \`${excerpt(source, x.pos)}\`: ${type(x.type, "expression", x.pos, "")}`,
+    );
+  for (const x of fn.lvalues || [])
+    lines.push(
+      `lvalue ${span(x.pos)} \`${excerpt(source, x.pos)}\`: ${type(x.type, "lvalue", x.pos, "")}`,
     );
   return lines.join("\n");
 }

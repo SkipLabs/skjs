@@ -10,7 +10,13 @@ extension class TypeChecker {
     if (getConfig(tcenv.context).emitSkjsTypeClaims) {
       vars = mutable Vector<TypeClaimVar>[];
       for (kv in tcenv.scope.visibleRefs().items()) {
-        vars.push(TypeClaimVar(kv.i0, kv.i1.type))
+        ref = kv.i1;
+        // The declared type is worth a separate claim only when a write has
+        // narrowed away from it; otherwise it says nothing `type` does not.
+        declared = if (ref.declaredType == ref.type) None() else {
+          Some(ref.declaredType)
+        };
+        vars.push(TypeClaimVar(kv.i0, ref.type, ref.isMutable, declared))
       };
       tcenv.claimedEnvs.push(TypeClaimEnv(st.pos, vars.toArray()))
     };

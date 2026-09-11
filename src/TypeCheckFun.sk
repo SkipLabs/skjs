@@ -39,7 +39,8 @@ extension class TypeChecker {
       .default(false);
     if (!receiverlessThis) {
       !this.bindings["this"] = thisType;
-      tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true)
+      // `this` cannot be reassigned.
+      tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true, false)
     };
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
     this.bindParams(tcenv, sig.params, paramTypes);

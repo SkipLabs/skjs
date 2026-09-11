@@ -178,6 +178,18 @@ metadata from verifier input. Missing, malformed, stale, ambiguous, or unfamilia
 reasons must not affect verification; readers use a generic explanation when
 necessary.
 
+Besides `parameter`, `result`, `entry`, and `expression`, `unavailableTypes[i].kind`
+also carries `lvalue` (a spot in `functions[i].lvalues`, same shape as `exprs`)
+and `declared` (a binding's declared type, in `envs[i].vars[j].declared`). A
+function's claims object also carries, additively, a top-level `lvalues` array —
+one `{pos, type}` entry per expression span SKJS typed as an assignment target or
+a binding pattern rather than as a value (`exprTypes`'s `isLValue` key) — and each
+`envs[i].vars[j]` binding object carries `mutable` (`true` for `let`/`var`/a
+parameter/a catch variable, `false` for `const` and for `this`) and, only when it
+differs from the narrowed `type`, `declared` (the binding's declared type).
+`SourceInput.decodeClaims` and `annotate-source.js`'s `fromSkjs` read this
+export by field name, so the additions reach both without a version change.
+
 For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emits:
 
 | Reason | Emitted when |
@@ -192,8 +204,8 @@ For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emit
 | `function-generic`, `function-this-parameter`, `function-optional-parameter`, `function-rest-parameter`, `function-arity` | A signature has type parameters, a `this` parameter, optional or rest parameters, or other than one parameter. |
 | `function-without-signature`, `not-callable` | A branch is provably callable with no signature, or has no call at all. |
 | `no-object-branch` | The object has no branches. |
-| `unexpanded-type` | An object still carries an unexpanded type. |
-| `unexpanded-named-type`, `unexpanded-intersection`, `several-unexpanded-types` | The type is an unexpanded alias instantiation, an unexpanded intersection, or more than one unexpanded type. |
+| `unexpanded-type` | A single unexpanded type of another kind, an array literal. |
+| `unexpanded-named-type`, `unexpanded-intersection`, `several-unexpanded-types` | The type is an unexpanded alias or class instantiation, an unexpanded intersection, or more than one unexpanded type. |
 | `type-parameter` | A clause carries a universally quantified type parameter. |
 | `union-of-clauses` | The type has more than one clause, outside the bounded encoding. |
 | `unbound-inference-variable` | An isolated unconstrained inference variable has no binding in the function's substitution snapshot. |
@@ -207,7 +219,9 @@ gives the branch its own reason, so the innermost cause is the one reported.
 
 Representable object branches are exported as separate union atoms. Multiple
 branches alone are not a refusal reason. An unsupported branch causes refusal
-of the whole type rather than a partial export.
+of the whole type rather than a partial export. A class instance exports its
+branches like any other object; the class name it carries is display
+information.
 
 Current-content assertions in the supported cell profile now reach checked
 obligations. Graph failures use `edge-coverage`, with destination `sourceMap` role

@@ -1,0 +1,12 @@
+# class-instance.ts
+
+## readValue [complete unverified normal]
+params: none
+result: boolean
+entry 75-95: this: (unavailable: void-type)
+entry 99-113: c: { value: boolean }; this: (unavailable: void-type)
+expr 85-95 `new Cell()`: { value: boolean }
+expr 106-107 `c`: { value: boolean }
+expr 106-113 `c.value`: boolean
+expr 108-113 `value`: "value"
+lvalue 81-82 `c`: { value: boolean }

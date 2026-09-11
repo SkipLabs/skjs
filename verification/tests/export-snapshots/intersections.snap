@@ -3,11 +3,11 @@
 ## records [complete unverified normal]
 params: c: (unavailable: unexpanded-intersection); d: { value: boolean } [call=unknown construct=unknown array=unknown]; e: (unavailable: cell-field-name)
 result: null
-entry 159-170: c: (unavailable: unexpanded-intersection); d: { value: boolean } [call=unknown construct=unknown array=unknown]; e: (unavailable: cell-field-name); this: (unavailable: void-type)
+entry 159-170: c!: (unavailable: unexpanded-intersection); d!: { value: boolean } [call=unknown construct=unknown array=unknown]; e!: (unavailable: cell-field-name); this: (unavailable: void-type)
 expr 166-170 `null`: null
 
 ## arrows [aborted unverified normal]
 params: f: never
 result: null
-entry 247-261: f: never; this: (unavailable: void-type)
+entry 247-261: f!: never; this: (unavailable: void-type)
 expr 254-255 `f`: never

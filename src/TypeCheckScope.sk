@@ -4,152 +4,23 @@
 
 module SKJS;
 
-// `type` is the binding's current (flow-narrowed) type; `declaredType` is its
-// initial or inherited contract, preserved across narrowing so a write that
+// `type` is the binding's current (flow-narrowed) type; `declaredType` is the
+// type it was declared with, preserved across narrowing writes so a write that
 // escapes the current frame — through a loop or into an enclosing-function
 // capture — can be checked against the declared type rather than a transient
-// narrowing (see `Scope::set`). `hasDeclaredContract` records an explicit
-// annotation, a completed inferred object, or an object contract inherited
-// from an alias source. Every write must preserve that contract.
-// Inferred initializers constrain writes too. Open inference variables collect
-// compatible bounds; a concrete contract is never replaced by a later flow type.
+// narrowing (see `Scope::set`). `isAnnotated` records whether the binding had an
+// explicit type annotation: an annotation is a hard constraint that every write
+// must satisfy, whereas an un-annotated binding's inferred type evolves on write.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
 value class LocalRef(
   type: TType,
   declaredType: TType,
-  hasDeclaredContract: Bool,
+  isAnnotated: Bool,
   isInitialized: Bool,
   isMutable: Bool,
-  hasFieldRefinement: Bool = false,
-) {
-  // Only a binding carrying transient field facts needs contract projection.
-  fun stableContentsType(
-    subst: mutable Subst,
-    tenv: TEnv,
-    preserveAlternatives: Bool = false,
-  ): TType {
-    if (this.hasDeclaredContract && this.hasFieldRefinement) {
-      this.type.withStableContents(
-        subst,
-        tenv,
-        this.declaredType,
-        preserveAlternatives,
-      )
-    } else {
-      this.type
-    }
-  }
-}
-
-extension class TType {
-  // Project transient field facts back to the lasting object contract, keeping
-  // primitive alternatives from the current flow type (including null checks).
-  fun withStableContents(
-    subst: mutable Subst,
-    tenv: TEnv,
-    contract: TType,
-    preserveAlternatives: Bool,
-  ): TType {
-    if (this != contract && !this.isFieldFree()) {
-      objects = contract.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
-        Some(
-          stypes
-            .map(types ->
-              types.filterMap(st ->
-                st match {
-                | obj @ TObject _ ->
-                  if (preserveAlternatives) {
-                    obj.mapOpt(fields ->
-                      if (this.mayMatchAlternative(subst, tenv, fields)) {
-                        Some(fields)
-                      } else {
-                        None()
-                      }
-                    )
-                  } else {
-                    Some(obj)
-                  }
-                | TPrim _ -> None()
-                }
-              )
-            )
-            .default(STypes::single(TObject::createEmpty(this.pos))),
-        )
-      );
-      values = this.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
-        stypes.map(types ->
-          types.filterMap(st ->
-            st match {
-            | prim @ TPrim _ -> Some(prim)
-            | TObject _ -> None()
-            }
-          )
-        )
-      );
-      TType::union(subst, tenv, objects, values)
-    } else {
-      this
-    }
-  }
-
-  // Selecting a declared union alternative does not strengthen that
-  // alternative's contents contract. Discard only alternatives separated by
-  // incompatible required field values; uncertainty keeps the alternative.
-  private fun mayMatchAlternative(
-    subst: mutable Subst,
-    tenv: TEnv,
-    declared: TFields,
-  ): Bool {
-    subst.withCommittedReadContext<Bool>(
-      tenv.forTypeReadObservation(),
-      context ->
-        if (this.probeMatchesAlternative(context, declared)) {
-          None()
-        } else {
-          Some(false)
-        }
-      ,
-    ) match {
-    | TRReady(matches) -> matches
-    | TRUnavailable()
-    | TRBlocked() ->
-      true
-    }
-  }
-
-  // Only a justified elimination escapes; keeping an alternative requires no
-  // inferred commitment. Nested probes share the outer observation's reads.
-  private fun probeMatchesAlternative(
-    context: mutable TypeReadContext,
-    declared: TFields,
-  ): Bool {
-    current = context.singleTypes(this);
-    current
-      .map(current ->
-        current.any(st ->
-          st match {
-          | obj @ TObject _ ->
-            obj.getBranches().any(branch ->
-              !declared.fields.any(field ->
-                branch.fields
-                  .maybeGet(field.name)
-                  .map(other ->
-                    !field.isOptional &&
-                      !other.isOptional &&
-                      context.disjoint(field.get, other.get)
-                  )
-                  .default(false)
-              )
-            )
-          | TPrim _ -> true
-          }
-        )
-      )
-      .default(true)
-  }
-}
+)
 
 class NameRef(name: String, ref: LocalRef) uses Projectable<String> {
   fun project(): String {
@@ -168,75 +39,9 @@ mutable class Scope{
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
-  private mutable hasCaptureSummary: Bool = false,
-  private mutable captureWrites: ?SortedSet<String> = None(),
-  private mutable capturedNames: ?SortedSet<String> = None(),
 } {
   static fun mcreateToplevel(): mutable this {
     mutable static{id => 0, isLoop => false}
-  }
-
-  mutable fun setCaptureWrites(
-    writes: ?SortedSet<String>,
-    captures: ?SortedSet<String>,
-  ): void {
-    this.!hasCaptureSummary = true;
-    this.!captureWrites = writes;
-    this.!capturedNames = captures
-  }
-
-  readonly private fun functionWrites(): ?SortedSet<String> {
-    if (this.hasCaptureSummary) {
-      this.captureWrites
-    } else {
-      this.up.flatMap(up -> up.functionWrites())
-    }
-  }
-
-  readonly private fun captureNeverWritten(name: String): Bool {
-    if (this.locals.containsKey(name)) {
-      this.functionWrites().map(writes -> !writes.contains(name)).default(false)
-    } else {
-      this.up.map(up -> up.captureNeverWritten(name)).default(false)
-    }
-  }
-
-  readonly private fun functionCaptures(): ?SortedSet<String> {
-    if (this.hasCaptureSummary) {
-      this.capturedNames
-    } else {
-      this.up.flatMap(up -> up.functionCaptures())
-    }
-  }
-
-  readonly private fun isCapturedBinding(name: String): Bool {
-    if (this.locals.containsKey(name)) {
-      this.functionCaptures().map(names -> names.contains(name)).default(true)
-    } else {
-      this.up.map(up -> up.isCapturedBinding(name)).default(false)
-    }
-  }
-
-  readonly private fun hasCaptureContract(name: String, ref: LocalRef): Bool {
-    ref.hasDeclaredContract ||
-      (ref.isMutable &&
-        (ref.declaredType.isConcretePrimitive() ||
-          ref.declaredType.getSingleVar().isSome()) &&
-        this.isCapturedBinding(name))
-  }
-
-  readonly private fun captureView(name: String, ref: LocalRef): LocalRef {
-    // Stable binding identity does not stabilize mutable properties. Recover
-    // only field-free facts (primitive values and callable signatures).
-    if (
-      this.hasCaptureContract(name, ref) &&
-      (!ref.type.isFieldFree() ||
-        (ref.isMutable && !this.captureNeverWritten(name)))
-    ) {
-      ref with {type => ref.declaredType}
-    } else {
-      ref
-    }
   }
 
   readonly private fun maybeGetLocal(name: Name): ?Name {
@@ -260,7 +65,6 @@ mutable class Scope{
 
   readonly private fun maybeGetRefHelper(
     throughLoop: Bool,
-    throughFunction: Bool,
     name: String,
   ): ?(Bool, LocalRef) {
     !throughLoop = this.isLoop || throughLoop;
@@ -268,52 +72,26 @@ mutable class Scope{
     | None() ->
       this.up match {
       | None() -> None()
-      | Some(up) ->
-        up.maybeGetRefHelper(
-          throughLoop,
-          throughFunction || this.isFunction,
-          name,
-        )
+      | Some(up) -> up.maybeGetRefHelper(throughLoop, name)
       }
-    | Some(x) ->
-      // Enclosing flow facts may expire before this function runs, but a
-      // capture with a write contract retains its declared type. Other inferred
-      // bindings can evolve beyond their initial type, so it is not a fallback.
-      // Refinements made inside this function are found before crossing its
-      // boundary, so invocation-time checks still narrow subsequent reads.
-      ref = if (throughFunction) {
-        this.captureView(name, x)
-      } else {
-        x
-      };
-      Some((throughLoop, ref))
+    | Some(x) -> Some((throughLoop, x))
     }
   }
 
   readonly private fun maybeGetRef(name: String): ?(Bool, LocalRef) {
-    this.maybeGetRefHelper(false, false, name)
+    this.maybeGetRefHelper(false, name)
   }
 
   mutable fun bind(
     tcenvb: mutable TCEnvBase,
     name: Name,
     ty: TType,
-    hasDeclaredContract: Bool,
+    isAnnotated: Bool,
     isInitialized: Bool,
     isMutable: Bool,
-    pendingBindings: SortedSet<PosRange> = SortedSet[],
   ): void {
     this.maybeGetLocal(name) match {
     | None() -> void
-    | Some(
-      otherDef,
-    ) if (
-      !this.locals.containsKey(name.value) &&
-      pendingBindings.contains(otherDef.pos)
-    ) ->
-      // An inner binding remains distinct from a future outer declaration.
-      // Pre-reservation must not turn that valid reuse into a redeclaration.
-      void
     | Some(otherDef) ->
       tcenvb.error(
         Array[
@@ -327,211 +105,10 @@ mutable class Scope{
     this.!refs[name.value] = LocalRef(
       ty,
       ty,
-      hasDeclaredContract,
+      isAnnotated,
       isInitialized,
       isMutable,
     )
-  }
-
-  // Only for names already reserved in this scope. Initialization
-  // establishes the projected contract; it is not an assignment to the
-  // inaccessible placeholder type used during reservation.
-  mutable fun initializeReservedBinding(
-    name: Name,
-    ty: TType,
-    hasDeclaredContract: Bool = true,
-    isInitialized: Bool = true,
-  ): void {
-    ref = this.refs.get(name.value);
-    this.!refs[name.value] = ref with {
-      type => ty,
-      declaredType => ty,
-      isInitialized,
-      hasDeclaredContract,
-    }
-  }
-
-  // A direct object alias shares its source's lasting contents contract, not
-  // just the source's current field refinements. Scalar/callable snapshots
-  // without fields copy stable values and retain their narrower type.
-  mutable fun inheritAliasContract(alias: Name, source: Name): void {
-    this.maybeGetRef(source.value) match {
-    | Some(
-      (_, sourceRef),
-    ) if (sourceRef.hasDeclaredContract && !sourceRef.type.isFieldFree()) ->
-      aliasRef = this.refs.get(alias.value);
-      this.!refs[alias.value] = aliasRef with {
-        declaredType => sourceRef.declaredType,
-        hasDeclaredContract => true,
-        hasFieldRefinement => sourceRef.hasFieldRefinement,
-      }
-    | _ -> void
-    }
-  }
-
-  // Use an existing contract when this binding inherited one from an alias.
-  // Otherwise the completed initialization shape is the first-use contract.
-  readonly fun objectContentsContract(name: Name): TType {
-    ref = this.maybeGetRef(name.value).fromSome().i1;
-    if (ref.hasDeclaredContract) ref.declaredType else ref.type
-  }
-
-  // Install the binding's shared first-use contract in the current scope.
-  // A callback's first read must forget enclosing flow facts; refinements
-  // already made against a contract in this scope remain valid.
-  mutable fun establishObjectContract(name: Name, contract: TType): void {
-    this.maybeGetRef(name.value) match {
-    | Some((_, ref)) if (!ref.hasDeclaredContract) ->
-      this.!refs[name.value] = ref with {
-        type => if (this.isThroughFunction(name)) contract else ref.type,
-        declaredType => contract,
-        hasDeclaredContract => true,
-      }
-    | _ -> void
-    }
-  }
-
-  mutable fun markFieldRefinement(name: Name): void {
-    this.maybeGetRef(name.value) match {
-    | Some((_, ref)) ->
-      this.!refs[name.value] = ref with {hasFieldRefinement => true}
-    | None() -> void
-    }
-  }
-
-  readonly fun hasFieldRefinement(name: Name): Bool {
-    this.maybeGetRef(name.value)
-      .map(pair -> pair.i1.hasFieldRefinement)
-      .default(false)
-  }
-
-  readonly fun hasDeclaredContract(name: Name): Bool {
-    this.maybeGetRef(name.value)
-      .map(pair -> pair.i1.hasDeclaredContract)
-      .default(false)
-  }
-
-  // An annotated direct alias must promise stable contents, rather than
-  // turning a temporary field refinement into a lasting read guarantee.
-  readonly fun stableAliasType(
-    name: Name,
-    currentType: TType,
-    subst: mutable Subst,
-    tenv: TEnv,
-  ): ?TType {
-    this.maybeGetRef(name.value).map(pair ->
-      // A distributed receiver call checks only its selected branch.
-      (pair.i1 with {type => currentType}).stableContentsType(subst, tenv, true)
-    )
-  }
-
-  readonly fun mayBeReassignedByCall(name: Name): Bool {
-    this.maybeGetRef(name.value)
-      .map(pair ->
-        pair.i1.isMutable &&
-          this.isCapturedBinding(name.value) &&
-          !this.captureNeverWritten(name.value)
-      )
-      .default(false)
-  }
-
-  readonly fun callWriteBounds(): SortedMap<String, TType> {
-    bounds = SortedMap[];
-    for (entry in this.visibleRefs().items()) {
-      ref = entry.i1;
-      if (
-        this.hasCaptureContract(entry.i0, ref) &&
-        this.mayBeReassignedByCall(Name(ref.type.pos, entry.i0))
-      ) {
-        !bounds = bounds.set(entry.i0, ref.declaredType)
-      }
-    };
-    bounds
-  }
-
-  // A property write may affect any visible object alias. Restore object
-  // contents from lasting contracts, while retaining current primitive
-  // alternatives: changing a field cannot turn a non-null reference into null.
-  // Do not reset inferred objects to an initial type their writes may outgrow.
-  mutable fun forgetObjectRefinements(
-    subst: mutable Subst,
-    tenv: TEnv,
-    hasStableContents: Name -> Bool,
-  ): void {
-    for (entry in this.visibleRefs().items()) {
-      ref = entry.i1;
-      if (
-        ref.hasDeclaredContract &&
-        hasStableContents(Name(ref.type.pos, entry.i0)) &&
-        ref.type != ref.declaredType &&
-        !ref.type.isFieldFree()
-      ) {
-        this.!refs[entry.i0] = ref with {
-          type => ref.stableContentsType(subst, tenv),
-        }
-      }
-    }
-  }
-
-  // Repeated reads must cover every value a loop may write. A fresh condition
-  // or body check can narrow again, but a pre-loop fact is not an invariant.
-  // Unknown write summaries conservatively include every visible binding.
-  mutable fun widenLoopBindings(
-    writes: ?SortedSet<String>,
-  ): SortedMap<String, TType> {
-    entryValues = SortedMap[];
-    for (entry in this.visibleRefs().items()) {
-      ref = entry.i1;
-      if (
-        ref.isMutable &&
-        ref.hasDeclaredContract &&
-        writes.map(names -> names.contains(entry.i0)).default(true)
-      ) {
-        if (ref.declaredType.isConcretePrimitive()) {
-          !entryValues[entry.i0] = ref.type
-        };
-        this.!refs[entry.i0] = ref with {type => ref.declaredType}
-      }
-    };
-    entryValues
-  }
-
-  // The invariant used inside a loop may be broader than any value actually
-  // stored. Recover scalar exit precision from entry values and runtime writes.
-  // Object contents need alias/effect tracking and are deliberately excluded.
-  mutable fun limitLoopExit(
-    subst: mutable Subst,
-    tenv: TEnv,
-    bounds: readonly Map<String, TType>,
-  ): void {
-    for (entry in bounds.items()) {
-      this.maybeGetRef(entry.i0).each(pair ->
-        this.!refs[entry.i0] = pair.i1 with {
-          type => TType::inter(subst, tenv, pair.i1.type, entry.i1),
-        }
-      )
-    }
-  }
-
-  // Every binding visible from this scope, innermost shadowing outer, as a
-  // flat map for refinement invalidation.
-  readonly fun visibleRefs(): SortedMap<String, LocalRef> {
-    acc = this.up match {
-    | None() -> SortedMap[]
-    | Some(up) -> up.visibleRefs()
-    };
-    // Export the same capture view used by lookup, not creation-time flow
-    // refinements from an enclosing mutable binding.
-    if (this.isFunction) {
-      for (kv in acc.items()) {
-        ref = kv.i1;
-        !acc = acc.set(kv.i0, this.captureView(kv.i0, ref))
-      }
-    };
-    for (kv in this.refs.items()) {
-      !acc = acc.set(kv.i0, kv.i1)
-    };
-    acc
   }
 
   // Every binding visible from this scope, innermost shadowing outer. Used
@@ -610,29 +187,10 @@ mutable class Scope{
     }
   }
 
-  // Runtime writes must respect binding immutability. Flow refinements and
-  // declaration initialization use set/initializeReservedBinding separately.
-  readonly fun checkWritable(name: Name): void {
-    this.maybeGetRef(name.value) match {
-    | Some((_, ref)) if (!ref.isMutable) ->
-      fatalError(
-        Array[
-          (
-            name.pos,
-            `Cannot assign to '${name.value}' because it is a constant`,
-          ),
-        ],
-        TSCode(2588),
-      )
-    | _ -> void
-    }
-  }
-
   mutable fun set(
     name: Name,
     ty: TType,
     isSubType: (TType, TType) -> void,
-    runtimeWrite: Bool = false,
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
     | None() ->
@@ -642,55 +200,33 @@ mutable class Scope{
       )
     | Some(x) -> x
     };
-    // Every runtime write preserves the binding's retained contract, even
-    // when no closure captures it. Concrete contracts cannot change kind;
-    // an open inference variable collects writes in that same variable,
-    // and a sealed one checks them against its established bound.
-    // Object initialization can grow a reference's shape without replacing
-    // the binding. Preserve its existing first-use contract discipline;
-    // runtimeWrite distinguishes assignments from that construction work.
-    // Flow-only callers supply a no-op checker.
-    if (
-      runtimeWrite ||
-      this.hasCaptureContract(name.value, upRef) ||
-      this.isThroughFunction(name)
-    ) {
+    if (upRef.isAnnotated) {
+      // An explicit type annotation is a hard constraint: every write must
+      // satisfy the declared type, wherever it happens. The value still narrows
+      // the binding for later reads in this frame, but it may not escape the
+      // annotation.
       isSubType(ty, upRef.declaredType);
-    };
-    if (
-      throughLoop &&
-      !this.hasCaptureContract(name.value, upRef) &&
-      !this.isThroughFunction(name)
-    ) {
-      // Retain the existing loop-entry restriction for unsealed bindings.
+    } else if (this.isThroughFunction(name)) {
+      // An un-annotated binding's inferred type evolves on same-frame writes,
+      // but a write that escapes the current function (a captured
+      // enclosing-function local written from inside a lambda) may run at an
+      // arbitrary later time, so its narrowing cannot be trusted: check it
+      // against the (widened) inferred type. A bare `let x = null`/`undefined`
+      // has an unresolved type variable as its type and widens like TS's
+      // evolving `any`, so such an escaping write is always allowed.
+      if (upRef.declaredType.getSingleVar().isNone()) {
+        isSubType(ty, upRef.declaredType);
+      }
+    } else if (throughLoop) {
       isSubType(ty, upRef.type);
     };
     this.!refs[name.value] = LocalRef(
       ty,
       upRef.declaredType,
-      upRef.hasDeclaredContract,
+      upRef.isAnnotated,
       true,
       upRef.isMutable,
-      upRef.hasFieldRefinement,
     );
-  }
-
-  // Capture and loop entry use the declared contract. A write cannot let
-  // those views forget that an assigned method may be omitted by copying.
-  mutable fun preserveAssignedCopyProvenance(
-    tenv: TEnv,
-    subst: mutable Subst,
-    name: Name,
-    source: TType,
-  ): void {
-    ref = this.refs.get(name.value);
-    this.!refs[name.value] = ref with {
-      declaredType => tenv.preserveCopyProvenance(
-        subst,
-        source,
-        ref.declaredType,
-      ),
-    }
   }
 
   readonly fun escapingRefs(): mutable Iterator<NameRef> {
@@ -730,15 +266,10 @@ mutable class Scope{
       (_, curRef) = this.maybeGetRef(nameRef.name).fromSome();
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, nameRef.ref.type, curRef.type),
-        tenv.preserveCopyProvenance(
-          subst,
-          nameRef.ref.declaredType,
-          curRef.declaredType,
-        ),
-        curRef.hasDeclaredContract,
+        curRef.declaredType,
+        curRef.isAnnotated,
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
-        curRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }
@@ -813,15 +344,10 @@ mutable class Scope{
       (_, curRef) = this.maybeGetRef(kv.i0).fromSome();
       this.!refs[kv.i0] = LocalRef(
         TType::union(subst, tenv, kv.i1.type, curRef.type),
-        tenv.preserveCopyProvenance(
-          subst,
-          kv.i1.declaredType,
-          curRef.declaredType,
-        ),
-        curRef.hasDeclaredContract,
+        curRef.declaredType,
+        curRef.isAnnotated,
         kv.i1.isInitialized && curRef.isInitialized,
         curRef.isMutable,
-        curRef.hasFieldRefinement || kv.i1.hasFieldRefinement,
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
@@ -839,10 +365,9 @@ mutable class Scope{
           this.!refs[nameRef.name] = LocalRef(
             nameRef.ref.type,
             nameRef.ref.declaredType,
-            nameRef.ref.hasDeclaredContract,
+            nameRef.ref.isAnnotated,
             false,
             nameRef.ref.isMutable,
-            nameRef.ref.hasFieldRefinement,
           )
         | _ -> void
         }
@@ -866,11 +391,10 @@ mutable class Scope{
       | Some((_, cur)) ->
         this.!refs[kv.i0] = LocalRef(
           TType::union(subst, tenv, cur.type, kv.i1),
-          tenv.preserveCopyProvenance(subst, kv.i1, cur.declaredType),
-          cur.hasDeclaredContract,
+          cur.declaredType,
+          cur.isAnnotated,
           cur.isInitialized,
           cur.isMutable,
-          true, // The write log carries types without refinement provenance.
         )
       | None() -> void
       }
@@ -900,15 +424,10 @@ mutable class Scope{
       };
       snap![nameRef.name] = LocalRef(
         TType::union(subst, tenv, cur.type, nameRef.ref.type),
-        tenv.preserveCopyProvenance(
-          subst,
-          nameRef.ref.declaredType,
-          cur.declaredType,
-        ),
-        cur.hasDeclaredContract,
+        cur.declaredType,
+        cur.isAnnotated,
         cur.isInitialized,
         cur.isMutable,
-        cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }
@@ -955,26 +474,18 @@ mutable class Scope{
       // Every path that leaves the binding alone — a scope that does not touch
       // it, or the untouched path — contributes the same parent value, so it is
       // unioned in once rather than once per such path.
-      declaredType = upRef.declaredType;
       untouched = untouchedPath;
       tyOpt: ?TType = None();
       isInitialized = true;
-      hasFieldRefinement = false;
       for (scope in scopes) {
         scope.escapingRef(name) match {
         | Some(ref) ->
-          !declaredType = tenv.preserveCopyProvenance(
-            subst,
-            ref.declaredType,
-            declaredType,
-          );
           !tyOpt = Some(
             tyOpt match {
             | None() -> ref.type
             | Some(ty) -> TType::union(subst, tenv, ty, ref.type)
             },
           );
-          !hasFieldRefinement = hasFieldRefinement || ref.hasFieldRefinement;
           !isInitialized = isInitialized && ref.isInitialized
         | None() -> !untouched = true
         }
@@ -984,16 +495,14 @@ mutable class Scope{
       ty = tyOpt.fromSome();
       if (untouched) {
         !ty = TType::union(subst, tenv, ty, upRef.type);
-        !hasFieldRefinement = hasFieldRefinement || upRef.hasFieldRefinement;
         !isInitialized = isInitialized && upRef.isInitialized
       };
       this.!refs[name] = LocalRef(
         ty,
-        declaredType,
-        upRef.hasDeclaredContract,
+        upRef.declaredType,
+        upRef.isAnnotated,
         isInitialized,
         upRef.isMutable,
-        hasFieldRefinement,
       )
     }
   }
@@ -1017,35 +526,23 @@ mutable class Scope{
         (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
         this.!refs[nameRef.name] = LocalRef(
           TType::union(subst, tenv, upRef.type, nameRef.ref.type),
-          tenv.preserveCopyProvenance(
-            subst,
-            nameRef.ref.declaredType,
-            upRef.declaredType,
-          ),
-          upRef.hasDeclaredContract,
+          upRef.declaredType,
+          upRef.isAnnotated,
           upRef.isInitialized,
           upRef.isMutable,
-          upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
         )
       | Both(nameRef1, nameRef2) ->
-        // Value contracts belong to the binding. Copy provenance may have
-        // accumulated on either branch and must survive alongside that contract.
+        // Only the narrowed type and the initialization state differ between
+        // the branches. How the binding was declared does not: both branches
+        // narrow the same binding, so take it from the binding itself rather
+        // than from one arbitrary branch.
         (_, upRef) = this.maybeGetRef(nameRef1.name).fromSome();
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
-          tenv.preserveCopyProvenance(
-            subst,
-            nameRef2.ref.declaredType,
-            tenv.preserveCopyProvenance(
-              subst,
-              nameRef1.ref.declaredType,
-              upRef.declaredType,
-            ),
-          ),
-          upRef.hasDeclaredContract,
+          upRef.declaredType,
+          upRef.isAnnotated,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
-          nameRef1.ref.hasFieldRefinement || nameRef2.ref.hasFieldRefinement,
         )
       }
     })
@@ -1063,15 +560,10 @@ mutable class Scope{
       (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, upRef.type, nameRef.ref.type),
-        tenv.preserveCopyProvenance(
-          subst,
-          nameRef.ref.declaredType,
-          upRef.declaredType,
-        ),
-        upRef.hasDeclaredContract,
+        upRef.declaredType,
+        upRef.isAnnotated,
         upRef.isInitialized,
         upRef.isMutable,
-        upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }

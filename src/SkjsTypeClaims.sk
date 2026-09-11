@@ -17,7 +17,16 @@ module SKJS;
 /* The claims. */
 /***************************************************************************/
 
-class TypeClaimVar(name: String, type: TType)
+// `isMutable` and `declaredType` come straight from the scope's own `LocalRef`
+// (src/TypeCheckScope.sk): `declaredType` is `None` when it equals the
+// narrowed `type`, since it then carries nothing beyond what `type` already
+// says.
+class TypeClaimVar(
+  name: String,
+  type: TType,
+  isMutable: Bool,
+  declaredType: ?TType,
+)
 
 // The environment SKJS held on entry to the statement at `pos`.
 class TypeClaimEnv(pos: PosRange, vars: Array<TypeClaimVar>)
@@ -36,6 +45,10 @@ class FunTypeClaims(
   retType: TType,
   envs: Array<TypeClaimEnv>,
   exprs: Array<TypeClaimExpr>,
+  // The write side of `exprs`: the type SKJS assigned to the same span read
+  // as an assignment target or a binding pattern (`exprTypes`'s `isLValue`
+  // key), rather than as a value.
+  lvalues: Array<TypeClaimExpr>,
   // Snapshot at successful completion or a body error that aborts checking.
   // Export reads existing bounds; it cannot solve, seal or grow inference variables.
   substValues: SortedMap<TVarID, SubstValue>,
@@ -82,6 +95,22 @@ fun buildFunTypeClaims(
   for (kv in byPos.items()) {
     exprs.push(TypeClaimExpr(kv.i0, kv.i1))
   };
+  // The same most-precise-wins merge, for the `isLValue` entries.
+  byPosL = SortedMap<PosRange, TType>[];
+  for (kv in tcenv.exprTypes.items()) {
+    if (kv.i0.i2 && !kv.i0.i1) {
+      !byPosL = byPosL.set(kv.i0.i0, kv.i1)
+    }
+  };
+  for (kv in tcenv.exprTypes.items()) {
+    if (kv.i0.i2 && kv.i0.i1) {
+      !byPosL = byPosL.set(kv.i0.i0, kv.i1)
+    }
+  };
+  lvalues = mutable Vector<TypeClaimExpr>[];
+  for (kv in byPosL.items()) {
+    lvalues.push(TypeClaimExpr(kv.i0, kv.i1))
+  };
   visits = SortedMap<PosRange, Bool>[];
   for (pos in tcenv.claimedExprVisits) {
     !visits[pos] = true
@@ -102,6 +131,7 @@ fun buildFunTypeClaims(
     retType,
     tcenv.claimedEnvs.toArray(),
     exprs.toArray(),
+    lvalues.toArray(),
     tcenv.subst.values,
     aborted,
     tcenv.results.errors.size() > errorsBefore,
@@ -174,13 +204,15 @@ fun claimPushAtoms(
       }
     }
   | obj @ TObject _ ->
-    if (obj.unexpandedType.isSome()) {
-      "unexpanded-type"
-    } else if (records) {
+    if (records) {
       // Branches are alternatives, preserved as separate union atoms. Never
       // emit a partial union when any branch cannot be represented. A branch
       // that fails both readings reports the reason of the reading its shape
       // asks for: a callable branch is a function, anything else a cell.
+      // A class instance's branches export like any other object's: the
+      // class it names in `unexpandedType` is display information, and its
+      // shape is already expanded here. Whether an instance may be read as a
+      // plain cell is the source gate's decision.
       branches = obj.getBranches();
       reason = if (branches.isEmpty()) "no-object-branch" else "";
       for (fields in branches) {
@@ -238,6 +270,11 @@ fun claimTypeJsonBounded(
       } else if (ty.getSingleInst().isSome()) {
         claimUnavailable("unexpanded-named-type")
       } else if (ty.getSingleInter().isSome()) {
+        // A conjunction of two object types is merged by TObject::inter
+        // (src/TTypeInter.sk) before it can reach export, and an unexpanded
+        // TInter survives only around an unbound inference variable, which
+        // the surface never leaves open. So no export carries a conjunction
+        // to write as `and`, and this refusal is what remains.
         claimUnavailable("unexpanded-intersection")
       } else {
         claimUnavailable("unexpanded-type")
@@ -558,26 +595,45 @@ fun funTypeClaimsJson(
               (
                 "vars",
                 jsonArr(
-                  e.vars.map(v ->
-                    jsonObj(
+                  e.vars.map(v -> {
+                    base = Array[
+                      ("name", jsonStr(v.name)),
+                      ("mutable", if (v.isMutable) "true" else "false"),
+                      (
+                        "type",
+                        claimTypeAtJson(
+                          v.type,
+                          fc.substValues,
+                          Array[
+                            ("kind", jsonStr("entry")),
+                            ("pos", claimPosJson(e.pos, symbols)),
+                            ("binding", jsonStr(v.name)),
+                          ],
+                          unavailable,
+                        ),
+                      ),
+                    ];
+                    declared = v.declaredType match {
+                    | Some(d) ->
                       Array[
-                        ("name", jsonStr(v.name)),
                         (
-                          "type",
+                          "declared",
                           claimTypeAtJson(
-                            v.type,
+                            d,
                             fc.substValues,
                             Array[
-                              ("kind", jsonStr("entry")),
+                              ("kind", jsonStr("declared")),
                               ("pos", claimPosJson(e.pos, symbols)),
                               ("binding", jsonStr(v.name)),
                             ],
                             unavailable,
                           ),
                         ),
-                      ],
-                    )
-                  ),
+                      ]
+                    | None() -> Array[]
+                    };
+                    jsonObj(base.concat(declared))
+                  }),
                 ),
               ),
             ],
@@ -599,6 +655,30 @@ fun funTypeClaimsJson(
                   fc.substValues,
                   Array[
                     ("kind", jsonStr("expression")),
+                    ("pos", claimPosJson(x.pos, symbols)),
+                  ],
+                  unavailable,
+                ),
+              ),
+            ],
+          )
+        ),
+      ),
+    ),
+    (
+      "lvalues",
+      jsonArr(
+        fc.lvalues.map(x ->
+          jsonObj(
+            Array[
+              ("pos", claimPosJson(x.pos, symbols)),
+              (
+                "type",
+                claimTypeAtJson(
+                  x.type,
+                  fc.substValues,
+                  Array[
+                    ("kind", jsonStr("lvalue")),
                     ("pos", claimPosJson(x.pos, symbols)),
                   ],
                   unavailable,

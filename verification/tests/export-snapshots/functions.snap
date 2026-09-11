@@ -3,5 +3,5 @@
 ## functions [complete unverified normal]
 params: f: (boolean) => null [construct=unknown array=unknown]; g: (unavailable: function-arity); h: (unavailable: function-optional-parameter); k: (unavailable: function-arity); m: (unavailable: cell-field-name); n: (unavailable: nested-object-type)
 result: null
-entry 214-225: f: (boolean) => null [construct=unknown array=unknown]; g: (unavailable: function-arity); h: (unavailable: function-optional-parameter); k: (unavailable: function-arity); m: (unavailable: cell-field-name); n: (unavailable: nested-object-type); this: (unavailable: void-type)
+entry 214-225: f!: (boolean) => null [construct=unknown array=unknown]; g!: (unavailable: function-arity); h!: (unavailable: function-optional-parameter); k!: (unavailable: function-arity); m!: (unavailable: cell-field-name); n!: (unavailable: nested-object-type); this: (unavailable: void-type)
 expr 221-225 `null`: null

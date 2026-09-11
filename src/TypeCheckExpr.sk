@@ -420,7 +420,6 @@ extension class TypeChecker {
     // one: its statements have already run when the fallthrough is what reached
     // this block. See `Scope::uniteFallenInto`.
     fallenFrom: ?readonly Scope = None(),
-    reservedStatements: Array<Stmt> = Array[],
   ): (readonly Scope, StmtTermination) {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
@@ -432,95 +431,15 @@ extension class TypeChecker {
     // After `cond`: the fallthrough entry is a separate way in, so its values
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
-    this.reserveBlockBindings(tcenv, reservedStatements);
-    term = this.blockStatements(tcenv, stmts);
+    // Checking a statement also answers how it ends; the block's termination
+    // folds the answers left to right, where `then` stops accumulating once
+    // control cannot reach the next statement — which is still checked.
+    term = StmtTermination::skip;
+    for (st in stmts) {
+      !term = term.then(this.stmt(tcenv, st))
+    };
     tcenv.!scope = scopeCopy;
     (scope, term)
-  }
-
-  // Shared by ordinary and exception-handling blocks. Reserve lexical
-  // identities before checking any statement; retain source execution order.
-  fun blockStatements(
-    tcenv: mutable TCEnv,
-    stmts: Array<Stmt>,
-  ): StmtTermination {
-    this.reserveBlockBindings(tcenv, stmts);
-    term = StmtTermination::skip;
-    for (stmt in stmts) {
-      !term = term.then(this.stmt(tcenv, stmt))
-    };
-    term
-  }
-
-  // Only direct declarations belong to this block; nested scopes reserve
-  // their own names when entered. Conditions have already been checked.
-  fun reserveBlockBindings(tcenv: mutable TCEnv, stmts: Array<Stmt>): void {
-    for (stmt in stmts) {
-      stmt.value match {
-      | Bind(kind, bindings) ->
-        for (binding in bindings) {
-          this.reserveBindingNames(
-            tcenv,
-            binding.pat,
-            TType::top(binding.pat.pos),
-            !(kind is BKConst()),
-          )
-        }
-      | _ -> void
-      }
-    }
-  }
-
-  // Defaults may be skipped. Local defaults merge their effects with the
-  // untouched path; parameter initialization keeps its separate contract scope.
-  fun bindingDefaultType(
-    tcenv: mutable TCEnv,
-    expr: Expr,
-    isConst: Bool,
-    isParameter: Bool,
-  ): TType {
-    savedScope = tcenv.scope;
-    defaultScope = tcenv.mcreateSubScope{isLoop => false};
-    tcenv.!scope = defaultScope;
-    currentType = this.expr(tcenv, expr, isConst);
-    type = this.stableAliasExprType(tcenv, expr, currentType);
-    tcenv.!scope = savedScope;
-    if (!isParameter) {
-      tcenv.mergeScopes(this, Array[defaultScope], true)
-    };
-    type
-  }
-
-  // Defaulting reads the source value before replacing undefined. Resolve
-  // inferred candidates in the live substitution so subtraction sees their
-  // members and later growth respects the read. Keep the default's own
-  // undefined member, if any, by adding it only after subtraction.
-  fun defaultedValueType(
-    tcenv: mutable TCEnv,
-    sourceType: TType,
-    defaultType: TType,
-  ): TType {
-    ArrayLitTyping::establishLiteralForms(
-      tcenv.subst,
-      this,
-      sourceType,
-      TType::top(sourceType.pos),
-      Some(Covariant()),
-    );
-    sourceRead = this.materializeReadContext<TType>(
-      tcenv,
-      sourceType.pos,
-      context -> context.expand(sourceType, Some(Covariant())),
-      (scratch, readEnv) ->
-        sourceType.expand(scratch, readEnv, Some(Covariant()))
-      ,
-    );
-    TType::union(
-      tcenv.subst,
-      this,
-      TType::removeUndefined(tcenv.subst, this, sourceRead),
-      defaultType,
-    )
   }
 
   fun bind(
@@ -528,11 +447,9 @@ extension class TypeChecker {
     kind: BindKind,
     pat: Pattern,
     type: TType,
-    hasDeclaredContract: Bool,
+    isAnnotated: Bool,
     isInitialized: Bool,
     isLocalObject: Bool,
-    isParameter: Bool = false,
-    stableType: ?TType = None(),
   ): void {
     pos = pat.pos;
     pat.value match {
@@ -542,57 +459,37 @@ extension class TypeChecker {
         // bindings get distinct entries (no stale reuse).
         tcenv.localObjects![local.pos] = LOCanGrow(None())
       };
-      if (tcenv.pendingBindings.contains(local.pos)) {
-        tcenv.scope.initializeReservedBinding(
-          local,
-          type,
-          hasDeclaredContract,
-          isInitialized,
-        );
-        tcenv.!pendingBindings = tcenv.pendingBindings.remove(local.pos)
-      } else {
-        tcenv.scope.bind(
-          tcenv,
-          local,
-          type,
-          hasDeclaredContract,
-          isInitialized,
-          !(kind is BKConst()),
-        )
-      }
+      tcenv.scope.bind(
+        tcenv,
+        local,
+        type,
+        isAnnotated,
+        isInitialized,
+        !(kind is BKConst()),
+      )
     | PArray(arrPat, rest) ->
-      // Iterator acquisition, advancement, and closing can invoke user code.
-      tcenv.invalidateCallEffects(this);
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
-      stypes.flatMap(s ->
-        s.destructuringElements(tcenv.subst, this, arrPat.size())
-      ) match {
+      stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
       | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
-          tcenv.invalidateCallEffects(this);
           arrPat[i] match {
           | None() -> /* skipped element */ void
           | Some((eltPat, Some(defaultExpr))) ->
             eltType = tyl[i];
-            defaultType = this.bindingDefaultType(
-              tcenv,
-              defaultExpr,
-              kind is BKConst(),
-              isParameter,
-            );
+            defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
             undefined = TType::single(TPrimUnit(TUndefined(), defaultExpr.pos));
-            canBeUndefined = this.materializeSubtypeDecision(
-              tcenv,
-              defaultExpr.pos,
+            canBeUndefined = TType::isSub(
+              tcenv.subst.clone(),
+              this,
               undefined,
               eltType,
-            );
-            isAlwaysUndefined = this.materializeSubtypeDecision(
-              tcenv,
-              defaultExpr.pos,
+            ) is STOk();
+            isAlwaysUndefined = TType::isSub(
+              tcenv.subst.clone(),
+              this,
               eltType,
               undefined,
-            );
+            ) is STOk();
             if (!canBeUndefined) {
               tcenv.warning(
                 Array[
@@ -616,7 +513,12 @@ extension class TypeChecker {
               )
             };
             boundType = if (canBeUndefined) {
-              this.defaultedValueType(tcenv, eltType, defaultType)
+              TType::union(
+                tcenv.subst,
+                this,
+                TType::removeUndefined(tcenv.subst, this, eltType),
+                defaultType,
+              )
             } else {
               eltType
             };
@@ -625,10 +527,9 @@ extension class TypeChecker {
               kind,
               eltPat,
               boundType,
-              hasDeclaredContract,
+              isAnnotated,
               isInitialized,
               false,
-              isParameter,
             )
           | Some((eltPat, None())) ->
             this.bind(
@@ -636,10 +537,9 @@ extension class TypeChecker {
               kind,
               eltPat,
               tyl[i],
-              hasDeclaredContract,
+              isAnnotated,
               isInitialized,
               false,
-              isParameter,
             )
           };
         };
@@ -664,25 +564,19 @@ extension class TypeChecker {
         };
         rest match {
         | Some(restName) ->
-          restType = this.tupleUnionRestType(
-            tcenv,
-            stypes,
+          restType = TType::tuple(
             restName.pos,
-            arrPat.size(),
-          ) match {
-          | Some(restType) -> restType
-          | None() ->
-            TType::tuple(restName.pos, tyl.slice(arrPat.size()), false)
-          };
+            tyl.slice(arrPat.size()),
+            false,
+          );
           this.bind(
             tcenv,
             kind,
             Pattern(restName.pos, PVar(restName)),
             restType,
-            hasDeclaredContract,
+            isAnnotated,
             isInitialized,
             false,
-            isParameter,
           )
         | None() -> void
         }
@@ -704,26 +598,24 @@ extension class TypeChecker {
             )
           };
           for (i in Range(0, arrPat.size())) {
-            tcenv.invalidateCallEffects(this);
             arrPat[i] match {
             | None() -> void
             | Some((eltPat, Some(defaultExpr))) ->
-              defaultType = this.bindingDefaultType(
-                tcenv,
-                defaultExpr,
-                kind is BKConst(),
-                isParameter,
+              defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
+              boundType = TType::union(
+                tcenv.subst,
+                this,
+                TType::removeUndefined(tcenv.subst, this, eltType),
+                defaultType,
               );
-              boundType = this.defaultedValueType(tcenv, eltType, defaultType);
               this.bind(
                 tcenv,
                 kind,
                 eltPat,
                 boundType,
-                hasDeclaredContract,
+                isAnnotated,
                 isInitialized,
                 false,
-                isParameter,
               )
             | Some((eltPat, None())) ->
               optionalEltType = TType::unionUndefined(
@@ -737,10 +629,9 @@ extension class TypeChecker {
                 kind,
                 eltPat,
                 optionalEltType,
-                hasDeclaredContract,
+                isAnnotated,
                 isInitialized,
                 false,
-                isParameter,
               )
             }
           };
@@ -755,10 +646,9 @@ extension class TypeChecker {
               kind,
               Pattern(restName.pos, PVar(restName)),
               restType,
-              hasDeclaredContract,
+              isAnnotated,
               isInitialized,
               false,
-              isParameter,
             )
           | None() -> void
           }
@@ -774,8 +664,7 @@ extension class TypeChecker {
             TSCode(2461),
           )
         }
-      };
-      tcenv.invalidateCallEffects(this)
+      }
 
     | PObject{fields => objectFields, rest} ->
       fieldsToRemoveForRest = rest match {
@@ -783,234 +672,127 @@ extension class TypeChecker {
       | Some(_name) ->
         SortedSet::createFromItems(objectFields.map(f -> f.i0.value))
       };
-      // Bind each field once in source order, not once per type alternative.
-      // Defaults can mutate the retained source object before later reads.
-      branches = this.bindingObjectBranches(tcenv, type, pos);
-      stableBranches = stableType
-        .map(ty -> this.bindingObjectBranches(tcenv, ty, pos, false))
-        .default(branches);
-      sawDefault = false;
-      for (field in objectFields) {
-        (fieldName, fieldPat, fieldDefault) = field;
-        // Earlier scalar reads are snapshots. After a possible default effect,
-        // use the original object's contract, not a re-evaluated source name.
-        readBranches = if (sawDefault) stableBranches else branches;
-        stableFieldType = TType::bottom(fieldName.pos);
-        for (fields in stableBranches) {
-          fieldType = fields.maybeGet(fieldName.value) match {
-          | None() -> TType::top(fieldName.pos)
-          | Some(fd) ->
-            if (fd.isOptional) {
-              TType::union(
-                tcenv.subst,
-                this,
-                fd.get,
-                TType::single(TPrimUnit(TUndefined(), fieldName.pos)),
-              )
-            } else {
-              fd.get
-            }
-          };
-          !stableFieldType = TType::union(
-            tcenv.subst,
-            this,
-            stableFieldType,
-            fieldType,
-          )
-        };
-        defaultOpt = fieldDefault.map(e -> {
-          (
-            e.pos,
-            this.bindingDefaultType(tcenv, e, kind is BKConst(), isParameter),
-          )
-        });
-        defaultIsUseless = fieldDefault.map(e -> e.pos);
-        typeForField = TType::bottom(fieldName.pos);
-        for (fields in readBranches) {
-          fields.maybeGet(fieldName.value) match {
-          | None() ->
-            // The key is absent, so a default is the ONLY thing that can
-            // fire at runtime — it is not useless (#799). The 2339 error
-            // below already covers the misuse.
-            !defaultIsUseless = None();
-            tcenv.error(
-              Array[
-                (
-                  fieldName.pos,
-                  `Property '${TypePp::escapeName(
-                    fieldName.value,
-                  )}' does not exist on this type`,
-                ),
-                (type.pos, `Out of ${this.ppType(tcenv, type)}`),
-              ],
-              TSCode(2339),
-            )
-          | Some(tfield) ->
-            this.checkFieldAccess(tcenv, tfield, fieldName.pos);
-            undefined = (pos) -> TType::single(TPrimUnit(TUndefined(), pos));
-            union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);
-            !typeForField = union(
-              typeForField,
-              defaultOpt match {
-              | Some((defaultPos, defaultType)) ->
-                if (
-                  tfield.isOptional ||
-                  this.materializeSubtypeDecision(
-                    tcenv,
-                    defaultPos,
-                    undefined(defaultPos),
-                    tfield.get,
-                  )
-                ) {
-                  !defaultIsUseless = None();
-                  this.defaultedValueType(tcenv, tfield.get, defaultType)
-                } else {
-                  tfield.get
-                }
-              | None() ->
-                if (tfield.isOptional) {
-                  union(tfield.get, undefined(tfield.pos))
-                } else {
-                  tfield.get
-                }
-              },
-            )
-          }
-        };
-        defaultIsUseless match {
-        | None() -> void
-        | Some(defaultPos) ->
-          tcenv.warning(
-            Array[
-              (
-                defaultPos,
-                "This default is unreachable because the field cannot be 'undefined'",
-              ),
-            ],
-            SKJSCode(2063),
-          )
-        };
-        fieldContract = if (
-          !typeForField.isFieldFree() ||
-          this.patternHasDefault(fieldPat)
-        ) {
-          Some(
-            defaultOpt match {
-            | None() -> stableFieldType
-            | Some((_, defaultType)) ->
-              this.defaultedValueType(tcenv, stableFieldType, defaultType)
-            },
-          )
-        } else {
-          None()
-        };
-        // Saving the field retains an alias to its object contents. Nested
-        // patterns keep the current read type until they actually bind a value.
-        boundType = if (fieldPat.value is PVar _) {
-          fieldContract
-            .map(contract ->
-              typeForField.withStableContents(tcenv.subst, this, contract, true)
-            )
-            .default(typeForField)
-        } else {
-          typeForField
-        };
-        this.bind(
-          tcenv,
-          kind,
-          fieldPat,
-          this.extractedMethodType(tcenv.subst, boundType),
-          hasDeclaredContract,
-          isInitialized,
-          false,
-          isParameter,
-          fieldContract,
-        );
-        !sawDefault =
-          sawDefault ||
-          fieldDefault.isSome() ||
-          this.patternHasDefault(fieldPat)
-      };
-
-      rest.each(name -> {
-        restBranches = if (sawDefault) stableBranches else branches;
-        copiedBranches = mutable Vector<TFields>[];
-        for (fields in restBranches) {
-          copiedBranches.push(
-            this.stablePropertyCopyFields(
-              tcenv,
-              fields.removeFields(fieldsToRemoveForRest),
-              stableType.flatMap(ty -> if (ty == type) None() else Some(ty)),
-            ),
-          )
-        };
-        this.bind(
-          tcenv,
-          kind,
-          Pattern(name.pos, PVar(name)),
-          if (copiedBranches.isEmpty()) {
-            TType::bottom(type.pos)
-          } else {
-            TType::single(TObject::createFromBranches(copiedBranches, type.pos))
-          },
-          hasDeclaredContract,
-          isInitialized,
-          false,
-          isParameter,
+      type.getSTypes(tcenv.subst, this, Covariant()) match {
+      | None() ->
+        fatalError(
+          Array[
+            (pos, "Cannot use object-destructuring on this type"),
+            (type.pos, `This is ${this.ppType(tcenv, type)}`),
+          ],
+          SKJSCode(2035),
         )
-      })
-    }
-  }
-
-  private fun bindingObjectBranches(
-    tcenv: mutable TCEnv,
-    type: TType,
-    pos: PosRange,
-    requireObject: Bool = true,
-  ): Array<TFields> {
-    branches = mutable Vector<TFields>[];
-    type.getSTypes(tcenv.subst, this, Covariant()) match {
-    | None() ->
-      fatalError(
-        Array[
-          (pos, "Cannot use object-destructuring on this type"),
-          (type.pos, `This is ${this.ppType(tcenv, type)}`),
-        ],
-        SKJSCode(2035),
-      )
-    | Some(stypes) ->
-      for (stype in stypes) {
-        stype match {
-        | obj @ TObject _ -> branches.extend(obj.getBranches())
-        | TPrim _ if (!requireObject) ->
-          // The actual read has already established an object reference.
-          // Its contents contract must not reintroduce primitive alternatives.
-          void
-        | _ ->
-          fatalError(
-            Array[
-              (pos, "Cannot use object-destructuring on this type"),
-              (type.pos, `This is ${this.ppType(tcenv, type)}`),
-            ],
-            SKJSCode(2035),
+      | Some(stypes) ->
+        for (stype in stypes) {
+          (branches, typeForRest) = stype match {
+          | tobj @ TObject(_, _, _) ->
+            (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
+          | _ ->
+            fatalError(
+              Array[
+                (pos, "Cannot use object-destructuring on this type"),
+                (type.pos, `This is ${this.ppType(tcenv, type)}`),
+              ],
+              SKJSCode(2035),
+            )
+          };
+          for (field in objectFields) {
+            (fieldName, fieldPat, fieldDefault) = field;
+            defaultOpt = fieldDefault.map(e ->
+              (e.pos, this.expr(tcenv, e, kind is BKConst()))
+            );
+            defaultIsUseless = fieldDefault.map(e -> e.pos);
+            typeForField = TType::bottom(fieldName.pos);
+            for (fields in branches) {
+              fields.maybeGet(fieldName.value) match {
+              | None() ->
+                // The key is absent, so a default is the ONLY thing that can
+                // fire at runtime — it is not useless (#799). The 2339 error
+                // below already covers the misuse.
+                !defaultIsUseless = None();
+                tcenv.error(
+                  Array[
+                    (
+                      fieldName.pos,
+                      `Property '${TypePp::escapeName(
+                        fieldName.value,
+                      )}' does not exist on this type`,
+                    ),
+                    (type.pos, `Out of ${this.ppType(tcenv, type)}`),
+                  ],
+                  TSCode(2339),
+                )
+              | Some(tfield) ->
+                this.checkFieldAccess(tcenv, tfield, fieldName.pos);
+                undefined = (pos) ->
+                  TType::single(TPrimUnit(TUndefined(), pos));
+                union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);
+                !typeForField = union(
+                  typeForField,
+                  defaultOpt match {
+                  | Some((defaultPos, defaultType)) ->
+                    if (
+                      tfield.isOptional ||
+                      TType::isSub(
+                        tcenv.subst.clone(),
+                        this,
+                        undefined(defaultPos),
+                        tfield.get,
+                      ) is STOk()
+                    ) {
+                      !defaultIsUseless = None();
+                      union(
+                        TType::removeUndefined(tcenv.subst, this, tfield.get),
+                        defaultType,
+                      )
+                    } else {
+                      tfield.get
+                    }
+                  | None() ->
+                    if (tfield.isOptional) {
+                      union(tfield.get, undefined(tfield.pos))
+                    } else {
+                      tfield.get
+                    }
+                  },
+                )
+              }
+            };
+            defaultIsUseless match {
+            | None() -> void
+            | Some(defaultPos) ->
+              tcenv.warning(
+                Array[
+                  (
+                    defaultPos,
+                    "This default is unreachable because the field cannot be 'undefined'",
+                  ),
+                ],
+                SKJSCode(2063),
+              )
+            };
+            this.bind(
+              tcenv,
+              kind,
+              fieldPat,
+              typeForField,
+              isAnnotated,
+              isInitialized,
+              false,
+            )
+          };
+          rest.each(name ->
+            this.bind(
+              tcenv,
+              kind,
+              Pattern(name.pos, PVar(name)),
+              TType::single(typeForRest),
+              isAnnotated,
+              isInitialized,
+              false,
+            )
           )
         }
       }
-    };
-    branches.toArray()
-  }
-
-  private fun patternHasDefault(pat: Pattern): Bool {
-    pat.value match {
-    | PVar _ -> false
-    | PArray(elements, _) ->
-      elements.any(elt ->
-        elt
-          .map(pair -> pair.i1.isSome() || this.patternHasDefault(pair.i0))
-          .default(false)
-      )
-    | PObject{fields, rest => _} ->
-      fields.any(field -> field.i2.isSome() || this.patternHasDefault(field.i1))
     }
   }
 
@@ -1047,25 +829,13 @@ extension class TypeChecker {
         // initializer is already reported above). If the declared type
         // accepts `undefined`, that read is a genuine member of the type, so
         // exempt it from the used-before-assigned check (TS2454's carve-out).
-        // A typeof annotation can contain an open inferred field candidate.
-        // Finalize its head candidates (including the ordinary unknown
-        // default) in the owner before observing the initialization decision.
-        // Keep the original type so a provisional literal cannot lose its
-        // selector before the observation sees it.
-        ArrayLitTyping::establishLiteralForms(
-          tcenv.subst,
-          this,
-          ty,
-          TType::top(pos),
-          Some(Covariant()),
-        );
         undefinedTy = TType::single(TPrimUnit(TUndefined(), pos));
-        isInitialized = this.materializeSubtypeDecision(
-          tcenv,
-          pos,
+        isInitialized = TType::isSub(
+          tcenv.subst.clone(),
+          this,
           undefinedTy,
           ty,
-        );
+        ) is STOk();
         (ty, isInitialized)
       }
     | Some(e) ->
@@ -1082,17 +852,14 @@ extension class TypeChecker {
       | _ -> ty
       };
       type match {
-      | None() ->
-        (tcenv.stableExprTypes.maybeGet((e.pos, ty)).default(ty), true)
+      | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        aliasType = this.stableAliasExprType(tcenv, e, ty);
-        !annot = this.preserveCopyProvenance(tcenv.subst, aliasType, annot);
         this.checkSubType(
           tcenv,
           annotAst.pos,
           "Type of value is not assignable to the variable's type annotation",
-          aliasType,
+          ty,
           annot,
           TSCode(2322),
         );
@@ -1871,10 +1638,9 @@ extension class TypeChecker {
     ty1: TType,
     ty2: TType,
   ): void {
-    // A diagnostic check ("always false/true?"), not a type assignment: it
-    // runs on a detached diagnostic computation, so the relations it consults
-    // neither grow type variables nor publish an accepted judgment.
-    subst = tcenv.subst.diagnosticComputation();
+    // Clone subst: this is a diagnostic check ("always false/true?"), not a
+    // type assignment. It should not grow type variables.
+    subst = tcenv.subst.clone();
     ty1.getSTypes(subst, this, Covariant()) match {
     | Some(stypes1) if (!stypes1.isEmpty()) ->
       ty2.getSTypes(subst, this, Covariant()) match {
@@ -1985,10 +1751,7 @@ extension class TypeChecker {
     pos: PosRange,
   ): TType {
     if (!args.isEmpty()) {
-      // Rendering state only. The shown expression is still evaluated in the
-      // real checker below, in the same order, so the intrinsic reports the
-      // type the program actually gets.
-      subst = tcenv.subst.diagnosticComputation();
+      subst = tcenv.subst.clone();
       exprTy = this.expr(tcenv, args[0], true);
       max_depth = 10;
       actual = if (expand) {
@@ -2003,7 +1766,7 @@ extension class TypeChecker {
         rawPrettyPrint(
           false,
           pp -> pp.type(0, Margin{max_depth}, exprTy),
-          subst.bindingsForExport(),
+          subst.values,
           this.verbose,
         )
       };
@@ -2067,21 +1830,6 @@ extension class TypeChecker {
       )
     | None() ->
       ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
-      e.value match {
-      | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, _)
-      | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, _) ->
-        void
-      | Call _
-      | New _
-      | InstanceOf _ ->
-        tcenv.invalidateCallEffects(this)
-      | Await _ ->
-        !ty = this.stableAliasExprType(tcenv, e, ty);
-        tcenv.invalidateCallEffects(this)
-      | _ -> void
-      };
-      tcenv.validateHiddenEscapes();
-      tcenv.!exprEffectEpochs[e.pos] = tcenv.effectEpoch;
       tcenv.!exprTypes[key] = ty;
       ty
     };
@@ -2238,9 +1986,7 @@ extension class TypeChecker {
         growableFieldOrigin: ?TVarOrigin = None();
         (name, ty) = efield match {
         | FDNormal(name, y) ->
-          currentType = this.expr(tcenv, y, true);
-          // The slot is fresh, but an object stored in it may remain aliased.
-          ttype = this.stableAliasExprType(tcenv, y, currentType);
+          ttype = this.expr(tcenv, y, true);
           // A field value is routed through a growable field type variable so
           // a precise inferred type can widen to a non-literal declared field
           // type under the invariant subtyping a mutable field requires. This
@@ -2300,11 +2046,6 @@ extension class TypeChecker {
 
         | FDSpread(spreadExpr) ->
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-          stableSpreadTy = this.stableAliasExprType(
-            tcenv,
-            spreadExpr,
-            spreadTy,
-          );
           // Collect the source branches to distribute over. `{ ...(A | B) }`
           // is `(spread A) | (spread B)`: each object arm contributes its
           // TObject branches. A union arm that is a primitive spreading to a
@@ -2328,18 +2069,7 @@ extension class TypeChecker {
             invalid = false;
             for (stype in sTypes.values()) {
               stype match {
-              | obj @ TObject _ ->
-                sourceBranches.extend(
-                  obj.getBranches().map(fields ->
-                    this.stablePropertyCopyFields(
-                      tcenv,
-                      fields,
-                      if (stableSpreadTy == spreadTy) None() else {
-                        Some(stableSpreadTy)
-                      },
-                    )
-                  ),
-                )
+              | obj @ TObject _ -> sourceBranches.extend(obj.getBranches())
               | TPrimUnit(TVoid(), _)
               | TPrimValue(TString(), _, _) ->
                 !invalid = true
@@ -2476,8 +2206,7 @@ extension class TypeChecker {
           continue
         | FDComputed(keyExpr, valueExpr) ->
           keyType = this.expr(tcenv, keyExpr, true);
-          currentType = this.expr(tcenv, valueExpr, mostPrecise);
-          valueTy = this.stableAliasExprType(tcenv, valueExpr, currentType);
+          valueTy = this.expr(tcenv, valueExpr, mostPrecise);
           keyType
             .getSTypes(tcenv.subst, this, Covariant())
             .flatMap(stypes -> stypes.singleElt())
@@ -2666,16 +2395,7 @@ extension class TypeChecker {
           | None() -> fatalError(errorArgs, TSCode(2349))
           }
         };
-        this.call(
-          tcenv,
-          pos,
-          tfuns,
-          normTargs,
-          args,
-          mostPrecise,
-          thisArgOpt,
-          ValidateTypeArguments(),
-        )
+        this.call(tcenv, pos, tfuns, normTargs, args, mostPrecise, thisArgOpt)
       };
       // When the callee is `e1.field` / `e1[idx]`, capture the receiver so the
       // method's `this` is checked against it. For a (non-optional) union
@@ -2695,24 +2415,11 @@ extension class TypeChecker {
         accessKind: AccessKind,
       ) -> {
         e1Ty = this.expr(tcenv, e1, mostPrecise);
-        stableReceiver = this.stableAliasExprType(tcenv, e1, e1Ty);
         idxTy = this.expr(tcenv, idx, true);
-        !e1Ty = this.indexedReadReceiver(tcenv, e1Ty, stableReceiver, idx);
         resolve = (recv: TType, ak: AccessKind) ->
           this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
-        callOn = (recv: TType) -> {
-          stableBranch = if (stableReceiver == e1Ty) {
-            this.stableAliasExprType(tcenv, e1, recv)
-          } else {
-            // Distribution and optional chaining select a branch of the
-            // expression's current type. Its metadata is keyed by the whole
-            // type, so project that contract onto the selected branch using
-            // the same rule as a narrowed local: retain stable object fields
-            // and current primitive alternatives (including null removal).
-            recv.withStableContents(tcenv.subst, this, stableReceiver, true)
-          };
-          dispatchCall(resolve(recv, AKNormal()), Some(stableBranch))
-        };
+        callOn = (recv: TType) ->
+          dispatchCall(resolve(recv, AKNormal()), Some(recv));
         distributeOver = (stypes: STypes) ->
           TType::unionN(
             tcenv.subst,
@@ -2736,24 +2443,18 @@ extension class TypeChecker {
               // warning.
               resolve(e1Ty, accessKind)
             } else {
-              // A nullish receiver skips argument evaluation too. Keep the
-              // call result, but merge argument effects with that skipped path.
-              savedScope = tcenv.scope;
-              callScope = tcenv.mcreateSubScope{isLoop => false};
-              tcenv.!scope = callScope;
-              calledType = distributeOver(definedSTypes);
-              tcenv.!scope = savedScope;
-              tcenv.popScope(this, callScope);
-              TType::unionUndefined(tcenv.subst, this, calledType, pos)
+              TType::unionUndefined(
+                tcenv.subst,
+                this,
+                distributeOver(definedSTypes),
+                pos,
+              )
             }
           | _ ->
             // Receiver is never nullish (or Top): the `?.` does not change the
             // call. Defer to the normal resolution, which emits the "unnecessary
             // `?.`" warning and the member error/call exactly as before.
-            dispatchCall(
-              resolve(e1Ty, accessKind),
-              Some(this.stableAliasExprType(tcenv, e1, e1Ty)),
-            )
+            dispatchCall(resolve(e1Ty, accessKind), Some(e1Ty))
           }
         } else {
           maybeStypes match {
@@ -2831,8 +2532,6 @@ extension class TypeChecker {
         c = this.getClass(tcenv.subst, className);
         if (targsAst.size() == 0) {
           !tArgs = this.makeTArgsOf(tcenv.subst, c, className)
-        } else {
-          this.validateExplicitTypeArgs(tcenv, className.pos, tArgs, c.tparams)
         };
         cstr = this.newConstructorOf(tcenv.subst, c, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
@@ -2845,16 +2544,7 @@ extension class TypeChecker {
         | Some(obj @ TObject _) ->
           obj.maybeGetNew(tcenv.subst, this) match {
           | Some(f) ->
-            this.call(
-              tcenv,
-              pos,
-              f,
-              tArgs,
-              args,
-              mostPrecise,
-              None(),
-              ValidateTypeArguments(),
-            )
+            this.call(tcenv, pos, f, tArgs, args, mostPrecise, None())
           | None() ->
             fatalError(
               Array[
@@ -2883,37 +2573,8 @@ extension class TypeChecker {
 
     | Get(arr, idx) ->
       objOrArray = this.expr(tcenv, arr, mostPrecise);
-      stableReceiver = if (isLValue) objOrArray else {
-        this.stableAliasExprType(tcenv, arr, objOrArray)
-      };
       accessKind = if (isLValue) AKLValue() else AKNormal();
-      idxType = this.expr(tcenv, idx, true);
-      if (!isLValue) {
-        !objOrArray = this.indexedReadReceiver(
-          tcenv,
-          objOrArray,
-          stableReceiver,
-          idx,
-        )
-      };
-      result = this.getWithIndexType(
-        tcenv,
-        pos,
-        objOrArray,
-        idxType,
-        idx.pos,
-        accessKind,
-      );
-      if (isLValue) result else {
-        this.propertyReadType(
-          tcenv,
-          pos,
-          objOrArray,
-          stableReceiver,
-          idxType,
-          result,
-        )
-      }
+      this.get(tcenv, pos, objOrArray, idx, accessKind)
 
     // We always interpret `[]` as an array, not a tuple.
     // Because an empty tuple is not very meaningful.
@@ -2929,15 +2590,8 @@ extension class TypeChecker {
           xEltTy = x.value match {
           | Spread(spreadExpr) ->
             spreadTy = this.expr(tcenv, spreadExpr, true);
-            this.getValueType(
-              tcenv,
-              x.pos,
-              this.stableAliasExprType(tcenv, spreadExpr, spreadTy),
-              "spread",
-            )
-          | _ ->
-            ty = this.expr(tcenv, x, mostPrecise);
-            this.stableAliasExprType(tcenv, x, ty)
+            this.getValueType(tcenv, x.pos, spreadTy, "spread")
+          | _ -> this.expr(tcenv, x, mostPrecise)
           };
           !eltType = TType::union(tcenv.subst, this, eltType, xEltTy)
         };
@@ -2947,10 +2601,9 @@ extension class TypeChecker {
           tcenv,
           pos,
           arr.map(x -> {
-            currentType = this.expr(tcenv, x, mostPrecise);
-            ty = this.stableAliasExprType(tcenv, x, currentType);
+            ty = this.expr(tcenv, x, mostPrecise);
             if (x.value is Object _ || ty.isConcretePrimitive()) {
-              this.makeBoundTVarForContextualElement(
+              this.makeBoundTVarForLiteralCommitment(
                 tcenv,
                 ty,
                 FromArrayElement(x.pos),
@@ -3052,50 +2705,47 @@ extension class TypeChecker {
       | (false, OptionalDot()) -> AKOptionalChain()
       | (false, NormalDot()) -> AKNormal()
       };
-      receiverType = this.expr(tcenv, e1, mostPrecise);
-      stableReceiver = if (isLValue) receiverType else {
-        this.stableAliasExprType(tcenv, e1, receiverType)
-      };
-      result = this.dot(tcenv, e1.pos, receiverType, fieldName, accessKind);
-      if (isLValue) result else {
-        this.propertyReadType(
-          tcenv,
-          pos,
-          receiverType,
-          stableReceiver,
-          FKName(fieldName, TString()).toType(),
-          result,
-        )
-      }
+      this.dot(
+        tcenv,
+        e1.pos,
+        this.expr(tcenv, e1, mostPrecise),
+        fieldName,
+        accessKind,
+      )
 
     | Binop(op, e1, e2) ->
       op match {
       | BOAddition() ->
-        this.arithmeticRhs(
-          tcenv,
-          pos,
-          true,
-          e1.pos,
-          this.expr(tcenv, e1, true),
-          e2,
-        )
+        ty1 = this.expr(tcenv, e1, true);
+        ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+          stypes.singleElt()
+        ) match {
+        | Some(TPrimValue(k @ TNum(), _, primPos))
+        | Some(TPrimValue(k @ TString(), _, primPos))
+        | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
+          ty2 = this.expr(tcenv, e2, true);
+          res = TType::single(TPrimValue::full(k, primPos));
+          this.checkSubType(
+            tcenv,
+            e2.pos,
+            "Right operand of '+' is not assignable to the left operand's type",
+            ty2,
+            res,
+            TSCode(2365),
+          );
+          res
+        | _ ->
+          fatalError(
+            Array[
+              (pos, "Operator '+' cannot be applied to these types"),
+              (e1.pos, `For an object of type: ${this.ppType(tcenv, ty1)}`),
+            ],
+            TSCode(2365),
+          )
+        }
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
         ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
-        // The assignment expression returns its RHS, independently of the
-        // target's contract. Preserve that value's stable alias type before
-        // a property write invalidates the scope's transient field facts.
-        tcenv.!stableExprTypes[(pos, ty)] = this.stableAliasExprType(
-          tcenv,
-          e2,
-          this.lookupExprType(tcenv, e2),
-        );
-        e1.value match {
-        | Dot _
-        | Get _ ->
-          tcenv.forgetObjectRefinements(this)
-        | _ -> void
-        };
         // Record the assignment target's type. The `Var` and local-object
         // field-write branches of `assign` never typecheck `e1` themselves, so
         // this is the only place their lvalue type is recorded (the CFG builder
@@ -3115,7 +2765,6 @@ extension class TypeChecker {
         | BOLogicalOr() -> ("||", false)
         };
         ty1 = this.expr(tcenv, e1, true);
-        stable1 = this.stableAliasExprType(tcenv, e1, ty1);
         // The left operand is truthiness-tested, so it is checked per the
         // truthiness mode.
         this.checkCondition(
@@ -3129,7 +2778,6 @@ extension class TypeChecker {
         tcenv.!scope = branch2;
         this.evalCond(tcenv, e1, continuationTarget);
         ty2 = this.expr(tcenv, e2, true);
-        stable2 = this.stableAliasExprType(tcenv, e2, ty2);
         tcenv.!scope = savedScope;
         tcenv.popScope(this, branch2);
         // In `boolean` mode the operator must produce a boolean, so the right
@@ -3159,14 +2807,7 @@ extension class TypeChecker {
           this,
           !continuationTarget,
         );
-        this.composeSelectionType(
-          tcenv,
-          pos,
-          e1Part,
-          ty2,
-          stable1.truthinessValuePart(tcenv.subst, this, !continuationTarget),
-          stable2,
-        )
+        TType::union(tcenv.subst, this, e1Part, ty2)
 
       | BOLessThan()
       | BOLessThanOrEqual()
@@ -3209,32 +2850,11 @@ extension class TypeChecker {
         TType::single(TPrimValue::boolean(pos))
 
       | BOOpAssignment(assOp) ->
-        assOp match {
-        | BOLogicalAnd()
-        | BOLogicalOr()
-        | BONullishCoalescing() ->
-          this.compoundLogical(
-            tcenv,
-            pos,
-            assOp is BONullishCoalescing(),
-            assOp is BOLogicalAnd(),
-            e1,
-            e2,
-          )
-        | BOAddition()
-        | BOExponentiation()
-        | BOMultiplication()
-        | BODivision()
-        | BORemainder()
-        | BOSubtraction()
-        | BOBitwiseAnd()
-        | BOBitwiseOr()
-        | BOBitwiseXor()
-        | BOLeftShift()
-        | BOSignedRightShift()
-        | BOZeroFilledRightShift() ->
-          this.compoundArithmetic(tcenv, pos, assOp is BOAddition(), e1, e2)
-        }
+        this.expr(
+          tcenv,
+          Expr(pos, Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2)))),
+          mostPrecise,
+        )
 
       | BOExponentiation()
       | BOMultiplication()
@@ -3247,14 +2867,34 @@ extension class TypeChecker {
       | BOLeftShift()
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
-        this.arithmeticRhs(
+        ty1 = this.expr(tcenv, e1, true);
+        kind1 = this.checkIsNumeric(
           tcenv,
-          pos,
-          false,
           e1.pos,
-          this.expr(tcenv, e1, true),
-          e2,
-        )
+          "This operator requires a numeric operand",
+          ty1,
+        );
+        ty2 = this.expr(tcenv, e2, true);
+        kind2 = this.checkIsNumeric(
+          tcenv,
+          e2.pos,
+          "This operator requires a numeric operand",
+          ty2,
+        );
+        if (kind1 != kind2) {
+          fatalError(
+            Array[
+              (
+                pos,
+                "Arithmetic operations require both operands to be the same numeric type",
+              ),
+              (e1.pos, `Left operand is ${kind1}`),
+              (e2.pos, `Right operand is ${kind2}`),
+            ],
+            TSCode(2365),
+          )
+        };
+        TType::single(TPrimValue::full(kind1, pos))
 
       | BONullishCoalescing() ->
         (_isValid, ty1WithoutNullish) = this.exprWithoutNullish(
@@ -3264,44 +2904,12 @@ extension class TypeChecker {
           mostPrecise,
           false,
         );
-        stable1 = this.stableAliasExprType(
-          tcenv,
-          e1,
-          this.lookupExprType(tcenv, e1),
-        );
-        stable1WithoutNullish = TType::removeUndefined(
-          tcenv.subst,
-          this,
-          TType::removeConstant(
-            tcenv.subst,
-            this,
-            stable1,
-            TPrimUnit(TNull(), pos),
-          ),
-        );
-        // The fallback runs only when the left value is nullish. Preserve
-        // its expression type, but merge its writes with the skipped path,
-        // just as for the right operand of && or ||.
-        savedScope = tcenv.scope;
-        fallbackScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = fallbackScope;
         ty2 = this.expr(tcenv, e2, mostPrecise);
-        stable2 = this.stableAliasExprType(tcenv, e2, ty2);
-        tcenv.!scope = savedScope;
-        tcenv.popScope(this, fallbackScope);
-        this.composeSelectionType(
-          tcenv,
-          pos,
-          ty1WithoutNullish,
-          ty2,
-          stable1WithoutNullish,
-          stable2,
-        )
+        TType::union(tcenv.subst, this, ty1WithoutNullish, ty2)
       }
 
     | InstanceOf(e1, e2) ->
-      lhsTy = this.expr(tcenv, e1, true);
-      stableLhs = this.stableAliasExprType(tcenv, e1, lhsTy);
+      _ = this.expr(tcenv, e1, true);
       // The RHS must be a value that is constructable or callable (a class,
       // function, or other Function-like value). A type-only interface used
       // here is already reported as TS2693 by typechecking it as a value.
@@ -3317,13 +2925,6 @@ extension class TypeChecker {
           TSCode(2359),
         )
       };
-      this.validateInstanceofHook(
-        tcenv,
-        pos,
-        stableLhs,
-        rhsTy,
-        this.stableAliasExprType(tcenv, e2, rhsTy),
-      );
       TType::single(TPrimValue::boolean(pos))
     | In(e1, e2) ->
       t1 = this.expr(tcenv, e1, true);
@@ -3493,8 +3094,6 @@ extension class TypeChecker {
       pop match {
       | PODecr()
       | POIncr() ->
-        tcenv.markForInImpure(pos);
-        this.checkLValue(tcenv, subExpr);
         num = TType::single(TPrimValue::number(pos));
         ty = this.expr(tcenv, subExpr, true);
         this.checkSubType(
@@ -3505,8 +3104,25 @@ extension class TypeChecker {
           num,
           TSCode(2356),
         );
-        setter = this.compoundSetter(tcenv, subExpr);
-        this.writeCapturedTarget(tcenv, subExpr, setter, num);
+        // A `++`/`--` on a plain variable writes it back — the binding holds
+        // `number` afterwards, not whatever it was narrowed to. Route the write
+        // through `Scope::set`, the same path `x = x + 1` takes, so a later read
+        // of a value the binding's type now excludes is caught and so any
+        // write-log hook sees the mutation (SkipLabs/skjs#1017).
+        subExpr.value match {
+        | Var(n) ->
+          tcenv.scope.set(n, num, (x, y) ->
+            this.checkSubType(
+              tcenv,
+              pos,
+              "Type is not assignable to the variable's type",
+              x,
+              y,
+              TSCode(2322),
+            )
+          )
+        | _ -> void
+        };
         num
       | POExcl() ->
         (isValid, tyWithoutNullish) = this.exprWithoutNullish(
@@ -3567,21 +3183,6 @@ extension class TypeChecker {
             )
           }
         };
-        // ! changes reference nullishness, not the lasting contents of an
-        // aliased object. Apply the same null removal to its stable contract.
-        stableOperand = this.stableAliasExprType(
-          tcenv,
-          subExpr,
-          this.lookupExprType(tcenv, subExpr),
-        );
-        tcenv.!stableExprTypes[
-          (pos, tyWithoutNullish),
-        ] = stableOperand.mapSTypes(
-          tcenv.subst,
-          this,
-          Some(Covariant()),
-          stypes -> stypes.map(ss -> ss.filterSTypes(st -> !st.isNullish())),
-        );
         tyWithoutNullish
       }
 
@@ -3616,7 +3217,7 @@ extension class TypeChecker {
         tcenv,
         pos,
         "This 'as' cast is unsound: the source type is not assignable to the target type",
-        this.stableAliasExprType(tcenv, subExpr, inferredTy),
+        inferredTy,
         annot,
         SKJSCode(2003),
       );
@@ -3624,9 +3225,7 @@ extension class TypeChecker {
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
-      // Mandatory validation keeps its inference commitments. Returning
-      // inferredTy instead of annot preserves the inferred result structure,
-      // but writable target fields can still determine literal field types.
+      savedSubst = tcenv.subst.save();
       this.checkSubType(
         tcenv,
         pos,
@@ -3635,13 +3234,7 @@ extension class TypeChecker {
         annot,
         TSCode(1360),
       );
-      // satisfies returns the same value, including its stable contents
-      // contract when that value is aliased.
-      tcenv.!stableExprTypes[(pos, inferredTy)] = this.stableAliasExprType(
-        tcenv,
-        subExpr,
-        inferredTy,
-      );
+      tcenv.subst.restore(savedSubst);
       inferredTy
     | Async _ ->
       fatalError(
@@ -3650,19 +3243,11 @@ extension class TypeChecker {
       )
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
-      // Mixed thenable/non-thenable results retain projected object shapes.
-      // Establish literal representations before those shapes lose their identity.
-      ArrayLitTyping::establishLiteralForms(
-        tcenv.subst,
-        this,
-        aeType,
-        TType::top(pos),
-        Some(Covariant()),
-      );
       // Unwrap the thenable branches and pass the non-thenable parts
       // through unchanged, like the runtime does (and like tsc types it).
-      // Non-thenable parts produce a lint warning; checking continues
-      // with the combined result type.
+      // Non-thenable parts are an error, but a non-fatal one as long as at
+      // least one branch is a thenable: checking continues with the
+      // combined result type.
       resultTys = mutable Vector[];
       hasThenable = false;
       hasNonThenable = false;
@@ -3701,7 +3286,7 @@ extension class TypeChecker {
           }
         }
       };
-      awaitedType = if (!hasThenable) {
+      if (!hasThenable) {
         // `await` of a non-thenable yields the value itself (the runtime and
         // tsc pass it through), so this is a lint concern (`await-thenable`,
         // where SKJS is deliberately stricter than tsc), not a soundness error.
@@ -3725,17 +3310,7 @@ extension class TypeChecker {
           )
         };
         TType::unionN(tcenv.subst, this, pos, resultTys)
-      };
-      stableOperand = this.stableAliasExprType(tcenv, ae, aeType);
-      if (stableOperand != aeType) {
-        // Await can pass an object through unchanged. Flatten the stable
-        // contract too, so an alias cannot retain transient field facts.
-        tcenv.!stableExprTypes[(pos, awaitedType)] = stableOperand
-          .expand(tcenv.subst, this, Some(Covariant()))
-          .maybeAwaited(tcenv.subst, this, pos)
-          .default(TType::top(pos))
-      };
-      awaitedType
+      }
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1, true);
       this.checkCondition(
@@ -3753,7 +3328,6 @@ extension class TypeChecker {
       tcenv.!scope = trueScope;
       this.evalCond(tcenv, e1, true);
       left = this.expr(tcenv, e2, mostPrecise);
-      stableLeft = this.stableAliasExprType(tcenv, e2, left);
       tcenv.!scope = scopeCopy;
 
       // False branch - evaluate e3 with refinements from e1 being false
@@ -3761,21 +3335,9 @@ extension class TypeChecker {
       tcenv.!scope = falseScope;
       this.evalCond(tcenv, e1, false);
       right = this.expr(tcenv, e3, mostPrecise);
-      stableRight = this.stableAliasExprType(tcenv, e3, right);
       tcenv.!scope = scopeCopy;
 
-      // Exactly one branch runs. Retain either branch's writes and establish
-      // definite assignment only when both branches establish it.
-      tcenv.mergeScope(this, trueScope, falseScope);
-
-      this.composeSelectionType(
-        tcenv,
-        pos,
-        left,
-        right,
-        stableLeft,
-        stableRight,
-      )
+      TType::union(tcenv.subst, this, left, right)
     | AsConst(subExpr) ->
       this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> ty
@@ -3823,8 +3385,8 @@ extension class TypeChecker {
 
   // Whether `rhsTy` is a valid `instanceof` right-hand side: every member of
   // the type is a Function-like object (each branch carries a construct or
-  // call signature). A custom membership hook is validated separately below;
-  // non-function objects whose only capability is the hook remain unsupported.
+  // call signature). Mirrors tsc's TS2359 acceptance (modulo
+  // `Symbol.hasInstance`, which SKJS does not model).
   fun isInstanceofRhs(tcenv: mutable TCEnv, rhsTy: TType): Bool {
     rhsTy.getSTypes(tcenv.subst, this, Covariant()) match {
     | None() -> false
@@ -3836,94 +3398,6 @@ extension class TypeChecker {
         }
       )
     }
-  }
-
-  // @@hasInstance is called with the already evaluated LHS and the RHS as
-  // receiver. A nullish optional hook falls back to ordinary membership.
-  private fun validateInstanceofHook(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    lhsTy: TType,
-    rhsTy: TType,
-    stableRhs: TType,
-  ): void {
-    uniqueId = this.getWellKnownSymbolUniqueId(
-      tcenv.subst,
-      pos,
-      "hasInstance",
-    ) match {
-    | Some(id) -> id
-    | None() -> return void
-    };
-    rhsTy.getSTypes(tcenv.subst, this, Covariant()).each(stypes -> {
-      for (stype in stypes) {
-        stype match {
-        | obj @ TObject _ ->
-          for (fields in obj.getBranches()) {
-            fields.maybeGetSymbol(uniqueId).each(field -> {
-              hooks = field.get.getSTypes(
-                tcenv.subst,
-                this,
-                Covariant(),
-              ) match {
-              | Some(types) -> types
-              | None() ->
-                fatalError(
-                  Array[
-                    (
-                      pos,
-                      "The 'Symbol.hasInstance' hook must have a callable signature",
-                    ),
-                  ],
-                  TSCode(2349),
-                )
-              };
-              for (hook in hooks) {
-                if (!hook.isNullish()) {
-                  callable = hook match {
-                  | fn @ TObject _ -> fn.callMode(tcenv.subst, this).i0
-                  | _ -> CUnknown()
-                  };
-                  callable match {
-                  | CPresent(tfuns) ->
-                    _ = this.callWithArgumentTypes(
-                      tcenv,
-                      pos,
-                      tfuns,
-                      Array[],
-                      Vector::mcreateFromItems(Array[lhsTy]),
-                      None(),
-                      Some(
-                        TType::single(
-                          TObject::createSingleBranch(fields, None(), obj.pos),
-                        ).withStableContents(
-                          tcenv.subst,
-                          this,
-                          stableRhs,
-                          true,
-                        ),
-                      ),
-                      ValidateTypeArguments(),
-                    )
-                  | _ ->
-                    fatalError(
-                      Array[
-                        (
-                          pos,
-                          "The 'Symbol.hasInstance' hook must have a callable signature",
-                        ),
-                      ],
-                      TSCode(2349),
-                    )
-                  }
-                }
-              }
-            })
-          }
-        | _ -> void
-        }
-      }
-    })
   }
 
   // The precise type of a direct primitive literal expression, or None for
@@ -3952,9 +3426,7 @@ extension class TypeChecker {
         elt.value match {
         | EArray(nested) if (nested.all(x -> !(x.value is Spread _))) ->
           this.constArrayLit(tcenv, elt.pos, nested)
-        | _ ->
-          ty = this.expr(tcenv, elt, true);
-          this.stableAliasExprType(tcenv, elt, ty)
+        | _ -> this.expr(tcenv, elt, true)
         }
       ),
       true,
@@ -4096,13 +3568,19 @@ extension class TypeChecker {
     body: ClosureBody,
     expectedParamTypes: Array<?TType> = Array[],
   ): TType {
-    firstLocalSkolem = tcenv.subst.skolemCheckpoint();
     static::checkTypeParams(
       tcenv.subst,
       tparams,
       OptionalTypeParamsForbidden(),
     );
     !this = this.addTParams(tcenv.subst, tparams);
+    paramTypes = this.processParams(
+      tcenv,
+      params,
+      tparams,
+      false,
+      expectedParamTypes,
+    );
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -4116,23 +3594,13 @@ extension class TypeChecker {
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
     tcenv.!callingContext = callingContext;
 
-    writes = mutable CaptureWrites{};
-    writes.params(params);
-    writes.body(body);
-    tcenv.scope.setCaptureWrites(writes.result(), writes.capturedNames());
-    paramTypes = this.processParams(
-      tcenv,
-      params,
-      tparams,
-      false,
-      expectedParamTypes,
-    );
+    this.bindParams(tcenv, params, paramTypes);
 
     retType = retTypeAstOpt match {
     | None() ->
       body match {
       | CBExpr(e) ->
-        inferredType = this.returnExprType(tcenv, e);
+        inferredType = this.expr(tcenv, e, true);
         isAsync match {
         | None() -> inferredType
         | Some(asyncPos) ->
@@ -4169,7 +3637,7 @@ extension class TypeChecker {
       tcenv.collectErrors(() ->
         body match {
         | CBExpr(e) ->
-          inferredType = this.returnExprType(tcenv, e);
+          inferredType = this.expr(tcenv, e, true);
           this.checkSubType(
             tcenv,
             e.pos,
@@ -4199,10 +3667,6 @@ extension class TypeChecker {
         }
       );
       annotatedType
-    };
-
-    if (tcenv.subst.skolemCheckpoint() > firstLocalSkolem) {
-      this.checkHiddenBindingEscape(tcenv, pos, firstLocalSkolem, savedScope)
     };
 
     tcenv.!scope = savedScope;
@@ -4256,7 +3720,7 @@ extension class TypeChecker {
     };
 
     funClauses = tparams.map(tparam -> this.makeTParam(tcenv.subst, tparam));
-    signature = TType::single(
+    TType::single(
       TObject::createCall(
         TFuns::singleFun(
           TFun(
@@ -4271,22 +3735,7 @@ extension class TypeChecker {
           pos,
         ),
       ),
-    );
-    // A contextual parameter may carry a candidate owned by a temporary
-    // receiver, absent from the enclosing scope. Explicit typeof annotations
-    // can expose that candidate too. Retain the whole published signature.
-    if (tcenv.subst.skolemCheckpoint() > firstLocalSkolem) {
-      tcenv.registerHiddenEscape(
-        HiddenEscapeCheck(
-          pos,
-          tcenv.subst.skolemIdsSince(firstLocalSkolem),
-          Array[signature],
-          "A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types",
-          2080,
-        ),
-      )
-    };
-    signature
+    )
   }
 
   fun callConstructor(
@@ -4303,257 +3752,7 @@ extension class TypeChecker {
         TSCode(2554),
       )
     | Some(cstr) ->
-      _ = this.call(
-        tcenv,
-        pos,
-        cstr,
-        cstrType.tArgs,
-        args,
-        true,
-        None(),
-        // Written class arguments were checked at new; synthesized ones
-        // must stay open until constructor arguments determine their shape.
-        ProbeTypeArguments(),
-      )
-    }
-  }
-
-  // Shared by closure and loop boundaries: inference may mutate types reachable
-  // from persistent bindings without assigning those bindings directly.
-  fun checkHiddenBindingEscape(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    firstLocalSkolem: Int,
-    enclosingScope: readonly Scope,
-  ): void {
-    if (tcenv.subst.skolemCheckpoint() > firstLocalSkolem) {
-      roots = mutable Vector[];
-      for (entry in enclosingScope.visibleRefs().items()) {
-        roots.push(entry.i1.type);
-        roots.push(entry.i1.declaredType)
-      };
-      tcenv.registerHiddenEscape(
-        HiddenEscapeCheck(
-          pos,
-          tcenv.subst.skolemIdsSince(firstLocalSkolem),
-          roots.toArray(),
-          "A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type",
-          2081,
-        ),
-      )
-    }
-  }
-
-  // A returned alias outlives this frame's field refinements. Record the
-  // expression's current type normally, but infer/check its stable contract.
-  fun returnExprType(tcenv: mutable TCEnv, e: Expr): TType {
-    currentType = this.expr(tcenv, e, true);
-    this.stableAliasExprType(tcenv, e, currentType)
-  }
-
-  // Selection expressions keep separate current-read and stored-alias types.
-  private fun composeSelectionType(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    left: TType,
-    right: TType,
-    stableLeft: TType,
-    stableRight: TType,
-  ): TType {
-    result = TType::union(tcenv.subst, this, left, right);
-    tcenv.!stableExprTypes[(pos, result)] = TType::union(
-      tcenv.subst,
-      this,
-      stableLeft,
-      stableRight,
-    );
-    result
-  }
-
-  // The receiver reference is captured before the key, but its field is read
-  // afterwards. A property write in the key can invalidate those contents;
-  // rebinding a local alone cannot change the already captured reference.
-  private fun indexedReadReceiver(
-    tcenv: mutable TCEnv,
-    receiver: TType,
-    contract: TType,
-    index: Expr,
-  ): TType {
-    writes = mutable CaptureWrites{};
-    writes.expr(index);
-    if (writes.result().isNone() || writes.hasCallEffects) {
-      receiver.withStableContents(tcenv.subst, this, contract, true)
-    } else {
-      receiver
-    }
-  }
-
-  // The ordinary access has already checked presence, visibility, and key
-  // validity. Project only the lasting contents of its result here: a missing
-  // declaration supplies no object-content guarantee, rather than a new error.
-  private fun propertyContentsContract(
-    tcenv: mutable TCEnv,
-    receiver: TType,
-    index: TType,
-  ): TType {
-    pos = index.pos;
-    (
-      receiver.getSTypes(tcenv.subst, this, Covariant()),
-      index.getSTypes(tcenv.subst, this, Covariant()),
-    ) match {
-    | (Some(receivers), Some(indexes)) ->
-      result = TType::bottom(pos);
-      add = ty -> !result = TType::union(tcenv.subst, this, result, ty);
-      for (receiverBranch in receivers) {
-        receiverBranch match {
-        | obj @ TObject _ ->
-          for (fields in obj.getBranches()) {
-            for (indexBranch in indexes) {
-              keys = FieldKey::allOfSType(pos, indexBranch);
-              if (!keys.isEmpty()) {
-                for (key in keys) {
-                  add(
-                    fields
-                      .maybeGetFieldOrIndex(key)
-                      .map(field -> field.get)
-                      .default(TType::top(pos)),
-                  )
-                }
-              } else {
-                indexBranch match {
-                | TPrimValue(kind, None(), _) ->
-                  add(
-                    fields
-                      .nonSyntheticIndexForKeyKind(kind)
-                      .map(field -> field.get)
-                      .default(TType::top(pos)),
-                  );
-                  for (field in fields.namedFieldsForKeyKind(kind)) {
-                    add(field.get)
-                  }
-                | _ -> add(TType::top(pos))
-                }
-              }
-            }
-          }
-        | TPrimUnit(TNull(), _)
-        | TPrimUnit(TUndefined(), _) ->
-          void
-        | TPrim _ -> add(TType::top(pos))
-        }
-      };
-      result
-    | _ -> TType::top(pos)
-    }
-  }
-
-  // Copying allocates the carrier, not the objects referenced by its fields.
-  // Preserve the existing own-property/callability rules, then stabilize only
-  // object contents. Scalar values and property presence remain snapshots.
-  private fun stablePropertyCopyFields(
-    tcenv: mutable TCEnv,
-    fields: TFields,
-    stableSource: ?TType,
-  ): TFields {
-    copied = this.propertyCopyFields(tcenv.subst, fields);
-    stableSource match {
-    | None() -> copied
-    | Some(source) ->
-      project = (field: TField, key: TType) ->
-        if (field.get.isFieldFree()) {
-          field
-        } else {
-          contract = this.extractedMethodType(
-            tcenv.subst,
-            this.propertyContentsContract(tcenv, source, key),
-          );
-          field with {
-            get => field.get.withStableContents(
-              tcenv.subst,
-              this,
-              contract,
-              true,
-            ),
-          }
-        };
-      projectIndex = (field: TField, kind: TPrimValueKind) ->
-        project(field, TType::single(TPrimValue::full(kind, field.pos)));
-      TFields::createFromSorted{
-        fields => SortedMap::createFromItems(
-          copied.fields.toArray().map(field ->
-            (
-              field.name,
-              project(
-                field,
-                FKName(Name(field.pos, field.name.value), TString()).toType(),
-              ),
-            )
-          ),
-        ),
-        symbolFields => SortedMap::createFromItems(
-          copied.symbolFields.toArray().map(field ->
-            (
-              field.name,
-              project(field, FKSymbol(field.pos, field.name.value).toType()),
-            )
-          ),
-        ),
-        tIndexes => TIndexes{
-          stringIndex => copied.stringIndex.map(field ->
-            projectIndex(field, TString())
-          ),
-          numberIndex => copied.numberIndex.map(field ->
-            projectIndex(field, TNum())
-          ),
-          symbolIndex => copied.symbolIndex.map(field ->
-            projectIndex(field, TSymbol())
-          ),
-        },
-        call => copied.call,
-        new => copied.new,
-        isArray => copied.isArray,
-      }
-    }
-  }
-
-  private fun propertyReadType(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    receiver: TType,
-    stableReceiver: TType,
-    index: TType,
-    readType: TType,
-  ): TType {
-    result = this.extractedMethodType(tcenv.subst, readType);
-    if (receiver != stableReceiver && !result.isFieldFree()) {
-      contract = this.extractedMethodType(
-        tcenv.subst,
-        this.propertyContentsContract(tcenv, stableReceiver, index),
-      );
-      tcenv.!stableExprTypes[(pos, result)] = result.withStableContents(
-        tcenv.subst,
-        this,
-        contract,
-        true,
-      )
-    };
-    result
-  }
-
-  // A direct alias must satisfy lasting contracts with stable contents, while
-  // its current expression type may still carry transient read refinements.
-  private fun stableAliasExprType(
-    tcenv: mutable TCEnv,
-    e: Expr,
-    currentType: TType,
-  ): TType {
-    e.value match {
-    | Var(source) if (!(tcenv.localObjectState(source) is Some(LOCanGrow _))) ->
-      tcenv.scope
-        .stableAliasType(source, currentType, tcenv.subst, this)
-        .default(currentType)
-    | _ ->
-      tcenv.stableExprTypes.maybeGet((e.pos, currentType)).default(currentType)
+      _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true, None())
     }
   }
 
@@ -4568,31 +3767,22 @@ extension class TypeChecker {
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      storedType = tcenv.stableExprTypes.maybeGet((e2.pos, ty2)).default(ty2);
-      tcenv.writeVar(this, n, storedType, (x, y) ->
+      tcenv.writeVar(this, n, ty2, (x, y) ->
         this.checkSubType(
           tcenv,
           pos,
           "Type is not assignable to the variable's type",
-          this.stableAliasExprType(tcenv, e2, x),
+          x,
           y,
           TSCode(2322),
         )
       );
-      e2.value match {
-      | Var(source) if (tcenv.scope.hasFieldRefinement(source)) ->
-        tcenv.scope.markFieldRefinement(n)
-      | _ -> void
-      };
       ty2
     | Dot(
       NormalDot(),
       Expr(_, Var(local)),
       fieldName,
-    ) if (
-      tcenv.localObjectState(local).isSome() &&
-      !this.assignmentRebinds(tcenv, local, None(), e2)
-    ) ->
+    ) if (tcenv.localObjectState(local).isSome()) ->
       keyExpr = Expr(fieldName.pos, EString(fieldName.value));
       this.assignLocalObject(
         tcenv,
@@ -4606,10 +3796,7 @@ extension class TypeChecker {
     | Get(
       Expr(_, Var(local)),
       keyExpr,
-    ) if (
-      tcenv.localObjectState(local).isSome() &&
-      !this.assignmentRebinds(tcenv, local, Some(keyExpr), e2)
-    ) ->
+    ) if (tcenv.localObjectState(local).isSome()) ->
       this.assignLocalObject(
         tcenv,
         pos,
@@ -4633,7 +3820,7 @@ extension class TypeChecker {
         tcenv,
         e2.pos,
         "Type is not assignable to the assignment target's type",
-        this.stableAliasExprType(tcenv, e2, ty2),
+        ty2,
         ty1,
         TSCode(2322),
       );
@@ -4689,14 +3876,10 @@ extension class TypeChecker {
     mostPrecise: Bool,
   ): void {
     (targets, restInner) = this.splitRest(tcenv, elements);
-    tcenv.invalidateCallEffects(this);
     stypes = rhsType.getSTypes(tcenv.subst, this, Covariant());
-    stypes.flatMap(s ->
-      s.destructuringElements(tcenv.subst, this, targets.size())
-    ) match {
+    stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
     | Some(tyl) ->
       for (i => elt in targets) {
-        tcenv.invalidateCallEffects(this);
         eltType = if (i < tyl.size()) {
           tyl[i]
         } else {
@@ -4705,7 +3888,6 @@ extension class TypeChecker {
         this.assignElement(tcenv, elt, eltType, mostPrecise)
       };
       restInner.each(inner -> {
-        tcenv.invalidateCallEffects(this);
         // Destructuring a rest allocates a fresh array, so nothing aliases it
         // at the tuple's arity: it can be read as a growable array just as well
         // as a tuple. Type it the way an array literal is typed — delayed, so
@@ -4715,25 +3897,16 @@ extension class TypeChecker {
         // through the array view would break its arity.
         start = min(targets.size(), tyl.size());
         restElts = tyl.slice(start);
-        restType = this.tupleUnionRestType(
-          tcenv,
-          stypes,
-          inner.pos,
-          targets.size(),
-        ) match {
-        | Some(restType) -> restType
-        | None() ->
-          if (restElts.isEmpty()) {
-            eltTvar = this.newTVar(tcenv, inner.pos, FromEmptyArray(inner.pos));
-            TType::inst(Name(inner.pos, "Array"), TArgs(Array[eltTvar]))
-          } else {
-            ArrayLitTyping::typeFromLiteral(
-              tcenv,
-              inner.pos,
-              restElts,
-              restElts.map(_ -> None()),
-            )
-          }
+        restType = if (restElts.isEmpty()) {
+          eltTvar = this.newTVar(tcenv, inner.pos, FromEmptyArray(inner.pos));
+          TType::inst(Name(inner.pos, "Array"), TArgs(Array[eltTvar]))
+        } else {
+          ArrayLitTyping::typeFromLiteral(
+            tcenv,
+            inner.pos,
+            restElts,
+            restElts.map(_ -> None()),
+          )
         };
         this.assignTarget(tcenv, inner, restType, mostPrecise)
       })
@@ -4755,7 +3928,6 @@ extension class TypeChecker {
           )
         };
         for (elt in targets) {
-          tcenv.invalidateCallEffects(this);
           this.assignElement(
             tcenv,
             elt,
@@ -4763,15 +3935,14 @@ extension class TypeChecker {
             mostPrecise,
           )
         };
-        restInner.each(inner -> {
-          tcenv.invalidateCallEffects(this);
+        restInner.each(inner ->
           this.assignTarget(
             tcenv,
             inner,
             TType::inst(Name(inner.pos, "Array"), TArgs(Array[baseElt])),
             mostPrecise,
           )
-        })
+        )
       | _ ->
         fatalError(
           Array[
@@ -4784,27 +3955,7 @@ extension class TypeChecker {
           TSCode(2461),
         )
       }
-    };
-    // IteratorClose may overwrite facts established by the final target.
-    tcenv.invalidateCallEffects(this)
-  }
-
-  private fun tupleUnionRestType(
-    tcenv: mutable TCEnv,
-    stypes: ?STypes,
-    pos: PosRange,
-    start: Int,
-  ): ?TType {
-    stypes
-      .flatMap(s -> s.destructuringRestElement(tcenv.subst, this, start))
-      .map(elt -> {
-        element = if (elt.isBottom()) {
-          this.newTVar(tcenv, pos, FromEmptyArray(pos))
-        } else {
-          elt
-        };
-        TType::inst(Name(pos, "Array"), TArgs(Array[element]))
-      })
+    }
   }
 
   // Assign one destructured element, applying its default first: `[x = d]`
@@ -4816,31 +3967,26 @@ extension class TypeChecker {
     eltType: TType,
     mostPrecise: Bool,
   ): void {
-    elt.value match {
+    (target, targetType) = elt.value match {
     | Binop(BOAssignment(), lhs, defaultExpr) ->
-      // A property reference (including its computed key) is evaluated before
-      // the default. Nested patterns instead evaluate their own targets after
-      // the default has produced the value they destructure.
-      setter = lhs.value match {
-      | Dot _
-      | Get _ ->
-        this.checkLValue(tcenv, lhs);
-        Some(this.expr(tcenv, lhs, false, true))
-      | _ -> None()
-      };
-      defaultType = this.bindingDefaultType(tcenv, defaultExpr, false, false);
-      targetType = this.defaultedValueType(tcenv, eltType, defaultType);
-      setter match {
-      | Some(_) -> this.writeCapturedTarget(tcenv, lhs, setter, targetType)
-      | None() -> this.assignTarget(tcenv, lhs, targetType, mostPrecise)
-      }
-    | _ -> this.assignTarget(tcenv, elt, eltType, mostPrecise)
-    }
+      defaultType = this.expr(tcenv, defaultExpr, false);
+      (
+        lhs,
+        TType::union(
+          tcenv.subst,
+          this,
+          TType::removeUndefined(tcenv.subst, this, eltType),
+          defaultType,
+        ),
+      )
+    | _ -> (elt, eltType)
+    };
+    this.assignTarget(tcenv, target, targetType, mostPrecise)
   }
 
   // Write `valueType` to one destructuring target, routing it through the same
   // path the equivalent single assignment uses: a variable is narrowed and
-  // checked by `TCEnv.writeVar`, a property or index is checked against the type it
+  // checked by `Scope::set`, a property or index is checked against the type it
   // can be set to, and a nested pattern destructures in turn.
   private fun assignTarget(
     tcenv: mutable TCEnv,
@@ -4851,279 +3997,29 @@ extension class TypeChecker {
     this.checkLValue(tcenv, target);
     target.value match {
     | Var(n) ->
-      this.writeCapturedTarget(tcenv, target, None(), valueType);
-      // This path has only the extracted type, not the source expression's
-      // refinement provenance. Conservatively retain field invalidation.
-      tcenv.scope.markFieldRefinement(n)
-    | EArray(nested) ->
-      this.assignArray(tcenv, target.pos, nested, valueType, mostPrecise)
-    | _ ->
-      ty1 = this.expr(tcenv, target, false, true);
-      this.writeCapturedTarget(tcenv, target, Some(ty1), valueType)
-    }
-  }
-
-  // Arithmetic reads the left value before evaluating the RHS. Sharing this
-  // operation lets compound assignments supply a captured read, without
-  // manufacturing a second evaluation of their target.
-  private fun arithmeticRhs(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    addition: Bool,
-    leftPos: PosRange,
-    ty1: TType,
-    e2: Expr,
-  ): TType {
-    if (addition) {
-      ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TPrimValue(k @ TNum(), _, primPos))
-      | Some(TPrimValue(k @ TString(), _, primPos))
-      | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
-        ty2 = this.expr(tcenv, e2, true);
-        res = TType::single(TPrimValue::full(k, primPos));
-        this.checkSubType(
-          tcenv,
-          e2.pos,
-          "Right operand of '+' is not assignable to the left operand's type",
-          ty2,
-          res,
-          TSCode(2365),
-        );
-        res
-      | _ ->
-        fatalError(
-          Array[
-            (pos, "Operator '+' cannot be applied to these types"),
-            (leftPos, `For an object of type: ${this.ppType(tcenv, ty1)}`),
-          ],
-          TSCode(2365),
-        )
-      }
-    } else {
-      kind1 = this.checkIsNumeric(
-        tcenv,
-        leftPos,
-        "This operator requires a numeric operand",
-        ty1,
-      );
-      ty2 = this.expr(tcenv, e2, true);
-      kind2 = this.checkIsNumeric(
-        tcenv,
-        e2.pos,
-        "This operator requires a numeric operand",
-        ty2,
-      );
-      if (kind1 != kind2) {
-        fatalError(
-          Array[
-            (
-              pos,
-              "Arithmetic operations require both operands to be the same numeric type",
-            ),
-            (leftPos, `Left operand is ${kind1}`),
-            (e2.pos, `Right operand is ${kind2}`),
-          ],
-          TSCode(2365),
-        )
-      };
-      TType::single(TPrimValue::full(kind1, pos))
-    }
-  }
-
-  private fun compoundArithmetic(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    addition: Bool,
-    target: Expr,
-    rhs: Expr,
-  ): TType {
-    tcenv.markForInImpure(pos);
-    this.checkLValue(tcenv, target);
-    readType = this.expr(tcenv, target, true);
-    setter = this.compoundSetter(tcenv, target);
-    result = this.arithmeticRhs(
-      tcenv,
-      pos,
-      addition,
-      target.pos,
-      readType,
-      rhs,
-    );
-    this.writeCapturedTarget(tcenv, target, setter, result);
-    result
-  }
-
-  // The receiver and key have already been evaluated by the target read.
-  private fun compoundSetter(tcenv: mutable TCEnv, target: Expr): ?TType {
-    target.value match {
-    | Var _ -> None()
-    | Dot(_, receiver, field) ->
-      Some(
-        this.getWithIndexType(
-          tcenv,
-          target.pos,
-          this.lookupExprType(tcenv, receiver),
-          FKName(field, TString()).toType(),
-          field.pos,
-          AKLValue(),
-        ),
-      )
-    | Get(receiver, index) ->
-      Some(
-        this.getWithIndexType(
-          tcenv,
-          target.pos,
-          this.lookupExprType(tcenv, receiver),
-          this.lookupExprType(tcenv, index),
-          index.pos,
-          AKLValue(),
-        ),
-      )
-    | _ ->
-      fatalError(
-        Array[(target.pos, "Invalid compound assignment target")],
-        TSCode(2364),
-      )
-    }
-  }
-
-  private fun writeCapturedTarget(
-    tcenv: mutable TCEnv,
-    target: Expr,
-    setter: ?TType,
-    result: TType,
-  ): void {
-    target.value match {
-    | Var(name) ->
-      tcenv.writeVar(this, name, result, (value, contract) ->
+      tcenv.writeVar(this, n, valueType, (x, y) ->
         this.checkSubType(
           tcenv,
           target.pos,
           "Type is not assignable to the variable's type",
-          value,
-          contract,
+          x,
+          y,
           TSCode(2322),
         )
       )
+    | EArray(nested) ->
+      this.assignArray(tcenv, target.pos, nested, valueType, mostPrecise)
     | _ ->
+      ty1 = this.expr(tcenv, target, false, true);
       this.checkSubType(
         tcenv,
         target.pos,
         "Type is not assignable to the assignment target's type",
-        result,
-        setter.fromSome(),
+        valueType,
+        ty1,
         TSCode(2322),
-      );
-      tcenv.forgetObjectRefinements(this)
+      )
     }
-  }
-
-  private fun compoundLogical(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    nullish: Bool,
-    continuationTarget: Bool,
-    target: Expr,
-    rhs: Expr,
-  ): TType {
-    tcenv.markForInImpure(pos);
-    this.checkLValue(tcenv, target);
-    skipped = if (nullish) {
-      this.exprWithoutNullish(pos, tcenv, target, true, false).i1
-    } else {
-      readType = this.expr(tcenv, target, true);
-      this.checkCondition(
-        tcenv,
-        pos,
-        readType,
-        if (continuationTarget) {
-          "Operand of '&&' must be of type 'boolean'"
-        } else {
-          "Operand of '||' must be of type 'boolean'"
-        },
-      );
-      readType.truthinessValuePart(tcenv.subst, this, !continuationTarget)
-    };
-    stable = this.stableAliasExprType(
-      tcenv,
-      target,
-      this.lookupExprType(tcenv, target),
-    );
-    stableSkipped = if (nullish) {
-      TType::removeUndefined(
-        tcenv.subst,
-        this,
-        TType::removeConstant(
-          tcenv.subst,
-          this,
-          stable,
-          TPrimUnit(TNull(), pos),
-        ),
-      )
-    } else {
-      stable.truthinessValuePart(tcenv.subst, this, !continuationTarget)
-    };
-    setter = this.compoundSetter(tcenv, target);
-    savedScope = tcenv.scope;
-    branch = tcenv.mcreateSubScope{isLoop => false};
-    tcenv.!scope = branch;
-    if (!nullish) this.evalCond(tcenv, target, continuationTarget);
-    rhsType = this.expr(tcenv, rhs, true);
-    stableRhs = this.stableAliasExprType(tcenv, rhs, rhsType);
-    if (!nullish && this.truthiness is TBoolean()) {
-      this.checkCondition(
-        tcenv,
-        rhs.pos,
-        rhsType,
-        if (continuationTarget) {
-          "Operand of '&&' must be of type 'boolean'"
-        } else {
-          "Operand of '||' must be of type 'boolean'"
-        },
-      );
-    };
-    // The setter sees only the RHS value. The skipped path performs no write.
-    this.writeCapturedTarget(tcenv, target, setter, stableRhs);
-    tcenv.!scope = savedScope;
-    tcenv.popScope(this, branch);
-    result = this.composeSelectionType(
-      tcenv,
-      pos,
-      skipped,
-      rhsType,
-      stableSkipped,
-      stableRhs,
-    );
-    target.value match {
-    | Var(name) ->
-      // The local contains the selected value on both paths. Recover that
-      // correlation after the general effect merge (not another runtime write).
-      tcenv.scope.set(
-        name,
-        TType::union(tcenv.subst, this, stableSkipped, stableRhs),
-        (_, _) -> void,
-      )
-    | _ -> void
-    };
-    result
-  }
-
-  // Growing through a local name is valid only while it denotes the captured
-  // assignment receiver. Otherwise ordinary assignment checks the original
-  // target before evaluating the RHS and cannot grow the replacement object.
-  private fun assignmentRebinds(
-    tcenv: readonly TCEnv,
-    local: Name,
-    key: ?Expr,
-    value: Expr,
-  ): Bool {
-    writes = mutable CaptureWrites{};
-    key.each(e -> writes.expr(e));
-    writes.expr(value);
-    writes.names.contains(local.value) ||
-      (writes.hasCallEffects && tcenv.scope.mayBeReassignedByCall(local))
   }
 
   /*
@@ -5152,14 +4048,8 @@ extension class TypeChecker {
     e2: Expr,
     mostPrecise: Bool,
   ): TType {
-    // Same-frame writes may initialize new fields. A captured write may run
-    // later, so it must establish the receiver's lasting contents contract.
-    if (tcenv.scope.isThroughFunction(local)) tcenv.markLocalObjectUsed(local);
-    // The computed key runs before the RHS, including any writes that affect
-    // the RHS's type. Keep the optimized local-object path in source order.
-    keyType = this.expr(tcenv, keyExpr, true);
     fieldType = this.expr(tcenv, e2, mostPrecise);
-    stableFieldType = this.stableAliasExprType(tcenv, e2, fieldType);
+    keyType = this.expr(tcenv, keyExpr, true);
     fieldKeys = keyType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes -> stypes.singleElt()) match {
@@ -5183,7 +4073,7 @@ extension class TypeChecker {
         tcenv,
         fieldType.pos,
         "Type is not assignable to the index signature's value type",
-        stableFieldType,
+        fieldType,
         elemType,
         TSCode(2322),
       );
@@ -5197,7 +4087,6 @@ extension class TypeChecker {
         keyExpr,
         keyType,
         fieldType,
-        stableFieldType,
         fieldKeys,
       )
     }
@@ -5205,7 +4094,6 @@ extension class TypeChecker {
 
   // Grows a local object by one or more literal keys.
   // When there are multiple keys (e.g. key: "a" | "b"), fields are optional.
-  // Slots use stableFieldType; fieldType is the assignment expression's value.
   private fun assignLocalObjectByKeys(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -5214,7 +4102,6 @@ extension class TypeChecker {
     keyExpr: Expr,
     keyType: TType,
     fieldType: TType,
-    stableFieldType: TType,
     fieldKeys: Array<FieldKey>,
   ): TType {
     isOptional = fieldKeys.size() > 1;
@@ -5231,7 +4118,7 @@ extension class TypeChecker {
           tcenv,
           fieldType.pos,
           "Type is not assignable to the field's type",
-          stableFieldType,
+          fieldType,
           // The key was already typechecked by the caller; reuse its type
           // rather than re-typechecking keyExpr.
           this.getWithIndexType(
@@ -5272,7 +4159,7 @@ extension class TypeChecker {
               tcenv,
               fieldType.pos,
               "Type is not assignable to the field's type",
-              stableFieldType,
+              fieldType,
               fd.set,
               TSCode(2322),
             )
@@ -5292,7 +4179,7 @@ extension class TypeChecker {
               name => key.value(),
               isOptional,
               isReadonly => None(),
-              type => stableFieldType,
+              type => fieldType,
               access,
             };
             key match {
@@ -5344,7 +4231,7 @@ extension class TypeChecker {
         | Some(o) -> TType::single(o)
         | None() -> TType::bottom(objPos)
         };
-        tcenv.updateObjectType(this, local, newTy, (x, y) -> {
+        tcenv.writeVar(this, local, newTy, (x, y) -> {
           this.checkSubType(
             tcenv,
             fieldType.pos,
@@ -5425,8 +4312,7 @@ extension class TypeChecker {
   // for each of the closure's parameters — used to fill in un-annotated ones.
   // Returns the empty array (no contextual typing) unless the expected type is
   // a single callable object (ignoring undefined/null branches) whose own call
-  // signature is non-generic. Its parameters may still contain inference
-  // candidates owned by an instantiated receiver.
+  // signature is non-generic, so the extracted parameter types are concrete.
   fun expectedCallbackParamTypes(
     tcenv: mutable TCEnv,
     expectedFnTy: TType,
@@ -5462,9 +4348,9 @@ extension class TypeChecker {
 
   // Type a call argument, applying contextual typing when it is a closure with
   // un-annotated parameters: fill those from the callee's expected parameter
-  // type at this position. Restricted to a non-generic callee (so parameters
-  // cannot refer to the callee's own not-yet-inferred type parameters) at an
-  // unambiguous position (before any
+  // type at this position. Restricted to a non-generic callee (so the expected
+  // parameter types are concrete, not references to the callee's own
+  // not-yet-inferred type parameters) at an unambiguous position (before any
   // spread argument). Everything else is typed as usual.
   fun typeCallArg(
     tcenv: mutable TCEnv,
@@ -5503,10 +4389,7 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    // The callee may retain an argument or return it through an inferred type.
-    // Its contract cannot depend on the caller's temporary field refinements.
-    currentType = this.expr(tcenv, argExpr, mostPrecise);
-    this.stableAliasExprType(tcenv, argExpr, currentType)
+    this.expr(tcenv, argExpr, mostPrecise)
   }
 
   fun call(
@@ -5517,7 +4400,6 @@ extension class TypeChecker {
     argExprs: Array<Expr>,
     mostPrecise: Bool,
     thisArgOpt: ?TType,
-    argumentCheck: TypeArgumentCheck,
   ): TType {
     args = mutable Vector<TType>[];
     moreArgs: ?TType = None();
@@ -5525,10 +4407,7 @@ extension class TypeChecker {
     for (argExpr in argExprs) {
       argExpr.value match {
       | Spread(spreadExpr) ->
-        currentSpreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        spreadTy = this.stableAliasExprType(tcenv, spreadExpr, currentSpreadTy);
-        // Consume the iterator before evaluating the following argument.
-        tcenv.invalidateCallEffects(this);
+        spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
         stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
         if (moreArgs is None()) {
           stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
@@ -5592,72 +4471,9 @@ extension class TypeChecker {
       }
     };
 
-    this.callWithArgumentTypes(
-      tcenv,
-      pos,
-      tfuns,
-      targs,
-      args,
-      moreArgs,
-      thisArgOpt,
-      argumentCheck,
-    )
-  }
-
-  // Both explicit and implicit calls use the same receiver, generic and
-  // argument obligations. Callers have evaluated each operand exactly once.
-  private fun callWithArgumentTypes(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    tfuns: TFuns,
-    targs: Array<TType>,
-    args: readonly Vector<TType>,
-    moreArgs: ?TType,
-    thisArgOpt: ?TType,
-    argumentCheck: TypeArgumentCheck,
-  ): TType {
-    saved = tcenv.subst.save();
-    publication = tcenv.results.savePublication();
-    entryErrors = tcenv.results.errors.size();
-    result = try {
-      this.proposeAndValidateCall(
-        tcenv,
-        pos,
-        tfuns,
-        targs,
-        args,
-        moreArgs,
-        thisArgOpt,
-        argumentCheck,
-        entryErrors,
-      )
-    } catch {
-    | exn ->
-      tcenv.subst.restore(saved);
-      tcenv.results.restorePublication(publication);
-      throw exn
-    };
-    if (tcenv.results.errors.size() != entryErrors) {
-      tcenv.subst.restore(saved);
-      tcenv.results.restorePublication(publication)
-    };
-    result
-  }
-
-  private fun proposeAndValidateCall(
-    tcenv: mutable TCEnv,
-    pos: PosRange,
-    tfuns: TFuns,
-    targs: Array<TType>,
-    args: readonly Vector<TType>,
-    moreArgs: ?TType,
-    thisArgOpt: ?TType,
-    argumentCheck: TypeArgumentCheck,
-    entryErrors: Int,
-  ): TType {
     tfuns match {
     | TFuns(tfun, fPos) ->
-      plan = CallSubtypePlan::mcreate();
+      tcenv.recordCalls(tfun.cgNodes);
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
         tcenv.error(
           Array[
@@ -5688,9 +4504,22 @@ extension class TypeChecker {
         }
       };
       frozenMap = map.chill();
-      // Retain bounds as original symbolic obligations. Constructor arguments
-      // may need a detached compatibility proposal before argument inference;
-      // the final call still proves their bounds in the live fixed snapshot.
+      // Validate each explicit type argument against its parameter's constraint.
+      // Inferred arguments (the fresh TVars above) carry their constraint on the
+      // variable and have it enforced at growth, so only explicit arguments need
+      // checking here. The constraint is a subtyping obligation -- every
+      // inhabitant of the argument must inhabit the bound -- so it is checked
+      // with `isSub`. The constraint is instantiated with `frozenMap` first, so
+      // a constraint that references another type parameter (a dependent
+      // constraint like `<A, B extends A>`) is checked against that parameter's
+      // argument. The clone keeps the speculative check from growing inference
+      // variables on the live subst.
+      //
+      // Without this check, an argument that violates the bound is substituted
+      // anyway; where the parameter occurs only covariantly (e.g. the return
+      // type) the constraint-carrying occurrence (the parameter is normalized to
+      // `param & constraint`) collapses to `never`, which is assignable to
+      // anything and silently absorbs the violation -- unsound.
       for (i => tparamDecl in tfun.tparams) {
         if (i < targs.size()) {
           tparamDecl.cstr match {
@@ -5701,25 +4530,27 @@ extension class TypeChecker {
               (tcenv.subst, this, frozenMap),
               cstr,
             );
-            plan.propose(
-              tcenv,
-              this,
-              tArg,
-              cstrTy,
-              Array[
-                (pos, "Type argument does not satisfy the constraint"),
-                (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
-                (
-                  cstr.pos,
-                  `It does not satisfy the constraint: ${this.ppType(
-                    tcenv,
-                    cstrTy,
-                  )}`,
-                ),
-              ],
-              TSCode(2344),
-              argumentCheck,
-            )
+            TType::isSub(tcenv.subst.clone(), this, tArg, cstrTy) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              tcenv.subtypingError(
+                tcenv.subst,
+                this,
+                Array[
+                  (pos, "Type argument does not satisfy the constraint"),
+                  (tArg.pos, `This is of type: ${this.ppType(tcenv, tArg)}`),
+                  (
+                    cstr.pos,
+                    `It does not satisfy the constraint: ${this.ppType(
+                      tcenv,
+                      cstrTy,
+                    )}`,
+                  ),
+                ],
+                err,
+                TSCode(2344),
+              )
+            }
           }
         }
       };
@@ -5732,7 +4563,6 @@ extension class TypeChecker {
       // type variable, infer/bind it from call-site arguments before param checking.
       callInvalid = VariadicTyping::inferRestTypeVar(
         tcenv,
-        plan,
         this,
         pos,
         tfun.spreadParam,
@@ -5747,57 +4577,51 @@ extension class TypeChecker {
         return tfun.retType
       };
 
-      // Proposals can iterate, but none of these passes publishes acceptance.
-      // Retain earlier operands when rest or positional inference changes them.
-      version = tcenv.subst.inferenceVersion();
-      loop {
-        // Check the receiver against the declared `this` parameter, if any.
-        // A call with no receiver (free call) uses `this: void`, matching TS.
-        tfun.thisParam match {
-        | NoThis() -> void
-        // A shape method is attach-only: at an attached call the receiver is
-        // the object it was accessed on; a free call has lost it.
-        | ImplicitShape() ->
-          if (thisArgOpt is None _) {
-            tcenv.error(
-              Array[
-                (
-                  pos,
-                  "A shape method can only be called on the object it was accessed on",
-                ),
-              ],
-              SKJSCode(2075),
-            )
-          }
-        // An implicit class `this` is the type of the object the method was
-        // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
-        // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
-        // receiver the method's `this` is the *intersection* of the branches, and
-        // `union <: intersection` would spuriously fail even though each branch
-        // trivially satisfies its own `this`. Only a free/detached call (receiver
-        // `void`) needs the check, to reject `const g = o.m; g()`.
-        | ImplicitClass _ if (thisArgOpt.isSome()) -> void
-        // Explicit `this: T`, or a detached call on an implicit this.
-        | tp ->
-          expectedThis = tp.tyOpt().fromSome();
-          actualThis = thisArgOpt match {
-          | Some(t) -> t
-          | None() -> TType::single(TPrimUnit(TVoid(), pos))
-          };
-          plan.propose(
-            tcenv,
-            this,
-            actualThis,
-            expectedThis,
+      // Check the receiver against the declared `this` parameter, if any.
+      // A call with no receiver (free call) uses `this: void`, matching TS.
+      tfun.thisParam match {
+      | NoThis() -> void
+      // A shape method is attach-only: at an attached call the receiver is
+      // the object it was accessed on; a free call has lost it.
+      | ImplicitShape() ->
+        if (thisArgOpt is None _) {
+          tcenv.error(
             Array[
               (
                 pos,
-                "The 'this' context is not assignable to method's 'this' type",
+                "A shape method can only be called on the object it was accessed on",
               ),
             ],
-            TSCode(2684),
+            SKJSCode(2075),
           )
+        }
+      // An implicit class `this` is the type of the object the method was
+      // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
+      // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
+      // receiver the method's `this` is the *intersection* of the branches, and
+      // `union <: intersection` would spuriously fail even though each branch
+      // trivially satisfies its own `this`. Only a free/detached call (receiver
+      // `void`) needs the check, to reject `const g = o.m; g()`.
+      | ImplicitClass _ if (thisArgOpt.isSome()) -> void
+      // Explicit `this: T`, or a detached call on an implicit this.
+      | tp ->
+        expectedThis = tp.tyOpt().fromSome();
+        actualThis = thisArgOpt match {
+        | Some(t) -> t
+        | None() -> TType::single(TPrimUnit(TVoid(), pos))
         };
+        this.checkSubType(
+          tcenv,
+          pos,
+          "The 'this' context is not assignable to method's 'this' type",
+          actualThis,
+          expectedThis,
+          TSCode(2684),
+        )
+      };
+
+      version = tcenv.subst.version;
+      loop {
         for (i in Range(0, tfun.params.size())) {
           if (i >= args.size()) {
             tcenv.error(
@@ -5809,16 +4633,14 @@ extension class TypeChecker {
             );
             break void
           } else {
-            plan.propose(
+            this.checkSubType(
               tcenv,
-              this,
+              pos,
+              "Argument is not assignable to the parameter's type",
               args[i],
               tfun.params[i],
-              Array[
-                (pos, "Argument is not assignable to the parameter's type"),
-              ],
               TSCode(2345),
-            );
+            )
           }
         };
         for (j in Range(0, tfun.optionalParams.size())) {
@@ -5831,36 +4653,29 @@ extension class TypeChecker {
             | Some(ma) -> ma
             }
           };
-          plan.propose(
+          this.checkSubType(
             tcenv,
-            this,
+            pos,
+            "Argument is not assignable to the parameter's type",
             arg,
             tfun.optionalParams[j],
-            Array[(pos, "Argument is not assignable to the parameter's type")],
             TSCode(2345),
-          );
+          )
         };
-        VariadicTyping::proposeRestArgs(
-          tcenv,
-          plan,
-          this,
-          pos,
-          tfun.spreadParam,
-          totalSize,
-          args,
-          moreArgs,
-        );
-        if (tcenv.subst.inferenceVersion() == version) {
+        if (tcenv.subst.version == version) {
           break void
         };
-        !version = tcenv.subst.inferenceVersion();
+        !version = tcenv.subst.version;
       };
-      if (
-        tcenv.results.errors.size() == entryErrors &&
-        plan.validate(tcenv, this)
-      ) {
-        tcenv.recordCalls(tfun.cgNodes)
-      };
+      VariadicTyping::checkRestArgs(
+        tcenv,
+        this,
+        pos,
+        tfun.spreadParam,
+        totalSize,
+        args,
+        moreArgs,
+      );
       tfun.retType
     }
   }
