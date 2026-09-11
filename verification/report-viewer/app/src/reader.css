@@ -24,6 +24,12 @@
   --bad: #a3272b;
   --bad-bg: #f8e8e8;
   --warn: #8a5a10;
+
+  /* The producer's own diagnostics. Not a claim and not a verification
+     outcome, so not the claim tint and not the proof red: its own hue. */
+  --diag: #9b4a12;
+  --diag-bg: #fbeee3;
+  --diag-edge: #e2bc99;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +54,10 @@
     --bad: #e88a8d;
     --bad-bg: #3a2124;
     --warn: #d6a75a;
+
+    --diag: #e5a26c;
+    --diag-bg: #382a1f;
+    --diag-edge: #6a4a2e;
   }
 }
 

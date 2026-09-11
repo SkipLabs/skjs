@@ -74,9 +74,16 @@
   let hovered = $state<string | null>(null);
 
   const lit = $derived.by(() => {
-    const span = spanOf(hovered ?? selectedMark ?? "");
+    const id = hovered ?? selectedMark ?? "";
     const covered = new Map<number, [number, number]>();
-    if (!span) return covered;
+    const span = spanOf(id);
+    if (!span) {
+      // A producer diagnostic is not a claim and has no entry in those lists,
+      // but the mark already knows the columns it covers on its own line.
+      const mark = [...drawn.entries, ...drawn.items].find((m) => m.id === id);
+      if (mark) covered.set(mark.line, [mark.col, mark.end]);
+      return covered;
+    }
     const starts = lineStarts(report.source);
     for (let line = lineAt(starts, span[0]); ; line++) {
       const from = starts[line];
@@ -238,6 +245,21 @@
   }
   .mark.entry .label {
     color: var(--faint);
+  }
+  /* The producer's own diagnostic about this span: what its checker said while
+     running over the source. Neither a claim nor a verification result, so it
+     reads as neither — its own colour, and a dotted bracket so it is still
+     distinguishable where colour is not. */
+  .mark.err {
+    color: var(--diag);
+  }
+  .mark.err .bracket {
+    color: var(--diag-edge);
+  }
+  .mark.err:hover .label,
+  .mark.err.selected .label {
+    background: var(--diag-bg);
+    color: var(--diag);
   }
   .mark.gap {
     color: var(--faint);
