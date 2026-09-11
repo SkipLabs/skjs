@@ -1263,6 +1263,13 @@ async function connectLive() {
         )
         .join("");
     el("livewrap").hidden = false;
+    // Choosing the other producer re-reads the file that is open, so the two
+    // reports can be put side by side without retyping the path.
+    el("producerwrap").hidden = false;
+    el("liveproducer").addEventListener("change", () => {
+      state.pendingMark = "";
+      run();
+    });
     // The picker lists examples; any repository source can be opened by path.
     const offerFile = (file) => {
       if (![...sel.options].some((o) => o.value === file)) {

@@ -102,6 +102,19 @@ verify-test:
 verify-examples:
 	@node verification/examples.js --build $(if $(filter 1,$(VERBOSE)),--verbose)
 
+# The claim report reader, on loopback. It runs a producer on whatever source
+# is opened and shows the verifier's verdict beside each claim.
+viewer:
+	@node verification/report-viewer/serve.js --open
+
+# One producer's column at a time. Both together is the default above; either
+# alone runs only that producer, which is also how one is measured.
+verify-examples-skjs:
+	@node verification/examples.js --only skjs $(if $(filter 1,$(VERBOSE)),--verbose)
+
+verify-examples-tsc:
+	@node verification/examples.js --only tsc $(if $(filter 1,$(VERBOSE)),--verbose)
+
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
 	ln -s $(PWD)/bin/git_hooks/check_format.sh .git/hooks/pre-commit

@@ -10,12 +10,15 @@ needs to change things here without breaking the suite's shape.
 ## Commands
 
 ```sh
-make verify                      # from the repo root: build, 22 suites, then the corpus
+make verify                      # from the repo root: build, 23 suites, then the corpus
 make verify-test                 # the suites only
 make verify-examples             # the corpus only
 verification/run.sh --suite all  # the suites, without rebuilding Lean
 lake -d verification/lean build  # the verifier alone
-node verification/examples.js    # the corpus alone
+node verification/examples.js    # the corpus alone, both producers
+make verify-examples-skjs        # one column at a time; either alone runs
+make verify-examples-tsc         # only that producer
+make viewer                      # the claim report reader on http://localhost:8731
 ```
 
 One file end to end, with `$F` a repository-relative path:
@@ -31,7 +34,7 @@ runs the binary directly. Never invoke `target/host/dev/skjs` yourself.
 
 ## The suite's shape, and the rules that keep it
 
-`run.sh` runs 22 suites in about ten seconds because of four decisions. Each
+`run.sh` runs 23 suites in about fifteen seconds because of four decisions. Each
 is a rule for anything added.
 
 - **One container for the run.** `skjs_start` brings it up before anything
@@ -59,10 +62,13 @@ corpus file, one worker per core, and colour decided once in the parent.
 
 ## What a result means
 
-- The corpus prints two outcomes per function, `SKJS ✓ · proof ✗`, because
-  they answer different questions. `✗` means proof search found no
-  derivation; it is never a disproof. `?` means the check could not be
-  attempted and is neither agreement nor disagreement.
+- The corpus prints a pair per producer, `SKJS ✓→✓ · tsc ✓→✗`: the producer's
+  own verdict on the program, then whether the verifier derives the claims it
+  made. `✗` on the right means proof search found no derivation; it is never a
+  disproof. `?` means the check could not be attempted. `⚠` marks an SKJS
+  acceptance its own claims do not establish; the tsc column carries none,
+  because that producer states no current-content assertions and fails by its
+  own limits wherever one is needed.
 - Expected outcomes are policy, in `expectedVerified` in `examples.js`: a
   witness fixture is expected *not* to verify, and a run fails when any
   function's outcome contradicts the policy, in either direction.

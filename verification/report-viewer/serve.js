@@ -82,11 +82,70 @@ async function hasVerifier() {
 
 // Verification is not an option the caller turns on: if a verifier is present it
 // runs, so what is displayed is always checked against the claims on screen.
-async function analyse(relative) {
+// The other producer: what TypeScript's own checker claims at the same sites,
+// through the same verifier. It states types and no current-content
+// assertions, so a cell read after a write fails here by its own limits;
+// tests/tsc-claims/README.md says which failures are which.
+async function tscAnalyse(relative, source, tmp, options) {
+  const startedAt = Date.now();
+  try {
+    const claims = path.join(tmp, "tsc-claims.json");
+    await execFile(
+      process.execPath,
+      ["verification/tools/tsc-claims.js", relative, "--out", claims],
+      options,
+    );
+    const args = [
+      "verification/tools/annotate-source.js",
+      relative,
+      "--claims",
+      claims,
+      "--producer",
+      "tsc",
+      "--format",
+      "source-claims",
+      "--stdout",
+      "json",
+    ];
+    const verify = await hasVerifier();
+    if (verify) args.push("--verify", VERIFIER);
+    const result = await execFile(process.execPath, args, options);
+    const bundle = JSON.parse(result.stdout);
+    const digest = require("node:crypto")
+      .createHash("sha256")
+      .update(source)
+      .digest("hex");
+    if (bundle.manifest.source.sha256 !== digest)
+      throw new Error("Report source identity mismatch");
+    return {
+      source,
+      ...bundle,
+      collection: {
+        producer: "tsc",
+        producerRun: true,
+        command: "tsc-claims.js " + relative,
+        ranAt: new Date(startedAt).toISOString(),
+        durationMs: Date.now() - startedAt,
+        verified: Boolean(verify),
+      },
+      candidate: {
+        format: "source-claims",
+        file: relative,
+        sourceSha256: digest,
+        claims: JSON.parse(await fs.readFile(claims, "utf8")),
+      },
+    };
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+}
+
+async function analyse(relative, producer = "skjs") {
   const sourcePath = await repositoryPath(relative);
   const source = await fs.readFile(sourcePath, "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
   const options = { cwd: REPO, timeout: 120000, maxBuffer: 32 * 1024 * 1024 };
+  if (producer === "tsc") return tscAnalyse(relative, source, tmp, options);
   // Every request runs the producer: nothing here is cached or reused. The
   // reader shows when it ran, so a displayed report is never mistaken for an
   // older one.
@@ -322,7 +381,10 @@ const server = http.createServer(async (req, res) => {
         return send(
           res,
           200,
-          await analyse(url.searchParams.get("path") || ""),
+          await analyse(
+            url.searchParams.get("path") || "",
+            url.searchParams.get("producer") === "tsc" ? "tsc" : "skjs",
+          ),
         );
       } finally {
         analysing = false;
@@ -360,8 +422,33 @@ const server = http.createServer(async (req, res) => {
   }
 });
 if (require.main === module)
-  server.listen(PORT, "127.0.0.1", () =>
-    console.log(`Claim report reader on http://localhost:${PORT}`),
-  );
+  // A port already taken usually means a reader is up from an earlier run.
+  // Say so, with what to do about it, rather than a stack trace.
+  server.on("error", (error) => {
+    if (error.code !== "EADDRINUSE") throw error;
+    console.error(
+      `Port ${PORT} is already serving. Open http://localhost:${PORT},` +
+        ` or run on another port with PORT=8732 make viewer.`,
+    );
+    process.exit(1);
+  });
+  server.listen(PORT, "127.0.0.1", () => {
+    const url = `http://localhost:${PORT}`;
+    console.log(`Claim report reader on ${url}`);
+    // `--open` hands the page to the browser once the socket is actually
+    // listening, so nothing races the server's start.
+    if (process.argv.includes("--open")) {
+      const opener =
+        process.platform === "darwin"
+          ? "open"
+          : process.platform === "win32"
+            ? "start"
+            : "xdg-open";
+      require("node:child_process")
+        .spawn(opener, [url], { stdio: "ignore", detached: true })
+        .on("error", () => console.log(`Open ${url} to read reports.`))
+        .unref();
+    }
+  });
 
 module.exports = { candidateReport };

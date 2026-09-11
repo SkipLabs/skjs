@@ -7,8 +7,14 @@ verification badges are proof evidence.
 ## Use
 
 ```sh
-node verification/report-viewer/serve.js # http://localhost:8731
+make viewer                              # starts it and opens the page
+node verification/report-viewer/serve.js # http://localhost:8731, without opening
 ```
+
+The toolbar's producer selector chooses whose claims are read: **SKJS claims**
+or **TypeScript claims**, the latter from `tools/tsc-claims.js`. Both answer
+for the same sites and the same verifier adjudicates either, so switching
+re-reads the open file through the other one.
 
 Select an example to collect claims with SKJS, or type any repository-relative
 path into **Open any repository path…**; it suggests matching `.ts` sources as

@@ -23,6 +23,12 @@
         <span class="livedot"></span>
         <select id="livefile" aria-label="Example source file"></select>
       </label>
+      <label class="tog live" id="producerwrap" hidden>
+        <select id="liveproducer" aria-label="Claim producer">
+          <option value="skjs">SKJS claims</option>
+          <option value="tsc">TypeScript claims</option>
+        </select>
+      </label>
       <label class="tog live" id="pathwrap" hidden>
         <input id="livepath" type="search" list="pathlist" placeholder="Open any repository path…" aria-label="Repository source path" autocomplete="off">
         <datalist id="pathlist"></datalist>

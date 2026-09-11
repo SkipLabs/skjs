@@ -6,6 +6,7 @@ const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 const ts = require("./tools/node_modules/typescript");
 const { fromSkjs, verifySkjs } = require("./tools/annotate-source.js");
+const tscClaims = require("./tools/tsc-claims.js");
 const { groups, supported } = require("./report-viewer/examples.js");
 const root = path.resolve(__dirname, "..");
 process.chdir(root);
@@ -13,22 +14,34 @@ let build = false,
   verbose = false,
   shard = null,
   claimsPath = null,
+  // Both producers by default: the comparison is the point. Either can be
+  // asked for alone, which is also how one is measured without the other.
+  producers = { skjs: true, tsc: true },
   binary = process.env.SKJS_BIN;
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg === "--build") build = true;
   else if (arg === "--verbose") verbose = true;
   else if (arg === "--skjs" && process.argv[i + 1]) binary = process.argv[++i];
+  else if (arg === "--only" && process.argv[i + 1]) {
+    const named = process.argv[++i].split(",");
+    for (const name of named)
+      if (!(name in producers)) throw Error(`unknown producer '${name}'`);
+    producers = { skjs: named.includes("skjs"), tsc: named.includes("tsc") };
+  }
   // A worker checks the files of one shard and reports them as data. The parent
   // hands it the claims so the producer still runs exactly once for the run.
   else if (arg === "--shard" && process.argv[i + 1]) shard = process.argv[++i];
-  else if (arg === "--claims" && process.argv[i + 1]) claimsPath = process.argv[++i];
+  else if (arg === "--claims" && process.argv[i + 1])
+    claimsPath = process.argv[++i];
   else
     throw Error(
-      "usage: examples.js [--build] [--verbose] [--skjs BIN] [--shard i:n --claims FILE]",
+      "usage: examples.js [--build] [--verbose] [--only skjs|tsc] [--skjs BIN] [--shard i:n --claims FILE]",
     );
 }
 const verifier = path.join(__dirname, "lean/.lake/build/bin/verifier");
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "examples-"));
+process.on("exit", () => fs.rmSync(work, { recursive: true, force: true }));
 function run(command, args) {
   const r = spawnSync(command, args, {
     cwd: root,
@@ -111,19 +124,31 @@ try {
     console.log(marked("✓", "✓ Lean build passed"));
   }
   if (!shard)
-    console.log("\nExample outcomes — original SKJS claims; no repairs applied");
+    console.log(
+      "\nExample outcomes — original claims, no repairs applied. Each producer" +
+        " reads accepted→derived: its own verdict on the program, then whether" +
+        " the verifier derives the claims it made. ⚠ marks an SKJS acceptance" +
+        " its own claims do not establish. The tsc column carries no ⚠: that" +
+        " producer states no current-content assertions, so a cell read after" +
+        " a write fails there by its own limits (tests/tsc-claims/README.md).",
+    );
   // One producer run for every example. A container start costs more than
   // checking any of these files, so the loop used to spend most of its time
   // starting containers; the claim array names each file, so one run serves
   // them all.
   const sources = [...new Set(groups.flatMap((g) => g.files))];
-  const collected = claimsPath
-    ? { stdout: fs.readFileSync(claimsPath, "utf8"), stderr: "" }
-    : run("bash", [
-        "verification/skjs.sh",
-        "--emit-skjs-type-claims",
-        ...sources,
-      ]);
+  // Asking for one producer runs only that producer: the SKJS collection is
+  // a container start and a check over every example, which is the run's
+  // largest single cost and is pure waste when its column is not shown.
+  const collected = !producers.skjs
+    ? { stdout: "[]", stderr: "" }
+    : claimsPath
+      ? { stdout: fs.readFileSync(claimsPath, "utf8"), stderr: "" }
+      : run("bash", [
+          "verification/skjs.sh",
+          "--emit-skjs-type-claims",
+          ...sources,
+        ]);
   const claims = JSON.parse(collected.stdout);
   if (!Array.isArray(claims))
     throw Error("producer did not return a claim array");
@@ -135,86 +160,186 @@ try {
     for (const line of (collected.stderr || "").split("\n")) {
       const named = /^File "(?:\/work\/skjs\/)?(.*?)",/.exec(line);
       if (named && sources.includes(named[1])) current = named[1];
-      if (current) diagnostics.set(current, (diagnostics.get(current) || "") + line + "\n");
+      if (current)
+        diagnostics.set(
+          current,
+          (diagnostics.get(current) || "") + line + "\n",
+        );
     }
   }
   // Each file is checked on its own and reports what it found, so the work can
   // be spread across processes and still be printed in the order it was
   // written. Counting happens where the lines are merged, not where they are
   // produced, so a worker and a plain run agree.
+  // One checker for the files this process examines, for the same reason there
+  // is one producer run: loading it costs more than reading any one file. A
+  // worker loads its own shard, not the whole corpus.
+  let mine = sources;
+  let tscProgram = null;
   const examine = (file) => {
     const lines = [];
     const tally = {
-      verified: 0, failed: 0, unavailable: 0, unexpected: 0, errors: 0,
-      producerAccepted: 0, producerRejected: 0, producerUnknown: 0,
+      verified: 0,
+      failed: 0,
+      unavailable: 0,
+      unexpected: 0,
+      errors: 0,
+      producerAccepted: 0,
+      producerRejected: 0,
+      producerUnknown: 0,
     };
     const say = (text) => lines.push(String(text).replace(/\n$/, ""));
-    let verified = 0, failed = 0, unavailable = 0, unexpected = 0, errors = 0,
-      producerAccepted = 0, producerRejected = 0, producerUnknown = 0;
-      try {
-        const source = fs.readFileSync(file, "utf8");
-        const report = fromSkjs(source, file, claims, "skjs");
-        const { results } = verifySkjs(
-          file,
-          source,
-          claims,
-          file,
-          report,
-          verifier,
-          10,
+    let verified = 0,
+      failed = 0,
+      unavailable = 0,
+      unexpected = 0,
+      errors = 0,
+      producerAccepted = 0,
+      producerRejected = 0,
+      producerUnknown = 0;
+    try {
+      const source = fs.readFileSync(file, "utf8");
+      // What TypeScript's own checker claims at the same sites, put through
+      // the same verifier. A second producer disagreeing with the first is
+      // the comparison this corpus exists for; a producer that cannot state
+      // a site leaves its functions unmarked rather than failing the run.
+      const fromTsc = new Map();
+      // The functions the producer could state in full. One it could not is a
+      // gap in the claims, not a verdict about them, so it reads `·`.
+      let stated = new Set();
+      let tscAccepted = null;
+      if (producers.tsc)
+        try {
+          if (!tscProgram) tscProgram = tscClaims.programOver(mine);
+          const { doc, ast, accepted } = tscClaims.produce(file, tscProgram);
+          tscAccepted = accepted;
+          stated = new Set(doc.functions.map((g) => g.name));
+          // Producing evidence checks it, so one run answers the whole file.
+          // Only a file that fails is split, and only to say which function
+          // failed; a file that verifies needs no second look.
+          const claimed = new Set(doc.functions.map((g) => g.name));
+          const attempt = (document) => {
+            const astFile = path.join(work, "tsc.ast.json");
+            const claimsFile = path.join(work, "tsc.claims.json");
+            fs.writeFileSync(astFile, JSON.stringify({ ...ast, file }));
+            fs.writeFileSync(claimsFile, JSON.stringify(document));
+            return (
+              run(verifier, [
+                "--produce-source-claims",
+                astFile,
+                claimsFile,
+                file,
+                path.join(work, "tsc.evidence.json"),
+                "10",
+              ]).status === 0
+            );
+          };
+          if (attempt(doc)) for (const name of claimed) fromTsc.set(name, true);
+          else
+            for (const name of claimed)
+              fromTsc.set(
+                name,
+                attempt({
+                  ...doc,
+                  functions: doc.functions.filter((g) => g.name === name),
+                }),
+              );
+        } catch (error) {
+          void error;
+        }
+      // Without its column there is nothing to attribute, so neither the
+      // report nor the verification is built.
+      const report = producers.skjs
+        ? fromSkjs(source, file, claims, "skjs")
+        : { functions: [] };
+      const { results } = producers.skjs
+        ? verifySkjs(file, source, claims, file, report, verifier, 10)
+        : { results: [] };
+      const functions = ts
+        .createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+        .statements.filter(
+          (n) => ts.isFunctionDeclaration(n) && n.name && n.body,
         );
-        const functions = ts
-          .createSourceFile(file, source, ts.ScriptTarget.Latest, true)
-          .statements.filter(
-            (n) => ts.isFunctionDeclaration(n) && n.name && n.body,
-          );
-        if (!functions.length)
-          throw Error("example contains no function definitions");
-        for (const f of functions) {
-          const index = report.functions.findIndex(
-            (g) => g.name === f.name.text && g.namePos[0] === f.name.getStart(),
-          );
-          const result = index < 0 ? undefined : results[index];
-          const accepted = result?.status === "verified";
-          const producer = report.functions[index]?.collection?.completion;
-          const producerMark =
-            producer === "complete" ? "✓" : producer === "aborted" ? "✗" : "·";
+      if (!functions.length)
+        throw Error("example contains no function definitions");
+      for (const f of functions) {
+        const index = report.functions.findIndex(
+          (g) => g.name === f.name.text && g.namePos[0] === f.name.getStart(),
+        );
+        const result = index < 0 ? undefined : results[index];
+        const accepted = result?.status === "verified";
+        const producer = report.functions[index]?.collection?.completion;
+        const producerMark =
+          producer === "complete" ? "✓" : producer === "aborted" ? "✗" : "·";
+        if (producers.skjs) {
           if (producer === "complete") producerAccepted++;
           else if (producer === "aborted") producerRejected++;
           else producerUnknown++;
-          const [mark, label] = outcome(result);
+        }
+        const [mark, label] = outcome(result);
+        // Each producer answers two questions: did it accept the program,
+        // and can the verifier derive the claims it made. They are different
+        // questions, so each producer shows both, as `accepted→derived`.
+        const tscProof = fromTsc.has(f.name.text)
+          ? fromTsc.get(f.name.text)
+            ? "✓"
+            : "✗"
+          : "·";
+        const tscOwn = tscAccepted === null ? "·" : tscAccepted ? "✓" : "✗";
+        const pair = (own, proof, flag) =>
+          `${marked(own, own)}→${marked(proof, proof)}` +
+          (flag && own === "✓" && proof === "✗" ? color(33, " ⚠") : "");
+        if (producers.skjs) {
           if (accepted) verified++;
           else if (mark === "?") unavailable++;
           else failed++;
-          const matches =
-            index >= 0 && accepted === expectedVerified(file, f.name.text);
-          if (!matches) unexpected++;
-          const disagrees =
-            (producer === "complete" && mark === "✗") ||
-            (producer === "aborted" && accepted);
-          say(
-            `    ${f.name.text}: SKJS ${marked(producerMark, producerMark)} · proof ${marked(mark, `${mark} — ${label}`)}${disagrees ? color(33, " ⚠ outcomes differ") : ""}${matches ? "" : color(31, " ✗ unexpected outcome")}`,
-          );
-          if (verbose && result?.detail)
-            say("      " + result.detail.replace(/\n/g, "\n      "));
         }
-
-      } catch (error) {
-        errors++;
-        say(color(31, "    ✗ runner error: " + error.message));
+        // Expected outcomes are policy about SKJS's claims; with that column
+        // off there is no policy to hold anything to.
+        const matches =
+          !producers.skjs ||
+          (index >= 0 && accepted === expectedVerified(file, f.name.text));
+        if (!matches) unexpected++;
+        const disagrees =
+          (producer === "complete" && mark === "✗") ||
+          (producer === "aborted" && accepted);
+        say(
+          `    ${f.name.text}: ` +
+            [
+              producers.skjs && `SKJS ${pair(producerMark, mark, true)}`,
+              producers.tsc && `tsc ${pair(tscOwn, tscProof, false)}`,
+            ]
+              .filter(Boolean)
+              .join(" · ") +
+            `${verbose ? ` — ${label}` : ""}${matches ? "" : color(31, " ✗ unexpected outcome")}`,
+        );
+        if (verbose && result?.detail)
+          say("      " + result.detail.replace(/\n/g, "\n      "));
       }
+    } catch (error) {
+      errors++;
+      say(color(31, "    ✗ runner error: " + error.message));
+    }
 
-    Object.assign(tally, { verified, failed, unavailable, unexpected, errors,
-      producerAccepted, producerRejected, producerUnknown });
+    Object.assign(tally, {
+      verified,
+      failed,
+      unavailable,
+      unexpected,
+      errors,
+      producerAccepted,
+      producerRejected,
+      producerUnknown,
+    });
     return { lines, tally };
   };
 
   // A worker reports its shard as data and leaves the presentation alone.
   if (shard) {
     const [index, total] = shard.split(":").map(Number);
-    for (const [at, file] of sources.entries())
-      if (at % total === index)
-        process.stdout.write(JSON.stringify({ file, ...examine(file) }) + "\n");
+    mine = sources.filter((_, at) => at % total === index);
+    for (const file of mine)
+      process.stdout.write(JSON.stringify({ file, ...examine(file) }) + "\n");
     process.exit(0);
   }
 
@@ -235,11 +360,18 @@ try {
     const quote = (text) => JSON.stringify(String(text));
     const outputs = [];
     for (let index = 0; index < width; index++)
-      outputs.push(path.join(os.tmpdir(), `example-shard-${process.pid}-${index}.json`));
+      outputs.push(
+        path.join(os.tmpdir(), `example-shard-${process.pid}-${index}.json`),
+      );
     const flags = [
       ...(verbose ? ["--verbose"] : []),
       ...(binary ? ["--skjs", binary] : []),
-    ].map(quote).join(" ");
+      ...(producers.skjs && producers.tsc
+        ? []
+        : ["--only", producers.skjs ? "skjs" : "tsc"]),
+    ]
+      .map(quote)
+      .join(" ");
     try {
       run("bash", [
         "-c",
@@ -251,7 +383,10 @@ try {
           .join("\n") + "\nwait",
       ]);
       for (const out of outputs)
-        for (const line of fs.readFileSync(out, "utf8").split("\n").filter((l) => l.startsWith("{"))) {
+        for (const line of fs
+          .readFileSync(out, "utf8")
+          .split("\n")
+          .filter((l) => l.startsWith("{"))) {
           const found = JSON.parse(line);
           findings.set(found.file, found);
         }

@@ -236,6 +236,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Report viewer" node verification/tests/report-viewer.js
   run_test "Candidate editing" node verification/tests/candidate-editor.js "$WORK/closures.claims"
   run_test "Export snapshots" node verification/tests/export-snapshots.js "$WORK/snapshots.claims" "$SNAPSHOTS"
+  run_test "TypeScript claims" node verification/tests/tsc-claims.js "$VERIFIER"
   run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
   report_tests
 fi
