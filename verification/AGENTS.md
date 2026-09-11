@@ -99,10 +99,14 @@ an exporter change needs a place to show, one phenomenon per file.
   `<script>` and which is not formatted; leave it alone until the reader is
   rewritten with a build step.
 - Every module the node side runs is `.mts` and belongs to a `tsc` project:
-  `tools/tsconfig.json` for the trusted front end, and `tsconfig.annotator`,
-  `tsconfig.corpus` and `tsconfig.tests` beside it for the files carried over
-  from JavaScript, which are strict except for `noImplicitAny`. A new file
-  goes in one of them or it is not checked at all.
+  `tools/tsconfig.json` for the trusted front end, fully strict, and
+  `tsconfig.annotator`, `tsconfig.corpus` and `tsconfig.tests` beside it for
+  the files carried over from JavaScript. Those three turn off exactly two
+  checks — `noImplicitAny`, because their helpers have no signatures, and
+  `strictNullChecks`, because they walk decoded JSON. Nothing else: the other
+  strict checks cost nothing here, which was measured rather than assumed. A
+  new file goes in one of these projects or it is not checked at all, and a
+  file graduates to `tsconfig.json` once its own signatures are written down.
 - The trusted front end is TypeScript on the compiler's own API
   (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
   the tree), type-checked by the `Front-end types` suite. A member that API

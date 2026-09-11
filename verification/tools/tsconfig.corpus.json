@@ -1,7 +1,7 @@
 {
-  // The corpus driver, which lives a directory up. Same terms as the annotator
-  // project: carried over from JavaScript, so its helpers have no signatures.
+  // The corpus driver, which lives a directory up. Same two exceptions as
+  // tsconfig.annotator.json, for the same reasons.
   "extends": "./tsconfig.json",
-  "compilerOptions": { "strict": false, "noImplicitAny": false },
+  "compilerOptions": { "noImplicitAny": false, "strictNullChecks": false },
   "files": ["../examples.mts"]
 }

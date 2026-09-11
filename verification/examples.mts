@@ -318,7 +318,7 @@ try {
       }
     } catch (error) {
       errors++;
-      say(color(31, "    ✗ runner error: " + error.message));
+      say(color(31, "    ✗ runner error: " + (error as Error).message));
     }
 
     Object.assign(tally, {
@@ -420,7 +420,7 @@ try {
 } catch (error) {
   errors++;
   console.error(
-    color(31, "✗ Example runner: " + error.message, process.stderr),
+    color(31, "✗ Example runner: " + (error as Error).message, process.stderr),
   );
 }
 console.log(`\nExample results (${files} files):`);

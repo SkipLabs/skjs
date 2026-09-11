@@ -1,8 +1,8 @@
 {
-  // The suites, carried over from JavaScript on the same terms as the rest:
-  // their helpers have no signatures, so the inference checks are off. Each is
-  // an entry point run by run.sh, not a module anything imports.
+  // The suites. Same two exceptions as tsconfig.annotator.json, for the same
+  // reasons: each suite is an entry point that decodes a wire document and
+  // reaches into it. They are run by run.sh, not imported by anything.
   "extends": "./tsconfig.json",
-  "compilerOptions": { "strict": false, "noImplicitAny": false },
+  "compilerOptions": { "noImplicitAny": false, "strictNullChecks": false },
   "include": ["../tests/*.mts"]
 }

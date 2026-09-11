@@ -375,7 +375,7 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
     try {
       ast=parseSource.parseFile(sourcePath);
     } catch(error) {
-      const detail=String(error.message||error);
+      const detail=String((error as Error)?.message||error);
       if(!detail.startsWith("gate:"))throw Error(`source parser failed: ${detail}`);
       return {identity,results:report.functions.map(()=>({status:"unsupported",detail:detail.trim()}))};
     }
@@ -621,4 +621,4 @@ function main(args) {
 }
 export {hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs,main};
 if(process.argv[1] && import.meta.filename===path.resolve(process.argv[1]))
-  try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
+  try {main(process.argv.slice(2));}catch(e){console.error((e as Error).message);process.exitCode=1;}
