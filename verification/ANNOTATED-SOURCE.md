@@ -1,13 +1,13 @@
 # Annotated source reports
 
-`tools/annotate-source.js` writes a separate TypeScript copy showing producer
+`tools/annotate-source.mts` writes a separate TypeScript copy showing producer
 claims, optionally with freshly checked function results. It also writes a JSON
 manifest preserving the claims, diagnostics and content fingerprints. Producer
 names are reported provenance, not authenticated identities. The original source and claim files are not modified. Existing output files are
 never overwritten.
 
 ```sh
-node verification/tools/annotate-source.js input.ts \
+node verification/tools/annotate-source.mts input.ts \
   --claims claims.json --producer skjs \
   --verify verification/lean/.lake/build/bin/verifier
 ```
@@ -181,7 +181,7 @@ Type strings are producer descriptions, not parsed type assertions. Optional
 `raw` fields on bindings and expressions preserve additional producer data.
 
 ```sh
-node verification/tools/annotate-source.js input.ts \
+node verification/tools/annotate-source.mts input.ts \
   --format report --claims display-claims.json --out report.ts
 ```
 
@@ -198,7 +198,7 @@ and, for checked reports, the verifier executable, parser and certificate
 digests. Check the saved snapshot against the current local files with:
 
 ```sh
-node verification/tools/annotate-source.js --check-fresh input.annotated.ts
+node verification/tools/annotate-source.mts --check-fresh input.annotated.ts
 ```
 
 This detects changed source, claims, annotated output, parser or verifier. It is
@@ -253,7 +253,7 @@ Capture stdout and stderr separately, retaining the nonzero exit status:
 ```sh
 skjs check --emit-skjs-type-claims input.ts > claims.json 2> diagnostics.txt
 # A nonzero status is expected for a rejected program; inspect it before proceeding.
-node verification/tools/annotate-source.js input.ts --claims claims.json \
+node verification/tools/annotate-source.mts input.ts --claims claims.json \
   --diagnostics diagnostics.txt --out partial.annotated.ts \
   --verify verification/lean/.lake/build/bin/verifier
 ```
@@ -276,7 +276,7 @@ Keep the original report and edit a separate copy of its **input claims**, then
 pass the original report's JSON manifest as `--baseline`:
 
 ```sh
-node verification/tools/annotate-source.js input.ts --claims repaired-claims.json \
+node verification/tools/annotate-source.mts input.ts --claims repaired-claims.json \
   --producer manual-repair --baseline partial.annotated.ts.json \
   --verify verification/lean/.lake/build/bin/verifier --out repaired.annotated.ts
 ```

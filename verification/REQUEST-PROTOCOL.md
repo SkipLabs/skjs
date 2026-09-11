@@ -221,7 +221,7 @@ never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the slice
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
 
-Generate an AST with `tools/parse-source.js`, and claims with SKJS's
+Generate an AST with `tools/parse-source.mts`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:
 
 ```sh
@@ -377,7 +377,7 @@ Their source correspondence remains a reviewed compilation obligation.
 
 ## Cell source lowering
 
-Use `parse-source.js <file.ts>` for the extended source gate. It accepts
+Use `parse-source.mts <file.ts>` for the extended source gate. It accepts
 only plain `{ value: e }` allocations, `.value` reads and assignments, with the
 required invariant-cell contracts above. Methods, accessors, computed keys,
 spreads, extra fields and optional access are rejected. Cell parameters are

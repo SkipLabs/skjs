@@ -12,7 +12,7 @@ node verification/report-viewer/serve.js # http://localhost:8731, without openin
 ```
 
 The toolbar's producer selector chooses whose claims are read: **SKJS claims**
-or **TypeScript claims**, the latter from `tools/tsc-claims.js`. Both answer
+or **TypeScript claims**, the latter from `tools/tsc-claims.mts`. Both answer
 for the same sites and the same verifier adjudicates either, so switching
 re-reads the open file through the other one.
 
@@ -254,7 +254,7 @@ Neither operation writes the source file or replaces the producer's claim file.
 
 The candidate wrapper is `{format, file, sourceSha256, claims}`. Supported formats
 are `skjs` and `source-claims`; the latter uses the existing normalized sidecar
-language. For CLI use, save the `claims` member and pass it to `annotate-source.js`
+language. For CLI use, save the `claims` member and pass it to `annotate-source.mts`
 with the matching `--format`. Legacy annotated-only reports are read-only because
 they do not preserve a verifier input. Live candidate verification requires the
 local server; standalone viewing and bundle export remain available offline.

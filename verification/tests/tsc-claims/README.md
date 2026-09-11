@@ -1,13 +1,13 @@
 # TypeScript's claims, through the verifier
 
-`../../tools/tsc-claims.js` states what the TypeScript compiler's own checker
+`../../tools/tsc-claims.mts` states what the TypeScript compiler's own checker
 believes at every site of a corpus file, as a `stateful-source-v3` document, so
 that `tsc` becomes a second claim producer beside SKJS and the same verifier
-adjudicates both. `../tsc-claims.js` runs it over the corpus and pins each
+adjudicates both. `../tsc-claims.mts` runs it over the corpus and pins each
 file's verdict.
 
 ```sh
-node verification/tools/tsc-claims.js verification/tests/stateful-source/cells.ts --out claims.json
+node verification/tools/tsc-claims.mts verification/tests/stateful-source/cells.ts --out claims.json
 node verification/tests/tsc-claims.js verification/lean/.lake/build/bin/verifier
 ```
 

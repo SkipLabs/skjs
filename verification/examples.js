@@ -4,9 +4,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
-const ts = require("./tools/node_modules/typescript");
-const { fromSkjs, verifySkjs } = require("./tools/annotate-source.js");
-const tscClaims = require("./tools/tsc-claims.js");
+const { fromSkjs, verifySkjs } = require("./tools/annotate-source.mts");
+const tscClaims = require("./tools/tsc-claims.mts");
+const { projectFor } = require("./tools/parse-source.mts");
+const ts = require(
+  require.resolve("typescript/unstable/ast", {
+    paths: [path.join(__dirname, "tools")],
+  }),
+);
 const { groups, supported } = require("./report-viewer/examples.js");
 const root = path.resolve(__dirname, "..");
 process.chdir(root);
@@ -175,7 +180,6 @@ try {
   // is one producer run: loading it costs more than reading any one file. A
   // worker loads its own shard, not the whole corpus.
   let mine = sources;
-  let tscProgram = null;
   const examine = (file) => {
     const lines = [];
     const tally = {
@@ -210,8 +214,7 @@ try {
       let tscAccepted = null;
       if (producers.tsc)
         try {
-          if (!tscProgram) tscProgram = tscClaims.programOver(mine);
-          const { doc, ast, accepted } = tscClaims.produce(file, tscProgram);
+          const { doc, ast, accepted } = tscClaims.produce(file);
           tscAccepted = accepted;
           stated = new Set(doc.functions.map((g) => g.name));
           // Producing evidence checks it, so one run answers the whole file.
@@ -255,8 +258,8 @@ try {
       const { results } = producers.skjs
         ? verifySkjs(file, source, claims, file, report, verifier, 10)
         : { results: [] };
-      const functions = ts
-        .createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+      const functions = projectFor(path.resolve(file))
+        .program.getSourceFile(path.resolve(file))
         .statements.filter(
           (n) => ts.isFunctionDeclaration(n) && n.name && n.body,
         );

@@ -8,8 +8,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
-const ts = require("../tools/node_modules/typescript");
-const { fromSourceClaims } = require("../tools/annotate-source");
+const { stripTypes } = require("../tools/strip-types.mts");
+const { typeErrors } = require("../tools/type-errors.mts");
+const { fromSourceClaims } = require("../tools/annotate-source.mts");
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath));
 const claims = JSON.parse(fs.readFileSync(claimsPath));
@@ -205,9 +206,7 @@ try {
   test("runtime distinguishes null and undefined, preserves false, and evaluates the fallback only when needed", () => {
     const context = vm.createContext({});
     vm.runInContext(
-      ts.transpileModule(source, {
-        compilerOptions: { target: ts.ScriptTarget.ES2022 },
-      }).outputText,
+      stripTypes(source),
       context,
     );
     for (const v of [null, undefined, false, true]) {
@@ -238,7 +237,7 @@ try {
       const input = path.join(tmp, "boundary.ts");
       fs.writeFileSync(input, text);
       const result = run(process.execPath, [
-        path.resolve(__dirname, "../tools/parse-source.js"),
+        path.resolve(__dirname, "../tools/parse-source.mts"),
         input,
       ]);
       assert.notEqual(result.status, 0, text);
@@ -247,15 +246,8 @@ try {
     }
   });
   test("the fixture also passes strict TypeScript checking", () => {
-    const program = ts.createProgram([file], {
-      strict: true,
-      noEmit: true,
-      target: ts.ScriptTarget.ES2022,
-    });
     assert.deepEqual(
-      ts
-        .getPreEmitDiagnostics(program)
-        .map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n")),
+      typeErrors(file).map((d) => d.text),
       [],
     );
   });

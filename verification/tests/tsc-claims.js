@@ -1,7 +1,7 @@
 "use strict";
 // What TypeScript's own checker believes, put through the verifier.
 //
-// `tools/tsc-claims.js` states tsc's types at every site of a corpus file as a
+// `tools/tsc-claims.mts` states tsc's types at every site of a corpus file as a
 // producer-neutral claims document; this runs that over the corpus and records
 // the verdict per file. The expected verdicts below are policy, the same shape
 // as `expectedVerified` in examples.js: a change here is a change in what one
@@ -11,7 +11,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const verifier = process.argv[2];
-if (!verifier) throw Error("usage: tsc-claims.js <verifier>");
+if (!verifier) throw Error("usage: tsc-claims.mts <verifier>");
 const root = path.resolve(__dirname, "../..");
 process.chdir(root);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
@@ -67,7 +67,7 @@ for (const [name, want] of Object.entries(expected)) {
     evidence = path.join(tmp, "evidence.json");
   let got, detail = "";
   const parsed = run(process.execPath, [
-    "verification/tools/parse-source.js",
+    "verification/tools/parse-source.mts",
     file,
   ]);
   if (parsed.status !== 0) {
@@ -76,7 +76,7 @@ for (const [name, want] of Object.entries(expected)) {
   } else {
     fs.writeFileSync(ast, parsed.stdout);
     const produced = run(process.execPath, [
-      "verification/tools/tsc-claims.js",
+      "verification/tools/tsc-claims.mts",
       file,
       "--out",
       claims,

@@ -1,13 +1,20 @@
 #!/usr/bin/env node
-"use strict";
 
 // Display-only reports. These comments are never certificate input.
-const fs = require("fs"), path = require("path"), os = require("os"), crypto = require("crypto");
-const {spawnSync} = require("child_process");
-const ts = require("typescript");
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
+import * as ts from "typescript/unstable/ast";
+import { createScanner } from "typescript/unstable/ast/scanner";
+import { createRequire } from "node:module";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
-const parseSource = require("./parse-source.js");
+import * as parseSource from "./parse-source.mts";
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+// The display helpers beside this file are plain JavaScript modules.
+const require = createRequire(import.meta.url);
 const hash = data => crypto.createHash("sha256").update(data).digest("hex");
 const clone = x => JSON.parse(JSON.stringify(x));
 // Escapes what could end or break the comment; a quote cannot, and a string
@@ -149,7 +156,7 @@ function fromSourceClaims(source,file,input,producer) {
     return {name:b.name,type:point(b).type};
   };
   const sf=parse(source,file),entries=new Map();
-  const walk=n=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);ts.forEachChild(n,walk);};walk(sf);
+  const walk=n=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);n.forEachChild(walk);};walk(sf);
   return {version:1,source:{file,sha256:input.sourceSha256},producer,
     functions:input.functions.map(f=>({name:f.name,namePos:f.namePos,
       signature:{params:f.params.map(parameter),retType:type(f.result)},
@@ -187,31 +194,36 @@ function attachConversion(source,report,sidecarBytes,conversion) {
   return result;
 }
 
+// The tree of the text the caller is holding, read as the file it names. A
+// report is rendered over a source in memory — the original, or an annotated
+// rendering of it — and its spans have to be spans of that text.
 function parse(source, file) {
-  const sf=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
-  if(sf.parseDiagnostics.length)throw Error(ts.flattenDiagnosticMessageText(sf.parseDiagnostics[0].messageText," "));
-  return sf;
+  return parseSource.openText(path.resolve(file), source);
 }
-function render(source, report, results=null, identity={}) {
+/**
+ * `identity` carries the report-level fingerprints and edit records into the
+ * header comment and, where present, into the gap annotations.
+ */
+function render(source, report, results=null, identity: {claimChanges?:any[],[k:string]:any} = {}) {
   if(report.version!==1 || report.source?.sha256!==hash(source))throw Error("report source fingerprint mismatch");
   if(typeof report.producer!=="string" || !report.producer || !Array.isArray(report.functions))throw Error("invalid report header");
   if(results && results.length!==report.functions.length)throw Error("result count mismatch");
-  const scanner=ts.createScanner(ts.ScriptTarget.Latest,false,ts.LanguageVariant.Standard,source);
-  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFileToken;k=scanner.scan())
+  const scanner=createScanner(false,undefined,source);
+  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())
     if((k===ts.SyntaxKind.MultiLineCommentTrivia || k===ts.SyntaxKind.SingleLineCommentTrivia) &&
        /@verify-report\b/.test(scanner.getTokenText()))throw Error("source already contains report annotations; use the original source");
   const sf=parse(source,report.source.file), functions=new Map(), starts=new Set(), spans=new Set();
   function walk(n) {
     starts.add(n.getStart(sf));spans.add(`${n.getStart(sf)}:${n.end}`);
     if(ts.isFunctionDeclaration(n)&&n.name)functions.set(`${n.name.getStart(sf)}:${n.name.end}`,n);
-    ts.forEachChild(n,walk);
+    n.forEachChild(walk);
   }
   walk(sf);
   const insertions=new Map(), seen=new Set();
   function add(pos,data){insertions.set(pos,(insertions.get(pos)||"")+comment(data));}
   // Ids are positional and deterministic, so the manifest and the annotations
   // agree without either having to re-derive spans.
-  const idOf=(kind,i,j)=>kind==="function" ? `f${i}` : kind==="gap" ? `g${i}` : `f${i}${kind==="entry"?"e":"x"}${j}`;
+  const idOf=(kind,i,j=null)=>kind==="function" ? `f${i}` : kind==="gap" ? `g${i}` : `f${i}${kind==="entry"?"e":"x"}${j}`;
   const checkSpan = p => {
     if(!Array.isArray(p)||p.length!==2||!p.every(Number.isSafeInteger)||p[0]<0||p[0]>=p[1]||p[1]>source.length)
       throw Error("invalid source span");
@@ -262,12 +274,23 @@ function render(source, report, results=null, identity={}) {
   insertions.set(headerAt,header+(insertions.get(headerAt)||""));
   let text=source;
   for(const [pos,data] of [...insertions].sort((a,b)=>b[0]-a[0]))text=text.slice(0,pos)+data+text.slice(pos);
-  // Compare AST structure and every token's source spelling after adding comments.
-  const shape=(n,s)=>[n.kind,...(n.getChildCount(s) ? n.getChildren(s).map(c=>shape(c,s)) : [n.getText(s)])];
+  // Adding comments must not change the program. Two independent witnesses of
+  // that: the token stream with trivia skipped, which is what the parser
+  // actually consumes, and the tree of node kinds it produced.
   const annotated=parse(text,report.source.file);
-  if(JSON.stringify(shape(sf,sf))!==JSON.stringify(shape(annotated,annotated)))throw Error("annotation changed the source AST");
+  if(JSON.stringify(tokens(source))!==JSON.stringify(tokens(text)) ||
+     JSON.stringify(shape(sf))!==JSON.stringify(shape(annotated)))
+    throw Error("annotation changed the source AST");
   return text;
 }
+
+// Every token, comments and whitespace skipped, as kind and spelling.
+function tokens(text) {
+  const scanner=createScanner(true,undefined,text), out=[];
+  for(let k=scanner.scan();k!==ts.SyntaxKind.EndOfFile;k=scanner.scan())out.push([k,scanner.getTokenText()]);
+  return out;
+}
+const shape=n=>{const kids=[];n.forEachChild(c=>{kids.push(shape(c));});return [n.kind,kids];};
 
 // Absence is meaningful only when the producer explicitly records collection progress.
 function coverage(source,report) {
@@ -282,7 +305,7 @@ function coverage(source,report) {
     for(const pos of f.collection.visitedExpressions||[]) {
       if(!snapshot.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1])) {
         if(!Array.isArray(pos)||pos.length!==2||!pos.every(Number.isSafeInteger)||pos[0]<node.getStart(sf)||pos[1]>node.end||pos[0]>=pos[1])throw Error("invalid expression visit span");
-        const matches=n=>(n.getStart(sf)===pos[0]&&n.end===pos[1])||ts.forEachChild(n,matches);
+        const matches=n=>(n.getStart(sf)===pos[0]&&n.end===pos[1])||n.forEachChild(matches);
         if(!matches(node))throw Error("cannot attach expression visit");
         gaps.push({pos,status:"expression entered without a type result"});
       }
@@ -292,7 +315,7 @@ function coverage(source,report) {
         if(ts.isFunctionDeclaration(n))return;
         if((ts.isVariableStatement(n)||ts.isReturnStatement(n)||ts.isIfStatement(n)||ts.isWhileStatement(n)||ts.isExpressionStatement(n)) &&
            !snapshot.entries.some(e=>e.pos[0]===n.getStart(sf)))gaps.push({pos:[n.getStart(sf),n.end],status:"statement not visited"});
-        ts.forEachChild(n,walk);
+        n.forEachChild(walk);
       };
       walk(node.body);
     }
@@ -342,7 +365,7 @@ function run(executable,args) {
 }
 const {readDiagnostic}=require("./obligation-diagnostic.js");
 function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, normalized=false) {
-  const parser=path.join(__dirname,"parse-source.js"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
+  const parser=path.join(__dirname,"parse-source.mts"), temp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-source-"));
   try {
     // Called rather than spawned: a node start costs more than the parse, and
     // this runs once per source. The parser's own file is still hashed into the
@@ -424,11 +447,16 @@ function verifySkjs(sourcePath, source, claims, file, report, verifier, depth, n
           absentBinding ? {kind:"missing-environment-claim",start:Number(environment[1]),binding:absentBinding[1]} :
           environment ? {kind:"environment-obligation",start:Number(environment[1])} :
           outsideSlice ? {kind:"source-limitation"} : null;
-        if(unavailableType && location) {
+
+        // One shape for every branch above: a place (a span or an entry start),
+        // the binding it concerns where there is one, and the producer's own
+        // reason where the refusals below match it.
+        const where = location as {kind:string,pos?:number[],start?:number,binding?:string,reason?:string}|null;
+        if(unavailableType && where) {
           const matches=refusals.filter(d=>unavailableBinding ?
-            d.kind==="entry"&&d.pos[0]===location.start&&d.binding===location.binding :
-            located ? d.kind==="expression"&&JSON.stringify(d.pos)===JSON.stringify(location.pos) : false);
-          if(matches.length===1)location.reason=matches[0].reason;
+            d.kind==="entry"&&d.pos[0]===where.start&&d.binding===where.binding :
+            located ? d.kind==="expression"&&JSON.stringify(d.pos)===JSON.stringify(where.pos) : false);
+          if(matches.length===1)where.reason=matches[0].reason;
         }
         // Bind node-local IDs to this exact function, source, and selected claims.
         const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
@@ -452,7 +480,7 @@ function checkFresh(output) {
   if(m.baselinePath)checks.push([m.baselinePath,m.baselineSha256]);
   if(m.diagnosticsPath)checks.push([m.diagnosticsPath,m.diagnosticsSha256]);
   if(m.verifierPath)checks.push([m.verifierPath,m.verifierSha256]);
-  if(m.parserSha256)checks.push([path.join(__dirname,"parse-source.js"),m.parserSha256]);
+  if(m.parserSha256)checks.push([path.join(__dirname,"parse-source.mts"),m.parserSha256]);
   for(const [file,digest] of checks)if(hash(fs.readFileSync(file))!==digest)throw Error(`stale report: ${file}`);
   console.log("Snapshot fingerprints match. This is not proof verification.");
 }
@@ -473,6 +501,18 @@ const namedBinding=(name,typeNode)=>{
 const identifiers=nodes=>(nodes||[]).filter(p=>ts.isIdentifier(p.name)).map(p=>[p.name.text,p.type]);
 const declaredBy=n=>ts.isVariableStatement(n)?identifiers(n.declarationList.declarations):[];
 
+// TypeScript's own "is this node in expression position" test is not part of
+// the public surface, and kind alone is not it: the name a declaration binds
+// is an Identifier like any other. The name a node *declares* is always its
+// `name` child — with one exception, a property access, whose `.value` is not
+// a declared name but part of the expression, and carries a claim like any
+// other site.
+const isDeclaredName = n => {
+  const p=n.parent;
+  return !!p && p.name===n && !ts.isPropertyAccessExpression(p);
+};
+const isExpressionNode = n => ts.isExpression(n) && !isDeclaredName(n);
+
 function missingClaimSites(node, f) {
   const sites=[];
   const walk=(n,scope)=> {
@@ -481,7 +521,7 @@ function missingClaimSites(node, f) {
     if(ts.isStatement(n) && !ts.isBlock(n) && !f.entries.some(e=>e.pos[0]===pos[0]))
       sites.push({kind:"environment",pos,syntax:ts.isVariableStatement(n)?"VariableStatement":ts.SyntaxKind[n.kind],
         bindings:scope.map(([name,typeNode])=>namedBinding(name,typeNode))});
-    if(ts.isExpressionNode(n) && !f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1]))
+    if(isExpressionNode(n) && !f.expressions.some(e=>e.pos[0]===pos[0]&&e.pos[1]===pos[1]))
       sites.push({kind:"expression",pos,syntax:ts.SyntaxKind[n.kind]});
     // A block is walked in order so that each statement sees only what precedes
     // it; a lambda adds its own parameter for its body.
@@ -492,10 +532,10 @@ function missingClaimSites(node, f) {
     }
     if(ts.isArrowFunction(n)||ts.isFunctionExpression(n)) {
       const inner=scope.concat(identifiers(n.parameters));
-      ts.forEachChild(n,c=>walk(c,inner));
+      n.forEachChild(c=>walk(c,inner));
       return;
     }
-    ts.forEachChild(n,c=>walk(c,scope));
+    n.forEachChild(c=>walk(c,scope));
   };
   if(node.body) walk(node.body,identifiers(node.parameters));
   return sites.sort((a,b)=>a.pos[0]-b.pos[0]||a.pos[1]-b.pos[1]);
@@ -503,8 +543,15 @@ function missingClaimSites(node, f) {
 
 function main(args) {
   if(args[0]==="--check-fresh" && args.length===2)return checkFresh(args[1]);
-  const sourcePath=args.shift(), options={format:"skjs",depth:10};
-  if(!sourcePath)throw Error("usage: annotate-source.js source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
+  const sourcePath=args.shift();
+  // Every switch in `allowed` below lands here, so the record says so once
+  // rather than growing a property at a time.
+  const options = {format:"skjs",depth:10} as {
+    format:string, depth:string|number, claims?:string, out?:string, verify?:string,
+    producer?:string, "file-key"?:string, diagnostics?:string, baseline?:string,
+    conversion?:string, stdout?:string,
+  };
+  if(!sourcePath)throw Error("usage: annotate-source.mts source.ts --claims claims.json [--out annotated.ts] [--verify verifier] [--format report --producer name]");
   const allowed=new Set(["claims","out","verify","format","producer","file-key","depth","diagnostics","baseline","conversion","stdout"]);
   while(args.length) {
     const key=args.shift()?.replace(/^--/,"");
@@ -519,21 +566,22 @@ function main(args) {
   if([sourcePath,options.claims,options.verify].filter(Boolean).some(p=>path.resolve(p)===path.resolve(output)))throw Error("output must differ from inputs");
   // Nothing is written in stdout mode, so an existing report there is not a conflict.
   if(options.stdout!=="json" && (fs.existsSync(output)||fs.existsSync(manifest)))throw Error("output already exists; choose a new --out path");
-  const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims), input=JSON.parse(bytes);
+  const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims,"utf8"), input=JSON.parse(bytes);
   const file=options["file-key"] || sourcePath;
   let report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
   let conversion=null,conversionBytes=null;
   if(options.conversion) {
     if(options.format!=="source-claims")throw Error("--conversion requires --format source-claims");
-    conversionBytes=fs.readFileSync(options.conversion);conversion=JSON.parse(conversionBytes);
+    conversionBytes=fs.readFileSync(options.conversion,"utf8");conversion=JSON.parse(conversionBytes);
     report=attachConversion(source,report,bytes,conversion);
   }
   // Validate attachment before running any expensive proof generation.
   render(source,report);
-  let results=null, identity={claimsSha256:hash(bytes)}, comparison=null;
+  let results=null, comparison=null;
+  let identity: {claimsSha256:string, [k:string]:any} = {claimsSha256:hash(bytes)};
   if(conversion)identity.conversionSha256=hash(conversionBytes);
   if(options.baseline) {
-    const baselineBytes=fs.readFileSync(options.baseline);
+    const baselineBytes=fs.readFileSync(options.baseline,"utf8");
     comparison=compareClaims(source,JSON.parse(baselineBytes),report);
     identity.baselineSha256=hash(baselineBytes);
   }
@@ -571,5 +619,6 @@ function main(args) {
   catch(e){fs.unlinkSync(output);throw e;}
   console.log(`Annotated source: ${output}\nReport manifest: ${manifest}`);
 }
-if(require.main===module)try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}
-module.exports={hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs,main};
+export {hash,typeText,fromSkjs,fromSourceClaims,attachConversion,render,coverage,compareClaims,verifySkjs,main};
+if(process.argv[1] && import.meta.filename===path.resolve(process.argv[1]))
+  try {main(process.argv.slice(2));}catch(e){console.error(e.message);process.exitCode=1;}

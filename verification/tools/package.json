@@ -3,6 +3,9 @@
   "private": true,
   "description": "Trusted front end for the verification experiment.",
   "dependencies": {
-    "typescript": "5.7.2"
+    "typescript": "7.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2"
   }
 }

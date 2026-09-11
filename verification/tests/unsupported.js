@@ -33,7 +33,7 @@ try {
   for (const [name, reason] of Object.entries(cases)) {
     const file = dir + "/" + name;
     let result = run(process.execPath, [
-      "verification/tools/parse-source.js",
+      "verification/tools/parse-source.mts",
       file,
     ]);
     if (result.status === 0) {

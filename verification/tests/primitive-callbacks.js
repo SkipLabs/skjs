@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
-const ts = require("../tools/node_modules/typescript");
+const { stripTypes } = require("../tools/strip-types.mts");
 const [
   astPath,
   claimsPath,
@@ -47,9 +47,7 @@ function expect(name, r, accept, reason = "") {
 function runtime(path) {
   const context = vm.createContext({});
   vm.runInContext(
-    ts.transpileModule(fs.readFileSync(path, "utf8"), {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
+    stripTypes(fs.readFileSync(path, "utf8")),
     context,
     { timeout: 1000 },
   );

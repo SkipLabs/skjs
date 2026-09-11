@@ -6,8 +6,9 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const ts = require("../tools/node_modules/typescript");
-const { fromSkjs, verifySkjs } = require("../tools/annotate-source.js");
+const { stripTypes } = require("../tools/strip-types.mts");
+const { typeErrors } = require("../tools/type-errors.mts");
+const { fromSkjs, verifySkjs } = require("../tools/annotate-source.mts");
 const [
   safeAstPath,
   safeClaimsPath,
@@ -37,9 +38,7 @@ function test(name, f) {
 function runtime(file) {
   const context = vm.createContext({});
   vm.runInContext(
-    ts.transpileModule(fs.readFileSync(file, "utf8"), {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
+    stripTypes(fs.readFileSync(file, "utf8")),
     context,
   );
   return context;
@@ -117,34 +116,17 @@ test("runtime results establish the two classifications", () => {
   assert.equal(bad.staleFlip(false), true);
 });
 test("TypeScript accepts the safe function and rejects the stale false return", () => {
-  const program = ts.createProgram([safeFile, badFile], {
-    strict: true,
-    noEmit: true,
-    target: ts.ScriptTarget.ES2022,
-  });
-  const errors = ts
-    .getPreEmitDiagnostics(program)
-    .filter((d) => d.category === ts.DiagnosticCategory.Error);
+  const errors = [...typeErrors(safeFile), ...typeErrors(badFile)];
   assert.equal(
     errors.length,
     2,
-    ts.formatDiagnostics(errors, {
-      getCanonicalFileName: (x) => x,
-      getCurrentDirectory: () => process.cwd(),
-      getNewLine: () => "\n",
-    }),
+    errors.map((e) => `${e.file}:${e.pos} TS${e.code}: ${e.text}`).join("\n"),
   );
-  assert(errors.every((e) => e.file.fileName === badFile && e.code === 2322));
-  const flipped = errors.find((e) =>
-    ts
-      .flattenDiagnosticMessageText(e.messageText, "\n")
-      .includes("Type 'true'"),
-  );
+  const bad = require("node:path").resolve(badFile);
+  assert(errors.every((e) => e.file === bad && e.code === 2322));
+  const flipped = errors.find((e) => e.text.includes("Type 'true'"));
   assert(flipped);
-  assert.match(
-    ts.flattenDiagnosticMessageText(flipped.messageText, "\n"),
-    /Type 'true' is not assignable to type 'false'/,
-  );
+  assert.match(flipped.text, /Type 'true' is not assignable to type 'false'/);
 });
 test("accepted negated-guard export retains a false read after a true write", () => {
   const f = claim(badClaims, badFile, "staleFlip"),

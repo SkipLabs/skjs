@@ -1,6 +1,6 @@
 "use strict";
 const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert"),vm=require("vm");
-const ts=require(require.resolve("typescript",{paths:[path.resolve(__dirname,"../tools")]})),{spawnSync}=require("child_process");
+const {stripTypes}=require("../tools/strip-types.mts"),{spawnSync}=require("child_process");
 const [astPath,claimsPath,file,verifier]=process.argv.slice(2),ast=JSON.parse(fs.readFileSync(astPath)),claims=JSON.parse(fs.readFileSync(claimsPath));
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"loop-transfers-")),ap=path.join(tmp,"ast.json"),cp=path.join(tmp,"claims.json"),ep=path.join(tmp,"evidence.json");
 const sf=(a,n)=>a.functions.find(f=>f.name===n),cf=(c,n)=>c.find(f=>f.file===file).functions.find(f=>f.name===n);
@@ -36,9 +36,9 @@ try {
     ["labeled break","while (true) { break outer; } return null;"],
     ["labeled continue","while (true) { continue outer; } return null;"],
     ["closure cannot break its caller's loop","while (true) { const f = (x: null): null => { break; return null; }; } return null;"]
-  ])test(`${name} gated`,()=>{const p=path.join(tmp,"gated.ts");fs.writeFileSync(p,`function gated(): null { ${body} }`);assert.notEqual(exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),p]).status,0);});
+  ])test(`${name} gated`,()=>{const p=path.join(tmp,"gated.ts");fs.writeFileSync(p,`function gated(): null { ${body} }`);assert.notEqual(exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),p]).status,0);});
   test("source runtime distinguishes nearest-loop exits and branch transfers",()=>{
-    const js=ts.transpileModule(fs.readFileSync(file,"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    const js=stripTypes(fs.readFileSync(file,"utf8"));
     const values=vm.runInNewContext(js+"; JSON.stringify([stopAfterWrite(),continueAfterWrite(),nestedBreak(true),nestedBreak(false),branchContinue(true),branchContinue(false)])",{},{timeout:2000});
     assert.equal(values,JSON.stringify([false,false,true,false,false,true]));
   });

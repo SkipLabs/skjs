@@ -1,0 +1,1189 @@
+#!/usr/bin/env node
+/*
+ * A second claims producer for `stateful-source-v3`. Where SKJS's own export
+ * (`skjs.sh --emit-skjs-type-claims`) states what SKJS's checker believes at
+ * every site of a source fragment file, this states what the TypeScript
+ * compiler's own checker believes at the same sites, so the two can be run
+ * through the same independent verifier and compared.
+ *
+ * Sites come from the trusted parser's own AST (parse-source.mts), walked with
+ * the same rule the verifier uses to decide what is an entry and what is an
+ * expression (SourceClaimJson.functionSites / exprSites, in
+ * verification/lean/Verification/ExperimentState/SourceClaimJson.lean). A site
+ * is matched to a real TypeScript node by exact [start,end) span, and its type
+ * comes from the checker. A type this tool cannot state as a calculus label is
+ * omitted, never guessed: the omission, with the reason and the checker's own
+ * rendering, goes to `<out>.omissions.json`, and the whole function is left out
+ * of the claims document, since one missing site would fail extraction anyway.
+ *
+ * This producer is UNTRUSTED. The verifier checks what it claims.
+ */
+import {
+  SignatureKind,
+  SymbolFlags,
+  TypeFlags,
+  isUnionType,
+} from "typescript/unstable/sync";
+import type { Checker, Symbol, Type } from "typescript/unstable/sync";
+import * as ts from "typescript/unstable/ast";
+import type { Node, SourceFile } from "typescript/unstable/ast";
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { close, parseFile, projectFor } from "./parse-source.mts";
+import type { Ast, Expr, FunctionAst, Span, Stmt } from "./parse-source.mts";
+
+/* ------------------------------------------------------------- refusal -- */
+// A type this producer will not state. The reason is a short slug; the
+// rendering is the checker's own, so a reader can see what was refused.
+
+class Refusal extends Error {
+  readonly reason: string;
+  readonly tsType: string;
+  constructor(reason: string, tsType: string) {
+    super(reason);
+    this.reason = reason;
+    this.tsType = tsType;
+  }
+}
+
+/* ------------------------------------------- predicates the AST lacks -- */
+// Written against `kind`, because that is all they ever were.
+
+const FUNCTION_LIKE = new Set<number>([
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ArrowFunction,
+  ts.SyntaxKind.MethodDeclaration,
+  ts.SyntaxKind.Constructor,
+  ts.SyntaxKind.GetAccessor,
+  ts.SyntaxKind.SetAccessor,
+]);
+const isFunctionLike = (n: Node) => FUNCTION_LIKE.has(n.kind);
+const isParameter = (n: Node) => n.kind === ts.SyntaxKind.Parameter;
+const isPropertySignature = (n: Node) =>
+  n.kind === ts.SyntaxKind.PropertySignature;
+
+/* ---------------------------------------------------------- the sites -- */
+// Which spans carry a claim, from the trusted parse alone. The verifier
+// refuses a claim anywhere else and requires one at each of these, so this
+// walk mirrors `functionSites` in the Lean lowering exactly.
+
+interface Sites {
+  entries: Set<number>;
+  exprs: Map<string, { pos: Span; kind: string }>;
+}
+
+function addExpr(out: Sites, pos: Span, kind: string): void {
+  const key = pos[0] + ":" + pos[1];
+  if (!out.exprs.has(key)) out.exprs.set(key, { pos, kind });
+}
+
+function walkExpr(e: Expr, out: Sites): void {
+  switch (e.k) {
+    case "id":
+    case "lit":
+      addExpr(out, e.pos, e.k);
+      return;
+    case "not":
+    case "alloc":
+    case "read":
+      addExpr(out, e.pos, e.k);
+      walkExpr(e.e, out);
+      return;
+    case "lambda":
+      addExpr(out, e.pos, "lambda");
+      walkExpr(e.body, out);
+      return;
+    case "write":
+      addExpr(out, e.pos, "write");
+      walkExpr(e.receiver, out);
+      walkExpr(e.rhs, out);
+      return;
+    case "apply":
+      addExpr(out, e.pos, "apply");
+      walkExpr(e.callee, out);
+      walkExpr(e.arg, out);
+      return;
+    case "bin":
+      addExpr(out, e.pos, "bin");
+      walkExpr(e.l, out);
+      walkExpr(e.r, out);
+      return;
+    case "coalesce":
+      addExpr(out, e.pos, "coalesce");
+      walkExpr(e.left, out);
+      walkExpr(e.right, out);
+      return;
+    case "conditional":
+      // A source ternary: its own span is the expression claim.
+      addExpr(out, e.pos, "conditional");
+      walkExpr(e.cond, out);
+      walkExpr(e.then, out);
+      walkExpr(e.else_, out);
+      return;
+    case "ifBody":
+      // A lowered statement-conditional inside a closure body: an entry.
+      out.entries.add(e.pos[0]);
+      walkExpr(e.cond, out);
+      walkExpr(e.then, out);
+      walkExpr(e.else_, out);
+      return;
+    case "seqBody":
+    case "letBody":
+      out.entries.add(e.pos[0]);
+      walkExpr(e.init, out);
+      walkExpr(e.body, out);
+      return;
+    case "returnBody":
+      out.entries.add(e.pos[0]);
+      walkExpr(e.e, out);
+      return;
+    case "doneBody":
+      // Administrative completion; no source expression claim.
+      return;
+    default:
+      throw new Error(
+        `expression outside the lowered fragment (${(e as { k: string }).k})`,
+      );
+  }
+}
+
+function walkStmt(s: Stmt, out: Sites): void {
+  out.entries.add(s.pos[0]);
+  switch (s.k) {
+    case "break":
+    case "continue":
+      return;
+    case "return":
+    case "effect":
+      walkExpr(s.e, out);
+      return;
+    case "const":
+      walkExpr(s.init, out);
+      return;
+    case "while":
+      // The loop head: the invariant candidate checked on entry and every
+      // back edge.
+      walkExpr(s.cond, out);
+      s.body.forEach((st) => walkStmt(st, out));
+      return;
+    case "if":
+      walkExpr(s.cond, out);
+      s.then.forEach((st) => walkStmt(st, out));
+      (s.else_ ?? []).forEach((st) => walkStmt(st, out));
+      return;
+    default:
+      throw new Error(
+        `statement outside the lowered fragment (${(s as { k: string }).k})`,
+      );
+  }
+}
+
+function functionSites(fn: FunctionAst): Sites {
+  const out: Sites = { entries: new Set(), exprs: new Map() };
+  fn.body.forEach((st) => walkStmt(st, out));
+  return out;
+}
+
+/* ------------------------------------------------------- the AST index -- */
+// A site's span, from the trusted parser's output, is matched to the compiler
+// node with that same [getStart(sf), end) span: the checker speaks about
+// nodes, the parser speaks about offsets, and this is the one place the two
+// vocabularies meet.
+
+const STATEMENT_KINDS = new Set<number>([
+  ts.SyntaxKind.ReturnStatement,
+  ts.SyntaxKind.VariableStatement,
+  ts.SyntaxKind.IfStatement,
+  ts.SyntaxKind.WhileStatement,
+  ts.SyntaxKind.BreakStatement,
+  ts.SyntaxKind.ContinueStatement,
+  ts.SyntaxKind.ExpressionStatement,
+]);
+
+interface Indices {
+  stmtByStart: Map<number, any>;
+  exprBySpan: Map<string, any>;
+}
+
+function buildIndices(sf: SourceFile): Indices {
+  const stmtByStart = new Map<number, any>();
+  const exprBySpan = new Map<string, any>();
+  const visit = (node: any): void => {
+    const start = node.getStart(sf);
+    if (STATEMENT_KINDS.has(node.kind) && !stmtByStart.has(start))
+      stmtByStart.set(start, node);
+    exprBySpan.set(start + ":" + node.end, node);
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return { stmtByStart, exprBySpan };
+}
+
+/* -------------------------------------------------- types into labels -- */
+// The document's own type table: the four primitives, then one row per
+// compound type on first use (SOURCE-CLAIMS.md). Rows are interned by exact
+// content, so equal types always share a label.
+
+type Row = unknown[];
+
+function dedupSortInts(xs: number[]): number[] {
+  return Array.from(new Set(xs)).sort((a, b) => a - b);
+}
+function arrCompare(a: number[], b: number[]): number {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i] ?? -Infinity;
+    const y = b[i] ?? -Infinity;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+function dedupSortArrays(arrs: number[][]): number[][] {
+  const sorted = arrs.map((a) => a.slice()).sort(arrCompare);
+  const out: number[][] = [];
+  for (const a of sorted)
+    if (!out.length || arrCompare(out[out.length - 1]!, a) !== 0) out.push(a);
+  return out;
+}
+function internRow(types: Row[], row: Row): number {
+  const key = JSON.stringify(row);
+  for (let i = 0; i < types.length; i++)
+    if (JSON.stringify(types[i]) === key) return i;
+  types.push(row);
+  return types.length - 1;
+}
+
+/**
+ * A type built only from null/true/false/undefined/boolean/never, as a sorted,
+ * duplicate-free list of primitive labels, or null when the type (or some
+ * union member) is none of those.
+ */
+function primitiveLabelsOf(type: Type): number[] | null {
+  const f = type.flags;
+  if (f & TypeFlags.Null) return [0];
+  if (f & TypeFlags.Undefined) return [3];
+  if (f & TypeFlags.Never) return [];
+  if (f & TypeFlags.Boolean) return [1, 2]; // the `boolean` pseudo-union itself
+  if (f & TypeFlags.BooleanLiteral)
+    return (type as { value?: unknown }).value === true ? [1] : [2];
+  if (isUnionType(type)) {
+    const acc: number[] = [];
+    for (const t of type.getTypes()) {
+      const sub = primitiveLabelsOf(t);
+      if (sub === null) return null;
+      acc.push(...sub);
+    }
+    return dedupSortInts(acc);
+  }
+  return null;
+}
+
+function primitiveOnly(type: Type, checker: Checker): number[] {
+  const p = primitiveLabelsOf(type);
+  if (p === null)
+    throw new Refusal("nested-non-primitive", checker.typeToString(type));
+  return p;
+}
+
+interface RecordRead {
+  ok: boolean;
+  reason?: string;
+  valueType?: Type;
+}
+
+/**
+ * `{ value: T }`-shaped: exactly one required, non-readonly property named
+ * "value", no index signatures, and not itself callable. `ok:false` with no
+ * reason means "not object-shaped at all, try the arrow reading instead";
+ * with a reason it means "object-shaped but not this exact contract".
+ */
+function tryRecord(type: Type, checker: Checker): RecordRead {
+  if (!(type.flags & TypeFlags.Object)) return { ok: false };
+  if (
+    checker.getSignaturesOfType(type, SignatureKind.Call).length ||
+    checker.getSignaturesOfType(type, SignatureKind.Construct).length
+  )
+    return { ok: false };
+  const props = checker.getPropertiesOfType(type);
+  if (props.length !== 1)
+    return {
+      ok: false,
+      reason: props.length === 0 ? "no-value-field" : "several-properties",
+    };
+  const prop = props[0]!;
+  if (prop.name !== "value") return { ok: false, reason: "no-value-field" };
+  if (checker.getIndexInfosOfType(type).length)
+    return { ok: false, reason: "indexed-type" };
+  if (prop.flags & SymbolFlags.Optional)
+    return { ok: false, reason: "optional-field" };
+  // A declaration arrives as a handle; `readonly` is on the node it names.
+  const declaration = declarationOf(prop);
+  if (
+    declaration?.modifiers?.some(
+      (m: Node) => m.kind === ts.SyntaxKind.ReadonlyKeyword,
+    )
+  )
+    return { ok: false, reason: "readonly-field" };
+  return {
+    ok: true,
+    valueType: must(checker.getTypeOfSymbol(prop), "field-type"),
+  };
+}
+
+interface ArrowRead {
+  ok: boolean;
+  reason?: string;
+  domain?: Type;
+  result?: Type;
+}
+
+/**
+ * `(x: D) => R`-shaped: one signature, one required ordinary parameter, no
+ * type parameters, no `this` parameter.
+ */
+function tryArrow(type: Type, checker: Checker): ArrowRead {
+  const sigs = checker.getSignaturesOfType(type, SignatureKind.Call);
+  if (sigs.length === 0) return { ok: false };
+  if (
+    sigs.length !== 1 ||
+    checker.getSignaturesOfType(type, SignatureKind.Construct).length
+  )
+    return { ok: false, reason: "overloaded-arrow" };
+  const sig = sigs[0]!;
+  if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
+  if (sig.thisParameter !== undefined) return { ok: false, reason: "this-param" };
+  if (sig.hasRestParameter || sig.parameters.length !== 1)
+    return { ok: false, reason: "arrow-arity" };
+  // Optionality is on the declared parameter: a signature transports its
+  // parameters as ids, and asking the checker for one of those symbols is
+  // not the way to reach a type here — `getParameterType` is.
+  const declared = sig.declaration?.resolve() as any;
+  const p0 = declared?.parameters?.[0];
+  if (p0 && (p0.questionToken || p0.initializer))
+    return { ok: false, reason: "optional-param" };
+  return {
+    ok: true,
+    domain: must(checker.getParameterType(sig, 0), "parameter-type"),
+    result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
+  };
+}
+
+/**
+ * The checker answers `undefined` where it has nothing to say. That is a site
+ * this producer cannot state, like any other, so it becomes a refusal with its
+ * own name rather than a crash somewhere further down.
+ */
+function must(type: Type | undefined, what: string): Type {
+  if (!type) throw new Refusal(`no-${what}`, "");
+  return type;
+}
+
+function basicReason(type: Type): string {
+  const f = type.flags;
+  if (f & TypeFlags.Void) return "void";
+  if (f & (TypeFlags.String | TypeFlags.StringLiteral)) return "string";
+  if (f & (TypeFlags.Number | TypeFlags.NumberLiteral)) return "number";
+  if (f & TypeFlags.Any) return "any";
+  if (f & TypeFlags.Unknown) return "unknown";
+  if (f & TypeFlags.TypeParameter) return "generic";
+  if (f & TypeFlags.Object) return "object-shape";
+  return "unsupported-type";
+}
+
+/**
+ * An intersection of record contracts, as `{first, rest}` (both sorted,
+ * duplicate-free label lists), or null when the operands are not all records,
+ * which leaves an arrow intersection still to try.
+ */
+function tryRecordIntersection(
+  type: Type,
+  checker: Checker,
+  parts: readonly Type[],
+): { first: number[]; rest: number[][] } | null {
+  const results = parts.map((t) => tryRecord(t, checker));
+  if (!results.every((r) => r.ok)) {
+    const bad = results.find((r) => !r.ok && r.reason);
+    if (bad) throw new Refusal(bad.reason!, checker.typeToString(type));
+    return null;
+  }
+  const operands = dedupSortArrays(
+    results.map((r) => primitiveOnly(r.valueType!, checker)),
+  );
+  return { first: operands[0]!, rest: operands.slice(1) };
+}
+
+/** An intersection of arrows, in declaration order, exact repeats dropped. */
+function tryArrowIntersection(
+  type: Type,
+  checker: Checker,
+  parts: readonly Type[],
+): number[][][] | null {
+  const results = parts.map((t) => tryArrow(t, checker));
+  if (!results.every((r) => r.ok)) {
+    const bad = results.find((r) => !r.ok && r.reason);
+    if (bad) throw new Refusal(bad.reason!, checker.typeToString(type));
+    return null;
+  }
+  const arrows: number[][][] = [];
+  for (const r of results) {
+    const pair = [
+      primitiveOnly(r.domain!, checker),
+      primitiveOnly(r.result!, checker),
+    ];
+    if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
+      arrows.push(pair);
+  }
+  return arrows;
+}
+
+function translateType(type: Type, checker: Checker, types: Row[]): number[] {
+  const prim = primitiveLabelsOf(type);
+  if (prim !== null) return prim;
+  if (type.flags & TypeFlags.Intersection) {
+    const parts = (type as unknown as { getTypes(): readonly Type[] }).getTypes();
+    const refs = tryRecordIntersection(type, checker, parts);
+    if (refs) return [internRow(types, [{ refs }])];
+    const arrows = tryArrowIntersection(type, checker, parts);
+    if (arrows) return [internRow(types, [{ arrs: { arrows } }])];
+    throw new Refusal("mixed-intersection", checker.typeToString(type));
+  }
+  // A union is a label list, and the format admits one mixing cell and arrow
+  // atoms with primitives, so each member contributes its own labels.
+  if (isUnionType(type)) {
+    const labels: number[] = [];
+    for (const member of type.getTypes())
+      labels.push(...translateType(member, checker, types));
+    return dedupSortInts(labels);
+  }
+  const rec = tryRecord(type, checker);
+  if (rec.ok)
+    return [
+      internRow(types, [
+        { refs: { first: primitiveOnly(rec.valueType!, checker), rest: [] } },
+      ]),
+    ];
+  if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
+  const arr = tryArrow(type, checker);
+  if (arr.ok) {
+    const pair = [
+      primitiveOnly(arr.domain!, checker),
+      primitiveOnly(arr.result!, checker),
+    ];
+    return [internRow(types, [{ arrs: { arrows: [pair] } }])];
+  }
+  if (arr.reason) throw new Refusal(arr.reason, checker.typeToString(type));
+  throw new Refusal(basicReason(type), checker.typeToString(type));
+}
+
+/* -------------------------------------------------- symbols and nodes -- */
+// Remote objects are addressed by handle, so a declaration is fetched and a
+// symbol is compared by id rather than by reference.
+
+function declarationOf(sym: Symbol): any {
+  const handle = sym.valueDeclaration ?? sym.declarations?.[0];
+  return handle ? handle.resolve() : undefined;
+}
+
+/* ------------------------------------------------ a site's own type -- */
+
+/**
+ * Object literals and arrow functions are contextually typed: the checker's
+ * own type for the node is the narrowest branch it can infer on its own (one
+ * record, or one signature), but a claim allocating into or implementing a
+ * conjoined contract needs the wider annotation the value is held to. Prefer
+ * that contextual type when it exists and translates; the node's own type is
+ * always the sound fallback.
+ *
+ * A `.value` read is a different case: TypeScript narrows a property access
+ * across a straight-line write (`cell.value = false; ...cell.value...` reads
+ * as `false`), but the calculus reads a cell at its declared invariant unless
+ * the point carries an explicit current-content assertion, which this producer
+ * never writes. Claiming the narrower type here states something the calculus
+ * does not (and need not) grant, so a read's claim is always the cell's own
+ * invariant: the `first` contract of whatever row its receiver's type interns.
+ */
+function readInvariant(node: any, checker: Checker, types: Row[]): number[] {
+  const cellType = must(
+    checker.getTypeAtLocation(node.expression),
+    "receiver-type",
+  );
+  const cellLabels = translateType(cellType, checker, types);
+  if (cellLabels.length === 1) {
+    const row = types[cellLabels[0]!];
+    const clause = Array.isArray(row) && row.length === 1 ? (row[0] as any) : null;
+    if (clause?.refs) return clause.refs.first;
+  }
+  throw new Refusal("read-of-non-reference", checker.typeToString(cellType));
+}
+
+/**
+ * TypeScript folds a boolean local declared with a wider annotation but a
+ * literal initializer (`const condition: boolean = true;`) back to that
+ * literal, and then marks whichever arm of `if (condition)` the literal rules
+ * out as unreachable — every reference there reads back as `never`. The
+ * calculus does not fold constants across a test: `if`/`while` on a bare name
+ * or its negation (`conditionVariable`, SourceExtraction.lean) narrows the
+ * tested binding to `true`/`false` in the corresponding arm regardless of its
+ * initializer, and both arms stay live. So `never` on a reference to a local
+ * is never trusted outright — it is TypeScript proving more than the
+ * calculus's model of this one test does, not a fact the calculus can use.
+ */
+function testedIdentitySymbol(
+  cond: any,
+  checker: Checker,
+): { sym: Symbol; negated: boolean } | null {
+  if (ts.isParenthesizedExpression(cond))
+    return testedIdentitySymbol(cond.expression, checker);
+  if (
+    ts.isPrefixUnaryExpression(cond) &&
+    cond.operator === ts.SyntaxKind.ExclamationToken
+  ) {
+    const inner = testedIdentitySymbol(cond.operand, checker);
+    return inner && { sym: inner.sym, negated: !inner.negated };
+  }
+  if (ts.isIdentifier(cond)) {
+    const sym = checker.getSymbolAtLocation(cond);
+    return sym ? { sym, negated: false } : null;
+  }
+  return null;
+}
+
+/**
+ * Walks outward from a reference through enclosing `if`/`while` statements,
+ * applying the innermost one that tests this same binding by bare identity.
+ */
+function truthyGuardLabels(node: any, checker: Checker): number[] | null {
+  const sym = checker.getSymbolAtLocation(node);
+  if (!sym) return null;
+  let child: any = node;
+  let cur: any = node.parent;
+  while (cur && !isFunctionLike(cur)) {
+    if (ts.isIfStatement(cur) || ts.isWhileStatement(cur)) {
+      const tested = testedIdentitySymbol(cur.expression, checker);
+      if (tested && tested.sym.id === sym.id) {
+        const truthyArm = ts.isIfStatement(cur)
+          ? child === cur.thenStatement
+          : child === cur.statement;
+        const falsyArm = ts.isIfStatement(cur) && child === cur.elseStatement;
+        if (truthyArm) return tested.negated ? [2] : [1];
+        if (falsyArm) return tested.negated ? [1] : [2];
+      }
+    }
+    child = cur;
+    cur = cur.parent;
+  }
+  return null;
+}
+
+/**
+ * The general fallback once `never` is rejected: the binding's own declared
+ * type, ignoring flow entirely. Always sound, since it is what every value the
+ * binding could ever hold is required to satisfy.
+ */
+function declaredTypeAt(node: any, checker: Checker, types: Row[]): number[] {
+  const sym = checker.getSymbolAtLocation(node);
+  if (sym)
+    return translateType(
+      must(checker.getTypeOfSymbol(sym), "binding-type"),
+      checker,
+      types,
+    );
+  throw new Refusal("unreachable-per-typescript", "never");
+}
+
+/** A binding's reading, memoised for one function. Keyed by declaration start. */
+interface Authoritative {
+  labels: number[] | null;
+  readTainted: boolean;
+  declared: number[] | null;
+  claimed: number[] | null;
+}
+type DeclCache = Map<number, Authoritative>;
+
+/**
+ * The one place every reference to a local binding is priced: a real guard
+ * wins outright (it is what the calculus itself would derive); failing that, a
+ * binding already known to disagree with TypeScript about its own value
+ * (`authoritativeType`) uses that fixed reading instead of asking flow at all;
+ * only a plain, untainted local defers to TypeScript's own answer, with
+ * `never` still rejected in favour of the declared type, since it is always
+ * TypeScript proving a stronger fact than a test the calculus has no rule for
+ * is entitled to.
+ */
+function bestLabelsForReference(
+  node: any,
+  checker: Checker,
+  types: Row[],
+  declCache: DeclCache | null,
+  sf: SourceFile,
+): number[] {
+  const guard = truthyGuardLabels(node, checker);
+  if (guard) return guard;
+  if (declCache) {
+    const sym = checker.getSymbolAtLocation(node);
+    const decl = sym ? declarationOf(sym) : undefined;
+    if (
+      decl &&
+      (ts.isVariableDeclaration(decl) || isParameter(decl)) &&
+      decl.getStart !== undefined
+    ) {
+      const auth = authoritativeType(
+        { decl, name: node.text, sym: sym! },
+        checker,
+        types,
+        declCache,
+        sf,
+      );
+      // A tainted binding (read- or literal-tainted; see `authoritativeType`)
+      // is wrong everywhere but a matching guard: the calculus's own internal
+      // value for it is its fixed reading (a read's cell invariant, or a
+      // `const`'s declared annotation — the cast a `const` compiles to, never
+      // the narrower literal TypeScript tracks for it), so a claim anywhere
+      // has to be provable from that, not from whatever TypeScript
+      // additionally happens to know. A matching guard is the one exception,
+      // already returned above — the one place the compiled program itself
+      // narrows the binding's own internal value, exactly enough to justify
+      // the arm's tighter claim.
+      if (
+        auth.readTainted ||
+        (auth.declared &&
+          JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))
+      )
+        return auth.labels!;
+    }
+  }
+  const t = must(checker.getTypeAtLocation(node), "reference-type");
+  if (t.flags & TypeFlags.Never)
+    return declaredTypeAt(node, checker, types);
+  return translateType(t, checker, types);
+}
+
+function declarationExprKind(node: any): string {
+  if (!node) return "other";
+  if (ts.isParenthesizedExpression(node))
+    return declarationExprKind(node.expression);
+  if (ts.isPropertyAccessExpression(node)) return "read";
+  if (ts.isObjectLiteralExpression(node)) return "alloc";
+  if (ts.isArrowFunction(node)) return "lambda";
+  return "other";
+}
+
+/**
+ * A binding disagrees with TypeScript's later narrowing in two distinct ways
+ * this producer has found by testing against the corpus: a `.value` read
+ * tracks the cell's exact last-written content past the point the calculus
+ * grants that without a current-content assertion (never written here), and a
+ * `const` whose annotation is wider than its initializer's own literal type
+ * lets TypeScript fold the literal through every later use — including
+ * treating whichever arm of a subsequent test the literal rules out as
+ * unreachable (`never`), where the calculus's plain two-armed test
+ * (`conditionVariable`) keeps both arms live. Either way the binding's own
+ * declared annotation (or, lacking one, the initializer's own claimed type) is
+ * what every value it could hold is required to satisfy, so it is always a
+ * sound ceiling to fall back to. A binding copied one hop from a tainted one
+ * (`const b = a;`) is not detected here.
+ *
+ * A parameter is never authoritative — it names no initializer to disagree
+ * with — and neither is a plain `const` TypeScript does not narrow past its
+ * own declaration.
+ */
+function authoritativeType(
+  binding: { decl: any; name: string; sym: Symbol },
+  checker: Checker,
+  types: Row[],
+  cache: DeclCache,
+  sf: SourceFile,
+): Authoritative {
+  const key = binding.decl.getStart(sf);
+  const hit = cache.get(key);
+  if (hit) return hit;
+  let result: Authoritative;
+  if (isParameter(binding.decl)) {
+    result = { labels: null, readTainted: false, declared: null, claimed: null };
+  } else {
+    const init = binding.decl.initializer;
+    const kind = declarationExprKind(init);
+    const claimed = typeForExprSite(kind, init, checker, types, cache, sf);
+    let declared: number[] | null = null;
+    if (binding.decl.type) {
+      try {
+        declared = translateType(
+          must(checker.getTypeFromTypeNode(binding.decl.type), "annotation-type"),
+          checker,
+          types,
+        );
+      } catch {
+        declared = null;
+      }
+    }
+    const literalTaint =
+      declared !== null && JSON.stringify(declared) !== JSON.stringify(claimed);
+    result = {
+      labels: literalTaint ? declared : claimed,
+      readTainted: kind === "read",
+      declared,
+      claimed,
+    };
+  }
+  cache.set(key, result);
+  return result;
+}
+
+/**
+ * Mirrors the JSON `k` tags the parser assigns, over a real node, for the one
+ * place a real node needs re-classifying: a write's own value.
+ */
+function tsExprKind(node: any): string {
+  if (ts.isParenthesizedExpression(node)) return tsExprKind(node.expression);
+  if (ts.isIdentifier(node)) return "id";
+  if (
+    node.kind === ts.SyntaxKind.NullKeyword ||
+    node.kind === ts.SyntaxKind.TrueKeyword ||
+    node.kind === ts.SyntaxKind.FalseKeyword
+  )
+    return "lit";
+  if (ts.isPropertyAccessExpression(node)) return "read";
+  if (ts.isObjectLiteralExpression(node)) return "alloc";
+  if (ts.isArrowFunction(node)) return "lambda";
+  if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isPropertyAccessExpression(node.left)
+  )
+    return "write";
+  return "other";
+}
+
+function typeForExprSite(
+  kind: string,
+  node: any,
+  checker: Checker,
+  types: Row[],
+  declCache: DeclCache | null,
+  sf: SourceFile,
+): number[] {
+  if (kind === "read") return readInvariant(node, checker, types);
+  if (kind === "id")
+    return bestLabelsForReference(node, checker, types, declCache, sf);
+  // JavaScript's assignment expression evaluates to the assigned value, and
+  // the calculus's write carries that same value forward as the expression's
+  // result (SourceExtraction.lean's `.write` case derives the write node's
+  // type from the right-hand side's own claim, not from asking separately
+  // what the assignment evaluates to) — so the write's claim has to be
+  // exactly the right-hand side's claim, not a second, independently-asked
+  // opinion that could disagree with it.
+  if (kind === "write") {
+    let assignment = node;
+    while (ts.isParenthesizedExpression(assignment))
+      assignment = assignment.expression;
+    const rhs = assignment.right;
+    return typeForExprSite(tsExprKind(rhs), rhs, checker, types, declCache, sf);
+  }
+  if (kind === "alloc" || kind === "lambda") {
+    const ctx = checker.getContextualType(node);
+    if (ctx) {
+      try {
+        return translateType(ctx, checker, types);
+      } catch {
+        /* fall through to the node's own type */
+      }
+    }
+  }
+  return translateType(
+    must(checker.getTypeAtLocation(node), "expression-type"),
+    checker,
+    types,
+  );
+}
+
+/* ------------------------------------------------- entry environments -- */
+// The environment at an entry is every parameter and enclosing-block `const`
+// declared before it (SOURCE-CLAIMS.md), independent of control flow. The
+// fragment's scope rule is small enough to read straight off the tree, which
+// is also the only place that knows the textual order the rule depends on.
+
+interface VisibleBinding {
+  sym: Symbol;
+  decl: any;
+  declStart: number;
+  name: string;
+}
+
+function envAtEntry(
+  anchorNode: any,
+  offset: number,
+  checker: Checker,
+  sf: SourceFile,
+): VisibleBinding[] {
+  const seen: VisibleBinding[] = [];
+  const take = (nameNode: any, decl: any): void => {
+    const declStart = nameNode.getStart(sf);
+    if (declStart >= offset) return;
+    const sym = checker.getSymbolAtLocation(nameNode);
+    if (sym) seen.push({ sym, decl, declStart, name: nameNode.text });
+  };
+  for (let n: any = anchorNode; n; n = n.parent) {
+    if (n.kind === ts.SyntaxKind.Block || n.kind === ts.SyntaxKind.SourceFile) {
+      for (const st of n.statements)
+        if (ts.isVariableStatement(st))
+          for (const d of st.declarationList.declarations)
+            if (ts.isIdentifier(d.name)) take(d.name, d);
+    }
+    // Every enclosing function contributes its parameters, not just the
+    // innermost: an entry inside a lowered closure body still sees the
+    // parameters of the function that closure was written in.
+    if (isFunctionLike(n))
+      for (const p of n.parameters ?? [])
+        if (ts.isIdentifier(p.name)) take(p.name, p);
+  }
+  seen.sort((a, b) => a.declStart - b.declStart);
+  return seen;
+}
+
+/**
+ * The real expression, if any, whose flow this entry's own statement is keyed
+ * on: the condition for `if`/`while`, the initializer for `const`, the
+ * statement's own expression otherwise. Restricting the search to this
+ * expression (rather than the whole statement, which for `if`/`while` would
+ * reach into branches decided *after* this point) keeps the anchor at the
+ * right point in the control-flow graph.
+ */
+function anchorSearchScope(stmtNode: any): any {
+  if (ts.isIfStatement(stmtNode) || ts.isWhileStatement(stmtNode))
+    return stmtNode.expression;
+  if (ts.isReturnStatement(stmtNode)) return stmtNode.expression ?? null;
+  if (ts.isVariableStatement(stmtNode))
+    return stmtNode.declarationList.declarations[0].initializer;
+  if (ts.isExpressionStatement(stmtNode)) return stmtNode.expression;
+  return null; // break/continue: no expression to anchor on
+}
+
+function isNamePosition(id: any): boolean {
+  const p = id.parent;
+  if (!p) return false;
+  return (
+    (ts.isPropertyAccessExpression(p) ||
+      isPropertySignature(p) ||
+      ts.isPropertyAssignment(p) ||
+      isParameter(p) ||
+      ts.isVariableDeclaration(p) ||
+      ts.isBindingElement(p)) &&
+    p.name === id
+  );
+}
+
+function findNameRef(scope: any, name: string): any {
+  if (!scope) return null;
+  let found: any = null;
+  const visit = (node: any): void => {
+    if (found) return;
+    if (ts.isIdentifier(node) && node.text === name && !isNamePosition(node)) {
+      found = node;
+      return;
+    }
+    node.forEachChild(visit);
+  };
+  visit(scope);
+  return found;
+}
+
+/**
+ * `getTypeOfSymbolAtLocation` only narrows when its location is itself a
+ * reference resolving to that symbol; given any other node it falls back to
+ * the symbol's plain declared type. So: when the entry's own anchoring
+ * expression mentions this binding, use that reference directly (it narrows
+ * like any other identifier); otherwise fall back to the declared type, which
+ * is always sound, if not always precise enough for proof search.
+ */
+function bindingLabelsAtEntry(
+  stmtNode: any,
+  binding: VisibleBinding,
+  checker: Checker,
+  sf: SourceFile,
+  types: Row[],
+  cache: DeclCache,
+): number[] {
+  const ref = findNameRef(anchorSearchScope(stmtNode), binding.name);
+  if (ref) return bestLabelsForReference(ref, checker, types, cache, sf);
+  return translateType(
+    must(checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode), "binding-type"),
+    checker,
+    types,
+  );
+}
+
+/* -------------------------------------------------------------- driver -- */
+
+interface Omission {
+  function: string;
+  site: unknown;
+  tsType: string;
+  reason: string;
+}
+
+function omissionRecord(fn: string, site: unknown, err: unknown): Omission {
+  return {
+    function: fn,
+    site,
+    tsType: err instanceof Refusal ? err.tsType : "",
+    reason:
+      err instanceof Refusal
+        ? err.reason
+        : String((err as Error)?.message ?? err),
+  };
+}
+
+interface ClaimedFunction {
+  name: string;
+  namePos: Span;
+  params: { name: string; type: number[]; current: null }[];
+  result: number[];
+  entries: { start: number; bindings: { name: string; type: number[]; current: null }[] }[];
+  expressions: { pos: Span; type: number[]; current: null }[];
+}
+
+function processFunction(
+  fnJson: FunctionAst,
+  fnNode: any,
+  checker: Checker,
+  sf: SourceFile,
+  types: Row[],
+  indices: Indices,
+  omissions: Omission[],
+): ClaimedFunction | null {
+  const before = omissions.length;
+  const name = fnJson.name;
+  const params = fnNode.parameters.map((p: any) => {
+    try {
+      return {
+        name: p.name.text,
+        type: translateType(
+          must(checker.getTypeAtLocation(p.name), "parameter-type"),
+          checker,
+          types,
+        ),
+        current: null as null,
+      };
+    } catch (e) {
+      omissions.push(
+        omissionRecord(name, { kind: "param", name: p.name.text }, e),
+      );
+      return null;
+    }
+  });
+
+  let result: number[] | null = null;
+  try {
+    const sig = checker.getSignatureFromDeclaration(fnNode);
+    if (!sig) throw new Refusal("no-signature", "");
+    result = translateType(
+      must(checker.getReturnTypeOfSignature(sig), "return-type"),
+      checker,
+      types,
+    );
+  } catch (e) {
+    omissions.push(omissionRecord(name, { kind: "result" }, e));
+  }
+
+  const sites = functionSites(fnJson); // may throw; the caller catches
+  const declCache: DeclCache = new Map(); // one function's memo
+
+  const entries: ClaimedFunction["entries"] = [];
+  for (const start of Array.from(sites.entries).sort((a, b) => a - b)) {
+    const stmtNode = indices.stmtByStart.get(start);
+    if (!stmtNode) {
+      omissions.push(
+        omissionRecord(name, { kind: "entry", start }, new Refusal("site-not-found", "")),
+      );
+      continue;
+    }
+    const bindings: ClaimedFunction["entries"][number]["bindings"] = [];
+    for (const b of envAtEntry(stmtNode, start, checker, sf)) {
+      try {
+        bindings.push({
+          name: b.name,
+          type: bindingLabelsAtEntry(stmtNode, b, checker, sf, types, declCache),
+          current: null,
+        });
+      } catch (e) {
+        omissions.push(
+          omissionRecord(name, { kind: "entry", start, name: b.name }, e),
+        );
+      }
+    }
+    entries.push({ start, bindings });
+  }
+
+  const expressions: ClaimedFunction["expressions"] = [];
+  for (const [key, { pos, kind }] of Array.from(sites.exprs.entries()).sort(
+    (a, b) => a[1].pos[0] - b[1].pos[0],
+  )) {
+    const node = indices.exprBySpan.get(key);
+    if (!node) {
+      omissions.push(
+        omissionRecord(name, { kind: "expr", pos }, new Refusal("site-not-found", "")),
+      );
+      continue;
+    }
+    try {
+      expressions.push({
+        pos,
+        type: typeForExprSite(kind, node, checker, types, declCache, sf),
+        current: null,
+      });
+    } catch (e) {
+      omissions.push(omissionRecord(name, { kind: "expr", pos }, e));
+    }
+  }
+
+  // One unstated site would fail extraction, so a function is claimed whole or
+  // not at all.
+  if (omissions.length !== before || result === null || params.some((p: unknown) => p === null))
+    return null;
+  return {
+    name: fnJson.name,
+    namePos: fnJson.namePos,
+    params: params as ClaimedFunction["params"],
+    result,
+    entries,
+    expressions,
+  };
+}
+
+/* ------------------------------------------------------------ produce -- */
+
+export interface ClaimsDocument {
+  version: 3;
+  profile: "stateful-source-v3";
+  file: string;
+  sourceSha256: string;
+  types: Row[];
+  functions: ClaimedFunction[];
+}
+
+export interface Produced {
+  doc: ClaimsDocument;
+  omissions: Omission[];
+  ast: Ast;
+  /** The checker's own verdict, per function: what `tsc --noEmit` would say. */
+  accepted: Map<string, boolean>;
+}
+
+export { close };
+
+export function produce(file: string): Produced {
+  const ast = parseFile(file); // the trusted parse; also the syntactic gate
+  const absolute = resolve(file);
+  // The same project, in the same compiler process, the gate just parsed
+  // under: one `tsconfig.json` covering the corpus means the 2nd file
+  // onwards costs nothing to open.
+  const project = projectFor(absolute);
+  // What every claim below is relative to. A file typed under a laxer regime
+  // would be stating types the corpus's own configuration does not support,
+  // so it is refused rather than silently claimed.
+  if (!project.compilerOptions.strict)
+    throw new Error(
+      `${file} is not covered by a tsconfig.json with "strict": true`,
+    );
+  const checker = project.checker;
+  const sf = project.program.getSourceFile(absolute);
+  if (!sf) throw new Error(`the compiler produced no tree for ${file}`);
+  const indices = buildIndices(sf);
+  const fnNodes = sf.statements.filter((s: any) =>
+    ts.isFunctionDeclaration(s),
+  ) as any[];
+  if (fnNodes.length !== ast.functions.length)
+    throw new Error(
+      "function count mismatch between the trusted parse and the checker's program",
+    );
+
+  const types: Row[] = [
+    ["nul"],
+    [{ boolLit: { value: true } }],
+    [{ boolLit: { value: false } }],
+    ["undef"],
+  ];
+  const omissions: Omission[] = [];
+  const functions: ClaimedFunction[] = [];
+  ast.functions.forEach((fnJson, i) => {
+    const before = types.length;
+    try {
+      const built = processFunction(
+        fnJson,
+        fnNodes[i],
+        checker,
+        sf,
+        types,
+        indices,
+        omissions,
+      );
+      if (built) functions.push(built);
+      else types.length = before; // only a kept function's rows stay
+    } catch (e) {
+      types.length = before;
+      omissions.push(omissionRecord(fnJson.name, { kind: "function" }, e));
+    }
+  });
+
+  // A diagnostic belongs to the function whose span contains it, so one bad
+  // function does not speak for the rest of the file.
+  const diagnostics = [
+    ...project.program.getSyntacticDiagnostics(absolute),
+    ...project.program.getSemanticDiagnostics(absolute),
+  ];
+  const accepted = new Map<string, boolean>();
+  for (const fn of fnNodes)
+    if (fn.name)
+      accepted.set(
+        fn.name.text,
+        !diagnostics.some(
+          (d) => d.pos >= fn.getStart(sf) && d.pos < fn.end,
+        ),
+      );
+
+  return {
+    doc: {
+      version: 3,
+      profile: "stateful-source-v3",
+      file,
+      sourceSha256: ast.sourceSha256,
+      types,
+      functions,
+    },
+    omissions,
+    ast,
+    accepted,
+  };
+}
+
+/* ---------------------------------------------------------------- main -- */
+
+if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
+  const [file, ...rest] = process.argv.slice(2);
+  let out: string | null = null;
+  while (rest.length) {
+    const flag = rest.shift();
+    if (flag === "--out" && rest.length) out = rest.shift()!;
+    else {
+      process.stderr.write(`invalid option ${flag}\n`);
+      process.exit(1);
+    }
+  }
+  if (!file || !out) {
+    process.stderr.write("usage: tsc-claims.mts <file.ts> --out <claims.json>\n");
+    process.exit(1);
+  }
+  try {
+    const { doc, omissions } = produce(file);
+    writeFileSync(out, JSON.stringify(doc, null, 2) + "\n");
+    writeFileSync(out + ".omissions.json", JSON.stringify(omissions, null, 2) + "\n");
+    process.stderr.write(
+      `${doc.functions.length} function(s) claimed, ${omissions.length} omitted site(s)/reason(s).\n`,
+    );
+    close();
+  } catch (e) {
+    process.stderr.write(String((e as Error)?.message ?? e) + "\n");
+    process.exit(1);
+  }
+}

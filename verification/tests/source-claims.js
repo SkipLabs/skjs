@@ -1,6 +1,6 @@
 "use strict";
 const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
-const {spawnSync}=require("child_process"),{hash}=require("../tools/annotate-source.js");
+const {spawnSync}=require("child_process"),{hash}=require("../tools/annotate-source.mts");
 const verifier=process.argv[2],tmp=fs.mkdtempSync(path.join(os.tmpdir(),"source-claims-"));
 const run=(exe,args)=>{const r=spawnSync(exe,args,{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
 let passed=0;
@@ -9,7 +9,7 @@ try {
   const source="function identity(flag: boolean): boolean { return flag; }\n";
   const file=path.join(tmp,"source.ts"),ap=path.join(tmp,"ast.json"),cp=path.join(tmp,"claims.json"),ep=path.join(tmp,"evidence.json");
   fs.writeFileSync(file,source);
-  const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);
+  const parsed=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),file]);
   assert.equal(parsed.status,0,parsed.stderr);const ast=JSON.parse(parsed.stdout);fs.writeFileSync(ap,parsed.stdout);
   const f=ast.functions[0],pos=f.body[0].e.pos;
   const primitives=[["nul"],[{boolLit:{value:true}}],[{boolLit:{value:false}}],["undef"]];
@@ -57,7 +57,7 @@ try {
     // body at the given type, the call at null.
     const write=(source,bodyType)=>{
       fs.writeFileSync(sf,source);
-      const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),sf]);assert.equal(p.status,0,p.stderr);
+      const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),sf]);assert.equal(p.status,0,p.stderr);
       fs.writeFileSync(sa,p.stdout);
       const f=JSON.parse(p.stdout).functions[0],[cst,ret]=f.body;
       // The parser writes the second signature under `and` on the first.
@@ -85,12 +85,12 @@ try {
   test("restored claims still check",()=>assert.equal(check().status,0));
   test("normalized report verifies without SKJS encoding",()=>{
     const out=path.join(tmp,"report.ts");
-    const r=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.js"),file,"--claims",cp,"--format","source-claims","--producer","manual","--verify",verifier,"--out",out]);
+    const r=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.mts"),file,"--claims",cp,"--format","source-claims","--producer","manual","--verify",verifier,"--out",out]);
     assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json"));
     assert.equal(m.results[0].status,"verified");assert(fs.readFileSync(out,"utf8").includes("true | false"));
     const changed=structuredClone(doc);changed.functions[0].expressions[0].type=[1];fs.writeFileSync(cp,JSON.stringify(changed));
     const repaired=path.join(tmp,"changed.ts");
-    const compared=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.js"),file,"--claims",cp,"--format","source-claims","--baseline",out+".json","--verify",verifier,"--out",repaired]);
+    const compared=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.mts"),file,"--claims",cp,"--format","source-claims","--baseline",out+".json","--verify",verifier,"--out",repaired]);
     assert.equal(compared.status,0,compared.stderr);const cm=JSON.parse(fs.readFileSync(repaired+".json"));
     assert.equal(cm.results[0].status,"not-established");assert.equal(cm.comparison.changes.length,1);assert.equal(cm.comparison.changes[0].kind,"expression");
     fs.writeFileSync(cp,JSON.stringify(doc));
@@ -99,7 +99,7 @@ try {
     const text="function captured(): boolean { const cell: { value: boolean } = { value: true }; const read: (x: null) => boolean = (x: null): boolean => cell.value; cell.value = false; return read(null); }\n";
     const sf=path.join(tmp,"captured.ts"),sa=path.join(tmp,"captured.ast.json"),sc=path.join(tmp,"captured.claims.json"),se=path.join(tmp,"captured.evidence.json");
     fs.writeFileSync(sf,text);
-    const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),sf]);assert.equal(p.status,0,p.stderr);
+    const p=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),sf]);assert.equal(p.status,0,p.stderr);
     const a=JSON.parse(p.stdout),f=a.functions[0],expressions=[],entries=[],scope=[];
     // The table: the primitives, then the cell at 4 and the reader arrow at 5.
     const types=[...primitives,[{refs:{first:[1,2],rest:[]}}],[{arrs:{arrows:[[[0],[1,2]]]}}]];

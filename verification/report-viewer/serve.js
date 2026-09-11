@@ -89,14 +89,14 @@ async function hasVerifier() {
 async function tscAnalyse(relative, source, tmp, options) {
   const startedAt = Date.now();
   try {
-    const claims = path.join(tmp, "tsc-claims.json");
+    const claims = path.join(tmp, "tsc-claims.mtson");
     await execFile(
       process.execPath,
-      ["verification/tools/tsc-claims.js", relative, "--out", claims],
+      ["verification/tools/tsc-claims.mts", relative, "--out", claims],
       options,
     );
     const args = [
-      "verification/tools/annotate-source.js",
+      "verification/tools/annotate-source.mts",
       relative,
       "--claims",
       claims,
@@ -123,7 +123,7 @@ async function tscAnalyse(relative, source, tmp, options) {
       collection: {
         producer: "tsc",
         producerRun: true,
-        command: "tsc-claims.js " + relative,
+        command: "tsc-claims.mts " + relative,
         ranAt: new Date(startedAt).toISOString(),
         durationMs: Date.now() - startedAt,
         verified: Boolean(verify),
@@ -189,7 +189,7 @@ async function analyse(relative, producer = "skjs") {
     const claims = path.join(tmp, "claims.json");
     await fs.writeFile(claims, run.stdout);
     const args = [
-      "verification/tools/annotate-source.js",
+      "verification/tools/annotate-source.mts",
       relative,
       "--claims",
       claims,
@@ -268,7 +268,7 @@ async function candidateReport(candidate, verify = true) {
     const claims = path.join(tmp, "candidate.json");
     await fs.writeFile(claims, JSON.stringify(candidate.claims));
     const args = [
-      "verification/tools/annotate-source.js",
+      "verification/tools/annotate-source.mts",
       candidate.file,
       "--claims",
       claims,
@@ -421,7 +421,9 @@ const server = http.createServer(async (req, res) => {
     });
   }
 });
-if (require.main === module)
+// Only a direct run serves: requiring this module for `candidateReport` must
+// not take the port.
+if (require.main === module) {
   // A port already taken usually means a reader is up from an earlier run.
   // Say so, with what to do about it, rather than a stack trace.
   server.on("error", (error) => {
@@ -450,5 +452,6 @@ if (require.main === module)
         .unref();
     }
   });
+}
 
 module.exports = { candidateReport };

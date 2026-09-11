@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { hash } = require("../tools/annotate-source.js");
+const { hash } = require("../tools/annotate-source.mts");
 const verifier = process.argv[2];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-heap-claims-"));
 const run = (args) => spawnSync(verifier, args, { encoding: "utf8" });
@@ -20,7 +20,7 @@ function fixture(body, param = "") {
   fs.writeFileSync(file, source);
   const parsed = spawnSync(
     process.execPath,
-    [path.resolve(__dirname, "../tools/parse-source.js"), file],
+    [path.resolve(__dirname, "../tools/parse-source.mts"), file],
     { encoding: "utf8" },
   );
   assert.equal(parsed.status, 0, parsed.stderr);

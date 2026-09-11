@@ -13,7 +13,7 @@ const {
   parseReportLink,
   reportLink,
 } = require("../report-viewer/model.js");
-const { hash, render } = require("../tools/annotate-source.js");
+const { hash, render } = require("../tools/annotate-source.mts");
 
 const source =
   "// 😀\nfunction f(x: boolean): boolean {\n  return (\n    x\n  );\n}\n";

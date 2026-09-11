@@ -24,7 +24,7 @@ make viewer                      # the claim report reader on http://localhost:8
 One file end to end, with `$F` a repository-relative path:
 
 ```sh
-node verification/tools/parse-source.js $F > ast.json
+node verification/tools/parse-source.mts $F > ast.json
 bash verification/skjs.sh --emit-skjs-type-claims $F > claims.json
 verification/lean/.lake/build/bin/verifier --produce-stateful-source ast.json claims.json $F evidence.json 10
 ```
@@ -94,8 +94,21 @@ an exporter change needs a place to show, one phenomenon per file.
 
 ## Conventions
 
-- Formatting: `.ts` and `.json` are prettier-formatted (`make fmt` at the
-  root); the `.js` here is not, so do not reformat it.
+- Formatting: `.ts`, `.mts` and `.json` are prettier-formatted (`make fmt` at
+  the root); the `.js` here is not, so do not reformat it.
+- The trusted front end is TypeScript on the compiler's own API
+  (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
+  the tree), type-checked by the `Front-end types` suite. A member that API
+  renamed reads as `undefined` rather than failing, so `tsc` over
+  `tools/tsconfig.json` is the thing that catches it — run the suite, do not
+  reason about it.
+- `tests/tsconfig.json` is the regime the corpus is claimed and checked under.
+  The producers refuse a file no `tsconfig.json` with `"strict": true` claims,
+  rather than claiming it under weaker defaults.
+- node, not bun: the compiler's synchronous channel reads the child process's
+  pipe through node's own `_handle`, which bun does not expose
+  (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
+  that opens the compiler is affected, so this is not a per-suite choice.
 - Wire formats are version-locked. A changed format gets a new version and
   the decoders accept only that version; regenerate documents, never migrate
   them in place.

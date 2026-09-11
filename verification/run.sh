@@ -121,7 +121,7 @@ skjs_start || echo "warning: no shared container; each check will start its own"
 # nothing to run, so a failure here stops the run instead of being counted.
 fixture() { # name source-path
   local name="$1" path="$2"
-  if ! { node verification/tools/parse-source.js "$path" > "$WORK/$name.ast" &&
+  if ! { node verification/tools/parse-source.mts "$path" > "$WORK/$name.ast" &&
          skjs_check "$path" > "$WORK/$name.claims"; } 2> "$WORK/$name.err"; then
     echo "FAIL: fixture setup for $path"
     cat "$WORK/$name.err"
@@ -134,7 +134,7 @@ fixture() { # name source-path
 # kind of rejection is itself the point.
 rejected_fixture() { # name source-path [expected status]
   local name="$1" path="$2" want="${3:-}"
-  node verification/tools/parse-source.js "$path" > "$WORK/$name.ast" || exit 1
+  node verification/tools/parse-source.mts "$path" > "$WORK/$name.ast" || exit 1
   skjs_check "$path" > "$WORK/$name.claims" 2> "$WORK/$name.err"
   local got=$?
   if [ "$got" -eq 0 ] || { [ -n "$want" ] && [ "$got" -ne "$want" ]; }; then
@@ -152,7 +152,18 @@ snapshot_probes() {
   skjs_check "$SNAPSHOTS"/*.ts > "$WORK/snapshots.claims" 2> "$WORK/snapshots.err" || true
 }
 
+# The front end is TypeScript and is checked as such: `tsc` over the trusted
+# tools and over the reader's own types, under the same strictness the corpus
+# is claimed at. A silently-renamed compiler API reads as `undefined` at
+# runtime and as an error here.
+typecheck() {
+  (cd verification/tools && npx tsc -p tsconfig.json &&
+   npx tsc -p tsconfig.annotator.json &&
+   npx tsc -p ../report-viewer/tsconfig.json)
+}
+
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
+  run_test "Front-end types" typecheck
   run_test "Source boundaries" node verification/tests/unsupported.js "$VERIFIER"
 
   BASE=verification/tests/stateful-source/basic.ts

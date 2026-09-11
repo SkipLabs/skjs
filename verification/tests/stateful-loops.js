@@ -1,5 +1,5 @@
 "use strict";
-const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert"),vm=require("vm"),ts=require(require.resolve("typescript",{paths:[path.resolve(__dirname,"../tools")]}));
+const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert"),vm=require("vm"),{stripTypes}=require("../tools/strip-types.mts");
 const {spawnSync}=require("child_process");
 const [astPath,claimsPath,file,verifier]=process.argv.slice(2),ast=JSON.parse(fs.readFileSync(astPath)),claims=JSON.parse(fs.readFileSync(claimsPath));
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"while-source-"));
@@ -38,9 +38,9 @@ try {
     ["nonblock loop body gated","while (false) return null; return null;"],
     ["for remains gated","for (;;) {} return null;"],
     ["closure loop remains gated","const f: (x: null) => null = (x: null): null => { while (false) {} return null; }; return null;"]
-  ])test(name,()=>{const file=path.join(tmp,"gated.ts");fs.writeFileSync(file,`function gated(): null { ${text} }`);const r=exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),file]);assert.notEqual(r.status,0);assert(r.stderr.startsWith("gate:"));});
+  ])test(name,()=>{const file=path.join(tmp,"gated.ts");fs.writeFileSync(file,`function gated(): null { ${text} }`);const r=exec(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),file]);assert.notEqual(r.status,0);assert(r.stderr.startsWith("gate:"));});
   test("runtime samples agree on zero iterations, one write and nested return",()=>{
-    const js=ts.transpileModule(fs.readFileSync(file,"utf8"),{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    const js=stripTypes(fs.readFileSync(file,"utf8"));
     const actual=vm.runInNewContext(js+"; JSON.stringify([zeroTrips(false),oneWrite(),nested(false),nested(true)])",{},{timeout:2000});
     assert.equal(actual,JSON.stringify([false,false,false,true]));
   });

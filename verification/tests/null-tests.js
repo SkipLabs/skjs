@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
-const ts = require("../tools/node_modules/typescript");
+const { stripTypes } = require("../tools/strip-types.mts");
 const [
   astPath,
   claimsPath,
@@ -418,9 +418,7 @@ try {
   );
   const guardContext = vm.createContext({});
   vm.runInContext(
-    ts.transpileModule(fs.readFileSync(guardFile, "utf8"), {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
+    stripTypes(fs.readFileSync(guardFile, "utf8")),
     guardContext,
   );
   for (const value of [null, true, false]) {
@@ -567,7 +565,7 @@ try {
     binding: "cell",
     reason: "unexpanded-type",
   });
-  const { fromSkjs, verifySkjs } = require("../tools/annotate-source.js");
+  const { fromSkjs, verifySkjs } = require("../tools/annotate-source.mts");
   const staleText = fs.readFileSync(staleFile, "utf8");
   const actualReport = verifySkjs(
     staleFile,
@@ -700,9 +698,7 @@ try {
   assert(staleResult.stderr.includes(`[${staleRead[0]},${staleRead[1]})`));
   const staleRuntime = vm.createContext({});
   vm.runInContext(
-    ts.transpileModule(fs.readFileSync(staleFile, "utf8"), {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
+    stripTypes(fs.readFileSync(staleFile, "utf8")),
     staleRuntime,
   );
   assert.equal(staleRuntime.staleCompound(null), true);
@@ -750,18 +746,14 @@ try {
     false,
   );
   vm.runInContext(
-    ts.transpileModule(fs.readFileSync(exitFile, "utf8"), {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
+    stripTypes(fs.readFileSync(exitFile, "utf8")),
     guardContext,
   );
   for (const value of [true, false])
     assert.equal(guardContext.exitGuard(value), value);
   const context = vm.createContext({});
   vm.runInContext(
-    ts.transpileModule(fs.readFileSync(file, "utf8"), {
-      compilerOptions: { target: ts.ScriptTarget.ES2022 },
-    }).outputText,
+    stripTypes(fs.readFileSync(file, "utf8")),
     context,
     { timeout: 1000 },
   );

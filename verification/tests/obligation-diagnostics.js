@@ -8,7 +8,7 @@ const {
   hash,
   fromSourceClaims,
   verifySkjs,
-} = require("../tools/annotate-source.js");
+} = require("../tools/annotate-source.mts");
 const { readDiagnostic } = require("../tools/obligation-diagnostic.js");
 const verifier = path.resolve(process.argv[2]);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "obligation-diagnostics-"));
@@ -25,7 +25,7 @@ try {
   fs.writeFileSync(file, source);
   const parsed = spawnSync(
     process.execPath,
-    [path.resolve(__dirname, "../tools/parse-source.js"), file],
+    [path.resolve(__dirname, "../tools/parse-source.mts"), file],
     { encoding: "utf8" },
   );
   assert.equal(parsed.status, 0, parsed.stderr);

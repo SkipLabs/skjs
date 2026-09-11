@@ -19,7 +19,7 @@ not interpreted. Failures that reach no calculus obligation carry human text and
 an optional `location` instead of a record.
 Absence of a structured record never changes a failure into success.
 
-`annotate-source.js` preserves recognized records as `results[i].obligation` and
+`annotate-source.mts` preserves recognized records as `results[i].obligation` and
 keeps the machine payload out of the human `detail`. It adds `input`:
 
 - `file`, `functionName`, `namePos`: the selected source function.
@@ -187,7 +187,7 @@ a binding pattern rather than as a value (`exprTypes`'s `isLValue` key) — and 
 `envs[i].vars[j]` binding object carries `mutable` (`true` for `let`/`var`/a
 parameter/a catch variable, `false` for `const` and for `this`) and, only when it
 differs from the narrowed `type`, `declared` (the binding's declared type).
-`SourceInput.decodeClaims` and `annotate-source.js`'s `fromSkjs` read this
+`SourceInput.decodeClaims` and `annotate-source.mts`'s `fromSkjs` read this
 export by field name, so the additions reach both without a version change.
 
 For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emits:

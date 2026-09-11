@@ -71,7 +71,7 @@ try {
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
-  const parser=path.resolve(__dirname,"../tools/parse-source.js");
+  const parser=path.resolve(__dirname,"../tools/parse-source.mts");
   for (const [name,body] of [
     ["accessor allocation gate","const c = { get value(): boolean { return true; } }; return c.value;"],
     ["spread allocation gate","const c = { value: true }; const d = { ...c }; return d.value;"],

@@ -1,6 +1,6 @@
 "use strict";
 const fs=require("fs"),assert=require("assert"),os=require("os"),path=require("path");
-const {fromSkjs,render,coverage,verifySkjs,main}=require("../tools/annotate-source.js");
+const {fromSkjs,render,coverage,verifySkjs,main}=require("../tools/annotate-source.mts");
 const [normalPath,recoveryPath,file,verifier,diagnostics]=process.argv.slice(2);
 const normal=JSON.parse(fs.readFileSync(normalPath)),recovery=JSON.parse(fs.readFileSync(recoveryPath));
 const source=fs.readFileSync(file,"utf8"), report=fromSkjs(source,file,normal,"skjs");

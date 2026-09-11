@@ -150,7 +150,7 @@ try {
       throw Error("falling arm and continuation need separate local scopes");
     passed++;console.log("  falling arm local scope ends before continuation: OK");
   }
-  const parser=path.resolve(__dirname,"../tools/parse-source.js");
+  const parser=path.resolve(__dirname,"../tools/parse-source.mts");
   for(const [name,closure] of [
     ["partially returning nested arm gated","(u: null): boolean => { if (true) { if (true) { return true; } } return false; }"],
     ["missing closure else gated","(u: null): boolean => { if (true) { return true; } }"],

@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const vm = require("node:vm");
 const { spawnSync } = require("node:child_process");
-const ts = require("../tools/node_modules/typescript");
+const { stripTypes } = require("../tools/strip-types.mts");
 const [
   astPath,
   claimsPath,
@@ -252,12 +252,11 @@ try {
   );
   const context = vm.createContext({});
   vm.runInContext(
-    ts.transpileModule(
+    stripTypes(
       [file, exitFile, singletonFile]
         .map((f) => fs.readFileSync(f, "utf8"))
         .join("\n"),
-      { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
-    ).outputText,
+    ),
     context,
     { timeout: 1000 },
   );

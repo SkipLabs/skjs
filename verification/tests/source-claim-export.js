@@ -8,7 +8,7 @@ const script=path.resolve(__dirname,"../tools/export-source-claims.js");
 let passed=0;
 const test=(name,f)=>{f();passed++;console.log(`  ${name}: OK`);};
 const convert=(source,claims,out,extra=[])=>run(process.execPath,[script,source,"--claims",claims,"--out",out,"--verifier",verifier,...extra]);
-const parse=(source,ap)=>{const r=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),source]);assert.equal(r.status,0,r.stderr);fs.writeFileSync(ap,r.stdout);};
+const parse=(source,ap)=>{const r=run(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),source]);assert.equal(r.status,0,r.stderr);fs.writeFileSync(ap,r.stdout);};
 try {
   const out=path.join(tmp,"closures.json"),ap=path.join(tmp,"closures.ast.json"),ep=path.join(tmp,"evidence.json");
   test("real SKJS closure claims convert",()=>{const r=convert(file,claimsPath,out);assert.equal(r.status,0,r.stderr);});
@@ -49,12 +49,12 @@ try {
     assert.equal(checked.status,0,checked.stderr);
     const rawCheck=run(verifier,["--check-stateful-source",ap,cp,file,ep]);
     assert.equal(rawCheck.status,0,rawCheck.stderr);
-    const {fromSourceClaims}=require("../tools/annotate-source.js");
+    const {fromSourceClaims}=require("../tools/annotate-source.mts");
     const report=fromSourceClaims(fs.readFileSync(file,"utf8"),file,d,"candidate");
     const shown=report.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert(shown.type.includes(" = (true)"));
     assert.deepEqual(shown.raw,{type:point.type,current:[1]});
-    const {verifySkjs}=require("../tools/annotate-source.js");
+    const {verifySkjs}=require("../tools/annotate-source.mts");
     const result=verifySkjs(file,fs.readFileSync(file,"utf8"),d,file,report,verifier,10,true)
       .results[report.functions.findIndex(f=>f.name===changed.name)];
     assert.equal(result.status,"verified");
@@ -107,7 +107,7 @@ try {
   test("duplicate claims fail conversion rather than being merged",()=>{
     const raw=JSON.parse(fs.readFileSync(partialPath));const selected=raw.find(f=>f.file===partialFile);selected.functions.push(selected.functions[0]);const cp=path.join(tmp,"duplicate.json");fs.writeFileSync(cp,JSON.stringify(raw));assert.notEqual(convert(partialFile,cp,path.join(tmp,"duplicate-out.json")).status,0);
   });
-  const annotate=path.resolve(__dirname,"../tools/annotate-source.js");
+  const annotate=path.resolve(__dirname,"../tools/annotate-source.mts");
   const report=(claims,out,extra=[])=>run(process.execPath,[annotate,partialFile,"--format","source-claims","--claims",claims,"--out",out,...extra]);
   const partialReport=path.join(tmp,"partial.annotated.ts");
   test("converted reports show original collection and fresh results",()=>{

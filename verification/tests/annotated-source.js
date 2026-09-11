@@ -2,7 +2,7 @@
 "use strict";
 const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
 const {spawnSync}=require("child_process");
-const {hash,render,fromSkjs,compareClaims,typeText}=require("../tools/annotate-source.js");
+const {hash,render,fromSkjs,compareClaims,typeText}=require("../tools/annotate-source.mts");
 const [claimsPath,fileKey,verifier]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
@@ -64,7 +64,7 @@ try {
     delete f.unavailableTypes;
     assert.deepEqual(get(),[]);
   });
-  const script=path.resolve(__dirname,"../tools/annotate-source.js");
+  const script=path.resolve(__dirname,"../tools/annotate-source.mts");
   const generic=path.join(tmp,"generic.ts"), gp=path.join(tmp,"generic.json"), go=path.join(tmp,"generic.annotated.ts");
   fs.writeFileSync(generic,source);fs.writeFileSync(gp,JSON.stringify(report));
   const cli=args=>{const r=spawnSync(process.execPath,[script,...args],{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
@@ -189,7 +189,7 @@ try {
   // proof search that failed, and the report must say which one happened.
   test("an absent required claim is located as a missing claim",()=>{
     const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
-    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),fileKey],{encoding:"utf8"});
+    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
     const body=JSON.parse(parsed.stdout).functions.find(f=>f.name==="capturedRead").body[1].init.body;
     const removed=f.exprs.find(e=>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(removed);
@@ -241,7 +241,7 @@ try {
   });
   test("false claim is not called refuted or verified",()=>{
     const c=structuredClone(claims), f=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead");
-    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.js"),fileKey],{encoding:"utf8"});
+    const parsed=spawnSync(process.execPath,[path.resolve(__dirname,"../tools/parse-source.mts"),fileKey],{encoding:"utf8"});
     assert.equal(parsed.status,0,parsed.stderr);
     const body=JSON.parse(parsed.stdout).functions.find(f=>f.name==="capturedRead").body[1].init.body;
     const p=f.exprs.find(e=>e.pos[0]===body.pos[0] && e.pos[1]===body.pos[1]);assert(p);

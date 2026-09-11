@@ -7,7 +7,7 @@ interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
 
 ```sh
-node verification/tools/parse-source.js input.ts > ast.json
+node verification/tools/parse-source.mts input.ts > ast.json
 verification/lean/.lake/build/bin/verifier --produce-source-claims \
   ast.json source-claims.json input.ts evidence.json 10
 verification/lean/.lake/build/bin/verifier --check-source-claims \
@@ -223,7 +223,7 @@ fingerprint. Supplying evidence from a previous judgment cannot bypass checking.
 The existing report and comparison command accepts this format:
 
 ```sh
-node verification/tools/annotate-source.js input.ts \
+node verification/tools/annotate-source.mts input.ts \
   --format source-claims --producer manual --claims source-claims.json \
   --verify verification/lean/.lake/build/bin/verifier --out input.annotated.ts
 ```
@@ -276,7 +276,7 @@ Review that manifest alongside the sidecar, particularly for recovered exports.
 Attach it explicitly when making the initial report:
 
 ```sh
-node verification/tools/annotate-source.js input.ts --format source-claims \
+node verification/tools/annotate-source.mts input.ts --format source-claims \
   --claims source-claims.json --conversion source-claims.json.conversion.json \
   --verify verification/lean/.lake/build/bin/verifier --out initial.annotated.ts
 ```

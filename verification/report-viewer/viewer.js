@@ -1166,7 +1166,7 @@ async function load(text, { keepCandidate = false, opening = "", asked = false }
     el("code").innerHTML =
       '<div class="empty">Could not read that file: ' +
       esc(err.message) +
-      ". Expected an annotated .ts written by annotate-source.js.</div>";
+      ". Expected an annotated .ts written by annotate-source.mts.</div>";
   }
 }
 
