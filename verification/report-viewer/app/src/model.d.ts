@@ -66,6 +66,12 @@ declare module "*/model.js" {
     /** Sites a located failure names where nothing is claimed. */
     failureSites?: ShownClaim[];
     missingSites?: { kind: "expression" | "environment"; pos: Span }[];
+    /** True for a source function the candidate says nothing about at all. */
+    candidateMissing?: boolean;
+    /** Its parameter names, in source order, for the contract it needs. */
+    parameters?: string[];
+    /** What the report says about it, where there is no result to report. */
+    detail?: string;
     /** The verifier's verdict over this function's claims. */
     status: string;
     /** The producer's own collection outcome. */
@@ -262,6 +268,28 @@ declare module "*/candidate.js" {
     fn: ShownFunction,
     item: ClaimSite,
     value: unknown,
+  ): Candidate;
+
+  /**
+   * A candidate with a claim added at a site the producer left empty. The site
+   * must be one the parse identified for this snapshot: the reader offers
+   * attachment points, it does not invent them.
+   */
+  export function addClaim(
+    candidate: Candidate,
+    fn: ShownFunction,
+    site: ClaimSite,
+    value: unknown,
+  ): Candidate;
+
+  /**
+   * A candidate with a contract for a function it said nothing about. Parameter
+   * names and order come from the source; only the types are supplied here.
+   */
+  export function addFunction(
+    candidate: Candidate,
+    fn: ShownFunction,
+    contract: { params: { name: string; type: unknown }[]; result: unknown },
   ): Candidate;
 }
 

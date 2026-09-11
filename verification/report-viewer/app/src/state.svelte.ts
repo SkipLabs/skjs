@@ -12,7 +12,12 @@ import {
   health,
   type Group,
 } from "./api.ts";
-import { editClaim, type ClaimSite } from "../../candidate.js";
+import {
+  addClaim,
+  addFunction,
+  editClaim,
+  type ClaimSite,
+} from "../../candidate.js";
 import { fromBundle, type Report, type ShownFunction } from "../../model.js";
 import type {
   Bundle,
@@ -113,14 +118,24 @@ export class Reader {
    * obligations; it does not make the producer's original claims true.
    */
   async apply(fn: ShownFunction, site: ClaimSite, value: unknown) {
+    await this.change((c) => editClaim(c, fn, site, value));
+  }
+
+  /**
+   * Change the candidate and have the verifier check the result. The producer
+   * is not run again: the source is unchanged, and what is being checked is the
+   * draft. A check that succeeds establishes that function's modeled
+   * obligations; it does not make the producer's original claims true.
+   */
+  private async change(edit: (candidate: Candidate) => Candidate) {
     if (!this.candidate || this.busy) return;
     this.busy = true;
     this.error = "";
     try {
       // `$state` proxies what it holds, and a proxy is not structured-clonable,
-      // which is what `editClaim` does to copy the candidate. The snapshot is
-      // the plain object the proxy stands for.
-      const next = editClaim($state.snapshot(this.candidate), fn, site, value);
+      // which is what these edits do to copy the candidate. The snapshot is the
+      // plain object the proxy stands for.
+      const next = edit($state.snapshot(this.candidate));
       const bundle = await checkCandidate(next);
       this.candidate = next;
       this.edited = true;
@@ -135,6 +150,19 @@ export class Reader {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** Add a claim where the producer left a site empty, and check the result. */
+  async add(fn: ShownFunction, site: ClaimSite, value: unknown) {
+    await this.change((c) => addClaim(c, fn, site, value));
+  }
+
+  /** Supply the contract for a function the candidate says nothing about. */
+  async addContract(
+    fn: ShownFunction,
+    contract: { params: { name: string; type: unknown }[]; result: unknown },
+  ) {
+    await this.change((c) => addFunction(c, fn, contract));
   }
 
   /** Put the producer's own claims back, and check them again. */

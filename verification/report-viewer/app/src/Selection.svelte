@@ -5,10 +5,16 @@
    * The old reader put this in a side rail, far from the thing clicked. A claim
    * and its detail belong together, so this sits directly beneath the line it
    * is about and the source keeps the full width.
+   *
+   * Four things can be selected, and each says a different thing: a claim the
+   * producer made, the environment at a statement entry, a place it did not
+   * visit, and a place it visited but claimed nothing at — which is where a
+   * claim can be added.
    */
   import ClaimEditor from "./ClaimEditor.svelte";
+  import FunctionContract from "./FunctionContract.svelte";
   import { proofLabel } from "../../marks.js";
-  import type { ClaimSite } from "../../candidate.js";
+  import { claimValue, type ClaimSite } from "../../candidate.js";
   import type { Report, ShownFunction } from "../../model.js";
   import type { Candidate } from "../../types.ts";
 
@@ -19,6 +25,8 @@
     candidate,
     busy,
     onapply,
+    onadd,
+    oncontract,
   }: {
     report: Report;
     fn: ShownFunction;
@@ -26,6 +34,11 @@
     candidate: Candidate | null;
     busy: boolean;
     onapply: (site: ClaimSite, value: unknown) => void;
+    onadd: (site: ClaimSite, value: unknown) => void;
+    oncontract: (contract: {
+      params: { name: string; type: unknown }[];
+      result: unknown;
+    }) => void;
   } = $props();
 
   /** A mark id is a list prefix and an index within that list. */
@@ -37,16 +50,34 @@
     if (kind === "e") return { what: "expression", item: fn.exprs[index] };
     if (kind === "n") return { what: "environment", item: fn.entries[index] };
     if (kind === "g") return { what: "gap", item: fn.gaps[index] };
+    if (kind === "m")
+      return { what: "missing", item: fn.missingSites?.[index] };
     return null;
   });
 
   /** Where the selected claim sits, in the terms a candidate is addressed by. */
   const site = $derived.by((): ClaimSite | null => {
-    const pos = (picked?.item as { pos?: [number, number] })?.pos;
+    const item = picked?.item as
+      | { pos?: [number, number]; kind?: string }
+      | undefined;
+    const pos = item?.pos;
     if (!pos || !picked) return null;
     if (picked.what === "expression") return { kind: "expression", pos };
     if (picked.what === "environment") return { kind: "environment", pos };
+    // A missing site names the kind of claim that belongs there.
+    if (picked.what === "missing" && item?.kind)
+      return { kind: item.kind as ClaimSite["kind"], pos };
     return null;
+  });
+
+  /** The candidate's own value at the site, which reading back resolves against. */
+  const current = $derived.by(() => {
+    if (!candidate || !site || picked?.what === "missing") return undefined;
+    try {
+      return claimValue(candidate, fn, site);
+    } catch {
+      return undefined;
+    }
   });
 
   const text = $derived.by(() => {
@@ -56,7 +87,17 @@
 </script>
 
 <section class="selection">
-  {#if !picked?.item}
+  {#if fn.candidateMissing}
+    <!-- No claims at all for this function: its contract comes first, since
+         every point claim is checked against it. -->
+    <header>
+      <span class="what">no candidate</span>
+      <span class="status">{fn.detail ?? ""}</span>
+    </header>
+    {#if candidate}
+      <FunctionContract {fn} {busy} onsubmit={oncontract} />
+    {/if}
+  {:else if !picked?.item}
     <p class="empty">
       Select a claim in the source to see its span, its type and the producer's
       own encoding.
@@ -87,6 +128,11 @@
           <dd class="type">{b.type}</dd>
         {/each}
       </dl>
+    {:else if picked.what === "missing"}
+      <p class="gap">
+        The producer visited this place and claimed nothing here. A claim can be
+        added; an attachment site is not necessarily a required obligation.
+      </p>
     {:else}
       <p class="gap">{item.detail}</p>
     {/if}
@@ -99,11 +145,11 @@
 
     {#if candidate && site}
       <ClaimEditor
-        {candidate}
-        {fn}
-        {site}
+        kind={site.kind}
+        {current}
         {busy}
-        onapply={(value) => onapply(site, value)}
+        onapply={(value) =>
+          picked.what === "missing" ? onadd(site, value) : onapply(site, value)}
       />
     {/if}
 
@@ -187,6 +233,7 @@
   }
   .gap {
     margin: 0 0 10px;
+    max-width: 68ch;
     color: var(--faint);
   }
   summary {

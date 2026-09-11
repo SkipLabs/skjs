@@ -5,81 +5,75 @@
    * There is no workspace panel: a claim is edited at the claim. The text is
    * the same surface syntax it is read in, parsed on every keystroke, and
    * applying is refused until it reads back into an encoding — so a typo cannot
-   * be saved. Reading it back edits the claim it came from: what the surface
-   * names is replaced, and what it cannot name — index signatures, call and
-   * construct shapes — is the original's, never invented here.
+   * be saved. Reading back edits the claim it came from: what the surface names
+   * is replaced, and what it cannot name — index signatures, call and construct
+   * shapes — is the original's, never invented here.
    *
-   * An encoding this reader cannot print exactly is edited as the producer's
-   * own JSON instead, which is honest about what is being changed.
+   * That is also why a claim being *added* is different. There is no original
+   * to resolve against, so the surface can only name what it says in full:
+   * primitives and unions. An object or function type, and any environment,
+   * has to be written as the producer's own encoding — which the editor says
+   * rather than letting the attempt fail obscurely.
    */
   import surface from "../../../tools/claim-types.js";
-  import { claimValue, type ClaimSite } from "../../candidate.js";
-  import type { ShownFunction } from "../../model.js";
-  import type { Candidate } from "../../types.ts";
+  import type { ClaimSite } from "../../candidate.js";
 
   let {
-    candidate,
-    fn,
-    site,
+    kind,
+    current,
     busy,
     onapply,
   }: {
-    candidate: Candidate;
-    fn: ShownFunction;
-    site: ClaimSite;
+    kind: ClaimSite["kind"];
+    /** The claim being edited, or undefined where one is being added. */
+    current: unknown | undefined;
     busy: boolean;
     onapply: (value: unknown) => void;
   } = $props();
 
-  /** The producer's own value here, which reading back is resolved against. */
-  const current = $derived.by(() => {
-    try {
-      return claimValue(candidate, fn, site);
-    } catch {
-      return undefined;
-    }
-  });
+  const adding = $derived(current === undefined);
 
-  /** Surface text where it round-trips exactly; otherwise the raw encoding. */
+  /** Surface text where the claim round-trips exactly; null where it does not. */
   const printed = $derived(
-    current === undefined
-      ? null
-      : surface.printClaimValue(site.kind, current),
+    adding ? null : surface.printClaimValue(kind, current),
   );
-  const asJson = $derived(printed === null);
 
+  /** Whether the encoding is being written directly, rather than the surface. */
+  let raw = $state(false);
   let text = $state("");
   let touched = $state(false);
 
-  // Selecting another claim abandons an unapplied edit rather than carrying it
+  // A different claim abandons an unapplied edit rather than carrying it
   // somewhere it does not belong.
   $effect(() => {
-    site;
-    candidate;
-    text = printed ?? JSON.stringify(current ?? null, null, 2);
+    kind;
+    current;
+    raw = !adding && printed === null;
+    text = printed ?? (adding ? "" : JSON.stringify(current, null, 2));
     touched = false;
   });
 
   /** What the text reads back as, or why it does not read back at all. */
-  const parsed = $derived.by(() => {
-    if (current === undefined) return { error: "no claim here to edit" };
+  const parsed = $derived.by((): { value?: unknown; error?: string } => {
+    if (!text.trim()) return { error: "" };
     try {
       return {
-        value: asJson
+        value: raw
           ? JSON.parse(text)
-          : surface.readClaimValue(site.kind, text, current),
+          : surface.readClaimValue(kind, text, current),
       };
     } catch (e) {
       return { error: (e as Error).message };
     }
   });
 
-  const changed = $derived(
-    touched && JSON.stringify(parsed.value) !== JSON.stringify(current),
+  const ready = $derived(
+    "value" in parsed &&
+      (adding || JSON.stringify(parsed.value) !== JSON.stringify(current)),
   );
 
   function apply() {
-    if ("value" in parsed && changed && !busy) onapply(parsed.value);
+    if (ready && !busy) onapply(parsed.value);
   }
 </script>
 
@@ -90,37 +84,52 @@
     apply();
   }}
 >
-  <label>
-    <span>{asJson ? "edit as the producer's encoding" : "claim"}</span>
-    {#if asJson}
-      <textarea
-        bind:value={text}
-        oninput={() => (touched = true)}
-        onkeydown={(e) => {
-          // Enter makes a newline in a textarea, so applying takes the modifier.
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) apply();
-        }}
-        rows="6"
-        spellcheck="false"
-      ></textarea>
-    {:else}
-      <input
-        type="text"
-        bind:value={text}
-        oninput={() => (touched = true)}
-        spellcheck="false"
-      />
-    {/if}
-  </label>
+  <div class="head">
+    <span class="what">
+      {adding ? `add the ${kind} claim` : "claim"}
+    </span>
+    <label class="as-raw">
+      <input type="checkbox" bind:checked={raw} disabled={!adding && printed === null} />
+      write the encoding
+    </label>
+  </div>
+
+  {#if raw}
+    <textarea
+      bind:value={text}
+      oninput={() => (touched = true)}
+      onkeydown={(e) => {
+        // Enter makes a newline in a textarea, so applying takes the modifier.
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) apply();
+      }}
+      rows="6"
+      spellcheck="false"
+      placeholder={kind === "environment"
+        ? '[{ "name": "x", "type": { "top": false, "atoms": [] } }]'
+        : '{ "top": false, "atoms": [] }'}
+    ></textarea>
+  {:else}
+    <input
+      type="text"
+      bind:value={text}
+      oninput={() => (touched = true)}
+      spellcheck="false"
+      placeholder={kind === "environment" ? "x: true, y: boolean" : "boolean"}
+    />
+  {/if}
 
   <div class="row">
-    <button type="submit" disabled={!changed || !("value" in parsed) || busy}>
-      {busy ? "checking…" : "apply and check"}
+    <button type="submit" disabled={!ready || busy}>
+      {busy ? "checking…" : adding ? "add and check" : "apply and check"}
     </button>
     {#if touched && parsed.error}
       <span class="bad">{parsed.error}</span>
-    {:else if changed}
-      <span class="faint">checks against unchanged source; the producer is not rerun</span>
+    {:else if !adding && printed === null && !raw}
+      <span class="faint">this encoding has no exact surface syntax</span>
+    {:else if ready}
+      <span class="faint"
+        >checks against unchanged source; the producer is not rerun</span
+      >
     {/if}
   </div>
 </form>
@@ -129,12 +138,23 @@
   .editor {
     margin: 0 0 12px;
   }
-  label span {
-    display: block;
-    color: var(--faint);
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
     margin-bottom: 4px;
   }
-  input,
+  .what {
+    color: var(--faint);
+  }
+  .as-raw {
+    color: var(--faint);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  input[type="text"],
   textarea {
     width: 100%;
     font:
@@ -149,7 +169,7 @@
     color: var(--ink);
     resize: vertical;
   }
-  input:focus,
+  input[type="text"]:focus,
   textarea:focus {
     outline: 2px solid var(--accent);
     outline-offset: -1px;

@@ -123,6 +123,8 @@
             candidate={reader.candidate}
             busy={reader.busy}
             onapply={(site, value) => reader.apply(fn, site, value)}
+            onadd={(site, value) => reader.add(fn, site, value)}
+            oncontract={(contract) => reader.addContract(fn, contract)}
           />
           <Obligation
             {fn}
