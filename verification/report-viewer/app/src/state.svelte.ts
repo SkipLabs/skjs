@@ -58,6 +58,14 @@ export class Reader {
   edited = $state(false);
   /** Where the kept draft sits, once one has been written beside the source. */
   draftPath = $state("");
+  /**
+   * The draft kept beside the source, not applied. Opening a file shows what
+   * the producer said, because that is the finding; a repair is the answer to
+   * it and is one step away, not the thing you land on.
+   */
+  kept = $state<Candidate | null>(null);
+  /** True while the kept draft is what is on screen. */
+  showingKept = $state(false);
   /** Why a draft beside the source was not used, where one was not. */
   staleDraft = $state("");
 
@@ -145,6 +153,8 @@ export class Reader {
       this.edited = false;
       this.draftPath = "";
       this.staleDraft = bundle.stale ?? "";
+      this.kept = bundle.draft ?? null;
+      this.showingKept = false;
       // A fresh report makes the previous selection meaningless: ids identify
       // records within one snapshot, not the same claim across collections.
       this.selection = this.report.functions.length
@@ -160,15 +170,20 @@ export class Reader {
     } finally {
       this.busy = false;
     }
-    // A draft beside the source resumes where it was left. It is checked before
-    // any of it is displayed — a kept draft is a record of an edit, never a
-    // result — and this happens after the collection releases the reader,
-    // because checking is itself a change and takes the same guard.
-    const draft = this.bundle?.draft;
-    if (draft) {
-      const at = this.path.replace(/\.tsx?$/, "") + ".candidate.json";
-      await this.change(() => draft);
-      this.draftPath = at;
+  }
+
+  /**
+   * Show the draft kept beside the source. It is checked before any of it is
+   * displayed — a kept draft is a record of an edit, never a result.
+   */
+  async showKept() {
+    const draft = this.kept;
+    if (!draft || this.busy) return;
+    // Showing a kept draft edits nothing, so it is not offered to be kept.
+    await this.change(() => draft, false);
+    if (!this.error) {
+      this.showingKept = true;
+      this.draftPath = this.path.replace(/\.tsx?$/, "") + ".candidate.json";
     }
   }
 
@@ -188,7 +203,11 @@ export class Reader {
    * draft. A check that succeeds establishes that function's modeled
    * obligations; it does not make the producer's original claims true.
    */
-  private async change(edit: (candidate: Candidate) => Candidate) {
+  private async change(
+    edit: (candidate: Candidate) => Candidate,
+    /** False where nothing was edited — a kept draft being shown, say. */
+    edited = true,
+  ) {
     if (!this.candidate || this.busy) return;
     this.busy = true;
     this.error = "";
@@ -199,7 +218,7 @@ export class Reader {
       const next = edit($state.snapshot(this.candidate));
       const bundle = await checkCandidate(next);
       this.candidate = next;
-      this.edited = true;
+      this.edited = edited;
       this.adopt(bundle);
     } catch (e) {
       // A refused candidate stays available for correction, and what was last
@@ -257,6 +276,7 @@ export class Reader {
       const bundle = await checkCandidate($state.snapshot(this.original));
       this.candidate = this.original;
       this.edited = false;
+      this.showingKept = false;
       this.adopt(bundle);
     } catch (e) {
       this.error = (e as Error).message;

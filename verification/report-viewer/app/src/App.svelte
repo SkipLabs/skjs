@@ -164,10 +164,16 @@
         {#if !reader.collection.verified}· not checked{/if}
       </span>
     {/if}
+    {#if reader.kept && !reader.showingKept}
+      <!-- A repair kept beside this source. Opening a file shows what the
+           producer said, because that is the finding; this is the answer. -->
+      <button
+        class="plain"
+        onclick={() => reader.showKept()}
+        disabled={reader.busy}>show the kept repair</button
+      >
+    {/if}
     {#if reader.edited}
-      <!-- A draft lives beside the source, named after it, the way the
-           command-line tools already name what they write. There is nothing to
-           choose and nothing to find: reopening the source finds it. -->
       <button
         class="plain"
         onclick={() => reader.keep()}
@@ -175,19 +181,20 @@
         title="writes the candidate beside the source, for the CLI to read too"
         >keep this draft</button
       >
+    {/if}
+    {#if reader.edited || reader.showingKept}
       <button
         class="plain"
         onclick={() => reader.restore()}
-        disabled={reader.busy}>restore the producer's claims</button
+        disabled={reader.busy}>show the producer's claims</button
       >
     {/if}
-    {#if reader.draftPath}
-      <span class="note" title={reader.draftPath}>draft beside the source</span>
+    {#if reader.showingKept}
       <button
         class="plain"
         onclick={() => reader.discard()}
         disabled={reader.busy}
-        title="deletes {reader.draftPath}">discard it</button
+        title="deletes {reader.draftPath}">discard the repair</button
       >
     {/if}
     {#if !reader.hasVerifier}
@@ -241,6 +248,7 @@
           />
           <Provenance bundle={reader.bundle} collection={reader.collection} />
         </div>
+        <div class="rest"></div>
       </div>
     </div>
   {:else if !reader.busy && !reader.error}
@@ -259,7 +267,8 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 8px 10px;
     padding: 8px 14px;
     border-bottom: 1px solid var(--rule);
     background: var(--panel);
@@ -276,6 +285,7 @@
   .path {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--faint);
+    white-space: nowrap;
   }
   .tick {
     display: inline-flex;
@@ -290,11 +300,13 @@
   .note {
     color: var(--faint);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .warn {
     color: var(--warn);
   }
   .plain {
+    white-space: nowrap;
     padding: 3px 10px;
     border: 1px solid var(--rule);
     border-radius: 5px;
@@ -321,9 +333,10 @@
   }
   .centre {
     display: grid;
-    /* The dock takes only what it needs: an empty one is a prompt, not a
-       third of the screen. */
-    grid-template-rows: minmax(0, 1fr) auto;
+    /* The source takes the height it needs and the dock follows it, so a short
+       function does not leave a field of nothing between the code and what is
+       said about it. The last row absorbs the rest. */
+    grid-template-rows: minmax(0, auto) auto 1fr;
     min-height: 0;
     min-width: 0;
   }
@@ -334,6 +347,10 @@
   .dock {
     overflow-y: auto;
     max-height: 45vh;
+  }
+  /* Absorbs whatever the source and the dock do not use. */
+  .rest {
+    min-height: 0;
   }
   .empty {
     padding: 20px 16px;
