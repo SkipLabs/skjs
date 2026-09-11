@@ -1,0 +1,175 @@
+<script lang="ts">
+  /*
+   * The selected claim, docked under the source it came from.
+   *
+   * The old reader put this in a side rail, far from the thing clicked. A claim
+   * and its detail belong together, so this sits directly beneath the line it
+   * is about and the source keeps the full width.
+   */
+  import { proofLabel } from "../../marks.js";
+  import type { Report, ShownFunction } from "../../model.js";
+
+  let {
+    report,
+    fn,
+    markId,
+  }: {
+    report: Report;
+    fn: ShownFunction;
+    markId: string | null;
+  } = $props();
+
+  /** A mark id is a list prefix and an index within that list. */
+  const picked = $derived.by(() => {
+    if (!markId) return null;
+    const kind = markId[0];
+    const index = Number(markId.slice(1));
+    if (!Number.isInteger(index)) return null;
+    if (kind === "e") return { what: "expression", item: fn.exprs[index] };
+    if (kind === "n") return { what: "environment", item: fn.entries[index] };
+    if (kind === "g") return { what: "gap", item: fn.gaps[index] };
+    return null;
+  });
+
+  const text = $derived.by(() => {
+    const pos = (picked?.item as { pos?: [number, number] })?.pos;
+    return pos ? report.source.slice(pos[0], pos[1]) : "";
+  });
+</script>
+
+<section class="selection">
+  {#if !picked?.item}
+    <p class="empty">
+      Select a claim in the source to see its span, its type and the producer's
+      own encoding.
+    </p>
+  {:else}
+    {@const item = picked.item as Record<string, any>}
+    <header>
+      <span class="what">{picked.what}</span>
+      {#if item.pos}
+        <span class="span">[{item.pos[0]},{item.pos[1]})</span>
+      {/if}
+      <span class="status">{proofLabel(fn.status)}</span>
+    </header>
+
+    {#if text}
+      <pre class="text">{text}</pre>
+    {/if}
+
+    {#if picked.what === "expression"}
+      <dl>
+        <dt>claims</dt>
+        <dd class="type">{item.type}</dd>
+      </dl>
+    {:else if picked.what === "environment"}
+      <dl>
+        {#each item.bindings ?? [] as b (b.name)}
+          <dt class:changed={item.changed?.has(b.name)}>{b.name}</dt>
+          <dd class="type">{b.type}</dd>
+        {/each}
+      </dl>
+    {:else}
+      <p class="gap">{item.detail}</p>
+    {/if}
+
+    {#if item.failure}
+      <!-- Search found no derivation. That is never a statement that the claim
+           is false, so it is reported as what happened, not as a verdict. -->
+      <p class="failure">{item.failure}</p>
+    {/if}
+
+    {#if item.raw}
+      <details>
+        <summary>producer encoding</summary>
+        <pre class="raw">{item.raw}</pre>
+      </details>
+    {/if}
+  {/if}
+</section>
+
+<style>
+  .selection {
+    border-top: 1px solid var(--rule);
+    padding: 12px 16px 16px;
+    overflow-y: auto;
+    max-height: 40vh;
+    background: var(--panel);
+  }
+  .empty {
+    margin: 0;
+    color: var(--faint);
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .what {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .span,
+  .status {
+    color: var(--faint);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+  }
+  pre {
+    margin: 0 0 10px;
+    font:
+      12px/1.5 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+  .text {
+    color: var(--ink);
+    background: var(--field);
+    border-radius: 5px;
+    padding: 8px 10px;
+  }
+  dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 14px;
+    margin: 0 0 10px;
+    font:
+      12px/1.5 ui-monospace,
+      SFMono-Regular,
+      Menlo,
+      monospace;
+  }
+  dt {
+    color: var(--faint);
+  }
+  dt.changed {
+    color: var(--accent);
+  }
+  dd {
+    margin: 0;
+    color: var(--claim);
+  }
+  .failure {
+    margin: 0 0 10px;
+    color: var(--bad);
+  }
+  .gap {
+    margin: 0 0 10px;
+    color: var(--faint);
+  }
+  summary {
+    cursor: pointer;
+    color: var(--faint);
+    font-size: 12px;
+  }
+  .raw {
+    margin-top: 6px;
+    color: var(--faint);
+    max-height: 220px;
+    overflow: auto;
+  }
+</style>

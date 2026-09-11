@@ -24,3 +24,4 @@ _skjs-debug/
 *.swp
 *.swo
 .idea/
+.svelte-check/

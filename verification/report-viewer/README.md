@@ -8,8 +8,34 @@ verification badges are proof evidence.
 
 ```sh
 make viewer                              # starts it and opens the page
+make viewer-next                         # the reader being rebuilt, at /next
 node verification/report-viewer/serve.js # http://localhost:8731, without opening
 ```
+
+## The reader being rebuilt
+
+`app/` is a Svelte application replacing this one, served at `/next` beside the
+existing page at `/`. Both read the same reports through the same server: only
+the view is being rewritten, and `model.js`, `marks.js` and `obligation.js` —
+the tested logic for what a bundle means and what the source view draws — are
+shared by both.
+
+It reads today: a source with its claims bracketed under the spans they are
+about, the file's functions with both outcomes, and the selected claim docked
+beneath the source. Editing, claim addition and report bundles are still the
+existing reader's.
+
+```sh
+npm --prefix verification/report-viewer/app run check   # types, templates included
+npm --prefix verification/report-viewer/app run build   # dist/, which serve.js serves
+npm --prefix verification/report-viewer/app run dev     # vite, with hot reload
+```
+
+`svelte-check` is the check that matters: `tsc` does not look inside a
+component's template, which is exactly where a wrong property name hides. It
+needs TypeScript 6 alongside 7 and the `--tsgo` flag, which is its own
+transitional requirement; the trusted front end in `tools/` is unaffected and
+still builds against 7 alone.
 
 The toolbar's producer selector chooses whose claims are read: **SKJS claims**
 or **TypeScript claims**, the latter from `tools/tsc-claims.mts`. Both answer

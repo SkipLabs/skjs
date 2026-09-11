@@ -107,6 +107,13 @@ verify-examples:
 viewer:
 	@node verification/report-viewer/serve.js --open
 
+# The reader being rebuilt, at /next. It is a built bundle, so it is built
+# first; the existing reader at / needs no build and is unaffected.
+viewer-next:
+	@npm --prefix verification/report-viewer/app install --silent --legacy-peer-deps
+	@npm --prefix verification/report-viewer/app run build --silent
+	@node verification/report-viewer/serve.js --open /next
+
 # One producer's column at a time. Both together is the default above; either
 # alone runs only that producer, which is also how one is measured.
 verify-examples-skjs:

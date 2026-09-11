@@ -327,8 +327,14 @@ async function readCandidate(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+// The reader being rebuilt, served beside the one it will replace: `/` is the
+// existing page, `/next` the Svelte application from `app/dist`, which exists
+// only after `npm --prefix app run build`.
 const assets = new Map([
   ["/", ["claim-report-viewer.html", "text/html"]],
+  ["/next", ["app/dist/index.html", "text/html"]],
+  ["/reader.js", ["app/dist/reader.js", "text/javascript"]],
+  ["/reader.css", ["app/dist/reader.css", "text/css"]],
   ["/viewer.js", ["viewer.js", "text/javascript"]],
   ["/model.js", ["model.js", "text/javascript"]],
   ["/tools/claim-types.js", ["../tools/claim-types.js", "text/javascript"]],
@@ -440,6 +446,12 @@ if (require.main === module) {
     // `--open` hands the page to the browser once the socket is actually
     // listening, so nothing races the server's start.
     if (process.argv.includes("--open")) {
+      // An argument after `--open` names the page to open, so the reader being
+      // rebuilt can be asked for without a second flag.
+      const at = process.argv.indexOf("--open");
+      const page = (process.argv[at + 1] || "").startsWith("/")
+        ? process.argv[at + 1]
+        : "";
       const opener =
         process.platform === "darwin"
           ? "open"
@@ -447,7 +459,7 @@ if (require.main === module) {
             ? "start"
             : "xdg-open";
       require("node:child_process")
-        .spawn(opener, [url], { stdio: "ignore", detached: true })
+        .spawn(opener, [url + page], { stdio: "ignore", detached: true })
         .on("error", () => console.log(`Open ${url} to read reports.`))
         .unref();
     }

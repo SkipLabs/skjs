@@ -1,0 +1,69 @@
+/* The reader's palette. A code tool: sober, high-contrast, and legible at the
+   small sizes a source view uses. Claims carry the page, so they are the one
+   thing with a tint of their own. */
+:root {
+  color-scheme: light dark;
+
+  --page: #fbfbfa;
+  --panel: #f3f3f1;
+  --field: #ffffff;
+  --rule: #dcdcd6;
+  --hover: #eaeae6;
+
+  --ink: #1d1d1b;
+  --faint: #75756e;
+
+  --accent: #3159a8;
+  --accent-bg: #e4ebf8;
+
+  --claim: #4a3a86;
+  --claim-bg: #efecf8;
+  --claim-edge: #c4bae4;
+
+  --good: #2c6e49;
+  --bad: #a3272b;
+  --bad-bg: #f8e8e8;
+  --warn: #8a5a10;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #18181a;
+    --panel: #202024;
+    --field: #131315;
+    --rule: #35353b;
+    --hover: #2a2a30;
+
+    --ink: #e8e8e4;
+    --faint: #96968f;
+
+    --accent: #93b1ea;
+    --accent-bg: #232b3d;
+
+    --claim: #bdb0ec;
+    --claim-bg: #262239;
+    --claim-edge: #453c69;
+
+    --good: #7cc39a;
+    --bad: #e88a8d;
+    --bad-bg: #3a2124;
+    --warn: #d6a75a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font:
+    13px/1.5 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  background: var(--page);
+  color: var(--ink);
+}
+button {
+  font: inherit;
+}

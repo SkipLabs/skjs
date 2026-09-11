@@ -149,6 +149,10 @@ export interface Result {
   location?: Failure;
   /** Explanatory metadata about an unsuccessful attempt. Never evidence. */
   obligation?: unknown;
+  /** What a successful check covers, in the verifier's own words. */
+  scope?: string;
+  /** The certificate that was checked, for provenance only. */
+  certificateSha256?: string;
 }
 
 export interface Manifest {

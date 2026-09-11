@@ -1,0 +1,19 @@
+{
+  "name": "skjs-claim-reader",
+  "private": true,
+  "type": "module",
+  "description": "The claim report reader. Its own package, so `type: module` does not reach the CommonJS server and helpers beside it.",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "check": "svelte-check --tsconfig ./tsconfig.json --tsgo --output human"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.0",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "svelte": "5.57.0",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.0"
+  }
+}
