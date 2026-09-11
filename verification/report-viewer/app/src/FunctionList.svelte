@@ -28,6 +28,25 @@
         )
       : functions,
   );
+
+  /*
+   * What a symbol means, where it is. The two positions ask different
+   * questions, so the same symbol says different things in each, and neither
+   * `✗` ever means a claim is false. The rail is narrow and scrolls, so the
+   * note is placed against the viewport rather than inside it.
+   */
+  let meaning = $state<{
+    title: string;
+    body: string;
+    top: number;
+    left: number;
+  } | null>(null);
+
+  function explain(event: PointerEvent | FocusEvent, title: string, body: string) {
+    const at = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    meaning = { title, body, top: at.bottom + 6, left: at.left - 180 };
+  }
+
 </script>
 
 <div class="rail">
@@ -51,14 +70,41 @@
               class="sym"
               class:good={verdict.producer[0] === "✓"}
               class:bad={verdict.producer[0] === "✗"}
-              title="the producer's own outcome: {verdict.producer[1]}"
-              >{verdict.producer[0]}</span
-            ><span class="arrow">→</span><span
+              role="img"
+              aria-label="the producer's own verdict: {verdict.producer[1]}"
+              onpointerenter={(e) =>
+                explain(
+                  e,
+                  "The producer's own verdict",
+                  verdict.producer[1] +
+                    ". It reads the source alone, so it holds for as long as the source does.",
+                )}
+              onpointerleave={() => (meaning = null)}>{verdict.producer[0]}</span
+            ><span
+              class="arrow"
+              role="img"
+              aria-label="then"
+              onpointerenter={(e) =>
+                explain(
+                  e,
+                  "accepted → derived",
+                  "Two different questions: what the producer concluded about the program, and whether the verifier derives the claims it made. Neither stands for the other.",
+                )}
+              onpointerleave={() => (meaning = null)}>→</span
+            ><span
               class="sym"
               class:good={verdict.proof[0] === "✓"}
               class:bad={verdict.proof[0] === "✗"}
-              title="what proof search found: {verdict.proof[1]}"
-              >{verdict.proof[0]}</span
+              role="img"
+              aria-label="what proof search found: {verdict.proof[1]}"
+              onpointerenter={(e) =>
+                explain(
+                  e,
+                  "What proof search found",
+                  verdict.proof[1] +
+                    ". It reads the claims, so an edit can change it.",
+                )}
+              onpointerleave={() => (meaning = null)}>{verdict.proof[0]}</span
             >
           </span>
         </button>
@@ -71,7 +117,37 @@
   </ul>
 </div>
 
+{#if meaning}
+  <div
+    class="meaning"
+    style="top:{meaning.top}px; left:{meaning.left}px"
+    role="tooltip"
+  >
+    <b>{meaning.title}</b>
+    <span>{meaning.body}</span>
+  </div>
+{/if}
+
 <style>
+  .meaning {
+    position: fixed;
+    z-index: 30;
+    max-width: 24rem;
+    display: grid;
+    gap: 3px;
+    padding: 8px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--panel);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+    pointer-events: none;
+  }
+  .meaning b {
+    font-weight: 600;
+  }
+  .meaning span {
+    color: var(--faint);
+  }
   .rail {
     display: flex;
     flex-direction: column;
@@ -146,6 +222,10 @@
   .arrow {
     padding: 0 2px;
     color: var(--faint);
+  }
+  .sym,
+  .arrow {
+    cursor: help;
   }
   .sym.good {
     color: var(--good);
