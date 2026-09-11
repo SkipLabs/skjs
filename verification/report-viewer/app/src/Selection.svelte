@@ -6,17 +6,26 @@
    * and its detail belong together, so this sits directly beneath the line it
    * is about and the source keeps the full width.
    */
+  import ClaimEditor from "./ClaimEditor.svelte";
   import { proofLabel } from "../../marks.js";
+  import type { ClaimSite } from "../../candidate.js";
   import type { Report, ShownFunction } from "../../model.js";
+  import type { Candidate } from "../../types.ts";
 
   let {
     report,
     fn,
     markId,
+    candidate,
+    busy,
+    onapply,
   }: {
     report: Report;
     fn: ShownFunction;
     markId: string | null;
+    candidate: Candidate | null;
+    busy: boolean;
+    onapply: (site: ClaimSite, value: unknown) => void;
   } = $props();
 
   /** A mark id is a list prefix and an index within that list. */
@@ -28,6 +37,15 @@
     if (kind === "e") return { what: "expression", item: fn.exprs[index] };
     if (kind === "n") return { what: "environment", item: fn.entries[index] };
     if (kind === "g") return { what: "gap", item: fn.gaps[index] };
+    return null;
+  });
+
+  /** Where the selected claim sits, in the terms a candidate is addressed by. */
+  const site = $derived.by((): ClaimSite | null => {
+    const pos = (picked?.item as { pos?: [number, number] })?.pos;
+    if (!pos || !picked) return null;
+    if (picked.what === "expression") return { kind: "expression", pos };
+    if (picked.what === "environment") return { kind: "environment", pos };
     return null;
   });
 
@@ -77,6 +95,16 @@
       <!-- Search found no derivation. That is never a statement that the claim
            is false, so it is reported as what happened, not as a verdict. -->
       <p class="failure">{item.failure}</p>
+    {/if}
+
+    {#if candidate && site}
+      <ClaimEditor
+        {candidate}
+        {fn}
+        {site}
+        {busy}
+        onapply={(value) => onapply(site, value)}
+      />
     {/if}
 
     {#if item.raw}

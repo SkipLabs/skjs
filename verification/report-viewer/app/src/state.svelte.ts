@@ -5,9 +5,21 @@
  * through one producer, with one claim selected. Nothing here decides an
  * outcome — a report carries the verifier's verdicts and this only holds them.
  */
-import { analyse, files as fetchFiles, health, type Group } from "./api.ts";
+import {
+  analyse,
+  checkCandidate,
+  files as fetchFiles,
+  health,
+  type Group,
+} from "./api.ts";
+import { editClaim, type ClaimSite } from "../../candidate.js";
 import { fromBundle, type Report, type ShownFunction } from "../../model.js";
-import type { Bundle, CollectionRun, Producer } from "../../types.ts";
+import type {
+  Bundle,
+  Candidate,
+  CollectionRun,
+  Producer,
+} from "../../types.ts";
 
 /** Which claim is selected: a function, and a mark within it. */
 export interface Selection {
@@ -31,6 +43,13 @@ export class Reader {
   /** True while a collection is running: it runs the producer and the verifier. */
   busy = $state(false);
   error = $state("");
+
+  /** The editable copy of the producer's claims, where the report carries one. */
+  candidate = $state<Candidate | null>(null);
+  /** The producer's own claims, to restore the candidate to. */
+  original = $state<Candidate | null>(null);
+  /** True once the candidate differs from what the producer said. */
+  edited = $state(false);
 
   /** Only claims whose type the producer could not state. */
   showUnsupported = $state(false);
@@ -67,6 +86,9 @@ export class Reader {
       this.bundle = bundle;
       this.report = fromBundle(bundle);
       this.collection = bundle.collection ?? null;
+      this.candidate = bundle.candidate ?? null;
+      this.original = bundle.candidate ?? null;
+      this.edited = false;
       // A fresh report makes the previous selection meaningless: ids identify
       // records within one snapshot, not the same claim across collections.
       this.selection = this.report.functions.length
@@ -76,7 +98,59 @@ export class Reader {
       this.error = (e as Error).message;
       this.report = null;
       this.collection = null;
+      this.candidate = null;
+      this.original = null;
       this.selection = null;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * Replace one claim and have the verifier check the result. The producer is
+   * not run again: the source is unchanged, and what is being checked is the
+   * draft. A check that succeeds establishes that function's modeled
+   * obligations; it does not make the producer's original claims true.
+   */
+  async apply(fn: ShownFunction, site: ClaimSite, value: unknown) {
+    if (!this.candidate || this.busy) return;
+    this.busy = true;
+    this.error = "";
+    try {
+      // `$state` proxies what it holds, and a proxy is not structured-clonable,
+      // which is what `editClaim` does to copy the candidate. The snapshot is
+      // the plain object the proxy stands for.
+      const next = editClaim($state.snapshot(this.candidate), fn, site, value);
+      const bundle = await checkCandidate(next);
+      this.candidate = next;
+      this.edited = true;
+      this.bundle = bundle;
+      this.report = fromBundle(bundle);
+      this.collection = bundle.collection ?? null;
+    } catch (e) {
+      // A refused candidate stays available for correction, and what was last
+      // displayed keeps saying what it said: nothing unchecked is shown as a
+      // result.
+      this.error = (e as Error).message;
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** Put the producer's own claims back, and check them again. */
+  async restore() {
+    if (!this.original || this.busy) return;
+    this.busy = true;
+    this.error = "";
+    try {
+      const bundle = await checkCandidate($state.snapshot(this.original));
+      this.candidate = this.original;
+      this.edited = false;
+      this.bundle = bundle;
+      this.report = fromBundle(bundle);
+      this.collection = bundle.collection ?? null;
+    } catch (e) {
+      this.error = (e as Error).message;
     } finally {
       this.busy = false;
     }

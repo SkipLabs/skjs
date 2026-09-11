@@ -7,7 +7,7 @@
  * an outcome in a bundle was reached by the verifier, and a bundle that carries
  * none says so rather than being filled in.
  */
-import type { Bundle, Producer } from "../../types.ts";
+import type { Bundle, Candidate, Producer } from "../../types.ts";
 
 /** A named group of corpus files, as the example picker lists them. */
 export interface Group {
@@ -51,6 +51,26 @@ export function files() {
 /** Repository sources matching a query, for the path field's suggestions. */
 export function sources(query: string) {
   return get<{ files: string[]; total: number }>("/api/sources", { q: query });
+}
+
+/**
+ * Check an edited candidate against unchanged source. The producer is not run:
+ * this is the reader's own draft, and what comes back is a report of what the
+ * verifier made of it — an unchecked candidate is never displayed as a result.
+ */
+export async function checkCandidate(candidate: Candidate) {
+  const response = await fetch("/api/candidate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ candidate }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok)
+    throw new ApiError(
+      response.status,
+      (body as { error?: string })?.error ?? "the candidate was not accepted",
+    );
+  return body as Bundle;
 }
 
 /**

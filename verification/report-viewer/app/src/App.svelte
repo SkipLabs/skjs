@@ -80,6 +80,11 @@
         {#if !reader.collection.verified}· not checked{/if}
       </span>
     {/if}
+    {#if reader.edited}
+      <button class="restore" onclick={() => reader.restore()} disabled={reader.busy}
+        >restore the producer's claims</button
+      >
+    {/if}
     {#if !reader.hasVerifier}
       <span class="warn">no verifier built — nothing can be checked</span>
     {/if}
@@ -111,7 +116,14 @@
           />
         </div>
         <div class="dock">
-          <Selection {report} {fn} markId={reader.selection?.markId ?? null} />
+          <Selection
+            {report}
+            {fn}
+            markId={reader.selection?.markId ?? null}
+            candidate={reader.candidate}
+            busy={reader.busy}
+            onapply={(site, value) => reader.apply(fn, site, value)}
+          />
           <Obligation
             {fn}
             source={report.source}
@@ -164,6 +176,14 @@
   }
   .warn {
     color: var(--warn);
+  }
+  .restore {
+    padding: 3px 10px;
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--field);
+    color: var(--ink);
+    cursor: pointer;
   }
   .error {
     margin: 0;

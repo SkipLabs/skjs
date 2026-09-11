@@ -235,3 +235,51 @@ declare module "*/obligation.js" {
   };
   export default reader;
 }
+
+declare module "*/candidate.js" {
+  import type { Candidate } from "../../types.ts";
+  import type { ShownFunction } from "*/model.js";
+
+  /** Where a claim sits, in the terms the candidate is addressed by. */
+  export interface ClaimSite {
+    kind: "expression" | "environment";
+    pos: [number, number];
+  }
+
+  /** The candidate's own value at a site, in the producer's encoding. */
+  export function claimValue(
+    candidate: Candidate,
+    fn: ShownFunction,
+    item: ClaimSite,
+  ): unknown;
+
+  /**
+   * A candidate with one claim replaced. Immutable: editing never changes a
+   * source snapshot and never establishes a verification result.
+   */
+  export function editClaim(
+    candidate: Candidate,
+    fn: ShownFunction,
+    item: ClaimSite,
+    value: unknown,
+  ): Candidate;
+}
+
+declare module "*/claim-types.js" {
+  /** Surface syntax for claim types: printing, and reading back. */
+  const surface: {
+    /**
+     * The claim in surface syntax, or null where this encoding cannot be
+     * printed exactly — in which case it is edited as the producer's JSON.
+     */
+    printClaimValue(kind: string, value: unknown): string | null;
+    /**
+     * Read surface text back into an encoding, against the claim it came from:
+     * what the text names is replaced, and what it cannot name — index
+     * signatures, call and construct shapes — is the original's, never
+     * invented here.
+     */
+    readClaimValue(kind: string, text: string, current: unknown): unknown;
+  };
+  export default surface;
+}
