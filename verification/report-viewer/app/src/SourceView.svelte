@@ -230,12 +230,15 @@
   .lit.selected {
     background: var(--accent-bg);
   }
-  /* The two claims of an edge, told apart: where it comes from is underlined. */
-  .lit.from {
-    box-shadow: inset 0 -2px var(--claim-edge);
-  }
+  /* A hovered failure lights its edge in the failure's own colour, so it is
+     never mistaken for a hover or a selection. The two claims are told apart:
+     where the edge comes from is underlined. */
+  .lit.from,
   .lit.to {
-    background: var(--accent-bg);
+    background: var(--bad-bg);
+  }
+  .lit.from {
+    box-shadow: inset 0 -2px var(--bad);
   }
   .text {
     position: relative;
@@ -260,8 +263,6 @@
     padding: 0;
     cursor: pointer;
   }
-  /* The other claim of a hovered edge reads as hovered too. */
-  .mark.edge .label,
   .mark:hover .label {
     background: var(--claim-bg);
   }
@@ -312,5 +313,9 @@
   }
   .tag {
     color: var(--faint);
+  }
+  .mark.edge .label {
+    background: var(--bad-bg);
+    color: var(--bad);
   }
 </style>
