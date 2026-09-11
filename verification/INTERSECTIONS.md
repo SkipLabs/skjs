@@ -110,8 +110,11 @@ them where TypeScript merges them.
 - *Mutable field, different contracts.* Empty. A location cannot hold `null`
   invariantly and `boolean` invariantly. This is the sound verdict, and it is
   where TypeScript's covariant merge to `{ value: null & boolean }` and SKJS's
-  acceptance of contradictory writes both go wrong. `tsc` recovers by reducing
-  the merged property to `never`; the model never merges.
+  merge both go wrong. SKJS's `TField::inter` meets the read types and joins
+  the write types of a shared field, giving a field readable at `never` and
+  writable at `null | boolean`, with no check that the two invariants agree;
+  that is what admits both writes and the read back at `null`. `tsc` recovers
+  by reducing the merged property to `never`; the model never merges.
 - *Mutable field, same contract.* The plain cell. `{ value: boolean } &
   { value: true | false }` is `{ value: boolean }`, which the lowering already
   produces by deduplicating operands.
@@ -209,8 +212,9 @@ carry no runtime meaning and have no semantic content to model.
 
 ## What it says about SKJS
 
-SKJS's merge `{ value: null } & { value: boolean } = { value: null & boolean }`
-is the read-only law applied to a mutable field. The sound rule the model gives
+SKJS's merge of `{ value: null } & { value: boolean }`, reads met to `never`
+and writes joined to `null | boolean`, is the read-only law applied to a
+mutable field, with the write side widened rather than required to agree. The sound rule the model gives
 is: on disjoint fields, compose; on a shared read-only field, intersect the
 contracts; on a shared mutable field, require the same contract and otherwise
 report the type empty. TypeScript's `never` reduction is that last clause,
