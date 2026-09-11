@@ -9,12 +9,6 @@ import {
   fromBundle,
   parseReport,
   renderType,
-  findMark,
-  markIdOf,
-  nextMark,
-  summarize,
-  parseReportLink,
-  reportLink,
 } from "../report-viewer/model.mts";
 import * as marks from "../report-viewer/marks.mts";
 import surface from "../tools/claim-types.mts";
@@ -53,11 +47,13 @@ const manifest: Manifest = {
   results: null,
 };
 const bundle = { source, manifest };
+/** The sites of one kind, in source order. */
+const of = (f: any, kind: string) => f.sites.filter((s: any) => s.kind === kind);
 const report = fromBundle(bundle);
-assert.equal(report.functions[0].exprs[0].type, claim.type);
-assert.deepEqual(JSON.parse(report.functions[0].exprs[0].raw), claim.raw);
+assert.equal(of(report.functions[0], "expression")[0].type, claim.type);
+assert.deepEqual(JSON.parse(of(report.functions[0], "expression")[0].raw), claim.raw);
 assert.equal(
-  report.source.slice(...report.functions[0].exprs[0].pos),
+  report.source.slice(...of(report.functions[0], "expression")[0].pos),
   "(\n    x\n  )",
 );
 assert.equal(report.diagnostics, manifest.diagnostics);
@@ -71,7 +67,7 @@ changed.manifest.comparison = {
   changes: [{ span: [expr, end], status: "changed", kind: "expression" }],
 };
 assert.match(
-  fromBundle(changed).functions[0].gaps[0].detail,
+  of(fromBundle(changed).functions[0], "unclaimed")[0].detail,
   /claim edit: changed/,
 );
 const missing = structuredClone(bundle);
@@ -79,7 +75,7 @@ missing.manifest.functions = [];
 missing.manifest.gaps = [
   { id: "g0", pos: [start, source.length - 1], status: "claims unavailable" },
 ];
-assert.equal(fromBundle(missing).functions[0].gaps.length, 1);
+assert.equal(of(fromBundle(missing).functions[0], "unclaimed").length, 1);
 const missingFunctionBundle: any = structuredClone(missing);
 missingFunctionBundle.manifest.missingFunctions = [
   {
@@ -101,7 +97,7 @@ invalidMissing.manifest.missingFunctions[0].namePos = [0, 1];
 assert.throws(() => fromBundle(invalidMissing), /identity/);
 const annotated = render(source, manifest);
 assert.equal(parseReport(annotated).source, source);
-assert.equal(parseReport(annotated).functions[0].exprs[0].type, claim.type);
+assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, claim.type);
 // Realistic comment-format input, built here rather than stored: a rejected
 // snapshot with a recovery label, an unvisited statement and an undecodable
 // binding. Reading it back must recover the exact source, including non-ASCII.
@@ -153,85 +149,30 @@ assert.equal(parseReport(annotated).functions[0].exprs[0].type, claim.type);
   assert.equal(partialFn.name, "partial");
   assert.equal(partialFn.quality, "recovery");
   assert.equal(partialFn.collection, "aborted");
-  assert.equal(partialFn.exprs[0].recovery, true);
-  assert.equal(partialFn.entries[0].bindings[0].unavailable, true);
-  const unvisited = partialFn.gaps.find(
+  assert.equal(of(partialFn, "expression")[0].recovery, true);
+  assert.equal(of(partialFn, "environment")[0].bindings[0].unavailable, true);
+  const unvisited = of(partialFn, "unclaimed").find(
     (g: any) => g.reason === "statement-not-visited",
   );
   assert(unvisited);
   assert.equal(text.slice(...unvisited.pos), "return x;");
   assert.equal(partialFn.id, "f0");
-  assert.equal(partialFn.exprs[0].id, "f0x0");
 }
 
-// Marks are addressed by the writer's manifest id, not by their position in a
-// function's lists: a link or a quoted id must survive changed claims.
-const addressed = fromBundle(bundle);
-assert.deepEqual(findMark(addressed, "f0x0"), {
-  fn: 0,
-  id: "e0",
-  manifestId: "f0x0",
-});
-assert.deepEqual(findMark(addressed, "f0"), {
-  fn: 0,
-  id: null,
-  manifestId: "f0",
-});
-assert.equal(findMark(addressed, "f9x9"), null);
-assert.equal(findMark(addressed, ""), null);
-assert.equal(markIdOf(addressed, 0, "e0"), "f0x0");
-assert.equal(markIdOf(addressed, 0, null), "f0");
-assert.equal(markIdOf(addressed, 0, "e7"), "");
-const shifted: any = structuredClone(bundle);
-shifted.manifest.functions[0].expressions.unshift({
-  id: "f0x9",
-  pos: [source.indexOf("x\n"), source.indexOf("x\n") + 1],
-  type: "boolean",
-});
-assert.equal(findMark(fromBundle(shifted), "f0x0")!.id, "e1");
-const entryBundle = structuredClone(bundle);
-entryBundle.manifest.functions[0].entries = [
-  { id: "f0e0", pos: [start, end], bindings: [] },
-];
-assert.equal(findMark(fromBundle(entryBundle), "f0e0")!.id, "n0");
-const drawn = ["n0", "e0", "e1", "g0"];
-assert.equal(nextMark(drawn, "e0", 1), "e1");
-assert.equal(nextMark(drawn, "e0", -1), "n0");
-assert.equal(nextMark(drawn, "g0", 1), "n0");
-assert.equal(nextMark(drawn, "n0", -1), "g0");
-assert.equal(nextMark(drawn, null, 1), "n0");
-assert.equal(nextMark(drawn, null, -1), "g0");
-assert.equal(nextMark(drawn, "e9", 1), "n0");
-assert.equal(nextMark([], null, 1), null);
-assert.deepEqual(summarize(fromBundle(missing).functions), {
-  functions: 1,
-  gaps: 1,
-  status: { "not-established": 1 },
-});
-assert.deepEqual(summarize(addressed.functions), {
-  functions: 1,
-  gaps: 0,
-  status: { "not-run": 1 },
-});
-// A link from an older session may still carry a verification flag; it is read
-// and ignored, because verification is no longer something to switch on.
-assert.deepEqual(parseReportLink("?file=a/b.ts&verify=1", "#f0x0"), {
-  file: "a/b.ts",
-  mark: "f0x0",
-});
-assert.deepEqual(parseReportLink("", ""), { file: "", mark: "" });
-assert.equal(
-  reportLink({ file: "a/b.ts", mark: "f0x0" }),
-  "?file=a%2Fb.ts#f0x0",
-);
-assert.equal(reportLink({ file: "", mark: "" }), "");
-assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
+// A site is addressed by its index in source order; an environment comes
+// before the claims of its statement, so stepping visits it first.
 {
-  const round = { file: "verification/x.ts", mark: "f1e2" };
-  const link = reportLink(round);
+  const shifted: any = structuredClone(bundle);
+  shifted.manifest.functions[0].expressions.unshift({
+    id: "f0x9",
+    pos: [source.indexOf("x\n"), source.indexOf("x\n") + 1],
+    type: "boolean",
+  });
+  shifted.manifest.functions[0].entries = [{ id: "f0e0", pos: [start, end], bindings: [] }];
+  const sites = fromBundle(shifted).functions[0].sites;
   assert.deepEqual(
-    parseReportLink(link.split("#")[0], "#" + link.split("#")[1]),
-    round,
+    sites.map((s: any) => [s.kind, s.pos[0]]),
+    [["environment", start], ["expression", claim.pos[0]], ["expression", source.indexOf("x\n")]],
   );
 }
 
@@ -283,7 +224,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   const incomplete = {
     status: "not-established",
     collection: "complete",
-    result: { location: { kind: "missing-expression-claim" } },
+    failure: { kind: "missing-expression-claim" },
   };
   assert.equal(outcome(incomplete).proof[0], "?");
   assert.equal(outcome(incomplete).disagrees, false);
@@ -306,44 +247,39 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     status: "not-established",
     collection: "complete",
     quality: "unverified",
-    start: text.indexOf("function"),
-    end: text.length - 1,
-    exprs: [
-      { pos: at("x;"), type: "boolean", id: "f0x0" },
-      { pos: at("y;"), type: "boolean", id: "f0x1", failure: "no", failureKind: "expression-obligation" },
-      // a literal restating itself: hidden in Compact, shown in Every claim
-      { pos: literal, type: "true", id: "f0x2" },
-    ],
-    entries: [
+    pos: [text.indexOf("function"), text.length - 1],
+    sites: [
       {
+        kind: "environment",
         pos: at("const y: boolean = x;"),
         bindings: [
           { name: "x", type: "boolean" },
           { name: "this", type: "(unavailable)", unavailable: true },
         ],
         changed: new Set(["x"]),
-        id: "f0e0",
       },
+      { kind: "expression", pos: at("x;"), type: "boolean" },
+      { kind: "expression", pos: at("y;"), type: "boolean" },
+      // a literal restating itself: hidden in Compact, shown in Every claim
+      { kind: "expression", pos: literal, type: "true" },
     ],
-    gaps: [],
+    failure: { detail: "no", kind: "expression-obligation", role: "", binding: "", at: 2, pos: at("y;") },
   };
   const compact = marks.sourceMarks(rep, fn, { density: "key" });
   assert.deepEqual(
-    compact.items.map((i: any) => [i.id, i.label, i.mark]),
+    compact.items.map((i: any) => [i.site, i.label, i.mark]),
     [
-      ["e0", "boolean", ""],
-      ["e1", "boolean", "✗"],
+      [1, "boolean", ""],
+      [2, "boolean", "✗"],
     ],
   );
   assert.equal(compact.entries[0].label, "x: boolean");
   const all = marks.sourceMarks(rep, fn, { density: "all", unsupported: true });
   assert.equal(all.entries[0].label, "x: boolean,  this: (unavailable)");
   assert.deepEqual(
-    all.items.map((i: any) => i.id),
-    ["e0", "e1", "e2"],
+    all.items.map((i: any) => i.site),
+    [1, 2, 3],
   );
-  assert.equal(marks.firstFailure(fn)!.id, "e1");
-  assert.equal(marks.firstFailure({ exprs: [], entries: [], gaps: [] }), null);
 }
 
 // A gap reads like the other marks: its own words, plus the proof symbol where
@@ -351,22 +287,15 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 {
   const text = "function f(): boolean {\n  return true;\n}\n";
   const rep = { source: text, file: "f.ts" };
+  const site = [text.indexOf("return"), text.indexOf("true;") + 5];
   const fn = {
     status: "not-established",
     collection: "aborted",
-    start: 0,
-    end: text.length,
-    exprs: [],
-    entries: [],
-    gaps: [
-      {
-        pos: [text.indexOf("return"), text.indexOf("true;") + 5],
-        reason: "statement-not-visited",
-        detail: "statement not visited",
-        failure: "needed a claim",
-        failureKind: "missing-environment-claim",
-      },
+    pos: [0, text.length],
+    sites: [
+      { kind: "unclaimed", pos: site, reason: "statement-not-visited", detail: "statement not visited" },
     ],
+    failure: { detail: "needed a claim", kind: "missing-environment-claim", role: "", binding: "", at: 0, pos: site },
   };
   const [gap] = marks.sourceMarks(rep, fn, { density: "key" }).items;
   assert.equal(gap.label, "not visited by producer");
@@ -416,10 +345,9 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     },
   ];
   const f = fromBundle(unavailable).functions[0];
-  assert.equal(f.entries[0].failureKind, "unavailable-type-claim");
-  assert.equal(f.entries[0].failureBinding, "cell");
-  assert.equal(f.entries[0].failureStage, "source-extraction");
-  assert.equal(f.exprs[0].failure, undefined);
+  assert.equal(f.failure!.kind, "unavailable-type-claim");
+  assert.equal(f.failure!.binding, "cell");
+  assert.equal(f.sites[f.failure!.at!].kind, "environment");
   assert.equal(marks.proofMark(f)[0], "?");
   assert.equal(marks.outcomeGroup(f).label, "could not be checked");
   assert.equal(marks.outcome(f, { collection: null }).disagrees, false);
@@ -431,10 +359,11 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     kind: "unavailable-type-claim",
     pos: claim.pos,
   };
-  assert.equal(
-    fromBundle(atExpression).functions[0].exprs[0].failureKind,
-    "unavailable-type-claim",
-  );
+  {
+    const f = fromBundle(atExpression).functions[0];
+    assert.equal(f.failure!.kind, "unavailable-type-claim");
+    assert.equal(f.sites[f.failure!.at!].kind, "expression");
+  }
   // Verified functions and failed searches keep their own groups.
   assert.equal(
     marks.outcomeGroup({ status: "verified", collection: "complete" }).label,
@@ -879,21 +808,13 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 {
   const source = "function f(): true {\n  return flag;\n}\n";
   const rep = { source, file: "f.ts", collection: { verified: true } };
-  const failing = {
-    pos: [source.indexOf("flag"), source.indexOf("flag") + 4],
-    type: "boolean",
-    failure: "reject",
-    failureKind: "expression-obligation",
-    failureRole: "return-contract",
-  };
+  const pos = [source.indexOf("flag"), source.indexOf("flag") + 4];
   const fn = {
     status: "not-established",
     collection: "aborted",
-    start: 0,
-    end: source.length,
-    exprs: [failing],
-    entries: [],
-    gaps: [],
+    pos: [0, source.length],
+    sites: [{ kind: "expression", pos, type: "boolean" }],
+    failure: { detail: "reject", kind: "expression-obligation", role: "return-contract", binding: "", at: 0, pos },
   };
   const [mark] = marks.sourceMarks(rep, fn, { density: "key" }).items;
   assert.equal(mark.label, "boolean");
@@ -921,16 +842,17 @@ failureBundle.manifest.results = [
     location: { kind: "expression-obligation", pos: claim.pos },
   },
 ];
-assert.equal(
-  fromBundle(failureBundle).functions[0].exprs[0].failure,
-  "proof search stopped",
-);
+/** The failure's site, by kind, so a test says where it attached. */
+const failedAt = (bundle: any) => {
+  const f = fromBundle(bundle).functions[0];
+  return f.failure ? { ...f.failure, site: f.failure.at === null ? null : f.sites[f.failure.at].kind } : null;
+};
+assert.equal(failedAt(failureBundle)!.detail, "proof search stopped");
+assert.equal(failedAt(failureBundle)!.site, "expression");
 for (const kind of ["edge-obligation", "source-limitation"]) {
   failureBundle.manifest.results![0]!.location!.kind = kind as FailureKind;
-  assert.equal(
-    fromBundle(failureBundle).functions[0].exprs[0].failureKind,
-    kind,
-  );
+  assert.equal(failedAt(failureBundle)!.kind, kind);
+  assert.equal(failedAt(failureBundle)!.site, "expression");
 }
 failureBundle.manifest.functions[0].entries = [
   { id: "f0e0", pos: [start, end] as Span, bindings: [] },
@@ -939,24 +861,56 @@ failureBundle.manifest.results![0].location = {
   kind: "environment-obligation",
   start,
 };
-assert.equal(
-  fromBundle(failureBundle).functions[0].entries[0].failureKind,
-  "environment-obligation",
-);
+assert.equal(failedAt(failureBundle)!.kind, "environment-obligation");
+assert.equal(failedAt(failureBundle)!.site, "environment");
+// An edge obligation names both of its claims: the expression at the mapped
+// span, and the environment at the mapped statement entry.
+failureBundle.manifest.results![0].obligation = {
+  kind: "edge-coverage",
+  source: { sourceMap: { pos: claim.pos, role: "binding-annotation" } },
+  destination: { sourceMap: { environmentStart: start, role: "heap-observation" } },
+} as any;
+{
+  const f = fromBundle(failureBundle).functions[0];
+  const kindAt = (i: number | null) => (i === null ? null : f.sites[i].kind);
+  assert.deepEqual([kindAt(f.failure!.edge!.from), kindAt(f.failure!.edge!.to)], ["expression", "environment"]);
+}
+delete failureBundle.manifest.results![0].obligation;
+// The declared result is a site of its own, first in source order, and a
+// failed return contract is an edge from the returned expression to it.
+{
+  const contract: any = structuredClone(bundle);
+  const annotation = source.lastIndexOf("boolean");
+  contract.manifest.functions[0].resultPos = [annotation, annotation + 7];
+  contract.manifest.functions[0].signature = {
+    params: [],
+    retType: { top: false, atoms: [{ a: "booleanlit", v: "true" }] },
+  };
+  contract.manifest.results = [
+    {
+      function: "f0",
+      status: "not-established",
+      detail: "did not establish true",
+      location: { kind: "expression-obligation", pos: claim.pos },
+      obligation: { kind: "node-typing", sourceMap: { pos: claim.pos, role: "return-contract" } },
+    },
+  ];
+  const f = fromBundle(contract).functions[0];
+  assert.deepEqual([f.sites[0].kind, (f.sites[0] as any).type], ["result", "true"]);
+  assert.equal(f.sites[f.failure!.at!].kind, "expression");
+  assert.deepEqual(f.failure!.edge, { from: f.failure!.at, to: 0 });
+  const [drawn] = marks.sourceMarks({ source, file: "f.ts" }, f, { density: "key" }).items;
+  assert.equal(drawn.label, "returns true");
+  assert.equal(drawn.cls, "result");
+}
 delete failureBundle.manifest.results![0].location;
-assert.equal(
-  fromBundle(failureBundle).functions[0].exprs[0].failure,
-  undefined,
-);
+assert.equal(failedAt(failureBundle), null);
 failureBundle.manifest.results![0].location = {
   kind: "expression-obligation",
   pos: claim.pos,
 };
 failureBundle.manifest.results![0].status = "verified";
-assert.equal(
-  fromBundle(failureBundle).functions[0].exprs[0].failure,
-  undefined,
-);
+assert.equal(failedAt(failureBundle), null);
 
 // A claim the verifier needed and did not find is reported at the gap that
 // already marks that place, and is not presented as a disproved claim.
@@ -979,19 +933,18 @@ absent.manifest.results = [
 ];
 {
   const f = fromBundle(absent).functions[0];
-  assert.equal(f.gaps[0].failureKind, "missing-expression-claim");
-  assert.match(f.gaps[0].failure, /no claimed type/);
+  assert.equal(f.failure!.kind, "missing-expression-claim");
+  assert.match(f.failure!.detail, /no claimed type/);
+  assert.equal(f.sites[f.failure!.at!].kind, "unclaimed");
   assert.equal(f.detail, absent.manifest.results![0].detail);
-  assert.equal(f.result.status, "not-established");
+  assert.equal(f.status, "not-established");
 }
 // Without a gap at that place — an older report — the claim there still carries it.
 const absentNoGap = structuredClone(absent);
 absentNoGap.manifest.gaps = [];
 absentNoGap.manifest.functions[0].expressions = [{ id: "f0x0", ...claim }];
-assert.equal(
-  fromBundle(absentNoGap).functions[0].exprs[0].failureKind,
-  "missing-expression-claim",
-);
+assert.equal(failedAt(absentNoGap)!.kind, "missing-expression-claim");
+assert.equal(failedAt(absentNoGap)!.site, "expression");
 const absentEnv = structuredClone(absent);
 absentEnv.manifest.gaps = [
   { id: "g0", pos: [start, end], status: "statement not visited" },
@@ -1001,8 +954,6 @@ absentEnv.manifest.results![0].location = {
   start,
   binding: "x",
 };
-{
-  const f = fromBundle(absentEnv).functions[0];
-  assert.equal(f.gaps[0].failureKind, "missing-environment-claim");
-  assert.equal(f.gaps[0].failureBinding, "x");
-}
+assert.equal(failedAt(absentEnv)!.kind, "missing-environment-claim");
+assert.equal(failedAt(absentEnv)!.binding, "x");
+assert.equal(failedAt(absentEnv)!.site, "unclaimed");

@@ -11,6 +11,7 @@ import {
   addFunction,
 } from "../report-viewer/candidate.mts";
 import { candidateReport } from "../report-viewer/serve.mts";
+import { fromBundle } from "../report-viewer/model.mts";
 process.env.SKJS_BIN = "/no-producer-in-candidate-tests";
 
 const file = "verification/tests/stateful-source/closures.ts";
@@ -179,26 +180,27 @@ assert.deepEqual(
     (e: any) => JSON.stringify(e.pos) !== JSON.stringify(item.pos),
   );
   const partial = await candidateReport(incomplete, true);
-  const partialFn = partial.manifest.functions.find((f: any) => f.name === fn.name);
+  // Sites are addressed through the shown function, as the reader addresses them.
+  const partialFn = fromBundle(partial).functions.find((f: any) => f.name === fn.name)!;
+  // A claim is added at a site addressed by what belongs there, as the reader does.
+  const unclaimedAt = (f: any, claims: string) =>
+    f.sites
+      .filter((s: any) => s.kind === "unclaimed" && s.claims === claims)
+      .map((s: any) => ({ kind: s.claims, pos: s.pos }));
   assert.equal(
     partial.manifest.results.find((r: any) => r.function === partialFn.id).status,
     "not-established",
   );
-  const expressionSite = partialFn.missingSites.find(
-    (s: any) =>
-      s.kind === "expression" &&
-      JSON.stringify(s.pos) === JSON.stringify(item.pos),
+  const expressionSite = unclaimedAt(partialFn, "expression").find(
+    (s: any) => JSON.stringify(s.pos) === JSON.stringify(item.pos),
   );
-  const entrySite = partialFn.missingSites.find(
-    (s: any) => s.kind === "environment" && s.pos[0] === env.pos[0],
+  const entrySite = unclaimedAt(partialFn, "environment").find(
+    (s: any) => s.pos[0] === env.pos[0],
   );
   assert(expressionSite && entrySite);
-  assert(
-    !partialFn.missingSites.some(
-      (s: any) => s.pos[0] === source.indexOf("unit: null") + 6,
-    ),
-  );
-  assert(!partialFn.missingSites.some((s: any) => s.pos[0] === fn.namePos[0]));
+  const unclaimed = partialFn.sites.filter((s: any) => s.kind === "unclaimed");
+  assert(!unclaimed.some((s: any) => s.pos[0] === source.indexOf("unit: null") + 6));
+  assert(!unclaimed.some((s: any) => s.pos[0] === fn.namePos[0]));
   let repaired = addClaim(
     incomplete,
     partialFn,
@@ -262,7 +264,8 @@ assert.deepEqual(
     (f: any) => f.name === fn.name,
   );
   assert(missingFunction);
-  const missingModel = { ...missingFunction, candidateMissing: true };
+  const missingModel = fromBundle(missingReport).functions.find((f: any) => f.name === fn.name)!;
+  assert.equal(missingModel.candidateMissing, true);
   const contract = { params: fn.params, result: fn.retType };
   assert.throws(
     () =>
@@ -290,17 +293,15 @@ assert.deepEqual(
     false,
   );
   for (const e of fn.exprs) {
-    const site = missingFunction.missingSites.find(
-      (s: any) =>
-        s.kind === "expression" &&
-        JSON.stringify(s.pos) === JSON.stringify(e.pos),
+    const site = unclaimedAt(missingModel, "expression").find(
+      (s: any) => JSON.stringify(s.pos) === JSON.stringify(e.pos),
     );
     assert(site, "missing expression repair site " + e.pos);
     restored = addClaim(restored, missingModel, site, e.type);
   }
   for (const e of fn.envs) {
-    const site = missingFunction.missingSites.find(
-      (s: any) => s.kind === "environment" && s.pos[0] === e.pos[0],
+    const site = unclaimedAt(missingModel, "environment").find(
+      (s: any) => s.pos[0] === e.pos[0],
     );
     assert(site, "missing environment repair site " + e.pos);
     restored = addClaim(restored, missingModel, site, e.vars);

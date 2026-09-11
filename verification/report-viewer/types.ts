@@ -120,6 +120,8 @@ export interface ReportFunction {
   namePos: Span;
   /** The whole declaration. */
   pos: Span;
+  /** The declared result's annotation, where the source has one. */
+  resultPos?: Span | null;
   signature?: Signature;
   entries: Entry[];
   expressions: DisplayClaim[];

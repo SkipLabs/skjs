@@ -732,7 +732,9 @@ export function main(args: string[]) {
       parameters:n.parameters.map(p=>p.name.getText()),missingSites:missingClaimSites(n,{entries:[],expressions:[]})})),
     gaps:coverage(source,report),
     functions:report.functions.map((f: any,i: number)=>({id:`f${i}`,...f,
-      ...((node: any)=>({pos:[node.getStart(),node.end],missingSites:missingClaimSites(node,f)}))(
+      // The declared result's annotation, where the source writes one: the reader
+      // shows the claimed result there, and a return contract points at it.
+      ...((node: any)=>({pos:[node.getStart(),node.end],resultPos:node.type ? [node.type.getStart(),node.type.end] : null,missingSites:missingClaimSites(node,f)}))(
         functionNodes.find((n: any)=>n.name?.getStart()===f.namePos[0])),
       entries:f.entries.map((e: any,j: number)=>({id:`f${i}e${j}`,...e})),
       expressions:f.expressions.map((e: any,j: number)=>({id:`f${i}x${j}`,...e}))})),

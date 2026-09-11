@@ -22,6 +22,9 @@
   ];
 
   onMount(async () => {
+    // Read the link before opening anything: opening selects afresh, and the
+    // address bar follows the selection, so the hash is gone by then.
+    const [fnName, at] = (location.hash.slice(1) || "").split(":");
     await reader.start();
     const params = new URLSearchParams(location.search);
     const wanted = params.get("file");
@@ -30,9 +33,10 @@
     if (wanted || first) await reader.open(wanted || first!, producer);
     // A link may name a claim. It names a record of one snapshot, so it is
     // honoured where it still resolves and dropped where it does not.
-    const [fnName, markId] = (location.hash.slice(1) || "").split(":");
     const fn = reader.functions.find((f) => f.name === fnName);
-    if (fn && markId) reader.select(fn.id, markId);
+    const site = Number(at);
+    if (fn && Number.isInteger(site) && site >= 0 && site < fn.sites.length)
+      reader.select(fn.id, site);
   });
 
   function choose(path: string) {
@@ -52,8 +56,8 @@
     url.searchParams.set("file", reader.path);
     url.searchParams.set("producer", reader.producer);
     const fn = reader.selected;
-    const mark = reader.selection?.markId;
-    url.hash = fn && mark ? `${fn.name}:${mark}` : "";
+    const site = reader.selection?.site;
+    url.hash = fn && site !== null && site !== undefined ? `${fn.name}:${site}` : "";
     history.replaceState(null, "", url.toString());
   });
 
@@ -224,17 +228,17 @@
           <SourceView
             {report}
             {fn}
-            selectedMark={reader.selection?.markId ?? null}
+            selected={reader.selection?.site ?? null}
             unsupported={reader.showUnsupported}
             producerErrors={reader.showProducerErrors}
-            onselect={(markId) => reader.select(fn.id, markId)}
+            onselect={(site) => reader.select(fn.id, site)}
           />
         </div>
         <div class="dock">
           <Selection
             {report}
             {fn}
-            markId={reader.selection?.markId ?? null}
+            site={reader.selection?.site ?? null}
             candidate={reader.candidate}
             busy={reader.busy}
             onapply={(site, value) => reader.apply(fn, site, value)}

@@ -86,8 +86,8 @@ function editClaim(candidate: any, fn: any, item: any, value: any) {
 function addClaim(candidate: any, fn: any, site: any, value: any) {
   const sameSpan = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
   if (
-    !fn.missingSites?.some(
-      (s: any) => s.kind === site.kind && sameSpan(s.pos, site.pos),
+    !fn.sites?.some(
+      (s: any) => s.kind === "unclaimed" && s.claims === site.kind && sameSpan(s.pos, site.pos),
     )
   )
     throw new Error("Choose a missing site from this source snapshot");

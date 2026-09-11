@@ -6,22 +6,22 @@
    * and its detail belong together, so this sits directly beneath the line it
    * is about and the source keeps the full width.
    *
-   * Four things can be selected, and each says a different thing: a claim the
-   * producer made, the environment at a statement entry, a place it did not
-   * visit, and a place it visited but claimed nothing at — which is where a
-   * claim can be added.
+   * Four kinds of site can be selected: the result the function must
+   * establish, an expression claim, an environment, and a place with nothing
+   * claimed — which, where the lowering attaches a claim there, is where one
+   * can be added.
    */
   import ClaimEditor from "./ClaimEditor.svelte";
   import FunctionContract from "./FunctionContract.svelte";
   import { proofLabel } from "../../marks.mts";
   import { editable, type ClaimSite } from "../../candidate.mts";
-  import type { Report, ShownFunction } from "../../model.mts";
+  import type { Report, ShownFunction, Site } from "../../model.mts";
   import type { Candidate } from "../../types.ts";
 
   let {
     report,
     fn,
-    markId,
+    site: at,
     candidate,
     busy,
     onapply,
@@ -30,7 +30,8 @@
   }: {
     report: Report;
     fn: ShownFunction;
-    markId: string | null;
+    /** The selected site's index, in source order. */
+    site: number | null;
     candidate: Candidate | null;
     busy: boolean;
     onapply: (site: ClaimSite, value: unknown) => void;
@@ -41,38 +42,21 @@
     }) => void;
   } = $props();
 
-  /** A mark id is a list prefix and an index within that list. */
-  const picked = $derived.by(() => {
-    if (!markId) return null;
-    const kind = markId[0];
-    const index = Number(markId.slice(1));
-    if (!Number.isInteger(index)) return null;
-    if (kind === "e") return { what: "expression", item: fn.exprs[index] };
-    if (kind === "n") return { what: "environment", item: fn.entries[index] };
-    if (kind === "g") return { what: "gap", item: fn.gaps[index] };
-    if (kind === "m")
-      return { what: "missing", item: fn.missingSites?.[index] };
-    return null;
-  });
+  const picked = $derived<Site | null>(at === null ? null : (fn.sites[at] ?? null));
 
   /** Where the selected claim sits, in the terms a candidate is addressed by. */
   const site = $derived.by((): ClaimSite | null => {
-    const item = picked?.item as
-      | { pos?: [number, number]; kind?: string }
-      | undefined;
-    const pos = item?.pos;
-    if (!pos || !picked) return null;
-    if (picked.what === "expression") return { kind: "expression", pos };
-    if (picked.what === "environment") return { kind: "environment", pos };
-    // A missing site names the kind of claim that belongs there.
-    if (picked.what === "missing" && item?.kind)
-      return { kind: item.kind as ClaimSite["kind"], pos };
-    return null;
+    if (!picked || picked.kind === "result") return null;
+    if (picked.kind === "unclaimed")
+      // A place with nothing claimed names the kind of claim that belongs there,
+      // where the lowering says one does.
+      return picked.claims ? { kind: picked.claims, pos: picked.pos } : null;
+    return { kind: picked.kind, pos: picked.pos };
   });
 
   /** The candidate's value at the site, as the editor reads and writes it. */
   const current = $derived.by(() => {
-    if (!candidate || !site || picked?.what === "missing") return undefined;
+    if (!candidate || !site || picked?.kind === "unclaimed") return undefined;
     try {
       return editable(candidate, fn, site);
     } catch {
@@ -80,10 +64,9 @@
     }
   });
 
-  const text = $derived.by(() => {
-    const pos = (picked?.item as { pos?: [number, number] })?.pos;
-    return pos ? report.source.slice(pos[0], pos[1]) : "";
-  });
+  const text = $derived(picked ? report.source.slice(picked.pos[0], picked.pos[1]) : "");
+  /** The function's failure, where it attached to the selected site. */
+  const failure = $derived(fn.failure && fn.failure.at === at ? fn.failure : null);
 </script>
 
 <section class="selection">
@@ -97,18 +80,15 @@
     {#if candidate}
       <FunctionContract {fn} {busy} onsubmit={oncontract} />
     {/if}
-  {:else if !picked?.item}
+  {:else if !picked}
     <p class="empty">
       Select a claim in the source to see its span, its type and the producer's
       own encoding.
     </p>
   {:else}
-    {@const item = picked.item as Record<string, any>}
     <header>
-      <span class="what">{picked.what}</span>
-      {#if item.pos}
-        <span class="span">[{item.pos[0]},{item.pos[1]})</span>
-      {/if}
+      <span class="what">{picked.kind}</span>
+      <span class="span">[{picked.pos[0]},{picked.pos[1]})</span>
       <span class="status">{proofLabel(fn.status)}</span>
     </header>
 
@@ -116,31 +96,40 @@
       <pre class="text">{text}</pre>
     {/if}
 
-    {#if picked.what === "expression"}
+    {#if picked.kind === "result"}
+      <dl>
+        <dt>must establish</dt>
+        <dd class="type">{picked.type}</dd>
+      </dl>
+      <p class="gap">
+        The function's claimed result. Every return is checked against it, and
+        completing without returning has to establish it too.
+      </p>
+    {:else if picked.kind === "expression"}
       <dl>
         <dt>claims</dt>
-        <dd class="type">{item.type}</dd>
+        <dd class="type">{picked.type}</dd>
       </dl>
-    {:else if picked.what === "environment"}
+    {:else if picked.kind === "environment"}
       <dl>
-        {#each item.bindings ?? [] as b (b.name)}
-          <dt class:changed={item.changed?.has(b.name)}>{b.name}</dt>
+        {#each picked.bindings as b (b.name)}
+          <dt class:changed={picked.changed.has(b.name)}>{b.name}</dt>
           <dd class="type">{b.type}</dd>
         {/each}
       </dl>
-    {:else if picked.what === "missing"}
+    {:else if picked.claims}
       <p class="gap">
         The producer visited this place and claimed nothing here. A claim can be
         added; an attachment site is not necessarily a required obligation.
       </p>
     {:else}
-      <p class="gap">{item.detail}</p>
+      <p class="gap">{picked.detail}</p>
     {/if}
 
-    {#if item.failure}
+    {#if failure}
       <!-- Search found no derivation. That is never a statement that the claim
            is false, so it is reported as what happened, not as a verdict. -->
-      <p class="failure">{item.failure}</p>
+      <p class="failure">{failure.detail}</p>
     {/if}
 
     {#if candidate && site}
@@ -149,14 +138,14 @@
         {current}
         {busy}
         onapply={(value) =>
-          picked.what === "missing" ? onadd(site, value) : onapply(site, value)}
+          picked.kind === "unclaimed" ? onadd(site, value) : onapply(site, value)}
       />
     {/if}
 
-    {#if item.raw}
+    {#if picked.kind === "expression" && picked.raw}
       <details>
         <summary>producer encoding</summary>
-        <pre class="raw">{item.raw}</pre>
+        <pre class="raw">{picked.raw}</pre>
       </details>
     {/if}
   {/if}

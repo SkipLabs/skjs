@@ -21,7 +21,9 @@ export interface MarkItem {
   mark: string;
   /** The obligation's role, where the record names one. */
   tag: string;
+  /** The mark's own key, for hover; and the site it stands for, where it does. */
   id: string;
+  site: number | null;
   cls: string;
 }
 
@@ -118,13 +120,13 @@ function proofMark(f: any) {
       "?",
       "the source fragment gate rejected this file, so nothing was checked",
     ];
-  if (f.result?.location?.kind === "unavailable-type-claim")
+  if (f.failure?.kind === "unavailable-type-claim")
     return [
       "?",
       "a type this needed was never decoded by the producer, so no obligation was reached",
     ];
   if (f.status === "not-established")
-    return INCOMPLETE_INPUT.has(f.result?.location?.kind)
+    return INCOMPLETE_INPUT.has(f.failure?.kind)
       ? [
           "?",
           "checking could not proceed: a claim it needed is missing, or the source is outside the fragment",
@@ -144,6 +146,7 @@ const OUTCOME_GROUP: Record<string, string> = {
   "?": "could not be checked",
   "·": "not run",
 };
+const outcomeLabel = (symbol: string) => OUTCOME_GROUP[symbol] || symbol;
 const outcomeGroup = (f: any) => {
   const [symbol] = proofMark(f);
   return { key: symbol, label: OUTCOME_GROUP[symbol] || proofLabel(f.status) };
@@ -164,7 +167,7 @@ function outcome(f: any, rep: any) {
     "no producer outcome recorded",
   ];
   const proof = proofMark(f);
-  const concluded = !INCOMPLETE_INPUT.has(f.result?.location?.kind);
+  const concluded = !INCOMPLETE_INPUT.has(f.failure?.kind);
   const disagrees =
     concluded &&
     ((f.collection === "complete" && f.status === "not-established") ||
@@ -232,25 +235,24 @@ function shortType(type: any) {
   return type.length > 64 ? type.slice(0, 61) + "…" : type;
 }
 
-// One mark per claim, gap or producer diagnostic in this function, positioned
-// by line and column. `entries` are drawn above their line and `items` below.
-// The entry an expression obligation is checked against. Where the record names
-// it, that is the answer; otherwise it is the innermost entry containing the
+// One mark per site or producer diagnostic in this function, positioned by
+// line and column. Environments are drawn above their line and the rest below.
+// The environment an expression obligation is checked against. Where the record
+// names it, that is the answer; otherwise it is the innermost one containing the
 // expression. Both are facts about the report, not a claim about what is wrong.
 function companionEntry(f: any) {
-  const failing = (f.exprs || []).find((e: any) => e.failure);
-  if (!failing) return -1;
+  const sites = f.sites || [];
+  const failing = f.failure?.at !== null && f.failure?.at !== undefined ? sites[f.failure.at] : null;
+  if (!failing || failing.kind !== "expression") return -1;
   const named = f.obligation?.source?.sourceMap?.environmentStart;
-  const entries = f.entries || [];
   if (named !== null && named !== undefined) {
-    const at = entries.findIndex((e: any) => e.pos && e.pos[0] === named);
+    const at = sites.findIndex((s: any) => s.kind === "environment" && s.pos[0] === named);
     if (at >= 0) return at;
   }
   let best = -1;
-  entries.forEach((e: any, i: number) => {
-    if (!e.pos || e.pos[0] > failing.pos[0] || e.pos[1] < failing.pos[1]) return;
-    if (best < 0 || e.pos[1] - e.pos[0] < entries[best].pos[1] - entries[best].pos[0])
-      best = i;
+  sites.forEach((s: any, i: number) => {
+    if (s.kind !== "environment" || s.pos[0] > failing.pos[0] || s.pos[1] < failing.pos[1]) return;
+    if (best < 0 || s.pos[1] - s.pos[0] < sites[best].pos[1] - sites[best].pos[0]) best = i;
   });
   return best;
 }
@@ -260,199 +262,172 @@ function sourceMarks(rep: any, f: any, options: any) {
   const source = rep.source;
   const starts = lineStarts(source);
   const at = (p: any) => lineAt(starts, p);
-  const failedIn = (x: any) => f.status === "not-established" && Boolean(x.failure);
+  const sites: any[] = f.sites || [];
+  const failure = f.status === "not-established" ? f.failure : null;
   // A recovery-quality snapshot says so once, on the function; only a claim that
   // stands out from its snapshot needs the label repeated.
   const recMark = f.quality === "recovery" ? "" : "  (recovery)";
   const items: any[] = [];
   const entries: any[] = [];
-  // Both sides of a failed obligation stay on screen. Compact hides an entry
-  // where nothing changed, which is often the very environment the marked claim
-  // is checked against.
-  const companion = f.status === "not-established" ? companionEntry(f) : -1;
-
-  f.exprs.forEach((e: any, i: number) => {
-    if (!e.pos) return;
-    const failed = failedIn(e);
-    if (density === "key" && !failed) {
-      const nested = f.exprs.some(
-        (other: any) =>
-          other !== e &&
-          other.pos &&
-          other.pos[0] <= e.pos[0] &&
-          other.pos[1] >= e.pos[1] &&
-          (other.pos[0] < e.pos[0] || other.pos[1] > e.pos[1]),
-      );
-      if (nested) return;
-      if (source.slice(e.pos[0], e.pos[1]).trim() === e.type.trim()) return;
-    }
-    const line = at(e.pos[0]);
-    const multiline = at(e.pos[1] - 1) !== line;
-    items.push({
-      kind: "expr",
+  // Both sides of a failed obligation stay on screen. Compact hides an
+  // environment where nothing changed, which is often the very one the marked
+  // claim is checked against.
+  const companion = failure ? companionEntry(f) : -1;
+  // A mark's bracket stops at the end of its first line; the span may go on.
+  const columns = (pos: any) => {
+    const line = at(pos[0]);
+    const multiline = at(pos[1] - 1) !== line;
+    return {
       line,
-      col: e.pos[0] - starts[line],
-      end: multiline
-        ? lineEndAt(source, starts, line) - starts[line]
-        : e.pos[1] - starts[line],
-      label:
-        shortType(e.type) +
-        (multiline ? " ↳ multiline" : "") +
-        (e.recovery ? recMark : ""),
-      // A claim proof search stopped at is still a claim: it reads the same,
-      // with the proof outcome added in the symbols the function pill uses.
-      mark: failed ? proofSymbol(e.failureKind) : "",
-      tag: failed ? roleTag(e.failureRole || e.failureKind) : "",
-      id: "e" + i,
-      cls: "expr" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
-    });
-  });
+      col: pos[0] - starts[line],
+      end: (multiline ? lineEndAt(source, starts, line) : pos[1]) - starts[line],
+      multiline,
+    };
+  };
 
-  // A gap and a missing site can be the same place: "the producer did not visit
-  // this statement" and "this statement has no environment claim" are one fact
-  // in two vocabularies. Draw it once, as the site, since that is the one that
-  // can be acted on, and keep the gap's wording on it.
-  const sameSpan = (a: any, b: any) => a[0] === b[0] && a[1] === b[1];
-  const gapAt = (site: any) =>
-    (f.gaps || []).find((g: any) => sameSpan(g.pos, site.pos)) || null;
-  const missingAt = (g: any) =>
-    (f.missingSites || []).some((site: any) => sameSpan(g.pos, site.pos));
-
-  f.gaps.forEach((g: any, i: number) => {
-    if (missingAt(g) && (density === "all" || f.status === "not-established"))
-      return;
-    // Always shown: an absent claim is the finding.
-    const line = at(g.pos[0]);
-    const failed = failedIn(g);
-    items.push({
-      kind: "gap",
-      line,
-      col: g.pos[0] - starts[line],
-      end:
-        (at(g.pos[1] - 1) === line ? g.pos[1] : lineEndAt(source, starts, line)) -
-        starts[line],
-      label:
-        gapLabel(g) +
-        (failed && g.failureBinding ? " · " + g.failureBinding : ""),
-      mark: failed ? proofSymbol(g.failureKind) : "",
-      id: "g" + i,
-      cls: "gap" + (failed ? " failed" : ""),
-    });
-  });
-
-  // A missing claim has no record, so nothing in the source view marked it and
-  // the only way to reach one was the panel with nothing selected. Every claim
-  // always draws them; Compact draws them only where verification is blocked,
-  // which is when an absent claim is the thing to act on.
-  if (density === "all" || f.status === "not-established")
-    (f.missingSites || []).forEach((site: any, i: number) => {
-      const gap = gapAt(site);
-      const line = at(site.pos[0]);
+  sites.forEach((s: any, i: number) => {
+    const failed = Boolean(failure) && failure.at === i;
+    // A site proof search stopped at reads the same, with the proof outcome
+    // added in the symbols the function pill uses.
+    const mark = failed ? proofSymbol(failure.kind) : "";
+    const tag = failed ? roleTag(failure.role || failure.kind) : "";
+    const flagged = failed ? " failed" : "";
+    if (s.kind === "expression") {
+      if (density === "key" && !failed) {
+        // Compact keeps the outermost claim of a nest, and drops a literal that
+        // only restates its own text.
+        const nested = sites.some(
+          (o: any) =>
+            o.kind === "expression" &&
+            o !== s &&
+            o.pos[0] <= s.pos[0] &&
+            o.pos[1] >= s.pos[1] &&
+            (o.pos[0] < s.pos[0] || o.pos[1] > s.pos[1]),
+        );
+        if (nested) return;
+        if (source.slice(s.pos[0], s.pos[1]).trim() === s.type.trim()) return;
+      }
+      const c = columns(s.pos);
       items.push({
-        kind: "missing",
-        line,
-        col: site.pos[0] - starts[line],
-        end:
-          (at(site.pos[1] - 1) === line
-            ? site.pos[1]
-            : lineEndAt(source, starts, line)) - starts[line],
-        label: "no " + site.kind + " claim" + (gap ? " · " + gapLabel(gap) : ""),
-        mark: gap && failedIn(gap) ? proofSymbol(gap.failureKind) : "",
-        id: "m" + i,
-        cls: "gap missing" + (gap && failedIn(gap) ? " failed" : ""),
+        kind: "expr",
+        id: "s" + i,
+        site: i,
+        line: c.line,
+        col: c.col,
+        end: c.end,
+        label:
+          shortType(s.type) + (c.multiline ? " ↳ multiline" : "") + (s.recovery ? recMark : ""),
+        mark,
+        tag,
+        cls: "expr" + (s.recovery ? " rec" : "") + flagged,
       });
-    });
+    } else if (s.kind === "result") {
+      // What the function must establish, drawn at its annotation and read as
+      // itself: every return is checked against it.
+      const c = columns(s.pos);
+      items.push({
+        kind: "result",
+        id: "s" + i,
+        site: i,
+        line: c.line,
+        col: c.col,
+        end: c.end,
+        label: "returns " + shortType(s.type),
+        mark,
+        tag,
+        cls: "result" + flagged,
+      });
+    } else if (s.kind === "unclaimed") {
+      // A place with nothing claimed is always drawn where the report says why.
+      // One the lowering merely attaches to is drawn in Every claim, and in
+      // Compact only where verification is blocked, which is when an absent
+      // claim is the thing to act on.
+      if (s.claims && !s.detail && density !== "all" && f.status !== "not-established") return;
+      const c = columns(s.pos);
+      items.push({
+        kind: s.claims ? "missing" : "gap",
+        id: "s" + i,
+        site: i,
+        line: c.line,
+        col: c.col,
+        end: c.end,
+        label: s.claims
+          ? "no " + s.claims + " claim" + (s.detail ? " · " + gapLabel(s) : "")
+          : gapLabel(s) + (failed && failure.binding ? " · " + failure.binding : ""),
+        mark,
+        tag: s.claims ? "" : tag,
+        cls: "gap" + (s.claims ? " missing" : "") + flagged,
+      });
+    } else {
+      const involved = failed || i === companion;
+      // An undecoded claim is normally noise. Where checking stopped at this
+      // statement it is the finding, so it shows whatever the toggle says.
+      const shown = s.bindings.filter((b: any) => unsupported || failed || !isNoise(b));
+      // An environment the marked claim is checked against shows what it
+      // claims, not only what changed there: nothing changing is exactly why
+      // it can be the side that has to.
+      const list =
+        density === "key" && !involved ? shown.filter((b: any) => s.changed.has(b.name)) : shown;
+      if (!list.length && !involved) return;
+      const line = at(s.pos[0]);
+      const col = s.pos[0] - starts[line];
+      entries.push({
+        kind: "entry",
+        id: "s" + i,
+        site: i,
+        line,
+        col,
+        end: col,
+        label:
+          list.map((b: any) => b.name + ": " + shortType(b.type)).join(",  ") +
+          (s.recovery ? recMark : ""),
+        mark,
+        tag,
+        cls: "entry" + (s.recovery ? " rec" : "") + flagged,
+      });
+    }
+  });
 
-  // An obligation whose place carries no claim. Always drawn: it is the only
-  // thing on screen saying where the function failed, and there is nothing else
-  // at that position to click.
-  (f.failureSites || []).forEach((site: any, i: number) => {
-    const line = at(site.pos[0]);
+  // A failure whose place carries no site. Always drawn: it is the only thing
+  // on screen saying where the function failed, and there is nothing else at
+  // that position to click.
+  if (failure && failure.at === null && failure.pos) {
+    const c = columns(failure.pos);
     const title =
-      (site.failureRole && obligationReader.roleView(site.failureRole).title) ||
-      "Obligation here";
+      (failure.role && obligationReader.roleView(failure.role).title) || "Obligation here";
     items.push({
       kind: "failure",
-      line,
-      col: site.pos[0] - starts[line],
-      end:
-        (at(site.pos[1] - 1) === line
-          ? site.pos[1]
-          : lineEndAt(source, starts, line)) - starts[line],
+      id: "u",
+      site: null,
+      line: c.line,
+      col: c.col,
+      end: c.end,
       label: title.toLowerCase() + " · nothing claimed here",
-      mark: proofSymbol(site.failureKind),
-      id: "u" + i,
+      mark: proofSymbol(failure.kind),
       cls: "gap failed",
     });
-  });
+  }
 
   if (producerErrors)
     producerMarks(rep).forEach((mark, i) => {
-      if (mark.pos[0] < (f.start || 0) || mark.pos[1] > (f.end ?? source.length))
-        return;
+      if (mark.pos[0] < f.pos[0] || mark.pos[1] > f.pos[1]) return;
       const line = at(mark.pos[0]);
       const col = mark.pos[0] - starts[line];
       items.push({
         kind: "error",
+        id: "p" + i,
+        site: null,
         line,
         col,
         end: Math.max(mark.pos[1] - starts[line], col + 1),
         label: mark.text.length > 72 ? mark.text.slice(0, 69) + "…" : mark.text,
-        id: "p" + i,
         cls: "err",
       });
     });
 
-  f.entries.forEach((e: any, i: number) => {
-    if (!e.pos) return;
-    const failed = failedIn(e);
-    const involved = failed || i === companion;
-    // An undecoded claim is normally noise. Where checking stopped at this
-    // statement it is the finding, so it shows whatever the toggle says.
-    const shown = e.bindings.filter((b: any) => unsupported || failed || !isNoise(b));
-    // An entry the marked claim is checked against shows what it claims, not
-    // only what changed there: nothing changing is exactly why it can be the
-    // side that has to.
-    const list =
-      density === "key" && !involved
-        ? shown.filter((b: any) => e.changed.has(b.name))
-        : shown;
-    if (!list.length && !involved) return;
-    const line = at(e.pos[0]),
-      col = e.pos[0] - starts[line];
-    entries.push({
-      kind: "entry",
-      line,
-      col,
-      end: col,
-      label:
-        list.map((b: any) => b.name + ": " + shortType(b.type)).join(",  ") +
-        (e.recovery ? recMark : ""),
-      mark: failed ? proofSymbol(e.failureKind) : "",
-      tag: failed ? roleTag(e.failureRole || e.failureKind) : "",
-      id: "n" + i,
-      cls: "entry" + (e.recovery ? " rec" : "") + (failed ? " failed" : ""),
-    });
-  });
-
   return { entries, items };
 }
 
-// The first failure the report located, in the order the source view marks them.
-function firstFailure(f: any) {
-  for (const [prefix, list] of [
-    ["e", f.exprs],
-    ["n", f.entries],
-    ["g", f.gaps],
-    // A located obligation with nothing claimed at its place is still the
-    // failure this function has, and the banner should point at it.
-    ["u", f.failureSites],
-  ]) {
-    const i = (list || []).findIndex((x: any) => x.failure);
-    if (i >= 0) return { id: prefix + i, item: list[i], kind: list[i].failureKind };
-  }
-  return null;
-}
 
 /* ---------- laying marks out ---------- */
 function bracket(w: any) {
@@ -503,13 +478,13 @@ export {
     roleTag,
     proofMark,
     outcomeGroup,
+    outcomeLabel,
     outcome,
     producerMarks,
     isNoise,
     gapLabel,
     shortType,
     sourceMarks,
-    firstFailure,
     companionEntry,
     bracket,
     markWidth,

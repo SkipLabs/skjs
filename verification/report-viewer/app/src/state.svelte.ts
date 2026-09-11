@@ -31,7 +31,8 @@ import type {
 export interface Selection {
   functionId: string;
   /** A mark id local to the function's own lists (`e3`, `n1`, `g0`), or null. */
-  markId: string | null;
+  /** Index into the function's sites, in source order. */
+  site: number | null;
 }
 
 export class Reader {
@@ -74,39 +75,14 @@ export class Reader {
   /** The producer's own diagnostics, under the spans they name. */
   showProducerErrors = $state(false);
 
-  /** Every mark of the selected function, in the order the source draws them. */
-  get marks(): string[] {
-    const fn = this.selected;
-    if (!fn) return [];
-    const ids: string[] = [];
-    fn.entries.forEach((_, i) => ids.push("n" + i));
-    fn.exprs.forEach((_, i) => ids.push("e" + i));
-    fn.gaps.forEach((_, i) => ids.push("g" + i));
-    (fn.missingSites ?? []).forEach((_, i) => ids.push("m" + i));
-    const at = (id: string) => {
-      const list =
-        id[0] === "n"
-          ? fn.entries
-          : id[0] === "e"
-            ? fn.exprs
-            : id[0] === "g"
-              ? fn.gaps
-              : (fn.missingSites ?? []);
-      return (
-        (list[Number(id.slice(1))] as { pos?: [number, number] })?.pos?.[0] ?? 0
-      );
-    };
-    return ids.sort((a, b) => at(a) - at(b));
-  }
-
-  /** Step to the next or previous mark of this function, in source order. */
+  /** Step to the next or previous site of this function, in source order. */
   step(by: 1 | -1) {
-    const ids = this.marks;
-    if (!ids.length || !this.selection) return;
-    const at = ids.indexOf(this.selection.markId ?? "");
-    const next = at < 0 ? (by > 0 ? 0 : ids.length - 1) : at + by;
-    if (next < 0 || next >= ids.length) return;
-    this.selection = { ...this.selection, markId: ids[next]! };
+    const fn = this.selected;
+    if (!fn || !this.selection || !fn.sites.length) return;
+    const at = this.selection.site;
+    const next = at === null ? (by > 0 ? 0 : fn.sites.length - 1) : at + by;
+    if (next < 0 || next >= fn.sites.length) return;
+    this.selection = { ...this.selection, site: next };
   }
 
   /** Step to the next or previous function of the file. */
@@ -158,7 +134,7 @@ export class Reader {
       // A fresh report makes the previous selection meaningless: ids identify
       // records within one snapshot, not the same claim across collections.
       this.selection = this.report.functions.length
-        ? { functionId: this.report.functions[0]!.id, markId: null }
+        ? { functionId: this.report.functions[0]!.id, site: null }
         : null;
     } catch (e) {
       this.error = (e as Error).message;
@@ -306,11 +282,11 @@ export class Reader {
     this.collection = bundle.collection ?? null;
     const fn =
       this.functions.find((f) => f.name === was) ?? this.functions[0] ?? null;
-    this.selection = fn ? { functionId: fn.id, markId: null } : null;
+    this.selection = fn ? { functionId: fn.id, site: null } : null;
   }
 
-  select(functionId: string, markId: string | null = null) {
-    this.selection = { functionId, markId };
+  select(functionId: string, site: number | null = null) {
+    this.selection = { functionId, site };
   }
 
   /**
@@ -319,17 +295,17 @@ export class Reader {
    * the reader points at a record, it does not invent one.
    */
   selectAt(fn: ShownFunction, offset: number) {
-    const at = <T extends { pos: [number, number] }>(list: T[]) =>
-      list.findIndex((x) => x.pos[0] <= offset && offset < x.pos[1]);
-    for (const [prefix, list] of [
-      ["e", fn.exprs],
-      ["n", fn.entries],
-      ["g", fn.gaps],
-    ] as const) {
-      const i = at(list as { pos: [number, number] }[]);
-      if (i >= 0) return this.select(fn.id, prefix + i);
-    }
-    this.select(fn.id, null);
+    let best = -1;
+    fn.sites.forEach((s, i) => {
+      if (!(s.pos[0] <= offset && offset < s.pos[1])) return;
+      // The innermost site containing the offset is the one meant.
+      if (
+        best < 0 ||
+        s.pos[1] - s.pos[0] < fn.sites[best]!.pos[1] - fn.sites[best]!.pos[0]
+      )
+        best = i;
+    });
+    this.select(fn.id, best >= 0 ? best : null);
   }
 }
 

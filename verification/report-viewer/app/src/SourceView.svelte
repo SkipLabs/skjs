@@ -14,6 +14,7 @@
     groupLines,
     lineAt,
     lineStarts,
+    outcomeLabel,
     packRows,
     sourceMarks,
   } from "../../marks.mts";
@@ -22,17 +23,18 @@
   let {
     report,
     fn,
-    selectedMark,
+    selected,
     unsupported,
     producerErrors,
     onselect,
   }: {
     report: Report;
     fn: ShownFunction;
-    selectedMark: string | null;
+    /** The selected site's index, in source order. */
+    selected: number | null;
     unsupported: boolean;
     producerErrors: boolean;
-    onselect: (markId: string) => void;
+    onselect: (site: number) => void;
   } = $props();
 
   // Every claim, always. The old reader had a density switch; a claim that is
@@ -58,47 +60,53 @@
    * line, which is right for the bracket it draws; the span itself can cross
    * several lines, and that is what the code should light up.
    */
-  function spanOf(id: string): [number, number] | null {
-    const index = Number(id.slice(1));
-    if (!Number.isInteger(index)) return null;
-    const list =
-      id[0] === "e"
-        ? fn.exprs
-        : id[0] === "n"
-          ? fn.entries
-          : id[0] === "g"
-            ? fn.gaps
-            : id[0] === "m"
-              ? (fn.missingSites ?? [])
-              : [];
-    return (list[index] as { pos?: [number, number] })?.pos ?? null;
-  }
+  /** The mark under a key, so a hover can light what it stands for. */
+  const markAt = (key: string) =>
+    [...drawn.entries, ...drawn.items].find((m) => m.id === key) ?? null;
 
-  /** Which line is hovered, and the columns the claim covers on it. */
+  /** Which mark is hovered, and whether its failure symbol in particular is. */
   let hovered = $state<string | null>(null);
+  let edgeHovered = $state<string | null>(null);
+
+  /** The columns lit on each line, and which end of an edge each is. */
+  type Lit = { from: number; to: number; end: string };
 
   const lit = $derived.by(() => {
-    const id = hovered ?? selectedMark ?? "";
-    const covered = new Map<number, [number, number]>();
-    const span = spanOf(id);
-    if (!span) {
-      // A producer diagnostic is not a claim and has no entry in those lists,
-      // but the mark already knows the columns it covers on its own line.
-      const mark = [...drawn.entries, ...drawn.items].find((m) => m.id === id);
-      if (mark) covered.set(mark.line, [mark.col, mark.end]);
+    const covered = new Map<number, Lit[]>();
+    const starts = lineStarts(report.source);
+    const cover = (span: [number, number] | null, end = "") => {
+      if (!span) return;
+      for (let line = lineAt(starts, span[0]); ; line++) {
+        const from = starts[line];
+        if (from === undefined || from >= span[1]) break;
+        const to = starts[line + 1] ?? report.source.length + 1;
+        covered.set(line, [
+          ...(covered.get(line) ?? []),
+          {
+            from: Math.max(span[0] - from, 0),
+            to: Math.min(span[1], to - 1) - from,
+            end,
+          },
+        ]);
+        if (span[1] <= to) break;
+      }
+    };
+    // Hovering the symbol of a failed edge obligation lights both of its ends:
+    // one is the failure's own place, the other is where the edge comes from
+    // or goes to, and the failure is about the pair.
+    const edge = edgeHovered ? fn.failure?.edge : null;
+    if (edge) {
+      if (edge.from !== null) cover(fn.sites[edge.from]!.pos, "from");
+      if (edge.to !== null) cover(fn.sites[edge.to]!.pos, "to");
       return covered;
     }
-    const starts = lineStarts(report.source);
-    for (let line = lineAt(starts, span[0]); ; line++) {
-      const from = starts[line];
-      if (from === undefined || from >= span[1]) break;
-      const to = starts[line + 1] ?? report.source.length + 1;
-      covered.set(line, [
-        Math.max(span[0] - from, 0),
-        Math.min(span[1], to - 1) - from,
-      ]);
-      if (span[1] <= to) break;
-    }
+    const mark = hovered ? markAt(hovered) : null;
+    if (mark) {
+      // A producer diagnostic stands for no site, but the mark knows the
+      // columns it covers on its own line.
+      if (mark.site !== null) cover(fn.sites[mark.site]!.pos);
+      else covered.set(mark.line, [{ from: mark.col, to: mark.end, end: "" }]);
+    } else if (selected !== null) cover(fn.sites[selected]?.pos ?? null);
     return covered;
   });
 
@@ -124,14 +132,13 @@
     <div class="row">
       <span class="gutter">{line.number}</span>
       <code class="code">
-        {#if lit.has(line.index)}
-          {@const [from, to] = lit.get(line.index)!}
+        {#each lit.get(line.index) ?? [] as at, i (i)}
           <span
-            class="lit"
-            class:selected={!hovered}
-            style="--from:{from}; --to:{to}"
+            class="lit {at.end}"
+            class:selected={!hovered && !edgeHovered}
+            style="--from:{at.from}; --to:{at.to}"
           ></span>
-        {/if}<span class="text">{line.text || " "}</span>
+        {/each}<span class="text">{line.text || " "}</span>
       </code>
     </div>
     {#each below.get(line.index) ?? [] as packed, depth (depth)}
@@ -149,9 +156,13 @@
       {#each items as item (item.id)}
         <button
           class="mark {item.cls}"
-          class:selected={item.id === selectedMark}
+          class:selected={item.site !== null && item.site === selected}
+          class:edge={edgeHovered !== null &&
+            item.site !== null &&
+            (item.site === fn.failure?.edge?.from ||
+              item.site === fn.failure?.edge?.to)}
           style="--col:{item.col}"
-          onclick={() => onselect(item.id)}
+          onclick={() => item.site !== null && onselect(item.site)}
           onpointerenter={() => (hovered = item.id)}
           onpointerleave={() => (hovered = null)}
           onfocus={() => (hovered = item.id)}
@@ -163,7 +174,13 @@
           >
           <span class="label">{item.label}</span>
           {#if item.tag}<span class="tag">{item.tag}</span>{/if}
-          {#if item.mark}<span class="symbol">{item.mark}</span>{/if}
+          {#if item.mark}<span
+              class="symbol"
+              role="img"
+              aria-label={outcomeLabel(item.mark)}
+              onpointerenter={() => (edgeHovered = item.id)}
+              onpointerleave={() => (edgeHovered = null)}>{item.mark}</span
+            >{/if}
         </button>
       {/each}
     </span>
@@ -213,6 +230,13 @@
   .lit.selected {
     background: var(--accent-bg);
   }
+  /* The two claims of an edge, told apart: where it comes from is underlined. */
+  .lit.from {
+    box-shadow: inset 0 -2px var(--claim-edge);
+  }
+  .lit.to {
+    background: var(--accent-bg);
+  }
   .text {
     position: relative;
   }
@@ -236,6 +260,8 @@
     padding: 0;
     cursor: pointer;
   }
+  /* The other claim of a hovered edge reads as hovered too. */
+  .mark.edge .label,
   .mark:hover .label {
     background: var(--claim-bg);
   }
@@ -254,6 +280,10 @@
      different kind of thing. */
   .mark.failed .symbol {
     color: var(--bad);
+    font-weight: 600;
+  }
+  .mark.result .label {
+    color: var(--accent);
     font-weight: 600;
   }
   .mark.entry .label {

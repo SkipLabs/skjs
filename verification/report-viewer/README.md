@@ -23,11 +23,11 @@ refused. The producer runs on every open — nothing is cached — and the verif
 checks what it produced, so nothing is displayed as a result without having
 been checked.
 
-The address bar follows the view: `?file=…&producer=…#function:mark`. Reopening
-that link restores it. A mark is named by its function and its position within
-it, because names survive a recollection and positional ids do not; a link into
-a report that has changed resolves by name or is dropped, rather than quietly
-selecting something else.
+The address bar follows the view: `?file=…&producer=…#function:site`. Reopening
+that link restores it. A site is named by its function and its index in source
+order, because names survive a recollection and positional ids do not; a link
+into a report that has changed resolves by name or is dropped, rather than
+quietly selecting something else.
 
 ## What is on screen
 
@@ -38,7 +38,9 @@ means no derivation was found — never that a claim is false. `?` means checkin
 could not properly be attempted: a claim it needed is missing, or the source is
 outside the fragment. A disagreement is amber.
 
-**The source**, with each claim bracketed under the span it is about — except
+**The source**, with the function's claimed result drawn at its annotation as
+`returns T` — every return is checked against it, so it reads differently from
+a claim — and each claim bracketed under the span it is about — except
 an entry's environment, which is what holds before its statement runs and so
 sits above it. Every
 claim is drawn; there is no density switch, because a claim that is hidden is
@@ -57,7 +59,10 @@ from it: its span, its type in surface syntax, the producer's own encoding, and
 
 **Why verification stopped**, where the verifier emitted a structured
 obligation diagnostic: what it had and what had to follow from it, the bindings
-that differ marked, and both ends of an edge selectable. The role comes from
+that differ marked, and both ends of an edge selectable — hovering the `✗`
+lights the other claim of the edge and both spans, the origin underlined. A
+failed return contract is an edge too, from the returned expression to the
+result. The role comes from
 the record rather than from the span — a return contract and the returned
 expression's own claim share a span and are different obligations — and where
 the record names no specific role, the panel says nothing rather than inventing
@@ -163,7 +168,10 @@ The view is the only part that is Svelte. Everything it reasons with is a
 module beside it, checked by `tools/tsconfig.json` like the rest of the front
 end and exercised by `tests/report-viewer.mts` without a browser:
 
-- `model.mts` — what a bundle means, as the reader displays it.
+- `model.mts` — what a bundle means, as the reader displays it: for each
+  function, its sites in source order — an expression claim, an environment, or
+  a place with nothing claimed — and its one failure, with the site it attached
+  to.
 - `marks.mts` — what the source view draws: which claims at what position, the
   outcome symbols, how marks pack onto rows without overlapping.
 - `obligation.mts` — an obligation diagnostic, as the rows a panel shows.
