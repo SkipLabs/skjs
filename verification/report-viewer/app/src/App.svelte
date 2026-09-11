@@ -9,6 +9,7 @@
   import { onMount } from "svelte";
   import FunctionList from "./FunctionList.svelte";
   import Obligation from "./Obligation.svelte";
+  import OpenPath from "./OpenPath.svelte";
   import Provenance from "./Provenance.svelte";
   import Selection from "./Selection.svelte";
   import SourceView from "./SourceView.svelte";
@@ -22,20 +23,89 @@
 
   onMount(async () => {
     await reader.start();
-    const wanted = new URLSearchParams(location.search).get("file");
+    const params = new URLSearchParams(location.search);
+    const wanted = params.get("file");
+    const producer = params.get("producer") === "tsc" ? "tsc" : "skjs";
     const first = reader.groups[0]?.files[0];
-    if (wanted || first) await reader.open(wanted || first!);
+    if (wanted || first) await reader.open(wanted || first!, producer);
+    // A link may name a claim. It names a record of one snapshot, so it is
+    // honoured where it still resolves and dropped where it does not.
+    const [fnName, markId] = (location.hash.slice(1) || "").split(":");
+    const fn = reader.functions.find((f) => f.name === fnName);
+    if (fn && markId) reader.select(fn.id, markId);
   });
 
   function choose(path: string) {
     reader.open(path);
+  }
+
+  /*
+   * The address bar follows the view: the file, the producer, and the selected
+   * claim. Reopening the link restores the same view. Ids identify records
+   * within one snapshot, not the same claim across collections, so a link into
+   * a report that has changed may name nothing — and then the reader leaves the
+   * selection alone rather than guessing.
+   */
+  $effect(() => {
+    if (!reader.path) return;
     const url = new URL(location.href);
-    url.searchParams.set("file", path);
-    history.replaceState(null, "", url);
+    url.searchParams.set("file", reader.path);
+    url.searchParams.set("producer", reader.producer);
+    const fn = reader.selected;
+    const mark = reader.selection?.markId;
+    url.hash = fn && mark ? `${fn.name}:${mark}` : "";
+    history.replaceState(null, "", url.toString());
+  });
+
+  /*
+   * Selecting a claim puts the cursor in its editor, so stepping between claims
+   * needs a key the editor will not take: Alt with the arrows, or with j and k,
+   * works while typing and leaves the next claim ready to type into. The
+   * letters are matched by physical key, because Option composes characters on
+   * macOS and would otherwise arrive as ∆ and ˚.
+   */
+  function onkeydown(event: KeyboardEvent) {
+    if (!reader.report) return;
+    if (event.altKey && !event.metaKey && !event.ctrlKey) {
+      const by =
+        event.key === "ArrowDown" || event.code === "KeyJ"
+          ? 1
+          : event.key === "ArrowUp" || event.code === "KeyK"
+            ? -1
+            : 0;
+      if (by) {
+        event.preventDefault();
+        reader.step(by as 1 | -1);
+      }
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.isContentEditable ||
+      ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target?.tagName ?? "")
+    )
+      return;
+    const moves: Record<string, () => void> = {
+      j: () => reader.step(1),
+      ArrowDown: () => reader.step(1),
+      k: () => reader.step(-1),
+      ArrowUp: () => reader.step(-1),
+      "]": () => reader.stepFunction(1),
+      "[": () => reader.stepFunction(-1),
+      Escape: () => reader.selection && reader.select(reader.selection.functionId),
+    };
+    const move = moves[event.key];
+    if (move) {
+      event.preventDefault();
+      move();
+    }
   }
 
   const name = $derived(reader.path.split("/").pop() ?? "");
 </script>
+
+<svelte:window {onkeydown} />
 
 <div class="app">
   <header class="bar">
@@ -66,6 +136,8 @@
       {/each}
     </select>
 
+    <OpenPath busy={reader.busy} onopen={choose} />
+
     <span class="path" title={reader.path}>{name}</span>
 
     <span class="spacer"></span>
@@ -81,9 +153,24 @@
       </span>
     {/if}
     {#if reader.edited}
-      <button class="restore" onclick={() => reader.restore()} disabled={reader.busy}
-        >restore the producer's claims</button
+      <!-- A draft lives beside the source, named after it, the way the
+           command-line tools already name what they write. There is nothing to
+           choose and nothing to find: reopening the source finds it. -->
+      <button
+        class="plain"
+        onclick={() => reader.keep()}
+        disabled={reader.busy}
+        title="writes the candidate beside the source, for the CLI to read too"
+        >keep this draft</button
       >
+      <button
+        class="plain"
+        onclick={() => reader.restore()}
+        disabled={reader.busy}>restore the producer's claims</button
+      >
+    {/if}
+    {#if reader.draftPath}
+      <span class="note" title={reader.draftPath}>kept beside the source</span>
     {/if}
     {#if !reader.hasVerifier}
       <span class="warn">no verifier built — nothing can be checked</span>
@@ -179,7 +266,7 @@
   .warn {
     color: var(--warn);
   }
-  .restore {
+  .plain {
     padding: 3px 10px;
     border: 1px solid var(--rule);
     border-radius: 5px;

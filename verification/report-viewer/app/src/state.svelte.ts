@@ -10,6 +10,7 @@ import {
   checkCandidate,
   files as fetchFiles,
   health,
+  keepDraft,
   type Group,
 } from "./api.ts";
 import {
@@ -55,11 +56,57 @@ export class Reader {
   original = $state<Candidate | null>(null);
   /** True once the candidate differs from what the producer said. */
   edited = $state(false);
+  /** Where the kept draft sits, once one has been written beside the source. */
+  draftPath = $state("");
 
   /** Only claims whose type the producer could not state. */
   showUnsupported = $state(false);
   /** The producer's own diagnostics, under the spans they name. */
   showProducerErrors = $state(false);
+
+  /** Every mark of the selected function, in the order the source draws them. */
+  get marks(): string[] {
+    const fn = this.selected;
+    if (!fn) return [];
+    const ids: string[] = [];
+    fn.entries.forEach((_, i) => ids.push("n" + i));
+    fn.exprs.forEach((_, i) => ids.push("e" + i));
+    fn.gaps.forEach((_, i) => ids.push("g" + i));
+    (fn.missingSites ?? []).forEach((_, i) => ids.push("m" + i));
+    const at = (id: string) => {
+      const list =
+        id[0] === "n"
+          ? fn.entries
+          : id[0] === "e"
+            ? fn.exprs
+            : id[0] === "g"
+              ? fn.gaps
+              : (fn.missingSites ?? []);
+      return (
+        (list[Number(id.slice(1))] as { pos?: [number, number] })?.pos?.[0] ?? 0
+      );
+    };
+    return ids.sort((a, b) => at(a) - at(b));
+  }
+
+  /** Step to the next or previous mark of this function, in source order. */
+  step(by: 1 | -1) {
+    const ids = this.marks;
+    if (!ids.length || !this.selection) return;
+    const at = ids.indexOf(this.selection.markId ?? "");
+    const next = at < 0 ? (by > 0 ? 0 : ids.length - 1) : at + by;
+    if (next < 0 || next >= ids.length) return;
+    this.selection = { ...this.selection, markId: ids[next]! };
+  }
+
+  /** Step to the next or previous function of the file. */
+  stepFunction(by: 1 | -1) {
+    const fns = this.functions;
+    const at = fns.findIndex((f) => f.id === this.selection?.functionId);
+    const next = at + by;
+    if (next < 0 || next >= fns.length) return;
+    this.select(fns[next]!.id);
+  }
 
   get functions(): ShownFunction[] {
     return this.report?.functions ?? [];
@@ -94,6 +141,7 @@ export class Reader {
       this.candidate = bundle.candidate ?? null;
       this.original = bundle.candidate ?? null;
       this.edited = false;
+      this.draftPath = "";
       // A fresh report makes the previous selection meaningless: ids identify
       // records within one snapshot, not the same claim across collections.
       this.selection = this.report.functions.length
@@ -108,6 +156,16 @@ export class Reader {
       this.selection = null;
     } finally {
       this.busy = false;
+    }
+    // A draft beside the source resumes where it was left. It is checked before
+    // any of it is displayed — a kept draft is a record of an edit, never a
+    // result — and this happens after the collection releases the reader,
+    // because checking is itself a change and takes the same guard.
+    const draft = this.bundle?.draft;
+    if (draft) {
+      const at = this.path.replace(/\.tsx?$/, "") + ".candidate.json";
+      await this.change(() => draft);
+      this.draftPath = at;
     }
   }
 
@@ -163,6 +221,25 @@ export class Reader {
     await this.change((c) => addFunction(c, fn, contract));
   }
 
+  /**
+   * Keep the current draft beside the source, or discard the kept one. Applying
+   * an edit writes nothing; this is the step that touches the working tree.
+   */
+  async keep(remove = false) {
+    const candidate = remove ? this.original : this.candidate;
+    if (!candidate || this.busy) return;
+    this.busy = true;
+    this.error = "";
+    try {
+      const kept = await keepDraft($state.snapshot(candidate), remove);
+      this.draftPath = kept.kept ? kept.path : "";
+    } catch (e) {
+      this.error = (e as Error).message;
+    } finally {
+      this.busy = false;
+    }
+  }
+
   /** Put the producer's own claims back, and check them again. */
   async restore() {
     if (!this.original || this.busy) return;
@@ -178,6 +255,10 @@ export class Reader {
     } finally {
       this.busy = false;
     }
+    // The producer's claims are back, so a kept draft is no longer what is on
+    // screen, and leaving it would resume it on the next open. Discarding it
+    // waits for the check to release the reader, since it takes the same guard.
+    if (!this.error && this.draftPath) await this.keep(true);
   }
 
   /**

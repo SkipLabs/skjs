@@ -50,7 +50,9 @@ async function sources() {
       if (entry.name.startsWith(".") || SKIP.has(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) await walk(full);
-      else if (/\.(ts|tsx|mts|cts)$/.test(entry.name) && !entry.isSymbolicLink())
+      // A claim source is a `.ts` the parser accepts. The `.mts` beside it is
+      // this repository's own tooling, which the gate would reject anyway.
+      else if (/\.(ts|tsx)$/.test(entry.name) && !entry.isSymbolicLink())
         files.push(path.relative(REPO, full));
     }
   };
@@ -71,6 +73,31 @@ async function repositoryPath(relative) {
   if (!resolved.startsWith((await fs.realpath(REPO)) + path.sep))
     throw new Error("Path outside the repository");
   return resolved;
+}
+
+/*
+ * A draft lives beside the source it is about, named after it, the way the
+ * command-line tools already name what they write. It is meaningful for that
+ * file and no other — its `sourceSha256` must match — so there is nothing to
+ * choose and nothing to find: opening the source finds its draft.
+ *
+ * What is written is the candidate itself, not a display bundle, so the same
+ * file can be handed to `annotate-source.mts --claims`.
+ */
+const draftPath = (source) => source.replace(/\.tsx?$/, "") + ".candidate.json";
+
+/** The draft beside a source, where one exists and is about that source. */
+async function readDraft(absolute, sourceSha256) {
+  const text = await fs.readFile(draftPath(absolute), "utf8").catch(() => null);
+  if (text === null) return null;
+  try {
+    const draft = JSON.parse(text);
+    // A draft for a source that has since changed is stale, and a stale draft
+    // is not shown: its spans describe text that is no longer there.
+    return draft?.sourceSha256 === sourceSha256 ? draft : null;
+  } catch {
+    return null;
+  }
 }
 
 async function hasVerifier() {
@@ -141,6 +168,17 @@ async function tscAnalyse(relative, source, tmp, options) {
 }
 
 async function analyse(relative, producer = "skjs") {
+  const bundle = await collect(relative, producer);
+  // The draft, where one is beside the source and is about this source. The
+  // reader decides what to do with it; the server only reports that it exists.
+  const draft = await readDraft(
+    await repositoryPath(relative),
+    bundle.manifest?.source?.sha256,
+  );
+  return draft ? { ...bundle, draft } : bundle;
+}
+
+async function collect(relative, producer = "skjs") {
   const sourcePath = await repositoryPath(relative);
   const source = await fs.readFile(sourcePath, "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
@@ -395,6 +433,43 @@ const server = http.createServer(async (req, res) => {
       } finally {
         analysing = false;
       }
+    }
+    /*
+     * Keeping a draft, or discarding it. This writes into the working tree, so
+     * it happens only when asked: applying an edit checks it and writes
+     * nothing. What is written is the candidate itself, beside the source and
+     * named after it, so the same file can be passed to `annotate-source.mts`.
+     */
+    if (url.pathname === "/api/draft") {
+      const input = await readCandidate(req);
+      const file = input.candidate?.file ?? input.file;
+      if (typeof file !== "string")
+        return send(res, 400, { error: "A draft names the source it is about" });
+      const at = draftPath(await repositoryPath(file));
+      if (input.remove) {
+        await fs.rm(at, { force: true });
+        return send(res, 200, { path: path.relative(REPO, at), kept: false });
+      }
+      const candidate = input.candidate;
+      if (
+        !candidate ||
+        !["skjs", "source-claims"].includes(candidate.format) ||
+        typeof candidate.sourceSha256 !== "string"
+      )
+        return send(res, 400, { error: "Unsupported candidate" });
+      const source = await fs.readFile(await repositoryPath(file), "utf8");
+      const digest = require("node:crypto")
+        .createHash("sha256")
+        .update(source)
+        .digest("hex");
+      // A draft about a source that has since changed would be stale the moment
+      // it landed, so it is refused rather than written.
+      if (candidate.sourceSha256 !== digest)
+        return send(res, 409, {
+          error: "The source changed; collect it again before keeping a draft",
+        });
+      await fs.writeFile(at, JSON.stringify(candidate, null, 2) + "\n");
+      return send(res, 200, { path: path.relative(REPO, at), kept: true });
     }
     if (url.pathname === "/api/candidate") {
       const input = await readCandidate(req);

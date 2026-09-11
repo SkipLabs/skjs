@@ -74,6 +74,26 @@ export async function checkCandidate(candidate: Candidate) {
 }
 
 /**
+ * Keep the draft beside the source it is about, or discard it. This writes into
+ * the working tree, so it happens only when asked; what is written is the
+ * candidate itself, so the same file can be handed to `annotate-source.mts`.
+ */
+export async function keepDraft(candidate: Candidate, remove = false) {
+  const response = await fetch("/api/draft", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ candidate, file: candidate.file, remove }),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok)
+    throw new ApiError(
+      response.status,
+      (body as { error?: string })?.error ?? "the draft was not kept",
+    );
+  return body as { path: string; kept: boolean };
+}
+
+/**
  * Collect one file's claims from one producer and check them. This runs the
  * producer and the verifier, so it is the expensive call; the server allows one
  * at a time and answers 409 while another is running.

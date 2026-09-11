@@ -194,11 +194,18 @@ export interface Candidate {
   claims: unknown;
 }
 
-/** What the server hands the page, and what `Save report…` writes. */
+/** What the server hands the page. */
 export interface Bundle {
   source: string;
   manifest: Manifest;
   annotated?: string;
   collection?: CollectionRun;
+  /** The producer's own claims, as an editable copy. */
   candidate?: Candidate;
+  /**
+   * A draft kept beside the source, where one exists and is about this exact
+   * source. It is a record of an edit, never a result: what it claims is
+   * checked before anything is displayed.
+   */
+  draft?: Candidate;
 }

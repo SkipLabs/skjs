@@ -679,7 +679,21 @@ export function main(args: string[]) {
   if([sourcePath,options.claims,options.verify].filter((p): p is string=>!!p).some(p=>path.resolve(p)===path.resolve(output)))throw Error("output must differ from inputs");
   // Nothing is written in stdout mode, so an existing report there is not a conflict.
   if(options.stdout!=="json" && (fs.existsSync(output)||fs.existsSync(manifest)))throw Error("output already exists; choose a new --out path");
-  const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims,"utf8"), input=JSON.parse(bytes);
+  const source=fs.readFileSync(sourcePath,"utf8"), bytes=fs.readFileSync(options.claims,"utf8");
+  const read=JSON.parse(bytes);
+  // A kept draft is a candidate: the claims with the format and the source they
+  // are about wrapped around them. The reader writes one beside its source, and
+  // it names everything `--format` would have had to be told, so it is taken
+  // from the file rather than asked for again.
+  const wrapped=read && !Array.isArray(read) && typeof read.format==="string" && "claims" in read;
+  if(wrapped) {
+    if(read.file!==sourcePath && read.file!==options["file-key"])
+      throw Error(`that candidate is about ${read.file}`);
+    if(read.sourceSha256!==hash(source))
+      throw Error("that candidate is about an earlier version of this source");
+    options.format=read.format;
+  }
+  const input=wrapped ? read.claims : read;
   const file=options["file-key"] || sourcePath;
   let report=options.format==="skjs" ? fromSkjs(source,file,input,options.producer) : options.format==="source-claims" ? fromSourceClaims(source,file,input,options.producer) : input;
   let conversion=null,conversionBytes=null;
