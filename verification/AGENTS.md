@@ -116,9 +116,14 @@ an exporter change needs a place to show, one phenomenon per file.
   pipe through node's own `_handle`, which bun does not expose
   (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
   that opens the compiler is affected, so this is not a per-suite choice.
-- Wire formats are version-locked. A changed format gets a new version and
-  the decoders accept only that version; regenerate documents, never migrate
-  them in place.
+- Wire formats carry a version, and the decoders accept only that version.
+  That is a freshness check, not a compatibility mechanism: every producer and
+  every consumer of these documents is in this repository, and nothing outside
+  reads them. So a format is not frozen — fix its shape in place and
+  regenerate, rather than bumping the version and carrying the old shape. What
+  the version is for is catching a stale document when one side was
+  regenerated and the other was not, which the `sha256` fields also do, more
+  precisely.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
   theorem stays in the file. Build only the module you changed while
   iterating (`lake build Verification.ExperimentState.<Module>`).

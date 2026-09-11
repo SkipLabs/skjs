@@ -55,10 +55,13 @@ def produce (G : NormalGraph Nat) (labels : List Nat) (bound fuel : Nat)
            ("types",toJson ((List.range bound).map G))])
     return e
   if checkAll G bound rs es then return es
+  -- `failure` names what was produced and rejected, the same field a graph
+  -- production failure carries: one `kind` has one shape, so a reader never
+  -- has to know which of the two emitters wrote the record.
   throw (withDiagnostic "closure expression evidence failed independent checking"
     [("kind",toJson "production-failure"),("phase",toJson "certificate-check"),
-     ("outcome",toJson "not-established"),("fuel",toJson fuel),
-     ("types",toJson ((List.range bound).map G))])
+     ("outcome",toJson "not-established"),("failure",toJson "closureEvidenceRejected"),
+     ("fuel",toJson fuel),("types",toJson ((List.range bound).map G))])
 
 #print axioms checkAll_sound
 end Verification.ExperimentState.ExpressionClaims

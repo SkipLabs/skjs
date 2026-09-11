@@ -52,6 +52,11 @@ export interface ObligationDiagnostic {
   /** The proof budget the search was given. */
   fuel: number;
   types: unknown[];
+  /**
+   * The result type the request asked for. Absent from a closure expression
+   * claim, which is produced without a request and so has none — not an
+   * omission to paper over.
+   */
   requiredResult?: unknown;
   /** The node or edge the record is about; absent for a production failure. */
   id?: string;
@@ -73,12 +78,7 @@ export interface ObligationDiagnostic {
   sourceMap?: SourceMapEntry;
   /** Node typing and expression claims only. */
   sequent?: { context: unknown[]; expression?: unknown; type?: unknown } | null;
-  /**
-   * Production failure only — and only from the graph emitter. Both emitters
-   * write `kind: "production-failure"`, with different fields and nothing to
-   * tell them apart: the closure one carries neither this nor
-   * `requiredResult`. Read either as optional on this kind.
-   */
+  /** Production failure only: what was produced and then rejected. */
   failure?: string;
   /** Attached by the report writer, not by the verifier. */
   input?: {
