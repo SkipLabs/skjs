@@ -85,6 +85,25 @@ export class Reader {
   select(functionId: string, markId: string | null = null) {
     this.selection = { functionId, markId };
   }
+
+  /**
+   * Select whatever claim sits at a source offset, for following a failure to
+   * one end of its edge. Nothing is selected where nothing is claimed there:
+   * the reader points at a record, it does not invent one.
+   */
+  selectAt(fn: ShownFunction, offset: number) {
+    const at = <T extends { pos: [number, number] }>(list: T[]) =>
+      list.findIndex((x) => x.pos[0] <= offset && offset < x.pos[1]);
+    for (const [prefix, list] of [
+      ["e", fn.exprs],
+      ["n", fn.entries],
+      ["g", fn.gaps],
+    ] as const) {
+      const i = at(list as { pos: [number, number] }[]);
+      if (i >= 0) return this.select(fn.id, prefix + i);
+    }
+    this.select(fn.id, null);
+  }
 }
 
 export const reader = new Reader();

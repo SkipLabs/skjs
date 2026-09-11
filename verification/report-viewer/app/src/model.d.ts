@@ -166,3 +166,72 @@ declare module "*/marks.js" {
   export function lineStarts(source: string): number[];
   export function lineAt(starts: number[], pos: number): number;
 }
+
+declare module "*/obligation.js" {
+  import type { Span } from "../../types.ts";
+
+  /** One binding of the context: what was carried, and what was required. */
+  export interface ContextRow {
+    slot: number;
+    binding: string;
+    have: string;
+    need: string;
+    differs: boolean;
+  }
+
+  /**
+   * A heap fact the obligation needed, where it needed any: the binding it is
+   * about, and what is true of it, already phrased ("holds true", "is a read
+   * of cell").
+   */
+  export interface KnowledgeRow {
+    slot: number;
+    binding: string;
+    what: string;
+  }
+
+  /** One end of an edge, and where in the source that end sits. */
+  export interface Endpoint {
+    end: "from" | "to";
+    label: number;
+    sourceMap: {
+      pos: Span | null;
+      role: string;
+      environmentStart?: number;
+      context?: { name: string; span: Span | null }[];
+    } | null;
+  }
+
+  /**
+   * What the verifier had and what had to follow from it. Explanatory metadata
+   * about an unsuccessful attempt — never evidence, and never a statement that
+   * a claim is false.
+   */
+  export interface ObligationView {
+    kind: string;
+    kindLabel: string;
+    /** The role's own name, where the record gives a specific one. */
+    title: string;
+    /** What that role means, in prose. */
+    what: string;
+    role: string;
+    id: string;
+    fuel: number;
+    phase: string;
+    pos: Span | null;
+    rows: ContextRow[];
+    /** The judgement required, for a node obligation. */
+    conclusion: string;
+    term?: string;
+    endpoints: Endpoint[];
+    knowledge: KnowledgeRow[];
+    knowledgeIsTheDifference?: boolean;
+    observation?: string;
+    note?: string;
+  }
+
+  const reader: {
+    obligationView(obligation: unknown, source?: string): ObligationView | null;
+  };
+  export default reader;
+}

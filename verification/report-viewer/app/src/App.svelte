@@ -8,6 +8,8 @@
    */
   import { onMount } from "svelte";
   import FunctionList from "./FunctionList.svelte";
+  import Obligation from "./Obligation.svelte";
+  import Provenance from "./Provenance.svelte";
   import Selection from "./Selection.svelte";
   import SourceView from "./SourceView.svelte";
   import { reader } from "./state.svelte.ts";
@@ -108,7 +110,15 @@
             onselect={(markId) => reader.select(fn.id, markId)}
           />
         </div>
-        <Selection {report} {fn} markId={reader.selection?.markId ?? null} />
+        <div class="dock">
+          <Selection {report} {fn} markId={reader.selection?.markId ?? null} />
+          <Obligation
+            {fn}
+            source={report.source}
+            onselect={(offset) => reader.selectAt(fn, offset)}
+          />
+          <Provenance bundle={reader.bundle} collection={reader.collection} />
+        </div>
       </div>
     </div>
   {:else if !reader.busy && !reader.error}
@@ -171,13 +181,17 @@
     display: grid;
     /* The dock takes only what it needs: an empty one is a prompt, not a
        third of the screen. */
-    grid-template-rows: 1fr auto;
+    grid-template-rows: minmax(0, 1fr) auto;
     min-height: 0;
     min-width: 0;
   }
   .scroll {
     overflow: auto;
     min-height: 0;
+  }
+  .dock {
+    overflow-y: auto;
+    max-height: 45vh;
   }
   .empty {
     padding: 20px 16px;
