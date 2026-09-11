@@ -1,318 +1,205 @@
 # Claim report reader
 
-A source-centred inspector for producer claims, collection gaps and recorded
-verification results. It is display-only: neither annotations nor stored
-verification badges are proof evidence.
+A source-centred inspector for producer claims and what the verifier made of
+them. It is display-only: nothing it shows is proof evidence, and an outcome it
+displays was reached by the verifier, never by the reader.
 
 ## Use
 
 ```sh
-make viewer                              # starts it and opens the page
-make viewer-next                         # the reader being rebuilt, at /next
-node verification/report-viewer/serve.mts # http://localhost:8731, without opening
+make viewer                                # builds and opens it
+node verification/report-viewer/serve.mts  # http://localhost:8731, without opening
 ```
 
-## The reader being rebuilt
+The producer selector chooses whose claims are read — **SKJS claims**, or
+**TypeScript claims** from `tools/tsc-claims.mts`. Both answer for the same
+sites and the same verifier adjudicates either, so switching re-reads the open
+file through the other one.
 
-`app/` is a Svelte application replacing this one, served at `/next` beside the
-existing page at `/`. Both read the same reports through the same server: only
-the view is being rewritten, and `model.js`, `marks.js` and `obligation.js` —
-the tested logic for what a bundle means and what the source view draws — are
-shared by both.
+Pick an example, or type any repository-relative path into **Open any
+repository path…**; it suggests matching `.ts` sources as you type, and a full
+path works whether or not it is listed. Paths outside the repository are
+refused. The producer runs on every open — nothing is cached — and the verifier
+checks what it produced, so nothing is displayed as a result without having
+been checked.
 
-It reads today: a source with its claims bracketed under the spans they are
-about, the file's functions with both outcomes, and the selected claim docked
-beneath the source. Editing, claim addition and report bundles are still the
-existing reader's.
+The address bar follows the view: `?file=…&producer=…#function:mark`. Reopening
+that link restores it. A mark is named by its function and its position within
+it, because names survive a recollection and positional ids do not; a link into
+a report that has changed resolves by name or is dropped, rather than quietly
+selecting something else.
+
+## What is on screen
+
+**The functions**, down the left, each with the two outcomes that matter:
+`✓→✓` is the producer's own verdict on the program, then what proof search
+found over the claims it made. They are different questions. `✗` on the right
+means no derivation was found — never that a claim is false. `?` means checking
+could not properly be attempted: a claim it needed is missing, or the source is
+outside the fragment. A disagreement is amber.
+
+**The source**, with each claim bracketed under the span it is about. Every
+claim is drawn; there is no density switch, because a claim that is hidden is
+one you cannot tell is missing. Weight does that work instead: an entry's
+environment reads faintly, a failed claim carries its symbol, and a place the
+producer never visited is dashed.
+
+Two ticks change what else is drawn, both off by default because they answer
+questions about the producer's run rather than about what it claims: **producer
+diagnostics** puts its own errors under the spans they name, and **undecoded
+bindings** shows the bindings whose types it could not state.
+
+**The selected claim**, docked beneath the source rather than in a rail away
+from it: its span, its type in surface syntax, the producer's own encoding, and
+— where one is there — the claim's failure.
+
+**Why verification stopped**, where the verifier emitted a structured
+obligation diagnostic: what it had and what had to follow from it, the bindings
+that differ marked, and both ends of an edge selectable. The role comes from
+the record rather than from the span — a return contract and the returned
+expression's own claim share a span and are different obligations — and where
+the record names no specific role, the panel says nothing rather than inventing
+one. See [OBLIGATION-DIAGNOSTICS](../OBLIGATION-DIAGNOSTICS.md).
+
+**Provenance**, collapsed: the producer, the exact command, how long it took,
+whether the independent consumer ran, and the fingerprints of the inputs.
+
+Keyboard: <kbd>j</kbd>/<kbd>k</kbd> or the arrows step through the marks in
+source order, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears
+the mark. Those are ignored while typing, so <kbd>⌥</kbd>/<kbd>Alt</kbd> with
+the same keys steps from inside the editor, leaving the next claim ready to
+type into. The letters match by physical key, since Option composes characters.
+
+## Editing a claim
+
+There is no workspace panel: a claim is edited at the claim. Selecting one
+opens its editor holding the same surface syntax it is read in — `{ value:
+boolean }`, `(boolean) => null`, `true | null`. The text is parsed on every
+keystroke and applying is refused until it reads back into an encoding, so a
+typo cannot be saved.
+
+Reading back edits the claim it came from: what the surface names is replaced,
+and what it cannot name — index signatures, call and construct shapes — is the
+original's, never invented here. An encoding with no exact surface syntax is
+edited as the producer's own JSON, which the editor switches to itself and says
+why.
+
+**Adding** a claim is different, and the difference is forced. There is no
+original to resolve against, so the surface can only name what it says in full:
+primitives and unions. An object or function type, and any environment, is
+written as the encoding.
+
+Where the encoding is the normalized one, a type is a list of indices into that
+document's own type table — bookkeeping of that document, not something to
+write. So it is chosen from the table by the names the table holds: picking
+`true` and `false` reads back as `true | false`, and picking nothing is the
+empty union. Only rows already in the table can be chosen; naming a type that is
+not one would mean interning it, which is the producer's job.
+
+A place the producer visited and claimed nothing at is selectable, and offers
+the claim that belongs there. A function the candidate says nothing about asks
+for its contract first, since every point claim is checked against it;
+parameter names and their order come from the source. An attachment site is not
+necessarily a required proof obligation.
+
+Applying sends the candidate to the verifier against unchanged source; the
+producer is not rerun. A refused candidate stays available for correction and
+what was last displayed keeps saying what it said, because nothing unchecked is
+shown as a result. A check that succeeds establishes that function's modeled
+obligations; it does not make the producer's original claims true.
+
+## Keeping a draft
+
+A draft is meaningful for one file — its `sourceSha256` must match, and every
+span is checked against the source it carries — so there is nothing to choose
+and nothing to find. **Keep this draft** writes it beside the source, named
+after it, the way the command-line tools already name what they write:
+
+```
+verification/tests/stateful-source/closures.ts
+verification/tests/stateful-source/closures.candidate.json
+```
+
+Opening that source finds the draft, checks it, and shows what the verifier
+made of it — a kept draft is a record of an edit, never a result. A draft about
+a source that has since changed is stale and is not shown.
+
+Keeping is explicit: applying an edit checks it and writes nothing, so
+experiments leave no trace. The file is tracked, so a repair is something that
+can be reviewed and kept. **Restore the producer's claims** puts them back and
+discards the draft, because leaving it would resurrect it on the next open.
+
+What is written is the candidate itself, so the same file is what the
+command-line tool reads:
+
+```sh
+node verification/tools/annotate-source.mts closures.ts \
+  --claims closures.candidate.json --verify verification/lean/.lake/build/bin/verifier
+```
+
+It names its own format and the source it is about, so `--format` is not needed
+and a draft about a different file, or an earlier version of the same one, is
+refused.
+
+## How it is built
+
+`app/` is a Svelte 5 application in TypeScript, built by Vite:
 
 ```sh
 npm --prefix verification/report-viewer/app run check   # types, templates included
-npm --prefix verification/report-viewer/app run build   # dist/, which serve.js serves
+npm --prefix verification/report-viewer/app run build   # dist/, which serve.mts serves
 npm --prefix verification/report-viewer/app run dev     # vite, with hot reload
 ```
 
-`svelte-check` is the check that matters: `tsc` does not look inside a
-component's template, which is exactly where a wrong property name hides. It
-needs TypeScript 6 alongside 7 and the `--tsgo` flag, which is its own
-transitional requirement; the trusted front end in `tools/` is unaffected and
-still builds against 7 alone.
+`npm run check` is `svelte-check`, and that distinction earns its place: `tsc`
+does not look inside a component's template, which is exactly where a wrong
+property name hides. It needs TypeScript 6 alongside 7 and the `--tsgo` flag,
+its own transitional requirement; the trusted front end in `tools/` is
+unaffected and builds against 7 alone.
 
-The toolbar's producer selector chooses whose claims are read: **SKJS claims**
-or **TypeScript claims**, the latter from `tools/tsc-claims.mts`. Both answer
-for the same sites and the same verifier adjudicates either, so switching
-re-reads the open file through the other one.
+The view is the only part that is Svelte. Everything it reasons with is a
+module beside it, checked by `tools/tsconfig.json` like the rest of the front
+end and exercised by `tests/report-viewer.mts` without a browser:
 
-Select an example to collect claims with SKJS, or type any repository-relative
-path into **Open any repository path…**; it suggests matching `.ts` sources as
-you type, and a full path works whether or not it is listed. The independent
-consumer runs whenever a verifier is built — on load, and again after every
-applied edit — so nothing is displayed as a result without having been checked.
-Rejected programs still show their partial claims and producer diagnostics. Links can select any repository source, for example:
-`http://localhost:8731/?file=verification/tests/stateful-source/closures.ts`.
+- `model.mts` — what a bundle means, as the reader displays it.
+- `marks.mts` — what the source view draws: which claims at what position, the
+  outcome symbols, how marks pack onto rows without overlapping.
+- `obligation.mts` — an obligation diagnostic, as the rows a panel shows.
+- `candidate.mts` — immutable candidate edits. Candidate inputs and stored
+  results are never trusted proof evidence.
+- `../tools/claim-types.mts` — claim types in surface syntax, printed and read
+  back. `report-viewer.mts` checks that printing and reading back returns the
+  same encoding for every shape, and `annotated-source.mts` checks it over
+  every claim in a real export.
+- `serve.mts` — runs the producer and the report writer, and writes drafts. It
+  binds to loopback, runs one collection at a time, applies a 120-second
+  timeout to each subprocess, rejects source changes detected during
+  collection, and cleans temporary reports up either way. `SKJS_REPO`,
+  `SKJS_BIN`, `SKJS_IMAGE` and `PORT` configure the local runner.
 
-The example groups come from `examples.js`, re-read for each page load, so
-adding an example does not need a server restart. Paths outside the repository
-are refused, and the listing is a convenience for finding a file, not the limit
-of what can be opened.
-
-The address bar follows the view: the selected file, whether it was collected
-with verification (`&verify=1`), and the selected claim as `#<manifest id>`
-(`#f2x1`, `#f0e3`, `#g0`). Reopening that link restores the same view, and the
-id is how a claim can be named in a review or a message. Ids identify records
-within one snapshot, not the same claim across edits, so a link into a changed
-report may name nothing; the reader then leaves the selection alone rather than
-guessing. A linked claim that **Compact** hides is shown with every claim for
-that view, without changing the stored density preference.
-
-The server binds to loopback, runs one collection at a time, and applies a
-120-second timeout to each subprocess. It rejects source changes detected during
-collection and cleans temporary reports up on success and failure.
-`SKJS_REPO`, `SKJS_BIN`, `SKJS_IMAGE` and `PORT` configure the local runner.
-
-The HTML can also be opened directly, with its sibling JS and CSS files present.
-It then starts empty: there are no bundled example reports, and nothing is shown
-until one is read. **Load report…** and drag-and-drop accept either
-an annotated `.ts` file or a JSON bundle containing `{source, manifest}`. The
-latter preserves exact producer encodings, diagnostics and function ranges.
-A manifest alone does not contain source text. Bundle imports check the source
-SHA-256 before displaying claims. Annotated-source import is a compatibility
-adapter for the display format, with only the data present in those comments.
-
-## Reading dense reports
-
-- The header says whether the producer ran for what is on screen, and when.
-  Provenance gives the exact command, how long it took, and whether the
-  independent consumer was run. A report read from a file records no such run and
-  says so. Every collection runs the producer again; nothing is cached.
-- The header tallies what the report records: functions, their recorded statuses,
-  and total gaps. Each count moves to the next function it describes, selecting
-  that function's failure or first gap. Counts summarize stored outcomes only.
-- Find a function by name; selecting it shows its source with original line numbers.
-- Keyboard: <kbd>j</kbd>/<kbd>k</kbd> (or the arrow keys) step through the marks
-  as drawn, <kbd>[</kbd>/<kbd>]</kbd> change function, <kbd>Esc</kbd> clears the
-  selection. Those are ignored while typing in a field, so
-  <kbd>⌥</kbd>/<kbd>Alt</kbd> with <kbd>↓</kbd>/<kbd>↑</kbd> — or with
-  <kbd>j</kbd>/<kbd>k</kbd> — steps between claims from inside the editor,
-  leaving the next one focused: read a claim, retype it, <kbd>Enter</kbd>, move
-  on. The letters are matched by physical key, since Option composes characters.
-- **Compact** shows outer expression claims and environment changes from the
-  preceding entry in source order. It hides literal restatements. This is not a
-  claim about control-flow edges, narrowing, or the identity of shadowed bindings.
-- Claims carry the page: they are tinted and weighted, so they read against the
-  code and against the producer's diagnostics beside them.
-- Select an expression to see its full type, exact source text, original payload,
-  containing statement's entry claims, and nested expression claims.
-- **Every claim** includes nested expressions and literal restatements. Multiline
-  expressions have a marker on their first line; selection shows the complete span.
-- Selecting a claim opens its editor at the top of the panel, focused and ready
-  to type into; <kbd>Esc</kbd> hands the keyboard back to the source view.
-- Claims read in surface syntax — `{ value: boolean }`, `(boolean) => null`,
-  `true | null` — printed from the producer's encoding rather than from prose.
-  A cell whose read and write types differ says both: `{ value: read true write
-  boolean }`. Long types are abbreviated, and an encoding this reader cannot name
-  says **structured type — inspect** rather than guessing at part of it.
-- Each function shows both outcomes: **SKJS ✓ · proof ✓**. The first is the
-  producer's own outcome for that function, which depends on the source file
-  alone and therefore stands until the source changes. The second is what proof
-  search found over the claims, which an edit can change: **✓** proved, **✗**
-  searched and failed, **?** could not properly try (a claim it needed is
-  missing, or the source is outside the fragment), **·** not run. **✗** never
-  means the claim is false.
-- A disagreement is amber: SKJS accepted a function nothing could prove (which
-  is either an unsound acceptance or a limit of these rules, and carries ⚠), or
-  SKJS rejected one that a checked certificate covers. Where nothing was
-  concluded — a **?** — there is no disagreement to show.
-- A verified function carries a stamp. A solid stamp means the independent
-  consumer checked a certificate for this report; a dashed one means the status
-  was recorded in a file and nothing was checked for what you are looking at.
-  Either way it covers the function's modeled obligations, not every claim.
-- Provenance spells the producer's snapshot out: complete, or partial because it
-  stopped collecting inside that function.
-- **SKJS errors** shows the producer's own diagnostics inline, under the exact
-  spans they name, including the notes that accompany an error. They describe
-  SKJS's run over the source and are neither claims nor verification results.
-  Provenance keeps the verbatim text under **Producer diagnostics**, with a count
-  and a note about any the source view is not showing — a diagnostic for another
-  function in the file, or the tick being off.
-- Coverage gaps remain visible in both densities. **Not visited by producer**
-  describes collection, not runtime unreachability. Recovery describes the quality
-  of a collection snapshot, not necessarily when an individual claim was emitted.
-- Function statuses cover modeled obligations, not every displayed producer claim.
-  Fingerprints are available under Provenance.
-
-### Why verification stopped
-
-Where the verifier emits a structured obligation diagnostic, the Selection panel
-shows what it had and what had to follow: the available bindings, the conclusion
-required of them, and — for an edge — the same context carried to the
-destination, with the differing bindings marked and both endpoints selectable. The
-role is taken from the record, never guessed from the span: a **return contract**
-at a `return` is a different obligation from the returned expression's own claim,
-even though they share a span, so a sound claim is not labelled as the culprit. A
-mark names its role when the record gives a specific one and stays silent when it
-does not.
-
-Types are rendered through the record's own graph table; a clause this reader
-does not know is shown as its encoding rather than guessed at, and recursion
-through references and arrows stops with an ellipsis. Ids are local to one
-attempt: they identify nothing after an edit. The record is explanatory metadata
-about an unsuccessful attempt — never evidence, and never a statement that a
-claim is false. Failures without a record keep the existing wording. See
-[OBLIGATION-DIAGNOSTICS](../OBLIGATION-DIAGNOSTICS.md).
-
-### Verification warnings
-
-When proof search reports an obligation's exact source span, the claim there
-reads as it always does and carries the proof symbol after it — **✗** where
-search failed, **?** where it could not properly try — the same symbols the
-function pill uses. A failed claim is still a claim, so it is not drawn as a
-different kind of thing. A banner offers **Show failed obligation**; selection
-shows the diagnostic. This is the first reported failure, not an exhaustive
-classification of claims. Failure may involve the claimed type, its environment,
-a source annotation, or search limitations; the symbol never means the claim has
-been disproved.
-
-Incoming-edge failures mark the destination expression whose environment was
-not justified. Environment conversion failures mark the statement entry.
-Unsupported source expressions carry **?**: conversion stopped before checking
-the candidate, so this is not a verdict on an edit.
-
-When the producer exported no usable type for something extraction needed, the
-report says **required type unavailable** and names the binding, marked **?**:
-no proof obligation was reached, so this is neither a failed search nor a
-statement about whether the claim would hold. The producer does have a type
-there; it is outside what the claim format expresses — a union of object
-branches, say, where a cell claim is one invariant contract — so the sentinel is
-a limit of the format rather than a gap in the producer's analysis. The reader takes the binding and
-the statement from the report's `unavailable-type-claim` location rather than
-inferring them, keeps that explanation separate from proof obligations, and
-synthesizes no sequent for it. An entry that stopped checking shows its
-undecoded claims whatever the **unsupported bindings** tick says, since there
-they are the finding.
-
-The header tally groups by what happened — verified, proof search failed, could
-not be checked, not run — rather than by recorded status, so a function whose
-type was never exported is not counted as a failed proof.
-
-When verification stopped because a claim it needed is absent, the marker says
-so — **verification needed a claim here**, on the gap that already marks that
-place, naming the binding when one is missing from an environment. This reports
-where extraction stopped, not a claim that was disproved; supplying the claim is
-what makes checking possible.
-
-If no source location is available (including older verifier results), the
-function-level warning displays the diagnostic directly. The reader never
-interprets a graph node number as an expression index. Editing makes prior results
-stale and removes their active failure markers until a fresh check completes.
-
-## Implementation
-
-`types.js` prints claim types in surface syntax and reads them back. `model.js`
-reads structured bundles and adapts legacy comments. `obligation.js`
-reads an obligation diagnostic into the rows a panel shows. `marks.js`
-decides what the source view shows — which claims are drawn at what position,
-the outcome symbols, the producer's diagnostic positions — as pure functions the
-tests exercise without a browser. `viewer.js` owns selection, events and
-rendering; `viewer.css` owns layout. `serve.js` runs the
-existing producer and report writer. The live path uses the structured manifest;
-it does not recover types or source from generated comments. Function `pos` ranges
-in manifests use the same original UTF-16 offsets as expression claims.
-
-Run `node verification/tests/report-viewer.js` for the model and source-mark
-regression checks. They
-also run under `make verify`; report-writer tests exercise the manifest producer.
-
-## Claim editing
-
-Live reports include an editable candidate in the producer's encoding. There is
-no separate workspace panel: select an expression or entry environment and open
-**Edit candidate JSON** on it. The original
-producer value remains available alongside the editor. **Apply candidate edit**
-validates the candidate, checks it, and refreshes the report. A check that
-succeeds establishes the modeled obligations for that function; it does not make
-the producer's original claims true.
-
-Applying an edit runs the independent consumer against unchanged source, without
-rerunning SKJS: an unchecked candidate is never displayed as a result. Editing
-conservatively invalidates all function results first. Failed validation leaves the candidate available for correction and the
-last successful display marked stale. Source fingerprint changes block checking.
-The editor supports expression types and entire entry binding arrays. It uses
-JSON; a richer type editor is future work.
-
-Adding a claim happens where the missing one is. Select a coverage gap and the
-Selection panel offers the attachment sites inside it; with nothing selected, it
-lists the parser-identified expression and statement-entry locations for the
-whole function. Enter a type encoding or binding array and apply it. No offsets
-need to be entered, and no type is inferred or defaulted. Possible attachment
-sites are not necessarily required proof obligations.
-
-Manually added claims have no original producer value; the inspector says so.
-After applying, the new claim is selectable and editable normally. Restore removes
-all additions along with other manual edits.
-
-A source function with no candidate appears in the function list. Select it and
-the panel asks for its `{params, result}` contract. Parameter names and
-order come from the source; types use the selected candidate encoding. Adding the
-contract reveals that function's missing point-claim sites. No point claims are
-invented, and fresh verification checks the contract against source annotations.
-
-Claims are edited in that same syntax. The text is parsed on every keystroke and
-applying is refused until it reads back into an encoding, so a typo cannot be
-saved. <kbd>Enter</kbd> applies the claim field; where the editor is a JSON
-textarea, <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Enter</kbd> applies and Enter still
-makes a newline. Reading it back edits the claim it came from: what the surface
-names is replaced, and what it cannot name — index signatures, call and
-construct shapes —
-is the original's, never invented here. Naming a field the original does not have
-is refused for the same reason; dropping one is allowed, since the surface says
-so. A type this reader cannot print exactly is edited as the producer's JSON, as
-before. `report-viewer.js` checks that printing and reading back returns the same
-encoding for every shape, and `annotated-source.js` checks it over every claim in
-a real export.
-
-**Save report…** writes the source snapshot, candidate, original claims and display
-manifest together; **Load report…** reads one back. Both sit with the other
-report-wide actions, alongside **Restore original claims**. Unsaved candidate
-edits block switching reports until saved or restored. Typed JSON takes effect
-only on **Apply**; switching selections discards unapplied textarea edits.
-**Restore original claims** restores the baseline and clears verification results.
-Neither operation writes the source file or replaces the producer's claim file.
-
-The candidate wrapper is `{format, file, sourceSha256, claims}`. Supported formats
-are `skjs` and `source-claims`; the latter uses the existing normalized sidecar
-language. For CLI use, save the `claims` member and pass it to `annotate-source.mts`
-with the matching `--format`. Legacy annotated-only reports are read-only because
-they do not preserve a verifier input. Live candidate verification requires the
-local server; standalone viewing and bundle export remain available offline.
-
-`candidate.js` handles immutable candidate updates; `editor.js` owns the editing
-workspace and its revision/verification lifecycle. The server's JSON POST
-`/api/candidate` validates source identity and invokes the existing report writer
-and optional verifier. Candidate inputs and stored results are never trusted proof
-evidence. The candidate tests exercise real verification with a deliberately
-unavailable producer binary, a false claim, and a stale source fingerprint.
-
-## Source editing direction (not implemented)
-
-Source editing should use an editor document with decorations, not embedded report
-comments. Decorations can move with edits while remaining visibly stale. Changed
-or ambiguous attachments must be invalidated. Initially any source edit should
-invalidate the file's verification result; finer dependency tracking can follow.
-During syntax errors, retain only unambiguous stale decorations. Accept asynchronous
-results only for the exact source revision and candidate revision analysed.
-
-Current report IDs identify records within one snapshot. They are not stable
-identities across edits; reattachment requires syntax and binding identity as well
-as offset mapping. Moving an annotation is not evidence that its claim remains valid.
+Function `pos` ranges in manifests use the same original UTF-16 offsets as
+expression claims.
 
 ## Example selection
 
-The live picker defaults to **Current verifier examples**, tested by the same
-source suites as `make verify`. **Claim repair** contains the deliberately
-rejected partial-collection exercise. **Unsupported examples** contains expected
-source limitations and never implies those programs are verified.
+The picker defaults to **Current verifier examples**, tested by the same source
+suites as `make verify`. **Claim repair** holds the deliberately rejected
+partial-collection exercise. **Unsupported examples** holds expected source
+limitations, and listing one never implies it is verified. The groups come from
+`examples.mts`, re-read for each page load, so adding an example needs no
+restart.
 
-Loading arbitrary repository source through `?file=relative/path.ts`, or through
-the path field, remains supported. No annotated copies are stored in the tree:
-the comment-format reader is exercised against reports the test writes in
-memory, so nothing generated goes stale against the sources it came from.
+## Source editing direction (not implemented)
+
+Source editing should use an editor document with decorations, not embedded
+report comments. Decorations can move with edits while remaining visibly stale.
+Changed or ambiguous attachments must be invalidated. Initially any source edit
+should invalidate the file's verification result; finer dependency tracking can
+follow. During syntax errors, retain only unambiguous stale decorations. Accept
+asynchronous results only for the exact source revision and candidate revision
+analysed.
+
+Report ids identify records within one snapshot. They are not stable identities
+across edits; reattachment requires syntax and binding identity as well as
+offset mapping. Moving an annotation is not evidence that its claim remains
+valid.

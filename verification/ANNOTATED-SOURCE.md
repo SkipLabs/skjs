@@ -122,11 +122,11 @@ creates no files, for callers that render a report without keeping one.
 
 ## Reading a report
 
-`report-viewer/claim-report-viewer.html` reads an annotated file and draws each
-claim as a bracket under the span it is about, with a table of how the bindings
-narrow. It is a reader for this output, with the same standing: display only.
-Its companion `report-viewer/serve.mts` runs SKJS and this generator on a chosen
-file so a report can be produced and read in one step. See
+The reader in `report-viewer/` draws each claim as a bracket under the span it
+is about, with the bindings an entry carries beside it. It has the same
+standing as this format: display only. It reads the structured manifest rather
+than these comments — `report-viewer/serve.mts` runs the producer and this
+generator on a chosen file, so a report is produced and read in one step. See
 [report-viewer/README.md](report-viewer/README.md).
 
 ## What verification results mean
