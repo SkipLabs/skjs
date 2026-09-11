@@ -25,5 +25,3 @@ _skjs-debug/
 *.swo
 .idea/
 .svelte-check/
-# Working notes kept deliberately out of the history.
-verification/*.notes.md
