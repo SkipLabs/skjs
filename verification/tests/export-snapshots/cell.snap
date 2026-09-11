@@ -3,8 +3,8 @@
 ## cell [complete unverified normal]
 params: c: { value: boolean } [call=unknown construct=unknown array=unknown]
 result: boolean
-entry 50-65: c: { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: unsupported-type)
-entry 69-83: c: { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: unsupported-type)
+entry 50-65: c: { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
+entry 69-83: c: { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
 expr 50-51 `c`: { value: boolean } [call=unknown construct=unknown array=unknown]
 expr 50-65 `c.value = false`: boolean
 expr 52-57 `value`: "value"

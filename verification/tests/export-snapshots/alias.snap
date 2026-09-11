@@ -1,9 +1,9 @@
 # alias.ts
 
 ## alias [complete unverified normal]
-params: c: (unavailable: constrained-inference-variable)
+params: c: (unavailable: unexpanded-named-type)
 result: boolean
-entry 69-83: c: (unavailable: constrained-inference-variable); this: (unavailable: unsupported-type)
-expr 76-77 `c`: (unavailable: constrained-inference-variable)
+entry 69-83: c: (unavailable: unexpanded-named-type); this: (unavailable: void-type)
+expr 76-77 `c`: (unavailable: unexpanded-named-type)
 expr 76-83 `c.value`: boolean
 expr 78-83 `value`: "value"

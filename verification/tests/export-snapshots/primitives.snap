@@ -1,5 +1,5 @@
 # primitives.ts
 
 ## primitives [complete unverified normal]
-params: a: null; b: undefined; c: boolean; d: true; e: "s"; f: 1; g: string; h: number; i: (unavailable: unsupported-type); j: (unavailable: unsupported-type)
-result: (unavailable: unsupported-type)
+params: a: null; b: undefined; c: boolean; d: true; e: "s"; f: 1; g: string; h: number; i: (unavailable: unsupported-primitive); j: (unavailable: unsupported-primitive)
+result: (unavailable: void-type)

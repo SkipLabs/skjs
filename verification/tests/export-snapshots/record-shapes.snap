@@ -1,7 +1,7 @@
 # record-shapes.ts
 
 ## shapes [complete unverified normal]
-params: a: (unavailable: unsupported-object-branch); b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: unsupported-object-branch); e: (unavailable: unsupported-object-branch)
+params: a: (unavailable: cell-field-name); b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: nested-object-type); e: (unavailable: nested-object-type)
 result: null
-entry 193-204: a: (unavailable: unsupported-object-branch); b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: unsupported-object-branch); e: (unavailable: unsupported-object-branch); this: (unavailable: unsupported-type)
+entry 193-204: a: (unavailable: cell-field-name); b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: nested-object-type); e: (unavailable: nested-object-type); this: (unavailable: void-type)
 expr 200-204 `null`: null

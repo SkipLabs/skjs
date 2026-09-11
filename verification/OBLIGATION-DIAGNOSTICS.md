@@ -182,14 +182,28 @@ For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emit
 
 | Reason | Emitted when |
 | --- | --- |
-| `unsupported-type` | A primitive or unit is outside the export format, an object occurs in a position that does not admit one, or a clause has no representable types. |
-| `unsupported-object-branch` | An object branch fits neither the cell-record nor the function encoding, or the object has no branches. |
+| `unsupported-primitive` | A `bigint` or `symbol`, outside the export format. |
+| `void-type` | The `void` unit, which the format keeps distinct from `undefined` and does not carry. |
+| `unsupported-type` | A clause has no representable types. |
+| `nested-object-type` | An object occurs as a field, parameter or result type; objects are exported at the top of a claim only. |
+| `cell-is-array`, `cell-symbol-field`, `cell-index-signature`, `cell-callable`, `cell-constructible` | A branch read as a cell has an array brand, a symbol field, a real index signature, or positive callability or constructibility. |
+| `cell-field-name`, `cell-field-access`, `cell-field-count` | A branch read as a cell has a field not named `value`, a non-public field, or a number of fields other than one. |
+| `function-has-fields`, `function-index-signature`, `function-is-array`, `function-constructible` | A branch read as a function carries fields, an index signature, an array brand, or a construct signature. |
+| `function-generic`, `function-this-parameter`, `function-optional-parameter`, `function-rest-parameter`, `function-arity` | A signature has type parameters, a `this` parameter, optional or rest parameters, or other than one parameter. |
+| `function-without-signature`, `not-callable` | A branch is provably callable with no signature, or has no call at all. |
+| `no-object-branch` | The object has no branches. |
 | `unexpanded-type` | An object still carries an unexpanded type. |
+| `unexpanded-named-type`, `unexpanded-intersection`, `several-unexpanded-types` | The type is an unexpanded alias instantiation, an unexpanded intersection, or more than one unexpanded type. |
 | `type-parameter` | A clause carries a universally quantified type parameter. |
 | `union-of-clauses` | The type has more than one clause, outside the bounded encoding. |
 | `unbound-inference-variable` | An isolated unconstrained inference variable has no binding in the function's substitution snapshot. |
-| `constrained-inference-variable` | Inference variables cannot be followed as a single isolated unconstrained variable. |
+| `constrained-inference-variable` | An isolated inference variable carries constraints. |
 | `fuel-exhausted` | Bounded type export exhausts its recursion fuel, independently of proof-search fuel. |
+
+A branch that fits neither reading reports the reason of the reading its
+shape asks for: a callable branch is a function that failed, anything else a
+cell that failed. A field, parameter or result type that cannot be exported
+gives the branch its own reason, so the innermost cause is the one reported.
 
 Representable object branches are exported as separate union atoms. Multiple
 branches alone are not a refusal reason. An unsupported branch causes refusal

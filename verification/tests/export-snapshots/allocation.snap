@@ -3,9 +3,9 @@
 ## allocation [complete unverified normal]
 params: none
 result: boolean
-entry 35-60: this: (unavailable: unsupported-type)
-entry 64-109: c: { value: boolean } [string-index=synthetic symbol-index=synthetic]; this: (unavailable: unsupported-type)
-entry 113-138: c: { value: boolean } [string-index=synthetic symbol-index=synthetic]; d: { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: unsupported-type)
+entry 35-60: this: (unavailable: void-type)
+entry 64-109: c: { value: boolean } [string-index=synthetic symbol-index=synthetic]; this: (unavailable: void-type)
+entry 113-138: c: { value: boolean } [string-index=synthetic symbol-index=synthetic]; d: { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
 expr 45-60 `{ value: true }`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
 expr 54-58 `true`: true
 expr 94-109 `{ value: true }`: { value: boolean } [string-index=synthetic symbol-index=synthetic]

@@ -153,10 +153,10 @@ fun claimPushAtoms(
   | TPrimUnit(TUndefined(), _) ->
     acc.push(jsonObj(Array[("a", jsonStr("undefined"))]));
     ""
-  | TPrimUnit(TVoid(), _) -> "unsupported-type"
+  | TPrimUnit(TVoid(), _) -> "void-type"
   | TPrimValue(kind, litsOpt, _) ->
     claimKindName(kind) match {
-    | None() -> "unsupported-type"
+    | None() -> "unsupported-primitive"
     | Some(tag) ->
       litsOpt match {
       | None() ->
@@ -178,22 +178,32 @@ fun claimPushAtoms(
       "unexpanded-type"
     } else if (records) {
       // Branches are alternatives, preserved as separate union atoms. Never
-      // emit a partial union when any branch cannot be represented.
+      // emit a partial union when any branch cannot be represented. A branch
+      // that fails both readings reports the reason of the reading its shape
+      // asks for: a callable branch is a function, anything else a cell.
       branches = obj.getBranches();
-      reason = if (branches.isEmpty()) "unsupported-object-branch" else "";
+      reason = if (branches.isEmpty()) "no-object-branch" else "";
       for (fields in branches) {
         claimCellBranchJson(fields, values, fuel) match {
-        | Some(atom) -> acc.push(atom)
-        | None() ->
+        | Success(atom) -> acc.push(atom)
+        | Failure(cellReason) ->
           claimFunctionBranchJson(fields, values, fuel) match {
-          | Some(atom) -> acc.push(atom)
-          | None() -> !reason = "unsupported-object-branch"
+          | Success(atom) -> acc.push(atom)
+          | Failure(functionReason) ->
+            if (reason == "") {
+              !reason = fields.call match {
+              | CPresent _ -> functionReason
+              | _ -> cellReason
+              }
+            }
           }
         }
       };
       reason
     } else {
-      "unsupported-type"
+      // Objects are exported at the top of a claim only; as a field, parameter
+      // or result type they are outside the fragment.
+      "nested-object-type"
     }
   }
 }
@@ -209,15 +219,29 @@ fun claimTypeJsonBounded(
   } else if (!ty.insts.isEmpty()) {
     // Only an isolated, bound, unconstrained inference variable can be read
     // from the snapshot. Do not approximate constraints or expand named types.
+    // Everything else is refused under the name of what it is.
     ty.getSingleVar() match {
-    | Some(tv) if (tv.constraints.isEmpty()) ->
-      values.maybeGet(tv.id) match {
-      | Some(SVOpen(bound))
-      | Some(SVClosed(bound)) ->
-        claimTypeJsonBounded(bound, records, values, fuel - 1)
-      | None() -> claimUnavailable("unbound-inference-variable")
+    | Some(tv) ->
+      if (!tv.constraints.isEmpty()) {
+        claimUnavailable("constrained-inference-variable")
+      } else {
+        values.maybeGet(tv.id) match {
+        | Some(SVOpen(bound))
+        | Some(SVClosed(bound)) ->
+          claimTypeJsonBounded(bound, records, values, fuel - 1)
+        | None() -> claimUnavailable("unbound-inference-variable")
+        }
       }
-    | _ -> claimUnavailable("constrained-inference-variable")
+    | None() ->
+      if (ty.insts.size() > 1) {
+        claimUnavailable("several-unexpanded-types")
+      } else if (ty.getSingleInst().isSome()) {
+        claimUnavailable("unexpanded-named-type")
+      } else if (ty.getSingleInter().isSome()) {
+        claimUnavailable("unexpanded-intersection")
+      } else {
+        claimUnavailable("unexpanded-type")
+      }
     }
   } else if (ty.clauses.isTop()) {
     ClaimExport("{\"top\": true, \"atoms\": []}", "")
@@ -262,7 +286,7 @@ fun claimCellBranchJson(
   fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
-): ?String {
+): Result<String, String> {
   callMode = fields.call match {
   | CUnknown() -> Some("unknown")
   | CAbsent() -> Some("absent")
@@ -275,107 +299,95 @@ fun claimCellBranchJson(
   | _ ->
     None() // Positive constructibility is outside the plain-cell fragment.
   };
-  if (
-    fields.isArray == Some(true) ||
-    !fields.symbolFields.isEmpty() ||
-    fields.hasNonSyntheticIndex() ||
-    callMode.isNone() ||
-    newMode.isNone()
-  ) {
-    None()
-  } else {
-    entries = mutable Vector<String>[];
-    ok = true;
-    for (field in fields.fields) {
-      if (field.name.value != "value" || !(field.access is FAPublic())) {
-        !ok = false
-      };
-      read = claimTypeJsonBounded(field.get, false, values, fuel).json;
-      write = claimTypeJsonBounded(field.set, false, values, fuel).json;
-      if (read == claimUnsupported || write == claimUnsupported) {
-        !ok = false
-      };
-      entries.push(
-        jsonObj(
-          Array[
-            ("name", jsonStr(field.name.value)),
-            ("optional", if (field.isOptional) "true" else "false"),
-            ("read", read),
-            ("write", write),
-          ],
+  if (fields.isArray == Some(true)) return Failure("cell-is-array");
+  if (!fields.symbolFields.isEmpty()) return Failure("cell-symbol-field");
+  if (fields.hasNonSyntheticIndex()) return Failure("cell-index-signature");
+  if (callMode.isNone()) return Failure("cell-callable");
+  if (newMode.isNone()) return Failure("cell-constructible");
+  entries = mutable Vector<String>[];
+  for (field in fields.fields) {
+    if (field.name.value != "value") return Failure("cell-field-name");
+    if (!(field.access is FAPublic())) return Failure("cell-field-access");
+    // A field type that cannot be exported names its own reason.
+    read = claimTypeJsonBounded(field.get, false, values, fuel);
+    if (read.reason != "") return Failure(read.reason);
+    write = claimTypeJsonBounded(field.set, false, values, fuel);
+    if (write.reason != "") return Failure(write.reason);
+    entries.push(
+      jsonObj(
+        Array[
+          ("name", jsonStr(field.name.value)),
+          ("optional", if (field.isOptional) "true" else "false"),
+          ("read", read.json),
+          ("write", write.json),
+        ],
+      ),
+    )
+  };
+  if (entries.size() != 1) return Failure("cell-field-count");
+  Success(
+    jsonObj(
+      Array[
+        ("a", jsonStr("record")),
+        ("fields", jsonArr(entries)),
+        // Synthetic indexes are inference bookkeeping, excluded from
+        // runtime field lookup. Record their presence, not their TVars.
+        (
+          "indexes",
+          jsonObj(
+            Array[
+              (
+                "string",
+                jsonStr(
+                  if (fields.stringIndex.isSome()) "synthetic" else {
+                    "absent"
+                  },
+                ),
+              ),
+              (
+                "number",
+                jsonStr(
+                  if (fields.numberIndex.isSome()) "synthetic" else {
+                    "absent"
+                  },
+                ),
+              ),
+              (
+                "symbol",
+                jsonStr(
+                  if (fields.symbolIndex.isSome()) "synthetic" else {
+                    "absent"
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
-      )
-    };
-    if (ok && entries.size() == 1) {
-      Some(
-        jsonObj(
-          Array[
-            ("a", jsonStr("record")),
-            ("fields", jsonArr(entries)),
-            // Synthetic indexes are inference bookkeeping, excluded from
-            // runtime field lookup. Record their presence, not their TVars.
-            (
-              "indexes",
-              jsonObj(
-                Array[
-                  (
-                    "string",
-                    jsonStr(
-                      if (fields.stringIndex.isSome()) "synthetic" else {
-                        "absent"
-                      },
-                    ),
-                  ),
-                  (
-                    "number",
-                    jsonStr(
-                      if (fields.numberIndex.isSome()) "synthetic" else {
-                        "absent"
-                      },
-                    ),
-                  ),
-                  (
-                    "symbol",
-                    jsonStr(
-                      if (fields.symbolIndex.isSome()) "synthetic" else {
-                        "absent"
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            (
-              "call",
-              jsonStr(
-                callMode match {
-                | Some(mode) -> mode
-                | None() -> "unknown"
-                },
-              ),
-            ),
-            (
-              "construct",
-              jsonStr(
-                newMode match {
-                | Some(mode) -> mode
-                | None() -> "unknown"
-                },
-              ),
-            ),
-            (
-              "array",
-              jsonStr(
-                if (fields.isArray == Some(false)) "absent" else "unknown",
-              ),
-            ),
-          ],
+        (
+          "call",
+          jsonStr(
+            callMode match {
+            | Some(mode) -> mode
+            | None() -> "unknown"
+            },
+          ),
         ),
-      )
-    } else {
-      None()
-    }
-  }
+        (
+          "construct",
+          jsonStr(
+            newMode match {
+            | Some(mode) -> mode
+            | None() -> "unknown"
+            },
+          ),
+        ),
+        (
+          "array",
+          jsonStr(if (fields.isArray == Some(false)) "absent" else "unknown"),
+        ),
+      ],
+    ),
+  )
 }
 
 // One free unary call signature with primitive operands. No methods, generics,
@@ -384,59 +396,57 @@ fun claimFunctionBranchJson(
   fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
-): ?String {
+): Result<String, String> {
+  if (!fields.fields.isEmpty() || !fields.symbolFields.isEmpty()) {
+    return Failure("function-has-fields")
+  };
   if (
-    !fields.fields.isEmpty() ||
-    !fields.symbolFields.isEmpty() ||
     fields.stringIndex.isSome() ||
     fields.numberIndex.isSome() ||
-    fields.symbolIndex.isSome() ||
-    fields.isArray == Some(true) ||
-    !(fields.new is CAbsent() || fields.new is CUnknown())
+    fields.symbolIndex.isSome()
   ) {
-    None()
-  } else {
-    fields.call match {
-    | CPresent(TFuns(f, _)) ->
-      if (
-        !f.tparams.isEmpty() ||
-        !(f.thisParam is NoThis()) ||
-        f.params.size() != 1 ||
-        !f.optionalParams.isEmpty() ||
-        f.spreadParam.isSome()
-      ) {
-        None()
-      } else {
-        arg = claimTypeJsonBounded(f.params[0], false, values, fuel).json;
-        ret = claimTypeJsonBounded(f.retType, false, values, fuel).json;
-        if (arg == claimUnsupported || ret == claimUnsupported) {
-          None()
-        } else {
-          Some(
-            jsonObj(
-              Array[
-                ("a", jsonStr("function")),
-                ("params", jsonArr(Array[arg])),
-                ("result", ret),
-                (
-                  "construct",
-                  jsonStr(if (fields.new is CAbsent()) "absent" else "unknown"),
-                ),
-                (
-                  "array",
-                  jsonStr(
-                    if (fields.isArray == Some(false)) "absent" else {
-                      "unknown"
-                    },
-                  ),
-                ),
-              ],
+    return Failure("function-index-signature")
+  };
+  if (fields.isArray == Some(true)) return Failure("function-is-array");
+  if (!(fields.new is CAbsent() || fields.new is CUnknown())) {
+    return Failure("function-constructible")
+  };
+  fields.call match {
+  | CPresent(TFuns(f, _)) ->
+    if (!f.tparams.isEmpty()) return Failure("function-generic");
+    if (!(f.thisParam is NoThis())) return Failure("function-this-parameter");
+    if (!f.optionalParams.isEmpty()) {
+      return Failure("function-optional-parameter")
+    };
+    if (f.spreadParam.isSome()) return Failure("function-rest-parameter");
+    if (f.params.size() != 1) return Failure("function-arity");
+    arg = claimTypeJsonBounded(f.params[0], false, values, fuel);
+    if (arg.reason != "") return Failure(arg.reason);
+    ret = claimTypeJsonBounded(f.retType, false, values, fuel);
+    if (ret.reason != "") return Failure(ret.reason);
+    Success(
+      jsonObj(
+        Array[
+          ("a", jsonStr("function")),
+          ("params", jsonArr(Array[arg.json])),
+          ("result", ret.json),
+          (
+            "construct",
+            jsonStr(if (fields.new is CAbsent()) "absent" else "unknown"),
+          ),
+          (
+            "array",
+            jsonStr(
+              if (fields.isArray == Some(false)) "absent" else {
+                "unknown"
+              },
             ),
-          )
-        }
-      }
-    | _ -> None()
-    }
+          ),
+        ],
+      ),
+    )
+  | CFunction() -> Failure("function-without-signature")
+  | _ -> Failure("not-callable")
   }
 }
 
