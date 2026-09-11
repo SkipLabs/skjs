@@ -9,7 +9,7 @@ verification badges are proof evidence.
 ```sh
 make viewer                              # starts it and opens the page
 make viewer-next                         # the reader being rebuilt, at /next
-node verification/report-viewer/serve.js # http://localhost:8731, without opening
+node verification/report-viewer/serve.mts # http://localhost:8731, without opening
 ```
 
 ## The reader being rebuilt

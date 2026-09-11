@@ -14,5 +14,10 @@
     "lib": ["es2022"],
     "types": ["node"]
   },
-  "include": ["*.mts", "../examples.mts", "../tests/*.mts"]
+  "include": [
+    "*.mts",
+    "../examples.mts",
+    "../tests/*.mts",
+    "../report-viewer/*.mts"
+  ]
 }

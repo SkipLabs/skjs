@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 const { groups, supported }: {
   groups: { label: string; files: string[] }[];
   supported: string[];
-} = require("./report-viewer/examples.js");
+} = require("./report-viewer/examples.mts");
 const root = path.resolve(__dirname, "..");
 process.chdir(root);
 let build = false,

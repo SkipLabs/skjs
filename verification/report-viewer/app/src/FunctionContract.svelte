@@ -8,9 +8,9 @@
    * which are invented here either. Fresh verification checks the contract
    * against the source's own annotations.
    */
-  import surface from "../../../tools/claim-types.js";
+  import surface from "../../../tools/claim-types.mts";
   import LabelChooser from "./LabelChooser.svelte";
-  import type { ShownFunction } from "../../model.js";
+  import type { ShownFunction } from "../../model.mts";
   import type { Candidate } from "../../types.ts";
 
   let {

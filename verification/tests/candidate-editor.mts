@@ -2,16 +2,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
-import { createRequire } from "node:module";
-// Plain JavaScript modules; the reader loads these in a browser too.
-const require = createRequire(import.meta.url);
-const {
+import {
   claimValue,
   editClaim,
   addClaim,
   addFunction,
-} = require("../report-viewer/candidate.js");
-const { candidateReport } = require("../report-viewer/serve.js");
+} from "../report-viewer/candidate.mts";
+import { candidateReport } from "../report-viewer/serve.mts";
 process.env.SKJS_BIN = "/no-producer-in-candidate-tests";
 
 const file = "verification/tests/stateful-source/closures.ts";

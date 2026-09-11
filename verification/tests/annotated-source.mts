@@ -6,6 +6,8 @@ import assert from "node:assert";
 import { spawnSync } from "node:child_process";
 import { hash,render,fromSkjs,compareClaims,typeText } from "../tools/annotate-source.mts";
 import { createRequire } from "node:module";
+import { parseReport } from "../report-viewer/model.mts";
+import surface from "../tools/claim-types.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(import.meta.filename);
@@ -173,23 +175,21 @@ try {
     assert(annotated.includes("ends *\\/ here"),annotated);
     assert(!/\*\/ here/.test(annotated),"the terminator must not survive unescaped");
     // The reader recovers the exact source from that comment.
-    const {parseReport}=require("../report-viewer/model.js");
     assert.equal(parseReport(annotated).source,text);
   });
   const real=fs.readFileSync(fileKey,"utf8"), claims=JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   // Surface syntax is what a reader edits claims in, so it has to determine the
   // producer's encoding exactly. Check that on every type in a real export.
   test("every exported claim type survives printing and reading back",()=>{
-    const {printType,parseType}=require("../tools/claim-types.js");
     const types: any[]=[];
     const walk=(f: any) =>{for(const e of f.exprs||[])types.push(e.type);
       for(const env of f.envs||[])for(const v of env.vars||[])types.push(v.type);
       for(const p of f.params||[])types.push(p.type); types.push(f.retType);};
     for(const file of claims)for(const f of file.functions)walk(f);
-    const printable=types.filter(t=>t&&!t.unsupported&&printType(t).printable);
+    const printable=types.filter(t=>t&&!t.unsupported&&surface.printType(t).printable);
     assert(printable.length>50,`only ${printable.length} printable types`);
     for(const type of printable)
-      assert.deepEqual(parseType(printType(type).text,type),type,printType(type).text);
+      assert.deepEqual(surface.parseType(surface.printType(type).text,type),type,surface.printType(type).text);
   });
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");

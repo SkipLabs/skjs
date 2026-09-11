@@ -13,7 +13,7 @@
    * so there is nothing here that can express it, rather than a field that
    * takes it and fails later.
    */
-  import reader from "../../obligation.js";
+  import reader from "../../obligation.mts";
 
   let {
     types,

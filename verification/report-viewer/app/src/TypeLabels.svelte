@@ -10,7 +10,7 @@
    * Naming a type that is not already a row would mean interning it, which is
    * the producer's job. So this shows what can be named, and nothing more.
    */
-  import reader from "../../obligation.js";
+  import reader from "../../obligation.mts";
 
   let { types }: { types: unknown[] } = $props();
 

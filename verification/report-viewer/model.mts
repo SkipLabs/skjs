@@ -1,14 +1,93 @@
-"use strict";
 // Surface type printing is shared with the report writer.
-const SURFACE =
-  typeof module !== "undefined" ? require("../tools/claim-types.js") : surfaceTypes;
-// Not named printType: claim-types.js owns that name in the page's one scope.
-const printSurface = (type) => SURFACE.printType(type);
+import type { Bundle, Producer } from "./types.ts";
+import type { Span } from "../tools/source-claims.mts";
+
+/** A claim as the reader shows it, after the model has decoded its type. */
+export interface ShownClaim {
+  pos: Span;
+  /** Surface syntax, printed from the producer's encoding. */
+  type: string;
+  /** The producer's own encoding, or null where there was none. */
+  encoding: unknown;
+  /** That encoding as formatted JSON, for the inspector. */
+  raw: string | null;
+  recovery?: boolean;
+  unavailable?: boolean;
+  failure?: string;
+  failureKind?: string;
+  failureRole?: string;
+}
+
+export interface ShownBinding {
+  name: string;
+  type: string;
+  encoding?: unknown;
+  raw?: string | null;
+}
+
+export interface ShownEntry {
+  pos: Span;
+  bindings: ShownBinding[];
+  /** Names whose type differs from the preceding entry's. */
+  changed: Set<string>;
+  recovery?: boolean;
+  unsupported?: string[];
+  failure?: string;
+  failureKind?: string;
+}
+
+export interface ShownGap {
+  pos: Span;
+  detail: string;
+  reason: string;
+  failure?: string;
+  failureKind?: string;
+}
+
+/** One function of the report, with everything the view draws for it. */
+export interface ShownFunction {
+  id: string;
+  name: string;
+  namePos: Span;
+  pos: Span;
+  signature?: { params: { name: string; type: string }[]; retType: string };
+  entries: ShownEntry[];
+  exprs: ShownClaim[];
+  gaps: ShownGap[];
+  /** Sites a located failure names where nothing is claimed. */
+  failureSites?: ShownClaim[];
+  missingSites?: { kind: "expression" | "environment"; pos: Span }[];
+  /** True for a source function the candidate says nothing about at all. */
+  candidateMissing?: boolean;
+  /** Its parameter names, in source order, for the contract it needs. */
+  parameters?: string[];
+  /** What the report says about it, where there is no result to report. */
+  detail?: string;
+  /** The verifier's verdict over this function's claims. */
+  status: string;
+  /** The producer's own collection outcome. */
+  collection?: { completion: string; quality: string; mode: string };
+  quality?: string;
+  failure?: string;
+  obligation?: unknown;
+}
+
+export interface Report {
+  source: string;
+  producer: Producer | string;
+  functions: ShownFunction[];
+  diagnostics?: string;
+  missingFunctions?: { name: string; namePos: Span }[];
+}
+
+
+import SURFACE from "../tools/claim-types.mts";
+const printSurface = (type: any) => SURFACE.printType(type);
 
 /* ---------- reading the annotated format ---------- */
 const RE_COMMENT = /\/\*\s*@verify-report([\s\S]*?)\*\//g;
 
-function unescapeText(s) {
+function unescapeText(s: any) {
   try {
     return JSON.parse('"' + s.replace(/\n/g, " ") + '"');
   } catch (e) {
@@ -17,8 +96,8 @@ function unescapeText(s) {
 }
 
 // split "a: T, b: U" on top-level commas (types may be raw JSON)
-function splitTop(s, sep) {
-  const out = [];
+function splitTop(s: any, sep: any) {
+  const out: any[] = [];
   let depth = 0,
     q = null,
     cur = "";
@@ -46,19 +125,19 @@ function splitTop(s, sep) {
   return out.map((x) => x.trim());
 }
 
-function renderType(text) {
+function renderType(text: string) {
   const value = (text || "").trim();
   // Display text is already produced by the report writer. Never reinterpret
   // unknown producer encodings as a different type.
   return { text: value, raw: value.startsWith("{") ? value : null };
 }
 
-function parseReport(annotated) {
-  const rep = {
+function parseReport(annotated: any) {
+  const rep: Record<string, any> = {
     producer: "unknown",
     file: "(unknown source)",
-    meta: {},
-    functions: [],
+    meta: {} as Record<string, any>,
+    functions: [] as any[],
     source: "",
   };
   let src = "",
@@ -95,9 +174,9 @@ function parseReport(annotated) {
     let core = span ? text.slice(0, span.index).trim() : text;
     // The generator prefixes machine-readable fields; the prose after them is for
     // people. Reports written before those fields still parse by their prose.
-    const fld = {};
+    const fld: Record<string, any> = {};
     core = core
-      .replace(/^(?:[a-z]+=[^;]*; )+/, (run) => {
+      .replace(/^(?:[a-z]+=[^;]*; )+/, (run: any) => {
         for (const kv of run.split("; ")) {
           const i = kv.indexOf("=");
           if (i > 0) fld[kv.slice(0, i)] = kv.slice(i + 1);
@@ -136,8 +215,8 @@ function parseReport(annotated) {
         mode: "",
         entries: [],
         exprs: [],
-        gaps: [],
-      };
+        gaps: [] as any[],
+      } as Record<string, any>;
       for (const p of parts.slice(1)) {
         if (p.startsWith("producer=")) f.producer = p.slice(9);
         else if (p.startsWith("claimed ")) f.signature = p.slice(8).trim();
@@ -197,25 +276,25 @@ function parseReport(annotated) {
       e.changed = new Set();
       for (const b of e.bindings)
         if (prev.get(b.name) !== b.type) e.changed.add(b.name);
-      prev = new Map(e.bindings.map((b) => [b.name, b.type]));
+      prev = new Map(e.bindings.map((b: any) => [b.name, b.type]));
     }
   }
   return rep;
 }
 
 // A function's contract, in the same syntax as its claims.
-function signatureText(signature) {
-  const part = (type) => {
+function signatureText(signature: any) {
+  const part = (type: any) => {
     const printed = printSurface(type);
     return printed.printable ? printed.text : JSON.stringify(type);
   };
   const params = (signature.params || [])
-    .map((p) => (p.name ? p.name + ": " : "") + part(p.type))
+    .map((p: any) => (p.name ? p.name + ": " : "") + part(p.type))
     .join(", ");
   return "(" + params + ") => " + part(signature.retType);
 }
 
-function fromBundle(bundle) {
+function fromBundle(bundle: any) {
   const { source, manifest: m } = bundle;
   if (
     typeof source !== "string" ||
@@ -223,7 +302,7 @@ function fromBundle(bundle) {
     !Array.isArray(m.functions)
   )
     throw new Error("Expected source text and a version 1 report manifest");
-  const span = (pos) => {
+  const span = (pos: any) => {
     if (
       !Array.isArray(pos) ||
       pos.length !== 2 ||
@@ -235,8 +314,8 @@ function fromBundle(bundle) {
       throw new Error("Invalid claim source span");
     return pos;
   };
-  const missingSites = (f, pos) =>
-    (f.missingSites || []).map((site) => {
+  const missingSites = (f: any, pos: any) =>
+    (f.missingSites || []).map((site: any) => {
       if (!["expression", "environment"].includes(site.kind))
         throw new Error("Invalid missing claim kind");
       span(site.pos);
@@ -244,26 +323,26 @@ function fromBundle(bundle) {
         throw new Error("Missing site outside function");
       return site;
     });
-  const raw = (x) => (x === undefined ? null : JSON.stringify(x, null, 2));
+  const raw = (x: any) => (x === undefined ? null : JSON.stringify(x, null, 2));
   // Claims are shown in the syntax they were written in. The producer's display
   // string is the fallback: it is what a report carries when there is no
   // encoding to print, and the exact encoding stays available beside it.
-  const display = (encoding, fallback) => {
+  const display = (encoding: any, fallback: any) => {
     if (encoding === undefined || encoding === null) return fallback;
     const printed = printSurface(encoding);
     return printed.printable ? printed.text : fallback;
   };
   const gaps = [
     ...(m.gaps || []),
-    ...(m.comparison?.changes || []).map((c, i) => ({
+    ...(m.comparison?.changes || []).map((c: any, i: number) => ({
       id: `g${(m.gaps || []).length + i}`,
       pos: c.span,
       status: `claim edit: ${c.status} ${c.kind}`,
     })),
   ];
-  const functions = m.functions.map((f) => {
+  const functions = m.functions.map((f: any) => {
     const pos = span(f.pos);
-    const result = m.results?.find((r) => r.function === f.id);
+    const result = m.results?.find((r: any) => r.function === f.id);
     const recovery = f.collection?.quality === "recovery";
     return {
       ...f,
@@ -281,12 +360,12 @@ function fromBundle(bundle) {
       collection: f.collection?.completion || "",
       quality: f.collection?.quality || "",
       mode: f.collection?.mode || "",
-      entries: f.entries.map((e) => ({
+      entries: f.entries.map((e: any) => ({
         ...e,
         pos: span(e.pos),
         recovery,
         changed: new Set(),
-        bindings: e.bindings.map((b) => ({
+        bindings: e.bindings.map((b: any) => ({
           ...b,
           type: display(b.raw, b.type),
           encoding: b.raw ?? null,
@@ -294,7 +373,7 @@ function fromBundle(bundle) {
           unavailable: b.raw?.unsupported === true,
         })),
       })),
-      exprs: f.expressions.map((e) => ({
+      exprs: f.expressions.map((e: any) => ({
         ...e,
         pos: span(e.pos),
         recovery,
@@ -314,29 +393,29 @@ function fromBundle(bundle) {
     };
   });
   for (const f of functions) {
-    f.entries.sort((a, b) => a.pos[0] - b.pos[0]);
+    f.entries.sort((a: any, b: any) => a.pos[0] - b.pos[0]);
     let previous = new Map();
     for (const e of f.entries) {
       e.changed = new Set(
         e.bindings
-          .filter((b) => previous.get(b.name) !== b.type)
-          .map((b) => b.name),
+          .filter((b: any) => previous.get(b.name) !== b.type)
+          .map((b: any) => b.name),
       );
-      previous = new Map(e.bindings.map((b) => [b.name, b.type]));
+      previous = new Map(e.bindings.map((b: any) => [b.name, b.type]));
     }
   }
   for (const f of functions) {
-    const result = m.results?.find((r) => r.function === f.id);
+    const result = m.results?.find((r: any) => r.function === f.id);
     const location = result?.location;
     if (f.status !== "not-established" || !location) continue;
     // Where a location does not land on a claim, the record's own environment
     // offset says which statement entry it belongs to.
-    const entryStart = (result, location) =>
+    const entryStart = (result: any, location: any) =>
       result.obligation?.destination?.sourceMap?.environmentStart ??
       result.obligation?.source?.sourceMap?.environmentStart ??
       location.start ??
       (Array.isArray(location.pos) ? location.pos[0] : undefined);
-    const samePos = (x) =>
+    const samePos = (x: any) =>
       location.pos !== undefined &&
       JSON.stringify(x.pos) === JSON.stringify(location.pos);
     // A claim the verifier needed and did not find belongs on the gap that
@@ -347,20 +426,20 @@ function fromBundle(bundle) {
       // so this attaches to the claim that is missing one, not to a judgement.
       location.kind === "unavailable-type-claim"
         ? location.start !== undefined
-          ? f.entries.find((e) => e.pos[0] === location.start)
+          ? f.entries.find((e: any) => e.pos[0] === location.start)
           : f.exprs.find(samePos)
         : location.kind === "missing-expression-claim"
         ? f.gaps.find(samePos) || f.exprs.find(samePos)
         : location.kind === "missing-environment-claim"
-          ? f.gaps.find((g) => g.pos[0] === location.start) ||
-            f.entries.find((e) => e.pos[0] === location.start)
+          ? f.gaps.find((g: any) => g.pos[0] === location.start) ||
+            f.entries.find((e: any) => e.pos[0] === location.start)
           : location.kind === "environment-obligation"
-            ? f.entries.find((e) => e.pos[0] === location.start)
+            ? f.entries.find((e: any) => e.pos[0] === location.start)
             : // A parameter claim contradicting its annotation: the first entry
               // that names the parameter is where the reader sees the claim.
               location.kind === "parameter-claim"
-              ? f.entries.find((e) =>
-                  e.bindings.some((b) => b.name === location.binding),
+              ? f.entries.find((e: any) =>
+                  e.bindings.some((b: any) => b.name === location.binding),
                 )
             : [
                   "expression-obligation",
@@ -371,7 +450,7 @@ function fromBundle(bundle) {
                 // into a statement checkpoint has none: its destination is the
                 // entry, which the record names.
                 f.exprs.find(samePos) ||
-                f.entries.find((e) => e.pos[0] === entryStart(result, location))
+                f.entries.find((e: any) => e.pos[0] === entryStart(result, location))
               : null;
     if (failed) {
       failed.failure =
@@ -419,12 +498,12 @@ function fromBundle(bundle) {
     if (
       f.namePos[0] < pos[0] ||
       f.namePos[1] > pos[1] ||
-      functions.some((existing) => existing.namePos?.[0] === f.namePos[0])
+      functions.some((existing: any) => existing.namePos?.[0] === f.namePos[0])
     )
       throw new Error("Invalid missing function identity");
     if (
       !Array.isArray(f.parameters) ||
-      f.parameters.some((p) => typeof p !== "string")
+      f.parameters.some((p: any) => typeof p !== "string")
     )
       throw new Error("Invalid missing function parameters");
     functions.push({
@@ -444,9 +523,9 @@ function fromBundle(bundle) {
         .map((g) => ({ ...g, detail: g.status })),
     });
   }
-  functions.sort((a, b) => a.start - b.start);
+  functions.sort((a: any, b: any) => a.start - b.start);
   const unattached = gaps.filter(
-    (g) => !functions.some((f) => g.pos[0] >= f.start && g.pos[1] <= f.end),
+    (g) => !functions.some((f: any) => g.pos[0] >= f.start && g.pos[1] <= f.end),
   );
   if (unattached.length)
     functions.push({
@@ -493,20 +572,20 @@ const MARK_LISTS = [
   ["g", "gaps"],
 ];
 
-function findMark(report, manifestId) {
+function findMark(report: any, manifestId: any) {
   if (!manifestId) return null;
   for (let fn = 0; fn < report.functions.length; fn++) {
     const f = report.functions[fn];
     if (f.id === manifestId) return { fn, id: null, manifestId };
     for (const [prefix, list] of MARK_LISTS) {
-      const i = (f[list] || []).findIndex((x) => x.id === manifestId);
+      const i = (f[list] || []).findIndex((x: any) => x.id === manifestId);
       if (i >= 0) return { fn, id: prefix + i, manifestId };
     }
   }
   return null;
 }
 
-function markIdOf(report, fn, id) {
+function markIdOf(report: any, fn: any, id: any) {
   const f = report.functions[fn];
   if (!f) return "";
   if (!id) return f.id || "";
@@ -517,7 +596,7 @@ function markIdOf(report, fn, id) {
 // Movement through the marks as drawn. It wraps, and an unknown current
 // position starts at the end nearest the direction of travel, so the first key
 // press always lands on something.
-function nextMark(marks, current, step) {
+function nextMark(marks: any, current: any, step: any) {
   if (!marks.length) return null;
   const at = marks.indexOf(current);
   if (at < 0) return step > 0 ? marks[0] : marks[marks.length - 1];
@@ -526,8 +605,12 @@ function nextMark(marks, current, step) {
 
 // Counts of recorded outcomes. These summarize what the report says, and say
 // nothing about claims a function result does not cover.
-function summarize(functions) {
-  const tally = { functions: functions.length, gaps: 0, status: {} };
+function summarize(functions: any) {
+  const tally = {
+    functions: functions.length,
+    gaps: 0,
+    status: {} as Record<string, number>,
+  };
   for (const f of functions) {
     tally.status[f.status] = (tally.status[f.status] || 0) + 1;
     tally.gaps += (f.gaps || []).length;
@@ -539,7 +622,7 @@ function summarize(functions) {
 // to reopen that view, never a record that anything was established. Older links
 // carrying a verify flag still work: verification is no longer optional, so the
 // flag is read and ignored.
-function parseReportLink(search, hash) {
+function parseReportLink(search: any, hash: any) {
   const params = new URLSearchParams(search || "");
   return {
     file: params.get("file") || "",
@@ -547,15 +630,14 @@ function parseReportLink(search, hash) {
   };
 }
 
-function reportLink({ file, mark }) {
+function reportLink({ file, mark }: { file?: string; mark?: string }) {
   const params = new URLSearchParams();
   if (file) params.set("file", file);
   const query = params.toString();
   return (query ? "?" + query : "") + (mark ? "#" + mark : "");
 }
 
-if (typeof module !== "undefined")
-  module.exports = {
+export {
     signatureText,
     parseReport,
     fromBundle,
@@ -566,4 +648,4 @@ if (typeof module !== "undefined")
     summarize,
     parseReportLink,
     reportLink,
-  };
+};

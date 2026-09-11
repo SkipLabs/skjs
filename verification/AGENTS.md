@@ -94,15 +94,17 @@ an exporter change needs a place to show, one phenomenon per file.
 
 ## Conventions
 
-- Formatting: everything is prettier-formatted (`make fmt` at the root). The
-  `.js` that remains is the reader's own, which the browser loads as plain
-  `<script>` and which is not formatted; leave it alone until the reader is
-  rewritten with a build step.
+- Formatting: everything is prettier-formatted (`make fmt` at the root).
+- The reader is a Svelte application in `report-viewer/app`, built by Vite and
+  served by `report-viewer/serve.mts`. `npm run check` there is svelte-check,
+  not `tsc`: `tsc` does not look inside a component's template, which is
+  exactly where a wrong property name hides. `make viewer` builds and serves.
 - Every module the node side runs is `.mts`, and `tools/tsconfig.json` covers
   all of them — the trusted front end, the corpus driver and the suites — under
   one fully strict configuration, `noImplicitAny` and `strictNullChecks`
-  included. A new file lands in that project by being where it belongs;
-  nothing is exempt.
+  included — the trusted front end, the corpus driver, the suites, and the
+  reader's own model and server. A new file lands in that project by being
+  where it belongs; nothing is exempt.
 - `tools/source-claims.mts` describes the `stateful-source-v3` wire format, and
   `report-viewer/types.ts` the report the reader displays. A tool that writes
   or reads one of those documents is typed against that description rather

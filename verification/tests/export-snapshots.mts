@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import surface from "../tools/claim-types.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
-const { printFull } = require("../tools/claim-types.js");
 // Export snapshots. SKJS's claims for each probe source, printed in the syntax
 // the viewer shows, with every unavailable type carrying the exporter's
 // reason. The expected text sits beside the probe; a diff is a change in what
@@ -37,7 +37,7 @@ function render(source: string, fn: any) {
     );
   const type = (t: any, kind: string, pos: any, binding: any) => {
     const reason = reasons.get([kind, pos ? span(pos) : "", binding || ""].join("|"));
-    const text = printFull(t);
+    const text = surface.printFull(t);
     return text === "(unavailable)" && reason
       ? `(unavailable: ${reason})`
       : reason

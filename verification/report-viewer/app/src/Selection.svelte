@@ -13,9 +13,9 @@
    */
   import ClaimEditor from "./ClaimEditor.svelte";
   import FunctionContract from "./FunctionContract.svelte";
-  import { proofLabel } from "../../marks.js";
-  import { claimValue, type ClaimSite } from "../../candidate.js";
-  import type { Report, ShownFunction } from "../../model.js";
+  import { proofLabel } from "../../marks.mts";
+  import { claimValue, type ClaimSite } from "../../candidate.mts";
+  import type { Report, ShownFunction } from "../../model.mts";
   import type { Candidate } from "../../types.ts";
 
   let {

@@ -18,8 +18,8 @@ import {
   addFunction,
   editClaim,
   type ClaimSite,
-} from "../../candidate.js";
-import { fromBundle, type Report, type ShownFunction } from "../../model.js";
+} from "../../candidate.mts";
+import { fromBundle, type Report, type ShownFunction } from "../../model.mts";
 import type {
   Bundle,
   Candidate,

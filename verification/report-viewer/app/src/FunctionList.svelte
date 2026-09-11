@@ -4,8 +4,8 @@
    * producer concluded, and what proof search found over the claims it made.
    * They are different questions, so neither stands for the other.
    */
-  import { outcome } from "../../marks.js";
-  import type { ShownFunction } from "../../model.js";
+  import { outcome } from "../../marks.mts";
+  import type { ShownFunction } from "../../model.mts";
   import type { CollectionRun } from "../../types.ts";
 
   let {

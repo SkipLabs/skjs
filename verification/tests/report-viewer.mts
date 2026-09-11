@@ -5,9 +5,7 @@ import { hash, render } from "../tools/annotate-source.mts";
 import { createRequire } from "node:module";
 import type { FailureKind, Manifest } from "../report-viewer/types.ts";
 import type { Span } from "../tools/source-claims.mts";
-// Plain JavaScript modules; the reader loads these in a browser too.
-const require = createRequire(import.meta.url);
-const {
+import {
   fromBundle,
   parseReport,
   renderType,
@@ -17,10 +15,12 @@ const {
   summarize,
   parseReportLink,
   reportLink,
-} = require("../report-viewer/model.js");
-const marks = require("../report-viewer/marks.js");
-const surface = require("../tools/claim-types.js");
-const ob = require("../report-viewer/obligation.js");
+} from "../report-viewer/model.mts";
+import * as marks from "../report-viewer/marks.mts";
+import surface from "../tools/claim-types.mts";
+import ob from "../report-viewer/obligation.mts";
+// Plain JavaScript modules; the reader loads these in a browser too.
+const require = createRequire(import.meta.url);
 const source =
   "// 😀\nfunction f(x: boolean): boolean {\n  return (\n    x\n  );\n}\n";
 const start = source.indexOf("function"),
@@ -188,12 +188,12 @@ shifted.manifest.functions[0].expressions.unshift({
   pos: [source.indexOf("x\n"), source.indexOf("x\n") + 1],
   type: "boolean",
 });
-assert.equal(findMark(fromBundle(shifted), "f0x0").id, "e1");
+assert.equal(findMark(fromBundle(shifted), "f0x0")!.id, "e1");
 const entryBundle = structuredClone(bundle);
 entryBundle.manifest.functions[0].entries = [
   { id: "f0e0", pos: [start, end], bindings: [] },
 ];
-assert.equal(findMark(fromBundle(entryBundle), "f0e0").id, "n0");
+assert.equal(findMark(fromBundle(entryBundle), "f0e0")!.id, "n0");
 const drawn = ["n0", "e0", "e1", "g0"];
 assert.equal(nextMark(drawn, "e0", 1), "e1");
 assert.equal(nextMark(drawn, "e0", -1), "n0");
@@ -342,7 +342,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     all.items.map((i: any) => i.id),
     ["e0", "e1", "e2"],
   );
-  assert.equal(marks.firstFailure(fn).id, "e1");
+  assert.equal(marks.firstFailure(fn)!.id, "e1");
   assert.equal(marks.firstFailure({ exprs: [], entries: [], gaps: [] }), null);
 }
 
@@ -674,6 +674,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     },
   };
   const view = ob.obligationView(record);
+  assert(view, "the reader made nothing of a valid record");
   assert.equal(view.title, "Return contract");
   assert.equal(view.role, "return-contract");
   assert.equal(view.conclusion, "true");
@@ -693,12 +694,12 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   // An unknown role stays generic rather than being guessed into a story.
   const odd = structuredClone(record);
   odd.source.sourceMap.role = "future-role";
-  assert.equal(ob.obligationView(odd).title, "Obligation at this point");
-  assert.match(ob.obligationView(odd).what, /not one this reader knows/);
+  assert.equal(ob.obligationView(odd)!.title, "Obligation at this point");
+  assert.match(ob.obligationView(odd)!.what, /not one this reader knows/);
   // Only a return contract names slot 0 as the returned value.
   const plain = structuredClone(record);
   plain.source.sourceMap.role = "expression-claim";
-  assert.equal(ob.obligationView(plain).rows[0].note, "");
+  assert.equal(ob.obligationView(plain)!.rows[0].note, "");
 }
 
 // An edge: the destination map acts on the available context, and the slots
@@ -727,6 +728,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     },
   };
   const view = ob.obligationView(record);
+  assert(view, "the reader made nothing of a valid record");
   assert.equal(view.kindLabel, "edge coverage");
   assert.deepEqual(
     view.rows.map((r: any) => [r.slot, r.have, r.need, r.differs]),
@@ -735,9 +737,9 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
       [1, "null", "null", false],
     ],
   );
-  assert.match(view.observation, /slot 0 is true/);
-  assert.match(view.observation, /not a claim that execution took it/);
-  assert.match(view.note, /edge 1/);
+  assert.match(view.observation!, /slot 0 is true/);
+  assert.match(view.observation!, /not a claim that execution took it/);
+  assert.match(view.note!, /edge 1/);
   assert.deepEqual(
     view.endpoints.map((e: any) => [e.end, e.sourceMap.pos]),
     [
@@ -755,6 +757,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     role: "heap-observation",
   };
   const checkpointView = ob.obligationView(checkpoint);
+  assert(checkpointView, "the reader made nothing of a valid record");
   assert.equal(checkpointView.title, "Current-content assertion");
   assert.equal(checkpointView.environmentStart, 10);
   assert.deepEqual(
@@ -777,6 +780,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     links: [{ cell: 1, value: 0, alias: false }],
   };
   const observedView = ob.obligationView(observed);
+  assert(observedView, "the reader made nothing of a valid record");
   assert.equal(
     observedView.rows.every((r: any) => !r.differs),
     true,
@@ -790,13 +794,14 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
     ],
   );
   assert.equal(observedView.knowledgeIsTheDifference, true);
-  assert.match(observedView.note, /Every binding's contract already agrees/);
+  assert.match(observedView.note!, /Every binding's contract already agrees/);
   // A differing contract is still reported as the difference it is.
   const both = structuredClone(observed);
   both.transfer.available = [[2], [0]];
   const bothView = ob.obligationView(both);
+  assert(bothView, "the reader made nothing of a valid record");
   assert.equal(bothView.knowledgeIsTheDifference, false);
-  assert.match(bothView.note, /slot 0 is where/);
+  assert.match(bothView.note!, /slot 0 is where/);
   assert.equal(bothView.knowledge.length, 3);
   // An alias link reads as an equality between slots, not as a heap read.
   assert.equal(
@@ -828,15 +833,16 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
   tagged.transfer.tagObservation = { test: "nul", answer: false, slot: 0 };
   tagged.source.sourceMap.role = "tag-dispatch";
   const tagView = ob.obligationView(tagged);
+  assert(tagView, "the reader made nothing of a valid record");
   assert.equal(tagView.title, "Tag dispatch");
-  assert.match(tagView.observation, /tag test nul answers false on slot 0/);
-  assert.match(tagView.observation, /not a claim that execution took it/);
+  assert.match(tagView.observation!, /tag test nul answers false on slot 0/);
+  assert.match(tagView.observation!, /not a claim that execution took it/);
   // An identity map selects the available context unchanged.
   assert.deepEqual(ob.mapContext([[1], [2]], null), [[1], [2]]);
   const mismatched = structuredClone(record);
   mismatched.transfer.target.mapping = [0, 1];
   assert.deepEqual(
-    ob.obligationView(mismatched).rows.map((r: any) => r.differs),
+    ob.obligationView(mismatched)!.rows.map((r: any) => r.differs),
     [true, true],
   );
 }

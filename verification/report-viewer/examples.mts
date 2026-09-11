@@ -1,4 +1,3 @@
-"use strict";
 
 // These files are exercised through the current source consumer by run.sh.
 const supported = [
@@ -51,4 +50,4 @@ const groups = [
     ].map((name) => `verification/tests/unsupported/${name}.ts`),
   },
 ];
-module.exports = { supported, groups };
+export { supported, groups };

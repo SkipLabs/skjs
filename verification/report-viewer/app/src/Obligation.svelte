@@ -9,8 +9,8 @@
    * claim share a span and are different obligations — and where the record
    * names no specific role, this says nothing rather than inventing one.
    */
-  import reader, { type ObligationView } from "../../obligation.js";
-  import type { ShownFunction } from "../../model.js";
+  import reader, { type ObligationView } from "../../obligation.mts";
+  import type { ShownFunction } from "../../model.mts";
 
   let {
     fn,

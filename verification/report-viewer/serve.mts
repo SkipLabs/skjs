@@ -1,24 +1,29 @@
 #!/usr/bin/env node
 "use strict";
 
-const http = require("node:http");
-const fs = require("node:fs/promises");
-const path = require("node:path");
-const os = require("node:os");
-const { promisify } = require("node:util");
-const execFile = promisify(require("node:child_process").execFile);
+import http from "node:http";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
+import { spawn } from "node:child_process";
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCb);
+const __dirname = path.dirname(import.meta.filename);
 
 const REPO = path.resolve(
   process.env.SKJS_REPO || path.join(__dirname, "../.."),
 );
 const VERIFIER = "verification/lean/.lake/build/bin/verifier";
 const PORT = Number(process.env.PORT || 8731);
-const EXAMPLES = "./examples.js";
+const EXAMPLES = "./examples.mts";
 // Read the example groups per request: editing that list should show up on the
-// next page load, not only after restarting this server.
-function exampleGroups() {
-  delete require.cache[require.resolve(EXAMPLES)];
-  return require(EXAMPLES);
+// next page load, not only after restarting this server. A module is cached by
+// its specifier, so a fresh one is asked for each time.
+async function exampleGroups() {
+  return import(`${EXAMPLES}?at=${Date.now()}`);
 }
 
 // Any repository source can be opened, so the picker is a starting point rather
@@ -34,11 +39,11 @@ const SKIP = new Set([
   ".lake",
   ".cache",
 ]);
-let listing = { at: 0, files: [] };
+let listing: { at: number; files: string[] } = { at: 0, files: [] };
 async function sources() {
   if (Date.now() - listing.at < 10000) return listing.files;
-  const files = [];
-  const walk = async (dir) => {
+  const files: string[] = [];
+  const walk = async (dir: any) => {
     if (files.length > 20000) return;
     let entries;
     try {
@@ -62,7 +67,7 @@ async function sources() {
   return files;
 }
 
-async function repositoryPath(relative) {
+async function repositoryPath(relative: any) {
   const resolved = await fs
     .realpath(path.resolve(REPO, relative))
     .catch(() => {
@@ -84,10 +89,10 @@ async function repositoryPath(relative) {
  * What is written is the candidate itself, not a display bundle, so the same
  * file can be handed to `annotate-source.mts --claims`.
  */
-const draftPath = (source) => source.replace(/\.tsx?$/, "") + ".candidate.json";
+const draftPath = (source: string) => source.replace(/\.tsx?$/, "") + ".candidate.json";
 
 /** The draft beside a source, where one exists and is about that source. */
-async function readDraft(absolute, sourceSha256) {
+async function readDraft(absolute: any, sourceSha256: any) {
   const text = await fs.readFile(draftPath(absolute), "utf8").catch(() => null);
   if (text === null) return null;
   try {
@@ -113,7 +118,7 @@ async function hasVerifier() {
 // through the same verifier. It states types and no current-content
 // assertions, so a cell read after a write fails here by its own limits;
 // tests/tsc-claims/README.md says which failures are which.
-async function tscAnalyse(relative, source, tmp, options) {
+async function tscAnalyse(relative: any, source: string, tmp: any, options: any) {
   const startedAt = Date.now();
   try {
     const claims = path.join(tmp, "tsc-claims.mtson");
@@ -137,8 +142,8 @@ async function tscAnalyse(relative, source, tmp, options) {
     const verify = await hasVerifier();
     if (verify) args.push("--verify", VERIFIER);
     const result = await execFile(process.execPath, args, options);
-    const bundle = JSON.parse(result.stdout);
-    const digest = require("node:crypto")
+    const bundle = JSON.parse(String(result.stdout));
+    const digest = crypto
       .createHash("sha256")
       .update(source)
       .digest("hex");
@@ -167,7 +172,7 @@ async function tscAnalyse(relative, source, tmp, options) {
   }
 }
 
-async function analyse(relative, producer = "skjs") {
+async function analyse(relative: any, producer = "skjs") {
   const bundle = await collect(relative, producer);
   // The draft, where one is beside the source and is about this source. The
   // reader decides what to do with it; the server only reports that it exists.
@@ -178,7 +183,7 @@ async function analyse(relative, producer = "skjs") {
   return draft ? { ...bundle, draft } : bundle;
 }
 
-async function collect(relative, producer = "skjs") {
+async function collect(relative: any, producer = "skjs") {
   const sourcePath = await repositoryPath(relative);
   const source = await fs.readFile(sourcePath, "utf8");
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "claim-report-"));
@@ -189,7 +194,7 @@ async function collect(relative, producer = "skjs") {
   // older one.
   const startedAt = Date.now();
   try {
-    let run;
+    let run: { stdout: string; stderr?: string };
     try {
       run = await execFile(
         "docker",
@@ -214,8 +219,15 @@ async function collect(relative, producer = "skjs") {
         ],
         options,
       );
-    } catch (error) {
-      // Normal rejection can still yield a partial collection. Operational errors cannot.
+    } catch (thrown) {
+      // Normal rejection can still yield a partial collection. Operational
+      // errors cannot, and a thrown value is unknown until something checks it.
+      const error = thrown as {
+        killed?: boolean;
+        code?: unknown;
+        stdout: string;
+        stderr?: string;
+      };
       if (
         error.killed ||
         typeof error.code !== "number" ||
@@ -238,9 +250,9 @@ async function collect(relative, producer = "skjs") {
       "--stdout",
       "json",
     ];
-    if (run.stderr.trim()) {
+    if ((run.stderr ?? "").trim()) {
       const diagnostics = path.join(tmp, "diagnostics.txt");
-      await fs.writeFile(diagnostics, run.stderr);
+      await fs.writeFile(diagnostics, (run.stderr ?? ""));
       args.push("--diagnostics", diagnostics);
     }
     const verify = await hasVerifier();
@@ -249,7 +261,7 @@ async function collect(relative, producer = "skjs") {
     const bundle = JSON.parse(result.stdout);
     if (source !== (await fs.readFile(sourcePath, "utf8")))
       throw new Error("Source changed during collection; run again");
-    const digest = require("node:crypto")
+    const digest = crypto
       .createHash("sha256")
       .update(source)
       .digest("hex");
@@ -273,7 +285,7 @@ async function collect(relative, producer = "skjs") {
         format: "skjs",
         file: relative,
         sourceSha256: digest,
-        claims: JSON.parse(run.stdout).filter((f) => f.file === relative),
+        claims: JSON.parse(run.stdout).filter((f: any) => f.file === relative),
       },
     };
   } finally {
@@ -283,7 +295,7 @@ async function collect(relative, producer = "skjs") {
 
 // `verify` exists for callers that want attachment validation on its own; the
 // HTTP route never passes it, so nothing a browser asks for skips checking.
-async function candidateReport(candidate, verify = true) {
+async function candidateReport(candidate: any, verify = true) {
   const startedAt = Date.now();
   if (
     !candidate ||
@@ -293,7 +305,7 @@ async function candidateReport(candidate, verify = true) {
     throw new Error("Unsupported candidate format");
   const sourcePath = await repositoryPath(candidate.file);
   const source = await fs.readFile(sourcePath, "utf8");
-  const digest = require("node:crypto")
+  const digest = crypto
     .createHash("sha256")
     .update(source)
     .digest("hex");
@@ -346,7 +358,7 @@ async function candidateReport(candidate, verify = true) {
   }
 }
 
-async function readCandidate(req) {
+async function readCandidate(req: any) {
   if (
     req.method !== "POST" ||
     !req.headers["content-type"]?.startsWith("application/json")
@@ -365,24 +377,19 @@ async function readCandidate(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-// The reader being rebuilt, served beside the one it will replace: `/` is the
-// existing page, `/next` the Svelte application from `app/dist`, which exists
-// only after `npm --prefix app run build`.
+// The reader is a built bundle in `app/dist`, which exists only after
+// `npm --prefix app run build`; `make viewer` builds before it serves.
 const assets = new Map([
-  ["/", ["claim-report-viewer.html", "text/html"]],
-  ["/next", ["app/dist/index.html", "text/html"]],
+  ["/", ["app/dist/index.html", "text/html"]],
   ["/reader.js", ["app/dist/reader.js", "text/javascript"]],
   ["/reader.css", ["app/dist/reader.css", "text/css"]],
-  ["/viewer.js", ["viewer.js", "text/javascript"]],
-  ["/model.js", ["model.js", "text/javascript"]],
-  ["/tools/claim-types.js", ["../tools/claim-types.js", "text/javascript"]],
-  ["/marks.js", ["marks.js", "text/javascript"]],
-  ["/obligation.js", ["obligation.js", "text/javascript"]],
-  ["/candidate.js", ["candidate.js", "text/javascript"]],
-  ["/editor.js", ["editor.js", "text/javascript"]],
-  ["/viewer.css", ["viewer.css", "text/css"]],
 ]);
-const send = (res, status, data, type = "application/json") => {
+const send = (
+  res: any,
+  status: number,
+  data: any,
+  type = "application/json",
+) => {
   res.writeHead(status, {
     "content-type": type + "; charset=utf-8",
     "cache-control": "no-store",
@@ -393,12 +400,12 @@ const send = (res, status, data, type = "application/json") => {
 // Bound concurrency: expensive runs do not block file loading or health checks.
 let analysing = false;
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, "http://localhost");
+  const url = new URL(req.url ?? "/", "http://localhost");
   try {
     if (url.pathname === "/api/health")
       return send(res, 200, { verifier: await hasVerifier() });
     if (url.pathname === "/api/files") {
-      const examples = exampleGroups();
+      const examples = await exampleGroups();
       return send(res, 200, {
         files: examples.supported,
         groups: examples.groups,
@@ -458,7 +465,7 @@ const server = http.createServer(async (req, res) => {
       )
         return send(res, 400, { error: "Unsupported candidate" });
       const source = await fs.readFile(await repositoryPath(file), "utf8");
-      const digest = require("node:crypto")
+      const digest = crypto
         .createHash("sha256")
         .update(source)
         .digest("hex");
@@ -496,19 +503,20 @@ const server = http.createServer(async (req, res) => {
       await fs.readFile(path.join(__dirname, asset[0])),
       asset[1],
     );
-  } catch (error) {
+  } catch (thrown) {
+    const error = thrown as { stderr?: string; message?: string };
     send(res, 500, {
       error: String(error.stderr || error.message).slice(0, 4000),
     });
   }
 });
-// Only a direct run serves: requiring this module for `candidateReport` must
+// Only a direct run serves: importing this module for `candidateReport` must
 // not take the port.
-if (require.main === module) {
+if (process.argv[1] && import.meta.filename === path.resolve(process.argv[1])) {
   // A port already taken usually means a reader is up from an earlier run.
   // Say so, with what to do about it, rather than a stack trace.
   server.on("error", (error) => {
-    if (error.code !== "EADDRINUSE") throw error;
+    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
     console.error(
       `Port ${PORT} is already serving. Open http://localhost:${PORT},` +
         ` or run on another port with PORT=8732 make viewer.`,
@@ -533,12 +541,11 @@ if (require.main === module) {
           : process.platform === "win32"
             ? "start"
             : "xdg-open";
-      require("node:child_process")
-        .spawn(opener, [url + page], { stdio: "ignore", detached: true })
+      spawn(opener, [url + page], { stdio: "ignore", detached: true })
         .on("error", () => console.log(`Open ${url} to read reports.`))
         .unref();
     }
   });
 }
 
-module.exports = { candidateReport };
+export { candidateReport };

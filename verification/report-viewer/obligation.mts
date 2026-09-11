@@ -1,4 +1,3 @@
-"use strict";
 /* Reading an obligation diagnostic for display.
  *
  * A record describes an unsuccessful verification attempt: the assumptions that
@@ -8,12 +7,86 @@
  * exercise it without a browser.
  */
 
+import type { Span } from "../tools/source-claims.mts";
+
+/** One binding of the context: what was carried, and what was required. */
+export interface ContextRow {
+  slot: number;
+  binding: string;
+  have: string;
+  /** What the destination required. A node obligation requires nothing here. */
+  need?: string;
+  differs?: boolean;
+  /**
+   * What this slot is, where the role says something the name does not: the
+   * value being returned, for a return contract's slot 0.
+   */
+  note?: string;
+}
+
+/**
+ * A heap fact the obligation needed, where it needed any: the binding it is
+ * about, and what is true of it, already phrased ("holds true", "is a read
+ * of cell").
+ */
+export interface KnowledgeRow {
+  slot: number;
+  binding: string;
+  what: string;
+}
+
+/** One end of an edge, and where in the source that end sits. */
+export interface Endpoint {
+  end: "from" | "to";
+  label: number;
+  sourceMap: {
+    pos: Span | null;
+    role: string;
+    environmentStart?: number;
+    context?: { name: string; span: Span | null }[];
+  } | null;
+}
+
+/**
+ * What the verifier had and what had to follow from it. Explanatory metadata
+ * about an unsuccessful attempt — never evidence, and never a statement that
+ * a claim is false.
+ */
+export interface ObligationView {
+  kind: string;
+  kindLabel: string;
+  /** The role's own name, where the record gives a specific one. */
+  title: string;
+  /** What that role means, in prose. */
+  what: string;
+  role: string;
+  id: string;
+  fuel: number;
+  phase: string;
+  pos: Span | null;
+  /** Where the statement entry this obligation is about begins. */
+  environmentStart?: number;
+  /** The result type the request asked for, printed. */
+  requiredResult?: string;
+  rows: ContextRow[];
+  /** The judgement required, for a node obligation. */
+  conclusion?: string;
+  term?: string;
+  endpoints: Endpoint[];
+  knowledge: KnowledgeRow[];
+  knowledgeIsTheDifference?: boolean;
+  observation?: string;
+  note?: string;
+}
+
+
+
 const obligationReader = (() => {
 const OBLIGATION_VERSION = 2;
 
 // Roles come from extraction. An unknown role stays generic rather than being
 // guessed into a more specific story.
-const ROLE = {
+const ROLE: Record<string, { title: string; what: string }> = {
   "return-contract": {
     title: "Return contract",
     what: "The value this returns must establish the function's declared result. The expression's own claim can be sound and still not do that.",
@@ -51,13 +124,13 @@ const ROLE = {
     what: "The judgement attempted at this point did not follow from the assumptions available.",
   },
 };
-const roleView = (role) =>
+const roleView = (role: string) =>
   ROLE[role] || {
     title: "Obligation at this point",
     what: "This obligation's source role is not one this reader knows; it is shown as recorded.",
   };
 
-const KIND_LABEL = {
+const KIND_LABEL: Record<string, string> = {
   "node-typing": "node typing",
   "edge-coverage": "edge coverage",
   "expression-claim": "expression claim",
@@ -69,7 +142,7 @@ const KIND_LABEL = {
 // Unknown clauses are shown as their encoding rather than guessed at, and
 // recursion through references and arrows is cut off with an ellipsis: the
 // graph is finite but may be cyclic.
-function clauseText(types, clause, depth) {
+function clauseText(types: any, clause: any, depth: number): any {
   if (clause === "nul") return "null";
   if (clause === "bool") return "boolean";
   if (clause === "undef") return "undefined";
@@ -78,14 +151,14 @@ function clauseText(types, clause, depth) {
   if (clause && clause.refs) {
     const first = typeText(types, clause.refs.first, depth - 1);
     const rest = (clause.refs.rest || []).length
-      ? " & " + clause.refs.rest.map((r) => typeText(types, r, depth - 1)).join(" & ")
+      ? " & " + clause.refs.rest.map((r: any) => typeText(types, r, depth - 1)).join(" & ")
       : "";
     return "Ref<" + first + ">" + rest;
   }
   if (clause && clause.arrs)
     return (clause.arrs.arrows || [])
       .map(
-        ([domain, result]) =>
+        ([domain, result]: [any, any]) =>
           "(" +
           typeText(types, domain, depth - 1) +
           ") => " +
@@ -95,7 +168,7 @@ function clauseText(types, clause, depth) {
   return JSON.stringify(clause);
 }
 
-function typeText(types, labels, depth = 3) {
+function typeText(types: any, labels: any, depth = 3) {
   if (!Array.isArray(labels)) return "(no type recorded)";
   if (!labels.length) return "never";
   return labels
@@ -114,7 +187,7 @@ function typeText(types, labels, depth = 3) {
 // so a position should never reach a reader. The `slot N` fallback below is for
 // a record that arrives without a source map at all; seeing one means the
 // producer broke that invariant.
-function bindingText(descriptor, source) {
+function bindingText(descriptor: any, source: string) {
   if (!descriptor) return "";
   if (descriptor.name) return descriptor.name;
   if (!Array.isArray(descriptor.span)) return "";
@@ -124,24 +197,24 @@ function bindingText(descriptor, source) {
     .trim();
 }
 
-const bindingsOf = (map, source) =>
-  (map?.context || []).map((d) => bindingText(d, source));
+const bindingsOf = (map: any, source: string) =>
+  (map?.context || []).map((d: any) => bindingText(d, source));
 
 /* ---------- current-content requirements ---------- */
 // A slot's type is its standing contract; knowledge is a statement about the
 // heap as it is at this point. Two ends can agree on every contract and still
 // differ here, so these facts are shown in their own right rather than folded
 // into the slot table. See ../OBLIGATION-DIAGNOSTICS.md.
-const LITERAL = { nul: "null", tru: "true", fls: "false" };
-const contentsText = (contents) =>
+const LITERAL: Record<string, string> = { nul: "null", tru: "true", fls: "false" };
+const contentsText = (contents: any): any =>
   !Array.isArray(contents) || !contents.length
     ? "never"
     : contents.map((l) => LITERAL[l] || String(l)).join(" | ");
 
-function knowledgeRows(knowledge, names = []) {
+function knowledgeRows(knowledge: any, names: string[] = []) {
   if (!knowledge) return [];
-  const of = (slot) => names[slot] || "slot " + slot;
-  const rows = [];
+  const of = (slot: any) => names[slot] || "slot " + slot;
+  const rows: any[] = [];
   for (const f of knowledge.cells || [])
     rows.push({ slot: f.slot, binding: of(f.slot), what: "holds " + contentsText(f.contents) });
   for (const f of knowledge.values || [])
@@ -160,35 +233,35 @@ function knowledgeRows(knowledge, names = []) {
 
 // Terms are shown technically: this is the calculus's own encoding, and naming
 // it after a source construct would be a guess.
-function termText(term) {
+function termText(term: any): any {
   if (typeof term === "string") return term;
   if (term && term.var) return "slot " + term.var.i;
   return JSON.stringify(term);
 }
 
 /* ---------- one record, as rows a panel can show ---------- */
-const sameType = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sameType = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 
 // The destination map acts after the result is pushed: target slot i takes
 // source slot mapping[i]. A null mapping selects the available context as it is.
-function mapContext(available, mapping) {
+function mapContext(available: any, mapping: any) {
   if (!Array.isArray(mapping)) return available;
   return mapping.map((slot) => available[slot]);
 }
 
-function obligationView(ob, source = "") {
+function obligationView(ob: any, source = "") {
   if (!ob || ob.version !== OBLIGATION_VERSION) return null;
   const types = ob.types || [];
   // An edge fails at what its destination required, so a destination role that
   // names something specific describes it. A generic destination leaves the
   // source end to describe it, which is where a dispatch role sits.
-  const specific = (o) => o && o.role && o.role !== "node-typing";
+  const specific = (o: any) => o && o.role && o.role !== "node-typing";
   const sourceMap =
     ob.kind === "edge-coverage" && specific(ob.destination?.sourceMap)
       ? ob.destination.sourceMap
       : ob.source?.sourceMap || ob.sourceMap || null;
   const role = roleView(sourceMap?.role);
-  const view = {
+  const view: ObligationView = {
     kind: ob.kind,
     kindLabel: KIND_LABEL[ob.kind] || ob.kind,
     role: sourceMap?.role || "",
@@ -204,7 +277,7 @@ function obligationView(ob, source = "") {
       : "",
     rows: [],
     endpoints: [],
-    observation: null,
+    observation: undefined,
     note: "",
     // What the failing end required of the heap as it is, and whether that is
     // all that separates the two ends.
@@ -217,7 +290,7 @@ function obligationView(ob, source = "") {
     const required = ob.destination?.claim?.context || [];
     const mapped = mapContext(available, ob.transfer?.target?.mapping);
     const names = bindingsOf(ob.destination?.sourceMap, source);
-    view.rows = required.map((need, slot) => ({
+    view.rows = required.map((need: any, slot: any) => ({
       slot,
       binding: names[slot] || "slot " + slot,
       have: typeText(types, mapped[slot]),
@@ -275,7 +348,7 @@ function obligationView(ob, source = "") {
 
   const sequent = ob.sequent || {};
   const names = bindingsOf(sourceMap, source);
-  view.rows = (sequent.context || []).map((entry, slot) => ({
+  view.rows = (sequent.context || []).map((entry: any, slot: any) => ({
     slot,
     binding: names[slot] || "slot " + slot,
     have: typeText(types, entry),
@@ -308,4 +381,4 @@ function obligationView(ob, source = "") {
   };
 })();
 
-if (typeof module !== "undefined") module.exports = obligationReader;
+export default obligationReader;

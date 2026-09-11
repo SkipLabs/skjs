@@ -1,4 +1,3 @@
-"use strict";
 /* Claim types in surface syntax, shared by the report writer and the reader.
  *
  * The producer's encoding is authoritative and unreadable: a cell holding a
@@ -21,10 +20,11 @@
 // plain scripts, and a bare `typeText` here would silently replace another's.
 const surfaceTypes = (() => {
 const PRIMITIVE = ["null", "boolean", "string", "number", "undefined"];
-const LITERAL = { booleanlit: 1, stringlit: 1, numberlit: 1, numlit: 1 };
+// A membership marker, not a table of names.
+const LITERAL: Record<string, number> = { booleanlit: 1, stringlit: 1, numberlit: 1, numlit: 1 };
 
 /* ---------- printing ---------- */
-function atomText(atom, state) {
+function atomText(atom: any, state: any) {
   if (!atom || typeof atom !== "object") {
     state.printable = false;
     return String(atom);
@@ -45,7 +45,7 @@ function atomText(atom, state) {
     return (
       "{ " +
       atom.fields
-        .map((field) => {
+        .map((field: any) => {
           const name = field.name + (field.optional ? "?" : "");
           const read = typeText(field.read, state);
           const write = typeText(field.write, state);
@@ -63,7 +63,7 @@ function atomText(atom, state) {
   if (atom.a === "function" && Array.isArray(atom.params))
     return (
       "(" +
-      atom.params.map((p) => typeText(p, state)).join(", ") +
+      atom.params.map((p: any) => typeText(p, state)).join(", ") +
       ") => " +
       typeText(atom.result, state)
     );
@@ -71,7 +71,7 @@ function atomText(atom, state) {
   return atom.a ? "«" + atom.a + "»" : "«type»";
 }
 
-function typeText(type, state) {
+function typeText(type: any, state: any) {
   if (type === undefined || type === null) {
     state.printable = false;
     return "«missing»";
@@ -88,13 +88,13 @@ function typeText(type, state) {
     return "«type»";
   }
   if (!atoms.length) return "never";
-  return atoms.map((atom) => atomText(atom, state)).join(" | ");
+  return atoms.map((atom: any) => atomText(atom, state)).join(" | ");
 }
 
 // `printable` says the text names this type in surface syntax. It does not say
   // the text alone determines the encoding: reading it back uses the original,
   // because index signatures, callable shapes and optionality are not shown.
-  function printType(type) {
+  function printType(type: any) {
     const state = { printable: true };
     const text = typeText(type, state);
     return { text, printable: state.printable };
@@ -103,7 +103,7 @@ function typeText(type, state) {
 /* ---------- reading ---------- */
 class TypeSyntaxError extends Error {}
 
-function tokenize(text) {
+function tokenize(text: string) {
   const tokens = [];
   const re =
     /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}(),:|?=]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?/g;
@@ -120,11 +120,11 @@ function tokenize(text) {
   return tokens;
 }
 
-function parseType(text, template) {
+function parseType(text: string, template: any) {
   const tokens = tokenize(String(text));
   let i = 0;
   const peek = () => tokens[i];
-  const take = (expected) => {
+  const take = (expected?: any) => {
     if (expected !== undefined && tokens[i] !== expected)
       throw new TypeSyntaxError(
         "expected " + expected + " but found " + (tokens[i] ?? "end of type"),
@@ -133,11 +133,11 @@ function parseType(text, template) {
   };
   // Templates supply what the surface does not name. A union is matched by atom
   // kind, taking the first template atom of that kind; order is not assumed.
-  const templateAtom = (from, kind) =>
-    (from && Array.isArray(from.atoms) ? from.atoms : []).find((a) => a.a === kind) ||
+  const templateAtom = (from: any, kind: string) =>
+    (from && Array.isArray(from.atoms) ? from.atoms : []).find((a: any) => a.a === kind) ||
     null;
 
-  const union = (from) => {
+  const union = (from: any): any => {
     if (peek() === "unknown") {
       take();
       return { top: true, atoms: [] };
@@ -154,7 +154,7 @@ function parseType(text, template) {
     return { top: false, atoms };
   };
 
-  const atom = (from) => {
+  const atom = (from: any) => {
     const token = peek();
     if (token === undefined) throw new TypeSyntaxError("type expected");
     if (PRIMITIVE.includes(token)) return { a: take() };
@@ -176,7 +176,7 @@ function parseType(text, template) {
     throw new TypeSyntaxError("unexpected " + token);
   };
 
-  const record = (from) => {
+  const record = (from: any) => {
     const base = templateAtom(from, "record");
     if (!base)
       throw new TypeSyntaxError(
@@ -190,7 +190,7 @@ function parseType(text, template) {
       take(":");
       // A name the original does not have would take another field's hidden
       // structure. Dropping a field is expressible; inventing one is not.
-      const original = (base.fields || []).find((f) => f.name === name);
+      const original = (base.fields || []).find((f: any) => f.name === name);
       if (!original)
         throw new TypeSyntaxError(
           "this object type has no field '" + name + "'",
@@ -217,7 +217,7 @@ function parseType(text, template) {
     return { ...base, a: "record", fields };
   };
 
-  const arrow = (from) => {
+  const arrow = (from: any) => {
     const base = templateAtom(from, "function");
     if (!base)
       throw new TypeSyntaxError(
@@ -244,7 +244,7 @@ function parseType(text, template) {
 
 // Surface editing is offered only where the text says everything and reading it
 // back returns the encoding it came from.
-function roundTrips(type) {
+function roundTrips(type: any) {
   const printed = printType(type);
   if (!printed.printable) return false;
   try {
@@ -262,9 +262,9 @@ function roundTrips(type) {
   // edit. It is carried through as it is, so one such binding does not push a
   // whole environment back into JSON.
   const UNAVAILABLE = "(unavailable)";
-  const undecoded = (type) => Boolean(type) && type.unsupported === true;
+  const undecoded = (type: any) => Boolean(type) && type.unsupported === true;
 
-  function printClaimValue(kind, value) {
+  function printClaimValue(kind: string, value: any) {
     if (kind === "expression")
       return undecoded(value)
         ? UNAVAILABLE
@@ -281,7 +281,7 @@ function roundTrips(type) {
 
   // Splits on commas outside braces and parentheses, so a binding's own type can
   // contain either.
-  function splitBindings(text) {
+  function splitBindings(text: string) {
     const parts = [];
     let depth = 0,
       start = 0;
@@ -304,7 +304,7 @@ function roundTrips(type) {
   // come back later as a stopped verification. This names what is certainly
   // outside; the verifier stays the authority on everything else.
   const FRAGMENT = new Set(["null", "boolean", "booleanlit"]);
-  function outsideFragment(type) {
+  function outsideFragment(type: any): any {
     if (undecoded(type)) return "";
     if (!type || typeof type !== "object" || !Array.isArray(type.atoms))
       return "";
@@ -320,7 +320,7 @@ function roundTrips(type) {
       }
       if (atom.a === "function") {
         for (const part of [...(atom.params || []), atom.result]) {
-          const found = outsideFragment(part);
+          const found: any = outsideFragment(part);
           if (found) return found;
         }
         continue;
@@ -331,16 +331,16 @@ function roundTrips(type) {
   }
 
   // A claim value is a type, or for an environment a list of them.
-  function claimOutsideFragment(kind, value) {
+  function claimOutsideFragment(kind: string, value: any) {
     if (kind === "expression") return outsideFragment(value);
     for (const binding of value || []) {
-      const found = outsideFragment(binding && binding.type);
+      const found: any = outsideFragment(binding && binding.type);
       if (found) return found;
     }
     return "";
   }
 
-  function readClaimValue(kind, text, current) {
+  function readClaimValue(kind: string, text: string, current: any) {
     if (kind === "expression") {
       if (String(text).trim() === UNAVAILABLE) {
         if (undecoded(current)) return current;
@@ -359,13 +359,13 @@ function roundTrips(type) {
         throw new TypeSyntaxError("binding '" + name + "' appears twice");
       written.set(name, part.slice(at + 1));
     }
-    const names = (current || []).map((b) => b.name);
+    const names = (current || []).map((b: any) => b.name);
     for (const name of written.keys())
       if (!names.includes(name))
         throw new TypeSyntaxError("'" + name + "' is not a binding of this environment");
     for (const name of names)
       if (!written.has(name)) throw new TypeSyntaxError("binding '" + name + "' is missing");
-    return current.map((b) => {
+    return current.map((b: any) => {
       const value = written.get(b.name).trim();
       if (undecoded(b.type)) {
         // Its type was never decoded, so there is nothing here to edit against.
@@ -387,7 +387,7 @@ function roundTrips(type) {
   // leaves out, are listed after the atom when any is not `absent`, and a
   // conjunction under `and` prints with `&`. This is for reading an export,
   // never for reading text back.
-  function modesText(atom) {
+  function modesText(atom: any) {
     const parts = [];
     for (const key of ["call", "construct", "array"])
       if (key in atom && atom[key] !== "absent") parts.push(key + "=" + atom[key]);
@@ -397,7 +397,7 @@ function roundTrips(type) {
           parts.push(kind + "-index=" + atom.indexes[kind]);
     return parts.length ? " [" + parts.join(" ") + "]" : "";
   }
-  function fullAtomText(atom) {
+  function fullAtomText(atom: any) {
     if (!atom || typeof atom !== "object") return String(atom);
     if (atom.unsupported === true) return "(unavailable)";
     let text;
@@ -405,7 +405,7 @@ function roundTrips(type) {
       text =
         "{ " +
         atom.fields
-          .map((field) => {
+          .map((field: any) => {
             const name = field.name + (field.optional ? "?" : "");
             const read = fullTypeText(field.read);
             const write = fullTypeText(field.write);
@@ -432,10 +432,10 @@ function roundTrips(type) {
       text = JSON.stringify(rest);
     }
     if (Array.isArray(atom.and) && atom.and.length)
-      text += atom.and.map((other) => " & " + fullAtomText(other)).join("");
+      text += atom.and.map((other: any) => " & " + fullAtomText(other)).join("");
     return text;
   }
-  function fullTypeText(type) {
+  function fullTypeText(type: any) {
     if (type === undefined || type === null) return "«missing»";
     if (typeof type === "string") return type;
     if (type.unsupported === true) return "(unavailable)";
@@ -444,7 +444,7 @@ function roundTrips(type) {
     if (!type.atoms.length) return "never";
     return type.atoms.map(fullAtomText).join(" | ");
   }
-  function printFull(type) {
+  function printFull(type: any) {
     return fullTypeText(type);
   }
 
@@ -460,4 +460,4 @@ function roundTrips(type) {
   };
 })();
 
-if (typeof module !== "undefined") module.exports = surfaceTypes;
+export default surfaceTypes;

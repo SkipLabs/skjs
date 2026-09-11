@@ -15,8 +15,8 @@
     lineStarts,
     packRows,
     sourceMarks,
-  } from "../../marks.js";
-  import type { Report, ShownFunction } from "../../model.js";
+  } from "../../marks.mts";
+  import type { Report, ShownFunction } from "../../model.mts";
 
   let {
     report,

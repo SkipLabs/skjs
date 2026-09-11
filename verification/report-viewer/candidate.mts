@@ -1,28 +1,35 @@
-"use strict";
+
+/** Where a claim sits, in the terms the candidate is addressed by. */
+export interface ClaimSite {
+  kind: "expression" | "environment";
+  pos: [number, number];
+}
+
+/** The candidate's own value at a site, in the producer's encoding. */
 
 // Candidates are untrusted inputs. Editing never changes a source snapshot or
 // establishes a verification result. Keep producer data separate from the draft.
-function claimSlot(candidate, fn, item) {
-  const sameSpan = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function claimSlot(candidate: any, fn: any, item: any) {
+  const sameSpan = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
   const file =
     candidate.format === "skjs"
-      ? candidate.claims.find((f) => f.file === candidate.file)
+      ? candidate.claims.find((f: any) => f.file === candidate.file)
       : candidate.claims;
   const target = file?.functions.find(
-    (f) => f.name === fn.name && sameSpan(f.namePos, fn.namePos),
+    (f: any) => f.name === fn.name && sameSpan(f.namePos, fn.namePos),
   );
   if (!target) throw new Error("Candidate has no matching function");
   if (item.kind === "expression") {
     const expressions =
       candidate.format === "skjs" ? target.exprs : target.expressions;
-    const claim = expressions.find((e) => sameSpan(e.pos, item.pos));
+    const claim = expressions.find((e: any) => sameSpan(e.pos, item.pos));
     if (!claim) throw new Error("Candidate has no matching expression");
     return { object: claim, key: "type" };
   }
   if (item.kind !== "environment")
     throw new Error("Select an expression or environment claim");
   const entries = candidate.format === "skjs" ? target.envs : target.entries;
-  const entry = entries.find((e) =>
+  const entry = entries.find((e: any) =>
     candidate.format === "skjs"
       ? e.pos[0] === item.pos[0]
       : e.start === item.pos[0],
@@ -38,14 +45,14 @@ function claimSlot(candidate, fn, item) {
 // {top, atoms} form or the marker saying the producer could not decode one.
 // Anything else is not a claim about this site at all; the verifier would reject
 // it later, with a message about a place rather than about what was typed here.
-const claimedType = (t) =>
+const claimedType = (t: any) =>
   Array.isArray(t)
     ? t.every((label) => Number.isInteger(label) && label >= 0)
     : Boolean(t) &&
       typeof t === "object" &&
       (t.unsupported === true ||
         (typeof t.top === "boolean" && Array.isArray(t.atoms)));
-function editClaim(candidate, fn, item, value) {
+function editClaim(candidate: any, fn: any, item: any, value: any) {
   const next = structuredClone(candidate);
   const slot = claimSlot(next, fn, item);
   if (
@@ -59,21 +66,21 @@ function editClaim(candidate, fn, item, value) {
   slot.object[slot.key] = value;
   return next;
 }
-function addClaim(candidate, fn, site, value) {
-  const sameSpan = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function addClaim(candidate: any, fn: any, site: any, value: any) {
+  const sameSpan = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
   if (
     !fn.missingSites?.some(
-      (s) => s.kind === site.kind && sameSpan(s.pos, site.pos),
+      (s: any) => s.kind === site.kind && sameSpan(s.pos, site.pos),
     )
   )
     throw new Error("Choose a missing site from this source snapshot");
   const next = structuredClone(candidate);
   const file =
     next.format === "skjs"
-      ? next.claims.find((f) => f.file === next.file)
+      ? next.claims.find((f: any) => f.file === next.file)
       : next.claims;
   const target = file?.functions.find(
-    (f) => f.name === fn.name && sameSpan(f.namePos, fn.namePos),
+    (f: any) => f.name === fn.name && sameSpan(f.namePos, fn.namePos),
   );
   if (!target)
     throw new Error("Adding claims requires an existing function candidate");
@@ -82,7 +89,7 @@ function addClaim(candidate, fn, site, value) {
     if (!claimedType(value))
       throw new Error("An expression claim must be a type");
     const expressions = skjs ? target.exprs : target.expressions;
-    if (expressions.some((e) => sameSpan(e.pos, site.pos)))
+    if (expressions.some((e: any) => sameSpan(e.pos, site.pos)))
       throw new Error("An expression claim already exists here");
     expressions.push({ pos: site.pos, type: value });
   } else if (site.kind === "environment") {
@@ -96,7 +103,7 @@ function addClaim(candidate, fn, site, value) {
         "An environment must be an array of {name, type} bindings",
       );
     const entries = skjs ? target.envs : target.entries;
-    if (entries.some((e) => (skjs ? e.pos[0] : e.start) === site.pos[0]))
+    if (entries.some((e: any) => (skjs ? e.pos[0] : e.start) === site.pos[0]))
       throw new Error("An entry claim already exists here");
     entries.push(
       skjs
@@ -105,12 +112,12 @@ function addClaim(candidate, fn, site, value) {
     );
     // Normalized wire entries are sorted by source offset.
     entries.sort(
-      (a, b) => (skjs ? a.pos[0] : a.start) - (skjs ? b.pos[0] : b.start),
+      (a: any, b: any) => (skjs ? a.pos[0] : a.start) - (skjs ? b.pos[0] : b.start),
     );
   } else throw new Error("Unsupported claim site");
   return next;
 }
-function addFunction(candidate, fn, contract) {
+function addFunction(candidate: any, fn: any, contract: any) {
   if (!fn.candidateMissing)
     throw new Error("Select a function without a candidate");
   if (
@@ -119,7 +126,7 @@ function addFunction(candidate, fn, contract) {
     !("result" in contract) ||
     contract.params.length !== fn.parameters.length ||
     contract.params.some(
-      (p, i) => !p || p.name !== fn.parameters[i] || !("type" in p),
+      (p: any, i: number) => !p || p.name !== fn.parameters[i] || !("type" in p),
     )
   )
     throw new Error(
@@ -128,10 +135,10 @@ function addFunction(candidate, fn, contract) {
   const next = structuredClone(candidate);
   const file =
     next.format === "skjs"
-      ? next.claims.find((f) => f.file === next.file)
+      ? next.claims.find((f: any) => f.file === next.file)
       : next.claims;
   if (!file) throw new Error("Candidate has no matching source file");
-  if (file.functions.some((f) => f.namePos[0] === fn.namePos[0]))
+  if (file.functions.some((f: any) => f.namePos[0] === fn.namePos[0]))
     throw new Error("Function candidate already exists");
   const header = {
     name: fn.name,
@@ -145,9 +152,8 @@ function addFunction(candidate, fn, contract) {
   );
   return next;
 }
-function claimValue(candidate, fn, item) {
+function claimValue(candidate: any, fn: any, item: any) {
   const slot = claimSlot(candidate, fn, item);
   return slot.object[slot.key];
 }
-if (typeof module !== "undefined")
-  module.exports = { claimValue, editClaim, addClaim, addFunction };
+export { claimValue, editClaim, addClaim, addFunction };

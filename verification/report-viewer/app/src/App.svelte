@@ -138,6 +138,18 @@
 
     <OpenPath busy={reader.busy} onopen={choose} />
 
+    <!-- What the source view draws beyond the claims themselves. Both are off
+         by default: they answer questions about the producer's run, not about
+         what it claims. -->
+    <label class="tick">
+      <input type="checkbox" bind:checked={reader.showProducerErrors} />
+      producer diagnostics
+    </label>
+    <label class="tick">
+      <input type="checkbox" bind:checked={reader.showUnsupported} />
+      undecoded bindings
+    </label>
+
     <span class="path" title={reader.path}>{name}</span>
 
     <span class="spacer"></span>
@@ -255,6 +267,13 @@
   .path {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: var(--faint);
+  }
+  .tick {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--faint);
+    white-space: nowrap;
   }
   .spacer {
     flex: 1;

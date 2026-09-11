@@ -96,7 +96,7 @@ restrictions. Worked examples of each construct live in
 Start the local viewer with:
 
 ```sh
-node verification/report-viewer/serve.js
+node verification/report-viewer/serve.mts
 ```
 
 Open the printed URL. The default group contains current-verifier examples.

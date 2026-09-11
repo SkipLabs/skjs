@@ -104,15 +104,11 @@ verify-examples:
 
 # The claim report reader, on loopback. It runs a producer on whatever source
 # is opened and shows the verifier's verdict beside each claim.
+# The reader is a built bundle, so it is built before it is served.
 viewer:
-	@node verification/report-viewer/serve.js --open
-
-# The reader being rebuilt, at /next. It is a built bundle, so it is built
-# first; the existing reader at / needs no build and is unaffected.
-viewer-next:
 	@npm --prefix verification/report-viewer/app install --silent --legacy-peer-deps
 	@npm --prefix verification/report-viewer/app run build --silent
-	@node verification/report-viewer/serve.js --open /next
+	@node verification/report-viewer/serve.mts --open
 
 # One producer's column at a time. Both together is the default above; either
 # alone runs only that producer, which is also how one is measured.

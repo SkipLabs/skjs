@@ -125,7 +125,7 @@ creates no files, for callers that render a report without keeping one.
 `report-viewer/claim-report-viewer.html` reads an annotated file and draws each
 claim as a bracket under the span it is about, with a table of how the bindings
 narrow. It is a reader for this output, with the same standing: display only.
-Its companion `report-viewer/serve.js` runs SKJS and this generator on a chosen
+Its companion `report-viewer/serve.mts` runs SKJS and this generator on a chosen
 file so a report can be produced and read in one step. See
 [report-viewer/README.md](report-viewer/README.md).
 

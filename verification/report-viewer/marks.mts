@@ -1,4 +1,3 @@
-"use strict";
 /* What the source view draws, decided without touching the DOM.
  *
  * Everything here is a pure function of a report, so it can be checked by the
@@ -7,13 +6,46 @@
  */
 
 /* ---------- positions ---------- */
-const lineStarts = (src) => {
+import type { ShownFunction, Report } from "./model.mts";
+
+/** One drawn mark: where it sits, what it says, and how it reads. */
+export interface MarkItem {
+  kind: string;
+  line: number;
+  /** Start column of the span the mark is about, in the monospace grid. */
+  col: number;
+  /** End column of that span; the bracket is drawn between the two. */
+  end: number;
+  label: string;
+  /** A proof symbol where this claim is the located failure. */
+  mark: string;
+  /** The obligation's role, where the record names one. */
+  tag: string;
+  id: string;
+  cls: string;
+}
+
+/** Marks packed onto as few rows as fit, so nesting is visible at a glance. */
+export interface MarkRow {
+  items: MarkItem[];
+  free: number;
+}
+
+export interface SourceMarks {
+  entries: MarkItem[];
+  items: MarkItem[];
+}
+
+
+import obligationReader from "./obligation.mts";
+
+const lineStarts = (src: any) => {
   const a = [0];
   for (let i = 0; i < src.length; i++) if (src[i] === "\n") a.push(i + 1);
   return a;
 };
 
-function lineAt(starts, pos) {
+function lineAt(starts: any, pos: any) {
   let lo = 0,
     hi = starts.length;
   while (lo + 1 < hi) {
@@ -24,7 +56,7 @@ function lineAt(starts, pos) {
   return lo;
 }
 
-const lineEndAt = (source, starts, line) =>
+const lineEndAt = (source: string, starts: any, line: any) =>
   line + 1 < starts.length ? starts[line + 1] - 1 : source.length;
 
 // Claim spans start at the declaration, but a comment written directly above a
@@ -32,7 +64,7 @@ const lineEndAt = (source, starts, line) =>
 // blank line or at anything that is not a comment, so a neighbour's trailing
 // comment is never attributed here.
 const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/;
-function commentStartLine(source, starts, from, floor) {
+function commentStartLine(source: string, starts: any, from: any, floor: any) {
   let line = lineAt(starts, from);
   while (line > 0 && starts[line - 1] >= floor) {
     const text = source.slice(starts[line - 1], lineEndAt(source, starts, line - 1));
@@ -54,21 +86,21 @@ const INCOMPLETE_INPUT = new Set([
   "source-limitation",
 ]);
 
-const PROOF_LABEL = {
+const PROOF_LABEL: Record<string, string> = {
   verified: "verified",
   "not-established": "proof search failed",
   unsupported: "unsupported source",
   "not-run": "not run",
   stale: "stale after an edit",
 };
-const proofLabel = (status) => PROOF_LABEL[status] || status;
+const proofLabel = (status: string) => PROOF_LABEL[status] || status;
 
-const proofSymbol = (failureKind) =>
+const proofSymbol = (failureKind: any) =>
   INCOMPLETE_INPUT.has(failureKind) ? "?" : "✗";
 
 // A mark says which obligation stopped there when the record names a specific
 // one. Without that, it stays silent rather than implying the claim is at fault.
-const ROLE_TAG = {
+const ROLE_TAG: Record<string, string> = {
   "unavailable-type-claim": "type unavailable",
   "parameter-claim": "parameter claim",
   "heap-observation": "current contents",
@@ -77,9 +109,9 @@ const ROLE_TAG = {
   "closure-entry": "closure entry",
   "closure-result": "closure result",
 };
-const roleTag = (role) => ROLE_TAG[role] || "";
+const roleTag = (role: string) => ROLE_TAG[role] || "";
 
-function proofMark(f) {
+function proofMark(f: any) {
   if (f.status === "verified") return ["✓", "a certificate was checked"];
   if (f.status === "unsupported")
     return [
@@ -106,18 +138,18 @@ function proofMark(f) {
 // Grouping for the tally: what actually happened, which is the proof symbol. A
 // function whose required type was never exported did not fail a proof search,
 // and saying so in a count would be as wrong as saying it in a panel.
-const OUTCOME_GROUP = {
+const OUTCOME_GROUP: Record<string, string> = {
   "✓": "verified",
   "✗": "proof search failed",
   "?": "could not be checked",
   "·": "not run",
 };
-const outcomeGroup = (f) => {
+const outcomeGroup = (f: any) => {
   const [symbol] = proofMark(f);
   return { key: symbol, label: OUTCOME_GROUP[symbol] || proofLabel(f.status) };
 };
 
-const PRODUCER_MARK = {
+const PRODUCER_MARK: Record<string, string[]> = {
   complete: ["✓", "SKJS finished checking this function"],
   aborted: ["✗", "SKJS stopped inside this function"],
 };
@@ -126,7 +158,7 @@ const PRODUCER_MARK = {
 // outcome holds for as long as the source does; proof search reads the claims,
 // so an edit can change it. Where proof search reached no verdict there is no
 // disagreement to report.
-function outcome(f, rep) {
+function outcome(f: any, rep: any) {
   const producer = PRODUCER_MARK[f.collection] || [
     "·",
     "no producer outcome recorded",
@@ -158,8 +190,8 @@ function outcome(f, rep) {
 /* ---------- the producer's own diagnostics ---------- */
 // SKJS reports against the source with 1-based columns and an exclusive end.
 // These are its diagnostics shown where they point: not claims, not results.
-function producerMarks(rep) {
-  const marks = [];
+function producerMarks(rep: any) {
+  const marks: any[] = [];
   if (!rep.diagnostics) return marks;
   const starts = lineStarts(rep.source);
   const re = /^File "([^"]+)", line (\d+), character (\d+)-(\d+):\r?\n([^\n]*)/gm;
@@ -181,19 +213,19 @@ function producerMarks(rep) {
 }
 
 /* ---------- what the source view shows ---------- */
-const isNoise = (b) =>
+const isNoise = (b: any) =>
   b.unavailable || b.type === "unsupported" || b.type === "(unavailable)";
 
 // Gaps read better as a short phrase than as the generator's sentence.
-const GAP_LABEL = {
+const GAP_LABEL: Record<string, string> = {
   "statement-not-visited": "not visited by producer",
   "expression-without-type": "no type produced",
   "claims-unavailable": "no claims for this function",
   "claim-edit": "claim edit",
 };
-const gapLabel = (g) => GAP_LABEL[g.reason] || g.detail;
+const gapLabel = (g: any) => GAP_LABEL[g.reason] || g.detail;
 
-function shortType(type) {
+function shortType(type: any) {
   // Surface syntax reads as a type; a raw producer encoding does not, and only
   // appears when this reader cannot name it.
   if (/^\{\s*"/.test(type)) return "structured type — inspect";
@@ -205,17 +237,17 @@ function shortType(type) {
 // The entry an expression obligation is checked against. Where the record names
 // it, that is the answer; otherwise it is the innermost entry containing the
 // expression. Both are facts about the report, not a claim about what is wrong.
-function companionEntry(f) {
-  const failing = (f.exprs || []).find((e) => e.failure);
+function companionEntry(f: any) {
+  const failing = (f.exprs || []).find((e: any) => e.failure);
   if (!failing) return -1;
   const named = f.obligation?.source?.sourceMap?.environmentStart;
   const entries = f.entries || [];
   if (named !== null && named !== undefined) {
-    const at = entries.findIndex((e) => e.pos && e.pos[0] === named);
+    const at = entries.findIndex((e: any) => e.pos && e.pos[0] === named);
     if (at >= 0) return at;
   }
   let best = -1;
-  entries.forEach((e, i) => {
+  entries.forEach((e: any, i: number) => {
     if (!e.pos || e.pos[0] > failing.pos[0] || e.pos[1] < failing.pos[1]) return;
     if (best < 0 || e.pos[1] - e.pos[0] < entries[best].pos[1] - entries[best].pos[0])
       best = i;
@@ -223,28 +255,28 @@ function companionEntry(f) {
   return best;
 }
 
-function sourceMarks(rep, f, options) {
+function sourceMarks(rep: any, f: any, options: any) {
   const { density = "key", unsupported = false, producerErrors = true } = options || {};
   const source = rep.source;
   const starts = lineStarts(source);
-  const at = (p) => lineAt(starts, p);
-  const failedIn = (x) => f.status === "not-established" && Boolean(x.failure);
+  const at = (p: any) => lineAt(starts, p);
+  const failedIn = (x: any) => f.status === "not-established" && Boolean(x.failure);
   // A recovery-quality snapshot says so once, on the function; only a claim that
   // stands out from its snapshot needs the label repeated.
   const recMark = f.quality === "recovery" ? "" : "  (recovery)";
-  const items = [];
-  const entries = [];
+  const items: any[] = [];
+  const entries: any[] = [];
   // Both sides of a failed obligation stay on screen. Compact hides an entry
   // where nothing changed, which is often the very environment the marked claim
   // is checked against.
   const companion = f.status === "not-established" ? companionEntry(f) : -1;
 
-  f.exprs.forEach((e, i) => {
+  f.exprs.forEach((e: any, i: number) => {
     if (!e.pos) return;
     const failed = failedIn(e);
     if (density === "key" && !failed) {
       const nested = f.exprs.some(
-        (other) =>
+        (other: any) =>
           other !== e &&
           other.pos &&
           other.pos[0] <= e.pos[0] &&
@@ -280,13 +312,13 @@ function sourceMarks(rep, f, options) {
   // this statement" and "this statement has no environment claim" are one fact
   // in two vocabularies. Draw it once, as the site, since that is the one that
   // can be acted on, and keep the gap's wording on it.
-  const sameSpan = (a, b) => a[0] === b[0] && a[1] === b[1];
-  const gapAt = (site) =>
-    (f.gaps || []).find((g) => sameSpan(g.pos, site.pos)) || null;
-  const missingAt = (g) =>
-    (f.missingSites || []).some((site) => sameSpan(g.pos, site.pos));
+  const sameSpan = (a: any, b: any) => a[0] === b[0] && a[1] === b[1];
+  const gapAt = (site: any) =>
+    (f.gaps || []).find((g: any) => sameSpan(g.pos, site.pos)) || null;
+  const missingAt = (g: any) =>
+    (f.missingSites || []).some((site: any) => sameSpan(g.pos, site.pos));
 
-  f.gaps.forEach((g, i) => {
+  f.gaps.forEach((g: any, i: number) => {
     if (missingAt(g) && (density === "all" || f.status === "not-established"))
       return;
     // Always shown: an absent claim is the finding.
@@ -313,7 +345,7 @@ function sourceMarks(rep, f, options) {
   // always draws them; Compact draws them only where verification is blocked,
   // which is when an absent claim is the thing to act on.
   if (density === "all" || f.status === "not-established")
-    (f.missingSites || []).forEach((site, i) => {
+    (f.missingSites || []).forEach((site: any, i: number) => {
       const gap = gapAt(site);
       const line = at(site.pos[0]);
       items.push({
@@ -334,12 +366,10 @@ function sourceMarks(rep, f, options) {
   // An obligation whose place carries no claim. Always drawn: it is the only
   // thing on screen saying where the function failed, and there is nothing else
   // at that position to click.
-  (f.failureSites || []).forEach((site, i) => {
+  (f.failureSites || []).forEach((site: any, i: number) => {
     const line = at(site.pos[0]);
     const title =
-      (typeof obligationReader !== "undefined" &&
-        site.failureRole &&
-        obligationReader.roleView(site.failureRole).title) ||
+      (site.failureRole && obligationReader.roleView(site.failureRole).title) ||
       "Obligation here";
     items.push({
       kind: "failure",
@@ -373,19 +403,19 @@ function sourceMarks(rep, f, options) {
       });
     });
 
-  f.entries.forEach((e, i) => {
+  f.entries.forEach((e: any, i: number) => {
     if (!e.pos) return;
     const failed = failedIn(e);
     const involved = failed || i === companion;
     // An undecoded claim is normally noise. Where checking stopped at this
     // statement it is the finding, so it shows whatever the toggle says.
-    const shown = e.bindings.filter((b) => unsupported || failed || !isNoise(b));
+    const shown = e.bindings.filter((b: any) => unsupported || failed || !isNoise(b));
     // An entry the marked claim is checked against shows what it claims, not
     // only what changed there: nothing changing is exactly why it can be the
     // side that has to.
     const list =
       density === "key" && !involved
-        ? shown.filter((b) => e.changed.has(b.name))
+        ? shown.filter((b: any) => e.changed.has(b.name))
         : shown;
     if (!list.length && !involved) return;
     const line = at(e.pos[0]),
@@ -396,7 +426,7 @@ function sourceMarks(rep, f, options) {
       col,
       end: col,
       label:
-        list.map((b) => b.name + ": " + shortType(b.type)).join(",  ") +
+        list.map((b: any) => b.name + ": " + shortType(b.type)).join(",  ") +
         (e.recovery ? recMark : ""),
       mark: failed ? proofSymbol(e.failureKind) : "",
       tag: failed ? roleTag(e.failureRole || e.failureKind) : "",
@@ -409,7 +439,7 @@ function sourceMarks(rep, f, options) {
 }
 
 // The first failure the report located, in the order the source view marks them.
-function firstFailure(f) {
+function firstFailure(f: any) {
   for (const [prefix, list] of [
     ["e", f.exprs],
     ["n", f.entries],
@@ -418,14 +448,14 @@ function firstFailure(f) {
     // failure this function has, and the banner should point at it.
     ["u", f.failureSites],
   ]) {
-    const i = (list || []).findIndex((x) => x.failure);
+    const i = (list || []).findIndex((x: any) => x.failure);
     if (i >= 0) return { id: prefix + i, item: list[i], kind: list[i].failureKind };
   }
   return null;
 }
 
 /* ---------- laying marks out ---------- */
-function bracket(w) {
+function bracket(w: any) {
   if (w <= 1) return "╵";
   return "╰" + "─".repeat(Math.max(0, w - 2)) + "╯";
 }
@@ -433,16 +463,16 @@ function bracket(w) {
 // Marks are packed onto as few rows as fit, so nesting is visible at a glance.
 // Width counts the bracket, the label and any proof symbol: these sit in a
 // monospace grid, and a row that miscounts would overlap the next mark.
-const markWidth = (it) =>
+const markWidth = (it: any) =>
   Math.max(1, it.end - it.col) +
   1 +
   it.label.length +
   (it.mark ? it.mark.length + 1 : 0) +
   (it.tag ? it.tag.length + 1 : 0);
 
-function packRows(items) {
-  const rows = [];
-  items.sort((a, b) => a.col - b.col || a.end - b.end);
+function packRows(items: any) {
+  const rows: any[] = [];
+  items.sort((a: any, b: any) => a.col - b.col || a.end - b.end);
   for (const it of items) {
     let row = rows.find((r) => r.free <= it.col);
     if (!row) {
@@ -455,7 +485,7 @@ function packRows(items) {
   return rows;
 }
 
-function groupLines(items) {
+function groupLines(items: any) {
   const grouped = new Map();
   for (const item of items) {
     if (!grouped.has(item.line)) grouped.set(item.line, []);
@@ -464,8 +494,7 @@ function groupLines(items) {
   return grouped;
 }
 
-if (typeof module !== "undefined")
-  module.exports = {
+export {
     lineStarts,
     lineAt,
     commentStartLine,
@@ -486,4 +515,4 @@ if (typeof module !== "undefined")
     markWidth,
     packRows,
     groupLines,
-  };
+};

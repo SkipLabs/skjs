@@ -9,6 +9,9 @@ import { spawnSync } from "node:child_process";
 import * as ts from "typescript/unstable/ast";
 import { createScanner } from "typescript/unstable/ast/scanner";
 import { createRequire } from "node:module";
+import surface from "./claim-types.mts";
+import obligationReader from "../report-viewer/obligation.mts";
+import { readDiagnostic } from "./obligation-diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
 import * as parseSource from "./parse-source.mts";
@@ -148,7 +151,7 @@ function comment(x: Record<string, any>) {
 
 // The same printer the reader uses, so a comment and a panel say the same thing.
 // The manifest keeps the producer's encoding; this is a readable view of it.
-const {printType}=require("./claim-types.js");
+
 function typeText(t: any) {
   if(typeof t==="string")return t;
   // A binding the producer could not decode has no claimed type. Name the
@@ -157,7 +160,7 @@ function typeText(t: any) {
   if(t && t.unsupported === true && Object.keys(t).length === 1)return "(unavailable)";
   // Surface syntax where the printer can name the type; the exact encoding
   // otherwise, so a shape it does not know is never quietly hidden.
-  const printed=printType(t);
+  const printed=surface.printType(t);
   if(printed.printable)return printed.text;
   if(t && t.top === false && Object.keys(t).sort().join() === "atoms,top" && Array.isArray(t.atoms)) {
     const names=t.atoms.map((a: any)=> {
@@ -223,14 +226,13 @@ function fromSourceClaims(
   input: SourceClaims,
   producer: string,
 ): DraftReport {
-  const {typeText:labelText}=require("../report-viewer/obligation.js");
   if(input.version!==3||input.profile!=="stateful-source-v3"||input.file!==file||input.sourceSha256!==hash(source))
     throw Error("source-claim profile or source identity mismatch");
   const types=input.types;
   if(!Array.isArray(types)||types.length<4)throw Error("invalid source type table");
   const type=(A: Labels)=> {
     if(!Array.isArray(A)||A.some((i,k)=>!Number.isInteger(i)||i<0||i>=types.length||(k&&A[k-1]>=i)))throw Error("invalid source type labels");
-    return labelText(types,A);
+    return obligationReader.typeText(types,A);
   };
   const point=(b: Point)=> {
     if(!Object.hasOwn(b,"current"))throw Error("every source-claim point requires an explicit current field");
@@ -466,7 +468,7 @@ function run(executable: string, args: string[]) {
   if(r.error || r.signal)throw Error(`tool execution failed: ${r.error?.message || r.signal}`);
   return r;
 }
-const {readDiagnostic}=require("./obligation-diagnostic.mts");
+
 function verifySkjs(
   sourcePath: string,
   source: string,

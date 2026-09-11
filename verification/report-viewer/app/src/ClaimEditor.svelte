@@ -15,10 +15,10 @@
    * has to be written as the producer's own encoding — which the editor says
    * rather than letting the attempt fail obscurely.
    */
-  import surface from "../../../tools/claim-types.js";
+  import surface from "../../../tools/claim-types.mts";
   import LabelChooser from "./LabelChooser.svelte";
   import TypeLabels from "./TypeLabels.svelte";
-  import type { ClaimSite } from "../../candidate.js";
+  import type { ClaimSite } from "../../candidate.mts";
   import type { Candidate } from "../../types.ts";
 
   let {
