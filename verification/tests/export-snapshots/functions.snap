@@ -1,0 +1,7 @@
+# functions.ts
+
+## functions [complete unverified normal]
+params: f: (boolean) => null [construct=unknown array=unknown]; g: (unavailable: unsupported-object-branch); h: (unavailable: unsupported-object-branch); k: (unavailable: unsupported-object-branch); m: (unavailable: unsupported-object-branch); n: (unavailable: unsupported-object-branch)
+result: null
+entry 214-225: f: (boolean) => null [construct=unknown array=unknown]; g: (unavailable: unsupported-object-branch); h: (unavailable: unsupported-object-branch); k: (unavailable: unsupported-object-branch); m: (unavailable: unsupported-object-branch); n: (unavailable: unsupported-object-branch); this: (unavailable: unsupported-type)
+expr 221-225 `null`: null

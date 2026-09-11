@@ -381,8 +381,76 @@ function roundTrips(type) {
     });
   }
 
+  /* ---------- full printing, for snapshots ---------- */
+  // Every part of the encoding reaches the text, so two encodings that differ
+  // print differently: modes and index signatures, which the surface syntax
+  // leaves out, are listed after the atom when any is not `absent`, and a
+  // conjunction under `and` prints with `&`. This is for reading an export,
+  // never for reading text back.
+  function modesText(atom) {
+    const parts = [];
+    for (const key of ["call", "construct", "array"])
+      if (key in atom && atom[key] !== "absent") parts.push(key + "=" + atom[key]);
+    if (atom.indexes && typeof atom.indexes === "object")
+      for (const kind of ["string", "number", "symbol"])
+        if (kind in atom.indexes && atom.indexes[kind] !== "absent")
+          parts.push(kind + "-index=" + atom.indexes[kind]);
+    return parts.length ? " [" + parts.join(" ") + "]" : "";
+  }
+  function fullAtomText(atom) {
+    if (!atom || typeof atom !== "object") return String(atom);
+    if (atom.unsupported === true) return "(unavailable)";
+    let text;
+    if (atom.a === "record" && Array.isArray(atom.fields))
+      text =
+        "{ " +
+        atom.fields
+          .map((field) => {
+            const name = field.name + (field.optional ? "?" : "");
+            const read = fullTypeText(field.read);
+            const write = fullTypeText(field.write);
+            return read === write
+              ? name + ": " + read
+              : name + ": " + write + " = (" + read + ")";
+          })
+          .join(", ") +
+        " }" +
+        modesText(atom);
+    else if (atom.a === "function" && Array.isArray(atom.params))
+      text =
+        "(" +
+        atom.params.map(fullTypeText).join(", ") +
+        ") => " +
+        fullTypeText(atom.result) +
+        modesText(atom);
+    else if (PRIMITIVE.includes(atom.a) && Object.keys(atom).join() === "a")
+      text = atom.a;
+    else if (LITERAL[atom.a] && "v" in atom)
+      text = atom.a === "stringlit" ? JSON.stringify(atom.v) : String(atom.v);
+    else {
+      const { and, ...rest } = atom;
+      text = JSON.stringify(rest);
+    }
+    if (Array.isArray(atom.and) && atom.and.length)
+      text += atom.and.map((other) => " & " + fullAtomText(other)).join("");
+    return text;
+  }
+  function fullTypeText(type) {
+    if (type === undefined || type === null) return "«missing»";
+    if (typeof type === "string") return type;
+    if (type.unsupported === true) return "(unavailable)";
+    if (type.top === true) return "unknown";
+    if (!Array.isArray(type.atoms)) return JSON.stringify(type);
+    if (!type.atoms.length) return "never";
+    return type.atoms.map(fullAtomText).join(" | ");
+  }
+  function printFull(type) {
+    return fullTypeText(type);
+  }
+
   return {
     printType,
+    printFull,
     parseType,
     roundTrips,
     printClaimValue,

@@ -1,0 +1,7 @@
+# record-shapes.ts
+
+## shapes [complete unverified normal]
+params: a: (unavailable: unsupported-object-branch); b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: unsupported-object-branch); e: (unavailable: unsupported-object-branch)
+result: null
+entry 193-204: a: (unavailable: unsupported-object-branch); b: { value?: boolean } [call=unknown construct=unknown array=unknown]; c: { value: never = (boolean) } [call=unknown construct=unknown array=unknown]; d: (unavailable: unsupported-object-branch); e: (unavailable: unsupported-object-branch); this: (unavailable: unsupported-type)
+expr 200-204 `null`: null

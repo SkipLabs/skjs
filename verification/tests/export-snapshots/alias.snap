@@ -1,0 +1,9 @@
+# alias.ts
+
+## alias [complete unverified normal]
+params: c: (unavailable: constrained-inference-variable)
+result: boolean
+entry 69-83: c: (unavailable: constrained-inference-variable); this: (unavailable: unsupported-type)
+expr 76-77 `c`: (unavailable: constrained-inference-variable)
+expr 76-83 `c.value`: boolean
+expr 78-83 `value`: "value"

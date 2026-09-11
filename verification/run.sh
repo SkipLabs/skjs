@@ -144,6 +144,14 @@ rejected_fixture() { # name source-path [expected status]
   fi
 }
 
+# The exporter's own probes, exported together. Some are rejected on purpose
+# and their claims are still exported, so the status is not the fixture; and
+# they may use any TypeScript, so they do not go through the source parser.
+SNAPSHOTS=verification/tests/export-snapshots
+snapshot_probes() {
+  skjs_check "$SNAPSHOTS"/*.ts > "$WORK/snapshots.claims" 2> "$WORK/snapshots.err" || true
+}
+
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Source boundaries" node verification/tests/unsupported.js "$VERIFIER"
 
@@ -189,6 +197,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build rejected_fixture singleton "$SINGLETON"
   build rejected_fixture null-exit "$NULL_EXIT"
   build rejected_fixture write-refined "$WRITE_REFINED" 2
+  build snapshot_probes
   for pid in "${building[@]}"; do wait "$pid" || exit 1; done
 
   # The partial export must not change what ordinary checking reports: same
@@ -226,6 +235,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.js "$VERIFIER"
   run_test "Report viewer" node verification/tests/report-viewer.js
   run_test "Candidate editing" node verification/tests/candidate-editor.js "$WORK/closures.claims"
+  run_test "Export snapshots" node verification/tests/export-snapshots.js "$WORK/snapshots.claims" "$SNAPSHOTS"
   run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
   report_tests
 fi
