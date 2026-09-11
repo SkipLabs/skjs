@@ -62,15 +62,23 @@ export interface ObligationDiagnostic {
   edgeIndex?: number;
   transfer?: DiagnosticTransfer | null;
   /**
-   * A closure expression claim names its place directly: that failure is
-   * raised where the claim is, not at a node of the certificate graph, so it
-   * carries the entry itself rather than a `source` node holding one
-   * (ExpressionClaims.lean, against `failureDiagnostic` in RequestJson.lean).
+   * Closure expression claims only. Two emitters write these records. The one
+   * in RequestJson.lean reports failures about the certificate graph, where a
+   * failure names labels and the source map is a lookup keyed by one — so it
+   * hangs under the node, and an edge failure, having two nodes, could not put
+   * it anywhere else. The one in ExpressionClaims.lean reports obligations
+   * that are not graph nodes at all: each carries its own `pos` and `role`,
+   * and there is no label to nest under. `kind` is what separates the two.
    */
   sourceMap?: SourceMapEntry;
   /** Node typing and expression claims only. */
   sequent?: { context: unknown[]; expression?: unknown; type?: unknown } | null;
-  /** Production failure only. */
+  /**
+   * Production failure only — and only from the graph emitter. Both emitters
+   * write `kind: "production-failure"`, with different fields and nothing to
+   * tell them apart: the closure one carries neither this nor
+   * `requiredResult`. Read either as optional on this kind.
+   */
   failure?: string;
   /** Attached by the report writer, not by the verifier. */
   input?: {
