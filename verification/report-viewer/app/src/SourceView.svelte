@@ -4,9 +4,10 @@
    *
    * A claim is not an annotation beside the code — it is what the producer says
    * about a span of it — so the marks sit under their spans, bracketed to the
-   * exact columns, and clicking one selects it. What is drawn, and how the
-   * marks pack onto rows without overlapping, is decided by `marks.js` without
-   * a DOM, which is why the suites can check it.
+   * exact columns, and clicking one selects it. An entry claim is what holds
+   * before its statement runs, so that one sits above. What is drawn, and how
+   * the marks pack onto rows without overlapping, is decided by `marks.mts`
+   * without a DOM, which is why the suites can check it.
    */
   import {
     bracket,
@@ -41,13 +42,16 @@
     sourceMarks(report, fn, { density: "all", unsupported, producerErrors }),
   );
 
-  /** Every mark, grouped by the line it sits under and packed into rows. */
-  const rowsByLine = $derived.by(() => {
-    const grouped = groupLines([...drawn.entries, ...drawn.items]);
-    return new Map(
-      [...grouped].map(([line, items]) => [line, packRows(items)]),
-    );
-  });
+  /** Marks grouped by line and packed into rows. */
+  const packed = (marks: typeof drawn.items) =>
+    new Map([...groupLines(marks)].map(([line, on]) => [line, packRows(on)]));
+  /*
+   * An entry claim is the environment on entry to its statement — what holds
+   * before it runs — so it sits above the line. Everything else is about a
+   * span of the line and sits under it.
+   */
+  const above = $derived(packed(drawn.entries));
+  const below = $derived(packed(drawn.items));
 
   /**
    * The source a mark is about. A mark's own `col`/`end` stop at the end of its
@@ -114,6 +118,9 @@
 
 <div class="source">
   {#each lines as line (line.index)}
+    {#each above.get(line.index) ?? [] as packed, depth (depth)}
+      {@render marks(packed.items, "╷")}
+    {/each}
     <div class="row">
       <span class="gutter">{line.number}</span>
       <code class="code">
@@ -127,35 +134,41 @@
         {/if}<span class="text">{line.text || " "}</span>
       </code>
     </div>
-    {#each rowsByLine.get(line.index) ?? [] as packed, depth (depth)}
-      <div class="row marks">
-        <span class="gutter"></span>
-        <span class="code">
-          {#each packed.items as item (item.id)}
-            <button
-              class="mark {item.cls}"
-              class:selected={item.id === selectedMark}
-              style="--col:{item.col}"
-              onclick={() => onselect(item.id)}
-              onpointerenter={() => (hovered = item.id)}
-              onpointerleave={() => (hovered = null)}
-              onfocus={() => (hovered = item.id)}
-              onblur={() => (hovered = null)}
-              title={item.label}
-            >
-              <span class="bracket"
-                >{bracket(Math.max(1, item.end - item.col))}</span
-              >
-              <span class="label">{item.label}</span>
-              {#if item.tag}<span class="tag">{item.tag}</span>{/if}
-              {#if item.mark}<span class="symbol">{item.mark}</span>{/if}
-            </button>
-          {/each}
-        </span>
-      </div>
+    {#each below.get(line.index) ?? [] as packed, depth (depth)}
+      {@render marks(packed.items, null)}
     {/each}
   {/each}
 </div>
+
+<!-- One packed row of marks. An entry's tick points down at the statement it
+     is the entry to; every other bracket spans what it is about. -->
+{#snippet marks(items: typeof drawn.items, tick: string | null)}
+  <div class="row marks">
+    <span class="gutter"></span>
+    <span class="code">
+      {#each items as item (item.id)}
+        <button
+          class="mark {item.cls}"
+          class:selected={item.id === selectedMark}
+          style="--col:{item.col}"
+          onclick={() => onselect(item.id)}
+          onpointerenter={() => (hovered = item.id)}
+          onpointerleave={() => (hovered = null)}
+          onfocus={() => (hovered = item.id)}
+          onblur={() => (hovered = null)}
+          title={item.label}
+        >
+          <span class="bracket"
+            >{tick ?? bracket(Math.max(1, item.end - item.col))}</span
+          >
+          <span class="label">{item.label}</span>
+          {#if item.tag}<span class="tag">{item.tag}</span>{/if}
+          {#if item.mark}<span class="symbol">{item.mark}</span>{/if}
+        </button>
+      {/each}
+    </span>
+  </div>
+{/snippet}
 
 <style>
   .source {

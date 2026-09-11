@@ -38,7 +38,9 @@ means no derivation was found — never that a claim is false. `?` means checkin
 could not properly be attempted: a claim it needed is missing, or the source is
 outside the fragment. A disagreement is amber.
 
-**The source**, with each claim bracketed under the span it is about. Every
+**The source**, with each claim bracketed under the span it is about — except
+an entry's environment, which is what holds before its statement runs and so
+sits above it. Every
 claim is drawn; there is no density switch, because a claim that is hidden is
 one you cannot tell is missing. Weight does that work instead: an entry's
 environment reads faintly, a failed claim carries its symbol, and a place the
