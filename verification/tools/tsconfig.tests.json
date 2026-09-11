@@ -1,0 +1,8 @@
+{
+  // The suites, carried over from JavaScript on the same terms as the rest:
+  // their helpers have no signatures, so the inference checks are off. Each is
+  // an entry point run by run.sh, not a module anything imports.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": false, "noImplicitAny": false },
+  "include": ["../tests/*.mts"]
+}

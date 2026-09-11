@@ -1,15 +1,11 @@
-"use strict";
-const fs = require("node:fs"),
-  path = require("node:path"),
-  os = require("node:os"),
-  assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
-const {
-  hash,
-  fromSourceClaims,
-  verifySkjs,
-} = require("../tools/annotate-source.mts");
-const { readDiagnostic } = require("../tools/obligation-diagnostic.mts");
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { hash, fromSourceClaims, verifySkjs, } from "../tools/annotate-source.mts";
+import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
+const __dirname = path.dirname(import.meta.filename);
 const verifier = path.resolve(process.argv[2]);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "obligation-diagnostics-"));
 let passed = 0;
@@ -119,7 +115,7 @@ try {
   test("strengthening both claims verifies independently", () =>
     assert.equal(verify([1], [1]).status, "verified"));
   test("an edge diagnostic identifies the selected mapping even with a shared destination", () => {
-    const request = {
+    const request: any = {
       version: 2,
       types: [
         [{ boolLit: { value: true } }],

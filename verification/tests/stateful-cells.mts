@@ -1,8 +1,12 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+const __dirname = path.dirname(import.meta.filename);
 // Real cell source claims: production, independent consumption, and corruption.
-"use strict";
-const fs = require("fs"), os = require("os"), path = require("path");
-const {spawnSync} = require("child_process");
+
+
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
 const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
@@ -14,7 +18,7 @@ const at = (c,n,e) => fun(c,n).exprs.find(x=>x.pos[0]===e.pos[0] && x.pos[1]===e
 const bool = {top:false,atoms:[{a:"boolean"}]};
 const lit = v => ({top:false,atoms:[{a:"booleanlit",v}]});
 let passed = 0;
-function run(mode,a,c,evidence) {
+function run(mode,a,c,evidence?) {
   fs.writeFileSync(path.join(tmp,"ast"),JSON.stringify(a));
   fs.writeFileSync(path.join(tmp,"claims"),JSON.stringify(c));
   if(evidence) fs.writeFileSync(path.join(tmp,"evidence"),JSON.stringify(evidence));
@@ -47,13 +51,13 @@ try {
     ["optional field cannot be erased",a=>{a.fields[0].optional=true;}],
     ["real index cannot be erased",a=>{a.indexes.string="present";}],
     ["callable requirement cannot be erased",a=>{a.call="present";}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const c=clone(claims),t=at(c,"aliasWrite",source(ast,"aliasWrite").body[0].init).type;
     const arm=clone(t.atoms[0]);edit(arm);t.atoms.push(arm);
     expect(name,run("--produce-stateful-source",ast,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",ast,c,evidence),false);
   }
-  const cases=[
+  const cases: [string, (a: any, c?: any) => void][] = [
     ["cell parameter boundary",(a,c)=>{const t=source(a,"aliasWrite").body[0].annot;source(a,"aliasWrite").params[0].type=clone(t);fun(c,"aliasWrite").params[0].type=clone(t);}],
     ["initializer subexpression claim",(a,c)=>{at(c,"aliasWrite",source(a,"aliasWrite").body[0].init.e).type=lit("true");}],
     ["missing allocation subexpression",(a,c)=>{const e=source(a,"aliasWrite").body[0].init.e; fun(c,"aliasWrite").exprs=fun(c,"aliasWrite").exprs.filter(x=>x.pos[0]!==e.pos[0]);}],

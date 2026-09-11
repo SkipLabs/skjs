@@ -1,16 +1,19 @@
 #!/usr/bin/env node
-"use strict";
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const { createHash } = require("node:crypto");
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+// Plain JavaScript modules; the reader loads these in a browser too.
+const require = createRequire(import.meta.url);
 const {
   claimValue,
   editClaim,
   addClaim,
   addFunction,
 } = require("../report-viewer/candidate.js");
-process.env.SKJS_BIN = "/no-producer-in-candidate-tests";
 const { candidateReport } = require("../report-viewer/serve.js");
+process.env.SKJS_BIN = "/no-producer-in-candidate-tests";
+
 const file = "verification/tests/stateful-source/closures.ts";
 const source = fs.readFileSync(file, "utf8");
 const sourceSha256 = createHash("sha256").update(source).digest("hex");

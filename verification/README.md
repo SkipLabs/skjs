@@ -171,7 +171,7 @@ saved before a callback remains safe after the callback mutates its source cell.
 
 [The captured-refinement example](tests/skjs-unsound/captured-refinement.ts)
 is accepted by SKJS but returns false where its annotation requires true.
-[Its test](tests/primitive-callbacks.js) distinguishes the original unsupported
+[Its test](tests/primitive-callbacks.mts) distinguishes the original unsupported
 refined-reference contract from a stale expression claim that fails proof checking
 after those reference refinements are forgotten. See the
 [unsoundness notes](tests/skjs-unsound/README.md).

@@ -1,11 +1,17 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import vm from "node:vm";
+import { spawnSync } from "node:child_process";
+import { stripTypes } from "../tools/strip-types.mts";
 // Negated tests must reverse refinements without trusting them or duplicating effects.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const vm = require("node:vm");
-const { spawnSync } = require("node:child_process");
-const { stripTypes } = require("../tools/strip-types.mts");
+
+
+
+
+
+
 const [
   astPath,
   claimsPath,
@@ -18,8 +24,8 @@ const [
   singletonClaimsPath,
   singletonFile,
 ] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath));
-const claims = JSON.parse(fs.readFileSync(claimsPath));
+const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/negation-");
 const firstClaim = (c) =>
   c
@@ -30,7 +36,7 @@ const singleton = (v) => ({
   atoms: [{ a: "booleanlit", v: String(v) }],
 });
 let passed = 0;
-function run(mode, a, c, evidence, key = file) {
+function run(mode, a, c, evidence?, key = file) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -59,7 +65,7 @@ try {
     run("--produce-stateful-source", ast, claims),
     true,
   );
-  const evidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const evidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "negation independent consumption",
     run("--check-stateful-source", ast, claims, evidence),
@@ -77,7 +83,7 @@ try {
     true,
   );
   const normalizedEvidence = JSON.parse(
-    fs.readFileSync(tmp + "/evidence.json"),
+    fs.readFileSync(tmp + "/evidence.json", "utf8"),
   );
   expect(
     "negation normalized claim consumption",
@@ -135,7 +141,7 @@ try {
       },
       "evidence search failed",
     ],
-  ]) {
+  ] as [string, (a: any, c: any) => void, string][]) {
     const a = structuredClone(ast),
       c = structuredClone(claims);
     mutate(a, c);
@@ -151,8 +157,8 @@ try {
     run("--check-stateful-source", changed, claims, evidence),
     false,
   );
-  const exitAst = JSON.parse(fs.readFileSync(exitAstPath));
-  const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath));
+  const exitAst = JSON.parse(fs.readFileSync(exitAstPath, "utf8"));
+  const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath, "utf8"));
   const exitFn = exitClaims.find((f) => f.file === exitFile).functions[0];
   assert.equal(exitFn.collection.completion, "aborted");
   assert.equal(exitFn.collection.mode, "normal");
@@ -173,7 +179,7 @@ try {
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
     true,
   );
-  const repairedEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const repairedEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "independent consumer accepts repaired loop",
     run(
@@ -192,8 +198,8 @@ try {
     false,
     "evidence search failed",
   );
-  const singletonAst = JSON.parse(fs.readFileSync(singletonAstPath));
-  const singletonClaims = JSON.parse(fs.readFileSync(singletonClaimsPath));
+  const singletonAst = JSON.parse(fs.readFileSync(singletonAstPath, "utf8"));
+  const singletonClaims = JSON.parse(fs.readFileSync(singletonClaimsPath, "utf8"));
   const singletonFn = singletonClaims.find((f) => f.file === singletonFile)
     .functions[0];
   assert.equal(singletonFn.collection.completion, "aborted");
@@ -225,7 +231,7 @@ try {
     ),
     true,
   );
-  const singletonEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const singletonEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "singleton repair independently consumed",
     run(

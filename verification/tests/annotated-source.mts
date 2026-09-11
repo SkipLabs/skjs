@@ -1,8 +1,14 @@
 #!/usr/bin/env node
-"use strict";
-const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
-const {spawnSync}=require("child_process");
-const {hash,render,fromSkjs,compareClaims,typeText}=require("../tools/annotate-source.mts");
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import { hash,render,fromSkjs,compareClaims,typeText } from "../tools/annotate-source.mts";
+import { createRequire } from "node:module";
+// Plain JavaScript modules; the reader loads these in a browser too.
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(import.meta.filename);
 const [claimsPath,fileKey,verifier]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
@@ -20,8 +26,8 @@ try {
   test("inside-token attachment rejected",()=>{const r=structuredClone(report);r.functions[0].expressions[0].pos=[source.indexOf("return")+1,source.indexOf("return")+3];assert.throws(()=>render(source,r),/attach/);});
   test("comment injection stays inside report",()=>{const r=structuredClone(report);r.functions[0].expressions[0].type='*/ throw "bad"; /*\n';assert(render(source,r).includes('*\\/'));});
   test("return line break remains unchanged",()=>{const s=source.replace("return x","return\nx"),r=structuredClone(report);r.source.sha256=hash(s);r.functions[0].entries=[];r.functions[0].expressions=[];assert(render(s,r).includes("return\nx"));});
-  test("stored generic statuses cannot establish verification",()=>{const r=structuredClone(report);r.results=[{status:"verified"}];assert(!render(source,r).includes("verification=verified"));});
-  test("comparison ignores stored statuses and provenance changes",()=>{const r=structuredClone(report);r.results=[{status:"verified"}];r.producer="manual";assert.deepEqual(compareClaims(source,report,r).changes,[]);});
+  test("stored generic statuses cannot establish verification",()=>{const r: any=structuredClone(report);r.results=[{status:"verified"}];assert(!render(source,r).includes("verification=verified"));});
+  test("comparison ignores stored statuses and provenance changes",()=>{const r: any=structuredClone(report);r.results=[{status:"verified"}];r.producer="manual";assert.deepEqual(compareClaims(source,report,r).changes,[]);});
   test("comparison reports added removed and changed claims",()=>{
     const r=structuredClone(report);r.functions[0].entries=[];r.functions[0].expressions[0].type="true";
     const changes=compareClaims(source,report,r).changes;
@@ -41,7 +47,7 @@ try {
     assert.deepEqual(compareClaims(source,a,b).changes,[]);
   });
   test("unavailable reasons identify claims, ignore stale metadata, and preserve unknown codes",()=>{
-    const raw=[{file:"test.ts",functions:[{name:"f",namePos:[ns,ns+1],
+    const raw: any=[{file:"test.ts",functions:[{name:"f",namePos:[ns,ns+1],
       params:[{name:"x",type:{unsupported:true}}],retType:{unsupported:true},
       envs:[{pos:[es-7,es+2],vars:[{name:"x",type:{unsupported:true}},{name:"y",type:{unsupported:true}}]}],
       exprs:[{pos:[es,es+1],type:{unsupported:true}}],
@@ -68,7 +74,7 @@ try {
   const generic=path.join(tmp,"generic.ts"), gp=path.join(tmp,"generic.json"), go=path.join(tmp,"generic.annotated.ts");
   fs.writeFileSync(generic,source);fs.writeFileSync(gp,JSON.stringify(report));
   const cli=args=>{const r=spawnSync(process.execPath,[script,...args],{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
-  test("generic claims CLI writes separate source and manifest",()=>{const r=cli([generic,"--claims",gp,"--format","report","--out",go]);assert.equal(r.status,0,r.stderr);assert.equal(fs.readFileSync(generic,"utf8"),source);const m=JSON.parse(fs.readFileSync(go+".json"));assert.equal(m.annotatedSha256,hash(fs.readFileSync(go)));});
+  test("generic claims CLI writes separate source and manifest",()=>{const r=cli([generic,"--claims",gp,"--format","report","--out",go]);assert.equal(r.status,0,r.stderr);assert.equal(fs.readFileSync(generic,"utf8"),source);const m=JSON.parse(fs.readFileSync(go+".json", "utf8"));assert.equal(m.annotatedSha256,hash(fs.readFileSync(go)));});
   test("existing report is not overwritten",()=>assert.notEqual(cli([generic,"--claims",gp,"--format","report","--out",go]).status,0));
   test("input cannot be overwritten",()=>assert.notEqual(cli([generic,"--claims",gp,"--format","report","--out",generic]).status,0));
   test("generic stored results cannot be used as certificates",()=>assert.notEqual(cli([generic,"--claims",gp,"--format","report","--verify",verifier]).status,0));
@@ -82,7 +88,7 @@ try {
     fs.writeFileSync(input,text);
     fs.writeFileSync(cp,JSON.stringify([{file:input,functions:[{name:"gated",namePos:[9,14],params:[],retType:{top:false,atoms:[{a:"null"}]},envs:[],exprs:[]}]}]));
     const r=cli([input,"--claims",cp,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);
-    assert.equal(JSON.parse(fs.readFileSync(out+".json")).results[0].status,"unsupported");
+    assert.equal(JSON.parse(fs.readFileSync(out+".json", "utf8")).results[0].status,"unsupported");
   });
   test("every claim annotation carries its kind and a manifest id",()=>{
     const marks=render(source,report).split("@verify-report").slice(2);
@@ -108,7 +114,7 @@ try {
     assert.equal(typeText(t),JSON.stringify(t));
   });
   test("bindings without a decoded type are named in the annotation",()=>{
-    const r=structuredClone(report);
+    const r: any=structuredClone(report);
     r.functions[0].entries[0].bindings.push({name:"this",type:typeText({unsupported:true}),raw:{unsupported:true}});
     const entry=render(source,r).split("@verify-report").find(m=>m.includes("kind=entry"));
     assert(entry.includes("unsupported=this"),entry);
@@ -147,7 +153,7 @@ try {
     const annotated=fs.readFileSync(out,"utf8");
     assert(annotated.includes("expr { value: boolean }"),annotated);
     assert(annotated.includes('"a":"tuple"'),"an unnameable shape keeps its encoding");
-    const m=JSON.parse(fs.readFileSync(out+".json"));
+    const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));
     assert.deepEqual(m.functions[0].expressions[0].raw,encoding);
     assert.deepEqual(m.functions[0].expressions[1].raw,exotic);
   });
@@ -167,7 +173,7 @@ try {
     const {parseReport}=require("../report-viewer/model.js");
     assert.equal(parseReport(annotated).source,text);
   });
-  const real=fs.readFileSync(fileKey,"utf8"), claims=JSON.parse(fs.readFileSync(claimsPath));
+  const real=fs.readFileSync(fileKey,"utf8"), claims=JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   // Surface syntax is what a reader edits claims in, so it has to determine the
   // producer's encoding exactly. Check that on every type in a real export.
   test("every exported claim type survives printing and reading back",()=>{
@@ -184,7 +190,7 @@ try {
   });
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");
-  test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json"));assert(m.results.every(x=>x.status==="verified"));assert(m.results.every(x=>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
+  test("fresh independent verification is recorded",()=>{const r=cli([fileKey,"--claims",claimsPath,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));assert(m.results.every(x=>x.status==="verified"));assert(m.results.every(x=>x.certificateSha256));assert.equal(m.verifierSha256,hash(fs.readFileSync(verifier)));assert.equal(m.source.sha256,hash(real));});
   // A claim the extractor needed and did not find is a different finding from a
   // proof search that failed, and the report must say which one happened.
   test("an absent required claim is located as a missing claim",()=>{
@@ -196,7 +202,7 @@ try {
     f.exprs=f.exprs.filter(e=>e!==removed);
     const cp=path.join(tmp,"absent.json"),op=path.join(tmp,"absent.annotated.ts");fs.writeFileSync(cp,JSON.stringify(c));
     const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
-    const m=JSON.parse(fs.readFileSync(op+".json"));
+    const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));
     const result=m.results[m.functions.findIndex(f=>f.name==="capturedRead")];
     assert.equal(result.status,"not-established");
     assert.deepEqual(result.location,{kind:"missing-expression-claim",pos:removed.pos});
@@ -210,7 +216,7 @@ try {
     const cp=path.join(tmp,"noenv.json"),op=path.join(tmp,"noenv.annotated.ts");
     fs.writeFileSync(cp,JSON.stringify(withoutEnv));
     const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
-    const m=JSON.parse(fs.readFileSync(op+".json"));
+    const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));
     const result=m.results[m.functions.findIndex(x=>x.name==="capturedRead")];
     assert.equal(result.location.kind,"missing-environment-claim");
     assert.equal(result.location.start,dropped.pos[0]);
@@ -222,7 +228,7 @@ try {
     const bp=path.join(tmp,"nobinding.json"),bo=path.join(tmp,"nobinding.annotated.ts");
     fs.writeFileSync(bp,JSON.stringify(withoutBinding));
     const rb=cli([fileKey,"--claims",bp,"--verify",verifier,"--out",bo]);assert.equal(rb.status,0,rb.stderr);
-    const mb=JSON.parse(fs.readFileSync(bo+".json"));
+    const mb=JSON.parse(fs.readFileSync(bo+".json", "utf8"));
     const rr=mb.results[mb.functions.findIndex(x=>x.name==="capturedRead")];
     if(rr.location?.kind==="missing-environment-claim")assert.equal(rr.location.binding,name);
     else assert.equal(rr.status,"not-established");
@@ -235,7 +241,7 @@ try {
     fs.writeFileSync(cp,JSON.stringify([{file:input,functions:[{name:"outside",namePos:[ns,ns+7],
       params:[{name:"x",type:{top:false,atoms:[{a:"string"}]}}],retType:{top:false,atoms:[{a:"string"}]},envs:[],exprs:[]}]}]));
     const r=cli([input,"--claims",cp,"--verify",verifier,"--out",out]);assert.equal(r.status,0,r.stderr);
-    const result=JSON.parse(fs.readFileSync(out+".json")).results[0];
+    const result=JSON.parse(fs.readFileSync(out+".json", "utf8")).results[0];
     if(/outside the .*slice/.test(result.detail||""))assert.deepEqual(result.location,{kind:"source-limitation"});
     else assert.equal(result.status,"unsupported");
   });
@@ -248,7 +254,7 @@ try {
     p.type={top:false,atoms:[{a:"booleanlit",v:"true"}]};
     const cp=path.join(tmp,"bad.json"),op=path.join(tmp,"bad.annotated.ts");fs.writeFileSync(cp,JSON.stringify(c));
     const r=cli([fileKey,"--claims",cp,"--verify",verifier,"--out",op]);assert.equal(r.status,0,r.stderr);
-    const m=JSON.parse(fs.readFileSync(op+".json"));assert.equal(m.results[m.functions.findIndex(f=>f.name==="capturedRead")].status,"not-established");
+    const m=JSON.parse(fs.readFileSync(op+".json", "utf8"));assert.equal(m.results[m.functions.findIndex(f=>f.name==="capturedRead")].status,"not-established");
   });
   console.log(`Annotated source: ${passed} passed, 0 failed`);
 } finally {fs.rmSync(tmp,{recursive:true,force:true});}

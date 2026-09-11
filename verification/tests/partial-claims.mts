@@ -1,8 +1,10 @@
-"use strict";
-const fs=require("fs"),assert=require("assert"),os=require("os"),path=require("path");
-const {fromSkjs,render,coverage,verifySkjs,main}=require("../tools/annotate-source.mts");
+import fs from "node:fs";
+import assert from "node:assert";
+import os from "node:os";
+import path from "node:path";
+import { fromSkjs,render,coverage,verifySkjs,main } from "../tools/annotate-source.mts";
 const [normalPath,recoveryPath,file,verifier,diagnostics]=process.argv.slice(2);
-const normal=JSON.parse(fs.readFileSync(normalPath)),recovery=JSON.parse(fs.readFileSync(recoveryPath));
+const normal=JSON.parse(fs.readFileSync(normalPath, "utf8")),recovery=JSON.parse(fs.readFileSync(recoveryPath, "utf8"));
 const source=fs.readFileSync(file,"utf8"), report=fromSkjs(source,file,normal,"skjs");
 const get=(claims,name)=>claims.find(f=>f.file===file).functions.find(f=>f.name===name);
 for(const name of ["annotationFailure","expressionFailure"]) {
@@ -23,7 +25,7 @@ for(const name of ["annotationFailure","expressionFailure"])assert.notEqual(veri
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"partial-report-"));
 try {
   const out=path.join(temp,"report.ts");main([file,"--claims",normalPath,"--diagnostics",diagnostics,"--out",out]);
-  const manifest=JSON.parse(fs.readFileSync(out+".json"));
+  const manifest=JSON.parse(fs.readFileSync(out+".json", "utf8"));
   assert.equal(manifest.diagnostics,fs.readFileSync(diagnostics,"utf8"));assert.deepEqual(manifest.gaps,gaps);
   // Simulate a missing obligation in a valid function, without changing source
   // or asking SKJS to recover. A copied original claim supplies the repair.
@@ -32,14 +34,14 @@ try {
   const incompletePath=path.join(temp,"incomplete.json"), baseline=path.join(temp,"baseline.ts");
   fs.writeFileSync(incompletePath,JSON.stringify(incomplete));
   main([file,"--claims",incompletePath,"--verify",verifier,"--out",baseline]);
-  const bm=JSON.parse(fs.readFileSync(baseline+".json"));
+  const bm=JSON.parse(fs.readFileSync(baseline+".json", "utf8"));
   const idx=bm.functions.findIndex(f=>f.name==="complete");
   assert.equal(bm.results[idx].status,"not-established");
   // A saved success is deliberately forged: comparison must not trust it.
   bm.results[idx]={status:"verified"};fs.writeFileSync(baseline+".json",JSON.stringify(bm));
   const repaired=path.join(temp,"repaired.ts");
   main([file,"--claims",normalPath,"--producer","manual-repair","--baseline",baseline+".json","--verify",verifier,"--out",repaired]);
-  const rm=JSON.parse(fs.readFileSync(repaired+".json"));
+  const rm=JSON.parse(fs.readFileSync(repaired+".json", "utf8"));
   assert.equal(rm.results[idx].status,"verified");assert(rm.results[idx].certificateSha256);
   assert(rm.comparison.changes.some(c=>c.function==="complete"&&c.kind==="entry"&&c.status==="added"));
   assert.equal(rm.comparison.changes.length,1);
@@ -48,6 +50,6 @@ try {
   assert.throws(()=>main(["--check-fresh",repaired]),/stale/);
   const stillIncomplete=path.join(temp,"still-incomplete.ts");
   main([file,"--claims",incompletePath,"--baseline",baseline+".json","--verify",verifier,"--out",stillIncomplete]);
-  assert.equal(JSON.parse(fs.readFileSync(stillIncomplete+".json")).results[idx].status,"not-established");
+  assert.equal(JSON.parse(fs.readFileSync(stillIncomplete+".json", "utf8")).results[idx].status,"not-established");
 } finally {fs.rmSync(temp,{recursive:true,force:true});}
 console.log("Partial claims: default failure snapshots, unchanged diagnostics, recovery labels, gaps and independent verification passed.");

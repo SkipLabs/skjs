@@ -1,6 +1,10 @@
-"use strict";
-const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
-const {spawnSync}=require("child_process");
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import { fromSourceClaims, verifySkjs } from "../tools/annotate-source.mts";
+const __dirname = path.dirname(import.meta.filename);
 const [claimsPath,file,partialPath,partialFile,recoveryPath,verifier,diagnostics]=process.argv.slice(2);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"claim-export-tests-"));
 const run=(exe,args)=>{const r=spawnSync(exe,args,{encoding:"utf8",timeout:120000,maxBuffer:32*1024*1024});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
@@ -12,8 +16,8 @@ const parse=(source,ap)=>{const r=run(process.execPath,[path.resolve(__dirname,"
 try {
   const out=path.join(tmp,"closures.json"),ap=path.join(tmp,"closures.ast.json"),ep=path.join(tmp,"evidence.json");
   test("real SKJS closure claims convert",()=>{const r=convert(file,claimsPath,out);assert.equal(r.status,0,r.stderr);});
-  const manifest=JSON.parse(fs.readFileSync(out+".conversion.json"));
-  test("raw claims and omissions retained",()=>{assert.deepEqual(manifest.originalClaims,JSON.parse(fs.readFileSync(claimsPath)));assert(manifest.omissions.length>0);assert(manifest.omissions.every(x=>x.reason&&"raw" in x));});
+  const manifest=JSON.parse(fs.readFileSync(out+".conversion.json", "utf8"));
+  test("raw claims and omissions retained",()=>{assert.deepEqual(manifest.originalClaims,JSON.parse(fs.readFileSync(claimsPath, "utf8")));assert(manifest.omissions.length>0);assert(manifest.omissions.every(x=>x.reason&&"raw" in x));});
   parse(file,ap);
   test("existing SKJS evidence checks against converted claims",()=>{
     const p=run(verifier,["--produce-stateful-source",ap,claimsPath,file,ep,"10"]);assert.equal(p.status,0,p.stderr);
@@ -24,7 +28,7 @@ try {
     const c=run(verifier,["--check-stateful-source",ap,claimsPath,file,ep]);assert.equal(c.status,0,c.stderr);
   });
   test("current contents export separately from the storage invariant",()=>{
-    const raw=JSON.parse(fs.readFileSync(claimsPath));
+    const raw=JSON.parse(fs.readFileSync(claimsPath, "utf8"));
     const selected=raw.find(f=>f.file===file);
     let changed;
     for(const f of selected.functions) {
@@ -39,22 +43,20 @@ try {
     const cp=path.join(tmp,"current.raw.json"),op=path.join(tmp,"current.json");
     fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(file,cp,op);assert.equal(r.status,0,r.stderr);
-    const d=JSON.parse(fs.readFileSync(op));
+    const d=JSON.parse(fs.readFileSync(op, "utf8"));
     assert.equal(d.version,3);assert.equal(d.profile,"stateful-source-v3");
     const point=d.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert.deepEqual(d.types[point.type[0]],[{refs:{first:[1,2],rest:[]}}]);assert.equal(point.type.length,1);assert.deepEqual(point.current,[1]);
-    const omissions=JSON.parse(fs.readFileSync(op+".conversion.json")).omissions;
+    const omissions=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8")).omissions;
     assert(!omissions.some(o=>o.function===changed.name&&JSON.stringify(o.site.pos)===JSON.stringify(changed.pos)));
     const checked=run(verifier,["--produce-source-claims",ap,op,file,ep,"10"]);
     assert.equal(checked.status,0,checked.stderr);
     const rawCheck=run(verifier,["--check-stateful-source",ap,cp,file,ep]);
     assert.equal(rawCheck.status,0,rawCheck.stderr);
-    const {fromSourceClaims}=require("../tools/annotate-source.mts");
     const report=fromSourceClaims(fs.readFileSync(file,"utf8"),file,d,"candidate");
     const shown=report.functions.find(f=>f.name===changed.name).expressions.find(e=>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert(shown.type.includes(" = (true)"));
     assert.deepEqual(shown.raw,{type:point.type,current:[1]});
-    const {verifySkjs}=require("../tools/annotate-source.mts");
     const result=verifySkjs(file,fs.readFileSync(file,"utf8"),d,file,report,verifier,10,true)
       .results[report.functions.findIndex(f=>f.name===changed.name)];
     assert.equal(result.status,"verified");
@@ -76,43 +78,43 @@ try {
   test("existing output is not overwritten",()=>assert.notEqual(convert(file,claimsPath,out).status,0));
   const partial=path.join(tmp,"partial.json"),pa=path.join(tmp,"partial.ast.json");
   test("normal first-error snapshot converts without recovery",()=>{const r=convert(partialFile,partialPath,partial,["--diagnostics",diagnostics]);assert.equal(r.status,0,r.stderr);});
-  const pm=JSON.parse(fs.readFileSync(partial+".conversion.json")),pc=JSON.parse(fs.readFileSync(partial));
-  test("aborted collection and diagnostics preserved",()=>{assert(pm.functions.some(f=>f.collection.completion==="aborted"&&f.collection.mode==="normal"));assert.equal(pm.diagnostics,fs.readFileSync(diagnostics,"utf8"));assert.deepEqual(pm.originalClaims,JSON.parse(fs.readFileSync(partialPath)));});
+  const pm=JSON.parse(fs.readFileSync(partial+".conversion.json", "utf8")),pc=JSON.parse(fs.readFileSync(partial, "utf8"));
+  test("aborted collection and diagnostics preserved",()=>{assert(pm.functions.some(f=>f.collection.completion==="aborted"&&f.collection.mode==="normal"));assert.equal(pm.diagnostics,fs.readFileSync(diagnostics,"utf8"));assert.deepEqual(pm.originalClaims,JSON.parse(fs.readFileSync(partialPath, "utf8")));});
   parse(partialFile,pa);
   test("partial conversion does not complete missing obligations",()=>assert.notEqual(run(verifier,["--produce-source-claims",pa,partial,partialFile,ep,"10"]).status,0));
   test("complete function in partial export still verifies",()=>{
-    const ast=JSON.parse(fs.readFileSync(pa));ast.functions=ast.functions.filter(f=>f.name==="complete");
+    const ast=JSON.parse(fs.readFileSync(pa, "utf8"));ast.functions=ast.functions.filter(f=>f.name==="complete");
     const one=structuredClone(pc);one.functions=one.functions.filter(f=>f.name==="complete");
     const oa=path.join(tmp,"one.ast.json"),oc=path.join(tmp,"one.json");fs.writeFileSync(oa,JSON.stringify(ast));fs.writeFileSync(oc,JSON.stringify(one));
     const r=run(verifier,["--produce-source-claims",oa,oc,partialFile,ep,"10"]);assert.equal(r.status,0,r.stderr);
   });
-  test("optional recovery provenance retained separately",()=>{const rp=path.join(tmp,"recovery.json"),r=convert(partialFile,recoveryPath,rp);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(rp+".conversion.json"));assert(m.functions.some(f=>f.collection.quality==="recovery"));assert(!("collection" in JSON.parse(fs.readFileSync(rp)).functions[0]));});
+  test("optional recovery provenance retained separately",()=>{const rp=path.join(tmp,"recovery.json"),r=convert(partialFile,recoveryPath,rp);assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(rp+".conversion.json", "utf8"));assert(m.functions.some(f=>f.collection.quality==="recovery"));assert(!("collection" in JSON.parse(fs.readFileSync(rp, "utf8")).functions[0]));});
   test("unsupported required type becomes a recorded gap",()=>{
-    const raw=JSON.parse(fs.readFileSync(partialPath)),f=raw.find(f=>f.file===partialFile).functions.find(f=>f.name==="complete");
+    const raw=JSON.parse(fs.readFileSync(partialPath, "utf8")),f=raw.find(f=>f.file===partialFile).functions.find(f=>f.name==="complete");
     f.exprs[0].type={unsupported:true};const cp=path.join(tmp,"unsupported.raw.json"),op=path.join(tmp,"unsupported.json");fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(partialFile,cp,op);assert.equal(r.status,0,r.stderr);
-    const d=JSON.parse(fs.readFileSync(op)),m=JSON.parse(fs.readFileSync(op+".conversion.json"));
+    const d=JSON.parse(fs.readFileSync(op, "utf8")),m=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8"));
     assert.equal(d.functions.find(f=>f.name==="complete").expressions.length,0);
     assert(m.omissions.some(o=>o.function==="complete"&&o.raw.unsupported===true));
-    const oneAst=JSON.parse(fs.readFileSync(pa));oneAst.functions=oneAst.functions.filter(f=>f.name==="complete");d.functions=d.functions.filter(f=>f.name==="complete");
+    const oneAst=JSON.parse(fs.readFileSync(pa, "utf8"));oneAst.functions=oneAst.functions.filter(f=>f.name==="complete");d.functions=d.functions.filter(f=>f.name==="complete");
     const oa=path.join(tmp,"unavailable.ast.json"),oc=path.join(tmp,"unavailable-one.json");fs.writeFileSync(oa,JSON.stringify(oneAst));fs.writeFileSync(oc,JSON.stringify(d));
     assert.notEqual(run(verifier,["--produce-source-claims",oa,oc,partialFile,ep,"10"]).status,0);
   });
   test("unavailable signatures omit the function explicitly",()=>{
-    const raw=JSON.parse(fs.readFileSync(partialPath));raw.find(f=>f.file===partialFile).functions.find(f=>f.name==="complete").retType={unsupported:true};
+    const raw=JSON.parse(fs.readFileSync(partialPath, "utf8"));raw.find(f=>f.file===partialFile).functions.find(f=>f.name==="complete").retType={unsupported:true};
     const cp=path.join(tmp,"signature.raw.json"),op=path.join(tmp,"signature.json");fs.writeFileSync(cp,JSON.stringify(raw));const r=convert(partialFile,cp,op);assert.equal(r.status,0,r.stderr);
-    assert(!JSON.parse(fs.readFileSync(op)).functions.some(f=>f.name==="complete"));
-    assert(JSON.parse(fs.readFileSync(op+".conversion.json")).omissions.some(o=>o.reason.includes("signature")));
+    assert(!JSON.parse(fs.readFileSync(op, "utf8")).functions.some(f=>f.name==="complete"));
+    assert(JSON.parse(fs.readFileSync(op+".conversion.json", "utf8")).omissions.some(o=>o.reason.includes("signature")));
   });
   test("duplicate claims fail conversion rather than being merged",()=>{
-    const raw=JSON.parse(fs.readFileSync(partialPath));const selected=raw.find(f=>f.file===partialFile);selected.functions.push(selected.functions[0]);const cp=path.join(tmp,"duplicate.json");fs.writeFileSync(cp,JSON.stringify(raw));assert.notEqual(convert(partialFile,cp,path.join(tmp,"duplicate-out.json")).status,0);
+    const raw=JSON.parse(fs.readFileSync(partialPath, "utf8"));const selected=raw.find(f=>f.file===partialFile);selected.functions.push(selected.functions[0]);const cp=path.join(tmp,"duplicate.json");fs.writeFileSync(cp,JSON.stringify(raw));assert.notEqual(convert(partialFile,cp,path.join(tmp,"duplicate-out.json")).status,0);
   });
   const annotate=path.resolve(__dirname,"../tools/annotate-source.mts");
   const report=(claims,out,extra=[])=>run(process.execPath,[annotate,partialFile,"--format","source-claims","--claims",claims,"--out",out,...extra]);
   const partialReport=path.join(tmp,"partial.annotated.ts");
   test("converted reports show original collection and fresh results",()=>{
     const r=report(partial,partialReport,["--conversion",partial+".conversion.json","--verify",verifier]);assert.equal(r.status,0,r.stderr);
-    const text=fs.readFileSync(partialReport,"utf8"),m=JSON.parse(fs.readFileSync(partialReport+".json"));
+    const text=fs.readFileSync(partialReport,"utf8"),m=JSON.parse(fs.readFileSync(partialReport+".json", "utf8"));
     assert(text.includes("original SKJS collection=aborted"));assert(text.includes("statement not visited"));assert(text.includes("expression entered without a type result"));
     assert.equal(m.conversion.diagnostics,pm.diagnostics);
     assert.equal(m.results[m.functions.findIndex(f=>f.name==="complete")].status,"verified");
@@ -124,7 +126,7 @@ try {
   });
   test("conversion omissions are distinct from unfinished expressions",()=>{
     const cp=path.join(tmp,"unsupported.json"),out=path.join(tmp,"omitted.annotated.ts"),r=report(cp,out,["--conversion",cp+".conversion.json"]);assert.equal(r.status,0,r.stderr);
-    const m=JSON.parse(fs.readFileSync(out+".json")),f=m.functions.find(f=>f.name==="complete"),pos=f.collectionSnapshot.expressions[0].pos;
+    const m=JSON.parse(fs.readFileSync(out+".json", "utf8")),f=m.functions.find(f=>f.name==="complete"),pos=f.collectionSnapshot.expressions[0].pos;
     assert(m.gaps.some(g=>JSON.stringify(g.pos)===JSON.stringify(pos)&&g.status.includes("omitted during conversion")));
     assert(!m.gaps.some(g=>JSON.stringify(g.pos)===JSON.stringify(pos)&&g.status==="expression entered without a type result"));
   });
@@ -132,7 +134,7 @@ try {
     const edited=path.join(tmp,"edited.json"),d=structuredClone(pc);d.functions.find(f=>f.name==="complete").entries=[];fs.writeFileSync(edited,JSON.stringify(d));
     const bad=report(edited,path.join(tmp,"bad-provenance.ts"),["--conversion",partial+".conversion.json"]);assert.notEqual(bad.status,0);assert(bad.stderr.includes("exact sidecar"));
     const out=path.join(tmp,"edited.annotated.ts"),good=report(edited,out,["--baseline",partialReport+".json","--verify",verifier]);assert.equal(good.status,0,good.stderr);
-    const m=JSON.parse(fs.readFileSync(out+".json"));assert(m.functions.every(f=>!f.collection));assert.equal(m.comparison.changes.length,1);
+    const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));assert(m.functions.every(f=>!f.collection));assert.equal(m.comparison.changes.length,1);
     assert.equal(m.results[m.functions.findIndex(f=>f.name==="complete")].status,"not-established");
   });
   test("conversion fingerprint participates in report freshness",()=>{

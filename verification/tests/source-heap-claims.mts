@@ -1,12 +1,18 @@
-"use strict";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { hash } from "../tools/annotate-source.mts";
+const __dirname = path.dirname(import.meta.filename);
 // End-to-end source assertions, independent of SKJS inference. Each claim is
 // reconstructed at its actual source site before the graph certificate is checked.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
-const { hash } = require("../tools/annotate-source.mts");
+
+
+
+
+
+
 const verifier = process.argv[2];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "source-heap-claims-"));
 const run = (args) => spawnSync(verifier, args, { encoding: "utf8" });

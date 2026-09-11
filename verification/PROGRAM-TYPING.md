@@ -1036,7 +1036,7 @@ inside a closure may remain unproved even when it is valid locally; exploiting
 such facts requires graph-backed closure bodies. The checkpoint integration does
 not claim that extra precision.
 
-`tests/source-heap-claims.js` exercises both source formats, wrong and empty
+`tests/source-heap-claims.mts` exercises both source formats, wrong and empty
 observations, write invalidation, Boolean read guards, both incoming merge edges,
 loop backedges, and evidence reuse after changing assertions.
 

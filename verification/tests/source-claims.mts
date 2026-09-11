@@ -1,6 +1,11 @@
-"use strict";
-const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert");
-const {spawnSync}=require("child_process"),{hash}=require("../tools/annotate-source.mts");
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert";
+import { spawnSync } from "node:child_process";
+import { hash } from "../tools/annotate-source.mts";
+import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
+const __dirname = path.dirname(import.meta.filename);
 const verifier=process.argv[2],tmp=fs.mkdtempSync(path.join(os.tmpdir(),"source-claims-"));
 const run=(exe,args)=>{const r=spawnSync(exe,args,{encoding:"utf8"});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
 let passed=0;
@@ -86,12 +91,12 @@ try {
   test("normalized report verifies without SKJS encoding",()=>{
     const out=path.join(tmp,"report.ts");
     const r=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.mts"),file,"--claims",cp,"--format","source-claims","--producer","manual","--verify",verifier,"--out",out]);
-    assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json"));
+    assert.equal(r.status,0,r.stderr);const m=JSON.parse(fs.readFileSync(out+".json", "utf8"));
     assert.equal(m.results[0].status,"verified");assert(fs.readFileSync(out,"utf8").includes("true | false"));
     const changed=structuredClone(doc);changed.functions[0].expressions[0].type=[1];fs.writeFileSync(cp,JSON.stringify(changed));
     const repaired=path.join(tmp,"changed.ts");
     const compared=run(process.execPath,[path.resolve(__dirname,"../tools/annotate-source.mts"),file,"--claims",cp,"--format","source-claims","--baseline",out+".json","--verify",verifier,"--out",repaired]);
-    assert.equal(compared.status,0,compared.stderr);const cm=JSON.parse(fs.readFileSync(repaired+".json"));
+    assert.equal(compared.status,0,compared.stderr);const cm=JSON.parse(fs.readFileSync(repaired+".json", "utf8"));
     assert.equal(cm.results[0].status,"not-established");assert.equal(cm.comparison.changes.length,1);assert.equal(cm.comparison.changes[0].kind,"expression");
     fs.writeFileSync(cp,JSON.stringify(doc));
   });
@@ -132,7 +137,7 @@ try {
     fs.writeFileSync(sc,JSON.stringify(bad));
     const failed=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);
     assert.notEqual(failed.status,0);
-    const diagnostic=require("../tools/obligation-diagnostic.mts").readDiagnostic(failed.stderr);
+    const diagnostic=readDiagnostic(failed.stderr);
     assert.equal(diagnostic.kind,"expression-claim");
     assert.equal(diagnostic.sourceMap.role,"expression-claim");
     assert.deepEqual(diagnostic.sourceMap.pos,bodyPos);
@@ -148,7 +153,7 @@ try {
     receiver.current=[1];fs.writeFileSync(sc,JSON.stringify(observed));
     assert.notEqual(run(verifier,["--check-source-claims",sa,sc,sf,se]).status,0);
     const stale=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.notEqual(stale.status,0);
-    const observation=require("../tools/obligation-diagnostic.mts").readDiagnostic(stale.stderr);
+    const observation=readDiagnostic(stale.stderr);
     assert.equal(observation.sourceMap.role,"heap-observation");
     assert.deepEqual(observation.sourceMap.pos,receiver.pos);
     assert.deepEqual(observation.sequent.context,[[1,2]]);

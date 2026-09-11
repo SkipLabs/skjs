@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-"use strict";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import vm from "node:vm";
+import { stripTypes } from "../tools/strip-types.mts";
+import { typeErrors } from "../tools/type-errors.mts";
+import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
+import path from "node:path";
 // Classify the two producer witnesses independently of verifier acceptance.
 // The complete safe body also has a Lean proof in WriteRefinedRead.lean; the
 // source checker also consumes the generated heap-aware graph certificate.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const vm = require("node:vm");
-const { stripTypes } = require("../tools/strip-types.mts");
-const { typeErrors } = require("../tools/type-errors.mts");
-const { fromSkjs, verifySkjs } = require("../tools/annotate-source.mts");
+
+
+
+
+
+
 const [
   safeAstPath,
   safeClaimsPath,
@@ -18,7 +24,7 @@ const [
   badFile,
   verifier,
 ] = process.argv.slice(2);
-const load = (p) => JSON.parse(fs.readFileSync(p));
+const load = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
 const safeAst = load(safeAstPath),
   safeClaims = load(safeClaimsPath);
 const badAst = load(badAstPath),
@@ -122,7 +128,7 @@ test("TypeScript accepts the safe function and rejects the stale false return", 
     2,
     errors.map((e) => `${e.file}:${e.pos} TS${e.code}: ${e.text}`).join("\n"),
   );
-  const bad = require("node:path").resolve(badFile);
+  const bad = path.resolve(badFile);
   assert(errors.every((e) => e.file === bad && e.code === 2322));
   const flipped = errors.find((e) => e.text.includes("Type 'true'"));
   assert(flipped);

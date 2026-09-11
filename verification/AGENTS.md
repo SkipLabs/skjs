@@ -86,7 +86,7 @@ TypeScript. A change to what the exporter says is a diff in a `.snap` file;
 read it, then regenerate:
 
 ```sh
-UPDATE_EXPECT=1 node verification/tests/export-snapshots.js claims.json verification/tests/export-snapshots
+UPDATE_EXPECT=1 node verification/tests/export-snapshots.mts claims.json verification/tests/export-snapshots
 ```
 
 where `claims.json` is one `skjs_check` over the directory. Add a probe when
@@ -94,15 +94,22 @@ an exporter change needs a place to show, one phenomenon per file.
 
 ## Conventions
 
-- Formatting: `.ts`, `.mts` and `.json` are prettier-formatted (`make fmt` at
-  the root); the `.js` here is not, so do not reformat it.
+- Formatting: everything is prettier-formatted (`make fmt` at the root). The
+  `.js` that remains is the reader's own, which the browser loads as plain
+  `<script>` and which is not formatted; leave it alone until the reader is
+  rewritten with a build step.
+- Every module the node side runs is `.mts` and belongs to a `tsc` project:
+  `tools/tsconfig.json` for the trusted front end, and `tsconfig.annotator`,
+  `tsconfig.corpus` and `tsconfig.tests` beside it for the files carried over
+  from JavaScript, which are strict except for `noImplicitAny`. A new file
+  goes in one of them or it is not checked at all.
 - The trusted front end is TypeScript on the compiler's own API
   (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
   the tree), type-checked by the `Front-end types` suite. A member that API
   renamed reads as `undefined` rather than failing, so `tsc` over
   `tools/tsconfig.json` is the thing that catches it — run the suite, do not
   reason about it.
-- `tests/tsconfig.json` is the regime the corpus is claimed and checked under.
+- `tests/tsconfig.mtson` is the regime the corpus is claimed and checked under.
   The producers refuse a file no `tsconfig.json` with `"strict": true` claims,
   rather than claiming it under weaker defaults.
 - node, not bun: the compiler's synchronous channel reads the child process's

@@ -160,12 +160,13 @@ typecheck() {
   (cd verification/tools && npx tsc -p tsconfig.json &&
    npx tsc -p tsconfig.annotator.json &&
    npx tsc -p tsconfig.corpus.json &&
+   npx tsc -p tsconfig.tests.json &&
    npx tsc -p ../report-viewer/tsconfig.json)
 }
 
 if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Front-end types" typecheck
-  run_test "Source boundaries" node verification/tests/unsupported.js "$VERIFIER"
+  run_test "Source boundaries" node verification/tests/unsupported.mts "$VERIFIER"
 
   BASE=verification/tests/stateful-source/basic.ts
   CELL_SOURCE=verification/tests/stateful-source/cells.ts
@@ -228,27 +229,27 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
     echo "FAIL: cell contract export setup"; cat "$WORK/cell.err"; exit 1
   fi
 
-  run_test "Source claims and certificates" node verification/tests/stateful-source.js        "$WORK/source.ast" "$WORK/source.claims" "$BASE" "$VERIFIER"
-  run_test "Mutable cells" node verification/tests/stateful-cells.js        "$WORK/cells.ast" "$WORK/cells.claims" "$CELL_SOURCE" "$VERIFIER"
-  run_test "Undefined values and contracts" node verification/tests/undefined.js        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
-  run_test "Closures" node verification/tests/stateful-closures.js        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
-  run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.js        "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"
-  run_test "Negation and claim repair" node verification/tests/negation.js        "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER"        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT"        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"
-  run_test "Null predicates" node verification/tests/null-tests.js        "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER"        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"        "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"
-  run_test "Refinement witness audit" node verification/tests/refinement-witnesses.js "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"        "$WORK/refinement-controls.ast" "$WORK/refinement-controls.claims" "$CONTROLS"
-  run_test "Write observations and producer witnesses" node verification/tests/write-observations.js        "$WORK/write-refined.ast" "$WORK/write-refined.claims" "$WRITE_REFINED"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" "$VERIFIER"
-  run_test "While loops" node verification/tests/stateful-loops.js        "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"
-  run_test "Break and continue" node verification/tests/stateful-loop-transfers.js        "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"
-  run_test "Producer-neutral claims" node verification/tests/source-claims.js "$VERIFIER"
-  run_test "Source heap assertions" node verification/tests/source-heap-claims.js "$VERIFIER"
-  run_test "Claim export" node verification/tests/source-claim-export.js        "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL"        "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"
-  run_test "Partial collection" node verification/tests/partial-claims.js        "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"
-  run_test "Annotated source reports" node verification/tests/annotated-source.js        "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
-  run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.js "$VERIFIER"
-  run_test "Report viewer" node verification/tests/report-viewer.js
-  run_test "Candidate editing" node verification/tests/candidate-editor.js "$WORK/closures.claims"
-  run_test "Export snapshots" node verification/tests/export-snapshots.js "$WORK/snapshots.claims" "$SNAPSHOTS"
-  run_test "TypeScript claims" node verification/tests/tsc-claims.js "$VERIFIER"
+  run_test "Source claims and certificates" node verification/tests/stateful-source.mts        "$WORK/source.ast" "$WORK/source.claims" "$BASE" "$VERIFIER"
+  run_test "Mutable cells" node verification/tests/stateful-cells.mts        "$WORK/cells.ast" "$WORK/cells.claims" "$CELL_SOURCE" "$VERIFIER"
+  run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
+  run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
+  run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.mts        "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"
+  run_test "Negation and claim repair" node verification/tests/negation.mts        "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER"        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT"        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"
+  run_test "Null predicates" node verification/tests/null-tests.mts        "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER"        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"        "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"
+  run_test "Refinement witness audit" node verification/tests/refinement-witnesses.mts "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"        "$WORK/refinement-controls.ast" "$WORK/refinement-controls.claims" "$CONTROLS"
+  run_test "Write observations and producer witnesses" node verification/tests/write-observations.mts        "$WORK/write-refined.ast" "$WORK/write-refined.claims" "$WRITE_REFINED"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE" "$VERIFIER"
+  run_test "While loops" node verification/tests/stateful-loops.mts        "$WORK/loops.ast" "$WORK/loops.claims" "$LOOPS" "$VERIFIER"
+  run_test "Break and continue" node verification/tests/stateful-loop-transfers.mts        "$WORK/transfers.ast" "$WORK/transfers.claims" "$TRANSFERS" "$VERIFIER"
+  run_test "Producer-neutral claims" node verification/tests/source-claims.mts "$VERIFIER"
+  run_test "Source heap assertions" node verification/tests/source-heap-claims.mts "$VERIFIER"
+  run_test "Claim export" node verification/tests/source-claim-export.mts        "$WORK/closures.claims" "$CLOSURES" "$WORK/partial.claims" "$PARTIAL"        "$WORK/recovery.claims" "$VERIFIER" "$WORK/partial.err"
+  run_test "Partial collection" node verification/tests/partial-claims.mts        "$WORK/partial.claims" "$WORK/recovery.claims" "$PARTIAL" "$VERIFIER" "$WORK/partial.err"
+  run_test "Annotated source reports" node verification/tests/annotated-source.mts        "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
+  run_test "Obligation diagnostics" node verification/tests/obligation-diagnostics.mts "$VERIFIER"
+  run_test "Report viewer" node verification/tests/report-viewer.mts
+  run_test "Candidate editing" node verification/tests/candidate-editor.mts "$WORK/closures.claims"
+  run_test "Export snapshots" node verification/tests/export-snapshots.mts "$WORK/snapshots.claims" "$SNAPSHOTS"
+  run_test "TypeScript claims" node verification/tests/tsc-claims.mts "$VERIFIER"
   run_test "Cell contract export" "$REPO/verification/lean/.lake/build/bin/cell_claim_tests"        "$WORK/cell.claims" "$CELLS"
   report_tests
 fi

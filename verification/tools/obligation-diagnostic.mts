@@ -11,6 +11,39 @@ export type Kind =
   | "expression-claim"
   | "production-failure";
 
+/**
+ * Where a node the failure names sits, in the source the request came from.
+ * Absent when the request carried no source map.
+ */
+export interface SourceMapEntry {
+  pos: [number, number];
+  role: string;
+  environmentStart: number | null;
+  context: unknown[];
+}
+
+/** A node of the certificate graph, as the failure reports it. */
+export interface DiagnosticNode {
+  label: number;
+  sourceMap: SourceMapEntry | null;
+  node: unknown;
+  claim: { context: unknown[]; type?: unknown } | null;
+  requiredKnowledge: { cells?: { contents?: unknown }[] } | null;
+}
+
+/**
+ * What an edge carries from its source to its destination, mirroring the
+ * continuation the source node ends in (RequestJson.lean, `failureDiagnostic`).
+ */
+export interface DiagnosticTransfer {
+  available: unknown[];
+  target: { label: number; mapping: number[] };
+  /** Which way a two-armed Boolean test went; null for every other edge. */
+  booleanObservation: boolean | null;
+  /** The tag test an edge answers, where the continuation is one. */
+  tagObservation: { test: unknown; answer: boolean; slot: number } | null;
+}
+
 export interface ObligationDiagnostic {
   version: 2;
   phase: Phase;
@@ -19,12 +52,34 @@ export interface ObligationDiagnostic {
   /** The proof budget the search was given. */
   fuel: number;
   types: unknown[];
-  /** The node or expression the record is about; absent for a production failure. */
+  requiredResult?: unknown;
+  /** The node or edge the record is about; absent for a production failure. */
   id?: string;
-  source?: unknown;
-  destination?: unknown;
-  transfer?: unknown;
-  sequent?: unknown;
+  /** Present for every kind but a production failure. */
+  source?: DiagnosticNode;
+  /** Edge coverage only. */
+  destination?: DiagnosticNode;
+  edgeIndex?: number;
+  transfer?: DiagnosticTransfer | null;
+  /**
+   * A closure expression claim names its place directly: that failure is
+   * raised where the claim is, not at a node of the certificate graph, so it
+   * carries the entry itself rather than a `source` node holding one
+   * (ExpressionClaims.lean, against `failureDiagnostic` in RequestJson.lean).
+   */
+  sourceMap?: SourceMapEntry;
+  /** Node typing and expression claims only. */
+  sequent?: { context: unknown[]; expression?: unknown; type?: unknown } | null;
+  /** Production failure only. */
+  failure?: string;
+  /** Attached by the report writer, not by the verifier. */
+  input?: {
+    file: string;
+    functionName: string;
+    namePos: [number, number];
+    sourceSha256: string;
+    claimsSha256: string;
+  };
 }
 
 const PHASES: readonly string[] = [

@@ -1,15 +1,20 @@
-"use strict";
-const fs=require("fs"),path=require("path"),os=require("os"),assert=require("assert"),vm=require("vm");
-const {stripTypes}=require("../tools/strip-types.mts"),{spawnSync}=require("child_process");
-const [astPath,claimsPath,file,verifier]=process.argv.slice(2),ast=JSON.parse(fs.readFileSync(astPath)),claims=JSON.parse(fs.readFileSync(claimsPath));
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import assert from "node:assert";
+import vm from "node:vm";
+import { stripTypes } from "../tools/strip-types.mts";
+import { spawnSync } from "node:child_process";
+const __dirname = path.dirname(import.meta.filename);
+const [astPath,claimsPath,file,verifier]=process.argv.slice(2),ast=JSON.parse(fs.readFileSync(astPath, "utf8")),claims=JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"loop-transfers-")),ap=path.join(tmp,"ast.json"),cp=path.join(tmp,"claims.json"),ep=path.join(tmp,"evidence.json");
 const sf=(a,n)=>a.functions.find(f=>f.name===n),cf=(c,n)=>c.find(f=>f.file===file).functions.find(f=>f.name===n);
 const exec=(exe,args)=>{const r=spawnSync(exe,args,{encoding:"utf8",timeout:120000});if(r.error||r.signal)throw r.error||Error(r.signal);return r;};
-const run=(mode,a,c,e)=>{fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));if(e)fs.writeFileSync(ep,JSON.stringify(e));return exec(verifier,[mode,ap,cp,file,ep,...(mode.startsWith("--produce")?["10"]:[])]);};
+const run=(mode,a,c,e?)=>{fs.writeFileSync(ap,JSON.stringify(a));fs.writeFileSync(cp,JSON.stringify(c));if(e)fs.writeFileSync(ep,JSON.stringify(e));return exec(verifier,[mode,ap,cp,file,ep,...(mode.startsWith("--produce")?["10"]:[])]);};
 let passed=0;const test=(name,f)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
   test("SKJS break and continue claims produce evidence",()=>{const r=run("--produce-stateful-source",ast,claims);assert.equal(r.status,0,r.stderr);});
-  const evidence=JSON.parse(fs.readFileSync(ep));
+  const evidence=JSON.parse(fs.readFileSync(ep, "utf8"));
   test("independent transfer consumer",()=>assert.equal(run("--check-stateful-source",ast,claims,evidence).status,0));
   for(const name of ["stopAfterWrite","continueAfterWrite"]) {
     test(`${name}: transfer environment required`,()=>{

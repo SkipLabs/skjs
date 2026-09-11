@@ -681,7 +681,7 @@ The three milestones are:
    have exactly one failing heap edge: the required observation at the return
    after the write/callback. Every ordinary expression/edge obligation, external
    entry, and other heap edge checks. Both source formats report the same site.
-   [The audit](tests/refinement-witnesses.js) also verifies fresh producer claims
+   [The audit](tests/refinement-witnesses.mts) also verifies fresh producer claims
    for [three structurally matched controls](tests/refinement-controls.ts), which
    remove only the invalidating operation. `writeRefinedRead` needs an explicit
    current-true return-entry claim; its original broad claim is insufficient.

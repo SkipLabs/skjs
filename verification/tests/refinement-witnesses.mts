@@ -1,12 +1,18 @@
-"use strict";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { spawnSync } from "node:child_process";
+import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
+const __dirname = path.dirname(import.meta.filename);
 // The original exports must fail only at the stale observation. Controls differ
 // solely by removal of the invalidating operation, and use fresh producer claims.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const os = require("node:os");
-const { spawnSync } = require("node:child_process");
-const { readDiagnostic } = require("../tools/obligation-diagnostic.mts");
+
+
+
+
+
+
 const [
   verifier,
   capturedAst,
@@ -21,7 +27,7 @@ const [
 ] = process.argv.slice(2);
 const root = path.resolve(__dirname, "../..");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "refinement-witnesses-"));
-const load = (p) => JSON.parse(fs.readFileSync(p));
+const load = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
 const run = (exe, args, cwd = root) => {
   const r = spawnSync(exe, args, {
     cwd,

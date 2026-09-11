@@ -1,25 +1,35 @@
-"use strict";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import vm from "node:vm";
+import { spawnSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
+import { stripTypes } from "../tools/strip-types.mts";
+import { typeErrors } from "../tools/type-errors.mts";
+import { fromSourceClaims } from "../tools/annotate-source.mts";
+const __dirname = path.dirname(import.meta.filename);
 // Fresh producer claims, independent consumers, exact profile mirroring, and
 // negative candidates. Runtime checks distinguish null, undefined and false.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const vm = require("node:vm");
-const { spawnSync } = require("node:child_process");
-const { performance } = require("node:perf_hooks");
-const { stripTypes } = require("../tools/strip-types.mts");
-const { typeErrors } = require("../tools/type-errors.mts");
-const { fromSourceClaims } = require("../tools/annotate-source.mts");
+
+
+
+
+
+
+
+
+
+
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath));
-const claims = JSON.parse(fs.readFileSync(claimsPath));
+const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const source = fs.readFileSync(file, "utf8");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "undefined-tests-"));
 const evidence = path.join(tmp, "evidence.json");
 const normalized = path.join(tmp, "claims.json");
 let passed = 0;
-const run = (exe, args, cwd) => {
+const run = (exe, args, cwd?) => {
   const r = spawnSync(exe, args, {
     cwd,
     encoding: "utf8",
@@ -71,7 +81,7 @@ try {
       verifier,
     ]);
     accepted(r);
-    const doc = JSON.parse(fs.readFileSync(normalized));
+    const doc = JSON.parse(fs.readFileSync(normalized, "utf8"));
     assert.equal(doc.profile, "stateful-source-v3");
     // The table starts with the primitives and holds one row per compound
     // type the fixture mentions, each a single clause over earlier labels.
@@ -108,7 +118,7 @@ try {
     accepted(check("stateful-source", claimsPath));
   });
   function candidate(name, edit) {
-    const doc = JSON.parse(fs.readFileSync(normalized));
+    const doc = JSON.parse(fs.readFileSync(normalized, "utf8"));
     doc.functions = doc.functions.filter((f) => f.name === name);
     const a = {
       ...ast,
@@ -191,7 +201,7 @@ try {
         verifier,
       ]),
     );
-    const doc = JSON.parse(fs.readFileSync(out));
+    const doc = JSON.parse(fs.readFileSync(out, "utf8"));
     const b = doc.functions
       .find((f) => f.name === "undefinedCurrent")
       .entries.find((e) => e.start === ret.pos[0])

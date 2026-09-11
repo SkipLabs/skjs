@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-"use strict";
-const fs=require("fs"),os=require("os"),path=require("path");
-const {spawnSync}=require("child_process");
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+const __dirname = path.dirname(import.meta.filename);
 const [astPath,claimsPath,fileKey,verifier]=process.argv.slice(2);
 const ast=JSON.parse(fs.readFileSync(astPath,"utf8")), claims=JSON.parse(fs.readFileSync(claimsPath,"utf8"));
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"stateful-closures-"));
@@ -11,7 +13,7 @@ const cf=c=>c.find(f=>f.file===fileKey).functions.find(f=>f.name==="capturedRead
 const at=(c,e)=>cf(c).exprs.find(x=>x.pos[0]===e.pos[0] && x.pos[1]===e.pos[1]);
 const lit=v=>({top:false,atoms:[{a:"booleanlit",v}]});
 let passed=0;
-function run(mode,a,c,e) {
+function run(mode,a,c,e?) {
   fs.writeFileSync(path.join(tmp,"ast"),JSON.stringify(a));fs.writeFileSync(path.join(tmp,"claims"),JSON.stringify(c));
   if(e) fs.writeFileSync(path.join(tmp,"evidence"),JSON.stringify(e));
   const args=[mode,path.join(tmp,"ast"),path.join(tmp,"claims"),fileKey,path.join(tmp,"evidence")];
@@ -37,7 +39,7 @@ try {
     ["shadowing closure parameter gated",a=>{sf(a).body[1].init.name="cell";}],
     ["function requirements cannot disappear",(a,c)=>{at(c,sf(a).body[1].init).type.atoms[0].construct="present";}],
     ["extra signature fields rejected",(a,c)=>{at(c,sf(a).body[1].init).type.atoms[0].optional=true;}],
-  ]){
+  ] as [string, (...xs: any[]) => any][]){
     const a=clone(ast),c=clone(claims);edit(a,c);
     expect(name,run("--produce-stateful-source",a,c),false);
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
@@ -54,7 +56,7 @@ try {
     ["valid proof for wrong sequent", e=>{e.obligations[0][1]=clone(e.obligations[0][0]);}],
     ["changed expression context", e=>{e.obligations[0][0].node.claim.context=[];}],
     ["changed expression result", e=>{e.obligations[0][0].node.claim.type=[1];}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const e=clone(evidence);edit(e);
     expect(name,run("--check-stateful-source",ast,claims,e),false);
   }
@@ -62,7 +64,7 @@ try {
     ["writingBody", e=>e.body.rhs],
     ["allocatingBody", e=>e.body.e.e],
     ["callingBody", e=>e.body.arg],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name===name);
     const closure=f.body.filter(s=>s.init && s.init.k==="lambda").at(-1).init;
     const e=select(closure),fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name===name);
@@ -83,7 +85,7 @@ try {
     ["missing block entry claim", (fc,pos)=>{fc.envs=fc.envs.filter(q=>q.pos[0]!==pos[0]);}],
     ["missing block parameter", (fc,pos)=>{fc.envs.find(q=>q.pos[0]===pos[0]).vars=fc.envs.find(q=>q.pos[0]===pos[0]).vars.filter(v=>v.name!=="unit");}],
     ["unjustified block entry", (fc,pos)=>{fc.envs.find(q=>q.pos[0]===pos[0]).vars.find(v=>v.name==="unit").type=lit("true");}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const c=clone(claims),f=ast.functions.find(f=>f.name==="blockReader");
     const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="blockReader");
     edit(fc,f.body[1].init.body.pos);
@@ -95,7 +97,7 @@ try {
     ["wrong local annotation", a=>{a.body[0].init.body.body.annot=lit("true");}],
     ["shadowing local gated", a=>{a.body[0].init.body.body.name="cell";}],
     ["unjustified local entry", (a,fc)=>{const p=a.body[0].init.body.body.body.pos;fc.envs.find(q=>q.pos[0]===p[0]).vars.find(v=>v.name==="saved").type=lit("true");}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="localBlock");
     const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="localBlock");
     edit(f,fc);
@@ -108,7 +110,7 @@ try {
     ["branch cannot narrow parameter", (b,fc)=>{fc.envs.find(q=>q.pos[0]===b.then.pos[0]).vars.find(v=>v.name==="unit").type=lit("true");}],
     ["branch result annotation checked", b=>{b.result=lit("false");}],
     ["non-Boolean closure condition", b=>{b.cond={k:"lit",pos:b.cond.pos,lit:{a:"null"}};}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="branchingClosure");
     const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="branchingClosure");
     edit(f.body[0].init.body,fc);
@@ -120,7 +122,7 @@ try {
     ["branch refinement cannot escape join", (b,fc)=>{fc.envs.find(q=>q.pos[0]===b.body.pos[0]).vars.find(v=>v.name==="flag").type=lit("true");}],
     ["branch local cannot escape closure join", b=>{b.body.e={k:"id",pos:b.body.e.pos,name:"saved"};}],
     ["branch local initializer checked", (b,fc)=>{const pos=b.init.then.init.pos;fc.exprs.find(q=>q.pos[0]===pos[0]&&q.pos[1]===pos[1]).type=lit("false");}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="joinedClosure");
     const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="joinedClosure");
     edit(f.body[0].init.body.body,fc);
@@ -131,7 +133,7 @@ try {
     ["missing early-return continuation entry", (b,fc)=>{fc.envs=fc.envs.filter(q=>q.pos[0]!==b.else_.pos[0]);}],
     ["wrong surviving-arm refinement", (b,fc)=>{fc.envs.find(q=>q.pos[0]===b.else_.pos[0]).vars.find(v=>v.name==="flag").type=lit("true");}],
     ["early return expression claim checked", (b,fc)=>{const pos=b.then.e.pos;fc.exprs.find(q=>q.pos[0]===pos[0]&&q.pos[1]===pos[1]).type=lit("false");}],
-  ]) {
+  ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims),f=a.functions.find(f=>f.name==="earlyReturn");
     const fc=c.find(f=>f.file===fileKey).functions.find(f=>f.name==="earlyReturn");
     edit(f.body[0].init.body,fc);

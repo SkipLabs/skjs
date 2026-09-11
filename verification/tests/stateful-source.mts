@@ -1,10 +1,13 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 // Exercise the source consumer using actual parser output and SKJS exports.
-"use strict";
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const { spawnSync } = require("child_process");
+
+
+
+
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
 const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
@@ -19,7 +22,7 @@ const parameterAst = a => a.functions.find(f => f.name === "selectParameter");
 const parameterClaims = c => c.find(f => f.file === fileKey).functions.find(f => f.name === "selectParameter");
 const ty = v => ({ top: false, atoms: [{ a: "booleanlit", v }] });
 let passed = 0;
-function run(mode, a, c, evidence) {
+function run(mode, a, c, evidence?) {
   fs.writeFileSync(path.join(tmp, "ast.json"), JSON.stringify(a));
   fs.writeFileSync(path.join(tmp, "claims.json"), JSON.stringify(c));
   if (evidence !== undefined) fs.writeFileSync(path.join(tmp, "evidence.json"), JSON.stringify(evidence));
@@ -41,7 +44,7 @@ try {
   expect("produce real source certificates", run("--produce-stateful-source", ast, claims), true);
   const evidence = JSON.parse(fs.readFileSync(path.join(tmp, "evidence.json"), "utf8"));
   expect("independent source consumer", run("--check-stateful-source", ast, claims, evidence), true);
-  const cases = [
+  const cases: [string, (a: any, c?: any) => void, string?][] = [
     ["false claim for true initializer", (a,c) => { fn(c).exprs.find(e => e.pos[0] === a.functions[0].body[0].init.pos[0]).type = ty("false"); }, "evidence search failed"],
     ["source annotation independently enforced", a => { a.functions[0].body[0].annot = ty("false"); }, "evidence search failed"],
     ["incoming edge rejects invented refinement", (a,c) => { fn(c).envs.find(e => e.pos[0] === a.functions[0].body[1].pos[0]).vars.find(v => v.name === "x").type = ty("false"); }, "evidence search failed"],

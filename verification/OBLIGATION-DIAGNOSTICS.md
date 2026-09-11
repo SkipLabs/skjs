@@ -144,7 +144,7 @@ There are no retained mutable-heap observations. Future overloads and generics
 should extend explicit obligation data rather than force them into
 an `in / claim / out` triple or infer their roles in the viewer.
 
-`tests/obligation-diagnostics.js` exercises the three partial repairs and full
+`tests/obligation-diagnostics.mts` exercises the three partial repairs and full
 repair of the return example, identical spans with different obligations,
 selected maps on shared-destination branches, input fingerprints, and unsupported
 record versions. It runs under `make verify-test`.
@@ -236,8 +236,8 @@ report reader classifies. An unequal-contract error can still arise in an
 ordinary type/signature or unsupported record union; standalone point
 observations take the assertion path.
 
-[Annotated-source tests](tests/annotated-source.js) check reason transport and
-classification; [viewer tests](tests/report-viewer.js) cover known, unknown, and
-absent reasons. [Source-claim export tests](tests/source-claim-export.js) check
+[Annotated-source tests](tests/annotated-source.mts) check reason transport and
+classification; [viewer tests](tests/report-viewer.mts) cover known, unknown, and
+absent reasons. [Source-claim export tests](tests/source-claim-export.mts) check
 that observations survive conversion and become proof obligations rather than
 being silently erased.

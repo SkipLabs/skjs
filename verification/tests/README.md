@@ -8,17 +8,17 @@ claims for the viewer's corpus, without the repairs or corruptions used in tests
 
 | Tests | Coverage |
 |---|---|
-| `stateful-source.js` / `stateful-source/basic.ts` | Real certificates, branches and shared continuations, exact singletons, source annotations, parameter contracts, incoming-edge refinements, missing/duplicate claims, lexical scope and input identities. |
-| `stateful-cells.js`, `stateful-closures.js` | Allocation, alias writes, reads, captures, returned closures, inner claims and corrupted certificates. |
-| `stateful-loops.js`, `stateful-loop-transfers.js` | Supplied loop invariants, back edges, nested scope, early returns, break and continue. |
-| `null-tests.js` | Null predicates, coalescing, logical expressions and compound guard edges; required claims, merge rejection, effect order, loop back edges and a direct-write stale-refinement counterexample. |
-| `write-observations.js` | Post-write precision and negated stale-refinement witnesses: SKJS/TypeScript results, execution, source shape for the Lean observation proof, and the current checker limitation. |
-| `primitive-callbacks.js` | Primitive domains, contravariant call contracts, returned writers, a stale captured-refinement witness and a verified immutable-snapshot counterpart. |
-| `source-claims.js`, `source-claim-export.js` | Producer-independent claims, conversion fidelity and source association. |
-| `partial-claims.js` | Partial collections without recovery, optional keep-going quality and diagnostics. |
-| `annotated-source.js`, `report-viewer.js`, `candidate-editor.js` | Source-preserving display, failure locations and independent candidate repair. |
-| `obligation-diagnostics.js` | Distinct obligations sharing a return span, claim repair combinations, selected edge mappings, version handling and report identity. |
-| `unsupported.js` / `unsupported/` | Explicit source boundaries, rejected for the expected reason. |
+| `stateful-source.mts` / `stateful-source/basic.ts` | Real certificates, branches and shared continuations, exact singletons, source annotations, parameter contracts, incoming-edge refinements, missing/duplicate claims, lexical scope and input identities. |
+| `stateful-cells.mts`, `stateful-closures.mts` | Allocation, alias writes, reads, captures, returned closures, inner claims and corrupted certificates. |
+| `stateful-loops.mts`, `stateful-loop-transfers.mts` | Supplied loop invariants, back edges, nested scope, early returns, break and continue. |
+| `null-tests.mts` | Null predicates, coalescing, logical expressions and compound guard edges; required claims, merge rejection, effect order, loop back edges and a direct-write stale-refinement counterexample. |
+| `write-observations.mts` | Post-write precision and negated stale-refinement witnesses: SKJS/TypeScript results, execution, source shape for the Lean observation proof, and the current checker limitation. |
+| `primitive-callbacks.mts` | Primitive domains, contravariant call contracts, returned writers, a stale captured-refinement witness and a verified immutable-snapshot counterpart. |
+| `source-claims.mts`, `source-claim-export.mts` | Producer-independent claims, conversion fidelity and source association. |
+| `partial-claims.mts` | Partial collections without recovery, optional keep-going quality and diagnostics. |
+| `annotated-source.mts`, `report-viewer.mts`, `candidate-editor.mts` | Source-preserving display, failure locations and independent candidate repair. |
+| `obligation-diagnostics.mts` | Distinct obligations sharing a return span, claim repair combinations, selected edge mappings, version handling and report identity. |
+| `unsupported.mts` / `unsupported/` | Explicit source boundaries, rejected for the expected reason. |
 
 The reader's supported example group lists files exercised by these source
 suites. `cell-contracts.ts` tests exported type contracts separately and is not
@@ -39,7 +39,7 @@ and the independent consumer, then move it into the supported group and remove
 its expected rejection. Promotion depends on implemented semantics and checking,
 not merely on the parser accepting the syntax.
 
-`negation.js` checks Boolean negation and reversed immutable refinements in branches, closures and loops, including forged claims and an effectful operand.
+`negation.mts` checks Boolean negation and reversed immutable refinements in branches, closures and loops, including forged claims and an effectful operand.
 
 Producer examples are separated by the direction of the failure:
 

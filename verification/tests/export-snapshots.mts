@@ -1,12 +1,17 @@
-"use strict";
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+// Plain JavaScript modules; the reader loads these in a browser too.
+const require = createRequire(import.meta.url);
+const { printFull } = require("../tools/claim-types.js");
 // Export snapshots. SKJS's claims for each probe source, printed in the syntax
 // the viewer shows, with every unavailable type carrying the exporter's
 // reason. The expected text sits beside the probe; a diff is a change in what
 // the exporter says about that program, to be read and either fixed or
 // accepted with UPDATE_EXPECT=1. Nothing here is verified.
-const fs = require("node:fs");
-const path = require("node:path");
-const { printFull } = require("../tools/claim-types.js");
+
+
+
 const [claimsPath, dir] = process.argv.slice(2);
 if (!claimsPath || !dir)
   throw Error("usage: export-snapshots.js <claims.json> <probe-dir>");

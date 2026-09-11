@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-"use strict";
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { hash, render } from "../tools/annotate-source.mts";
+import { createRequire } from "node:module";
+// Plain JavaScript modules; the reader loads these in a browser too.
+const require = createRequire(import.meta.url);
 const {
   fromBundle,
   parseReport,
@@ -13,8 +16,9 @@ const {
   parseReportLink,
   reportLink,
 } = require("../report-viewer/model.js");
-const { hash, render } = require("../tools/annotate-source.mts");
-
+const marks = require("../report-viewer/marks.js");
+const surface = require("../tools/claim-types.js");
+const ob = require("../report-viewer/obligation.js");
 const source =
   "// 😀\nfunction f(x: boolean): boolean {\n  return (\n    x\n  );\n}\n";
 const start = source.indexOf("function"),
@@ -57,7 +61,7 @@ assert.equal(renderType('{"newConstructor":7}').text, '{"newConstructor":7}');
 const bad = structuredClone(bundle);
 bad.manifest.functions[0].expressions[0].pos = [1, source.length + 1];
 assert.throws(() => fromBundle(bad), /span/);
-const changed = structuredClone(bundle);
+const changed: any = structuredClone(bundle);
 changed.manifest.comparison = {
   changes: [{ span: [expr, end], status: "changed", kind: "expression" }],
 };
@@ -71,7 +75,7 @@ missing.manifest.gaps = [
   { id: "g0", pos: [start, source.length - 1], status: "claims unavailable" },
 ];
 assert.equal(fromBundle(missing).functions[0].gaps.length, 1);
-const missingFunctionBundle = structuredClone(missing);
+const missingFunctionBundle: any = structuredClone(missing);
 missingFunctionBundle.manifest.missingFunctions = [
   {
     name: "f",
@@ -173,7 +177,7 @@ assert.equal(findMark(addressed, ""), null);
 assert.equal(markIdOf(addressed, 0, "e0"), "f0x0");
 assert.equal(markIdOf(addressed, 0, null), "f0");
 assert.equal(markIdOf(addressed, 0, "e7"), "");
-const shifted = structuredClone(bundle);
+const shifted: any = structuredClone(bundle);
 shifted.manifest.functions[0].expressions.unshift({
   id: "f0x9",
   pos: [source.indexOf("x\n"), source.indexOf("x\n") + 1],
@@ -227,7 +231,7 @@ assert.equal(reportLink({ file: "", mark: "g2" }), "#g2");
 }
 
 /* ---------- what the source view decides, without a browser ---------- */
-const marks = require("../report-viewer/marks.js");
+
 
 // SKJS positions are 1-based with an exclusive end; a diagnostic for another
 // file, or past the end of its line, must not be drawn over this source.
@@ -438,7 +442,7 @@ const marks = require("../report-viewer/marks.js");
 }
 
 /* ---------- claim types in surface syntax ---------- */
-const surface = require("../tools/claim-types.js");
+
 
 {
   const cell = (read, write) => ({
@@ -611,12 +615,12 @@ const surface = require("../tools/claim-types.js");
     ["this: (unavailable), value: null, cell: { value: boolean }, extra: null", /not a binding/],
     ["this: (unavailable), value: null, value: null, cell: { value: boolean }", /appears twice/],
     ["this: (unavailable), value, cell: { value: boolean }", /needs a name and a type/],
-  ])
+  ] as [string, RegExp][])
     assert.throws(() => surface.readClaimValue("environment", bad, env), complaint);
 }
 
 /* ---------- obligation diagnostics, as the panel reads them ---------- */
-const ob = require("../report-viewer/obligation.js");
+
 
 // Types are label lists into the record's own table, read as a union. The graph
 // is finite but may be cyclic, so rendering stops rather than recursing.
@@ -738,7 +742,7 @@ const ob = require("../report-viewer/obligation.js");
   );
   // An edge into a statement checkpoint has no expression claim at its span: it
   // is described by what its destination required, and attaches to that entry.
-  const checkpoint = structuredClone(record);
+  const checkpoint: any = structuredClone(record);
   checkpoint.source.sourceMap = { pos: [1, 5], role: "binding-annotation" };
   checkpoint.destination.sourceMap = {
     pos: [10, 20],
@@ -814,7 +818,7 @@ const ob = require("../report-viewer/obligation.js");
   assert.equal(ob.contentsText([]), "never");
 
   // Tag dispatch observes the same slot, and reads the same way.
-  const tagged = structuredClone(record);
+  const tagged: any = structuredClone(record);
   delete tagged.transfer.booleanObservation;
   tagged.transfer.tagObservation = { test: "nul", answer: false, slot: 0 };
   tagged.source.sourceMap.role = "tag-dispatch";

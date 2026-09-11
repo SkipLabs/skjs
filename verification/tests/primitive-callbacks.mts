@@ -1,11 +1,17 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import vm from "node:vm";
+import { spawnSync } from "node:child_process";
+import { stripTypes } from "../tools/strip-types.mts";
 // Exact callback contracts, real SKJS exports, and a captured-refinement witness.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const vm = require("node:vm");
-const { spawnSync } = require("node:child_process");
-const { stripTypes } = require("../tools/strip-types.mts");
+
+
+
+
+
+
 const [
   astPath,
   claimsPath,
@@ -15,13 +21,13 @@ const [
   badClaimsPath,
   badFile,
 ] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath));
-const claims = JSON.parse(fs.readFileSync(claimsPath));
+const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/primitive-callbacks-");
 const clone = structuredClone;
 const nul = { top: false, atoms: [{ a: "null" }] };
 let passed = 0;
-function run(mode, a, c, key = file, evidence) {
+function run(mode, a, c, key = file, evidence?) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -59,7 +65,7 @@ try {
     run("--produce-stateful-source", ast, claims),
     true,
   );
-  const evidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const evidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "primitive callback independent consumption",
     run("--check-stateful-source", ast, claims, file, evidence),
@@ -79,7 +85,7 @@ try {
     true,
   );
   const normalizedEvidence = JSON.parse(
-    fs.readFileSync(tmp + "/evidence.json"),
+    fs.readFileSync(tmp + "/evidence.json", "utf8"),
   );
   expect(
     "normalized independent consumption",
@@ -108,8 +114,8 @@ try {
     run("--check-stateful-source", a, c, file, evidence),
     false,
   );
-  const bad = JSON.parse(fs.readFileSync(badClaimsPath)),
-    ba = JSON.parse(fs.readFileSync(badAstPath));
+  const bad = JSON.parse(fs.readFileSync(badClaimsPath, "utf8")),
+    ba = JSON.parse(fs.readFileSync(badAstPath, "utf8"));
   expect(
     "original refined reference fails after the callback",
     run("--produce-stateful-source", ba, bad, badFile),

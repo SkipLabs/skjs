@@ -1,4 +1,8 @@
-"use strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+const __dirname = path.dirname(import.meta.filename);
 // What TypeScript's own checker believes, put through the verifier.
 //
 // `tools/tsc-claims.mts` states tsc's types at every site of a corpus file as a
@@ -6,10 +10,10 @@
 // the verdict per file. The expected verdicts below are policy, the same shape
 // as `expectedVerified` in examples.mts: a change here is a change in what one
 // checker's claims can be derived from, to be read rather than regenerated.
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const { spawnSync } = require("node:child_process");
+
+
+
+
 const verifier = process.argv[2];
 if (!verifier) throw Error("usage: tsc-claims.mts <verifier>");
 const root = path.resolve(__dirname, "../..");

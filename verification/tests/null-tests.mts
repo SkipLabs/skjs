@@ -1,11 +1,21 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import vm from "node:vm";
+import { spawnSync } from "node:child_process";
+import { stripTypes } from "../tools/strip-types.mts";
+import { createRequire } from "node:module";
+import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
+// Plain JavaScript modules; the reader loads these in a browser too.
+const require = createRequire(import.meta.url);
 // Null predicates and immutable-variable guard edges are independently checked.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const os = require("node:os");
-const vm = require("node:vm");
-const { spawnSync } = require("node:child_process");
-const { stripTypes } = require("../tools/strip-types.mts");
+
+
+
+
+
+
 const [
   astPath,
   claimsPath,
@@ -21,13 +31,13 @@ const [
   staleClaimsPath,
   staleFile,
 ] = process.argv.slice(2);
-const ast = JSON.parse(fs.readFileSync(astPath));
-const claims = JSON.parse(fs.readFileSync(claimsPath));
+const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
+const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
 const tmp = fs.mkdtempSync(os.tmpdir() + "/null-tests-");
 const fn = (c) =>
   c.find((f) => f.file === file).functions.find((f) => f.name === "isNull");
 let passed = 0;
-function run(mode, a, c, evidence, key = file) {
+function run(mode, a, c, evidence?, key = file) {
   fs.writeFileSync(tmp + "/ast.json", JSON.stringify(a));
   fs.writeFileSync(tmp + "/claims.json", JSON.stringify(c));
   if (evidence)
@@ -56,7 +66,7 @@ try {
     run("--produce-stateful-source", ast, claims),
     true,
   );
-  const evidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const evidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "null predicate independent consumption",
     run("--check-stateful-source", ast, claims, evidence),
@@ -75,7 +85,7 @@ try {
     true,
   );
   const normalizedEvidence = JSON.parse(
-    fs.readFileSync(tmp + "/evidence.json"),
+    fs.readFileSync(tmp + "/evidence.json", "utf8"),
   );
   expect(
     "normalized null predicate consumption",
@@ -114,7 +124,7 @@ try {
       },
       "only strict equality",
     ],
-  ]) {
+  ] as [string, (a: any, c: any) => void, string][]) {
     const a = structuredClone(ast),
       c = structuredClone(claims);
     mutate(a, c);
@@ -131,19 +141,16 @@ try {
     "null guards produce evidence for branch and loop refinements",
     run(
       "--produce-stateful-source",
-      JSON.parse(fs.readFileSync(guardAstPath)),
-      JSON.parse(fs.readFileSync(guardClaimsPath)),
+      JSON.parse(fs.readFileSync(guardAstPath, "utf8")),
+      JSON.parse(fs.readFileSync(guardClaimsPath, "utf8")),
       undefined,
       guardFile,
-      exitAstPath,
-      exitClaimsPath,
-      exitFile,
     ),
     true,
   );
-  const guardAst = JSON.parse(fs.readFileSync(guardAstPath));
-  const guardClaims = JSON.parse(fs.readFileSync(guardClaimsPath));
-  const guardEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const guardAst = JSON.parse(fs.readFileSync(guardAstPath, "utf8"));
+  const guardClaims = JSON.parse(fs.readFileSync(guardClaimsPath, "utf8"));
+  const guardEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "null guard independent consumption",
     run(
@@ -152,9 +159,6 @@ try {
       guardClaims,
       guardEvidence,
       guardFile,
-      exitAstPath,
-      exitClaimsPath,
-      exitFile,
     ),
     true,
   );
@@ -177,7 +181,7 @@ try {
     true,
   );
   const normalizedGuardEvidence = JSON.parse(
-    fs.readFileSync(tmp + "/evidence.json"),
+    fs.readFileSync(tmp + "/evidence.json", "utf8"),
   );
   expect(
     "normalized null guards independently consumed",
@@ -410,9 +414,6 @@ try {
       guardClaims,
       guardEvidence,
       guardFile,
-      exitAstPath,
-      exitClaimsPath,
-      exitFile,
     ),
     false,
   );
@@ -496,8 +497,8 @@ try {
   assert.equal(guardContext.maybeCell(true).value, true);
   assert.equal(guardContext.maybeCallback(false), null);
   assert.equal(guardContext.maybeCallback(true)(false), true);
-  const staleAst = JSON.parse(fs.readFileSync(staleAstPath));
-  const staleClaims = JSON.parse(fs.readFileSync(staleClaimsPath));
+  const staleAst = JSON.parse(fs.readFileSync(staleAstPath, "utf8"));
+  const staleClaims = JSON.parse(fs.readFileSync(staleClaimsPath, "utf8"));
   // This suite repairs the positive variant; write-observations covers staleFlip.
   staleAst.functions = staleAst.functions.filter(
     (f) => f.name === "staleCompound",
@@ -565,7 +566,6 @@ try {
     binding: "cell",
     reason: "unexpanded-type",
   });
-  const { fromSkjs, verifySkjs } = require("../tools/annotate-source.mts");
   const staleText = fs.readFileSync(staleFile, "utf8");
   const actualReport = verifySkjs(
     staleFile,
@@ -706,8 +706,8 @@ try {
   assert.equal(staleRuntime.staleCompound(false), false);
   console.log("  compound stale-refinement runtime counterexample: OK");
   passed++;
-  const exitAst = JSON.parse(fs.readFileSync(exitAstPath));
-  const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath));
+  const exitAst = JSON.parse(fs.readFileSync(exitAstPath, "utf8"));
+  const exitClaims = JSON.parse(fs.readFileSync(exitClaimsPath, "utf8"));
   expect(
     "SKJS null loop-exit claims are insufficient",
     run("--produce-stateful-source", exitAst, exitClaims, undefined, exitFile),
@@ -726,7 +726,7 @@ try {
     run("--produce-stateful-source", exitAst, repaired, undefined, exitFile),
     true,
   );
-  const exitEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json"));
+  const exitEvidence = JSON.parse(fs.readFileSync(tmp + "/evidence.json", "utf8"));
   expect(
     "null loop-exit repair is independently consumed",
     run("--check-stateful-source", exitAst, repaired, exitEvidence, exitFile),
