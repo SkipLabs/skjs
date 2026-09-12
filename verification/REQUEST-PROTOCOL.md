@@ -140,9 +140,9 @@ The evidence file is an object with one field, `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
-`var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `lam`, `app`, `letE`, `alloc`,
+`var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `funE`, `app`, `letE`, `alloc`,
 `read`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
-`unionVar` or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
+`unionVar`, `makeCallable`, `callCallable`, `readCallable`, `writeCallable`, or `sub`. `ifTrue` and `ifFalse` are the two answers of the single
 shape-test rule `ifTag`, split so that the evidence records which answer it
 relies on; `truLit` and `flsLit` are the Boolean singleton introductions. Expression sequents repeat their
 contexts, terms and result types. The consumer checks these against the request;
@@ -165,7 +165,12 @@ The effect checker binds to the root expression sequent and must establish exact
 `output`. Each actual outgoing edge checks fact entailment against the destination's
 `knowledge`, in addition to ordinary type coverage. Effect-only continuations drop
 the result slot before transferring facts. External entry requires empty knowledge.
-All type labels in nested effect proofs are bounds checked. Within a source
+All type labels in nested effect proofs are bounds checked. `allocated` retains its existing payload
+(`slot`, `contents`, and ordinary `proof`) for either descriptor: it requires
+`make code (var slot)` and checks the entire term's scope and creation proof.
+The code descriptor is part of the requested term, so changing it invalidates
+the evidence. `typedRead` similarly accepts the first invariant operand of a
+plain or callable bag; its stored read links retain the receiver descriptor. Within a source
 statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.
 See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).

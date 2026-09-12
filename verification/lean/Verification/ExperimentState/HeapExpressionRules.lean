@@ -129,9 +129,27 @@ theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
       exact ⟨l,c,he.trans hl,by simpa [push,hp.2] using hv⟩
     · exact hout.2.2 link hm
 
+/-- The first invariant bag operand, for either plain or callable objects. -/
+def bagOperand : List (PositiveNormalization.Clause α) → Option α
+  | [.refs B _] | [.callable B _ _] => some B
+  | _ => none
+
+theorem bagOperand_sound {G : NormalGraph ι} {Ref B n W v}
+    (hr : bagOperand (expand G Ref) = some B) (hv : meaning G Ref n W v) :
+    bagT (meaning G B) n W v := by
+  unfold bagOperand at hr
+  split at hr
+  · rename_i A rest he
+    cases hr
+    exact refT_bag ((represents_sem he n W v).mp hv).1
+  · rename_i A rest L he
+    cases hr
+    exact ((represents_sem he n W v).mp hv).1.1
+  · contradiction
+
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ n W h}
     (ht : HasTy G Γ (.read (.var i)) A) (hi : Γ[i]? = some Ref)
-    (hr : Represents G Ref (.refs B []))
+    (hr : bagOperand (expand G Ref) = some B)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
@@ -139,7 +157,8 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ
   cases n with
   | zero => trivial
   | succ n =>
-    obtain ⟨l,c,hl,hlookup,hagree⟩ := ((represents_sem hr _ W (ρ i)).mp (he.2 i Ref hi)).1
+    obtain ⟨l,code,hl,_,r,c,hproj,hlookup,hagree⟩ := bagOperand_sound hr (he.2 i Ref hi)
+    cases hproj
     obtain ⟨v,hv,hmem⟩ := hh.2 l c hlookup
     have hval := meaning_valOnly G B 0 _ v ((hagree 0 (by omega) _ v).mp (hmem 0 (by omega)))
     have hs : Safe (meaning G A) (n+1) W h (.read (ρ i)) := by
@@ -151,7 +170,7 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
-      exact ⟨l,.absent,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
+      exact ⟨l,code,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
     · exact hout.2.2 link hm
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
@@ -182,23 +201,21 @@ theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
 def allocOutput (k : Knowledge) (R : List Literal) : Knowledge :=
   ⟨⟨0,R⟩ :: HeapFacts.shift k.cells, HeapFacts.shift k.values,(HeapKnowledge.shift k).links⟩
 
-theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
-    (ht : HasTy G Γ (.alloc (.var i)) A)
+theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h} {code : CallCode}
     (hr : valuesAt G Γ k i = some R)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hs : Safe (meaning G A) n W h (.make code (ρ i))) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (allocOutput k R) (push v ρ) h')
-      n W h (.alloc (ρ i)) := by
+      n W h (.make code (ρ i)) := by
   obtain ⟨a,ha,hv⟩ := valuesAt_sound hr he hk
   have hvv : isVal (ρ i) = true := by rw [hv]; cases a <;> rfl
-  apply one_step rfl rfl (.makeV hvv) _
-    (by simpa [instantiate] using ht.sound n W h ρ he hw hh)
-  refine ⟨?_,(HeapKnowledge.shift_holds (v := .obj h.length .absent) hk).2.1,
-    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .obj h.length .absent) hk).2.2⟩
+  apply one_step rfl rfl (.makeV hvv) _ hs
+  refine ⟨?_,(HeapKnowledge.shift_holds (v := .obj h.length code) hk).2.1,
+    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .obj h.length code) hk).2.2⟩
   intro f hf
   rcases List.mem_cons.mp hf with rfl | hf
-  · exact ⟨h.length,.absent,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
+  · exact ⟨h.length,code,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
     obtain ⟨l,c,v,hl,hh',b,hb,hv'⟩ := hk.1 g hg
     exact ⟨l,c,v,hl,alloc_frame hh',b,hb,hv'⟩
@@ -350,6 +367,12 @@ inductive StepEvidence (ι : Type) where
   | allocated (slot : Nat) (contents : List Literal) (proof : ProgramCertificates.Evidence ι)
   | written (receiver value : Nat) (contents : List Literal) (proof : ProgramCertificates.Evidence ι)
 
+/-- Only allocation whose initializer is an existing value slot can frame facts.
+The descriptor is not evaluated; its code obligations stay in ordinary evidence. -/
+def allocationSlot : Tm → Option Nat
+  | .make _ (.var i) => some i
+  | _ => none
+
 /-- The successful result is the guaranteed postcondition in the result-pushed
 frame. Edge checking must entail the destination's facts from this output;
 checking a node alone does not establish its supplied input knowledge. -/
@@ -370,7 +393,7 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
     else none
   | .typedRead i B e =>
     if claim e = j ∧ checkTree G e = true ∧ j.term = .read (.var i) ∧
-        (j.context[i]?).any (fun Ref => decide (expand G Ref = [.refs B []]))
+        (j.context[i]?).any (fun Ref => decide (bagOperand (expand G Ref) = some B))
     then some (readFrame k i) else none
   | .observedRead i R =>
     if j.term = .read (.var i) ∧ i < j.context.length ∧
@@ -381,8 +404,8 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
         valuesAt G j.context k i = some R ∧ includes G j.type R = true
     then some (withResult (copy k i) R) else none
   | .allocated i R e =>
-    if claim e = j ∧ checkTree G e = true ∧
-        j.term = .alloc (.var i) ∧ i < j.context.length ∧
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true ∧
+        allocationSlot j.term = some i ∧ i < j.context.length ∧
         valuesAt G j.context k i = some R
     then some (allocOutput k R) else none
   | .written i v R e =>
@@ -441,7 +464,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       cases hi : j.context[i]? with
       | none => simp [hi] at hr
       | some Ref =>
-        have hrep : Represents G Ref (.refs B []) := by simpa [hi, Represents] using hr
+        have hrep : bagOperand (expand G Ref) = some B := by simpa [hi] using hr
         have typed := checkTree_sound e ht
         rw [hj,term] at typed
         cases hc
@@ -470,13 +493,18 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
     simp only [checkStep] at hc
     split at hc
     · rename_i hp
-      obtain ⟨hj,ht,term,_,hr⟩ := hp
+      obtain ⟨hj,_,ht,term,_,hr⟩ := hp
       have typed := checkTree_sound e ht
       rw [hj] at typed
-      rw [term] at typed
-      cases hc
-      rw [term]
-      simpa [instantiate] using alloc_sound typed hr he hk hw hh
+      unfold allocationSlot at term
+      split at term
+      · rename_i code slot heq
+        cases term
+        cases hc
+        rw [heq] at typed ⊢
+        have hs := typed.sound n W h ρ he hw hh
+        cases code <;> simpa [instantiate] using alloc_sound hr he hk hs
+      · contradiction
     · contradiction
   | written i v R e =>
     simp only [checkStep] at hc
@@ -491,6 +519,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       simpa [instantiate] using write_sound typed hi hr he hk hw hh
     · contradiction
 
+#print axioms bagOperand_sound
+#print axioms alloc_sound
 #print axioms creation_sound
 #print axioms checkStep_sound
 #print axioms typedRead_sound

@@ -257,7 +257,11 @@ the same location after any write, and a constant a variable is equal to does no
 change when a cell does. Everything in $\Sigma$ is a claim about the heap as it is
 now, so a write to an unknown location or a call to an unknown function can
 falsify any of it. Allocation is the exception that proves it: a fresh cell
-cannot be one an existing fact names, so allocation preserves both.
+cannot be one an existing fact names, so allocation preserves both. The
+checked `allocated` rule applies to both plain and callable objects through
+`make`, with a known initializer slot. Typed reads also use one proof for both
+kinds of bag and retain their actual descriptor in the read links. Closure
+bodies may mutate when called; allocating their code does not execute them.
 
 `ValueHolds` and the alias branch of `HeapLinks.Holds` interpret $\Pi$;
 `HeapFacts.Holds` and the read branch interpret $\Sigma$. The implementation stores

@@ -287,9 +287,9 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
     match j.term with
     | .read (.var i) =>
       if let some Ref := j.context[i]? then
-        if let [.refs B []] := expand G Ref then
+        if let some B := HeapExpressionRules.bagOperand (expand G Ref) then
           choices := choices ++ [.typedRead i B e]
-    | .alloc (.var i) =>
+    | .make _ (.var i) =>
       if let some R := HeapExpressionRules.valuesAt G j.context k i then
         choices := choices ++ [.allocated i R e]
     | .write (.var i) (.var v) =>

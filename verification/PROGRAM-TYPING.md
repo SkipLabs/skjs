@@ -905,10 +905,10 @@ It computes a guaranteed output, not an assumed postcondition:
 | --- | --- |
 | Pure value or variable copy | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
 | Pure test or conditional | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure; no new result-to-cell link is invented. |
-| Ordinary typed read | Preserve facts and record read links to the receiver and witnessed aliases; no prior current-content fact is needed. Its result has the supplied type. |
+| Ordinary typed read | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; no prior current-content fact is needed. Its result has the supplied type. |
 | Observed read | Preserve facts and links; record the result's literal set and its current read relationship. That set must fit the requested ordinary result type. |
 | Known immutable value | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type. |
-| Allocation | Check ordinary allocation evidence, preserve old facts, and add the fresh cell's initial contents. |
+| Allocation | Check ordinary creation evidence and scope for either descriptor, preserve old facts, and add the fresh bag's initial contents from a checked value slot. Closure code is not executed. |
 | Write | Check ordinary write evidence (no old-content premise), discard all old cell facts, record new contents for the receiver and its witnessed aliases, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities. |
 
@@ -917,6 +917,17 @@ rules above. None of them takes a premise about a cell's old contents, and the
 checker's write evidence carries none either. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.
+
+The `allocated` and `typedRead` evidence constructors serve both plain and
+callable bags. `allocationSlot` selects a `make` whose initializer is an
+existing value slot; it never treats an effectful initializer as a value.
+`bagOperand` selects the first invariant from either `refs` or `callable`.
+The same allocation proof frames old facts and records the fresh bag, and the
+read proof records links with the object's actual descriptor.
+[CallableEffectTests.lean](lean/Verification/ExperimentState/CallableEffectTests.lean)
+checks that code with a delayed write preserves old contents during creation,
+that descriptor changes and out-of-scope captures cannot reuse its evidence,
+and that a saved read value remains precise across a subsequent call.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
@@ -1294,6 +1305,11 @@ runs an allocated overloaded object through aliasing, bag mutation, reading,
 and invocation using produced evidence and a JSON roundtrip. The existing
 `refT` and graph reference clauses still mean plain objects; callability-neutral
 bag views and source export of combined callable/property types remain future work.
+Source integration also needs explicit property-presence/initialization rules:
+the model's initial function bag does not establish a source `value` field.
+External structural object annotations can admit accessors, so lifting the
+source parameter gate requires an external-value boundary as well. The new
+heap evidence does not relax either restriction.
 `ObjectCoherence.step_preserves` proves global identity/descriptor coherence
 for the operational machine using an append-only ghost registry, including
 objects nested in code and heap cells. `GraphCoherence.accepted_closed_coherent`
