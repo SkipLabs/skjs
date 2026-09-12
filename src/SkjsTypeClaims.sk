@@ -173,6 +173,7 @@ fun claimPushAtoms(
   sty: SType,
   acc: mutable Vector<String>,
   records: Bool,
+  functions: Bool,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
 ): String {
@@ -204,7 +205,7 @@ fun claimPushAtoms(
       }
     }
   | obj @ TObject _ ->
-    if (records) {
+    if (records || functions) {
       // Branches are alternatives, preserved as separate union atoms. Never
       // emit a partial union when any branch cannot be represented. A branch
       // that fails both readings reports the reason of the reading its shape
@@ -216,7 +217,10 @@ fun claimPushAtoms(
       branches = obj.getBranches();
       reason = if (branches.isEmpty()) "no-object-branch" else "";
       for (fields in branches) {
-        claimCellBranchJson(fields, values, fuel) match {
+        cell = if (records) claimCellBranchJson(fields, values, fuel) else {
+          Failure("nested-object-type")
+        };
+        cell match {
         | Success(atom) -> acc.push(atom)
         | Failure(cellReason) ->
           claimFunctionBranchJson(fields, values, fuel) match {
@@ -233,8 +237,7 @@ fun claimPushAtoms(
       };
       reason
     } else {
-      // Objects are exported at the top of a claim only; as a field, parameter
-      // or result type they are outside the fragment.
+      // Object fields and function parameters retain the primitive-only boundary.
       "nested-object-type"
     }
   }
@@ -243,6 +246,7 @@ fun claimPushAtoms(
 fun claimTypeJsonBounded(
   ty: TType,
   records: Bool,
+  functions: Bool,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
 ): ClaimExport {
@@ -260,7 +264,7 @@ fun claimTypeJsonBounded(
         values.maybeGet(tv.id) match {
         | Some(SVOpen(bound))
         | Some(SVClosed(bound)) ->
-          claimTypeJsonBounded(bound, records, values, fuel - 1)
+          claimTypeJsonBounded(bound, records, functions, values, fuel - 1)
         | None() -> claimUnavailable("unbound-inference-variable")
         }
       }
@@ -296,7 +300,14 @@ fun claimTypeJsonBounded(
       | None() -> !reason = "unsupported-type"
       | Some(stypes) ->
         for (sty in stypes) {
-          refusal = claimPushAtoms(sty, atoms, records, values, fuel - 1);
+          refusal = claimPushAtoms(
+            sty,
+            atoms,
+            records,
+            functions,
+            values,
+            fuel - 1,
+          );
           if (reason == "" && refusal != "") {
             !reason = refusal
           }
@@ -346,9 +357,9 @@ fun claimCellBranchJson(
     if (field.name.value != "value") return Failure("cell-field-name");
     if (!(field.access is FAPublic())) return Failure("cell-field-access");
     // A field type that cannot be exported names its own reason.
-    read = claimTypeJsonBounded(field.get, false, values, fuel);
+    read = claimTypeJsonBounded(field.get, false, false, values, fuel);
     if (read.reason != "") return Failure(read.reason);
-    write = claimTypeJsonBounded(field.set, false, values, fuel);
+    write = claimTypeJsonBounded(field.set, false, false, values, fuel);
     if (write.reason != "") return Failure(write.reason);
     entries.push(
       jsonObj(
@@ -427,8 +438,10 @@ fun claimCellBranchJson(
   )
 }
 
-// One free unary call signature with primitive operands. No methods, generics,
-// optional/rest parameters, object fields or construct requirements are erased.
+// One free unary call signature with a primitive argument and a primitive or
+// callable result. Recursive results consume the shared serialization fuel.
+// No methods, generics, optional/rest parameters, object fields or construct
+// requirements are erased.
 fun claimFunctionBranchJson(
   fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
@@ -457,9 +470,9 @@ fun claimFunctionBranchJson(
     };
     if (f.spreadParam.isSome()) return Failure("function-rest-parameter");
     if (f.params.size() != 1) return Failure("function-arity");
-    arg = claimTypeJsonBounded(f.params[0], false, values, fuel);
+    arg = claimTypeJsonBounded(f.params[0], false, false, values, fuel);
     if (arg.reason != "") return Failure(arg.reason);
-    ret = claimTypeJsonBounded(f.retType, false, values, fuel);
+    ret = claimTypeJsonBounded(f.retType, false, true, values, fuel);
     if (ret.reason != "") return Failure(ret.reason);
     Success(
       jsonObj(
@@ -503,7 +516,7 @@ fun claimTypeAtJson(
   address: Array<(String, String)>,
   unavailable: mutable Vector<String>,
 ): String {
-  result = claimTypeJsonBounded(ty, true, values, 64);
+  result = claimTypeJsonBounded(ty, true, true, values, 64);
   if (result.reason != "") {
     unavailable.push(
       jsonObj(address.concat(Array[("reason", jsonStr(result.reason))])),

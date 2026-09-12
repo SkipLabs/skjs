@@ -7,10 +7,27 @@ claims use the same bounded contract decoder. -/
 namespace Verification.ExperimentState.SourceInput
 open Lean ProgramTyping PositiveRules
 
+/-- Callable results may recursively contain callables, but their arguments and
+all other result atoms remain primitive. Every union and overload arm is checked. -/
+partial def callableResult (j : Json) : SourceTypes.Lowering (Ty Nat) := do
+  CellClaims.fieldsExactly j ["top","atoms"]
+  if ← (← jField j "top").getBool? then throw "top is outside callable results"
+  let arms ← (← jArr j "atoms").mapM fun atom => do
+    if (← jStr (← jField atom "a")) == "function" then
+      let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
+        let (arg, result) ← FunctionClaims.decodeShape a
+        return (← SourceTypes.translate arg, ← callableResult result)
+      return [← SourceTypes.use (.arrs signatures.eraseDups)]
+    else
+      let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
+      SourceTypes.translate (← CellClaims.primitive single)
+  return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
+
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
-Record fields and arrow inputs/results retain their bounded primitive decoders. -/
+Record fields and arrow inputs retain their bounded primitive decoders.
+Arrow results additionally admit callable contracts. -/
 def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
     throw "type claim unavailable from producer"
@@ -29,7 +46,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
-    | "function" => FunctionClaims.translate single
+    | "function" => callableResult single
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
 

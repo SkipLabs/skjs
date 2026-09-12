@@ -10,14 +10,19 @@ structure Signature where
   argument : Wire.Ty
   result : Wire.Ty
 
-private def decodeAtom (a : Json) : Except String Signature := do
+/-- Validate a free unary signature without projecting away object requirements. -/
+def decodeShape (a : Json) : Except String (Wire.Ty × Json) := do
   CellClaims.fieldsExactly a ["a","params","result","construct","array"]
   if (← jStr (← jField a "a")) != "function" then throw "expected a function atom"
   for key in ["construct","array"] do
     let mode ← jStr (← jField a key)
     if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
   let [arg] ← jArr a "params" | throw "expected one required function parameter"
-  return ⟨← CellClaims.primitive arg, ← CellClaims.primitive (← jField a "result")⟩
+  return (← CellClaims.primitive arg, ← jField a "result")
+
+private def decodeAtom (a : Json) : Except String Signature := do
+  let (arg, result) ← decodeShape a
+  return ⟨arg, ← CellClaims.primitive result⟩
 
 /-- The signatures of one function atom: its own and those under `and`. -/
 def decode (j : Json) : Except String (List Signature) := do

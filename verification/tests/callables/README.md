@@ -31,20 +31,21 @@ Run `make verify-test` for the suites or `make verify-examples` for the corpus.
 `make verify` runs both. Core semantic regressions remain in
 `lean/Verification/ExperimentState/`, including `SourceCallableUnionTests.lean`.
 
-Pending pipeline coverage: call one factory twice, with each invocation allocating
-a private Boolean cell and returning a closure that writes its argument and
-returns the old contents. Starting from false, calls `first(true)`,
-`second(false)`, `first(false)` should return false, false, true. A control with
-the cell allocated outside the factory should return false, true, false despite
-distinct returned closure identities. This combines fresh allocation, escaping
-capture, and mutation; identity-only and single-capture tests do not establish
-instance isolation. Add it when local closure factories with callable result
-contracts are supported by the source pipeline. [factories.ts](factories.ts)
-now records both cases as a rejection baseline in
-[callable-factories.mts](../callable-factories.mts): SKJS marks the factory
-contract unavailable with `nested-object-type`, before the verifier reaches its
-primitive-only local closure result decoder. These are not verified corpus
-examples, and the baseline does not establish the isolation observations.
+[factories.ts](factories.ts) exercises two calls to a factory that allocates a
+private Boolean cell and returns a closure that writes its argument and returns
+the old contents. A control hoists the cell outside the factory, so the returned
+closures share state. Both original SKJS exports now produce certificates checked
+by the independent consumer in [callable-factories.mts](../callable-factories.mts).
+Narrowing the returned closure's result to false fails both fresh production and
+reuse of the original evidence.
+
+These Boolean contracts establish type safety, not the exact instance-isolation
+observations: calls `first(true)`, `second(false)`, `first(false)` should return
+false, false, true for private cells and false, true, false for the shared cell.
+That semantic execution check remains deferred. The fixtures are suite coverage;
+they are not yet in the two-producer corpus because the tsc adapter still limits
+arrow results to primitives. Callable arguments and record-valued results also
+remain outside this source fragment.
 
 That module also checks unions of overloaded functions using explicit normalized
 source claims. Null and Boolean arguments select different signatures in each
