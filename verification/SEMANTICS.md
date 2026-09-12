@@ -132,11 +132,25 @@ with one simultaneous substitution. `bound_body_closed` establishes that a body
 scoped to its parameters is closed after binding closed actuals. Binding performs
 no heap operation.
 
-The current unary beta rule and semantic call helper use `bindArgs` on a
-singleton, definitionally the previous substitution. Multi-argument invocation
-still needs an arity-bearing descriptor, corresponding call contracts,
-certificates and source integration. The preparation and binding operations alone
-do not enable multi-argument source calls.
+[Safety.lean](lean/Verification/ExperimentState/Safety.lean) defines `ArgsT` for
+an ordered list of actual-argument types and `InvocationSpec` for code with a
+declared parameter count. Each overload fixes its actual argument count, which
+can differ from the declared count. The safety obligation uses the normalized
+parameter list, so omitted parameters must be safe as `undefined`; extra actuals
+still satisfy their own domains. These are semantic code obligations, not a
+source policy allowing omitted required arguments. `ArgsT_length` establishes
+the actual count, and `ArgsT_values` establishes readiness when the domains
+contain only values. Invocation contracts survive budget reduction and world
+extension.
+
+The existing `CodeSpec` is now the one-parameter, singleton-domain specialization
+of `InvocationSpec`. `CodeSpec_iff` proves equivalence to its previous unary
+obligation, and existing callable creation proofs use that equivalence. The
+current unary beta rule and semantic call helper use `bindArgs` on a singleton,
+definitionally the previous substitution. Multi-argument invocation still needs
+an arity-bearing runtime descriptor and application, semantic arrow integration,
+certificates and source integration. These code contracts alone do not enable
+multi-argument source calls.
 
 ## Types, worlds and heaps
 

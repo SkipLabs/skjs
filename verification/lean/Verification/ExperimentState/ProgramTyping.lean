@@ -189,6 +189,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     have hcode : CodeSpec (L.map fun p => (meaning G p.1, meaning G p.2))
         n W (instantiate 1 ρ b) := by
+      apply (CodeSpec_iff _ _ _ _).mpr
       refine ⟨instantiate_scoped ρ he.1 b 1, ?_⟩
       intro p hp j hj U hx hu heap hok a ha
       obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
@@ -200,6 +201,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     have hcode : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2))
         n W (instantiate 1 ρ b) := by
+      apply (CodeSpec_iff _ _ _ _).mpr
       refine ⟨instantiate_scoped ρ he.1 b 1,?_⟩
       intro p hp j hj U hx hu heap hok av hav
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp

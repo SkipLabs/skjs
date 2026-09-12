@@ -1,4 +1,4 @@
-import Verification.ExperimentState.Bindings
+import Verification.ExperimentState.CallArguments
 import Verification.ExperimentState.Heaps
 /-!
 # Safety and function types
@@ -252,14 +252,93 @@ theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : N
     exact (Safe_congr (j + 1) hcj j (Nat.lt_succ_self j) W' hh _).mpr
       (hobl (g x) (List.mem_map_of_mem hx') j hj W' hx hu hh hok a ((hd j hj W' a).mp ha))
 
-/-- An invocation-code judgment, separate from membership of runtime values. -/
-def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
-  Scoped 1 b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+/-- Ordered actual-argument contracts. The signature fixes the actual count;
+the code's declared parameter count is independent. -/
+def ArgsT : List Fam → (k : Nat) → WorldT k → List Tm → Prop
+  | [], _, _, [] => True
+  | A :: As, k, W, a :: args => A k W a ∧ ArgsT As k W args
+  | _, _, _, _ => False
+
+theorem ArgsT_singleton (A : Fam) (k : Nat) (W : WorldT k) (args : List Tm) :
+    ArgsT [A] k W args ↔ ∃ a, args = [a] ∧ A k W a := by
+  cases args with
+  | nil => simp [ArgsT]
+  | cons a args =>
+    cases args <;> simp [ArgsT]
+
+theorem ArgsT_length {As k W args} (h : ArgsT As k W args) :
+    args.length = As.length := by
+  induction As generalizing args with
+  | nil => cases args <;> simp_all [ArgsT]
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim h
+    | cons a args => exact congrArg Nat.succ (ih h.2)
+
+/-- Typed actuals are ready for binding when their domains contain only values. -/
+theorem ArgsT_values {As k W args} (hA : ∀ A ∈ As, ValOnly A)
+    (h : ArgsT As k W args) : CallArguments.Values args := by
+  induction As generalizing args with
+  | nil =>
+    cases args with
+    | nil => intro a ha; cases ha
+    | cons a args => exact False.elim h
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim h
+    | cons a args =>
+      intro v hv
+      rcases List.mem_cons.mp hv with rfl | hv
+      · exact hA A (by simp) k W _ h.1
+      · exact ih (fun B hb => hA B (List.mem_cons_of_mem A hb)) h.2 v hv
+
+/-- A code contract checks the normalized parameter list after actuals have
+been evaluated. Each overload admits its own list of actual argument types. -/
+def InvocationSpec (arity : Nat) (L : List (List Fam × Fam))
+    (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
+  Scoped arity b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
-      ∀ a, p.1 j W' a → Safe p.2 j W' h (subst 0 a b)
+      ∀ args, ArgsT p.1 j W' args →
+        Safe p.2 j W' h (CallArguments.bindParameters arity args b)
+
+theorem InvocationSpec.down {arity L n W b} (h : InvocationSpec arity L (n + 1) W b) :
+    InvocationSpec arity L n (trunc n (Nat.le_succ n) W) b := by
+  refine ⟨h.1, ?_⟩
+  intro p hp j hj U hx hu heap hh args ha
+  exact h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args ha
+
+theorem InvocationSpec.mono {arity L n W W' b} (hx : WExt W W')
+    (h : InvocationSpec arity L n W b) : InvocationSpec arity L n W' b := by
+  refine ⟨h.1, ?_⟩
+  intro p hp j hj U hy hu heap hh args ha
+  exact h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args ha
+
+/-- The existing unary judgment is a specialization of list invocation. -/
+def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
+  InvocationSpec 1 (L.map fun p => ([p.1], p.2)) k W b
+
+theorem CodeSpec_iff (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) :
+    CodeSpec L k W b ↔
+      Scoped 1 b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+        WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' →
+        ∀ (h : Heap), HeapOk j W' h →
+          ∀ a, p.1 j W' a → Safe p.2 j W' h (subst 0 a b) := by
+  constructor
+  · rintro ⟨hc, hs⟩
+    refine ⟨hc, ?_⟩
+    intro p hp j hj U hx hu heap hh a ha
+    exact hs ([p.1], p.2) (List.mem_map.mpr ⟨p, hp, rfl⟩)
+      j hj U hx hu heap hh [a] ⟨ha, trivial⟩
+  · rintro ⟨hc, hs⟩
+    refine ⟨hc, ?_⟩
+    intro p hp j hj U hx hu heap hh args ha
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+    obtain ⟨a, rfl, harg⟩ := (ArgsT_singleton q.1 j U args).mp ha
+    exact hs q hq j hj U hx hu heap hh a harg
 
 theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
     arrowsT L n W (.obj l (.closure b)) ↔ CodeSpec L n W b := by
+  rw [CodeSpec_iff]
   constructor
   · rintro ⟨⟨b', l', he, hc⟩, hs⟩
     cases he
@@ -269,13 +348,17 @@ theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
 
 theorem CodeSpec.down {L n W b} (h : CodeSpec L (n + 1) W b) :
     CodeSpec L n (trunc n (Nat.le_succ n) W) b :=
-  (arrowsT_code_iff L 0 b n _).mp ((arrowsT_adm L).down n W _
-    ((arrowsT_code_iff L 0 b _ W).mpr h))
+  InvocationSpec.down h
 
 theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
     CodeSpec L n W' b :=
-  (arrowsT_code_iff L 0 b n W').mp ((arrowsT_adm L).mono n W W' hx _
-    ((arrowsT_code_iff L 0 b n W).mpr h))
+  InvocationSpec.mono hx h
+
+#print axioms ArgsT_length
+#print axioms ArgsT_values
+#print axioms InvocationSpec.down
+#print axioms InvocationSpec.mono
+#print axioms CodeSpec_iff
 
 theorem omega_safe (B : Fam) : ∀ (n : Nat) (W : WorldT n) (h : Heap),
     WorldAdm W → HeapOk n W h → Safe B n W h omegaTm := by

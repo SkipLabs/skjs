@@ -941,9 +941,12 @@ for invocation. Its singleton case agrees with existing unary congruence rules.
 JavaScript witness and remains an explicitly unsupported source fixture.
 Parameter binding now preserves declaration order and captures, pads missing
 actuals with undefined, and discards extra values only after preparation. The
-current unary beta step uses the shared binder. Next, connect prepared lists to
-arity-bearing descriptors, then extend arrow contracts and the producer/consumer
-together. Multi-argument source calls remain gated.
+current unary beta step uses the shared binder. List-based invocation contracts
+now distinguish declared parameter count from each overload's actual argument
+count; the existing unary code judgment specializes them. Next, connect prepared
+lists to arity-bearing runtime descriptors and applications, then extend semantic
+arrows and the producer/consumer together. Multi-argument source calls remain
+gated.
 
 ### Next callable and object milestones
 
