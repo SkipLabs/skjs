@@ -277,3 +277,18 @@ function ambiguousCaptureGuard(flag: boolean): (unit: null) => boolean {
   }
   return (unit: null): boolean => false;
 }
+
+/**
+ * A Boolean returned by a probing closure is not a type-predicate contract.
+ * Even on its true branch, the caller must guard the nullable callback itself.
+ */
+function callbackProbeDoesNotNarrow(flag: boolean): boolean {
+  const callback: ((unit: null) => boolean) | null = (unit: null): boolean =>
+    flag;
+  const present: (unit: null) => boolean = (unit: null): boolean =>
+    callback !== null;
+  if (present(null)) {
+    return callback === null ? false : callback(null);
+  }
+  return false;
+}

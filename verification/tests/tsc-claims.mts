@@ -132,6 +132,12 @@ for (const [name, want] of Object.entries(expected)) {
         assert.ok(ambiguousClaim);
         assert(ambiguousClaim.type.includes(0), "a successful disjunction must retain the path admitted by flag");
         assert.equal(ambiguousClaim.type.length, 2, "capture retains both null and the callable");
+        const probe = parsed.functions.find((f: any) => f.name === "callbackProbeDoesNotNarrow");
+        const probeClaims = normalized.functions.find((f) => f.name === probe.name)!;
+        const probedRef = probe.body[2].then[0].e.cond.l;
+        const probedClaim = probeClaims.expressions.find((p) => p.pos[0] === probedRef.pos[0] && p.pos[1] === probedRef.pos[1]);
+        assert.ok(probedClaim);
+        assert(probedClaim.type.includes(0), "a Boolean probe result does not refine the captured callback");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);

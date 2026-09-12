@@ -363,6 +363,18 @@ try {
     expect("returning an impossible absence conjunction excludes neither tag (consumer)", run("--check-stateful-source", a, claims, evidence), false);
   }
 
+  {
+    const a = clone(ast);
+    const f = a.functions.find((f: any) => f.name === "callbackProbeDoesNotNarrow");
+    const guarded = f.body[2].then[0];
+    assert.equal(guarded.e.k, "conditional");
+    // Keep the real call's source span and claim, but remove the caller's guard.
+    // The probing callback's Boolean contract supplies no capture refinement.
+    guarded.e = guarded.e.else_;
+    expect("Boolean probe cannot replace the caller's null guard", run("--produce-stateful-source", a, claims), false);
+    expect("Boolean probe cannot replace the caller's null guard (consumer)", run("--check-stateful-source", a, claims, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
