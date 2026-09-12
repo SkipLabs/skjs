@@ -1390,7 +1390,11 @@ A write accepted by only one alternative and an unjustifiably narrow read
 claim fail the source consumer. Captured current-content assertions produce a
 located obligation over the union of invariant contents; broad observations
 verify, while narrowing to the allocation's initial value fails. The external-cell
-parameter restriction remains in force. Typed reads retain current heap
+parameter restriction remains in force. Statement-entry regressions cover nested
+closures after writes, preserving named captures alongside anonymous evaluation
+slots. An entry environment that narrows the captured storage contract fails its
+own obligation even when its separate contents observation is provable.
+Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral
 read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types

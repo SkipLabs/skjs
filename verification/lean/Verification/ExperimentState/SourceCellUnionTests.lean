@@ -97,4 +97,50 @@ private def wrongClaims : SourceClaims.Function := {claims with
   | .error _ => false
   | .ok r => r.obligations.any fun q => q.pos == (24,27) &&
       q.sequent.term == .letE (.var 1) (.read (.var 0))
+
+-- Statement-entry observations name the captured binding. Nested closures and
+-- preceding expression statements add parameter and anonymous evaluation slots;
+-- projecting the named environment must preserve both kinds of slot.
+private def entrySource (mutate nested : Bool) : SourceInput.Fn :=
+  let body := SourceInput.Expr.atEnv (23,28) read
+  let body := if nested then
+    SourceInput.Expr.app (14,28)
+      (.lam (15,28) "inner" null result body) (.lit (21,22) .vnull)
+    else body
+  withBody (if mutate then .seqBody (12,28) write body else body)
+private def entryClaims (nested : Bool) (R : Ty Nat) : SourceClaims.Function :=
+  {claims with
+    envs := claims.envs ++ [(23,
+      (if nested then [("inner",.ok [0])] else []) ++
+      [("unit",.ok [0]),("cell",.ok [4,5])])]
+    exprs := claims.exprs ++ [((14,28),.ok [0,1,2]),((15,28),.ok [6]),((21,22),.ok [0])]
+    entryCurrent := [(23,[("cell",R)])]}
+#guard [false,true].all fun mutate => [false,true].all fun nested =>
+  ok (check (entrySource mutate nested) (entryClaims nested [0,1,2]))
+#guard [false,true].all fun mutate => [false,true].all fun nested =>
+  (extractNormalizedFn table (entrySource mutate nested) (entryClaims nested [0])).toOption.isSome &&
+  !ok (check (entrySource mutate nested) (entryClaims nested [0]))
+#guard match extractNormalizedFn table (entrySource true true) (entryClaims true [0,1,2]) with
+  | .error _ => false
+  | .ok r =>
+    (r.obligations.any fun q => q.pos == (23,24) && q.role == "heap-observation" &&
+      q.sequent.context == [[0,1,2]] && q.context == [⟨"cell",none⟩]) &&
+    (r.obligations.any fun q => q.pos == (24,27) &&
+      q.sequent.term == .letE (.var 3) (.read (.var 0)))
+-- A false entry environment cannot erase the Boolean-capable alternative,
+-- even when its separate contents observation is valid for the narrowed type.
+private def narrowedEntry : SourceClaims.Function :=
+  let c := entryClaims true [0]
+  {c with envs := c.envs.map fun (pos,env) =>
+    (pos, if pos == 23 then env.map (fun (name,A) =>
+      (name,if name == "cell" then .ok [5] else A)) else env)}
+#guard (extractNormalizedFn table (entrySource true true) narrowedEntry).toOption.isSome
+#guard !ok (check (entrySource true true) narrowedEntry)
+#guard match extractNormalizedFn table (entrySource true true) narrowedEntry with
+  | .error _ => false
+  | .ok r =>
+    let proveRole := fun role => ExpressionClaims.produce (RequestJson.graph r.toRequest)
+      r.searchLabels r.types.length 0 (r.obligations.filter (·.role == role))
+    (proveRole "heap-observation").toOption.isSome &&
+    !(proveRole "closure-entry").toOption.isSome
 end Verification.ExperimentState.SourceCellUnionTests
