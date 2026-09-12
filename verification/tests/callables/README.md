@@ -45,7 +45,11 @@ reuse of the original evidence.
 These Boolean contracts establish type safety, not the exact instance-isolation
 observations: calls `first(true)`, `second(false)`, `first(false)` should return
 false, false, true for private cells and false, true, false for the shared cell.
-That semantic execution check remains deferred. Callable arguments and
+The suite now checks those exact observations with a JavaScript runtime witness,
+inserting a passive observer immediately before the outer return. It also runs
+the unmodified function and checks its Boolean result. This does not prove that
+the extracted Lean machine has the same execution: that semantic execution
+check remains deferred. Callable arguments and
 record-valued results remain outside this source fragment.
 
 That module also checks unions of overloaded functions using explicit normalized
