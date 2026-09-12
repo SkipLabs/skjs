@@ -522,10 +522,11 @@ regression checks the extracted alias-assignment graph's heap and result.
 
 The first closure slice is connected through
 [FunctionClaims.lean](lean/Verification/ExperimentState/FunctionClaims.lean).
-It accepts explicitly typed unary arrows with a null/Boolean primitive argument and a primitive
-result, singly or as an intersection of signatures proved one by one on the
-body. Bodies compose literals, variables, cell allocation, reads, assignments,
-and calls, including nested expression arrows with the same signature limits.
+That initial decoder covers primitive unary arrows, singly or as an intersection
+of signatures proved one by one on the body. The source layer now uses
+`SourceInput.callableType` for recursively callable arguments and results.
+Bodies compose literals, variables, cell allocation, reads, assignments and
+calls, including nested expression arrows.
 An internal expression claim can differ from the declared result: both are
 checked independently.
 
@@ -919,21 +920,20 @@ obligations and the claims/evidence mutations that exercise them.
 
 This is sufficient to demonstrate that the existing pipeline runs over the
 bounded callable model. It is not coverage of every TypeScript callable feature.
-The next integration target is callable-valued arguments: an invoking closure
-should accept a locally checked callback, call it at its declared domain, and
-preserve its result and effects. The matching negative case should reject an
-incompatible callback domain or a result promise its body cannot establish.
-That requires extending argument decoding in the SKJS exporter,
-`SourceInput.callableResult`, source lambda annotation lowering, and the tsc
-producer. Keep the primitive decoder's existing theorem scoped to what it proves;
-keep record operands and external object assumptions gated.
+Callable-valued arguments now cross the existing pipeline too: an invoking
+closure receives a locally checked stateful callback, supplies a Boolean
+argument, and uses its result. The callable-argument suite independently checks
+the evidence and rejects incompatible callback domains and results. The SKJS
+exporter, `SourceInput.callableType`, source lambda annotations and tsc producer
+all admit recursive callable operands while retaining the record-operand gate.
+The primitive decoder's theorem remains scoped to its original fragment.
 
 Graph-backed closure loops, multiple/optional/rest arguments, `this`, generics,
 function properties and identity comparisons remain separate obligations. Do
 not accumulate minor guard variants as prerequisites for these extensions.
 Factory isolation and live-versus-snapshot selection have JavaScript witnesses
 alongside checked type claims; exact executions of their extracted Lean programs
-remain deferred. A Boolean typing certificate alone does not establish those
+remain deferred unless a concrete discrepancy warrants investigation. A Boolean typing certificate alone does not establish those
 observations or TypeScript-to-calculus execution equivalence.
 
 Source-mode search uses labels in the function's request and required-expression
@@ -1009,9 +1009,8 @@ refinements and closure loops remain outside this slice.
 `SourceInput.translate` now decodes each union atom through its existing primitive,
 cell or function decoder, then canonicalizes the combined labels. It rejects the
 entire type if any arm fails. This needs no new graph label or semantic rule:
-label lists already denote unions. Cell fields and arrow inputs retain their
-primitive-only decoders. Arrow results now recursively admit primitive/callable
-unions through `SourceInput.callableResult`; nested records remain outside this
+label lists already denote unions. Cell fields retain their primitive-only decoder. Arrow arguments and results
+now recursively admit primitive/callable unions through `SourceInput.callableType`; nested records remain outside this
 fragment.
 
 Locally allocated nullable cells and optional checked-closure results exercise

@@ -1,7 +1,7 @@
 # callable-results.ts
 
 ## callableResults [complete unverified normal]
-params: factory: (null) => (boolean) => boolean [construct=unknown array=unknown] [construct=unknown array=unknown]; recordResult: (unavailable: nested-object-type); higherOrderArgument: (unavailable: nested-object-type)
+params: factory: (null) => (boolean) => boolean [construct=unknown array=unknown] [construct=unknown array=unknown]; recordResult: (unavailable: nested-object-type); higherOrderArgument: ((boolean) => boolean [construct=unknown array=unknown]) => null [construct=unknown array=unknown]
 result: null
-entry 209-220: factory!: (null) => (boolean) => boolean [construct=unknown array=unknown] [construct=unknown array=unknown]; higherOrderArgument!: (unavailable: nested-object-type); recordResult!: (unavailable: nested-object-type); this: (unavailable: void-type)
+entry 209-220: factory!: (null) => (boolean) => boolean [construct=unknown array=unknown] [construct=unknown array=unknown]; higherOrderArgument!: ((boolean) => boolean [construct=unknown array=unknown]) => null [construct=unknown array=unknown]; recordResult!: (unavailable: nested-object-type); this: (unavailable: void-type)
 expr 216-220 `null`: null

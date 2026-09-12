@@ -433,7 +433,7 @@ function tryArrowIntersection(
   const arrows: number[][][] = [];
   for (const r of results) {
     const pair = [
-      primitiveOnly(r.domain!, checker),
+      translateType(r.domain!, checker, types, false, fuel - 1),
       translateType(r.result!, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -442,14 +442,14 @@ function tryArrowIntersection(
   return arrows;
 }
 
-// Results can contain further arrows, with bounded recursion for recursive TS
-// types. Record fields and callable arguments retain their primitive boundary.
+// Arrow operands can contain further arrows, with bounded recursion for
+// recursive TS types. Record fields retain their primitive boundary.
 function translateType(type: Type, checker: Checker, types: Row[], records = true, fuel = 64): number[] {
   if (fuel <= 0) throw new Refusal("type-depth", checker.typeToString(type));
   const prim = primitiveLabelsOf(type);
   if (prim !== null) return prim;
   if (!records && (checker.getPropertiesOfType(type).length || checker.getIndexInfosOfType(type).length))
-    throw new Refusal("callable-result-properties", checker.typeToString(type));
+    throw new Refusal("callable-operand-properties", checker.typeToString(type));
   if (type.flags & TypeFlags.Intersection) {
     const parts = (type as unknown as { getTypes(): readonly Type[] }).getTypes();
     const refs = records ? tryRecordIntersection(type, checker, parts) : null;
@@ -467,7 +467,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
     return dedupSortInts(labels);
   }
   const rec = tryRecord(type, checker);
-  if (rec.ok && !records) throw new Refusal("record-result", checker.typeToString(type));
+  if (rec.ok && !records) throw new Refusal("record-operand", checker.typeToString(type));
   if (rec.ok)
     return [
       internRow(types, [
@@ -478,7 +478,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair = [
-      primitiveOnly(arr.domain!, checker),
+      translateType(arr.domain!, checker, types, false, fuel - 1),
       translateType(arr.result!, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];

@@ -60,8 +60,8 @@ The suite now checks those exact observations with a JavaScript runtime witness,
 inserting a passive observer immediately before the outer return. It also runs
 the unmodified function and checks its Boolean result. This does not prove that
 the extracted Lean machine has the same execution: that semantic execution
-check remains deferred. Callable arguments and
-record-valued results remain outside this source fragment.
+check remains deferred unless a concrete discrepancy warrants investigation.
+Record-valued callable operands remain outside this source fragment.
 
 That module also checks unions of overloaded functions using explicit normalized
 source claims. Null and Boolean arguments select different signatures in each
@@ -79,10 +79,9 @@ uses the lambda's own expression type under its nullable context; the enclosing
 return still checks that arrow against the full function-or-null contract.
 The TypeScript claim suite independently checks the resulting certificates.
 
-[arguments.ts](arguments.ts) starts the callable-valued argument milestone.
-An invoking closure receives a callback that mutates a captured cell and returns
-its old contents. This is currently a rejection baseline, not a verified corpus
-example: [callable-arguments.mts](../callable-arguments.mts) checks that SKJS
-marks the invoking closure's type unavailable with `nested-object-type`, and
-the tsc suite records its primitive-only argument boundary. The shared runner
-builds this fixture alongside the supported examples.
+[arguments.ts](arguments.ts) passes a stateful callback to an invoking closure.
+The callback mutates a captured cell and returns its old contents. Both producers
+verify it through the existing pipeline, with independent certificate checking.
+[callable-arguments.mts](../callable-arguments.mts) rejects a callback domain too
+narrow for the invoker and an invoker claim accepting incompatible callback
+results. It appears in the Callables corpus and report viewer.

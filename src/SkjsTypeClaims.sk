@@ -237,7 +237,7 @@ fun claimPushAtoms(
       };
       reason
     } else {
-      // Object fields and function parameters retain the primitive-only boundary.
+      // Object fields retain the primitive-only boundary.
       "nested-object-type"
     }
   }
@@ -438,8 +438,8 @@ fun claimCellBranchJson(
   )
 }
 
-// One free unary call signature with a primitive argument and a primitive or
-// callable result. Recursive results consume the shared serialization fuel.
+// One free unary call signature with primitive or callable operands.
+// Recursive operands consume the shared serialization fuel.
 // No methods, generics, optional/rest parameters, object fields or construct
 // requirements are erased.
 fun claimFunctionBranchJson(
@@ -470,7 +470,7 @@ fun claimFunctionBranchJson(
     };
     if (f.spreadParam.isSome()) return Failure("function-rest-parameter");
     if (f.params.size() != 1) return Failure("function-arity");
-    arg = claimTypeJsonBounded(f.params[0], false, false, values, fuel);
+    arg = claimTypeJsonBounded(f.params[0], false, true, values, fuel);
     if (arg.reason != "") return Failure(arg.reason);
     ret = claimTypeJsonBounded(f.retType, false, true, values, fuel);
     if (ret.reason != "") return Failure(ret.reason);

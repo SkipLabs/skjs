@@ -25,8 +25,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 // Why each file lands where it does. A verified file says tsc's claims are
 // derivable in the calculus; a failing one names what stops them.
 const expected = {
-  // Callable-valued arguments still use the primitive-only parameter decoder.
-  "callables/arguments": "failed",
+  // A stateful callback crosses a higher-order parameter boundary.
+  "callables/arguments": "verified",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
   // Compound absence guards preserve all facts established by their outcome.
@@ -173,7 +173,7 @@ for (const [name, want] of Object.entries(expected)) {
         "10",
       ]);
       got = checked.status === 0 ? "verified" : "failed";
-      if (got === "verified" && ["callables/factories", "callables/unions", "stateful-source/null-guards"].includes(name)) {
+      if (got === "verified" && ["callables/arguments", "callables/factories", "callables/unions", "stateful-source/null-guards"].includes(name)) {
         const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
         if (consumed.status !== 0) {
           got = "consumer-failed";

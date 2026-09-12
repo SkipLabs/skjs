@@ -5,26 +5,49 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const [ast, claims, file, verifier] = process.argv.slice(2);
+const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-arguments-"));
 try {
-  const source = JSON.parse(fs.readFileSync(ast, "utf8"));
-  const exported = JSON.parse(fs.readFileSync(claims, "utf8"));
+  const source = JSON.parse(fs.readFileSync(astPath, "utf8"));
+  const exported = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
   const fn = source.functions.find((fn: any) => fn.name === "callableArgument");
-  const fc = exported.find((batch: any) => batch.file === file).functions.find((fn: any) => fn.name === "callableArgument");
-  assert.ok(fn && fc);
-  const invoke = fn.body[2].init;
-  assert.equal(invoke.name, "f");
-  const claim = fc.exprs.find((site: any) => site.pos[0] === invoke.pos[0] && site.pos[1] === invoke.pos[1]);
-  assert.deepEqual(claim?.type, {unsupported: true});
-  assert(fc.unavailableTypes.some((site: any) => site.kind === "expression" &&
-    site.pos[0] === invoke.pos[0] && site.pos[1] === invoke.pos[1] && site.reason === "nested-object-type"));
-  const result = spawnSync(verifier, ["--produce-stateful-source", ast, claims, file,
-    path.join(tmp, "evidence"), "10"], {encoding: "utf8"});
-  if (result.error || result.signal) throw result.error || Error(String(result.signal));
-  assert.notEqual(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout + result.stderr, /source expression obligation at \[\d+,\d+\): type claim unavailable from producer/);
-  console.log("  callable argument: original export records the unsupported parameter boundary OK");
+  const ast = path.join(tmp, "ast"), claims = path.join(tmp, "claims");
+  const evidence = path.join(tmp, "evidence");
+  const run = (mode: string, a: any, c: any) => {
+    fs.writeFileSync(ast, JSON.stringify(a));
+    fs.writeFileSync(claims, JSON.stringify(c));
+    const args = [mode, ast, claims, file, evidence];
+    if (mode === "--produce-stateful-source") args.push("10");
+    const result = spawnSync(verifier, args, {encoding: "utf8"});
+    if (result.error || result.signal) throw result.error || Error(String(result.signal));
+    return result;
+  };
+  for (const mode of ["--produce-stateful-source", "--check-stateful-source"]) {
+    const result = run(mode, source, exported);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  }
+  console.log("  stateful callable argument: original claims and independent consumer OK");
+  for (const [name, change] of [
+    ["callback must accept the invoker's full Boolean domain", (fc: any) => {
+      const arg = fn.body[3].init.arg;
+      const site = fc.exprs.find((e: any) => e.pos[0] === arg.pos[0] && e.pos[1] === arg.pos[1]);
+      site.type.atoms[0].params[0] = {top: false, atoms: [{a: "booleanlit", v: "false"}]};
+    }],
+    ["invoker cannot accept callbacks with incompatible results", (fc: any) => {
+      const callee = fn.body[3].init.callee;
+      const site = fc.exprs.find((e: any) => e.pos[0] === callee.pos[0] && e.pos[1] === callee.pos[1]);
+      site.type.atoms[0].params[0].atoms[0].result = {top: false, atoms: [{a: "null"}]};
+    }],
+  ] as [string, (fc: any) => void][]) {
+    const changed = structuredClone(exported);
+    change(changed.find((b: any) => b.file === file).functions.find((f: any) => f.name === fn.name));
+    // Check reuse first so a failed production cannot alter the original evidence.
+    for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
+      const result = run(mode, source, changed);
+      assert.notEqual(result.status, 0, `${name}: ${mode} accepted forged contract`);
+    }
+    console.log(`  ${name}: OK`);
+  }
 } finally {
   fs.rmSync(tmp, {recursive: true, force: true});
 }

@@ -435,13 +435,13 @@ The bounded function atom is:
 
 The exporter preserves one free required parameter and the result. It rejects
 `this` requirements, generics, optional/rest parameters, fields, indexes, positive
-construct requirements and record-valued operands. Arrow arguments remain
-primitive; results may recursively union bounded function contracts with the
+construct requirements and record-valued operands. Arrow arguments and results
+may recursively union bounded function contracts with the
 supported primitives null, undefined, true and false. The SKJS exporter uses
 bounded recursion, and the tsc producer applies a depth limit when translating
-nested results. No unsupported union alternative is discarded.
+nested operands. No unsupported union alternative is discarded.
 
-`SourceInput.callableResult` lowers nested callable results to the existing
+`SourceInput.callableType` lowers nested callable operands to the existing
 arrow rows. `FunctionClaims.translate_exact` remains the exact-interpretation
 theorem for its primitive signature decoder; it is not a new recursive source
 extraction theorem. The resulting requests use the existing lambda, application

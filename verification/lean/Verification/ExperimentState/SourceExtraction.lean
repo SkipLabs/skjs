@@ -74,7 +74,7 @@ fabricated expression claim at the if statement's span. -/
 private def closureType (fc : SourceClaims.Function) : SourceInput.Expr → Compiler (Ty Nat)
   | .atEnv _ b | .letBody _ _ _ _ b | .seqBody _ _ b => closureType fc b
   | .done _ => pure [0]
-  | .ifBody _ (some result) _ _ _ => do lower (SourceInput.callableResult result)
+  | .ifBody _ (some result) _ _ _ => do lower (SourceInput.callableType result)
   | e => exprType fc e
 
 private def emit (t : Tm) (k : Continuation) (Γ : List (Ty Nat)) (A : Ty Nat) :
@@ -423,8 +423,8 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .lam pos name arg ret body => do
     if name == "undefined" then throw "shadowing undefined is outside the source slice"
     if (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
-    let D ← SourceTypes.translate (← decodeTy arg)
-    let R ← lower (SourceInput.callableResult ret)
+    let D ← lower (SourceInput.callableType arg)
+    let R ← lower (SourceInput.callableType ret)
     let inner := ⟨name,some pos⟩::scope
     -- The annotation is one obligation on the body; the claim may be several
     -- signatures, each proved on the body under its own parameter type, as
