@@ -248,3 +248,17 @@ function twoAbsenceCapture(flag: boolean): (unit: null) => boolean {
   }
   return (unit: null): boolean => (callback === null ? false : callback(unit));
 }
+
+/**
+ * The continuation of a returning disjunction excludes both absence tags.
+ * Both facts must be available when the returned closure captures the callback.
+ */
+function compoundAbsenceCapture(flag: boolean): (unit: null) => boolean {
+  const callback: ((unit: null) => boolean) | null | undefined = (
+    unit: null,
+  ): boolean => flag;
+  if (callback === null || callback === undefined) {
+    return (unit: null): boolean => false;
+  }
+  return (unit: null): boolean => callback(unit);
+}
