@@ -1387,6 +1387,13 @@ unjustifiably narrow results fail. The `guardedCallableUnion` TypeScript fixture
 also runs through the parser, SKJS claim exporter, independent source consumer,
 and annotated report pipeline. Report syntax groups arrow alternatives and
 preserves each alternative's hidden metadata when reading the union back.
+The `coalescedCallable` fixture selects between a null/undefined-or-callable
+input and a fallback before invocation. Both distinct return contracts survive
+export and verification. Producer and consumer regressions reject a discarded
+fallback alternative, a narrowed result, reuse of the nullish input as the
+fallback, a null fallback, and an incompatible argument.
+These sources live in the dedicated [Callables group](tests/callables/README.md),
+with their own pipeline suite and corpus/viewer section.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved

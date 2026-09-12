@@ -1,6 +1,6 @@
 
 // These files are exercised through the current source consumer by run.sh.
-const supported = [
+const stateful = [
   "basic",
   "undefined",
   "cells",
@@ -13,8 +13,11 @@ const supported = [
   "null-tests",
   "null-guards",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
+const callables = ["verification/tests/callables/unions.ts"];
+const supported = [...stateful, ...callables];
 const groups = [
-  { label: "Current verifier examples", files: supported },
+  { label: "Current verifier examples", files: stateful },
+  { label: "Callables", files: callables },
   {
     label: "Claim repair · producer rejects",
     files: ["verification/tests/partial-claims.ts"],
