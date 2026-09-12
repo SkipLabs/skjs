@@ -940,6 +940,14 @@ requested `false` contract fails. Both plain and callable allocations follow
 this path. Forged call outputs retaining old cell facts or read links are
 rejected by the consumer. Exact execution proofs distinguish the changed heap
 from the unchanged saved value.
+[CallableReentryTests.lean](lean/Verification/ExperimentState/CallableReentryTests.lean)
+checks an active function calling a callback that mutates its bag and reenters
+that same function. A terminating inner callback ends the nesting. The outer
+frame can return its saved `false` or reread the changed `true`; exact execution
+proofs cover both choices and both bag descriptors. The graph producer and JSON
+consumer accept the Boolean contracts and reject incompatible callbacks and
+unjustified singleton contracts. Nested invocation uses the existing closure,
+let-binding, and heap rules without a separate reentry mechanism.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
