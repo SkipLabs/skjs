@@ -932,6 +932,14 @@ read proof records links with the object's actual descriptor.
 checks that code with a delayed write preserves old contents during creation,
 that descriptor changes and out-of-scope captures cannot reuse its evidence,
 and that a saved read value remains precise across a subsequent call.
+[CallableMutationTests.lean](lean/Verification/ExperimentState/CallableMutationTests.lean)
+adds an actual mutating invocation: a closure captures a neutral bag and writes
+`true` after a `false` read has been saved. The saved value still verifies as
+`false`; a fresh read verifies as Boolean and executes to `true`, while a
+requested `false` contract fails. Both plain and callable allocations follow
+this path. Forged call outputs retaining old cell facts or read links are
+rejected by the consumer. Exact execution proofs distinguish the changed heap
+from the unchanged saved value.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
