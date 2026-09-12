@@ -148,3 +148,23 @@ function branchReturnedCapture(seed: boolean | null): boolean {
   const read = make(seed);
   return read(null);
 }
+
+/**
+ * A Boolean-accepting closure and a true-only closure can both implement the
+ * factory's true-only result contract. Returning the broader implementation in
+ * one branch does not let callers pass false to the joined result.
+ */
+function returnedCallableDomain(flag: boolean): boolean {
+  // SKJS requires an unparenthesized callable result annotation.
+  // prettier-ignore
+  const make: (choose: boolean) => (next: true) => boolean =
+    (choose: boolean): (next: true) => boolean => {
+      if (choose) {
+        return (next: boolean): boolean => next;
+      } else {
+        return (next: true): boolean => false;
+      }
+    };
+  const invoke = make(flag);
+  return invoke(true);
+}

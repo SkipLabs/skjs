@@ -299,6 +299,28 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, claims, evidence), false);
   }
 
+  for (const [name, edit] of [
+    ["factory result cannot widen the returned parameter domain", (f: any, at: any) => {
+      const returned = at(f.body[0].init).type.atoms[0].result.atoms[0];
+      assert.deepEqual(returned.params[0], lit("true"));
+      returned.params[0] = {top: false, atoms: [{a: "boolean"}]};
+    }],
+    ["returned callable requires the shared true-only domain", (f: any, at: any) => {
+      const call = f.body[2].e;
+      assert.deepEqual(at(call.arg).type, lit("true"));
+      call.arg.lit.v = "false";
+      at(call.arg).type = lit("false");
+    }],
+  ] as [string, (f: any, at: any) => void][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "returnedCallableDomain");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "returnedCallableDomain");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f, at);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
