@@ -11,6 +11,7 @@ They have their own **Callables** group in the corpus and report viewer.
 | `orGuardedCallable` | `||` skips the call for null, preserving true alongside the callable's false result. |
 | `coalescedCallable` | Null and undefined select a fallback function before invocation; either callable can supply the result. |
 | `capturedGuardedCallable` | A returned closure retains the immutable capture's non-null refinement and both callable alternatives after the branch ends. |
+| `aliasedCallableSelection` | A selected local alias retains both callable alternatives through a nested closure; its callability does not transfer to the original nullable input. |
 
 [callables.mts](../callables.mts) checks the original claims and rejects forged
 claims and reused evidence. It also retains report round-trip and independent

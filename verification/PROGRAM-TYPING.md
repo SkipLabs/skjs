@@ -1409,6 +1409,11 @@ or discarding the skipped result fails both production and independent checking.
 immutable capture's non-null refinement for later calls. Both callable alternatives
 remain possible. A reversed guard, discarded alternative, narrowed closure
 signature, or narrowed inner call result fails producer and consumer checks.
+`aliasedCallableSelection` selects an immutable local alias with a ternary and
+captures it in a nested closure. Both alternatives survive the selection and
+the next statement's environment. False initializer and entry claims, reversed
+selection, reuse of the original nullable input, and narrowed nested-call results
+fail independently checked obligations.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved

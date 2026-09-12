@@ -111,6 +111,37 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
+  for (const [name, edit] of [
+    ["alias selection must respect the guard", (b, at, fc) => {
+      b.init.cond.op = "!==";
+    }],
+    ["selected alias cannot make the original callable", (b, at, fc) => {
+      b.body.init.body.callee.name = "f";
+    }],
+    ["alias initializer must retain the fallback", (b, at, fc) => {
+      const type = at(b.init).type;
+      assertCallableAlternatives(type.atoms);
+      type.atoms = [type.atoms[0]];
+    }],
+    ["joined alias entry cannot discard an alternative", (b, at, fc) => {
+      const entry = fc.envs.find((e: any) => e.pos[0] === b.body.pos[0]);
+      const type = entry.vars.find((v: any) => v.name === "selected").type;
+      assertCallableAlternatives(type.atoms);
+      type.atoms = [type.atoms[0]];
+    }],
+    ["nested alias call result cannot narrow", (b, at, fc) => {
+      at(b.body.init.body).type = lit("true");
+    }],
+  ] as [string, (...xs: any[]) => any][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "aliasedCallableSelection");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "aliasedCallableSelection");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f.body[0].init.body, at, fc);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));

@@ -52,3 +52,20 @@ function capturedGuardedCallable(
     return (unit: null): boolean => f(unit);
   }
 }
+
+/**
+ * Select an immutable callable alias inside a closure, then capture that alias
+ * in another closure. A later call must respect either selected signature;
+ * selecting the fallback does not make the original nullable input callable.
+ */
+function aliasedCallableSelection(
+  f: ((unit: null) => true) | null,
+  fallback: (unit: null) => false,
+): boolean {
+  const invoke: (unit: null) => boolean = (unit: null): boolean => {
+    const selected = f === null ? fallback : f;
+    const call: (arg: null) => boolean = (arg: null): boolean => selected(arg);
+    return call(unit);
+  };
+  return invoke(null);
+}
