@@ -16,7 +16,7 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
 const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
-  test("function union surface round-trip baseline",()=>{
+  test("function unions retain grouping and per-alternative metadata",()=>{
     const unit={top:false,atoms:[{a:"null"}]};
     const truth={top:false,atoms:[{a:"booleanlit",v:"true"}]};
     const falsity={top:false,atoms:[{a:"booleanlit",v:"false"}]};
@@ -26,9 +26,8 @@ try {
     for(const type of [callableUnion,{top:false,atoms:[{a:"null"},...callableUnion.atoms]},
       {top:false,atoms:[arrow([callableUnion],unit)]},
       {top:false,atoms:[arrow([unit],callableUnion)]}]) {
-      // Baseline: arrow alternatives lose grouping and cannot be read back.
       assert.equal(surface.printType(type).printable,true);
-      assert.equal(surface.roundTrips(type),false);
+      assert.equal(surface.roundTrips(type),true);
     }
     // An arrow returning a primitive union and a higher-order argument retain
     // their existing meaning; grouping must not turn either into an outer union.

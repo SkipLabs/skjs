@@ -88,7 +88,12 @@ function typeText(type: any, state: any) {
     return "«type»";
   }
   if (!atoms.length) return "never";
-  return atoms.map((atom: any) => atomText(atom, state)).join(" | ");
+  return atoms.map((atom: any) => {
+    const text = atomText(atom, state);
+    // Arrow results extend through a union, so an arrow that is itself a
+    // union alternative needs grouping around the whole signature.
+    return atoms.length > 1 && atom?.a === "function" ? "(" + text + ")" : text;
+  }).join(" | ");
 }
 
 // `printable` says the text names this type in surface syntax. It does not say
@@ -132,7 +137,8 @@ function parseType(text: string, template: any) {
     return tokens[i++];
   };
   // Templates supply what the surface does not name. A union is matched by atom
-  // kind, taking the first template atom of that kind; order is not assumed.
+  // kind, consuming each occurrence once within that union. This retains each
+  // alternative's hidden structure even when several have the same kind.
   const templateAtom = (from: any, kind: string) =>
     (from && Array.isArray(from.atoms) ? from.atoms : []).find((a: any) => a.a === kind) ||
     null;
@@ -146,10 +152,17 @@ function parseType(text: string, template: any) {
       take();
       return { top: false, atoms: [] };
     }
-    const atoms = [atom(from)];
+    const remaining = [...(from?.atoms || [])];
+    const next = () => {
+      const value = atom({...from,atoms:remaining});
+      const index = remaining.findIndex((a: any) => a.a === value.a);
+      if (index >= 0) remaining.splice(index,1);
+      return value;
+    };
+    const atoms = [next()];
     while (peek() === "|") {
       take("|");
-      atoms.push(atom(from));
+      atoms.push(next());
     }
     return { top: false, atoms };
   };
@@ -172,7 +185,23 @@ function parseType(text: string, template: any) {
     }
     if (/^-?\d/.test(token)) return { a: "numberlit", v: take() };
     if (token === "{") return record(from);
-    if (token === "(") return arrow(from);
+    if (token === "(") {
+      // The matching ')' followed by '=>' identifies parameter parentheses.
+      // Otherwise these parentheses group one union alternative.
+      let end = i, depth = 0;
+      do {
+        if (tokens[end] === "(") depth++;
+        if (tokens[end] === ")") depth--;
+        end++;
+      } while (end < tokens.length && depth > 0);
+      if (tokens[end] === "=>") return arrow(from);
+      take("(");
+      const grouped = union(from);
+      take(")");
+      if (grouped.top || grouped.atoms.length !== 1)
+        throw new TypeSyntaxError("expected a single grouped type alternative");
+      return grouped.atoms[0];
+    }
     throw new TypeSyntaxError("unexpected " + token);
   };
 
