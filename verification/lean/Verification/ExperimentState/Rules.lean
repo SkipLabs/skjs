@@ -20,7 +20,7 @@ theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : S
       WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
       ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
         Safe B j U heap (subst 0 a b)) : arrowT A B k W (.fn l b) :=
-  ⟨⟨b, l, rfl, hc⟩, h⟩
+  ⟨⟨1, b, l, rfl, hc⟩, h⟩
 
 /-- Same-budget application compatibility, the rule needed for the fundamental
  theorem under semantic environments. Both values are available at the current
@@ -202,7 +202,7 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
 that type, including one that would get stuck if it were ever applied. -/
 theorem vacuous_arrow {l : Nat} {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
     (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.fn l b) :=
-  ⟨⟨b, l, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+  ⟨⟨1, b, l, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer
 
@@ -263,7 +263,7 @@ theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
 /-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
 theorem diverging_in_arrowsT (L : List (Fam × Fam))
     (k : Nat) (W : WorldT k) : arrowsT L k W (.fn 0 omegaTm) := by
-  refine ⟨⟨omegaTm, 0, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
+  refine ⟨⟨1, omegaTm, 0, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
   intro p hp j hj W' hx hu hh hok a ha
   exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 

@@ -1308,7 +1308,7 @@ class constructor's `[[Call]]` always throws, and a value of TypeScript's
 
 The original [operational language](SEMANTICS.md#operational-language) separated
 lambdas from locations. The Lean runtime now has only object values for both
-plain objects (`obj l absent`) and functions (`obj l (closure b)`). `CallCode`
+plain objects (`obj l absent`) and functions (`obj l (closure arity b)`). `CallCode`
 is a separate descriptor type; its body is not a runtime value. `funE b`
 allocates a fresh function object with a null-initialized one-cell bag, while
 `letE` binds without allocation. Plain allocation and function creation are

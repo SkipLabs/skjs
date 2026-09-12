@@ -53,7 +53,7 @@ theorem higher_order_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
 /-- A lambda with a free variable is excluded even at budget zero. -/
 theorem open_lambda_excluded (A B : Fam) (n W) :
     ¬ arrowT A B n W (.fn 0 (.var 1)) := by
-  rintro ⟨⟨b, l, he, hc⟩, _⟩
+  rintro ⟨⟨arity, b, l, he, hc⟩, _⟩
   cases he
   exact Nat.lt_irrefl 1 hc
 

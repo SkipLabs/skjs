@@ -126,13 +126,6 @@ theorem unary_step (s : Prepare h ⟨f,[a]⟩ h' frame) :
     obtain ⟨a',rfl,ha⟩ := singleton.mp hs
     exact ⟨_,_,rfl,.appR hv ha⟩
 
-/-- Runtime parameter binding pads missing arguments with undefined and ignores
-extra values. Preparation still evaluates the entire actual list first. -/
-def parameters : Nat → List Tm → List Tm
-  | 0, _ => []
-  | n+1, [] => .undef :: parameters n []
-  | n+1, a::args => a :: parameters n args
-
 theorem parameters_length (n : Nat) (args : List Tm) :
     (parameters n args).length = n := by
   induction n generalizing args with
@@ -169,10 +162,6 @@ theorem parameters_property {P : Tm → Prop} (hu : P .undef)
       · exact ha a (by simp)
       · exact ih (fun a h => ha a (by simp [h])) a hm
 
-/-- Bind a prepared argument list without evaluating or allocating anything. -/
-def bindParameters (arity : Nat) (args : List Tm) (body : Tm) : Tm :=
-  bindArgs 0 (parameters arity args) body
-
 theorem bound_body_closed (hb : Scoped arity body)
     (ha : ∀ a ∈ args, Scoped 0 a) : Scoped 0 (bindParameters arity args body) := by
   apply bindArgs_scoped
@@ -189,11 +178,11 @@ theorem omitted_unary_binding (body : Tm) :
     bindParameters 1 [] body = subst 0 .undef body := rfl
 
 /-- Dispatch a fully evaluated frame to the code on its saved callee. The
-current runtime descriptor binds one parameter; all actuals, including extras,
+descriptor supplies the parameter count; all actuals, including extras,
 must be values before normalization. Invocation itself performs no heap effect. -/
 inductive Invoke : Frame → Tm → Prop where
   | closure : Values args →
-      Invoke ⟨.obj l (.closure body), args⟩ (bindParameters 1 args body)
+      Invoke ⟨.obj l (.closure arity body), args⟩ (bindParameters arity args body)
 
 theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
   cases hi with
@@ -211,21 +200,21 @@ theorem invoke_no_prepare (hi : Invoke frame body) : ¬ Prepare h frame h' frame
 /-- Readiness is sufficient for dispatch precisely when the saved callee has
 invocation code. No scope or type test is added to the untyped machine. -/
 theorem invoke_iff : Invoke frame result ↔
-    ∃ l body, frame.callee = .obj l (.closure body) ∧ Values frame.args ∧
-      result = bindParameters 1 frame.args body := by
+    ∃ l arity body, frame.callee = .obj l (.closure arity body) ∧ Values frame.args ∧
+      result = bindParameters arity frame.args body := by
   constructor
   · intro hi
     cases hi with
-    | closure hv => exact ⟨_, _, rfl, hv, rfl⟩
+    | closure hv => exact ⟨_, _, _, rfl, hv, rfl⟩
   · rcases frame with ⟨f, args⟩
-    rintro ⟨l, body, hf, hv, rfl⟩
+    rintro ⟨l, arity, body, hf, hv, rfl⟩
     cases hf
     exact .closure hv
 
 theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
     (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
   cases hi with
-  | closure _ => exact bound_body_closed hf ha
+  | closure _ => exact bound_body_closed (by simpa [Scoped] using hf) ha
 
 /-- A complete decomposition of the maintained unary machine: every step is
 operand preparation or dispatch, and both reconstruct a machine step. -/

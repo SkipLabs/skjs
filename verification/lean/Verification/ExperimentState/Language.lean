@@ -42,7 +42,7 @@ inductive Tm where
   /-- An object identity with an optional, immutable invocation descriptor. -/
   | obj (l : Nat) (call : CallCode)
   /-- Allocate one object with immutable call code and initial bag contents `a`.
-  Only the initializer is evaluated; a closure body is code under one binder. -/
+  Only the initializer is evaluated; code binds its declared parameter count. -/
   | make (call : CallCode) (a : Tm)
   | read (a : Tm)
   | write (a b : Tm)
@@ -53,7 +53,7 @@ inductive Tm where
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
 inductive CallCode where
   | absent
-  | closure (body : Tm)
+  | closure (arity : Nat) (body : Tm)
   deriving Repr, DecidableEq
 end
 
@@ -61,13 +61,13 @@ end
 @[match_pattern] abbrev Tm.alloc (a : Tm) : Tm := .make .absent a
 
 /-- Function-object allocation is the closure-descriptor case of `make`. -/
-@[match_pattern] abbrev Tm.attach (b a : Tm) : Tm := .make (.closure b) a
+@[match_pattern] abbrev Tm.attach (b a : Tm) : Tm := .make (.closure 1 b) a
 
 /-- Source function creation starts with an empty one-cell property bag. -/
 @[match_pattern] abbrev Tm.funE (b : Tm) : Tm := .attach b .nul
 
 /-- Notation for an already allocated function object, used in semantic lemmas. -/
-@[match_pattern] abbrev Tm.fn (l : Nat) (b : Tm) : Tm := .obj l (.closure b)
+@[match_pattern] abbrev Tm.fn (l : Nat) (b : Tm) : Tm := .obj l (.closure 1 b)
 
 /-- Term induction exposing the body stored inside a call descriptor. -/
 @[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
@@ -76,25 +76,25 @@ end
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (objAbsent : ∀ l, P (.obj l .absent))
-    (objClosure : ∀ l b, P b → P (.obj l (.closure b)))
-    (attach : ∀ b a, P b → P a → P (.attach b a))
+    (objClosure : ∀ l n b, P b → P (.obj l (.closure n b)))
+    (attach : ∀ n b a, P b → P a → P (.make (.closure n b) a))
     (alloc : ∀ a, P a → P (.alloc a))
     (read : ∀ a, P a → P (.read a))
     (write : ∀ a b, P a → P b → P (.write a b))
     (test : ∀ k a, P a → P (.test k a))
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
-    (motive_2 := fun c => match c with | .absent => True | .closure b => P b)
+    (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
     var app letE nul undef tru fls ?_ ?_ read write test ite
-    True.intro (fun _ h => h) t
+    True.intro (fun _ _ h => h) t
   · intro l c ih
     cases c with
     | absent => exact objAbsent l
-    | closure b => exact objClosure l b ih
+    | closure n b => exact objClosure l n b ih
   · intro c a ihc iha
     cases c with
     | absent => exact alloc a iha
-    | closure b => exact attach b a ihc iha
+    | closure n b => exact attach n b a ihc iha
 
 
 
@@ -117,7 +117,7 @@ def tagHolds : Tag → Val → Bool
   | .isBool, .tru => true
   | .isBool, .fls => true
   | .isRef, .obj _ .absent => true
-  | .isFun, .obj _ (.closure _) => true
+  | .isFun, .obj _ (.closure _ _) => true
   | _, _ => false
 
 def subst (j : Nat) (a : Tm) : Tm → Tm
@@ -129,8 +129,8 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .tru => .tru
   | .fls => .fls
   | .obj l .absent => .obj l .absent
-  | .obj l (.closure b) => .obj l (.closure (subst (j + 1) a b))
-  | .attach b x => .attach (subst (j + 1) a b) (subst j a x)
+  | .obj l (.closure n b) => .obj l (.closure n (subst (j + n) a b))
+  | .make (.closure n b) x => .make (.closure n (subst (j + n) a b)) (subst j a x)
   | .alloc x => .alloc (subst j a x)
   | .read x => .read (subst j a x)
   | .write x y => .write (subst j a x) (subst j a y)
@@ -146,6 +146,21 @@ def bindArgs (d : Nat) : List Tm → Tm → Tm
 @[simp] theorem bindArgs_singleton (d : Nat) (a body : Tm) :
     bindArgs d [a] body = subst d a body := rfl
 
+namespace CallArguments
+
+/-- Runtime parameter binding pads missing arguments with undefined and ignores
+extra values. Preparation still evaluates the entire actual list first. -/
+def parameters : Nat → List Tm → List Tm
+  | 0, _ => []
+  | n+1, [] => .undef :: parameters n []
+  | n+1, a::args => a :: parameters n args
+
+/-- Bind a prepared argument list without evaluating or allocating anything. -/
+def bindParameters (arity : Nat) (args : List Tm) (body : Tm) : Tm :=
+  bindArgs 0 (parameters arity args) body
+
+end CallArguments
+
 abbrev Heap := List Val
 
 /-! ## One small step, threading the heap -/
@@ -157,7 +172,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
-  | beta : isVal a = true → Step h (.app (.obj l (.closure b)) a) h (bindArgs 0 [a] b)
+  | beta : isVal a = true → Step h (.app (.obj l (.closure n b)) a) h (CallArguments.bindParameters n [a] b)
   | makeC : Step h a h' a' → Step h (.make c a) h' (.make c a')
   | makeV : isVal v = true → Step h (.make c v) (h ++ [v]) (.obj h.length c)
   | readC : Step h a h' a' → Step h (.read a) h' (.read a')
@@ -305,7 +320,7 @@ theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
   | makeV => exact ⟨rfl, rfl⟩
 
 theorem beta_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
-    (hs : Step h (.app (.obj l (.closure b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
+    (hs : Step h (.app (.obj l (.closure 1 b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
   cases hs with
   | appL hs => cases hs
   | appR _ hs => exact False.elim (value_no_step ha hs)

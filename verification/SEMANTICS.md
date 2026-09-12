@@ -25,12 +25,12 @@ the subset
 
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
-where $c ::= \mathsf{absent}\mid\mathsf{closure}(t)$ is a separate invocation
-descriptor. `make c a` evaluates its initializer `a`, then appends that value
+where $c ::= \mathsf{absent}\mid\mathsf{closure}(m,t)$ is a separate invocation
+descriptor with a declared parameter count `m`. `make c a` evaluates its initializer `a`, then appends that value
 to the heap and returns `obj h.length c`, where `h.length` is the length
 before appending.
 `alloc a` abbreviates `make absent a`; `attach b a` abbreviates
-`make (closure b) a`; `funE b` abbreviates `make (closure b) null`.
+`make (closure 1 b) a`; `funE b` abbreviates `make (closure 1 b) null`.
 All three use the same constructor and the same allocation step, `Step.makeV`.
 The closure body is not evaluated during creation. There is no bare lambda value.
 
@@ -149,7 +149,12 @@ preparation step. All actuals must be values, including those discarded during
 normalization. `invoke_iff` characterizes dispatch exactly; readiness alone does
 not make a primitive or a plain object callable. `invoke_closed` preserves closed
 scope, and `InvocationSpec.invoke` supplies the promised body safety for an
-admitted actual list. The descriptor still declares one parameter implicitly.
+admitted actual list. The descriptor carries its parameter count explicitly;
+`Scoped`, substitution, capture instantiation and the certificate scope check
+all traverse its body under that many binders. Object coherence preserves both
+arity and body at an identity. `Step.beta` and dispatch use the same normalized
+binding operation, including when a unary application supplies fewer or more
+actuals than the descriptor declares.
 
 `unary_step_iff` proves both directions of the connection to the maintained
 machine: every application step is preparation or dispatch, and either operation
@@ -159,12 +164,12 @@ it introduces no second term evaluator.
 The existing `CodeSpec` is now the one-parameter, singleton-domain specialization
 of `InvocationSpec`. `CodeSpec_iff` proves equivalence to its previous unary
 obligation, and existing callable creation proofs use that equivalence. The
-current unary beta rule uses `bindArgs` on a singleton, and the semantic call
-helper uses the equivalent singleton `bindParameters`, definitionally the
-previous substitution. Multi-argument invocation still needs
-an arity-bearing runtime descriptor and application, semantic arrow integration,
-certificates and source integration. These code contracts alone do not enable
-multi-argument source calls.
+current beta rule and semantic call helper both use `bindParameters` with the
+saved descriptor's arity. `arrowsT_invocation_iff` connects unary actual-argument
+contracts to code of any declared arity. Source creation still uses arity one
+(including the current implicit-undefined thunk encoding). List-valued application
+terms, list-domain semantic arrows, typing certificates and source integration
+remain to be added before multi-argument source calls are enabled.
 
 ## Types, worlds and heaps
 
@@ -240,10 +245,10 @@ membership. Quantification over future worlds remains essential for allocation.
 
 In notation, for every $j<n$ and admissible future $U$ and satisfying heap $h$,
 
-$$\mathsf{obj}(\ell,\mathsf{closure}(b))\in\llbracket A\to B\rrbracket(n,W)
+$$\mathsf{obj}(\ell,\mathsf{closure}(m,b))\in\llbracket A\to B\rrbracket(n,W)
 \Longrightarrow
 \big(a\in\llbracket A\rrbracket(j,U)\Rightarrow
-\operatorname{Safe}(B,j,U,h,b[a/x])\big).$$
+\operatorname{Safe}(B,j,U,h,\operatorname{bindParameters}(m,[a],b))\big).$$
 
 A guarded operator consults recursive operands only below the current budget.
 Its approximation tower stabilizes at every finite observation level, and the

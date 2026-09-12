@@ -1,4 +1,4 @@
-import Verification.ExperimentState.Bindings
+import Verification.ExperimentState.CallArguments
 
 /-!
 # Object identity coherence
@@ -29,8 +29,8 @@ theorem extends_append (D : Registry) (c : CallCode) : Extends D (D ++ [c]) := b
 /-- Every object occurrence agrees with its allocation, including inside code. -/
 def Names (D : Registry) : Tm → Prop
   | .obj l .absent => D[l]? = some .absent
-  | .obj l (.closure b) => D[l]? = some (.closure b) ∧ Scoped 1 b ∧ Names D b
-  | .attach b a => Names D b ∧ Names D a
+  | .obj l (.closure n b) => D[l]? = some (.closure n b) ∧ Scoped n b ∧ Names D b
+  | .make (.closure _ b) a => Names D b ∧ Names D a
   | .letE a b | .app a b | .write a b => Names D a ∧ Names D b
   | .alloc a | .read a | .test _ a => Names D a
   | .ite c a b => Names D c ∧ Names D a ∧ Names D b
@@ -39,12 +39,12 @@ def Names (D : Registry) : Tm → Prop
 theorem Names.mono {D E t} (ht : Names D t) (hx : Extends D E) : Names E t := by
   induction t using Tm.induct <;> simp_all [Names]
   case objAbsent l => exact hx _ _ ht
-  case objClosure l b ih => exact hx _ _ ht.1
+  case objClosure l n b ih => exact hx _ _ ht.1
 
 theorem Names.descriptor {D l c} (ht : Names D (.obj l c)) : D[l]? = some c := by
   cases c with
   | absent => exact ht
-  | closure b => exact ht.1
+  | closure n b => exact ht.1
 
 /-- Same identity means exactly the same descriptor, including its body. -/
 theorem descriptor_unique {D l c c'} (h : Names D (.obj l c))
@@ -55,21 +55,34 @@ theorem Names.subst {D t a} (ht : Names D t) (ha : Names D a) (j : Nat) :
     Names D (subst j a t) := by
   induction t using Tm.induct generalizing j <;> simp only [Names, ExperimentState.subst] at *
   case var i => split <;> (try split) <;> simp_all [Names]
-  case objClosure l b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
+  case objClosure l n b ih => rw [subst_above ht.2.1 (by omega)]; exact ht
   all_goals simp_all
+
+theorem Names.bindArgs {D t args} (ht : Names D t)
+    (ha : ∀ a ∈ args, Names D a) (d : Nat) : Names D (bindArgs d args t) := by
+  induction args generalizing d with
+  | nil => exact ht
+  | cons a args ih =>
+    exact (ih (fun v hv => ha v (List.mem_cons_of_mem a hv)) (d + 1)).subst
+      (ha a (by simp)) d
+
+theorem Names.bindParameters {D t args} (ht : Names D t)
+    (ha : ∀ a ∈ args, Names D a) (arity : Nat) :
+    Names D (CallArguments.bindParameters arity args t) :=
+  ht.bindArgs (CallArguments.parameters_property (by trivial) ha) 0
 
 theorem Names.instantiate {D t} (ht : Names D t) (ρ : Env)
     (hρ : ∀ i, Names D (ρ i)) (d : Nat) : Names D (instantiate d ρ t) := by
   induction t using Tm.induct generalizing d <;> simp only [Names, ExperimentState.instantiate] at *
   case var i => split <;> simp_all [Names]
-  case objClosure l b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
+  case objClosure l n b ih => rw [instantiate_above (ht.2.1.mono (by omega))]; exact ht
   all_goals simp_all
 
 /-- Program syntax cannot manufacture an already allocated identity, even in
 an unreachable branch or the body of an empty overload. -/
 def sourceTerm : Tm → Bool
   | .obj .. => false
-  | .attach b a => sourceTerm b && sourceTerm a
+  | .make (.closure _ b) a => sourceTerm b && sourceTerm a
   | .letE a b | .app a b | .write a b => sourceTerm a && sourceTerm b
   | .alloc a | .read a | .test _ a => sourceTerm a
   | .ite c a b => sourceTerm c && sourceTerm a && sourceTerm b
@@ -133,14 +146,17 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     exact ⟨D,.refl D,hh,subst_scoped ht.1.2 ht.1.1 (by omega),ht.2.2.subst ht.2.1 0⟩
   | beta hv =>
     intro D hh ht
-    exact ⟨D,.refl D,hh,subst_scoped ht.1.1 ht.1.2 (by omega),ht.2.1.2.2.subst ht.2.2 0⟩
+    refine ⟨D,.refl D,hh,?_,?_⟩
+    · exact CallArguments.bound_body_closed (by simpa [Scoped] using ht.1.1)
+        (by simpa using ht.1.2)
+    · exact ht.2.1.2.2.bindParameters (by simpa using ht.2.2) _
   | @makeC h a h' a' c step ih =>
     intro D hh ht
     cases c with
     | absent =>
       obtain ⟨E,hx,hh',ht'⟩ := ih D hh ht
       exact ⟨E,hx,hh',ht'⟩
-    | closure b =>
+    | closure n b =>
       obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
       exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
   | @makeV v h c hv =>
@@ -151,9 +167,9 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     | absent =>
       refine ⟨D ++ [CallCode.absent],extends_append D .absent,hh.alloc hv ht .absent,?_⟩
       exact ⟨True.intro,hl⟩
-    | closure b =>
-      exact ⟨D ++ [.closure b],hx,hh.alloc hv ⟨ht.1.2,ht.2.2⟩ (.closure b),
-        ht.1.1,hl,ht.1.1,ht.2.1.mono hx⟩
+    | closure n b =>
+      exact ⟨D ++ [.closure n b],hx,hh.alloc hv ⟨ht.1.2,ht.2.2⟩ (.closure n b),
+        ht.1.1,hl,(by simpa using ht.1.1),ht.2.1.mono hx⟩
   | readC step ih =>
     intro D hh ht
     exact ih D hh ht

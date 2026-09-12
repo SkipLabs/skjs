@@ -122,8 +122,8 @@ decreasing_by
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
   | .obj _ .absent => true
-  | .obj _ (.closure b) => checkScope (d+1) b
-  | .attach b a => checkScope (d+1) b && checkScope d a
+  | .obj _ (.closure n b) => checkScope (d+n) b
+  | .make (.closure n b) a => checkScope (d+n) b && checkScope d a
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .app a b | .write a b => checkScope d a && checkScope d b
   | .alloc a | .read a | .test _ a => checkScope d a

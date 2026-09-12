@@ -86,12 +86,12 @@ theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
     (hf : CodeSpec L n W b) (hval : isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
     Safe (callableT L P) n W h (.attach b v) := by
-  apply make_rule hA n W h (.closure b) v hval hadm hok hv
+  apply make_rule hA n W h (.closure 1 b) v hval hadm hok hv
   intro j hj U hx hr
-  have hf' : arrowsT L j U (.obj h.length (.closure b)) :=
+  have hf' : arrowsT L j U (.obj h.length (.closure 1 b)) :=
     (arrowsT_adm L).mono j _ U hx _ ((arrowsT_adm L).down_le n j
       (Nat.le_of_lt hj) W _ ((arrowsT_code_iff L h.length b n W).mpr hf))
-  exact ⟨⟨h.length, .closure b, rfl, rfl, hr⟩, hf'⟩
+  exact ⟨⟨h.length, .closure 1 b, rfl, rfl, hr⟩, hf'⟩
 
 #print axioms Callable.step
 #print axioms bagT_contractive

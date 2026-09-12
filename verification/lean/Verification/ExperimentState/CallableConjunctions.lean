@@ -41,9 +41,9 @@ theorem neutral_iff (A : Fam) (Bs : List Fam) (n W v) :
       obtain ⟨l',code,he,_,hr⟩ := h.2 B hb
       cases he
       exact hr
-    | closure b =>
+    | closure arity b =>
       right
-      exact ⟨h,⟨b,l,rfl,hs⟩,by simp⟩
+      exact ⟨h,⟨arity,b,l,rfl,(by simpa [Scoped] using hs)⟩,by simp⟩
 
 theorem merge (A C : Fam) (Bs Ds : List Fam) (L M : List (Fam × Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔

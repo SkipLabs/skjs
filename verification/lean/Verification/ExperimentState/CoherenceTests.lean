@@ -20,7 +20,7 @@ example : Scoped 1 (.fn 0 (.var 1)) := by simp [Scoped]
 example (D : Registry) : ¬ Names D (.fn 0 (.var 1)) := by simp [Names, Scoped]
 
 /-- An object hidden inside captured code is checked against the same registry. -/
-example : ¬ Names [.absent, .closure (.fn 0 (.var 0))] (.fn 1 (.fn 0 (.var 0))) := by
+example : ¬ Names [.absent, .closure 1 (.fn 0 (.var 0))] (.fn 1 (.fn 0 (.var 0))) := by
   simp [Names]
 
 /- Source functions may capture variables, but may not spell allocated identities. -/
@@ -69,12 +69,12 @@ example : ∃ D, Extends initial D ∧ ObjectCoherence.HeapOk D [.tru,.nul] ∧
 
 /-- A write can create a heap cycle through captured code while retaining both
 identities' descriptors. The invariant does not forbid mutable heap cycles. -/
-example : ∃ E, Extends [.absent,.closure captured] E ∧
+example : ∃ E, Extends [.absent,.closure 1 captured] E ∧
     ObjectCoherence.HeapOk E [.fn 1 captured,.fn 1 captured] ∧ TermOk E .nul :=
   step_preserves (.writeV rfl (by decide) :
     Step [.tru,.fn 1 captured] (.write (.obj 0 .absent) (.fn 1 captured))
       [.fn 1 captured,.fn 1 captured] .nul)
-    [.absent,.closure captured]
+    [.absent,.closure 1 captured]
     (by simp [ObjectCoherence.HeapOk,TermOk,Scoped,Names,isVal,captured])
     (by simp [TermOk,Scoped,Names,captured])
 

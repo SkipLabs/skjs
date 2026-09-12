@@ -45,22 +45,22 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
 not an additional runtime operation. Arrow membership separately requires a
 callable shape, so the fallback branch is never used for typed application. -/
 def callBody (v a : Tm) : Tm := match v with
-  | .obj _ (.closure b) => CallArguments.bindParameters 1 [a] b
+  | .obj _ (.closure n b) => CallArguments.bindParameters n [a] b
   | _ => .app .nul .nul
 
 /-- Only an object with closed invocation code is a callable value. -/
 def Callable (v : Val) : Prop :=
-  ∃ b l, v = .obj l (.closure b) ∧ Scoped 1 b
+  ∃ arity b l, v = .obj l (.closure arity b) ∧ Scoped arity b
 
 theorem Callable.val {v : Val} (h : Callable v) : isVal v = true := by
-  rcases h with ⟨b, l, rfl, _⟩; rfl
+  rcases h with ⟨arity, b, l, rfl, _⟩; rfl
 
 theorem Callable.scoped {v : Val} (h : Callable v) : Scoped 0 v := by
-  rcases h with ⟨b, l, rfl, hc⟩; exact hc
+  rcases h with ⟨arity, b, l, rfl, hc⟩; simpa [Scoped] using hc
 
 theorem Callable.step {v a : Val} (h : Callable v) (ha : isVal a = true) (heap : Heap) :
     Step heap (.app v a) heap (callBody v a) := by
-  rcases h with ⟨b, l, rfl, _⟩
+  rcases h with ⟨arity, b, l, rfl, _⟩
   exact .beta ha
 
 /-- `A → B` contains closed callables whose substituted bodies are safe in every
@@ -216,8 +216,8 @@ theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
 
 /-- Membership in every conjunct is membership in the intersection. -/
 theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm} {l : Nat}
-    (hobj : v = .obj l (.closure b)) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
-  ⟨⟨b, l, hobj, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
+    (hobj : v = .obj l (.closure 1 b)) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
+  ⟨⟨1, b, l, hobj, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
 
 theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
   rintro j W a ⟨hc, -⟩
@@ -314,14 +314,14 @@ theorem InvocationSpec.mono {arity L n W W' b} (hx : WExt W W')
   exact h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args ha
 
 /-- Dispatch realizes the code contract in a future world. The actual list
-can be empty or longer than the current descriptor's single parameter, provided
+can be empty or differ in length from the declared parameters, provided
 the selected signature admits it. Operand effects have finished before dispatch. -/
-theorem InvocationSpec.invoke {L k W b} (hs : InvocationSpec 1 L k W b)
+theorem InvocationSpec.invoke {arity L k W b} (hs : InvocationSpec arity L k W b)
     {p : List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
     (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
     {heap : Heap} (hh : HeapOk j U heap) {args : List Tm} (ha : ArgsT p.1 j U args)
     {l : Nat} {result : Tm}
-    (hi : CallArguments.Invoke ⟨.obj l (.closure b), args⟩ result) :
+    (hi : CallArguments.Invoke ⟨.obj l (.closure arity b), args⟩ result) :
     Safe p.2 j U heap result := by
   cases hi
   exact hs.2 p hp j hj U hx hu heap hh args ha
@@ -330,12 +330,13 @@ theorem InvocationSpec.invoke {L k W b} (hs : InvocationSpec 1 L k W b)
 def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
   InvocationSpec 1 (L.map fun p => ([p.1], p.2)) k W b
 
-theorem CodeSpec_iff (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) :
-    CodeSpec L k W b ↔
-      Scoped 1 b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+theorem InvocationSpec_unary_iff (arity : Nat) (L : List (Fam × Fam))
+    (k : Nat) (W : WorldT k) (b : Tm) :
+    InvocationSpec arity (L.map fun p => ([p.1], p.2)) k W b ↔
+      Scoped arity b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
         WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' →
         ∀ (h : Heap), HeapOk j W' h →
-          ∀ a, p.1 j W' a → Safe p.2 j W' h (subst 0 a b) := by
+          ∀ a, p.1 j W' a → Safe p.2 j W' h (CallArguments.bindParameters arity [a] b) := by
   constructor
   · rintro ⟨hc, hs⟩
     refine ⟨hc, ?_⟩
@@ -349,15 +350,31 @@ theorem CodeSpec_iff (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) :
     obtain ⟨a, rfl, harg⟩ := (ArgsT_singleton q.1 j U args).mp ha
     exact hs q hq j hj U hx hu heap hh a harg
 
-theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
-    arrowsT L n W (.obj l (.closure b)) ↔ CodeSpec L n W b := by
-  rw [CodeSpec_iff]
+theorem CodeSpec_iff (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) :
+    CodeSpec L k W b ↔
+      Scoped 1 b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+        WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' →
+        ∀ (h : Heap), HeapOk j W' h →
+          ∀ a, p.1 j W' a → Safe p.2 j W' h (subst 0 a b) :=
+  InvocationSpec_unary_iff 1 L k W b
+
+/-- Unary arrow domains describe actual calls, independently of the code's
+parameter count. The descriptor controls padding and truncation. -/
+theorem arrowsT_invocation_iff (arity : Nat) (L : List (Fam × Fam))
+    (l : Nat) (b : Tm) (n W) :
+    arrowsT L n W (.obj l (.closure arity b)) ↔
+      InvocationSpec arity (L.map fun p => ([p.1], p.2)) n W b := by
+  rw [InvocationSpec_unary_iff]
   constructor
-  · rintro ⟨⟨b', l', he, hc⟩, hs⟩
+  · rintro ⟨⟨arity', b', l', he, hc⟩, hs⟩
     cases he
     exact ⟨hc, hs⟩
   · rintro ⟨hc, hs⟩
-    exact ⟨⟨b, l, rfl, hc⟩, hs⟩
+    exact ⟨⟨arity, b, l, rfl, hc⟩, hs⟩
+
+theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
+    arrowsT L n W (.obj l (.closure 1 b)) ↔ CodeSpec L n W b :=
+  arrowsT_invocation_iff 1 L l b n W
 
 theorem CodeSpec.down {L n W b} (h : CodeSpec L (n + 1) W b) :
     CodeSpec L n (trunc n (Nat.le_succ n) W) b :=
@@ -372,6 +389,7 @@ theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
 #print axioms InvocationSpec.down
 #print axioms InvocationSpec.mono
 #print axioms InvocationSpec.invoke
+#print axioms arrowsT_invocation_iff
 #print axioms CodeSpec_iff
 
 theorem omega_safe (B : Fam) : ∀ (n : Nat) (W : WorldT n) (h : Heap),
