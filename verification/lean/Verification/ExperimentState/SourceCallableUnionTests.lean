@@ -18,7 +18,7 @@ private def source : SourceInput.Fn :=
   ⟨"invoke",(0,1),[⟨"f",union⟩],primitive "boolean",
    [.ret (2,16) (.app (3,16)
      (.lam (3,12) "unit" (primitive "null") (primitive "boolean")
-       (.app (7,12) (.var (7,8) "f") (.lit (9,10) .vnull)))
+       (.app (7,12) (.var (7,8) "f") (.var (9,10) "unit")))
      (.lit (14,15) .vnull))]⟩
 private def claims : SourceClaims.Function :=
   ⟨"invoke",(0,1),[("f",.ok [4,5])],.ok [1,2],
@@ -26,23 +26,22 @@ private def claims : SourceClaims.Function :=
    [((3,16),.ok [1,2]),((3,12),.ok [6]),((7,12),.ok [1,2]),
     ((7,8),.ok [4,5]),((9,10),.ok [0]),((14,15),.ok [0])],[],[]⟩
 
--- Baseline: primitive-only unions decode, but source call extraction requires
--- one arrow clause even though the graph consumer can justify each alternative.
+-- Primitive-only function unions decode and acquire direct recipes inside
+-- closures, preserving all alternatives and the source consumer checks.
 #guard ((SourceInput.translate union).run' SourceTypes.initial).toOption == some [4,5]
-#guard match extractNormalizedFn table source claims with
-  | .error e => e == "callee must name a source arrow"
-  | .ok _ => false
+#guard (extractNormalizedFn table source claims).toOption.isSome
 
-private def check (f : SourceInput.Fn) (c : SourceClaims.Function) : Except String Unit := do
-  let r ← extractNormalizedFn table f c
+private def checkWith (T : SourceTypes.Table) (f : SourceInput.Fn) (c : SourceClaims.Function) : Except String Unit := do
+  let r ← extractNormalizedFn T f c
   let proofs ← ExpressionClaims.produce (RequestJson.graph r.toRequest)
     r.searchLabels r.types.length 0 r.obligations
   let evidence ← RequestJson.produceJson (toJson r.toRequest) 8 [] proofs
     r.sourceMap (some r.searchLabels) r.assertions r.cuts
   let response ← RequestJson.decodeResponse r.toRequest evidence
   if !checkRequests [r] ⟨[response],[proofs]⟩ then throw "source consumer rejected evidence"
+private def check := checkWith table
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
-#guard !ok (check source claims)
+#guard ok (check source claims)
 -- The union result cannot be silently narrowed to one alternative.
 #guard !ok (check source {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (7,12) then (pos,.ok [1]) else (pos,c)})
@@ -54,4 +53,28 @@ private def wrongArgument : SourceInput.Fn := {source with body :=
     (.lit (14,15) .vnull))]}
 #guard !ok (check wrongArgument {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (9,10) then (pos,.ok [1]) else (pos,c)})
+-- Saving both operands explicitly keeps source name lookup and evaluation
+-- order correct after adding the anonymous callee slot.
+#guard match extractNormalizedFn table source claims with
+  | .error _ => false
+  | .ok r => r.obligations.any fun q => q.pos == (7,12) &&
+      q.sequent.term == .letE (.var 1) (.letE (.var 1) (.app (.var 1) (.var 0)))
+
+-- One successful alternative does not excuse another incompatible domain.
+private def mixedDomain : Json := Json.mkObj [("top",toJson false),("atoms",toJson
+  [arrow (primitive "null") (literal true),arrow (primitive "boolean") (literal false)])]
+#guard (extractNormalizedFn (table.set 5 [.arrs [([1,2],[2])]])
+  {source with params := [⟨"f",mixedDomain⟩]} claims).toOption.isSome
+#guard !ok (checkWith (table.set 5 [.arrs [([1,2],[2])]])
+  {source with params := [⟨"f",mixedDomain⟩]} claims)
+
+-- A source-level nullable function remains gated until a guard establishes
+-- callability; it cannot borrow the callable union branch's signature.
+private def nullable : Json := Json.mkObj [("top",toJson false),("atoms",toJson
+  [Json.mkObj [("a",toJson "null")],arrow (primitive "null") (literal true)])]
+#guard !ok (check {source with params := [⟨"f",nullable⟩]}
+  {claims with
+    params := [("f",.ok [0,4])]
+    envs := [(2,[("f",.ok [0,4])])]
+    exprs := claims.exprs.map fun (pos,c) => if pos == (7,8) then (pos,.ok [0,4]) else (pos,c)})
 end Verification.ExperimentState.SourceCallableUnionTests

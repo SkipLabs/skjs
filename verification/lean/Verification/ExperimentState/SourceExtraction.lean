@@ -312,16 +312,37 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       | throw "read receiver must name a cell contract"
     pure (DirectProof.node Γ (.read a.term) B .read [a])
   | .app _ f a => do
-    let f ← closureExpr fc scope Γ f
-    let a ← closureExpr fc scope Γ a
-    let [.arrs L] := PositiveRules.expand G f.type
-      | throw "callee must name a source arrow"
-    -- As TypeScript resolves overloads: the first signature whose parameter
-    -- admits the argument's type; failing that, the first, whose obligation
-    -- then reports the mismatch.
-    let some (D,R) := (L.find? fun (D,_) => a.type.all D.contains) <|> L.head?
-      | throw "callee has no signature"
-    pure (DirectProof.node Γ (.app f.term a.term) R .app [f,DirectProof.cast Γ D a])
+    let callee ← closureExpr fc scope Γ f
+    -- Keep single-arrow recipes unchanged. Union callees are saved before the
+    -- argument, then eliminated in that immutable slot without reevaluation.
+    match PositiveRules.expand G callee.type with
+    | [.arrs L] =>
+      let arg ← closureExpr fc scope Γ a
+      -- Preserve the existing overload order and mismatch diagnostics.
+      let some (D,R) := (L.find? fun (D,_) => arg.type.all D.contains) <|> L.head?
+        | throw "callee has no signature"
+      pure (DirectProof.node Γ (.app callee.term arg.term) R .app
+        [callee,DirectProof.cast Γ D arg])
+    | _ =>
+      if callee.type.length ≤ 1 then throw "callee must name a source arrow"
+      let K := callee.type :: Γ
+      let arg ← closureExpr fc (⟨"",some f.span⟩::scope) K a
+      let alternatives ← callee.type.mapM fun label => do
+        let [.arrs L] := PositiveRules.expand G [label]
+          | throw "every callee alternative must name a source arrow"
+        let some (D,R) := (L.find? fun (D,_) => arg.type.all D.contains) <|> L.head?
+          | throw "callee alternative has no signature"
+        pure (label,D,R)
+      let R := (alternatives.flatMap fun (_,_,R) => R).eraseDups
+      let H := arg.type :: K
+      let term := Tm.app (.var 1) (.var 0)
+      let children := alternatives.map fun (label,D,result) =>
+        let branch := arg.type :: [label] :: Γ
+        DirectProof.cast branch R (DirectProof.node branch term result .app
+          [DirectProof.var branch 1 [label],
+           DirectProof.cast branch D (DirectProof.var branch 0 arg.type)])
+      pure (DirectProof.letE Γ callee (DirectProof.letE K arg
+        (DirectProof.node H term R (.unionVar 1) children)))
   | .write _ receiver rhs => do
     let B ← exprType fc receiver
     let [.refs D []] := PositiveRules.expand G B

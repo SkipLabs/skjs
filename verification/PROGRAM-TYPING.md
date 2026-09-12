@@ -1370,7 +1370,15 @@ types, including erased property views. Every alternative must accept the
 actual argument and produce a result covered by the requested type. This does
 not invent a signature from `typeof`, pick a successful alternative, or require
 a common arrow label in the graph. The producer emits ordinary `unionVar`
-evidence; the consumer and wire format are unchanged. Typed reads retain current heap
+evidence; the consumer and wire format are unchanged.
+[SourceCallableUnionTests.lean](lean/Verification/ExperimentState/SourceCallableUnionTests.lean)
+checks the corresponding source-closure path for unions of primitive-only
+function signatures. Its direct recipe saves the callee and argument in order,
+then checks each alternative at the saved callee slot and joins the signature
+results. Expression obligations require no expression-search fuel. The complete
+source consumer still checks supplied result claims, rejects an incompatible
+alternative or nullable callee, and retains the external-object boundary.
+Single-arrow call recipes keep their existing form. Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral
 read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types
