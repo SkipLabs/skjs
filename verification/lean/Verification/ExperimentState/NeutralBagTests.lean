@@ -36,14 +36,20 @@ theorem write_checked : checkTree G writeProof = true := by cbv
 #guard !(expression G pool 8 [[2,3]] (.app (.var 0) .tru) [1]).isSome
 #guard !(expression G pool 8 [[2,3]] (.write (.var 0) .nul) [0]).isSome
 
--- Baseline: ordinary reads work, but neutral views cannot yet preserve read
--- links through typedRead. Its invariant selector only handles one clause.
-#guard bagOperand (expand G [2,3]) == none
-#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [1] readProof) == none
+-- Every branch has the same invariant, so typedRead retains facts and links.
+#guard bagOperand (expand G [2,3]) == some [1]
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [1] readProof) ==
+  some (readFrame ⟨[],[],[]⟩ 0)
 #guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
-  | some (_, .ordinary _, _) => true
+  | some (_, .typedRead 0 [1] _, out) => out == readFrame ⟨[],[],[]⟩ 0
   | _ => false
 
+-- Nullable and mismatched alternatives cannot borrow the first branch's
+-- invariant. Clause order and duplicate valid alternatives do not matter.
+#guard bagOperand (expand G [3,2,3]) == some [1]
+#guard bagOperand ([] : List (Clause (List Nat))) == none
+#guard bagOperand ([.refs [1] [],.callable [0] [] []] : List (Clause (List Nat))) == none
+#guard bagOperand ([.callable [0] [] [],.refs [1] []] : List (Clause (List Nat))) == none
 -- A nullable alternative and a mismatched requested invariant must fail.
 #guard bagOperand (expand G [0,2]) == none
 #guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [0] readProof) == none
@@ -93,9 +99,10 @@ private def framedClaims : List (PointClaim Nat) :=
    ⟨[[2],[1],[2,3]],[1]⟩,⟨[[1],[2],[1],[2,3]],[5]⟩]
 private def framedRequest (callable : Bool) : Request :=
   ⟨types,framedProgram callable,framedClaims,[5],0,[]⟩
-#guard [false,true].all fun callable => match
-    produceJson (Lean.toJson (framedRequest callable)) 8 with
-  | .ok _ => false | .error _ => true
+#guard [false,true].all fun callable => match (do
+    let response ← produceJson (Lean.toJson (framedRequest callable)) 8
+    verifyJson (Lean.toJson (framedRequest callable)) response) with
+  | .ok _ => true | .error _ => false
 
 theorem framed_returns_false (callable : Bool) : Execution (framedProgram callable) 14 []
     (.at 0 (fun _ => .nul)) [.tru,.fls] (.done .fls) := by

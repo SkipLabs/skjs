@@ -129,23 +129,48 @@ theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
       exact ⟨l,c,he.trans hl,by simpa [push,hp.2] using hv⟩
     · exact hout.2.2 link hm
 
-/-- The first invariant bag operand, for either plain or callable objects. -/
-def bagOperand : List (PositiveNormalization.Clause α) → Option α
-  | [.refs B _] | [.callable B _ _] => some B
+/-- A clause's first invariant bag operand, independent of callability. -/
+def clauseBagOperand : PositiveNormalization.Clause α → Option α
+  | .refs B _ | .callable B _ _ => some B
   | _ => none
 
-theorem bagOperand_sound {G : NormalGraph ι} {Ref B n W v}
+/-- Every alternative must promise the same invariant. This includes a neutral
+plain/callable view, but excludes empty unions, non-bags, and mixed operands. -/
+def bagOperand [DecidableEq α] : List (PositiveNormalization.Clause α) → Option α
+  | [] => none
+  | c :: cs => do
+    let B ← clauseBagOperand c
+    if cs.all (fun d => decide (clauseBagOperand d = some B)) then some B else none
+
+theorem bagOperand_mem [DecidableEq α] {cs : List (PositiveNormalization.Clause α)} {B c}
+    (hr : bagOperand cs = some B) (hm : c ∈ cs) : clauseBagOperand c = some B := by
+  cases cs with
+  | nil => contradiction
+  | cons d ds =>
+    simp only [bagOperand] at hr
+    cases hd : clauseBagOperand d with
+    | none => simp [hd] at hr
+    | some D =>
+      simp only [hd] at hr
+      change (if ds.all (fun d => decide (clauseBagOperand d = some D)) then
+        some D else none) = some B at hr
+      split at hr
+      · rename_i hall
+        cases hr
+        rcases List.mem_cons.mp hm with rfl | hm
+        · exact hd
+        · exact of_decide_eq_true (List.all_eq_true.mp hall c hm)
+      · contradiction
+
+theorem bagOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref B n W v}
     (hr : bagOperand (expand G Ref) = some B) (hv : meaning G Ref n W v) :
     bagT (meaning G B) n W v := by
-  unfold bagOperand at hr
-  split at hr
-  · rename_i A rest he
-    cases hr
-    exact refT_bag ((represents_sem he n W v).mp hv).1
-  · rename_i A rest L he
-    cases hr
-    exact ((represents_sem he n W v).mp hv).1.1
-  · contradiction
+  obtain ⟨c,hm,hc⟩ := (expand_sem G Ref n W v).mp hv
+  have hb := bagOperand_mem hr hm
+  cases c <;> simp only [clauseBagOperand] at hb
+  all_goals try contradiction
+  · cases hb; exact refT_bag hc.1
+  · cases hb; exact hc.1.1
 
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ n W h}
     (ht : HasTy G Γ (.read (.var i)) A) (hi : Γ[i]? = some Ref)
@@ -519,6 +544,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       simpa [instantiate] using write_sound typed hi hr he hk hw hh
     · contradiction
 
+#print axioms bagOperand_mem
 #print axioms bagOperand_sound
 #print axioms alloc_sound
 #print axioms creation_sound

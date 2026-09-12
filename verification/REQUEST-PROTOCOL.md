@@ -169,8 +169,10 @@ All type labels in nested effect proofs are bounds checked. `allocated` retains 
 (`slot`, `contents`, and ordinary `proof`) for either descriptor: it requires
 `make code (var slot)` and checks the entire term's scope and creation proof.
 The code descriptor is part of the requested term, so changing it invalidates
-the evidence. `typedRead` similarly accepts the first invariant operand of a
-plain or callable bag; its stored read links retain the receiver descriptor. Within a source
+the evidence. `typedRead` accepts a first invariant operand shared by every
+clause in a nonempty expansion of plain or callable bags. Empty expansions,
+non-bag alternatives, and differing operands are rejected; its stored read
+links retain the receiver descriptor. Within a source
 statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.
 See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).

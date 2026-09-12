@@ -921,7 +921,11 @@ survives.
 The `allocated` and `typedRead` evidence constructors serve both plain and
 callable bags. `allocationSlot` selects a `make` whose initializer is an
 existing value slot; it never treats an effectful initializer as a value.
-`bagOperand` selects the first invariant from either `refs` or `callable`.
+`bagOperand` requires a nonempty expansion whose clauses are all `refs` or
+`callable` with the same first invariant operand. It therefore accepts a neutral
+bag view as well as a single shape, while rejecting a nullable or mismatched
+alternative. Operand comparison is syntactic; it does not search for an
+equivalent invariant.
 The same allocation proof frames old facts and records the fresh bag, and the
 read proof records links with the object's actual descriptor.
 [CallableEffectTests.lean](lean/Verification/ExperimentState/CallableEffectTests.lean)
@@ -1325,7 +1329,10 @@ constructor view, then splits an explicitly union-typed receiver variable for
 reads and writes, using the existing `unionVar` evidence. Every alternative
 must check; a null alternative cannot be ignored. Both allocation shapes run
 through the same read/write graph and JSON protocol without a runtime tag
-branch. The view makes no invocation promise. Source export of combined callable/property types
+branch. The view makes no invocation promise. Typed reads retain current heap
+facts and read links when every alternative has the same invariant operand.
+The regression keeps a known `false` fact about another cell across a neutral
+read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types
 remains future work.
 Source integration also needs explicit property-presence/initialization rules:
 the model's initial function bag does not establish a source `value` field.
