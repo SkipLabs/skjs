@@ -12,10 +12,10 @@ def G : NormalGraph (Fin 6) := fun i => match i.val with
   | _ => [.arrs [([3], [1])]]
 
 /-- A single closure implements both signatures. `var 1` is the captured cell. -/
-def dispatch : Tm := .lam (.ite (.test .isNul (.var 0)) (.read (.var 1)) .nul)
+def dispatch : Tm := .funE (.ite (.test .isNul (.var 0)) (.read (.var 1)) .nul)
 
 theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
-  apply HasTy.lam (by rfl)
+  apply HasTy.funE (by rfl)
   intro p hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with rfl | rfl
@@ -39,24 +39,23 @@ theorem dispatch_widened : HasTy G [[2]] dispatch [4] :=
   .sub dispatch_typed (by decide : check G [3] [4] widenCert = true)
 
 /-- Lambda introduction also accepts function-valued parameters. -/
-theorem higher_order_typed : HasTy G [] (.lam (.app (.var 0) .nul)) [5] := by
-  apply HasTy.lam (by rfl)
+theorem higher_order_typed : HasTy G [] (.funE (.app (.var 0) .nul)) [5] := by
+  apply HasTy.funE (by rfl)
   intro p hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   subst p
   exact .app (A := [0]) (.var rfl) (by rfl) (by simp) (.nul (by rfl))
 
 theorem higher_order_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G [5]) n W h (.lam (.app (.var 0) .nul)) :=
+    Safe (meaning G [5]) n W h (.funE (.app (.var 0) .nul)) :=
   higher_order_typed.closed_safe (by simp [Scoped]) n W h hw hh
 
 /-- A lambda with a free variable is excluded even at budget zero. -/
 theorem open_lambda_excluded (A B : Fam) (n W) :
-    ¬ arrowT A B n W (.lam (.var 1)) := by
-  rintro ⟨⟨b, hb, hc⟩, _⟩
-  rcases hb with hb | ⟨l, hb⟩
-  · cases hb; exact Nat.lt_irrefl 1 hc
-  · cases hb
+    ¬ arrowT A B n W (.fn 0 (.var 1)) := by
+  rintro ⟨⟨b, l, he, hc⟩, _⟩
+  cases he
+  exact Nat.lt_irrefl 1 hc
 
 /--
 let r = alloc true;
@@ -95,9 +94,10 @@ inductive Runs : Heap → Tm → Heap → Tm → Prop where
   | done : Runs h t h t
   | next : Step h t h' t' → Runs h' t' h'' t'' → Runs h t h'' t''
 
-theorem program_returns_false : Runs [] program [.fls] .fls := by
+theorem program_returns_false : Runs [] program [.fls,.nul] .fls := by
   apply Runs.next (.letC (.allocV rfl))
   apply Runs.next (.letV rfl)
+  apply Runs.next (.letC (.attachV rfl))
   apply Runs.next (.letV rfl)
   apply Runs.next (.letV rfl)
   apply Runs.next (.letC (.writeV rfl (by decide)))

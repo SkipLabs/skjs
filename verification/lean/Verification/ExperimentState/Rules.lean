@@ -13,14 +13,14 @@ programs be built compositionally.
 namespace Verification
 namespace ExperimentState
 
-/-- Abstraction establishes safety of the substituted body at every smaller
+/-- The invocation code of an existing object establishes safety at every smaller
 budget. Application, rather than this obligation, spends the beta step. -/
-theorem lam_intro {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b)
+theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b)
     (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
       ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
-        Safe B j U heap (subst 0 a b)) : arrowT A B k W (.lam b) :=
-  ⟨⟨b, Or.inl rfl, hc⟩, h⟩
+        Safe B j U heap (subst 0 a b)) : arrowT A B k W (.fn l b) :=
+  ⟨⟨b, l, rfl, hc⟩, h⟩
 
 /-- Same-budget application compatibility, the rule needed for the fundamental
  theorem under semantic environments. Both values are available at the current
@@ -39,10 +39,10 @@ theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
         (HeapOk_trunc n W heap hh) a (hA.down n W a ha)⟩
 
 /-- **Beta.** -/
-theorem beta_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
+theorem beta_rule {l : Nat} {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
     (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h)
     (hb : Safe B p (trunc p (Nat.le_succ p) W) h (subst 0 a b)) :
-    Safe B (p + 1) W h (.app (.lam b) a) :=
+    Safe B (p + 1) W h (.app (.fn l b) a) :=
   Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .beta hval,
     HeapOk_trunc p W h hok, hb⟩
 
@@ -84,7 +84,7 @@ theorem Safe_bind_appR {A B : Fam} (f : Tm) (hfv : isVal f = true) :
 
 
 /-- **Read.** -/
-theorem read_rule {code : Tm} {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+theorem read_rule {code : CallCode} {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (hadm : WorldAdm W) (hok : HeapOk n W h) {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
     Safe A n W h (.read (.obj l code)) := by
@@ -100,7 +100,7 @@ theorem read_rule {code : Tm} {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
 /-- **Write.** -/
-theorem write_rule {code : Tm} {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+theorem write_rule {code : CallCode} {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (v : Tm) (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u)
@@ -141,7 +141,7 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
       show A i _ v
       rw [trunc_appendW, trunc_trunc]
       exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
-    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .obj h.length .nul,
+    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .obj h.length .absent,
       WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .allocV hval,
       heap_alloc p _ h (res A) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
       ?_⟩
@@ -154,15 +154,15 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
       simp [hlen]
 
 theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {l : Nat}
-    (hr : refT A k W (.obj l .nul)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
-    (hW : WExt (trunc j hj W) W') : refT A j W' (.obj l .nul) :=
+    (hr : refT A k W (.obj l .absent)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
+    (hW : WExt (trunc j hj W) W') : refT A j W' (.obj l .absent) :=
   (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)
 
 /-- A function that ignores its argument and diverges inhabits *every* arrow
 type: applied to anything, it never returns, and that is safe at any result. -/
 theorem ignore_safe (B : Fam) (n : Nat) (W : WorldT n) (h : Heap)
     (ha : WorldAdm W) (hh : HeapOk n W h) (v : Val) (hv : isVal v = true) :
-    Safe B n W h (.app (.lam omegaTm) v) := by
+    Safe B n W h (.app (.fn 0 omegaTm) v) := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -171,8 +171,8 @@ theorem ignore_safe (B : Fam) (n : Nat) (W : WorldT n) (h : Heap)
       omega_safe B n _ h (WorldAdm_trunc _ ha) (HeapOk_trunc n W h hh)
 
 theorem diverging_arrow {A B : Fam} (n : Nat) (W : WorldT n) :
-    arrowT A B n W (.lam omegaTm) := by
-  apply lam_intro _ _ _ (by simp [omegaTm, delta, Scoped])
+    arrowT A B n W (.fn 0 omegaTm) := by
+  apply fn_intro _ _ _ (by simp [omegaTm, delta, Scoped])
   intro p hp U hx hu h hh a hA
   simpa [omegaTm, delta, subst] using
     omega_safe B p U h hu hh
@@ -186,9 +186,9 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
 
 /-- An arrow with an uninhabited domain constrains nothing: every function has
 that type, including one that would get stuck if it were ever applied. -/
-theorem vacuous_arrow {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
-    (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.lam b) :=
-  ⟨⟨b, Or.inl rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+theorem vacuous_arrow {l : Nat} {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
+    (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.fn l b) :=
+  ⟨⟨b, l, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer
 
@@ -248,8 +248,8 @@ theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
 
 /-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
 theorem diverging_in_arrowsT (L : List (Fam × Fam))
-    (k : Nat) (W : WorldT k) : arrowsT L k W (.lam omegaTm) := by
-  refine ⟨⟨omegaTm, Or.inl rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
+    (k : Nat) (W : WorldT k) : arrowsT L k W (.fn 0 omegaTm) := by
+  refine ⟨⟨omegaTm, 0, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
   intro p hp j hj W' hx hu hh hok a ha
   exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 

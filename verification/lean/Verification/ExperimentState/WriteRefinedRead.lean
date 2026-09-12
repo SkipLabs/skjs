@@ -20,14 +20,14 @@ theorem program_post {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
   apply bind (fun t => .letE t body) Step.letC
     n W h (.alloc .fls) hw hh (alloc_observed boolT_adm hw hh rfl (Or.inr rfl))
   intro j hj U hx hu h' v hh' hval hr hp
-  have he : v = .obj h.length .nul := hp.2
+  have he : v = .obj h.length .absent := hp.2
   subst v
   cases j with
   | zero => trivial
   | succ p =>
     apply bind_value rfl hu hh'
     change SafePost _ _ p _ h'
-      (.letE (.write (.obj h.length .nul) .tru) (.read (.obj h.length .nul)))
+      (.letE (.write (.obj h.length .absent) .tru) (.read (.obj h.length .absent)))
     exact write_then_read boolT_adm (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh')
       ((refT_adm boolT).down p U _ hr) rfl (Or.inl rfl)
 
@@ -37,8 +37,8 @@ theorem program_safe {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
 /-- Unary null is the semantic wrapper for a source function with no inputs.
 The unused argument has no effect on the proved body or return guarantee. -/
 theorem function_arrow (n : Nat) (W : WorldT n) :
-    arrowT nulT (exact .tru) n W (.lam program) := by
-  apply lam_intro _ _ _ (by simp [program,body,Scoped])
+    arrowT nulT (exact .tru) n W (.fn 0 program) := by
+  apply fn_intro _ _ _ (by simp [program,body,Scoped])
   intro j hj U hx hu h hh a ha
   simpa [program,body,subst] using program_safe hu hh
 

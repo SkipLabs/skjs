@@ -20,6 +20,13 @@ def Holds (k : Knowledge) (ρ : Env) (h : Heap) : Prop :=
 
 theorem empty (ρ h) : Holds ⟨[],[],[]⟩ ρ h := ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds]⟩
 
+/-- A fresh allocation preserves every assertion about existing cells and aliases. -/
+theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
+  refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2⟩
+  intro f hf
+  obtain ⟨l,c,u,he,hu,a,ha,hv⟩ := hk.1 f hf
+  exact ⟨l,c,u,he,HeapObservations.alloc_frame hu,a,ha,hv⟩
+
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m && HeapLinks.check a.links b.links m)
 

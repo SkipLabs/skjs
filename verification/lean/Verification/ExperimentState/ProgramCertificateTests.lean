@@ -15,7 +15,7 @@ private def letE (a b : Evidence (Fin 6)) : Evidence (Fin 6) :=
   .node ⟨(claim a).context, .letE (claim a).term (claim b).term, (claim b).type⟩ .letE [a,b]
 
 def dispatchEvidence : Evidence (Fin 6) :=
-  .node ⟨[[2]], dispatch, [3]⟩ .lam
+  .node ⟨[[2]], dispatch, [3]⟩ .funE
     [.node ⟨[[0],[2]], .ite (.test .isNul (.var 0)) (.read (.var 1)) .nul, [1]⟩ .ifTrue
       [.node ⟨[[0],[2]], .read (.var 1), [1]⟩ .read [varE [[0],[2]] 1 [2]]],
      .node ⟨[[1],[2]], .ite (.test .isNul (.var 0)) (.read (.var 1)) .nul, [0]⟩ .ifFalse
@@ -65,9 +65,9 @@ private def wrongContext (Γ : List (Ty ι)) : Evidence ι → Evidence ι
 
 -- The empty overload imposes no body obligations, but cannot bypass scope.
 private def EmptyG : PositiveGraphs.NormalGraph (Fin 1) := fun _ => [.arrs []]
-private def openEvidence : Evidence (Fin 1) := .node ⟨[], .lam (.var 1), [0]⟩ .lam []
+private def openEvidence : Evidence (Fin 1) := .node ⟨[], .funE (.var 1), [0]⟩ .funE []
 #guard checkTree EmptyG openEvidence
-#guard !(check EmptyG (.lam (.var 1)) [0] openEvidence)
+#guard !(check EmptyG (.funE (.var 1)) [0] openEvidence)
 
 #print axioms checked_program_safe
 end Verification.ExperimentState.ProgramCertificateTests

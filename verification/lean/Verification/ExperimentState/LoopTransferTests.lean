@@ -54,7 +54,7 @@ private def continueProgram : Program := [
   ⟨.nul,.bind 12⟩,
   ⟨.var 0,.bind 13⟩,
   ⟨.var 0,.effect 0⟩,
-  ⟨.lam (.read (.var 1)),.bind 15⟩,
+  ⟨.funE (.read (.var 1)),.bind 15⟩,
   ⟨.var 0,.effect 16⟩,
   ⟨.alloc (.var 0),.bind ⟨17,some [0]⟩⟩,
   ⟨.tru,.bind 18⟩,
@@ -64,11 +64,12 @@ private def continueProgram : Program := [
 #guard (SourceClaimJson.produceJson continueAst continueClaims "verification/tests/stateful-source/loop-transfers.ts" 10).toOption.isSome
 
 -- Continue drops the alias and returns to condition evaluation after the write.
-theorem continue_retests : Execution continueProgram 59 []
-    (.at 20 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem continue_retests : Execution continueProgram 60 []
+    (.at 20 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
+    | apply Execution.next (.expr (.attachV rfl))
     | apply Execution.next (.expr (.allocV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
     | apply Execution.next (.expr (.beta rfl))

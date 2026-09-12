@@ -11,7 +11,7 @@ open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
 
 deriving instance ToJson, FromJson for Tag
-deriving instance ToJson, FromJson for Tm
+deriving instance ToJson, FromJson for Tm, CallCode
 deriving instance ToJson, FromJson for Clause
 deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
@@ -90,7 +90,7 @@ decreasing_by
 
 def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
   | .typedRead _ B e => validTy bound B && validEvidence bound e
-  | .ordinary e | .pure e | .allocated _ _ e | .written _ _ _ e => validEvidence bound e
+  | .ordinary e | .pure e | .created e | .allocated _ _ e | .written _ _ _ e => validEvidence bound e
   | .observedRead _ _ | .knownValue _ _ => true
 
 def validResponse (r : Request) (c : Response) : Bool :=

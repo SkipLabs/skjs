@@ -27,9 +27,9 @@ theorem Rf_unfold (n : Nat) (W : WorldT n) (v : Val) : Rf n W v ↔ arrowT Rf nu
 theorem Rf_callable {n W t} (h : Rf n W t) : Callable t :=
   ((Rf_unfold n W t).mp h).1
 
-def hFn : Tm := .lam .nul
+def hFn : Tm := .fn 0 .nul
 
-def kFn : Tm := .lam (.app (.var 0) hFn)
+def kFn : Tm := .fn 0 (.app (.var 0) hFn)
 
 theorem Rf_adm : Adm Rf := fix_adm _ (arrowT_contractive nulT) (fun _ _ => arrowT_adm _ _)
 
@@ -38,13 +38,13 @@ theorem Rf_valOnly : ValOnly Rf := fun n W v h =>
 
 theorem hFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W hFn := by
   apply (Rf_unfold n W hFn).mpr
-  apply lam_intro _ _ _ (by simp [Scoped])
+  apply fn_intro _ _ _ (by simp [Scoped])
   intro j hj U hx hu h hh a ha
   exact Safe_nul j U h
 
 theorem kFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W kFn := by
   apply (Rf_unfold n W kFn).mpr
-  apply lam_intro _ _ _ (by simp [Scoped, hFn])
+  apply fn_intro _ _ _ (by simp [Scoped, hFn])
   intro j hj U hx hu h hh a ha
   exact app_elim Rf_adm Rf_valOnly ((Rf_unfold j U a).mp ha) (hFn_in_Rf j U) hu hh
 
@@ -52,13 +52,13 @@ theorem kFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W kFn := by
 
 
 /-- `capFn` ignores its argument and reads location 0. -/
-def capFn : Tm := .lam (.read (.obj 0 .nul))
+def capFn : Tm := .fn 0 (.read (.obj 0 .absent))
 
 /-- It inhabits `null → null` against any world extending one that declares
 location 0 to hold `null` -- **in every heap satisfying that world**, not in one
 particular heap. -/
 theorem capFn_in_arrow (n : Nat) : arrowT nulT nulT n (ofList [res nulT]) capFn := by
-  apply lam_intro _ _ _ (by trivial)
+  apply fn_intro _ _ _ (by trivial)
   intro j hj U hx hu heap hh a ha
   have hl : lookup U 0 = some (res nulT) := by
     rw [trunc_res] at hx
@@ -87,17 +87,17 @@ Allocate a cell, change it through one reference, read it through a closure that
 captured another. -/
 
 
-def inner : Tm := .lam (.read (.var 1))
+def inner : Tm := .fn 0 (.read (.var 1))
 
 def body : Tm := .app inner (.write (.var 0) .fls)
 
-def prog : Tm := .app (.lam body) (.alloc .tru)
+def prog : Tm := .app (.fn 0 body) (.alloc .tru)
 
 /-- Reading through the captured closure, at any level and admissible world in
 which the cell is a boolean reference. -/
 theorem closure_read {l : Nat} : ∀ (j : Nat) (W : WorldT j) (h : Heap),
-    refT boolT j W (.obj l .nul) → WorldAdm W → HeapOk j W h →
-    ∀ v, isVal v = true → Safe boolT j W h (.app (.lam (.read (.obj l .nul))) v) := by
+    refT boolT j W (.obj l .absent) → WorldAdm W → HeapOk j W h →
+    ∀ v, isVal v = true → Safe boolT j W h (.app (.fn 0 (.read (.obj l .absent))) v) := by
   intro j W h hr hadm hok v hv
   cases j with
   | zero => trivial
@@ -118,13 +118,13 @@ theorem prog_safe : ∀ (n : Nat) (W : WorldT n) (h : Heap),
     (alloc_rule boolT_adm n W h .tru rfl hadm hok (Or.inl rfl)) ?_
   intro j _ W' _ hadm' h' v hok' hv
   obtain ⟨l, c, rfl, hl, hag⟩ := hv
-  have hr : refT boolT j W' (.obj l .nul) := ⟨l, c, rfl, hl, hag⟩
+  have hr : refT boolT j W' (.obj l .absent) := ⟨l, c, rfl, hl, hag⟩
   cases j with
   | zero => trivial
   | succ q =>
     refine beta_rule _ _ rfl q W' h' hadm' hok' ?_
-    show Safe boolT q _ h' (.app (.lam (.read (.obj l .nul))) (.write (.obj l .nul) .fls))
-    have hrq : refT boolT q (trunc q (Nat.le_succ q) W') (.obj l .nul) :=
+    show Safe boolT q _ h' (.app (.fn 0 (.read (.obj l .absent))) (.write (.obj l .absent) .fls))
+    have hrq : refT boolT q (trunc q (Nat.le_succ q) W') (.obj l .absent) :=
       refT_transfer hr q (Nat.le_succ q) _ (WExt_refl _)
     have hrqc := hrq
     obtain ⟨l2, c2, hvl2, hl2, hag2⟩ := hrqc
@@ -144,24 +144,24 @@ theorem prog_safe : ∀ (n : Nat) (W : WorldT n) (h : Heap),
 through one reference, and the closure reads `false` back -- so the cell's
 contents really change, rather than being rewritten with the value they had. -/
 theorem prog_runs :
-    Step [] prog [.tru] (.app (.lam body) (.obj 0 .nul)) ∧
-      Step [.tru] (.app (.lam body) (.obj 0 .nul)) [.tru]
-        (.app (.lam (.read (.obj 0 .nul))) (.write (.obj 0 .nul) .fls)) ∧
-      Step [.tru] (.app (.lam (.read (.obj 0 .nul))) (.write (.obj 0 .nul) .fls)) [.fls]
-        (.app (.lam (.read (.obj 0 .nul))) .nul) ∧
-      Step [.fls] (.app (.lam (.read (.obj 0 .nul))) .nul) [.fls] (.read (.obj 0 .nul)) ∧
-      Step [.fls] (.read (.obj 0 .nul)) [.fls] .fls :=
+    Step [] prog [.tru] (.app (.fn 0 body) (.obj 0 .absent)) ∧
+      Step [.tru] (.app (.fn 0 body) (.obj 0 .absent)) [.tru]
+        (.app (.fn 0 (.read (.obj 0 .absent))) (.write (.obj 0 .absent) .fls)) ∧
+      Step [.tru] (.app (.fn 0 (.read (.obj 0 .absent))) (.write (.obj 0 .absent) .fls)) [.fls]
+        (.app (.fn 0 (.read (.obj 0 .absent))) .nul) ∧
+      Step [.fls] (.app (.fn 0 (.read (.obj 0 .absent))) .nul) [.fls] (.read (.obj 0 .absent)) ∧
+      Step [.fls] (.read (.obj 0 .absent)) [.fls] .fls :=
   ⟨.appR rfl (.allocV rfl), .beta rfl, .appR rfl (.writeV rfl (by simp)),
     .beta rfl, .readV rfl⟩
 
 /-- And the whole thing really is a function of that type. -/
 theorem prog_lam_arrow (k : Nat) (W : WorldT k) :
-    arrowT (refT boolT) boolT k W (.lam body) := by
-  apply lam_intro _ _ _ (by simp [body, inner, Scoped])
+    arrowT (refT boolT) boolT k W (.fn 0 body) := by
+  apply fn_intro _ _ _ (by simp [body, inner, Scoped])
   intro p hp U hx hu heap hh a ha
   obtain ⟨l, c, rfl, hl, hc⟩ := ha
-  have hr : refT boolT p U (.obj l .nul) := ⟨l, c, rfl, hl, hc⟩
-  change Safe boolT p U heap (.app (.lam (.read (.obj l .nul))) (.write (.obj l .nul) .fls))
+  have hr : refT boolT p U (.obj l .absent) := ⟨l, c, rfl, hl, hc⟩
+  change Safe boolT p U heap (.app (.fn 0 (.read (.obj l .absent))) (.write (.obj l .absent) .fls))
   apply Safe_bind_appR (A := nulT) _ rfl p U heap _ hu hh
     (write_rule boolT_adm p U heap l .fls rfl hu hh hl hc (Or.inr rfl))
   intro j hj V hV hVadm h' v hh' hv
@@ -170,7 +170,7 @@ theorem prog_lam_arrow (k : Nat) (W : WorldT k) :
 /-! ## `Safe` is doing real work -/
 
 
-def badFn : Tm := .lam (.app .nul .nul)
+def badFn : Tm := .fn 0 (.app .nul .nul)
 
 theorem badFn_not_in_arrow : ¬ arrowT nulT nulT 2 (ofList []) badFn := by
   intro hb

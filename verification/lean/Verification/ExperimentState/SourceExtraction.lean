@@ -388,7 +388,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let bodies ← L.mapM fun (Di,Ri) => do
       if (Di,Ri) == (D,R) then pure annotation
       else return DirectProof.cast (Di::Γ) Ri (← closureExpr fc inner (Di::Γ) body)
-    pure (DirectProof.node Γ (.lam b.term) A .lam bodies)
+    pure (DirectProof.node Γ (.funE b.term) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
   return plan

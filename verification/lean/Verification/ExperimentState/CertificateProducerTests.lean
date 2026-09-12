@@ -48,13 +48,14 @@ theorem mapped_accepted : accept G [1] mapped mappedClaims mappedCertificate 0 =
 theorem mapped_safe (n : Nat) : SafeGraph mapped (PositiveRules.meaning G [1]) n
     (ofList []) [] (.at 0 (fun _ => .nul)) := accepted_safe mapped_accepted n
 
-theorem mapped_returns_false : Execution mapped 16 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem mapped_returns_false : Execution mapped 17 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.allocV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
+  apply Execution.next (.expr (.attachV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.writeV rfl (by decide)))

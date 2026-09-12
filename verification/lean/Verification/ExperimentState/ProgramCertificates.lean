@@ -14,7 +14,7 @@ structure Sequent (ι : Type) where
   deriving DecidableEq
 
 inductive Rule (ι : Type) where
-  | var | nul | undef | tru | fls | truLit | flsLit | lam | app | letE | alloc | read | write
+  | var | nul | undef | tru | fls | truLit | flsLit | funE | app | letE | alloc | read | write
   | ifBool | ifTrue | ifFalse
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
@@ -36,7 +36,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .tru, .tru, [] | .fls, .fls, [] => Represents G j.type .bool
   | .truLit, .tru, [] => Represents G j.type (.boolLit true)
   | .flsLit, .fls, [] => Represents G j.type (.boolLit false)
-  | .lam, .lam b, ps =>
+  | .funE, .funE b, ps =>
     match expand G j.type with
     | [.arrs L] => ps = L.map (fun p => ⟨p.1 :: j.context, b, p.2⟩)
     | _ => False
@@ -100,15 +100,17 @@ decreasing_by
 
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
-  | .lam b => checkScope (d+1) b
+  | .obj _ .absent => true
+  | .obj _ (.closure b) => checkScope (d+1) b
+  | .attach b a => checkScope (d+1) b && checkScope d a
   | .letE a b => checkScope d a && checkScope (d+1) b
-  | .app a b | .write a b | .attach a b => checkScope d a && checkScope d b
-  | .alloc a | .read a | .test _ a | .obj _ a => checkScope d a
+  | .app a b | .write a b => checkScope d a && checkScope d b
+  | .alloc a | .read a | .test _ a => checkScope d a
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
 
 theorem checkScope_iff (d : Nat) (t : Tm) : checkScope d t = true ↔ Scoped d t := by
-  induction t generalizing d <;> simp_all [checkScope, Scoped, and_assoc]
+  induction t using Tm.induct generalizing d <;> simp_all [checkScope, Scoped, and_assoc]
 
 /-- Bind evidence to the actual requested program, type and empty context.
 Scope includes unselected branches and bodies of empty overloads. -/
@@ -130,7 +132,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · exact .flsLit hl
   · split at hl
     · rename_i b ps L hL
-      apply HasTy.lam hL
+      apply HasTy.funE hL
       intro p hmem
       apply hp ⟨p.1 :: Γ, b, p.2⟩
       rw [hl]
@@ -270,8 +272,8 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | fls hr => exact node_complete (r := .fls) (js := []) hr (by simp)
   | truLit hr => exact node_complete (r := .truLit) (js := []) hr (by simp)
   | flsLit hr => exact node_complete (r := .flsLit) (js := []) hr (by simp)
-  | @lam F L Γ b hr hb ih =>
-    apply node_complete (r := .lam) (js := L.map (fun p => ⟨p.1 :: Γ, b, p.2⟩))
+  | @funE F L Γ b hr hb ih =>
+    apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 :: Γ, b, p.2⟩))
     · simp only [Local, show expand G F = [.arrs L] from hr]
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj

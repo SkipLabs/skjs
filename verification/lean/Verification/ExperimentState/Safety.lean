@@ -8,7 +8,7 @@ if it reaches a value with budget left, that value is in `T`. Each step spends a
 level and the world drops with it; the world reached after a step must extend the
 truncation of the one before, and must itself be admissible.
 
-A function type requires closed code, either a lambda or a function object, whose substituted body is safe in
+A function type requires an object with closed invocation code whose substituted body is safe in
 every *future* world and every heap satisfying
 it, at every strictly smaller budget. Requiring admissibility here is what lets a
 function allocate: without it, a world carrying a contract like `badCtr` could be
@@ -45,26 +45,23 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
 not an additional runtime operation. Arrow membership separately requires a
 callable shape, so the fallback branch is never used for typed application. -/
 def callBody (v a : Tm) : Tm := match v with
-  | .lam b | .obj _ (.lam b) => subst 0 a b
+  | .obj _ (.closure b) => subst 0 a b
   | _ => .app .nul .nul
 
-/-- Closed executable code, with or without an allocated object identity.
-The lambda case supports administrative bindings; source function objects use
-an immutable call slot. This predicate alone promises no bag invariant. -/
+/-- Only an object with closed invocation code is a callable value. -/
 def Callable (v : Val) : Prop :=
-  ∃ b, (v = .lam b ∨ ∃ l, v = .obj l (.lam b)) ∧ Scoped 1 b
+  ∃ b l, v = .obj l (.closure b) ∧ Scoped 1 b
 
 theorem Callable.val {v : Val} (h : Callable v) : isVal v = true := by
-  rcases h with ⟨b, (rfl | ⟨l, rfl⟩), _⟩ <;> rfl
+  rcases h with ⟨b, l, rfl, _⟩; rfl
 
 theorem Callable.scoped {v : Val} (h : Callable v) : Scoped 0 v := by
-  rcases h with ⟨b, (rfl | ⟨l, rfl⟩), hc⟩ <;> exact hc
+  rcases h with ⟨b, l, rfl, hc⟩; exact hc
 
 theorem Callable.step {v a : Val} (h : Callable v) (ha : isVal a = true) (heap : Heap) :
     Step heap (.app v a) heap (callBody v a) := by
-  rcases h with ⟨b, (rfl | ⟨l, rfl⟩), _⟩
-  · exact .beta ha
-  · exact .betaC ha
+  rcases h with ⟨b, l, rfl, _⟩
+  exact .beta ha
 
 /-- `A → B` contains closed callables whose substituted bodies are safe in every
 future world and satisfying heap, at every strictly smaller level. The actual
@@ -218,9 +215,9 @@ theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
     exact fun j hj W' hx hu hh hok a ha => h j hj W' hx hu hh hok a ha
 
 /-- Membership in every conjunct is membership in the intersection. -/
-theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm}
-    (hlam : v = .lam b) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
-  ⟨⟨b, Or.inl hlam, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
+theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm} {l : Nat}
+    (hobj : v = .obj l (.closure b)) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
+  ⟨⟨b, l, hobj, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
 
 theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
   rintro j W a ⟨hc, -⟩
@@ -254,6 +251,31 @@ theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : N
     have hcj : Agree (f x).2 (g x).2 (j + 1) := fun m hm U u => hc m (by omega) U u
     exact (Safe_congr (j + 1) hcj j (Nat.lt_succ_self j) W' hh _).mpr
       (hobl (g x) (List.mem_map_of_mem hx') j hj W' hx hu hh hok a ((hd j hj W' a).mp ha))
+
+/-- An invocation-code judgment, separate from membership of runtime values. -/
+def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
+  Scoped 1 b ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
+      ∀ a, p.1 j W' a → Safe p.2 j W' h (subst 0 a b)
+
+theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
+    arrowsT L n W (.obj l (.closure b)) ↔ CodeSpec L n W b := by
+  constructor
+  · rintro ⟨⟨b', l', he, hc⟩, hs⟩
+    cases he
+    exact ⟨hc, hs⟩
+  · rintro ⟨hc, hs⟩
+    exact ⟨⟨b, l, rfl, hc⟩, hs⟩
+
+theorem CodeSpec.down {L n W b} (h : CodeSpec L (n + 1) W b) :
+    CodeSpec L n (trunc n (Nat.le_succ n) W) b :=
+  (arrowsT_code_iff L 0 b n _).mp ((arrowsT_adm L).down n W _
+    ((arrowsT_code_iff L 0 b _ W).mpr h))
+
+theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
+    CodeSpec L n W' b :=
+  (arrowsT_code_iff L 0 b n W').mp ((arrowsT_adm L).mono n W W' hx _
+    ((arrowsT_code_iff L 0 b n W).mpr h))
 
 theorem omega_safe (B : Fam) : ∀ (n : Nat) (W : WorldT n) (h : Heap),
     WorldAdm W → HeapOk n W h → Safe B n W h omegaTm := by

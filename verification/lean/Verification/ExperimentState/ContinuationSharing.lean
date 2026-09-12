@@ -1,7 +1,7 @@
 import Verification.ExperimentState.SourceTypes
 import Verification.ExperimentState.DirectProof
 
-/-! Shared local continuations use ordinary lambdas, lets and calls. This module
+/-! Shared local continuations use allocated function objects, lets and calls. This module
 checks the construction before extending source lowering to multiple surviving
 paths. It introduces no new term, typing rule or certificate constructor. -/
 namespace Verification.ExperimentState.ContinuationSharing
@@ -9,13 +9,13 @@ open ProgramTyping PositiveRules ProgramCertificates ControlFlow RequestJson Lea
 
 /-- `k` is under an argument slot; `body` is under a continuation slot.
 The continuation term occurs once, independently of how many paths call it. -/
-def share (k body : Tm) : Tm := .letE (.lam k) body
+def share (k body : Tm) : Tm := .letE (.funE k) body
 
 theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
     {Γ N R C k body} (hc : Represents G C (.arrs [(N,R)]))
     (hk : HasTy G (N::Γ) k R) (hb : HasTy G (C::Γ) body R) :
     HasTy G Γ (share k body) R := by
-  apply HasTy.letE (HasTy.lam hc ?_) hb
+  apply HasTy.letE (HasTy.funE hc ?_) hb
   intro p hp
   simp only [List.mem_singleton] at hp
   subst p
@@ -35,7 +35,7 @@ private def choose (Δ : List (Ty Nat)) (i : Nat) (t e : DirectProof.Plan) :=
     [DirectProof.var Δ i [1,2],t,e]
 private def recipe : DirectProof.Plan :=
   let K := [0]::Γ
-  let k := DirectProof.node Γ (.lam (.read (.var 1))) [5] .lam
+  let k := DirectProof.node Γ (.funE (.read (.var 1))) [5] .funE
     [DirectProof.node K (.read (.var 1)) [1,2] .read [DirectProof.var K 1 [4]]]
   let write := DirectProof.node H (.write (.var 1) .fls) [0] .write
     [DirectProof.var H 1 [4],
@@ -67,11 +67,12 @@ private def accepted : Except String Unit := do
 -- Capturing a reference does not capture its current contents. All three paths
 -- are observable: return early; write then resume; resume without writing.
 theorem shared_paths (a b : Bool) : Execution program
-    (if a then (if b then 8 else 12) else 9) []
+    (if a then (if b then 9 else 13) else 10) []
     (.at 0 (fun i => if i == 0 then (if a then .tru else .fls) else (if b then .tru else .fls)))
-    [if a && !b then .fls else .tru] (.done (if a && !b then .fls else .tru)) := by
+    [if a && !b then .fls else .tru,.nul] (.done (if a && !b then .fls else .tru)) := by
   cases a <;> cases b <;> repeat first
     | exact Execution.refl
+    | apply Execution.next (.expr (.letC (.attachV rfl)))
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.allocV rfl))
     | apply Execution.next (.expr (.letV rfl))
@@ -90,7 +91,7 @@ theorem shared_paths (a b : Bool) : Execution program
 
 -- The promise is checked where the continuation is defined, not invented from
 -- the paths on which it may later be called.
-#guard !checkTree G (.node ⟨Γ,.lam (.read (.var 1)),[6]⟩ .lam
+#guard !checkTree G (.node ⟨Γ,.funE (.read (.var 1)),[6]⟩ .funE
   [.node ⟨[0]::Γ,.read (.var 1),[1,2]⟩ .read
     [.node ⟨[0]::Γ,.var 1,[4]⟩ .var []]])
 
@@ -105,7 +106,7 @@ private def refinedCall (Δ : List (Ty Nat)) (i : Nat) :=
   DirectProof.node Δ (.app (.var 0) (.var i)) [1,2] .app
     [DirectProof.var Δ 0 [extraLabel],DirectProof.var Δ i [2]]
 private def refinedRecipe : DirectProof.Plan :=
-  let k := DirectProof.node outer (.lam (.var 0)) [extraLabel] .lam
+  let k := DirectProof.node outer (.funE (.var 0)) [extraLabel] .funE
     [DirectProof.var ([2]::outer) 0 [1,2]]
   let yes := inside.set 2 [1]
   let no := inside.set 2 [2]
@@ -135,11 +136,12 @@ private def refinedProgram : Program := [⟨refinedTerm,.ret⟩]
   | .ok _ => true | .error _ => false
 
 theorem passed_refinement_paths (a b : Bool) : Execution refinedProgram
-    (if b then 5 else 6) []
+    (if b then 6 else 7) []
     (.at 0 (fun i => if i == 0 then (if a then .tru else .fls) else (if b then .tru else .fls)))
-    [] (.done (if b then .tru else .fls)) := by
+    [.nul] (.done (if b then .tru else .fls)) := by
   cases a <;> cases b <;> repeat first
     | exact Execution.refl
+    | apply Execution.next (.expr (.letC (.attachV rfl)))
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.letV rfl))
     | apply Execution.next (.expr (.beta rfl))

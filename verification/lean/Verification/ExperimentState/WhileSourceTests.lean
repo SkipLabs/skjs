@@ -21,7 +21,7 @@ private def expected : Program :=
    ⟨.var 0,.branchBind ⟨9,some [2,3]⟩ ⟨3,some [2,3]⟩⟩,
    ⟨.app (.var 1) (.var 0),.bind ⟨10,some [0,3,4]⟩⟩,
    ⟨.nul,.bind 11⟩,⟨.var 0,.bind 12⟩,⟨.var 0,.effect 0⟩,
-   ⟨.lam (.read (.var 1)),.bind 14⟩,⟨.var 0,.effect 15⟩,
+   ⟨.funE (.read (.var 1)),.bind 14⟩,⟨.var 0,.effect 15⟩,
    ⟨.alloc (.var 0),.bind ⟨16,some [0]⟩⟩,⟨.tru,.bind 17⟩,⟨.nul,.effect 18⟩]
 #guard program == expected
 #guard start == 19
@@ -30,11 +30,12 @@ private def expected : Program :=
 -- The alias local is dropped on the back edge; the original closure and cell
 -- remain in the correct slots. This is a trace, not a general compiler proof.
 theorem one_iteration : ∃ n, Execution expected n []
-    (.at 19 (fun _ => .nul)) [.fls] (.done .fls) := by
-  refine ⟨57,?_⟩
+    (.at 19 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
+  refine ⟨58,?_⟩
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
+    | apply Execution.next (.expr (.attachV rfl))
     | apply Execution.next (.expr (.allocV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
     | apply Execution.next (.expr (.beta rfl))

@@ -54,7 +54,7 @@ theorem operands_agree {A B : Fam} {Bs : List Fam} {n W v}
 
 /-- A read satisfies every operand at every available lower budget. -/
 theorem read_all {A : Fam} {Bs : List Fam} {n W heap l}
-    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.obj l .nul)) :
+    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.obj l .absent)) :
     ∃ v, heap[l]? = some v ∧ ∀ j (hj : j < n),
       A j (trunc j (Nat.le_of_lt hj) W) v ∧
       ∀ B ∈ Bs, B j (trunc j (Nat.le_of_lt hj) W) v := by
@@ -69,7 +69,7 @@ theorem read_all {A : Fam} {Bs : List Fam} {n W heap l}
 /-- Writing a value satisfying even one operand suffices: all operands agree
 with the same invariant below this budget. Aliased heap satisfaction survives. -/
 theorem write_first {A : Fam} {Bs : List Fam} {n W heap l v}
-    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.obj l .nul))
+    (hok : HeapOk n W heap) (hr : refsT A Bs n W (.obj l .absent))
     (hv : ∀ j (hj : j < n), A j (trunc j (Nat.le_of_lt hj) W) v) :
     HeapOk n W (heap.set l v) := by
   obtain ⟨k, c, he, hl, hc⟩ := hr.1
@@ -81,15 +81,15 @@ theorem duplicate (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
 
 /-- Both constraints on the cyclic reference are inhabited in a satisfying heap. -/
 theorem cyclic_inhabited (n : Nat) :
-    HeapOk n (ofList [res R]) [.obj 0 .nul] ∧
-    refsT R [R] n (ofList [res R]) (.obj 0 .nul) :=
+    HeapOk n (ofList [res R]) [.obj 0 .absent] ∧
+    refsT R [R] n (ofList [res R]) (.obj 0 .absent) :=
   ⟨cyclic_heap_ok n, (duplicate R n _ _).mpr ((R_unfold n _ _).mp (R_cyclic n))⟩
 
 /-- Incompatible contracts must remain visible at zero; dropping the entire
 conjunction as bottom would not preserve the current indexed interpretation. -/
 theorem incompatible_at_zero :
-    refsT nulT [boolT] 0 (ofList [res nulT]) (.obj 0 .nul) := by
-  have hr : ∀ A : Fam, refT A 0 (ofList [res nulT]) (.obj 0 .nul) := by
+    refsT nulT [boolT] 0 (ofList [res nulT]) (.obj 0 .absent) := by
+  have hr : ∀ A : Fam, refT A 0 (ofList [res nulT]) (.obj 0 .absent) := by
     intro A
     exact ⟨0, res nulT, rfl, by simp [lookup], fun j hj => by omega⟩
   exact ⟨hr nulT, by simpa using hr boolT⟩

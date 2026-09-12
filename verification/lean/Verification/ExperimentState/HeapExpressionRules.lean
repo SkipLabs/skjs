@@ -2,7 +2,7 @@ import Verification.ExperimentState.HeapKnowledge
 
 /-! Checked expression rules with finite state postconditions. Ordinary evidence
 retains only immutable-value facts; special rules justify stronger heap facts.
-No fact is accepted as an ordinary reference type or captured by a lambda. -/
+No fact is accepted as an ordinary reference type or captured as a permanent call contract. -/
 namespace Verification.ExperimentState.HeapExpressionRules
 open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower
 open HeapFacts HeapKnowledge HeapObservations ProgramCertificates
@@ -151,7 +151,7 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
-      exact ⟨l,.nul,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
+      exact ⟨l,.absent,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
     · exact hout.2.2 link hm
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
@@ -194,11 +194,11 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
   have hvv : isVal (ρ i) = true := by rw [hv]; cases a <;> rfl
   apply one_step rfl rfl (.allocV hvv) _
     (by simpa [instantiate] using ht.sound n W h ρ he hw hh)
-  refine ⟨?_,(HeapKnowledge.shift_holds (v := .obj h.length .nul) hk).2.1,
-    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .obj h.length .nul) hk).2.2⟩
+  refine ⟨?_,(HeapKnowledge.shift_holds (v := .obj h.length .absent) hk).2.1,
+    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .obj h.length .absent) hk).2.2⟩
   intro f hf
   rcases List.mem_cons.mp hf with rfl | hf
-  · exact ⟨h.length,.nul,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
+  · exact ⟨h.length,.absent,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
     obtain ⟨l,c,v,hl,hh',b,hb,hv'⟩ := hk.1 g hg
     exact ⟨l,c,v,hl,alloc_frame hh',b,hb,hv'⟩
@@ -250,7 +250,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R A ρ n W h
         · exact ⟨.nul,by simp,rfl⟩
         · exact (HeapKnowledge.shift_holds (v := .nul) hk).2.1 f hf
 
-/-- Source lowering inserts variable copies and literal/lambda nodes between
+/-- Source lowering inserts variable copies and literal nodes between
 operations. These are pure: unlike calls they must not discard cell facts. -/
 def pureTerm : Tm → Bool
   | .var _ => true
@@ -259,7 +259,7 @@ def pureTerm : Tm → Bool
   | t => isVal t
 
 /-- Purity is closed under actual reduction and rules out every heap change.
-Lambda bodies need not be pure: evaluating a lambda does not call it. -/
+Stored closure bodies need not be pure: observing an object does not invoke it. -/
 theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
     h' = h ∧ pureTerm t' = true := by
   induction hs <;> simp_all [pureTerm,isVal]
@@ -268,8 +268,7 @@ theorem pure_step {h t h' t'} (hs : Step h t h' t') (hp : pureTerm t = true) :
 theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
     (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) : pureTerm (instantiate 0 ρ t) = true := by
-  induction t <;> simp_all [pureTerm,isVal,instantiate,checkScope]
-  case obj l c ih => cases c <;> simp_all [isVal,instantiate]
+  induction t using Tm.induct <;> simp_all [pureTerm,isVal,instantiate,checkScope]
   case var i =>
     have hi : i < Γ.length := by omega
     have hv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
@@ -320,12 +319,31 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k t A ρ n W h}
     | exact refine_value rfl (result_holds (HeapKnowledge.shift_holds hk) ⟨.fls,by simp,rfl⟩) hs
     | exact refine_value rfl (HeapKnowledge.shift_holds hk) hs
 
+/-- Creating a function allocates a fresh bag without executing its body or
+invalidating knowledge about existing cells. -/
+theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k b A ρ n W h}
+    (ht : HasTy G Γ (.funE b) A) (he : EnvOk G Γ ρ n W)
+    (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
+      n W h (instantiate 0 ρ (.funE b)) := by
+  have hs := ht.sound n W h ρ he hw hh
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with ⟨hv, _⟩ | ⟨U,h',t',hx,hu,step,hh',hs'⟩
+    · simp [instantiate,Tm.funE,isVal] at hv
+    · obtain ⟨rfl,rfl⟩ := attach_step_inv rfl step
+      exact Or.inr ⟨U,_,_,hx,hu,step,hh',
+        refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩
+
 /-- Evidence names the particular observation used. The checker binds it to
 an actual source sequent, so neither the slot nor the requested result type can
 be changed by an untrusted producer. -/
 inductive StepEvidence (ι : Type) where
   | ordinary (proof : ProgramCertificates.Evidence ι)
   | pure (proof : ProgramCertificates.Evidence ι)
+  | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (element : Ty ι) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Literal)
   | knownValue (slot : Nat) (contents : List Literal)
@@ -344,6 +362,12 @@ def checkStep [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι)
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
         checkTree G e = true ∧ pureTerm j.term = true
     then some (pureOutput k j.term) else none
+  | .created e =>
+    if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTree G e = true then
+      match j.term with
+      | .funE _ => some (HeapKnowledge.shift k)
+      | _ => none
+    else none
   | .typedRead i B e =>
     if claim e = j ∧ checkTree G e = true ∧ j.term = .read (.var i) ∧
         (j.context[i]?).any (fun Ref => decide (expand G Ref = [.refs B []]))
@@ -394,6 +418,20 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       rw [hj] at typed
       cases hc
       exact pure_sound typed hpure scope he hk hw hh
+    · contradiction
+  | created e =>
+    simp only [checkStep] at hc
+    split at hc
+    · rename_i hp
+      obtain ⟨hj,_,ht⟩ := hp
+      have typed := checkTree_sound e ht
+      rw [hj] at typed
+      split at hc
+      · rename_i b hb
+        cases hc
+        rw [hb] at typed ⊢
+        exact creation_sound typed he hk hw hh
+      · contradiction
     · contradiction
   | typedRead i B e =>
     simp only [checkStep] at hc
@@ -453,6 +491,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {j k e out}
       simpa [instantiate] using write_sound typed hi hr he hk hw hh
     · contradiction
 
+#print axioms creation_sound
 #print axioms checkStep_sound
 #print axioms typedRead_sound
 #print axioms write_sound

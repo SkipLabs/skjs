@@ -18,7 +18,7 @@ namespace Verification.ExperimentState
 /-- A writable bag invariant independent of the object's call slot. The plain
 object in `refT` is only a semantic projection, never an allocation or coercion. -/
 def bagT (P : Fam) : Fam := fun n W v =>
-  ∃ l code, v = .obj l code ∧ isVal v = true ∧ refT P n W (.obj l .nul)
+  ∃ l code, v = .obj l code ∧ isVal v = true ∧ refT P n W (.obj l .absent)
 
 /-- Call and property contracts hold of the same object value. -/
 def callableT (L : List (Fam × Fam)) (P : Fam) : Fam :=
@@ -43,22 +43,10 @@ theorem bagT_contractive : Contractive bagT := by
 
 theorem refT_bag {P : Fam} {n W v} (h : refT P n W v) : bagT P n W v := by
   obtain ⟨l, c, rfl, hl, hc⟩ := h
-  exact ⟨l, .nul, rfl, rfl, l, c, rfl, hl, hc⟩
+  exact ⟨l, .absent, rfl, rfl, l, c, rfl, hl, hc⟩
 
 theorem callableT_adm (L : List (Fam × Fam)) (P : Fam) : Adm (callableT L P) :=
   interT_adm _ _ (bagT_adm P) (arrowsT_adm L)
-
-theorem arrowsT_object_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
-    arrowsT L n W (.obj l (.lam b)) ↔ arrowsT L n W (.lam b) := by
-  constructor
-  · rintro ⟨⟨b', (he | ⟨l', he⟩), hc⟩, hs⟩
-    · cases he
-    · cases he
-      exact ⟨⟨b, Or.inl rfl, hc⟩, hs⟩
-  · rintro ⟨⟨b', (he | ⟨l', he⟩), hc⟩, hs⟩
-    · cases he
-      exact ⟨⟨b, Or.inr ⟨l, rfl⟩, hc⟩, hs⟩
-    · cases he
 
 /-- Forgetting properties leaves the same callable and all its call contracts. -/
 theorem callableT_calls {L P n W v} (h : callableT L P n W v) : arrowsT L n W v := h.2
@@ -96,9 +84,9 @@ theorem bag_write {P : Fam} (hP : Adm P) {n W h v a}
 single fresh identity. The call contracts survive the extended world. -/
 theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
     (n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
-    (hf : arrowsT L n W (.lam b)) (hval : isVal v = true)
+    (hf : CodeSpec L n W b) (hval : isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
-    Safe (callableT L P) n W h (.attach (.lam b) v) := by
+    Safe (callableT L P) n W h (.attach b v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -112,7 +100,7 @@ theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
       show P i _ v
       rw [trunc_appendW, trunc_trunc]
       exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
-    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res P), h ++ [v], .obj h.length (.lam b),
+    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res P), h ++ [v], .obj h.length (.closure b),
       WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .attachV hval,
       heap_alloc p _ h (res P) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
       ?_⟩
@@ -121,16 +109,16 @@ theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
     | succ q =>
       have hr : refT P (q + 1)
           (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P))
-          (.obj h.length .nul) := by
+          (.obj h.length .absent) := by
         refine ⟨h.length, res P, rfl, ?_, fun _ _ _ _ => Iff.rfl⟩
         simp only [lookup, appendW, toList_ofList]
         rw [List.getElem?_append_right (by omega)]
         simp [hlen]
-      have hf' : arrowsT L (q + 1)
-          (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P)) (.lam b) := (arrowsT_adm L).mono (q + 1) _ _ (WExt_appendW _ _) _
-        ((arrowsT_adm L).down (q + 1) W _ hf)
-      exact Or.inl ⟨rfl, ⟨⟨h.length, .lam b, rfl, rfl, hr⟩,
-        (arrowsT_object_iff L h.length b _ _).mpr hf'⟩⟩
+      have hf' : CodeSpec L (q + 1)
+          (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P)) b :=
+        hf.down.mono (WExt_appendW _ _)
+      exact Or.inl ⟨rfl, ⟨⟨h.length, .closure b, rfl, rfl, hr⟩,
+        (arrowsT_code_iff L h.length b _ _).mpr hf'⟩⟩
 
 #print axioms Callable.step
 #print axioms bagT_contractive

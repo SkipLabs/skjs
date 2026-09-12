@@ -73,9 +73,9 @@ def lookup {k : Nat} (W : WorldT k) (l : Nat) : Option (Ctr k) := (toList W)[l]?
 /-- A world can actually be built: one location whose contract is "points at
 location 0", stated at every lower level. This is the cyclic case. -/
 def selfRef (k : Nat) : WorldT k :=
-  ofList [fun _ _ _ v => v = .obj 0 .nul]
+  ofList [fun _ _ _ v => v = .obj 0 .absent]
 
-example (k : Nat) : lookup (selfRef k) 0 = some (fun _ _ _ v => v = .obj 0 .nul) := by
+example (k : Nat) : lookup (selfRef k) 0 = some (fun _ _ _ v => v = .obj 0 .absent) := by
   simp [lookup, selfRef]
 
 /-- And truncation commutes with lookup, which is what any proof will need. -/

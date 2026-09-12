@@ -133,7 +133,7 @@ private def nullProof : Evidence Nat :=
 -- A captured cell is read when the closure is called, after an alias write.
 private def captureProgram (q : Bool) : Program :=
   [⟨.alloc .tru,.bind 1⟩,
-   ⟨.lam (.ite (.read (.var 1)) .tru .fls),.bind 2⟩,
+   ⟨.funE (.ite (.read (.var 1)) .tru .fls),.bind 2⟩,
    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3⟩,
    ⟨.app (.var 0) .nul,.ret⟩]
 private def captureRequest (q : Bool) : Request :=
@@ -141,11 +141,12 @@ private def captureRequest (q : Bool) : Request :=
 #guard ok (roundtrip (captureRequest true))
 #guard ok (roundtrip (captureRequest false))
 
-theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 13 []
-    (.at 0 (fun _ => .nul)) [if q then .tru else .fls] (.done (if q then .tru else .fls)) := by
+theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 14 []
+    (.at 0 (fun _ => .nul)) [if q then .tru else .fls,.nul] (.done (if q then .tru else .fls)) := by
   cases q <;> repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
+    | apply Execution.next (.expr (.attachV rfl))
     | apply Execution.next (.expr (.allocV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
     | apply Execution.next (.expr (.beta rfl))

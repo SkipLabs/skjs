@@ -70,8 +70,8 @@ def shape : Clause α → Nat
   | .undef => 4
 
 def valueShape : Val → Nat
-  | .nul => 0 | .tru | .fls => 1 | .obj _ .nul => 2 | .lam _ => 3 | .undef => 4
-  | .obj _ (.lam _) => 3
+  | .nul => 0 | .tru | .fls => 1 | .obj _ .absent => 2 | .undef => 4
+  | .obj _ (.closure _) => 3
   | _ => 6
 
 theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
@@ -81,7 +81,7 @@ theorem sem_shape {X : α → Fam} {c : Clause α} {n W v}
   | bool => rcases h with h | h <;> cases h <;> rfl
   | boolLit b => cases b <;> cases h <;> rfl
   | refs a bs => obtain ⟨l, _, rfl, _⟩ := h.1; rfl
-  | arrs L => rcases h.1 with ⟨b, (rfl | ⟨l, rfl⟩), _⟩ <;> rfl
+  | arrs L => rcases h.1 with ⟨b, l, rfl, _⟩; rfl
   | undef => cases h; rfl
 
 theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :

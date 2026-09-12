@@ -272,7 +272,7 @@ private def captureProgram : ControlFlow.Program :=
    ⟨.nul,.bind 1⟩, ⟨.var 1,.bind 2⟩,
    ⟨.var 0,.bind ⟨3,some [3,4,5]⟩⟩, ⟨.write (.var 1) (.var 0),.effect 4⟩,
    ⟨.fls,.bind 5⟩, ⟨.var 0,.bind 6⟩, ⟨.var 0,.effect 7⟩, ⟨.var 1,.bind 8⟩,
-   ⟨.var 0,.effect 9⟩, ⟨.lam (.read (.var 1)),.bind 10⟩,
+   ⟨.var 0,.effect 9⟩, ⟨.funE (.read (.var 1)),.bind 10⟩,
    ⟨.var 0,.effect 11⟩, ⟨.alloc (.var 0),.bind ⟨12,some [0]⟩⟩,
    ⟨.tru,.bind 13⟩, ⟨.nul,.effect 14⟩]
 #guard captureRequest.program == captureProgram
@@ -280,11 +280,12 @@ private def captureProgram : ControlFlow.Program :=
 
 /-- The extracted closure reads after the alias write and returns false.
 The graph-equality guards above tie this trace to the source compiler regression. -/
-theorem captured_alias_trace : ControlFlow.Execution captureProgram 36 []
-    (.at 15 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem captured_alias_trace : ControlFlow.Execution captureProgram 37 []
+    (.at 15 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
@@ -311,7 +312,7 @@ private def branchCaptureClaims : SourceInput.Claims :=
     envs := captureClaims.envs ++ [(40,H),(41,H),(45,H)]
     exprs := captureClaims.exprs ++ [((42,43),t),((46,47),b)] }
 private def branchCaptureProgram : ControlFlow.Program :=
-  captureProgram.set 11 ⟨.lam (.ite (.read (.var 1)) .tru .fls),.bind 10⟩
+  captureProgram.set 11 ⟨.funE (.ite (.read (.var 1)) .tru .fls),.bind 10⟩
 #guard is ((extractFn branchCaptureFn branchCaptureClaims).map (·.program)) branchCaptureProgram
 #guard ok (do
   let r ← extractFn branchCaptureFn branchCaptureClaims
@@ -319,11 +320,12 @@ private def branchCaptureProgram : ControlFlow.Program :=
     r.searchLabels r.types.length 0 r.obligations
   pure ())
 
-theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 37 []
-    (.at 15 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 38 []
+    (.at 15 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
@@ -358,7 +360,7 @@ private def joinedCaptureClaims : SourceInput.Claims :=
 private def joinedCaptureProgram : ControlFlow.Program :=
   let assignment := Tm.letE (.var 1) (.letE .tru (.letE (.write (.var 1) (.var 0)) (.var 1)))
   captureProgram.set 11
-    ⟨.lam (.letE (.ite (.read (.var 1)) .nul (.letE assignment .nul))
+    ⟨.funE (.letE (.ite (.read (.var 1)) .nul (.letE assignment .nul))
       (.read (.var 2))),.bind 10⟩
 #guard is ((extractFn joinedCaptureFn joinedCaptureClaims).map (·.program)) joinedCaptureProgram
 #guard ok (do
@@ -367,11 +369,12 @@ private def joinedCaptureProgram : ControlFlow.Program :=
     r.searchLabels r.types.length 0 r.obligations
   pure ())
 
-theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 44 []
-    (.at 15 (fun _ => .nul)) [.tru] (.done .tru) := by
+theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 45 []
+    (.at 15 (fun _ => .nul)) [.tru,.nul] (.done .tru) := by
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
@@ -414,7 +417,7 @@ private def earlyCaptureClaims (q : Bool) : SourceInput.Claims :=
 private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
   let assignment := Tm.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))
   (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5⟩).set 11
-    ⟨.lam (.ite (.read (.var 1)) .tru
+    ⟨.funE (.ite (.read (.var 1)) .tru
       (.letE (.letE assignment .nul) (.read (.var 2)))),.bind 10⟩
 #guard [true,false].all fun q =>
   is ((extractFn (earlyCaptureFn q) (earlyCaptureClaims q)).map (·.program)) (earlyCaptureProgram q)
@@ -425,11 +428,12 @@ private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
   pure ())
 
 theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgram q)
-    (if q then 37 else 44) [] (.at 15 (fun _ => .nul))
-    [if q then .tru else .fls] (.done (if q then .tru else .fls)) := by
+    (if q then 38 else 45) [] (.at 15 (fun _ => .nul))
+    [if q then .tru else .fls,.nul] (.done (if q then .tru else .fls)) := by
   cases q <;> repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
@@ -476,7 +480,7 @@ private def writerClaims : SourceInput.Claims :=
 private def writerProgram : ControlFlow.Program :=
   [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩⟩,
    ⟨.nul,.bind 1⟩, ⟨.var 0,.bind 2⟩, ⟨.var 0,.effect 3⟩,
-   ⟨.lam (.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4⟩,
+   ⟨.funE (.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4⟩,
    ⟨.var 0,.effect 5⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩⟩,
    ⟨.tru,.bind 7⟩, ⟨.nul,.effect 8⟩]
 #guard is ((extractFn writerFn writerClaims).map (·.program)) writerProgram
@@ -487,11 +491,12 @@ private def writerProgram : ControlFlow.Program :=
   ExpressionClaims.produce (RequestJson.graph r.toRequest) r.searchLabels r.types.length 10 r.obligations)
 
 /-- Calling the extracted writer changes the heap and returns its RHS, not null. -/
-theorem closure_write_trace : ControlFlow.Execution writerProgram 26 []
-    (.at 9 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem closure_write_trace : ControlFlow.Execution writerProgram 27 []
+    (.at 9 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
@@ -549,15 +554,16 @@ private def localWriterClaims : SourceInput.Claims :=
 private def localWriterProgram : ControlFlow.Program :=
   let write : Tm := .letE (.var 2) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
   writerProgram.set 5
-    ⟨.lam (.letE .fls (.letE write (.read (.var 3)))),.bind 4⟩
+    ⟨.funE (.letE .fls (.letE write (.read (.var 3)))),.bind 4⟩
 #guard is ((extractFn localWriterFn localWriterClaims).map (·.program)) localWriterProgram
 
 /-- A saved local is used by the write and survives the anonymous effect slot. -/
-theorem local_writer_trace : ControlFlow.Execution localWriterProgram 29 []
-    (.at 9 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem local_writer_trace : ControlFlow.Execution localWriterProgram 30 []
+    (.at 9 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
+    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))

@@ -131,8 +131,8 @@ theorem checked_recursive_example : FamLe
 /-- Nested incompatible contracts have real overlap at an informative budget,
 with a satisfying cyclic heap, not just at the universal zero approximation. -/
 theorem nested_inhabited :
-    HeapOk 1 (ofList [res R]) [.obj 0 .nul] ∧
-    refsT (refT nulT) [refT boolT] 1 (ofList [res R]) (.obj 0 .nul) := by
+    HeapOk 1 (ofList [res R]) [.obj 0 .absent] ∧
+    refsT (refT nulT) [refT boolT] 1 (ofList [res R]) (.obj 0 .absent) := by
   have hR := R_cyclic 1
   have hn := (ModelBoundaries.nested_agrees_cycle 2 nulT 1 (by omega) _ _).mpr hR
   have hb := (ModelBoundaries.nested_agrees_cycle 2 boolT 1 (by omega) _ _).mpr hR

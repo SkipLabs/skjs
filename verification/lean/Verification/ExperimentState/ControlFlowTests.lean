@@ -38,11 +38,12 @@ theorem loop_safe (n : Nat) : SafeGraph loop (PositiveRules.meaning G [1]) n
 
 /-- The trace actually traverses the back edge, then returns the changed value.
 The global safety proof is independent of this terminating example's trace. -/
-theorem loop_returns_false : Execution loop 26 [] (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by
+theorem loop_returns_false : Execution loop 27 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.allocV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
+  apply Execution.next (.expr (.attachV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.beta rfl))

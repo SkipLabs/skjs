@@ -102,7 +102,7 @@ theorem heap_alloc (n : Nat) (W : WorldT n) (h : Heap) (c : Ctr n) (v : Val)
 
 /-- **The cyclic heap.** One location, whose contract is `R`, holding a
 reference to itself -- and the heap really satisfies the world. -/
-theorem cyclic_heap_ok (n : Nat) : HeapOk n (ofList [res R]) [Tm.obj 0 .nul] := by
+theorem cyclic_heap_ok (n : Nat) : HeapOk n (ofList [res R]) [Tm.obj 0 .absent] := by
   refine ⟨by simp, ?_⟩
   intro l c hl
   simp only [lookup, toList_ofList] at hl
@@ -110,7 +110,7 @@ theorem cyclic_heap_ok (n : Nat) : HeapOk n (ofList [res R]) [Tm.obj 0 .nul] := 
   | zero =>
     simp only [List.getElem?_cons_zero, Option.some.injEq] at hl
     subst hl
-    refine ⟨.obj 0 .nul, rfl, ?_⟩
+    refine ⟨.obj 0 .absent, rfl, ?_⟩
     intro j hj
     show R j _ _
     rw [trunc_res]

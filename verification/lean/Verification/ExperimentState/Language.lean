@@ -26,11 +26,11 @@ inductive Tag where
   | isNul | isBool | isRef | isFun | isUndef | isNullish
   deriving Repr, DecidableEq
 
+mutual
 /-- Terms. Values are terms too, so worlds and the operational semantics speak
 about the same objects. -/
 inductive Tm where
   | var (i : Nat)
-  | lam (b : Tm)
   | app (f a : Tm)
   /-- Evaluate `a`, then substitute its value into `b`. Binding allocates no object. -/
   | letE (a b : Tm)
@@ -39,17 +39,11 @@ inductive Tm where
   | undef
   | tru
   | fls
-  /-- An object: an identity — the location of its bag — and its call
-  operation, the closure it carries, or `nul` where it has none. The code is
-  immutable; the bag is mutable and shared by every value carrying that
-  identity. A plain object carries no closure and a source function carries
-  one; a lambda on its own is only the calculus's closure, code without
-  identity. The source-object design uses the allocated form for functions;
-  administrative bindings continue to use bare lambdas. -/
-  | obj (l : Nat) (call : Tm)
-  /-- Creates a function object: allocates a bag holding `a` and pairs it with
-  the closure `f`, which must be a lambda. Every creation is a fresh identity. -/
-  | attach (f a : Tm)
+  /-- An object identity with an optional, immutable invocation descriptor. -/
+  | obj (l : Nat) (call : CallCode)
+  /-- Allocate a function object with body `b` and initial bag contents `a`.
+  The body is code under one binder, not a term evaluated at creation. -/
+  | attach (b a : Tm)
   | alloc (a : Tm)
   | read (a : Tm)
   | write (a b : Tm)
@@ -57,14 +51,51 @@ inductive Tm where
   | ite (c t e : Tm)
   deriving Repr, DecidableEq
 
+/-- Invocation code is not a runtime value. A plain object has no call code. -/
+inductive CallCode where
+  | absent
+  | closure (body : Tm)
+  deriving Repr, DecidableEq
+end
+
+/-- Source function creation starts with an empty one-cell property bag. -/
+@[match_pattern] abbrev Tm.funE (b : Tm) : Tm := .attach b .nul
+
+/-- Notation for an already allocated function object, used in semantic lemmas. -/
+@[match_pattern] abbrev Tm.fn (l : Nat) (b : Tm) : Tm := .obj l (.closure b)
+
+/-- Term induction exposing the body stored inside a call descriptor. -/
+@[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
+    (var : ∀ i, P (.var i))
+    (app : ∀ f a, P f → P a → P (.app f a))
+    (letE : ∀ a b, P a → P b → P (.letE a b))
+    (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
+    (objAbsent : ∀ l, P (.obj l .absent))
+    (objClosure : ∀ l b, P b → P (.obj l (.closure b)))
+    (attach : ∀ b a, P b → P a → P (.attach b a))
+    (alloc : ∀ a, P a → P (.alloc a))
+    (read : ∀ a, P a → P (.read a))
+    (write : ∀ a b, P a → P b → P (.write a b))
+    (test : ∀ k a, P a → P (.test k a))
+    (ite : ∀ c a b, P c → P a → P b → P (.ite c a b)) (t : Tm) : P t := by
+  apply Tm.rec (motive_1 := P)
+    (motive_2 := fun c => match c with | .absent => True | .closure b => P b)
+    var app letE nul undef tru fls ?_ attach alloc read write test ite
+    True.intro (fun _ h => h) t
+  intro l c ih
+  cases c with
+  | absent => exact objAbsent l
+  | closure b => exact objClosure l b ih
+
+
+
 abbrev Val := Tm
 
 /-! ## Values and substitution -/
 
 
 def isVal : Tm → Bool
-  | .lam _ => true | .nul => true | .undef => true | .tru => true
-  | .fls => true | .obj _ .nul => true | .obj _ (.lam _) => true
+  | .nul | .undef | .tru | .fls | .obj .. => true
   | _ => false
 
 /-- What a test of a value answers. A test is total on values: every value has
@@ -76,22 +107,21 @@ def tagHolds : Tag → Val → Bool
   | .isNullish, .nul | .isNullish, .undef => true
   | .isBool, .tru => true
   | .isBool, .fls => true
-  | .isRef, .obj _ .nul => true
-  | .isFun, .lam _ => true
-  | .isFun, .obj _ (.lam _) => true
+  | .isRef, .obj _ .absent => true
+  | .isFun, .obj _ (.closure _) => true
   | _, _ => false
 
 def subst (j : Nat) (a : Tm) : Tm → Tm
   | .var i => if i == j then a else if j < i then .var (i - 1) else .var i
-  | .lam b => .lam (subst (j + 1) a b)
   | .app f x => .app (subst j a f) (subst j a x)
   | .letE x b => .letE (subst j a x) (subst (j + 1) a b)
   | .nul => .nul
   | .undef => .undef
   | .tru => .tru
   | .fls => .fls
-  | .obj l c => .obj l (subst j a c)
-  | .attach f x => .attach (subst j a f) (subst j a x)
+  | .obj l .absent => .obj l .absent
+  | .obj l (.closure b) => .obj l (.closure (subst (j + 1) a b))
+  | .attach b x => .attach (subst (j + 1) a b) (subst j a x)
   | .alloc x => .alloc (subst j a x)
   | .read x => .read (subst j a x)
   | .write x y => .write (subst j a x) (subst j a y)
@@ -108,14 +138,12 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | appR : isVal f = true → Step h a h' a' → Step h (.app f a) h' (.app f a')
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
-  | beta : isVal a = true → Step h (.app (.lam b) a) h (subst 0 a b)
-  /-- Calling a function object is one step, as for a lambda: its code is in the value. -/
-  | betaC : isVal a = true → Step h (.app (.obj l (.lam b)) a) h (subst 0 a b)
-  | attachC1 : Step h f h' f' → Step h (.attach f a) h' (.attach f' a)
-  | attachC2 : isVal f = true → Step h a h' a' → Step h (.attach f a) h' (.attach f a')
-  | attachV : isVal v = true → Step h (.attach (.lam b) v) (h ++ [v]) (.obj h.length (.lam b))
+  /-- Invocation executes the object's stored code in one step. -/
+  | beta : isVal a = true → Step h (.app (.obj l (.closure b)) a) h (subst 0 a b)
+  | attachC : Step h a h' a' → Step h (.attach b a) h' (.attach b a')
+  | attachV : isVal v = true → Step h (.attach b v) (h ++ [v]) (.obj h.length (.closure b))
   | allocC : Step h a h' a' → Step h (.alloc a) h' (.alloc a')
-  | allocV : isVal v = true → Step h (.alloc v) (h ++ [v]) (.obj h.length .nul)
+  | allocV : isVal v = true → Step h (.alloc v) (h ++ [v]) (.obj h.length .absent)
   | readC : Step h a h' a' → Step h (.read a) h' (.read a')
   /-- Reading and writing an object go to its bag, whatever its code. -/
   | readV : h[l]? = some v → Step h (.read (.obj l c)) h v
@@ -129,7 +157,6 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | iteT : Step h (.ite .tru t e) h t
   | iteF : Step h (.ite .fls t e) h e
 
-theorem lam_no_step {h b h' t} : ¬ Step h (.lam b) h' t := by intro s; cases s
 
 theorem nul_no_step {h h' t} : ¬ Step h .nul h' t := by intro s; cases s
 theorem tru_no_step {h h' t} : ¬ Step h .tru h' t := by intro s; cases s
@@ -141,7 +168,7 @@ theorem obj_no_step {h l c h' t} : ¬ Step h (.obj l c) h' t := by intro s; case
 `omegaTm` steps to itself forever. It is the inhabitant of last resort: safe at
 every budget, since safety asks for progress and not termination. -/
 
-def delta : Tm := .lam (.app (.var 0) (.var 0))
+def delta : Tm := .fn 0 (.app (.var 0) (.var 0))
 def omegaTm : Tm := .app delta delta
 
 theorem omega_step (h : Heap) : Step h omegaTm h omegaTm := Step.beta rfl
@@ -152,7 +179,7 @@ def Closed (v : Val) : Prop := ∀ k a, subst k a v = v
 
 /-- A function that gets stuck the moment it is applied. It inhabits an arrow
 whose domain is empty, since such an arrow is never applied, and no other. -/
-def stuckFn : Tm := .lam (.app .nul .nul)
+def stuckFn : Tm := .fn 0 (.app .nul .nul)
 
 theorem closed_stuck : Closed stuckFn := by
   intro k a
@@ -172,13 +199,6 @@ theorem value_no_step {v : Val} (hv : isVal v = true) {h h' t} : ¬ Step h v h' 
   intro hs
   cases v <;> simp [isVal] at hv <;> cases hs
 
-theorem beta_inv {b a : Tm} (ha : isVal a = true) {h h' t}
-    (hs : Step h (.app (.lam b) a) h' t) : h' = h ∧ t = subst 0 a b := by
-  cases hs with
-  | appL hs => cases hs
-  | appR _ hs => exact False.elim (value_no_step ha hs)
-  | beta => exact ⟨rfl, rfl⟩
-
 /-- **Evaluation is deterministic.** One term in one heap has at most one next
 state. Nothing in the safety definition says so — it quantifies existentially
 over the world a step lands in — so this has to be proved, and it is what lets
@@ -190,14 +210,12 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | appL s' => exact (ih s').imp id (congrArg (Tm.app · _))
     | appR hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
-    | beta => exact absurd s lam_no_step
-    | betaC => exact absurd s obj_no_step
+    | beta => exact absurd s obj_no_step
   | appR hv s ih =>
     cases s2 with
     | appL s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
     | appR _ s' => exact (ih s').imp id (congrArg (Tm.app _ ·))
     | beta hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
-    | betaC hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
   | letC hs ih =>
     cases s2 with
     | letC hs' => exact (ih hs').imp id (congrArg (Tm.letE · _))
@@ -208,28 +226,16 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | letV => exact ⟨rfl, rfl⟩
   | beta hv =>
     cases s2 with
-    | appL s' => exact absurd s' lam_no_step
-    | appR _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | appL hs => exact absurd hs obj_no_step
+    | appR _ hs => exact absurd hs (value_no_step hv)
     | beta => exact ⟨rfl, rfl⟩
-  | betaC hv =>
+  | attachC hs ih =>
     cases s2 with
-    | appL s' => exact absurd s' obj_no_step
-    | appR _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
-    | betaC => exact ⟨rfl, rfl⟩
-  | attachC1 s ih =>
-    cases s2 with
-    | attachC1 s' => exact (ih s').imp id (congrArg (Tm.attach · _))
-    | attachC2 hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
-    | attachV _ => exact absurd s lam_no_step
-  | attachC2 hv s ih =>
-    cases s2 with
-    | attachC1 s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
-    | attachC2 _ s' => exact (ih s').imp id (congrArg (Tm.attach _ ·))
-    | attachV hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
+    | attachC hs' => exact (ih hs').imp id (congrArg (Tm.attach _))
+    | attachV hv => exact absurd hs (value_no_step hv)
   | attachV hv =>
     cases s2 with
-    | attachC1 s' => exact absurd s' lam_no_step
-    | attachC2 _ s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
+    | attachC hs => exact absurd hs (value_no_step hv)
     | attachV => exact ⟨rfl, rfl⟩
   | allocC s ih =>
     cases s2 with
@@ -285,17 +291,17 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | iteF => exact ⟨rfl, rfl⟩
 
 theorem alloc_step_inv {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.alloc v) h' t) : h' = h ++ [v] ∧ t = .obj h.length .nul := by
+    (hs : Step h (.alloc v) h' t) : h' = h ++ [v] ∧ t = .obj h.length .absent := by
   cases hs with
   | allocC hs => exact False.elim (value_no_step hv hs)
   | allocV => exact ⟨rfl, rfl⟩
 
-theorem betaC_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
-    (hs : Step h (.app (.obj l (.lam b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
+theorem beta_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
+    (hs : Step h (.app (.obj l (.closure b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
   cases hs with
   | appL hs => cases hs
   | appR _ hs => exact False.elim (value_no_step ha hs)
-  | betaC => exact ⟨rfl, rfl⟩
+  | beta => exact ⟨rfl, rfl⟩
 
 /-- Binding a value spends one step and leaves the heap unchanged. -/
 theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}
@@ -305,29 +311,17 @@ theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}
   | letV => exact ⟨rfl, rfl⟩
 
 theorem attach_step_inv {b : Tm} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.attach (.lam b) v) h' t) : h' = h ++ [v] ∧ t = .obj h.length (.lam b) := by
+    (hs : Step h (.attach b v) h' t) : h' = h ++ [v] ∧ t = .obj h.length (.closure b) := by
   cases hs with
-  | attachC1 hs => cases hs
-  | attachC2 _ hs => exact False.elim (value_no_step hv hs)
+  | attachC hs => exact False.elim (value_no_step hv hs)
   | attachV => exact ⟨rfl, rfl⟩
 
-theorem read_step_inv {r : Nat} {c : Tm} {h h' t} (hs : Step h (.read (.obj r c)) h' t) :
+theorem read_step_inv {r : Nat} {c : CallCode} {h h' t} (hs : Step h (.read (.obj r c)) h' t) :
     h' = h ∧ h[r]? = some t := by
   cases hs with
   | readC hs => exact False.elim (obj_no_step hs)
   | readV he => exact ⟨rfl, he⟩
 
-theorem write_step_inv {f : Tm} {l : Nat} {c : Tm} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.app (.lam f) (.write (.obj l c) v)) h' t) :
-    h' = h.set l v ∧ t = .app (.lam f) .nul ∧ l < h.length := by
-  cases hs with
-  | appL hs => cases hs
-  | beta hv => simp [isVal] at hv
-  | appR _ hs =>
-    cases hs with
-    | writeC1 hs => cases hs
-    | writeC2 _ hs => exact False.elim (value_no_step hv hs)
-    | writeV _ hlt => exact ⟨rfl, rfl, hlt⟩
 
 end ExperimentState
 end Verification

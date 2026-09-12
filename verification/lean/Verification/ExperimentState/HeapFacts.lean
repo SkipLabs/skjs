@@ -75,13 +75,13 @@ theorem write {A : Fam} (ha : Adm A) {ρ h i a n W}
     SafePost nulT (fun h' _ => Holds [⟨i,[a]⟩] ρ h') n W h
       (.write (ρ i) a.value) := by
   obtain ⟨l,c,he,hl,hc⟩ := hr
-  have hr : refT A n W (.obj l .nul) := ⟨l,c,rfl,hl,hc⟩
+  have hr : refT A n W (.obj l .absent) := ⟨l,c,rfl,hl,hc⟩
   rw [he]
   apply weaken _ (write_observed ha hw hh hr (by cases a <;> rfl) ht)
   intro h' _ hp f hf
   simp only [List.mem_singleton] at hf
   subst f
-  refine ⟨l,.nul,a.value,he,?_,a,by simp,rfl⟩
+  refine ⟨l,.absent,a.value,he,?_,a,by simp,rfl⟩
   rw [hp.1]
   apply write_new
   rw [hh.1]
@@ -98,7 +98,7 @@ theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a n W}
   intro h' v hp f hm
   rw [hp.1,hp.2]
   rcases List.mem_cons.mp hm with rfl | hm
-  · exact ⟨h.length,.nul,a.value,rfl,alloc_new h a.value,a,by simp,rfl⟩
+  · exact ⟨h.length,.absent,a.value,rfl,alloc_new h a.value,a,by simp,rfl⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hm
     obtain ⟨l,c,u,hl,hu,b,hb,he⟩ := hf g hg
     exact ⟨l,c,u,hl,alloc_frame hu,b,hb,he⟩

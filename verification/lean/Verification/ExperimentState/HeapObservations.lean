@@ -18,7 +18,7 @@ def Contents (h : Heap) (l : Nat) (P : Val → Prop) : Prop :=
 /-- Proposed point-claim meaning: a persistent storage invariant AND a current
 read observation. It is heap-indexed, unlike a value family. -/
 def ObservedRef (A : Fam) (P : Val → Prop) (n : Nat) (W : WorldT n) (h : Heap) (v : Val) : Prop :=
-  ∃ l, v = .obj l .nul ∧ refT A n W v ∧ Contents h l P
+  ∃ l, v = .obj l .absent ∧ refT A n W v ∧ Contents h l P
 
 /-- Read observations may be absorbed when the storage invariant stays fixed.
 No covariance or contravariance of the invariant reference is assumed. -/
@@ -170,7 +170,7 @@ theorem bind_value {T Q n} {W : WorldT (n+1)} {h b a}
 
 /-- Observations supply read precision without narrowing the location's world
 contract. Reading preserves the whole heap, so all current observations remain. -/
-theorem read_observed {n W h l v} {c : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+theorem read_observed {n W h l v} {c : CallCode} (hw : WorldAdm W) (hh : HeapOk n W h)
     (hv : isVal v = true) (ho : Observes h l v) :
     SafePost (exact v) (fun h' u => h' = h ∧ u = v) n W h (.read (.obj l c)) := by
   cases n with
@@ -180,7 +180,7 @@ theorem read_observed {n W h l v} {c : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
       .readV ho,HeapOk_trunc p W h hh,?_⟩
     exact value hv rfl ⟨rfl,rfl⟩
 
-theorem read_contents {n W h l P} {c : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+theorem read_contents {n W h l P} {c : CallCode} (hw : WorldAdm W) (hh : HeapOk n W h)
     (hval : ∀ v, P v → isVal v = true) (ho : Contents h l P) :
     SafePost (fun _ _ v => P v) (fun h' u => h' = h ∧ Observes h' l u) n W h (.read (.obj l c)) := by
   obtain ⟨v,hread,hp⟩ := ho
@@ -192,9 +192,9 @@ theorem read_contents {n W h l P} {c : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
 /-- This rule has no premise asserting old contents. The write permission comes
 from the invariant reference, and the postcondition records the new contents. -/
 theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .nul))
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .absent))
     (hv : isVal v = true) (ht : A n W v) :
-    SafePost nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h (.write (.obj l .nul) v) := by
+    SafePost nulT (fun h' u => h' = h.set l v ∧ u = .nul) n W h (.write (.obj l .absent) v) := by
   obtain ⟨_,c,he,hl,hc⟩ := hr
   cases he
   have hlt : l < h.length := by
@@ -205,7 +205,7 @@ theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
 
 theorem alloc_observed {A : Fam} (ha : Adm A) {n W h v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : isVal v = true) (ht : A n W v) :
-    SafePost (refT A) (fun h' u => h' = h ++ [v] ∧ u = .obj h.length .nul) n W h (.alloc v) :=
+    SafePost (refT A) (fun h' u => h' = h ++ [v] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
   one_step rfl rfl (.allocV hv) ⟨rfl,rfl⟩ (alloc_rule ha n W h v hv hw hh ht)
 
 /-- A same-location alias shares the observation; variable names do not matter. -/
@@ -230,16 +230,16 @@ theorem alloc_new (h : Heap) (v : Val) : Observes (h ++ [v]) h.length v := by
 /-- Composite proof: mutation produces a new observation, which the continuation
 uses to type the next read exactly. No original-content premise is needed. -/
 theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .nul))
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .absent))
     (hv : isVal v = true) (ht : A n W v) :
     SafePost (exact v) (fun h' u => Observes h' l v ∧ u = v) n W h
-      (.letE (.write (.obj l .nul) v) (.read (.obj l .nul))) := by
+      (.letE (.write (.obj l .absent) v) (.read (.obj l .absent))) := by
   have hlt : l < h.length := by
     obtain ⟨_,c,he,hl,_⟩ := hr
     cases he
     rw [hh.1]; exact (List.getElem?_eq_some_iff.mp hl).1
-  apply bind (fun t => .letE t (.read (.obj l .nul))) Step.letC
-    n W h (.write (.obj l .nul) v) hw hh
+  apply bind (fun t => .letE t (.read (.obj l .absent))) Step.letC
+    n W h (.write (.obj l .absent) v) hw hh
     (write_observed ha hw hh hr hv ht)
   intro j hj U hx hu h' u hh' hval ht hpost
   have ho : Observes h' l v := by rw [hpost.1]; exact write_new hlt
@@ -247,7 +247,7 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
   | zero => trivial
   | succ p =>
     apply bind_value hval hu hh'
-    change SafePost _ _ p _ h' (.read (.obj l .nul))
+    change SafePost _ _ p _ h' (.read (.obj l .absent))
     apply weaken _ (read_observed (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh') hv ho)
     intro h'' result hp
     exact ⟨by rw [hp.1]; exact ho,hp.2⟩

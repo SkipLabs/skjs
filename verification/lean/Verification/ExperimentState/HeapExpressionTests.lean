@@ -85,14 +85,24 @@ private def invalidWrite : Evidence Nat := .node narrowWrite .write
 #guard checkStep G narrowWrite beforeWrite
   (.written 0 1 [.tru] invalidWrite) == none
 
--- Pure computational guards frame existing facts; an uncalled lambda may
--- contain effects, but a call/read/write/allocation is not classified as pure.
+-- Pure computational guards frame existing facts. Function creation allocates
+-- without running its body, and therefore needs a distinct effect rule.
 #guard pureTerm (.ite (.test .isNul (.var 0)) .tru .fls)
-#guard pureTerm (.lam (.write (.var 0) .fls))
+#guard !pureTerm (.funE (.write (.var 0) .fls))
 #guard !pureTerm (.ite .tru .nul (.write (.var 0) .fls))
 #guard !pureTerm (.test .isNul (.read (.var 0)))
-#guard !pureTerm (.app (.lam .nul) .nul)
+#guard !pureTerm (.app (.funE .nul) .nul)
 #guard !pureTerm (.alloc .tru)
+
+-- A creation preserves old facts even when its uncalled body would mutate a cell.
+private def CG := SourceTypes.graph (T ++ [[.arrs []]])
+private def creationClaim : Sequent Nat :=
+  ⟨[refBool,boolTy,refBool,boolTy],.funE (.write (.var 1) .fls),[5]⟩
+private def creationProof : Evidence Nat := .node creationClaim .funE []
+#guard checkStep CG creationClaim beforeWrite (.created creationProof) == some (shift beforeWrite)
+#guard checkStep CG creationClaim beforeWrite (.pure creationProof) == none
+-- An actual write cannot obtain the creation frame, even with a valid typing proof.
+#guard checkStep G writeClaim beforeWrite (.created writeProof) == none
 
 #print axioms pure_step
 #print axioms pure_frame

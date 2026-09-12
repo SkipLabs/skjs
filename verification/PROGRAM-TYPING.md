@@ -82,7 +82,8 @@ $$
      {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
 $$
 
-`let` has its own operational constructor, `letE a b`. It evaluates `a`,
+Here $\lambda x.t$ denotes source function creation, implemented as `funE t`: it
+allocates an object before any invocation. `let` has its own operational constructor, `letE a b`. It evaluates `a`,
 then substitutes the resulting value into `b` in one nonallocating step.
 Neither a function value nor a function-type graph label is needed. The
 producer and consumer use this constructor directly; lambda application no
@@ -195,13 +196,14 @@ mixed shapes; that representation needs additional decomposition rules.
 its application law:
 
 $$
-(\operatorname{close}_{\rho}(\lambda x.b))(a)
+\mathsf{invoke}(\mathsf{obj}(\ell,\mathsf{closure}(\operatorname{close}^{1}_{\rho}(b))),a)
 \longrightarrow \operatorname{close}_{a::\rho}(b).
 $$
 
 The formal statement is `instantiate_beta`; environment entries must be closed.
-The same substitution law applies to `letE`. Arrow membership requires closed
-callable code, so every value in a
+This is the invocation step for an already allocated function object;
+creation is a separate step. The same substitution law applies to `letE`.
+Arrow membership requires an object with closed callable code, so every value in a
 positive graph type is both a value and closed (`meaning_value`). Semantic
 environments retain these properties when extended, when their world grows,
 and when their observation budget decreases.
@@ -1242,8 +1244,8 @@ implemented.
 
 ## Callables
 
-Nothing in this section is implemented. It states a design for callable
-values and the rules it would add, in the terms of the rules above, so the
+The one-cell callable fragment described below is implemented. The rest of
+this section states the broader design and the rules it would add, in the terms of the rules above, so the
 design can be read as a user of the verifier would read it: what can be claimed
 about a value, what a claim commits to, and what the verifier will and will not
 check. Where a fact below is already proved, the theorem is named; where it is
@@ -1262,18 +1264,22 @@ class constructor's `[[Call]]` always throws, and a value of TypeScript's
 `[[Call]]`, so constructibility implies `typeof "function"`.
 
 The original [operational language](SEMANTICS.md#operational-language) separated
-lambdas from locations, making the intersection of function and reference
-shapes empty. The Lean implementation now uses `obj l code` for both plain
-objects (`code = nul`) and function objects (`code = lam b`). Lambdas remain
-as code without identity and for administrative bindings. `isFun` recognizes
-both lambdas and function objects; `isRef` recognizes plain objects. These
-shape tests remain total on values and heap-independent.
+lambdas from locations. The Lean runtime now has only object values for both
+plain objects (`obj l absent`) and functions (`obj l (closure b)`). `CallCode`
+is a separate descriptor type; its body is not a runtime value. `funE b`
+allocates a fresh function object with a null-initialized one-cell bag, while
+`letE` binds without allocation. `isFun` recognizes function objects and
+`isRef` recognizes plain objects, both independently of the heap.
 
 The implemented semantic slice is in
 [CallableObjects.lean](lean/Verification/ExperimentState/CallableObjects.lean).
 `arrowT` and `arrowsT` admit function objects; `bagT P` describes an object's
 writable cell independently of its call slot; `callableT L P` combines both
-contracts on the same value. Allocation, application, bag reads and writes,
+contracts on the same value. `CodeSpec` checks invocation bodies separately
+from object membership. Source functions and shared continuations now lower
+to `funE`, and the certificate producer and consumer use its allocating typing
+rule. A checked creation effect preserves existing heap knowledge without
+executing the body. Allocation, application, bag reads and writes,
 and overload conjunction have safety proofs. The existing `refT` and graph
 reference clauses still mean plain objects: general bag and callable views
 have not yet been added to the certificate language or source lowering.
@@ -1288,8 +1294,9 @@ constructor); `CAbsent`, provably not callable (object literals, class
 instances, arrays); and `CUnknown`, a structural object type — `{}`, an
 interface — which width subtyping lets a function inhabit. The
 [views these modes obtain](#shape-tests-and-identity) are given with the rules.
-The claims exporter currently refuses any positive callability, so none of this
-reaches the verifier.
+The claims exporter still refuses positive callability on cells and function
+shape without a signature. Ordinary exported function signatures already run
+through the allocated-function path.
 
 ### A first proposal, and its generalisation
 

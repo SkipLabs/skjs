@@ -117,11 +117,11 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
         if checkTree G (leaf B r) then coerce G pool (leaf B r) A else none
-    | .lam b =>
+    | .funE b =>
       return (A :: pool).findSome? fun F => do
         let [.arrs L] := expand G F | none
         let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
-        coerce G pool (.node ⟨Γ,t,F⟩ .lam ps) A
+        coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -274,7 +274,7 @@ def expressionEffect [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
       if let some R := HeapExpressionRules.valuesAt G j.context k v then
         choices := choices ++ [.written i v R e]
     | _ => pure ()
-    choices := choices ++ [.pure e,.ordinary e]
+    choices := choices ++ [.created e,.pure e,.ordinary e]
   for effect in choices do
     if let some out := HeapExpressionRules.checkStep G j k effect then
       -- Effect evidence validates this header itself; an ordinary derivation

@@ -1,3 +1,4 @@
+import Verification.ExperimentState.CallableObjects
 import Verification.ExperimentState.PositiveCertificates
 
 /-!
@@ -127,8 +128,8 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | fls : Represents G A .bool → HasTy G Γ .fls A
   | truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
   | flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
-  | lam : Represents G F (.arrs L) →
-      (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.lam b) F
+  | funE : Represents G F (.arrs L) →
+      (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.funE b) F
   | app : HasTy G Γ f F → Represents G F (.arrs L) → (A, B) ∈ L →
       HasTy G Γ a A → HasTy G Γ (.app f a) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
@@ -175,16 +176,17 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | truLit hr | flsLit hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
-  | @lam F L Γ b hr hb ih =>
+  | @funE F L Γ b hr hb ih =>
     intro n W h ρ he hw hh
-    apply value_safe _ _ _ _ _ rfl
-    apply (represents_sem hr n W _).mpr
-    refine ⟨⟨instantiate 1 ρ b, Or.inl rfl, instantiate_scoped ρ he.1 b 1⟩, ?_⟩
-    intro p hp j hj U hx hu heap hok a ha
-    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-    change Safe (meaning G q.2) j U heap (subst 0 a (instantiate 1 ρ b))
-    rw [instantiate_beta ρ he.1]
-    exact ih q hq j U heap (push a ρ) ((he.transfer j (Nat.le_of_lt hj) U hx).push ha) hu hok
+    have hcode : CodeSpec (L.map fun p => (meaning G p.1, meaning G p.2))
+        n W (instantiate 1 ρ b) := by
+      refine ⟨instantiate_scoped ρ he.1 b 1, ?_⟩
+      intro p hp j hj U hx hu heap hok a ha
+      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+      rw [instantiate_beta ρ he.1]
+      exact ih q hq j U heap (push a ρ) ((he.transfer j (Nat.le_of_lt hj) U hx).push ha) hu hok
+    have hs := attach_rule nulT_adm n W h _ .nul hcode rfl hw hh rfl
+    exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr hv.2) W h _ hs
   | @app Γ f F L A B a hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
     apply bind (fun f => .app f (instantiate 0 ρ a)) Step.appL n W h _ hw hh (ihf n W h ρ he hw hh)

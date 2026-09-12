@@ -15,11 +15,11 @@ private def evidence : Evidence Nat :=
 #guard (expressionWith G [[0]] [] 3 [] term [0]).isSome
 
 /- The consumer no longer accepts lambda application as a binding certificate. -/
-#guard !checkTree G (.node ⟨[],.app (.lam (.var 0)) .tru,[0]⟩ .letE
+#guard !checkTree G (.node ⟨[],.app (.funE (.var 0)) .tru,[0]⟩ .letE
   [.node ⟨[],.tru,[0]⟩ .tru [], .node ⟨[[0]],.var 0,[0]⟩ .var []])
 
 /- The producer cannot use the removed shortcut to avoid a function type. -/
-#guard !(expressionWith G [[0]] [] 3 [] (.app (.lam (.var 0)) .tru) [0]).isSome
+#guard !(expressionWith G [[0]] [] 3 [] (.app (.funE (.var 0)) .tru) [0]).isSome
 
 /- The binder scopes the body, not its initializer. -/
 #guard checkScope 0 term
@@ -39,8 +39,8 @@ example (h : Heap) : ¬ Step h (.letE (.app .nul .nul) (.alloc .tru)) h' t' := b
   | letC hs => exact stuck_no_step hs
   | letV hv => simp [isVal] at hv
 
-example : Step [.tru] (.letE (.write (.obj 0 .nul) .fls) (.read (.obj 0 .nul)))
-    [.fls] (.letE .nul (.read (.obj 0 .nul))) :=
+example : Step [.tru] (.letE (.write (.obj 0 .absent) .fls) (.read (.obj 0 .absent)))
+    [.fls] (.letE .nul (.read (.obj 0 .absent))) :=
   .letC (.writeV rfl (by decide))
 
 /-- Closing substitution respects the additional binder only in the body. -/
