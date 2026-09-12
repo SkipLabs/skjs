@@ -19,6 +19,32 @@ theorem props_merge (A C : Fam) (Bs Ds : List Fam) (n W v) :
   · rintro ⟨ha,hb,hc,hd⟩; exact ⟨⟨ha,hb⟩,hc,hd⟩
   · rintro ⟨⟨ha,hb⟩,hc,hd⟩; exact ⟨ha,hb,hc,hd⟩
 
+/-- A callability-neutral bag needs no new clause: plain bags and callable
+bags with no invocation promises cover exactly the scoped bag values. -/
+theorem neutral_iff (A : Fam) (Bs : List Fam) (n W v) :
+    unionT (ReferenceConjunctions.refsT A Bs) (objectsT A Bs []) n W v ↔
+      propsT A Bs n W v ∧ Scoped 0 v := by
+  constructor
+  · intro h
+    rcases h with h | h
+    · refine ⟨⟨refT_bag h.1, fun B hb => refT_bag (h.2 B hb)⟩, ?_⟩
+      obtain ⟨l,c,rfl,_,_⟩ := h.1
+      trivial
+    · exact ⟨h.1,h.2.1.scoped⟩
+  · rintro ⟨h,hs⟩
+    obtain ⟨l,code,rfl,_,hr⟩ := h.1
+    cases code with
+    | absent =>
+      left
+      refine ⟨hr,?_⟩
+      intro B hb
+      obtain ⟨l',code,he,_,hr⟩ := h.2 B hb
+      cases he
+      exact hr
+    | closure b =>
+      right
+      exact ⟨h,⟨b,l,rfl,hs⟩,by simp⟩
+
 theorem merge (A C : Fam) (Bs Ds : List Fam) (L M : List (Fam × Fam)) (n W v) :
     objectsT A (Bs ++ C :: Ds) (L ++ M) n W v ↔
       interT (objectsT A Bs L) (objectsT C Ds M) n W v := by
@@ -51,6 +77,7 @@ theorem congr_below {α : Type} (X Y : α → Fam) (a : α) (bs : List α) (L : 
   · exact (bagT_contractive n _ _ (h b) W v).mp (hb b hm)
   · exact (bagT_contractive n _ _ (h b) W v).mpr (hb b hm)
 
+#print axioms neutral_iff
 #print axioms merge
 #print axioms adm
 #print axioms congr_below
