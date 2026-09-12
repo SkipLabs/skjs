@@ -960,6 +960,9 @@ callee first, then the leftmost unfinished actual. Its transitions are proved
 equivalent to the preparation/dispatch interface, deterministic, and coherent.
 Body typing now establishes exact-arity list invocation contracts by prepending
 all parameter bindings before captures; unary creation rules share that proof.
+Declarative overload coverage now handles ordered domain lists, pointwise
+contravariance, union splitting at any argument position, and compatible result
+combination. The unary subtype soundness proof uses this general rule.
 Next, extend type-graph nodes, typing certificates and the producer/consumer
 together. Multi-argument source calls remain gated.
 

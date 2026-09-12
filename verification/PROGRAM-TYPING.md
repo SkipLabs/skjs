@@ -1128,6 +1128,17 @@ resulting table and all arrow evidence. This search is deliberately incomplete:
 it does not enumerate arbitrary intermediate types, transitivity derivations,
 or arbitrary nested arrow-combination proofs.
 
+The semantic coverage rule `CallArrow` now admits ordered parameter lists.
+Source selection checks inclusion contravariantly at every argument position,
+with equal actual counts. A union may split at any position while preserving
+its prefix and suffix. An empty type at any position makes the domain
+uninhabited; an empty parameter list itself still admits a zero-argument call.
+Result combination uses the same compatibility check and shared-execution
+argument as unary overloads. `Arrow.sound` embeds existing unary derivations
+into `CallArrow.sound`, so current certificates already rely on the general
+proof. Graph signatures, certificate syntax and search still expose unary
+calls; this proof does not widen the accepted source fragment.
+
 The final `accept` check binds the evidence to **all the requested point claims**
 as well as calling `checkEntry` on the actual program and external input context. Thus a valid certificate
 for different annotations is rejected. Lean proves:

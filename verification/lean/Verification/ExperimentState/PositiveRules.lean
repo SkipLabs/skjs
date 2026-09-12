@@ -82,6 +82,109 @@ theorem compatible_sound {G : NormalGraph ι} {i k : ι} {n W U v}
 def FamLeAt (G : NormalGraph ι) (a b : List ι) (n : Nat) : Prop :=
   ∀ (W : WorldT n) (v : Val), meaning G a n W v → meaning G b n W v
 
+/-- Pointwise domain inclusion requires the same number of actual arguments. -/
+def Domains (R : List ι → List ι → Prop) : List (List ι) → List (List ι) → Prop
+  | [], [] => True
+  | a :: As, b :: Bs => R a b ∧ Domains R As Bs
+  | _, _ => False
+
+theorem Domains.sound {G : NormalGraph ι} {R As Bs n}
+    (hd : Domains R As Bs) (hr : ∀ a b, R a b → FamLeAt G a b n)
+    {W args} (ha : ArgsT (As.map (meaning G)) n W args) :
+    ArgsT (Bs.map (meaning G)) n W args := by
+  induction As generalizing Bs args with
+  | nil => cases Bs <;> simp_all [Domains]
+  | cons A As ih =>
+    cases Bs with
+    | nil => exact False.elim hd
+    | cons B Bs =>
+      cases args with
+      | nil => exact False.elim ha
+      | cons a args => exact ⟨hr A B hd.1 W a ha.1, ih hd.2 ha.2⟩
+
+/-- A union at any argument position splits calls without reordering positions. -/
+theorem args_union {G : NormalGraph ι} (pre : List (List ι)) (a b : List ι)
+    (suffix : List (List ι)) (n W args) :
+    ArgsT ((pre ++ (a ++ b) :: suffix).map (meaning G)) n W args ↔
+      ArgsT ((pre ++ a :: suffix).map (meaning G)) n W args ∨
+      ArgsT ((pre ++ b :: suffix).map (meaning G)) n W args := by
+  induction pre generalizing args with
+  | nil =>
+    cases args with
+    | nil => simp [ArgsT]
+    | cons v args =>
+      simp only [List.nil_append, List.map_cons, ArgsT]
+      have hm : meaning G (a ++ b) n W v ↔ meaning G a n W v ∨ meaning G b n W v := by
+        simp [meaning, setSem, List.mem_append, or_and_right, exists_or]
+      rw [hm]
+      exact or_and_right
+  | cons A pre ih =>
+    cases args with
+    | nil => simp [ArgsT]
+    | cons v args =>
+      simp only [List.cons_append, List.map_cons, ArgsT, ih]
+      exact and_or_left
+
+theorem args_empty {G : NormalGraph ι} {As : List (List ι)} {n W args} (he : [] ∈ As)
+    (ha : ArgsT (As.map (meaning G)) n W args) : False := by
+  induction As generalizing args with
+  | nil => simp at he
+  | cons A As ih =>
+    cases args with
+    | nil => exact ha
+    | cons a args =>
+      rcases List.mem_cons.mp he with he | he
+      · subst A; obtain ⟨i, hi, _⟩ := ha.1; simp at hi
+      · exact ih he ha.2
+
+/-- Declarative overload coverage for native argument-list signatures. -/
+inductive CallArrow (G : NormalGraph ι) (R : List ι → List ι → Prop)
+    (L : List (List (List ι) × List ι)) : List (List ι) → List ι → Prop where
+  | empty : [] ∈ As → CallArrow G R L As d
+  | source : p ∈ L → Domains R As p.1 → (p.2 = [] ∨ R p.2 d) → CallArrow G R L As d
+  | union : CallArrow G R L (pre ++ a :: suffix) d →
+      CallArrow G R L (pre ++ b :: suffix) d →
+      CallArrow G R L (pre ++ (a ++ b) :: suffix) d
+  | combine : CallArrow G R L As b → CallArrow G R L As b' →
+      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → CallArrow G R L As d
+
+theorem CallArrow.sound {G : NormalGraph ι} {R L As d} (hc : CallArrow G R L As d) (n : Nat)
+    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
+    (W : WorldT n) (v : Val)
+    (hv : callsT (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W v) :
+    callsT [(As.map (meaning G), meaning G d)] n W v := by
+  obtain ⟨arity, body, loc, rfl, hscope, hs⟩ := hv
+  refine ⟨arity, body, loc, rfl, hscope, ?_⟩
+  intro p hp
+  have he : p = (As.map (meaning G), meaning G d) := List.mem_singleton.mp hp
+  subst p
+  clear hp
+  induction hc with
+  | empty he =>
+    intro j hj U hx hu heap hh args ha
+    exact False.elim (args_empty he ha)
+  | source hm hd hc =>
+    intro j hj U hx hu heap hh args ha
+    have hb := hs _ (List.mem_map_of_mem hm) j hj U hx hu heap hh args
+      (hd.sound (hr j hj) ha)
+    apply Safe_mono j _ U heap _ hb
+    intro r hb V u hu
+    rcases hc with he | he
+    · obtain ⟨i, hi, _⟩ := hu; simp [he] at hi
+    · exact hr r (by omega) _ _ he V u hu
+  | union _ _ hl hh =>
+    intro j hj U hx hu heap hok args ha
+    rcases (args_union _ _ _ _ j U args).mp ha with ha | ha
+    · exact hl j hj U hx hu heap hok args ha
+    · exact hh j hj U hx hu heap hok args ha
+  | combine _ _ hg hl hh =>
+    intro j hj U hx hu heap hok args ha
+    apply safe_cross_upto j _ U U heap _ hok hok
+      (hl j hj U hx hu heap hok args ha) (hh j hj U hx hu heap hok args ha)
+    rintro r hb V V' heap h1 h2 u ⟨i, hi, hv1⟩ ⟨k, hk, hv2⟩
+    exact hr r (by omega) _ _ (hg i hi k hk (compatible_sound hv1 hv2)) V u
+      ⟨i, by simp, hv1⟩
+
 inductive Arrow (G : NormalGraph ι) (R : List ι → List ι → Prop)
     (L : Ops ι) : List ι → List ι → Prop where
   | empty : Arrow G R L [] d
@@ -98,41 +201,27 @@ theorem Arrow.split {G : NormalGraph ι} {R L c d}
   | cons i tail ih =>
     exact .union (h i (by simp)) (ih (fun k hk => h k (by simp [hk])))
 
+/-- Existing unary certificates embed in native list coverage. -/
+theorem Arrow.toCallArrow {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) :
+    CallArrow G R (L.map fun p => ([p.1], p.2)) [c] d := by
+  induction hc with
+  | empty => exact .empty (by simp)
+  | source hm hd hc => exact .source (List.mem_map_of_mem hm) ⟨hd, trivial⟩ hc
+  | union _ _ hl hh => exact .union (pre := []) (suffix := []) hl hh
+  | combine _ _ hg hl hh => exact .combine hl hh hg
+
 theorem Arrow.sound {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)
     (hv : arrowsT (L.map fun p => (meaning G p.1, meaning G p.2)) n W v) :
     arrowT (meaning G c) (meaning G d) n W v := by
-  induction hc with
-  | empty =>
-    refine ⟨hv.1, ?_⟩
-    rintro j hj U hx hu h hh x ⟨i, hi, _⟩
-    simp at hi
-  | source hm hd hc =>
-    refine ⟨hv.1, ?_⟩
-    intro j hj U hx hu h hh x ha
-    have hs := hv.2 _ (List.mem_map_of_mem hm) j hj U hx hu h hh x
-      (hr j hj _ _ hd U x ha)
-    apply Safe_mono j _ U h _ hs
-    intro r hb V u hu
-    rcases hc with he | he
-    · obtain ⟨i, hi, _⟩ := hu
-      simp [he] at hi
-    · exact hr r (by omega) _ _ he V u hu
-  | union _ _ hl hh =>
-    refine ⟨hv.1, ?_⟩
-    rintro j hj U hx hu h hok x ⟨i, hi, hxv⟩
-    rcases List.mem_append.mp hi with hi | hi
-    · exact hl.2 j hj U hx hu h hok x ⟨i, hi, hxv⟩
-    · exact hh.2 j hj U hx hu h hok x ⟨i, hi, hxv⟩
-  | combine _ _ hg hl hh =>
-    refine ⟨hv.1, ?_⟩
-    intro j hj U hx hu h hok x ha
-    apply safe_cross_upto j _ U U h _ hok hok
-      (hl.2 j hj U hx hu h hok x ha) (hh.2 j hj U hx hu h hok x ha)
-    rintro r hb V V' heap h1 h2 u ⟨i, hi, hv1⟩ ⟨k, hk, hv2⟩
-    exact hr r (by omega) _ _ (hg i hi k hk (compatible_sound hv1 hv2)) V u
-      ⟨i, by simp, hv1⟩
+  have hcalls : callsT ((L.map fun p => ([p.1], p.2)).map
+      fun p => (p.1.map (meaning G), meaning G p.2)) n W v := by
+    simpa only [List.map_map, Function.comp_def, List.map_cons, List.map_nil] using
+      (arrowsT_callsT _ n W v).mp hv
+  have hout := hc.toCallArrow.sound n hr W v hcalls
+  have harr := (arrowsT_callsT [(meaning G c, meaning G d)] n W v).mpr hout
+  exact ⟨harr.1, harr.2 (meaning G c, meaning G d) (by simp)⟩
 
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
@@ -247,5 +336,8 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
     exact .trans (.subset (fun i hi => (hs i).mp hi))
       (.trans h (.subset (fun i hi => (ht i).mpr hi)))
 
+#print axioms Domains.sound
+#print axioms CallArrow.sound
+#print axioms Arrow.sound
 #print axioms Sub.sound
 end Verification.ExperimentState.PositiveRules
