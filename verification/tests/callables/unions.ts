@@ -114,3 +114,17 @@ function callableArgumentWrite(seed: boolean): boolean {
   const result: boolean = read((cell.value = false));
   return result;
 }
+
+/**
+ * A nested call writes an outer captured cell through its argument. Saving the
+ * write receiver and RHS introduces temporary bindings around the named
+ * parameter is evaluated; those bindings must not change what the names refer to.
+ */
+function nestedCallableArgumentWrite(seed: boolean): boolean {
+  const cell: { value: boolean } = { value: seed };
+  const read: (value: boolean) => boolean = (value: boolean): boolean =>
+    cell.value;
+  const invoke: (next: boolean) => boolean = (next: boolean): boolean =>
+    read((cell.value = next));
+  return invoke(false);
+}

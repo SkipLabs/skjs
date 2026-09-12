@@ -1429,6 +1429,12 @@ returns its RHS. The original Boolean export verifies; an explicit false-result
 refinement also verifies with a false-only callee view and fresh evidence.
 The original evidence cannot justify that stronger request. Captured reads
 continue to use the Boolean invariant rather than an invented singleton.
+`nestedCallableArgumentWrite` exercises the compositional closure path for an
+argument write. Its exact expression proof saves the receiver, binds the named
+RHS at the shifted position, writes once, and returns that saved RHS. Corrupting
+the evidence to use the Boolean seed capture instead of the Boolean parameter
+fails, even though their types agree. Wrong receiver and narrowed RHS/result
+claims also fail production and independent consumption.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved

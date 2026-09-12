@@ -247,6 +247,45 @@ try {
     expect("original evidence cannot replace refined assignment proof", run("--check-stateful-source", ast, c, evidence), false);
   }
 
+  for (const [name, edit] of [
+    ["nested argument receiver must remain the captured cell", (call, at) => {
+      call.arg.receiver.name = "next";
+    }],
+    ["nested argument RHS must retain its parameter contract", (call, at) => {
+      at(call.arg.rhs).type = lit("false");
+    }],
+    ["nested assignment must return its saved RHS", (call, at) => {
+      at(call.arg).type = {top: false, atoms: [{a: "null"}]};
+    }],
+  ] as [string, (...xs: any[]) => any][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "nestedCallableArgumentWrite");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "nestedCallableArgumentWrite");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f.body[2].init.body, at);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+  {
+    const index = ast.functions.findIndex((f: any) => f.name === "nestedCallableArgumentWrite");
+    const variable = (i: number) => ({var: {i}});
+    const letE = (a: any, b: any) => ({letE: {a, b}});
+    // Context: next, read, cell, seed. After saving cell, next moves to slot 1;
+    // the write consumes saved operands and the assignment returns saved next.
+    const expected = letE(variable(2), letE(variable(1),
+      letE({write: {a: variable(1), b: variable(0)}}, variable(1))));
+    const proof = evidence.obligations[index].findIndex((e: any) => {
+      try { assert.deepEqual(e.node.claim.term, expected); return true; } catch { return false; }
+    });
+    assert(proof >= 0, "nested argument must retain receiver and named RHS bindings");
+    passed++;
+    console.log("  nested argument preserves exact lexical slots: OK");
+    const changed = clone(evidence);
+    // Seed is also Boolean, but substituting it for next changes the program.
+    changed.obligations[index][proof].node.claim.term.letE.b.letE.a = variable(4);
+    expect("same-typed capture cannot replace argument parameter", run("--check-stateful-source", ast, claims, changed), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
