@@ -1286,8 +1286,15 @@ executing the body. Allocation, application, bag reads and writes,
 and overload conjunction have safety proofs. The existing `refT` and graph
 reference clauses still mean plain objects: general bag and callable views
 have not yet been added to the certificate language or source lowering.
-Construction, receivers, exceptions, richer property operations, and a global
-identity/descriptor coherence invariant remain outside this implemented slice.
+`ObjectCoherence.step_preserves` proves global identity/descriptor coherence
+for the operational machine using an append-only ghost registry, including
+objects nested in code and heap cells. `GraphCoherence.accepted_closed_coherent`
+connects that invariant to every finite run of an accepted graph. The consumer
+checks that graph syntax cannot embed runtime identities; external inputs must
+already be coherent. Semantic type families remain defined over unrestricted
+raw values, so coherence is a separate execution invariant, not a new membership
+premise. Construction, receivers, exceptions, and richer property operations
+remain outside this implemented slice.
 
 SKJS has no separate function type. A function type is an object type whose
 fields carry a `call` member, and every object type carries a call mode from a

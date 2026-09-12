@@ -34,9 +34,26 @@ The closure body is not evaluated during creation. There is no bare lambda value
 
 `make_rule` proves heap and world extension once, with a result obligation for
 the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that
-proof to plain reference and callable contracts. Unique descriptors for every
-occurrence of an identity still need a separate global coherence invariant;
-unified fresh allocation alone does not impose one on arbitrary runtime terms.
+proof to plain reference and callable contracts.
+
+[ObjectCoherence.lean](lean/Verification/ExperimentState/ObjectCoherence.lean)
+proves the separate identity invariant. An append-only ghost registry records
+each allocation's descriptor. Every object occurrence in terms, closure bodies,
+and heap cells agrees with that registry; an already allocated closure has no
+free variables other than its argument. Substitution therefore preserves its
+descriptor. `step_preserves` follows the existing `Step` relation and proves that
+reads, writes, calls, and allocation preserve coherence, including heap cycles.
+The registry is proof data, not an additional runtime heap.
+
+[GraphCoherence.lean](lean/Verification/ExperimentState/GraphCoherence.lean)
+lifts this to the existing graph execution, including saved environments and
+slot maps. The graph consumer checks `sourceTerm` on every node, forbidding
+embedded runtime identities even inside unselected branches and empty-overload
+bodies. `accepted_closed_coherent` covers every finite prefix of an accepted
+closed invocation. External invocations preserve a supplied coherent heap and
+environment, with all pre-existing descriptors unchanged. This theorem is
+separate from semantic type safety: arbitrary raw terms and the unrestricted
+semantic families do not themselves impose a global registry.
 
 `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
 about the same objects. `letE a b` is an explicit binding: it evaluates `a`,

@@ -1,3 +1,4 @@
+import Verification.ExperimentState.ObjectCoherence
 import Verification.ExperimentState.BranchRefinement
 import Verification.ExperimentState.HeapExpressionRules
 
@@ -116,7 +117,7 @@ def checkGraph [DecidableEq ι] (G : NormalGraph ι) (Rty : Ty ι)
   decide (P.length = C.length) && (List.range P.length).all (fun l =>
     match P[l]?, C[l]? with
     | some node, some c => checkNode G Rty P C node c
-    | _, _ => false)
+    | _, _ => false) && P.all (fun node => ObjectCoherence.sourceTerm node.expression)
 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target) (facts : HeapKnowledge.Knowledge) : Prop :=
   ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping ∧ HeapKnowledge.check facts c.knowledge l.mapping = true
@@ -187,6 +188,7 @@ theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {Rty P C c} {l : Nat}
     ∃ node : Node, P[l]? = some node ∧ ExpressionOk G c node.expression ∧
       ContinuationOk G Rty C (entry c) (result c) c.output node.continuation := by
   simp only [checkGraph, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hg
+  have hg := hg.1
   have hl : l < P.length := by
     rw [hg.1]
     exact (List.getElem?_eq_some_iff.mp hc).1
