@@ -34,18 +34,19 @@ Run `make verify-test` for the suites or `make verify-examples` for the corpus.
 [factories.ts](factories.ts) exercises two calls to a factory that allocates a
 private Boolean cell and returns a closure that writes its argument and returns
 the old contents. A control hoists the cell outside the factory, so the returned
-closures share state. Both original SKJS exports now produce certificates checked
+closures share state. Both original SKJS exports produce certificates checked
 by the independent consumer in [callable-factories.mts](../callable-factories.mts).
+The TypeScript producer also verifies both factories, with independent consumption
+in [tsc-claims.mts](../tsc-claims.mts). They appear in the Callables corpus and
+report viewer alongside the union examples.
 Narrowing the returned closure's result to false fails both fresh production and
 reuse of the original evidence.
 
 These Boolean contracts establish type safety, not the exact instance-isolation
 observations: calls `first(true)`, `second(false)`, `first(false)` should return
 false, false, true for private cells and false, true, false for the shared cell.
-That semantic execution check remains deferred. The fixtures are suite coverage;
-they are not yet in the two-producer corpus because the tsc adapter still limits
-arrow results to primitives. Callable arguments and record-valued results also
-remain outside this source fragment.
+That semantic execution check remains deferred. Callable arguments and
+record-valued results remain outside this source fragment.
 
 That module also checks unions of overloaded functions using explicit normalized
 source claims. Null and Boolean arguments select different signatures in each

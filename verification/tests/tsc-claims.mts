@@ -23,8 +23,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 // Why each file lands where it does. A verified file says tsc's claims are
 // derivable in the calculus; a failing one names what stops them.
 const expected = {
-  // Callable results are not yet representable by the tsc producer.
-  "callables/factories": "failed",
+  // Factories return closures that capture either private or shared cells.
+  "callables/factories": "verified",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -100,6 +100,13 @@ for (const [name, want] of Object.entries(expected)) {
         "10",
       ]);
       got = checked.status === 0 ? "verified" : "failed";
+      if (got === "verified" && name === "callables/factories") {
+        const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
+        if (consumed.status !== 0) {
+          got = "consumer-failed";
+          detail = consumed.stderr;
+        }
+      }
       if (got === "failed")
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");
     }
