@@ -27,8 +27,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
-  // An unmentioned nullable callback currently loses its declared contract at entry.
-  "callables/unions": "failed",
+  // Guarded and unmentioned callbacks retain their own declared contracts.
+  "callables/unions": "verified",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -111,6 +111,10 @@ for (const [name, want] of Object.entries(expected)) {
         const secondCall = fn.body[4].e;
         assert.equal(firstCall.callee.name, "first");
         assert.equal(secondCall.callee.name, "second");
+        const branchEntry = fc.entries.find((entry) => entry.start === fn.body[3].then[0].pos[0]);
+        assert.ok(branchEntry);
+        assert.deepEqual(branchEntry.bindings.find((binding) => binding.name === "second")?.type, [0],
+          "an unmentioned callback retains its own null branch at statement entry");
         for (const call of [firstCall, secondCall]) {
           const labels = at(call.callee);
           assert.equal(labels.length, 1);

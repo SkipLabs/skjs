@@ -617,7 +617,7 @@ function alwaysReturns(stmt: any): boolean {
 /** Refine a fixed binding contract only along explicit null-test edges.
  * A preceding returning arm establishes the opposite edge for its continuation.
  * Stop at function boundaries: a guard on a later invocation is not in scope. */
-function nullGuardLabels(node: any, checker: Checker, labels: number[]): number[] {
+function nullGuardLabels(node: any, checker: Checker, labels: number[], anchor = node): number[] {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return labels;
   const apply = (cond: any, truth: boolean) => {
@@ -625,7 +625,7 @@ function nullGuardLabels(node: any, checker: Checker, labels: number[]): number[
     if (test?.sym.id === sym.id)
       labels = labels.filter((label) => (label === 0) === (test.equal === truth));
   };
-  let child = node, cur = node.parent;
+  let child = anchor, cur = anchor.parent;
   while (cur && !isFunctionLike(cur)) {
     if (ts.isIfStatement(cur)) {
       if (child === cur.thenStatement) apply(cur.expression, true);
@@ -983,6 +983,11 @@ function bindingLabelsAtEntry(
 ): number[] {
   const ref = findNameRef(anchorSearchScope(stmtNode), binding.name);
   if (ref) return bestLabelsForReference(ref, checker, types, cache, sf);
+  // Absence from the statement does not undo the contract imposed at the
+  // declaration. Apply only guards that dominate this statement's entry.
+  const auth = authoritativeType(binding, checker, types, cache, sf);
+  if (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed)))
+    return nullGuardLabels(binding.decl.name, checker, auth.labels!, stmtNode);
   return translateType(
     must(checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode), "binding-type"),
     checker,

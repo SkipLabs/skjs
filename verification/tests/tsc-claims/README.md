@@ -51,6 +51,9 @@ Lambda and allocation claims under union contexts use the expression's own
 arrow or cell type. Explicit null tests refine a binding's declared contract
 within branches and after an arm that returns; the fallback no longer restores
 null at guarded reads or calls. Matching uses symbol identity and stops at
-function boundaries. No heap-content refinement is inferred from these guards.
+function boundaries. Statement entries use the same declared contracts and
+guards even for bindings absent from that statement; `distinctNullableCallbacks`
+checks both reference and entry claims. No heap-content
+refinement is inferred from these guards.
 Where `tsc` rejects the program outright, its claims describe something it does
 not accept, and the verifier refusing them says nothing about either checker.
