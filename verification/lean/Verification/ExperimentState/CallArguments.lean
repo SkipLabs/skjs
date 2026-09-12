@@ -1,9 +1,9 @@
 import Verification.ExperimentState.Bindings
 
 /-! Call preparation keeps a callee and an ordered argument list separate from
-invocation. It reuses the term machine for operand effects. This is the
-operational interface for argument-list integration, not yet a source calling
-convention or a replacement for the current unary beta rule. -/
+invocation. It reuses the term machine for operand effects and connects prepared
+list dispatch to native call reduction. General operand-list reduction and source
+calling conventions remain integration work. -/
 namespace Verification.ExperimentState.CallArguments
 
 /-- Only the leftmost non-value argument can step. Completed values are retained
@@ -216,6 +216,25 @@ theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
   cases hi with
   | closure _ => exact bound_body_closed (by simpa [Scoped] using hf) ha
 
+/-- Prepared list dispatch is a step of the maintained term machine. -/
+theorem Invoke.step (hi : Invoke frame body) (h : Heap) :
+    Step h (.call frame.callee frame.args) h body := by
+  cases hi with
+  | closure hv => exact .callV hv
+
+/-- A ready native call can only dispatch its saved code, without a heap change. -/
+theorem ready_step_iff (hf : frame.ready) :
+    Step h (.call frame.callee frame.args) h' body ↔ h' = h ∧ Invoke frame body := by
+  rcases frame with ⟨f, args⟩
+  constructor
+  · intro hs
+    cases hs with
+    | appL hs => exact False.elim (value_no_step hf.1 hs)
+    | appR _ hs => exact False.elim (value_no_step (hf.2 _ (by simp)) hs)
+    | callV hv => exact ⟨rfl, .closure hv⟩
+  · rintro ⟨rfl, hi⟩
+    exact hi.step _
+
 /-- A complete decomposition of the maintained unary machine: every step is
 operand preparation or dispatch, and both reconstruct a machine step. -/
 theorem unary_step_iff : Step h (.app f a) h' result ↔
@@ -226,7 +245,7 @@ theorem unary_step_iff : Step h (.app f a) h' result ↔
     cases hs with
     | appL hs => exact Or.inl ⟨_, _, .callee hs, rfl⟩
     | appR hv hs => exact Or.inl ⟨_, _, .args hv (.head hs), rfl⟩
-    | beta hv => exact Or.inr ⟨rfl, .closure (by simpa [Values] using hv)⟩
+    | callV hv => exact Or.inr ⟨rfl, .closure hv⟩
   · rintro (⟨f', a', hp, rfl⟩ | ⟨rfl, hi⟩)
     · obtain ⟨f'', a'', he, hs⟩ := unary_step hp
       cases he
@@ -254,5 +273,7 @@ example : (Frame.mk .nul []).ready := ⟨rfl,by simp [Values]⟩
 #print axioms invoke_no_prepare
 #print axioms invoke_iff
 #print axioms invoke_closed
+#print axioms Invoke.step
+#print axioms ready_step_iff
 #print axioms unary_step_iff
 end Verification.ExperimentState.CallArguments

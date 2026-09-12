@@ -953,8 +953,10 @@ contracts to values, with dispatch safety, admissibility and guarded congruence;
 the existing unary type reuses the general proofs through singleton equivalence.
 Application syntax now uses a native argument list, with the old unary constructor
 replaced by singleton notation. All binding and syntax-validation traversals cover
-the full list. Next, connect general argument preparation and dispatch to native
-call reduction, then extend type-graph nodes, typing certificates and the
+the full list. Ready native calls now dispatch arbitrary argument lists, and
+`call_elim` proves their safety from list-signature membership; unary application
+uses that general rule. Next, connect argument-list operand evaluation to native
+reduction, then extend type-graph nodes, typing certificates and the
 producer/consumer together. Multi-argument source calls remain gated.
 
 ### Next callable and object milestones

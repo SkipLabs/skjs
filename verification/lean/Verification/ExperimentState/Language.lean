@@ -268,7 +268,8 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
-  | beta : isVal a = true → Step h (.app (.obj l (.closure n b)) a) h (CallArguments.bindParameters n [a] b)
+  | callV : (∀ a ∈ args, isVal a = true) →
+      Step h (.call (.obj l (.closure n b)) args) h (CallArguments.bindParameters n args b)
   | makeC : Step h a h' a' → Step h (.make c a) h' (.make c a')
   | makeV : isVal v = true → Step h (.make c v) (h ++ [v]) (.obj h.length c)
   | readC : Step h a h' a' → Step h (.read a) h' (.read a')
@@ -284,6 +285,11 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | iteT : Step h (.ite .tru t e) h t
   | iteF : Step h (.ite .fls t e) h e
 
+
+/-- The existing unary beta rule is a specialization of list dispatch. -/
+theorem Step.beta (ha : isVal a = true) :
+    Step h (.app (.obj l (.closure n b)) a) h (CallArguments.bindParameters n [a] b) :=
+  .callV (by simpa using ha)
 
 theorem nul_no_step {h h' t} : ¬ Step h .nul h' t := by intro s; cases s
 theorem tru_no_step {h h' t} : ¬ Step h .tru h' t := by intro s; cases s
@@ -337,12 +343,12 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | appL s' => exact (ih s').imp id (congrArg (Tm.app · _))
     | appR hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
-    | beta => exact absurd s obj_no_step
+    | callV => exact absurd s obj_no_step
   | appR hv s ih =>
     cases s2 with
     | appL s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
     | appR _ s' => exact (ih s').imp id (congrArg (Tm.app _ ·))
-    | beta hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
+    | callV hv' => exact absurd s (by intro hs; exact value_no_step (hv' _ (by simp)) hs)
   | letC hs ih =>
     cases s2 with
     | letC hs' => exact (ih hs').imp id (congrArg (Tm.letE · _))
@@ -351,11 +357,11 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     cases s2 with
     | letC hs => exact absurd hs (value_no_step hv)
     | letV => exact ⟨rfl, rfl⟩
-  | beta hv =>
+  | callV hv =>
     cases s2 with
     | appL hs => exact absurd hs obj_no_step
-    | appR _ hs => exact absurd hs (value_no_step hv)
-    | beta => exact ⟨rfl, rfl⟩
+    | appR _ hs => exact absurd hs (value_no_step (hv _ (by simp)))
+    | callV => exact ⟨rfl, rfl⟩
   | makeC hs ih =>
     cases s2 with
     | makeC hs' => exact (ih hs').imp id (congrArg (Tm.make _))
@@ -420,7 +426,7 @@ theorem beta_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
   cases hs with
   | appL hs => cases hs
   | appR _ hs => exact False.elim (value_no_step ha hs)
-  | beta => exact ⟨rfl, rfl⟩
+  | callV => exact ⟨rfl, rfl⟩
 
 /-- Binding a value spends one step and leaves the heap unchanged. -/
 theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}

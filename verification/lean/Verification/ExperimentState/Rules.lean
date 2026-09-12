@@ -22,6 +22,24 @@ theorem fn_intro {l : Nat} {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : S
         Safe B j U heap (subst 0 a b)) : arrowT A B k W (.fn l b) :=
   ⟨⟨1, b, l, rfl, hc⟩, h⟩
 
+/-- Ready native list calls consume one step, then satisfy the chosen result
+contract. The domains transfer all saved actuals to that smaller budget. -/
+theorem call_elim {L : List (List Fam × Fam)} {p : List Fam × Fam}
+    (hA : ∀ A ∈ p.1, Adm A) (hAv : ∀ A ∈ p.1, ValOnly A)
+    {n : Nat} {W : WorldT n} {f : Tm} {args : List Tm} {heap : Heap}
+    (hf : callsT L n W f) (hp : p ∈ L) (ha : ArgsT p.1 n W args)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe p.2 n W heap (.call f args) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    let U := trunc n (Nat.le_succ n) W
+    have hu : WorldAdm U := WorldAdm_trunc _ hw
+    have hh' : HeapOk n U heap := HeapOk_trunc n W heap hh
+    have ha' := ArgsT_transfer hA ha n (Nat.le_succ n) U (WExt_refl _)
+    obtain ⟨body, hi, hs⟩ := callsT_invoke hf hp (Nat.lt_succ_self n)
+      (WExt_refl _) hu hh' hAv ha'
+    exact Or.inr ⟨U, heap, body, WExt_refl _, hu, hi.step heap, hh', hs⟩
+
 /-- Same-budget application compatibility, the rule needed for the fundamental
  theorem under semantic environments. Both values are available at the current
 budget; beta consumes one step and uses the function guarantee below it. -/
@@ -29,14 +47,13 @@ theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
     {n : Nat} {W : WorldT n} {f a : Tm} {heap : Heap}
     (hf : arrowT A B n W f) (ha : A n W a)
     (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe B n W heap (.app f a) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    exact Or.inr ⟨trunc n (Nat.le_succ n) W, heap, callBody f a,
-      WExt_refl _, WorldAdm_trunc _ hw, hf.1.step (hAv _ _ _ ha) heap,
-      HeapOk_trunc n W heap hh,
-      hf.2 n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hw) heap
-        (HeapOk_trunc n W heap hh) a (hA.down n W a ha)⟩
+  apply call_elim (L := [([A], B)]) (p := ([A], B))
+    (by simpa using hA) (by simpa using hAv)
+  · exact (arrowsT_callsT [(A, B)] n W f).mp ((arrowsT_singleton A B n W f).mpr hf)
+  · simp
+  · exact ⟨ha, trivial⟩
+  · exact hw
+  · exact hh
 
 /-- **Beta.** -/
 theorem beta_rule {l : Nat} {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
@@ -268,6 +285,8 @@ theorem diverging_in_arrowsT (L : List (Fam × Fam))
   exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 
 
+#print axioms call_elim
+#print axioms app_elim
 #print axioms let_rule
 
 end ExperimentState

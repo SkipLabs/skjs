@@ -168,13 +168,13 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
   | letV hv =>
     intro D hh ht
     exact ⟨D,.refl D,hh,subst_scoped ht.1.2 ht.1.1 (by omega),ht.2.2.subst ht.2.1 0⟩
-  | beta hv =>
+  | callV hv =>
     intro D hh ht
-    simp only [TermOk, Scoped, ScopedArgs, Names, NamesArgs, and_true] at ht
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht
     refine ⟨D,.refl D,hh,?_,?_⟩
     · exact CallArguments.bound_body_closed (by simpa [Scoped] using ht.1.1)
-        (by simpa using ht.1.2)
-    · exact ht.2.1.2.2.bindParameters (by simpa using ht.2.2) _
+        ht.1.2
+    · exact ht.2.1.2.2.bindParameters ht.2.2 _
   | @makeC h a h' a' c step ih =>
     intro D hh ht
     cases c with

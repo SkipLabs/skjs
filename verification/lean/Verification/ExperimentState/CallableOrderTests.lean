@@ -82,7 +82,7 @@ theorem argument_blocks_body {h h' t'} :
   cases step with
   | appL step => exact obj_no_step step
   | appR _ step => exact stuck_no_step step
-  | beta hv => simp [isVal] at hv
+  | callV hv => simp [isVal] at hv
 
 #print axioms initializer_blocks_argument
 #print axioms argument_blocks_body

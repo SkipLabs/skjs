@@ -117,10 +117,12 @@ The list traversal helpers are structurally recursive and proved equivalent to
 `map` or universal membership, so the existing singleton computations still
 reduce directly.
 
-The maintained `Step` and typing rules currently cover singleton calls. The
-preparation and dispatch interface below describes arbitrary lists; connecting
-it to the native non-singleton terms is the next operational step. Merely
-constructing a `call` term does not establish that it can step or is typable.
+`Step.callV` dispatches any native call whose callee carries code and whose
+actuals are all values. The previous unary `Step.beta` is its singleton
+specialization. Operand evaluation and the certificate typing rules still cover
+singleton calls; general argument-list preparation remains to be connected to
+native reduction. Constructing a `call` term alone does not establish readiness
+or typing.
 
 [CallArguments.lean](lean/Verification/ExperimentState/CallArguments.lean)
 defines preparation separately from invocation. A frame contains a callee term
@@ -179,13 +181,19 @@ actuals than the descriptor declares.
 `unary_step_iff` proves both directions of the connection to the maintained
 machine: every application step is preparation or dispatch, and either operation
 reconstructs an application step. This includes beta as well as operand effects;
-it introduces no second term evaluator.
+it introduces no second term evaluator. `Invoke.step` embeds dispatch of every
+ready argument list into native reduction. `ready_step_iff` proves the converse:
+a ready call can only dispatch the saved code, and that step leaves the heap
+unchanged.
 
 `callsT` lifts list-signature code contracts to callable values. An overload can
 admit any fixed actual count, including zero, independently of the descriptor's
 parameter count. `callsT_invoke` obtains both a dispatch and its safe body from
 membership and typed value arguments. `ArgsT_transfer` preserves the saved
-arguments' types as budget decreases and the world extends.
+arguments' types as budget decreases and the world extends. `call_elim` uses
+that transfer to prove same-budget safety of a native call on typed values: the
+call spends one step and the body uses the remaining budget. The existing unary
+`app_elim` now specializes this list-call rule.
 
 `callsT_adm` proves admissibility without assuming admissible domains, and
 `callsT_congr` proves that every argument position and result is guarded by the
@@ -201,7 +209,7 @@ current beta rule and semantic call helper both use `bindParameters` with the
 saved descriptor's arity. `arrowsT_invocation_iff` connects unary actual-argument
 contracts to code of any declared arity. Source creation still uses arity one
 (including the current implicit-undefined thunk encoding). General argument-list
-reduction rules, list-domain type-graph nodes, typing
+operand reduction, list-domain type-graph nodes, typing
 certificates and source integration remain to be added before multi-argument
 source calls are enabled.
 
