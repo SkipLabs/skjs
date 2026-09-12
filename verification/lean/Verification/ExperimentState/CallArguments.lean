@@ -1,4 +1,4 @@
-import Verification.ExperimentState.Language
+import Verification.ExperimentState.Bindings
 
 /-! Call preparation keeps a callee and an ordered argument list separate from
 invocation. It reuses the term machine for operand effects. This is the
@@ -126,6 +126,68 @@ theorem unary_step (s : Prepare h ⟨f,[a]⟩ h' frame) :
     obtain ⟨a',rfl,ha⟩ := singleton.mp hs
     exact ⟨_,_,rfl,.appR hv ha⟩
 
+/-- Runtime parameter binding pads missing arguments with undefined and ignores
+extra values. Preparation still evaluates the entire actual list first. -/
+def parameters : Nat → List Tm → List Tm
+  | 0, _ => []
+  | n+1, [] => .undef :: parameters n []
+  | n+1, a::args => a :: parameters n args
+
+theorem parameters_length (n : Nat) (args : List Tm) :
+    (parameters n args).length = n := by
+  induction n generalizing args with
+  | zero => rfl
+  | succ n ih => cases args <;> simp [parameters, ih]
+
+/-- Position i receives actual i if present, otherwise undefined. -/
+theorem parameter_at (hi : i < n) :
+    (parameters n args)[i]? = some (args[i]?.getD .undef) := by
+  induction n generalizing args i with
+  | zero => omega
+  | succ n ih =>
+    cases args <;> cases i <;> simp only [parameters, List.getElem?_cons_zero,
+      List.getElem?_cons_succ, List.getElem?_nil, Option.getD_some, Option.getD_none]
+    · exact ih (by omega)
+    · exact ih (by omega)
+
+theorem parameters_property {P : Tm → Prop} (hu : P .undef)
+    (ha : ∀ a ∈ args, P a) : ∀ a ∈ parameters n args, P a := by
+  induction n generalizing args with
+  | zero => simp [parameters]
+  | succ n ih =>
+    cases args with
+    | nil =>
+      intro a hm
+      simp only [parameters, List.mem_cons] at hm
+      rcases hm with rfl | hm
+      · exact hu
+      · exact ih (by simp) a hm
+    | cons v args =>
+      intro a hm
+      simp only [parameters, List.mem_cons] at hm
+      rcases hm with rfl | hm
+      · exact ha a (by simp)
+      · exact ih (fun a h => ha a (by simp [h])) a hm
+
+/-- Bind a prepared argument list without evaluating or allocating anything. -/
+def bindParameters (arity : Nat) (args : List Tm) (body : Tm) : Tm :=
+  bindArgs 0 (parameters arity args) body
+
+theorem bound_body_closed (hb : Scoped arity body)
+    (ha : ∀ a ∈ args, Scoped 0 a) : Scoped 0 (bindParameters arity args body) := by
+  apply bindArgs_scoped
+  · simpa [parameters_length] using hb
+  · exact parameters_property (by trivial) ha
+
+theorem prepared_parameters_values {frame : Frame} (hf : frame.ready) : Values (parameters arity frame.args) :=
+  parameters_property rfl hf.2
+
+/-- The new binding operation recovers the current unary beta substitution. -/
+theorem unary_binding (a body : Tm) : bindParameters 1 [a] body = subst 0 a body := rfl
+
+theorem omitted_unary_binding (body : Tm) :
+    bindParameters 1 [] body = subst 0 .undef body := rfl
+
 -- A stuck first argument blocks a later write; readiness does not itself
 -- assert callability (a primitive callee still has to fail at invocation).
 example : ¬ ArgStep [.tru] [.app .nul .nul, .write (.obj 0 .absent) .fls] h' args' := by
@@ -136,6 +198,8 @@ example : ¬ ArgStep [.tru] [.app .nul .nul, .write (.obj 0 .absent) .fls] h' ar
 
 example : (Frame.mk .nul []).ready := ⟨rfl,by simp [Values]⟩
 
+#print axioms parameter_at
+#print axioms bound_body_closed
 #print axioms prefix_iff
 #print axioms deterministic
 #print axioms prepare_deterministic

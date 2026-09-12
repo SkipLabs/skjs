@@ -45,7 +45,7 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
 not an additional runtime operation. Arrow membership separately requires a
 callable shape, so the fallback branch is never used for typed application. -/
 def callBody (v a : Tm) : Tm := match v with
-  | .obj _ (.closure b) => subst 0 a b
+  | .obj _ (.closure b) => bindArgs 0 [a] b
   | _ => .app .nul .nul
 
 /-- Only an object with closed invocation code is a callable value. -/

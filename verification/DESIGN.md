@@ -939,9 +939,11 @@ now separates callee evaluation, left-to-right argument evaluation and readiness
 for invocation. Its singleton case agrees with existing unary congruence rules.
 `tests/callables/arity.ts` fixes the required source evaluation order with a
 JavaScript witness and remains an explicitly unsupported source fixture.
-Next, connect the prepared value list to a descriptor and binding rule that
-retains arity, then extend arrow contracts and the producer/consumer together.
-Preparation alone does not enable multiple arguments.
+Parameter binding now preserves declaration order and captures, pads missing
+actuals with undefined, and discards extra values only after preparation. The
+current unary beta step uses the shared binder. Next, connect prepared lists to
+arity-bearing descriptors, then extend arrow contracts and the producer/consumer
+together. Multi-argument source calls remain gated.
 
 ### Next callable and object milestones
 

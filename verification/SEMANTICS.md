@@ -118,10 +118,25 @@ rules. A ready frame has a value callee and value arguments; readiness does not
 establish callability, arity compatibility or typing. A stuck operand blocks later
 effects rather than being skipped.
 
-This interface is compiled and proved, but not yet wired to a multi-argument
-invocation descriptor or the source pipeline. The current unary beta rule is
-unchanged. Supporting argument lists still requires parameter binding, an arity-
-aware call contract, certificates and source integration.
+After preparation, `parameters n args` supplies exactly `n` parameter values:
+actual position `i` when present, otherwise `undefined`. Extra actuals do not
+occupy parameter slots; their effects have already happened during preparation.
+`parameter_at` and `parameters_length` establish this for every list and arity.
+The type contract must separately justify any missing argument.
+
+`bindArgs` substitutes parameter slots from highest to lowest, preserving earlier
+arguments and nested body binders. Parameters use declaration order: the first
+parameter is slot zero, and captures begin after the full parameter list.
+`instantiate_args` proves that closing captures then binding parameters agrees
+with one simultaneous substitution. `bound_body_closed` establishes that a body
+scoped to its parameters is closed after binding closed actuals. Binding performs
+no heap operation.
+
+The current unary beta rule and semantic call helper use `bindArgs` on a
+singleton, definitionally the previous substitution. Multi-argument invocation
+still needs an arity-bearing descriptor, corresponding call contracts,
+certificates and source integration. The preparation and binding operations alone
+do not enable multi-argument source calls.
 
 ## Types, worlds and heaps
 

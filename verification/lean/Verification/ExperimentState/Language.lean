@@ -137,6 +137,15 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .test k x => .test k (subst j a x)
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
 
+/-- Substitute the highest parameter slots first. All replacements are closed;
+no argument is evaluated by binding, and nested body binders remain intact. -/
+def bindArgs (d : Nat) : List Tm → Tm → Tm
+  | [], t => t
+  | a::args, t => subst d a (bindArgs (d + 1) args t)
+
+@[simp] theorem bindArgs_singleton (d : Nat) (a body : Tm) :
+    bindArgs d [a] body = subst d a body := rfl
+
 abbrev Heap := List Val
 
 /-! ## One small step, threading the heap -/
@@ -148,7 +157,7 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
-  | beta : isVal a = true → Step h (.app (.obj l (.closure b)) a) h (subst 0 a b)
+  | beta : isVal a = true → Step h (.app (.obj l (.closure b)) a) h (bindArgs 0 [a] b)
   | makeC : Step h a h' a' → Step h (.make c a) h' (.make c a')
   | makeV : isVal v = true → Step h (.make c v) (h ++ [v]) (.obj h.length c)
   | readC : Step h a h' a' → Step h (.read a) h' (.read a')
