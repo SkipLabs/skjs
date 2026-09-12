@@ -1405,6 +1405,10 @@ The `andGuardedCallable` and `orGuardedCallable` examples exercise short-circuit
 calls with singleton call results. Their full expression results also include
 the skipped branch. Reversing the guard, changing the short-circuit operator,
 or discarding the skipped result fails both production and independent checking.
+`capturedGuardedCallable` returns a closure from a guarded branch, retaining the
+immutable capture's non-null refinement for later calls. Both callable alternatives
+remain possible. A reversed guard, discarded alternative, narrowed closure
+signature, or narrowed inner call result fails producer and consumer checks.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved

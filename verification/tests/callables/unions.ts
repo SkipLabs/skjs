@@ -37,3 +37,18 @@ function coalescedCallable(
     (f ?? fallback)(unit);
   return invoke(null);
 }
+
+/**
+ * Return a closure after guarding its immutable capture. The non-null branch
+ * retains both callable alternatives for later invocations; the null branch
+ * returns a separate closure that never calls the captured value.
+ */
+function capturedGuardedCallable(
+  f: ((unit: null) => true) | ((unit: null) => false) | null,
+): (unit: null) => boolean {
+  if (f === null) {
+    return (unit: null): boolean => false;
+  } else {
+    return (unit: null): boolean => f(unit);
+  }
+}

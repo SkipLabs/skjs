@@ -86,6 +86,31 @@ try {
     }
   }
 
+  for (const [name, edit] of [
+    ["reversed guard cannot justify an escaping capture", (branch, at) => {
+      branch.cond.op = "!==";
+    }],
+    ["escaping capture must retain both alternatives", (branch, at) => {
+      const callee = at(branch.else_[0].e.body.callee).type;
+      assertCallableAlternatives(callee.atoms);
+      callee.atoms = [callee.atoms[0]];
+    }],
+    ["returned closure signature cannot narrow", (branch, at) => {
+      at(branch.else_[0].e).type.atoms[0].result = lit("true");
+    }],
+    ["later invocation result cannot narrow", (branch, at) => {
+      at(branch.else_[0].e.body).type = lit("true");
+    }],
+  ] as [string, (...xs: any[]) => any][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "capturedGuardedCallable");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "capturedGuardedCallable");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f.body[0], at);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
