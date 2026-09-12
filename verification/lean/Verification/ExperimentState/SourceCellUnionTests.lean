@@ -44,17 +44,30 @@ private def check (f : SourceInput.Fn) (c : SourceClaims.Function) : Except Stri
     r.sourceMap (some r.searchLabels) r.assertions r.cuts
   let response ← RequestJson.decodeResponse r.toRequest j
   if !checkRequests [r] ⟨[response],[proofs]⟩ then throw "source consumer rejected evidence"
+  -- Removing observation evidence must invalidate an otherwise valid bundle.
+  if r.obligations.any (·.role == "heap-observation") then
+    let omitted := (r.obligations.zip proofs).filterMap fun (q,e) =>
+      if q.role == "heap-observation" then none else some e
+    if checkRequests [r] ⟨[response],[omitted]⟩ then
+      throw "source consumer ignored missing observation evidence"
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
 #guard [false,true].all fun mutate => ok (check (source mutate) claims)
--- Baseline: even an observation implied by every invariant is currently
--- rejected when a captured receiver has more than one cell contract.
+-- An observation implied by every invariant survives capture, with a located
+-- obligation over the union of possible stored values.
 private def observed (R : Ty Nat) : SourceClaims.Function :=
   {claims with exprCurrent := [((24,25),R)]}
 #guard [false,true].all fun mutate =>
-  !(extractNormalizedFn table (source mutate) (observed [0,1,2])).toOption.isSome
+  ok (check (source mutate) (observed [0,1,2]))
+#guard match extractNormalizedFn table (source false) (observed [0,1,2]) with
+  | .error _ => false
+  | .ok r => r.obligations.any fun q => q.pos == (24,25) &&
+      q.role == "heap-observation" && q.sequent.context == [[0,1,2]] &&
+      q.sequent.term == .var 0 && q.sequent.type == [0,1,2] &&
+      q.context == [⟨"",some (24,25)⟩]
 -- The allocation's initial null value cannot justify a persistent null-only
 -- observation: one alternative permits later Boolean writes.
 #guard !ok (check (source false) (observed [0]))
+#guard (extractNormalizedFn table (source false) (observed [0])).toOption.isSome
 -- Possible read contents must not be narrowed to null by a supplied claim.
 #guard !ok (check (source false) {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (24,27) then (pos,.ok [0]) else (pos,c)})

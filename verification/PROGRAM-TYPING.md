@@ -1076,7 +1076,9 @@ x:B\ \vdash\ x:R.
 $$
 
 Here $x$ is an arbitrary **stored value**, not the reference. This checks that
-the invariant implies the observation uniformly. Its proof is a supplemental
+the invariant implies the observation uniformly. For a union of cell contracts,
+$B$ is the union of their invariant contents, so every alternative must imply
+the observation. Its proof is a supplemental
 `heap-observation` obligation at the source site. It never assumes the heap at
 closure creation remains unchanged. Consequently a narrower temporary observation
 inside a closure may remain unproved even when it is valid locally; exploiting
@@ -1385,8 +1387,10 @@ inside source closures. Reads join possible contents. Writes check the saved
 RHS against every alternative, evaluate each operand once, and return that RHS
 as the source assignment value. Direct recipes need no expression-search fuel.
 A write accepted by only one alternative and an unjustifiably narrow read
-claim fail the source consumer. The external-cell parameter restriction and
-single-cell requirement for captured current-content assertions remain in force. Typed reads retain current heap
+claim fail the source consumer. Captured current-content assertions produce a
+located obligation over the union of invariant contents; broad observations
+verify, while narrowing to the allocation's initial value fails. The external-cell
+parameter restriction remains in force. Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral
 read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types

@@ -142,8 +142,13 @@ calls. Require their declared storage contract to imply such an observation
 uniformly; this is a located proof obligation, never a discarded assertion. -/
 private def persistentObservation (d : Descriptor) (pos : Span) (A R : Ty Nat) : Compiler Unit := do
   let _ ← contents R
-  let [.refs W []] := PositiveRules.expand (SourceTypes.graph (← table)) A
-    | throw "current-content assertion requires a single cell contract"
+  let clauses := PositiveRules.expand (SourceTypes.graph (← table)) A
+  if clauses.isEmpty then throw "current-content assertion requires nonempty cell contracts"
+  let invariants ← clauses.mapM fun clause => do
+    let .refs W [] := clause
+      | throw "current-content assertion requires only cell contracts"
+    pure W
+  let W := invariants.flatten.eraseDups
   let plan := DirectProof.var [W] 0 R
   obligation pos plan.goal (some plan) "heap-observation" [d]
 
