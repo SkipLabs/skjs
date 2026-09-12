@@ -28,6 +28,7 @@ const expected = {
   // A stateful callback crosses a higher-order parameter boundary.
   "callables/arguments": "verified",
   "callables/cells": "verified",
+  "callables/thunks": "out-of-fragment",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
   // Compound absence guards preserve all facts established by their outcome.
