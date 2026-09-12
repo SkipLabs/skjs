@@ -23,6 +23,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 // Why each file lands where it does. A verified file says tsc's claims are
 // derivable in the calculus; a failing one names what stops them.
 const expected = {
+  // Callable results are not yet representable by the tsc producer.
+  "callables/factories": "failed",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
