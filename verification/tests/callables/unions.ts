@@ -168,3 +168,22 @@ function returnedCallableDomain(flag: boolean): boolean {
   const invoke = make(flag);
   return invoke(true);
 }
+
+/**
+ * A factory may decline to produce a closure. Its nullable result survives the
+ * call and must be guarded independently of the Boolean argument supplied to
+ * the factory; the returned closure captures that particular argument.
+ */
+function nullableFactoryResult(flag: boolean): boolean {
+  const make: (enabled: boolean) => ((unit: null) => boolean) | null = (
+    enabled: boolean,
+  ): ((unit: null) => boolean) | null => {
+    if (enabled) {
+      return (unit: null): boolean => enabled;
+    } else {
+      return null;
+    }
+  };
+  const selected = make(flag);
+  return selected === null ? false : selected(null);
+}

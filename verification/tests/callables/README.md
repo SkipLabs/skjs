@@ -20,6 +20,7 @@ develop or check, defer it until the case is expressible through the pipeline.
 | `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
 | `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
 | `callableArgumentWrite` | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view. |
+| `nullableFactoryResult` | A factory result can mix a callable with null; both alternatives survive the factory contract and invocation, and the caller must guard the returned value before calling it. |
 | `returnedCallableDomain` | Factory branches with Boolean and true-only callable domains both implement a true-only result contract; neither the nested result claim nor a later call can widen that shared domain. |
 | `branchReturnedCapture` | A factory returns different closures from a null-test branch; the escaping closure retains its own factory argument's refinement, which cannot transfer to the nullable caller capture. |
 | `nestedCallableArgumentWrite` | A write inside a closure's call argument preserves the captured receiver and named RHS through temporary bindings; a same-typed capture cannot replace the parameter in the evidence. |
@@ -64,3 +65,9 @@ in the [intersection finding](../skjs-incomplete/arrow-intersection.ts).
 For `callableArgumentWrite`, the original SKJS assignment claim is Boolean.
 The suite separately verifies an explicit false-result refinement with fresh
 evidence; it does not count that refinement as an original producer claim.
+
+For `nullableFactoryResult`, SKJS's original claims verify. The tsc producer
+currently gives the returned lambda its nullable contextual type, while source
+extraction requires a lambda claim to name an arrow. The TypeScript claim suite
+records this failure; tsc itself accepts the program. This is a producer/adapter
+limitation, not evidence of unsoundness in the example.
