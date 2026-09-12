@@ -128,3 +128,23 @@ function nestedCallableArgumentWrite(seed: boolean): boolean {
     read((cell.value = next));
   return invoke(false);
 }
+
+/**
+ * A factory's branch returns a closure after narrowing its own argument.
+ * The escaping closure retains that immutable capture after the factory ends;
+ * the null branch contributes a separate false-returning implementation.
+ */
+function branchReturnedCapture(seed: boolean | null): boolean {
+  // SKJS requires an unparenthesized callable result annotation.
+  // prettier-ignore
+  const make: (input: boolean | null) => (unit: null) => boolean =
+    (input: boolean | null): (unit: null) => boolean => {
+      if (input === null) {
+        return (unit: null): boolean => false;
+      } else {
+        return (unit: null): boolean => input;
+      }
+    };
+  const read = make(seed);
+  return read(null);
+}

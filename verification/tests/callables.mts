@@ -286,6 +286,19 @@ try {
     expect("same-typed capture cannot replace argument parameter", run("--check-stateful-source", ast, claims, changed), false);
   }
 
+  for (const [name, edit] of [
+    ["returned capture requires the non-null factory branch", (body: any) => { body.cond.op = "!=="; }],
+    ["factory argument refinement cannot transfer to the caller capture", (body: any) => { body.else_.e.body.name = "seed"; }],
+  ] as [string, (body: any) => void][]) {
+    const a = clone(ast);
+    const f = a.functions.find((f: any) => f.name === "branchReturnedCapture");
+    assert.equal(f.body[0].init.body.k, "ifBody");
+    assert.equal(f.body[0].init.body.else_.e.body.name, "input");
+    edit(f.body[0].init.body);
+    expect(name, run("--produce-stateful-source", a, claims), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, claims, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
