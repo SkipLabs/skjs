@@ -1326,6 +1326,15 @@ finite run, and an exact terminating execution. Independent recursive labels
 can be related by cyclic subtype evidence, while invariant widening and an
 unguarded nullable call are rejected. These are regressions over the existing
 rules; no recursive-callable special case or additional semantic axiom is needed.
+[CallableRecursionTests.lean](lean/Verification/ExperimentState/CallableRecursionTests.lean)
+separately checks recursive invocation: a closure reads itself from a captured,
+nullable cell and calls it after a function test. Allocation and a self-write
+reach a five-step cycle from the empty heap. The test proves arbitrarily many
+cycles, nontermination by determinism, safety at every budget, and descriptor
+coherence. A small explicit certificate is checked in the kernel; a separate
+JSON roundtrip exercises automatic production. An unguarded nullable call and
+a recursive call with an incompatible argument are rejected. The safety
+contract guarantees progress, not termination.
 The existing
 `refT` and graph reference clauses still mean plain objects. A callability-neutral
 bag view can be expressed as `refs P Ps | callable P Ps []` using two graph
