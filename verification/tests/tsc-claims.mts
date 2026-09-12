@@ -27,8 +27,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
-  // Guarded const captures retain null refinements in returned closures.
-  "callables/unions": "verified",
+  // The undefined guard currently leaves its tag in the returned capture claim.
+  "callables/unions": "failed",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -110,6 +110,13 @@ for (const [name, want] of Object.entries(expected)) {
         const testClaim = laterClaims.expressions.find((p) => p.pos[0] === test.pos[0] && p.pos[1] === test.pos[1]);
         assert.ok(testClaim);
         assert(testClaim.type.includes(0), "a later outer guard cannot refine an earlier closure capture");
+        const absent = parsed.functions.find((f: any) => f.name === "twoAbsenceCapture");
+        const absentClaims = normalized.functions.find((f) => f.name === absent.name)!;
+        const absentRef = absent.body[2].e.body.cond.l;
+        const absentClaim = absentClaims.expressions.find((p) => p.pos[0] === absentRef.pos[0] && p.pos[1] === absentRef.pos[1]);
+        assert.ok(absentClaim);
+        assert(absentClaim.type.includes(0), "eliminating undefined must retain null");
+        assert(absentClaim.type.includes(3), "baseline: undefined guard is not yet retained");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);

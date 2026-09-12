@@ -20,6 +20,7 @@ develop or check, defer it until the case is expressible through the pipeline.
 | `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
 | `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
 | `callableArgumentWrite` | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view. |
+| `twoAbsenceCapture` | Eliminating undefined must retain null in a returned closure capture; its inner null guard is still needed. SKJS verifies this, while the tsc baseline does not yet retain the undefined guard. |
 | `laterGuardedCallback` | A guard after closure creation cannot refine its earlier capture; the closure needs its own guard. The tsc suite checks the pre-guard nullable claim, and a reversed inner guard fails independently of the later outer guard. |
 | `escapedLocalCallback` | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. Both producers verify it; the tsc suite checks that its callee claim retains the creation-time guard. |
 | `distinctNullableCallbacks` | Same-typed local callbacks require independent null guards; the tsc suite checks that guarding the first leaves the second nullable, then each own guard permits its call. |

@@ -234,3 +234,17 @@ function laterGuardedCallback(flag: boolean): boolean {
   }
   return invoke(null);
 }
+
+/**
+ * Eliminating undefined leaves null as a separate possibility. The returned
+ * closure keeps that partial refinement and must still guard null before call.
+ */
+function twoAbsenceCapture(flag: boolean): (unit: null) => boolean {
+  const callback: ((unit: null) => boolean) | null | undefined = (
+    unit: null,
+  ): boolean => flag;
+  if (callback === undefined) {
+    return (unit: null): boolean => false;
+  }
+  return (unit: null): boolean => (callback === null ? false : callback(unit));
+}
