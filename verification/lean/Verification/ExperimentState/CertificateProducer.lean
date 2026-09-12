@@ -154,7 +154,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let eb ← recur (B :: Γ) b A
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .app f a =>
-      return pool.findSome? fun F => do
+      let direct := pool.findSome? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L] => some (L,Rule.app)
           | [.callable _ _ L] => some (L,Rule.callCallable)
@@ -165,6 +165,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           let ef ← recur Γ f F
           let ea ← recur Γ a p.1
           coerce G pool (.node ⟨Γ,t,p.2⟩ r [ef,ea]) A
+      if let some e := direct then return some e
+      return splitReceiver f
     | .alloc a =>
       return (A :: pool).findSome? fun R => do
         let [.refs B []] := expand G R | none

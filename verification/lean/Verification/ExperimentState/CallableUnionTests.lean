@@ -23,11 +23,11 @@ private def proof : Evidence Nat :=
   .node callClaim (.unionVar 0) [branchProof [2] [0],branchProof [3] [1]]
 theorem checked : checkTree G proof = true := by cbv
 
--- Baseline: the consumer accepts this derivation, but automatic search cannot
--- call the union unless an auxiliary shared constructor view happens to exist.
-#guard !(expression G pool 8 callClaim.context callClaim.term callClaim.type).isSome
-#guard !(expression G pool 8 [[7,8]] (.app (.var 0) .tru) [0,1]).isSome
-#guard !(expression G pool 8 [[2,8]] (.app (.var 0) .tru) [0,1]).isSome
+-- Search now derives the same union elimination, without an auxiliary shared
+-- constructor view. Each alternative checks the argument and result separately.
+#guard (expression G pool 8 callClaim.context callClaim.term callClaim.type).isSome
+#guard (expression G pool 8 [[7,8]] (.app (.var 0) .tru) [0,1]).isSome
+#guard (expression G pool 8 [[2,8]] (.app (.var 0) .tru) [0,1]).isSome
 #guard !(expression G pool 8 [[2,3],[0,1]] (.app (.var 0) (.var 1)) [0,1]).isSome
 #guard !(expression G pool 8 [[2,4]] (.app (.var 0) .tru) [0,1]).isSome
 #guard !(expression G pool 8 [[2,5]] (.app (.var 0) .tru) [0,1]).isSome
@@ -40,9 +40,10 @@ private def program (nullResult : Bool) : Program :=
 private def claims : List (PointClaim Nat) := [⟨[],[2,3]⟩,⟨callClaim.context,callClaim.type⟩]
 private def request (nullResult : Bool) : Request :=
   ⟨types,program nullResult,claims,[0,1],0,[]⟩
-#guard [false,true].all fun nullResult => match
-    produceJson (Lean.toJson (request nullResult)) 8 with
-  | .ok _ => false | .error _ => true
+#guard [false,true].all fun nullResult => match (do
+    let response ← produceJson (Lean.toJson (request nullResult)) 8
+    verifyJson (Lean.toJson (request nullResult)) response) with
+  | .ok _ => true | .error _ => false
 
 theorem returns_expected (nullResult : Bool) : Execution (program nullResult) 6 []
     (.at 0 (fun _ => .nul)) [if nullResult then .nul else .tru]

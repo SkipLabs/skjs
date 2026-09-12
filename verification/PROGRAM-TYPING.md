@@ -1326,10 +1326,17 @@ the bag conjunction on scoped values; it forgets invocation promises without
 changing the object. `NeutralBagTests` supplies checked `unionVar` derivations
 for reads and writes through this view. Proof search first tries a single
 constructor view, then splits an explicitly union-typed receiver variable for
-reads and writes, using the existing `unionVar` evidence. Every alternative
+reads, writes, and calls, using the existing `unionVar` evidence. Every alternative
 must check; a null alternative cannot be ignored. Both allocation shapes run
 through the same read/write graph and JSON protocol without a runtime tag
-branch. The view makes no invocation promise. Typed reads retain current heap
+branch. The view makes no invocation promise.
+[CallableUnionTests.lean](lean/Verification/ExperimentState/CallableUnionTests.lean)
+checks calls through unions of known signatures with different bags and result
+types, including erased property views. Every alternative must accept the
+actual argument and produce a result covered by the requested type. This does
+not invent a signature from `typeof`, pick a successful alternative, or require
+a common arrow label in the graph. The producer emits ordinary `unionVar`
+evidence; the consumer and wire format are unchanged. Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral
 read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types
