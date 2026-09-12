@@ -85,3 +85,9 @@ verify it through the existing pipeline, with independent certificate checking.
 [callable-arguments.mts](../callable-arguments.mts) rejects a callback domain too
 narrow for the invoker and an invoker claim accepting incompatible callback
 results. It appears in the Callables corpus and report viewer.
+
+`escapedCallbackArgument` checks the higher-order round trip: a callback enters
+a wrapper factory, escapes as a captured parameter, and the returned wrapper
+is passed to another invoker. An intervening cell write distinguishes later
+callback execution from creation-time observation. Both producers' certificates
+are checked independently; a JavaScript witness checks the result for both seeds.

@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import vm from "node:vm";
+import { stripTypes } from "../tools/strip-types.mts";
 
 const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "callable-arguments-"));
@@ -26,7 +28,23 @@ try {
     const result = run(mode, source, exported);
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
-  console.log("  stateful callable argument: original claims and independent consumer OK");
+  console.log("  stateful callable arguments: original claims and independent consumer OK");
+  const runtime = vm.createContext({});
+  vm.runInContext(stripTypes(fs.readFileSync(file, "utf8")), runtime, {timeout: 1000});
+  for (const seed of [false, true])
+    assert.equal(vm.runInContext(`escapedCallbackArgument(${seed})`, runtime, {timeout: 1000}), !seed);
+  const escaped = source.functions.find((f: any) => f.name === "escapedCallbackArgument");
+  const terminal = escaped.body.at(-1);
+  assert.equal(terminal.k, "return");
+  const original = fs.readFileSync(file, "utf8");
+  const observations: boolean[][] = [];
+  const observed = vm.createContext({observe: (...values: boolean[]) => { observations.push(values); }});
+  vm.runInContext(stripTypes(original.slice(0, terminal.pos[0]) +
+    "observe(old, cell.value); " + original.slice(terminal.pos[0])), observed, {timeout: 1000});
+  for (const seed of [false, true])
+    vm.runInContext(`escapedCallbackArgument(${seed})`, observed, {timeout: 1000});
+  assert.deepEqual(observations, [[true, false], [false, true]]);
+  console.log("  escaped callback argument observes the write and forwards the argument: JavaScript witness OK");
   for (const [name, change] of [
     ["callback must accept the invoker's full Boolean domain", (fc: any) => {
       const arg = fn.body[3].init.arg;
