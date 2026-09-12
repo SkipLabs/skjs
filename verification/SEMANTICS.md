@@ -161,6 +161,19 @@ machine: every application step is preparation or dispatch, and either operation
 reconstructs an application step. This includes beta as well as operand effects;
 it introduces no second term evaluator.
 
+`callsT` lifts list-signature code contracts to callable values. An overload can
+admit any fixed actual count, including zero, independently of the descriptor's
+parameter count. `callsT_invoke` obtains both a dispatch and its safe body from
+membership and typed value arguments. `ArgsT_transfer` preserves the saved
+arguments' types as budget decreases and the world extends.
+
+`callsT_adm` proves admissibility without assuming admissible domains, and
+`callsT_congr` proves that every argument position and result is guarded by the
+call step. `ArgsAgree` requires corresponding domain positions and equal list
+lengths. `arrowsT_callsT` establishes exact equivalence to the existing unary
+overload type for singleton domains; the unary admissibility and congruence
+proofs now use these general results.
+
 The existing `CodeSpec` is now the one-parameter, singleton-domain specialization
 of `InvocationSpec`. `CodeSpec_iff` proves equivalence to its previous unary
 obligation, and existing callable creation proofs use that equivalence. The
@@ -168,7 +181,7 @@ current beta rule and semantic call helper both use `bindParameters` with the
 saved descriptor's arity. `arrowsT_invocation_iff` connects unary actual-argument
 contracts to code of any declared arity. Source creation still uses arity one
 (including the current implicit-undefined thunk encoding). List-valued application
-terms, list-domain semantic arrows, typing certificates and source integration
+terms, list-domain type-graph nodes, typing certificates and source integration
 remain to be added before multi-argument source calls are enabled.
 
 ## Types, worlds and heaps

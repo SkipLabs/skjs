@@ -948,9 +948,12 @@ ready frames to the stored code and its safety contract, and preparation plus
 dispatch is proved equivalent to the maintained unary application step. The runtime descriptor now carries its parameter count, and
 scope, substitution,
 coherence and beta use it. Unary semantic arrows constrain the supplied actual
-independently of that count. Next, add list-valued application terms and
-list-domain arrows, then extend typing certificates and the producer/consumer
-together. Multi-argument source calls remain gated.
+independently of that count. List-signature callable types now lift those code
+contracts to values, with dispatch safety, admissibility and guarded congruence;
+the existing unary type reuses the general proofs through singleton equivalence.
+Next, add list-valued application terms and list-domain type-graph nodes, then
+extend typing certificates and the producer/consumer together. Multi-argument
+source calls remain gated.
 
 ### Next callable and object milestones
 

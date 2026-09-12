@@ -223,35 +223,6 @@ theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
   rintro j W a ⟨hc, -⟩
   exact hc.val
 
-theorem arrowsT_adm (L : List (Fam × Fam)) : Adm (arrowsT L) := by
-  constructor
-  · rintro n W v ⟨hl, h⟩
-    refine ⟨hl, ?_⟩
-    intro p hp j hj W' hx hu hh hok a ha
-    exact h p hp j (by omega) W' (by rwa [trunc_trunc] at hx) hu hh hok a ha
-  · rintro n W W' hx v ⟨hl, h⟩
-    refine ⟨hl, ?_⟩
-    intro p hp j hj W'' hx' hu hh hok a ha
-    exact h p hp j hj W'' (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hx') hu hh hok a ha
-
-/-- The congruence the tower needs: agreement below the budget on every operand
-is agreement on the type. -/
-theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : Nat}
-    (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ Agree (f x).2 (g x).2 n)
-    (W : WorldT n) (v : Val) : arrowsT (l.map f) n W v ↔ arrowsT (l.map g) n W v := by
-  constructor <;> rintro ⟨hl, hobl⟩ <;> refine ⟨hl, ?_⟩ <;>
-      intro p hp j hj W' hx hu hh hok a ha
-  · obtain ⟨x, hx', rfl⟩ := List.mem_map.mp hp
-    obtain ⟨hd, hc⟩ := h x hx'
-    have hcj : Agree (g x).2 (f x).2 (j + 1) := fun m hm U u => (hc m (by omega) U u).symm
-    exact (Safe_congr (j + 1) hcj j (Nat.lt_succ_self j) W' hh _).mpr
-      (hobl (f x) (List.mem_map_of_mem hx') j hj W' hx hu hh hok a ((hd j hj W' a).mpr ha))
-  · obtain ⟨x, hx', rfl⟩ := List.mem_map.mp hp
-    obtain ⟨hd, hc⟩ := h x hx'
-    have hcj : Agree (f x).2 (g x).2 (j + 1) := fun m hm U u => hc m (by omega) U u
-    exact (Safe_congr (j + 1) hcj j (Nat.lt_succ_self j) W' hh _).mpr
-      (hobl (g x) (List.mem_map_of_mem hx') j hj W' hx hu hh hok a ((hd j hj W' a).mp ha))
-
 /-- Ordered actual-argument contracts. The signature fixes the actual count;
 the code's declared parameter count is independent. -/
 def ArgsT : List Fam → (k : Nat) → WorldT k → List Tm → Prop
@@ -292,6 +263,37 @@ theorem ArgsT_values {As k W args} (hA : ∀ A ∈ As, ValOnly A)
       · exact hA A (by simp) k W _ h.1
       · exact ih (fun B hb => hA B (List.mem_cons_of_mem A hb)) h.2 v hv
 
+/-- Saved actual values retain their domains as evaluation spends budget and
+extends the heap world. No argument is re-evaluated during this transfer. -/
+theorem ArgsT_transfer {As n W args} (hA : ∀ A ∈ As, Adm A)
+    (ha : ArgsT As n W args) (j : Nat) (hj : j ≤ n) (U : WorldT j)
+    (hx : WExt (trunc j hj W) U) : ArgsT As j U args := by
+  induction As generalizing args with
+  | nil => cases args <;> exact ha
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim ha
+    | cons a args =>
+      have hadm := hA A (by simp)
+      exact ⟨hadm.mono j _ U hx a (hadm.down_le n j hj W a ha.1),
+        ih (fun B hb => hA B (List.mem_cons_of_mem A hb)) ha.2⟩
+
+inductive ArgsAgree (n : Nat) : List Fam → List Fam → Prop where
+  | nil : ArgsAgree n [] []
+  | cons : Agree A B n → ArgsAgree n As Bs → ArgsAgree n (A :: As) (B :: Bs)
+
+/-- Agreement follows argument positions, including the actual-list length. -/
+theorem ArgsT_congr {As Bs : List Fam} {n : Nat}
+    (h : ArgsAgree n As Bs)
+    {j : Nat} (hj : j < n) (W : WorldT j) (args : List Tm) :
+    ArgsT As j W args ↔ ArgsT Bs j W args := by
+  induction h generalizing args with
+  | nil => rfl
+  | cons hd ht ih =>
+    cases args with
+    | nil => rfl
+    | cons a args => exact and_congr (hd j hj W a) (ih args)
+
 /-- A code contract checks the normalized parameter list after actuals have
 been evaluated. Each overload admits its own list of actual argument types. -/
 def InvocationSpec (arity : Nat) (L : List (List Fam × Fam))
@@ -325,6 +327,64 @@ theorem InvocationSpec.invoke {arity L k W b} (hs : InvocationSpec arity L k W b
     Safe p.2 j U heap result := by
   cases hi
   exact hs.2 p hp j hj U hx hu heap hh args ha
+
+/-- Callable values with ordered argument-list signatures. The descriptor's
+parameter count is independent of every overload's admitted actual count. -/
+def callsT (L : List (List Fam × Fam)) : Fam := fun k W v =>
+  ∃ arity b l, v = .obj l (.closure arity b) ∧ InvocationSpec arity L k W b
+
+theorem callsT_code_iff (L : List (List Fam × Fam)) (arity l : Nat) (b : Tm) (n W) :
+    callsT L n W (.obj l (.closure arity b)) ↔ InvocationSpec arity L n W b := by
+  constructor
+  · rintro ⟨arity', b', l', he, hs⟩
+    cases he
+    exact hs
+  · intro hs
+    exact ⟨arity, b, l, rfl, hs⟩
+
+theorem callsT_callable {L n W v} (h : callsT L n W v) : Callable v := by
+  obtain ⟨arity, b, l, hv, hs⟩ := h
+  exact ⟨arity, b, l, hv, hs.1⟩
+
+theorem callsT_adm (L : List (List Fam × Fam)) : Adm (callsT L) := by
+  constructor
+  · rintro n W v ⟨arity, b, l, hv, hs⟩
+    exact ⟨arity, b, l, hv, hs.down⟩
+  · rintro n W U hx v ⟨arity, b, l, hv, hs⟩
+    exact ⟨arity, b, l, hv, hs.mono hx⟩
+
+/-- List signatures guard every domain position and the result. This is the
+congruence needed to interpret recursive call types in the existing tower. -/
+theorem callsT_congr {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
+    (h : ∀ x ∈ l,
+      ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2 (g x).2 n)
+    (W : WorldT n) (v : Val) : callsT (l.map f) n W v ↔ callsT (l.map g) n W v := by
+  constructor <;> rintro ⟨arity, b, loc, hv, hc, hs⟩ <;>
+    refine ⟨arity, b, loc, hv, hc, ?_⟩ <;> intro p hp j hj U hx hu heap hh args ha
+  · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
+    obtain ⟨hd, hr⟩ := h x hm
+    have hr' : Agree (f x).2 (g x).2 (j + 1) := fun k hk V a => hr k (by omega) V a
+    exact (Safe_congr (j + 1) hr' j (by omega) U heap _).mp
+      (hs (f x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args
+        ((ArgsT_congr hd hj U args).mpr ha))
+  · obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
+    obtain ⟨hd, hr⟩ := h x hm
+    have hr' : Agree (f x).2 (g x).2 (j + 1) := fun k hk V a => hr k (by omega) V a
+    exact (Safe_congr (j + 1) hr' j (by omega) U heap _).mpr
+      (hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args
+        ((ArgsT_congr hd hj U args).mp ha))
+
+/-- Typed callable values dispatch to a safe body at the next observation
+budget. Readiness follows from the argument domains containing only values. -/
+theorem callsT_invoke {L k W v} (hf : callsT L k W v)
+    {p : List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
+    (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
+    {heap : Heap} (hh : HeapOk j U heap) {args : List Tm}
+    (hA : ∀ A ∈ p.1, ValOnly A) (ha : ArgsT p.1 j U args) :
+    ∃ result, CallArguments.Invoke ⟨v, args⟩ result ∧ Safe p.2 j U heap result := by
+  obtain ⟨arity, b, l, rfl, hs⟩ := hf
+  have hi := CallArguments.Invoke.closure (l := l) (body := b) (arity := arity) (ArgsT_values hA ha)
+  exact ⟨_, hi, hs.invoke hp hj hx hu hh ha hi⟩
 
 /-- The existing unary judgment is a specialization of list invocation. -/
 def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
@@ -372,6 +432,31 @@ theorem arrowsT_invocation_iff (arity : Nat) (L : List (Fam × Fam))
   · rintro ⟨hc, hs⟩
     exact ⟨⟨arity, b, l, rfl, hc⟩, hs⟩
 
+/-- Existing unary overloads are exactly singleton-domain list signatures. -/
+theorem arrowsT_callsT (L : List (Fam × Fam)) (n W v) :
+    arrowsT L n W v ↔ callsT (L.map fun p => ([p.1], p.2)) n W v := by
+  constructor
+  · intro h
+    obtain ⟨arity, b, l, rfl, hc⟩ := h.1
+    exact ⟨arity, b, l, rfl, (arrowsT_invocation_iff arity L l b n W).mp h⟩
+  · rintro ⟨arity, b, l, rfl, hs⟩
+    exact (arrowsT_invocation_iff arity L l b n W).mpr hs
+
+theorem arrowsT_adm (L : List (Fam × Fam)) : Adm (arrowsT L) := by
+  constructor
+  · intro n W v h
+    exact (arrowsT_callsT L n _ v).mpr ((callsT_adm _).down n W v ((arrowsT_callsT L _ W v).mp h))
+  · intro n W U hx v h
+    exact (arrowsT_callsT L n U v).mpr ((callsT_adm _).mono n W U hx v ((arrowsT_callsT L n W v).mp h))
+
+theorem arrowsT_congr {α : Type} (l : List α) (f g : α → Fam × Fam) {n : Nat}
+    (h : ∀ x ∈ l, Agree (f x).1 (g x).1 n ∧ Agree (f x).2 (g x).2 n)
+    (W : WorldT n) (v : Val) : arrowsT (l.map f) n W v ↔ arrowsT (l.map g) n W v := by
+  rw [arrowsT_callsT, arrowsT_callsT, List.map_map, List.map_map]
+  apply callsT_congr
+  intro x hx
+  exact ⟨.cons (h x hx).1 .nil, (h x hx).2⟩
+
 theorem arrowsT_code_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
     arrowsT L n W (.obj l (.closure 1 b)) ↔ CodeSpec L n W b :=
   arrowsT_invocation_iff 1 L l b n W
@@ -384,6 +469,12 @@ theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
     CodeSpec L n W' b :=
   InvocationSpec.mono hx h
 
+#print axioms ArgsT_transfer
+#print axioms callsT_code_iff
+#print axioms callsT_adm
+#print axioms callsT_congr
+#print axioms callsT_invoke
+#print axioms arrowsT_callsT
 #print axioms ArgsT_length
 #print axioms ArgsT_values
 #print axioms InvocationSpec.down
