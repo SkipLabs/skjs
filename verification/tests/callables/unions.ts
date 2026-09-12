@@ -86,3 +86,18 @@ function sharedCallableDomain(
   };
   return invoke(null);
 }
+
+/**
+ * Calls inside the conditional retain the tested Boolean's branch refinement.
+ * The true branch can pass it to the true-only callee; the false branch needs
+ * the wider Boolean domain. Both singleton call results reach the join.
+ */
+function branchLocalCallableDomains(
+  choose: boolean,
+  wide: (value: boolean) => true,
+  narrow: (value: true) => false,
+): boolean {
+  const invoke: (unit: null) => boolean = (unit: null): boolean =>
+    choose ? narrow(choose) : wide(choose);
+  return invoke(null);
+}

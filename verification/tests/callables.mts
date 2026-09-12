@@ -176,6 +176,34 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
+  for (const [name, edit] of [
+    ["false branch cannot borrow the true-only domain", (b, at) => {
+      assert.deepEqual(at(b.then.arg).type, lit("true"));
+      assert.deepEqual(at(b.else_.arg).type, lit("false"));
+      b.else_.callee.name = "narrow";
+      at(b.else_.callee).type = clone(at(b.then.callee).type);
+      at(b.else_).type = clone(at(b.then).type);
+    }],
+    ["branch argument claim must match the tested value", (b, at) => {
+      at(b.else_.arg).type = lit("true");
+    }],
+    ["branch result must match its own callee", (b, at) => {
+      assert.deepEqual(at(b.then).type, lit("false"));
+      at(b.then).type = lit("true");
+    }],
+    ["joined call result cannot retain one branch only", (b, at) => {
+      at(b).type = lit("true");
+    }],
+  ] as [string, (...xs: any[]) => any][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "branchLocalCallableDomains");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "branchLocalCallableDomains");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f.body[0].init.body, at);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));

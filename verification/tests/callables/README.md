@@ -13,6 +13,7 @@ They have their own **Callables** group in the corpus and report viewer.
 | `capturedGuardedCallable` | A returned closure retains the immutable capture's non-null refinement and both callable alternatives after the branch ends. |
 | `aliasedCallableSelection` | A selected local alias retains both callable alternatives through a nested closure; its callability does not transfer to the original nullable input. |
 | `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
+| `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
 
 [callables.mts](../callables.mts) checks the original claims and rejects forged
 claims and reused evidence. It also retains report round-trip and independent

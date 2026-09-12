@@ -1418,6 +1418,11 @@ fail independently checked obligations.
 The shared true argument verifies. A false argument, forged widening of the
 callee's domain, removal of its restrictive alternative, or narrowed result
 fails both production and independent consumption.
+`branchLocalCallableDomains` uses the tested Boolean as the argument inside
+each branch: its true refinement satisfies a true-only domain, while its false
+refinement requires the wider Boolean domain. Both singleton results reach the
+join. Forged argument refinements, an incompatible false-branch callee, false
+branch-result claims, and a narrowed join fail producer and consumer checks.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved
