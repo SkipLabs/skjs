@@ -101,3 +101,16 @@ function branchLocalCallableDomains(
     choose ? narrow(choose) : wide(choose);
   return invoke(null);
 }
+
+/**
+ * A call's argument writes the captured cell before the callee reads it. The
+ * assignment supplies its RHS as the argument. SKJS exports its result as
+ * Boolean; the captured read also retains the cell's Boolean invariant.
+ */
+function callableArgumentWrite(seed: boolean): boolean {
+  const cell: { value: boolean } = { value: seed };
+  const read: (value: boolean) => boolean = (value: boolean): boolean =>
+    cell.value;
+  const result: boolean = read((cell.value = false));
+  return result;
+}

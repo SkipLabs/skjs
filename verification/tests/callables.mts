@@ -204,6 +204,49 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
+  for (const [name, edit] of [
+    ["argument write must satisfy the callee domain", (body, at) => {
+      at(body[2].init.callee).type.atoms[0].params[0] = lit("true");
+    }],
+    ["argument write must satisfy the cell invariant", (body, at) => {
+      const arg = body[2].init.arg;
+      arg.rhs.lit = {a: "null"};
+      at(arg.rhs).type = {top: false, atoms: [{a: "null"}]};
+      at(arg).type = clone(at(arg.rhs).type);
+    }],
+    ["assignment argument must return its RHS", (body, at) => {
+      at(body[2].init.arg).type = {top: false, atoms: [{a: "null"}]};
+    }],
+    ["captured read cannot invent a singleton", (body, at) => {
+      at(body[1].init.body).type = lit("true");
+    }],
+  ] as [string, (...xs: any[]) => any][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "callableArgumentWrite");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "callableArgumentWrite");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f.body, at);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+
+  // The assignment returns false, although the original exporter claims only
+  // Boolean. An explicit refinement supports a false-only view of the callee.
+  {
+    const c = clone(claims);
+    const f = ast.functions.find((f: any) => f.name === "callableArgumentWrite");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "callableArgumentWrite");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    const call = f.body[2].init;
+    assert.deepEqual(at(call.arg).type, {top: false, atoms: [{a: "boolean"}]});
+    at(call.arg).type = lit("false");
+    at(call.callee).type.atoms[0].params[0] = lit("false");
+    expect("explicit assignment refinement satisfies false-only view", run("--produce-stateful-source", ast, c), true);
+    const refined = JSON.parse(fs.readFileSync(path.join(tmp, "evidence"), "utf8"));
+    expect("independent refined assignment consumer", run("--check-stateful-source", ast, c, refined), true);
+    expect("original evidence cannot replace refined assignment proof", run("--check-stateful-source", ast, c, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));

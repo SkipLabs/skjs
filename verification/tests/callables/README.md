@@ -14,6 +14,7 @@ They have their own **Callables** group in the corpus and report viewer.
 | `aliasedCallableSelection` | A selected local alias retains both callable alternatives through a nested closure; its callability does not transfer to the original nullable input. |
 | `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
 | `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
+| `callableArgumentWrite` | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view. |
 
 [callables.mts](../callables.mts) checks the original claims and rejects forged
 claims and reused evidence. It also retains report round-trip and independent
@@ -30,3 +31,7 @@ alternative; narrowing the joined result or omitting an alternative's compatible
 signature fails. These cases are not advertised as verified SKJS exports:
 SKJS currently collapses incomparable arrow intersections to `never`, as recorded
 in the [intersection finding](../skjs-incomplete/arrow-intersection.ts).
+
+For `callableArgumentWrite`, the original SKJS assignment claim is Boolean.
+The suite separately verifies an explicit false-result refinement with fresh
+evidence; it does not count that refinement as an original producer claim.

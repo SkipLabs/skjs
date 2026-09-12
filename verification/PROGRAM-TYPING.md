@@ -1423,6 +1423,12 @@ each branch: its true refinement satisfies a true-only domain, while its false
 refinement requires the wider Boolean domain. Both singleton results reach the
 join. Forged argument refinements, an incompatible false-branch callee, false
 branch-result claims, and a narrowed join fail producer and consumer checks.
+`callableArgumentWrite` writes a captured Boolean cell in a call's argument.
+Storage and parameter obligations both remain checked, and the assignment
+returns its RHS. The original Boolean export verifies; an explicit false-result
+refinement also verifies with a false-only callee view and fresh evidence.
+The original evidence cannot justify that stronger request. Captured reads
+continue to use the Boolean invariant rather than an invented singleton.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved
