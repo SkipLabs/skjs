@@ -7,6 +7,8 @@ They have their own **Callables** group in the corpus and report viewer.
 | Example in [unions.ts](unions.ts) | What it establishes |
 | --- | --- |
 | `guardedCallableUnion` | A null guard permits calling either remaining signature and preserves both possible results. |
+| `andGuardedCallable` | `&&` calls only the non-null function; its true result does not erase the skipped false result. |
+| `orGuardedCallable` | `||` skips the call for null, preserving true alongside the callable's false result. |
 | `coalescedCallable` | Null and undefined select a fallback function before invocation; either callable can supply the result. |
 
 [callables.mts](../callables.mts) checks the original claims and rejects forged

@@ -62,6 +62,30 @@ try {
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
 
+  for (const functionName of ["andGuardedCallable", "orGuardedCallable"]) {
+    for (const [name, edit] of [
+      ["reversed guard cannot justify the call", (b, at) => {
+        b.l.op = b.l.op === "===" ? "!==" : "===";
+      }],
+      ["opposite short-circuit operator cannot justify the call", (b, at) => {
+        b.op = b.op === "&&" ? "||" : "&&";
+      }],
+      ["result must include the skipped branch", (b, at) => {
+        const called = at(b.r).type;
+        assert.deepEqual(called, lit(functionName === "andGuardedCallable" ? "true" : "false"));
+        at(b).type = clone(called);
+      }],
+    ] as [string, (...xs: any[]) => any][]) {
+      const a = clone(ast), c = clone(claims);
+      const f = a.functions.find((f: any) => f.name === functionName);
+      const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === functionName);
+      const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+      edit(f.body[0].init.body, at);
+      expect(`${functionName}: ${name}`, run("--produce-stateful-source", a, c), false);
+      expect(`${functionName}: ${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+    }
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));

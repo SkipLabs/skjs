@@ -1401,6 +1401,10 @@ fallback alternative, a narrowed result, reuse of the nullish input as the
 fallback, a null fallback, and an incompatible argument.
 These sources live in the dedicated [Callables group](tests/callables/README.md),
 with their own pipeline suite and corpus/viewer section.
+The `andGuardedCallable` and `orGuardedCallable` examples exercise short-circuit
+calls with singleton call results. Their full expression results also include
+the skipped branch. Reversing the guard, changing the short-circuit operator,
+or discarding the skipped result fails both production and independent checking.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved
