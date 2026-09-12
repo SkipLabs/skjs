@@ -77,4 +77,41 @@ private def nullable : Json := Json.mkObj [("top",toJson false),("atoms",toJson
     params := [("f",.ok [0,4])]
     envs := [(2,[("f",.ok [0,4])])]
     exprs := claims.exprs.map fun (pos,c) => if pos == (7,8) then (pos,.ok [0,4]) else (pos,c)})
+
+-- Null guards preserve both callable alternatives. Exercise both comparison
+-- polarities and operand orders through closure lowering and the full consumer.
+private def guardedType : Json := Json.mkObj [("top",toJson false),("atoms",toJson
+  [Json.mkObj [("a",toJson "null")],
+   arrow (primitive "null") (literal true),arrow (primitive "null") (literal false)])]
+private def guarded (equal testLeft wrongBranch : Bool) : SourceInput.Fn :=
+  let left := if testLeft then SourceInput.Expr.var (11,12) "f" else .lit (11,12) .vnull
+  let right := if testLeft then SourceInput.Expr.lit (16,17) .vnull else .var (16,17) "f"
+  let cond := SourceInput.Expr.unitTest (10,18) .isNul equal testLeft left right
+  let call := SourceInput.Expr.app (30,38) (.var (30,31) "f") (.var (34,35) "unit")
+  let fallback := SourceInput.Expr.lit (20,21) (.vbool false)
+  let callOnYes := equal == wrongBranch
+  ⟨"guarded",(0,1),[⟨"f",guardedType⟩],primitive "boolean",
+   [.ret (2,50) (.app (3,50)
+     (.lam (3,47) "unit" (primitive "null") (primitive "boolean")
+       (.ifBody (8,46) none cond
+         (if callOnYes then call else fallback) (if callOnYes then fallback else call)))
+     (.lit (48,49) .vnull))]⟩
+private def guardedClaims (testLeft : Bool) : SourceClaims.Function :=
+  ⟨"guarded",(0,1),[("f",.ok [0,4,5])],.ok [1,2],
+   [(2,[("f",.ok [0,4,5])])],
+   [((3,50),.ok [1,2]),((3,47),.ok [6]),((8,46),.ok [1,2]),
+    ((10,18),.ok [1,2]),((11,12),.ok (if testLeft then [0,4,5] else [0])),
+    ((16,17),.ok (if testLeft then [0] else [0,4,5])),
+    ((20,21),.ok [2]),((30,38),.ok [1,2]),((30,31),.ok [4,5]),
+    ((34,35),.ok [0]),((48,49),.ok [0])],[],[]⟩
+#guard [false,true].all fun equal => [false,true].all fun testLeft =>
+  ok (check (guarded equal testLeft false) (guardedClaims testLeft))
+-- A callee claim cannot move the call to the null branch or discard a possible
+-- return value after the guard has established only non-nullness.
+#guard [false,true].all fun equal => [false,true].all fun testLeft =>
+  (extractNormalizedFn table (guarded equal testLeft true) (guardedClaims testLeft)).toOption.isSome &&
+  !ok (check (guarded equal testLeft true) (guardedClaims testLeft))
+#guard !ok (check (guarded true true false)
+  {(guardedClaims true) with exprs := (guardedClaims true).exprs.map fun (pos,c) =>
+    if pos == (30,38) then (pos,.ok [1]) else (pos,c)})
 end Verification.ExperimentState.SourceCallableUnionTests

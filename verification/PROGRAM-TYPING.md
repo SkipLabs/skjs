@@ -1381,6 +1381,12 @@ results. Expression obligations require no expression-search fuel. The complete
 source consumer still checks supplied result claims, rejects an incompatible
 alternative or nullable callee, and retains the external-object boundary.
 Single-arrow call recipes keep their existing form.
+Null-guard regressions retain every callable alternative on the non-null arm
+for both comparison polarities and operand orders. Calls on the null arm and
+unjustifiably narrow results fail. The `guardedCallableUnion` TypeScript fixture
+also runs through the parser, SKJS claim exporter, independent source consumer,
+and annotated report pipeline. Report syntax groups arrow alternatives and
+preserves each alternative's hidden metadata when reading the union back.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved

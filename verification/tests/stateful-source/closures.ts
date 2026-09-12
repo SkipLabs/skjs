@@ -240,3 +240,12 @@ function successiveReturns(flag: boolean, other: boolean): boolean {
   };
   return run(null);
 }
+
+// A closure's null guard must retain both possible callable results.
+function guardedCallableUnion(
+  f: ((unit: null) => true) | ((unit: null) => false) | null,
+): boolean {
+  const invoke: (unit: null) => boolean = (unit: null): boolean =>
+    f === null ? false : f(unit);
+  return invoke(null);
+}
