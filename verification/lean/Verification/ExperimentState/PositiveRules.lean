@@ -142,7 +142,10 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .boolLit _, .bool => True
   | .boolLit a, .boolLit b => a = b
   | .refs a bs, .refs c ds => ∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x
-  | .arrs L, .arrs M => ∀ p ∈ M, Arrow G R L p.1 p.2
+  | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, Arrow G R L p.1 p.2
+  | .callable a bs L, .callable c ds M =>
+      (∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x) ∧
+      ∀ p ∈ M, Arrow G R L p.1 p.2
   | _, _ => False
 
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
@@ -174,6 +177,25 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
     · exact Or.inl rfl
   · cases hc; exact id
   · exact id
+  · intro hv
+    refine ⟨hv.2.1, ?_⟩
+    intro p hp
+    obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
+    exact (Arrow.sound (hc q hq) n hr W v hv.2).2
+  · rename_i a bs L c ds M
+    intro hv
+    have hall : ∀ x ∈ a :: bs, bagT (meaning G x) n W v := by
+      simpa [CallableConjunctions.propsT] using hv.1
+    have hout : ∀ b ∈ c :: ds, bagT (meaning G b) n W v := by
+      intro b hb
+      obtain ⟨x,hx,hxb,hbx⟩ := hc.1 b hb
+      apply (bagT_contractive n (meaning G x) (meaning G b) ?_ W v).mp (hall x hx)
+      intro j hj U u
+      exact ⟨hr j hj x b hxb U u,hr j hj b x hbx U u⟩
+    refine ⟨by simpa [CallableConjunctions.propsT] using hout, hv.2.1, ?_⟩
+    intro p hp
+    obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
+    exact (Arrow.sound (hc.2 q hq) n hr W v hv.2).2
 
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton

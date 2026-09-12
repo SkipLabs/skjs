@@ -63,8 +63,8 @@ def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (pool : List (Ty ι)) : PositiveCertificates.Evidence ι :=
   let clauses := pool.flatMap (expand G)
   clauses.flatMap fun a => match a with
-    | .arrs L => clauses.flatMap fun b => match b with
-      | .arrs M => M.filterMap fun p =>
+    | .arrs L | .callable _ _ L => clauses.flatMap fun b => match b with
+      | .arrs M | .callable _ _ M => M.filterMap fun p =>
           (arrowSearch G table L p.1 p.2 (p.1.length+1)).map (fun proof => (L,(p,proof)))
       | _ => []
     | _ => []
@@ -119,9 +119,21 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         if checkTree G (leaf B r) then coerce G pool (leaf B r) A else none
     | .funE b =>
       return (A :: pool).findSome? fun F => do
-        let [.arrs L] := expand G F | none
+        match expand G F with
+        | [.arrs L] =>
+          let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
+          coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
+        | [.callable P [] L] =>
+          let ea ← recur Γ .nul P
+          let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
+          coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
+        | _ => none
+    | .attach b a =>
+      return (A :: pool).findSome? fun F => do
+        let [.callable P [] L] := expand G F | none
+        let ea ← recur Γ a P
         let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
-        coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
+        coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none
@@ -135,13 +147,16 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .app f a =>
       return pool.findSome? fun F => do
-        let [.arrs L] := expand G F | none
+        let (L,r) ← match expand G F with
+          | [.arrs L] => some (L,Rule.app)
+          | [.callable _ _ L] => some (L,Rule.callCallable)
+          | _ => none
         L.findSome? fun p => do
           -- Check the result relation before searching both premises.
           let _ ← subtype G pool p.2 A
           let ef ← recur Γ f F
           let ea ← recur Γ a p.1
-          coerce G pool (.node ⟨Γ,t,p.2⟩ .app [ef,ea]) A
+          coerce G pool (.node ⟨Γ,t,p.2⟩ r [ef,ea]) A
     | .alloc a =>
       return (A :: pool).findSome? fun R => do
         let [.refs B []] := expand G R | none
@@ -149,17 +164,23 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         coerce G pool (.node ⟨Γ,t,R⟩ .alloc [ea]) A
     | .read a =>
       return pool.findSome? fun R => do
-        let [.refs B []] := expand G R | none
+        let (B,r) ← match expand G R with
+          | [.refs B []] => some (B,Rule.read)
+          | [.callable B _ _] => some (B,Rule.readCallable)
+          | _ => none
         let _ ← subtype G pool B A
         let ea ← recur Γ a R
-        coerce G pool (.node ⟨Γ,t,B⟩ .read [ea]) A
+        coerce G pool (.node ⟨Γ,t,B⟩ r [ea]) A
     | .write a b =>
       return pool.findSome? fun R => do
-        let [.refs B []] := expand G R | none
+        let (B,r) ← match expand G R with
+          | [.refs B []] => some (B,Rule.write)
+          | [.callable B _ _] => some (B,Rule.writeCallable)
+          | _ => none
         let ea ← recur Γ a R
         let eb ← recur Γ b B
         (A :: pool).findSome? fun N =>
-          let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ .write [ea,eb]
+          let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ r [ea,eb]
           if checkTree G e then coerce G pool e A else none
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none
@@ -211,6 +232,7 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
       | .refs A bs => A :: bs
       | .arrs L => L.flatMap fun p => [p.1,p.2]
+      | .callable A bs L => A :: bs ++ L.flatMap (fun p => [p.1,p.2])
       | _ => [])).eraseDups
 
 inductive Failure where

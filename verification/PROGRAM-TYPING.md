@@ -1283,9 +1283,17 @@ from object membership. Source functions and shared continuations now lower
 to `funE`, and the certificate producer and consumer use its allocating typing
 rule. A checked creation effect preserves existing heap knowledge without
 executing the body. Allocation, application, bag reads and writes,
-and overload conjunction have safety proofs. The existing `refT` and graph
-reference clauses still mean plain objects: general bag and callable views
-have not yet been added to the certificate language or source lowering.
+and overload conjunction have safety proofs. The graph clause
+`callable first rest arrows` combines a nonempty conjunction of bag invariants
+with overloads on one object. Normalization merges both lists; structural
+subtyping checks invariant bag coverage and arrow coverage separately, and can
+forget properties to obtain `arrs`. The producer and consumer support
+`makeCallable`, `callCallable`, `readCallable`, and `writeCallable` evidence.
+[CallableGraphTests.lean](lean/Verification/ExperimentState/CallableGraphTests.lean)
+runs an allocated overloaded object through aliasing, bag mutation, reading,
+and invocation using produced evidence and a JSON roundtrip. The existing
+`refT` and graph reference clauses still mean plain objects; callability-neutral
+bag views and source export of combined callable/property types remain future work.
 `ObjectCoherence.step_preserves` proves global identity/descriptor coherence
 for the operational machine using an append-only ghost registry, including
 objects nested in code and heap cells. `GraphCoherence.accepted_closed_coherent`

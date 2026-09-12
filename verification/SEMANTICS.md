@@ -152,6 +152,16 @@ admissible future, and remain safe there. `Safe` is the special case with no
 graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
 point and the input environment.
 
+`CallableConjunctions.objectsT` combines invariant bag requirements and
+overloads on one value. Its guardedness and admissibility proofs let the
+`callable first rest arrows` clause participate in recursive positive graphs.
+Normalization concatenates bag requirements and signatures; it retains
+incompatible invariant operands at low budgets just as reference conjunctions
+do. Subtyping can forget properties but cannot widen an invariant bag or turn
+a function into a plain reference. Checked creation proves the stored value
+and all code obligations separately. Graph calls, reads, and writes then use
+the corresponding part of that same object's contract.
+
 An arrow contains **function objects with closed invocation code** whose
 substituted bodies are safe at every
 smaller budget, every admissible future world, every satisfying heap, and every

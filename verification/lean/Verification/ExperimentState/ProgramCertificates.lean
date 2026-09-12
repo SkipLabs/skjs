@@ -19,6 +19,7 @@ inductive Rule (ι : Type) where
   | ifKnown (answer : Bool)
   | ifBoolVar (trueType falseType : Ty ι)
   | unionVar (slot : Nat)
+  | makeCallable | callCallable | readCallable | writeCallable
   | sub (proof : PositiveCertificates.Proof ι)
 
 inductive Evidence (ι : Type) where
@@ -78,6 +79,26 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match j.context[i]? with
     | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
     | none => False
+  | .makeCallable, .attach b a, ja :: ps =>
+    match expand G j.type with
+    | [.callable P [] L] => ja = ⟨j.context,a,P⟩ ∧ ps = L.map (fun p => ⟨p.1 :: j.context,b,p.2⟩)
+    | _ => False
+  | .callCallable, .app f a, [jf,ja] =>
+    jf.context = j.context ∧ jf.term = f ∧ ja.context = j.context ∧ ja.term = a ∧
+    match expand G jf.type with
+    | [.callable _ _ L] => (ja.type,j.type) ∈ L
+    | _ => False
+  | .readCallable, .read a, [ja] =>
+    ja.context = j.context ∧ ja.term = a ∧
+    match expand G ja.type with
+    | [.callable P _ _] => j.type = P
+    | _ => False
+  | .writeCallable, .write a b, [ja,jb] =>
+    ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
+    Represents G j.type .nul ∧
+    match expand G ja.type with
+    | [.callable P _ _] => jb.type = P
+    | _ => False
   | .sub proof, _, [jt] =>
     jt.context = j.context ∧ jt.term = j.term ∧
     PositiveCertificates.check G jt.type j.type proof = true
@@ -207,6 +228,44 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [hl]
       exact List.mem_map.mpr ⟨a,ha,rfl⟩
     · contradiction
+  · rename_i b a ja ps
+    split at hl
+    · rename_i P L hr
+      rcases hl with ⟨rfl,rfl⟩
+      apply HasTy.makeCallable hr (hp ⟨Γ,a,P⟩ (by simp))
+      intro p hm
+      exact hp _ (List.mem_cons_of_mem _ (List.mem_map.mpr ⟨p,hm,rfl⟩))
+    · contradiction
+  · rename_i f a jf ja
+    rcases hl with ⟨hΓf,htf,hΓa,hta,hL⟩
+    have hf := hp jf (by simp)
+    have ha := hp ja (by simp)
+    rw [hΓf,htf] at hf
+    rw [hΓa,hta] at ha
+    split at hL
+    · rename_i P Ps L he
+      exact .callCallable hf he hL ha
+    · contradiction
+  · rename_i a ja
+    rcases hl with ⟨hΓ,ht,hL⟩
+    have ha := hp ja (by simp)
+    rw [hΓ,ht] at ha
+    split at hL
+    · rename_i P Ps L he
+      cases hL
+      exact .readCallable ha he
+    · contradiction
+  · rename_i a b ja jb
+    rcases hl with ⟨hΓa,hta,hΓb,htb,hn,hL⟩
+    have ha := hp ja (by simp)
+    have hb := hp jb (by simp)
+    rw [hΓa,hta] at ha
+    rw [hΓb,htb] at hb
+    split at hL
+    · rename_i P Ps L he
+      rw [hL] at hb
+      exact .writeCallable ha he hb hn
+    · contradiction
   · rename_i proof t jt
     rcases hl with ⟨hΓ, ht, hc⟩
     have hj := hp jt (by simp)
@@ -278,6 +337,36 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
+  | @makeCallable F P L Γ a b hr ha hb iha ihb =>
+    apply node_complete (r := .makeCallable)
+      (js := ⟨Γ,a,P⟩ :: L.map (fun p => ⟨p.1 :: Γ,b,p.2⟩))
+    · simp [Local,show expand G F = [.callable P [] L] from hr]
+    · intro j hj
+      rcases List.mem_cons.mp hj with rfl | hj
+      · exact iha
+      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+        exact ihb p hp
+  | @callCallable Γ f F P Ps L A B a hf hr hp ha ihf iha =>
+    apply node_complete (r := .callCallable) (js := [⟨Γ,f,F⟩, ⟨Γ,a,A⟩])
+    · simpa only [Local, show expand G F = [.callable P Ps L] from hr, true_and] using hp
+    · intro j hj
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
+      rcases hj with rfl | rfl
+      · exact ihf
+      · exact iha
+  | @readCallable Γ a F P Ps L ha hr ih =>
+    apply node_complete (G := G) (j := ⟨Γ,.read a,P⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
+    · simp [Local,show expand G F = [.callable P Ps L] from hr]
+    · simpa using ih
+  | @writeCallable Γ a F P Ps L b N ha hr hb hn iha ihb =>
+    apply node_complete (G := G) (j := ⟨Γ,.write a b,N⟩) (r := .writeCallable)
+      (js := [⟨Γ,a,F⟩,⟨Γ,b,P⟩])
+    · simpa [Local,show expand G F = [.callable P Ps L] from hr] using hn
+    · intro j hj
+      simp only [List.mem_cons,List.not_mem_nil,or_false] at hj
+      rcases hj with rfl | rfl
+      · exact iha
+      · exact ihb
   | @app Γ f F L A B a hf hr hp ha ihf iha =>
     apply node_complete (r := .app) (js := [⟨Γ,f,F⟩, ⟨Γ,a,A⟩])
     · simpa only [Local, show expand G F = [.arrs L] from hr, true_and] using hp

@@ -74,6 +74,7 @@ Each type-graph node is a union of clauses:
 | Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
 | Invariant reference with optional additional contract requirements | `{"refs":{"first":[1],"rest":[]}}` |
 | Intersection of arrows | `{"arrs":{"arrows":[[[0],[1]],[[1],[0]]]}}` |
+| Callable with invariant bag requirements and overloads | `{"callable":{"first":[1],"rest":[],"arrows":[[[0],[1]]]}}` |
 
 The arrow example contains two domain/result pairs. References and arrow
 operands may point back to the same finite graph, representing guarded regular
@@ -113,15 +114,21 @@ The encoding follows mechanically from the
 | Term | JSON | Continuation | JSON |
 | --- | --- | --- | --- |
 | slot $i$ | `{"var":{"i":0}}` | `ret` | `"ret"` |
-| $\lambda t$ | `{"lam":{"b":t}}` | `bind` | `{"bind":{"next":T}}` |
+| $\mathsf{let}(t,t)$ | `{"letE":{"a":t,"b":t}}` | `bind` | `{"bind":{"next":T}}` |
 | $t\,t$ | `{"app":{"f":t,"a":t}}` | `effect` | `{"effect":{"next":T}}` |
 | null, undefined, true, false | `"nul"`, `"undef"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
-| location $\ell$ | `{"loc":{"l":0}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
-| $\mathsf{alloc}(t)$ | `{"alloc":{"a":t}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
+| object $\mathsf{obj}(\ell,c)$ | `{"obj":{"l":0,"call":c}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
+| $\mathsf{make}(c,t)$ | `{"make":{"call":c,"a":t}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
 | $\mathsf{read}(t)$ | `{"read":{"a":t}}` | | |
 | $\mathsf{write}(t,t)$ | `{"write":{"a":t,"b":t}}` | | |
 | $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
 | $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
+
+A descriptor `c` is `"absent"` or `{"closure":{"body":t}}`. Plain allocation
+uses the absent descriptor; function creation uses a closure descriptor and an
+initial bag value. The body is under one argument binder. Runtime object terms
+are rejected in supplied graph syntax, including inside unused branches and
+closure bodies.
 
 Tests are `isNul`, `isUndef`, `isNullish`, `isBool`, `isRef` and `isFun`.
 `isNullish` accepts null and undefined; false takes its negative branch. A location never appears
@@ -149,7 +156,7 @@ slot values; `alias: false` means the cell currently contains the value in the
 other slot. These are finite state assertions, not extra type labels.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`,
-`typedRead`, `observedRead`, `knownValue`, `allocated`, `written`). Constructor payloads use
+`typedRead`, `observedRead`, `knownValue`, `created`, `allocated`, `written`). Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking; the
 [graph regression](lean/Verification/ExperimentState/HeapGraphTests.lean) tests a
 round trip with nonempty facts and effect evidence.
@@ -162,6 +169,15 @@ All type labels in nested effect proofs are bounds checked. Within a source
 statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.
 See the [assertion rules](PROGRAM-TYPING.md#checked-expression-postconditions).
+
+The callable expression rules use the existing term syntax. `makeCallable`
+checks one initializer premise followed by one body premise per advertised
+overload, each body under its argument binder. Its result has a single initial
+bag contract; subtyping can add equivalent invariant requirements. `callCallable`
+selects an advertised signature, while `readCallable` and `writeCallable` use
+the first invariant bag operand. Every nested operand label is bounds checked.
+These rules are available to calculus requests; combined callable/property
+source types are not yet emitted by the source exporter.
 
 The `ifBool` expression rule checks an ordinary `ite` with three premises:
 the Boolean condition, the true arm, and the false arm. Each arm has the root's

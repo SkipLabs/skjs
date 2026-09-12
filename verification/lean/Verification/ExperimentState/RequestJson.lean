@@ -52,6 +52,7 @@ def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ => []
   | .refs A bs => A :: bs
   | .arrs L => L.flatMap (fun p => [p.1,p.2])
+  | .callable A bs L => A :: bs ++ L.flatMap (fun p => [p.1,p.2])
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)

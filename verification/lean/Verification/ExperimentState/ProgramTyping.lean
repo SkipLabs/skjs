@@ -37,6 +37,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
   | arrs L => exact ⟨hc.1.val, hc.1.scoped⟩
+  | callable a bs L => exact ⟨hc.2.1.val,hc.2.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
 
 theorem meaning_valOnly (G : NormalGraph ι) (A : Ty ι) : ValOnly (meaning G A) :=
@@ -130,6 +131,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
   | funE : Represents G F (.arrs L) →
       (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.funE b) F
+  | makeCallable : Represents G F (.callable P [] L) → HasTy G Γ a P →
+      (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.attach b a) F
+  | callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → (A,B) ∈ L →
+      HasTy G Γ a A → HasTy G Γ (.app f a) B
+  | readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) →
+      HasTy G Γ (.read a) P
+  | writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → HasTy G Γ b P →
+      Represents G N .nul → HasTy G Γ (.write a b) N
   | app : HasTy G Γ f F → Represents G F (.arrs L) → (A, B) ∈ L →
       HasTy G Γ a A → HasTy G Γ (.app f a) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
@@ -187,6 +196,50 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact ih q hq j U heap (push a ρ) ((he.transfer j (Nat.le_of_lt hj) U hx).push ha) hu hok
     have hs := attach_rule nulT_adm n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr hv.2) W h _ hs
+  | @makeCallable F P L Γ a b hr ha hb iha ihb =>
+    intro n W h ρ he hw hh
+    have hcode : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2))
+        n W (instantiate 1 ρ b) := by
+      refine ⟨instantiate_scoped ρ he.1 b 1,?_⟩
+      intro p hp j hj U hx hu heap hok av hav
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
+      rw [instantiate_beta ρ he.1]
+      exact ihb q hq j U heap (push av ρ) ((he.transfer j (Nat.le_of_lt hj) U hx).push hav) hu hok
+    apply bind (Tm.attach (instantiate 1 ρ b)) Step.makeC n W h _ hw hh (iha n W h ρ he hw hh)
+    intro j hj U hx hu heap av hok hav ha'
+    have hc : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2)) j U (instantiate 1 ρ b) :=
+      (arrowsT_code_iff _ 0 _ j U).mp ((arrowsT_adm _).mono j _ U hx _
+        ((arrowsT_adm _).down_le n j hj W _ ((arrowsT_code_iff _ 0 _ n W).mpr hcode)))
+    have hs := attach_rule (meaning_adm G P) j U heap _ av hc hav hu hok ha'
+    exact Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨⟨hv.1,by simp⟩,hv.2⟩) U heap _ hs
+  | @callCallable Γ f F P Ps L A B a hf hr hp ha ihf iha =>
+    intro n W h ρ he hw hh
+    apply bind (fun f => .app f (instantiate 0 ρ a)) Step.appL n W h _ hw hh (ihf n W h ρ he hw hh)
+    intro j hj U hx hu heap fv hok hfv hf'
+    apply bind (.app fv) (Step.appR hfv) j U heap _ hu hok
+      (iha j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro k hk V hy hv heap' av hok' hav ha'
+    have hf'' := (meaning_adm G F).mono k _ V hy fv ((meaning_adm G F).down_le j k hk U fv hf')
+    have hm := ((represents_sem hr k V fv).mp hf'').2
+    have harr : arrowT (meaning G A) (meaning G B) k V fv :=
+      ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
+    exact app_elim (meaning_adm G A) (meaning_valOnly G A) harr ha' hv hok'
+  | @readCallable Γ a Ref A Ps L ha hr ih =>
+    intro n W h ρ he hw hh
+    apply bind Tm.read Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
+    intro j hj U hx hu heap v hok hv ha'
+    exact bag_read (meaning_valOnly G A) ((represents_sem hr j U v).mp ha').1.1 hu hok
+  | @writeCallable Γ a Ref A Ps L b N ha hr hb hn iha ihb =>
+    intro n W h ρ he hw hh
+    apply bind (fun a => .write a (instantiate 0 ρ b)) Step.writeC1 n W h _ hw hh
+      (iha n W h ρ he hw hh)
+    intro j hj U hx hu heap av hok hav ha'
+    apply bind (.write av) (Step.writeC2 hav) j U heap _ hu hok
+      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
+    intro k hk V hy hv heap' bv hok' hbval hb'
+    have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
+    apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
+    exact bag_write (meaning_adm G A) ((represents_sem hr k V av).mp ha'').1.1 hb' hbval hv hok'
   | @app Γ f F L A B a hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
     apply bind (fun f => .app f (instantiate 0 ρ a)) Step.appL n W h _ hw hh (ihf n W h ρ he hw hh)

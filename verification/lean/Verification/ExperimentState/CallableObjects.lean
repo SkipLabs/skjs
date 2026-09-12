@@ -5,13 +5,12 @@ import Verification.ExperimentState.Rules
 A bag invariant forgets the call slot without changing the value. A callable
 object combines that invariant with the existing overloaded call contracts.
 The old reference family still denotes plain objects, so its disjointness and
-certificate rules keep their existing meaning. General object views will need
-an explicit representation in the positive graph before certificates can use
-these additional semantic rules.
+certificate rules keep their existing meaning. The positive graph now exposes combined callable/property contracts through
+`CallableConjunctions` and its `callable` clause.
 
 This is the one-cell, closed-closure fragment: construction, receiver binding,
-property descriptors and a global identity/descriptor coherence invariant are
-not modeled here.
+and property descriptors remain outside this fragment. `ObjectCoherence`
+proves the separate identity/descriptor invariant for execution.
 -/
 namespace Verification.ExperimentState
 

@@ -71,8 +71,12 @@ def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs
   | .boolLit a, .boolLit b => decide (a = b)
   | .refs a bs, .refs c ds => decide (∀ b ∈ c :: ds,
       ∃ x ∈ a :: bs, Rel table x b ∧ Rel table b x)
-  | .arrs L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
+  | .arrs L, .arrs M | .callable _ _ L, .arrs M => decide (∀ p ∈ M, ∃ e ∈ proofs,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
+  | .callable a bs L, .callable c ds M => decide
+      ((∀ b ∈ c :: ds, ∃ x ∈ a :: bs, Rel table x b ∧ Rel table b x) ∧
+       ∀ p ∈ M, ∃ e ∈ proofs,
+         e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true)
   | _, _ => false
 
 
@@ -87,6 +91,15 @@ theorem checkClause_sound [DecidableEq ι] {G : NormalGraph ι} {table proofs a 
     obtain ⟨e, _, _, _, he⟩ := hh p hp
     exact checkArrow_sound he
   · exact of_decide_eq_true h
+  · have hh := of_decide_eq_true h
+    intro p hp
+    obtain ⟨e,_,_,_,he⟩ := hh p hp
+    exact checkArrow_sound he
+  · have hh := of_decide_eq_true h
+    refine ⟨hh.1,?_⟩
+    intro p hp
+    obtain ⟨e,_,_,_,he⟩ := hh.2 p hp
+    exact checkArrow_sound he
 
 /-- Finite evidence collection is proof-only; the checker itself makes no
 classical choices. Monotonicity allows witnesses to share one evidence list. -/
@@ -110,9 +123,23 @@ theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'
   cases a <;> cases b <;> simp only [checkClause, Bool.false_eq_true, decide_eq_true_eq] at *
   all_goals try contradiction
   all_goals try trivial
-  intro p hp
-  obtain ⟨e, he, hL, hP, hc⟩ := h p hp
-  exact ⟨e, hm e he, hL, hP, hc⟩
+  all_goals first
+    | (intro p hp; obtain ⟨e,he,hL,hP,hc⟩ := h p hp; exact ⟨e,hm e he,hL,hP,hc⟩)
+    | (refine ⟨h.1,?_⟩; intro p hp; obtain ⟨e,he,hL,hP,hc⟩ := h.2 p hp;
+       exact ⟨e,hm e he,hL,hP,hc⟩)
+
+private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
+    (h : ∀ p ∈ M, Arrow G (Rel table) L p.1 p.2) :
+    ∃ es : Evidence ι, ∀ p ∈ M, ∃ e ∈ es,
+      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true := by
+  have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,
+      e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true := by
+    intro p hp
+    obtain ⟨pc, hc⟩ := checkArrow_complete (h p hp)
+    exact ⟨[(L, (p, pc))], (L, (p, pc)), by simp, rfl, rfl, hc⟩
+  obtain ⟨es, he⟩ := collect M _ (fun p es es' hm ⟨e, he, hL, hp, hc⟩ =>
+    ⟨e, hm e he, hL, hp, hc⟩) hx
+  exact ⟨es,he⟩
 
 theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
     (h : Covers G (Rel table) a b) : ∃ es, checkClause G table es a b = true := by
@@ -122,17 +149,15 @@ theorem checkClause_complete [DecidableEq ι] {G : NormalGraph ι} {table a b}
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa only [checkClause, decide_eq_true_eq] using h⟩
   · rename_i L M
-    have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,
-        e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true := by
-      intro p hp
-      obtain ⟨pc, hc⟩ := checkArrow_complete (h p hp)
-      exact ⟨[(L, (p, pc))], (L, (p, pc)), by simp, rfl, rfl, hc⟩
-    obtain ⟨es, he⟩ := collect M _ (fun p es es' hm ⟨e, he, hL, hp, hc⟩ =>
-      ⟨e, hm e he, hL, hp, hc⟩) hx
-    exact ⟨es, by simpa only [checkClause, decide_eq_true_eq] using he⟩
+    obtain ⟨es,he⟩ := arrow_evidence_complete h
+    exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩
   · exact ⟨[], rfl⟩
   · exact ⟨[], by simpa [checkClause] using h⟩
   · exact ⟨[], rfl⟩
+  · obtain ⟨es,he⟩ := arrow_evidence_complete h
+    exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using he⟩
+  · obtain ⟨es,he⟩ := arrow_evidence_complete h.2
+    exact ⟨es,by simpa only [checkClause,decide_eq_true_eq] using And.intro h.1 he⟩
 
 structure Certificate (ι : Type) where
   table : Table ι

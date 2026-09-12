@@ -16,13 +16,14 @@ graph labels:
 $$A ::= \bot\mid i\mid A\lor A.$$
 
 A **clause** constrains one value shape. A value is null, undefined, a boolean, a location
-or a closed lambda, and each clause pins exactly one of those:
+or a function object with closed invocation code, and each clause pins exactly one of those:
 
 $$
 \begin{aligned}
-c &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{bool}\mid\mathsf{true}\mid\mathsf{false}\mid r\mid f,\\
+c &::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{bool}\mid\mathsf{true}\mid\mathsf{false}\mid r\mid f\mid o,\\
 r &::= \mathsf{Ref}\,A\mid r\land\mathsf{Ref}\,A,\\
-f &::= \mathsf{fun}\mid f\land(A\to A).
+f &::= \mathsf{fun}\mid f\land(A\to A),\\
+o &::= \mathsf{Callable}(A;[A_1,\ldots,A_m];[(B_1,C_1),\ldots,(B_k,C_k)]).
 \end{aligned}
 $$
 
@@ -34,14 +35,14 @@ $$
 | $\mathsf{true}$, $\mathsf{false}$ | exactly that value, at every budget |
 | $\mathsf{Ref}\,A$ | a location whose stored invariant agrees with $A$ |
 | $r\land\mathsf{Ref}\,A$ | the same location, also agreeing with $A$ |
-| $\mathsf{fun}$ | a closed lambda, carrying no call obligation |
+| $\mathsf{fun}$ | a function object with closed invocation code, carrying no call obligation |
 | $f\land(A\to B)$ | also: applied to any argument in $A$, it is safe at $B$ |
 
 $\mathsf{fun}$ is the empty arrow intersection. It is a terminal because an
 intersection of zero arrows cannot be derived from a rule producing arrows, and
-it is a real type: every closed lambda inhabits it. A single arrow $A\to B$
+it is a real type: every function object with closed invocation code inhabits it. A single arrow $A\to B$
 abbreviates $\mathsf{fun}\land(A\to B)$, since arrow membership already requires
-a closed lambda.
+closed invocation code.
 
 References are asymmetric to arrows here: $r$ always carries a first operand, so
 there is no bare "any location" clause. A cell's operand is the invariant that
@@ -68,9 +69,19 @@ A graph body is a finite positive formula over clauses:
 $$P ::= \bot\mid c\mid P\lor P\mid P\land P.$$
 
 In the Lean development and the [request encoding](REQUEST-PROTOCOL.md#request-fields)
-these clauses are `nul`, `undef`, `bool`, `boolLit`, `refs` and `arrs`, where a reference
+these clauses are `nul`, `undef`, `bool`, `boolLit`, `refs`, `arrs`, and `callable`, where a reference
 conjunction is a first operand plus the rest, and an arrow intersection is a
-possibly-empty list of domain/result pairs.
+possibly-empty list of domain/result pairs. A `callable` clause carries a first
+bag invariant, a list of further bag invariants, and its domain/result pairs.
+All constraints apply to one object. Its shape is function, as for `arrs`;
+`refs` still means a plain object. There is no callability-neutral bag clause yet.
+
+A callable intersection concatenates both lists of requirements. Intersecting
+it with `arrs` adds call obligations while retaining its bag invariants.
+Subtyping between callable clauses requires the same bidirectional operand
+coverage as references, together with arrow coverage. A callable can forget
+its bag requirements to become `arrs`; the reverse requires evidence of those
+requirements and has no unconditional rule.
 
 A **normal body** is a union of clauses, with no conjunction above the clause
 level:
