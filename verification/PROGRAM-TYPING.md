@@ -1302,7 +1302,19 @@ forget properties to obtain `arrs`. The producer and consumer support
 `makeCallable`, `callCallable`, `readCallable`, and `writeCallable` evidence.
 [CallableGraphTests.lean](lean/Verification/ExperimentState/CallableGraphTests.lean)
 runs an allocated overloaded object through aliasing, bag mutation, reading,
-and invocation using produced evidence and a JSON roundtrip. The existing
+and invocation using produced evidence and a JSON roundtrip.
+[CallableRecursiveTests.lean](lean/Verification/ExperimentState/CallableRecursiveTests.lean)
+checks the recursive contract `R = callable(null | R; Boolean → Boolean)`:
+a function is written into its own bag, read back, narrowed, and invoked.
+A second graph captures the object before that write and calls the getter
+afterward, exercising a higher-order result and a delayed heap read. Both graphs
+use the existing JSON producer and consumer. The first has kernel-checked
+certificate acceptance, safety at every budget, descriptor coherence for every
+finite run, and an exact terminating execution. Independent recursive labels
+can be related by cyclic subtype evidence, while invariant widening and an
+unguarded nullable call are rejected. These are regressions over the existing
+rules; no recursive-callable special case or additional semantic axiom is needed.
+The existing
 `refT` and graph reference clauses still mean plain objects; callability-neutral
 bag views and source export of combined callable/property types remain future work.
 Source integration also needs explicit property-presence/initialization rules:
