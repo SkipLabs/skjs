@@ -218,3 +218,19 @@ function escapedLocalCallback(flag: boolean): (unit: null) => boolean {
   }
   return (unit: null): boolean => callback(unit);
 }
+
+/**
+ * The outer guard occurs after this closure is created. The closure therefore
+ * checks its own nullable capture; a later guard at the call site cannot supply
+ * a creation-time fact for the closure body.
+ */
+function laterGuardedCallback(flag: boolean): boolean {
+  const callback: ((unit: null) => boolean) | null = (unit: null): boolean =>
+    flag;
+  const invoke: (unit: null) => boolean = (unit: null): boolean =>
+    callback === null ? false : callback(unit);
+  if (callback === null) {
+    return false;
+  }
+  return invoke(null);
+}

@@ -104,6 +104,12 @@ for (const [name, want] of Object.entries(expected)) {
         assert.ok(calleeClaim);
         assert.equal(calleeClaim.type.length, 1);
         assert(!calleeClaim.type.includes(0), "returned closure retains its immutable capture refinement");
+        const later = parsed.functions.find((f: any) => f.name === "laterGuardedCallback");
+        const laterClaims = normalized.functions.find((f) => f.name === later.name)!;
+        const test = later.body[1].init.body.cond.l;
+        const testClaim = laterClaims.expressions.find((p) => p.pos[0] === test.pos[0] && p.pos[1] === test.pos[1]);
+        assert.ok(testClaim);
+        assert(testClaim.type.includes(0), "a later outer guard cannot refine an earlier closure capture");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);

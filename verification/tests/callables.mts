@@ -341,6 +341,19 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
+  {
+    const a = clone(ast);
+    const f = a.functions.find((f: any) => f.name === "laterGuardedCallback");
+    const body = f.body[1].init.body;
+    assert.equal(body.k, "conditional");
+    assert.equal(body.cond.l.name, "callback");
+    // With the inner guard reversed, the call occurs on its null edge. The
+    // later outer guard cannot rescue the already-created closure's body.
+    body.cond.op = "!==";
+    expect("later call-site guard cannot repair the closure's null branch", run("--produce-stateful-source", a, claims), false);
+    expect("later call-site guard cannot repair the closure's null branch (consumer)", run("--check-stateful-source", a, claims, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
