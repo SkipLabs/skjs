@@ -948,6 +948,15 @@ proofs cover both choices and both bag descriptors. The graph producer and JSON
 consumer accept the Boolean contracts and reject incompatible callbacks and
 unjustified singleton contracts. Nested invocation uses the existing closure,
 let-binding, and heap rules without a separate reentry mechanism.
+[CallableOrderTests.lean](lean/Verification/ExperimentState/CallableOrderTests.lean)
+checks effectful creation followed by invocation. The initializer writes a
+captured bag and allocates an intermediate object before the callable is
+allocated; the argument then overwrites the bag before the body reads it.
+The exact execution and heap order are proved for both captured-object
+shapes. A stuck initializer blocks argument effects, and a stuck argument
+blocks the body. Effectful creation cannot reuse value-slot allocation,
+ordinary function-creation, or purity evidence to retain stale heap facts.
+The existing JSON pipeline checks the complete expressions.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
