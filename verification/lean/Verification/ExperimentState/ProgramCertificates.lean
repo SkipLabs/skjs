@@ -45,7 +45,7 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match expand G jf.type with
     | [.arrs L] => (ja.type, j.type) ∈ L
     | _ => False
-  | .letE, .app (.lam b) a, [ja, jb] =>
+  | .letE, .letE a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
   | .alloc, .alloc a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧ Represents G j.type (.refs ja.type [])
@@ -101,6 +101,7 @@ decreasing_by
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
   | .lam b => checkScope (d+1) b
+  | .letE a b => checkScope d a && checkScope (d+1) b
   | .app a b | .write a b | .attach a b => checkScope d a && checkScope d b
   | .alloc a | .read a | .test _ a | .obj _ a => checkScope d a
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
@@ -145,7 +146,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
     · rename_i L he
       exact .app hf he hL ha
     · contradiction
-  · rename_i b a ja jb
+  · rename_i a b ja jb
     rcases hl with ⟨hΓ, ht, rfl⟩
     have ha := hp ja (by simp)
     rw [hΓ, ht] at ha

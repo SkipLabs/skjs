@@ -136,14 +136,14 @@ theorem bind_claim [DecidableEq ι] {G : NormalGraph ι} {Γ a A Δ b B ps}
     (ha : HasTy G Γ a A) (hc : checkEdge G (A :: Γ) Δ ps = true)
     (hb : HasTy G Δ b B) (n W h ρ) (he : EnvOk G Γ ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G B) n W h (.app (.lam (instantiate 1 ρ b)) (instantiate 0 ρ a)) := by
-  apply ProgramTyping.bind (.app (.lam (instantiate 1 ρ b))) (Step.appR rfl) n W h _ hw hh
+    Safe (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
+  apply ProgramTyping.bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh
     (ha.sound n W h ρ he hw hh)
   intro j hj U hx hu heap v hok hv hav
   cases j with
   | zero => trivial
   | succ k =>
-    apply beta_rule _ _ hv k U heap hu hok
+    apply let_rule _ _ hv k U heap hu hok
     rw [instantiate_beta ρ he.1]
     have he' := (checked_env hc ((he.transfer (k+1) hj U hx).push hav)).transfer k
       (Nat.le_succ k) (trunc k (Nat.le_succ k) U) (WExt_refl _)
@@ -157,7 +157,7 @@ theorem checked_bind_claim [DecidableEq ι] {G : NormalGraph ι} {Γ a A Δ b B 
     (hjb : ProgramCertificates.claim eb = ⟨Δ,b,B⟩)
     (hb : ProgramCertificates.checkTree G eb = true)
     (n W h ρ) (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    Safe (meaning G B) n W h (.app (.lam (instantiate 1 ρ b)) (instantiate 0 ρ a)) := by
+    Safe (meaning G B) n W h (.letE (instantiate 0 ρ a) (instantiate 1 ρ b)) := by
   apply bind_claim (G := G) (Γ := Γ) (Δ := Δ) (A := A) _ hc _ n W h ρ he hw hh
   · simpa only [hja] using ProgramCertificates.checkTree_sound ea ha
   · simpa only [hjb] using ProgramCertificates.checkTree_sound eb hb

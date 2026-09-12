@@ -9,15 +9,15 @@ namespace Verification.ExperimentState.WriteRefinedRead
 open HeapObservations
 
 -- Outer binder: cell. Inner binder: unused result of the write; cell shifts to 1.
-def body : Tm := .app (.lam (.read (.var 1))) (.write (.var 0) .tru)
-def program : Tm := .app (.lam body) (.alloc .fls)
+def body : Tm := .letE (.write (.var 0) .tru) (.read (.var 1))
+def program : Tm := .letE (.alloc .fls) body
 
 /-- All ambient admissible heaps are allowed; the proof assumes neither an
 empty heap nor absence of other aliases elsewhere in it. -/
 theorem program_post {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (exact .tru) (fun h' v => Observes h' h.length .tru ∧ v = .tru)
       n W h program := by
-  apply bind (fun t => .app (.lam body) t) (fun hs => .appR rfl hs)
+  apply bind (fun t => .letE t body) Step.letC
     n W h (.alloc .fls) hw hh (alloc_observed boolT_adm hw hh rfl (Or.inr rfl))
   intro j hj U hx hu h' v hh' hval hr hp
   have he : v = .obj h.length .nul := hp.2
@@ -25,9 +25,9 @@ theorem program_post {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
   cases j with
   | zero => trivial
   | succ p =>
-    apply beta rfl hu hh'
+    apply bind_value rfl hu hh'
     change SafePost _ _ p _ h'
-      (.app (.lam (.read (.obj h.length .nul))) (.write (.obj h.length .nul) .tru))
+      (.letE (.write (.obj h.length .nul) .tru) (.read (.obj h.length .nul)))
     exact write_then_read boolT_adm (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh')
       ((refT_adm boolT).down p U _ hr) rfl (Or.inl rfl)
 
@@ -46,10 +46,10 @@ theorem function_arrow (n : Nat) (W : WorldT n) :
 program_post establishes safety independently by composition of general rules. -/
 theorem program_runs (h : Heap) :
     Steps 5 h program ((h ++ [Tm.fls]).set h.length .tru) .tru := by
-  apply Steps.next (.appR rfl (.allocV rfl))
-  apply Steps.next (.beta rfl)
-  apply Steps.next (.appR rfl (.writeV rfl (by simp)))
-  apply Steps.next (.beta rfl)
+  apply Steps.next (.letC (.allocV rfl))
+  apply Steps.next (.letV rfl)
+  apply Steps.next (.letC (.writeV rfl (by simp)))
+  apply Steps.next (.letV rfl)
   exact Steps.next (.readV (by simp [subst])) .refl
 
 #print axioms program_post

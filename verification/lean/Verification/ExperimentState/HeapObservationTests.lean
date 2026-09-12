@@ -10,7 +10,7 @@ open HeapObservations
 theorem write_then_read {n W h l} (hw : WorldAdm W) (hh : HeapOk n W h)
     (hr : refT boolT n W (.obj l .nul)) :
     SafePost (exact .fls) (fun h' u => Observes h' l .fls ∧ u = .fls) n W h
-      (.app (.lam (.read (.obj l .nul))) (.write (.obj l .nul) .fls)) :=
+      (.letE (.write (.obj l .nul) .fls) (.read (.obj l .nul))) :=
   HeapObservations.write_then_read boolT_adm hw hh hr rfl (Or.inr rfl)
 
 /-- The same read is precise before mutation, without strengthening Ref bool. -/

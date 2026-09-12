@@ -12,7 +12,8 @@ language remains an integration obligation.
 This is the whole term syntax:
 
 $$t ::= x_i\mid\lambda t\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
-\mid\ell\mid\mathsf{alloc}(t)\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
+\mid\mathsf{obj}(\ell,t)\mid\mathsf{attach}(t,t)\mid\mathsf{let}(t,t)
+\mid\mathsf{alloc}(t)\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
 \mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.$$
 
 Here $x_i$ is a variable, given as a de Bruijn position, $\ell$ a heap location,
@@ -21,17 +22,22 @@ drawn from $\{\mathsf{isNul},\mathsf{isUndef},\mathsf{isNullish},\mathsf{isBool}
 The nullish test accepts null or undefined; the others recognize individual value shapes. Values are
 the subset
 
-$$v ::= \lambda t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\ell,$$
+$$v ::= \lambda t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,\mathsf{null})\mid\mathsf{obj}(\ell,\lambda t),$$
 
 and `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
-about the same objects. There is no `let` constructor: `HasTy.letE` types the
-pattern $(\lambda t)\,t$. `Step_det` proves that a term and heap have at most
-one successor.
+about the same objects. `letE a b` is an explicit binding: it evaluates `a`,
+then substitutes the resulting value into `b` in one step without changing the
+heap. Only `b` is under the new binder. `HasTy.letE`, source lowering, and the
+certificate producer and consumer all use that constructor. `Step_det` proves
+that a term and heap have at most one successor.
 
 Two different things are named here, and both run through the whole development.
 A **binding** lives in the environment $\rho$; a **location** $\ell$ is an address
 in the heap $h$. This is the usual store/heap pair of an ML-style operational
-semantics. A binding may *hold* a location: $\rho(x)=\ell$.
+semantics. A binding may *hold* an object: $\rho(x)=\mathsf{obj}(\ell,c)$. Below,
+$\ell$ abbreviates the plain-object value $\mathsf{obj}(\ell,\mathsf{null})$.
+A function object carries closure code at the same kind of heap identity;
+[callable contracts](PROGRAM-TYPING.md#callables) additionally constrain that code.
 
 Because the calculus is nameless, a binding is really a de Bruijn position, and
 the implementation calls it a **slot**: environments are lists, and pushing a
@@ -115,7 +121,8 @@ admissible future, and remain safe there. `Safe` is the special case with no
 graph. Starting a graph means starting at $\mathsf{at}(p,\rho)$ for the entry
 point and the input environment.
 
-An arrow contains **closed lambdas** whose substituted bodies are safe at every
+An arrow contains **closed callable code**, either a lambda or a function
+object carrying one, whose substituted body is safe at every
 smaller budget, every admissible future world, every satisfying heap, and every
 argument in the domain there. The guarantee concerns the body after beta; the
 actual application spends that step before invoking it. Consequently `app_elim`

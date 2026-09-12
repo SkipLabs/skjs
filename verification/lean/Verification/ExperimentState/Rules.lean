@@ -46,6 +46,14 @@ theorem beta_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : Wo
   Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .beta hval,
     HeapOk_trunc p W h hok, hb⟩
 
+/-- A binding consumes one step after its initializer has become a value. -/
+theorem let_rule {B : Fam} (b a : Tm) (hval : isVal a = true) (p : Nat) (W : WorldT (p + 1))
+    (h : Heap) (hadm : WorldAdm W) (hok : HeapOk (p + 1) W h)
+    (hb : Safe B p (trunc p (Nat.le_succ p) W) h (subst 0 a b)) :
+    Safe B (p + 1) W h (.letE a b) :=
+  Or.inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hadm, .letV hval,
+    HeapOk_trunc p W h hok, hb⟩
+
 /-- **Evaluation inside the argument of an application.** The bind rule the
 composite programs need: run the argument, then continue with whatever value it
 produces, in whatever world and heap it produced them. -/
@@ -245,6 +253,8 @@ theorem diverging_in_arrowsT (L : List (Fam × Fam))
   intro p hp j hj W' hx hu hh hok a ha
   exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 
+
+#print axioms let_rule
 
 end ExperimentState
 end Verification

@@ -12,7 +12,7 @@ private def subE (e : Evidence (Fin 6)) (B : Ty (Fin 6)) (p : PositiveCertificat
 private def appE (f a : Evidence (Fin 6)) (B : Ty (Fin 6)) : Evidence (Fin 6) :=
   .node ⟨(claim f).context, .app (claim f).term (claim a).term, B⟩ .app [f,a]
 private def letE (a b : Evidence (Fin 6)) : Evidence (Fin 6) :=
-  .node ⟨(claim a).context, .app (.lam (claim b).term) (claim a).term, (claim b).type⟩ .letE [a,b]
+  .node ⟨(claim a).context, .letE (claim a).term (claim b).term, (claim b).type⟩ .letE [a,b]
 
 def dispatchEvidence : Evidence (Fin 6) :=
   .node ⟨[[2]], dispatch, [3]⟩ .lam

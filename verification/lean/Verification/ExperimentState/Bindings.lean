@@ -13,6 +13,7 @@ namespace Verification.ExperimentState
 def Scoped (d : Nat) : Tm → Prop
   | .var i => i < d
   | .lam b => Scoped (d + 1) b
+  | .letE a b => Scoped d a ∧ Scoped (d + 1) b
   | .app f a | .attach f a => Scoped d f ∧ Scoped d a
   | .alloc a | .read a | .test _ a | .obj _ a => Scoped d a
   | .write a b => Scoped d a ∧ Scoped d b
@@ -26,6 +27,7 @@ theorem Scoped.mono {t : Tm} {d e : Nat} (h : Scoped d t) (hde : d ≤ e) :
   case lam b ih => exact ih h (by omega)
   case obj l c ih => exact ih h hde
   case app f a ihf iha => exact ⟨ihf h.1 hde, iha h.2 hde⟩
+  case letE a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 (by omega)⟩
   case attach f a ihf iha => exact ⟨ihf h.1 hde, iha h.2 hde⟩
   case write a b iha ihb => exact ⟨iha h.1 hde, ihb h.2 hde⟩
   case ite c a b ihc iha ihb => exact ⟨ihc h.1 hde, iha h.2.1 hde, ihb h.2.2 hde⟩
@@ -41,6 +43,7 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case lam b ih => rw [ih h (by omega)]
   case obj l c ih => rw [ih h hj]
   case app f b ihf ihb => rw [ihf h.1 hj, ihb h.2 hj]
+  case letE x b ihx ihb => rw [ihx h.1 hj, ihb h.2 (by omega)]
   case attach f b ihf ihb => rw [ihf h.1 hj, ihb h.2 hj]
   case write b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case ite c b e ihc ihb ihe => rw [ihc h.1 hj, ihb h.2.1 hj, ihe h.2.2 hj]
@@ -64,6 +67,7 @@ theorem subst_scoped {t a : Tm} {d j : Nat} (ht : Scoped (d + 1) t)
   case lam b ih => exact ih ht (by omega)
   case obj l c ih => exact ih ht hj
   case app f b ihf ihb => exact ⟨ihf ht.1 hj, ihb ht.2 hj⟩
+  case letE x b ihx ihb => exact ⟨ihx ht.1 hj, ihb ht.2 (by omega)⟩
   case attach f b ihf ihb => exact ⟨ihf ht.1 hj, ihb ht.2 hj⟩
   case write b c ihb ihc => exact ⟨ihb ht.1 hj, ihc ht.2 hj⟩
   case ite c b e ihc ihb ihe => exact ⟨ihc ht.1 hj, ihb ht.2.1 hj, ihe ht.2.2 hj⟩
@@ -82,6 +86,7 @@ def push (a : Tm) (ρ : Env) : Env
 def instantiate (d : Nat) (ρ : Env) : Tm → Tm
   | .var i => if i < d then .var i else ρ (i - d)
   | .lam b => .lam (instantiate (d + 1) ρ b)
+  | .letE a b => .letE (instantiate d ρ a) (instantiate (d + 1) ρ b)
   | .obj l c => .obj l (instantiate d ρ c)
   | .app f a => .app (instantiate d ρ f) (instantiate d ρ a)
   | .attach f a => .attach (instantiate d ρ f) (instantiate d ρ a)
@@ -99,6 +104,7 @@ theorem instantiate_scoped (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (t : Tm) (d
   case lam b ih => exact ih _
   case obj l c ih => exact ih d
   case app f a ihf iha => exact ⟨ihf _, iha _⟩
+  case letE a b iha ihb => exact ⟨iha _, ihb _⟩
   case attach f a ihf iha => exact ⟨ihf _, iha _⟩
   case write a b iha ihb => exact ⟨iha _, ihb _⟩
   case ite c a b ihc iha ihb => exact ⟨ihc _, iha _, ihb _⟩
@@ -123,6 +129,7 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case lam b ih => rw [ih]
   case obj l c ih => rw [ih]
   case app f b ihf ihb => rw [ihf, ihb]
+  case letE a b iha ihb => rw [iha, ihb]
   case attach f b ihf ihb => rw [ihf, ihb]
   case write b c ihb ihc => rw [ihb, ihc]
   case ite c b e ihc ihb ihe => rw [ihc, ihb, ihe]
@@ -138,6 +145,7 @@ theorem instantiate_above {t : Tm} {d : Nat} (ht : Scoped d t) (ρ : Env) :
   case lam b ih => rw [ih ht]
   case obj l c ih => rw [ih ht]
   case app f a ihf iha => rw [ihf ht.1, iha ht.2]
+  case letE a b iha ihb => rw [iha ht.1, ihb ht.2]
   case attach f a ihf iha => rw [ihf ht.1, iha ht.2]
   case write a b iha ihb => rw [iha ht.1, ihb ht.2]
   case ite c a b ihc iha ihb => rw [ihc ht.1, iha ht.2.1, ihb ht.2.2]

@@ -4,8 +4,8 @@
 The operational foundation of the stateful type development. It is compiled
 and tested, and is the current verifier's language.
 
-An untyped call-by-value calculus with a mutable heap: lambda, application, two
-constants, and allocate/read/write. Values are terms, so worlds, heaps and the
+An untyped call-by-value calculus with a mutable heap: closures, application,
+explicit binding, primitive values, and object allocation/read/write. Values are terms, so worlds, heaps and the
 operational semantics all speak about the same objects.
 
 Substitution is written for *closed* arguments. `Bindings.lean` proves its
@@ -32,6 +32,8 @@ inductive Tm where
   | var (i : Nat)
   | lam (b : Tm)
   | app (f a : Tm)
+  /-- Evaluate `a`, then substitute its value into `b`. Binding allocates no object. -/
+  | letE (a b : Tm)
   | nul
   /-- The value a body produces by completing rather than returning. -/
   | undef
@@ -83,6 +85,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .var i => if i == j then a else if j < i then .var (i - 1) else .var i
   | .lam b => .lam (subst (j + 1) a b)
   | .app f x => .app (subst j a f) (subst j a x)
+  | .letE x b => .letE (subst j a x) (subst (j + 1) a b)
   | .nul => .nul
   | .undef => .undef
   | .tru => .tru
@@ -103,6 +106,8 @@ abbrev Heap := List Val
 inductive Step : Heap → Tm → Heap → Tm → Prop where
   | appL : Step h f h' f' → Step h (.app f a) h' (.app f' a)
   | appR : isVal f = true → Step h a h' a' → Step h (.app f a) h' (.app f a')
+  | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
+  | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   | beta : isVal a = true → Step h (.app (.lam b) a) h (subst 0 a b)
   /-- Calling a function object is one step, as for a lambda: its code is in the value. -/
   | betaC : isVal a = true → Step h (.app (.obj l (.lam b)) a) h (subst 0 a b)
@@ -193,6 +198,14 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | appR _ s' => exact (ih s').imp id (congrArg (Tm.app _ ·))
     | beta hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
     | betaC hv' => exact absurd s (by intro hs; exact value_no_step hv' hs)
+  | letC hs ih =>
+    cases s2 with
+    | letC hs' => exact (ih hs').imp id (congrArg (Tm.letE · _))
+    | letV hv => exact absurd hs (value_no_step hv)
+  | letV hv =>
+    cases s2 with
+    | letC hs => exact absurd hs (value_no_step hv)
+    | letV => exact ⟨rfl, rfl⟩
   | beta hv =>
     cases s2 with
     | appL s' => exact absurd s' lam_no_step
@@ -283,6 +296,13 @@ theorem betaC_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
   | appL hs => cases hs
   | appR _ hs => exact False.elim (value_no_step ha hs)
   | betaC => exact ⟨rfl, rfl⟩
+
+/-- Binding a value spends one step and leaves the heap unchanged. -/
+theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}
+    (hs : Step h (.letE a b) h' t) : h' = h ∧ t = subst 0 a b := by
+  cases hs with
+  | letC hs => exact False.elim (value_no_step ha hs)
+  | letV => exact ⟨rfl, rfl⟩
 
 theorem attach_step_inv {b : Tm} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.attach (.lam b) v) h' t) : h' = h ++ [v] ∧ t = .obj h.length (.lam b) := by

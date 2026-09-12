@@ -67,9 +67,11 @@ let _ = f true;
 f null
 -/
 def program : Tm :=
-  .app (.lam (.app (.lam (.app (.lam (.app (.lam
-    (.app (.lam (.app (.var 3) .nul)) (.app (.var 2) .tru)))
-    (.write (.var 0) .fls))) (.var 1))) dispatch)) (.alloc .tru)
+  .letE (.alloc .tru)
+    (.letE dispatch
+      (.letE (.var 1)
+        (.letE (.write (.var 0) .fls)
+          (.letE (.app (.var 2) .tru) (.app (.var 3) .nul)))))
 
 theorem program_typed : HasTy G [] program [0, 1] := by
   apply HasTy.letE (A := [2]) (.alloc (A := [1]) (.tru (by rfl)) (by rfl))
@@ -94,16 +96,16 @@ inductive Runs : Heap → Tm → Heap → Tm → Prop where
   | next : Step h t h' t' → Runs h' t' h'' t'' → Runs h t h'' t''
 
 theorem program_returns_false : Runs [] program [.fls] .fls := by
-  apply Runs.next (.appR rfl (.allocV rfl))
-  apply Runs.next (.beta rfl)
-  apply Runs.next (.beta rfl)
-  apply Runs.next (.beta rfl)
-  apply Runs.next (.appR rfl (.writeV rfl (by decide)))
-  apply Runs.next (.beta rfl)
-  apply Runs.next (.appR rfl (.beta rfl))
-  apply Runs.next (.appR rfl (.iteC (.testV rfl)))
-  apply Runs.next (.appR rfl .iteF)
-  apply Runs.next (.beta rfl)
+  apply Runs.next (.letC (.allocV rfl))
+  apply Runs.next (.letV rfl)
+  apply Runs.next (.letV rfl)
+  apply Runs.next (.letV rfl)
+  apply Runs.next (.letC (.writeV rfl (by decide)))
+  apply Runs.next (.letV rfl)
+  apply Runs.next (.letC (.beta rfl))
+  apply Runs.next (.letC (.iteC (.testV rfl)))
+  apply Runs.next (.letC .iteF)
+  apply Runs.next (.letV rfl)
   apply Runs.next (.beta rfl)
   apply Runs.next (.iteC (.testV rfl))
   apply Runs.next .iteT

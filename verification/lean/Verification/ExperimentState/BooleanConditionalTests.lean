@@ -84,7 +84,7 @@ private def knownProof : Evidence Nat :=
 
 private def knownEffectProgram : Program :=
   [⟨.alloc .tru,.bind 1⟩,
-   ⟨.ite (.app (.lam .tru) (.write (.var 0) .fls)) .fls (.read .nul),.ret⟩]
+   ⟨.ite (.letE (.write (.var 0) .fls) .tru) .fls (.read .nul),.ret⟩]
 #guard ok (roundtrip ⟨refinedTypes ++ [[.refs [0,1] []]],knownEffectProgram,
   [⟨[],[3]⟩,⟨[[3]],[1]⟩],[1],0,[]⟩)
 
@@ -95,8 +95,8 @@ theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.allocV rfl))
-    | apply Execution.next (.expr (.iteC (.appR rfl (.writeV rfl (by decide)))))
-    | apply Execution.next (.expr (.iteC (.beta rfl)))
+    | apply Execution.next (.expr (.iteC (.letC (.writeV rfl (by decide)))))
+    | apply Execution.next (.expr (.iteC (.letV rfl)))
     | apply Execution.next (.expr .iteT)
     | apply Execution.next (.bind rfl)
     | apply Execution.next (.ret rfl)
@@ -158,7 +158,7 @@ theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 1
 
 private def effectfulProgram : Program :=
   [⟨.alloc .tru,.bind 1⟩,
-   ⟨.ite (.app (.lam (.read (.var 1))) (.write (.var 0) .fls)) .tru .fls,.ret⟩]
+   ⟨.ite (.letE (.write (.var 0) .fls) (.read (.var 1))) .tru .fls,.ret⟩]
 #guard ok (roundtrip ⟨types,effectfulProgram,[⟨[],[2]⟩,⟨[[2]],[0]⟩],[0],0,[]⟩)
 
 theorem condition_effects_preserved : Execution effectfulProgram 9 []
@@ -167,8 +167,8 @@ theorem condition_effects_preserved : Execution effectfulProgram 9 []
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.allocV rfl))
-    | apply Execution.next (.expr (.iteC (.appR rfl (.writeV rfl (by decide)))))
-    | apply Execution.next (.expr (.iteC (.beta rfl)))
+    | apply Execution.next (.expr (.iteC (.letC (.writeV rfl (by decide)))))
+    | apply Execution.next (.expr (.iteC (.letV rfl)))
     | apply Execution.next (.expr (.iteC (.readV rfl)))
     | apply Execution.next (.expr .iteF)
     | apply Execution.next (.bind rfl)

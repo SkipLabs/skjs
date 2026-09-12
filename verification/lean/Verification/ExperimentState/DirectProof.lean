@@ -25,7 +25,7 @@ def node (Γ : List (Ty Nat)) (t : Tm) (A : Ty Nat) (r : Rule Nat)
 def var (Γ : List (Ty Nat)) (i : Nat) (A : Ty Nat) : Plan := node Γ (.var i) A .var
 
 def letE (Γ : List (Ty Nat)) (a b : Plan) : Plan :=
-  node Γ (.app (.lam b.term) a.term) b.type .letE [a,b]
+  node Γ (.letE a.term b.term) b.type .letE [a,b]
 
 /-- A known Boolean still evaluates its condition; only its reachable arm
 needs the requested result type. The consumer checks the singleton premise. -/
@@ -49,7 +49,7 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
     | .var, .var i, [] =>
       let A ← Γ[i]?
       coerce G pool (.node ⟨Γ,.var i,A⟩ .var []) j.type
-    | .letE, .app (.lam _) _, [a,b] =>
+    | .letE, .letE _ _, [a,b] =>
       let ea ← renderAt G pool depth Γ a
       let eb ← renderAt G pool depth ((claim ea).type :: Γ) b
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])

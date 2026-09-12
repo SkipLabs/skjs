@@ -122,18 +122,18 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let [.arrs L] := expand G F | none
         let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
         coerce G pool (.node ⟨Γ,t,F⟩ .lam ps) A
+    | .letE a b =>
+      let exactTypes := suggestions.reverse.filterMap fun j =>
+        if j.context == Γ && j.term == a then some j.type else none
+      let termTypes := suggestions.reverse.filterMap fun j =>
+        if j.term == a then some j.type else none
+      let variableType := match a with | .var i => (Γ[i]?).toList | _ => []
+      let preferred := variableType ++ exactTypes ++ termTypes
+      return (preferred ++ pool).eraseDups.findSome? (fun B => do
+        let ea ← recur Γ a B
+        let eb ← recur (B :: Γ) b A
+        return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .app f a =>
-      if let .lam b := f then
-        let exactTypes := suggestions.reverse.filterMap fun j =>
-          if j.context == Γ && j.term == a then some j.type else none
-        let termTypes := suggestions.reverse.filterMap fun j =>
-          if j.term == a then some j.type else none
-        let variableType := match a with | .var i => (Γ[i]?).toList | _ => []
-        let preferred := variableType ++ exactTypes ++ termTypes
-        if let some e := (preferred ++ pool).eraseDups.findSome? (fun B => do
-          let ea ← recur Γ a B
-          let eb ← recur (B :: Γ) b A
-          return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb]) then return some e
       return pool.findSome? fun F => do
         let [.arrs L] := expand G F | none
         L.findSome? fun p => do

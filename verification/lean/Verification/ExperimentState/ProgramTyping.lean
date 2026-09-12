@@ -131,7 +131,7 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
       (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.lam b) F
   | app : HasTy G Γ f F → Represents G F (.arrs L) → (A, B) ∈ L →
       HasTy G Γ a A → HasTy G Γ (.app f a) B
-  | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.app (.lam b) a) B
+  | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   | alloc : HasTy G Γ a A → Represents G Ref (.refs A []) → HasTy G Γ (.alloc a) Ref
   | read : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ (.read a) A
   | write : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ b A →
@@ -199,13 +199,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact app_elim (meaning_adm G A) (meaning_valOnly G A) harr ha' hv hok'
   | @letE Γ a A b B ha hb iha ihb =>
     intro n W h ρ he hw hh
-    apply bind (.app (.lam (instantiate 1 ρ b))) (Step.appR rfl) n W h _ hw hh
+    apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh
       (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     cases j with
     | zero => trivial
     | succ k =>
-      apply beta_rule _ _ hav k U heap hu hok
+      apply let_rule _ _ hav k U heap hu hok
       rw [instantiate_beta ρ he.1]
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)

@@ -82,8 +82,11 @@ $$
      {\Gamma\vdash_G \mathsf{let}\ x=a\ \mathsf{in}\ b:B}
 $$
 
-`let` is represented by application of a lambda in the operational language;
-it does not require allocating a type-graph label for that intermediate lambda.
+`let` has its own operational constructor, `letE a b`. It evaluates `a`,
+then substitutes the resulting value into `b` in one nonallocating step.
+Neither a function value nor a function-type graph label is needed. The
+producer and consumer use this constructor directly; lambda application no
+longer has a special binding-certificate route.
 
 $$
 \frac{\Gamma\vdash_G a:A}{\Gamma\vdash_G\mathsf{alloc}(a):\mathsf{Ref}(A)}
@@ -197,7 +200,8 @@ $$
 $$
 
 The formal statement is `instantiate_beta`; environment entries must be closed.
-Arrow membership explicitly requires a closed lambda, so every value in a
+The same substitution law applies to `letE`. Arrow membership requires closed
+callable code, so every value in a
 positive graph type is both a value and closed (`meaning_value`). Semantic
 environments retain these properties when extended, when their world grows,
 and when their observation budget decreases.

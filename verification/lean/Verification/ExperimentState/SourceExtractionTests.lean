@@ -356,10 +356,10 @@ private def joinedCaptureClaims : SourceInput.Claims :=
     exprs := captureClaims.exprs ++ [((44,47),t),((44,45),cellWire),((46,47),t),
       ((51,53),wireTy ⟨false,[.bool]⟩),((51,52),cellWire)] }
 private def joinedCaptureProgram : ControlFlow.Program :=
-  let assignment := Tm.app (.lam (.app (.lam (.app (.lam (.var 1))
-    (.write (.var 1) (.var 0)))) .tru)) (.var 1)
-  captureProgram.set 11 ⟨.lam (.app (.lam (.read (.var 2)))
-    (.ite (.read (.var 1)) .nul (.app (.lam .nul) assignment))),.bind 10⟩
+  let assignment := Tm.letE (.var 1) (.letE .tru (.letE (.write (.var 1) (.var 0)) (.var 1)))
+  captureProgram.set 11
+    ⟨.lam (.letE (.ite (.read (.var 1)) .nul (.letE assignment .nul))
+      (.read (.var 2))),.bind 10⟩
 #guard is ((extractFn joinedCaptureFn joinedCaptureClaims).map (·.program)) joinedCaptureProgram
 #guard ok (do
   let r ← extractFn joinedCaptureFn joinedCaptureClaims
@@ -374,12 +374,13 @@ theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 4
     | apply ControlFlow.Execution.next (.enter rfl)
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
+    | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.iteC (.readV rfl))))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl .iteF))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.beta rfl))))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.appR rfl (.writeV rfl (by decide))))))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.beta rfl)))
+    | apply ControlFlow.Execution.next (.expr (.letC (.iteC (.readV rfl))))
+    | apply ControlFlow.Execution.next (.expr (.letC .iteF))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letV rfl))))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letC (.writeV rfl (by decide))))))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))
     | apply ControlFlow.Execution.next (.expr (.readV rfl))
     | apply ControlFlow.Execution.next (.bind rfl)
     | apply ControlFlow.Execution.next (.effect rfl)
@@ -411,11 +412,10 @@ private def earlyCaptureClaims (q : Bool) : SourceInput.Claims :=
       [((42,43),t),((46,49),b),((46,47),cellWire),((48,49),b),
        ((53,55),wireTy ⟨false,[.bool]⟩),((53,54),cellWire)] }
 private def earlyCaptureProgram (q : Bool) : ControlFlow.Program :=
-  let assignment := Tm.app (.lam (.app (.lam (.app (.lam (.var 1))
-    (.write (.var 1) (.var 0)))) .fls)) (.var 1)
+  let assignment := Tm.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))
   (captureProgram.set 6 ⟨if q then .tru else .fls,.bind 5⟩).set 11
     ⟨.lam (.ite (.read (.var 1)) .tru
-      (.app (.lam (.read (.var 2))) (.app (.lam .nul) assignment))),.bind 10⟩
+      (.letE (.letE assignment .nul) (.read (.var 2)))),.bind 10⟩
 #guard [true,false].all fun q =>
   is ((extractFn (earlyCaptureFn q) (earlyCaptureClaims q)).map (·.program)) (earlyCaptureProgram q)
 #guard [true,false].all fun q => ok (do
@@ -432,13 +432,14 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
     | apply ControlFlow.Execution.next (.enter rfl)
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
+    | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
     | apply ControlFlow.Execution.next (.expr (.iteC (.readV rfl)))
     | apply ControlFlow.Execution.next (.expr .iteT)
     | apply ControlFlow.Execution.next (.expr .iteF)
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.beta rfl))))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.appR rfl (.writeV rfl (by decide))))))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.beta rfl)))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letV rfl))))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.letC (.writeV rfl (by decide))))))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))
     | apply ControlFlow.Execution.next (.expr (.readV rfl))
     | apply ControlFlow.Execution.next (.bind rfl)
     | apply ControlFlow.Execution.next (.effect rfl)
@@ -475,8 +476,7 @@ private def writerClaims : SourceInput.Claims :=
 private def writerProgram : ControlFlow.Program :=
   [⟨.var 0,.ret⟩, ⟨.app (.var 1) (.var 0),.bind ⟨0,some [0,3,4]⟩⟩,
    ⟨.nul,.bind 1⟩, ⟨.var 0,.bind 2⟩, ⟨.var 0,.effect 3⟩,
-   ⟨.lam (.app (.lam (.app (.lam (.app (.lam (.var 1))
-       (.write (.var 1) (.var 0)))) .fls)) (.var 1)),.bind 4⟩,
+   ⟨.lam (.letE (.var 1) (.letE .fls (.letE (.write (.var 1) (.var 0)) (.var 1)))),.bind 4⟩,
    ⟨.var 0,.effect 5⟩, ⟨.alloc (.var 0),.bind ⟨6,some [0]⟩⟩,
    ⟨.tru,.bind 7⟩, ⟨.nul,.effect 8⟩]
 #guard is ((extractFn writerFn writerClaims).map (·.program)) writerProgram
@@ -493,8 +493,9 @@ theorem closure_write_trace : ControlFlow.Execution writerProgram 26 []
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.writeV rfl (by decide))))
+    | apply ControlFlow.Execution.next (.expr (.letC (.writeV rfl (by decide))))
     | apply ControlFlow.Execution.next (.bind rfl)
     | apply ControlFlow.Execution.next (.effect rfl)
     | apply ControlFlow.Execution.next (.ret rfl)
@@ -546,10 +547,9 @@ private def localWriterClaims : SourceInput.Claims :=
       [((32,33),b),((36,39),B),((36,37),cellWire),((38,39),B),
        ((41,43),B),((41,42),cellWire)] }
 private def localWriterProgram : ControlFlow.Program :=
-  let write : Tm := .app (.lam (.app (.lam (.app (.lam (.var 1))
-    (.write (.var 1) (.var 0)))) (.var 1))) (.var 2)
+  let write : Tm := .letE (.var 2) (.letE (.var 1) (.letE (.write (.var 1) (.var 0)) (.var 1)))
   writerProgram.set 5
-    ⟨.lam (.app (.lam (.app (.lam (.read (.var 3))) write)) .fls),.bind 4⟩
+    ⟨.lam (.letE .fls (.letE write (.read (.var 3)))),.bind 4⟩
 #guard is ((extractFn localWriterFn localWriterClaims).map (·.program)) localWriterProgram
 
 /-- A saved local is used by the write and survives the anonymous effect slot. -/
@@ -559,9 +559,10 @@ theorem local_writer_trace : ControlFlow.Execution localWriterProgram 29 []
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
     | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.beta rfl)))
-    | apply ControlFlow.Execution.next (.expr (.appR rfl (.appR rfl (.writeV rfl (by decide)))))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))
+    | apply ControlFlow.Execution.next (.expr (.letC (.letC (.writeV rfl (by decide)))))
     | apply ControlFlow.Execution.next (.expr (.readV rfl))
     | apply ControlFlow.Execution.next (.bind rfl)
     | apply ControlFlow.Execution.next (.effect rfl)
@@ -571,7 +572,7 @@ theorem local_writer_trace : ControlFlow.Execution localWriterProgram 29 []
 
 -- A suggested intermediate type cannot turn false into true.
 #guard !(CertificateProducer.expressionWith G0 [[1],[2],[1,2]]
-  [⟨[],.fls,[1]⟩] 4 [] (.app (.lam (.var 0)) .fls) [1]).isSome
+  [⟨[],.fls,[1]⟩] 4 [] (.letE .fls (.var 0)) [1]).isSome
 
 -- Direct recipes preserve supplied types while rebuilding proofs in the actual context.
 private def widenedVariable := DirectProof.var [[1,2]] 0 [1,2]

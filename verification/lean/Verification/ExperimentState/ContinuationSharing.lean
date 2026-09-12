@@ -9,7 +9,7 @@ open ProgramTyping PositiveRules ProgramCertificates ControlFlow RequestJson Lea
 
 /-- `k` is under an argument slot; `body` is under a continuation slot.
 The continuation term occurs once, independently of how many paths call it. -/
-def share (k body : Tm) : Tm := .app (.lam body) (.lam k)
+def share (k body : Tm) : Tm := .letE (.lam k) body
 
 theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
     {Γ N R C k body} (hc : Represents G C (.arrs [(N,R)]))
@@ -47,7 +47,7 @@ private def recipe : DirectProof.Plan :=
 
 private def term : Tm := share (.read (.var 1))
   (.ite (.var 2)
-    (.ite (.var 3) .tru (.app (.lam (.app (.var 1) .nul)) (.write (.var 1) .fls)))
+    (.ite (.var 3) .tru (.letE (.write (.var 1) .fls) (.app (.var 1) .nul)))
     (.app (.var 0) .nul))
 #guard recipe.term == term
 private def proof : Option (Evidence Nat) :=
@@ -74,10 +74,11 @@ theorem shared_paths (a b : Bool) : Execution program
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.letV rfl))
     | apply Execution.next (.expr (.beta rfl))
     | apply Execution.next (.expr .iteT)
     | apply Execution.next (.expr .iteF)
-    | apply Execution.next (.expr (.appR rfl (.writeV rfl (by decide))))
+    | apply Execution.next (.expr (.letC (.writeV rfl (by decide))))
     | apply Execution.next (.expr (.readV rfl))
     | apply Execution.next (.bind rfl)
     | apply Execution.next (.ret rfl)
@@ -140,6 +141,7 @@ theorem passed_refinement_paths (a b : Bool) : Execution refinedProgram
   cases a <;> cases b <;> repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
+    | apply Execution.next (.expr (.letV rfl))
     | apply Execution.next (.expr (.beta rfl))
     | apply Execution.next (.expr .iteT)
     | apply Execution.next (.expr .iteF)

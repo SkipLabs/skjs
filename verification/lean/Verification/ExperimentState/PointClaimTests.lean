@@ -33,8 +33,7 @@ needed by the continuation and widens the write's result to the supplied union. 
 theorem checked_write_then_read (n W h ρ) (he : EnvOk G [[2]] ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (PositiveRules.meaning G [1]) n W h
-      (.app (.lam (instantiate 1 ρ (.read (.var 1))))
-        (instantiate 0 ρ (.write (.var 0) .fls))) :=
+      (.letE (instantiate 0 ρ (.write (.var 0) .fls)) (instantiate 1 ρ (.read (.var 1)))) :=
   checked_bind_claim (ea := writeEvidence) (eb := continuationEvidence)
     rfl (by cbv) (by decide : checkEdge G [[0],[2]] [[0,1],[2]] [.subset,.subset] = true)
     rfl (by cbv) n W h ρ he hw hh

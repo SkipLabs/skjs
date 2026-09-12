@@ -162,11 +162,11 @@ theorem bind {A B : Fam} {Q R : Post} (C : Tm → Tm)
       rw [trunc_trunc] at he'
       exact WExt_trans he' he
 
-theorem beta {T Q n} {W : WorldT (n+1)} {h b a}
+theorem bind_value {T Q n} {W : WorldT (n+1)} {h b a}
     (hv : isVal a = true) (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
     (hs : SafePost T Q n (trunc n (Nat.le_succ n) W) h (subst 0 a b)) :
-    SafePost T Q (n+1) W h (.app (.lam b) a) :=
-  Or.inr ⟨_,h,_,WExt_refl _,WorldAdm_trunc _ hw,.beta hv,HeapOk_trunc n W h hh,hs⟩
+    SafePost T Q (n+1) W h (.letE a b) :=
+  Or.inr ⟨_,h,_,WExt_refl _,WorldAdm_trunc _ hw,.letV hv,HeapOk_trunc n W h hh,hs⟩
 
 /-- Observations supply read precision without narrowing the location's world
 contract. Reading preserves the whole heap, so all current observations remain. -/
@@ -233,12 +233,12 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hr : refT A n W (.obj l .nul))
     (hv : isVal v = true) (ht : A n W v) :
     SafePost (exact v) (fun h' u => Observes h' l v ∧ u = v) n W h
-      (.app (.lam (.read (.obj l .nul))) (.write (.obj l .nul) v)) := by
+      (.letE (.write (.obj l .nul) v) (.read (.obj l .nul))) := by
   have hlt : l < h.length := by
     obtain ⟨_,c,he,hl,_⟩ := hr
     cases he
     rw [hh.1]; exact (List.getElem?_eq_some_iff.mp hl).1
-  apply bind (fun t => .app (.lam (.read (.obj l .nul))) t) (fun hs => .appR rfl hs)
+  apply bind (fun t => .letE t (.read (.obj l .nul))) Step.letC
     n W h (.write (.obj l .nul) v) hw hh
     (write_observed ha hw hh hr hv ht)
   intro j hj U hx hu h' u hh' hval ht hpost
@@ -246,7 +246,7 @@ theorem write_then_read {A : Fam} (ha : Adm A) {n W h l v}
   cases j with
   | zero => trivial
   | succ p =>
-    apply beta hval hu hh'
+    apply bind_value hval hu hh'
     change SafePost _ _ p _ h' (.read (.obj l .nul))
     apply weaken _ (read_observed (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh') hv ho)
     intro h'' result hp
@@ -262,6 +262,7 @@ theorem call_forget {A B : Fam} (ha : Adm A) (hav : ValOnly A) {n W h f a}
     SafePost B (fun _ _ => True) n W h (.app f a) :=
   forget (app_elim ha hav hf ht hw hh)
 
+#print axioms bind_value
 #print axioms postcondition
 #print axioms bind
 #print axioms read_observed
