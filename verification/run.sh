@@ -170,6 +170,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   UNDEFINED_SOURCE=verification/tests/stateful-source/undefined.ts
   CLOSURES=verification/tests/stateful-source/closures.ts
   CALLABLES=verification/tests/callables/unions.ts
+  FACTORIES=verification/tests/callables/factories.ts
   CALLBACKS=verification/tests/stateful-source/primitive-callbacks.ts
   COUNTEREXAMPLE=verification/tests/skjs-unsound/captured-refinement.ts
   NEGATION=verification/tests/stateful-source/negation.ts
@@ -196,6 +197,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture undefined "$UNDEFINED_SOURCE"
   build fixture closures "$CLOSURES"
   build fixture callables "$CALLABLES"
+  build fixture factories "$FACTORIES"
   build fixture callbacks "$CALLBACKS"
   build fixture counterexample "$COUNTEREXAMPLE"
   build fixture negation "$NEGATION"
@@ -233,6 +235,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
+  run_test "Callable factories" node verification/tests/callable-factories.mts "$WORK/factories.ast" "$WORK/factories.claims" "$FACTORIES" "$VERIFIER"
   run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.mts        "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"
   run_test "Negation and claim repair" node verification/tests/negation.mts        "$WORK/negation.ast" "$WORK/negation.claims" "$NEGATION" "$VERIFIER"        "$WORK/loop-exit.ast" "$WORK/loop-exit.claims" "$LOOP_EXIT"        "$WORK/singleton.ast" "$WORK/singleton.claims" "$SINGLETON"
   run_test "Null predicates" node verification/tests/null-tests.mts        "$WORK/null-tests.ast" "$WORK/null-tests.claims" "$NULL_TESTS" "$VERIFIER"        "$WORK/null-guard.ast" "$WORK/null-guard.claims" "$NULL_GUARD"        "$WORK/null-exit.ast" "$WORK/null-exit.claims" "$NULL_EXIT"        "$WORK/compound-stale.ast" "$WORK/compound-stale.claims" "$COMPOUND_STALE"
