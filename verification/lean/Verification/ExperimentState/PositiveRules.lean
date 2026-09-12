@@ -210,6 +210,27 @@ theorem Arrow.toCallArrow {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) 
   | union _ _ hl hh => exact .union (pre := []) (suffix := []) hl hh
   | combine _ _ hg hl hh => exact .combine hl hh hg
 
+/-- Native coverage over singleton signatures recovers the existing unary rules. -/
+theorem CallArrow.toArrow {G : NormalGraph ι} {R L c d}
+    (hc : CallArrow G R (L.map fun p => ([p.1], p.2)) [c] d) : Arrow G R L c d := by
+  generalize he : [c] = As at hc
+  induction hc generalizing c with
+  | empty hem => simp only [← he, List.mem_singleton] at hem; subst c; exact .empty
+  | source hm hd hr =>
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hm
+    rw [← he] at hd
+    exact .source hp hd.1 hr
+  | @union pre a suffix d b hl hh il ir =>
+    have hlen := congrArg List.length he
+    simp only [List.length_cons, List.length_nil, List.length_append] at hlen
+    have hp : pre = [] := by simpa only [List.length_eq_zero_iff] using (show pre.length = 0 by omega)
+    have hs : suffix = [] := by simpa only [List.length_eq_zero_iff] using (show suffix.length = 0 by omega)
+    subst pre; subst suffix
+    simp only [List.nil_append, List.cons.injEq, and_true] at he
+    subst c
+    exact .union (il rfl) (ir rfl)
+  | combine hl hh hg il ir => exact .combine (il he) (ir he) hg
+
 theorem Arrow.sound {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) (n : Nat)
     (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
     (W : WorldT n) (v : Val)

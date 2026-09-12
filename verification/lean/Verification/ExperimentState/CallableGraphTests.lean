@@ -96,6 +96,36 @@ private def creationPlan : DirectProof.Plan :=
 #guard !validRequest {request with types := types ++ [[.callable [1] [[99]] signatures]]}
 #guard !validRequest {request with types := types ++ [[.callable [1] [] [([1],[99])]]]}
 
+-- Native certificates split the middle parameter while fixing both neighbors.
+-- These are certificate checks, not executions of extracted source programs.
+namespace ArgumentCertificates
+open PositiveCertificates
+private def table : PositiveRules.Table Nat := [([0],[0]),([1],[1])]
+private def overloads : List (List (List Nat) × List Nat) :=
+  [([[0],[0],[1]],[1]), ([[0],[1],[1]],[1])]
+private def split : ArrowCert Nat :=
+  .union [[0]] [0] [1] [[1]]
+    (.source ([[0],[0],[1]],[1])) (.source ([[0],[1],[1]],[1]))
+#guard checkCallArrow G table overloads [[0],[0,1],[1]] [1] split
+#guard !(checkCallArrow G table overloads [[1],[0,1],[1]] [1] split)
+-- Selection cannot silently drop a target argument or ignore a source argument.
+#guard !(checkCallArrow G table [([[0]],[1])] [[0],[1]] [1] (.source ([[0]],[1])))
+#guard !(checkCallArrow G table [([[0],[1]],[1])] [[0]] [1] (.source ([[0],[1]],[1])))
+-- Zero arguments have a real call obligation; a bottom parameter is uninhabited.
+#guard !(checkCallArrow G table [] [] [1] .empty)
+#guard checkCallArrow G table [] [[0],[]] [1] .empty
+#guard checkCallArrow G table [([],[1])] [] [1] (.source ([],[1]))
+#guard match fromJson? (toJson split) with
+  | .error _ => false
+  | .ok (decoded : ArrowCert Nat) =>
+      decoded == split && checkCallArrow G table overloads [[0],[0,1],[1]] [1] decoded
+-- An out-of-range label in a preserved suffix must fail the outer evidence gate.
+private def badSuffix : ArrowCert Nat :=
+  .union [[0]] [0] [1] [[99]] .empty .empty
+#guard !validEvidence types.length (.node ⟨[],.nul,[0]⟩
+  (.sub (.core ⟨table,[([], (([0],[1]),badSuffix))]⟩)) [])
+end ArgumentCertificates
+
 #print axioms checked
 #print axioms returns_false
 #print axioms coherent

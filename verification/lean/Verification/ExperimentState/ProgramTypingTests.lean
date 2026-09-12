@@ -30,7 +30,7 @@ theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
 def widenCert : Proof (Fin 6) := .core
   ⟨[([3], [4]), ([0], [0]), ([1], [1]), ([0], [0, 1]), ([1], [0, 1])],
     [([([0], [1]), ([1], [0])], (([0, 1], [0, 1]),
-      .union [0] [1] (.source ([0], [1])) (.source ([1], [0]))))]⟩
+      .union [] [0] [1] [] (.source ([[0]], [1])) (.source ([[1]], [0]))))]⟩
 
 #guard check G [3] [4] widenCert
 #guard !(check G [4] [3] widenCert)

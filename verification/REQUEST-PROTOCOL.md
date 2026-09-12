@@ -148,6 +148,18 @@ relies on; `truLit` and `flsLit` are the Boolean singleton introductions. Expres
 contexts, terms and result types. The consumer checks these against the request;
 this redundancy cannot substitute a different program or different claims.
 
+Subtype arrow certificates use ordered lists of argument types. A `source`
+certificate's `p` is `[domains, result]`, for example
+`{"source":{"p":[[[0],[1]],[1]]}}` for a two-argument signature. A `union`
+certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
+`suffix` are lists of unchanged argument types, and the selected argument splits
+from `a ++ b` into the two branches. `combine` retains its result types `b` and
+`b'` and two branches; `empty` requires an empty type at some argument position,
+not merely a zero-length argument list. Every label in these fields is bounds
+checked. Current graph signatures remain unary, so their producer emits
+singleton `domains` and empty `pre`/`suffix`; the native list checker validates
+that specialization. There is one accepted certificate shape.
+
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
 `{slot, contents}` facts. `contents` is a list of literal constructors `nul`,

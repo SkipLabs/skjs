@@ -1136,8 +1136,11 @@ uninhabited; an empty parameter list itself still admits a zero-argument call.
 Result combination uses the same compatibility check and shared-execution
 argument as unary overloads. `Arrow.sound` embeds existing unary derivations
 into `CallArrow.sound`, so current certificates already rely on the general
-proof. Graph signatures, certificate syntax and search still expose unary
-calls; this proof does not widen the accepted source fragment.
+proof. `checkCallArrow` checks list coverage and is sound and complete for
+`CallArrow` derivations. `checkArrow` specializes that checker to the current
+unary graph signatures; search emits singleton domain lists in the same
+certificate syntax. Graph signatures, expression typing and source search
+still expose unary calls, so accepted source programs have not widened.
 
 The final `accept` check binds the evidence to **all the requested point claims**
 as well as calling `checkEntry` on the actual program and external input context. Thus a valid certificate

@@ -66,8 +66,9 @@ def validRequest (r : Request) : Bool :=
 
 def arrowTypes : PositiveCertificates.ArrowCert Nat → List (Ty Nat)
   | .empty => []
-  | .source p => [p.1,p.2]
-  | .union a b l r | .combine a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
+  | .source p => p.1 ++ [p.2]
+  | .union pre a b suffix l r => pre ++ [a,b] ++ suffix ++ arrowTypes l ++ arrowTypes r
+  | .combine a b l r => a :: b :: (arrowTypes l ++ arrowTypes r)
 
 def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .subset => []

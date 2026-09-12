@@ -46,17 +46,17 @@ def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (L : Op
     (c d : Ty ι) : Nat → Option (PositiveCertificates.ArrowCert ι)
   | 0 => none
   | fuel+1 => Id.run do
-    let basic := PositiveCertificates.ArrowCert.empty :: L.map (.source ·)
+    let basic := PositiveCertificates.ArrowCert.empty :: L.map (fun p => .source ([p.1], p.2))
     if let some p := basic.find? (fun p => PositiveCertificates.checkArrow G table L c d p) then
       return some p
     if let a :: rest := c then
       if !rest.isEmpty then
         if let some left := arrowSearch G table L [a] d fuel then
           if let some right := arrowSearch G table L rest d fuel then
-            let p := PositiveCertificates.ArrowCert.union [a] rest left right
+            let p := PositiveCertificates.ArrowCert.union [] [a] rest [] left right
             if PositiveCertificates.checkArrow G table L c d p then return some p
     return (L.flatMap fun p => L.map fun q =>
-      PositiveCertificates.ArrowCert.combine p.2 q.2 (.source p) (.source q)).find?
+      PositiveCertificates.ArrowCert.combine p.2 q.2 (.source ([p.1], p.2)) (.source ([q.1], q.2))).find?
         (fun p => PositiveCertificates.checkArrow G table L c d p)
 
 def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)

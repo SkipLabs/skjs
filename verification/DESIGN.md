@@ -963,8 +963,11 @@ all parameter bindings before captures; unary creation rules share that proof.
 Declarative overload coverage now handles ordered domain lists, pointwise
 contravariance, union splitting at any argument position, and compatible result
 combination. The unary subtype soundness proof uses this general rule.
-Next, extend type-graph nodes, typing certificates and the producer/consumer
-together. Multi-argument source calls remain gated.
+Subtype certificates now carry domain lists and the position of a union split.
+The list checker is sound and complete for declarative coverage; current unary
+search emits singleton domains through this checker and the JSON format.
+Next, extend type-graph nodes, expression typing certificates and source
+production/consumption together. Multi-argument source calls remain gated.
 
 ### Next callable and object milestones
 

@@ -46,7 +46,7 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
 def splitCert : Certificate (Fin 12) :=
   ⟨[([9], [10]), ([0], [0]), ([1], [1])],
     [([([0], [0]), ([1], [0])], (([0, 1], [0]),
-      .union [0] [1] (.source ([0], [0])) (.source ([1], [0]))))]⟩
+      .union [] [0] [1] [] (.source ([[0]], [0])) (.source ([[1]], [0]))))]⟩
 #guard checkCoreSource G [9] [10] splitCert
 #guard !(checkCoreSource G [10] [9] splitCert)
 
@@ -64,8 +64,8 @@ def tripleCert : Certificate (Fin 5) :=
     ([1, 2], [1, 2]), ([0, 2], [0, 2])],
    [([([0], [0, 1]), ([0], [1, 2]), ([0], [0, 2])], (([0], []),
      .combine [1] [0, 2]
-       (.combine [0, 1] [1, 2] (.source ([0], [0, 1])) (.source ([0], [1, 2])))
-       (.source ([0], [0, 2]))))]⟩
+       (.combine [0, 1] [1, 2] (.source ([[0]], [0, 1])) (.source ([[0]], [1, 2])))
+       (.source ([[0]], [0, 2]))))]⟩
 #guard checkCoreSource TripleG [3] [4] tripleCert
 
 -- A `bool` source clause is covered by the pair of Boolean singleton clauses.
@@ -116,7 +116,7 @@ theorem checked_boolean_split : FamLe
 #guard !(checkCoreSource G [9] [10] ⟨[([9], [10])], splitCert.arrows⟩)
 #guard !(checkArrow (normalizeGraph G) [([0], [0]), ([1], [1])]
   [([0], [0]), ([1], [0])] [0, 1] [0]
-  (.union [0] [] (.source ([0], [0])) .empty))
+  (.union [] [0] [] [] (.source ([[0]], [0])) .empty))
 
 example : PositiveRules.Sub (normalizeGraph G) [0, 0] [1, 0] :=
   check_sound (by decide : check (normalizeGraph G) [0, 0] [1, 0]
