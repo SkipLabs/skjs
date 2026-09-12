@@ -46,7 +46,9 @@ step, and would make the column's failures mean what SKJS's do.
 
 Three failures are this producer's own limits rather than findings:
 `write-refined-read.ts` and `primitive-callbacks.ts` need a current-content
-assertion, which it does not write, and `null-guards.ts` claims a closure at a
-union of an arrow and `null`, which the adapter's lambda rule does not take.
+assertion, which it does not write. In `null-guards.ts`, lambda claims under
+nullable contexts now use the expression's own arrow type, but an allocation
+claim still carries a nullable context rather than the single cell contract
+required by the allocation rule.
 Where `tsc` rejects the program outright, its claims describe something it does
 not accept, and the verifier refusing them says nothing about either checker.

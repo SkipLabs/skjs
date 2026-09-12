@@ -25,8 +25,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
-  // The nullable factory context gives its returned lambda a function-or-null claim.
-  "callables/unions": "failed",
+  // Lambda expression claims retain arrows under nullable return contexts.
+  "callables/unions": "verified",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -48,8 +48,7 @@ const expected = {
   // current-content assertion, which this producer does not write.
   "skjs-incomplete/write-refined-read": "failed",
   "stateful-source/primitive-callbacks": "failed",
-  // A closure claimed at a union of an arrow and null: the adapter's lambda
-  // rule takes a single arrow row.
+  // Lambda union contexts work; a nullable allocation context remains unsupported.
   "stateful-source/null-guards": "failed",
   // tsc rejects these outright, so its claims describe a program it does not
   // accept; the verifier refusing them says nothing about either checker.
@@ -102,7 +101,7 @@ for (const [name, want] of Object.entries(expected)) {
         "10",
       ]);
       got = checked.status === 0 ? "verified" : "failed";
-      if (got === "verified" && name === "callables/factories") {
+      if (got === "verified" && ["callables/factories", "callables/unions"].includes(name)) {
         const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
         if (consumed.status !== 0) {
           got = "consumer-failed";

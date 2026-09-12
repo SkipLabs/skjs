@@ -66,8 +66,7 @@ For `callableArgumentWrite`, the original SKJS assignment claim is Boolean.
 The suite separately verifies an explicit false-result refinement with fresh
 evidence; it does not count that refinement as an original producer claim.
 
-For `nullableFactoryResult`, SKJS's original claims verify. The tsc producer
-currently gives the returned lambda its nullable contextual type, while source
-extraction requires a lambda claim to name an arrow. The TypeScript claim suite
-records this failure; tsc itself accepts the program. This is a producer/adapter
-limitation, not evidence of unsoundness in the example.
+For `nullableFactoryResult`, both producers' claims verify. The tsc producer
+uses the lambda's own expression type under its nullable context; the enclosing
+return still checks that arrow against the full function-or-null contract.
+The TypeScript claim suite independently checks the resulting certificates.
