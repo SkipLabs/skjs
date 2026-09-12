@@ -54,8 +54,9 @@ theorem higher_order_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
 theorem open_lambda_excluded (A B : Fam) (n W) :
     ¬ arrowT A B n W (.lam (.var 1)) := by
   rintro ⟨⟨b, hb, hc⟩, _⟩
-  cases hb
-  exact Nat.lt_irrefl 1 hc
+  rcases hb with hb | ⟨l, hb⟩
+  · cases hb; exact Nat.lt_irrefl 1 hc
+  · cases hb
 
 /--
 let r = alloc true;

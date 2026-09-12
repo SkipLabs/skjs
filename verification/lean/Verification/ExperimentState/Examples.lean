@@ -24,9 +24,8 @@ def Rf : Fam := fixF (fun X => arrowT X nulT)
 theorem Rf_unfold (n : Nat) (W : WorldT n) (v : Val) : Rf n W v ↔ arrowT Rf nulT n W v :=
   fix_unfold _ (arrowT_contractive nulT) n W v
 
-theorem Rf_lam {n W t} (h : Rf n W t) : ∃ b, t = .lam b := by
-  obtain ⟨b, hb, _⟩ := ((Rf_unfold n W t).mp h).1
-  exact ⟨b, hb⟩
+theorem Rf_callable {n W t} (h : Rf n W t) : Callable t :=
+  ((Rf_unfold n W t).mp h).1
 
 def hFn : Tm := .lam .nul
 
@@ -53,7 +52,7 @@ theorem kFn_in_Rf (n : Nat) (W : WorldT n) : Rf n W kFn := by
 
 
 /-- `capFn` ignores its argument and reads location 0. -/
-def capFn : Tm := .lam (.read (.loc 0))
+def capFn : Tm := .lam (.read (.obj 0 .nul))
 
 /-- It inhabits `null → null` against any world extending one that declares
 location 0 to hold `null` -- **in every heap satisfying that world**, not in one
@@ -97,8 +96,8 @@ def prog : Tm := .app (.lam body) (.alloc .tru)
 /-- Reading through the captured closure, at any level and admissible world in
 which the cell is a boolean reference. -/
 theorem closure_read {l : Nat} : ∀ (j : Nat) (W : WorldT j) (h : Heap),
-    refT boolT j W (.loc l) → WorldAdm W → HeapOk j W h →
-    ∀ v, isVal v = true → Safe boolT j W h (.app (.lam (.read (.loc l))) v) := by
+    refT boolT j W (.obj l .nul) → WorldAdm W → HeapOk j W h →
+    ∀ v, isVal v = true → Safe boolT j W h (.app (.lam (.read (.obj l .nul))) v) := by
   intro j W h hr hadm hok v hv
   cases j with
   | zero => trivial
@@ -119,13 +118,13 @@ theorem prog_safe : ∀ (n : Nat) (W : WorldT n) (h : Heap),
     (alloc_rule boolT_adm n W h .tru rfl hadm hok (Or.inl rfl)) ?_
   intro j _ W' _ hadm' h' v hok' hv
   obtain ⟨l, c, rfl, hl, hag⟩ := hv
-  have hr : refT boolT j W' (.loc l) := ⟨l, c, rfl, hl, hag⟩
+  have hr : refT boolT j W' (.obj l .nul) := ⟨l, c, rfl, hl, hag⟩
   cases j with
   | zero => trivial
   | succ q =>
     refine beta_rule _ _ rfl q W' h' hadm' hok' ?_
-    show Safe boolT q _ h' (.app (.lam (.read (.loc l))) (.write (.loc l) .fls))
-    have hrq : refT boolT q (trunc q (Nat.le_succ q) W') (.loc l) :=
+    show Safe boolT q _ h' (.app (.lam (.read (.obj l .nul))) (.write (.obj l .nul) .fls))
+    have hrq : refT boolT q (trunc q (Nat.le_succ q) W') (.obj l .nul) :=
       refT_transfer hr q (Nat.le_succ q) _ (WExt_refl _)
     have hrqc := hrq
     obtain ⟨l2, c2, hvl2, hl2, hag2⟩ := hrqc
@@ -145,13 +144,13 @@ theorem prog_safe : ∀ (n : Nat) (W : WorldT n) (h : Heap),
 through one reference, and the closure reads `false` back -- so the cell's
 contents really change, rather than being rewritten with the value they had. -/
 theorem prog_runs :
-    Step [] prog [.tru] (.app (.lam body) (.loc 0)) ∧
-      Step [.tru] (.app (.lam body) (.loc 0)) [.tru]
-        (.app (.lam (.read (.loc 0))) (.write (.loc 0) .fls)) ∧
-      Step [.tru] (.app (.lam (.read (.loc 0))) (.write (.loc 0) .fls)) [.fls]
-        (.app (.lam (.read (.loc 0))) .nul) ∧
-      Step [.fls] (.app (.lam (.read (.loc 0))) .nul) [.fls] (.read (.loc 0)) ∧
-      Step [.fls] (.read (.loc 0)) [.fls] .fls :=
+    Step [] prog [.tru] (.app (.lam body) (.obj 0 .nul)) ∧
+      Step [.tru] (.app (.lam body) (.obj 0 .nul)) [.tru]
+        (.app (.lam (.read (.obj 0 .nul))) (.write (.obj 0 .nul) .fls)) ∧
+      Step [.tru] (.app (.lam (.read (.obj 0 .nul))) (.write (.obj 0 .nul) .fls)) [.fls]
+        (.app (.lam (.read (.obj 0 .nul))) .nul) ∧
+      Step [.fls] (.app (.lam (.read (.obj 0 .nul))) .nul) [.fls] (.read (.obj 0 .nul)) ∧
+      Step [.fls] (.read (.obj 0 .nul)) [.fls] .fls :=
   ⟨.appR rfl (.allocV rfl), .beta rfl, .appR rfl (.writeV rfl (by simp)),
     .beta rfl, .readV rfl⟩
 
@@ -161,8 +160,8 @@ theorem prog_lam_arrow (k : Nat) (W : WorldT k) :
   apply lam_intro _ _ _ (by simp [body, inner, Scoped])
   intro p hp U hx hu heap hh a ha
   obtain ⟨l, c, rfl, hl, hc⟩ := ha
-  have hr : refT boolT p U (.loc l) := ⟨l, c, rfl, hl, hc⟩
-  change Safe boolT p U heap (.app (.lam (.read (.loc l))) (.write (.loc l) .fls))
+  have hr : refT boolT p U (.obj l .nul) := ⟨l, c, rfl, hl, hc⟩
+  change Safe boolT p U heap (.app (.lam (.read (.obj l .nul))) (.write (.obj l .nul) .fls))
   apply Safe_bind_appR (A := nulT) _ rfl p U heap _ hu hh
     (write_rule boolT_adm p U heap l .fls rfl hu hh hl hc (Or.inr rfl))
   intro j hj V hV hVadm h' v hh' hv

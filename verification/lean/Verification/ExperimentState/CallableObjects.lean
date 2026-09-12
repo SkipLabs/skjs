@@ -1,0 +1,143 @@
+import Verification.ExperimentState.Rules
+/-!
+# Callable objects and their bags
+
+A bag invariant forgets the call slot without changing the value. A callable
+object combines that invariant with the existing overloaded call contracts.
+The old reference family still denotes plain objects, so its disjointness and
+certificate rules keep their existing meaning. General object views will need
+an explicit representation in the positive graph before certificates can use
+these additional semantic rules.
+
+This is the one-cell, closed-closure fragment: construction, receiver binding,
+property descriptors and a global identity/descriptor coherence invariant are
+not modeled here.
+-/
+namespace Verification.ExperimentState
+
+/-- A writable bag invariant independent of the object's call slot. The plain
+object in `refT` is only a semantic projection, never an allocation or coercion. -/
+def bagT (P : Fam) : Fam := fun n W v =>
+  ∃ l code, v = .obj l code ∧ isVal v = true ∧ refT P n W (.obj l .nul)
+
+/-- Call and property contracts hold of the same object value. -/
+def callableT (L : List (Fam × Fam)) (P : Fam) : Fam :=
+  interT (bagT P) (arrowsT L)
+
+theorem bagT_adm (P : Fam) : Adm (bagT P) := by
+  constructor
+  · rintro n W v ⟨l, code, hv, hval, hr⟩
+    exact ⟨l, code, hv, hval, (refT_adm P).down n W _ hr⟩
+  · rintro n W W' hx v ⟨l, code, hv, hval, hr⟩
+    exact ⟨l, code, hv, hval, (refT_adm P).mono n W W' hx _ hr⟩
+
+theorem bagT_valOnly (P : Fam) : ValOnly (bagT P) := by
+  rintro n W v ⟨l, code, hv, hval, hr⟩
+  exact hval
+
+theorem bagT_contractive : Contractive bagT := by
+  intro n P Q hag W v
+  constructor <;> rintro ⟨l, code, hv, hval, hr⟩ <;> refine ⟨l, code, hv, hval, ?_⟩
+  · exact (refT_contractive n P Q hag W _).mp hr
+  · exact (refT_contractive n P Q hag W _).mpr hr
+
+theorem refT_bag {P : Fam} {n W v} (h : refT P n W v) : bagT P n W v := by
+  obtain ⟨l, c, rfl, hl, hc⟩ := h
+  exact ⟨l, .nul, rfl, rfl, l, c, rfl, hl, hc⟩
+
+theorem callableT_adm (L : List (Fam × Fam)) (P : Fam) : Adm (callableT L P) :=
+  interT_adm _ _ (bagT_adm P) (arrowsT_adm L)
+
+theorem arrowsT_object_iff (L : List (Fam × Fam)) (l : Nat) (b : Tm) (n W) :
+    arrowsT L n W (.obj l (.lam b)) ↔ arrowsT L n W (.lam b) := by
+  constructor
+  · rintro ⟨⟨b', (he | ⟨l', he⟩), hc⟩, hs⟩
+    · cases he
+    · cases he
+      exact ⟨⟨b, Or.inl rfl, hc⟩, hs⟩
+  · rintro ⟨⟨b', (he | ⟨l', he⟩), hc⟩, hs⟩
+    · cases he
+      exact ⟨⟨b, Or.inr ⟨l, rfl⟩, hc⟩, hs⟩
+    · cases he
+
+/-- Forgetting properties leaves the same callable and all its call contracts. -/
+theorem callableT_calls {L P n W v} (h : callableT L P n W v) : arrowsT L n W v := h.2
+
+theorem callableT_bag {L P n W v} (h : callableT L P n W v) : bagT P n W v := h.1
+
+/-- An overload intersection is a conjunction of code obligations, with one bag
+invariant; it does not impose incompatible writable types on the code. -/
+theorem callableT_append (L M : List (Fam × Fam)) (P : Fam) (n W v) :
+    callableT (L ++ M) P n W v ↔ interT (callableT L P) (callableT M P) n W v := by
+  simp only [callableT, interT, arrowsT, List.mem_append]
+  constructor
+  · rintro ⟨hp, hc, hs⟩
+    exact ⟨⟨hp, hc, fun p hm => hs p (Or.inl hm)⟩,
+      ⟨hp, hc, fun p hm => hs p (Or.inr hm)⟩⟩
+  · rintro ⟨⟨hp, hc, hs⟩, ⟨_, _, ht⟩⟩
+    exact ⟨hp, hc, fun p hm => hm.elim (hs p) (ht p)⟩
+
+theorem bag_read {P : Fam} (hP : ValOnly P) {n W h v}
+    (hv : bagT P n W v) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    Safe P n W h (.read v) := by
+  obtain ⟨l, code, rfl, _, k, c, he, hl, hc⟩ := hv
+  cases he
+  exact read_rule (code := code) hP n W h l hw hh hl hc
+
+theorem bag_write {P : Fam} (hP : Adm P) {n W h v a}
+    (hv : bagT P n W v) (ha : P n W a) (hval : isVal a = true)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    Safe nulT n W h (.write v a) := by
+  obtain ⟨l, code, rfl, _, k, c, he, hl, hc⟩ := hv
+  cases he
+  exact write_rule (code := code) hP n W h l a hval hw hh hl hc ha
+
+/-- Creation checks the code and the stored value separately, then allocates a
+single fresh identity. The call contracts survive the extended world. -/
+theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
+    (n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
+    (hf : arrowsT L n W (.lam b)) (hval : isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
+    Safe (callableT L P) n W h (.attach (.lam b) v) := by
+  cases n with
+  | zero => trivial
+  | succ p =>
+    have hcadm : CtrAdm (res P : Ctr p) := fun i _ U U' hx w hw => hA.mono i U U' hx w hw
+    have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
+      have := hok.1; simp [trunc] at this ⊢; omega
+    have hcont : ∀ (i : Nat) (hi : i < p),
+        (res P : Ctr p) i hi
+          (trunc i (Nat.le_of_lt hi) (appendW (trunc p (Nat.le_succ p) W) (res P))) v := by
+      intro i hi
+      show P i _ v
+      rw [trunc_appendW, trunc_trunc]
+      exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
+    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res P), h ++ [v], .obj h.length (.lam b),
+      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .attachV hval,
+      heap_alloc p _ h (res P) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
+      ?_⟩
+    cases p with
+    | zero => trivial
+    | succ q =>
+      have hr : refT P (q + 1)
+          (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P))
+          (.obj h.length .nul) := by
+        refine ⟨h.length, res P, rfl, ?_, fun _ _ _ _ => Iff.rfl⟩
+        simp only [lookup, appendW, toList_ofList]
+        rw [List.getElem?_append_right (by omega)]
+        simp [hlen]
+      have hf' : arrowsT L (q + 1)
+          (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P)) (.lam b) := (arrowsT_adm L).mono (q + 1) _ _ (WExt_appendW _ _) _
+        ((arrowsT_adm L).down (q + 1) W _ hf)
+      exact Or.inl ⟨rfl, ⟨⟨h.length, .lam b, rfl, rfl, hr⟩,
+        (arrowsT_object_iff L h.length b _ _).mpr hf'⟩⟩
+
+#print axioms Callable.step
+#print axioms bagT_contractive
+#print axioms callableT_adm
+#print axioms callableT_append
+#print axioms bag_read
+#print axioms bag_write
+#print axioms attach_rule
+
+end Verification.ExperimentState

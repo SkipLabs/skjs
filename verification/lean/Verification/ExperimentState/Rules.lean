@@ -20,7 +20,7 @@ theorem lam_intro {A B : Fam} (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b
       WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
       ∀ (heap : Heap), HeapOk j U heap → ∀ a, A j U a →
         Safe B j U heap (subst 0 a b)) : arrowT A B k W (.lam b) :=
-  ⟨⟨b, rfl, hc⟩, h⟩
+  ⟨⟨b, Or.inl rfl, hc⟩, h⟩
 
 /-- Same-budget application compatibility, the rule needed for the fundamental
  theorem under semantic environments. Both values are available at the current
@@ -32,9 +32,8 @@ theorem app_elim {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
   cases n with
   | zero => trivial
   | succ n =>
-    obtain ⟨b, rfl, _⟩ := hf.1
-    exact Or.inr ⟨trunc n (Nat.le_succ n) W, heap, subst 0 a b,
-      WExt_refl _, WorldAdm_trunc _ hw, .beta (hAv _ _ _ ha),
+    exact Or.inr ⟨trunc n (Nat.le_succ n) W, heap, callBody f a,
+      WExt_refl _, WorldAdm_trunc _ hw, hf.1.step (hAv _ _ _ ha) heap,
       HeapOk_trunc n W heap hh,
       hf.2 n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hw) heap
         (HeapOk_trunc n W heap hh) a (hA.down n W a ha)⟩
@@ -77,10 +76,10 @@ theorem Safe_bind_appR {A B : Fam} (f : Tm) (hfv : isVal f = true) :
 
 
 /-- **Read.** -/
-theorem read_rule {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+theorem read_rule {code : Tm} {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (hadm : WorldAdm W) (hok : HeapOk n W h) {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u) :
-    Safe A n W h (.read (.loc l)) := by
+    Safe A n W h (.read (.obj l code)) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -93,12 +92,12 @@ theorem read_rule {A : Fam} (hA : ValOnly A) (n : Nat) (W : WorldT n) (h : Heap)
     | succ q => exact Or.inl ⟨hA _ _ _ hAv, hAv⟩
 
 /-- **Write.** -/
-theorem write_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
+theorem write_rule {code : Tm} {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (l : Nat)
     (v : Tm) (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h)
     {c : Ctr n} (hl : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ A j U u)
     (hv : A n W v) :
-    Safe nulT n W h (.write (.loc l) v) := by
+    Safe nulT n W h (.write (.obj l code) v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -134,7 +133,7 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
       show A i _ v
       rw [trunc_appendW, trunc_trunc]
       exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
-    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .loc h.length,
+    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .obj h.length .nul,
       WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .allocV hval,
       heap_alloc p _ h (res A) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
       ?_⟩
@@ -147,8 +146,8 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
       simp [hlen]
 
 theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {l : Nat}
-    (hr : refT A k W (.loc l)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
-    (hW : WExt (trunc j hj W) W') : refT A j W' (.loc l) :=
+    (hr : refT A k W (.obj l .nul)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)
+    (hW : WExt (trunc j hj W) W') : refT A j W' (.obj l .nul) :=
   (refT_adm A).mono j _ _ hW _ ((refT_adm A).down_le k j hj W _ hr)
 
 /-- A function that ignores its argument and diverges inhabits *every* arrow
@@ -181,7 +180,7 @@ theorem stuck_not_safe (B : Fam) (k : Nat) (W : WorldT (k + 1)) (h : Heap) :
 that type, including one that would get stuck if it were ever applied. -/
 theorem vacuous_arrow {A B : Fam} (hA : ∀ (j : Nat) (W : WorldT j) (v : Val), ¬ A j W v)
     (b : Tm) (k : Nat) (W : WorldT k) (hc : Scoped 1 b) : arrowT A B k W (.lam b) :=
-  ⟨⟨b, rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
+  ⟨⟨b, Or.inl rfl, hc⟩, fun _ _ _ _ _ _ _ a ha => absurd ha (hA _ _ a)⟩
 
 /-! ## Testing a value's shape, and branching on the answer
 
@@ -242,7 +241,7 @@ theorem arrowsT_of_arrow {L : List (Fam × Fam)} {A B : Fam}
 /-- The diverging function inhabits every intersection of arrows, as a direct check that these types admit safe nontermination. -/
 theorem diverging_in_arrowsT (L : List (Fam × Fam))
     (k : Nat) (W : WorldT k) : arrowsT L k W (.lam omegaTm) := by
-  refine ⟨⟨omegaTm, rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
+  refine ⟨⟨omegaTm, Or.inl rfl, by simp [omegaTm, delta, Scoped]⟩, ?_⟩
   intro p hp j hj W' hx hu hh hok a ha
   exact (diverging_arrow (A := p.1) (B := p.2) k W).2 j hj W' hx hu hh hok a ha
 

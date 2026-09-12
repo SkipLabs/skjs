@@ -8,7 +8,7 @@ if it reaches a value with budget left, that value is in `T`. Each step spends a
 level and the world drops with it; the world reached after a step must extend the
 truncation of the one before, and must itself be admissible.
 
-A function type requires a closed lambda whose substituted body is safe in
+A function type requires closed code, either a lambda or a function object, whose substituted body is safe in
 every *future* world and every heap satisfying
 it, at every strictly smaller budget. Requiring admissibility here is what lets a
 function allocate: without it, a world carrying a contract like `badCtr` could be
@@ -43,16 +43,34 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
 
 /-- The body executed after a call's beta step. This is a semantic helper,
 not an additional runtime operation. Arrow membership separately requires a
-lambda, so the non-lambda branch is never used for typed application. -/
+callable shape, so the fallback branch is never used for typed application. -/
 def callBody (v a : Tm) : Tm := match v with
-  | .lam b => subst 0 a b
+  | .lam b | .obj _ (.lam b) => subst 0 a b
   | _ => .app .nul .nul
 
-/-- `A → B` contains closed lambdas whose substituted bodies are safe in every
+/-- Closed executable code, with or without an allocated object identity.
+The lambda case supports administrative bindings; source function objects use
+an immutable call slot. This predicate alone promises no bag invariant. -/
+def Callable (v : Val) : Prop :=
+  ∃ b, (v = .lam b ∨ ∃ l, v = .obj l (.lam b)) ∧ Scoped 1 b
+
+theorem Callable.val {v : Val} (h : Callable v) : isVal v = true := by
+  rcases h with ⟨b, (rfl | ⟨l, rfl⟩), _⟩ <;> rfl
+
+theorem Callable.scoped {v : Val} (h : Callable v) : Scoped 0 v := by
+  rcases h with ⟨b, (rfl | ⟨l, rfl⟩), hc⟩ <;> exact hc
+
+theorem Callable.step {v a : Val} (h : Callable v) (ha : isVal a = true) (heap : Heap) :
+    Step heap (.app v a) heap (callBody v a) := by
+  rcases h with ⟨b, (rfl | ⟨l, rfl⟩), _⟩
+  · exact .beta ha
+  · exact .betaC ha
+
+/-- `A → B` contains closed callables whose substituted bodies are safe in every
 future world and satisfying heap, at every strictly smaller level. The actual
 application pays beta before using this body guarantee. -/
 def arrowT (A B : Fam) : Fam := fun k W v =>
-  (∃ b, v = .lam b ∧ Scoped 1 b) ∧
+  Callable v ∧
     ∀ (j : Nat) (hj : j < k) (W' : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) W' →
       WorldAdm W' → ∀ (h : Heap), HeapOk j W' h → ∀ a, A j W' a → Safe B j W' h (callBody v a)
 
@@ -119,7 +137,7 @@ theorem arrowT_adm (A B : Fam) : Adm (arrowT A B) := by
     exact h j hj W'' (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hW) hadm hp hok a ha
 
 theorem arrowT_valOnly (A B : Fam) : ValOnly (arrowT A B) := by
-  rintro _ _ _ ⟨⟨b, rfl, _⟩, -⟩; rfl
+  rintro _ _ _ ⟨hc, -⟩; exact hc.val
 
 /-! ## Unions and the arrow
 
@@ -177,14 +195,14 @@ theorem safe_cross_upto {B C D : Fam} : ∀ (n : Nat), CrossCompatUpTo n B C D �
 
 /-! ## Overloaded function types
 
-The intersection of finitely many arrows, with the shared "is a lambda"
+The intersection of finitely many arrows, with the shared callable-shape
 condition factored out. `arrowsT [(A, B)]` is `arrowT A B`, and `arrowsT []` is
 the type of all functions. This is the node a representation carrying
 intersections has to have, so it comes with the same structural properties the
 fixed point needs of `arrowT`. -/
 
 def arrowsT (L : List (Fam × Fam)) : Fam := fun k W v =>
-  (∃ b, v = .lam b ∧ Scoped 1 b) ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
+  Callable v ∧ ∀ p ∈ L, ∀ (j : Nat) (hj : j < k) (W' : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) W' → WorldAdm W' → ∀ (h : Heap), HeapOk j W' h →
       ∀ a, p.1 j W' a → Safe p.2 j W' h (callBody v a)
 
@@ -202,11 +220,11 @@ theorem arrowsT_singleton (A B : Fam) (k : Nat) (W : WorldT k) (v : Val) :
 /-- Membership in every conjunct is membership in the intersection. -/
 theorem arrowsT_of_all {L : List (Fam × Fam)} {k : Nat} {W : WorldT k} {v : Val} {b : Tm}
     (hlam : v = .lam b) (hclosed : Scoped 1 b) (h : ∀ p ∈ L, arrowT p.1 p.2 k W v) : arrowsT L k W v :=
-  ⟨⟨b, hlam, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
+  ⟨⟨b, Or.inl hlam, hclosed⟩, fun p hp j hj W' hx hu hp' hok a ha => (h p hp).2 j hj W' hx hu hp' hok a ha⟩
 
 theorem arrowsT_valOnly (L : List (Fam × Fam)) : ValOnly (arrowsT L) := by
-  rintro j W a ⟨⟨b, rfl, _⟩, -⟩
-  rfl
+  rintro j W a ⟨hc, -⟩
+  exact hc.val
 
 theorem arrowsT_adm (L : List (Fam × Fam)) : Adm (arrowsT L) := by
   constructor

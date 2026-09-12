@@ -15,7 +15,7 @@ structure Link where
 abbrev Links := List Link
 
 def Holds (ls : Links) (ρ : Env) (h : Heap) : Prop :=
-  ∀ g ∈ ls, if g.alias then ρ g.cell = ρ g.value else ∃ l, ρ g.cell = .loc l ∧ h[l]? = some (ρ g.value)
+  ∀ g ∈ ls, if g.alias then ρ g.cell = ρ g.value else ∃ l c, ρ g.cell = .obj l c ∧ h[l]? = some (ρ g.value)
 
 /-- Pull back through a finite selection of aliases for each old slot. -/
 def pull (ls : Links) (pre : Nat → List Nat) : Links :=
@@ -44,8 +44,8 @@ theorem alloc_frame {ls ρ h v} (hh : Holds ls ρ h) : Holds ls ρ (h ++ [v]) :=
   intro g hg
   have hh := hh g hg
   cases ha : g.alias <;> simp only [ha,Bool.false_eq_true,ite_false,ite_true] at hh ⊢
-  · obtain ⟨l,hl,hv⟩ := hh
-    exact ⟨l,hl,HeapObservations.alloc_frame hv⟩
+  · obtain ⟨l,c,hl,hv⟩ := hh
+    exact ⟨l,c,hl,HeapObservations.alloc_frame hv⟩
   · exact hh
 
 /-- Value equalities survive arbitrary heap changes; read links do not. -/

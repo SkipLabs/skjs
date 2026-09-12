@@ -26,7 +26,7 @@ structure Fact where
 abbrev Facts := List Fact
 
 def Holds (facts : Facts) (ρ : Env) (h : Heap) : Prop :=
-  ∀ f ∈ facts, ∃ l v, ρ f.slot = .loc l ∧ h[l]? = some v ∧
+  ∀ f ∈ facts, ∃ l c v, ρ f.slot = .obj l c ∧ h[l]? = some v ∧
     ∃ a ∈ f.contents, v = a.value
 
 theorem holds_nil (ρ h) : Holds [] ρ h := by simp [Holds]
@@ -43,8 +43,8 @@ theorem check_sound {source target mapping ρ h}
   intro f hf
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc f hf)
   simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.contains_iff_mem] at hc
-  obtain ⟨l,v,hl,hv,a,ha,he⟩ := hs g hg
-  exact ⟨l,v,by simpa [PointClaims.mapEnv,hc.1] using hl,hv,a,hc.2 a ha,he⟩
+  obtain ⟨l,c,v,hl,hv,a,ha,he⟩ := hs g hg
+  exact ⟨l,c,v,by simpa [PointClaims.mapEnv,hc.1] using hl,hv,a,hc.2 a ha,he⟩
 
 /-- The value added by a bind shifts every old environment slot. -/
 def shift (facts : Facts) : Facts := facts.map fun f => { f with slot := f.slot+1 }
@@ -61,7 +61,7 @@ theorem read {facts ρ h i R n W}
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (fun _ _ v => ∃ a ∈ R, v = a.value)
       (fun h' _ => Holds facts ρ h') n W h (.read (ρ i)) := by
-  obtain ⟨l,v,hl,hv,a,ha,rfl⟩ := hf _ hm
+  obtain ⟨l,c,v,hl,hv,a,ha,rfl⟩ := hf _ hm
   rw [hl]
   apply consequence _ _ (read_observed hw hh (by cases a <;> rfl) hv)
   · intro _ _ u hu; exact ⟨a,ha,hu⟩
@@ -75,13 +75,13 @@ theorem write {A : Fam} (ha : Adm A) {ρ h i a n W}
     SafePost nulT (fun h' _ => Holds [⟨i,[a]⟩] ρ h') n W h
       (.write (ρ i) a.value) := by
   obtain ⟨l,c,he,hl,hc⟩ := hr
-  have hr : refT A n W (.loc l) := ⟨l,c,rfl,hl,hc⟩
+  have hr : refT A n W (.obj l .nul) := ⟨l,c,rfl,hl,hc⟩
   rw [he]
   apply weaken _ (write_observed ha hw hh hr (by cases a <;> rfl) ht)
   intro h' _ hp f hf
   simp only [List.mem_singleton] at hf
   subst f
-  refine ⟨l,a.value,he,?_,a,by simp,rfl⟩
+  refine ⟨l,.nul,a.value,he,?_,a,by simp,rfl⟩
   rw [hp.1]
   apply write_new
   rw [hh.1]
@@ -98,10 +98,10 @@ theorem alloc {A : Fam} (ha : Adm A) {facts ρ h a n W}
   intro h' v hp f hm
   rw [hp.1,hp.2]
   rcases List.mem_cons.mp hm with rfl | hm
-  · exact ⟨h.length,a.value,rfl,alloc_new h a.value,a,by simp,rfl⟩
+  · exact ⟨h.length,.nul,a.value,rfl,alloc_new h a.value,a,by simp,rfl⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hm
-    obtain ⟨l,u,hl,hu,b,hb,he⟩ := hf g hg
-    exact ⟨l,u,hl,alloc_frame hu,b,hb,he⟩
+    obtain ⟨l,c,u,hl,hu,b,hb,he⟩ := hf g hg
+    exact ⟨l,c,u,hl,alloc_frame hu,b,hb,he⟩
 
 #print axioms check_sound
 #print axioms read

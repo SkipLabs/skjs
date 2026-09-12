@@ -1235,3 +1235,1275 @@ $\Delta$. `passed_refinement_paths` checks two surviving paths into one
 or the wrong slot. Passing this one refined value is established; translating
 arbitrary supplied entry environments into continuation parameters is not yet
 implemented.
+
+## Callables
+
+Nothing in this section is implemented. It states a design for callable
+values and the rules it would add, in the terms of the rules above, so the
+design can be read as a user of the verifier would read it: what can be claimed
+about a value, what a claim commits to, and what the verifier will and will not
+check. Where a fact below is already proved, the theorem is named; where it is
+not, the sentence says so. [INTERSECTIONS.md](INTERSECTIONS.md) §4 points here
+for the design of callable objects.
+
+### What a function is, and what the calculus has
+
+A JavaScript function value is three things: **code** — its `[[Call]]`
+behaviour, which cannot be changed after creation; a **property bag** —
+`f.cancel = …` is an ordinary object write; and an **identity** — `f === g`.
+A value is a function exactly when it has `[[Call]]`, which is what
+`typeof f === "function"` tests. Having `[[Call]]` does not make a call safe: a
+class constructor's `[[Call]]` always throws, and a value of TypeScript's
+`Function` type has `[[Call]]` and no known signature. Every constructor also has
+`[[Call]]`, so constructibility implies `typeof "function"`.
+
+The original [operational language](SEMANTICS.md#operational-language) separated
+lambdas from locations, making the intersection of function and reference
+shapes empty. The Lean implementation now uses `obj l code` for both plain
+objects (`code = nul`) and function objects (`code = lam b`). Lambdas remain
+as code without identity and for administrative bindings. `isFun` recognizes
+both lambdas and function objects; `isRef` recognizes plain objects. These
+shape tests remain total on values and heap-independent.
+
+The implemented semantic slice is in
+[CallableObjects.lean](lean/Verification/ExperimentState/CallableObjects.lean).
+`arrowT` and `arrowsT` admit function objects; `bagT P` describes an object's
+writable cell independently of its call slot; `callableT L P` combines both
+contracts on the same value. Allocation, application, bag reads and writes,
+and overload conjunction have safety proofs. The existing `refT` and graph
+reference clauses still mean plain objects: general bag and callable views
+have not yet been added to the certificate language or source lowering.
+Construction, receivers, exceptions, richer property operations, and a global
+identity/descriptor coherence invariant remain outside this implemented slice.
+
+SKJS has no separate function type. A function type is an object type whose
+fields carry a `call` member, and every object type carries a call mode from a
+four-point lattice: `CPresent(L)`, invocable with the signatures in $L$;
+`CFunction`, which has `[[Call]]` and no known signature (`Function`, a class
+constructor); `CAbsent`, provably not callable (object literals, class
+instances, arrays); and `CUnknown`, a structural object type — `{}`, an
+interface — which width subtyping lets a function inhabit. The
+[views these modes obtain](#shape-tests-and-identity) are given with the rules.
+The claims exporter currently refuses any positive callability, so none of this
+reaches the verifier.
+
+### A first proposal, and its generalisation
+
+A first proposal added one value shape, the pair JavaScript has: a closure body
+and a location for its properties, $\mathsf{callable}(b,\ell)$, created by
+$\mathsf{attach}(\lambda x.t,\,v)$, which allocates the bag as $\mathsf{alloc}$
+does; a call on it is one beta step, reads and writes go to the bag, and
+$\mathsf{isFun}$ answers true for it. Its type $\mathsf{Callable}(L;C)$ is the
+arrow family over $L$ intersected with the bag's reference contract, every
+callable is a function, and $\mathsf{isFun}$ stays total and heap-independent.
+The rest of this section is the complete account that proposal grows into: a
+generalisation of it, a uniform object model with identity, property
+operations, and separate call and construction behaviours. Call that design
+**C\***. The proposal's operations, types and rules are recovered below as
+special cases, and the sentences that say so name it as the first proposal.
+
+| Notation | Meaning |
+| --- | --- |
+| $\Gamma\vdash_G t:A\;!E$ | a computation whose normal results have type $A$ and whose thrown values have type $E$; $E=\bot$ when unannotated |
+| $\vdash_G^{\mathsf{call}}$, $\vdash_G^{\mathsf{construct}}$, $\vdash_G^{\mathsf{init}}$ | auxiliary judgments on invocation programs and initial property layouts |
+| $\sigma=(R;\alpha)\xrightarrow{E}B$ | a call signature: receiver contract $R$, argument-list contract $\alpha$, exception bound $E$, result $B$ |
+| $\nu=(N;\alpha)\xRightarrow{E}B$ | a construction signature, with $N$ the contract on `new.target` |
+| $\bar a$, $\bar p$ | an actual argument list, and stored bound arguments |
+| $\mathsf{Obj}(P)$, $\mathsf{Fun}$, $\mathsf{Ctor}$ | objects meeting the property contract $P$; objects with `[[Call]]`; objects with `[[Construct]]` |
+| $\top_p$ | the property contract imposing no requirement |
+| $\ell$, $\delta$, $\pi$, $\kappa$, $\eta$ | an identity, an operation descriptor, and its property, call and construction components |
+
+### One object identity, several operations
+
+Every source-level object, including every function, has an identity.
+Represent an object value schematically as
+
+$$
+\mathsf{object}(\ell,\delta),
+$$
+
+where $\ell$ is its identity and $\delta$ is an internal operation descriptor:
+
+$$
+\delta =
+\left\langle
+  \mathsf{properties}:\pi,\quad
+  \mathsf{call}:\operatorname{Option}(\kappa),\quad
+  \mathsf{construct}:\operatorname{Option}(\eta)
+\right\rangle.
+$$
+
+The descriptor determines **how operations are dispatched**. The heap contains
+the mutable state those operations use. Neither the descriptor nor its
+components are ordinary, source-visible properties.
+
+This follows the relevant distinction in ECMAScript: objects support property
+operations, while function objects additionally have `[[Call]]` and possibly
+`[[Construct]]`. Those internal operations are not properties named `call` or
+`construct`. ([TC39][c1])
+
+Once creation is complete, the presence of the call and construction operations
+is stable. Their behaviour need not be independent of mutable state.
+
+In this representation,
+
+$$
+\mathsf{isFun}(\mathsf{object}(\ell,\delta))
+\iff
+\delta.\mathsf{call}\ne\mathsf{None},
+$$
+
+and source-level object equality compares identities:
+
+$$
+\mathsf{object}(\ell,\delta)
+  ===
+\mathsf{object}(\ell',\delta')
+\iff
+\ell=\ell'.
+$$
+
+Well-formedness requires a unique descriptor for each identity. Thus
+function-shape tests can remain heap-independent without making function
+behaviour heap-independent.
+
+**All functions receive this representation at creation, not when their first
+custom property is added.** A plain function type, a callable-with-properties
+type, and a property-only type are views of the same value. Subsumption never
+allocates, wraps, or replaces it.
+
+That is the principal coherence requirement.
+
+### Invocation is not restricted to beta reduction
+
+The operational interface contains
+
+$$
+\begin{aligned}
+&\operatorname{Call}(f,r,\bar a),\\
+&\operatorname{Construct}(f,\bar a,n),\\
+&\operatorname{Get}(o,k,r),\\
+&\operatorname{Set}(o,k,v,r).
+\end{aligned}
+$$
+
+Here $r$ is the receiver, $\bar a$ is the actual argument list, and $n$ is
+`new.target`.
+
+A call descriptor specifies an invocation algorithm. Entering a closure body is
+one such algorithm — not the definition of invocation for every callable.
+
+The following are cases of that interface, rather than competing
+representations:
+
+| Source form | Account in C\* |
+| --- | --- |
+| Ordinary function declaration or expression | A closure with an environment and the appropriate strict or non-strict receiver discipline. Declaration versus expression also affects when its binding is initialized. |
+| Arrow function | A closure whose references to `this`, `arguments`, `super`, and `new.target` resolve through the enclosing lexical environment. It has no construction operation. |
+| Object or class method | A function whose invocation receives the call-site receiver; its home-object association supports `super`. Extracting the function does not bind that receiver. |
+| Class-field arrow | Arrow creation performed during instance initialization, producing a distinct function identity for each instance. |
+| Bound function | A fresh object whose call operation forwards to a target with stored receiver and arguments. Construction, when supported, has its own forwarding rule. |
+| Class constructor | An object with a construction operation and a call operation that throws. Function shape therefore does not imply a successful ordinary call. |
+| Callable proxy | A fresh object whose operations dispatch through proxy algorithms, consulting its target, handler, and revocation state. |
+| Async or generator function | A function whose invocation uses the corresponding promise or suspended-computation semantics. |
+
+The ordinary-function, arrow, method, and class distinctions come from the
+function-creation and invocation rules; in particular, an arrow captures an
+environment for the special bindings, not merely a copied receiver value.
+([TC39][c2]) Bound functions and proxies have distinct forwarding algorithms.
+([TC39][c3]) Async and generator behaviour requires the corresponding
+control-state semantics. ([TC39][c4])
+
+The important consequence is that **there is no need for a separate source type
+constructor for "arrow-function values"**. Their creation and invocation rules
+differ, but they may satisfy the same call contracts as ordinary functions.
+
+Similarly, a TypeScript object type containing a call signature describes an
+interface. It is not another runtime creation mechanism. TypeScript explicitly
+permits call signatures, properties, and construct signatures to coexist in one
+type. ([TypeScript][c5])
+
+### Properties must mean object operations, not just a bag of cells
+
+For the complete account, the property component cannot be specified solely by
+
+$$
+\operatorname{Get}(o,k)=H(o)[k].
+$$
+
+An object may have data properties, accessors, inherited properties, and
+symbol-keyed properties. Property operations can invoke code; proxies can
+intercept them. ECMAScript accordingly specifies property descriptors and
+internal property operations separately from a simple field store. ([TC39][c1])
+
+C\* should therefore distinguish two semantic assertions:
+
+$$
+\mathsf{OwnData}(o,k,A)
+$$
+
+for a particular kind of stored property, and
+
+$$
+\mathsf{Readable}(o,k,A)
+$$
+
+for an appropriate contract on reading the property.
+
+They are not interchangeable. The latter may require a computation contract,
+including effects and exceptions. Writable properties require corresponding
+write permissions and preservation obligations.
+
+Ordinary data properties can retain the simpler reference-based rules. They
+become a **verified special case** of the general object interface.
+
+This also explains how decoration and wrapping differ in the design. Decoration
+operates on an existing object identity. Wrapping creates a new object with a
+forwarding call operation; sharing or copying properties is a separate action.
+`Object.assign`, for example, returns its target rather than replacing its
+identity. ([TC39][c3])
+
+### Types describe behaviour, not internal storage
+
+Keep shape, properties, calls, and construction as separate predicates.
+
+For shape,
+
+$$
+\mathsf{Ctor}<:\mathsf{Fun}<:\mathsf{Obj}.
+$$
+
+The first inclusion reflects the ECMAScript invariant that an object with
+`[[Construct]]` also has `[[Call]]`; it does **not** assert that ordinary
+invocation succeeds. ([TC39][c6])
+
+For callable contracts,
+
+$$
+\mathsf{Callable}(L;P)
+=
+\mathsf{Fun}
+\cap \mathsf{Props}(P)
+\cap \bigcap_{\sigma\in L}\mathsf{CallSpec}(\sigma).
+$$
+
+For construction contracts,
+
+$$
+\mathsf{Constructible}(M)
+=
+\mathsf{Ctor}
+\cap \bigcap_{\nu\in M}\mathsf{ConstructSpec}(\nu).
+$$
+
+A value usable both ways has their intersection. A property-only view drops the
+call and construction requirements without asserting their absence.
+
+The empty call family still means function shape with no supplied call
+contract:
+
+$$
+\mathsf{Callable}([];P)
+=
+\mathsf{Fun}\cap\mathsf{Props}(P).
+$$
+
+This preserves the distinction between `CFunction` and `CUnknown` above:
+knowing that a value is a function is different from merely not excluding
+functions.
+
+**Overloads.** Several call contracts are conjunctions of behavioural
+obligations:
+
+$$
+\mathsf{CallSpec}(L)
+\cap
+\mathsf{CallSpec}(M)
+=
+\mathsf{CallSpec}(L\mathbin{+\!+}M).
+$$
+
+They are **not** assertions that a writable internal cell has two different
+invariant content types. This is the law `TypeAlgebra.overload_append` already
+proves for `arrowsT`.
+
+Consequently, placing the implementation in the heap does not itself damage
+overloads. The difficulty with A — boxing every function as an ordinary
+reference — was typing the implementation through an ordinary writable
+reference. A\* avoids that by separating the internal invocation mechanism from
+source-level mutation.
+
+**Generics and argument lists.** A call contract must be able to express a
+quantified relationship, schematically
+
+$$
+\forall\bar X.\;
+(R;\alpha)\Rightarrow B,
+$$
+
+where $R$ describes the receiver and $\alpha$ describes an argument list.
+
+Quantification is needed for generic input/output relationships; argument-list
+contracts handle optional and rest parameters. These are features of the
+contract language, not new runtime callable shapes. TypeScript exposes both
+generic signatures and these parameter forms. ([TypeScript][c5])
+
+This means the complete account needs more than the finite families of
+monomorphic arrows this document has so far. It needs a specified
+quantification discipline and rules connecting those richer contracts to the
+existing type fragment.
+
+**Effects and state.** The behavioural obligation must use the computation
+semantics, not just a relation between input and output values. Schematically,
+
+$$
+\{\mathcal P\}\;
+\operatorname{Call}(f,r,\bar a)
+\;\{\mathsf{return}\ v.\mathcal Q;\;
+    \mathsf{throw}\ e.\mathcal E\}.
+$$
+
+An ordinary arrow can abbreviate a suitable special case. Contracts for promises
+and generators additionally describe subsequent interactions with the returned
+objects.
+
+This is where mutable captured state, callback protocols, and revocable
+capabilities belong.
+
+For example, revoking a callable proxy leaves its function shape intact, but
+subsequent calls throw. Its callability is therefore a stable shape fact; a
+guarantee that invocation will not throw requires stronger assumptions about
+state. ([TC39][c7])
+
+A contract saying "every normal return is a number" may survive revocation. A
+contract promising a successful numeric return does not follow merely from the
+same shape information. The design must state which guarantee its arrows
+express.
+
+**What this means for the first proposal.** C\* is another realisation of it.
+Carry the invocation descriptor in the value and keep mutable object state in
+the heap. This preserves the motivation for the first proposal while replacing
+"every call is beta reduction" and "every property operation is a bag access"
+with the general interface.
+
+### Typing rules
+
+The rules below extend the first proposal's callable introduction,
+application, property access, and subsumption. They retain the ordinary
+judgment $\Gamma\vdash_G t:A$; exception bounds, construction contracts, and the
+stateful judgments are explicit additions. These are proposed rules, not claims
+about what is already implemented or proved.
+
+The principal distinction is between checking an invocation implementation,
+allocating an object carrying that implementation, and using the resulting
+object through a contract.
+
+#### Judgments and types
+
+Write
+
+$$
+\Gamma\vdash_G t:A\;!E
+$$
+
+for a computation whose normal results have type $A$ and whose thrown values
+have type $E$. This is a safety judgment, not a termination guarantee. The
+annotation bounds exceptions, not mutation. The unannotated judgment
+abbreviates $E=\bot$.
+
+Assumptions in $\Gamma$ are stable under permitted heap evolution. Assertions
+about current contents belong in the state judgment introduced below.
+
+Call and construction signatures are, respectively,
+
+$$
+\sigma=(R;\alpha)\xrightarrow{E}B,
+\qquad
+\nu=(N;\alpha)\xRightarrow{E}B.
+$$
+
+Here $R$ constrains the supplied receiver, $\alpha$ constrains the actual
+argument list, and $N$ constrains `new.target`. Construction signatures require
+
+$$
+N<:\mathsf{Ctor},
+\qquad
+B<:\mathsf{Obj}(\top_p).
+$$
+
+Argument-list contracts need not specify an exact arity. Parameter binding,
+defaults, and destructuring are computations in the function's entry program.
+
+Define the constructor views
+
+$$
+\begin{aligned}
+\mathsf{Calls}(L)
+&=
+\mathsf{Fun}\cap
+\bigcap_{\sigma\in L}\mathsf{CallSpec}(\sigma),\\[2mm]
+\mathsf{Callable}(L;P)
+&=
+\mathsf{Calls}(L)\cap\mathsf{Obj}(P),\\[2mm]
+\mathsf{Constructor}(M;P)
+&=
+\mathsf{Ctor}\cap\mathsf{Obj}(P)\cap
+\bigcap_{\nu\in M}\mathsf{ConstructSpec}(\nu).
+\end{aligned}
+$$
+
+$P$ is a property contract; $\top_p$ imposes no property requirement. In
+particular,
+
+$$
+\mathsf{Calls}([])=\mathsf{Fun}.
+$$
+
+An empty family supplies shape but no invocation contract.
+
+Write $\mathsf{Plain}(P)$ for non-function objects satisfying $P$, and
+$\mathsf{NoCtor}$ for objects without a construction operation. Neither asserts
+an empty property store.
+
+All operands in the operation rules below are values or previously bound
+variables. Effectful operands are evaluated once, in source order, using
+sequencing.
+
+#### Structural views and intersections
+
+**Forget-Properties** and **Forget-Calls** are the two essential forgetful
+rules:
+
+$$
+\frac{\Gamma\vdash_G f:\mathsf{Callable}(L;P)}
+{\Gamma\vdash_G f:\mathsf{Calls}(L)}
+\qquad
+\frac{\Gamma\vdash_G f:\mathsf{Callable}(L;P)}
+{\Gamma\vdash_G f:\mathsf{Obj}(P)}.
+$$
+
+These change the available view, not the value. Neither allocates nor wraps.
+
+**Constructor-Shape.** Construction implies function shape, but supplies no
+successful ordinary-call contract:
+
+$$
+\frac{\Gamma\vdash_G f:\mathsf{Constructor}(M;P)}
+{\Gamma\vdash_G f:\mathsf{Callable}([];P)}.
+$$
+
+**Sub.** The ordinary subsumption rule is
+
+$$
+\frac{
+\Gamma\vdash_G t:A\;!E
+\qquad G\vdash A<:B
+\qquad G\vdash E<:F
+}{
+\Gamma\vdash_G t:B\;!F
+}.
+$$
+
+**Call-Sub.** For unconditional call signatures,
+
+$$
+\frac{
+\begin{gathered}
+G\vdash R_2<:R_1
+\qquad G\vdash\alpha_2<:\alpha_1\\
+G\vdash B_1<:B_2
+\qquad G\vdash E_1<:E_2
+\end{gathered}
+}{
+G\vdash
+(R_1;\alpha_1)\xrightarrow{E_1}B_1
+<:
+(R_2;\alpha_2)\xrightarrow{E_2}B_2
+}.
+$$
+
+Construction signatures have the corresponding variance in `new.target`,
+arguments, normal results, and exceptions.
+
+The intended intersection laws are
+
+$$
+\mathsf{Calls}(L)\cap\mathsf{Obj}(P)
+=
+\mathsf{Callable}(L;P),
+$$
+
+$$
+\mathsf{Callable}(L;P)\cap\mathsf{Callable}(M;Q)
+=
+\mathsf{Callable}(L{+\!\!+}M;P\wedge Q).
+$$
+
+Here $P\wedge Q$ is a conjunction of property contracts. It is not a pointwise
+intersection of writable-cell content types.
+
+**Value-Meet.** Intersection introduction on an already obtained value is
+
+$$
+\frac{\Gamma\vdash_G v:A\qquad\Gamma\vdash_G v:B}
+{\Gamma\vdash_G v:A\cap B}.
+$$
+
+Both premises concern the same value under compatible heap invariants.
+Independently checking two allocations does not establish an intersection on
+one allocated object.
+
+#### Checking code and creating functions
+
+Internal invocation descriptors are not source-level function values. Introduce
+auxiliary judgments
+
+$$
+\Gamma\vdash_G^{\mathsf{call}}\kappa:L,
+\qquad
+\Gamma\vdash_G^{\mathsf{construct}}\eta:M,
+\qquad
+\Gamma\vdash_G^{\mathsf{init}}d:P.
+$$
+
+The first two check invocation programs. The third checks an initial property
+layout and the invariants it establishes. Initializer expressions have already
+been evaluated.
+
+**Ordinary functions: a dynamic receiver.** For strict ordinary-function code,
+the rule **Dynamic** is
+
+$$
+\frac{
+\left(
+\Gamma,\mathsf{this}:R_i,\mathsf{argv}:\alpha_i
+\vdash_G t:B_i\;!E_i
+\right)_{i\in I}
+}{
+\Gamma\vdash_G^{\mathsf{call}}
+\mathsf{dyn}(\mathsf{this},\mathsf{argv}.t):
+\left[(R_i;\alpha_i)\xrightarrow{E_i}B_i\right]_{i\in I}
+}.
+$$
+
+The entry program $t$ includes parameter initialization and the normal-return
+convention.
+
+For non-strict functions, the entry program first performs the specified
+receiver conversion. The supplied receiver and the body's `this` value must not
+simply be identified. ECMAScript distinguishes strict, non-strict, and lexical
+receiver binding.
+
+**Arrow functions: a lexical receiver.** The rule **Lexical** is
+
+$$
+\frac{
+\left(
+\Gamma,\mathsf{argv}:\alpha_i
+\vdash_G t:B_i\;!E_i
+\right)_{i\in I}
+}{
+\Gamma\vdash_G^{\mathsf{call}}
+\mathsf{lex}(\mathsf{argv}.t):
+\left[(\top;\alpha_i)\xrightarrow{E_i}B_i\right]_{i\in I}
+}.
+$$
+
+The enclosing lexical environment in $\Gamma$ is captured. The rule introduces
+no new source binding for `this`, `arguments`, `super`, or `new.target`;
+$\mathsf{argv}$ is an internal parameter, not the source identifier
+`arguments`. This corresponds to the lexical binding discipline of arrows.
+
+A method uses Dynamic, with its home-object association in the captured
+environment. A class-field arrow uses Lexical, with allocation performed during
+instance initialization.
+
+The stateful variants check the body under its invocation precondition. In
+particular, capturing an initialization-sensitive lexical binding does not
+require pretending that it was read at function creation.
+
+**Allocation.** A callable without construction behaviour is introduced by
+**Make-Function**,
+
+$$
+\frac{
+\Gamma\vdash_G^{\mathsf{call}}\kappa:L
+\qquad
+\Gamma\vdash_G^{\mathsf{init}}d:P
+}{
+\Gamma\vdash_G
+\mathsf{make}(\kappa,\mathsf{none},d):
+\mathsf{Callable}(L;P)\cap\mathsf{NoCtor}
+}.
+$$
+
+A callable with construction behaviour is introduced by **Make-Constructor**,
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G^{\mathsf{call}}\kappa:L
+\qquad
+\Gamma\vdash_G^{\mathsf{construct}}\eta:M\\
+\Gamma\vdash_G^{\mathsf{init}}d:P
+\end{gathered}
+}{
+\Gamma\vdash_G
+\mathsf{make}(\kappa,\eta,d):
+\mathsf{Callable}(L;P)\cap
+\mathsf{Constructor}(M;\top_p)
+}.
+$$
+
+An ordinary non-callable object is introduced by **Make-Object**,
+
+$$
+\frac{\Gamma\vdash_G^{\mathsf{init}}d:P}
+{\Gamma\vdash_G
+\mathsf{make}(\mathsf{none},\mathsf{none},d):
+\mathsf{Plain}(P)}.
+$$
+
+Every application of a make rule allocates one fresh object identity. There is
+no rule with a construction descriptor but no call descriptor.
+
+The first proposal's $\mathsf{attach}$ operation becomes a special case of
+allocation. It is not the operation used to decorate a source function that
+already exists.
+
+#### Invocation, property calls, and extraction
+
+**Call.** The ordinary application rule is
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:\mathsf{Callable}(L;P)
+\qquad (R;\alpha)\xrightarrow{E}B\in L\\
+\Gamma\vdash_G r:R
+\qquad \Gamma\vdash_G\bar a:\alpha
+\end{gathered}
+}{
+\Gamma\vdash_G\mathsf{invoke}(f,r,\bar a):B\;!E
+}.
+$$
+
+**Bare-Call.** For a bare call in the strict/module fragment,
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:\mathsf{Calls}(L)
+\qquad (R;\alpha)\xrightarrow{E}B\in L\\
+G\vdash\mathsf{Undefined}<:R
+\qquad\Gamma\vdash_G\bar a:\alpha
+\end{gathered}
+}{
+\Gamma\vdash_G f(\bar a):B\;!E
+}.
+$$
+
+**Method-Call.** A method call is lookup followed by invocation:
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G\mathsf{get}(o,k,o):
+\mathsf{Calls}(L)\;!E_g\\
+(R;\alpha)\xrightarrow{E_c}B\in L
+\qquad\Gamma\vdash_G o:R
+\qquad\Gamma\vdash_G\bar a:\alpha
+\end{gathered}
+}{
+\Gamma\vdash_G o[k](\bar a):B\;!(E_g\vee E_c)
+}.
+$$
+
+For effectful source expressions, the elaboration evaluates the base and key,
+performs lookup, evaluates the arguments, and invokes the retrieved function
+with the saved base as receiver. It neither reevaluates the base nor binds a
+receiver during lookup.
+
+Method extraction is only lookup. Consequently, extraction preserves the
+receiver requirement in the function's contract; it does not transform that
+contract into a bound-function contract.
+
+#### Properties
+
+Property contracts expose operation signatures. For example,
+
+$$
+P\vdash_G\mathsf{get}(k):(R;[])\xrightarrow{E}A
+$$
+
+states a contract for lookup at $k$, starting from an object satisfying $P$,
+with a receiver in $R$.
+
+The general rules are **Get** and **Set**:
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G o:\mathsf{Obj}(P)
+\qquad\Gamma\vdash_G r:R\\
+P\vdash_G\mathsf{get}(k):(R;[])\xrightarrow{E}A
+\end{gathered}
+}{
+\Gamma\vdash_G\mathsf{get}(o,k,r):A\;!E
+},
+$$
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G o:\mathsf{Obj}(P)
+\qquad\Gamma\vdash_G r:R
+\qquad\Gamma\vdash_G a:A\\
+P\vdash_G\mathsf{set}(k):(R;[A])
+\xrightarrow{E}\mathsf{Bool}
+\end{gathered}
+}{
+\Gamma\vdash_G\mathsf{set}(o,k,a,r):
+\mathsf{Bool}\;!E
+}.
+$$
+
+Set returns an internal success flag. A strict source assignment throws on
+failure and returns the assigned value on success. That differs from the
+calculus's `write`, which returns $\mathsf{Null}$.
+
+**Ordinary data properties.** For a stable, writable own-data-property
+invariant, the reference-style rules are recovered as **Read-Cell** and
+**Write-Cell**:
+
+$$
+\frac{
+\Gamma\vdash_G o:\mathsf{Obj}(\{k:\mathsf{cell}(A)\})
+}{
+\Gamma\vdash_G\mathsf{read}_k(o):A
+},
+\qquad
+\frac{
+\Gamma\vdash_G o:\mathsf{Obj}(\{k:\mathsf{cell}(A)\})
+\qquad\Gamma\vdash_G a:A
+}{
+\Gamma\vdash_G\mathsf{write}_k(o,a):\mathsf{Null}
+}.
+$$
+
+These apply to callables through Forget-Calls. The cell contract is invariant
+and also protects the descriptor assumptions against unchecked deletion or
+redefinition.
+
+For a fresh property layout, **Init-Data** is
+
+$$
+\frac{\Gamma\vdash_G v:A}
+{\Gamma\vdash_G^{\mathsf{init}}
+[k\mapsto\mathsf{data}(v)]:
+\{k:\mathsf{cell}(A)\}}.
+$$
+
+**Accessors.** An own getter is checked by **Init-Getter**:
+
+$$
+\frac{
+\Gamma\vdash_G g:
+\mathsf{Calls}([(R;[])\xrightarrow{E}A])
+}{
+\Gamma\vdash_G^{\mathsf{init}}
+[k\mapsto\mathsf{accessor}(g,\mathsf{none})]:
+\{\mathsf{get}(k):(R;[])\xrightarrow{E}A\}
+}.
+$$
+
+Dually, a setter with call contract
+
+$$
+(R;[A])\xrightarrow{E}\top
+$$
+
+supplies a set contract returning $\mathsf{True}$ on normal completion: the
+setter's returned value is discarded. These rules assume the corresponding
+descriptor invariants; inherited lookup additionally requires the
+prototype-chain obligations.
+
+General accessors and proxies use Get/Set, not Read-Cell/Write-Cell.
+
+An ordinary property named `call` or `apply` supplies no premise for Call.
+
+#### Construction
+
+**Construct.**
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:\mathsf{Constructor}(M;P)
+\qquad (N;\alpha)\xRightarrow{E}B\in M\\
+\Gamma\vdash_G n:N
+\qquad\Gamma\vdash_G\bar a:\alpha
+\end{gathered}
+}{
+\Gamma\vdash_G
+\mathsf{construct}(f,\bar a,n):B\;!E
+}.
+$$
+
+**New.** Ordinary `new` uses the constructor itself as `new.target`:
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:\mathsf{Constructor}(M;P)
+\qquad (N;\alpha)\xRightarrow{E}B\in M\\
+\Gamma\vdash_G f:N
+\qquad\Gamma\vdash_G\bar a:\alpha
+\end{gathered}
+}{
+\Gamma\vdash_G\mathsf{new}\ f(\bar a):B\;!E
+}.
+$$
+
+**Construction-Code.** The introduction rule checks the complete construction
+program:
+
+$$
+\frac{
+\begin{gathered}
+\left(
+\Gamma,\mathsf{newTarget}:N_i,\mathsf{argv}:\alpha_i
+\vdash_G t_\eta:B_i\;!E_i
+\right)_{i\in I}\\
+(G\vdash N_i<:\mathsf{Ctor})_{i\in I}
+\qquad
+(G\vdash B_i<:\mathsf{Obj}(\top_p))_{i\in I}
+\end{gathered}
+}{
+\Gamma\vdash_G^{\mathsf{construct}}
+\mathsf{constructCode}(\mathsf{newTarget},\mathsf{argv}.t_\eta):
+[(N_i;\alpha_i)\xRightarrow{E_i}B_i]_{i\in I}
+}.
+$$
+
+This program includes receiver allocation, prototype lookup, instance
+initialization, and explicit-return handling. Derived constructors additionally
+require `super` and initialization of `this`. Checking the source body as an
+ordinary function returning $B$ is insufficient.
+
+A contract proved only for ordinary `new` may restrict $N$ to the constructor's
+own identity. It must not silently become a guarantee for arbitrary
+`Reflect.construct` calls.
+
+A class's ordinary-call descriptor can have the exception-aware signature
+
+$$
+(\top;\mathsf{Args})
+\xrightarrow{\mathsf{TypeError}}\bot.
+$$
+
+Thus it has function shape without a successful ordinary-call contract.
+
+#### Overloads, polymorphism, and binding
+
+**Overloads.** The premises of Dynamic and Lexical check the same code against
+every advertised signature before allocating one function object. Call selects
+an applicable member. Forgetting members is subsumption; no writable
+implementation cell is retyped.
+
+**Generic signatures.** Let $\bar X$ be fresh abstract type variables. Then
+**Call-Forall-I** is
+
+$$
+\frac{
+\Gamma,\bar X\vdash_G^{\mathsf{call}}\kappa:[\sigma]
+\qquad
+\bar X\notin
+\mathsf{FTV}(\Gamma,\mathcal I_{\mathrm{captured}})
+}{
+\Gamma\vdash_G^{\mathsf{call}}\kappa:
+[\forall\bar X.\sigma]
+}.
+$$
+
+The proof is uniform in $\bar X$. Captured mutable cells retain the same
+invariant at every instantiation. **Call-Forall-E** is
+
+$$
+\frac{
+\Gamma\vdash_G f:
+\mathsf{Callable}([\forall\bar X.\sigma];P)
+\qquad G\vdash\bar A\ \mathsf{admissible}
+}{
+\Gamma\vdash_G f:
+\mathsf{Callable}([\sigma[\bar A/\bar X]];P)
+}.
+$$
+
+Instantiation preserves identity and properties. These are rules for quantified
+invocation contracts, not unrestricted generalization of an effectful
+allocation expression.
+
+**Bound functions.** The internal bound-call descriptor has the rule
+**Bound-Code**:
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:
+\mathsf{Calls}([(R;\alpha{+\!\!+}\beta)
+\xrightarrow{E}B])\\
+\Gamma\vdash_G r:R
+\qquad\Gamma\vdash_G\bar p:\alpha
+\end{gathered}
+}{
+\Gamma\vdash_G^{\mathsf{call}}
+\mathsf{bound}(f,r,\bar p):
+[(\top;\beta)\xrightarrow{E}B]
+}.
+$$
+
+Allocation gives this descriptor a fresh identity and its own properties. The
+target's property contract is not copied.
+
+For construction, a bound object $g$ forwards as
+
+$$
+\begin{aligned}
+&\mathsf{construct}(g,\bar a,n)\\
+&\quad\rightsquigarrow
+\mathsf{construct}\left(
+f,\bar p{+\!\!+}\bar a,\,
+\mathsf{if}\ \mathsf{same}(n,g)\
+\mathsf{then}\ f\
+\mathsf{else}\ n
+\right).
+\end{aligned}
+$$
+
+Its construction contracts must be checked against this program; the bound
+receiver is not used as the constructed receiver.
+
+Source `f.call`, `f.apply`, and `f.bind` remain property lookups followed by
+calls. Specialization requires the retrieved operation to be the standard
+intrinsic. Argument extraction and the prototype, name, and length operations
+of the full binding algorithm are separately checked computations. Bound-Code
+is not a blanket no-effect rule for `.bind`.
+
+#### Stateful contracts
+
+Use the additional judgment
+
+$$
+\Gamma\vdash_G
+\{\Phi\}\ t\
+\{z:B.\Psi\mid e:E.\Xi\}.
+$$
+
+It specifies normal and exceptional postconditions. The ordinary judgment is the
+special case with no additional precondition or postcondition beyond type
+safety and the ambient invariants. It is the exception-aware form of the
+[Hoare typing above](#checked-expression-postconditions), whose $\Pi$ and
+$\Sigma$ are one way of writing $\Phi$ and $\Psi$.
+
+A stateful call signature is
+
+$$
+\sigma=
+(r:R;\mathsf{argv}:\alpha)
+\{\Phi\}
+\Rightarrow
+\{z:B.\Psi\mid e:E.\Xi\}.
+$$
+
+Contracts may refer to a distinguished $\mathsf{self}$ denoting the callable.
+Let $\theta$ substitute the actual callable, receiver, and argument list for
+these formal names. **Call-State** is
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:\mathsf{Callable}(L;P)
+\qquad \sigma\in L\\
+\Gamma\vdash_G r:R
+\qquad\Gamma\vdash_G\bar a:\alpha
+\qquad\Phi_0\vdash\Phi\theta
+\end{gathered}
+}{
+\Gamma\vdash_G
+\{\Phi_0\}\mathsf{invoke}(f,r,\bar a)
+\{z:B.\Psi\theta\mid e:E.\Xi\theta\}
+}.
+$$
+
+The corresponding introduction rule checks the entry body under $\Phi$ and
+establishes $\Psi,\Xi$. Construction, lookup, and update have the same stateful
+form.
+
+Only facts supported by postconditions, stable invariants, or a justified frame
+rule survive a call. A transient observation is not promoted into a permanent
+callable or property type.
+
+**Decoration.** A representative strong property-addition rule is
+
+$$
+\frac{
+\begin{gathered}
+\Gamma\vdash_G f:\mathsf{Callable}(L;P)
+\qquad\Gamma\vdash_G a:A\\
+\mathsf{AddOK}_G(\Phi,f,k,A;P)
+\end{gathered}
+}{
+\begin{gathered}
+\Gamma\vdash_G
+\{\Phi\}\mathsf{defineOwn}(f,k,a)\\
+\{z:\mathsf{Callable}(L;P\wedge\{k:\mathsf{cell}(A)\}).
+\ z=f
+\mid e:\bot.\bot\}
+\end{gathered}
+}.
+$$
+
+Here `defineOwn` is a core operation returning its target.
+
+$\mathsf{AddOK}$ is a checked object-store obligation: the target is eligible,
+the slot is available, the update is permitted, and the invariant extension
+preserves established contracts. It cannot be discharged merely because the
+call descriptor is immutable: behaviour can depend on properties.
+
+Without those conditions, the general stateful property-definition contract is
+required instead.
+
+The postcondition $z=f$, rather than freshness, distinguishes decoration from
+wrapping.
+
+**Proxies and revocation.** The shape-only creation rule, **Proxy-Shape**, is
+
+$$
+\frac{
+\Gamma\vdash_G f:\mathsf{Fun}
+\qquad\Gamma\vdash_G h:\mathsf{Obj}(\top_p)
+}{
+\Gamma\vdash_G\mathsf{proxy}(f,h):\mathsf{Fun}
+}.
+$$
+
+There is no rule automatically copying the target's signatures. A stronger
+contract requires checking the dispatch program: revocation check, handler
+lookup, and target or trap invocation. Those operations can change the
+behaviour relative to the target.
+
+For a callable revocable proxy $q$, the state rules include
+
+$$
+\Gamma\vdash_G
+\{\mathsf{Revocable}(q)\}\mathsf{revoke}(q)
+\{z:\mathsf{Undefined}.\mathsf{Revoked}(q)
+\mid e:\bot.\bot\},
+$$
+
+$$
+\Gamma\vdash_G
+\{\mathsf{Revoked}(q)\}\mathsf{invoke}(q,r,\bar a)
+\{z:\bot.\bot
+\mid e:\mathsf{TypeError}.\top\}.
+$$
+
+The core revocation operation requires the associated revocation capability.
+The stable fact $q:\mathsf{Fun}$ survives. Liveness alone does not establish a
+nonthrowing signature; handler and target obligations remain.
+
+#### Shape tests and identity
+
+SKJS's call modes obtain the following views:
+
+| Mode | View | $\mathsf{isFun}$ |
+| --- | --- | --- |
+| `CPresent(L)` | $\mathsf{Callable}(L;P)$, with advertised signatures | true |
+| `CFunction` | $\mathsf{Callable}([];P)$ | true |
+| `CAbsent` | $\mathsf{Plain}(P)$ | false |
+| `CUnknown` | $\mathsf{Obj}(P)$ | unknown |
+
+This retains SKJS's distinction between known function shape and unknown
+callability, while supplying the structural object view.
+
+**Function-Test.** For an unknown-callability object,
+
+$$
+\frac{
+\begin{gathered}
+\Gamma,x:\mathsf{Callable}([];P)
+\vdash_G t:B\;!E_t\\
+\Gamma,x:\mathsf{Plain}(P)
+\vdash_G u:B\;!E_u
+\end{gathered}
+}{
+\Gamma,x:\mathsf{Obj}(P)\vdash_G
+\mathsf{if}\ \mathsf{isFun}(x)\
+\mathsf{then}\ t\
+\mathsf{else}\ u
+:B\;!(E_t\vee E_u)
+}.
+$$
+
+The true branch gains shape, not an arbitrary signature. Graph slicing must
+represent or safely approximate the refined views.
+
+**Identity.** Object identity has the rule
+
+$$
+\frac{
+\Gamma\vdash_G f:\mathsf{Obj}(\top_p)
+\qquad
+\Gamma\vdash_G g:\mathsf{Obj}(\top_p)
+}{
+\Gamma\vdash_G\mathsf{same}(f,g):\mathsf{Bool}
+}.
+$$
+
+Its refinement postcondition is
+
+$$
+b\iff\operatorname{id}(f)=\operatorname{id}(g).
+$$
+
+Allocation additionally establishes freshness relative to identities existing
+at entry. Subsumption establishes neither allocation nor freshness.
+
+#### Async and generator callables
+
+Their application uses Call. Their introduction needs additional computation
+judgments, not additional callable-object representations.
+
+An asynchronous entry judgment
+
+$$
+\Gamma,\mathsf{this}:R,\mathsf{argv}:\alpha
+\vdash_G^{\mathsf{async}}
+t:\mathsf{PromiseSpec}(B,E)
+$$
+
+must check entry and resumption, including parameter initialization, promise
+resolution, thenable assimilation, rejection, and state invariants across
+suspension. These are obligations of the asynchronous execution semantics.
+
+Its introduction schema, **Async-Code**, is
+
+$$
+\frac{
+\Gamma,\mathsf{this}:R,\mathsf{argv}:\alpha
+\vdash_G^{\mathsf{async}}
+t:\mathsf{PromiseSpec}(B,E)
+}{
+\Gamma\vdash_G^{\mathsf{call}}
+\mathsf{asyncCode}(t):
+[(R;\alpha)\xrightarrow{\bot}
+\mathsf{PromiseSpec}(B,E)]
+}.
+$$
+
+This schema assumes the entry proof accounts for ordinary entry failures as
+rejections; other synchronous failure paths must be advertised separately.
+$\mathsf{PromiseSpec}$ constrains fulfillment and rejection, not eventual
+settlement.
+
+For generators, let $\Pi$ be a protocol describing operations and transitions,
+including `next`, `throw`, and `return`. Then **Generator-Code** is
+
+$$
+\frac{
+\Gamma,\mathsf{this}:R,\mathsf{argv}:\alpha
+\vdash_G^{\mathsf{generator}}
+t:\Pi\;!E_{\mathrm{entry}}
+}{
+\Gamma\vdash_G^{\mathsf{call}}
+\mathsf{generatorCode}(t):
+[(R;\alpha)\xrightarrow{E_{\mathrm{entry}}}
+\mathsf{Generator}(\Pi)]
+}.
+$$
+
+A protocol transition supplies a stateful contract for the corresponding
+method. It must account for suspension, completion, and subsequent operations
+on a completed generator.
+
+These last two are module interfaces. Defining their premises requires an
+async/coroutine logic; merely giving the names of those judgments does not
+provide that logic.
+
+#### A distinguishing instance
+
+Let
+
+$$
+D=\mathsf{Obj}(\{n:\mathsf{cell}(\mathsf{Number})\}),
+$$
+
+$$
+M=(D;[])\to\mathsf{Number},
+\qquad
+A=(\top;[])\to\mathsf{Number}.
+$$
+
+For a checked incrementing body, Dynamic gives $M$ to an ordinary method.
+Lexical gives $A$ to an arrow capturing an instance of $D$.
+
+After allocation, suppose
+
+$$
+m:\mathsf{Calls}([M]),
+\qquad
+a:\mathsf{Calls}([A]),
+\qquad
+o:D.
+$$
+
+Then
+
+$$
+\Gamma\vdash_G
+\mathsf{invoke}(m,o,[]):\mathsf{Number},
+$$
+
+$$
+\Gamma\vdash_G
+\mathsf{invoke}(a,\mathsf{undefined},[]):\mathsf{Number}.
+$$
+
+The available contract for $m$ does not justify supplying `undefined` instead
+of $o$. Binding $m$ to $o$ produces a fresh function with a top-receiver
+contract. Decorating $m$, under Decorate, preserves its identity. A plain
+object containing $m$ in a property has a property-read rule, but no Call rule
+for the object itself.
+
+That is the intended separation: creation determines identity and dispatch;
+contracts determine permitted operations; subsumption changes neither.
+
+### The actual completeness claim
+
+There are three distinct deliverables.
+
+**A complete callable architecture** gives every pattern above a place without
+changing representations when types change. C\* provides that target.
+
+**A sound verification account** defines the operations and contracts, proves
+the typing and state rules sound, and proves source elaboration preserves the
+chosen observations. That includes identity, receiver binding, mutation,
+exceptions, and any admitted asynchronous observations.
+
+**A complete automated checker** is a separate claim. Neither object
+representation establishes that the current certificate language can express
+every required property or that its checker can discharge every valid
+obligation.
+
+This section establishes neither of the latter two deliverables. The one-cell
+callable slice described above is implemented and proved in Lean; the fuller
+architecture and rules below that slice remain proposed extensions.
+
+[c1]: https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html "6 ECMAScript Data Types and Values - TC39"
+[c2]: https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html "ECMAScript® 2027 Language Specification"
+[c3]: https://tc39.es/ecma262/multipage/fundamental-objects.html "ECMAScript® 2027 Language Specification"
+[c4]: https://tc39.es/ecma262/multipage/control-abstraction-objects.html "ECMAScript® 2027 Language Specification"
+[c5]: https://www.typescriptlang.org/docs/handbook/2/functions.html "Documentation - More on Functions - TypeScript"
+[c6]: https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html "ECMAScript® 2027 Language Specification"
+[c7]: https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html "ECMAScript® 2027 Language Specification"

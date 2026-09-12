@@ -13,11 +13,13 @@ open HeapFacts
 -- Two variables naming the same location cannot satisfy contradictory facts.
 theorem aliases_agree {ρ h i j} (he : ρ i = ρ j)
     (hf : Holds [⟨i,[.tru]⟩,⟨j,[.fls]⟩] ρ h) : False := by
-  obtain ⟨l,v,hl,hv,a,ha,rfl⟩ := hf ⟨i,[.tru]⟩ (by simp)
-  obtain ⟨k,u,hk,hu,b,hb,rfl⟩ := hf ⟨j,[.fls]⟩ (by simp)
+  obtain ⟨l,c,v,hl,hv,a,ha,rfl⟩ := hf ⟨i,[.tru]⟩ (by simp)
+  obtain ⟨k,d,u,hk,hu,b,hb,rfl⟩ := hf ⟨j,[.fls]⟩ (by simp)
   simp only [List.mem_singleton] at ha hb
   subst a; subst b
-  have heq : l = k := by simpa [hl,hk] using he
+  have heq : l = k := by
+    have ho : Tm.obj l c = .obj k d := hl.symm.trans (he.trans hk)
+    exact (Tm.obj.inj ho).1
   subst k
   have := hv.symm.trans hu
   cases this

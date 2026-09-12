@@ -20,14 +20,14 @@ theorem program_post {n W h} (hw : WorldAdm W) (hh : HeapOk n W h) :
   apply bind (fun t => .app (.lam body) t) (fun hs => .appR rfl hs)
     n W h (.alloc .fls) hw hh (alloc_observed boolT_adm hw hh rfl (Or.inr rfl))
   intro j hj U hx hu h' v hh' hval hr hp
-  have he : v = .loc h.length := hp.2
+  have he : v = .obj h.length .nul := hp.2
   subst v
   cases j with
   | zero => trivial
   | succ p =>
     apply beta rfl hu hh'
     change SafePost _ _ p _ h'
-      (.app (.lam (.read (.loc h.length))) (.write (.loc h.length) .tru))
+      (.app (.lam (.read (.obj h.length .nul))) (.write (.obj h.length .nul) .tru))
     exact write_then_read boolT_adm (WorldAdm_trunc _ hu) (HeapOk_trunc p U h' hh')
       ((refT_adm boolT).down p U _ hr) rfl (Or.inl rfl)
 

@@ -114,7 +114,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readOutput k i R) (push v ρ) h') n W h (.read (ρ i)) := by
-  obtain ⟨l,v,hl,hv,a,ha,rfl⟩ := hk.1 _ hm
+  obtain ⟨l,c,v,hl,hv,a,ha,rfl⟩ := hk.1 _ hm
   rw [hl]
   apply consequence _ _ (read_observed hw hh (by cases a <;> rfl) hv)
   · intro j U u hu; exact includes_sound hc ⟨a,ha,hu⟩ j U
@@ -126,7 +126,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
       have he := HeapLinks.aliases_eq hk.2.2 hj
-      exact ⟨l,he.trans hl,by simpa [push,hp.2] using hv⟩
+      exact ⟨l,c,he.trans hl,by simpa [push,hp.2] using hv⟩
     · exact hout.2.2 link hm
 
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ n W h}
@@ -151,7 +151,7 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i Ref B A ρ
     intro link hm
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
-      exact ⟨l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
+      exact ⟨l,.nul,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hv⟩
     · exact hout.2.2 link hm
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
@@ -194,14 +194,14 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
   have hvv : isVal (ρ i) = true := by rw [hv]; cases a <;> rfl
   apply one_step rfl rfl (.allocV hvv) _
     (by simpa [instantiate] using ht.sound n W h ρ he hw hh)
-  refine ⟨?_,(HeapKnowledge.shift_holds (v := .loc h.length) hk).2.1,
-    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .loc h.length) hk).2.2⟩
+  refine ⟨?_,(HeapKnowledge.shift_holds (v := .obj h.length .nul) hk).2.1,
+    HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .obj h.length .nul) hk).2.2⟩
   intro f hf
   rcases List.mem_cons.mp hf with rfl | hf
-  · exact ⟨h.length,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
+  · exact ⟨h.length,.nul,ρ i,rfl,alloc_new h (ρ i),a,ha,hv⟩
   · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-    obtain ⟨l,v,hl,hh',b,hb,hv'⟩ := hk.1 g hg
-    exact ⟨l,v,hl,alloc_frame hh',b,hb,hv'⟩
+    obtain ⟨l,c,v,hl,hh',b,hb,hv'⟩ := hk.1 g hg
+    exact ⟨l,c,v,hl,alloc_frame hh',b,hb,hv'⟩
 
 /-- A write forgets all old cell observations (including aliases), establishes
 its new contents, and retains immutable values already read into slots. -/
@@ -210,11 +210,11 @@ def writeOutput (k : Knowledge) (i : Nat) (R : List Literal) : Knowledge :=
 
 private theorem write_inv {h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.write a b) h' t) :
-    ∃ l, a = .loc l ∧ l < h.length ∧ h' = h.set l b ∧ t = .nul := by
+    ∃ l c, a = .obj l c ∧ l < h.length ∧ h' = h.set l b ∧ t = .nul := by
   cases hs with
   | writeC1 hs => exact False.elim (value_no_step ha hs)
   | writeC2 _ hs => exact False.elim (value_no_step hb hs)
-  | writeV _ hl => exact ⟨_,rfl,hl,rfl,rfl⟩
+  | writeV _ hl => exact ⟨_,_,rfl,hl,rfl,rfl⟩
 
 /-- The ordinary typing proof guarantees a writable location. An old observation
 is unnecessary: the postcondition depends only on the value being written. -/
@@ -237,14 +237,14 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i j R A ρ n W h
     have step := hs
     rcases step with ⟨hbad,_⟩ | ⟨U,h',t',_,_,step,_,_⟩
     · contradiction
-    · obtain ⟨l,hl,hlt,_,_⟩ := write_inv hiv hvv step
+    · obtain ⟨l,c,hl,hlt,_,_⟩ := write_inv hiv hvv step
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeV hvv hlt) _ hs
       refine ⟨?_,?_,HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := .nul) hk).2.2⟩
       · intro f hf
         obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp hf
         have heq := HeapLinks.aliases_eq hk.2.2 hs
-        exact ⟨l,ρ j,heq.trans hl,write_new hlt,a,ha,hv⟩
+        exact ⟨l,c,ρ j,heq.trans hl,write_new hlt,a,ha,hv⟩
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
         · exact ⟨.nul,by simp,rfl⟩
@@ -269,6 +269,7 @@ theorem pure_instantiate {G : NormalGraph ι} {Γ t ρ n W}
     (hp : pureTerm t = true) (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) : pureTerm (instantiate 0 ρ t) = true := by
   induction t <;> simp_all [pureTerm,isVal,instantiate,checkScope]
+  case obj l c ih => cases c <;> simp_all [isVal,instantiate]
   case var i =>
     have hi : i < Γ.length := by omega
     have hv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1

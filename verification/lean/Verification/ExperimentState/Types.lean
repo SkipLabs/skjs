@@ -39,7 +39,7 @@ element type semantically rather than syntactically is what makes the clause
 depend on the environment interpreting it, so a type parameter under a
 reference is interpreted rather than ignored. -/
 def refT (T : Fam) : Fam := fun k W v =>
-  ∃ (l : Nat) (c : Ctr k), v = .loc l ∧ lookup W l = some c ∧
+  ∃ (l : Nat) (c : Ctr k), v = .obj l .nul ∧ lookup W l = some c ∧
     ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
 
 def nulT : Fam := fun _ _ v => v = .nul
@@ -54,12 +54,12 @@ def boolT : Fam := fun _ _ v => v = .tru ∨ v = .fls
 
 
 theorem ref_param_inhabited (F : Fam) (k : Nat) :
-    refT F k (ofList [res F]) (.loc 0) :=
+    refT F k (ofList [res F]) (.obj 0 .nul) :=
   ⟨0, res F, rfl, by simp [lookup], fun _ _ _ _ => Iff.rfl⟩
 
 theorem ref_param_universal :
     ∀ (F : Fam) (k : Nat), ∃ (W : WorldT k) (v : Val), refT F k W v :=
-  fun F k => ⟨ofList [res F], .loc 0, ref_param_inhabited F k⟩
+  fun F k => ⟨ofList [res F], .obj 0 .nul, ref_param_inhabited F k⟩
 
 /-! ## The guarded fixed point -/
 
@@ -144,7 +144,7 @@ theorem R_unfold (n : Nat) (W : WorldT n) (v : Val) : R n W v ↔ refT R n W v :
 
 /-- Inhabited by a genuinely cyclic world: one location whose contract is `R`
 itself, holding a reference to that same location. -/
-theorem R_cyclic (n : Nat) : R n (ofList [res R]) (.loc 0) :=
+theorem R_cyclic (n : Nat) : R n (ofList [res R]) (.obj 0 .nul) :=
   (R_unfold n _ _).mpr ⟨0, res R, rfl, by simp [lookup], fun _ _ _ _ => Iff.rfl⟩
 
 /-- And `R` is not everything: a non-location is excluded at every level. -/

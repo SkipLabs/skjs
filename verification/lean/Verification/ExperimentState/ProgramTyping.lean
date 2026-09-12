@@ -35,7 +35,7 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
-  | arrs L => obtain ⟨b, rfl, hb⟩ := hc.1; exact ⟨rfl, hb⟩
+  | arrs L => exact ⟨hc.1.val, hc.1.scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
 
 theorem meaning_valOnly (G : NormalGraph ι) (A : Ty ι) : ValOnly (meaning G A) :=
@@ -99,6 +99,7 @@ theorem bind {A B : Fam} (C : Tm → Tm)
 def tagShape (tag : Tag) (s : Nat) : Bool :=
   match tag with
   | .isNul => s == 0 | .isBool => s == 1 | .isRef => s == 2
+  -- A function object is a function to `typeof`, as a lambda is.
   | .isFun => s == 3 | .isUndef => s == 4 | .isNullish => s == 0 || s == 4
 
 /-- A finite syntactic check; it neither executes a term nor queries membership. -/
@@ -109,7 +110,9 @@ theorem answers_sound {G : NormalGraph ι} {A tag q n W v}
     (hq : Answers G A tag q) (hv : meaning G A n W v) : tagHolds tag v = q := by
   obtain ⟨c, hc, hv⟩ := (expand_sem G A n W v).mp hv
   have htag : tagHolds tag v = tagShape tag (valueShape v) := by
-    cases tag <;> cases v <;> rfl
+    -- An object's answer depends on what sits in its call slot. `cases v`
+    -- re-introduces the membership hypothesis after the object's two fields.
+    cases tag <;> cases v <;> first | rfl | (rename_i l c h; cases c <;> rfl)
   rw [htag, sem_shape hv]
   exact hq c hc
 
@@ -176,7 +179,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     apply value_safe _ _ _ _ _ rfl
     apply (represents_sem hr n W _).mpr
-    refine ⟨⟨instantiate 1 ρ b, rfl, instantiate_scoped ρ he.1 b 1⟩, ?_⟩
+    refine ⟨⟨instantiate 1 ρ b, Or.inl rfl, instantiate_scoped ρ he.1 b 1⟩, ?_⟩
     intro p hp j hj U hx hu heap hok a ha
     obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
     change Safe (meaning G q.2) j U heap (subst 0 a (instantiate 1 ρ b))

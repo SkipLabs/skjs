@@ -101,8 +101,8 @@ decreasing_by
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
   | .lam b => checkScope (d+1) b
-  | .app a b | .write a b => checkScope d a && checkScope d b
-  | .alloc a | .read a | .test _ a => checkScope d a
+  | .app a b | .write a b | .attach a b => checkScope d a && checkScope d b
+  | .alloc a | .read a | .test _ a | .obj _ a => checkScope d a
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
 

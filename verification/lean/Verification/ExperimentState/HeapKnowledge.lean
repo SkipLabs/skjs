@@ -134,9 +134,9 @@ theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
       have hg2 := hg.2
       simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
       have hs := hg2.2
-      obtain ⟨l,hl,hh⟩ := (show ∃ l, ρ g.cell = .loc l ∧ h[l]? = some (ρ g.value) from
+      obtain ⟨l,c,hl,hh⟩ := (show ∃ l c, ρ g.cell = .obj l c ∧ h[l]? = some (ρ g.value) from
         by simpa [hg2.1] using hk.2.2 g hg.1)
-      refine ⟨l,ρ g.value,hl,hh,(if q then .tru else .fls),by simp,?_⟩
+      refine ⟨l,c,ρ g.value,hl,hh,(if q then .tru else .fls),by simp,?_⟩
       cases q <;> simpa [hs,HeapFacts.Literal.value] using hq
     · exact hk.1 f hf
   · intro f hf

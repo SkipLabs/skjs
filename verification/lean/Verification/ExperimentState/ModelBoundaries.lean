@@ -67,7 +67,7 @@ theorem arrow_inter_codomain_fails :
   -- a location is a value, and it would have to inhabit an empty codomain
   rcases hs2 with ⟨-, hmem⟩ | ⟨_, _, _, _, _, hst3, _, _⟩
   · exact ref_inter_empty 2 (by omega) Q _ hmem
-  · exact value_no_step (show isVal (Tm.loc _) = true from rfl) hst3
+  · exact value_no_step (show isVal (Tm.obj _ .nul) = true from rfl) hst3
 
 /-! ## Finite observation of nested references -/
 
@@ -90,23 +90,23 @@ def bottomT : Fam := fun _ _ _ => False
 /-- A constant body returns a location before two reference levels can be
 observed. Distinct eventual contracts remain indistinguishable at these budgets. -/
 theorem constant_nested_arrow (A : Fam) :
-    arrowT nulT (nestedRef 2 A) 2 (ofList [res R]) (.lam (.loc 0)) := by
+    arrowT nulT (nestedRef 2 A) 2 (ofList [res R]) (.lam (.obj 0 .nul)) := by
   apply lam_intro _ _ _ (by trivial)
   intro p hp U hx hu h hh a ha
-  have hr : R p U (.loc 0) := R_adm.mono p _ U hx _
+  have hr : R p U (.obj 0 .nul) := R_adm.mono p _ U hx _
     (R_adm.down_le 2 p (Nat.le_of_lt hp) _ _ (R_cyclic 2))
-  exact value_safe _ p U h (.loc 0) rfl ((nested_agrees_cycle 2 A p hp U _).mpr hr)
+  exact value_safe _ p U h (.obj 0 .nul) rfl ((nested_agrees_cycle 2 A p hp U _).mpr hr)
 
 theorem constant_not_bottom :
-    ¬ arrowT nulT bottomT 2 (ofList [res R]) (.lam (.loc 0)) := by
+    ¬ arrowT nulT bottomT 2 (ofList [res R]) (.lam (.obj 0 .nul)) := by
   intro ht
   have hx : WExt (trunc 1 (by omega) (ofList [res R] : WorldT 2))
       (ofList [res R] : WorldT 1) := by
     rw [trunc_res]
     exact WExt_refl _
   have hs := ht.2 1 (by omega) _ hx (cyclic_world_adm 1)
-    [.loc 0] (cyclic_heap_ok 1) .nul rfl
-  exact safe_value_mem (show isVal (Tm.loc 0) = true from rfl) hs
+    [.obj 0 .nul] (cyclic_heap_ok 1) .nul rfl
+  exact safe_value_mem (show isVal (Tm.obj 0 .nul) = true from rfl) hs
 
 /-- It is UNSOUND to extrapolate the single-reference empty-result rule to
 arbitrary reference nesting in the exact indexed interpretation. This is a
