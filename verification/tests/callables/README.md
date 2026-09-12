@@ -78,3 +78,11 @@ For `nullableFactoryResult`, both producers' claims verify. The tsc producer
 uses the lambda's own expression type under its nullable context; the enclosing
 return still checks that arrow against the full function-or-null contract.
 The TypeScript claim suite independently checks the resulting certificates.
+
+[arguments.ts](arguments.ts) starts the callable-valued argument milestone.
+An invoking closure receives a callback that mutates a captured cell and returns
+its old contents. This is currently a rejection baseline, not a verified corpus
+example: [callable-arguments.mts](../callable-arguments.mts) checks that SKJS
+marks the invoking closure's type unavailable with `nested-object-type`, and
+the tsc suite records its primitive-only argument boundary. The shared runner
+builds this fixture alongside the supported examples.
