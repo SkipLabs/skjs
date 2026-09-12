@@ -27,8 +27,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
-  // Compound absence guards are not yet retained in captures.
-  "callables/unions": "failed",
+  // Compound absence guards preserve all facts established by their outcome.
+  "callables/unions": "verified",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -122,8 +122,9 @@ for (const [name, want] of Object.entries(expected)) {
         const compoundCallee = compound.body[2].e.body.callee;
         const compoundClaim = compoundClaims.expressions.find((p) => p.pos[0] === compoundCallee.pos[0] && p.pos[1] === compoundCallee.pos[1]);
         assert.ok(compoundClaim);
-        assert(compoundClaim.type.includes(0) && compoundClaim.type.includes(3),
-          "baseline: compound guard leaves both absence tags in the capture");
+        assert.equal(compoundClaim.type.length, 1);
+        assert(!compoundClaim.type.includes(0) && !compoundClaim.type.includes(3),
+          "the compound guard excludes both absence tags before capture");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);

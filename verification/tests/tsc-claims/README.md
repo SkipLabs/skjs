@@ -51,7 +51,10 @@ Lambda and allocation claims under union contexts use the expression's own
 arrow or cell type. Explicit null and undefined tests refine a binding's declared contract
 within branches and after an arm that returns; the fallback no longer restores
 eliminated tags at guarded reads or calls. Removing either absence tag preserves
-the other, as checked by `twoAbsenceCapture`. Matching uses symbol identity. Immutable const
+the other, as checked by `twoAbsenceCapture`. Compound guards combine the
+facts of both operands where the outcome establishes both, and preserve the
+union of possible paths otherwise. `compoundAbsenceCapture` checks that a
+returning absence disjunction excludes both tags before arrow creation. Matching uses symbol identity. Immutable const
 captures retain guards from arrow creation; parameters and other function
 boundaries stop the walk. Statement entries use the same declared contracts and
 guards even for bindings absent from that statement; `distinctNullableCallbacks`

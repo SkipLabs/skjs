@@ -632,11 +632,30 @@ function unitGuardLabels(node: any, checker: Checker, labels: number[], anchor =
   const immutableCapture = declaration && ts.isVariableDeclaration(declaration) &&
     ts.isVariableDeclarationList(declaration.parent) &&
     (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
-  const apply = (cond: any, truth: boolean) => {
+  const refine = (cond: any, truth: boolean, base: number[]): number[] => {
+    if (ts.isParenthesizedExpression(cond)) return refine(cond.expression, truth, base);
+    if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken)
+      return refine(cond.operand, !truth, base);
+    if (ts.isBinaryExpression(cond)) {
+      const op = cond.operatorToken.kind;
+      if (op === ts.SyntaxKind.AmpersandAmpersandToken || op === ts.SyntaxKind.BarBarToken) {
+        const and = op === ts.SyntaxKind.AmpersandAmpersandToken;
+        // True conjunctions and false disjunctions establish both operands.
+        if (truth === and) return refine(cond.right, truth, refine(cond.left, truth, base));
+        // The other outcome can come from either short-circuit path. Preserve
+        // their union; a fact from just one path cannot refine the whole edge.
+        return dedupSortInts([
+          ...refine(cond.left, truth, base),
+          ...refine(cond.right, truth, refine(cond.left, !truth, base)),
+        ]);
+      }
+    }
     const test = testedUnitSymbol(cond, checker);
-    if (test?.sym.id === sym.id)
-      labels = labels.filter((label) => (label === test.label) === (test.equal === truth));
+    return test?.sym.id === sym.id
+      ? base.filter((label) => (label === test.label) === (test.equal === truth))
+      : base;
   };
+  const apply = (cond: any, truth: boolean) => { labels = refine(cond, truth, labels); };
   let child = anchor, cur = anchor.parent;
   while (cur) {
     if (isFunctionLike(cur) && !(immutableCapture && ts.isArrowFunction(cur))) break;

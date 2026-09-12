@@ -354,6 +354,15 @@ try {
     expect("later call-site guard cannot repair the closure's null branch (consumer)", run("--check-stateful-source", a, claims, evidence), false);
   }
 
+  {
+    const a = clone(ast);
+    const f = a.functions.find((f: any) => f.name === "compoundAbsenceCapture");
+    assert.equal(f.body[1].cond.op, "||");
+    f.body[1].cond.op = "&&";
+    expect("returning an impossible absence conjunction excludes neither tag", run("--produce-stateful-source", a, claims), false);
+    expect("returning an impossible absence conjunction excludes neither tag (consumer)", run("--check-stateful-source", a, claims, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
