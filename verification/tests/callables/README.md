@@ -33,65 +33,49 @@ develop or check, defer it until the case is expressible through the pipeline.
 | `branchReturnedCapture` | A factory returns different closures from a null-test branch; the escaping closure retains its own factory argument's refinement, which cannot transfer to the nullable caller capture. |
 | `nestedCallableArgumentWrite` | A write inside a closure's call argument preserves the captured receiver and named RHS through temporary bindings; a same-typed capture cannot replace the parameter in the evidence. |
 
-[callables.mts](../callables.mts) checks the original claims and rejects forged
-claims and reused evidence. It also retains report round-trip and independent
-report-verification coverage for these examples. The runner builds this fixture
-alongside the other source fixtures in its shared container.
+[callables.mts](../callables.mts) checks original SKJS claims, forged claims,
+reused evidence and report round trips. [tsc-claims.mts](../tsc-claims.mts) checks
+the TypeScript producer, including the capture refinements identified above.
+Both producers use the same extraction and independent consumer.
 
-Run `make verify-test` for the suites or `make verify-examples` for the corpus.
-`make verify` runs both. Core semantic regressions remain in
-`lean/Verification/ExperimentState/`. `SourceCallableUnionTests.lean` isolates
-union decoding, operand-slot lowering and overload selection with explicit
-claims. Guard polarity and guarded callable results are exercised through the
-source suites instead of a second standalone Lean guard matrix. Recursive
-callable bags and recursive invocation remain separate model obligations.
+For `callableArgumentWrite`, SKJS exports Boolean for the assignment. A separate
+false-result refinement verifies with fresh evidence; it is an explicit candidate,
+not an original producer claim. Under `nullableFactoryResult`'s nullable context,
+the tsc producer uses the lambda's own expression type, then checks that arrow
+against the full return contract.
 
-[factories.ts](factories.ts) exercises two calls to a factory that allocates a
-private Boolean cell and returns a closure that writes its argument and returns
-the old contents. A control hoists the cell outside the factory, so the returned
-closures share state. Both original SKJS exports produce certificates checked
-by the independent consumer in [callable-factories.mts](../callable-factories.mts).
-The TypeScript producer also verifies both factories, with independent consumption
-in [tsc-claims.mts](../tsc-claims.mts). They appear in the Callables corpus and
-report viewer alongside the union examples.
-Narrowing the returned closure's result to false fails both fresh production and
-reuse of the original evidence.
+[factories.ts](factories.ts) contrasts factories allocating a private cell per
+invocation with a control sharing a cell outside the factory.
+[callable-factories.mts](../callable-factories.mts) rejects a narrowed returned
+closure result with both fresh and reused evidence. Its JavaScript witness checks
+that `first(true)`, `second(false)`, `first(false)` return false/false/true with
+private cells and false/true/false with the shared cell. A passive observer records
+the intermediate results; the unmodified function's result is checked too.
 
-These Boolean contracts establish type safety, not the exact instance-isolation
-observations: calls `first(true)`, `second(false)`, `first(false)` should return
-false, false, true for private cells and false, true, false for the shared cell.
-The suite now checks those exact observations with a JavaScript runtime witness,
-inserting a passive observer immediately before the outer return. It also runs
-the unmodified function and checks its Boolean result. This does not prove that
-the extracted Lean machine has the same execution: that semantic execution
-check remains deferred unless a concrete discrepancy warrants investigation.
-Record-valued callable operands remain outside this source fragment.
+[arguments.ts](arguments.ts) covers a stateful callback passed to an invoker and
+`escapedCallbackArgument`, where that callback enters a wrapper factory, escapes
+as a captured parameter, and returns through another invoker. An intervening cell
+write distinguishes execution-time reads from creation-time snapshots.
+[callable-arguments.mts](../callable-arguments.mts) rejects incompatible callback
+domains and results, and checks the escaping wrapper's JavaScript result for both
+seeds. Both producers' certificates for factories and arguments are independently
+checked.
 
-That module also checks unions of overloaded functions using explicit normalized
-source claims. Null and Boolean arguments select different signatures in each
-alternative; narrowing the joined result or omitting an alternative's compatible
-signature fails. These cases are not advertised as verified SKJS exports:
-SKJS currently collapses incomparable arrow intersections to `never`, as recorded
+JavaScript witnesses establish observations separate from the Boolean typing
+certificates. They do not prove that extracted Lean programs execute equivalently;
+those execution checks remain deferred unless a concrete discrepancy warrants
+investigation. The [protocol](../../REQUEST-PROTOCOL.md#expression-closures-and-calls)
+owns callable signature restrictions.
+
+Core semantic regressions remain in `lean/Verification/ExperimentState/`.
+`SourceCallableUnionTests.lean` isolates union decoding, operand-slot lowering
+and overloaded union calls with explicit claims. Null and Boolean arguments
+select different signatures in each alternative; narrowing the joined result or
+omitting an alternative's compatible signature fails. These are not verified SKJS
+exports: SKJS collapses incomparable arrow intersections to `never`, as recorded
 in the [intersection finding](../skjs-incomplete/arrow-intersection.ts).
+Guard polarity and guarded results are covered by the source suites; recursive
+callable bags and recursive invocation remain distinct model obligations.
 
-For `callableArgumentWrite`, the original SKJS assignment claim is Boolean.
-The suite separately verifies an explicit false-result refinement with fresh
-evidence; it does not count that refinement as an original producer claim.
-
-For `nullableFactoryResult`, both producers' claims verify. The tsc producer
-uses the lambda's own expression type under its nullable context; the enclosing
-return still checks that arrow against the full function-or-null contract.
-The TypeScript claim suite independently checks the resulting certificates.
-
-[arguments.ts](arguments.ts) passes a stateful callback to an invoking closure.
-The callback mutates a captured cell and returns its old contents. Both producers
-verify it through the existing pipeline, with independent certificate checking.
-[callable-arguments.mts](../callable-arguments.mts) rejects a callback domain too
-narrow for the invoker and an invoker claim accepting incompatible callback
-results. It appears in the Callables corpus and report viewer.
-
-`escapedCallbackArgument` checks the higher-order round trip: a callback enters
-a wrapper factory, escapes as a captured parameter, and the returned wrapper
-is passed to another invoker. An intervening cell write distinguishes later
-callback execution from creation-time observation. Both producers' certificates
-are checked independently; a JavaScript witness checks the result for both seeds.
+Run `make verify-test` for suites or `make verify-examples` for the corpus;
+`make verify` runs both. The [test index](../README.md) describes suite ownership.

@@ -441,12 +441,8 @@ supported primitives null, undefined, true and false. The SKJS exporter uses
 bounded recursion, and the tsc producer applies a depth limit when translating
 nested operands. No unsupported union alternative is discarded.
 
-`SourceInput.callableType` lowers nested callable operands to the existing
-arrow rows. `SourceTypes.arrow_exact` characterizes the interpretation of a
-single arrow row for arbitrary graph domain and result types; it does not prove
-recursive JSON decoding or source extraction correct. The resulting requests use the existing lambda, application
-and graph certificate rules. Source extraction remains a reviewed boundary,
-and none of this asserts equivalence with SKJS's full structural function types.
+`SourceInput.callableType` lowers every supported operand to graph labels.
+See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
 
 Source arrows require explicit parameter and result annotations. Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including
@@ -517,12 +513,8 @@ AST tag, type claim or calculus rule is needed. General partially returning
 nested arms, unreachable continuations and active-name shadowing remain gated. Standalone field-test claims with unequal read/write meanings remain outside
 the invariant-cell slice; exact union absorption does not admit them on their own.
 
-For closure expressions the producer follows explicit proof recipes, retaining
-the initializer's claimed type at each source let and choosing known types for
-administrative temporaries. Context changes become explicit variable coercions.
-Only subtype obligations still require search. It can reuse an already produced
-supplemental proof with an exact matching root judgment in the graph certificate.
-The independent consumer and source bundle format are unchanged.
+Proof recipes are internal producer data, not wire fields. Their construction
+and reuse are described in [source integration](DESIGN.md#source-integration-current-slice-and-next-milestone).
 
 Source assertion requirements are reconstructed from the source/claim inputs,
 not read from the certificate. Every statement entry requires certificate input
@@ -538,17 +530,11 @@ The source bundle carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and
 rule derivation using `ExpressionClaims.checkAll`. Dropping a proof, adding a
 proof or substituting a valid proof of a different judgment is rejected.
-Assignments save the receiver and RHS once, perform the calculus write, and
-return the saved RHS; anonymous slots preserve lexical binding and evaluation
-order. The whole lambda is also checked by the ordinary program certificate.
-
-A closure is lowered to a lambda with its parameter in slot zero and captures
-shifted by one. Calls accept one ordinary argument and evaluate callee then
-argument, preserving both claims. Closures may be stored in local constants,
-called after alias writes, or returned. External function parameters and named
-top-level calls remain outside this source slice. Capture and source evaluation
-order remain part of the reviewed compiler boundary; calculus lambda/application
-soundness is proved.
+The whole lambda is also checked by the ordinary program certificate.
+Callable parameters are admitted at their source annotations; named top-level
+calls and external cell parameters remain outside the slice. Evaluation order,
+capture lowering and assignment temporaries are described in
+[source integration](DESIGN.md#source-integration-current-slice-and-next-milestone).
 
 ### Null and undefined predicates
 

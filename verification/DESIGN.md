@@ -396,7 +396,7 @@ Full TypeScript formalization is not a prerequisite.
 
 [SourceExtraction.lean](lean/Verification/ExperimentState/SourceExtraction.lean)
 connects independently parsed source and actual SKJS exports to the stateful
-consumer. It accepts primitive parameters, initialized `const` declarations,
+consumer. It accepts primitive or bounded callable parameters, initialized `const` declarations,
 nested boolean branches, block-bodied `while` loops and returns, with variables, null/undefined/boolean literals,
 plain `{ value: e }` allocation, `.value` reads and `.value = e` assignments,
 and the bounded local closures and calls described below. Every syntactic exit
@@ -483,12 +483,12 @@ plain-data allocation is the source gate’s responsibility. The parser accepts
 only an explicit single `value` data property, with no getters, setters, spreads
 or computed keys. Cell parameters remain rejected: an external object needs
 a separate plain-data boundary that its structural annotation cannot establish.
-Arrow parameters are admitted at their annotation, since the annotation is the
-assumption the caller is held to and the soundness theorem takes every input
-as given at its type; an arrow received from outside reaches no cell of the
-body, because the slice passes only primitives, so its contract is exactly
-what it returns on each admitted argument. A producer claim that contradicts
-the annotation is refused by name before any obligation is tried.
+Arrow parameters are assumed at their source annotation, as part of the caller
+contract. Callable arguments can expose captured cells to an invocation; the
+semantic arrow guarantee must therefore hold across admissible future heaps,
+including callback effects. A producer claim that contradicts the annotation
+is refused before proof search. This does not admit record-valued parameters
+or establish contracts for unchecked JavaScript callers.
 
 Object branches are exported faithfully as separate atoms in the existing union
 format. [CellUnion.lean](lean/Verification/ExperimentState/CellUnion.lean) validates
@@ -902,38 +902,22 @@ that guarantee. `make verify` remains the experiment's source-facing command.
 
 ### Callable integration
 
-A unary arrow is one interned row of the request's
-table. `SourceTypes.arrow_exact` proves the row's domain and codomain
-interpretations. Existing application and lambda rules discharge their
-obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the table encoding.
-
-The current pipeline also handles factories returning bounded callable contracts,
-nullable callable results, creation-time guards on immutable captures, callable
-selection and captured-cell mutation. Both SKJS and tsc claims run through the
-same source extraction and independent certificate consumer; the corpus and
-report viewer expose these examples in their Callables group. The old
-primitive-result restrictions have been removed from the exporter and source
-lowering. No replacement parser, claim format, report path or semantic machine
-was needed. See the [coverage map](tests/callables/README.md) for the distinct
-obligations and the claims/evidence mutations that exercise them.
-
-This is sufficient to demonstrate that the existing pipeline runs over the
-bounded callable model. It is not coverage of every TypeScript callable feature.
-Callable-valued arguments now cross the existing pipeline too: an invoking
-closure receives a locally checked stateful callback, supplies a Boolean
-argument, and uses its result. The callable-argument suite independently checks
-the evidence and rejects incompatible callback domains and results. The SKJS
-exporter, `SourceInput.callableType`, source lambda annotations and tsc producer
-all admit recursive callable operands while retaining the record-operand gate.
-The primitive decoder's theorem remains scoped to its original fragment.
+The existing source adapter, certificate producer, independent consumer and
+reports support recursively callable arguments and results, nullable callable
+unions, returned closures and captured-cell mutation. This establishes integration
+of the bounded callable model with the existing pipeline. The
+[protocol](REQUEST-PROTOCOL.md#expression-closures-and-calls) owns the signature
+encoding and restrictions; the [Callables coverage map](tests/callables/README.md)
+owns examples, adversarial checks and runtime observations. Arrow-row interpretation
+is characterized by `SourceTypes.arrow_exact`; recursive source decoding and
+extraction remain reviewed boundaries.
 
 Graph-backed closure loops, multiple/optional/rest arguments, `this`, generics,
-function properties and identity comparisons remain separate obligations. Do
-not accumulate minor guard variants as prerequisites for these extensions.
-Factory isolation and live-versus-snapshot selection have JavaScript witnesses
-alongside checked type claims; exact executions of their extracted Lean programs
-remain deferred unless a concrete discrepancy warrants investigation. A Boolean typing certificate alone does not establish those
-observations or TypeScript-to-calculus execution equivalence.
+function properties and identity comparisons remain separate obligations.
+Additional tests should isolate a new obligation or a credible suspected defect.
+Exact executions of extracted Lean programs are deferred unless a concrete
+discrepancy warrants investigation; checked Boolean results and JavaScript
+witnesses do not establish TypeScript-to-calculus execution equivalence.
 
 Source-mode search uses labels in the function's request and required-expression
 sequents, plus primitive labels. Vocabulary construction includes their operand
@@ -941,11 +925,6 @@ types. This is a search restriction, not a restriction on consumer checking or
 a completeness claim. A request's table holds only what its file mentions, but
 enumerating every unused arrow at each subtype query was already expensive at
 that size; a larger file must not silently expand every local search problem.
-
-The [captured-refinement fixture](tests/skjs-unsound/README.md) pairs a known stale
-read with a verified immutable snapshot. It distinguishes the raw contract boundary
-from a failed obligation after explicit candidate edits; neither an unsupported
-contract nor failed search alone is the runtime counterexample.
 
 ### Negated Boolean conditions
 

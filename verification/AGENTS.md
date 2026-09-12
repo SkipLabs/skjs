@@ -10,7 +10,7 @@ needs to change things here without breaking the suite's shape.
 ## Commands
 
 ```sh
-make verify                      # from the repo root: build, 23 suites, then the corpus
+make verify                      # from the repo root: build, suites, then the corpus
 make verify-test                 # the suites only
 make verify-examples             # the corpus only
 verification/run.sh --suite all  # the suites, without rebuilding Lean
@@ -34,8 +34,8 @@ runs the binary directly. Never invoke `target/host/dev/skjs` yourself.
 
 ## The suite's shape, and the rules that keep it
 
-`run.sh` runs 23 suites in about fifteen seconds because of four decisions. Each
-is a rule for anything added.
+`run.sh` keeps the suites fast through four decisions. Each is a rule for
+anything added; the runner summary reports the current suite count.
 
 - **One container for the run.** `skjs_start` brings it up before anything
   forks; `skjs_run` and `skjs_check` exec into it. A suite never starts its

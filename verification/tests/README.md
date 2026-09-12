@@ -3,14 +3,14 @@
 `make verify-test` runs the maintained pipeline regressions. Lean tests build
 alongside its implementation in `lean/Verification/ExperimentState/`.
 `make verify-examples` separately reports per-function outcomes on original SKJS
-claims for the viewer's corpus, without the repairs or corruptions used in tests.
+and tsc claims for the viewer's corpus, without the repairs or corruptions used in tests.
 `make verify` runs both, with separate summaries.
 
 | Tests | Coverage |
 |---|---|
 | `stateful-source.mts` / `stateful-source/basic.ts` | Real certificates, branches and shared continuations, exact singletons, source annotations, parameter contracts, incoming-edge refinements, missing/duplicate claims, lexical scope and input identities. |
 | `stateful-cells.mts`, `stateful-closures.mts` | Allocation, alias writes, reads, captures, returned closures, inner claims and corrupted certificates. |
-| `callables.mts` / [`callables/`](callables/README.md) | Guarded and coalesced callable unions, exact result contracts, forged claims, independent consumption and report round trips. |
+| `callables.mts`, `callable-factories.mts`, `callable-arguments.mts` / [`callables/`](callables/README.md) | Callable unions, factories and higher-order arguments; exact contracts, forged claims, independent consumption, runtime witnesses and report round trips. |
 | `stateful-loops.mts`, `stateful-loop-transfers.mts` | Supplied loop invariants, back edges, nested scope, early returns, break and continue. |
 | `null-tests.mts` | Null predicates, coalescing, logical expressions and compound guard edges; required claims, merge rejection, effect order, loop back edges and a direct-write stale-refinement counterexample. |
 | `write-observations.mts` | Post-write precision and negated stale-refinement witnesses: SKJS/TypeScript results, execution, source shape for the Lean observation proof, and the current checker limitation. |
@@ -26,14 +26,10 @@ suites. `cell-contracts.ts` tests exported type contracts separately and is not
 advertised as a source-verifiable example. `partial-claims.ts` is a repair
 exercise, in its own group.
 
-The retired primitive verifier and its duplicate test harness are no longer
-maintained. Applicable coverage (joins, source annotations, false/missing claims,
-signatures and binding identity) is exercised by the current suites. Features
-outside today's adapter are not silently counted as covered: `typeof`, numeric
-equality, general top-level calls and mutable bindings have boundary fixtures;
-active-name shadowing and code after unconditional transfer have explicit gate
-tests. General primitive set difference and the old sampled numeric runtime
-checks have no counterpart in the current null/boolean source fragment.
+Features outside today's adapter have explicit rejection coverage: `typeof`,
+numeric equality, general top-level calls and mutable bindings have boundary
+fixtures; active-name shadowing and code after unconditional transfer have gate
+tests. These tests establish the boundary, not support for the feature.
 
 To promote a boundary example, add a positive integration test using real claims
 and the independent consumer, then move it into the supported group and remove

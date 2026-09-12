@@ -40,11 +40,12 @@ The commands separate regression testing from inspecting example outcomes:
   altered claims and certificates, source boundaries, partial exports and report/editor
   tests. Its summary counts test executables, not functions or assertions, and marks
   an incomplete run after an early failure.
-- `make verify-examples` builds Lean and checks fresh, original SKJS claims for the
-  viewer's example corpus. It lists each function with the viewer's paired outcomes:
-  `SKJS ✓/✗/· · proof ✓/✗/?`. Proof `✓` means independently verified, `✗` means proof
+- `make verify-examples` builds Lean and checks fresh SKJS and tsc claims for the
+  viewer's example corpus. Each function has a producer-to-proof pair, for example
+  `SKJS ✓→✓ · tsc ✓→✗`. Proof `✓` means independently verified, `✗` means proof
   search failed (not a disproof), and `?` means unsupported source or missing claims.
-  `⚠ outcomes differ` calls attention to disagreement without claiming an SKJS bug.
+  `⚠` highlights SKJS acceptance not established by its claims; it is not itself
+  evidence of an SKJS bug.
   No repair is applied; repair demonstrations belong to the regression suites.
 - `make verify` runs both, building Lean once and keeping their summaries separate.
 
@@ -89,7 +90,8 @@ is accepted and why, together with the gates and the loop, closure and
 continuation constructions; [the protocol](REQUEST-PROTOCOL.md#source-mode) owns
 the source-mode commands, the type and claim encodings, and their exact
 restrictions. Worked examples of each construct live in
-[the corpus](tests/README.md).
+[the corpus](tests/README.md), including the [Callables coverage map](tests/callables/README.md)
+and [producer counterexamples](tests/skjs-unsound/README.md).
 
 ## Reports and examples
 
@@ -161,27 +163,3 @@ the storage invariant. Supplied observations are checked obligations: every
 incoming edge, including loop backedges, must establish the assertions claimed at
 a statement entry. See
 [Current-content assertions](DESIGN.md#current-content-assertions).
-
-## Primitive callbacks and a producer counterexample
-
-[primitive-callbacks.ts](tests/stateful-source/primitive-callbacks.ts) covers
-Boolean/union identity callbacks, captured writers, returned writers and a
-contravariant function assignment. `stableSnapshot` shows why an immutable value
-saved before a callback remains safe after the callback mutates its source cell.
-
-[The captured-refinement example](tests/skjs-unsound/captured-refinement.ts)
-is accepted by SKJS but returns false where its annotation requires true.
-[Its test](tests/primitive-callbacks.mts) distinguishes the original unsupported
-refined-reference contract from a stale expression claim that fails proof checking
-after those reference refinements are forgotten. See the
-[unsoundness notes](tests/skjs-unsound/README.md).
-[The compound-write example](tests/skjs-unsound/compound-write-refinement.ts)
-exercises known stale-field refinement after a direct write. Its runtime evidence,
-original claim boundary and explicit diagnostic candidate are recorded in the
-[unsoundness notes](tests/skjs-unsound/README.md).
-
-[negation.ts](tests/stateful-source/negation.ts) adds negated conditions, closures
-and loops. [The loop-exit example](tests/skjs-incomplete/negated-loop-exit.ts)
-is rejected by SKJS but verifies after repairing its final binding and expression
-claims to `true`. The regression consumes normal-mode partial claims and checks
-the resulting certificate independently.

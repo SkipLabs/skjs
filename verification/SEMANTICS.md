@@ -3,8 +3,9 @@
 The stateful development in [ExperimentState](lean/Verification/ExperimentState)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
-typing system and checked control-flow graphs. Extraction for the extended
-language remains an integration obligation.
+typing system and checked control-flow graphs. The
+[source integration status](DESIGN.md#source-integration-current-slice-and-next-milestone)
+distinguishes the supported source fragment from model-only features.
 
 ## Operational language
 
@@ -26,7 +27,8 @@ $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\m
 
 where $c ::= \mathsf{absent}\mid\mathsf{closure}(t)$ is a separate invocation
 descriptor. `make c a` evaluates its initializer `a`, then appends that value
-to the heap and returns `obj h.length c` using the updated heap length.
+to the heap and returns `obj h.length c`, where `h.length` is the length
+before appending.
 `alloc a` abbreviates `make absent a`; `attach b a` abbreviates
 `make (closure b) a`; `funE b` abbreviates `make (closure b) null`.
 All three use the same constructor and the same allocation step, `Step.makeV`.
