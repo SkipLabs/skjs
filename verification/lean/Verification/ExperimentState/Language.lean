@@ -48,14 +48,78 @@ inductive Tm where
   | write (a b : Tm)
   | test (k : Tag) (a : Tm)
   | ite (c t e : Tm)
-  deriving Repr, DecidableEq
+  deriving Repr
 
 /-- Invocation code is not a runtime value. A plain object has no call code. -/
 inductive CallCode where
   | absent
   | closure (arity : Nat) (body : Tm)
-  deriving Repr, DecidableEq
+  deriving Repr
 end
+
+/-! Executable structural equality, kept explicit because Lean's deriving
+handler does not support nested mutual types such as list-valued applications.
+Each recursive comparison visits a strict subterm; no classical decision is used. -/
+mutual
+def tmDecEq (a b : Tm) : Decidable (a = b) := by
+  cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
+  case var.var a0 b0 =>
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.var.injEq])
+  case app.app a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.app.injEq])
+  case letE.letE a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.letE.injEq])
+  case nul.nul =>
+    exact isTrue rfl
+  case undef.undef =>
+    exact isTrue rfl
+  case tru.tru =>
+    exact isTrue rfl
+  case fls.fls =>
+    exact isTrue rfl
+  case obj.obj a0 a1 b0 b1 =>
+    haveI : Decidable (a1 = b1) := callCodeDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.obj.injEq])
+  case make.make a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := callCodeDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.make.injEq])
+  case read.read a0 b0 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    exact decidable_of_iff (a0 = b0) (by simp only [Tm.read.injEq])
+  case write.write a0 a1 b0 b1 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.write.injEq])
+  case test.test a0 a1 b0 b1 =>
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.test.injEq])
+  case ite.ite a0 a1 a2 b0 b1 b2 =>
+    haveI : Decidable (a0 = b0) := tmDecEq a0 b0
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    haveI : Decidable (a2 = b2) := tmDecEq a2 b2
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.ite.injEq])
+termination_by sizeOf a
+
+def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
+  cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
+  case absent.absent =>
+    exact isTrue rfl
+  case closure.closure a0 a1 b0 b1 =>
+    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.closure.injEq])
+termination_by sizeOf a
+end
+
+instance : DecidableEq Tm := tmDecEq
+instance : DecidableEq CallCode := callCodeDecEq
+
+#print axioms tmDecEq
+#print axioms callCodeDecEq
 
 /-- Plain-object allocation is the absent-descriptor case of `make`. -/
 @[match_pattern] abbrev Tm.alloc (a : Tm) : Tm := .make .absent a

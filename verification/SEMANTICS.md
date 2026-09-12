@@ -64,6 +64,13 @@ heap. Only `b` is under the new binder. `HasTy.letE`, source lowering, and the
 certificate producer and consumer all use that constructor. `Step_det` proves
 that a term and heap have at most one successor.
 
+Term and descriptor equality use explicit structural comparisons, each returning
+a kernel-checked `Decidable` result and recurring only on strict subterms. This
+keeps certificate equality executable as the language moves to list-valued
+applications: Lean's `DecidableEq` deriving handler does not support nested
+mutually recursive types. The comparisons inspect every constructor field,
+including descriptor arity.
+
 Two different things are named here, and both run through the whole development.
 A **binding** lives in the environment $\rho$; a **location** $\ell$ is an address
 in the heap $h$. This is the usual store/heap pair of an ML-style operational
