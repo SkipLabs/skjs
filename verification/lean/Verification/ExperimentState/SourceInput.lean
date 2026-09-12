@@ -32,10 +32,26 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
       SourceTypes.translate (← CellClaims.primitive single)
   return arms.flatten.mergeSort (· ≤ ·) |>.eraseDups
 
+/-- Required cell fields admit primitives and callables, but not nested records.
+Decode both capabilities through the same table before checking invariance. -/
+private def cellContract (atom : Json) : SourceTypes.Lowering CellUnion.Contract := do
+  let (read, write) ← CellClaims.decodeShape
+    (Json.mkObj [("top",toJson false),("atoms",toJson [atom])])
+  return ⟨← callableType read, ← callableType write⟩
+
+private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
+  let types ← (← CellClaims.conjuncts atom).mapM fun part => do
+    let c ← cellContract part
+    if c.read != c.write then throw "cell read and write types do not describe the same invariant"
+    return c.read
+  let first :: rest := (types.mergeSort CellClaims.before).eraseDups
+    | throw "an empty conjunction is not a contract"
+  SourceTypes.use (.refs first rest)
+
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
-Record fields retain their bounded primitive decoder.
+Record fields admit bounded primitive/callable contracts.
 Arrow operands additionally admit callable contracts. -/
 def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   if j == Json.mkObj [("unsupported", toJson true)] then
@@ -50,8 +66,8 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let (conjoined, plain) :=
     ((tagged.filter (fun p => p.1 == "record")).map (·.2)).partition
       (fun a => (a.getObjVal? "and").toOption.isSome)
-  let records ← CellUnion.translate plain
-  let conjunctions ← conjoined.mapM fun a => do return [← CellClaims.conjunction a]
+  let records ← CellUnion.lower (← plain.mapM cellContract)
+  let conjunctions ← conjoined.mapM fun a => do return [← cellConjunction a]
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with

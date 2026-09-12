@@ -282,13 +282,6 @@ function primitiveLabelsOf(type: Type): number[] | null {
   return null;
 }
 
-function primitiveOnly(type: Type, checker: Checker): number[] {
-  const p = primitiveLabelsOf(type);
-  if (p === null)
-    throw new Refusal("nested-non-primitive", checker.typeToString(type));
-  return p;
-}
-
 interface RecordRead {
   ok: boolean;
   reason?: string;
@@ -403,6 +396,8 @@ function tryRecordIntersection(
   type: Type,
   checker: Checker,
   parts: readonly Type[],
+  types: Row[],
+  fuel: number,
 ): { first: number[]; rest: number[][] } | null {
   const results = parts.map((t) => tryRecord(t, checker));
   if (!results.every((r) => r.ok)) {
@@ -411,7 +406,7 @@ function tryRecordIntersection(
     return null;
   }
   const operands = dedupSortArrays(
-    results.map((r) => primitiveOnly(r.valueType!, checker)),
+    results.map((r) => translateType(r.valueType!, checker, types, false, fuel - 1)),
   );
   return { first: operands[0]!, rest: operands.slice(1) };
 }
@@ -443,7 +438,7 @@ function tryArrowIntersection(
 }
 
 // Arrow operands can contain further arrows, with bounded recursion for
-// recursive TS types. Record fields retain their primitive boundary.
+// recursive TS types. Record fields admit the same primitive/callable operands.
 function translateType(type: Type, checker: Checker, types: Row[], records = true, fuel = 64): number[] {
   if (fuel <= 0) throw new Refusal("type-depth", checker.typeToString(type));
   const prim = primitiveLabelsOf(type);
@@ -452,7 +447,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
     throw new Refusal("callable-operand-properties", checker.typeToString(type));
   if (type.flags & TypeFlags.Intersection) {
     const parts = (type as unknown as { getTypes(): readonly Type[] }).getTypes();
-    const refs = records ? tryRecordIntersection(type, checker, parts) : null;
+    const refs = records ? tryRecordIntersection(type, checker, parts, types, fuel) : null;
     if (refs) return [internRow(types, [{ refs }])];
     const arrows = tryArrowIntersection(type, checker, parts, types, fuel);
     if (arrows) return [internRow(types, [{ arrs: { arrows } }])];
@@ -471,7 +466,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   if (rec.ok)
     return [
       internRow(types, [
-        { refs: { first: primitiveOnly(rec.valueType!, checker), rest: [] } },
+        { refs: { first: translateType(rec.valueType!, checker, types, false, fuel - 1), rest: [] } },
       ]),
     ];
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));

@@ -37,7 +37,7 @@ by this bounded schema. Synthetic index markers describe exporter bookkeeping,
 not runtime permissions; their internal inference variables are not interpreted.
 Absence and unknown modes have the same interpretation
 within the plain-cell fragment; this is not full TypeScript object semantics. -/
-def decode (j : Json) : Except String FieldClaim := do
+def decodeShape (j : Json) : Except String (Json × Json) := do
   fieldsExactly j ["top","atoms"]
   if ← (← jField j "top").getBool? then throw "top is not a cell contract"
   let atoms ← jArr j "atoms"
@@ -62,7 +62,12 @@ def decode (j : Json) : Except String FieldClaim := do
   fieldsExactly field ["name","optional","read","write"]
   if (← jStr (← jField field "name")) != "value" then throw "cell field must be named value"
   if ← (← jField field "optional").getBool? then throw "optional fields are not invariant cells"
-  return ⟨← primitive (← jField field "read"), ← primitive (← jField field "write")⟩
+  return (← jField field "read", ← jField field "write")
+
+/-- Primitive contracts also support exact wire membership and point observations. -/
+def decode (j : Json) : Except String FieldClaim := do
+  let (read, write) ← decodeShape j
+  return ⟨← primitive read, ← primitive write⟩
 
 /-- Equality is after exact primitive normalization. No widening of either side
 is allowed; readonly fields and different read/write contracts are rejected. -/

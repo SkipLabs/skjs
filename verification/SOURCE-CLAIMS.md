@@ -62,8 +62,8 @@ Type references are sorted, duplicate-free lists of labels into the document's
 `types` table, read as a union: `[]` denotes `never`, `[1,2]` denotes `boolean`,
 and `[0,1,2]` denotes `null | boolean`. The source decoder also accepts unions
 mixing supported cell and function atoms with primitives. Existing limits on
-external cell parameters, primitive field contracts and primitive arrow inputs
-and results remain in force; an arrow parameter is assumed at its annotation.
+external cell parameters and nested record operands remain in force; fields
+and arrow operands admit bounded primitive/callable contracts, and an arrow parameter is assumed at its annotation.
 
 The table is the graph the functions are checked against. Row `i` is the list
 of clauses that label `i` denotes, and a clause names its operands as label

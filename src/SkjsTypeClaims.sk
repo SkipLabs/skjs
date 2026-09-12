@@ -237,7 +237,7 @@ fun claimPushAtoms(
       };
       reason
     } else {
-      // Object fields retain the primitive-only boundary.
+      // Nested records remain outside this bounded export.
       "nested-object-type"
     }
   }
@@ -329,7 +329,7 @@ fun claimTypeJsonBounded(
 // A deliberately bounded record branch: one public `value` field, no real index,
 // symbol, array, call or construct requirements. Preserve read and write types
 // separately; the verifier decides whether they justify an invariant cell.
-// Primitive-only recursive calls bound serialization even for recursive types.
+// Callable field operands consume the shared serialization fuel.
 fun claimCellBranchJson(
   fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
@@ -357,9 +357,9 @@ fun claimCellBranchJson(
     if (field.name.value != "value") return Failure("cell-field-name");
     if (!(field.access is FAPublic())) return Failure("cell-field-access");
     // A field type that cannot be exported names its own reason.
-    read = claimTypeJsonBounded(field.get, false, false, values, fuel);
+    read = claimTypeJsonBounded(field.get, false, true, values, fuel);
     if (read.reason != "") return Failure(read.reason);
-    write = claimTypeJsonBounded(field.set, false, false, values, fuel);
+    write = claimTypeJsonBounded(field.set, false, true, values, fuel);
     if (write.reason != "") return Failure(write.reason);
     entries.push(
       jsonObj(

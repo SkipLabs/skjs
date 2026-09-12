@@ -6,7 +6,7 @@ initialized local bindings. Supplied expression types and source annotations
 become distinct obligations. The consumer reconstructs the request from source
 and claims; evidence never supplies the program it is checked against.
 
-The currently supported source slice is deliberately small: primitive parameters,
+The currently supported source slice is deliberately small: primitive/callable parameters,
 initialized consts, branches, variables, null/boolean literals and local plain
 cells (allocation, reads and assignments), expression-bodied closures and calls,
 with every path returning. Boolean variable tests, including negations, refine the tested binding.
@@ -732,9 +732,9 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : Sourc
     let inputs ← f.params.mapM (fun (p : SourceInput.Param) => lower (SourceInput.translate p.ty))
     -- A parameter's annotation is the assumption its caller makes, and the
     -- soundness theorem takes it as given for every value meeting it. A
-    -- primitive or an arrow can be assumed: an arrow received from outside
-    -- reaches no cell of this body, since the slice passes only primitives,
-    -- so its contract is exactly what it returns on each admitted argument.
+    -- primitive or an arrow can be assumed. Callable arguments may expose
+    -- captured cells, so arrow contracts cover admissible future heaps and
+    -- invocation effects rather than promising snapshot contents.
     -- A cell cannot: a structural object annotation does not rule out
     -- accessors, so the plain-cell interpretation may be false of a value
     -- that conforms to the annotation. Cells must be allocated here.

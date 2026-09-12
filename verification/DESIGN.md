@@ -470,7 +470,7 @@ The cell-contract boundary is implemented in
 a bounded single-field record with separate read/write types, optionality and
 object-mode flags. Synthetic index markers are recorded separately from runtime
 permissions; real indexes remain unsupported. The Lean gate requires a required `value` field and equal
-read/write meanings after exact primitive normalization. A mutable Boolean
+read/write contracts after lowering to the same graph table. A mutable Boolean
 field passes; a readonly Boolean field has `never` writes and fails this
 particular invariant-cell gate. Readonly objects need a different capability
 interface; this rejection does not mean they are unsafe.
@@ -926,6 +926,28 @@ a completeness claim. A request's table holds only what its file mentions, but
 enumerating every unused arrow at each subtype query was already expensive at
 that size; a larger file must not silently expand every local search problem.
 
+### Next callable and object milestones
+
+Required single-field cells can store callbacks using the existing reference and
+arrow rules. The source tests distinguish a saved callback from a replacement and
+tie recursive invocation through a cell. The next milestones should expose new
+behavior through actual producer claims and independent consumption:
+
+| Milestone | Completion example | Semantic work to preserve |
+| --- | --- | --- |
+| Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Reuse `isFun` and checked tag refinements without inventing a signature for unknown code. |
+| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Define argument binding and arity; currying alone changes when the body executes. Zero-argument thunks are a smaller first slice. |
+| Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
+| Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
+| `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`; distinguish lexical arrow `this` from ordinary receivers. |
+
+Functions returning functions, including escaping callback parameters, already
+have pipeline coverage. `.apply`, `.bind`, optional/rest arguments, constructors
+and receiver-dependent methods extend the call interface further; they should
+follow explicit argument and receiver contracts rather than be erased into free
+unary calls. These milestones are not prerequisites for the completed bounded
+callable-model integration.
+
 ### Negated Boolean conditions
 
 As a value expression, `!e` lowers to `if e then false else true`. As a graph
@@ -987,9 +1009,9 @@ refinements and closure loops remain outside this slice.
 `SourceInput.translate` now decodes each union atom through its existing primitive,
 cell or function decoder, then canonicalizes the combined labels. It rejects the
 entire type if any arm fails. This needs no new graph label or semantic rule:
-label lists already denote unions. Cell fields retain their primitive-only decoder. Arrow arguments and results
-now recursively admit primitive/callable unions through `SourceInput.callableType`; nested records remain outside this
-fragment.
+label lists already denote unions. Required cell fields and arrow arguments and
+results admit primitive/callable unions through `SourceInput.callableType`;
+nested records remain outside this fragment.
 
 Locally allocated nullable cells and optional checked-closure results exercise
 the extension. External cell parameters remain rejected: annotations alone

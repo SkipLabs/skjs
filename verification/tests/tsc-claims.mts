@@ -27,7 +27,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // A stateful callback crosses a higher-order parameter boundary.
   "callables/arguments": "verified",
-  "callables/cells": "failed",
+  "callables/cells": "verified",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
   // Compound absence guards preserve all facts established by their outcome.
@@ -174,7 +174,7 @@ for (const [name, want] of Object.entries(expected)) {
         "10",
       ]);
       got = checked.status === 0 ? "verified" : "failed";
-      if (got === "verified" && ["callables/arguments", "callables/factories", "callables/unions", "stateful-source/null-guards"].includes(name)) {
+      if (got === "verified" && ["callables/cells", "callables/arguments", "callables/factories", "callables/unions", "stateful-source/null-guards"].includes(name)) {
         const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
         if (consumed.status !== 0) {
           got = "consumer-failed";

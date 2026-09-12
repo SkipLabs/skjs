@@ -74,8 +74,8 @@ SKJS itself; it is not required for changes confined to the verifier or reports.
 The source adapter supports **functions with primitive or bounded callable
 parameters, initialized `const` bindings, nested branches, `while` loops with `break`/`continue`, and
 returns**, over local cells and bounded expression closures and calls. Cell
-fields stay primitive; arrow arguments and results may recursively contain
-callable contracts. Annotations may union the supported primitive, cell and
+fields, arrow arguments and arrow results admit primitive and recursively
+callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
 unary function types. Immutable Boolean, null and undefined tests refine what
 follows them, including through `&&`, `||`, `??`, `?:` and negation. Every path must reach an explicit return.
 

@@ -355,7 +355,8 @@ The SKJS claim exporter additionally supports this bounded record atom:
 This is an SKJS export atom, **not** a new calculus type-graph clause. It records
 permissions rather than choosing a heap invariant. The bounded exporter rejects
 extra fields, symbols, real index signatures, positive callable/array requirements
-and nested or unresolved field types. The `indexes` object distinguishes `absent`
+and nested record or unresolved field types. Field read/write operands may
+contain bounded callable contracts. The `indexes` object distinguishes `absent`
 from `synthetic` for each key kind. Synthetic indexes are SKJS inference artifacts
 excluded from runtime field lookup, not index permissions; their internal type
 variables are not exported. It preserves readonly setters as `never` and marks
@@ -376,19 +377,21 @@ atoms in the same `atoms` list. Every branch must export successfully; one
 unsupported branch makes the whole type unavailable. No new JSON constructor is
 needed, and the report retains the alternatives exactly.
 
-`CellUnion.translate` validates all record atoms and absorbs a non-invariant
+`SourceInput` validates and lowers all record atoms. `CellUnion.lower` absorbs a non-invariant
 contract only into an existing invariant arm with weaker read requirements and
 the same write invariant. Remaining arms must satisfy the invariant-cell check;
 [Source claims](SOURCE-CLAIMS.md#record-alternative-absorption) specifies the
 exact normalization law and its proof scope. This is not a widening
 of a standalone refined cell claim.
 
-`CellClaims.translate` validates a single-record shape and requires the read and write
-types to normalize to the same supported primitive set. Unknown fields and
-unsupported types are rejected. Its theorem connects both supplied primitive
-types to that set's meaning. The cell interpretation is an invariant
-reference to that meaning; the theorem does not yet establish a TypeScript
-record-to-reference correspondence or exclude accessor-backed runtime objects.
+`CellClaims.decodeShape` validates each single-record shape. `SourceInput`
+lowers read and write operands, including callables, to the same graph table and
+requires equal invariant label lists after union absorption. Unknown fields and
+unsupported operands reject the whole contract. `CellClaims.translate` retains
+the primitive specialization and its exact wire-membership theorem, also used
+for primitive current-content observations. The reference-label theorem applies
+to arbitrary graph operands; neither theorem establishes TypeScript
+record-to-reference correspondence or excludes accessor-backed runtime objects.
 
 `cell_claim_tests` exercises real SKJS exports and corrupted contracts as part
 of `make verify`. Allocation probes check Boolean, singleton and contextually

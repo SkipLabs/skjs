@@ -79,3 +79,11 @@ callable bags and recursive invocation remain distinct model obligations.
 
 Run `make verify-test` for suites or `make verify-examples` for the corpus;
 `make verify` runs both. The [test index](../README.md) describes suite ownership.
+
+[cells.ts](cells.ts) and [callable-cells.mts](../callable-cells.mts) cover mutable
+callback storage. `replacedCallback` distinguishes a saved function value from a
+later cell read after replacement. `recursiveCallback` installs a callback that
+reads and invokes itself through the cell, then reaches a base case. Both producers
+verify the original claims with independent consumption. Forged read/write domains
+and replacement result contracts fail; JavaScript witnesses check both seeds.
+These examples require no new calculus constructor or typing rule.

@@ -171,6 +171,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   CLOSURES=verification/tests/stateful-source/closures.ts
   CALLABLES=verification/tests/callables/unions.ts
   FACTORIES=verification/tests/callables/factories.ts
+  CALLABLE_CELLS=verification/tests/callables/cells.ts
   CALLABLE_ARGUMENTS=verification/tests/callables/arguments.ts
   CALLBACKS=verification/tests/stateful-source/primitive-callbacks.ts
   COUNTEREXAMPLE=verification/tests/skjs-unsound/captured-refinement.ts
@@ -199,6 +200,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture closures "$CLOSURES"
   build fixture callables "$CALLABLES"
   build fixture factories "$FACTORIES"
+  build fixture callable_cells "$CALLABLE_CELLS"
   build fixture callable_arguments "$CALLABLE_ARGUMENTS"
   build fixture callbacks "$CALLBACKS"
   build fixture counterexample "$COUNTEREXAMPLE"
@@ -237,6 +239,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
+  run_test "Callable cells" node verification/tests/callable-cells.mts "$WORK/callable_cells.ast" "$WORK/callable_cells.claims" "$CALLABLE_CELLS" "$VERIFIER"
   run_test "Callable arguments" node verification/tests/callable-arguments.mts "$WORK/callable_arguments.ast" "$WORK/callable_arguments.claims" "$CALLABLE_ARGUMENTS" "$VERIFIER"
   run_test "Callable factories" node verification/tests/callable-factories.mts "$WORK/factories.ast" "$WORK/factories.claims" "$FACTORIES" "$VERIFIER"
   run_test "Primitive callbacks and unsoundness witness" node verification/tests/primitive-callbacks.mts        "$WORK/callbacks.ast" "$WORK/callbacks.claims" "$CALLBACKS" "$VERIFIER"        "$WORK/counterexample.ast" "$WORK/counterexample.claims" "$COUNTEREXAMPLE"
