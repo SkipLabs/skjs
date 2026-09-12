@@ -187,3 +187,20 @@ function nullableFactoryResult(flag: boolean): boolean {
   const selected = make(flag);
   return selected === null ? false : selected(null);
 }
+
+/**
+ * Separate nullable bindings have identical contracts. Guarding the first
+ * does not refine the second; each callback needs its own null-test edge.
+ */
+function distinctNullableCallbacks(): boolean {
+  const first: ((unit: null) => boolean) | null = (unit: null): boolean => true;
+  const second: ((unit: null) => boolean) | null = (unit: null): boolean =>
+    false;
+  if (first === null) {
+    return false;
+  }
+  if (second === null) {
+    return first(null);
+  }
+  return second(null);
+}

@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import assert from "node:assert/strict";
+import type { SourceClaims } from "../tools/source-claims.mts";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -25,8 +27,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
-  // Lambda expression claims retain arrows under nullable return contexts.
-  "callables/unions": "verified",
+  // An unmentioned nullable callback currently loses its declared contract at entry.
+  "callables/unions": "failed",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -92,6 +94,29 @@ for (const [name, want] of Object.entries(expected)) {
       got = "producer-error";
       detail = (produced.stderr || "").split("\n")[0];
     } else {
+      if (name === "callables/unions") {
+        const parsed = JSON.parse(fs.readFileSync(ast, "utf8"));
+        const normalized: SourceClaims = JSON.parse(fs.readFileSync(claims, "utf8"));
+        const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
+        const fc = normalized.functions.find((f) => f.name === fn.name)!;
+        assert.ok(fc);
+        const at = (e: any) => {
+          const site = fc.expressions.find((p) => p.pos[0] === e.pos[0] && p.pos[1] === e.pos[1]);
+          assert.ok(site);
+          return site.type;
+        };
+        assert.equal(fn.body[3].cond.l.name, "second");
+        assert(at(fn.body[3].cond.l).includes(0), "guarding first must leave second nullable");
+        const firstCall = fn.body[3].then[0].e;
+        const secondCall = fn.body[4].e;
+        assert.equal(firstCall.callee.name, "first");
+        assert.equal(secondCall.callee.name, "second");
+        for (const call of [firstCall, secondCall]) {
+          const labels = at(call.callee);
+          assert.equal(labels.length, 1);
+          assert(!labels.includes(0), "each callback's own guard removes null");
+        }
+      }
       const checked = run(verifier, [
         "--produce-source-claims",
         ast,
