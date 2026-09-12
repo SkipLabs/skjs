@@ -1381,6 +1381,13 @@ results. Expression obligations require no expression-search fuel. The complete
 source consumer still checks supplied result claims, rejects an incompatible
 alternative or nullable callee, and retains the external-object boundary.
 Single-arrow call recipes keep their existing form.
+Explicit normalized source claims also exercise unions of overloaded functions:
+the applicable signature occurs at different positions in the two alternatives,
+and changing from a null to a Boolean argument reverses those positions. Both
+calls verify; discarding a possible result or omitting one alternative's applicable
+signature fails. This validates the source adapter and independent consumer,
+while SKJS's documented collapse of incomparable arrow intersections to `never`
+still prevents these contracts from arriving as valid SKJS exports.
 Null-guard regressions retain every callable alternative on the non-null arm
 for both comparison polarities and operand orders. Calls on the null arm and
 unjustifiably narrow results fail. The `guardedCallableUnion` TypeScript fixture

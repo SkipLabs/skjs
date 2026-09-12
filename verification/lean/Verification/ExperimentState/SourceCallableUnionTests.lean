@@ -114,4 +114,36 @@ private def guardedClaims (testLeft : Bool) : SourceClaims.Function :=
 #guard !ok (check (guarded true true false)
   {(guardedClaims true) with exprs := (guardedClaims true).exprs.map fun (pos,c) =>
     if pos == (30,38) then (pos,.ok [1]) else (pos,c)})
+-- Explicit source claims isolate verifier coverage from SKJS's documented
+-- collapse of incomparable arrow intersections to never. Each union alternative
+-- must select its own applicable overload; the useful signature is not always
+-- first, and Boolean arguments reverse which signature is selected.
+private def overloaded (D R D' R' : Json) : Json := Json.mkObj
+  [("a",toJson "function"),("params",toJson [D]),("result",R),
+   ("construct",toJson "unknown"),("array",toJson "unknown"),
+   ("and",toJson [arrow D' R'])]
+private def overloadUnion (missingNull : Bool := false) : Json := Json.mkObj
+  [("top",toJson false),("atoms",toJson
+    [overloaded (primitive "null") (literal true) (primitive "boolean") (literal false),
+     if missingNull then arrow (primitive "boolean") (literal true)
+     else overloaded (primitive "boolean") (literal true) (primitive "null") (literal false)])]
+private def overloadTable : SourceTypes.Table :=
+  (table.set 4 [.arrs [([0],[1]),([1,2],[2])]]).set 5 [.arrs [([1,2],[1]),([0],[2])]]
+private def overloadSource (booleanArg : Bool) : SourceInput.Fn :=
+  {(if booleanArg then wrongArgument else source) with params := [⟨"f",overloadUnion⟩]}
+private def overloadClaims (booleanArg : Bool) : SourceClaims.Function :=
+  {claims with exprs := claims.exprs.map fun (pos,c) =>
+    if booleanArg && pos == (9,10) then (pos,.ok [1]) else (pos,c)}
+#guard [false,true].all fun booleanArg =>
+  ok (checkWith overloadTable (overloadSource booleanArg) (overloadClaims booleanArg))
+#guard [false,true].all fun booleanArg =>
+  !ok (checkWith overloadTable (overloadSource booleanArg)
+    {(overloadClaims booleanArg) with exprs := (overloadClaims booleanArg).exprs.map fun (pos,c) =>
+      if pos == (7,12) then (pos,.ok [1]) else (pos,c)})
+-- A sibling's null overload cannot rescue a Boolean-only alternative.
+private def incompleteOverloadSource : SourceInput.Fn :=
+  {source with params := [⟨"f",overloadUnion true⟩]}
+private def incompleteOverloadTable := overloadTable.set 5 [.arrs [([1,2],[1])]]
+#guard (extractNormalizedFn incompleteOverloadTable incompleteOverloadSource claims).toOption.isSome
+#guard !ok (checkWith incompleteOverloadTable incompleteOverloadSource claims)
 end Verification.ExperimentState.SourceCallableUnionTests

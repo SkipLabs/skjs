@@ -17,3 +17,10 @@ alongside the other source fixtures in its shared container.
 Run `make verify-test` for the suites or `make verify-examples` for the corpus.
 `make verify` runs both. Core semantic regressions remain in
 `lean/Verification/ExperimentState/`, including `SourceCallableUnionTests.lean`.
+
+That module also checks unions of overloaded functions using explicit normalized
+source claims. Null and Boolean arguments select different signatures in each
+alternative; narrowing the joined result or omitting an alternative's compatible
+signature fails. These cases are not advertised as verified SKJS exports:
+SKJS currently collapses incomparable arrow intersections to `never`, as recorded
+in the [intersection finding](../skjs-incomplete/arrow-intersection.ts).
