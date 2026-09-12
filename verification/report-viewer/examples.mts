@@ -13,7 +13,7 @@ const stateful = [
   "null-tests",
   "null-guards",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
-const callables = ["unions", "factories", "arguments", "cells"].map((name) => `verification/tests/callables/${name}.ts`);
+const callables = ["unions", "factories", "arguments", "cells", "thunks"].map((name) => `verification/tests/callables/${name}.ts`);
 const supported = [...stateful, ...callables];
 const groups = [
   { label: "Current verifier examples", files: stateful },

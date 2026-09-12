@@ -436,7 +436,7 @@ The bounded function atom is:
 }
 ```
 
-The exporter preserves one free required parameter and the result. It rejects
+The exporter preserves zero or one free required parameter and the result. It rejects
 `this` requirements, generics, optional/rest parameters, fields, indexes, positive
 construct requirements and record-valued operands. Arrow arguments and results
 may recursively union bounded function contracts with the
@@ -446,6 +446,17 @@ nested operands. No unsupported union alternative is discarded.
 
 `SourceInput.callableType` lowers every supported operand to graph labels.
 See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
+
+Zero-argument signatures use `"params": []`. Their calculus domain is the
+singleton `undefined` label, `[3]`; their bodies receive an anonymous unused slot.
+In source ASTs a zero-argument lambda has `"name": ""` and `"arg": null`, and a
+zero-argument application has `"arg": null`. The adapter generates the omitted
+argument's `undefined` value internally, without requesting a source expression
+claim or borrowing the enclosing call's claim. Existing application rules still
+check the domain, so omission cannot satisfy a Boolean or callable parameter.
+This interpretation relies on the fragment excluding `arguments`, receiver
+behavior and argument-count introspection. It is not a general multi-argument
+encoding.
 
 Source arrows require explicit parameter and result annotations. Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including
@@ -546,7 +557,7 @@ operand is a null or undefined literal. Both operands are evaluated in source or
 retain their expression obligations. The comparison lowers to the corresponding primitive
 shape test and Boolean conditional over the saved operand. `unionVar` evidence
 allows tag dispatch over a primitive union; no new term or reference semantics
-is introduced. The same lowering is available inside a unary closure.
+is introduced. The same lowering is available inside a supported closure.
 
 Top-level branches and loop heads also refine a syntactically identified immutable
 variable. Negations and either literal operand order are supported. The original

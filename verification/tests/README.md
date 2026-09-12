@@ -10,7 +10,7 @@ and tsc claims for the viewer's corpus, without the repairs or corruptions used 
 |---|---|
 | `stateful-source.mts` / `stateful-source/basic.ts` | Real certificates, branches and shared continuations, exact singletons, source annotations, parameter contracts, incoming-edge refinements, missing/duplicate claims, lexical scope and input identities. |
 | `stateful-cells.mts`, `stateful-closures.mts` | Allocation, alias writes, reads, captures, returned closures, inner claims and corrupted certificates. |
-| `callables.mts`, `callable-factories.mts`, `callable-arguments.mts`, `callable-cells.mts` / [`callables/`](callables/README.md) | Callable unions, factories, higher-order arguments and mutable callback cells; exact contracts, forged claims, independent consumption, runtime witnesses and report round trips. |
+| `callables.mts`, `callable-factories.mts`, `callable-arguments.mts`, `callable-cells.mts`, `callable-thunks.mts` / [`callables/`](callables/README.md) | Callable unions, factories, higher-order arguments and mutable callback cells and zero-argument thunks; exact contracts, forged claims, independent consumption, runtime witnesses and report round trips. |
 | `stateful-loops.mts`, `stateful-loop-transfers.mts` | Supplied loop invariants, back edges, nested scope, early returns, break and continue. |
 | `null-tests.mts` | Null predicates, coalescing, logical expressions and compound guard edges; required claims, merge rejection, effect order, loop back edges and a direct-write stale-refinement counterexample. |
 | `write-observations.mts` | Post-write precision and negated stale-refinement witnesses: SKJS/TypeScript results, execution, source shape for the Lean observation proof, and the current checker limitation. |

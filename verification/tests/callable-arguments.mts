@@ -29,6 +29,13 @@ try {
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   console.log("  stateful callable arguments: original claims and independent consumer OK");
+  const omitted = structuredClone(source);
+  omitted.functions.find((f: any) => f.name === "callableArgument").body[3].init.arg = null;
+  for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
+    const result = run(mode, omitted, exported);
+    assert.notEqual(result.status, 0, "omission cannot satisfy a required callback parameter");
+  }
+  console.log("  omitted required callback argument: rejected by production and independent consumer");
   const runtime = vm.createContext({});
   vm.runInContext(stripTypes(fs.readFileSync(file, "utf8")), runtime, {timeout: 1000});
   for (const seed of [false, true])

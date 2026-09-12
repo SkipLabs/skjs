@@ -87,3 +87,10 @@ reads and invokes itself through the cell, then reaches a base case. Both produc
 verify the original claims with independent consumption. Forged read/write domains
 and replacement result contracts fail; JavaScript witnesses check both seeds.
 These examples require no new calculus constructor or typing rule.
+
+[thunks.ts](thunks.ts) and [callable-thunks.mts](../callable-thunks.mts) cover
+zero-argument creation and invocation: a returned thunk reads a cell after a
+write, and a saved thunk remains distinct from its replacement. Both producers'
+claims are independently checked. Forged domains/results fail, and the callable
+argument suite checks that omission does not satisfy a required callback parameter.
+JavaScript witnesses check delayed reads and replacement for both seeds.

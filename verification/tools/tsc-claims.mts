@@ -107,7 +107,7 @@ function walkExpr(e: Expr, out: Sites): void {
     case "apply":
       addExpr(out, e.pos, "apply");
       walkExpr(e.callee, out);
-      walkExpr(e.arg, out);
+      if (e.arg) walkExpr(e.arg, out);
       return;
     case "bin":
       addExpr(out, e.pos, "bin");
@@ -335,7 +335,7 @@ interface ArrowRead {
 }
 
 /**
- * `(x: D) => R`-shaped: one signature, one required ordinary parameter, no
+ * `() => R` or `(x: D) => R`: one signature, at most one required parameter, no
  * type parameters, no `this` parameter.
  */
 function tryArrow(type: Type, checker: Checker): ArrowRead {
@@ -349,7 +349,7 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
   const sig = sigs[0]!;
   if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
   if (sig.thisParameter !== undefined) return { ok: false, reason: "this-param" };
-  if (sig.hasRestParameter || sig.parameters.length !== 1)
+  if (sig.hasRestParameter || sig.parameters.length > 1)
     return { ok: false, reason: "arrow-arity" };
   // Optionality is on the declared parameter: a signature transports its
   // parameters as ids, and asking the checker for one of those symbols is
@@ -360,7 +360,7 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     return { ok: false, reason: "optional-param" };
   return {
     ok: true,
-    domain: must(checker.getParameterType(sig, 0), "parameter-type"),
+    domain: sig.parameters.length ? must(checker.getParameterType(sig, 0), "parameter-type") : undefined,
     result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
   };
 }
@@ -428,7 +428,7 @@ function tryArrowIntersection(
   const arrows: number[][][] = [];
   for (const r of results) {
     const pair = [
-      translateType(r.domain!, checker, types, false, fuel - 1),
+      r.domain ? translateType(r.domain, checker, types, false, fuel - 1) : [3],
       translateType(r.result!, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -473,7 +473,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair = [
-      translateType(arr.domain!, checker, types, false, fuel - 1),
+      arr.domain ? translateType(arr.domain, checker, types, false, fuel - 1) : [3],
       translateType(arr.result!, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];

@@ -522,7 +522,7 @@ regression checks the extracted alias-assignment graph's heap and result.
 
 Closure contracts are decoded by
 [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean).
-`callableType` checks unary signature shapes and recursively lowers primitive
+`callableType` checks zero-argument and unary signature shapes and recursively lowers primitive
 and callable arguments and results, including every union and overload arm.
 Bodies compose literals, variables, cell allocation, reads, assignments and
 calls, including nested expression arrows.
@@ -926,6 +926,14 @@ a completeness claim. A request's table holds only what its file mentions, but
 enumerating every unused arrow at each subtype query was already expensive at
 that size; a larger file must not silently expand every local search problem.
 
+Zero-argument thunks reuse unary application with an internally supplied
+`undefined` value and an anonymous parameter. Returned and cell-stored thunks
+have real-export coverage; the implicit argument has no fabricated source claim.
+General multi-argument functions cannot simply be identified with curried arrows:
+`(a, b) => r` and `a => b => r` have different source invocation behavior even
+when their nested type encoding would coincide. Argument-list work must retain
+that distinction as well as evaluation order.
+
 ### Next callable and object milestones
 
 Required single-field cells can store callbacks using the existing reference and
@@ -936,7 +944,7 @@ behavior through actual producer claims and independent consumption:
 | Milestone | Completion example | Semantic work to preserve |
 | --- | --- | --- |
 | Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Reuse `isFun` and checked tag refinements without inventing a signature for unknown code. |
-| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Define argument binding and arity; currying alone changes when the body executes. Zero-argument thunks are a smaller first slice. |
+| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Define argument binding and arity; currying alone changes when the body executes. Zero-argument thunks are integrated using an unused undefined parameter; general argument lists still need an explicit representation. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`; distinguish lexical arrow `this` from ordinary receivers. |

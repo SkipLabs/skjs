@@ -64,6 +64,7 @@ private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List Descripto
     s!"source environment obligation at {pos}: {msg}"
 
 private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Compiler (Ty Nat) := do
+  if e.isImplicit then return [3]
   match fc.exprs.lookup e.span with
   | some t => (SourceClaims.resolve (← table).length t).mapError fun msg =>
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
@@ -251,11 +252,13 @@ losing their individual claims. Requirements use the lexical context at the occu
 slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
+  if e.isImplicit then return DirectProof.node Γ .undef [3] .undef
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
   if let some R := fc.exprCurrent.lookup e.span then
     persistentObservation ⟨"",some e.span⟩ e.span A R
   let p ← match e with
+  | .implicitUndef _ => pure (DirectProof.node Γ .undef [3] .undef)
   | .var _ name =>
     match (names scope).idxOf? name with
     | some i => pure (DirectProof.var Γ i A)
@@ -422,7 +425,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     closureExpr fc scope H body
   | .lam pos name arg ret body => do
     if name == "undefined" then throw "shadowing undefined is outside the source slice"
-    if (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
+    if name != "" && (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
     let D ← lower (SourceInput.callableType arg)
     let R ← lower (SourceInput.callableType ret)
     let inner := ⟨name,some pos⟩::scope
@@ -450,11 +453,14 @@ slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
 private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) (next : Target) : Compiler Target := do
+  if e.isImplicit then
+    return ← emitAt e.span .undef (.bind next) Γ [3] "implicit-argument" (scope := scope)
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
     | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next (scope := ⟨"",some e.span⟩::scope)
   match e with
+  | .implicitUndef _ => emitAt e.span .undef (.bind next) Γ [3] "implicit-argument" (scope := scope)
   | .var _ name =>
     let i ← match (names scope).idxOf? name with
       | some i => pure i

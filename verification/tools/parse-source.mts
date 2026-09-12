@@ -64,13 +64,13 @@ export type Expr =
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
-  | { k: "apply"; pos: Span; callee: Expr; arg: Expr }
+  | { k: "apply"; pos: Span; callee: Expr; arg: Expr | null }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
   | {
       k: "lambda";
       pos: Span;
       name: string;
-      arg: WireType;
+      arg: WireType | null;
       result: WireType;
       body: Expr;
     }
@@ -265,20 +265,20 @@ class Gate {
         return;
 
       case ts.SyntaxKind.FunctionType: {
-        if (node.typeParameters?.length || node.parameters.length !== 1)
-          this.fail(node, "expected a free unary function type");
+        if (node.typeParameters?.length || node.parameters.length > 1)
+          this.fail(node, "expected a function type with zero or one required parameter");
         const p = node.parameters[0];
-        if (
+        if (p && (
           !ts.isIdentifier(p.name) ||
           p.name.text === "this" ||
           p.questionToken ||
           p.dotDotDotToken ||
           p.initializer
-        )
+        ))
           this.fail(p, "expected a required ordinary parameter");
         acc.push({
           a: "function",
-          params: [this.typeOf(p.type)],
+          params: p ? [this.typeOf(p.type)] : [],
           result: this.typeOf(node.type),
           construct: "unknown",
           array: "unknown",
@@ -510,15 +510,15 @@ class Gate {
         if (
           node.questionDotToken ||
           node.typeArguments?.length ||
-          node.arguments.length !== 1 ||
-          ts.isSpreadElement(node.arguments[0])
+          node.arguments.length > 1 ||
+          (node.arguments.length === 1 && ts.isSpreadElement(node.arguments[0]))
         )
-          this.fail(node, "expected one ordinary call argument");
+          this.fail(node, "expected zero or one ordinary call argument");
         return {
           k: "apply",
           pos: this.span(node),
           callee: this.expr(node.expression),
-          arg: this.expr(node.arguments[0]),
+          arg: node.arguments.length ? this.expr(node.arguments[0]) : null,
         };
       }
 
@@ -583,19 +583,19 @@ class Gate {
     if (
       node.modifiers?.length ||
       node.typeParameters?.length ||
-      node.parameters.length !== 1
+      node.parameters.length > 1
     )
-      this.fail(node, "expected a unary closure");
+      this.fail(node, "expected a closure with zero or one required parameter");
     const p = node.parameters[0];
-    if (
+    if (p && (
       !ts.isIdentifier(p.name) ||
       p.name.text === "this" ||
       p.questionToken ||
       p.dotDotDotToken ||
       p.initializer
-    )
+    ))
       this.fail(p, "expected a required closure parameter");
-    if (p.name.text === "undefined")
+    if (p?.name.text === "undefined")
       this.fail(p, "shadowing undefined is outside the fragment");
 
     const result = () => this.typeOf(node.type);
@@ -609,8 +609,8 @@ class Gate {
     return {
       k: "lambda",
       pos: this.span(node),
-      name: p.name.text,
-      arg: this.typeOf(p.type),
+      name: p ? p.name.text : "",
+      arg: p ? this.typeOf(p.type) : null,
       result: this.typeOf(node.type),
       body,
     };
