@@ -590,6 +590,69 @@ function truthyGuardLabels(node: any, checker: Checker): number[] | null {
   return null;
 }
 
+/** A strict null test of one binding, including reversed operands and negation. */
+function testedNullSymbol(cond: any, checker: Checker): {sym: Symbol; equal: boolean} | null {
+  if (ts.isParenthesizedExpression(cond)) return testedNullSymbol(cond.expression, checker);
+  if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken) {
+    const inner = testedNullSymbol(cond.operand, checker);
+    return inner && {...inner, equal: !inner.equal};
+  }
+  if (!ts.isBinaryExpression(cond)) return null;
+  const op = cond.operatorToken.kind;
+  if (op !== ts.SyntaxKind.EqualsEqualsEqualsToken && op !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return null;
+  const id = cond.left.kind === ts.SyntaxKind.NullKeyword ? cond.right :
+    cond.right.kind === ts.SyntaxKind.NullKeyword ? cond.left : null;
+  if (!id || !ts.isIdentifier(id)) return null;
+  const sym = checker.getSymbolAtLocation(id);
+  return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken} : null;
+}
+
+function alwaysReturns(stmt: any): boolean {
+  if (ts.isReturnStatement(stmt)) return true;
+  if (ts.isBlock(stmt)) return stmt.statements.some(alwaysReturns);
+  return ts.isIfStatement(stmt) && !!stmt.elseStatement &&
+    alwaysReturns(stmt.thenStatement) && alwaysReturns(stmt.elseStatement);
+}
+
+/** Refine a fixed binding contract only along explicit null-test edges.
+ * A preceding returning arm establishes the opposite edge for its continuation.
+ * Stop at function boundaries: a guard on a later invocation is not in scope. */
+function nullGuardLabels(node: any, checker: Checker, labels: number[]): number[] {
+  const sym = checker.getSymbolAtLocation(node);
+  if (!sym) return labels;
+  const apply = (cond: any, truth: boolean) => {
+    const test = testedNullSymbol(cond, checker);
+    if (test?.sym.id === sym.id)
+      labels = labels.filter((label) => (label === 0) === (test.equal === truth));
+  };
+  let child = node, cur = node.parent;
+  while (cur && !isFunctionLike(cur)) {
+    if (ts.isIfStatement(cur)) {
+      if (child === cur.thenStatement) apply(cur.expression, true);
+      if (child === cur.elseStatement) apply(cur.expression, false);
+    } else if (ts.isWhileStatement(cur) && child === cur.statement) {
+      apply(cur.expression, true);
+    } else if (ts.isConditionalExpression(cur)) {
+      if (child === cur.whenTrue) apply(cur.condition, true);
+      if (child === cur.whenFalse) apply(cur.condition, false);
+    } else if (ts.isBinaryExpression(cur) && child === cur.right) {
+      if (cur.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) apply(cur.left, true);
+      if (cur.operatorToken.kind === ts.SyntaxKind.BarBarToken) apply(cur.left, false);
+    } else if (ts.isBlock(cur)) {
+      for (const stmt of cur.statements) {
+        if (stmt === child) break;
+        if (ts.isIfStatement(stmt)) {
+          if (alwaysReturns(stmt.thenStatement)) apply(stmt.expression, false);
+          if (stmt.elseStatement && alwaysReturns(stmt.elseStatement)) apply(stmt.expression, true);
+        }
+      }
+    }
+    child = cur;
+    cur = cur.parent;
+  }
+  return labels;
+}
+
 /**
  * The general fallback once `never` is rejected: the binding's own declared
  * type, ignoring flow entirely. Always sound, since it is what every value the
@@ -664,7 +727,7 @@ function bestLabelsForReference(
         (auth.declared &&
           JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))
       )
-        return auth.labels!;
+        return nullGuardLabels(node, checker, auth.labels!);
     }
   }
   const t = must(checker.getTypeAtLocation(node), "reference-type");

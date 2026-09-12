@@ -44,13 +44,13 @@ a cell after writing it fails, 56 of 129 in the corpus today. Teaching it to
 state the observation TypeScript already computes at that site is the next
 step, and would make the column's failures mean what SKJS's do.
 
-Three failures are this producer's own limits rather than findings:
-`write-refined-read.ts` and `primitive-callbacks.ts` need a current-content
-assertion, which it does not write. In `null-guards.ts`, lambda and allocation
-claims under union contexts now use the expression's own arrow or cell type.
-The remaining failure is a nullable reference claim at a guarded read: the
-producer's declared-type fallback does not yet preserve that null refinement.
-The suite checks this exact failure, so an earlier allocation rejection cannot
-masquerade as the expected result.
+`write-refined-read.ts` and `primitive-callbacks.ts` still fail by this producer's
+limits: they need a current-content assertion, which it does not write.
+`null-guards.ts` now verifies, including independent certificate consumption.
+Lambda and allocation claims under union contexts use the expression's own
+arrow or cell type. Explicit null tests refine a binding's declared contract
+within branches and after an arm that returns; the fallback no longer restores
+null at guarded reads or calls. Matching uses symbol identity and stops at
+function boundaries. No heap-content refinement is inferred from these guards.
 Where `tsc` rejects the program outright, its claims describe something it does
 not accept, and the verifier refusing them says nothing about either checker.

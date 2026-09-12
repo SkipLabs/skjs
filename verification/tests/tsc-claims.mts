@@ -48,8 +48,8 @@ const expected = {
   // current-content assertion, which this producer does not write.
   "skjs-incomplete/write-refined-read": "failed",
   "stateful-source/primitive-callbacks": "failed",
-  // Allocations now use cell claims, but guarded reads still retain nullable bindings.
-  "stateful-source/null-guards": "failed",
+  // Explicit null guards refine the declared nullable cell and callable contracts.
+  "stateful-source/null-guards": "verified",
   // tsc rejects these outright, so its claims describe a program it does not
   // accept; the verifier refusing them says nothing about either checker.
   "skjs-incomplete/empty-domain-escape": "failed",
@@ -101,7 +101,7 @@ for (const [name, want] of Object.entries(expected)) {
         "10",
       ]);
       got = checked.status === 0 ? "verified" : "failed";
-      if (got === "verified" && ["callables/factories", "callables/unions"].includes(name)) {
+      if (got === "verified" && ["callables/factories", "callables/unions", "stateful-source/null-guards"].includes(name)) {
         const consumed = run(verifier, ["--check-source-claims", ast, claims, file, evidence]);
         if (consumed.status !== 0) {
           got = "consumer-failed";
@@ -111,10 +111,6 @@ for (const [name, want] of Object.entries(expected)) {
       if (got === "failed")
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");
     }
-  }
-  if (name === "stateful-source/null-guards" && got === "failed" &&
-      !detail.includes("every read alternative must name a cell contract")) {
-    got = "unexpected-failure";
   }
   if (got === want) {
     console.log(`  ${name}: ${got}${detail ? ` — ${detail.slice(0, 60)}` : ""}`);
