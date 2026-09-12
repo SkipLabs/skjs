@@ -81,38 +81,6 @@ theorem congr_below {α : Type} (X Y : α → Fam) (a : α) (bs : List α) (L : 
   · exact (bagT_contractive n _ _ (h b) W v).mp (hb b hm)
   · exact (bagT_contractive n _ _ (h b) W v).mpr (hb b hm)
 
-/-- Unary graph clauses are a view of the native callable-object contracts. -/
-def unaryT (A : Fam) (Bs : List Fam) (L : List (Fam × Fam)) : Fam :=
-  interT (propsT A Bs) (arrowsT L)
-
-@[simp] theorem objectsT_unary (A : Fam) (Bs : List Fam) (L : List (Fam × Fam)) (n W v) :
-    objectsT A Bs (L.map fun p => ([p.1],p.2)) n W v ↔ unaryT A Bs L n W v :=
-  and_congr Iff.rfl (arrowsT_callsT L n W v).symm
-
-theorem unary_merge (A C : Fam) (Bs Ds : List Fam) (L M : List (Fam × Fam)) (n W v) :
-    unaryT A (Bs ++ C :: Ds) (L ++ M) n W v ↔
-      interT (unaryT A Bs L) (unaryT C Ds M) n W v := by
-  simpa only [interT, ← List.map_append, objectsT_unary] using
-    merge A C Bs Ds (L.map fun p => ([p.1],p.2)) (M.map fun p => ([p.1],p.2)) n W v
-
-theorem unary_calls_merge (A : Fam) (Bs : List Fam) (L M : List (Fam × Fam)) (n W v) :
-    unaryT A Bs (L ++ M) n W v ↔ interT (unaryT A Bs L) (arrowsT M) n W v := by
-  simpa only [interT, ← List.map_append, objectsT_unary, ← arrowsT_callsT] using
-    calls_merge A Bs (L.map fun p => ([p.1],p.2)) (M.map fun p => ([p.1],p.2)) n W v
-
-theorem unary_adm (A : Fam) (Bs : List Fam) (L : List (Fam × Fam)) : Adm (unaryT A Bs L) := by
-  have he : unaryT A Bs L = objectsT A Bs (L.map fun p => ([p.1],p.2)) := by
-    funext n W v; exact propext (objectsT_unary A Bs L n W v).symm
-  rw [he]; exact adm _ _ _
-
-theorem unary_congr_below {α : Type} (X Y : α → Fam) (a : α) (bs : List α) (L : List (α × α))
-    (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n) (v : Val) :
-    unaryT (X a) (bs.map X) (L.map fun p => (X p.1,X p.2)) n W v ↔
-      unaryT (Y a) (bs.map Y) (L.map fun p => (Y p.1,Y p.2)) n W v := by
-  rw [← objectsT_unary, ← objectsT_unary]
-  simpa only [List.map_map, Function.comp_def, List.map_cons, List.map_nil] using
-    congr_below X Y a bs (L.map fun p => ([p.1],p.2)) n h W v
-
 #print axioms neutral_iff
 #print axioms merge
 #print axioms adm

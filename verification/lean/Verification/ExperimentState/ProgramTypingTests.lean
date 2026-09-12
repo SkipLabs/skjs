@@ -7,15 +7,15 @@ def G : NormalGraph (Fin 6) := fun i => match i.val with
   | 0 => [.nul]
   | 1 => [.bool]
   | 2 => [.refs [1] []]
-  | 3 => [.arrs [([0], [1]), ([1], [0])]]
-  | 4 => [.arrs [([0, 1], [0, 1])]]
-  | _ => [.arrs [([3], [1])]]
+  | 3 => [.arrs [([[0]], [1]), ([[1]], [0])]]
+  | 4 => [.arrs [([[0, 1]], [0, 1])]]
+  | _ => [.arrs [([[3]], [1])]]
 
 /-- A single closure implements both signatures. `var 1` is the captured cell. -/
 def dispatch : Tm := .funE (.ite (.test .isNul (.var 0)) (.read (.var 1)) .nul)
 
 theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
-  apply HasTy.funE (by rfl)
+  apply HasTy.funE (by rfl) (by decide)
   intro p hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   rcases hp with rfl | rfl
@@ -29,7 +29,7 @@ theorem dispatch_typed : HasTy G [[2]] dispatch [3] := by
 /-- Genuine overload subsumption: splitting a union domain across two signatures. -/
 def widenCert : Proof (Fin 6) := .core
   ⟨[([3], [4]), ([0], [0]), ([1], [1]), ([0], [0, 1]), ([1], [0, 1])],
-    [([([0], [1]), ([1], [0])], (([0, 1], [0, 1]),
+    [([([[0]], [1]), ([[1]], [0])], (([[0, 1]], [0, 1]),
       .union [] [0] [1] [] (.source ([[0]], [1])) (.source ([[1]], [0]))))]⟩
 
 #guard check G [3] [4] widenCert
@@ -40,7 +40,7 @@ theorem dispatch_widened : HasTy G [[2]] dispatch [4] :=
 
 /-- Lambda introduction also accepts function-valued parameters. -/
 theorem higher_order_typed : HasTy G [] (.funE (.app (.var 0) .nul)) [5] := by
-  apply HasTy.funE (by rfl)
+  apply HasTy.funE (by rfl) (by decide)
   intro p hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   subst p

@@ -12,10 +12,10 @@ The continuation term occurs once, independently of how many paths call it. -/
 def share (k body : Tm) : Tm := .letE (.funE k) body
 
 theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
-    {Γ N R C k body} (hc : Represents G C (.arrs [(N,R)]))
+    {Γ N R C k body} (hc : Represents G C (.arrs [([N],R)]))
     (hk : HasTy G (N::Γ) k R) (hb : HasTy G (C::Γ) body R) :
     HasTy G Γ (share k body) R := by
-  apply HasTy.letE (HasTy.funE hc ?_) hb
+  apply HasTy.letE (HasTy.funE hc (by simp) ?_) hb
   intro p hp
   simp only [List.mem_singleton] at hp
   subst p
@@ -23,7 +23,7 @@ theorem share_typed {ι : Type} [DecidableEq ι] {G : PositiveGraphs.NormalGraph
 
 /-- The primitives, a Boolean cell, a null-to-Boolean arrow and a null-to-true arrow. -/
 private def T : SourceTypes.Table :=
-  SourceTypes.initial ++ [[.refs [1,2] []],[.arrs [([0],[1,2])]],[.arrs [([0],[1])]]]
+  SourceTypes.initial ++ [[.refs [1,2] []],[.arrs [([[0]],[1,2])]],[.arrs [([[0]],[1])]]]
 private def G := SourceTypes.graph T
 private def Γ : List (Ty Nat) := [[4],[1,2],[1,2]]
 private def H : List (Ty Nat) := [5]::Γ
@@ -97,7 +97,7 @@ theorem shared_paths (a b : Bool) : Execution program
 
 -- A later refinement is passed as a checked argument, not retroactively added
 -- to the captured environment. Both surviving paths reach the same definition.
-private def refinedTypes := T ++ [[PositiveNormalization.Clause.arrs [([2],[1,2])]]]
+private def refinedTypes := T ++ [[PositiveNormalization.Clause.arrs [([[2]],[1,2])]]]
 private def refinedGraph : PositiveGraphs.NormalGraph Nat := fun i => refinedTypes[i]?.getD []
 private def outer : List (Ty Nat) := [[1,2],[1,2]]
 private def extraLabel := T.length

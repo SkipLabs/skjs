@@ -1134,13 +1134,12 @@ with equal actual counts. A union may split at any position while preserving
 its prefix and suffix. An empty type at any position makes the domain
 uninhabited; an empty parameter list itself still admits a zero-argument call.
 Result combination uses the same compatibility check and shared-execution
-argument as unary overloads. `Arrow.sound` embeds existing unary derivations
-into `CallArrow.sound`, so current certificates already rely on the general
-proof. `checkCallArrow` checks list coverage and is sound and complete for
-`CallArrow` derivations. `checkArrow` specializes that checker to the current
-unary graph signatures; search emits singleton domain lists in the same
-certificate syntax. Graph signatures, expression typing and source search
-still expose unary calls, so accepted source programs have not widened.
+argument as unary overloads. Graph signatures now use domain lists directly,
+and `checkArrow` checks `CallArrow` derivations with soundness and completeness
+proofs. Search splits unions at any parameter position. Function-creation rules
+check every signature's arity against the descriptor and type the body under
+all parameter bindings followed by captures. Application evidence and source
+lowering still expose unary calls; accepted source programs have not widened.
 
 The final `accept` check binds the evidence to **all the requested point claims**
 as well as calling `checkEntry` on the actual program and external input context. Thus a valid certificate
@@ -1339,8 +1338,8 @@ from object membership. `EnvOk.prepend` extends environments with ordered
 parameter lists, and `HasTy.invocationSpec` derives an exact-arity native call
 contract from body derivations under those parameters and captured bindings.
 All signatures in this rule have the descriptor's arity; optional and rest
-parameters need further typing rules. Both unary creation proofs already use
-this general environment construction. Source functions and shared continuations now lower
+parameters need further typing rules. Creation evidence now checks descriptor arity and uses
+this general environment construction directly. Source functions and shared continuations now lower
 to `funE`, and the certificate producer and consumer use its allocating typing
 rule. A checked creation effect preserves existing heap knowledge without
 executing the body. Allocation, application, bag reads and writes,

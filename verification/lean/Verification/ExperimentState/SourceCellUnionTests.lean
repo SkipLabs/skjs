@@ -14,7 +14,7 @@ private def record (T : Json) : Json := Json.mkObj
    ("call",toJson "unknown"),("construct",toJson "unknown"),("array",toJson "unknown")]
 private def union : Json := Json.mkObj [("top",toJson false),("atoms",toJson [record result,record null])]
 private def table : SourceTypes.Table := SourceTypes.initial ++
-  [[.refs [0,1,2] []],[.refs [0] []],[.arrs [([0],[0,1,2])]]]
+  [[.refs [0,1,2] []],[.refs [0] []],[.arrs [([[0]],[0,1,2])]]]
 private def read : SourceInput.Expr := .read (24,27) (.var (24,25) "cell")
 private def write : SourceInput.Expr := .write (12,20) (.var (12,13) "cell") (.var (19,20) "unit")
 private def withBody (body : SourceInput.Expr) : SourceInput.Fn :=

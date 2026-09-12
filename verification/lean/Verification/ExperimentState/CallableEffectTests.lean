@@ -11,7 +11,7 @@ open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapExpressi
 open ControlFlow CertificateProducer RequestJson
 
 private def types := CallableGraphTests.types ++
-  [[PositiveNormalization.Clause.boolLit false], [.callable [1] [] [([0],[0])]]]
+  [[PositiveNormalization.Clause.boolLit false], [.callable [1] [] [([[0]],[0])]]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[1],[2],[5],[8]]

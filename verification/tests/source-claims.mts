@@ -54,7 +54,7 @@ try {
     // intersection as the source declares it.
     const fixture="verification/tests/skjs-incomplete/arrow-intersection.ts",text=fs.readFileSync(fixture,"utf8");
     const sf=path.join(tmp,"overload.ts"),sa=path.join(tmp,"overload.ast.json"),sc=path.join(tmp,"overload.claims.json"),se=path.join(tmp,"overload.evidence.json");
-    const types=[...primitives,[{arrs:{arrows:[[[1],[0]],[[2],[0]]]}}]];
+    const types=[...primitives,[{arrs:{arrows:[[[[1]],[0]],[[[2]],[0]]]}}]];
     // Claims for the parsed program: the lambda and its binding at row 4, the
     // body at the given type, the call at null.
     const write=(source: string,bodyType: any)=>{
@@ -105,7 +105,7 @@ try {
     const a=JSON.parse(p.stdout),f=a.functions[0];
     const expressions: any[]=[],entries: any[]=[],scope: any[]=[];
     // The table: the primitives, then the cell at 4 and the reader arrow at 5.
-    const types=[...primitives,[{refs:{first:[1,2],rest:[]}}],[{arrs:{arrows:[[[0],[1,2]]]}}]];
+    const types=[...primitives,[{refs:{first:[1,2],rest:[]}}],[{arrs:{arrows:[[[[0]],[1,2]]]}}]];
     const labels={cell:[4],read:[5],x:[0]};
     const expr=(e: any) =>{
       let type;

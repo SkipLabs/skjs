@@ -96,7 +96,7 @@ try {
       const operands = row[0].refs
         ? [row[0].refs.first, ...row[0].refs.rest]
         : row[0].arrs
-          ? row[0].arrs.arrows.flat()
+          ? row[0].arrs.arrows.flatMap(([As, B]: [number[][], number[]]) => [...As, B])
           : [];
       assert(
         operands.every((A: any) => A.every((j: number) => j < i)),

@@ -11,8 +11,8 @@ private def checkCoreSource [DecidableEq ι] (G : PositiveGraphs.Graph ι) (S T 
 -- them as an invariant of intersected contents or as bottom.
 #guard normalize (Formula.inter (.atom (.refs (0 : Nat) []))
   (.union (.atom (.refs 1 [])) (.atom .nul))) = [.refs 0 [1]]
-#guard normalize (Formula.inter (.atom (.arrs [((0 : Nat), 1)]))
-  (.atom (.arrs [(1, 0)]))) = [.arrs [(0, 1), (1, 0)]]
+#guard normalize (Formula.inter (.atom (.arrs [([(0 : Nat)], 1)]))
+  (.atom (.arrs [([1], 0)]))) = [.arrs [([0], 1), ([1], 0)]]
 #guard normalize (Formula.inter (.atom (.refs (0 : Nat) [])) (.atom .bool)) = []
 
 def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
@@ -25,8 +25,8 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
   | 6 => .inter (.atom (.refs [3] [])) (.atom (.refs [7] []))
   | 7 => .atom (.refs [1] [])
   | 8 => .atom (.refs [3] [])
-  | 9 => .inter (.atom (.arrs [([0], [0])])) (.atom (.arrs [([1], [0])]))
-  | 10 => .atom (.arrs [([0, 1], [0])])
+  | 9 => .inter (.atom (.arrs [([[0]], [0])])) (.atom (.arrs [([[1]], [0])]))
+  | 10 => .atom (.arrs [([[0, 1]], [0])])
   | _ => .inter (.atom .nul) (.atom .bool)
 
 -- Conjunction elimination, including nested reference constraints.
@@ -45,7 +45,7 @@ def G : PositiveGraphs.Graph (Fin 12) := fun i => match i.val with
 -- Previously supported domain splitting survives the representation extension.
 def splitCert : Certificate (Fin 12) :=
   ⟨[([9], [10]), ([0], [0]), ([1], [1])],
-    [([([0], [0]), ([1], [0])], (([0, 1], [0]),
+    [([([[0]], [0]), ([[1]], [0])], (([[0, 1]], [0]),
       .union [] [0] [1] [] (.source ([[0]], [0])) (.source ([[1]], [0]))))]⟩
 #guard checkCoreSource G [9] [10] splitCert
 #guard !(checkCoreSource G [10] [9] splitCert)
@@ -56,13 +56,13 @@ def TripleG : PositiveGraphs.Graph (Fin 5) := fun i => match i.val with
   | 0 => .atom .nul
   | 1 => .atom .bool
   | 2 => .atom (.arrs [])
-  | 3 => .atom (.arrs [([0], [0, 1]), ([0], [1, 2]), ([0], [0, 2])])
-  | _ => .atom (.arrs [([0], [])])
+  | 3 => .atom (.arrs [([[0]], [0, 1]), ([[0]], [1, 2]), ([[0]], [0, 2])])
+  | _ => .atom (.arrs [([[0]], [])])
 
 def tripleCert : Certificate (Fin 5) :=
   ⟨[([3], [4]), ([0], [0]), ([1], [1]), ([0, 1], [0, 1]),
     ([1, 2], [1, 2]), ([0, 2], [0, 2])],
-   [([([0], [0, 1]), ([0], [1, 2]), ([0], [0, 2])], (([0], []),
+   [([([[0]], [0, 1]), ([[0]], [1, 2]), ([[0]], [0, 2])], (([[0]], []),
      .combine [1] [0, 2]
        (.combine [0, 1] [1, 2] (.source ([[0]], [0, 1])) (.source ([[0]], [1, 2])))
        (.source ([[0]], [0, 2]))))]⟩
@@ -115,7 +115,7 @@ theorem checked_boolean_split : FamLe
 #guard !(checkSource G [1] [0] (.trans [0] .subset .subset))
 #guard !(checkCoreSource G [9] [10] ⟨[([9], [10])], splitCert.arrows⟩)
 #guard !(checkArrow (normalizeGraph G) [([0], [0]), ([1], [1])]
-  [([0], [0]), ([1], [0])] [0, 1] [0]
+  [([[0]], [0]), ([[1]], [0])] [[0, 1]] [0]
   (.union [] [0] [] [] (.source ([[0]], [0])) .empty))
 
 example : PositiveRules.Sub (normalizeGraph G) [0, 0] [1, 0] :=

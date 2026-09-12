@@ -346,6 +346,20 @@ theorem callsT_callable {L n W v} (h : callsT L n W v) : Callable v := by
   obtain ⟨arity, b, l, hv, hs⟩ := h
   exact ⟨arity, b, l, hv, hs.1⟩
 
+/-- Collect signature obligations on the same immutable callable descriptor. -/
+theorem callsT_of_signatures {L n W v} (hc : Callable v)
+    (hs : ∀ p ∈ L, callsT [p] n W v) : callsT L n W v := by
+  obtain ⟨arity, body, loc, rfl, hscope⟩ := hc
+  refine ⟨arity, body, loc, rfl, hscope, ?_⟩
+  intro p hp
+  exact ((callsT_code_iff [p] arity loc body n W).mp (hs p hp)).2 p (by simp)
+
+theorem callsT_select {L n W v p} (hf : callsT L n W v) (hp : p ∈ L) :
+    callsT [p] n W v := by
+  obtain ⟨arity, body, loc, he, hc, hs⟩ := hf
+  refine ⟨arity, body, loc, he, hc, ?_⟩
+  intro q hq; cases List.mem_singleton.mp hq; exact hs p hp
+
 theorem callsT_adm (L : List (List Fam × Fam)) : Adm (callsT L) := by
   constructor
   · rintro n W v ⟨arity, b, l, hv, hs⟩
@@ -471,6 +485,8 @@ theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
 
 #print axioms ArgsT_transfer
 #print axioms callsT_code_iff
+#print axioms callsT_of_signatures
+#print axioms callsT_select
 #print axioms callsT_adm
 #print axioms callsT_congr
 #print axioms callsT_invoke

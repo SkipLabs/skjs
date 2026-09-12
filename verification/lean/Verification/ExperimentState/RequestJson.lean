@@ -51,8 +51,8 @@ def validTy (bound : Nat) (A : Ty Nat) : Bool := A.all (fun i => i < bound)
 def clauseTypes : Clause (Ty Nat) → List (Ty Nat)
   | .nul | .undef | .bool | .boolLit _ => []
   | .refs A bs => A :: bs
-  | .arrs L => L.flatMap (fun p => [p.1,p.2])
-  | .callable A bs L => A :: bs ++ L.flatMap (fun p => [p.1,p.2])
+  | .arrs L => L.flatMap (fun p => p.1 ++ [p.2])
+  | .callable A bs L => A :: bs ++ L.flatMap (fun p => p.1 ++ [p.2])
 
 def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
   (c.type :: c.context).all (validTy bound)
@@ -74,7 +74,7 @@ def proofTypes : PositiveCertificates.Proof Nat → List (Ty Nat)
   | .subset => []
   | .trans middle l r => middle :: (proofTypes l ++ proofTypes r)
   | .core c => c.table.flatMap (fun p => [p.1,p.2]) ++ c.arrows.flatMap (fun e =>
-      e.1.flatMap (fun p => [p.1,p.2]) ++ [e.2.1.1,e.2.1.2] ++ arrowTypes e.2.2)
+      e.1.flatMap (fun p => p.1 ++ [p.2]) ++ e.2.1.1 ++ [e.2.1.2] ++ arrowTypes e.2.2)
 
 def validEvidence (bound : Nat) : ProgramCertificates.Evidence Nat → Bool
   | .node j r ps =>

@@ -37,14 +37,14 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
   | .tru, .tru, [] | .fls, .fls, [] => Represents G j.type .bool
   | .truLit, .tru, [] => Represents G j.type (.boolLit true)
   | .flsLit, .fls, [] => Represents G j.type (.boolLit false)
-  | .funE, .funE b, ps =>
+  | .funE, .make (.closure arity b) .nul, ps =>
     match expand G j.type with
-    | [.arrs L] => ps = L.map (fun p => ⟨p.1 :: j.context, b, p.2⟩)
+    | [.arrs L] => (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ j.context, b, p.2⟩)
     | _ => False
   | .app, .app f a, [jf, ja] =>
     jf.context = j.context ∧ jf.term = f ∧ ja.context = j.context ∧ ja.term = a ∧
     match expand G jf.type with
-    | [.arrs L] => (ja.type, j.type) ∈ L
+    | [.arrs L] => ([ja.type], j.type) ∈ L
     | _ => False
   | .letE, .letE a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
@@ -79,14 +79,14 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match j.context[i]? with
     | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
     | none => False
-  | .makeCallable, .attach b a, ja :: ps =>
+  | .makeCallable, .make (.closure arity b) a, ja :: ps =>
     match expand G j.type with
-    | [.callable P [] L] => ja = ⟨j.context,a,P⟩ ∧ ps = L.map (fun p => ⟨p.1 :: j.context,b,p.2⟩)
+    | [.callable P [] L] => ja = ⟨j.context,a,P⟩ ∧ (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ j.context,b,p.2⟩)
     | _ => False
   | .callCallable, .app f a, [jf,ja] =>
     jf.context = j.context ∧ jf.term = f ∧ ja.context = j.context ∧ ja.term = a ∧
     match expand G jf.type with
-    | [.callable _ _ L] => (ja.type,j.type) ∈ L
+    | [.callable _ _ L] => ([ja.type],j.type) ∈ L
     | _ => False
   | .readCallable, .read a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -163,11 +163,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
   · exact .truLit hl
   · exact .flsLit hl
   · split at hl
-    · rename_i b ps L hL
-      apply HasTy.funE hL
+    · rename_i arity b ps L hL
+      apply HasTy.funE hL hl.1
       intro p hmem
-      apply hp ⟨p.1 :: Γ, b, p.2⟩
-      rw [hl]
+      apply hp ⟨p.1 ++ Γ, b, p.2⟩
+      rw [hl.2]
       exact List.mem_map.mpr ⟨p, hmem, rfl⟩
     · contradiction
   · rename_i f a jf ja
@@ -239,11 +239,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [hl]
       exact List.mem_map.mpr ⟨a,ha,rfl⟩
     · contradiction
-  · rename_i b a ja ps
+  · rename_i arity b a ja ps
     split at hl
     · rename_i P L hr
-      rcases hl with ⟨rfl,rfl⟩
-      apply HasTy.makeCallable hr (hp ⟨Γ,a,P⟩ (by simp))
+      rcases hl with ⟨rfl,hlen,rfl⟩
+      apply HasTy.makeCallable hr (hp ⟨Γ,a,P⟩ (by simp)) hlen
       intro p hm
       exact hp _ (List.mem_cons_of_mem _ (List.mem_map.mpr ⟨p,hm,rfl⟩))
     · contradiction
@@ -342,16 +342,16 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
   | fls hr => exact node_complete (r := .fls) (js := []) hr (by simp)
   | truLit hr => exact node_complete (r := .truLit) (js := []) hr (by simp)
   | flsLit hr => exact node_complete (r := .flsLit) (js := []) hr (by simp)
-  | @funE F L Γ b hr hb ih =>
-    apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 :: Γ, b, p.2⟩))
-    · simp only [Local, show expand G F = [.arrs L] from hr]
+  | @funE F L arity Γ b hr hlen hb ih =>
+    apply node_complete (r := .funE) (js := L.map (fun p => ⟨p.1 ++ Γ, b, p.2⟩))
+    · simpa only [Local, show expand G F = [.arrs L] from hr, and_true] using hlen
     · intro j hj
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hj
       exact ih p hp
-  | @makeCallable F P L Γ a b hr ha hb iha ihb =>
+  | @makeCallable F P L Γ a arity b hr ha hlen hb iha ihb =>
     apply node_complete (r := .makeCallable)
-      (js := ⟨Γ,a,P⟩ :: L.map (fun p => ⟨p.1 :: Γ,b,p.2⟩))
-    · simp [Local,show expand G F = [.callable P [] L] from hr]
+      (js := ⟨Γ,a,P⟩ :: L.map (fun p => ⟨p.1 ++ Γ,b,p.2⟩))
+    · simpa [Local,show expand G F = [.callable P [] L] from hr] using hlen
     · intro j hj
       rcases List.mem_cons.mp hj with rfl | hj
       · exact iha

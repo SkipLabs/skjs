@@ -53,18 +53,18 @@ def renderAt (G : NormalGraph Nat) (pool : List (Ty Nat)) :
       let ea ← renderAt G pool depth Γ a
       let eb ← renderAt G pool depth ((claim ea).type :: Γ) b
       pure (.node ⟨Γ,j.term,j.type⟩ .letE [ea,eb])
-    | .funE, .funE _, bs =>
+    | .funE, .make (.closure arity _) .nul, bs =>
       -- One body plan per signature, in the signature order the checker expects.
       let [.arrs L] := expand G j.type | none
-      if L.length != bs.length then none else do
-        let es ← (L.zip bs).attach.mapM fun q => renderAt G pool depth (q.val.1.1 :: Γ) q.val.2
+      if L.length != bs.length || !L.all (fun p => p.1.length == arity) then none else do
+        let es ← (L.zip bs).attach.mapM fun q => renderAt G pool depth (q.val.1.1 ++ Γ) q.val.2
         pure (.node ⟨Γ,j.term,j.type⟩ .funE es)
-    | .makeCallable, .attach _ _, a :: bs =>
+    | .makeCallable, .make (.closure arity _) _, a :: bs =>
       let [.callable P [] L] := expand G j.type | none
-      if L.length != bs.length then none else do
+      if L.length != bs.length || !L.all (fun p => p.1.length == arity) then none else do
         let ea ← renderAt G pool depth Γ a
         let ea ← coerce G pool ea P
-        let es ← (L.zip bs).attach.mapM fun q => renderAt G pool depth (q.val.1.1 :: Γ) q.val.2
+        let es ← (L.zip bs).attach.mapM fun q => renderAt G pool depth (q.val.1.1 ++ Γ) q.val.2
         pure (.node ⟨Γ,j.term,j.type⟩ .makeCallable (ea :: es))
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>
       let pt ← renderAt G pool depth (Γ.set i T) t

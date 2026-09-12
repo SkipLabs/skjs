@@ -280,10 +280,10 @@ point and the input environment.
 ordered argument-list overloads on one value. `TypeAlgebra.calls_append` proves
 that merging overload lists preserves the same immutable descriptor, even when
 the admitted actual counts differ. Guardedness covers every argument position
-and the result, while bag invariants remain separate. The current unary
-`callable first rest arrows` graph clause uses `unaryT`, proved equivalent to
-`objectsT` with singleton domains; its normalization, admissibility and
-guardedness proofs specialize the general laws.
+and the result, while bag invariants remain separate. The
+`callable first rest arrows` graph clause now stores ordered domain lists and
+uses `objectsT` directly. The plain `arrs` clause likewise uses `callsT`; no unary
+graph adapter remains.
 Normalization concatenates bag requirements and signatures; it retains
 incompatible invariant operands at low budgets just as reference conjunctions
 do. Subtyping can forget properties but cannot widen an invariant bag or turn

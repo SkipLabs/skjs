@@ -9,9 +9,9 @@ open CertificateProducer ControlFlow RequestJson
 -- The two alternatives have different invariant bags and result types. No
 -- auxiliary common arrow label is provided to proof search.
 private def types : List (List (Clause (List Nat))) :=
-  [[.bool],[.nul],[.callable [0] [] [([0],[0])]],
-   [.callable [1] [] [([0],[1])]], [.callable [1] [] [([1],[1])]],
-   [.arrs []], [.refs [0] []], [.arrs [([0],[0])]], [.arrs [([0],[1])]] ]
+  [[.bool],[.nul],[.callable [0] [] [([[0]],[0])]],
+   [.callable [1] [] [([[0]],[1])]], [.callable [1] [] [([[1]],[1])]],
+   [.arrs []], [.refs [0] []], [.arrs [([[0]],[0])]], [.arrs [([[0]],[1])]] ]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3],[0,1]]
 private def callClaim : Sequent Nat := ⟨[[2,3]],.app (.var 0) .tru,[0,1]⟩

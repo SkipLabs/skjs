@@ -7,7 +7,7 @@ through the maintained graph producer, consumer, and JSON protocol. -/
 namespace Verification.ExperimentState.CallableGraphTests
 open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow CertificateProducer RequestJson
 
-private def signatures : List (List Nat × List Nat) := [([1],[1]),([0],[0])]
+private def signatures : List (List (List Nat) × List Nat) := [([[1]],[1]),([[0]],[0])]
 def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.callable [1] [] signatures],[.arrs signatures],
    [.callable [1] [[1]] signatures],[.refs [1] []],[.callable [0,1] [] signatures]]
@@ -68,8 +68,8 @@ private def pool := vocabulary G labels claims []
 #guard !(subtype G pool [3] [2]).isSome
 
 -- Normalization merges property constraints and overloads without allocation.
-#guard meet (.callable [1] [] signatures) (.arrs [([1],[1])]) ==
-  [.callable [1] [] (signatures ++ [([1],[1])])]
+#guard meet (.callable [1] [] signatures) (.arrs [([[1]],[1])]) ==
+  [.callable [1] [] (signatures ++ [([[1]],[1])])]
 #guard meet (.callable [1] [] signatures) (.callable [1] [] signatures) ==
   [.callable [1] [[1]] (signatures ++ signatures)]
 #guard meet (.refs [1] []) (.callable [1] [] signatures) == []
@@ -94,7 +94,7 @@ private def creationPlan : DirectProof.Plan :=
 -- Labels in the new clause's bag and arrow operands remain range checked.
 #guard !validRequest {request with types := types ++ [[.callable [99] [] signatures]]}
 #guard !validRequest {request with types := types ++ [[.callable [1] [[99]] signatures]]}
-#guard !validRequest {request with types := types ++ [[.callable [1] [] [([1],[99])]]]}
+#guard !validRequest {request with types := types ++ [[.callable [1] [] [([[1]],[99])]]]}
 
 -- Native certificates split the middle parameter while fixing both neighbors.
 -- These are certificate checks, not executions of extracted source programs.
@@ -106,25 +106,50 @@ private def overloads : List (List (List Nat) × List Nat) :=
 private def split : ArrowCert Nat :=
   .union [[0]] [0] [1] [[1]]
     (.source ([[0],[0],[1]],[1])) (.source ([[0],[1],[1]],[1]))
-#guard checkCallArrow G table overloads [[0],[0,1],[1]] [1] split
-#guard !(checkCallArrow G table overloads [[1],[0,1],[1]] [1] split)
+#guard checkArrow G table overloads [[0],[0,1],[1]] [1] split
+#guard !(checkArrow G table overloads [[1],[0,1],[1]] [1] split)
 -- Selection cannot silently drop a target argument or ignore a source argument.
-#guard !(checkCallArrow G table [([[0]],[1])] [[0],[1]] [1] (.source ([[0]],[1])))
-#guard !(checkCallArrow G table [([[0],[1]],[1])] [[0]] [1] (.source ([[0],[1]],[1])))
+#guard !(checkArrow G table [([[0]],[1])] [[0],[1]] [1] (.source ([[0]],[1])))
+#guard !(checkArrow G table [([[0],[1]],[1])] [[0]] [1] (.source ([[0],[1]],[1])))
 -- Zero arguments have a real call obligation; a bottom parameter is uninhabited.
-#guard !(checkCallArrow G table [] [] [1] .empty)
-#guard checkCallArrow G table [] [[0],[]] [1] .empty
-#guard checkCallArrow G table [([],[1])] [] [1] (.source ([],[1]))
+#guard !(checkArrow G table [] [] [1] .empty)
+#guard checkArrow G table [] [[0],[]] [1] .empty
+#guard checkArrow G table [([],[1])] [] [1] (.source ([],[1]))
 #guard match fromJson? (toJson split) with
   | .error _ => false
   | .ok (decoded : ArrowCert Nat) =>
-      decoded == split && checkCallArrow G table overloads [[0],[0,1],[1]] [1] decoded
+      decoded == split && checkArrow G table overloads [[0],[0,1],[1]] [1] decoded
 -- An out-of-range label in a preserved suffix must fail the outer evidence gate.
 private def badSuffix : ArrowCert Nat :=
   .union [[0]] [0] [1] [[99]] .empty .empty
 #guard !validEvidence types.length (.node ⟨[],.nul,[0]⟩
-  (.sub (.core ⟨table,[([], (([0],[1]),badSuffix))]⟩)) [])
+  (.sub (.core ⟨table,[([], (([[0]],[1]),badSuffix))]⟩)) [])
 end ArgumentCertificates
+
+-- Graph creation, subtype search, and JSON consumption now share native lists.
+namespace ArgumentGraphs
+private def rows : List (List (Clause (List Nat))) := types ++
+  [[.arrs [([[0],[0],[1]],[1]),([[0],[1],[1]],[1])]],
+   [.arrs [([[0],[0,1],[1]],[1])]], [.arrs [([],[0])]]]
+private def graph : NormalGraph Nat := fun i => rows[i]?.getD []
+private def body := Tm.make (.closure 3 (.var 2)) .nul
+private def req : Request := ⟨rows,[⟨body,.bind 1⟩,⟨.var 0,.ret⟩],[⟨[],[7]⟩,⟨[[7]],[8]⟩],[8],0,[]⟩
+#guard ok (do
+  let r ← Json.parse (toJson req).compress
+  let c ← produceJson r 8
+  verifyJson r (← Json.parse c.compress))
+-- A descriptor with an extra parameter is scoped but violates creation's arity premise.
+#guard !ProgramCertificates.check graph (.make (.closure 4 (.var 2)) .nul) [7]
+  (.node ⟨[],.make (.closure 4 (.var 2)) .nul,[7]⟩ .funE
+    [.node ⟨[[0],[0],[1]],.var 2,[1]⟩ .var [],
+     .node ⟨[[0],[1],[1]],.var 2,[1]⟩ .var []])
+private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret⟩],[⟨[],[9]⟩],[9],0,[]⟩
+#guard ok (do
+  let r := toJson zeroReq
+  verifyJson r (← produceJson r 8))
+#guard (subtype graph (List.range rows.length |>.map fun i => [i]) [7] [9]).isNone
+#guard !validRequest {req with types := rows ++ [[.arrs [([[0],[99]],[1])]]]}
+end ArgumentGraphs
 
 #print axioms checked
 #print axioms returns_false

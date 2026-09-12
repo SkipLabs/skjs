@@ -562,7 +562,7 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     [{ boolLit: { value: true } }],
     [{ boolLit: { value: false } }],
     [{ refs: { first: [1, 2], rest: [] } }],
-    [{ arrs: { arrows: [[[0], [1, 2]]] } }],
+    [{ arrs: { arrows: [[[[0]], [1, 2]]] } }],
     [{ mystery: 7 }],
     [{ refs: { first: [6], rest: [] } }],
   ];

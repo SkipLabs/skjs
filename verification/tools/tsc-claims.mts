@@ -418,17 +418,17 @@ function tryArrowIntersection(
   parts: readonly Type[],
   types: Row[],
   fuel: number,
-): number[][][] | null {
+): [number[][], number[]][] | null {
   const results = parts.map((t) => tryArrow(t, checker));
   if (!results.every((r) => r.ok)) {
     const bad = results.find((r) => !r.ok && r.reason);
     if (bad) throw new Refusal(bad.reason!, checker.typeToString(type));
     return null;
   }
-  const arrows: number[][][] = [];
+  const arrows: [number[][], number[]][] = [];
   for (const r of results) {
-    const pair = [
-      r.domain ? translateType(r.domain, checker, types, false, fuel - 1) : [3],
+    const pair: [number[][], number[]] = [
+      [r.domain ? translateType(r.domain, checker, types, false, fuel - 1) : [3]],
       translateType(r.result!, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -472,8 +472,8 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   if (rec.reason) throw new Refusal(rec.reason, checker.typeToString(type));
   const arr = tryArrow(type, checker);
   if (arr.ok) {
-    const pair = [
-      arr.domain ? translateType(arr.domain, checker, types, false, fuel - 1) : [3],
+    const pair: [number[][], number[]] = [
+      [arr.domain ? translateType(arr.domain, checker, types, false, fuel - 1) : [3]],
       translateType(arr.result!, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];

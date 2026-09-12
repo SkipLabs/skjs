@@ -8,7 +8,7 @@ open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [1] []],[.callable [1] [] []],
-   [.callable [1] [] [([0],[1])]]]
+   [.callable [1] [] [([[0]],[1])]]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 -- The initializer writes true, allocates an intermediate object, and returns

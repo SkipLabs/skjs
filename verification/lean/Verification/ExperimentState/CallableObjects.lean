@@ -79,6 +79,18 @@ theorem bag_write {P : Fam} (hP : Adm P) {n W h v a}
   cases he
   exact write_rule (code := code) hP n W h l a hval hw hh hl hc ha
 
+/-- Native creation preserves every list signature across allocation. -/
+theorem make_callable_rule {P : Fam} {L : List (List Fam × Fam)} (hA : Adm P)
+    (arity n : Nat) (W : WorldT n) (h : Heap) (b v : Tm)
+    (hf : InvocationSpec arity L n W b) (hval : isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
+    Safe (interT (bagT P) (callsT L)) n W h (.make (.closure arity b) v) := by
+  apply make_rule hA n W h (.closure arity b) v hval hadm hok hv
+  intro j hj U hx hr
+  have hf' := (callsT_adm L).mono j _ U hx _ ((callsT_adm L).down_le n j
+    (Nat.le_of_lt hj) W _ ((callsT_code_iff L arity h.length b n W).mpr hf))
+  exact ⟨⟨h.length, .closure arity b, rfl, rfl, hr⟩, hf'⟩
+
 /-- Creation checks the code and the stored value separately, then allocates a
 single fresh identity. The call contracts survive the extended world. -/
 theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
@@ -99,6 +111,7 @@ theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
 #print axioms callableT_append
 #print axioms bag_read
 #print axioms bag_write
+#print axioms make_callable_rule
 #print axioms attach_rule
 
 end Verification.ExperimentState

@@ -43,20 +43,21 @@ theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {R P claims C
 /-- Small arrow search: source, domain union, and pairwise compatible codomain
 combination. The checker, not this search strategy, defines the rules. -/
 def arrowSearch [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (L : Ops ι)
-    (c d : Ty ι) : Nat → Option (PositiveCertificates.ArrowCert ι)
+    (c : List (Ty ι)) (d : Ty ι) : Nat → Option (PositiveCertificates.ArrowCert ι)
   | 0 => none
   | fuel+1 => Id.run do
-    let basic := PositiveCertificates.ArrowCert.empty :: L.map (fun p => .source ([p.1], p.2))
+    let basic := PositiveCertificates.ArrowCert.empty :: L.map (.source ·)
     if let some p := basic.find? (fun p => PositiveCertificates.checkArrow G table L c d p) then
       return some p
-    if let a :: rest := c then
-      if !rest.isEmpty then
-        if let some left := arrowSearch G table L [a] d fuel then
-          if let some right := arrowSearch G table L rest d fuel then
-            let p := PositiveCertificates.ArrowCert.union [] [a] rest [] left right
-            if PositiveCertificates.checkArrow G table L c d p then return some p
+    for i in List.range c.length do
+      if let some (a :: rest) := c[i]? then
+        if !rest.isEmpty then
+          if let some left := arrowSearch G table L (c.set i [a]) d fuel then
+            if let some right := arrowSearch G table L (c.set i rest) d fuel then
+              let p := PositiveCertificates.ArrowCert.union (c.take i) [a] rest (c.drop (i+1)) left right
+              if PositiveCertificates.checkArrow G table L c d p then return some p
     return (L.flatMap fun p => L.map fun q =>
-      PositiveCertificates.ArrowCert.combine p.2 q.2 (.source ([p.1], p.2)) (.source ([q.1], q.2))).find?
+      PositiveCertificates.ArrowCert.combine p.2 q.2 (.source p) (.source q)).find?
         (fun p => PositiveCertificates.checkArrow G table L c d p)
 
 def arrowEvidence [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
@@ -125,22 +126,25 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let r := if expand G B = [.boolLit true] && t == .tru then Rule.truLit
           else if expand G B = [.boolLit false] && t == .fls then Rule.flsLit else r
         if checkTree G (leaf B r) then coerce G pool (leaf B r) A else none
-    | .funE b =>
+    | .make (.closure arity b) .nul =>
       return (A :: pool).findSome? fun F => do
         match expand G F with
         | [.arrs L] =>
-          let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
+          if !L.all (fun p => p.1.length == arity) then none else do
+          let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
           coerce G pool (.node ⟨Γ,t,F⟩ .funE ps) A
         | [.callable P [] L] =>
+          if !L.all (fun p => p.1.length == arity) then none else do
           let ea ← recur Γ .nul P
-          let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
+          let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
           coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
         | _ => none
-    | .attach b a =>
+    | .make (.closure arity b) a =>
       return (A :: pool).findSome? fun F => do
         let [.callable P [] L] := expand G F | none
+        if !L.all (fun p => p.1.length == arity) then none else do
         let ea ← recur Γ a P
-        let ps ← L.mapM fun p => recur (p.1 :: Γ) b p.2
+        let ps ← L.mapM fun p => recur (p.1 ++ Γ) b p.2
         coerce G pool (.node ⟨Γ,t,F⟩ .makeCallable (ea :: ps)) A
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
@@ -163,7 +167,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
           -- Check the result relation before searching both premises.
           let _ ← subtype G pool p.2 A
           let ef ← recur Γ f F
-          let ea ← recur Γ a p.1
+          let [D] := p.1 | none
+          let ea ← recur Γ a D
           coerce G pool (.node ⟨Γ,t,p.2⟩ r [ef,ea]) A
       if let some e := direct then return some e
       return splitReceiver f
@@ -245,8 +250,8 @@ def vocabulary [DecidableEq ι] (G : NormalGraph ι) (labels : List ι)
     claims.flatMap (fun c => c.type :: c.context) ++
     labels.flatMap (fun i => (G i).flatMap fun c => match c with
       | .refs A bs => A :: bs
-      | .arrs L => L.flatMap fun p => [p.1,p.2]
-      | .callable A bs L => A :: bs ++ L.flatMap (fun p => [p.1,p.2])
+      | .arrs L => L.flatMap fun p => p.1 ++ [p.2]
+      | .callable A bs L => A :: bs ++ L.flatMap (fun p => p.1 ++ [p.2])
       | _ => [])).eraseDups
 
 inductive Failure where

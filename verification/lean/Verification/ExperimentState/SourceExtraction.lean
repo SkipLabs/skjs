@@ -247,6 +247,13 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
       let e ← noBranch scope H
       pure (DirectProof.ifE G H A c t e)
 
+/-- The source fragment still admits at most one required parameter. Graph
+signatures themselves carry native lists, so enforce that boundary explicitly. -/
+private def unarySignatures (L : PositiveRules.Ops Nat) : Except String (List (Ty Nat × Ty Nat)) :=
+  L.mapM fun p => match p.1 with
+    | [D] => pure (D,p.2)
+    | _ => throw "source calls require a unary signature"
+
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -337,6 +344,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     -- argument, then eliminated in that immutable slot without reevaluation.
     match PositiveRules.expand G callee.type with
     | [.arrs L] =>
+      let L ← unarySignatures L
       let arg ← closureExpr fc scope Γ a
       -- Preserve the existing overload order and mismatch diagnostics.
       let some (D,R) := (L.find? fun (D,_) => arg.type.all D.contains) <|> L.head?
@@ -350,6 +358,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       let alternatives ← callee.type.mapM fun label => do
         let [.arrs L] := PositiveRules.expand G [label]
           | throw "every callee alternative must name a source arrow"
+        let L ← unarySignatures L
         let some (D,R) := (L.find? fun (D,_) => arg.type.all D.contains) <|> L.head?
           | throw "callee alternative has no signature"
         pure (label,D,R)
@@ -434,6 +443,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     -- the lambda rule requires. A claimed parameter must lie within the
     -- annotated one, so no signature leaves the source's declared domain.
     let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
+    let L ← unarySignatures L
     if L.isEmpty || !L.all (fun (Di,_) => Di.all D.contains) then
       throw "closure signature claim is outside the source annotation"
     let b ← closureExpr fc inner (D::Γ) body

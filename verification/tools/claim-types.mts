@@ -451,7 +451,7 @@ function roundTrips(type: any) {
     if (clause && clause.arrs && (clause.arrs.arrows || []).length) {
       const arrows = clause.arrs.arrows.map(([domain, result]: [any, any]) => ({
         a: "function",
-        params: [liftType(types, domain, depth - 1)],
+        params: domain.map((D: number[]) => liftType(types, D, depth - 1)),
         result: liftType(types, result, depth - 1),
       }));
       return arrows.length === 1 ? arrows[0] : shown(arrows);
@@ -513,7 +513,7 @@ function roundTrips(type: any) {
     if (atom.a === "function") {
       const [domain, ...more] = atom.params || [];
       if (!domain || more.length) throw new TypeSyntaxError("a function takes exactly one parameter here");
-      return [intern(types, [{ arrs: { arrows: [[lowerType(types, domain), lowerType(types, atom.result)]] } }])];
+      return [intern(types, [{ arrs: { arrows: [[[lowerType(types, domain)], lowerType(types, atom.result)]] } }])];
     }
     throw new TypeSyntaxError("'" + (atom.a || "type") + "' is outside the checked fragment");
   }

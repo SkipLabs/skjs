@@ -9,10 +9,10 @@ open Lean PositiveNormalization PositiveGraphs ProgramTyping ControlFlow Certifi
 -- R = { bag: null | R; call: Boolean → Boolean }. A second label describes
 -- the same recursive contract independently, to exercise cyclic subtyping.
 private def types : List (List (Clause (List Nat))) :=
-  [[.nul],[.bool],[.callable [0,2] [] [([1],[1])]],
-   [.callable [0,3] [] [([1],[1])]],
-   [.callable [0,2,1] [] [([1],[1])]],
-   [.arrs [([2],[2])]], [.arrs [([1],[0,2])]]]
+  [[.nul],[.bool],[.callable [0,2] [] [([[1]],[1])]],
+   [.callable [0,3] [] [([[1]],[1])]],
+   [.callable [0,2,1] [] [([[1]],[1])]],
+   [.arrs [([[2]],[2])]], [.arrs [([[1]],[0,2])]]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def labels := List.range types.length
 private def pool := vocabulary G labels [] [[0,2],[0,3]]
@@ -83,7 +83,7 @@ private def capturedRequest : Request := ⟨types,capturedProgram,capturedClaims
 -- The capture does not freeze the initial null bag. Treating the getter as
 -- always returning null must fail its ordinary closure-body obligation.
 private def nullGetterG : NormalGraph Nat := fun i =>
-  if i == 7 then [.arrs [([1],[0])]] else G i
+  if i == 7 then [.arrs [([[1]],[0])]] else G i
 #guard !(expression nullGetterG (vocabulary nullGetterG (List.range 8) [] []) 10
   [[2]] (.funE (.read (.var 1))) [7]).isSome
 

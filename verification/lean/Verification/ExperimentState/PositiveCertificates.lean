@@ -27,65 +27,52 @@ theorem checkDomains_iff [DecidableEq ι] {table} (As Bs : List (List ι)) :
 
 /-- One checker for ordered argument-list coverage; every union certificate
 identifies the unchanged positions as well as the position being split. -/
-def checkCallArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
+def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
     (L : List (List (List ι) × List ι)) (As : List (List ι)) (d : List ι) : ArrowCert ι → Bool
   | .empty => decide ([] ∈ As)
   | .source p => decide (p ∈ L ∧ (p.2 = [] ∨ Rel table p.2 d)) && checkDomains table As p.1
   | .union pre a b suffix left right => decide (As = pre ++ (a ++ b) :: suffix) &&
-      checkCallArrow G table L (pre ++ a :: suffix) d left &&
-      checkCallArrow G table L (pre ++ b :: suffix) d right
+      checkArrow G table L (pre ++ a :: suffix) d left &&
+      checkArrow G table L (pre ++ b :: suffix) d right
   | .combine b b' left right =>
-      checkCallArrow G table L As b left && checkCallArrow G table L As b' right &&
+      checkArrow G table L As b left && checkArrow G table L As b' right &&
       decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → Rel table [i] d)
 
-theorem checkCallArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L As d cert}
-    (h : checkCallArrow G table L As d cert = true) : CallArrow G (Rel table) L As d := by
+theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L As d cert}
+    (h : checkArrow G table L As d cert = true) : CallArrow G (Rel table) L As d := by
   induction cert generalizing As d with
   | empty => exact .empty (of_decide_eq_true h)
   | source p =>
-    simp only [checkCallArrow, Bool.and_eq_true, decide_eq_true_eq, checkDomains_iff] at h
+    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq, checkDomains_iff] at h
     exact .source h.1.1 h.2 h.1.2
   | union pre a b suffix left right ih ih' =>
-    simp only [checkCallArrow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
     rw [h.1.1]
     exact .union (ih h.1.2) (ih' h.2)
   | combine b b' left right ih ih' =>
-    simp only [checkCallArrow, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq] at h
     exact .combine (ih h.1.1) (ih' h.1.2) h.2
 
-theorem checkCallArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L As d}
-    (h : CallArrow G (Rel table) L As d) : ∃ cert, checkCallArrow G table L As d cert = true := by
+theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L As d}
+    (h : CallArrow G (Rel table) L As d) : ∃ cert, checkArrow G table L As d cert = true := by
   induction h with
-  | empty he => exact ⟨.empty, by simpa [checkCallArrow] using he⟩
+  | empty he => exact ⟨.empty, by simpa [checkArrow] using he⟩
   | source hp hd hc =>
     rename_i p As d
-    exact ⟨.source p, by simp [checkCallArrow, hp, hd, hc, checkDomains_iff]⟩
+    exact ⟨.source p, by simp [checkArrow, hp, hd, hc, checkDomains_iff]⟩
   | @union pre a suffix d b ha hb ih ih' =>
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
-    exact ⟨.union pre a b suffix left right, by simp [checkCallArrow, hl, hr]⟩
+    exact ⟨.union pre a b suffix left right, by simp [checkArrow, hl, hr]⟩
   | combine ha hb hg ih ih' =>
     rename_i As b b' d
     obtain ⟨left, hl⟩ := ih
     obtain ⟨right, hr⟩ := ih'
     refine ⟨.combine b b' left right, ?_⟩
-    simp only [checkCallArrow, Bool.and_eq_true, decide_eq_true_eq]
+    simp only [checkArrow, Bool.and_eq_true, decide_eq_true_eq]
     exact ⟨⟨hl, hr⟩, hg⟩
 
-/-- Current unary graph clauses specialize the native checker. -/
-def checkArrow [DecidableEq ι] (G : NormalGraph ι) (table : Table ι)
-    (L : Ops ι) (c d : List ι) (cert : ArrowCert ι) : Bool :=
-  checkCallArrow G table (L.map fun p => ([p.1], p.2)) [c] d cert
-
-theorem checkArrow_sound [DecidableEq ι] {G : NormalGraph ι} {table L c d cert}
-    (h : checkArrow G table L c d cert = true) : Arrow G (Rel table) L c d :=
-  (checkCallArrow_sound h).toArrow
-
-theorem checkArrow_complete [DecidableEq ι] {G : NormalGraph ι} {table L c d}
-    (h : Arrow G (Rel table) L c d) : ∃ cert, checkArrow G table L c d cert = true :=
-  checkCallArrow_complete h.toCallArrow
-
-abbrev Evidence (ι : Type) := List (Ops ι × ((List ι × List ι) × ArrowCert ι))
+abbrev Evidence (ι : Type) := List (Ops ι × ((List (List ι) × List ι) × ArrowCert ι))
 
 set_option synthInstance.maxSize 1024 in
 def checkClause [DecidableEq ι] (G : NormalGraph ι) (table : Table ι) (proofs : Evidence ι) :
@@ -155,7 +142,7 @@ theorem checkClause_mono [DecidableEq ι] {G : NormalGraph ι} {table a b es es'
        exact ⟨e,hm e he,hL,hP,hc⟩)
 
 private theorem arrow_evidence_complete [DecidableEq ι] {G : NormalGraph ι} {table} {L M : Ops ι}
-    (h : ∀ p ∈ M, Arrow G (Rel table) L p.1 p.2) :
+    (h : ∀ p ∈ M, CallArrow G (Rel table) L p.1 p.2) :
     ∃ es : Evidence ι, ∀ p ∈ M, ∃ e ∈ es,
       e.1 = L ∧ e.2.1 = p ∧ checkArrow G table L p.1 p.2 e.2.2 = true := by
   have hx : ∀ p ∈ M, ∃ es : Evidence ι, ∃ e ∈ es,
@@ -286,8 +273,8 @@ theorem accepted_subsumption [DecidableEq ι] {G : PositiveGraphs.Graph ι} {S T
   intro j _ U v hv
   exact accepted_source h j U v hv
 
-#print axioms checkCallArrow_sound
-#print axioms checkCallArrow_complete
+#print axioms checkArrow_sound
+#print axioms checkArrow_complete
 #print axioms check_sound
 #print axioms check_complete
 #print axioms accepted_source

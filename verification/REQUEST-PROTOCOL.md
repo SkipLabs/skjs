@@ -73,10 +73,11 @@ Each type-graph node is a union of clauses:
 | Boolean | `"bool"` |
 | Boolean singleton | `{"boolLit":{"value":true}}` (or `false`) |
 | Invariant reference with optional additional contract requirements | `{"refs":{"first":[1],"rest":[]}}` |
-| Intersection of arrows | `{"arrs":{"arrows":[[[0],[1]],[[1],[0]]]}}` |
-| Callable with invariant bag requirements and overloads | `{"callable":{"first":[1],"rest":[],"arrows":[[[0],[1]]]}}` |
+| Intersection of arrows | `{"arrs":{"arrows":[[[[0]],[1]],[[[1]],[0]]]}}` |
+| Callable with invariant bag requirements and overloads | `{"callable":{"first":[1],"rest":[],"arrows":[[[[0]],[1]]]}}` |
 
-The arrow example contains two domain/result pairs. References and arrow
+The arrow example contains two argument-list/result pairs, each with one
+argument. Each argument type is itself a list of union labels. References and arrow
 operands may point back to the same finite graph, representing guarded regular
 recursion. The request already contains normalized clauses: this grammar has no conjunction
 above the clause level, so nothing here needs normalizing. A producer that does
@@ -115,7 +116,7 @@ The encoding follows mechanically from the
 | --- | --- | --- | --- |
 | slot $i$ | `{"var":{"i":0}}` | `ret` | `"ret"` |
 | $\mathsf{let}(t,t)$ | `{"letE":{"a":t,"b":t}}` | `bind` | `{"bind":{"next":T}}` |
-| $t\,t$ | `{"app":{"f":t,"a":t}}` | `effect` | `{"effect":{"next":T}}` |
+| $\mathsf{call}(t,[t,\ldots])$ | `{"call":{"f":t,"args":[t]}}` | `effect` | `{"effect":{"next":T}}` |
 | null, undefined, true, false | `"nul"`, `"undef"`, `"tru"`, `"fls"` | `branch` | `{"branch":{"yes":T,"no":T}}` |
 | object $\mathsf{obj}(\ell,c)$ | `{"obj":{"l":0,"call":c}}` | `branchBind` | `{"branchBind":{"yes":T,"no":T}}` |
 | $\mathsf{make}(c,t)$ | `{"make":{"call":c,"a":t}}` | `tagBind` | `{"tagBind":{"test":"isNul","yes":T,"no":T}}` |
@@ -124,9 +125,12 @@ The encoding follows mechanically from the
 | $\mathsf{test}_k(t)$ | `{"test":{"k":"isNul","a":t}}` | | |
 | $\mathsf{if}\;t\;t\;t$ | `{"ite":{"c":t,"t":t,"e":t}}` | | |
 
-A descriptor `c` is `"absent"` or `{"closure":{"body":t}}`. Plain allocation
+A descriptor `c` is `"absent"` or `{"closure":{"arity":2,"body":t}}`. Plain allocation
 uses the absent descriptor; function creation uses a closure descriptor and an
-initial bag value. The body is under one argument binder. Runtime object terms
+initial bag value. The body is under `arity` parameter binders, in declaration
+order, before any captures. Creation evidence requires each overload to have
+that many argument types. Application evidence currently admits singleton
+actual lists; other counts remain a typing boundary. Runtime object terms
 are rejected in supplied graph syntax, including inside unused branches and
 closure bodies.
 
@@ -156,9 +160,9 @@ certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
 from `a ++ b` into the two branches. `combine` retains its result types `b` and
 `b'` and two branches; `empty` requires an empty type at some argument position,
 not merely a zero-length argument list. Every label in these fields is bounds
-checked. Current graph signatures remain unary, so their producer emits
-singleton `domains` and empty `pre`/`suffix`; the native list checker validates
-that specialization. There is one accepted certificate shape.
+checked. Graph subtype search supports native argument lists and splits any
+position. Source lowering still emits singleton domains for its current
+zero-or-one-parameter fragment. There is one accepted certificate shape.
 
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of

@@ -8,7 +8,7 @@ open PositiveNormalization PositiveGraphs ReferenceConjunctions Tower
 abbrev Table (ι : Type) := List (List ι × List ι)
 abbrev Rel (table : Table ι) (a b : List ι) : Prop := (a, b) ∈ table
 
-abbrev Ops (ι : Type) := List (List ι × List ι)
+abbrev Ops (ι : Type) := List (List (List ι) × List ι)
 def expand (G : NormalGraph ι) (S : List ι) : List (Clause (List ι)) := S.flatMap G
 
 /-- Decompose one clause into an exactly equivalent finite union. `bool` is the
@@ -185,65 +185,6 @@ theorem CallArrow.sound {G : NormalGraph ι} {R L As d} (hc : CallArrow G R L As
     exact hr r (by omega) _ _ (hg i hi k hk (compatible_sound hv1 hv2)) V u
       ⟨i, by simp, hv1⟩
 
-inductive Arrow (G : NormalGraph ι) (R : List ι → List ι → Prop)
-    (L : Ops ι) : List ι → List ι → Prop where
-  | empty : Arrow G R L [] d
-  | source : p ∈ L → R c p.1 → (p.2 = [] ∨ R p.2 d) → Arrow G R L c d
-  | union : Arrow G R L a d → Arrow G R L b d → Arrow G R L (a ++ b) d
-  | combine : Arrow G R L c b → Arrow G R L c b' →
-      (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] d) → Arrow G R L c d
-
-/-- Splitting a domain into clauses is derivable by finite union composition. -/
-theorem Arrow.split {G : NormalGraph ι} {R L c d}
-    (h : ∀ i ∈ c, Arrow G R L [i] d) : Arrow G R L c d := by
-  induction c with
-  | nil => exact .empty
-  | cons i tail ih =>
-    exact .union (h i (by simp)) (ih (fun k hk => h k (by simp [hk])))
-
-/-- Existing unary certificates embed in native list coverage. -/
-theorem Arrow.toCallArrow {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) :
-    CallArrow G R (L.map fun p => ([p.1], p.2)) [c] d := by
-  induction hc with
-  | empty => exact .empty (by simp)
-  | source hm hd hc => exact .source (List.mem_map_of_mem hm) ⟨hd, trivial⟩ hc
-  | union _ _ hl hh => exact .union (pre := []) (suffix := []) hl hh
-  | combine _ _ hg hl hh => exact .combine hl hh hg
-
-/-- Native coverage over singleton signatures recovers the existing unary rules. -/
-theorem CallArrow.toArrow {G : NormalGraph ι} {R L c d}
-    (hc : CallArrow G R (L.map fun p => ([p.1], p.2)) [c] d) : Arrow G R L c d := by
-  generalize he : [c] = As at hc
-  induction hc generalizing c with
-  | empty hem => simp only [← he, List.mem_singleton] at hem; subst c; exact .empty
-  | source hm hd hr =>
-    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hm
-    rw [← he] at hd
-    exact .source hp hd.1 hr
-  | @union pre a suffix d b hl hh il ir =>
-    have hlen := congrArg List.length he
-    simp only [List.length_cons, List.length_nil, List.length_append] at hlen
-    have hp : pre = [] := by simpa only [List.length_eq_zero_iff] using (show pre.length = 0 by omega)
-    have hs : suffix = [] := by simpa only [List.length_eq_zero_iff] using (show suffix.length = 0 by omega)
-    subst pre; subst suffix
-    simp only [List.nil_append, List.cons.injEq, and_true] at he
-    subst c
-    exact .union (il rfl) (ir rfl)
-  | combine hl hh hg il ir => exact .combine (il he) (ir he) hg
-
-theorem Arrow.sound {G : NormalGraph ι} {R L c d} (hc : Arrow G R L c d) (n : Nat)
-    (hr : ∀ j, j < n → ∀ a b, R a b → FamLeAt G a b j)
-    (W : WorldT n) (v : Val)
-    (hv : arrowsT (L.map fun p => (meaning G p.1, meaning G p.2)) n W v) :
-    arrowT (meaning G c) (meaning G d) n W v := by
-  have hcalls : callsT ((L.map fun p => ([p.1], p.2)).map
-      fun p => (p.1.map (meaning G), meaning G p.2)) n W v := by
-    simpa only [List.map_map, Function.comp_def, List.map_cons, List.map_nil] using
-      (arrowsT_callsT _ n W v).mp hv
-  have hout := hc.toCallArrow.sound n hr W v hcalls
-  have harr := (arrowsT_callsT [(meaning G c, meaning G d)] n W v).mpr hout
-  exact ⟨harr.1, harr.2 (meaning G c, meaning G d) (by simp)⟩
-
 def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
     Clause (List ι) → Clause (List ι) → Prop
   | .nul, .nul => True
@@ -252,10 +193,10 @@ def Covers (G : NormalGraph ι) (R : List ι → List ι → Prop) :
   | .boolLit _, .bool => True
   | .boolLit a, .boolLit b => a = b
   | .refs a bs, .refs c ds => ∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x
-  | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, Arrow G R L p.1 p.2
+  | .arrs L, .arrs M | .callable _ _ L, .arrs M => ∀ p ∈ M, CallArrow G R L p.1 p.2
   | .callable a bs L, .callable c ds M =>
       (∀ b ∈ c :: ds, ∃ x ∈ a :: bs, R x b ∧ R b x) ∧
-      ∀ p ∈ M, Arrow G R L p.1 p.2
+      ∀ p ∈ M, CallArrow G R L p.1 p.2
   | _, _ => False
 
 theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat)
@@ -277,10 +218,10 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
       exact ⟨hr j hj x b hxb U u, hr j hj b x hbx U u⟩
     simpa [sem, refsT] using hout
   · intro hv
-    refine ⟨hv.1, ?_⟩
+    apply callsT_of_signatures (callsT_callable hv)
     intro p hp
     obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-    exact (Arrow.sound (hc q hq) n hr W v hv).2
+    exact CallArrow.sound (hc q hq) n hr W v hv
   · rename_i b
     cases b <;> intro hv <;> cases hv
     · exact Or.inr rfl
@@ -288,10 +229,10 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
   · cases hc; exact id
   · exact id
   · intro hv
-    refine ⟨hv.2.1, ?_⟩
+    apply callsT_of_signatures (callsT_callable hv.2)
     intro p hp
     obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
-    exact (Arrow.sound (hc q hq) n hr W v hv.2).2
+    exact CallArrow.sound (hc q hq) n hr W v hv.2
   · rename_i a bs L c ds M
     intro hv
     have hall : ∀ x ∈ a :: bs, bagT (meaning G x) n W v := by
@@ -302,10 +243,11 @@ theorem Covers.sound {G : NormalGraph ι} {R a b} (hc : Covers G R a b) (n : Nat
       apply (bagT_contractive n (meaning G x) (meaning G b) ?_ W v).mp (hall x hx)
       intro j hj U u
       exact ⟨hr j hj x b hxb U u,hr j hj b x hbx U u⟩
-    refine ⟨by simpa [CallableConjunctions.propsT] using hout, hv.2.1, ?_⟩
+    refine ⟨by simpa [CallableConjunctions.propsT] using hout, ?_⟩
+    apply callsT_of_signatures (callsT_callable hv.2)
     intro p hp
     obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
-    exact (Arrow.sound (hc.2 q hq) n hr W v hv.2).2
+    exact CallArrow.sound (hc.2 q hq) n hr W v hv.2
 
 /-- Each split part of each source clause must be covered by some single target
 clause. A `bool` source is therefore discharged by the pair of Boolean singleton
@@ -359,6 +301,5 @@ theorem Sub.congr {G : NormalGraph ι} {S S' T T' : List ι}
 
 #print axioms Domains.sound
 #print axioms CallArrow.sound
-#print axioms Arrow.sound
 #print axioms Sub.sound
 end Verification.ExperimentState.PositiveRules

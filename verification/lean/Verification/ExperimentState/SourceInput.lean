@@ -31,7 +31,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
     if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
         let (arg, result) ← callableShape a
-        return (← callableType arg, ← callableType result)
+        return ([← callableType arg], ← callableType result)
       return [← SourceTypes.use (.arrs signatures.eraseDups)]
     else
       let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]

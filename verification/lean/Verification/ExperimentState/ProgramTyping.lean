@@ -36,8 +36,8 @@ theorem meaning_value {G : NormalGraph ι} {A n W v} (h : meaning G A n W v) :
   | bool => rcases hc with rfl | rfl <;> exact ⟨rfl, trivial⟩
   | boolLit b => cases b <;> cases hc <;> exact ⟨rfl, trivial⟩
   | refs a rest => obtain ⟨l, _, rfl, _⟩ := hc.1; exact ⟨rfl, trivial⟩
-  | arrs L => exact ⟨hc.1.val, hc.1.scoped⟩
-  | callable a bs L => exact ⟨hc.2.1.val,hc.2.1.scoped⟩
+  | arrs L => exact ⟨(callsT_callable hc).val, (callsT_callable hc).scoped⟩
+  | callable a bs L => exact ⟨(callsT_callable hc.2).val,(callsT_callable hc.2).scoped⟩
   | undef => subst v; exact ⟨rfl, trivial⟩
 
 theorem meaning_valOnly (G : NormalGraph ι) (A : Ty ι) : ValOnly (meaning G A) :=
@@ -107,17 +107,6 @@ theorem invocation_of_body {G : NormalGraph ι} {Γ ρ n W b arity}
   rw [← hlength, CallArguments.parameters_exact]
   rw [show args.length = 0 + args.length from (Nat.zero_add _).symm, instantiate_args ρ he.1 hargs]
   exact hb q hq j U heap _ henv hu hok
-
-/-- Unary graph clauses use the same parameter-environment proof. -/
-theorem code_of_body {G : NormalGraph ι} {Γ ρ n W b}
-    {L : List (Ty ι × Ty ι)} (he : EnvOk G Γ ρ n W)
-    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (p.1 :: Γ) env j U →
-      WorldAdm U → HeapOk j U heap → Safe (meaning G p.2) j U heap (instantiate 0 env b)) :
-    CodeSpec (L.map fun p => (meaning G p.1, meaning G p.2)) n W (instantiate 1 ρ b) := by
-  have hs := invocation_of_body (arity := 1) (L := L.map fun p => ([p.1], p.2)) he
-    (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; rfl)
-    (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; exact hb q hq)
-  simpa only [CodeSpec, List.map_map, Function.comp_def, List.map_cons, List.map_nil] using hs
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
@@ -214,18 +203,6 @@ theorem call_safe {B : Fam} (xs : List (Fam × Tm))
     (by intro A h; obtain ⟨p,hp,rfl⟩ := List.mem_map.mp h; exact hAv p hp)
     hf' (List.mem_singleton_self _) hargs hv' hok'
 
-/-- Unary application is a specialization of effectful list evaluation. -/
-theorem app_safe {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
-    {n W heap f a} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe (arrowT A B) n W heap f) (ha : FutureSafe A n W a) :
-    Safe B n W heap (.app f a) := by
-  apply call_safe [(A,a)] (by intro p hp; cases List.mem_singleton.mp hp; exact hA)
-    (by intro p hp; cases List.mem_singleton.mp hp; exact hAv) hw hh
-  · apply Safe_mono n _ W heap f hf
-    intro k hk U v hv
-    exact (arrowsT_callsT [(A,B)] k U v).mp ((arrowsT_singleton A B k U v).mpr hv)
-  · intro p hp; cases List.mem_singleton.mp hp; exact ha
-
 def tagShape (tag : Tag) (s : Nat) : Bool :=
   match tag with
   | .isNul => s == 0 | .isBool => s == 1 | .isRef => s == 2
@@ -257,17 +234,18 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | fls : Represents G A .bool → HasTy G Γ .fls A
   | truLit : Represents G A (.boolLit true) → HasTy G Γ .tru A
   | flsLit : Represents G A (.boolLit false) → HasTy G Γ .fls A
-  | funE : Represents G F (.arrs L) →
-      (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.funE b) F
+  | funE : Represents G F (.arrs L) → (∀ p ∈ L, p.1.length = arity) →
+      (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) .nul) F
   | makeCallable : Represents G F (.callable P [] L) → HasTy G Γ a P →
-      (∀ p ∈ L, HasTy G (p.1 :: Γ) b p.2) → HasTy G Γ (.attach b a) F
-  | callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → (A,B) ∈ L →
+      (∀ p ∈ L, p.1.length = arity) →
+      (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) a) F
+  | callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → ([A],B) ∈ L →
       HasTy G Γ a A → HasTy G Γ (.app f a) B
   | readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) →
       HasTy G Γ (.read a) P
   | writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → HasTy G Γ b P →
       Represents G N .nul → HasTy G Γ (.write a b) N
-  | app : HasTy G Γ f F → Represents G F (.arrs L) → (A, B) ∈ L →
+  | app : HasTy G Γ f F → Represents G F (.arrs L) → ([A], B) ∈ L →
       HasTy G Γ a A → HasTy G Γ (.app f a) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   | alloc : HasTy G Γ a A → Represents G Ref (.refs A []) → HasTy G Γ (.alloc a) Ref
@@ -313,33 +291,35 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
   | truLit hr | flsLit hr =>
     intro n W h ρ he hw hh
     exact value_safe _ _ _ _ _ rfl ((represents_sem hr n W _).mpr rfl)
-  | @funE F L Γ b hr hb ih =>
+  | @funE F L arity Γ b hr hlen hb ih =>
     intro n W h ρ he hw hh
-    have hcode : CodeSpec (L.map fun p => (meaning G p.1, meaning G p.2))
-        n W (instantiate 1 ρ b) := by
-      exact code_of_body he (fun p hp => ih p hp)
-    have hs := attach_rule nulT_adm n W h _ .nul hcode rfl hw hh rfl
+    simp only [instantiate, Nat.zero_add]
+    have hcode := invocation_of_body he hlen (fun p hp => ih p hp)
+    have hs := make_callable_rule nulT_adm arity n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr hv.2) W h _ hs
-  | @makeCallable F P L Γ a b hr ha hb iha ihb =>
+  | @makeCallable F P L Γ a arity b hr ha hlen hb iha ihb =>
     intro n W h ρ he hw hh
-    have hcode : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2))
-        n W (instantiate 1 ρ b) := by
-      exact code_of_body he (fun p hp => ihb p hp)
-    apply bind (Tm.attach (instantiate 1 ρ b)) Step.makeC n W h _ hw hh (iha n W h ρ he hw hh)
+    simp only [instantiate, Nat.zero_add]
+    have hcode := invocation_of_body he hlen (fun p hp => ihb p hp)
+    apply bind (Tm.make (.closure arity (instantiate arity ρ b))) Step.makeC n W h _ hw hh
+      (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
-    have hc : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2)) j U (instantiate 1 ρ b) :=
-      (arrowsT_code_iff _ 0 _ j U).mp ((arrowsT_adm _).mono j _ U hx _
-        ((arrowsT_adm _).down_le n j hj W _ ((arrowsT_code_iff _ 0 _ n W).mpr hcode)))
-    have hs := attach_rule (meaning_adm G P) j U heap _ av hc hav hu hok ha'
+    have hc : InvocationSpec arity (L.map fun p => (p.1.map (meaning G),meaning G p.2))
+        j U (instantiate arity ρ b) :=
+      (callsT_code_iff _ arity 0 _ j U).mp ((callsT_adm _).mono j _ U hx _
+        ((callsT_adm _).down_le n j hj W _ ((callsT_code_iff _ arity 0 _ n W).mpr hcode)))
+    have hs := make_callable_rule (meaning_adm G P) arity j U heap _ av hc hav hu hok ha'
     exact Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨⟨hv.1,by simp⟩,hv.2⟩) U heap _ hs
   | @callCallable Γ f F P Ps L A B a hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
-    apply app_safe (meaning_adm G A) (meaning_valOnly G A) hw hh
+    apply call_safe [(meaning G A,instantiate 0 ρ a)]
+      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_adm G A)
+      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_valOnly G A) hw hh
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
-      have hm := ((represents_sem hr k U v).mp hv).2
-      exact ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
-    · intro j hj U hx hu heap hok
+      exact callsT_select (((represents_sem hr k U v).mp hv).2) (List.mem_map.mpr ⟨([A],B), hp, rfl⟩)
+    · intro p hp; cases List.mem_singleton.mp hp
+      intro j hj U hx hu heap hok
       exact iha j U heap ρ (he.transfer j hj U hx) hu hok
   | @readCallable Γ a Ref A Ps L ha hr ih =>
     intro n W h ρ he hw hh
@@ -359,12 +339,14 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact bag_write (meaning_adm G A) ((represents_sem hr k V av).mp ha'').1.1 hb' hbval hv hok'
   | @app Γ f F L A B a hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
-    apply app_safe (meaning_adm G A) (meaning_valOnly G A) hw hh
+    apply call_safe [(meaning G A,instantiate 0 ρ a)]
+      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_adm G A)
+      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_valOnly G A) hw hh
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
-      have hm := (represents_sem hr k U v).mp hv
-      exact ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
-    · intro j hj U hx hu heap hok
+      exact callsT_select ((represents_sem hr k U v).mp hv) (List.mem_map.mpr ⟨([A],B), hp, rfl⟩)
+    · intro p hp; cases List.mem_singleton.mp hp
+      intro j hj U hx hu heap hok
       exact iha j U heap ρ (he.transfer j hj U hx) hu hok
   | @letE Γ a A b B ha hb iha ihb =>
     intro n W h ρ he hw hh
@@ -520,9 +502,7 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
 
 #print axioms bind_list
 #print axioms call_safe
-#print axioms app_safe
 #print axioms invocation_of_body
-#print axioms code_of_body
 #print axioms HasTy.invocationSpec
 #print axioms HasTy.sound
 #print axioms HasTy.closed_safe
