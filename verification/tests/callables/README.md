@@ -4,6 +4,11 @@ Source examples for callable contracts, checked through the existing parser,
 SKJS claim exporter, certificate producer, independent consumer, and reports.
 They have their own **Callables** group in the corpus and report viewer.
 
+Add coverage for a distinct semantic obligation or an interaction that could
+fail even when its components pass separately. Minor syntax variations alone
+do not warrant another example. If a standalone Lean test takes too long to
+develop or check, defer it until the case is expressible through the pipeline.
+
 | Example in [unions.ts](unions.ts) | What it establishes |
 | --- | --- |
 | `guardedCallableUnion` | A null guard permits calling either remaining signature and preserves both possible results. |
@@ -25,6 +30,16 @@ alongside the other source fixtures in its shared container.
 Run `make verify-test` for the suites or `make verify-examples` for the corpus.
 `make verify` runs both. Core semantic regressions remain in
 `lean/Verification/ExperimentState/`, including `SourceCallableUnionTests.lean`.
+
+Pending pipeline coverage: call one factory twice, with each invocation allocating
+a private Boolean cell and returning a closure that writes its argument and
+returns the old contents. Starting from false, calls `first(true)`,
+`second(false)`, `first(false)` should return false, false, true. A control with
+the cell allocated outside the factory should return false, true, false despite
+distinct returned closure identities. This combines fresh allocation, escaping
+capture, and mutation; identity-only and single-capture tests do not establish
+instance isolation. Add it when local closure factories with callable result
+contracts are supported by the source pipeline. It is not current coverage.
 
 That module also checks unions of overloaded functions using explicit normalized
 source claims. Null and Boolean arguments select different signatures in each
