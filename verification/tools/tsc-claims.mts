@@ -616,17 +616,23 @@ function alwaysReturns(stmt: any): boolean {
 
 /** Refine a fixed binding contract only along explicit null-test edges.
  * A preceding returning arm establishes the opposite edge for its continuation.
- * Stop at function boundaries: a guard on a later invocation is not in scope. */
+ * Immutable const captures retain creation-time guards across arrow functions;
+ * parameters and other function boundaries stop the walk. */
 function nullGuardLabels(node: any, checker: Checker, labels: number[], anchor = node): number[] {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return labels;
+  const declaration = declarationOf(sym);
+  const immutableCapture = declaration && ts.isVariableDeclaration(declaration) &&
+    ts.isVariableDeclarationList(declaration.parent) &&
+    (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
   const apply = (cond: any, truth: boolean) => {
     const test = testedNullSymbol(cond, checker);
     if (test?.sym.id === sym.id)
       labels = labels.filter((label) => (label === 0) === (test.equal === truth));
   };
   let child = anchor, cur = anchor.parent;
-  while (cur && !isFunctionLike(cur)) {
+  while (cur) {
+    if (isFunctionLike(cur) && !(immutableCapture && ts.isArrowFunction(cur))) break;
     if (ts.isIfStatement(cur)) {
       if (child === cur.thenStatement) apply(cur.expression, true);
       if (child === cur.elseStatement) apply(cur.expression, false);

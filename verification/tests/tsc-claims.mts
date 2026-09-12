@@ -27,8 +27,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tsc-claims-"));
 const expected = {
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
-  // A guarded local currently loses its null refinement in a returned closure.
-  "callables/unions": "failed",
+  // Guarded const captures retain null refinements in returned closures.
+  "callables/unions": "verified",
   // tsc's flow narrowing carries these, where SKJS's own claims needed a
   // hand repair at the loop exit or the negation.
   "stateful-source/basic": "verified",
@@ -102,7 +102,8 @@ for (const [name, want] of Object.entries(expected)) {
         const callee = escaped.body[2].e.body.callee;
         const calleeClaim = escapedClaims.expressions.find((p) => p.pos[0] === callee.pos[0] && p.pos[1] === callee.pos[1]);
         assert.ok(calleeClaim);
-        assert(calleeClaim.type.includes(0), "baseline: closure boundary loses the local null refinement");
+        assert.equal(calleeClaim.type.length, 1);
+        assert(!calleeClaim.type.includes(0), "returned closure retains its immutable capture refinement");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);

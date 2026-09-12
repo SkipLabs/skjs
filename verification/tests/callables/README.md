@@ -20,7 +20,7 @@ develop or check, defer it until the case is expressible through the pipeline.
 | `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
 | `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
 | `callableArgumentWrite` | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view. |
-| `escapedLocalCallback` | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. SKJS verifies it; the tsc baseline currently loses the guard at the closure boundary. |
+| `escapedLocalCallback` | A returned closure captures a guarded nullable const whose declaration is wider than its initializer. Both producers verify it; the tsc suite checks that its callee claim retains the creation-time guard. |
 | `distinctNullableCallbacks` | Same-typed local callbacks require independent null guards; the tsc suite checks that guarding the first leaves the second nullable, then each own guard permits its call. |
 | `nullableFactoryResult` | A factory result can mix a callable with null; both alternatives survive the factory contract and invocation, and the caller must guard the returned value before calling it. |
 | `returnedCallableDomain` | Factory branches with Boolean and true-only callable domains both implement a true-only result contract; neither the nested result claim nor a later call can widen that shared domain. |

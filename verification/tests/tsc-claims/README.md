@@ -50,8 +50,9 @@ limits: they need a current-content assertion, which it does not write.
 Lambda and allocation claims under union contexts use the expression's own
 arrow or cell type. Explicit null tests refine a binding's declared contract
 within branches and after an arm that returns; the fallback no longer restores
-null at guarded reads or calls. Matching uses symbol identity and stops at
-function boundaries. Statement entries use the same declared contracts and
+null at guarded reads or calls. Matching uses symbol identity. Immutable const
+captures retain guards from arrow creation; parameters and other function
+boundaries stop the walk. Statement entries use the same declared contracts and
 guards even for bindings absent from that statement; `distinctNullableCallbacks`
 checks both reference and entry claims. No heap-content
 refinement is inferred from these guards.
