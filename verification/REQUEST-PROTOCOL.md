@@ -442,9 +442,9 @@ bounded recursion, and the tsc producer applies a depth limit when translating
 nested operands. No unsupported union alternative is discarded.
 
 `SourceInput.callableType` lowers nested callable operands to the existing
-arrow rows. `FunctionClaims.translate_exact` remains the exact-interpretation
-theorem for its primitive signature decoder; it is not a new recursive source
-extraction theorem. The resulting requests use the existing lambda, application
+arrow rows. `SourceTypes.arrow_exact` characterizes the interpretation of a
+single arrow row for arbitrary graph domain and result types; it does not prove
+recursive JSON decoding or source extraction correct. The resulting requests use the existing lambda, application
 and graph certificate rules. Source extraction remains a reviewed boundary,
 and none of this asserts equivalence with SKJS's full structural function types.
 

@@ -40,7 +40,11 @@ alongside the other source fixtures in its shared container.
 
 Run `make verify-test` for the suites or `make verify-examples` for the corpus.
 `make verify` runs both. Core semantic regressions remain in
-`lean/Verification/ExperimentState/`, including `SourceCallableUnionTests.lean`.
+`lean/Verification/ExperimentState/`. `SourceCallableUnionTests.lean` isolates
+union decoding, operand-slot lowering and overload selection with explicit
+claims. Guard polarity and guarded callable results are exercised through the
+source suites instead of a second standalone Lean guard matrix. Recursive
+callable bags and recursive invocation remain separate model obligations.
 
 [factories.ts](factories.ts) exercises two calls to a factory that allocates a
 private Boolean cell and returns a closure that writes its argument and returns

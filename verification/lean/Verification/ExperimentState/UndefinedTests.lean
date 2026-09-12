@@ -51,6 +51,5 @@ private def write (A : Ty Nat) : Bool :=
 
 #print axioms SourceTypes.translate_exact
 #print axioms CellClaims.reference_exact
-#print axioms FunctionClaims.translate_exact
 #print axioms HasTy.sound
 end Verification.ExperimentState.UndefinedTests

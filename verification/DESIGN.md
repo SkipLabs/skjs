@@ -520,11 +520,10 @@ existing calculus rule, then returns the saved RHS to match JavaScript assignmen
 semantics; temporary slots are discarded by explicit edge maps. An execution
 regression checks the extracted alias-assignment graph's heap and result.
 
-The first closure slice is connected through
-[FunctionClaims.lean](lean/Verification/ExperimentState/FunctionClaims.lean).
-That initial decoder covers primitive unary arrows, singly or as an intersection
-of signatures proved one by one on the body. The source layer now uses
-`SourceInput.callableType` for recursively callable arguments and results.
+Closure contracts are decoded by
+[SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean).
+`callableType` checks unary signature shapes and recursively lowers primitive
+and callable arguments and results, including every union and overload arm.
 Bodies compose literals, variables, cell allocation, reads, assignments and
 calls, including nested expression arrows.
 An internal expression claim can differ from the declared result: both are
@@ -903,8 +902,8 @@ that guarantee. `make verify` remains the experiment's source-facing command.
 
 ### Callable integration
 
-A unary arrow between primitive unions is one interned row of the request's
-table. `FunctionClaims.arrow_exact` proves the row's domain and codomain
+A unary arrow is one interned row of the request's
+table. `SourceTypes.arrow_exact` proves the row's domain and codomain
 interpretations. Existing application and lambda rules discharge their
 obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the table encoding.
 

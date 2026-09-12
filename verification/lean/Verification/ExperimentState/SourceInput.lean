@@ -1,4 +1,3 @@
-import Verification.ExperimentState.FunctionClaims
 import Verification.ExperimentState.CellUnion
 
 /-! Stateful source syntax and raw claims. Types remain JSON until consumed, so
@@ -6,6 +5,16 @@ unsupported unused claims do not become invented types. Cell annotations and
 claims use the same bounded contract decoder. -/
 namespace Verification.ExperimentState.SourceInput
 open Lean ProgramTyping PositiveRules
+
+/-- Validate a free unary signature without projecting away object requirements. -/
+private def callableShape (a : Json) : Except String (Json × Json) := do
+  CellClaims.fieldsExactly a ["a","params","result","construct","array"]
+  if (← jStr (← jField a "a")) != "function" then throw "expected a function atom"
+  for key in ["construct","array"] do
+    let mode ← jStr (← jField a key)
+    if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
+  let [arg] ← jArr a "params" | throw "expected one required function parameter"
+  return (arg, ← jField a "result")
 
 /-- Callable operands may recursively contain callables and primitives.
 Every union and overload arm is checked; record operands remain excluded. -/
@@ -15,7 +24,7 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
-        let (arg, result) ← FunctionClaims.decodeShape a
+        let (arg, result) ← callableShape a
         return (← callableType arg, ← callableType result)
       return [← SourceTypes.use (.arrs signatures.eraseDups)]
     else

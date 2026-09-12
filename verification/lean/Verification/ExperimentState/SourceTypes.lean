@@ -152,6 +152,16 @@ theorem translate_exact {T : Table} (hT : initial <+: T) {t : Wire.Ty} {A u v}
       cases b <;> cases hv <;> simp [Wire.mem, htop, admits, List.any_eq_true]
   · contradiction
 
+/-- Exact arrow interpretation, including its contravariant domain, over any
+table holding the row. -/
+theorem arrow_exact {T : Table} {D R : Ty Nat} (hm : [.arrs [(D,R)]] ∈ T) (n W v) :
+    meaning (graph T) [label T (.arrs [(D,R)])] n W v ↔
+      arrowT (meaning (graph T) D) (meaning (graph T) R) n W v := by
+  rw [label_meaning hm]
+  simpa [PositiveNormalization.sem] using
+    arrowsT_singleton (meaning (graph T) D) (meaning (graph T) R) n W v
+
+#print axioms arrow_exact
 #print axioms translate_exact
 #print axioms label_meaning
 end Verification.ExperimentState.SourceTypes
