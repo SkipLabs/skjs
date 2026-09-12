@@ -69,3 +69,20 @@ function aliasedCallableSelection(
   };
   return invoke(null);
 }
+
+/**
+ * Both possible callees accept true, although only one accepts false. The
+ * selected function can be called at the shared domain, and its result must
+ * cover both alternatives.
+ */
+function sharedCallableDomain(
+  choose: boolean,
+  wide: (value: boolean) => true,
+  narrow: (value: true) => false,
+): boolean {
+  const invoke: (unit: null) => boolean = (unit: null): boolean => {
+    const selected = choose ? wide : narrow;
+    return selected(true);
+  };
+  return invoke(null);
+}

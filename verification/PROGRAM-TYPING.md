@@ -1414,6 +1414,10 @@ captures it in a nested closure. Both alternatives survive the selection and
 the next statement's environment. False initializer and entry claims, reversed
 selection, reuse of the original nullable input, and narrowed nested-call results
 fail independently checked obligations.
+`sharedCallableDomain` selects between Boolean-accepting and true-only functions.
+The shared true argument verifies. A false argument, forged widening of the
+callee's domain, removal of its restrictive alternative, or narrowed result
+fails both production and independent consumption.
 [SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
 checks reads and writes through unions of locally allocated invariant cells
 inside source closures. Reads join possible contents. Writes check the saved

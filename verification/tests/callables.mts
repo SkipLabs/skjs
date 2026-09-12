@@ -142,6 +142,40 @@ try {
     expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
   }
 
+  for (const [name, edit] of [
+    ["argument must fit every selected callable", (call, at) => {
+      call.arg.lit.v = "false";
+      at(call.arg).type = lit("false");
+    }],
+    ["claimed callee cannot widen a narrow domain", (call, at) => {
+      const arrows = at(call.callee).type.atoms;
+      assertCallableAlternatives(arrows);
+      assert(arrows.some((a: any) => JSON.stringify(a.params[0]) === JSON.stringify(lit("true"))));
+      for (const arrow of arrows) arrow.params[0] = {top: false, atoms: [{a: "boolean"}]};
+      call.arg.lit.v = "false";
+      at(call.arg).type = lit("false");
+    }],
+    ["callee claim cannot discard the restrictive alternative", (call, at) => {
+      const type = at(call.callee).type;
+      assertCallableAlternatives(type.atoms);
+      type.atoms = type.atoms.filter((a: any) => a.params[0].atoms.some((p: any) => p.a === "boolean"));
+      assert.equal(type.atoms.length, 1);
+      call.arg.lit.v = "false";
+      at(call.arg).type = lit("false");
+    }],
+    ["shared-domain result must retain both alternatives", (call, at) => {
+      at(call).type = lit("true");
+    }],
+  ] as [string, (...xs: any[]) => any][]) {
+    const a = clone(ast), c = clone(claims);
+    const f = a.functions.find((f: any) => f.name === "sharedCallableDomain");
+    const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "sharedCallableDomain");
+    const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
+    edit(f.body[0].init.body.body.e, at);
+    expect(name, run("--produce-stateful-source", a, c), false);
+    expect(`${name} (consumer)`, run("--check-stateful-source", a, c, evidence), false);
+  }
+
   const types: any[] = [];
   for (const file of claims) for (const f of file.functions) {
     types.push(f.retType, ...f.params.map((p: any) => p.type), ...f.exprs.map((e: any) => e.type));
