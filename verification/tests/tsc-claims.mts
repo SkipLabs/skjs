@@ -125,6 +125,13 @@ for (const [name, want] of Object.entries(expected)) {
         assert.equal(compoundClaim.type.length, 1);
         assert(!compoundClaim.type.includes(0) && !compoundClaim.type.includes(3),
           "the compound guard excludes both absence tags before capture");
+        const ambiguous = parsed.functions.find((f: any) => f.name === "ambiguousCaptureGuard");
+        const ambiguousClaims = normalized.functions.find((f) => f.name === ambiguous.name)!;
+        const ambiguousRef = ambiguous.body[1].then[0].e.body.cond.l;
+        const ambiguousClaim = ambiguousClaims.expressions.find((p) => p.pos[0] === ambiguousRef.pos[0] && p.pos[1] === ambiguousRef.pos[1]);
+        assert.ok(ambiguousClaim);
+        assert(ambiguousClaim.type.includes(0), "a successful disjunction must retain the path admitted by flag");
+        assert.equal(ambiguousClaim.type.length, 2, "capture retains both null and the callable");
         const fn = parsed.functions.find((f: any) => f.name === "distinctNullableCallbacks");
         const fc = normalized.functions.find((f) => f.name === fn.name)!;
         assert.ok(fc);

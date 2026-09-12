@@ -262,3 +262,18 @@ function compoundAbsenceCapture(flag: boolean): (unit: null) => boolean {
   }
   return (unit: null): boolean => callback(unit);
 }
+
+/**
+ * The disjunction can succeed because of flag even when callback is null.
+ * Its returned closure therefore needs its own null guard; a fact from only
+ * the left successful path is not a fact about the entire branch.
+ */
+function ambiguousCaptureGuard(flag: boolean): (unit: null) => boolean {
+  const callback: ((unit: null) => boolean) | null = (unit: null): boolean =>
+    flag;
+  if (callback !== null || flag) {
+    return (unit: null): boolean =>
+      callback === null ? false : callback(unit);
+  }
+  return (unit: null): boolean => false;
+}

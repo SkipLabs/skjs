@@ -20,6 +20,7 @@ develop or check, defer it until the case is expressible through the pipeline.
 | `sharedCallableDomain` | A call must fit the shared argument domain of Boolean-accepting and true-only alternatives, while retaining both possible results. |
 | `branchLocalCallableDomains` | Branch-refined Boolean arguments satisfy different callable domains; neither branch facts nor singleton results can be transferred to the other branch. |
 | `callableArgumentWrite` | An assignment used as a call argument checks both storage and parameter contracts; its false RHS admits an explicitly refined false-only callable view. |
+| `ambiguousCaptureGuard` | A successful disjunction may be justified by a separate Boolean flag; the returned closure must retain the nullable capture and guard it itself. The tsc suite checks both alternatives survive. |
 | `compoundAbsenceCapture` | A returning null-or-undefined guard must exclude both tags before closure creation. Both producers verify it, and the tsc suite checks both exclusions. |
 | `twoAbsenceCapture` | Eliminating undefined must retain null in a returned closure capture; its inner null guard is still needed. Both producers verify it; the tsc suite checks that undefined is removed while null remains. |
 | `laterGuardedCallback` | A guard after closure creation cannot refine its earlier capture; the closure needs its own guard. The tsc suite checks the pre-guard nullable claim, and a reversed inner guard fails independently of the later outer guard. |
