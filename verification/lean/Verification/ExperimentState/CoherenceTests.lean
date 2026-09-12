@@ -23,6 +23,11 @@ example (D : Registry) : ¬ Names D (.fn 0 (.var 1)) := by simp [Names, Scoped]
 example : ¬ Names [.absent, .closure 1 (.fn 0 (.var 0))] (.fn 1 (.fn 0 (.var 0))) := by
   simp [Names]
 
+/- Native call lists must not hide malformed syntax after the first argument.
+These check syntax traversal; non-singleton source calls remain gated. -/
+#guard !checkScope 0 (.call .nul [.tru, .var 0])
+#guard !sourceTerm (.call .nul [.tru, .obj 0 .absent])
+
 /- Source functions may capture variables, but may not spell allocated identities. -/
 #guard sourceTerm (.funE (.var 1))
 #guard !sourceTerm (.funE (.obj 0 .absent))

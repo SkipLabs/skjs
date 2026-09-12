@@ -21,7 +21,7 @@ private def branchProof (F R : Ty Nat) : Evidence Nat :=
   .node ⟨[F],callClaim.term,[0,1]⟩ (.sub .subset) [e]
 private def proof : Evidence Nat :=
   .node callClaim (.unionVar 0) [branchProof [2] [0],branchProof [3] [1]]
-theorem checked : checkTree G proof = true := by cbv
+theorem checked : checkTree G proof = true := by decide +kernel
 
 -- Search now derives the same union elimination, without an auxiliary shared
 -- constructor view. Each alternative checks the argument and result separately.

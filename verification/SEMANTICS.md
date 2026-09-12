@@ -66,7 +66,7 @@ that a term and heap have at most one successor.
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This
-keeps certificate equality executable as the language moves to list-valued
+keeps certificate equality executable for list-valued
 applications: Lean's `DecidableEq` deriving handler does not support nested
 mutually recursive types. The comparisons inspect every constructor field,
 including descriptor arity.
@@ -108,6 +108,19 @@ typing theorem uses semantic environments of closed values; its closed-program
 interface explicitly checks scope.
 
 ## Argument-list preparation
+
+Applications use the native constructor `call f args`, where `args` is a list
+of terms. `app f a` is only notation for `call f [a]`; the old binary constructor
+has been removed. Term induction, structural equality, substitution, capture
+instantiation, scope checking and object-name traversal all visit the full list.
+The list traversal helpers are structurally recursive and proved equivalent to
+`map` or universal membership, so the existing singleton computations still
+reduce directly.
+
+The maintained `Step` and typing rules currently cover singleton calls. The
+preparation and dispatch interface below describes arbitrary lists; connecting
+it to the native non-singleton terms is the next operational step. Merely
+constructing a `call` term does not establish that it can step or is typable.
 
 [CallArguments.lean](lean/Verification/ExperimentState/CallArguments.lean)
 defines preparation separately from invocation. A frame contains a callee term
@@ -187,9 +200,10 @@ obligation, and existing callable creation proofs use that equivalence. The
 current beta rule and semantic call helper both use `bindParameters` with the
 saved descriptor's arity. `arrowsT_invocation_iff` connects unary actual-argument
 contracts to code of any declared arity. Source creation still uses arity one
-(including the current implicit-undefined thunk encoding). List-valued application
-terms, list-domain type-graph nodes, typing certificates and source integration
-remain to be added before multi-argument source calls are enabled.
+(including the current implicit-undefined thunk encoding). General argument-list
+reduction rules, list-domain type-graph nodes, typing
+certificates and source integration remain to be added before multi-argument
+source calls are enabled.
 
 ## Types, worlds and heaps
 

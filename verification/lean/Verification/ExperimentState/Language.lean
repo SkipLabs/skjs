@@ -31,7 +31,7 @@ mutual
 about the same objects. -/
 inductive Tm where
   | var (i : Nat)
-  | app (f a : Tm)
+  | call (f : Tm) (args : List Tm)
   /-- Evaluate `a`, then substitute its value into `b`. Binding allocates no object. -/
   | letE (a b : Tm)
   | nul
@@ -65,10 +65,10 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
   case var.var a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.var.injEq])
-  case app.app a0 a1 b0 b1 =>
+  case call.call a0 a1 b0 b1 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
-    haveI : Decidable (a1 = b1) := tmDecEq a1 b1
-    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.app.injEq])
+    haveI : Decidable (a1 = b1) := argsDecEq a1 b1
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.call.injEq])
   case letE.letE a0 a1 b0 b1 =>
     haveI : Decidable (a0 = b0) := tmDecEq a0 b0
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
@@ -113,6 +113,14 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
     haveI : Decidable (a1 = b1) := tmDecEq a1 b1
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [CallCode.closure.injEq])
 termination_by sizeOf a
+def argsDecEq (a b : List Tm) : Decidable (a = b) := by
+  cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
+  case nil.nil => exact isTrue rfl
+  case cons.cons a as b bs =>
+    haveI : Decidable (a = b) := tmDecEq a b
+    haveI : Decidable (as = bs) := argsDecEq as bs
+    exact decidable_of_iff (a = b ∧ as = bs) (by simp only [List.cons.injEq])
+termination_by sizeOf a
 end
 
 instance : DecidableEq Tm := tmDecEq
@@ -120,6 +128,9 @@ instance : DecidableEq CallCode := callCodeDecEq
 
 #print axioms tmDecEq
 #print axioms callCodeDecEq
+
+/-- Unary application is the singleton case of the argument-list constructor. -/
+@[match_pattern] abbrev Tm.app (f a : Tm) : Tm := .call f [a]
 
 /-- Plain-object allocation is the absent-descriptor case of `make`. -/
 @[match_pattern] abbrev Tm.alloc (a : Tm) : Tm := .make .absent a
@@ -136,7 +147,7 @@ instance : DecidableEq CallCode := callCodeDecEq
 /-- Term induction exposing the body stored inside a call descriptor. -/
 @[elab_as_elim] theorem Tm.induct {P : Tm → Prop}
     (var : ∀ i, P (.var i))
-    (app : ∀ f a, P f → P a → P (.app f a))
+    (call : ∀ f args, P f → (∀ a ∈ args, P a) → P (.call f args))
     (letE : ∀ a b, P a → P b → P (.letE a b))
     (nul : P .nul) (undef : P .undef) (tru : P .tru) (fls : P .fls)
     (objAbsent : ∀ l, P (.obj l .absent))
@@ -149,8 +160,13 @@ instance : DecidableEq CallCode := callCodeDecEq
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with | .absent => True | .closure _ b => P b)
-    var app letE nul undef tru fls ?_ ?_ read write test ite
-    True.intro (fun _ _ h => h) t
+    (motive_3 := fun args => ∀ a ∈ args, P a)
+    var call letE nul undef tru fls ?_ ?_ read write test ite
+    True.intro (fun _ _ h => h) (by simp) (by
+      intro a args ha ih v hv
+      rcases List.mem_cons.mp hv with rfl | hv
+      · exact ha
+      · exact ih v hv) t
   · intro l c ih
     cases c with
     | absent => exact objAbsent l
@@ -184,9 +200,10 @@ def tagHolds : Tag → Val → Bool
   | .isFun, .obj _ (.closure _ _) => true
   | _, _ => false
 
+mutual
 def subst (j : Nat) (a : Tm) : Tm → Tm
   | .var i => if i == j then a else if j < i then .var (i - 1) else .var i
-  | .app f x => .app (subst j a f) (subst j a x)
+  | .call f args => .call (subst j a f) (substArgs j a args)
   | .letE x b => .letE (subst j a x) (subst (j + 1) a b)
   | .nul => .nul
   | .undef => .undef
@@ -200,6 +217,21 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .write x y => .write (subst j a x) (subst j a y)
   | .test k x => .test k (subst j a x)
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
+
+termination_by structural t => t
+
+def substArgs (j : Nat) (a : Tm) : List Tm → List Tm
+  | [] => []
+  | x :: xs => subst j a x :: substArgs j a xs
+termination_by structural xs => xs
+end
+
+@[simp] theorem substArgs_eq_map (j : Nat) (a : Tm) (args : List Tm) :
+    substArgs j a args = args.map (subst j a) := by
+  induction args <;> simp_all [substArgs]
+
+@[simp] theorem subst_app (j : Nat) (a f x : Tm) :
+    subst j a (.app f x) = .app (subst j a f) (subst j a x) := rfl
 
 /-- Substitute the highest parameter slots first. All replacements are closed;
 no argument is evaluated by binding, and nested body binders remain intact. -/

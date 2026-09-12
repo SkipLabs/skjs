@@ -119,16 +119,27 @@ decreasing_by
   simp only [Evidence.node.sizeOf_spec]
   omega
 
+mutual
 def checkScope (d : Nat) : Tm → Bool
   | .var i => decide (i < d)
   | .obj _ .absent => true
   | .obj _ (.closure n b) => checkScope (d+n) b
   | .make (.closure n b) a => checkScope (d+n) b && checkScope d a
   | .letE a b => checkScope d a && checkScope (d+1) b
-  | .app a b | .write a b => checkScope d a && checkScope d b
+  | .call f args => checkScope d f && checkScopes d args
+  | .write a b => checkScope d a && checkScope d b
   | .alloc a | .read a | .test _ a => checkScope d a
   | .ite c a b => checkScope d c && checkScope d a && checkScope d b
   | _ => true
+
+def checkScopes (d : Nat) : List Tm → Bool
+  | [] => true
+  | a :: args => checkScope d a && checkScopes d args
+end
+
+@[simp] theorem checkScopes_iff (d : Nat) (args : List Tm) :
+    checkScopes d args = true ↔ ∀ a ∈ args, checkScope d a = true := by
+  induction args <;> simp_all [checkScopes]
 
 theorem checkScope_iff (d : Nat) (t : Tm) : checkScope d t = true ↔ Scoped d t := by
   induction t using Tm.induct generalizing d <;> simp_all [checkScope, Scoped, and_assoc]

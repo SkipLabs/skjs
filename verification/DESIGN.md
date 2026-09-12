@@ -951,9 +951,11 @@ coherence and beta use it. Unary semantic arrows constrain the supplied actual
 independently of that count. List-signature callable types now lift those code
 contracts to values, with dispatch safety, admissibility and guarded congruence;
 the existing unary type reuses the general proofs through singleton equivalence.
-Next, add list-valued application terms and list-domain type-graph nodes, then
-extend typing certificates and the producer/consumer together. Multi-argument
-source calls remain gated.
+Application syntax now uses a native argument list, with the old unary constructor
+replaced by singleton notation. All binding and syntax-validation traversals cover
+the full list. Next, connect general argument preparation and dispatch to native
+call reduction, then extend type-graph nodes, typing certificates and the
+producer/consumer together. Multi-argument source calls remain gated.
 
 ### Next callable and object milestones
 

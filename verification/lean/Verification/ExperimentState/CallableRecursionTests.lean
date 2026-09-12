@@ -47,7 +47,7 @@ private def certificate : ControlFlow.Certificate Nat :=
    {expression := node [[1],[2]] (.app (.var 0) .nul) [0] .app
       [node [[1],[2]] (.var 0) [1] .var,node [[1],[2]] .nul [0] .nul], edges := []}]
 
-theorem checked : checkClosed G [0] program certificate 0 = true := by cbv
+theorem checked : checkClosed G [0] program certificate 0 = true := by decide +kernel
 #guard match (do
     let response ← produceJson (Lean.toJson request) 10
     verifyJson (Lean.toJson request) response) with
