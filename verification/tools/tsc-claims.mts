@@ -503,9 +503,10 @@ function declarationOf(sym: Symbol): any {
  * own type for the node is the narrowest branch it can infer on its own (one
  * record, or one signature), but a claim allocating into or implementing a
  * conjoined contract needs the wider annotation the value is held to. Prefer
- * that contextual type when it exists and translates. For a lambda with a
- * union context, use the checker's own expression type: the lambda implements
- * an arrow, and its binding or return obligation checks the enclosing union.
+ * that contextual type when it exists and translates. Under a union context,
+ * use the checker's own expression type: an allocation constructs a cell and
+ * a lambda implements an arrow. Its binding or return obligation checks the
+ * enclosing union.
  * No union alternative is selected or discarded by this producer.
  *
  * A `.value` read is a different case: TypeScript narrows a property access
@@ -795,7 +796,7 @@ function typeForExprSite(
   }
   if (kind === "alloc" || kind === "lambda") {
     const ctx = checker.getContextualType(node);
-    if (ctx && (kind !== "lambda" || !isUnionType(ctx))) {
+    if (ctx && !isUnionType(ctx)) {
       try {
         return translateType(ctx, checker, types);
       } catch {

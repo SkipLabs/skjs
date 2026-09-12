@@ -48,7 +48,7 @@ const expected = {
   // current-content assertion, which this producer does not write.
   "skjs-incomplete/write-refined-read": "failed",
   "stateful-source/primitive-callbacks": "failed",
-  // Lambda union contexts work; a nullable allocation context remains unsupported.
+  // Allocations now use cell claims, but guarded reads still retain nullable bindings.
   "stateful-source/null-guards": "failed",
   // tsc rejects these outright, so its claims describe a program it does not
   // accept; the verifier refusing them says nothing about either checker.
@@ -111,6 +111,10 @@ for (const [name, want] of Object.entries(expected)) {
       if (got === "failed")
         detail = (checked.stderr || "").split("\n")[0].replace(/^reject: /, "");
     }
+  }
+  if (name === "stateful-source/null-guards" && got === "failed" &&
+      !detail.includes("every read alternative must name a cell contract")) {
+    got = "unexpected-failure";
   }
   if (got === want) {
     console.log(`  ${name}: ${got}${detail ? ` — ${detail.slice(0, 60)}` : ""}`);

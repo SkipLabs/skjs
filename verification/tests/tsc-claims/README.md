@@ -46,9 +46,11 @@ step, and would make the column's failures mean what SKJS's do.
 
 Three failures are this producer's own limits rather than findings:
 `write-refined-read.ts` and `primitive-callbacks.ts` need a current-content
-assertion, which it does not write. In `null-guards.ts`, lambda claims under
-nullable contexts now use the expression's own arrow type, but an allocation
-claim still carries a nullable context rather than the single cell contract
-required by the allocation rule.
+assertion, which it does not write. In `null-guards.ts`, lambda and allocation
+claims under union contexts now use the expression's own arrow or cell type.
+The remaining failure is a nullable reference claim at a guarded read: the
+producer's declared-type fallback does not yet preserve that null refinement.
+The suite checks this exact failure, so an earlier allocation rejection cannot
+masquerade as the expected result.
 Where `tsc` rejects the program outright, its claims describe something it does
 not accept, and the verifier refusing them says nothing about either checker.
