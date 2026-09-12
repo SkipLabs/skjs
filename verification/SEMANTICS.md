@@ -197,6 +197,14 @@ that transfer to prove same-budget safety of a native call on typed values: the
 call spends one step and the body uses the remaining budget. The existing unary
 `app_elim` now specializes this list-call rule.
 
+`ProgramTyping.call_safe` extends that rule to effectful operand expressions.
+`FutureSafe` requires a pending argument to remain safe after earlier operands
+spend budget and change the heap. `bind_list` evaluates the arguments in order,
+transfers saved values' types to each later world, and invokes its continuation
+only after the complete list is ready. `call_safe` first evaluates the callee,
+then uses that list composition and `call_elim`. Both unary application cases
+in the typing soundness theorem now specialize this proof.
+
 `callsT_adm` proves admissibility without assuming admissible domains, and
 `callsT_congr` proves that every argument position and result is guarded by the
 call step. `ArgsAgree` requires corresponding domain positions and equal list

@@ -958,6 +958,8 @@ the full list. Ready native calls now dispatch arbitrary argument lists, and
 uses that general rule. Native operand reduction now handles any argument count:
 callee first, then the leftmost unfinished actual. Its transitions are proved
 equivalent to the preparation/dispatch interface, deterministic, and coherent.
+Compositional call safety now covers effectful callees and argument lists; both
+unary application typing proofs use it, preserving saved values across effects.
 Body typing now establishes exact-arity list invocation contracts by prepending
 all parameter bindings before captures; unary creation rules share that proof.
 Declarative overload coverage now handles ordered domain lists, pointwise

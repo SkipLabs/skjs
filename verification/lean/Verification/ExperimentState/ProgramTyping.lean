@@ -155,6 +155,77 @@ theorem bind {A B : Fam} (C : Tm → Tm)
       apply WExt_trans _ hx'
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
+/-- An operand remains safe after earlier operands spend budget or change the heap. -/
+def FutureSafe (A : Fam) (n : Nat) (W : WorldT n) (t : Tm) : Prop :=
+  ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+    ∀ heap, HeapOk j U heap → Safe A j U heap t
+
+theorem FutureSafe.transfer {A n W t} (h : FutureSafe A n W t)
+    {j : Nat} (hj : j ≤ n) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
+    FutureSafe A j U t := by
+  intro k hk V hy hv heap hh
+  apply h k (by omega) V _ hv heap hh
+  apply WExt_trans _ hy
+  simpa only [trunc_trunc] using WExt_trunc hk hx
+
+/-- Compose left-to-right argument evaluation with a continuation over the
+resulting values. Earlier values retain their types across later heap effects. -/
+theorem bind_list {B : Fam} (xs : List (Fam × Tm))
+    (hA : ∀ p ∈ xs, Adm p.1) (C : List Tm → Tm)
+    (lift : ∀ {h args h' args'}, CallArguments.ArgStep h args h' args' → Step h (C args) h' (C args'))
+    {n W heap} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (ht : ∀ p ∈ xs, FutureSafe p.1 n W p.2)
+    (hk : ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+      ∀ heap args, HeapOk j U heap → ArgsT (xs.map Prod.fst) j U args → Safe B j U heap (C args)) :
+    Safe B n W heap (C (xs.map Prod.snd)) := by
+  induction xs generalizing n C heap with
+  | nil =>
+    exact hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh trivial
+  | cons p xs ih =>
+    apply bind (fun a => C (a :: xs.map Prod.snd)) (fun hs => lift (.head hs)) n W heap p.2 hw hh
+      (ht p (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh)
+    intro j hj U hx hu heap' v hok hv ha
+    apply ih (fun q hq => hA q (by simp [hq])) (fun args => C (v :: args))
+      (fun hs => lift (.tail hv hs)) hu hok
+      (fun q hq => (ht q (by simp [hq])).transfer hj hx)
+    intro k hk' V hy hv' heap'' args hok' hargs
+    have hworld : WExt (trunc k (Nat.le_trans hk' hj) W) V := by
+      apply WExt_trans _ hy
+      simpa only [trunc_trunc] using WExt_trunc hk' hx
+    apply hk k (Nat.le_trans hk' hj) V hworld hv' heap'' (v :: args) hok'
+    exact ⟨(hA p (by simp)).mono k _ V hy v ((hA p (by simp)).down_le j k hk' U v ha), hargs⟩
+
+/-- Native call compatibility includes the callee and every effectful actual,
+then uses the invocation contract only after all operands have become values. -/
+theorem call_safe {B : Fam} (xs : List (Fam × Tm))
+    (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
+    {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (callsT [(xs.map Prod.fst, B)]) n W heap f)
+    (ha : ∀ p ∈ xs, FutureSafe p.1 n W p.2) :
+    Safe B n W heap (.call f (xs.map Prod.snd)) := by
+  apply bind (fun f => .call f (xs.map Prod.snd)) Step.callL n W heap f hw hh hf
+  intro j hj U hx hu heap' v hok hv hfun
+  apply bind_list xs hA (Tm.call v)
+    (fun hs => (CallArguments.Prepare.args hv hs).step) hu hok
+    (fun p hp => (ha p hp).transfer hj hx)
+  intro k hk V hy hv' heap'' args hok' hargs
+  have hf' := (callsT_adm _).mono k _ V hy v ((callsT_adm _).down_le j k hk U v hfun)
+  exact call_elim (by intro A h; obtain ⟨p,hp,rfl⟩ := List.mem_map.mp h; exact hA p hp)
+    (by intro A h; obtain ⟨p,hp,rfl⟩ := List.mem_map.mp h; exact hAv p hp)
+    hf' (List.mem_singleton_self _) hargs hv' hok'
+
+/-- Unary application is a specialization of effectful list evaluation. -/
+theorem app_safe {A B : Fam} (hA : Adm A) (hAv : ValOnly A)
+    {n W heap f a} (hw : WorldAdm W) (hh : HeapOk n W heap)
+    (hf : Safe (arrowT A B) n W heap f) (ha : FutureSafe A n W a) :
+    Safe B n W heap (.app f a) := by
+  apply call_safe [(A,a)] (by intro p hp; cases List.mem_singleton.mp hp; exact hA)
+    (by intro p hp; cases List.mem_singleton.mp hp; exact hAv) hw hh
+  · apply Safe_mono n _ W heap f hf
+    intro k hk U v hv
+    exact (arrowsT_callsT [(A,B)] k U v).mp ((arrowsT_singleton A B k U v).mpr hv)
+  · intro p hp; cases List.mem_singleton.mp hp; exact ha
+
 def tagShape (tag : Tag) (s : Nat) : Bool :=
   match tag with
   | .isNul => s == 0 | .isBool => s == 1 | .isRef => s == 2
@@ -263,16 +334,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨⟨hv.1,by simp⟩,hv.2⟩) U heap _ hs
   | @callCallable Γ f F P Ps L A B a hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
-    apply bind (fun f => .app f (instantiate 0 ρ a)) Step.appL n W h _ hw hh (ihf n W h ρ he hw hh)
-    intro j hj U hx hu heap fv hok hfv hf'
-    apply bind (.app fv) (Step.appR hfv) j U heap _ hu hok
-      (iha j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro k hk V hy hv heap' av hok' hav ha'
-    have hf'' := (meaning_adm G F).mono k _ V hy fv ((meaning_adm G F).down_le j k hk U fv hf')
-    have hm := ((represents_sem hr k V fv).mp hf'').2
-    have harr : arrowT (meaning G A) (meaning G B) k V fv :=
-      ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
-    exact app_elim (meaning_adm G A) (meaning_valOnly G A) harr ha' hv hok'
+    apply app_safe (meaning_adm G A) (meaning_valOnly G A) hw hh
+    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+      intro k hk U v hv
+      have hm := ((represents_sem hr k U v).mp hv).2
+      exact ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
+    · intro j hj U hx hu heap hok
+      exact iha j U heap ρ (he.transfer j hj U hx) hu hok
   | @readCallable Γ a Ref A Ps L ha hr ih =>
     intro n W h ρ he hw hh
     apply bind Tm.read Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -291,16 +359,13 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact bag_write (meaning_adm G A) ((represents_sem hr k V av).mp ha'').1.1 hb' hbval hv hok'
   | @app Γ f F L A B a hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
-    apply bind (fun f => .app f (instantiate 0 ρ a)) Step.appL n W h _ hw hh (ihf n W h ρ he hw hh)
-    intro j hj U hx hu heap fv hok hfv hf'
-    apply bind (.app fv) (Step.appR hfv) j U heap _ hu hok
-      (iha j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro k hk V hy hv heap' av hok' hav ha'
-    have hf'' := (meaning_adm G F).mono k _ V hy fv ((meaning_adm G F).down_le j k hk U fv hf')
-    have hm := (represents_sem hr k V fv).mp hf''
-    have harr : arrowT (meaning G A) (meaning G B) k V fv :=
-      ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
-    exact app_elim (meaning_adm G A) (meaning_valOnly G A) harr ha' hv hok'
+    apply app_safe (meaning_adm G A) (meaning_valOnly G A) hw hh
+    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+      intro k hk U v hv
+      have hm := (represents_sem hr k U v).mp hv
+      exact ⟨hm.1, hm.2 _ (List.mem_map.mpr ⟨(A,B), hp, rfl⟩)⟩
+    · intro j hj U hx hu heap hok
+      exact iha j U heap ρ (he.transfer j hj U hx) hu hok
   | @letE Γ a A b B ha hb iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh
@@ -453,6 +518,9 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
   have he : EnvOk G [] (fun _ => .nul) n W := ⟨fun _ => trivial, by simp⟩
   simpa only [instantiate_above hc] using ht.sound n W h _ he hw hh
 
+#print axioms bind_list
+#print axioms call_safe
+#print axioms app_safe
 #print axioms invocation_of_body
 #print axioms code_of_body
 #print axioms HasTy.invocationSpec
