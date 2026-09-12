@@ -46,6 +46,15 @@ private def check (f : SourceInput.Fn) (c : SourceClaims.Function) : Except Stri
   if !checkRequests [r] ⟨[response],[proofs]⟩ then throw "source consumer rejected evidence"
 private def ok (x : Except String α) : Bool := match x with | .ok _ => true | .error _ => false
 #guard [false,true].all fun mutate => ok (check (source mutate) claims)
+-- Baseline: even an observation implied by every invariant is currently
+-- rejected when a captured receiver has more than one cell contract.
+private def observed (R : Ty Nat) : SourceClaims.Function :=
+  {claims with exprCurrent := [((24,25),R)]}
+#guard [false,true].all fun mutate =>
+  !(extractNormalizedFn table (source mutate) (observed [0,1,2])).toOption.isSome
+-- The allocation's initial null value cannot justify a persistent null-only
+-- observation: one alternative permits later Boolean writes.
+#guard !ok (check (source false) (observed [0]))
 -- Possible read contents must not be narrowed to null by a supplied claim.
 #guard !ok (check (source false) {claims with exprs := claims.exprs.map fun (pos,c) =>
   if pos == (24,27) then (pos,.ok [0]) else (pos,c)})
