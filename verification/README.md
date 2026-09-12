@@ -144,7 +144,7 @@ in `SEMANTICS`; wire fields go in the relevant protocol document. Update `DESIGN
 with the decision and remaining integration, not a second rule specification.
 Keep corpus mechanics with the examples. Distinguish **exportable**, **proved in
 the model**, and **accepted by the source checker** wherever those statuses differ.
-Avoid temporary paths, task handoffs and duplicate version tables in maintained
+Avoid temporary paths, task handoffs and duplicate field tables in maintained
 docs. Lean definitions and tests remain the implementation evidence; cite them.
 
 The source boundary starts in
@@ -155,7 +155,7 @@ resulting requests and evidence.
 
 `tools/export-source-claims.mts` converts an existing SKJS export into editable
 calculus-label claims. Conversion records unsupported candidates and provenance;
-it does not itself establish verification. Version-2 sidecars also preserve
+it does not itself establish verification. Sidecars also preserve
 current-content assertions such as `{ value: boolean = (true) }`, separately from
 the storage invariant. Supplied observations are checked obligations: every
 incoming edge, including loop backedges, must establish the assertions claimed at

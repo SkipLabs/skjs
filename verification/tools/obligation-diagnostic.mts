@@ -1,5 +1,6 @@
-// Optional explanatory metadata, never evidence. Unknown versions are left in
-// the human diagnostic; they must not change the verification outcome.
+// Optional explanatory metadata, never evidence. A record this reader cannot
+// decode field by field is left in the human diagnostic; it must not change the
+// verification outcome.
 
 /** Where the verifier stopped. */
 export type Phase = "proof-search" | "certificate-check" | "request-validation";
@@ -53,7 +54,6 @@ export interface DiagnosticTransfer {
 
 /** What every record carries, whatever the failure was. */
 interface Common {
-  version: 2;
   phase: Phase;
   outcome: "not-established";
   /** The proof budget the search was given. */
@@ -143,7 +143,6 @@ export function readDiagnostic(
     return undefined;
   }
   if (
-    d?.version !== 2 ||
     !PHASES.includes(d.phase as string) ||
     d.outcome !== "not-established" ||
     !Array.isArray(d.types) ||

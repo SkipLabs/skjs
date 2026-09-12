@@ -63,7 +63,7 @@ its `true` return annotation because it forgets the condition's false edge after
 `while (!flag)`. The function returns true for both Boolean inputs: the loop body
 returns true, and reaching the following return entails `flag = true`.
 
-`negation.js` takes SKJS's normal-mode partial export (without `--keep-going`).
+`negation.mts` takes SKJS's normal-mode partial export (without `--keep-going`).
 The original broad exit claim does not suffice under local verification. The test
 independently checks an explicit repair of the final binding and expression to
 true and rejects an incorrect false exit binding. No SKJS behavior is changed.
@@ -76,7 +76,7 @@ the test rejects the opposite claimed result. Normal partial collection suffices
 
 `null-loop-exit.ts` isolates the same issue for `while (value === null) { continue; }`.
 For Boolean inputs the loop is skipped; null diverges. Reaching the return therefore
-implies a Boolean value. SKJS rejects it. `null-tests.js` repairs the final entry
+implies a Boolean value. SKJS rejects it. `null-tests.mts` repairs the final entry
 binding and returned-expression claim to `boolean`, independently checks the
 certificate, and rejects an opposite null exit refinement. No keep-going export
 or termination claim is involved.
@@ -95,9 +95,9 @@ The original broad return-entry claim does not verify locally: it forgets the
 write's current-true fact. An explicit candidate with `{ value: boolean = true }`
 at that entry verifies, even if the read's expression claim stays Boolean. The
 incoming write edge justifies the observation and the return statement uses it
-locally. False entry or read claims fail. `write-observations.js` checks these
+locally. False entry or read claims fail. `write-observations.mts` checks these
 outcomes, the source shape, and runtime and producer behavior. The three unsafe
-original exports are independently audited by `refinement-witnesses.js`.
+original exports are independently audited by `refinement-witnesses.mts`.
 
 `undefined-completes.ts` is the one entry the verifier establishes with no
 repair at all. A body that completes returns undefined, which is what it
@@ -114,7 +114,7 @@ and keep-going collection exports the binding at the empty type. TypeScript
 accepts the program, which returns null as declared. The verifier lowers the
 intersection to one arrow row with both signatures, proves the lambda under
 each and resolves the call to the first signature admitting its argument;
-`source-claims.js` verifies the fixture from handwritten claims that state the
+`source-claims.mts` verifies the fixture from handwritten claims that state the
 intersection as the source declares it, and rejects a body that meets only one
 signature. The producer's own export cannot be repaired into this: the claim
 it would need is the one it computes as empty. The same collapse taken as an

@@ -3,8 +3,6 @@
   "file": "verification/tests/skjs-incomplete/empty-domain-escape.ts",
   "sourceSha256": "488ba45856aed296470ab3e49cf196e6021531552a5c8b7e77a2bce293afde13",
   "claims": {
-    "version": 3,
-    "profile": "stateful-source-v3",
     "file": "verification/tests/skjs-incomplete/empty-domain-escape.ts",
     "sourceSha256": "488ba45856aed296470ab3e49cf196e6021531552a5c8b7e77a2bce293afde13",
     "types": [

@@ -701,7 +701,7 @@ def extractNormalizedFn (T : SourceTypes.Table) (f : SourceInput.Fn) (fc : Sourc
     let first ← body (traversalBudget f.body) fc R scope f.body none none
     let entry ← emit .nul (.effect first) inputs [0]
     return (inputs, R, entry)).run { types := T }
-  return ⟨⟨2, built.types, built.program, built.claims, R, entry.label, inputs⟩,
+  return ⟨⟨built.types, built.program, built.claims, R, entry.label, inputs⟩,
     built.obligations, built.sourceMap, built.assertions, built.cuts⟩
 
 /-- One function's wire claims, lowered into a fresh table. Other producers can
@@ -732,7 +732,6 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
 
 /-- Evidence order is source declaration order, independent of export order. -/
 structure Bundle where
-  version : Nat
   functions : List Response
   obligations : List (List (ProgramCertificates.Evidence Nat))
   deriving ToJson, FromJson
@@ -767,7 +766,7 @@ theorem checkAssertions_sound {r : SourceRequest} {c : Response}
   exact HeapKnowledge.check_sound (m := none) h hk
 
 def checkRequests (rs : List SourceRequest) (b : Bundle) : Bool :=
-  b.version == 3 && rs.length == b.functions.length && rs.length == b.obligations.length &&
+  rs.length == b.functions.length && rs.length == b.obligations.length &&
     (rs.zip b.functions).all (fun (r,c) => verify r.toRequest c && checkAssertions r c) &&
     (rs.zip b.obligations).all (fun (r,es) =>
       ExpressionClaims.checkAll (RequestJson.graph r.toRequest) r.types.length r.obligations es)
@@ -796,7 +795,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
     let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.sourceMap (some r.searchLabels) r.assertions r.cuts
     decodeResponse r.toRequest j
-  let evidence := toJson (Bundle.mk 3 cs es)
+  let evidence := toJson (Bundle.mk cs es)
   checkJson ast claims fileKey evidence
   return evidence
 

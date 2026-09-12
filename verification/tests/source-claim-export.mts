@@ -44,7 +44,6 @@ try {
     fs.writeFileSync(cp,JSON.stringify(raw));
     const r=convert(file,cp,op);assert.equal(r.status,0,r.stderr);
     const d=JSON.parse(fs.readFileSync(op, "utf8"));
-    assert.equal(d.version,3);assert.equal(d.profile,"stateful-source-v3");
     const point=d.functions.find((f: any) =>f.name===changed.name).expressions.find((e: any) =>JSON.stringify(e.pos)===JSON.stringify(changed.pos));
     assert.deepEqual(d.types[point.type[0]],[{refs:{first:[1,2],rest:[]}}]);assert.equal(point.type.length,1);assert.deepEqual(point.current,[1]);
     const omissions=JSON.parse(fs.readFileSync(op+".conversion.json", "utf8")).omissions;
@@ -70,11 +69,11 @@ try {
     const invalid=check();assert.notEqual(invalid.status,0);
     assert(invalid.stderr.includes("invalid source claims"),invalid.stderr);
     delete point.current;fs.writeFileSync(op,JSON.stringify(d));
-    assert.notEqual(check().status,0,"version 2 requires explicit assertion fields");
-    point.current=[1];d.version=1;d.profile="stateful-source-75-v1";
+    assert.notEqual(check().status,0,"the format requires explicit assertion fields");
+    point.current=[1];(d as any).status="verified";
     fs.writeFileSync(op,JSON.stringify(d));
-    const legacy=check();assert.notEqual(legacy.status,0);
-    assert(legacy.stderr.includes("unsupported source-claim profile or version"),legacy.stderr);
+    const extra=check();assert.notEqual(extra.status,0);
+    assert(extra.stderr.includes("unknown fields"),extra.stderr);
   });
   test("existing output is not overwritten",()=>assert.notEqual(convert(file,claimsPath,out).status,0));
   const partial=path.join(tmp,"partial.json"),pa=path.join(tmp,"partial.ast.json");

@@ -13,14 +13,14 @@ private def roundtrip (r : Request) : Except String Unit := do
   verifyJson input (← Json.parse evidence.compress)
 
 private def branch (c t e : Tm) : Request :=
-  ⟨2,types,[⟨.ite c t e,.ret⟩],[⟨[[0]],[0]⟩],[0],0,[[0]]⟩
+  ⟨types,[⟨.ite c t e,.ret⟩],[⟨[[0]],[0]⟩],[0],0,[[0]]⟩
 #guard ok (roundtrip (branch (.var 0) .tru .fls))
 #guard !ok (roundtrip (branch .nul .tru .fls))
 #guard !ok (roundtrip (branch (.var 0) (.read .nul) .fls))
 #guard !ok (roundtrip (branch (.var 0) .tru (.read .nul)))
 
 -- Boolean singleton unions are accepted; adding null to the input is not.
-#guard ok (roundtrip ⟨2,[[.boolLit true],[.boolLit false]],
+#guard ok (roundtrip ⟨[[.boolLit true],[.boolLit false]],
   [⟨.ite (.var 0) .tru .fls,.ret⟩],[⟨[[0,1]],[0,1]⟩],[0,1],0,[[0,1]]⟩)
 #guard !ok (roundtrip { branch (.var 0) .tru .fls with inputs := [[0,1]], claims := [⟨[[0,1]],[0]⟩] })
 
@@ -51,7 +51,7 @@ private def refinedNo : Evidence Nat := .node ⟨[[1]],.tru,[0]⟩ .truLit []
 private def refinedProof : Evidence Nat :=
   .node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩ (.ifBoolVar [0] [1]) [refinedYes,refinedNo]
 #guard checkTree RG refinedProof
-#guard ok (roundtrip ⟨2,refinedTypes,[⟨.ite (.var 0) (.var 0) .tru,.ret⟩],
+#guard ok (roundtrip ⟨refinedTypes,[⟨.ite (.var 0) (.var 0) .tru,.ret⟩],
   [⟨[[0,1]],[0]⟩],[0],0,[[0,1]]⟩)
 #guard !checkTree RG (.node ⟨[[0,1]],.ite (.var 0) (.var 0) .tru,[0]⟩
   (.ifBoolVar [1] [0]) [refinedYes,refinedNo])
@@ -75,7 +75,7 @@ private def knownTerm : Tm := .ite .tru .fls (.read .nul)
 private def knownProof : Evidence Nat :=
   .node ⟨[],knownTerm,[1]⟩ (.ifKnown true) [knownCond,knownArm]
 #guard checkTree RG knownProof
-#guard ok (roundtrip ⟨2,refinedTypes,[⟨knownTerm,.ret⟩],[⟨[],[1]⟩],[1],0,[]⟩)
+#guard ok (roundtrip ⟨refinedTypes,[⟨knownTerm,.ret⟩],[⟨[],[1]⟩],[1],0,[]⟩)
 #guard !checkTree RG (.node ⟨[],knownTerm,[1]⟩ (.ifKnown false) [knownCond,knownArm])
 #guard !checkTree RG (.node ⟨[],knownTerm,[1]⟩ (.ifKnown true) [knownArm])
 #guard !checkTree RG (.node ⟨[],.ite .tru (.read .nul) .fls,[1]⟩ (.ifKnown true) [knownCond,knownArm])
@@ -85,7 +85,7 @@ private def knownProof : Evidence Nat :=
 private def knownEffectProgram : Program :=
   [⟨.alloc .tru,.bind 1⟩,
    ⟨.ite (.app (.lam .tru) (.write (.var 0) .fls)) .fls (.read .nul),.ret⟩]
-#guard ok (roundtrip ⟨2,refinedTypes ++ [[.refs [0,1] []]],knownEffectProgram,
+#guard ok (roundtrip ⟨refinedTypes ++ [[.refs [0,1] []]],knownEffectProgram,
   [⟨[],[3]⟩,⟨[[3]],[1]⟩],[1],0,[]⟩)
 
 /-- Selecting a known arm must not erase the condition's write. -/
@@ -112,7 +112,7 @@ private def nullProof : Evidence Nat :=
   (CertificateProducer.expression NG [[0],[1],[2],[1,2],[0,1,2]] 10 [[0,1,2],[2]] nullGuard [1,2]).getD
     (.node ⟨[],.nul,[]⟩ .nul [])
 #guard checkTree NG nullProof
-#guard ok (roundtrip ⟨2,nullTypes,[⟨nullGuard,.ret⟩],
+#guard ok (roundtrip ⟨nullTypes,[⟨nullGuard,.ret⟩],
   [⟨[[0,1,2]],[1,2]⟩],[1,2],0,[[0,1,2]]⟩)
 -- The evidence cannot omit a union member or alter an unrelated binding.
 #guard !(match nullProof with
@@ -126,7 +126,7 @@ private def nullProof : Evidence Nat :=
 -- An empty union has no inhabitants; this is elimination from an impossible input.
 #guard checkTree NG (.node ⟨[[]],.read .nul,[1]⟩ (.unionVar 0) [])
 -- Packing different shapes into a single graph label is not split by this search.
-#guard !ok (roundtrip ⟨2,[[.nul,.boolLit true],[.boolLit true]],
+#guard !ok (roundtrip ⟨[[.nul,.boolLit true],[.boolLit true]],
   [⟨.ite (.test .isNul (.var 0)) .tru (.var 0),.ret⟩],
   [⟨[[0]],[1]⟩],[1],0,[[0]]⟩)
 
@@ -137,7 +137,7 @@ private def captureProgram (q : Bool) : Program :=
    ⟨.write (.var 1) (if q then .tru else .fls),.effect 3⟩,
    ⟨.app (.var 0) .nul,.ret⟩]
 private def captureRequest (q : Bool) : Request :=
-  ⟨2,types,captureProgram q,[⟨[],[2]⟩,⟨[[2]],[3]⟩,⟨[[3],[2]],[1]⟩,⟨[[3],[2]],[0]⟩],[0],0,[]⟩
+  ⟨types,captureProgram q,[⟨[],[2]⟩,⟨[[2]],[3]⟩,⟨[[3],[2]],[1]⟩,⟨[[3],[2]],[0]⟩],[0],0,[]⟩
 #guard ok (roundtrip (captureRequest true))
 #guard ok (roundtrip (captureRequest false))
 
@@ -159,7 +159,7 @@ theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 1
 private def effectfulProgram : Program :=
   [⟨.alloc .tru,.bind 1⟩,
    ⟨.ite (.app (.lam (.read (.var 1))) (.write (.var 0) .fls)) .tru .fls,.ret⟩]
-#guard ok (roundtrip ⟨2,types,effectfulProgram,[⟨[],[2]⟩,⟨[[2]],[0]⟩],[0],0,[]⟩)
+#guard ok (roundtrip ⟨types,effectfulProgram,[⟨[],[2]⟩,⟨[[2]],[0]⟩],[0],0,[]⟩)
 
 theorem condition_effects_preserved : Execution effectfulProgram 9 []
     (.at 0 (fun _ => .nul)) [.fls] (.done .fls) := by

@@ -45,10 +45,10 @@ try {
     expect(`${name} (consumer)`,run("--check-stateful-source",a,c,evidence),false);
   }
   // Each source function has an ordered list of exact supplemental sequents.
-  if(evidence.version!==3 || evidence.obligations.length!==ast.functions.length ||
+  if(evidence.obligations.length!==ast.functions.length ||
      evidence.obligations.some((es: any) =>es.length===0)) throw Error("missing expression obligations");
   for(const [name,edit] of [
-    ["old source bundle rejected", e=>{e.version=2;}],
+    ["unknown bundle fields", e=>{e.status="verified";}],
     ["missing obligation lists", e=>{delete e.obligations;}],
     ["missing function obligations", e=>{e.obligations.pop();}],
     ["missing expression proof", e=>{e.obligations[0].pop();}],

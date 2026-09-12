@@ -3,8 +3,6 @@
   "file": "verification/tests/skjs-incomplete/negated-loop-exit.ts",
   "sourceSha256": "32facb9a5c8800afa5884b12dd6781198fc1ea5e7fdf0b9cd9b86e55028cd396",
   "claims": {
-    "version": 3,
-    "profile": "stateful-source-v3",
     "file": "verification/tests/skjs-incomplete/negated-loop-exit.ts",
     "sourceSha256": "32facb9a5c8800afa5884b12dd6781198fc1ea5e7fdf0b9cd9b86e55028cd396",
     "types": [

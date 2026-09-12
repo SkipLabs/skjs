@@ -8,7 +8,7 @@ Programs accepted by SKJS whose declared types are contradicted by runtime behav
 `false`, contradicting its declared `true` result: a callback writes the captured
 cell after the branch test, but SKJS retains the read refinement.
 
-The current verifier distinguishes two checks in `primitive-callbacks.js`:
+The current verifier distinguishes two checks in `primitive-callbacks.mts`:
 
 1. The actual export reaches a checked incoming-edge obligation for the current
    contents claimed after the callback. Calls discard such observations.
@@ -35,7 +35,7 @@ It needs no callback: after the compound loop guard,
 accepted `true` result annotation; null skips the body and returns true. The local
 TypeScript checker rejects the stale return.
 
-`null-tests.js` checks that the original exit-cell union is exported with both
+`null-tests.mts` checks that the original exit-cell union is exported with both
 alternatives; Lean absorbs its redundant arm into the existing Boolean invariant.
 Standalone current-content assertions inside the loop now reach graph checking. A manual
 diagnostic candidate forgets four such observations while preserving the exit union;
@@ -46,7 +46,7 @@ edge rechecks its supplied invariant.
 
 The original now reports a located proof obligation; the diagnostic candidate
 reports a proof-search failure at the unchanged singleton read. The completed
-[audit](../refinement-witnesses.js) checks every ordinary obligation and heap edge:
+[audit](../refinement-witnesses.mts) checks every ordinary obligation and heap edge:
 exactly one edge fails, at the post-write return assertion. Structurally matched
 [controls](../refinement-controls.ts) with the mutation removed verify using fresh
 SKJS claims, including the compound and negated guards. Given fresh AST
@@ -75,7 +75,7 @@ rejects the stale return. This covers the opposite refinement outcome from
 
 The exit-cell union is exported with both alternatives and simplifies to the
 Boolean invariant. Standalone current-content assertions now reach checked
-obligations. `write-observations.js` checks the complete normal export, the false
+obligations. `write-observations.mts` checks the complete normal export, the false
 claim at the actual post-write read, all three runtime inputs, and the distinction
 between an unproved obligation and a runtime counterexample.
 

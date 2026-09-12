@@ -45,7 +45,7 @@ export function main(args: string[]) {
     const bytes=JSON.stringify(converted.claims,null,2)+"\n";
     const selected=originalClaims.find((f: any)=>f.file===file);
     if(!selected)throw Error(`the producer said nothing about ${file}`);
-    const provenance={version:1,kind:"skjs-source-claim-conversion",source:{file,sha256:hash(source)},
+    const provenance={kind:"skjs-source-claim-conversion",source:{file,sha256:hash(source)},
       sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(opts.claims),claimsSha256:hash(raw),
       sidecarPath:path.resolve(output),sidecarSha256:hash(bytes),
       parserSha256:hash(fs.readFileSync(parser)),converterSha256:hash(fs.readFileSync(opts.verifier)),

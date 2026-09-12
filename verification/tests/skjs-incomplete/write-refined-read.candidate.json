@@ -3,8 +3,6 @@
   "file": "verification/tests/skjs-incomplete/write-refined-read.ts",
   "sourceSha256": "ad1cde685eb620753de943e6830d36646c834edd590f98b4c74b631781c00a41",
   "claims": {
-    "version": 3,
-    "profile": "stateful-source-v3",
     "file": "verification/tests/skjs-incomplete/write-refined-read.ts",
     "sourceSha256": "ad1cde685eb620753de943e6830d36646c834edd590f98b4c74b631781c00a41",
     "types": [

@@ -30,15 +30,12 @@ structure Function where
   expressions : List Expression
   deriving ToJson, FromJson
 structure Document where
-  version : Nat
-  profile : String
   file : String
   sourceSha256 : String
   types : SourceTypes.Table
   functions : List Function
   deriving ToJson, FromJson
 
-def profile : String := "stateful-source-v3"
 
 def Function.normalized (f : Function) : SourceClaims.Function :=
   ⟨f.name,f.namePos,f.params.map (fun b => (b.name,.ok b.type)),.ok f.result,
@@ -72,8 +69,6 @@ private def validFunction (T : SourceTypes.Table) (f : Function) : Bool :=
 
 def decode (j : Json) : Except String Document := do
   let d : Document ← decodeStrict j
-  if !(d.version == 3 && d.profile == profile) then
-    throw "unsupported source-claim profile or version"
   if d.sourceSha256.length != 64 || !d.sourceSha256.toList.all (fun c => c.isDigit || ('a' ≤ c && c ≤ 'f')) then
     throw "invalid source fingerprint"
   if !validTable d.types then
@@ -137,7 +132,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat) : Except Str
   let cs ← (rs.zip es).mapM fun (r,proofs) => do
     let j ← RequestJson.produceJson (toJson r.toRequest) fuel [] proofs r.sourceMap (some r.searchLabels) r.assertions r.cuts
     decodeResponse r.toRequest j
-  let evidence := toJson (Bundle.mk 3 cs es)
+  let evidence := toJson (Bundle.mk cs es)
   checkJson ast claims fileKey evidence
   return evidence
 

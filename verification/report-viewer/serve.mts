@@ -93,9 +93,9 @@ const draftPath = (source: string) => source.replace(/\.tsx?$/, "") + ".candidat
 
 /**
  * The draft beside a source. A draft is about one exact source, so one written
- * for an earlier version of it describes text that is no longer there and
- * cannot be shown — but saying nothing would leave a file in the tree that
- * silently does nothing, so what is wrong with it is reported instead.
+ * before that source changed describes text that is no longer there and cannot
+ * be shown — but saying nothing would leave a file in the tree that silently
+ * does nothing, so what is wrong with it is reported instead.
  */
 async function readDraft(absolute: any, sourceSha256: any) {
   const at = draftPath(absolute);
@@ -111,7 +111,7 @@ async function readDraft(absolute: any, sourceSha256: any) {
   if (draft?.sourceSha256 !== sourceSha256)
     return {
       stale:
-        `${named} was written for an earlier version of this source, ` +
+        `${named} was written before this source changed, ` +
         `so it is not shown`,
     };
   return { draft };

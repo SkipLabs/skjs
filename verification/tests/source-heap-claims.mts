@@ -87,8 +87,6 @@ function fixture(body: string, param = "") {
     f.params.map((p: any) => p.name),
   );
   const doc = {
-    version: 3,
-    profile: "stateful-source-v3",
     // The primitives, then the Boolean cell at label 4.
     types: [
       ["nul"],

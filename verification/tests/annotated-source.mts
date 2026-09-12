@@ -18,7 +18,7 @@ const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
   const source='// Unicode: 😀\nfunction f(x: boolean): boolean { return x; }\n';
   const ns=source.indexOf("f("), es=source.lastIndexOf("x;");
-  const report={version:1,source:{file:"test.ts",sha256:hash(source)},producer:"other-analyzer",
+  const report={source:{file:"test.ts",sha256:hash(source)},producer:"other-analyzer",
     functions:[{name:"f",namePos:[ns,ns+1],entries:[{pos:[source.indexOf("return"),es+2],bindings:[{name:"x",type:"boolean"}]}],
       expressions:[{pos:[es,es+1],type:"boolean"}]}]};
   test("independent producer report and Unicode positions",()=>assert(render(source,report).includes("producer=other-analyzer")));

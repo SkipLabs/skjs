@@ -384,7 +384,7 @@ overload domain-splitting example. Executable program evidence checking and
 local supplied-environment edge obligations are now proved as well. The next
 integration work is source extraction and faithful claim translation. A bounded
 producer constructs checked evidence from supplied point annotations, and the
-[serialized consumer](REQUEST-PROTOCOL.md) checks versioned calculus requests.
+[serialized consumer](REQUEST-PROTOCOL.md) checks serialized calculus requests.
 The graph consumer covers every actual node and outgoing edge and proves global
 safety, including cycles and explicit slot maps. Producer success is checked;
 producer completeness is not claimed. A textual type-to-graph compiler still needs its own correctness

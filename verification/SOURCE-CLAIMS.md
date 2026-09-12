@@ -1,8 +1,8 @@
 # Producer-independent source sidecars
 
-The `stateful-source-v3` profile supplies types directly as calculus labels into
-a type table the document carries. It contains no SKJS type atoms, inferred
-bounds or stored proof results. A human or another producer can write it. This is a bounded
+The sidecar supplies types directly as calculus labels into a type table the
+document carries. It contains no SKJS type atoms, inferred bounds or stored
+proof results. A human or another producer can write it. This is a bounded
 interface for the existing source fragment, not support for arbitrary graphs,
 TypeScript types, shadowing or recursive source aliases.
 
@@ -28,8 +28,6 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 
 ```json
 {
-  "version": 3,
-  "profile": "stateful-source-v3",
   "file": "input.ts",
   "sourceSha256": "REPLACE_WITH_SHA256_OF_EXACT_SOURCE_BYTES",
   "types": [["nul"], [{"boolLit": {"value": true}}], [{"boolLit": {"value": false}}], ["undef"]],
@@ -47,10 +45,10 @@ identity, SHA-256 digest and UTF-16 source positions before use:
 }
 ```
 
-`stateful-source-v3` is the only accepted profile. Every point carries an
-explicit `current` field. Documents written for an earlier profile, including
-the fixed-table `stateful-source-532-v2`, are rejected and must be regenerated
-rather than upgraded in place.
+A decoder requires every field above and refuses any field not above, so a
+document that does not have exactly this shape is rejected rather than read
+under some other reading. Every point carries an explicit `current` field.
+When the shape changes, regenerate the documents that carry it.
 
 Function identity is its name and name span. Parameter names and order must match
 the source signature. Entry claims use statement start offsets, and expression
@@ -58,7 +56,7 @@ claims use complete spans. Sites must occur in the named function's decoded
 body, including loop heads and supported closure bodies. A loop-head entry is
 the invariant candidate checked on initial entry and every back edge. The existing extractor resolves names
 against initialized lexical bindings and retains its shadowing restrictions.
-This version does not yet introduce declaration IDs.
+Declaration IDs are not part of this interface.
 
 Type references are sorted, duplicate-free lists of labels into the document's
 `types` table, read as a union: `[]` denotes `never`, `[1,2]` denotes `boolean`,

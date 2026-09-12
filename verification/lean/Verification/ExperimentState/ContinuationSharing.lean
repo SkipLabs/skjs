@@ -56,7 +56,7 @@ private def proof : Option (Evidence Nat) :=
 
 private def program : Program := [⟨.alloc .tru,.bind 1⟩,⟨term,.ret⟩]
 private def request : Request :=
-  ⟨2,T,program,[⟨[[1,2],[1,2]],[4]⟩,⟨Γ,[1,2]⟩],[1,2],0,[[1,2],[1,2]]⟩
+  ⟨T,program,[⟨[[1,2],[1,2]],[4]⟩,⟨Γ,[1,2]⟩],[1,2],0,[[1,2],[1,2]]⟩
 private def accepted : Except String Unit := do
   let some p := proof | throw "missing direct proof"
   let wire ← Json.parse (toJson request).compress
@@ -127,7 +127,7 @@ private def refinedTerm := share (.var 0)
 private def refinedProgram : Program := [⟨refinedTerm,.ret⟩]
 #guard match (do
   let some p := refinedProof | throw "missing refinement proof"
-  let r : Request := ⟨2,refinedTypes,refinedProgram,[⟨outer,[1,2]⟩],[1,2],0,outer⟩
+  let r : Request := ⟨refinedTypes,refinedProgram,[⟨outer,[1,2]⟩],[1,2],0,outer⟩
   let wire := toJson r
   let e ← produceJson wire 10 [] [p] [] (some [0,1,2,4,5,T.length])
   verifyJson wire (← Json.parse e.compress)) with

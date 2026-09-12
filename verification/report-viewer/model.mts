@@ -293,12 +293,8 @@ function parseReport(annotated: any) {
 
 function fromBundle(bundle: any) {
   const { source, manifest: m } = bundle;
-  if (
-    typeof source !== "string" ||
-    m?.version !== 1 ||
-    !Array.isArray(m.functions)
-  )
-    throw new Error("Expected source text and a version 1 report manifest");
+  if (typeof source !== "string" || !Array.isArray(m?.functions))
+    throw new Error("Expected source text and a report manifest");
   const span = (pos: any): Span => {
     if (
       !Array.isArray(pos) ||

@@ -70,7 +70,7 @@ example : ObservedSub mixedWithNull [0] [1] (.tag .isNul true) := by
 #guard !checkObserved G [[1,2]] [[1]] 0 (.boolean true) (some [0,0]) [.subset]
 
 private def request (v : Tm) : Request :=
-  ⟨2, T,
+  ⟨T,
     [⟨v,.bind 1⟩, ⟨.var 0,.branchBind ⟨2,some [0,1]⟩ ⟨3,some [0,1]⟩⟩,
      ⟨.var 0,.ret⟩, ⟨.var 0,.ret⟩],
     [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[1],[1,2]],[1,2]⟩,⟨[[2],[1,2]],[1,2]⟩],
@@ -98,12 +98,12 @@ private def roundtrip (r : Request) : Except String Unit := do
 -- particular source expression happens to evaluate to true.
 #guard !ok (roundtrip { request .tru with claims := (request .tru).claims.set 1 ⟨[[1,2]],[0,1,2]⟩ })
 -- Refining transfers also participate in cycles; checking requires no iteration.
-#guard ok (roundtrip ⟨2,T,
+#guard ok (roundtrip ⟨T,
   [⟨.tru,.bind 1⟩,⟨.var 0,.branchBind ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩,⟨.var 0,.ret⟩],
   [⟨[],[1,2]⟩,⟨[[1,2]],[1,2]⟩,⟨[[2]],[1,2]⟩],[1,2],0,[]⟩)
 -- Tag dispatch uses the same observed edge checker and retains the value itself.
 private def tagRequest : Request :=
-  ⟨2,T,
+  ⟨T,
     [⟨.var 0,.tagBind .isNul ⟨1,some [0]⟩ ⟨2,some [0]⟩⟩,
      ⟨.fls,.ret⟩,⟨.var 0,.ret⟩],
     [⟨[[0,1,2]],[0,1,2]⟩,⟨[[0]],[1,2]⟩,⟨[[1,2]],[1,2]⟩],

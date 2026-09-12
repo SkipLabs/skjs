@@ -3,8 +3,6 @@
   "file": "verification/tests/skjs-incomplete/arrow-intersection.ts",
   "sourceSha256": "b53ab0ddaacfd1cb384640f513f38da59bb51b524d0582691a1c5f72091dbf2b",
   "claims": {
-    "version": 3,
-    "profile": "stateful-source-v3",
     "file": "verification/tests/skjs-incomplete/arrow-intersection.ts",
     "sourceSha256": "b53ab0ddaacfd1cb384640f513f38da59bb51b524d0582691a1c5f72091dbf2b",
     "types": [

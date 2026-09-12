@@ -1,11 +1,12 @@
 /*
- * The `stateful-source-v3` wire format, described once.
+ * The producer-independent source sidecar, described once.
  *
  * A producer states, for one source file, what it believes at every site the
  * lowering visits; the verifier asks whether those beliefs are derivable.
  * SOURCE-CLAIMS.md specifies the format in prose; this is the same thing for
  * the tools that write and read it, so the producer and the consumer cannot
- * drift apart silently.
+ * drift apart silently. A document either has exactly this shape, which every
+ * decoder requires field by field, or it is rejected.
  */
 
 /** A half-open span of the original source, in UTF-16 code units. */
@@ -61,8 +62,6 @@ export interface FunctionClaims {
 }
 
 export interface SourceClaims {
-  version: 3;
-  profile: "stateful-source-v3";
   file: string;
   sourceSha256: string;
   types: Row[];

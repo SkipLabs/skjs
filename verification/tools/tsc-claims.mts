@@ -1129,8 +1129,6 @@ export function produce(file: string): Produced {
 
   return {
     doc: {
-      version: 3,
-      profile: "stateful-source-v3",
       file,
       sourceSha256: ast.sourceSha256,
       types,

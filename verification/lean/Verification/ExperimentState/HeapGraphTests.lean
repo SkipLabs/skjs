@@ -78,14 +78,12 @@ private def cycleCertificate := certificate.set 5
 
 -- The external checker consumes the same facts and effects through strict JSON.
 private def request : RequestJson.Request :=
-  ⟨2,T,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
-private def response : RequestJson.Response := ⟨6,certificate⟩
+  ⟨T,program,certificate.map CertificateProducer.signature,[1],0,[]⟩
+private def response : RequestJson.Response := ⟨certificate⟩
 #guard RequestJson.verify request response
 #guard match RequestJson.verifyJson (Lean.toJson request) (Lean.toJson response) with
   | .ok _ => true
   | .error _ => false
-#guard !(RequestJson.validResponse request {response with version := 2})
-
 -- All nested effect evidence is bounds checked, not only the root header.
 private def badEffect : HeapExpressionRules.StepEvidence Nat := .ordinary
   (.node ⟨[],.nul,[0]⟩ (.sub (.trans [999] .subset .subset)) [])

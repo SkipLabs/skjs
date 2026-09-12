@@ -11,7 +11,7 @@ private def is [BEq α] (r : Except String α) (expected : α) : Bool :=
   match r with | .ok a => a == expected | .error _ => false
 
 -- Exercise the source-specific vocabulary, not every unrelated signature in
--- the fixed profile. The independent checker still receives the full graph.
+-- the whole type table. The independent checker still receives the full graph.
 private def produceSourceJson (j : Json) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent Nat) := [])
     (known : List (ProgramCertificates.Evidence Nat) := []) : Except String Json := do
@@ -32,7 +32,7 @@ private def produceSourceJson (j : Json) (fuel : Nat)
 
 private def G0 := SourceTypes.graph SourceTypes.initial
 private def request (t : Tm) (A : Ty Nat) : Request :=
-  ⟨2, SourceTypes.initial, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
+  ⟨SourceTypes.initial, [⟨t,.ret⟩], [⟨[],A⟩], A, 0, []⟩
 #guard ok (produceSourceJson (toJson (request .tru [1])) 5)
 #guard ok (produceSourceJson (toJson (request .fls [2])) 5)
 #guard ok (produceSourceJson (toJson (request .tru [1,2])) 5)
@@ -633,8 +633,8 @@ private def localCertificate (cuts : List Nat) :=
     localRequest.searchLabels 8 localRequest.result localRequest.program localRequest.claims
     localRequest.start [] localRequest.inputs [] [] localRequest.assertions cuts
 private def globalCertificate := (localCertificate []).toOption.get!
-#guard RequestJson.verify localRequest.toRequest ⟨6,globalCertificate⟩
-#guard !checkAssertions localRequest ⟨6,globalCertificate⟩
+#guard RequestJson.verify localRequest.toRequest ⟨globalCertificate⟩
+#guard !checkAssertions localRequest ⟨globalCertificate⟩
 #guard (localCertificate localRequest.cuts).toOption.isNone
 private def repairedLocal := (extractNormalizedFn SourceTypes.initial localFn
   {localClaims with envs := [(2,[]),(6,[("x",.ok [1])])]}).toOption.getD ⟨request .nul [0],[],[],[],[]⟩

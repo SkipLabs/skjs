@@ -3,8 +3,6 @@
   "file": "verification/tests/skjs-incomplete/singleton-negation.ts",
   "sourceSha256": "3b80de30d8353a83f67f1b68076bf91648111c38fcaf667988b57feaa068f527",
   "claims": {
-    "version": 3,
-    "profile": "stateful-source-v3",
     "file": "verification/tests/skjs-incomplete/singleton-negation.ts",
     "sourceSha256": "3b80de30d8353a83f67f1b68076bf91648111c38fcaf667988b57feaa068f527",
     "types": [

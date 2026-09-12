@@ -56,7 +56,7 @@ Types are displayed in surface syntax: primitive names, literals as the literal
 arrows as `(boolean) => null`. A cell whose read and write types differ shows
 both (`{ value: read true write boolean }`), because that distinction is exactly
 what a stale refinement looks like and TypeScript has no shape for it.
-`tools/claim-types.js` does this printing, and the reader uses the same module,
+`tools/claim-types.mts` does this printing, and the reader uses the same module,
 so a comment and a panel never disagree.
 
 The displayed text is a **view of the claim, not an encoding of it**. Surface
@@ -85,7 +85,7 @@ Other location kinds are `edge-obligation` (the destination expression span),
 `source-limitation` (an unsupported source expression span). The last indicates
 source conversion stopped before proof checking; it is not a failed claim.
 
-A proof-search failure can additionally include `obligation`, a version-1 structured
+A proof-search failure can additionally include `obligation`, a structured
 record described in [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md). It identifies
 the actual sequent or selected mapped edge, with extraction-provided roles and
 source provenance. Prefer it to guessing a failure role from `location` or the
@@ -161,7 +161,6 @@ A producer-independent display format is supported with `--format report`:
 
 ```json
 {
-  "version": 1,
   "source": {"file": "input.ts", "sha256": "SHA256_OF_SOURCE_BYTES"},
   "producer": "another-analyzer",
   "functions": [{
@@ -187,7 +186,7 @@ node verification/tools/annotate-source.mts input.ts \
 
 Generic report inputs are claims-only. Their stored status fields are ignored;
 `--verify` is rejected until that producer has a verification adapter. This
-versioned display format is distinct from the semantic source-claim interface
+display format is distinct from the semantic source-claim interface
 proposed in [CLAIM-INTERFACE](CLAIM-INTERFACE.md). It is not a shortcut around
 normalizing and checking a new producer's types.
 
@@ -308,7 +307,7 @@ without claiming that erroneous source can be repaired by false annotations.
 `--format source-claims` accepts the strict bounded
 [producer-independent sidecar](SOURCE-CLAIMS.md), including fresh verification and
 baseline comparison. Unlike `--format report`, this is an input to the Lean
-consumer, with its own versioned schema and source fingerprint.
+consumer, with its own schema and source fingerprint.
 
 
 For converted SKJS sidecars, `--conversion claims.json.conversion.json` attaches

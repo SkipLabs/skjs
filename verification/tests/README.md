@@ -17,7 +17,7 @@ claims for the viewer's corpus, without the repairs or corruptions used in tests
 | `source-claims.mts`, `source-claim-export.mts` | Producer-independent claims, conversion fidelity and source association. |
 | `partial-claims.mts` | Partial collections without recovery, optional keep-going quality and diagnostics. |
 | `annotated-source.mts`, `report-viewer.mts`, `candidate-editor.mts` | Source-preserving display, failure locations and independent candidate repair. |
-| `obligation-diagnostics.mts` | Distinct obligations sharing a return span, claim repair combinations, selected edge mappings, version handling and report identity. |
+| `obligation-diagnostics.mts` | Distinct obligations sharing a return span, claim repair combinations, selected edge mappings, records the reader must refuse and report identity. |
 | `unsupported.mts` / `unsupported/` | Explicit source boundaries, rejected for the expected reason. |
 
 The reader's supported example group lists files exercised by these source
@@ -55,7 +55,7 @@ producer failures, state the expected runtime behavior and the exact claim repai
 or rejection being tested; for unsupported examples, distinguish the adapter's
 limitation from a soundness result. Loop examples should say when termination is
 not established. Comments are part of the displayed source, so the tests always
-regenerate claims rather than reuse offsets from an older source version.
+regenerate claims rather than reuse offsets from the source as it was before.
 
 The [null-guard fixture](stateful-source/null-guards.ts) exercises the graph
 refinement path against real SKJS claims, including guarded returns and loop

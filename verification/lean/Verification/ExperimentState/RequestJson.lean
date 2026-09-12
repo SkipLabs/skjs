@@ -1,9 +1,11 @@
 import Lean.Data.Json
 import Verification.ExperimentState.CertificateProducer
 
-/-! Versioned, in-memory JSON boundary for the stateful consumer. A request and
-its evidence are separate inputs. This is a calculus protocol, not a decoder
-for SKJS types or a TypeScript extractor. No unsupported type is approximated. -/
+/-! In-memory JSON boundary for the stateful consumer. A request and its
+evidence are separate inputs. This is a calculus protocol, not a decoder for
+SKJS types or a TypeScript extractor. No unsupported type is approximated.
+`decodeStrict` requires every field and rejects any other, so a document either
+has the current shape or is refused. -/
 namespace Verification.ExperimentState.RequestJson
 open Lean ProgramTyping PositiveNormalization PositiveGraphs PositiveRules
 open ProgramCertificates PointClaims ControlFlow CertificateProducer
@@ -29,7 +31,6 @@ deriving instance ToJson, FromJson for NodeEvidence
 deriving instance ToJson, FromJson for PointClaim
 
 structure Request where
-  version : Nat
   types : List (List (Clause (List Nat)))
   program : Program
   claims : List (PointClaim Nat)
@@ -40,7 +41,6 @@ structure Request where
   deriving ToJson, FromJson
 
 structure Response where
-  version : Nat
   certificate : ControlFlow.Certificate Nat
   deriving ToJson, FromJson
 
@@ -59,7 +59,7 @@ def validClaim (bound : Nat) (c : PointClaim Nat) : Bool :=
 /-- The total Lean graph's out-of-range default must not become an accidental
 meaning for an invalid serialized type reference. -/
 def validRequest (r : Request) : Bool :=
-  r.version == 2 && (r.types.flatMap id |>.flatMap clauseTypes).all (validTy r.types.length) &&
+  (r.types.flatMap id |>.flatMap clauseTypes).all (validTy r.types.length) &&
   r.claims.all (validClaim r.types.length) && validTy r.types.length r.result &&
   r.inputs.all (validTy r.types.length)
 
@@ -94,7 +94,7 @@ def validEffect (bound : Nat) : HeapExpressionRules.StepEvidence Nat → Bool
   | .observedRead _ _ | .knownValue _ _ => true
 
 def validResponse (r : Request) (c : Response) : Bool :=
-  c.version == 6 && c.certificate.all (fun n =>
+  c.certificate.all (fun n =>
     validEvidence r.types.length n.expression &&
     (n.effect.map (validEffect r.types.length)).getD true &&
     (n.edges.flatMap id |>.flatMap proofTypes).all (validTy r.types.length))
@@ -111,17 +111,17 @@ partial def sameJson (a b : Json) : Bool :=
 def decodeStrict [FromJson α] [ToJson α] (j : Json) : Except String α := do
   let a ← fromJson? j
   if sameJson j (toJson a) then return a
-  throw "unknown fields or missing explicit fields in the versioned calculus protocol"
+  throw "unknown fields or missing explicit fields in the calculus protocol"
 
 def decodeRequest (j : Json) : Except String Request := do
   let r ← decodeStrict j
   if validRequest r then return r
-  throw "unsupported request version or out-of-range type label"
+  throw "out-of-range type label in request"
 
 def decodeResponse (r : Request) (j : Json) : Except String Response := do
   let c ← decodeStrict j
   if validResponse r c then return c
-  throw "unsupported evidence version or out-of-range type label in evidence"
+  throw "out-of-range type label in evidence"
 
 /-- This check remains independent of the producer and its search settings. -/
 def verify (r : Request) (c : Response) : Bool :=
@@ -186,8 +186,7 @@ abbrev SourceMap := List (Option SourceMapEntry)
 /-- One machine-readable record on stderr, following the human-readable error.
 This transport leaves successful evidence JSON and the proof protocol unchanged. -/
 def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
-  message ++ "\nobligation-diagnostic: " ++ (Json.mkObj
-    (("version", toJson (2 : Nat)) :: fields)).compress
+  message ++ "\nobligation-diagnostic: " ++ (Json.mkObj fields).compress
 
 def failureDiagnostic (r : Request) (fuel : Nat)
     (sourceMap : SourceMap) (e : Failure)
@@ -254,7 +253,7 @@ def produceJson (request : Json) (fuel : Nat)
         | _ => ""
       throw (withDiagnostic s!"{location}evidence search failed (unsupported or unjustified): {reprStr e}"
         (failureDiagnostic r fuel sourceMap e requirements))
-  let response := toJson (Response.mk 6 C)
+  let response := toJson (Response.mk C)
   verifyJson request response
   return response
 

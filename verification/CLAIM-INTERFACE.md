@@ -35,7 +35,6 @@ Conceptually the document contains:
 
 | Field | Meaning |
 | --- | --- |
-| Schema version | The source-claim interface version, independent of certificate versions. |
 | Source identity | File identity and digest of the exact source bytes. |
 | Type graph | The current calculus's finite positive graph; type references are lists of labels. |
 | Function identities | References to function declarations in that source snapshot. |
@@ -148,7 +147,7 @@ An expression claim must hold under its checked entry context. Source annotation
 remain separate requirements. Stable reference types in an entry claim do not
 license retaining a mutable field's singleton refinement across a write or call.
 
-The first version should not add a `requires` or `assume` directive. Function
+This interface should not add a `requires` or `assume` directive. Function
 inputs come from the source annotations, and their entry claims must follow from
 those inputs. A future contract syntax would need to state explicitly which
 obligations it places on external callers; an entry comment cannot quietly

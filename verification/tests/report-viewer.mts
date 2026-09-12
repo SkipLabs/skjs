@@ -29,7 +29,6 @@ const claim = {
 // is an error here rather than a puzzling reader failure. The reader's own
 // view of the format is report-viewer/types.ts.
 const manifest: Manifest = {
-  version: 1,
   producer: "manual",
   source: { file: "f.ts", sha256: hash(source) },
   functions: [
@@ -107,7 +106,6 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   const nameAt = text.indexOf("partial"),
     first = text.indexOf("const");
   const report = {
-    version: 1,
     producer: "skjs",
     source: { file: "partial.ts", sha256: hash(text) },
     functions: [
@@ -613,7 +611,6 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 {
   const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
   const record = {
-    version: 2,
     kind: "node-typing",
     phase: "proof-search",
     outcome: "not-established",
@@ -644,8 +641,6 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     ],
   );
   assert.equal(view.environmentStart, 363);
-  // A record from a version this reader does not know is not interpreted.
-  assert.equal(ob.obligationView({ ...record, version: 3 }), null);
   assert.equal(ob.obligationView(null), null);
   // An unknown role stays generic rather than being guessed into a story.
   const odd = structuredClone(record);
@@ -663,7 +658,6 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
 {
   const types = [["nul"], [{ boolLit: { value: true } }], [{ boolLit: { value: false } }]];
   const record = {
-    version: 2,
     kind: "edge-coverage",
     phase: "proof-search",
     outcome: "not-established",

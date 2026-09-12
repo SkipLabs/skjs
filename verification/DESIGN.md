@@ -289,7 +289,7 @@ separator searches, alternative models or a semantic-completeness project.
 | Point claims and slot maps | Checked incoming relations preserve semantic environments under the program's binding transfers. |
 | Control-flow graphs | The checker covers actual nodes and edges; accepted graphs have no stuck execution and typed returns, including cycles. |
 | In-memory producer | Builds evidence from fixed point annotations; successful output passes the consumer and preserves the exact requested claims. Search completeness is not claimed. |
-| Serialized requests | Versioned requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
+| Serialized requests | Requests and evidence pass through a separate JSON consumer in the existing verifier binary. Acceptance yields decoded-request safety. |
 | Source-facing integration | Primitive inputs, branches, local cells and bounded expression closures reach the stateful consumer. Primitive, cell-label and function-label translations have exact interpretation theorems; source compilation remains trusted. |
 
 Certificate completeness means **every declarative derivation has accepted
@@ -456,7 +456,7 @@ the contract or adding another edge rule. A test proves a valid mixed-label
 refinement that this algorithm cannot yet check. Boolean and tag dispatch
 supply observations from execution, never from producer assertions. No arbitrary predicate framework is introduced.
 
-Protocol version 2 makes the source parameter types an explicit input contract.
+The protocol makes the source parameter types an explicit input contract.
 The exporter’s parameter signature is checked for matching names, order and types.
 A synthetic entry edge must justify the first supplied point claim from that
 contract. Lean proves safety for any typed input environment, admissible world
@@ -621,7 +621,7 @@ proved operation rules, entailment check and mathematical statements.
 
 **Implemented:** semantic operation rules, finite heap/value facts and alias links,
 checked expression postconditions and graph-edge entailment, and source consumption
-through both raw SKJS claims and [version-2 sidecars](SOURCE-CLAIMS.md#current-content-assertions).
+through both raw SKJS claims and [sidecars](SOURCE-CLAIMS.md#current-content-assertions).
 Every statement entry is an exact local interface: its supplied ordinary types
 and current observations are the whole starting context. Extra derived heap/value
 facts and links are forgotten there, even on single-predecessor paths. The
@@ -905,8 +905,7 @@ that guarantee. `make verify` remains the experiment's source-facing command.
 A unary arrow between primitive unions is one interned row of the request's
 table. `FunctionClaims.arrow_exact` proves the row's domain and codomain
 interpretations. Existing application and lambda rules discharge their
-obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the table encoding and
-profile version.
+obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the table encoding.
 
 Source-mode search uses labels in the function's request and required-expression
 sequents, plus primitive labels. Vocabulary construction includes their operand
@@ -1001,13 +1000,13 @@ adding a typing rule. Effectful conditions and selected-arm effects retain their
 ordinary sequential evaluation.
 
 Null coalescing uses the same existing null-tag and union-elimination rules:
-save the left operand once, evaluate the fallback only for null, otherwise return
-the saved value (including false). The fallback may allocate, write or call.
-For an immutable variable operand, moving its name to the saved slot exposes its
-null refinement; reads and calls confer no retained alias. Both operand claims
-remain required. Undefined remains outside the source profile. Examples use
-named cell/callback fallback contracts because the current exporter can leave
-compound inferred alternatives unsupported; the consumer does not approximate them.
+save the left operand once, evaluate the fallback only for null or undefined,
+otherwise return the saved value (including false). The fallback may allocate,
+write or call. For an immutable variable operand, moving its name to the saved
+slot exposes its nullish refinement; reads and calls confer no retained alias.
+Both operand claims remain required. Examples use named cell/callback fallback
+contracts because the current exporter can leave compound inferred alternatives
+unsupported; the consumer does not approximate them.
 
 Boolean short-circuit operators reuse the existing conditional rules and source
 proof builder. Statement guards use checked graph paths and retain the complete

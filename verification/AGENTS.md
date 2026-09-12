@@ -105,11 +105,12 @@ an exporter change needs a place to show, one phenomenon per file.
   included — the trusted front end, the corpus driver, the suites, and the
   reader's own model and server. A new file lands in that project by being
   where it belongs; nothing is exempt.
-- `tools/source-claims.mts` describes the `stateful-source-v3` wire format, and
+- `tools/source-claims.mts` describes the source sidecar wire format, and
   `report-viewer/types.ts` the report the reader displays. A tool that writes
   or reads one of those documents is typed against that description rather
   than against its own idea of the shape, so producer and consumer cannot
-  drift apart silently.
+  drift apart silently. That typing is the whole consistency mechanism: adding
+  or removing a field is a compile error at every site that touches it.
 - The trusted front end is TypeScript on the compiler's own API
   (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
   the tree), type-checked by the `Front-end types` suite. A member that API
@@ -123,14 +124,19 @@ an exporter change needs a place to show, one phenomenon per file.
   pipe through node's own `_handle`, which bun does not expose
   (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
   that opens the compiler is affected, so this is not a per-suite choice.
-- Wire formats carry a version, and the decoders accept only that version.
-  That is a freshness check, not a compatibility mechanism: every producer and
-  every consumer of these documents is in this repository, and nothing outside
-  reads them. So a format is not frozen — fix its shape in place and
-  regenerate, rather than bumping the version and carrying the old shape. What
-  the version is for is catching a stale document when one side was
-  regenerated and the other was not, which the `sha256` fields also do, more
-  precisely.
+- Wire formats carry no version, profile or schema tag, and none is to be
+  added. What a version would be for is consistency, and consistency here is a
+  typing property: each format is one declared type, every producer and
+  consumer is typed against that type, and every decoder requires the shape
+  field by field and rejects an unknown field. So a document either has exactly
+  the current shape or it is refused, and there is nothing for a tag to
+  disambiguate. Staleness against a source is what the `sha256` fields are for,
+  and they say it precisely rather than by a number.
+- A format is never frozen and never has two accepted shapes. Fix its shape in
+  place, then regenerate the fixtures that carry it. Do not add a compatibility
+  shim, a second decoder, or a field that records which shape a document is:
+  every producer and consumer of these documents is in this repository, nothing
+  outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
   theorem stays in the file. Build only the module you changed while
   iterating (`lake build Verification.ExperimentState.<Module>`).

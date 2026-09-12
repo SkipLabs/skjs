@@ -8,7 +8,7 @@ file's verdict.
 
 ```sh
 node verification/tools/tsc-claims.mts verification/tests/stateful-source/cells.ts --out claims.json
-node verification/tests/tsc-claims.js verification/lean/.lake/build/bin/verifier
+node verification/tests/tsc-claims.mts verification/lean/.lake/build/bin/verifier
 ```
 
 Sites come from the trusted parser's AST and mirror `SourceClaimJson`'s

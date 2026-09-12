@@ -61,7 +61,7 @@ for (const at of kept) {
   assert.equal(
     draft.sourceSha256,
     digest,
-    `${relative} is about an earlier version of ${draft.file}; ` +
+    `${relative} is about ${draft.file} as it was before it changed; ` +
       `re-derive it against the source as it is, rather than editing the hash`,
   );
 

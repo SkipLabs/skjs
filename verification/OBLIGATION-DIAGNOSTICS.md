@@ -1,4 +1,4 @@
-# Obligation diagnostics (version 2)
+# Obligation diagnostics
 
 This is explanatory metadata about an unsuccessful verification attempt, not
 proof evidence and not a judgement that a source claim is false. The independent
@@ -10,12 +10,14 @@ On a structured failure, the verifier emits its existing human-readable error,
 then one line on stderr:
 
 ```text
-obligation-diagnostic: {"version":2,...}
+obligation-diagnostic: {"phase":"proof-search","outcome":"not-established",...}
 ```
 
 `verification/tools/obligation-diagnostic.mts` reads the record without parsing the
-human sentence. Unknown versions, malformed records, and duplicate records are
-not interpreted. Failures that reach no calculus obligation carry human text and
+human sentence. A record it cannot decode field by field, and a duplicate
+record, are not interpreted: the reader requires the fields below and refuses
+what it does not recognize, so a record it accepts is one of exactly this
+shape. Failures that reach no calculus obligation carry human text and
 an optional `location` instead of a record.
 Absence of a structured record never changes a failure into success.
 
@@ -36,7 +38,6 @@ is untrusted display data; it cannot establish verification status.
 
 | Field | Meaning |
 |---|---|
-| `version` | `2`; independent of evidence/request versions. |
 | `kind` | `node-typing`, `edge-coverage`, `expression-claim`, or `production-failure`. |
 | `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
 | `outcome` | `not-established`. |
@@ -146,8 +147,8 @@ an `in / claim / out` triple or infer their roles in the viewer.
 
 `tests/obligation-diagnostics.mts` exercises the three partial repairs and full
 repair of the return example, identical spans with different obligations,
-selected maps on shared-destination branches, input fingerprints, and unsupported
-record versions. It runs under `make verify-test`.
+selected maps on shared-destination branches, input fingerprints, and records
+the reader must refuse. It runs under `make verify-test`.
 
 ## Source-extraction failures
 
@@ -188,7 +189,8 @@ a binding pattern rather than as a value (`exprTypes`'s `isLValue` key) — and 
 parameter/a catch variable, `false` for `const` and for `this`) and, only when it
 differs from the narrowed `type`, `declared` (the binding's declared type).
 `SourceInput.decodeClaims` and `annotate-source.mts`'s `fromSkjs` read this
-export by field name, so the additions reach both without a version change.
+export by field name, so the additions reach both as soon as the field is
+declared in the type they share.
 
 For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emits:
 

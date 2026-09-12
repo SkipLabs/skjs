@@ -87,7 +87,7 @@ def convert (ast claims : Json) (fileKey : String) : Except String Json := do
     | some fn => functions := functions ++ [fn]
     | none =>
       omissions := omissions ++ [issue f (toJson "function") .null "function omitted: signature has unavailable types"]
-  let d : Document := ⟨3,profile,fileKey,← jStr (← jField ast "sourceSha256"),types,functions⟩
+  let d : Document := ⟨fileKey,← jStr (← jField ast "sourceSha256"),types,functions⟩
   -- Enforce the destination schema, without requiring the claims to be complete.
   let _ ← SourceClaimJson.decode (toJson d)
   return Json.mkObj [("claims",toJson d),("omissions",toJson omissions)]

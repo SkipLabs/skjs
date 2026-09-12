@@ -145,7 +145,7 @@ node verification/tools/annotate-source.mts closures.ts \
 ```
 
 It names its own format and the source it is about, so `--format` is not needed
-and a draft about a different file, or an earlier version of the same one, is
+and a draft about a different file, or the same one before it changed, is
 refused.
 
 ## How it is built

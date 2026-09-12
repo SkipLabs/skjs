@@ -1,6 +1,6 @@
 # Stateful calculus request protocol
 
-The verifier accepts a versioned JSON request for the
+The verifier accepts a JSON request for the
 stateful calculus, separately from its derivation certificate. This is a
 consumer boundary for extracted programs. It is **not** a decoder for SKJS's
 source-associated claims, and it does not certify TypeScript text by itself.
@@ -22,7 +22,6 @@ Save this minimal request as `request.json`:
 
 ```json
 {
-  "version": 2,
   "types": [["nul"]],
   "program": [{"expression": "nul", "continuation": "ret"}],
   "claims": [{"context": [], "type": [0]}],
@@ -52,7 +51,6 @@ All fields are explicit; object field order is immaterial.
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Exactly `2`. |
 | `types` | A finite array of normalized type-graph nodes. Its array positions are type labels. |
 | `program` | A finite array of calculus nodes. Its positions are control-flow labels. |
 | `claims` | One entry context and expression-result type per program node, in the same order. |
@@ -131,7 +129,7 @@ in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
 [RequestJson.lean](lean/Verification/ExperimentState/RequestJson.lean).
 
-The evidence file is an object with `version: 6` and `certificate`, a list of
+The evidence file is an object with one field, `certificate`, a list of
 `NodeEvidence` objects. Each node supplies its expression derivation tree and
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
@@ -176,14 +174,13 @@ Boolean slot. The lists must expand to the corresponding singleton clauses;
 the arms use precisely the root context with that slot replaced. All payload
 labels are bounds checked. The rule cannot narrow any other binding.
 
-Request version 2 requires explicit `inputs`. Raw requests use version 2;
-responses use version 6, which adds undefined literal evidence and undefined/nullish
-tests to checked heap postconditions, including ordinary-read
-links and writes without an old-content premise. Earlier responses
-are rejected. Source bundles use version 3 to include supplemental expression proofs;
-older source bundles are rejected.
-Decode/re-encode validation rejects unknown fields and missing fields,
-recursively. The JSON parser and codecs still form part of the input-meaning
+Requests require explicit `inputs`. Responses carry undefined literal evidence
+and undefined/nullish tests in checked heap postconditions, including
+ordinary-read links and writes without an old-content premise. Source bundles
+carry supplemental expression proofs alongside the graph certificates.
+Decode/re-encode validation requires every field and rejects any unknown
+field, recursively, so a document either has the current shape or is refused.
+When a shape changes, regenerate what carries it. The JSON parser and codecs still form part of the input-meaning
 boundary; round-trip tests are not a proof of fidelity to external source text.
 
 ## Proved boundary and validation
@@ -204,7 +201,7 @@ producer. Search is incomplete; failure is not a proof of untypability.
 `RequestJsonTests.lean` exercises serialize/parse/produce/serialize/parse/check
 on a loop, a mapped diamond, a closure over a mutated cell, and a program forcing
 structural overload-subtyping evidence. Negative cases alter code, claims,
-requirements, maps, versions and type labels, or add unknown fields and omit
+requirements, maps and type labels, or add unknown fields and omit
 required data. They also check that object field order does not matter.
 
 ## Source mode
@@ -230,8 +227,8 @@ verifier --check-stateful-source ast.json claims.json path/to/input.ts evidence.
 ```
 
 The file key must match both inputs. Evidence is a strict object
-`{"version":3,"functions":[...],"obligations":[...]}`, containing version-6
-responses in source function order. `obligations` has one list per function,
+`{"functions":[...],"obligations":[...]}`, containing responses in source
+function order. `obligations` has one list per function,
 including empty lists, with one evidence tree per reconstructed closure-expression
 or annotation judgment. Counts and root judgments must match exactly. Exported
 function order does not matter. The checking command reconstructs both the
@@ -352,8 +349,8 @@ internal types is not a Lean theorem.
 
 A supported multi-branch object is serialized as multiple `record` or `function`
 atoms in the same `atoms` list. Every branch must export successfully; one
-unsupported branch makes the whole type unavailable. No JSON constructor or
-version change is needed, and the report retains the alternatives exactly.
+unsupported branch makes the whole type unavailable. No new JSON constructor is
+needed, and the report retains the alternatives exactly.
 
 `CellUnion.translate` validates all record atoms and absorbs a non-invariant
 contract only into an existing invariant arm with weaker read requirements and
@@ -506,7 +503,7 @@ every incoming edge is checked. Neither the cut labels nor their interfaces are
 chosen by the certificate. See
 [the source checkpoint rules](PROGRAM-TYPING.md#source-observation-checkpoints).
 
-Source bundle version 3 carries these supplemental proofs alongside the graph
+The source bundle carries these supplemental proofs alongside the graph
 certificates. The consumer checks their syntax, scope, exact root judgment and
 rule derivation using `ExpressionClaims.checkAll`. Dropping a proof, adding a
 proof or substituting a valid proof of a different judgment is rejected.

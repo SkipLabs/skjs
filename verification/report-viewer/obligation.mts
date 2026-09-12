@@ -83,7 +83,6 @@ export interface ObligationView {
 
 
 const obligationReader = (() => {
-const OBLIGATION_VERSION = 2;
 
 // Roles come from extraction. An unknown role stays generic rather than being
 // guessed into a more specific story.
@@ -217,7 +216,7 @@ function mapContext(available: any, mapping: any) {
 }
 
 function obligationView(ob: any, source = "") {
-  if (!ob || ob.version !== OBLIGATION_VERSION) return null;
+  if (!ob) return null;
   const types = ob.types || [];
   // An edge fails at what its destination required, so a destination role that
   // names something specific describes it. A generic destination leaves the
@@ -334,7 +333,6 @@ function obligationView(ob: any, source = "") {
 }
 
   return {
-    OBLIGATION_VERSION,
     typeText,
     termText,
     contentsText,

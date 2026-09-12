@@ -28,12 +28,9 @@ try {
   assert.equal(parsed.status, 0, parsed.stderr);
   const f = JSON.parse(parsed.stdout).functions[0],
     pos = f.body[0].e.pos;
-  // Typed as the format itself, so an edit that stops being a valid
-  // `stateful-source-v3` document is an error here rather than a verifier
-  // rejection with a confusing message.
+  // Typed as the format itself, so an edit that stops being a valid sidecar
+  // is an error here rather than a verifier rejection with a confusing message.
   const base: SourceClaims = {
-    version: 3,
-    profile: "stateful-source-v3",
     types: [
       ["nul"],
       [{ boolLit: { value: true } }],
@@ -120,7 +117,6 @@ try {
     assert.equal(verify([1], [1]).status, "verified"));
   test("an edge diagnostic identifies the selected mapping even with a shared destination", () => {
     const request: any = {
-      version: 2,
       types: [
         [{ boolLit: { value: true } }],
         [{ boolLit: { value: false } }],
@@ -197,7 +193,7 @@ try {
     assert.equal(readDiagnostic(line + "\n" + line), undefined);
     assert.equal(readDiagnostic("obligation-diagnostic: {"), undefined);
     assert.equal(
-      readDiagnostic(line.replace('"version":2', '"version":99')),
+      readDiagnostic(line.replace('"outcome":"not-established"', '"outcome":"refuted"')),
       undefined,
     );
   });

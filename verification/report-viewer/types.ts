@@ -158,7 +158,6 @@ export interface Result {
 }
 
 export interface Manifest {
-  version: number;
   source: { file: string; sha256: string };
   producer: Producer | string;
   functions: ReportFunction[];

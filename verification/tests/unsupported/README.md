@@ -1,6 +1,6 @@
 # Unsupported source examples
 
-These are readable boundary cases, not verified successes. `unsupported.js`
+These are readable boundary cases, not verified successes. `unsupported.mts`
 requires rejection for a specific limitation, so an unrelated failure cannot
 silently replace the intended gate.
 

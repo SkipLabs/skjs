@@ -9,7 +9,7 @@ import { stripTypes } from "../tools/strip-types.mts";
 import { typeErrors } from "../tools/type-errors.mts";
 import { fromSourceClaims } from "../tools/annotate-source.mts";
 const __dirname = path.dirname(import.meta.filename);
-// Fresh producer claims, independent consumers, exact profile mirroring, and
+// Fresh producer claims, independent consumers, exact format mirroring, and
 // negative candidates. Runtime checks distinguish null, undefined and false.
 
 
@@ -69,7 +69,7 @@ try {
   test("independent raw consumer accepts", () =>
     accepted(check("stateful-source", claimsPath)));
   const checkMs = performance.now() - checkedAt;
-  test("undefined exports and round-trips through the neutral profile", () => {
+  test("undefined exports and round-trips through the neutral sidecar", () => {
     const r = run(process.execPath, [
       path.resolve(__dirname, "../tools/export-source-claims.mts"),
       file,
@@ -82,7 +82,6 @@ try {
     ]);
     accepted(r);
     const doc = JSON.parse(fs.readFileSync(normalized, "utf8"));
-    assert.equal(doc.profile, "stateful-source-v3");
     // The table starts with the primitives and holds one row per compound
     // type the fixture mentions, each a single clause over earlier labels.
     assert.deepEqual(doc.types.slice(0, 4), [

@@ -18,7 +18,7 @@ try {
   assert.equal(parsed.status,0,parsed.stderr);const ast=JSON.parse(parsed.stdout);fs.writeFileSync(ap,parsed.stdout);
   const f=ast.functions[0],pos=f.body[0].e.pos;
   const primitives=[["nul"],[{boolLit:{value:true}}],[{boolLit:{value:false}}],["undef"]];
-  const doc={version:3,profile:"stateful-source-v3",file,sourceSha256:hash(source),types:primitives,functions:[{
+  const doc={file,sourceSha256:hash(source),types:primitives,functions:[{
     name:f.name,namePos:f.namePos,params:[{name:"flag",type:[1,2],current:null}],result:[1,2],
     entries:[{start:f.body[0].pos[0],bindings:[{name:"flag",type:[1,2],current:null}]}],
     expressions:[{pos,type:[1,2],current:null}]}]};
@@ -35,9 +35,6 @@ try {
   mutate("unknown nested fields rejected",(d: any) =>d.functions[0].expressions[0].proof="trusted");
   mutate("stale source fingerprint rejected",(d: any) =>d.sourceSha256="0".repeat(64));
   mutate("different source identity rejected",(d: any) =>d.file="elsewhere.ts");
-  mutate("unsupported graph profile rejected",(d: any) =>d.profile="arbitrary");
-  mutate("retired profile is rejected",(d: any) =>d.profile="stateful-source-19-v1");
-  mutate("previous fixed-table profile is rejected",(d: any) =>d.profile="stateful-source-532-v2");
   mutate("out-of-range labels rejected even in unused bindings",(d: any) =>d.functions[0].entries[0].bindings.push({name:"unused",type:[4],current:null}));
   mutate("a table without the primitives is rejected",(d: any) =>d.types=d.types.slice(1));
   mutate("a table row referring past the table is rejected",(d: any) =>d.types.push([{refs:{first:[9],rest:[]}}]));
@@ -70,7 +67,7 @@ try {
       const expressions=[{pos:cst.init.pos,type:[4],current:null},{pos:cst.init.body.pos,type:bodyType,current:null},
         {pos:ret.e.pos,type:[0],current:null},{pos:ret.e.callee.pos,type:[4],current:null},{pos:ret.e.arg.pos,type:[1],current:null}];
       const entries=[{start:cst.pos[0],bindings:[]},{start:ret.pos[0],bindings:[{name:"f",type:[4],current:null}]}];
-      fs.writeFileSync(sc,JSON.stringify({version:3,profile:doc.profile,file:sf,sourceSha256:hash(source),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[0],entries,expressions}]}));
+      fs.writeFileSync(sc,JSON.stringify({file:sf,sourceSha256:hash(source),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[0],entries,expressions}]}));
     };
     write(text,[0]);
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
@@ -129,7 +126,7 @@ try {
       expr(st.init||st.e);
       if(st.k==="const")scope.push({name:st.name,type:(labels as Record<string, number[]>)[st.name],current:null});
     }
-    fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({version:3,profile:doc.profile,file:sf,sourceSha256:hash(text),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
+    fs.writeFileSync(sa,p.stdout);fs.writeFileSync(sc,JSON.stringify({file:sf,sourceSha256:hash(text),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[1,2],entries,expressions}]}));
     const produced=run(verifier,["--produce-source-claims",sa,sc,sf,se,"10"]);assert.equal(produced.status,0,produced.stderr);
     const checked=run(verifier,["--check-source-claims",sa,sc,sf,se]);assert.equal(checked.status,0,checked.stderr);
     const bad=JSON.parse(fs.readFileSync(sc,"utf8"));

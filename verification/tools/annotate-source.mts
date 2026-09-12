@@ -73,7 +73,6 @@ interface DraftFunction {
   conversionGaps?: { pos: Span; status: string }[];
 }
 interface DraftReport {
-  version: 1;
   source: { file: string; sha256: string };
   producer: string;
   functions: DraftFunction[];
@@ -96,6 +95,24 @@ interface SkjsFunction {
 interface SkjsFile {
   file: string;
   functions: SkjsFunction[];
+}
+
+/**
+ * The manifest `export-source-claims.mts` writes beside a converted sidecar.
+ * Declared here so the fields this tool reads are checked rather than assumed:
+ * a field that is renamed or dropped upstream fails to compile here.
+ */
+interface ConversionManifest {
+  kind: "skjs-source-claim-conversion";
+  source: { file: string; sha256: string };
+  sidecarSha256: string;
+  originalClaims: SkjsFile[];
+  omissions: {
+    function: string;
+    namePos: Span;
+    site?: { kind: string; pos: Span };
+    reason: string;
+  }[];
 }
 
 const hash = (data: crypto.BinaryLike) =>
@@ -209,7 +226,7 @@ function fromSkjs(
   if(!Array.isArray(claims))throw Error("expected SKJS file claims");
   const files=claims.filter(f=>f.file === file);
   if(files.length!==1)throw Error("expected exactly one matching claim file");
-  return {version:1,source:{file,sha256:hash(source)},producer,
+  return {source:{file,sha256:hash(source)},producer,
     functions:files[0].functions.map(f=>({name:f.name,namePos:f.namePos,
       ...(f.collection ? {collection:f.collection} : {}),
       unavailableTypes:unavailableTypes(f),
@@ -226,8 +243,8 @@ function fromSourceClaims(
   input: SourceClaims,
   producer: string,
 ): DraftReport {
-  if(input.version!==3||input.profile!=="stateful-source-v3"||input.file!==file||input.sourceSha256!==hash(source))
-    throw Error("source-claim profile or source identity mismatch");
+  if(input.file!==file||input.sourceSha256!==hash(source))
+    throw Error("source-claim source identity mismatch");
   const types=input.types;
   if(!Array.isArray(types)||types.length<4)throw Error("invalid source type table");
   const type=(A: Labels)=> {
@@ -249,7 +266,7 @@ function fromSourceClaims(
   };
   const sf=parse(source,file),entries=new Map();
   const walk=(n: any)=>{if(ts.isStatement(n))entries.set(n.getStart(sf),n.end);n.forEachChild(walk);};walk(sf);
-  return {version:1,source:{file,sha256:input.sourceSha256},producer,
+  return {source:{file,sha256:input.sourceSha256},producer,
     functions:input.functions.map(f=>({name:f.name,namePos:f.namePos,
       signature:{params:f.params.map(parameter),retType:type(f.result)},
       entries:f.entries.map(e=> {
@@ -262,9 +279,9 @@ function attachConversion(
   source: string,
   report: DraftReport,
   sidecarBytes: string,
-  conversion: any,
+  conversion: ConversionManifest,
 ): DraftReport {
-  if(conversion.version!==1||conversion.kind!=="skjs-source-claim-conversion")throw Error("unsupported conversion manifest");
+  if(conversion.kind!=="skjs-source-claim-conversion")throw Error("unsupported conversion manifest");
   if(conversion.source?.file!==report.source.file||conversion.source?.sha256!==hash(source))throw Error("conversion source identity mismatch");
   if(conversion.sidecarSha256!==hash(sidecarBytes))throw Error("conversion manifest does not match the exact sidecar; use a baseline for edited claims");
   if(!Array.isArray(conversion.omissions))throw Error("invalid conversion omissions");
@@ -281,10 +298,10 @@ function attachConversion(
     f.conversionGaps=[];
     for(const omission of conversion.omissions) {
       if(omission.function!==f.name||JSON.stringify(omission.namePos)!==JSON.stringify(f.namePos))continue;
-      const pos=omission.site?.pos;
-      if(omission.site?.kind==="expression" && old.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos)) &&
-          !f.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(pos))) {
-        f.conversionGaps.push({pos,status:`expression claim omitted during conversion: ${omission.reason}`});
+      const site=omission.site;
+      if(site?.kind==="expression" && old.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(site.pos)) &&
+          !f.expressions.some(e=>JSON.stringify(e.pos)===JSON.stringify(site.pos))) {
+        f.conversionGaps.push({pos:site.pos,status:`expression claim omitted during conversion: ${omission.reason}`});
       }
     }
   }
@@ -307,7 +324,7 @@ function render(
   results: any[] | null = null,
   identity: { claimChanges?: any[]; [k: string]: any } = {},
 ): string {
-  if(report.version!==1 || report.source?.sha256!==hash(source))throw Error("report source fingerprint mismatch");
+  if(report.source?.sha256!==hash(source))throw Error("report source fingerprint mismatch");
   if(typeof report.producer!=="string" || !report.producer || !Array.isArray(report.functions))throw Error("invalid report header");
   if(results && results.length!==report.functions.length)throw Error("result count mismatch");
   const scanner=createScanner(false,undefined,source);
@@ -371,7 +388,7 @@ function render(
   // Hashbang and BOM, when present, must remain at the beginning of the file.
   const headerAt=source.startsWith("#!") ? (source.indexOf("\n")<0 ? source.length : source.indexOf("\n")+1)
     : source.charCodeAt(0)===0xfeff ? 1 : 0;
-  const header=comment({kind:"report",version:1,source:report.source,producer:report.producer,
+  const header=comment({kind:"report",source:report.source,producer:report.producer,
     notice:"Display only. Results cover modeled function obligations, not every exported claim. Re-extract and verify after edits.",...identity});
   insertions.set(headerAt,header+(insertions.get(headerAt)||""));
   let text=source;
@@ -691,7 +708,7 @@ export function main(args: string[]) {
     if(read.file!==sourcePath && read.file!==options["file-key"])
       throw Error(`that candidate is about ${read.file}`);
     if(read.sourceSha256!==hash(source))
-      throw Error("that candidate is about an earlier version of this source");
+      throw Error("that candidate is about this source as it was before it changed");
     options.format=read.format;
   }
   const input=wrapped ? read.claims : read;
@@ -721,7 +738,7 @@ export function main(args: string[]) {
   if(diagnostics!==null)identity.diagnosticsSha256=hash(diagnostics);
   const annotated=render(source,report,results,{...identity,...(comparison?{claimChanges:comparison.changes}:{}),...(conversion?{conversionOmissions:conversion.omissions}:{})});
   const functionNodes=parse(source,report.source.file).statements.filter(ts.isFunctionDeclaration);
-  const data={version:1,sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
+  const data={sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(options.claims),
     ...(options.verify ? {verifierPath:path.resolve(options.verify)} : {}),
     ...identity,source:report.source,annotatedSha256:hash(annotated),producer:report.producer,
     ...(options.diagnostics ? {diagnosticsPath:path.resolve(options.diagnostics),diagnostics} : {}),

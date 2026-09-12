@@ -134,8 +134,6 @@ assert.deepEqual(
       file: outsideFile,
       sourceSha256: createHash("sha256").update(outsideSource).digest("hex"),
       claims: {
-        version: 3,
-        profile: "stateful-source-v3",
         types: [
           ["nul"],
           [{ boolLit: { value: true } }],

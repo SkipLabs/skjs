@@ -10,13 +10,13 @@ The probes are chosen for what the exporter does with them, one phenomenon
 each, and are independent of the verification corpus: nothing here is parsed
 by the source parser or checked by the verifier, so a probe may use any
 TypeScript. `run.sh` exports all of them in one SKJS run and
-`tests/export-snapshots.js` compares. When a diff is intended, review it and
+`tests/export-snapshots.mts` compares. When a diff is intended, review it and
 regenerate:
 
 ```sh
-UPDATE_EXPECT=1 node verification/tests/export-snapshots.js claims.json verification/tests/export-snapshots
+UPDATE_EXPECT=1 node verification/tests/export-snapshots.mts claims.json verification/tests/export-snapshots
 ```
 
-The printed syntax is `printFull` in `tools/claim-types.js`: the viewer's
+The printed syntax is `printFull` in `tools/claim-types.mts`: the viewer's
 surface syntax plus the parts it leaves out, so that two encodings that
 differ never print the same.
