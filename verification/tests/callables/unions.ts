@@ -292,3 +292,19 @@ function callbackProbeDoesNotNarrow(flag: boolean): boolean {
   }
   return false;
 }
+
+/**
+ * Selection captures a callable value once. One alternative reads the shared
+ * cell when called; the other retains the seed value. A later write changes
+ * the live reader's observation without changing which callable was selected.
+ */
+function selectedCallableAfterMutation(seed: boolean): (unit: null) => boolean {
+  const cell: { value: boolean } = { value: seed };
+  const live: (unit: null) => boolean = (unit: null): boolean => cell.value;
+  const snapshot: (unit: null) => boolean = (unit: null): boolean => seed;
+  const selected: (unit: null) => boolean = seed ? live : snapshot;
+  const invoke: (unit: null) => boolean = (unit: null): boolean =>
+    selected(unit);
+  cell.value = !seed;
+  return invoke;
+}

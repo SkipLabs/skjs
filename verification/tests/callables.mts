@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import surface from "../tools/claim-types.mts";
+import vm from "node:vm";
+import { stripTypes } from "../tools/strip-types.mts";
 
 const [astPath, claimsPath, fileKey, verifier] = process.argv.slice(2);
 const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
@@ -373,6 +375,25 @@ try {
     guarded.e = guarded.e.else_;
     expect("Boolean probe cannot replace the caller's null guard", run("--produce-stateful-source", a, claims), false);
     expect("Boolean probe cannot replace the caller's null guard (consumer)", run("--check-stateful-source", a, claims, evidence), false);
+  }
+
+  {
+    const runtime = vm.createContext({});
+    vm.runInContext(stripTypes(fs.readFileSync(fileKey, "utf8")), runtime, {timeout: 1000});
+    for (const seed of [false, true]) {
+      assert.equal(vm.runInContext(`selectedCallableAfterMutation(${seed})(null)`, runtime, {timeout: 1000}), false);
+    }
+    passed++;
+    console.log("  JavaScript selection remains stable while the live capture observes mutation: OK");
+    const a = clone(ast);
+    const f = a.functions.find((f: any) => f.name === "selectedCallableAfterMutation");
+    const call = f.body[4].init.body;
+    assert.equal(call.callee.name, "selected");
+    call.callee.name = "snapshot";
+    // The substitute has the same arrow type, so it is still well typed. Its
+    // changed lexical binding nevertheless requires freshly generated evidence.
+    expect("same-typed snapshot cannot reuse the selected callable's evidence", run("--check-stateful-source", a, claims, evidence), false);
+    expect("same-typed snapshot produces its own evidence", run("--produce-stateful-source", a, claims), true);
   }
 
   const types: any[] = [];
