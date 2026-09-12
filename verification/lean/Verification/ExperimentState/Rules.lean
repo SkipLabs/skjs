@@ -123,11 +123,15 @@ theorem write_rule {code : CallCode} {A : Fam} (hA : Adm A) (n : Nat) (W : World
     rw [trunc_trunc]
     exact this
 
-/-- **Allocation.** Storing a value of type `A` yields a reference to `A`, and
-the world grows by exactly that contract. -/
-theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
-    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v) :
-    Safe (refT A) n W h (.alloc v) := by
+/-- **Object allocation.** Both descriptor shapes allocate through this rule.
+The world grows by the stored contract; the result obligation supplies the
+descriptor-specific view of the fresh object in that future world. -/
+theorem make_rule {A Q : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode) (v : Tm)
+    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v)
+    (result : ∀ j (hj : j < n) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U →
+      refT A j U (.obj h.length .absent) → Q j U (.obj h.length code)) :
+    Safe Q n W h (.make code v) := by
   cases n with
   | zero => trivial
   | succ p =>
@@ -141,17 +145,27 @@ theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v
       show A i _ v
       rw [trunc_appendW, trunc_trunc]
       exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
-    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .obj h.length .absent,
-      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .allocV hval,
+    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res A), h ++ [v], .obj h.length code,
+      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .makeV hval,
       heap_alloc p _ h (res A) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
       ?_⟩
     cases p with
     | zero => trivial
     | succ q =>
-      refine Or.inl ⟨rfl, ⟨h.length, res A, rfl, ?_, fun _ _ _ _ => Iff.rfl⟩⟩
+      refine Or.inl ⟨rfl, result (q + 1) (by omega) _ (WExt_appendW _ _) ?_⟩
+      refine ⟨h.length, res A, rfl, ?_, fun _ _ _ _ => Iff.rfl⟩
       simp only [lookup, appendW, toList_ofList]
       rw [List.getElem?_append_right (by omega)]
       simp [hlen]
+
+/-- Plain references specialize the common allocation rule to an absent descriptor. -/
+theorem alloc_rule {A : Fam} (hA : Adm A) (n : Nat) (W : WorldT n) (h : Heap) (v : Tm)
+    (hval : isVal v = true) (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : A n W v) :
+    Safe (refT A) n W h (.alloc v) :=
+  make_rule hA n W h .absent v hval hadm hok hv (fun _ _ _ _ hr => hr)
+
+#print axioms make_rule
+#print axioms alloc_rule
 
 theorem refT_transfer {A : Fam} {k : Nat} {W : WorldT k} {l : Nat}
     (hr : refT A k W (.obj l .absent)) (j : Nat) (hj : j ≤ k) (W' : WorldT j)

@@ -41,10 +41,9 @@ inductive Tm where
   | fls
   /-- An object identity with an optional, immutable invocation descriptor. -/
   | obj (l : Nat) (call : CallCode)
-  /-- Allocate a function object with body `b` and initial bag contents `a`.
-  The body is code under one binder, not a term evaluated at creation. -/
-  | attach (b a : Tm)
-  | alloc (a : Tm)
+  /-- Allocate one object with immutable call code and initial bag contents `a`.
+  Only the initializer is evaluated; a closure body is code under one binder. -/
+  | make (call : CallCode) (a : Tm)
   | read (a : Tm)
   | write (a b : Tm)
   | test (k : Tag) (a : Tm)
@@ -57,6 +56,12 @@ inductive CallCode where
   | closure (body : Tm)
   deriving Repr, DecidableEq
 end
+
+/-- Plain-object allocation is the absent-descriptor case of `make`. -/
+@[match_pattern] abbrev Tm.alloc (a : Tm) : Tm := .make .absent a
+
+/-- Function-object allocation is the closure-descriptor case of `make`. -/
+@[match_pattern] abbrev Tm.attach (b a : Tm) : Tm := .make (.closure b) a
 
 /-- Source function creation starts with an empty one-cell property bag. -/
 @[match_pattern] abbrev Tm.funE (b : Tm) : Tm := .attach b .nul
@@ -80,12 +85,16 @@ end
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b)) (t : Tm) : P t := by
   apply Tm.rec (motive_1 := P)
     (motive_2 := fun c => match c with | .absent => True | .closure b => P b)
-    var app letE nul undef tru fls ?_ attach alloc read write test ite
+    var app letE nul undef tru fls ?_ ?_ read write test ite
     True.intro (fun _ h => h) t
-  intro l c ih
-  cases c with
-  | absent => exact objAbsent l
-  | closure b => exact objClosure l b ih
+  · intro l c ih
+    cases c with
+    | absent => exact objAbsent l
+    | closure b => exact objClosure l b ih
+  · intro c a ihc iha
+    cases c with
+    | absent => exact alloc a iha
+    | closure b => exact attach b a ihc iha
 
 
 
@@ -140,10 +149,8 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
   | beta : isVal a = true → Step h (.app (.obj l (.closure b)) a) h (subst 0 a b)
-  | attachC : Step h a h' a' → Step h (.attach b a) h' (.attach b a')
-  | attachV : isVal v = true → Step h (.attach b v) (h ++ [v]) (.obj h.length (.closure b))
-  | allocC : Step h a h' a' → Step h (.alloc a) h' (.alloc a')
-  | allocV : isVal v = true → Step h (.alloc v) (h ++ [v]) (.obj h.length .absent)
+  | makeC : Step h a h' a' → Step h (.make c a) h' (.make c a')
+  | makeV : isVal v = true → Step h (.make c v) (h ++ [v]) (.obj h.length c)
   | readC : Step h a h' a' → Step h (.read a) h' (.read a')
   /-- Reading and writing an object go to its bag, whatever its code. -/
   | readV : h[l]? = some v → Step h (.read (.obj l c)) h v
@@ -229,22 +236,14 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | appL hs => exact absurd hs obj_no_step
     | appR _ hs => exact absurd hs (value_no_step hv)
     | beta => exact ⟨rfl, rfl⟩
-  | attachC hs ih =>
+  | makeC hs ih =>
     cases s2 with
-    | attachC hs' => exact (ih hs').imp id (congrArg (Tm.attach _))
-    | attachV hv => exact absurd hs (value_no_step hv)
-  | attachV hv =>
+    | makeC hs' => exact (ih hs').imp id (congrArg (Tm.make _))
+    | makeV hv => exact absurd hs (value_no_step hv)
+  | makeV hv =>
     cases s2 with
-    | attachC hs => exact absurd hs (value_no_step hv)
-    | attachV => exact ⟨rfl, rfl⟩
-  | allocC s ih =>
-    cases s2 with
-    | allocC s' => exact (ih s').imp id (congrArg Tm.alloc)
-    | allocV hv => exact absurd s (by intro hs; exact value_no_step hv hs)
-  | allocV hv =>
-    cases s2 with
-    | allocC s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
-    | allocV => exact ⟨rfl, rfl⟩
+    | makeC hs => exact absurd hs (value_no_step hv)
+    | makeV => exact ⟨rfl, rfl⟩
   | readC s ih =>
     cases s2 with
     | readC s' => exact (ih s').imp id (congrArg Tm.read)
@@ -290,11 +289,11 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | iteC s' => exact absurd s' fls_no_step
     | iteF => exact ⟨rfl, rfl⟩
 
-theorem alloc_step_inv {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.alloc v) h' t) : h' = h ++ [v] ∧ t = .obj h.length .absent := by
+theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
+    (hs : Step h (.make c v) h' t) : h' = h ++ [v] ∧ t = .obj h.length c := by
   cases hs with
-  | allocC hs => exact False.elim (value_no_step hv hs)
-  | allocV => exact ⟨rfl, rfl⟩
+  | makeC hs => exact False.elim (value_no_step hv hs)
+  | makeV => exact ⟨rfl, rfl⟩
 
 theorem beta_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
     (hs : Step h (.app (.obj l (.closure b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
@@ -309,12 +308,6 @@ theorem let_step_inv {b a : Tm} (ha : isVal a = true) {h h' t}
   cases hs with
   | letC hs => exact False.elim (value_no_step ha hs)
   | letV => exact ⟨rfl, rfl⟩
-
-theorem attach_step_inv {b : Tm} {v : Val} (hv : isVal v = true) {h h' t}
-    (hs : Step h (.attach b v) h' t) : h' = h ++ [v] ∧ t = .obj h.length (.closure b) := by
-  cases hs with
-  | attachC hs => exact False.elim (value_no_step hv hs)
-  | attachV => exact ⟨rfl, rfl⟩
 
 theorem read_step_inv {r : Nat} {c : CallCode} {h h' t} (hs : Step h (.read (.obj r c)) h' t) :
     h' = h ∧ h[r]? = some t := by

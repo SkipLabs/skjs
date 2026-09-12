@@ -50,12 +50,12 @@ theorem mapped_safe (n : Nat) : SafeGraph mapped (PositiveRules.meaning G [1]) n
 
 theorem mapped_returns_false : Execution mapped 17 [] (.at 0 (fun _ => .nul)) [.fls,.nul] (.done .fls) := by
   apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.allocV rfl))
+  apply Execution.next (.expr (.makeV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
-  apply Execution.next (.expr (.attachV rfl))
+  apply Execution.next (.expr (.makeV rfl))
   apply Execution.next (.bind rfl)
   apply Execution.next (.enter rfl)
   apply Execution.next (.expr (.writeV rfl (by decide)))

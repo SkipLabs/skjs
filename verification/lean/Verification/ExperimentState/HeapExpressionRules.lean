@@ -192,7 +192,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i R A ρ n W h}
       n W h (.alloc (ρ i)) := by
   obtain ⟨a,ha,hv⟩ := valuesAt_sound hr he hk
   have hvv : isVal (ρ i) = true := by rw [hv]; cases a <;> rfl
-  apply one_step rfl rfl (.allocV hvv) _
+  apply one_step rfl rfl (.makeV hvv) _
     (by simpa [instantiate] using ht.sound n W h ρ he hw hh)
   refine ⟨?_,(HeapKnowledge.shift_holds (v := .obj h.length .absent) hk).2.1,
     HeapLinks.alloc_frame (HeapKnowledge.shift_holds (v := .obj h.length .absent) hk).2.2⟩
@@ -333,7 +333,7 @@ theorem creation_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k b A ρ n W h}
   | succ n =>
     rcases hs with ⟨hv, _⟩ | ⟨U,h',t',hx,hu,step,hh',hs'⟩
     · simp [instantiate,Tm.funE,isVal] at hv
-    · obtain ⟨rfl,rfl⟩ := attach_step_inv rfl step
+    · obtain ⟨rfl,rfl⟩ := make_step_inv rfl step
       exact Or.inr ⟨U,_,_,hx,hu,step,hh',
         refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame hk)) hs'⟩
 

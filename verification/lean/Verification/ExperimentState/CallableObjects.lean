@@ -87,38 +87,12 @@ theorem attach_rule {P : Fam} {L : List (Fam × Fam)} (hA : Adm P)
     (hf : CodeSpec L n W b) (hval : isVal v = true)
     (hadm : WorldAdm W) (hok : HeapOk n W h) (hv : P n W v) :
     Safe (callableT L P) n W h (.attach b v) := by
-  cases n with
-  | zero => trivial
-  | succ p =>
-    have hcadm : CtrAdm (res P : Ctr p) := fun i _ U U' hx w hw => hA.mono i U U' hx w hw
-    have hlen : h.length = (toList (trunc p (Nat.le_succ p) W)).length := by
-      have := hok.1; simp [trunc] at this ⊢; omega
-    have hcont : ∀ (i : Nat) (hi : i < p),
-        (res P : Ctr p) i hi
-          (trunc i (Nat.le_of_lt hi) (appendW (trunc p (Nat.le_succ p) W) (res P))) v := by
-      intro i hi
-      show P i _ v
-      rw [trunc_appendW, trunc_trunc]
-      exact hA.mono i _ _ (WExt_appendW _ _) v (hA.down_le (p + 1) i (by omega) W v hv)
-    refine Or.inr ⟨appendW (trunc p (Nat.le_succ p) W) (res P), h ++ [v], .obj h.length (.closure b),
-      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hadm) hcadm, .attachV hval,
-      heap_alloc p _ h (res P) v (HeapOk_trunc p W h hok) (WorldAdm_trunc _ hadm) hcont,
-      ?_⟩
-    cases p with
-    | zero => trivial
-    | succ q =>
-      have hr : refT P (q + 1)
-          (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P))
-          (.obj h.length .absent) := by
-        refine ⟨h.length, res P, rfl, ?_, fun _ _ _ _ => Iff.rfl⟩
-        simp only [lookup, appendW, toList_ofList]
-        rw [List.getElem?_append_right (by omega)]
-        simp [hlen]
-      have hf' : CodeSpec L (q + 1)
-          (appendW (trunc (q + 1) (Nat.le_succ (q + 1)) W) (res P)) b :=
-        hf.down.mono (WExt_appendW _ _)
-      exact Or.inl ⟨rfl, ⟨⟨h.length, .closure b, rfl, rfl, hr⟩,
-        (arrowsT_code_iff L h.length b _ _).mpr hf'⟩⟩
+  apply make_rule hA n W h (.closure b) v hval hadm hok hv
+  intro j hj U hx hr
+  have hf' : arrowsT L j U (.obj h.length (.closure b)) :=
+    (arrowsT_adm L).mono j _ U hx _ ((arrowsT_adm L).down_le n j
+      (Nat.le_of_lt hj) W _ ((arrowsT_code_iff L h.length b n W).mpr hf))
+  exact ⟨⟨h.length, .closure b, rfl, rfl, hr⟩, hf'⟩
 
 #print axioms Callable.step
 #print axioms bagT_contractive

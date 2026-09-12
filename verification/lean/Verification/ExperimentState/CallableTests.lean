@@ -3,7 +3,7 @@ import Verification.ExperimentState.ProgramTyping
 /-!
 # Function objects: the operational slice
 
-What the language layer says about `obj l (.closure b)` and `attach`, checked on
+What the language layer says about `obj l (.closure b)` and `make`, checked on
 concrete terms: creation allocates the bag and yields a fresh identity, a call
 is one beta step, reads and writes go to the bag, the shape test answers as
 for a function, and evaluation stays deterministic. A plain object is the same
@@ -14,16 +14,36 @@ namespace Verification.ExperimentState.CallableTests
 
 /-- Creating a function object allocates its bag: the closure is paired with the new location. -/
 example : Step [] (.attach (.var 0) .tru) [.tru] (.obj 0 (.closure (.var 0))) :=
-  .attachV rfl
+  .makeV rfl
 
 /-- Creating the same source function twice produces distinct identities. -/
 example : Step [] (.funE (.var 0)) [.nul] (.fn 0 (.var 0)) ∧
     Step [.nul] (.funE (.var 0)) [.nul,.nul] (.fn 1 (.var 0)) :=
-  ⟨.attachV rfl, .attachV rfl⟩
+  ⟨.makeV rfl, .makeV rfl⟩
 
 /-- Code is not evaluated during creation, even if invoking it would get stuck. -/
 example : Step [] (.funE (.app .nul .nul)) [.nul] (.fn 0 (.app .nul .nul)) :=
-  .attachV rfl
+  .makeV rfl
+
+/-- An allocating initializer gets its identity first, for any pair of descriptors.
+The outer allocation uses the updated heap length and stores that exact object. -/
+example (inner outer : CallCode) :
+    Step [] (.make outer (.make inner .tru)) [.tru] (.make outer (.obj 0 inner)) ∧
+    Step [.tru] (.make outer (.obj 0 inner)) [.tru, .obj 0 inner] (.obj 1 outer) :=
+  ⟨.makeC (.makeV rfl), .makeV rfl⟩
+
+/-- Plain and callable objects draw fresh identities from the same heap. -/
+example : Step [] (.alloc .tru) [.tru] (.obj 0 .absent) ∧
+    Step [.tru] (.funE (.var 0)) [.tru, .nul] (.fn 1 (.var 0)) ∧
+    Step [.tru, .nul] (.alloc .fls) [.tru, .nul, .fls] (.obj 2 .absent) :=
+  ⟨.makeV rfl, .makeV rfl, .makeV rfl⟩
+
+/-- Creating an object cannot hide a stuck initializer, regardless of its descriptor. -/
+example (code : CallCode) {h h' t} : ¬ Step h (.make code (.app .nul .nul)) h' t := by
+  intro hs
+  cases hs with
+  | makeC hs => exact stuck_no_step hs
+  | makeV hv => cases hv
 
 /-- Calling it is one beta step; the heap is untouched. -/
 example : Step [.tru] (.app (.obj 0 (.closure (.var 0))) .fls) [.tru] .fls :=
@@ -54,7 +74,7 @@ example : isVal (.funE (.var 0)) = false := rfl
 /-- The only step out of a creation is the allocation. -/
 example {h' t} (hs : Step [.nul] (.attach .nul .tru) h' t) :
     h' = [.nul, .tru] ∧ t = .obj 1 (.closure .nul) :=
-  attach_step_inv rfl hs
+  make_step_inv rfl hs
 
 /-- Substitution reaches the code and leaves the identity alone. -/
 example : subst 0 .tru (.obj 3 (.closure (.app (.var 1) (.var 0)))) =

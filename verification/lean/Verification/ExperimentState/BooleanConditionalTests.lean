@@ -94,7 +94,7 @@ theorem known_condition_effects_preserved : Execution knownEffectProgram 8 []
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.makeV rfl))
     | apply Execution.next (.expr (.iteC (.letC (.writeV rfl (by decide)))))
     | apply Execution.next (.expr (.iteC (.letV rfl)))
     | apply Execution.next (.expr .iteT)
@@ -146,8 +146,7 @@ theorem captured_branch_reads_latest (q : Bool) : Execution (captureProgram q) 1
   cases q <;> repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.attachV rfl))
-    | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.makeV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
     | apply Execution.next (.expr (.beta rfl))
     | apply Execution.next (.expr (.iteC (.readV rfl)))
@@ -167,7 +166,7 @@ theorem condition_effects_preserved : Execution effectfulProgram 9 []
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.makeV rfl))
     | apply Execution.next (.expr (.iteC (.letC (.writeV rfl (by decide)))))
     | apply Execution.next (.expr (.iteC (.letV rfl)))
     | apply Execution.next (.expr (.iteC (.readV rfl)))

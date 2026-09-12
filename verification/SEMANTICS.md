@@ -11,9 +11,9 @@ language remains an integration obligation.
 `Language.lean` defines an untyped call-by-value language with a mutable heap.
 This is the whole term syntax:
 
-$$t ::= x_i\mid\mathsf{fun}(t)\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
-\mid\mathsf{obj}(\ell,c)\mid\mathsf{attach}(t,t)\mid\mathsf{let}(t,t)
-\mid\mathsf{alloc}(t)\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
+$$t ::= x_i\mid t\,t\mid\mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}
+\mid\mathsf{obj}(\ell,c)\mid\mathsf{make}(c,t)\mid\mathsf{let}(t,t)
+\mid\mathsf{read}(t)\mid\mathsf{write}(t,t)
 \mid\mathsf{test}_k(t)\mid\mathsf{if}\;t\;t\;t.$$
 
 Here $x_i$ is a variable, given as a de Bruijn position, $\ell$ a heap location,
@@ -25,8 +25,18 @@ the subset
 $$v ::= \mathsf{null}\mid\mathsf{undefined}\mid\mathsf{true}\mid\mathsf{false}\mid\mathsf{obj}(\ell,c),$$
 
 where $c ::= \mathsf{absent}\mid\mathsf{closure}(t)$ is a separate invocation
-descriptor. `funE b` abbreviates `attach b null`: evaluating it allocates a
-fresh function object without running `b`. There is no bare lambda value.
+descriptor. `make c a` evaluates its initializer `a`, then appends that value
+to the heap and returns `obj h.length c` using the updated heap length.
+`alloc a` abbreviates `make absent a`; `attach b a` abbreviates
+`make (closure b) a`; `funE b` abbreviates `make (closure b) null`.
+All three use the same constructor and the same allocation step, `Step.makeV`.
+The closure body is not evaluated during creation. There is no bare lambda value.
+
+`make_rule` proves heap and world extension once, with a result obligation for
+the fresh object's descriptor. `alloc_rule` and `attach_rule` specialize that
+proof to plain reference and callable contracts. Unique descriptors for every
+occurrence of an identity still need a separate global coherence invariant;
+unified fresh allocation alone does not impose one on arbitrary runtime terms.
 
 `Val` abbreviates `Tm`, so worlds, heaps and the step relation all speak
 about the same objects. `letE a b` is an explicit binding: it evaluates `a`,

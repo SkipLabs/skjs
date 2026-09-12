@@ -234,7 +234,7 @@ theorem cell_assignment_trace : ControlFlow.Execution cellProgram 24 []
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.bind rfl)
     | apply ControlFlow.Execution.next (.effect rfl)
@@ -285,8 +285,7 @@ theorem captured_alias_trace : ControlFlow.Execution captureProgram 37 []
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
     | apply ControlFlow.Execution.next (.expr (.readV rfl))
@@ -325,8 +324,7 @@ theorem terminal_branch_trace : ControlFlow.Execution branchCaptureProgram 38 []
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
     | apply ControlFlow.Execution.next (.expr (.iteC (.readV rfl)))
@@ -374,8 +372,7 @@ theorem shared_continuation_trace : ControlFlow.Execution joinedCaptureProgram 4
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
@@ -433,8 +430,7 @@ theorem early_return_trace (q : Bool) : ControlFlow.Execution (earlyCaptureProgr
   cases q <;> repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.writeV rfl (by decide)))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
@@ -496,8 +492,7 @@ theorem closure_write_trace : ControlFlow.Execution writerProgram 27 []
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
     | apply ControlFlow.Execution.next (.expr (.letC (.writeV rfl (by decide))))
@@ -563,8 +558,7 @@ theorem local_writer_trace : ControlFlow.Execution localWriterProgram 30 []
   repeat first
     | exact ControlFlow.Execution.refl
     | apply ControlFlow.Execution.next (.enter rfl)
-    | apply ControlFlow.Execution.next (.expr (.attachV rfl))
-    | apply ControlFlow.Execution.next (.expr (.allocV rfl))
+    | apply ControlFlow.Execution.next (.expr (.makeV rfl))
     | apply ControlFlow.Execution.next (.expr (.letV rfl))
     | apply ControlFlow.Execution.next (.expr (.beta rfl))
     | apply ControlFlow.Execution.next (.expr (.letC (.letV rfl)))

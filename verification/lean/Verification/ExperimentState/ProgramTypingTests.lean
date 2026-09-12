@@ -95,9 +95,9 @@ inductive Runs : Heap → Tm → Heap → Tm → Prop where
   | next : Step h t h' t' → Runs h' t' h'' t'' → Runs h t h'' t''
 
 theorem program_returns_false : Runs [] program [.fls,.nul] .fls := by
-  apply Runs.next (.letC (.allocV rfl))
+  apply Runs.next (.letC (.makeV rfl))
   apply Runs.next (.letV rfl)
-  apply Runs.next (.letC (.attachV rfl))
+  apply Runs.next (.letC (.makeV rfl))
   apply Runs.next (.letV rfl)
   apply Runs.next (.letV rfl)
   apply Runs.next (.letC (.writeV rfl (by decide)))

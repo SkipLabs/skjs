@@ -151,7 +151,7 @@ theorem prog_runs :
         (.app (.fn 0 (.read (.obj 0 .absent))) .nul) ∧
       Step [.fls] (.app (.fn 0 (.read (.obj 0 .absent))) .nul) [.fls] (.read (.obj 0 .absent)) ∧
       Step [.fls] (.read (.obj 0 .absent)) [.fls] .fls :=
-  ⟨.appR rfl (.allocV rfl), .beta rfl, .appR rfl (.writeV rfl (by simp)),
+  ⟨.appR rfl (.makeV rfl), .beta rfl, .appR rfl (.writeV rfl (by simp)),
     .beta rfl, .readV rfl⟩
 
 /-- And the whole thing really is a function of that type. -/

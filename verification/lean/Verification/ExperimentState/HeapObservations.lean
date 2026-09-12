@@ -206,7 +206,7 @@ theorem write_observed {A : Fam} (ha : Adm A) {n W h l v}
 theorem alloc_observed {A : Fam} (ha : Adm A) {n W h v}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hv : isVal v = true) (ht : A n W v) :
     SafePost (refT A) (fun h' u => h' = h ++ [v] ∧ u = .obj h.length .absent) n W h (.alloc v) :=
-  one_step rfl rfl (.allocV hv) ⟨rfl,rfl⟩ (alloc_rule ha n W h v hv hw hh ht)
+  one_step rfl rfl (.makeV hv) ⟨rfl,rfl⟩ (alloc_rule ha n W h v hv hw hh ht)
 
 /-- A same-location alias shares the observation; variable names do not matter. -/
 theorem alias {h l k v} (he : l = k) (ho : Observes h l v) : Observes h k v := by

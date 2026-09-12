@@ -72,9 +72,9 @@ theorem shared_paths (a b : Bool) : Execution program
     [if a && !b then .fls else .tru,.nul] (.done (if a && !b then .fls else .tru)) := by
   cases a <;> cases b <;> repeat first
     | exact Execution.refl
-    | apply Execution.next (.expr (.letC (.attachV rfl)))
+    | apply Execution.next (.expr (.letC (.makeV rfl)))
     | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.makeV rfl))
     | apply Execution.next (.expr (.letV rfl))
     | apply Execution.next (.expr (.beta rfl))
     | apply Execution.next (.expr .iteT)
@@ -141,7 +141,7 @@ theorem passed_refinement_paths (a b : Bool) : Execution refinedProgram
     [.nul] (.done (if b then .tru else .fls)) := by
   cases a <;> cases b <;> repeat first
     | exact Execution.refl
-    | apply Execution.next (.expr (.letC (.attachV rfl)))
+    | apply Execution.next (.expr (.letC (.makeV rfl)))
     | apply Execution.next (.enter rfl)
     | apply Execution.next (.expr (.letV rfl))
     | apply Execution.next (.expr (.beta rfl))

@@ -920,8 +920,9 @@ survives.
 
 `pureTerm` includes values, variables, tests of pure terms, and conditionals
 whose condition and both arms are pure. It excludes calls, reads, writes and
-allocation. A lambda's body may have effects because forming the lambda does
-not run it. `pure_step` and `pure_frame` prove:
+allocation, including function creation. A checked creation effect separately
+preserves old facts while allocating the function's bag; the body may have
+effects because creation does not run it. `pure_step` and `pure_frame` prove:
 
 $$
 \frac{\operatorname{Pure}(t)\quad(h,t)\longrightarrow(h',t')}
@@ -1268,7 +1269,9 @@ lambdas from locations. The Lean runtime now has only object values for both
 plain objects (`obj l absent`) and functions (`obj l (closure b)`). `CallCode`
 is a separate descriptor type; its body is not a runtime value. `funE b`
 allocates a fresh function object with a null-initialized one-cell bag, while
-`letE` binds without allocation. `isFun` recognizes function objects and
+`letE` binds without allocation. Plain allocation and function creation are
+abbreviations of `make code initialContents`, with one congruence rule, one
+allocation step, and the shared semantic proof `make_rule`. `isFun` recognizes function objects and
 `isRef` recognizes plain objects, both independently of the heap.
 
 The implemented semantic slice is in

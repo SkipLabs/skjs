@@ -214,7 +214,7 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
   | @alloc Γ a A Ref ha hr ih =>
     intro n W h ρ he hw hh
-    apply bind Tm.alloc Step.allocC n W h _ hw hh (ih n W h ρ he hw hh)
+    apply bind Tm.alloc Step.makeC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     apply Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨hv, by simp⟩)
     exact alloc_rule (meaning_adm G A) j U heap v hv hu hok ha'

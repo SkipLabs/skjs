@@ -62,7 +62,7 @@ theorem arrow_inter_codomain_fails :
   -- the allocation
   rcases hs1 with ⟨hv, -⟩ | ⟨Q, h2', t2, hq, huq, hst2, hok2, hs2⟩
   · simp [isVal] at hv
-  obtain ⟨he2, rfl⟩ := alloc_step_inv (show isVal Tm.nul = true from rfl) hst2
+  obtain ⟨he2, rfl⟩ := make_step_inv (show isVal Tm.nul = true from rfl) hst2
   subst he2
   -- a location is a value, and it would have to inhabit an empty codomain
   rcases hs2 with ⟨-, hmem⟩ | ⟨_, _, _, _, _, hst3, _, _⟩

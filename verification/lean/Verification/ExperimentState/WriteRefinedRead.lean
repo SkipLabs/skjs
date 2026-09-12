@@ -46,7 +46,7 @@ theorem function_arrow (n : Nat) (W : WorldT n) :
 program_post establishes safety independently by composition of general rules. -/
 theorem program_runs (h : Heap) :
     Steps 5 h program ((h ++ [Tm.fls]).set h.length .tru) .tru := by
-  apply Steps.next (.letC (.allocV rfl))
+  apply Steps.next (.letC (.makeV rfl))
   apply Steps.next (.letV rfl)
   apply Steps.next (.letC (.writeV rfl (by simp)))
   apply Steps.next (.letV rfl)

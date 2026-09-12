@@ -69,8 +69,7 @@ theorem continue_retests : Execution continueProgram 60 []
   repeat first
     | exact Execution.refl
     | apply Execution.next (.enter rfl)
-    | apply Execution.next (.expr (.attachV rfl))
-    | apply Execution.next (.expr (.allocV rfl))
+    | apply Execution.next (.expr (.makeV rfl))
     | apply Execution.next (.expr (.writeV rfl (by decide)))
     | apply Execution.next (.expr (.beta rfl))
     | apply Execution.next (.expr (.readV rfl))
