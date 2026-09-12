@@ -1320,8 +1320,12 @@ bag view can be expressed as `refs P Ps | callable P Ps []` using two graph
 labels. `CallableConjunctions.neutral_iff` proves that this union is precisely
 the bag conjunction on scoped values; it forgets invocation promises without
 changing the object. `NeutralBagTests` supplies checked `unionVar` derivations
-for reads and writes through this view. Automatic proof search does not yet
-split these receivers. Source export of combined callable/property types
+for reads and writes through this view. Proof search first tries a single
+constructor view, then splits an explicitly union-typed receiver variable for
+reads and writes, using the existing `unionVar` evidence. Every alternative
+must check; a null alternative cannot be ignored. Both allocation shapes run
+through the same read/write graph and JSON protocol without a runtime tag
+branch. The view makes no invocation promise. Source export of combined callable/property types
 remains future work.
 Source integration also needs explicit property-presence/initialization rules:
 the model's initial function bag does not establish a source `value` field.

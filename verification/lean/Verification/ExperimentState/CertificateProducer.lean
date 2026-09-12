@@ -109,6 +109,14 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
   | fuel+1, Γ, t, A => Id.run do
     let leaf := fun B r => ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ r []
     let recur := expressionWith G pool suggestions fuel
+    -- Union elimination refines an immutable receiver slot in each premise;
+    -- it neither evaluates the operation twice nor inserts a runtime tag test.
+    let splitReceiver := fun receiver => do
+      let .var i := receiver | none
+      let B ← Γ[i]?
+      if B.length ≤ 1 then none else do
+        let ps ← B.mapM fun b => recur (Γ.set i [b]) t A
+        pure (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) ps)
     match t with
     | .var i => return (Γ[i]?).bind fun B => coerce G pool (leaf B .var) A
     | .nul | .undef | .tru | .fls =>
@@ -163,7 +171,7 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let ea ← recur Γ a B
         coerce G pool (.node ⟨Γ,t,R⟩ .alloc [ea]) A
     | .read a =>
-      return pool.findSome? fun R => do
+      let direct := pool.findSome? fun R => do
         let (B,r) ← match expand G R with
           | [.refs B []] => some (B,Rule.read)
           | [.callable B _ _] => some (B,Rule.readCallable)
@@ -171,8 +179,10 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let _ ← subtype G pool B A
         let ea ← recur Γ a R
         coerce G pool (.node ⟨Γ,t,B⟩ r [ea]) A
+      if let some e := direct then return some e
+      return splitReceiver a
     | .write a b =>
-      return pool.findSome? fun R => do
+      let direct := pool.findSome? fun R => do
         let (B,r) ← match expand G R with
           | [.refs B []] => some (B,Rule.write)
           | [.callable B _ _] => some (B,Rule.writeCallable)
@@ -182,6 +192,8 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         (A :: pool).findSome? fun N =>
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,N⟩ r [ea,eb]
           if checkTree G e then coerce G pool e A else none
+      if let some e := direct then return some e
+      return splitReceiver a
     | .ite (.test tag (.var i)) u e =>
       let some B := Γ[i]? | return none
       if decide (Answers G B tag true) then
