@@ -943,8 +943,10 @@ Parameter binding now preserves declaration order and captures, pads missing
 actuals with undefined, and discards extra values only after preparation. The
 current unary beta step uses the shared binder. List-based invocation contracts
 now distinguish declared parameter count from each overload's actual argument
-count; the existing unary code judgment specializes them. Next, connect prepared
-lists to arity-bearing runtime descriptors and applications, then extend semantic
+count; the existing unary code judgment specializes them. Dispatch now connects
+ready frames to the stored code and its safety contract, and preparation plus
+dispatch is proved equivalent to the maintained unary application step. Next,
+add arity-bearing runtime descriptors and applications, then extend semantic
 arrows and the producer/consumer together. Multi-argument source calls remain
 gated.
 

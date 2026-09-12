@@ -188,6 +188,63 @@ theorem unary_binding (a body : Tm) : bindParameters 1 [a] body = subst 0 a body
 theorem omitted_unary_binding (body : Tm) :
     bindParameters 1 [] body = subst 0 .undef body := rfl
 
+/-- Dispatch a fully evaluated frame to the code on its saved callee. The
+current runtime descriptor binds one parameter; all actuals, including extras,
+must be values before normalization. Invocation itself performs no heap effect. -/
+inductive Invoke : Frame → Tm → Prop where
+  | closure : Values args →
+      Invoke ⟨.obj l (.closure body), args⟩ (bindParameters 1 args body)
+
+theorem invoke_ready (hi : Invoke frame body) : frame.ready := by
+  cases hi with
+  | closure hv => exact ⟨rfl, hv⟩
+
+theorem invoke_deterministic (hi : Invoke frame body) (hi' : Invoke frame body') :
+    body = body' := by
+  cases hi
+  cases hi'
+  rfl
+
+theorem invoke_no_prepare (hi : Invoke frame body) : ¬ Prepare h frame h' frame' :=
+  ready_no_prepare (invoke_ready hi)
+
+/-- Readiness is sufficient for dispatch precisely when the saved callee has
+invocation code. No scope or type test is added to the untyped machine. -/
+theorem invoke_iff : Invoke frame result ↔
+    ∃ l body, frame.callee = .obj l (.closure body) ∧ Values frame.args ∧
+      result = bindParameters 1 frame.args body := by
+  constructor
+  · intro hi
+    cases hi with
+    | closure hv => exact ⟨_, _, rfl, hv, rfl⟩
+  · rcases frame with ⟨f, args⟩
+    rintro ⟨l, body, hf, hv, rfl⟩
+    cases hf
+    exact .closure hv
+
+theorem invoke_closed (hi : Invoke frame result) (hf : Scoped 0 frame.callee)
+    (ha : ∀ a ∈ frame.args, Scoped 0 a) : Scoped 0 result := by
+  cases hi with
+  | closure _ => exact bound_body_closed hf ha
+
+/-- A complete decomposition of the maintained unary machine: every step is
+operand preparation or dispatch, and both reconstruct a machine step. -/
+theorem unary_step_iff : Step h (.app f a) h' result ↔
+    (∃ f' a', Prepare h ⟨f, [a]⟩ h' ⟨f', [a']⟩ ∧ result = .app f' a') ∨
+    (h' = h ∧ Invoke ⟨f, [a]⟩ result) := by
+  constructor
+  · intro hs
+    cases hs with
+    | appL hs => exact Or.inl ⟨_, _, .callee hs, rfl⟩
+    | appR hv hs => exact Or.inl ⟨_, _, .args hv (.head hs), rfl⟩
+    | beta hv => exact Or.inr ⟨rfl, .closure (by simpa [Values] using hv)⟩
+  · rintro (⟨f', a', hp, rfl⟩ | ⟨rfl, hi⟩)
+    · obtain ⟨f'', a'', he, hs⟩ := unary_step hp
+      cases he
+      exact hs
+    · cases hi with
+      | closure hv => exact .beta (hv a (by simp))
+
 -- A stuck first argument blocks a later write; readiness does not itself
 -- assert callability (a primitive callee still has to fail at invocation).
 example : ¬ ArgStep [.tru] [.app .nul .nul, .write (.obj 0 .absent) .fls] h' args' := by
@@ -204,4 +261,9 @@ example : (Frame.mk .nul []).ready := ⟨rfl,by simp [Values]⟩
 #print axioms deterministic
 #print axioms prepare_deterministic
 #print axioms unary_step
+#print axioms invoke_deterministic
+#print axioms invoke_no_prepare
+#print axioms invoke_iff
+#print axioms invoke_closed
+#print axioms unary_step_iff
 end Verification.ExperimentState.CallArguments

@@ -45,7 +45,7 @@ theorem Safe_nul : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe nulT n W h .nul
 not an additional runtime operation. Arrow membership separately requires a
 callable shape, so the fallback branch is never used for typed application. -/
 def callBody (v a : Tm) : Tm := match v with
-  | .obj _ (.closure b) => bindArgs 0 [a] b
+  | .obj _ (.closure b) => CallArguments.bindParameters 1 [a] b
   | _ => .app .nul .nul
 
 /-- Only an object with closed invocation code is a callable value. -/
@@ -313,6 +313,19 @@ theorem InvocationSpec.mono {arity L n W W' b} (hx : WExt W W')
   intro p hp j hj U hy hu heap hh args ha
   exact h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args ha
 
+/-- Dispatch realizes the code contract in a future world. The actual list
+can be empty or longer than the current descriptor's single parameter, provided
+the selected signature admits it. Operand effects have finished before dispatch. -/
+theorem InvocationSpec.invoke {L k W b} (hs : InvocationSpec 1 L k W b)
+    {p : List Fam × Fam} (hp : p ∈ L) {j : Nat} (hj : j < k) {U : WorldT j}
+    (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
+    {heap : Heap} (hh : HeapOk j U heap) {args : List Tm} (ha : ArgsT p.1 j U args)
+    {l : Nat} {result : Tm}
+    (hi : CallArguments.Invoke ⟨.obj l (.closure b), args⟩ result) :
+    Safe p.2 j U heap result := by
+  cases hi
+  exact hs.2 p hp j hj U hx hu heap hh args ha
+
 /-- The existing unary judgment is a specialization of list invocation. -/
 def CodeSpec (L : List (Fam × Fam)) (k : Nat) (W : WorldT k) (b : Tm) : Prop :=
   InvocationSpec 1 (L.map fun p => ([p.1], p.2)) k W b
@@ -358,6 +371,7 @@ theorem CodeSpec.mono {L n W W' b} (hx : WExt W W') (h : CodeSpec L n W b) :
 #print axioms ArgsT_values
 #print axioms InvocationSpec.down
 #print axioms InvocationSpec.mono
+#print axioms InvocationSpec.invoke
 #print axioms CodeSpec_iff
 
 theorem omega_safe (B : Fam) : ∀ (n : Nat) (W : WorldT n) (h : Heap),

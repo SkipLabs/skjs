@@ -143,11 +143,25 @@ the actual count, and `ArgsT_values` establishes readiness when the domains
 contain only values. Invocation contracts survive budget reduction and world
 extension.
 
+`Invoke` dispatches a ready frame to the immutable code on its saved callee,
+using `bindParameters`. It performs no heap operation and cannot overlap a
+preparation step. All actuals must be values, including those discarded during
+normalization. `invoke_iff` characterizes dispatch exactly; readiness alone does
+not make a primitive or a plain object callable. `invoke_closed` preserves closed
+scope, and `InvocationSpec.invoke` supplies the promised body safety for an
+admitted actual list. The descriptor still declares one parameter implicitly.
+
+`unary_step_iff` proves both directions of the connection to the maintained
+machine: every application step is preparation or dispatch, and either operation
+reconstructs an application step. This includes beta as well as operand effects;
+it introduces no second term evaluator.
+
 The existing `CodeSpec` is now the one-parameter, singleton-domain specialization
 of `InvocationSpec`. `CodeSpec_iff` proves equivalence to its previous unary
 obligation, and existing callable creation proofs use that equivalence. The
-current unary beta rule and semantic call helper use `bindArgs` on a singleton,
-definitionally the previous substitution. Multi-argument invocation still needs
+current unary beta rule uses `bindArgs` on a singleton, and the semantic call
+helper uses the equivalent singleton `bindParameters`, definitionally the
+previous substitution. Multi-argument invocation still needs
 an arity-bearing runtime descriptor and application, semantic arrow integration,
 certificates and source integration. These code contracts alone do not enable
 multi-argument source calls.
