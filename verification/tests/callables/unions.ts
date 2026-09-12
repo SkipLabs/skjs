@@ -204,3 +204,17 @@ function distinctNullableCallbacks(): boolean {
   }
   return second(null);
 }
+
+/**
+ * A nullable local has a wider declaration than its initializer. Its null guard
+ * must survive capture by a returned closure, without relying on the creating
+ * function's stack frame or TypeScript's knowledge of the initializer.
+ */
+function escapedLocalCallback(flag: boolean): (unit: null) => boolean {
+  const callback: ((unit: null) => boolean) | null = (unit: null): boolean =>
+    flag;
+  if (callback === null) {
+    return (unit: null): boolean => false;
+  }
+  return (unit: null): boolean => callback(unit);
+}
