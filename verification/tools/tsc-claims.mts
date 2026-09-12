@@ -590,21 +590,28 @@ function truthyGuardLabels(node: any, checker: Checker): number[] | null {
   return null;
 }
 
-/** A strict null test of one binding, including reversed operands and negation. */
-function testedNullSymbol(cond: any, checker: Checker): {sym: Symbol; equal: boolean} | null {
-  if (ts.isParenthesizedExpression(cond)) return testedNullSymbol(cond.expression, checker);
+/** A strict null or undefined test, including reversed operands and negation. */
+function testedUnitSymbol(cond: any, checker: Checker): {sym: Symbol; equal: boolean; label: number} | null {
+  if (ts.isParenthesizedExpression(cond)) return testedUnitSymbol(cond.expression, checker);
   if (ts.isPrefixUnaryExpression(cond) && cond.operator === ts.SyntaxKind.ExclamationToken) {
-    const inner = testedNullSymbol(cond.operand, checker);
+    const inner = testedUnitSymbol(cond.operand, checker);
     return inner && {...inner, equal: !inner.equal};
   }
   if (!ts.isBinaryExpression(cond)) return null;
   const op = cond.operatorToken.kind;
   if (op !== ts.SyntaxKind.EqualsEqualsEqualsToken && op !== ts.SyntaxKind.ExclamationEqualsEqualsToken) return null;
-  const id = cond.left.kind === ts.SyntaxKind.NullKeyword ? cond.right :
-    cond.right.kind === ts.SyntaxKind.NullKeyword ? cond.left : null;
-  if (!id || !ts.isIdentifier(id)) return null;
+  const unitLabel = (node: any): number | null => {
+    if (node.kind === ts.SyntaxKind.NullKeyword) return 0;
+    if (ts.isIdentifier(node) && node.text === "undefined" &&
+        (checker.getTypeAtLocation(node)?.flags ?? 0) & TypeFlags.Undefined) return 3;
+    return null;
+  };
+  const left = unitLabel(cond.left), right = unitLabel(cond.right);
+  const id = left !== null ? cond.right : right !== null ? cond.left : null;
+  const label = left ?? right;
+  if (!id || !ts.isIdentifier(id) || label === null) return null;
   const sym = checker.getSymbolAtLocation(id);
-  return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken} : null;
+  return sym ? {sym, equal: op === ts.SyntaxKind.EqualsEqualsEqualsToken, label} : null;
 }
 
 function alwaysReturns(stmt: any): boolean {
@@ -614,11 +621,11 @@ function alwaysReturns(stmt: any): boolean {
     alwaysReturns(stmt.thenStatement) && alwaysReturns(stmt.elseStatement);
 }
 
-/** Refine a fixed binding contract only along explicit null-test edges.
+/** Refine a fixed binding contract only along explicit null/undefined-test edges.
  * A preceding returning arm establishes the opposite edge for its continuation.
  * Immutable const captures retain creation-time guards across arrow functions;
  * parameters and other function boundaries stop the walk. */
-function nullGuardLabels(node: any, checker: Checker, labels: number[], anchor = node): number[] {
+function unitGuardLabels(node: any, checker: Checker, labels: number[], anchor = node): number[] {
   const sym = checker.getSymbolAtLocation(node);
   if (!sym) return labels;
   const declaration = declarationOf(sym);
@@ -626,9 +633,9 @@ function nullGuardLabels(node: any, checker: Checker, labels: number[], anchor =
     ts.isVariableDeclarationList(declaration.parent) &&
     (declaration.parent.flags & ts.NodeFlags.Const) !== 0;
   const apply = (cond: any, truth: boolean) => {
-    const test = testedNullSymbol(cond, checker);
+    const test = testedUnitSymbol(cond, checker);
     if (test?.sym.id === sym.id)
-      labels = labels.filter((label) => (label === 0) === (test.equal === truth));
+      labels = labels.filter((label) => (label === test.label) === (test.equal === truth));
   };
   let child = anchor, cur = anchor.parent;
   while (cur) {
@@ -733,7 +740,7 @@ function bestLabelsForReference(
         (auth.declared &&
           JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed))
       )
-        return nullGuardLabels(node, checker, auth.labels!);
+        return unitGuardLabels(node, checker, auth.labels!);
     }
   }
   const t = must(checker.getTypeAtLocation(node), "reference-type");
@@ -993,7 +1000,7 @@ function bindingLabelsAtEntry(
   // declaration. Apply only guards that dominate this statement's entry.
   const auth = authoritativeType(binding, checker, types, cache, sf);
   if (auth.readTainted || (auth.declared && JSON.stringify(auth.declared) !== JSON.stringify(auth.claimed)))
-    return nullGuardLabels(binding.decl.name, checker, auth.labels!, stmtNode);
+    return unitGuardLabels(binding.decl.name, checker, auth.labels!, stmtNode);
   return translateType(
     must(checker.getTypeOfSymbolAtLocation(binding.sym, stmtNode), "binding-type"),
     checker,
