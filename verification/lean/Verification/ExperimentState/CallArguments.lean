@@ -163,6 +163,12 @@ theorem parameters_length (n : Nat) (args : List Tm) :
   | zero => rfl
   | succ n ih => cases args <;> simp [parameters, ih]
 
+/-- Exact-arity calls preserve the declared argument order without padding. -/
+theorem parameters_exact (args : List Tm) : parameters args.length args = args := by
+  induction args with
+  | nil => rfl
+  | cons a args ih => simp [parameters, ih]
+
 /-- Position i receives actual i if present, otherwise undefined. -/
 theorem parameter_at (hi : i < n) :
     (parameters n args)[i]? = some (args[i]?.getD .undef) := by

@@ -1321,7 +1321,12 @@ The implemented semantic slice is in
 `arrowT` and `arrowsT` admit function objects; `bagT P` describes an object's
 writable cell independently of its call slot; `callableT L P` combines both
 contracts on the same value. `CodeSpec` checks invocation bodies separately
-from object membership. Source functions and shared continuations now lower
+from object membership. `EnvOk.prepend` extends environments with ordered
+parameter lists, and `HasTy.invocationSpec` derives an exact-arity native call
+contract from body derivations under those parameters and captured bindings.
+All signatures in this rule have the descriptor's arity; optional and rest
+parameters need further typing rules. Both unary creation proofs already use
+this general environment construction. Source functions and shared continuations now lower
 to `funE`, and the certificate producer and consumer use its allocating typing
 rule. A checked creation effect preserves existing heap knowledge without
 executing the body. Allocation, application, bag reads and writes,

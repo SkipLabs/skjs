@@ -62,6 +62,63 @@ theorem EnvOk.push {G : NormalGraph ι} {Γ ρ n W A a} (h : EnvOk G Γ ρ n W)
               subst B; exact ha
     | succ i => exact h.2 i B hi
 
+/-- Parameter zero stays at slot zero; captures follow all parameters. -/
+theorem EnvOk.prepend {G : NormalGraph ι} {Γ ρ n W As args}
+    (h : EnvOk G Γ ρ n W) (ha : ArgsT (As.map (meaning G)) n W args) :
+    EnvOk G (As ++ Γ) (prependArgs args ρ) n W := by
+  induction As generalizing args with
+  | nil => cases args <;> simp_all [ArgsT, prependArgs]
+  | cons A As ih =>
+    cases args with
+    | nil => exact False.elim ha
+    | cons a args => exact (ih ha.2).push ha.1
+
+/-- A body safe under every declared parameter environment establishes the
+native invocation contract. All overloads here have the descriptor's arity. -/
+theorem invocation_of_body {G : NormalGraph ι} {Γ ρ n W b arity}
+    {L : List (List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
+    (hlen : ∀ p ∈ L, p.1.length = arity)
+    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (p.1 ++ Γ) env j U →
+      WorldAdm U → HeapOk j U heap → Safe (meaning G p.2) j U heap (instantiate 0 env b)) :
+    InvocationSpec arity (L.map fun p => (p.1.map (meaning G), meaning G p.2))
+      n W (instantiate arity ρ b) := by
+  refine ⟨instantiate_scoped ρ he.1 b arity, ?_⟩
+  intro p hp j hj U hx hu heap hok args ha
+  obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
+  have hlength : args.length = arity := by
+    simpa only [List.length_map, hlen q hq] using ArgsT_length ha
+  have henv := (he.transfer j (Nat.le_of_lt hj) U hx).prepend ha
+  have hscoped : ∀ (As : List (Ty ι)) args, ArgsT (As.map (meaning G)) j U args →
+      ∀ a ∈ args, Scoped 0 a := by
+    intro As
+    induction As with
+    | nil => intro args ha; cases args <;> simp_all [ArgsT]
+    | cons A As ih =>
+      intro args ha
+      cases args with
+      | nil => exact False.elim ha
+      | cons a args =>
+        intro v hv
+        rcases List.mem_cons.mp hv with rfl | hv
+        · exact (meaning_value ha.1).2
+        · exact ih args ha.2 v hv
+  have hargs := hscoped q.1 args ha
+  unfold CallArguments.bindParameters
+  rw [← hlength, CallArguments.parameters_exact]
+  rw [show args.length = 0 + args.length from (Nat.zero_add _).symm, instantiate_args ρ he.1 hargs]
+  exact hb q hq j U heap _ henv hu hok
+
+/-- Unary graph clauses use the same parameter-environment proof. -/
+theorem code_of_body {G : NormalGraph ι} {Γ ρ n W b}
+    {L : List (Ty ι × Ty ι)} (he : EnvOk G Γ ρ n W)
+    (hb : ∀ p ∈ L, ∀ j U heap env, EnvOk G (p.1 :: Γ) env j U →
+      WorldAdm U → HeapOk j U heap → Safe (meaning G p.2) j U heap (instantiate 0 env b)) :
+    CodeSpec (L.map fun p => (meaning G p.1, meaning G p.2)) n W (instantiate 1 ρ b) := by
+  have hs := invocation_of_body (arity := 1) (L := L.map fun p => ([p.1], p.2)) he
+    (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; rfl)
+    (by intro p hp; obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp; exact hb q hq)
+  simpa only [CodeSpec, List.map_map, Function.comp_def, List.map_cons, List.map_nil] using hs
+
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}
     (h : EnvOk G Γ ρ n W) (hi : Γ[i]? = some A)
@@ -189,24 +246,14 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     intro n W h ρ he hw hh
     have hcode : CodeSpec (L.map fun p => (meaning G p.1, meaning G p.2))
         n W (instantiate 1 ρ b) := by
-      apply (CodeSpec_iff _ _ _ _).mpr
-      refine ⟨instantiate_scoped ρ he.1 b 1, ?_⟩
-      intro p hp j hj U hx hu heap hok a ha
-      obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hp
-      rw [instantiate_beta ρ he.1]
-      exact ih q hq j U heap (push a ρ) ((he.transfer j (Nat.le_of_lt hj) U hx).push ha) hu hok
+      exact code_of_body he (fun p hp => ih p hp)
     have hs := attach_rule nulT_adm n W h _ .nul hcode rfl hw hh rfl
     exact Safe_mono n (fun k _ U v hv => (represents_sem hr k U v).mpr hv.2) W h _ hs
   | @makeCallable F P L Γ a b hr ha hb iha ihb =>
     intro n W h ρ he hw hh
     have hcode : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2))
         n W (instantiate 1 ρ b) := by
-      apply (CodeSpec_iff _ _ _ _).mpr
-      refine ⟨instantiate_scoped ρ he.1 b 1,?_⟩
-      intro p hp j hj U hx hu heap hok av hav
-      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
-      rw [instantiate_beta ρ he.1]
-      exact ihb q hq j U heap (push av ρ) ((he.transfer j (Nat.le_of_lt hj) U hx).push hav) hu hok
+      exact code_of_body he (fun p hp => ihb p hp)
     apply bind (Tm.attach (instantiate 1 ρ b)) Step.makeC n W h _ hw hh (iha n W h ρ he hw hh)
     intro j hj U hx hu heap av hok hav ha'
     have hc : CodeSpec (L.map fun p => (meaning G p.1,meaning G p.2)) j U (instantiate 1 ρ b) :=
@@ -388,6 +435,16 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     exact Safe_mono n (fun k _ V v hv => (PositiveCertificates.check_sound hc).sound k V v hv)
       W h _ (ih n W h ρ he hw hh)
 
+/-- Syntactically typed bodies establish exact-arity list signatures, including
+zero parameters, without encoding the function as nested unary closures. -/
+theorem HasTy.invocationSpec {G : NormalGraph ι} {Γ ρ n W b arity}
+    {L : List (List (Ty ι) × Ty ι)} (he : EnvOk G Γ ρ n W)
+    (hlen : ∀ p ∈ L, p.1.length = arity)
+    (hb : ∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) :
+    InvocationSpec arity (L.map fun p => (p.1.map (meaning G), meaning G p.2))
+      n W (instantiate arity ρ b) :=
+  invocation_of_body he hlen (fun p hp => (hb p hp).sound)
+
 /-- The closed-program interface requires scope explicitly, so free source
 variables cannot be silently filled by the total semantic environment. -/
 theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
@@ -396,6 +453,9 @@ theorem HasTy.closed_safe {G : NormalGraph ι} {t A} (ht : HasTy G [] t A)
   have he : EnvOk G [] (fun _ => .nul) n W := ⟨fun _ => trivial, by simp⟩
   simpa only [instantiate_above hc] using ht.sound n W h _ he hw hh
 
+#print axioms invocation_of_body
+#print axioms code_of_body
+#print axioms HasTy.invocationSpec
 #print axioms HasTy.sound
 #print axioms HasTy.closed_safe
 end Verification.ExperimentState.ProgramTyping

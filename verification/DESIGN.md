@@ -958,6 +958,8 @@ the full list. Ready native calls now dispatch arbitrary argument lists, and
 uses that general rule. Native operand reduction now handles any argument count:
 callee first, then the leftmost unfinished actual. Its transitions are proved
 equivalent to the preparation/dispatch interface, deterministic, and coherent.
+Body typing now establishes exact-arity list invocation contracts by prepending
+all parameter bindings before captures; unary creation rules share that proof.
 Next, extend type-graph nodes, typing certificates and the producer/consumer
 together. Multi-argument source calls remain gated.
 
@@ -971,7 +973,7 @@ behavior through actual producer claims and independent consumption:
 | Milestone | Completion example | Semantic work to preserve |
 | --- | --- | --- |
 | Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Reuse `isFun` and checked tag refinements without inventing a signature for unknown code. |
-| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Define argument binding and arity; currying alone changes when the body executes. Zero-argument thunks are integrated using an unused undefined parameter; general argument lists still need an explicit representation. |
+| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Native argument-list reduction, binding and body contracts are proved. Extend graph signatures and certificates to lists, then expose source calls. Zero-argument source thunks currently use an unused undefined parameter. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`; distinguish lexical arrow `this` from ordinary receivers. |
