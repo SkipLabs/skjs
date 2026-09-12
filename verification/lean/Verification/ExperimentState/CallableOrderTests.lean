@@ -68,21 +68,30 @@ theorem initializer_blocks_argument {h h' t'} :
       (.write (.obj 0 .absent) .fls)) h' t' := by
   intro step
   cases step with
-  | appL step =>
+  | callL step =>
     cases step with
     | makeC step => exact stuck_no_step step
     | makeV hv => simp [isVal] at hv
-  | appR hv _ => simp [isVal] at hv
+  | callArg hv _ _ _ => simp [isVal] at hv
 
-/-- An already allocated callee still cannot execute its mutating body while
-its argument is stuck. -/
+/-- Even a discarded extra argument must finish: a stuck second actual blocks
+both a later argument write and the unary callee's mutating body. -/
 theorem argument_blocks_body {h h' t'} :
-    ¬ Step h (.app (.fn 1 (.write (.obj 0 .absent) .tru)) (.app .nul .nul)) h' t' := by
+    ¬ Step h (.call (.fn 1 (.write (.obj 0 .absent) .tru))
+      [.tru, .app .nul .nul, .write (.obj 0 .absent) .fls]) h' t' := by
   intro step
-  cases step with
-  | appL step => exact obj_no_step step
-  | appR _ step => exact stuck_no_step step
-  | callV hv => simp [isVal] at hv
+  rcases CallArguments.call_step_iff.mp step with ⟨frame, hp, _⟩ | ⟨_, hi⟩
+  · cases hp with
+    | callee hs => exact obj_no_step hs
+    | args _ hs =>
+      cases hs with
+      | head hs => exact tru_no_step hs
+      | tail _ hs =>
+        cases hs with
+        | head hs => exact stuck_no_step hs
+        | tail hv _ => simp [isVal] at hv
+  · cases hi with
+    | closure hv => simp [CallArguments.Values, isVal] at hv
 
 #print axioms initializer_blocks_argument
 #print axioms argument_blocks_body

@@ -263,8 +263,10 @@ abbrev Heap := List Val
 
 
 inductive Step : Heap → Tm → Heap → Tm → Prop where
-  | appL : Step h f h' f' → Step h (.app f a) h' (.app f' a)
-  | appR : isVal f = true → Step h a h' a' → Step h (.app f a) h' (.app f a')
+  | callL : Step h f h' f' → Step h (.call f args) h' (.call f' args)
+  | callArg : isVal f = true → args[i]? = some a →
+      (∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true) →
+      Step h a h' a' → Step h (.call f args) h' (.call f (args.set i a'))
   | letC : Step h a h' a' → Step h (.letE a b) h' (.letE a' b)
   | letV : isVal a = true → Step h (.letE a b) h (subst 0 a b)
   /-- Invocation executes the object's stored code in one step. -/
@@ -285,6 +287,21 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
   | iteT : Step h (.ite .tru t e) h t
   | iteF : Step h (.ite .fls t e) h e
 
+
+/-- Singleton operand rules are specializations of native list evaluation. -/
+theorem Step.appL (hs : Step h f h' f') : Step h (.app f a) h' (.app f' a) :=
+  .callL hs
+
+theorem Step.appR (hv : isVal f = true) (hs : Step h a h' a') :
+    Step h (.app f a) h' (.app f a') :=
+  .callArg (i := 0) hv rfl (by intro j hj; omega) hs
+
+/-- Inversion for the source pipeline's singleton argument lists. -/
+theorem singleton_get {a b : Tm} {i : Nat} (h : [a][i]? = some b) : i = 0 ∧ b = a := by
+  have hi := (List.getElem?_eq_some_iff.mp h).1
+  have he : i = 0 := by simpa using hi
+  subst i
+  exact ⟨rfl, (Option.some.inj h).symm⟩
 
 /-- The existing unary beta rule is a specialization of list dispatch. -/
 theorem Step.beta (ha : isVal a = true) :
@@ -321,8 +338,10 @@ theorem closed_stuck : Closed stuckFn := by
 theorem stuck_no_step {h h' t} : ¬ Step h (.app .nul .nul) h' t := by
   intro hs
   cases hs with
-  | appL hs => exact nul_no_step hs
-  | appR _ hs => exact nul_no_step hs
+  | callL hs => exact nul_no_step hs
+  | callArg _ hg _ hs =>
+    obtain ⟨rfl, rfl⟩ := singleton_get hg
+    exact nul_no_step hs
 
 theorem closed_omega : Closed omegaTm := by
   intro k a
@@ -339,16 +358,28 @@ two independent runs of the same program be compared. -/
 theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     h1 = h2 ∧ t1 = t2 := by
   induction s1 generalizing h2 t2 with
-  | appL s ih =>
+  | callL s ih =>
     cases s2 with
-    | appL s' => exact (ih s').imp id (congrArg (Tm.app · _))
-    | appR hv s' => exact absurd s (by intro hs; exact value_no_step hv hs)
-    | callV => exact absurd s obj_no_step
-  | appR hv s ih =>
+    | callL s' => exact (ih s').imp id (congrArg (Tm.call · _))
+    | callArg hv _ _ _ => exact False.elim (value_no_step hv s)
+    | callV => exact False.elim (obj_no_step s)
+  | @callArg f args i a h h1 a1 hv hg hb s ih =>
     cases s2 with
-    | appL s' => exact absurd s' (by intro hs; exact value_no_step hv hs)
-    | appR _ s' => exact (ih s').imp id (congrArg (Tm.app _ ·))
-    | callV hv' => exact absurd s (by intro hs; exact value_no_step (hv' _ (by simp)) hs)
+    | callL s' => exact False.elim (value_no_step hv s')
+    | @callArg _ _ j b _ _ b1 _ hg' hb' s' =>
+      have hij : i = j := by
+        by_cases he : i = j
+        · exact he
+        · have hlt : i < j ∨ j < i := by omega
+          rcases hlt with hij | hji
+          · exact False.elim (value_no_step (hb' i hij a hg) s)
+          · exact False.elim (value_no_step (hb j hji b hg') s')
+      subst j
+      have hab : a = b := Option.some.inj (hg.symm.trans hg')
+      subst b
+      obtain ⟨rfl, rfl⟩ := ih s'
+      exact ⟨rfl, rfl⟩
+    | callV hvs => exact False.elim (value_no_step (hvs _ (List.mem_of_getElem? hg)) s)
   | letC hs ih =>
     cases s2 with
     | letC hs' => exact (ih hs').imp id (congrArg (Tm.letE · _))
@@ -359,8 +390,8 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | letV => exact ⟨rfl, rfl⟩
   | callV hv =>
     cases s2 with
-    | appL hs => exact absurd hs obj_no_step
-    | appR _ hs => exact absurd hs (value_no_step (hv _ (by simp)))
+    | callL hs => exact absurd hs obj_no_step
+    | callArg _ hg _ hs => exact absurd hs (value_no_step (hv _ (List.mem_of_getElem? hg)))
     | callV => exact ⟨rfl, rfl⟩
   | makeC hs ih =>
     cases s2 with
@@ -424,8 +455,10 @@ theorem make_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
 theorem beta_inv {b a : Tm} {l : Nat} (ha : isVal a = true) {h h' t}
     (hs : Step h (.app (.obj l (.closure 1 b)) a) h' t) : h' = h ∧ t = subst 0 a b := by
   cases hs with
-  | appL hs => cases hs
-  | appR _ hs => exact False.elim (value_no_step ha hs)
+  | callL hs => cases hs
+  | callArg _ hg _ hs =>
+    obtain ⟨rfl, rfl⟩ := singleton_get hg
+    exact False.elim (value_no_step ha hs)
   | callV => exact ⟨rfl, rfl⟩
 
 /-- Binding a value spends one step and leaves the heap unchanged. -/

@@ -955,9 +955,11 @@ Application syntax now uses a native argument list, with the old unary construct
 replaced by singleton notation. All binding and syntax-validation traversals cover
 the full list. Ready native calls now dispatch arbitrary argument lists, and
 `call_elim` proves their safety from list-signature membership; unary application
-uses that general rule. Next, connect argument-list operand evaluation to native
-reduction, then extend type-graph nodes, typing certificates and the
-producer/consumer together. Multi-argument source calls remain gated.
+uses that general rule. Native operand reduction now handles any argument count:
+callee first, then the leftmost unfinished actual. Its transitions are proved
+equivalent to the preparation/dispatch interface, deterministic, and coherent.
+Next, extend type-graph nodes, typing certificates and the producer/consumer
+together. Multi-argument source calls remain gated.
 
 ### Next callable and object milestones
 

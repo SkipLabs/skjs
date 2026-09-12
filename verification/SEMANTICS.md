@@ -119,10 +119,11 @@ reduce directly.
 
 `Step.callV` dispatches any native call whose callee carries code and whose
 actuals are all values. The previous unary `Step.beta` is its singleton
-specialization. Operand evaluation and the certificate typing rules still cover
-singleton calls; general argument-list preparation remains to be connected to
-native reduction. Constructing a `call` term alone does not establish readiness
-or typing.
+specialization. `Step.callL` evaluates the callee with any argument list. Once it
+is a value,
+`Step.callArg` reduces one indexed argument, requiring every earlier position to
+be a value; later positions remain untouched. Unary `appL` and `appR` are
+specializations of these rules. Certificate typing still covers singleton calls.
 
 [CallArguments.lean](lean/Verification/ExperimentState/CallArguments.lean)
 defines preparation separately from invocation. A frame contains a callee term
@@ -178,11 +179,12 @@ arity and body at an identity. `Step.beta` and dispatch use the same normalized
 binding operation, including when a unary application supplies fewer or more
 actuals than the descriptor declares.
 
-`unary_step_iff` proves both directions of the connection to the maintained
-machine: every application step is preparation or dispatch, and either operation
-reconstructs an application step. This includes beta as well as operand effects;
-it introduces no second term evaluator. `Invoke.step` embeds dispatch of every
-ready argument list into native reduction. `ready_step_iff` proves the converse:
+`focus_iff` proves that `ArgStep` selects exactly the indexed position allowed
+by `Step.callArg`. `call_step_iff` then proves both directions of the connection
+to the maintained machine for every argument count: every call step is
+preparation or dispatch, and either operation reconstructs a call step.
+`unary_step_iff` specializes this to the existing source application view.
+`Invoke.step` embeds dispatch of every ready argument list into native reduction. `ready_step_iff` proves the converse:
 a ready call can only dispatch the saved code, and that step leaves the heap
 unchanged.
 
@@ -208,10 +210,9 @@ obligation, and existing callable creation proofs use that equivalence. The
 current beta rule and semantic call helper both use `bindParameters` with the
 saved descriptor's arity. `arrowsT_invocation_iff` connects unary actual-argument
 contracts to code of any declared arity. Source creation still uses arity one
-(including the current implicit-undefined thunk encoding). General argument-list
-operand reduction, list-domain type-graph nodes, typing
-certificates and source integration remain to be added before multi-argument
-source calls are enabled.
+(including the current implicit-undefined thunk encoding). List-domain type-graph
+nodes, typing certificates and source integration remain
+to be added before multi-argument source calls are enabled.
 
 ## Types, worlds and heaps
 

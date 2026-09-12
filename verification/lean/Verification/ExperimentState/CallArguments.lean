@@ -2,8 +2,8 @@ import Verification.ExperimentState.Bindings
 
 /-! Call preparation keeps a callee and an ordered argument list separate from
 invocation. It reuses the term machine for operand effects and connects prepared
-list dispatch to native call reduction. General operand-list reduction and source
-calling conventions remain integration work. -/
+list preparation and dispatch to native call reduction. Source calling conventions
+remain integration work. -/
 namespace Verification.ExperimentState.CallArguments
 
 /-- Only the leftmost non-value argument can step. Completed values are retained
@@ -73,6 +73,37 @@ theorem singleton : ArgStep h [a] h' args' ↔ ∃ a', args' = [a'] ∧ Step h a
     | tail _ hs => cases hs
   · rintro ⟨a',rfl,hs⟩
     exact .head hs
+
+/-- Argument preparation selects exactly one position after a completed
+prefix. This is the indexed form used by native call reduction. -/
+theorem focus_iff : ArgStep h args h' args' ↔
+    ∃ i a a', args[i]? = some a ∧
+      (∀ j, j < i → ∀ v, args[j]? = some v → isVal v = true) ∧
+      Step h a h' a' ∧ args' = args.set i a' := by
+  constructor
+  · intro hs
+    induction hs with
+    | head hs => exact ⟨0, _, _, rfl, (by intro j hj; omega), hs, rfl⟩
+    | @tail v h args h' args' hv hs ih =>
+      obtain ⟨i, a, a', hg, hb, ha, he⟩ := ih
+      refine ⟨i + 1, a, a', hg, ?_, ha, ?_⟩
+      · intro j hj x hx
+        cases j with
+        | zero => cases hx; exact hv
+        | succ j => exact hb j (by omega) x hx
+      · exact congrArg (v :: ·) he
+  · rintro ⟨i, a, a', hg, hb, hs, rfl⟩
+    induction i generalizing args with
+    | zero =>
+      cases args with
+      | nil => simp at hg
+      | cons v args => cases hg; exact .head hs
+    | succ i ih =>
+      cases args with
+      | nil => simp at hg
+      | cons v args =>
+        exact .tail (hb 0 (by omega) v rfl)
+          (ih hg (fun j hj x hx => hb (j + 1) (by omega) x hx))
 
 structure Frame where
   callee : Tm
@@ -229,39 +260,50 @@ theorem ready_step_iff (hf : frame.ready) :
   constructor
   · intro hs
     cases hs with
-    | appL hs => exact False.elim (value_no_step hf.1 hs)
-    | appR _ hs => exact False.elim (value_no_step (hf.2 _ (by simp)) hs)
+    | callL hs => exact False.elim (value_no_step hf.1 hs)
+    | callArg _ hg _ hs => exact False.elim (value_no_step (hf.2 _ (List.mem_of_getElem? hg)) hs)
     | callV hv => exact ⟨rfl, .closure hv⟩
   · rintro ⟨rfl, hi⟩
     exact hi.step _
 
-/-- A complete decomposition of the maintained unary machine: every step is
-operand preparation or dispatch, and both reconstruct a machine step. -/
-theorem unary_step_iff : Step h (.app f a) h' result ↔
-    (∃ f' a', Prepare h ⟨f, [a]⟩ h' ⟨f', [a']⟩ ∧ result = .app f' a') ∨
-    (h' = h ∧ Invoke ⟨f, [a]⟩ result) := by
+/-- Preparation and native operand reduction are the same transition. -/
+theorem Prepare.step (hp : Prepare h frame h' frame') :
+    Step h (.call frame.callee frame.args) h' (.call frame'.callee frame'.args) := by
+  cases hp with
+  | callee hs => exact .callL hs
+  | args hv hs =>
+    obtain ⟨i, a, a', hg, hb, hstep, rfl⟩ := focus_iff.mp hs
+    exact .callArg hv hg hb hstep
+
+/-- Every native call step is preparation or dispatch, and both reconstruct
+that same machine step. This includes all argument counts. -/
+theorem call_step_iff : Step h (.call f args) h' result ↔
+    (∃ frame, Prepare h ⟨f, args⟩ h' frame ∧ result = .call frame.callee frame.args) ∨
+    (h' = h ∧ Invoke ⟨f, args⟩ result) := by
   constructor
   · intro hs
     cases hs with
-    | appL hs => exact Or.inl ⟨_, _, .callee hs, rfl⟩
-    | appR hv hs => exact Or.inl ⟨_, _, .args hv (.head hs), rfl⟩
+    | callL hs => exact Or.inl ⟨_, .callee hs, rfl⟩
+    | callArg hv hg hb hs =>
+      exact Or.inl ⟨_, .args hv (focus_iff.mpr ⟨_, _, _, hg, hb, hs, rfl⟩), rfl⟩
     | callV hv => exact Or.inr ⟨rfl, .closure hv⟩
-  · rintro (⟨f', a', hp, rfl⟩ | ⟨rfl, hi⟩)
-    · obtain ⟨f'', a'', he, hs⟩ := unary_step hp
-      cases he
-      exact hs
-    · cases hi with
-      | closure hv => exact .beta (hv a (by simp))
+  · rintro (⟨frame, hp, rfl⟩ | ⟨rfl, hi⟩)
+    · exact hp.step
+    · exact hi.step _
 
--- A stuck first argument blocks a later write; readiness does not itself
--- assert callability (a primitive callee still has to fail at invocation).
-example : ¬ ArgStep [.tru] [.app .nul .nul, .write (.obj 0 .absent) .fls] h' args' := by
-  intro s
-  cases s with
-  | head hs => exact stuck_no_step hs
-  | tail hv _ => simp [isVal] at hv
-
-example : (Frame.mk .nul []).ready := ⟨rfl,by simp [Values]⟩
+/-- The source pipeline's singleton application view is preserved. -/
+theorem unary_step_iff : Step h (.app f a) h' result ↔
+    (∃ f' a', Prepare h ⟨f, [a]⟩ h' ⟨f', [a']⟩ ∧ result = .app f' a') ∨
+    (h' = h ∧ Invoke ⟨f, [a]⟩ result) := by
+  rw [call_step_iff]
+  constructor
+  · rintro (⟨frame, hp, he⟩ | hi)
+    · obtain ⟨f', a', rfl, _⟩ := unary_step hp
+      exact Or.inl ⟨f', a', hp, he⟩
+    · exact Or.inr hi
+  · rintro (⟨f', a', hp, he⟩ | hi)
+    · exact Or.inl ⟨_, hp, he⟩
+    · exact Or.inr hi
 
 #print axioms parameter_at
 #print axioms bound_body_closed
@@ -273,6 +315,9 @@ example : (Frame.mk .nul []).ready := ⟨rfl,by simp [Values]⟩
 #print axioms invoke_no_prepare
 #print axioms invoke_iff
 #print axioms invoke_closed
+#print axioms focus_iff
+#print axioms Prepare.step
+#print axioms call_step_iff
 #print axioms Invoke.step
 #print axioms ready_step_iff
 #print axioms unary_step_iff

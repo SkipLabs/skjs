@@ -151,16 +151,25 @@ theorem step_preserves {h t h' t'} (step : Step h t h' t') :
     ∀ D, HeapOk D h → TermOk D t →
       ∃ E, Extends D E ∧ HeapOk E h' ∧ TermOk E t' := by
   induction step with
-  | appL step ih =>
+  | callL step ih =>
     intro D hh ht
-    simp only [TermOk, Scoped, ScopedArgs, Names, NamesArgs, and_true] at ht ⊢
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
-    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,ht.2.2.mono hx⟩
-  | appR hv step ih =>
+    exact ⟨E,hx,hh',⟨hs,ht.1.2⟩,hn,fun v hv => (ht.2.2 v hv).mono hx⟩
+  | callArg hv hg hb step ih =>
     intro D hh ht
-    simp only [TermOk, Scoped, ScopedArgs, Names, NamesArgs, and_true] at ht ⊢
-    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2,ht.2.2⟩
-    exact ⟨E,hx,hh',⟨ht.1.1,hs⟩,ht.2.1.mono hx,hn⟩
+    simp only [TermOk, Scoped, scopedArgs_iff, Names, namesArgs_iff] at ht ⊢
+    have hm := List.mem_of_getElem? hg
+    obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.2 _ hm,ht.2.2 _ hm⟩
+    refine ⟨E,hx,hh',⟨ht.1.1,?_⟩,ht.2.1.mono hx,?_⟩
+    · intro v hv
+      rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+      · exact ht.1.2 v hv
+      · exact hs
+    · intro v hv
+      rcases List.mem_or_eq_of_mem_set hv with hv | rfl
+      · exact (ht.2.2 v hv).mono hx
+      · exact hn
   | letC step ih =>
     intro D hh ht
     obtain ⟨E,hx,hh',hs,hn⟩ := ih D hh ⟨ht.1.1,ht.2.1⟩
