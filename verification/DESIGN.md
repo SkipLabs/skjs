@@ -934,6 +934,15 @@ General multi-argument functions cannot simply be identified with curried arrows
 when their nested type encoding would coincide. Argument-list work must retain
 that distinction as well as evaluation order.
 
+The [argument preparation interface](SEMANTICS.md#argument-list-preparation)
+now separates callee evaluation, left-to-right argument evaluation and readiness
+for invocation. Its singleton case agrees with existing unary congruence rules.
+`tests/callables/arity.ts` fixes the required source evaluation order with a
+JavaScript witness and remains an explicitly unsupported source fixture.
+Next, connect the prepared value list to a descriptor and binding rule that
+retains arity, then extend arrow contracts and the producer/consumer together.
+Preparation alone does not enable multiple arguments.
+
 ### Next callable and object milestones
 
 Required single-field cells can store callbacks using the existing reference and

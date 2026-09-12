@@ -241,6 +241,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
+  run_test "Call argument order" node verification/tests/callable-arity.mts
   run_test "Callable thunks" node verification/tests/callable-thunks.mts "$WORK/callable_thunks.ast" "$WORK/callable_thunks.claims" "$CALLABLE_THUNKS" "$VERIFIER"
   run_test "Callable cells" node verification/tests/callable-cells.mts "$WORK/callable_cells.ast" "$WORK/callable_cells.claims" "$CALLABLE_CELLS" "$VERIFIER"
   run_test "Callable arguments" node verification/tests/callable-arguments.mts "$WORK/callable_arguments.ast" "$WORK/callable_arguments.claims" "$CALLABLE_ARGUMENTS" "$VERIFIER"

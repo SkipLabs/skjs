@@ -94,3 +94,11 @@ write, and a saved thunk remains distinct from its replacement. Both producers'
 claims are independently checked. Forged domains/results fail, and the callable
 argument suite checks that omission does not satisfy a required callback parameter.
 JavaScript witnesses check delayed reads and replacement for both seeds.
+
+[arity.ts](arity.ts) is a **source-boundary fixture**, not a supported corpus
+example. It requires callee evaluation first, argument evaluation left to right,
+and body execution afterward. [callable-arity.mts](../callable-arity.mts) checks
+its JavaScript result and controls that reverse argument order or delay callee
+evaluation; the tsc suite retains its expected source-gate rejection. The
+[model preparation interface](../../SEMANTICS.md#argument-list-preparation)
+establishes operand sequencing separately from the remaining invocation work.

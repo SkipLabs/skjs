@@ -100,6 +100,29 @@ scope and simultaneous closing substitution, including its beta law. The program
 typing theorem uses semantic environments of closed values; its closed-program
 interface explicitly checks scope.
 
+## Argument-list preparation
+
+[CallArguments.lean](lean/Verification/ExperimentState/CallArguments.lean)
+defines preparation separately from invocation. A frame contains a callee term
+and an ordered list of argument terms. `Prepare` steps the callee until it is a
+value, then `ArgStep` steps the leftmost non-value argument using the existing
+term machine and heap. Previously evaluated operands remain in their original
+positions. No argument binding, padding, truncation or body invocation occurs
+in this relation.
+
+`prepare_deterministic`, `arity_preserved`, `callee_preserved` and `prefix_iff`
+prove unique next states, unchanged list length, stability of the saved callee,
+and preservation of every completed argument prefix. `unary_step` embeds each
+single-argument preparation step into the current application's congruence
+rules. A ready frame has a value callee and value arguments; readiness does not
+establish callability, arity compatibility or typing. A stuck operand blocks later
+effects rather than being skipped.
+
+This interface is compiled and proved, but not yet wired to a multi-argument
+invocation descriptor or the source pipeline. The current unary beta rule is
+unchanged. Supporting argument lists still requires parameter binding, an arity-
+aware call contract, certificates and source integration.
+
 ## Types, worlds and heaps
 
 A semantic family has type
