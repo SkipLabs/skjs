@@ -1378,7 +1378,15 @@ then checks each alternative at the saved callee slot and joins the signature
 results. Expression obligations require no expression-search fuel. The complete
 source consumer still checks supplied result claims, rejects an incompatible
 alternative or nullable callee, and retains the external-object boundary.
-Single-arrow call recipes keep their existing form. Typed reads retain current heap
+Single-arrow call recipes keep their existing form.
+[SourceCellUnionTests.lean](lean/Verification/ExperimentState/SourceCellUnionTests.lean)
+checks reads and writes through unions of locally allocated invariant cells
+inside source closures. Reads join possible contents. Writes check the saved
+RHS against every alternative, evaluate each operand once, and return that RHS
+as the source assignment value. Direct recipes need no expression-search fuel.
+A write accepted by only one alternative and an unjustifiably narrow read
+claim fail the source consumer. The external-cell parameter restriction and
+single-cell requirement for captured current-content assertions remain in force. Typed reads retain current heap
 facts and read links when every alternative has the same invariant operand.
 The regression keeps a known `false` fact about another cell across a neutral
 read, then checks a singleton result from that cell through the JSON pipeline. Source export of combined callable/property types

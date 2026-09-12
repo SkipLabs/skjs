@@ -308,9 +308,21 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     pure (DirectProof.node Γ (.alloc a.term) A .alloc [DirectProof.cast Γ B a])
   | .read _ a => do
     let a ← closureExpr fc scope Γ a
-    let [.refs B []] := PositiveRules.expand G a.type
-      | throw "read receiver must name a cell contract"
-    pure (DirectProof.node Γ (.read a.term) B .read [a])
+    match PositiveRules.expand G a.type with
+    | [.refs B []] => pure (DirectProof.node Γ (.read a.term) B .read [a])
+    | _ =>
+      if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
+      let alternatives ← a.type.mapM fun label => do
+        let [.refs B []] := PositiveRules.expand G [label]
+          | throw "every read alternative must name a cell contract"
+        pure (label,B)
+      let R := (alternatives.flatMap Prod.snd).eraseDups
+      let children := alternatives.map fun (label,B) =>
+        let H := [label] :: Γ
+        DirectProof.cast H R (DirectProof.node H (.read (.var 0)) B .read
+          [DirectProof.var H 0 [label]])
+      pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
+        (.read (.var 0)) R (.unionVar 0) children))
   | .app _ f a => do
     let callee ← closureExpr fc scope Γ f
     -- Keep single-arrow recipes unchanged. Union callees are saved before the
@@ -345,14 +357,27 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
         (DirectProof.node H term R (.unionVar 1) children)))
   | .write _ receiver rhs => do
     let B ← exprType fc receiver
-    let [.refs D []] := PositiveRules.expand G B
-      | throw "write receiver must name a cell contract"
+    let single := match PositiveRules.expand G B with | [.refs D []] => some D | _ => none
+    let alternatives ← if single.isSome then pure [] else do
+      if B.length ≤ 1 then throw "write receiver must name a cell contract"
+      B.mapM fun label => do
+        let [.refs D []] := PositiveRules.expand G [label]
+          | throw "every write alternative must name a cell contract"
+        pure (label,D)
     let r ← closureExpr fc scope Γ receiver
     let a ← closureExpr fc (⟨"",some receiver.span⟩::scope) (B::Γ) rhs
     let C := a.type
     let H := C::B::Γ
-    let write := DirectProof.node H (.write (.var 1) (.var 0)) [0] .write
-      [DirectProof.var H 1 B,DirectProof.cast H D (DirectProof.var H 0 C)]
+    let term := Tm.write (.var 1) (.var 0)
+    let write := match single with
+      | some D => DirectProof.node H term [0] .write
+          [DirectProof.var H 1 B,DirectProof.cast H D (DirectProof.var H 0 C)]
+      | none =>
+        let children := alternatives.map fun (label,D) =>
+          let branch := C :: [label] :: Γ
+          DirectProof.node branch term [0] .write
+            [DirectProof.var branch 1 [label],DirectProof.cast branch D (DirectProof.var branch 0 C)]
+        DirectProof.node H term [0] (.unionVar 1) children
     let done := DirectProof.letE H write (DirectProof.var ([0]::H) 1 C)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) a done))
   | .done _ => pure (DirectProof.node Γ .nul [0] .nul)
