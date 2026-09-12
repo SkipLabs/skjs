@@ -59,15 +59,21 @@ Resolution order is not a semantic matter. Any conjunct whose domain admits the
 argument is a sound choice; first-match is TypeScript's convention and the
 adapter follows it.
 
-Laws expected to hold, to be proved when needed:
+Two laws one might expect, of which only the second holds:
 
 ```
-(A → B) ∧ (A → C)  =  A → (B ∧ C)
-(A → C) ∧ (B → C)  =  (A ∨ B) → C
+(A → B) ∧ (A → C)  =  A → (B ∧ C)    refuted
+(A → C) ∧ (B → C)  =  (A ∨ B) → C    arrowT_union_dom
 ```
 
-Both read directly off `arrowT`, since `Safe` at a conjunction of result
-families is safety at each.
+The first fails left to right: `ModelBoundaries.arrow_inter_codomain_fails`
+exhibits a function in both `null → Ref(null)` and `null → Ref(null | boolean)`
+that is in neither result's conjunction, because each call allocates and the
+two contracts are invariant. `Safe` at a conjunction of result families is not
+safety at each when the result is allocated. What does hold is the overload law,
+`TypeAlgebra.overload_append`: an intersection of arrows is exactly the arrow
+family over the concatenated signature list, with no distribution into the
+result.
 
 ### 2. Disjoint-field composition: `{ name: string } & { createdAt: number }`
 
@@ -136,9 +142,12 @@ intersection type is simply false of the result.
 
 ### 4. Callable with properties: `(() => void) & { cancel(): void }`
 
-**Empty across shapes; needs boxed functions.** A closure is not a location, so
-no value is in `arrowT` and in `recT` at once. JavaScript functions are objects,
-and the pattern is real (`debounce`, `memoize`, decorated handlers).
+**Empty across shapes.** A closure is not a location, so no value is in
+`arrowT` and in `recT` at once. JavaScript functions are objects, and the
+pattern is real (`debounce`, `memoize`, decorated handlers). The designs that
+add the missing shape, and their rules, are compared in
+[Callables](PROGRAM-TYPING.md#callables); what follows is the boxing design,
+which that comparison recommends against.
 
 The extension is to represent a function as a location whose field map has a
 distinguished callable slot holding the closure, alongside ordinary fields.
@@ -206,8 +215,10 @@ carry no runtime meaning and have no semantic content to model.
 2. **Read and write capabilities on a field.** Gives the claim boundary's
    read/write split a semantics and makes TypeScript's covariant merge sound
    exactly where it is sound. Small once fields are individual.
-3. **Boxed functions.** Unlocks callable-with-properties and function identity.
-   Changes application; every closure becomes a location.
+3. **Callable values.** Unlocks callable-with-properties and function identity.
+   Either a lowering over multi-field references or a value shape of its own;
+   [Callables](PROGRAM-TYPING.md#callables) compares them with boxing, which
+   changes application and every closure, and does nothing for overloads.
 4. **Tagged locations.** Unlocks `instanceof` and class-based narrowing.
 
 ## What it says about SKJS
@@ -220,4 +231,11 @@ contracts; on a shared mutable field, require the same contract and otherwise
 report the type empty. TypeScript's `never` reduction is that last clause,
 applied late. For arrows, the sound rule is that a conjunction of signatures is
 a type in its own right, inhabited by any function meeting each; `never` is
-never the answer for two arrows.
+never the answer for two arrows. SKJS gives that answer today: `TFun::inter`
+(`src/TTypeInter.sk`) returns `None` unless one signature is a subtype of the
+other, and that `None` propagates through `TFields::inter` and `TObject::inter`
+until the clause is dropped, so `((x: string) => number) & ((x: number) =>
+string)` is empty in the checker. The repair the model prescribes is the one
+`overload_append` states: let `Callability::CPresent` carry a set of signatures
+and concatenate on `inter`. Boxing functions does not help here and makes it
+worse — see [Callables](PROGRAM-TYPING.md#callables), design A.
