@@ -24,7 +24,7 @@ def sem (X : α → Fam) : Clause α → Fam
   | .boolLit b => fun _ _ v => v = (if b then .tru else .fls)
   | .refs a bs => refsT (X a) (bs.map X)
   | .arrs L => arrowsT (L.map fun p => (X p.1, X p.2))
-  | .callable a bs L => CallableConjunctions.objectsT (X a) (bs.map X) (L.map fun p => (X p.1,X p.2))
+  | .callable a bs L => CallableConjunctions.unaryT (X a) (bs.map X) (L.map fun p => (X p.1,X p.2))
 
 def semList (X : α → Fam) (L : List (Clause α)) : Fam := setSem (sem X) L
 
@@ -105,7 +105,7 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
     · simp only [meet, singleton_sem, sem, List.map_append]
       exact TypeAlgebra.overload_append _ _ n W v
     · simp only [meet, singleton_sem, sem, List.map_append]
-      exact (CallableConjunctions.calls_merge _ _ _ _ n W v).trans and_comm
+      exact (CallableConjunctions.unary_calls_merge _ _ _ _ n W v).trans and_comm
     · rename_i b
       cases b <;> simp [meet, singleton_sem, sem, interT, boolT]
       all_goals intro hv; subst v; simp
@@ -114,9 +114,9 @@ theorem meet_sound (X : α → Fam) (a b : Clause α) (n : Nat) (W : WorldT n) (
       all_goals intro hv; subst v; simp
     · simp [meet, singleton_sem, sem, interT]
     · simp only [meet, singleton_sem, sem, List.map_append]
-      exact CallableConjunctions.calls_merge _ _ _ _ n W v
+      exact CallableConjunctions.unary_calls_merge _ _ _ _ n W v
     · simp only [meet, singleton_sem, sem, List.map_append, List.map_cons]
-      exact CallableConjunctions.merge _ _ _ _ _ _ n W v
+      exact CallableConjunctions.unary_merge _ _ _ _ _ _ n W v
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> simp_all [shape, meet]
     rw [hm]
@@ -158,7 +158,7 @@ theorem sem_adm (X : α → Fam) (c : Clause α) : Adm (sem X c) := by
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs => exact adm _ _
   | arrs L => exact arrowsT_adm _
-  | callable a bs L => exact CallableConjunctions.adm _ _ _
+  | callable a bs L => exact CallableConjunctions.unary_adm _ _ _
   | undef => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
@@ -170,7 +170,7 @@ theorem sem_congr (X Y : α → Fam) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n)
   | undef => rfl
   | refs a bs => exact congr_below X Y a bs n h W v
   | arrs L => exact arrowsT_congr L _ _ (fun p _ => ⟨h p.1, h p.2⟩) W v
-  | callable a bs L => exact CallableConjunctions.congr_below X Y a bs L n h W v
+  | callable a bs L => exact CallableConjunctions.unary_congr_below X Y a bs L n h W v
 
 #print axioms normalize_sound
 end Verification.ExperimentState.PositiveNormalization

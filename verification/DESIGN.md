@@ -968,6 +968,9 @@ combination. The unary subtype soundness proof uses this general rule.
 Subtype certificates now carry domain lists and the position of a union split.
 The list checker is sound and complete for declarative coverage; current unary
 search emits singleton domains through this checker and the JSON format.
+Callable-object normalization now handles list signatures, including different
+actual counts on one descriptor, while preserving all bag requirements. Current
+unary graph normalization specializes these general laws.
 Next, extend type-graph nodes, expression typing certificates and source
 production/consumption together. Multi-argument source calls remain gated.
 

@@ -20,18 +20,27 @@ theorem inter_assoc (A B C : Fam) (n : Nat) (W : WorldT n) (v : Val) :
 theorem inter_idemp (A : Fam) (n : Nat) (W : WorldT n) (v : Val) :
     interT A A n W v ↔ A n W v := ⟨And.left, fun h => ⟨h, h⟩⟩
 
+/-- Overload intersection preserves one descriptor, even when signatures
+admit different actual counts. -/
+theorem calls_append (L M : List (List Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
+    callsT (L ++ M) n W v ↔ interT (callsT L) (callsT M) n W v := by
+  constructor
+  · rintro ⟨arity, body, loc, he, hc, hs⟩
+    exact ⟨⟨arity, body, loc, he, hc, fun p hp => hs p (List.mem_append_left M hp)⟩,
+      ⟨arity, body, loc, he, hc, fun p hp => hs p (List.mem_append_right L hp)⟩⟩
+  · rintro ⟨⟨arity, body, loc, rfl, hc, hs⟩, ⟨arity', body', loc', he, _, ht⟩⟩
+    cases he
+    refine ⟨arity, body, loc, rfl, hc, ?_⟩
+    intro p hp
+    rcases List.mem_append.mp hp with hp | hp
+    · exact hs p hp
+    · exact ht p hp
+
 theorem overload_append (L M : List (Fam × Fam)) (n : Nat) (W : WorldT n) (v : Val) :
     arrowsT (L ++ M) n W v ↔ interT (arrowsT L) (arrowsT M) n W v := by
-  constructor
-  · rintro ⟨hl, hp⟩
-    exact ⟨⟨hl, fun p hm => hp p (List.mem_append_left M hm)⟩,
-      ⟨hl, fun p hm => hp p (List.mem_append_right L hm)⟩⟩
-  · rintro ⟨⟨hl, hp⟩, ⟨_, hq⟩⟩
-    refine ⟨hl, ?_⟩
-    intro p hm
-    rcases List.mem_append.mp hm with hm | hm
-    · exact hp p hm
-    · exact hq p hm
+  simpa only [interT, ← arrowsT_callsT, ← List.map_append] using
+    calls_append (L.map fun p => ([p.1], p.2)) (M.map fun p => ([p.1], p.2)) n W v
 
+#print axioms calls_append
 #print axioms overload_append
 end Verification.ExperimentState.TypeAlgebra
