@@ -16,6 +16,27 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"annotated-tests-"));
 let passed=0;
 const test=(name: string,f: any)=>{f();passed++;console.log(`  ${name}: OK`);};
 try {
+  test("function union surface round-trip baseline",()=>{
+    const unit={top:false,atoms:[{a:"null"}]};
+    const truth={top:false,atoms:[{a:"booleanlit",v:"true"}]};
+    const falsity={top:false,atoms:[{a:"booleanlit",v:"false"}]};
+    const arrow=(params: any[],result: any,construct="unknown")=>
+      ({a:"function",params,result,construct,array:"unknown"});
+    const callableUnion={top:false,atoms:[arrow([unit],truth),arrow([unit],falsity,"absent")]};
+    for(const type of [callableUnion,{top:false,atoms:[{a:"null"},...callableUnion.atoms]},
+      {top:false,atoms:[arrow([callableUnion],unit)]},
+      {top:false,atoms:[arrow([unit],callableUnion)]}]) {
+      // Baseline: arrow alternatives lose grouping and cannot be read back.
+      assert.equal(surface.printType(type).printable,true);
+      assert.equal(surface.roundTrips(type),false);
+    }
+    // An arrow returning a primitive union and a higher-order argument retain
+    // their existing meaning; grouping must not turn either into an outer union.
+    for(const type of [
+      {top:false,atoms:[arrow([unit],{top:false,atoms:[...truth.atoms,...falsity.atoms]})]},
+      {top:false,atoms:[arrow([{top:false,atoms:[arrow([unit],truth)]}],falsity)]}])
+      assert.equal(surface.roundTrips(type),true);
+  });
   const source='// Unicode: 😀\nfunction f(x: boolean): boolean { return x; }\n';
   const ns=source.indexOf("f("), es=source.lastIndexOf("x;");
   const report={source:{file:"test.ts",sha256:hash(source)},producer:"other-analyzer",
