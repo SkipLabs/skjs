@@ -229,13 +229,14 @@ required data. They also check that object field order does not matter.
 
 ## Source mode
 
-The adapter accepts primitive parameters, initialized `const` declarations,
-nested boolean branches and returns, using variable expressions and null/undefined/boolean
-literals. Every path must return. Types
-may be null, undefined, boolean, true, false, unions of these, or bottom. Source parameters
-remain primitive. Local annotations and function results can additionally union
-the cell and function contracts described below. Every union arm is decoded
-strictly. A redundant record arm may be absorbed into an existing invariant
+The adapter accepts primitive or bounded callable parameters, initialized
+`const` declarations, nested boolean branches and returns, using variable
+expressions and null/undefined/boolean literals. Every path must return. Types
+may be null, undefined, boolean, true, false, unions of these, or bottom. Source
+parameters may also contain the bounded function contracts below, including unions with
+primitives. External cell parameters remain rejected. Local annotations and
+function results can additionally contain cell contracts. Every union arm is
+decoded strictly. A redundant record arm may be absorbed into an existing invariant
 alternative by the checked read/write rule below; unsupported encodings are
 never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the slice
@@ -434,11 +435,18 @@ The bounded function atom is:
 
 The exporter preserves one free required parameter and the result. It rejects
 `this` requirements, generics, optional/rest parameters, fields, indexes, positive
-construct requirements and nested operand types. The Lean source slice further
-requires both the parameter and result to be supported primitive sets over
-null, undefined, true and false. `FunctionClaims.translate_exact` identifies the selected label's
-meaning with the corresponding arrow in the existing world-indexed semantics.
-This does not assert equivalence with SKJS's full structural function types.
+construct requirements and record-valued operands. Arrow arguments remain
+primitive; results may recursively union bounded function contracts with the
+supported primitives null, undefined, true and false. The SKJS exporter uses
+bounded recursion, and the tsc producer applies a depth limit when translating
+nested results. No unsupported union alternative is discarded.
+
+`SourceInput.callableResult` lowers nested callable results to the existing
+arrow rows. `FunctionClaims.translate_exact` remains the exact-interpretation
+theorem for its primitive signature decoder; it is not a new recursive source
+extraction theorem. The resulting requests use the existing lambda, application
+and graph certificate rules. Source extraction remains a reviewed boundary,
+and none of this asserts equivalence with SKJS's full structural function types.
 
 Source arrows require explicit parameter and result annotations. Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including

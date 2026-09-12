@@ -900,12 +900,41 @@ The eventual user-facing command must report certified success only after the
 consumer accepts. `--emit-skjs-type-claims` currently emits claims without making
 that guarantee. `make verify` remains the experiment's source-facing command.
 
-### Primitive callback integration
+### Callable integration
 
 A unary arrow between primitive unions is one interned row of the request's
 table. `FunctionClaims.arrow_exact` proves the row's domain and codomain
 interpretations. Existing application and lambda rules discharge their
 obligations; no operational constructor or semantic axiom was added. [Source claims](SOURCE-CLAIMS.md#encoding) specifies the table encoding.
+
+The current pipeline also handles factories returning bounded callable contracts,
+nullable callable results, creation-time guards on immutable captures, callable
+selection and captured-cell mutation. Both SKJS and tsc claims run through the
+same source extraction and independent certificate consumer; the corpus and
+report viewer expose these examples in their Callables group. The old
+primitive-result restrictions have been removed from the exporter and source
+lowering. No replacement parser, claim format, report path or semantic machine
+was needed. See the [coverage map](tests/callables/README.md) for the distinct
+obligations and the claims/evidence mutations that exercise them.
+
+This is sufficient to demonstrate that the existing pipeline runs over the
+bounded callable model. It is not coverage of every TypeScript callable feature.
+The next integration target is callable-valued arguments: an invoking closure
+should accept a locally checked callback, call it at its declared domain, and
+preserve its result and effects. The matching negative case should reject an
+incompatible callback domain or a result promise its body cannot establish.
+That requires extending argument decoding in the SKJS exporter,
+`SourceInput.callableResult`, source lambda annotation lowering, and the tsc
+producer. Keep the primitive decoder's existing theorem scoped to what it proves;
+keep record operands and external object assumptions gated.
+
+Graph-backed closure loops, multiple/optional/rest arguments, `this`, generics,
+function properties and identity comparisons remain separate obligations. Do
+not accumulate minor guard variants as prerequisites for these extensions.
+Factory isolation and live-versus-snapshot selection have JavaScript witnesses
+alongside checked type claims; exact executions of their extracted Lean programs
+remain deferred. A Boolean typing certificate alone does not establish those
+observations or TypeScript-to-calculus execution equivalence.
 
 Source-mode search uses labels in the function's request and required-expression
 sequents, plus primitive labels. Vocabulary construction includes their operand
@@ -980,9 +1009,10 @@ refinements and closure loops remain outside this slice.
 `SourceInput.translate` now decodes each union atom through its existing primitive,
 cell or function decoder, then canonicalizes the combined labels. It rejects the
 entire type if any arm fails. This needs no new graph label or semantic rule:
-label lists already denote unions. Cell fields and arrow inputs/results retain
-their primitive-only decoders; nested records and richer callable contracts are
-not enabled by this change.
+label lists already denote unions. Cell fields and arrow inputs retain their
+primitive-only decoders. Arrow results now recursively admit primitive/callable
+unions through `SourceInput.callableResult`; nested records remain outside this
+fragment.
 
 Locally allocated nullable cells and optional checked-closure results exercise
 the extension. External cell parameters remain rejected: annotations alone
