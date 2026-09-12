@@ -2,12 +2,12 @@ import Verification.ExperimentState.CallableGraphTests
 
 namespace Verification.ExperimentState.NeutralBagTests
 open PositiveNormalization PositiveGraphs PositiveRules ProgramTyping ProgramCertificates
-open CertificateProducer ControlFlow RequestJson
+open CertificateProducer ControlFlow RequestJson HeapExpressionRules
 
 -- [2,3] describes a Boolean bag without promising whether it is callable.
 private def types : List (List (Clause (List Nat))) :=
   [[.nul],[.bool],[.refs [1] []],[.callable [1] [] []],
-   [.callable [1] [] [([1],[1])]]]
+   [.callable [1] [] [([1],[1])]], [.boolLit false]]
 private def G : NormalGraph Nat := fun i => types[i]?.getD []
 private def pool := vocabulary G (List.range types.length) [] [[2,3]]
 private def readClaim : Sequent Nat := ⟨[[2,3]],.read (.var 0),[1]⟩
@@ -35,6 +35,18 @@ theorem write_checked : checkTree G writeProof = true := by cbv
 #guard (expression G pool 8 writeClaim.context writeClaim.term writeClaim.type).isSome
 #guard !(expression G pool 8 [[2,3]] (.app (.var 0) .tru) [1]).isSome
 #guard !(expression G pool 8 [[2,3]] (.write (.var 0) .nul) [0]).isSome
+
+-- Baseline: ordinary reads work, but neutral views cannot yet preserve read
+-- links through typedRead. Its invariant selector only handles one clause.
+#guard bagOperand (expand G [2,3]) == none
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [1] readProof) == none
+#guard match expressionEffect G pool 8 readClaim ⟨[],[],[]⟩ [] [] with
+  | some (_, .ordinary _, _) => true
+  | _ => false
+
+-- A nullable alternative and a mismatched requested invariant must fail.
+#guard bagOperand (expand G [0,2]) == none
+#guard checkStep G readClaim ⟨[],[],[]⟩ (.typedRead 0 [0] readProof) == none
 
 -- A bad alternative cannot be hidden by the successful branch.
 #guard !(expression G pool 8 [[0,2]] (.read (.var 0)) [1]).isSome
@@ -68,6 +80,35 @@ theorem returns_false (callable : Bool) : Execution (program callable) 9 []
       | apply Execution.next (.effect rfl)
       | apply Execution.next (.ret rfl)
 
+-- A neutral read must preserve the false fact about a different cell.
+-- Without that frame, the final Boolean read cannot establish a false singleton.
+private def framedProgram (callable : Bool) : Program :=
+  [⟨if callable then .attach (.var 0) .tru else .alloc .tru,.bind 1⟩,
+   ⟨.fls,.bind 2⟩,
+   ⟨.alloc (.var 0),.bind 3⟩,
+   ⟨.read (.var 2),.bind 4⟩,
+   ⟨.read (.var 1),.ret⟩]
+private def framedClaims : List (PointClaim Nat) :=
+  [⟨[],[2,3]⟩,⟨[[2,3]],[1]⟩,⟨[[1],[2,3]],[2]⟩,
+   ⟨[[2],[1],[2,3]],[1]⟩,⟨[[1],[2],[1],[2,3]],[5]⟩]
+private def framedRequest (callable : Bool) : Request :=
+  ⟨types,framedProgram callable,framedClaims,[5],0,[]⟩
+#guard [false,true].all fun callable => match
+    produceJson (Lean.toJson (framedRequest callable)) 8 with
+  | .ok _ => false | .error _ => true
+
+theorem framed_returns_false (callable : Bool) : Execution (framedProgram callable) 14 []
+    (.at 0 (fun _ => .nul)) [.tru,.fls] (.done .fls) := by
+  cases callable <;>
+    repeat first
+      | exact Execution.refl
+      | apply Execution.next (.enter rfl)
+      | apply Execution.next (.expr (.makeV rfl))
+      | apply Execution.next (.expr (.readV rfl))
+      | apply Execution.next (.bind rfl)
+      | apply Execution.next (.ret rfl)
+
+#print axioms framed_returns_false
 #print axioms returns_false
 #print axioms read_checked
 #print axioms write_checked
