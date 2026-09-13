@@ -274,30 +274,28 @@ not model hidden callee effects or provide general alias-effect analysis.
 Separate a write from a subsequent test when the conservative dependency check
 cannot retain an otherwise valid narrowing.
 
-The `satisfies` wrapper now propagates the operand's stable alias contract after
-restoring its speculative substitution. It still returns the inferred expression
-type and does not commit its compatibility probe. Previously wrapping a narrowed
-object in `x satisfies unknown` erased the stable-expression metadata, allowing
-both an annotated narrow alias and an inferred alias to survive an invalidating
-write through `x`. `satisfies.ts` covers both rejections and an accepted scalar
-snapshot. This addresses M1 contract propagation through this identity wrapper;
-it does not make the speculative check itself a durable R2 validation.
+The `satisfies` wrapper propagates the operand's stable alias contract and
+returns its inferred expression type. Previously wrapping a narrowed object in
+`x satisfies unknown` erased the stable-expression metadata, allowing both an
+annotated narrow alias and an inferred alias to survive an invalidating write
+through `x`. `satisfies.ts` covers both rejections and an accepted scalar snapshot.
 
-The next R2/R3c witness is `satisfiesValidationStability` in `satisfies.ts`:
-a numeric inferred field passes `satisfies`, a string write succeeds, and the
-same check then fails. Strict tsc rejects the write. The existing rollback
-loses the first check's sealing. This is a validation-stability witness, not
-a demonstrated runtime failure; the compatible numeric-write case passes.
+Its mandatory subtype check now retains commitments in the live substitution.
+`satisfiesValidationStability` demonstrates the previous rollback failure: an
+inferred numeric field passed the check, a string write succeeded, and the same
+check then failed. The incompatible write now rejects, matching strict tsc;
+compatible writes remain accepted. This is a validation-stability repair, not
+a demonstrated runtime counterexample or general immutable evidence.
 
-Removing that rollback is insufficient: live target checking widens the
-`8080` field in `testObjectPreservation` to `number`, breaking the existing
-inferred-result precision. Literal-shape commitments and lasting inference
-constraints currently share the substitution. A repair must distinguish which
-commitments the compatibility check may use from which source facts it must
-establish, preserving the inferred result without discarding validation
-stability. The implementation is unchanged pending that distinction; neither
-blindly committing nor blindly rolling back the whole substitution meets both
-requirements.
+Returning the inferred type does not mean undoing every inference commitment:
+a writable target can determine literal fields' lasting types. The old
+`testObjectPreservation` expected `8080` and `"localhost"` after validating against
+writable `number`/`string` fields. Strict tsc rejects those literal annotations
+too. The test now expects the rejection; `closed-type.ts` likewise records
+numeric target widening through `Closed`. An explicit literal-target counterpart
+and the scalar literal test retain their precision. This retains
+TypeScript-compatible literal precision while keeping validation commitments;
+it does not replace the result by the target type.
 
 Non-null assertions now apply their nullish removal to the operand's stable
 alias contract as well as its current expression type. Removing null from a

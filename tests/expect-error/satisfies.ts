@@ -25,8 +25,9 @@ function testObjectPreservation(): void {
     port: number;
     host: string;
   };
-  // FIXME: tsc rejects this literal annotation; SKJS rolls back target-guided widening.
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const port: 8080 = config.port;
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const host: "localhost" = config.host;
 }
 
@@ -62,9 +63,8 @@ function satisfiesSnapshot(x: { value: number | null }): number {
 function satisfiesValidationStability(seed: number): void {
   const box = { value: seed };
   const first = box satisfies { readonly value: number };
-  // FIXME: tsc rejects this write; SKJS discards the first validation's sealing.
+  // @ts-expect-error Type is not assignable to the field's type
   box.value = "changed";
-  // @skjs-expect-error Type does not satisfy the expected type
   const second = box satisfies { readonly value: number };
 }
 

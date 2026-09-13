@@ -3380,7 +3380,9 @@ extension class TypeChecker {
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
-      savedSubst = tcenv.subst.save();
+      // Mandatory validation keeps its inference commitments. Returning
+      // inferredTy instead of annot preserves the inferred result structure,
+      // but writable target fields can still determine literal field types.
       this.checkSubType(
         tcenv,
         pos,
@@ -3389,9 +3391,8 @@ extension class TypeChecker {
         annot,
         TSCode(1360),
       );
-      tcenv.subst.restore(savedSubst);
-      // satisfies returns the same value. Its speculative check must not
-      // erase the stable contents contract needed when that value is aliased.
+      // satisfies returns the same value, including its stable contents
+      // contract when that value is aliased.
       tcenv.!stableExprTypes[(pos, inferredTy)] = this.stableAliasExprType(
         tcenv,
         subExpr,
