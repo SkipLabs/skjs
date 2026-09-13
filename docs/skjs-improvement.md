@@ -289,9 +289,13 @@ reference cannot strengthen the lasting contract of its fields.
 `postfix-exclamation.ts` covers rejection of an annotated alias formed through
 a redundant `!`, while a copied scalar still survives a later field write.
 The existing assertion restrictions and for-in exception are unchanged.
-Checked `as` casts remain a confirmed nearby gap: validating their target
-against a transient source refinement can also manufacture an unsafe lasting
-alias. That needs a source-validation repair rather than identity metadata.
+Checked `as` casts now validate their target against the source's stable alias
+contract. Previously a temporary field refinement could justify a lasting
+target view that a later write invalidated. `as-operator.ts` covers rejection
+at the cast and an accepted scalar snapshot; existing tests retain primitive
+narrowing and object upcasts. The cast still produces the target type, including
+during error recovery. This uses the same source-validation boundary as an
+annotation rather than merely forwarding identity metadata.
 
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives

@@ -308,18 +308,11 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
   ```
 - **Verified by**: `tests/expect-error/template-literal-types.ts`
 
-### 19. Boolean Literal Type Casting Not Supported
-- **Rule**: Casting boolean values to literal boolean types is not supported
-- **Error**: "Construction not supported" when using `false as false` or `true as true`
-- **Workaround**: Use explicit boolean comparisons or different type definitions
-- **Example**:
-  ```typescript
-  // WRONG - will cause errors
-  let result: 'true' | 'false' = false as false;
-  
-  // CORRECT - use conditional expressions
-  let result: 'true' | 'false' = condition ? 'true' : 'false';
-  ```
+### 19. Checked Type Assertions
+- **Rule**: `e as T` is accepted only when the stable source type is assignable to `T`. Unlike TypeScript, casts cannot bypass the subtype check; downcasts from `unknown` and incompatible casts are rejected.
+- A scalar's current narrowing may justify a cast, including `false as false`. A temporary field check cannot justify a lasting narrower object view: after checking `x.value !== null`, `x as { readonly value: number }` still rejects when `x` has the contract `{ value: number | null }`. Copying the checked scalar with `x.value as number` remains valid.
+- **Error**: "This 'as' cast is unsound: the source type is not assignable to the target type". Recovery continues with the target type.
+- **Verified by**: `tests/expect-error/as-operator.ts`.
 
 ### 20. `for...of` Loop Constraints
 - **Rule**: Only arrays, tuples, strings, or objects with an explicit string index signature are recognized as iterables. Plain object literals (without `[key: string]: ...`) and custom classes are rejected.

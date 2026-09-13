@@ -3364,7 +3364,7 @@ extension class TypeChecker {
         tcenv,
         pos,
         "This 'as' cast is unsound: the source type is not assignable to the target type",
-        inferredTy,
+        this.stableAliasExprType(tcenv, subExpr, inferredTy),
         annot,
         SKJSCode(2003),
       );
