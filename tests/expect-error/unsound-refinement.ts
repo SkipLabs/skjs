@@ -450,3 +450,25 @@ function receiverSnapshot(x: {
   }
   return () => 0;
 }
+
+// Assignment returns the source object, so its result needs the same contract.
+function assignmentResultAlias(
+  x: { value: number | null },
+  y: { value: number | null },
+): number {
+  if (x.value === null) return 0;
+  const alias = (y = x);
+  x.value = null;
+  // FIXME: tsc rejects this nullable return; SKJS loses the assignment result's contract.
+  return alias.value;
+}
+
+function assignmentResultSnapshot(
+  x: { value: number | null },
+  y: number,
+): number {
+  if (x.value === null) return 0;
+  const value = (y = x.value);
+  x.value = null;
+  return value;
+}
