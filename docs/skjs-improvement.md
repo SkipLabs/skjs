@@ -220,10 +220,18 @@ discarding the child scope alone would be unsound for local bindings.
 the merge. Parameter defaults retain their existing isolated contract scope.
 The local merge conservatively includes both paths even when the source type
 could establish that the default always or never runs.
-One nearby completeness gap remains: defaulting an inferred object field or
-array element can retain `undefined` because `removeUndefined` leaves the
-symbolic candidate unresolved. An annotated source or an established tuple
-does not show the same failure; this is separate from the effect merge.
+
+Default-result typing now uses one `defaultedValueType` operation for object,
+tuple, iterable, assignment, and whole-parameter defaults. It establishes the
+source read type in the live substitution, removes `undefined`, and then unions
+the default result. Previously subtraction left inferred field/element
+candidates unresolved, so their `undefined` member survived: a supplied
+`number | undefined` followed by a numeric default could not be returned as
+`number`. An annotated source or an established tuple already worked.
+`destructuring.ts` covers the repaired declaration and assignment paths and
+retains rejection when the source includes `null` or the default can itself
+return `undefined`. This is a completeness repair with a shared read contract;
+the conditional-effect merge and general R2 obligations remain separate.
 
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives

@@ -462,6 +462,24 @@ extension class TypeChecker {
     type
   }
 
+  // Defaulting reads the source value before replacing undefined. Resolve
+  // inferred candidates in the live substitution so subtraction sees their
+  // members and later growth respects the read. Keep the default's own
+  // undefined member, if any, by adding it only after subtraction.
+  fun defaultedValueType(
+    tcenv: mutable TCEnv,
+    sourceType: TType,
+    defaultType: TType,
+  ): TType {
+    sourceRead = sourceType.expand(tcenv.subst, this, Some(Covariant()));
+    TType::union(
+      tcenv.subst,
+      this,
+      TType::removeUndefined(tcenv.subst, this, sourceRead),
+      defaultType,
+    )
+  }
+
   fun bind(
     tcenv: mutable TCEnv,
     kind: BindKind,
@@ -544,12 +562,7 @@ extension class TypeChecker {
               )
             };
             boundType = if (canBeUndefined) {
-              TType::union(
-                tcenv.subst,
-                this,
-                TType::removeUndefined(tcenv.subst, this, eltType),
-                defaultType,
-              )
+              this.defaultedValueType(tcenv, eltType, defaultType)
             } else {
               eltType
             };
@@ -641,12 +654,7 @@ extension class TypeChecker {
                 kind is BKConst(),
                 isParameter,
               );
-              boundType = TType::union(
-                tcenv.subst,
-                this,
-                TType::removeUndefined(tcenv.subst, this, eltType),
-                defaultType,
-              );
+              boundType = this.defaultedValueType(tcenv, eltType, defaultType);
               this.bind(
                 tcenv,
                 kind,
@@ -790,10 +798,7 @@ extension class TypeChecker {
                       ) is STOk()
                     ) {
                       !defaultIsUseless = None();
-                      union(
-                        TType::removeUndefined(tcenv.subst, this, tfield.get),
-                        defaultType,
-                      )
+                      this.defaultedValueType(tcenv, tfield.get, defaultType)
                     } else {
                       tfield.get
                     }
@@ -4210,15 +4215,7 @@ extension class TypeChecker {
     (target, targetType) = elt.value match {
     | Binop(BOAssignment(), lhs, defaultExpr) ->
       defaultType = this.bindingDefaultType(tcenv, defaultExpr, false, false);
-      (
-        lhs,
-        TType::union(
-          tcenv.subst,
-          this,
-          TType::removeUndefined(tcenv.subst, this, eltType),
-          defaultType,
-        ),
-      )
+      (lhs, this.defaultedValueType(tcenv, eltType, defaultType))
     | _ -> (elt, eltType)
     };
     this.assignTarget(tcenv, target, targetType, mostPrecise)

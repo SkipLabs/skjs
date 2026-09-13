@@ -112,19 +112,16 @@ function skippedAssignmentDefaultKeepsPreviousValue(
 function inferredFieldDefault(seed: number | undefined): number {
   const box = { value: seed };
   const { value = 0 } = box;
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return value;
 }
 function inferredIterableDefault(seed: number | undefined): number {
   const values = [seed];
   const [value = 0] = values;
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return value;
 }
 function inferredAssignmentDefault(seed: number | undefined): number {
   const values = [seed];
   let value: number = 0;
-  // @skjs-expect-error Type is not assignable to the variable's type
   [value = 0] = values;
   return value;
 }

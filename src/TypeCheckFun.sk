@@ -258,12 +258,7 @@ extension class TypeChecker {
         | STOk() ->
           // A supplied non-undefined argument or the initializer's result.
           // The initializer may itself return undefined; retain that possibility.
-          TType::union(
-            tcenv.subst,
-            this,
-            TType::removeUndefined(tcenv.subst, this, paramTypes[i]),
-            defaultType,
-          )
+          this.defaultedValueType(tcenv, paramTypes[i], defaultType)
         | err @ STErrorOnTType _ ->
           tcenv.subtypingError(
             tcenv.subst,
