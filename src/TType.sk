@@ -1972,8 +1972,8 @@ class TField{
   get: TType,
   set: TType,
   access: FieldAccess,
-  // Declaration provenance: lookup may find this method on the prototype.
-  isPrototypeMethod: Bool,
+  // Declaration provenance: lookup can succeed without an own enumerable key.
+  mayBeOmittedByCopy: Bool,
 } uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
@@ -1982,7 +1982,7 @@ class TField{
     isReadonly: ?PosRange,
     type: TType,
     access: FieldAccess,
-    isPrototypeMethod: Bool = false,
+    mayBeOmittedByCopy: Bool = false,
   }: TField {
     setType = isReadonly match {
     | Some(roPos) -> TType::bottom(roPos)
@@ -1995,7 +1995,7 @@ class TField{
       get => type,
       set => setType,
       access,
-      isPrototypeMethod,
+      mayBeOmittedByCopy,
     }
   }
 
@@ -2016,7 +2016,7 @@ class TField{
       get,
       set,
       access => FAPublic(),
-      isPrototypeMethod => false,
+      mayBeOmittedByCopy => false,
     }
   }
 
@@ -2044,7 +2044,7 @@ class TField{
       this.get == other.get &&
       this.set == other.set &&
       this.access == other.access &&
-      this.isPrototypeMethod == other.isPrototypeMethod
+      this.mayBeOmittedByCopy == other.mayBeOmittedByCopy
   }
 
   fun mapType(f: TType -> TType): TField {
@@ -2497,20 +2497,20 @@ class TFields protected {
     }
   }
 
-  fun preservePrototypeMethods(
+  fun preserveCopyUncertainty(
     names: SortedSet<FieldNameString>,
     symbols: SortedSet<FieldNameString>,
   ): TFields {
     this with {
       fields => this.fields.mapKeyed(field ->
         field with {
-          isPrototypeMethod => field.isPrototypeMethod ||
+          mayBeOmittedByCopy => field.mayBeOmittedByCopy ||
             names.contains(field.name),
         }
       ),
       symbolFields => this.symbolFields.mapKeyed(field ->
         field with {
-          isPrototypeMethod => field.isPrototypeMethod ||
+          mayBeOmittedByCopy => field.mayBeOmittedByCopy ||
             symbols.contains(field.name),
         }
       ),

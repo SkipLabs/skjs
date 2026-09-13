@@ -630,7 +630,7 @@ extension class TypeChecker {
                         get => indexField.get,
                         set => indexField.set,
                         access => indexField.access,
-                        isPrototypeMethod => indexField.isPrototypeMethod,
+                        mayBeOmittedByCopy => indexField.mayBeOmittedByCopy,
                       }
                     | None() ->
                       // Presence is runtime-confirmed by `in` but the
@@ -645,7 +645,7 @@ extension class TypeChecker {
                         get => TType::top(e.pos),
                         set => TType::bottom(e.pos),
                         access => FAPhantom(e.pos),
-                        isPrototypeMethod => false,
+                        mayBeOmittedByCopy => false,
                       }
                     };
                     Some(

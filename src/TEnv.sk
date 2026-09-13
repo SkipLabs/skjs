@@ -1561,7 +1561,7 @@ base class TEnv{
             isReadonly => Some(exprPos),
             type => metType,
             access => metAccess,
-            isPrototypeMethod => !metIsStatic,
+            mayBeOmittedByCopy => true,
           };
 
           symbolFields![field.name] = field
@@ -1573,7 +1573,7 @@ base class TEnv{
             isReadonly => Some(name.pos),
             type => metType,
             access => metAccess,
-            isPrototypeMethod => !metIsStatic,
+            mayBeOmittedByCopy => true,
           };
 
           acc![field.name] = field
@@ -2500,7 +2500,7 @@ base class TEnv{
   }
 
   // An annotation changes the value contract, but cannot establish that a
-  // source method is an own property. Keep that uncertainty on local aliases.
+  // source method is copied. Keep that uncertainty on local aliases.
   fun preserveCopyProvenance(
     subst: mutable Subst,
     source: TType,
@@ -2515,10 +2515,10 @@ base class TEnv{
           | obj @ TObject _ ->
             for (fields in obj.getBranches()) {
               for (field in fields.fields) {
-                if (field.isPrototypeMethod) !names = names.set(field.name)
+                if (field.mayBeOmittedByCopy) !names = names.set(field.name)
               };
               for (field in fields.symbolFields) {
-                if (field.isPrototypeMethod) !symbols = symbols.set(field.name)
+                if (field.mayBeOmittedByCopy) !symbols = symbols.set(field.name)
               }
             }
           | TPrim _ -> void
@@ -2537,7 +2537,7 @@ base class TEnv{
             stype match {
             | obj @ TObject _ ->
               obj.map(fields -> {
-                result = fields.preservePrototypeMethods(names, symbols);
+                result = fields.preserveCopyUncertainty(names, symbols);
                 if (result != fields) !changed = true;
                 result
               })
@@ -2550,16 +2550,17 @@ base class TEnv{
     }
   }
 
-  // Copying reads own enumerable values. A prototype method may be absent,
-  // or present as an own override; preserve both cases for spread overwrites.
+  // Copying reads own enumerable values. A class method may be omitted
+  // (inherited or non-enumerable), or supplied by an enumerable own override.
+  // Preserve both cases for spread overwrites.
   fun propertyCopyFields(subst: mutable Subst, fields: TFields): TFields {
     fields.map(
       field ->
-        if (field.isPrototypeMethod) {
+        if (field.mayBeOmittedByCopy) {
           field with {
             get => this.extractedMethodType(subst, field.get),
             isOptional => true,
-            isPrototypeMethod => false,
+            mayBeOmittedByCopy => false,
           }
         } else {
           field

@@ -574,14 +574,15 @@ cases and conservatively under-approximates a few others.
   a compatible carrier is accepted. TypeScript can accept incompatible carriers
   here, but the method body may access fields they do not have.
 - **Copied class methods may be absent**: object spread and rest make
-  class-declared instance methods optional, since prototype properties are not
-  copied. For example, `const copy = { ...instance }; copy.method()` is rejected.
+  class-declared methods optional, since inherited and non-enumerable properties
+  are not copied. This includes static methods; static data fields still copy.
+  For example, `const copy = { ...instance }; copy.method()` is rejected.
   Annotated local initializers retain this copy uncertainty from their source.
   Variable writes and control-flow merges also retain it in the declared
   contract used by captures.
   Own function-valued fields remain copyable. TypeScript omits class methods
   from the copy's type; SKJS conservatively allows for an own override.
-- **Function contracts cannot discard recorded prototype provenance**: a class
+- **Function contracts cannot discard recorded copy uncertainty**: a class
   method cannot become an ordinary function-valued property through a parameter
   or return type. Construct an own property, such as `{ read: source.read }`,
   when the receiving contract needs it to survive copying. Local annotations

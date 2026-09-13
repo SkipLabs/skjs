@@ -163,7 +163,7 @@ class StaticReader {
 
 function copyStaticMethod(): number {
   const copy = { ...StaticReader };
-  // FIXME: spread omits non-enumerable static methods; tsc rejects this call.
+  // @ts-expect-error This expression is not callable
   return copy.read();
 }
 

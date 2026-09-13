@@ -241,7 +241,7 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
-      isPrototypeMethod => x.isPrototypeMethod || y.isPrototypeMethod,
+      mayBeOmittedByCopy => x.mayBeOmittedByCopy || y.mayBeOmittedByCopy,
     }
   }
 
@@ -261,7 +261,7 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
-      isPrototypeMethod => x.isPrototypeMethod || y.isPrototypeMethod,
+      mayBeOmittedByCopy => x.mayBeOmittedByCopy || y.mayBeOmittedByCopy,
     }
   }
 }

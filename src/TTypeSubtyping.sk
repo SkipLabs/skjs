@@ -761,11 +761,11 @@ base class STErrorOnTFields(
             field.pos,
             `The field '${TypePp::escapeName(
               field.name.value,
-            )}' may be inherited; its copy provenance cannot be discarded`,
+            )}' may be absent from an object copy; this type must preserve that possibility`,
           ),
           (
             target.pos,
-            "Construct an own property explicitly to use this field type",
+            "Construct an own enumerable property explicitly to use this field type",
           ),
         ],
         None(),
@@ -1135,7 +1135,7 @@ extension class TFields {
         | STOk() ->
           getterResult match {
           | STOk() ->
-            if (f1.isPrototypeMethod && !f2.isPrototypeMethod) {
+            if (f1.mayBeOmittedByCopy && !f2.mayBeOmittedByCopy) {
               return STRecFieldsCopyProvenance(f1, f2, fields1, fields2)
             }
           | err @ STErrorOnTType _ ->

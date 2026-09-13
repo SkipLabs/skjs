@@ -565,7 +565,7 @@ mutable class Scope{
   }
 
   // Capture and loop entry use the declared contract. A write cannot let
-  // those views forget that an assigned method may live on the prototype.
+  // those views forget that an assigned method may be omitted by copying.
   mutable fun preserveAssignedCopyProvenance(
     tenv: TEnv,
     subst: mutable Subst,

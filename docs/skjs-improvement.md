@@ -456,8 +456,8 @@ check. Direct attached calls keep their existing path, preserving
 generic-container variance and union-receiver dispatch. This repairs receiver
 provenance; general callee-effect tracking and R2 remain open.
 
-Property-copy boundary: class-declared instance methods now carry declaration
-provenance separately from their callable receiver. Spread and rest make these
+Property-copy boundary: class-declared methods carry declaration provenance
+separately from their callable receiver. Spread and rest make these
 copied properties optional: lookup can find a prototype method that copying
 omits, but an own override may supply the property. Existing spread merging
 therefore keeps the earlier property's alternative instead of assuming that
@@ -466,7 +466,7 @@ explicit receiver requirement. Own function-valued fields and class data fields
 remain copyable. `spread-callable.ts` pins the previously accepted missing-method
 calls through spread/rest and these positive controls.
 
-Annotated local initializers now retain recorded prototype-method provenance
+Annotated local initializers retain recorded class-method copy provenance
 on matching fields of the annotation. This preserves the annotation's value
 contract while avoiding a new promise about ownership. Names and unique-symbol
 keys are tracked separately; any source branch carrying the marker makes the
@@ -488,7 +488,13 @@ recorded value types. The conditional-assignment and catch-capture regressions
 in `spread-callable.ts` distinguish ordinary branch contracts from the type-only
 exception log; both previously restored an unsafe contract for a closure.
 
-Named-field subtyping now rejects erasing recorded prototype provenance. This
+The field marker is `mayBeOmittedByCopy`: instance methods can be inherited,
+and static methods are own but non-enumerable. Both may be absent from a copy;
+static data fields still copy. `spread-callable.ts` covers the static-method
+failure and static-data counterpart. This generalizes the same copy rule rather
+than inferring ownership from the callable's receiver.
+
+Named-field subtyping rejects erasing recorded copy uncertainty. This
 closes parameter and declared-result boundaries: a class instance cannot satisfy
 a readonly function-property contract that would promise a copied method.
 Local annotations and variable writes retain the marker before validation;
