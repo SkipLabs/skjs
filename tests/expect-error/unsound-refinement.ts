@@ -147,3 +147,41 @@ function assignedUnionAlternative(
   }
   return y.f;
 }
+
+// FIXME: tsc rejects storing the narrowed source in a permanently narrow slot.
+function storedNarrowAlias(
+  x: { f: number | null },
+  box: { item: { readonly f: number } },
+): number {
+  if (x.f !== null) {
+    box.item = x;
+    x.f = null;
+    return box.item.f;
+  }
+  return 0;
+}
+
+// FIXME: the optimized local-object write must enforce the same contract.
+function storedLocalAlias(x: { f: number | null }): number {
+  const box = { item: { f: 0 } };
+  if (x.f !== null) {
+    box.item = x;
+    x.f = null;
+    return box.item.f;
+  }
+  return 0;
+}
+
+// A new field inherits stable contents from an aliased value. A fresh read
+// check must remain usable after mutation of that value through its source.
+// SKJS supports adding this field to {}; tsc requires declaring it upfront.
+function grownAliasField(x: { f: number | null }): number {
+  const box = {};
+  if (x.f !== null) {
+    box.item = x;
+    x.f = null;
+    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
+    if (box.item.f !== null) return box.item.f;
+  }
+  return 0;
+}
