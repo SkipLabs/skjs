@@ -110,6 +110,15 @@ extension class TypeChecker {
           (binding.pat.value, binding.value) match {
           | (PVar(alias), Some(Expr(_, Var(source)))) ->
             tcenv.scope.inheritAliasContract(alias, source)
+          | (PVar(local), Some(Expr(_, Call _)))
+          | (PVar(local), Some(Expr(_, New _))) if (
+            !ty.isFieldFree() &&
+            ty.getSingleVar().isNone()
+          ) ->
+            // A call has already established its result shape. Preserve that
+            // symbolic contract without expanding or sealing generic fields.
+            // Bare inference candidates retain their separate evolving rule.
+            tcenv.scope.establishObjectContract(local, ty)
           | _ -> void
           }
         }

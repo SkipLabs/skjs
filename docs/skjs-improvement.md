@@ -270,6 +270,16 @@ The M2 regressions in the same test file distinguish three obligations:
   widen, but the later reader must then handle the earlier numeric field write.
   Both const and mutable tracked bindings use the same contract. This is a
   symbolic inference dependency, not the immutable snapshot required by R2.
+- Direct call and constructor initializers retain their result's symbolic
+  contents contract at binding time. They have already produced a value, so
+  there is no local field-initialization phase to finish. This makes later
+  replacements and captured reads obey the same contract as explicitly typed
+  bindings, without expanding generic result fields. `replacedCallResult`,
+  `narrowedCallResult`, and `replacedConstructorResult` reject the witnessed
+  escapes; `checkedGenericCallResult` keeps a fresh nullable-field check and
+  compatible replacement usable. Bare inference-variable results keep their
+  existing evolving-binding discipline. Other expression forms and
+  destructuring result bindings remain separate work.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc
