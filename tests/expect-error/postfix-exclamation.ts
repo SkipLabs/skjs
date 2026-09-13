@@ -737,7 +737,7 @@ function testWrongPromiseGeneric(x: Promise<number> | null): Promise<string> {
 
 function nonNullAliasContract(x: { value: number | null }): number {
   if (x.value === null) return 0;
-  // @ts-expect-error Type of value is not assignable to the variable's type annotation
+  // FIXME: ! must not make a transient field fact into a lasting alias contract.
   // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   const alias: { readonly value: number } = x!;
   x.value = null;
