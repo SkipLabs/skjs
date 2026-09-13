@@ -59,8 +59,7 @@ class NumberMarkerClass<T extends { readonly value: number }> {}
 function aliasConstraintMustRemainValid(seed: number): void {
   const box = { value: seed };
   const first: NumberMarker<typeof box> = null;
-  // FIXME: Invalidates the accepted alias argument; the cached alias also hides
-  // the violation at the second reference.
+  // @ts-expect-error Type is not assignable to the field's type
   box.value = "changed";
   const second: NumberMarker<typeof box> = null;
 }
@@ -68,9 +67,8 @@ function aliasConstraintMustRemainValid(seed: number): void {
 function classConstraintWithoutConstructor(seed: number): void {
   const box = { value: seed };
   const first = new NumberMarkerClass<typeof box>();
-  // FIXME: The first explicit instantiation did not preserve its constraint.
+  // @ts-expect-error Type is not assignable to the field's type
   box.value = "changed";
-  // @skjs-expect-error Type argument does not satisfy the constraint
   const second = new NumberMarkerClass<typeof box>();
 }
 

@@ -139,24 +139,42 @@ This witnesses loss of validation stability, not a demonstrated runtime failure.
 The check instantiates dependent constraints with the explicit type-argument
 map and uses ordinary live subtyping to establish them. This reuses existing
 candidate sealing rather than introducing a second constraint store. The shared
-call routine distinguishes written type arguments from synthesized class
-constructor arguments; merely having a populated argument array does not make
-them explicit. Inferred constructors keep compatibility probing on a clone so
+call routine distinguishes written arguments from arguments forwarded by class
+setup; merely having a populated argument array does not make them explicit.
+Class arguments are now validated at the new-expression source site, before any
+constructor call. Inferred constructors keep compatibility probing on a clone so
 arguments can determine their full shape. Existing `class-ctor-tparam-unsound.ts`
 tests preserve fields beyond the constraint and explicit constructor arguments.
 Inferred generic arguments retain their constraint-carrying growth path. Receiver and
 positional/rest arguments still undergo their normal live checks. The explicit
 constraint is no longer justified solely by successful discarded speculation.
 
-R3c remains in progress: `TEnv.instantiateTParams` still uses clone checks with a
-separate justification for constrained unbound inference variables; open
-candidates nested in explicit alias/class arguments need their own audit.
-Diagnostic and literal-guidance probes do not establish the same acceptance
-obligation and should not be changed indiscriminately. R2 also remains open:
-this closes one acceptance path through existing sealing, not general immutable
-validation evidence or dependency-aware revalidation. Later substitution growth,
-receiver checks, and rest checks outside the positional fixed-point loop still
-need to be considered when defining the final call-validation boundary.
+R2/R3c source-instantiation repair: `validateExplicitTypeArgs` establishes
+alias/class bounds in the active substitution. Type references normalized in a
+lexical `TCEnv` validate before returning the named type, independently of body
+expansion or cache reuse. Previously that reference-site check used an empty
+substitution; a phantom alias could erase its type argument, and a cached body
+could hide an invalidated bound even at a second reference. Explicit `new`
+arguments use the same validator before constructor lookup, covering classes
+with no constructor. Constructor calls then retain compatibility probing for
+already-validated or synthesized arguments, preserving inference of extra fields.
+
+`aliasConstraintMustRemainValid` and `classConstraintWithoutConstructor` in
+`alias-inference-stability.ts` now reject the writes that invalidate their first
+instantiation. The alias previously accepted both references; the class only
+rejected the second instantiation. `compatibleAliasAndClassConstraints` keeps
+numeric writes and repeated instantiations usable. These are validation-stability
+regressions, not runtime counterexamples.
+
+R3c remains in progress: expansion and declaration contexts still use clone
+checks, whose justification for constrained unbound inference variables needs
+to stay explicit. Diagnostic and literal-guidance probes do not establish the
+same acceptance obligation and should not be changed indiscriminately. R2 also
+remains open: these repairs establish selected source-level constraints through
+existing sealing, not general immutable validation evidence or dependency-aware
+revalidation. Later substitution growth, receiver checks, and rest checks outside
+the positional fixed-point loop still need to be considered when defining the
+final call-validation boundary.
 
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives

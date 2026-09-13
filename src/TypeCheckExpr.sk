@@ -2593,9 +2593,11 @@ extension class TypeChecker {
         c = this.getClass(tcenv.subst, className);
         if (targsAst.size() == 0) {
           !tArgs = this.makeTArgsOf(tcenv.subst, c, className)
+        } else {
+          this.validateExplicitTypeArgs(tcenv, className.pos, tArgs, c.tparams)
         };
         cstr = this.newConstructorOf(tcenv.subst, c, className, tArgs);
-        this.callConstructor(tcenv, pos, cstr, args, !targsAst.isEmpty());
+        this.callConstructor(tcenv, pos, cstr, args);
         this.newOf(tcenv.subst, c, className, tArgs)
       | None() ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
@@ -3884,7 +3886,6 @@ extension class TypeChecker {
     pos: PosRange,
     cstrType: CstrType,
     args: Array<Expr>,
-    typeArgsAreExplicit: Bool = false,
   ): void {
     cstrType.cstr match {
     | None() ->
@@ -3902,7 +3903,9 @@ extension class TypeChecker {
         args,
         true,
         None(),
-        typeArgsAreExplicit,
+        // Written class arguments were checked at new; synthesized ones
+        // must stay open until constructor arguments determine their shape.
+        false,
       )
     }
   }
