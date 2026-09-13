@@ -70,18 +70,20 @@ function requiredToOptionalGrows(): void {
 
 function storedObjectAlias(x: { f: number | null }): number {
   if (x.f !== null) {
-    // FIXME: a fresh outer slot must not stabilize its aliased contents.
+    // A fresh outer slot does not stabilize its aliased contents.
     const box = { value: x };
     x.f = null;
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return box.value.f;
   }
   return 0;
 }
 
 function computedObjectAlias(x: { f: number | null }, key: "value"): number {
-  // FIXME: computed slots must retain the conditional's stable contract.
+  // Computed slots retain the conditional's stable contract.
   const box = { [key]: x.f !== null ? x : { f: 0 } };
   x.f = null;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return box.value.f;
 }
 

@@ -109,6 +109,12 @@ object and constructor-initialization paths. Added fields store the stable type
 of an aliased source. The regression distinguishes rejection at a fixed slot
 from safe widening of an inferred slot followed by rejection of a stale read;
 a checked scalar snapshot remains usable. Nested field narrowing is separate.
+Named and computed object-literal fields use the same stable alias projection
+before field inference/growth. This includes a conditional alias stored in a
+computed field; the computation of the key does not change the value contract.
+Object spread still reads current fields: copying a narrowed scalar is a
+snapshot, while nested aliases and general field subtyping remain separate.
+Coverage is in `obj-literal-var-field-growth.ts`.
 Array literals and readonly tuples store stable types for direct alias elements,
 including the spread-array path. This protects subsequent destructuring as well
 as saved arrays. Destructuring defaults use the same projection for assignments

@@ -2007,7 +2007,9 @@ extension class TypeChecker {
         growableFieldOrigin: ?TVarOrigin = None();
         (name, ty) = efield match {
         | FDNormal(name, y) ->
-          ttype = this.expr(tcenv, y, true);
+          currentType = this.expr(tcenv, y, true);
+          // The slot is fresh, but an object stored in it may remain aliased.
+          ttype = this.stableAliasExprType(tcenv, y, currentType);
           // A field value is routed through a growable field type variable so
           // a precise inferred type can widen to a non-literal declared field
           // type under the invariant subtyping a mutable field requires. This
@@ -2227,7 +2229,8 @@ extension class TypeChecker {
           continue
         | FDComputed(keyExpr, valueExpr) ->
           keyType = this.expr(tcenv, keyExpr, true);
-          valueTy = this.expr(tcenv, valueExpr, mostPrecise);
+          currentType = this.expr(tcenv, valueExpr, mostPrecise);
+          valueTy = this.stableAliasExprType(tcenv, valueExpr, currentType);
           keyType
             .getSTypes(tcenv.subst, this, Covariant())
             .flatMap(stypes -> stypes.singleElt())
