@@ -50,3 +50,33 @@ function callResult(obj: { m(x: number): number } | undefined): number {
   const result = obj?.m((state = 1));
   return result ?? 0;
 }
+
+// Removing the null branch must retain the composed receiver's stable fields.
+function composedReceiverContract(
+  x: {
+    value: number | null;
+    read: (this: { readonly value: number }) => () => number;
+  },
+  choose: boolean,
+): () => number {
+  if (x.value === null) return () => 0;
+  // FIXME: tsc rejects this this-context; SKJS loses the composed alias contract.
+  const read = (choose ? x : null)?.read();
+  x.value = null;
+  return read ?? (() => 0);
+}
+
+// A copied scalar gives the retained receiver a lasting numeric field.
+function composedReceiverSnapshot(
+  x: {
+    value: number | null;
+    read: (this: { readonly value: number }) => () => number;
+  },
+  choose: boolean,
+): () => number {
+  if (x.value === null) return () => 0;
+  const snapshot = { value: x.value, read: x.read };
+  const read = (choose ? snapshot : null)?.read();
+  x.value = null;
+  return read ?? (() => 0);
+}
