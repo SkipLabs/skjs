@@ -340,3 +340,31 @@ function nullishFallbackAlias(
   }
   return 0;
 }
+
+// FIXME: returning through a Promise does not stabilize an aliased object's fields.
+async function asyncNarrowReturn(x: {
+  f: number | null;
+}): Promise<{ readonly f: number }> {
+  if (x.f !== null) return x;
+  return { f: 0 };
+}
+
+// FIXME: an annotated expression body must validate the stable branch contract.
+function annotatedAliasReturn(): void {
+  const select = (x: { f: number | null }): { readonly f: number } =>
+    x.f !== null ? x : { f: 0 };
+}
+
+function inferredAliasReturn(): void {
+  const select = (x: { f: number | null }) => (x.f !== null ? x : { f: 0 });
+  // FIXME: inference must not export a temporary field fact as a result contract.
+  const narrow: (x: { f: number | null }) => { readonly f: number } = select;
+}
+
+// A freshly allocated result copies the checked scalar, rather than aliasing x.
+async function freshReturnSnapshot(x: {
+  f: number | null;
+}): Promise<{ readonly f: number }> {
+  if (x.f !== null) return { f: x.f };
+  return { f: 0 };
+}
