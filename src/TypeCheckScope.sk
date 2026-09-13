@@ -10,8 +10,8 @@ module SKJS;
 // capture — can be checked against the declared type rather than a transient
 // narrowing (see `Scope::set`). `isAnnotated` records whether the binding had an
 // explicit type annotation: an annotation is a hard constraint that every write
-// must satisfy. Captured concrete primitive initializers also constrain every
-// write; other unannotated bindings can evolve.
+// must satisfy. Captured primitive initializers and bare inference variables
+// also constrain every write; other unannotated bindings can evolve.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
@@ -92,7 +92,8 @@ mutable class Scope{
   readonly private fun hasCaptureContract(name: String, ref: LocalRef): Bool {
     ref.isAnnotated ||
       (ref.isMutable &&
-        ref.declaredType.isConcretePrimitive() &&
+        (ref.declaredType.isConcretePrimitive() ||
+          ref.declaredType.getSingleVar().isSome()) &&
         this.isCapturedBinding(name))
   }
 
@@ -313,22 +314,17 @@ mutable class Scope{
     | Some(x) -> x
     };
     if (this.hasCaptureContract(name.value, upRef)) {
-      // An explicit annotation, or a concrete primitive initializer of a
-      // captured mutable binding, is a contract every write must preserve.
+      // Captured inference variables collect writes while open. A captured
+      // read uses that same variable, sealing it through ordinary type checking;
+      // later writes must preserve the sealed contract. Concrete primitive
+      // initializers and explicit annotations constrain every write as well.
       // The value still narrows the binding for later reads in this frame,
       // but it may not escape that contract.
       isSubType(ty, upRef.declaredType);
     } else if (this.isThroughFunction(name)) {
-      // An un-annotated binding's inferred type evolves on same-frame writes,
-      // but a write that escapes the current function (a captured
-      // enclosing-function local written from inside a lambda) may run at an
-      // arbitrary later time, so its narrowing cannot be trusted: check it
-      // against the (widened) inferred type. A bare `let x = null`/`undefined`
-      // has an unresolved type variable as its type and widens like TS's
-      // evolving `any`, so such an escaping write is always allowed.
-      if (upRef.declaredType.getSingleVar().isNone()) {
-        isSubType(ty, upRef.declaredType);
-      }
+      // Other inferred captures can evolve on same-frame writes, but a write
+      // from a closure may run later and must respect the declared type.
+      isSubType(ty, upRef.declaredType);
     } else if (throughLoop) {
       isSubType(ty, upRef.type);
     };

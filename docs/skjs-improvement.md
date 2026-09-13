@@ -91,44 +91,54 @@ later growth remains within the constraint. `make test-in-docker` and
 M2 implementation scope: reads across a function boundary discard enclosing
 flow refinements for **annotated captures** and **captured mutable bindings with
 concrete primitive inferred types**, whose declared types every write must
-preserve. The latter retain their initializer's inferred type as a contract
-across all writes, including writes before a closure declaration. A const
+preserve. Primitive initializers retain their inferred type as a contract
+across all writes, including writes before a closure declaration. Captured bare
+inference variables share an inferred contract between writes and reads, as
+described below. A const
 binding does not stabilize mutable object contents, so field-bearing const
 captures also fall back to their declared type. A whole-function assignment
 summary, including nested closures and parameter defaults, recovers field-free
-capture facts when the
-binding is never reassigned. Unknown write targets, destructuring patterns,
+capture facts when the binding is never reassigned. Unknown write targets,
+destructuring patterns,
 and uninspected method bodies conservatively disable this recovery. Name-based
 write collection can over-approximate shadowed bindings, never overlook them.
 Checks made inside the closure still narrow its reads; const value snapshots
 retain their types. Claim environments use the same capture view.
 
 The guarded, never-reassigned parameter examples in `callables/unions.ts`
-remain accepted. Unannotated
-bindings with unresolved inference variables and inferred object contracts
-remain open work. Noncaptured bindings retain ordinary type evolution. Coverage:
+remain accepted. Inferred object contracts and compound types containing
+inference variables remain open work. Noncaptured bindings retain ordinary
+type evolution. Coverage:
 [`captured-read-stability.ts`](../tests/expect-error/captured-read-stability.ts).
 The full checker suite and all 41 pipeline suites pass, including inferred
 primitive contracts, with no corpus outcome mismatches. This is not completion
 of M2; the remaining inferred-contract cases are still open.
 
-The next M2 regressions in the same test file distinguish three problems:
+The M2 regressions in the same test file distinguish three obligations:
 
 - `inferredAliasCapture` is still accepted unsoundly: an alias initialized from
   a narrowed object stores a transient read fact as its inferred type. Resetting
   capture reads to that initial type would not repair it. Its field contract
   must account for writes through the original alias (the M1 connection).
-- `evolvingNullCapture` is still accepted unsoundly: its unresolved initializer
-  has no stable primitive write contract. Reads and subsequent writes must agree
-  on one inferred contract; snapshotting a read alone does not establish that.
+- The evolving-binding repair makes every write constrain the same bare
+  inference variable used by captured reads. Resolution seals that variable:
+  `evolvingNullCapture` now rejects the unguarded nullable read,
+  `checkedEvolvingCapture` accepts an invocation-time null check, and
+  `sealedEvolvingCapture` rejects a later string write. Local null checks resolve
+  the variable before narrowing, following the existing undefined-check
+  discipline. These changes are implemented and tested separately from inferred
+  object capture contracts; they do not complete R2 for the whole checker.
+  Recursive read-before-write inference may need an annotation: the AVL
+  example declares its intended `node | null` root contract explicitly.
 - `inferredObjectCapture` already rejects the stale read, but the safe
   `checkedInferredObject` is also rejected. Restoring invocation-time narrowing
   is a separate completeness obligation; widening every read would lose it.
 
-All four outcomes also occur with the saved pre-repair binary. Strict tsc
+The original four outcomes also occur with the saved pre-repair binary.
+Strict tsc
 rejects the two stale object callbacks and the evolving binding's implicit
-`any`, and accepts the invocation-time check. These tests record current
-behavior; they do not mark the remaining M2 work complete.
+`any`, and accepts the invocation-time object check. The evolving-binding
+repair changes the SKJS outcomes described above; M2 remains in progress.
 
 The initial M1–M3 Boolean/null reductions were accepted and returned null at a
 declared Boolean result. Lean does not have to

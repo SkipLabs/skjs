@@ -229,11 +229,12 @@ function inferredAliasCapture(cell: { value: boolean | null }): boolean {
   return false;
 }
 
-// FIXME: the unresolved initializer bypasses the primitive capture contract;
-// a later write changes the value returned as number. tsc rejects implicit any.
+// The initializer participates in the captured inference contract, so the
+// unguarded numeric read rejects null. tsc rejects implicit any here.
 function evolvingNullCapture(): number {
   let value = null;
   value = 1;
+  // @skjs-expect-error Type of the callback's returned value is not assignable to the expected return type
   const read = (): number => value;
   value = "s";
   return read();
@@ -260,23 +261,22 @@ function checkedEvolvingCapture(): number {
   let value = null;
   value = 1;
   const read = (): number => {
-    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
     if (value !== null) return value;
     return 0;
   };
   value = null;
   return read();
 }
-// FIXME: after the read establishes a numeric-or-undefined contract, a string
-// write must fail. SKJS currently accepts it; tsc rejects implicit any.
+// Once the read seals the numeric-or-undefined contract, a string write
+// cannot invalidate it. tsc rejects implicit any instead.
 function sealedEvolvingCapture(): number {
   let value = undefined;
   value = 1;
   const read = (): number => {
-    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
     if (value !== undefined) return value;
     return 0;
   };
+  // @skjs-expect-error Type is not assignable to the variable's type
   value = "s";
   return read();
 }
