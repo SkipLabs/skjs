@@ -312,3 +312,34 @@ function reassignedAlias(cell: { value: boolean | null }): boolean {
   alias = { value: "s" };
   return read() === true;
 }
+
+// FIXME: replacing the object after the callback is checked changes its
+// numeric result to a string. tsc rejects the replacement.
+function replacedObjectCapture(): number {
+  let cell = { value: 1 };
+  const read = (): number => cell.value;
+  cell = { value: "changed" };
+  return read();
+}
+
+// A guarded callback can handle a compatible whole-object replacement.
+function checkedMutableObjectReplacement(seed: boolean | null): boolean {
+  let cell = { value: seed };
+  const read = (): boolean => {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    if (cell.value !== null) return cell.value;
+    return false;
+  };
+  cell = { value: null };
+  return read();
+}
+
+// FIXME: the first read occurs in a nested callback/branch. Its contract must
+// survive that scope before a later replacement drops the required field.
+function branchObjectCapture(flag: boolean): number {
+  let cell = { value: 1 };
+  let read: () => number = (): number => 0;
+  if (flag) read = (): number => cell.value;
+  cell = { other: true };
+  return read();
+}
