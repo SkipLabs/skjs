@@ -4840,51 +4840,53 @@ extension class TypeChecker {
         return tfun.retType
       };
 
-      // Check the receiver against the declared `this` parameter, if any.
-      // A call with no receiver (free call) uses `this: void`, matching TS.
-      tfun.thisParam match {
-      | NoThis() -> void
-      // A shape method is attach-only: at an attached call the receiver is
-      // the object it was accessed on; a free call has lost it.
-      | ImplicitShape() ->
-        if (thisArgOpt is None _) {
-          tcenv.error(
-            Array[
-              (
-                pos,
-                "A shape method can only be called on the object it was accessed on",
-              ),
-            ],
-            SKJSCode(2075),
-          )
-        }
-      // An implicit class `this` is the type of the object the method was
-      // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
-      // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
-      // receiver the method's `this` is the *intersection* of the branches, and
-      // `union <: intersection` would spuriously fail even though each branch
-      // trivially satisfies its own `this`. Only a free/detached call (receiver
-      // `void`) needs the check, to reject `const g = o.m; g()`.
-      | ImplicitClass _ if (thisArgOpt.isSome()) -> void
-      // Explicit `this: T`, or a detached call on an implicit this.
-      | tp ->
-        expectedThis = tp.tyOpt().fromSome();
-        actualThis = thisArgOpt match {
-        | Some(t) -> t
-        | None() -> TType::single(TPrimUnit(TVoid(), pos))
-        };
-        this.checkSubType(
-          tcenv,
-          pos,
-          "The 'this' context is not assignable to method's 'this' type",
-          actualThis,
-          expectedThis,
-          TSCode(2684),
-        )
-      };
-
+      // Validate the whole call against one stable substitution. Rest or
+      // positional inference can affect the receiver and earlier arguments;
+      // a pass only finishes when none of these obligations changed it.
       version = tcenv.subst.version;
       loop {
+        // Check the receiver against the declared `this` parameter, if any.
+        // A call with no receiver (free call) uses `this: void`, matching TS.
+        tfun.thisParam match {
+        | NoThis() -> void
+        // A shape method is attach-only: at an attached call the receiver is
+        // the object it was accessed on; a free call has lost it.
+        | ImplicitShape() ->
+          if (thisArgOpt is None _) {
+            tcenv.error(
+              Array[
+                (
+                  pos,
+                  "A shape method can only be called on the object it was accessed on",
+                ),
+              ],
+              SKJSCode(2075),
+            )
+          }
+        // An implicit class `this` is the type of the object the method was
+        // resolved from, so an attached call (`e1.m()` / `e1[k]()`, which supplies
+        // `thisArgOpt`) inherently satisfies it. Skip the check there: for a union
+        // receiver the method's `this` is the *intersection* of the branches, and
+        // `union <: intersection` would spuriously fail even though each branch
+        // trivially satisfies its own `this`. Only a free/detached call (receiver
+        // `void`) needs the check, to reject `const g = o.m; g()`.
+        | ImplicitClass _ if (thisArgOpt.isSome()) -> void
+        // Explicit `this: T`, or a detached call on an implicit this.
+        | tp ->
+          expectedThis = tp.tyOpt().fromSome();
+          actualThis = thisArgOpt match {
+          | Some(t) -> t
+          | None() -> TType::single(TPrimUnit(TVoid(), pos))
+          };
+          this.checkSubType(
+            tcenv,
+            pos,
+            "The 'this' context is not assignable to method's 'this' type",
+            actualThis,
+            expectedThis,
+            TSCode(2684),
+          )
+        };
         for (i in Range(0, tfun.params.size())) {
           if (i >= args.size()) {
             tcenv.error(
@@ -4925,20 +4927,20 @@ extension class TypeChecker {
             TSCode(2345),
           )
         };
+        VariadicTyping::checkRestArgs(
+          tcenv,
+          this,
+          pos,
+          tfun.spreadParam,
+          totalSize,
+          args,
+          moreArgs,
+        );
         if (tcenv.subst.version == version) {
           break void
         };
         !version = tcenv.subst.version;
       };
-      VariadicTyping::checkRestArgs(
-        tcenv,
-        this,
-        pos,
-        tfun.spreadParam,
-        totalSize,
-        args,
-        moreArgs,
-      );
       tfun.retType
     }
   }

@@ -172,9 +172,23 @@ to stay explicit. Diagnostic and literal-guidance probes do not establish the
 same acceptance obligation and should not be changed indiscriminately. R2 also
 remains open: these repairs establish selected source-level constraints through
 existing sealing, not general immutable validation evidence or dependency-aware
-revalidation. Later substitution growth, receiver checks, and rest checks outside
-the positional fixed-point loop still need to be considered when defining the
-final call-validation boundary.
+revalidation.
+
+The call-validation fixed point now includes receiver, required/optional
+arguments, and rest arguments in the same pass. A successful call exits only
+after a complete pass leaves `subst.version` unchanged. Previously receiver
+checking preceded the positional fixed point and rest checking followed it.
+Argument expressions and initial rest-shape inference still run once before
+validation; repeating subtype obligations does not re-evaluate expressions.
+The exploratory callback/rest and dependent-constraint probes already rejected
+before this change, so this is a structural strengthening of the validation
+boundary, not a newly demonstrated unsound acceptance. Existing generic-rest,
+receiver, constructor, and call tests guard behavior and termination.
+
+This is a local fixed-point condition, not the full R2 guarantee: cache validity
+and later substitution changes still require their own justification. The
+checker does not yet retain immutable evidence or track all dependencies of a
+successful call after it returns.
 
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
