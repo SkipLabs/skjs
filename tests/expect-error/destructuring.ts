@@ -108,3 +108,35 @@ function skippedAssignmentDefaultKeepsPreviousValue(
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return state;
 }
+
+function inferredFieldDefault(seed: number | undefined): number {
+  const box = { value: seed };
+  const { value = 0 } = box;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return value;
+}
+function inferredIterableDefault(seed: number | undefined): number {
+  const values = [seed];
+  const [value = 0] = values;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return value;
+}
+function inferredAssignmentDefault(seed: number | undefined): number {
+  const values = [seed];
+  let value: number = 0;
+  // @skjs-expect-error Type is not assignable to the variable's type
+  [value = 0] = values;
+  return value;
+}
+function inferredDefaultKeepsNull(seed: number | null | undefined): number {
+  const box = { value: seed };
+  const { value = 0 } = box;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return value;
+}
+function inferredDefaultCanReturnUndefined(seed: number | undefined): number {
+  const box = { value: seed };
+  const { value = undefined } = box;
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return value;
+}
