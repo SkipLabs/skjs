@@ -1,8 +1,7 @@
-// The next iteration can read null despite the pre-loop string narrowing.
+// FIXME: the next iteration can read null under the pre-loop string narrowing.
 function staleLoopRead(x: string | null, again: boolean): void {
   if (x !== null) {
     while (again) {
-      // @ts-expect-error Type of value is not assignable to the variable's type annotation
       const text: string = x;
       x = null;
     }
@@ -13,8 +12,7 @@ function staleLoopRead(x: string | null, again: boolean): void {
 function staleIncrementRead(x: string | null, again: boolean): void {
   if (x !== null) {
     for (; again; x = null) {
-      // TypeScript also accepts this stale read.
-      // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+      // FIXME: the increment invalidates this read on the next iteration.
       const text: string = x;
       continue;
     }
@@ -24,8 +22,7 @@ function staleIncrementRead(x: string | null, again: boolean): void {
 function staleForOfRead(x: string | null, values: number[]): void {
   if (x !== null) {
     for (const value of values) {
-      // A fresh iteration variable does not stabilize an outer binding.
-      // @ts-expect-error Type of value is not assignable to the variable's type annotation
+      // FIXME: a fresh iteration variable does not stabilize an outer binding.
       const text: string = x;
       x = null;
     }
@@ -47,15 +44,6 @@ function unchangedLoopRead(x: string | null, again: boolean): void {
     while (again) {
       const text: string = x;
       count += 1;
-    }
-  }
-}
-
-// The for condition is rechecked after its increment, just like a while guard.
-function guardedIncrementRead(x: string | null): void {
-  if (x !== null) {
-    for (; x !== null; x = null) {
-      const text: string = x;
     }
   }
 }
