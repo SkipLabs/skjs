@@ -155,7 +155,19 @@ extension class TypeChecker {
             false,
           ) match {
           | None() -> Some(tFields)
-          | Some(branchFieldType) -> narrow(tFields, branchFieldType)
+          | Some(branchFieldType) ->
+            // Only established contracts can safely retain this field fact:
+            // uncontracted captures still lack a stable fallback at entry.
+            // Resolve in the live substitution so later inference respects
+            // the read that justified this refinement.
+            narrow(
+              tFields,
+              if (tcenv.scope.hasDeclaredContract(local)) {
+                branchFieldType.expand(tcenv.subst, this, Some(Covariant()))
+              } else {
+                branchFieldType
+              },
+            )
           }
         )
       | x -> Some(x)

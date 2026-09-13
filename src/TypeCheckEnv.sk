@@ -259,6 +259,10 @@ mutable class TCEnv private {
   mutable fun markLocalObjectUsed(local: Name): void {
     this.scope.bindingPos(local) match {
     | Some(p) if (this.localObjects.containsKey(p)) ->
+      // A use in a child scope may not have installed a contract in its
+      // parent, even though growth state is shared. Establish it on each read
+      // where needed, before that read can introduce field refinements.
+      this.scope.establishConstObjectContract(local);
       this.localObjects![p] = LOUsed(local.pos)
     | _ -> void
     }

@@ -241,13 +241,12 @@ function evolvingNullCapture(): number {
   return read();
 }
 
-// FIXME: invocation-time checking is safe, but inference still prevents the
-// field narrowing from reaching this read. tsc accepts this function.
+// A fresh check narrows the inferred field within this invocation, while the
+// const object's contents contract still admits later null writes.
 function checkedInferredObject(seed: boolean | null): boolean {
   const cell = { value: seed };
   const read = (): boolean => {
     if (cell.value !== null) {
-      // @skjs-expect-error Type of returned value is not assignable to the function's return type
       return cell.value;
     }
     return false;

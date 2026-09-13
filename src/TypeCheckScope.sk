@@ -9,7 +9,8 @@ module SKJS;
 // escapes the current frame — through a loop or into an enclosing-function
 // capture — can be checked against the declared type rather than a transient
 // narrowing (see `Scope::set`). `hasDeclaredContract` records an explicit
-// annotation or an object contract inherited from an alias source. Every write
+// annotation, a completed inferred const object, or an object contract inherited
+// from an alias source. Every write
 // must preserve that contract. Captured primitive initializers and bare
 // inference variables also constrain writes; other unannotated bindings evolve.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
@@ -310,6 +311,20 @@ mutable class Scope{
     }
   }
 
+  // A const object's first use ends shape initialization. Keep the completed
+  // symbolic shape as its contents contract; candidate field types still use
+  // the ordinary inference/sealing discipline. The binding cannot be replaced.
+  mutable fun establishConstObjectContract(name: Name): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) if (!ref.isMutable && !ref.hasDeclaredContract) ->
+      this.!refs[name.value] = ref with {
+        declaredType => ref.type,
+        hasDeclaredContract => true,
+      }
+    | _ -> void
+    }
+  }
+
   mutable fun markFieldRefinement(name: Name): void {
     this.maybeGetRef(name.value) match {
     | Some((_, ref)) ->
@@ -321,6 +336,12 @@ mutable class Scope{
   readonly fun hasFieldRefinement(name: Name): Bool {
     this.maybeGetRef(name.value)
       .map(pair -> pair.i1.hasFieldRefinement)
+      .default(false)
+  }
+
+  readonly fun hasDeclaredContract(name: Name): Bool {
+    this.maybeGetRef(name.value)
+      .map(pair -> pair.i1.hasDeclaredContract)
       .default(false)
   }
 

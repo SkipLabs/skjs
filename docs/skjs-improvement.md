@@ -216,7 +216,7 @@ retain their types. Claim environments use the same capture view.
 
 The guarded, never-reassigned parameter examples in `callables/unions.ts`
 remain accepted. Direct local aliases now inherit an explicit or previously
-inherited source object contract. Fresh inferred objects, other alias-producing
+inherited source object contract. Mutable inferred objects, other alias-producing
 expressions, and compound types containing inference variables remain open work. Other noncaptured bindings retain ordinary
 type evolution. Coverage:
 [`captured-read-stability.ts`](../tests/expect-error/captured-read-stability.ts).
@@ -247,15 +247,16 @@ The M2 regressions in the same test file distinguish three obligations:
   object capture contracts; they do not complete R2 for the whole checker.
   Recursive read-before-write inference may need an annotation: the AVL
   example declares its intended `node | null` root contract explicitly.
-- `inferredObjectCapture` already rejects the stale read, but the safe
-  `checkedInferredObject` is also rejected. Restoring invocation-time narrowing
-  is a separate completeness obligation; widening every read would lose it.
-  Resolving the inferred field in the live substitution before narrowing makes
-  the guarded read work, but also makes `inferredObjectCapture` unsoundly pass:
-  the uncontracted inferred object retains its creation-time field refinement
-  across the closure boundary. Establish a stable inferred-object capture
-  contract before enabling that refinement. Validate both existing tests
-  together: the guarded read must accept and the stale read must remain rejected.
+- `inferredObjectCapture` rejects the stale read, and `checkedInferredObject`
+  now accepts its invocation-time check. A tracked const object acquires a
+  contents contract at its first read, after field initialization has finished.
+  The contract retains the symbolic inferred field types, so ordinary reads
+  seal inference dependencies rather than taking an unprotected snapshot.
+  Direct aliases inherit that contract; captured reads and visible property
+  writes discard transient field facts through the existing contract machinery.
+  Field refinement resolves candidates in the live substitution only when the
+  binding has a contract. Doing so for uncontracted objects would make stale
+  closure reads unsoundly pass. Mutable inferred object bindings remain open.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc
