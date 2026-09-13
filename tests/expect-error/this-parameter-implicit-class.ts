@@ -77,3 +77,23 @@ function reattachmentThroughTypeof(other: C): void {
   // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }
+
+// Binding patterns read fields without going through expression property access.
+function destructuredReattachment(other: OtherReceiver): void {
+  const { m } = other;
+  const carrier = { m };
+  // FIXME: destructuring drops the requirement to validate a new receiver.
+  carrier.m(0);
+}
+
+function parameterReattachment({ m }: OtherReceiver): void {
+  const carrier = { m };
+  // FIXME: parameter binding has the same extraction obligation.
+  carrier.m(0);
+}
+
+function compatibleDestructuring(other: OtherReceiver): void {
+  const { m } = other;
+  const carrier = { text: "ok", m };
+  carrier.m(0);
+}
