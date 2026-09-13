@@ -235,6 +235,16 @@ mutable class TCEnv private {
     this.scope.bindingPos(local).flatMap(p -> this.localObjects.maybeGet(p))
   }
 
+  // Growth records initialization, not a refinement of an established object
+  // contract. In particular, resetting a constructor's unfinished this type
+  // would discard the fields it has initialized. Invalidation applies after
+  // growth has ended, or to bindings whose object type was fixed from the start.
+  mutable fun forgetObjectRefinements(tenv: TEnv): void {
+    this.scope.forgetObjectRefinements(this.subst, tenv, name ->
+      !(this.localObjectState(name) is Some(LOCanGrow _))
+    )
+  }
+
   // Freeze the in-scope growable local object `local` (no-op if it is not one),
   // recording the use position for diagnostics.
   mutable fun markLocalObjectUsed(local: Name): void {

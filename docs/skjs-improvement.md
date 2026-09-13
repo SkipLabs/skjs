@@ -65,7 +65,7 @@ next step is to establish contracts for the remaining inferred captures.
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
 | R3c | Speculative clone results authorize the parent only with a justified transfer | not started | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
-| M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | not started | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
+| M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | in progress | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | in progress | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | not started | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
@@ -87,6 +87,19 @@ have no stability guarantee after growth. Ordinary cache reuse is unchanged.
 checks rejection with and without priming, plus repeated valid queries when
 later growth remains within the constraint. `make test-in-docker` and
 `make verify` pass. The freeze-window repair is complete.
+
+M1 implementation scope: visible property writes invalidate object-content
+refinements on bindings with declared or inherited contracts. Object alternatives
+come from the contract; current primitive alternatives remain, preserving scalar
+and non-null reference facts. Destructuring and compound writes use the same
+rule, as do member increments/decrements. Growable objects retain their separate
+initialization state. Coverage is in
+[`unsound-refinement.ts`](../tests/expect-error/unsound-refinement.ts), including
+aliases established before narrowing, readonly views, and fresh checks after writes.
+This also rejects the pipeline's compound-write #598 witnesses. Their obsolete
+candidate generator has been retired; first-error exports and runtime results
+remain tested. M1 stays open for narrower alias annotations, uncontracted inferred
+objects, growing objects, and effects hidden behind calls.
 
 M2 implementation scope: reads across a function boundary discard enclosing
 flow refinements for **annotated captures** and **captured mutable bindings with
@@ -124,10 +137,10 @@ The M2 regressions in the same test file distinguish three obligations:
   `LocalRef.hasDeclaredContract` distinguishes these lasting contracts from
   transient flow types; it includes explicit annotations and inherited aliases.
   Field-free value snapshots retain their copied type. This is a capture repair,
-  not M1 completion: writes through other aliases still do not invalidate every
-  same-function refinement, and explicit narrower annotations can still exploit
-  the field-subtyping gap. Destructuring, calls, and property-access initializers
-  are outside the direct-alias transfer implemented here.
+  not M1 completion: visible writes now invalidate refinements of established
+  object contracts, but explicit narrower annotations can still exploit the
+  field-subtyping gap. Destructuring, calls, and property-access initializers are
+  outside the direct-alias transfer implemented here.
 - The evolving-binding repair makes every write constrain the same bare
   inference variable used by captured reads. Resolution seals that variable:
   `evolvingNullCapture` now rejects the unguarded nullable read,

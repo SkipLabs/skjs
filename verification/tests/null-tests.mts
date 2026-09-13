@@ -5,10 +5,7 @@ import os from "node:os";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
-import { createRequire } from "node:module";
 import { fromSkjs, verifySkjs } from "../tools/annotate-source.mts";
-// Plain JavaScript modules; the reader loads these in a browser too.
-const require = createRequire(import.meta.url);
 // Null predicates and immutable-variable guard edges are independently checked.
 
 
@@ -499,92 +496,60 @@ try {
   assert.equal(guardContext.maybeCallback(true)(false), true);
   const staleAst = JSON.parse(fs.readFileSync(staleAstPath, "utf8"));
   const staleClaims = JSON.parse(fs.readFileSync(staleClaimsPath, "utf8"));
-  // This suite repairs the positive variant; write-observations covers staleFlip.
-  staleAst.functions = staleAst.functions.filter(
-    (f: any) => f.name === "staleCompound",
-  );
-  staleClaims.find((f: any) => f.file === staleFile).functions = staleClaims
-    .find((f: any) => f.file === staleFile)
-    .functions.filter((f: any) => f.name === "staleCompound");
+  const stale = staleClaims.find((f: any) => f.file === staleFile)
+    .functions.find((f: any) => f.name === "staleCompound");
+  const staleReturn = staleAst.functions.find((f: any) => f.name === "staleCompound")
+    .body[1].body[1].e;
+  assert.equal(stale.collection.completion, "aborted");
+  assert.deepEqual(stale.exprs.find((e: any) =>
+    JSON.stringify(e.pos) === JSON.stringify(staleReturn.pos)).type,
+    { top: false, atoms: [{ a: "boolean" }] });
   expect(
-    "compound stale-read reaches an incoming heap obligation",
-    run(
-      "--produce-stateful-source",
-      staleAst,
-      staleClaims,
-      undefined,
-      staleFile,
-    ),
+    "rejected compound witness has a partial first-error export",
+    run("--produce-stateful-source", staleAst, staleClaims, undefined, staleFile),
     false,
-    "source incoming edge obligation at",
+    "missing statement environment",
   );
-  const { candidate } = require("./skjs-unsound/compound-write-candidate.js");
-  const { claims: weakened, edits } = candidate(
-    staleAst,
-    staleClaims,
-    staleFile,
-  );
-  assert.equal(edits.length, 4);
-  const exportedStale = staleClaims.find((f: any) => f.file === staleFile)
+
+  // Metadata diagnostics use a complete valid export, independent of the
+  // repaired checker bug and its intentionally partial first-error snapshot.
+  const metadataAst = structuredClone(guardAst);
+  metadataAst.functions = metadataAst.functions.filter((f: any) => f.name === "compoundContinue");
+  const metadataClaims = structuredClone(guardClaims);
+  metadataClaims.find((f: any) => f.file === guardFile).functions = metadataClaims
+    .find((f: any) => f.file === guardFile).functions
+    .filter((f: any) => f.name === "compoundContinue");
+  const metadataEntry = metadataClaims.find((f: any) => f.file === guardFile)
+    .functions[0].envs.find((e: any) => e.pos[0] === metadataAst.functions[0].body.at(-1).pos[0]);
+  const missingMetadataClaims = structuredClone(metadataClaims);
+  const missingMetadata = missingMetadataClaims.find((f: any) => f.file === guardFile)
     .functions[0];
-  const exitEntry = exportedStale.envs.find(
-    (e: any) => e.pos[0] === staleAst.functions[0].body[2].pos[0],
-  );
-  const exitCell = exitEntry.vars.find((v: any) => v.name === "cell");
-  assert.equal(exitCell.type.atoms.length, 2);
-  assert(exitCell.type.atoms.every((a: any) => a.a === "record"));
-  assert(
-    exitCell.type.atoms.some(
-      (a: any) =>
-        JSON.stringify(a.fields[0].read) !== JSON.stringify(a.fields[0].write),
-    ),
-  );
-  assert(
-    exitCell.type.atoms.some(
-      (a: any) =>
-        JSON.stringify(a.fields[0].read) === JSON.stringify(a.fields[0].write),
-    ),
-  );
-  assert(
-    !exportedStale.unavailableTypes.some(
-      (d: any) =>
-        d.kind === "entry" &&
-        d.pos[0] === exitEntry.pos[0] &&
-        d.binding === "cell",
-    ),
-  );
-  // Exercise missing-type metadata independently of the now-exportable union.
-  const missingStaleClaims = structuredClone(staleClaims);
-  const missingStale = missingStaleClaims.find((f: any) => f.file === staleFile)
-    .functions[0];
-  missingStale.envs
-    .find((e: any) => e.pos[0] === exitEntry.pos[0])
+  missingMetadata.envs
+    .find((e: any) => e.pos[0] === metadataEntry.pos[0])
     .vars.find((v: any) => v.name === "cell").type = { unsupported: true };
-  missingStale.unavailableTypes.push({
+  missingMetadata.unavailableTypes.push({
     kind: "entry",
-    pos: exitEntry.pos,
+    pos: metadataEntry.pos,
     binding: "cell",
     reason: "unexpanded-type",
   });
-  const staleText = fs.readFileSync(staleFile, "utf8");
   const actualReport = verifySkjs(
-    staleFile,
-    staleText,
-    staleClaims,
-    staleFile,
-    fromSkjs(staleText, staleFile, staleClaims, "skjs"),
+    guardFile,
+    guardText,
+    metadataClaims,
+    guardFile,
+    fromSkjs(guardText, guardFile, metadataClaims, "skjs"),
     verifier,
     10,
   ).results[0];
-  assert.equal(actualReport.status, "not-established");
-  assert.equal(actualReport.obligation.phase, "proof-search");
+  assert.equal(actualReport.status, "verified");
 
   const originalReport = verifySkjs(
-    staleFile,
-    staleText,
-    missingStaleClaims,
-    staleFile,
-    fromSkjs(staleText, staleFile, missingStaleClaims, "skjs"),
+    guardFile,
+    guardText,
+    missingMetadataClaims,
+    guardFile,
+    fromSkjs(guardText, guardFile, missingMetadataClaims, "skjs"),
     verifier,
     10,
   ).results[0];
@@ -593,23 +558,23 @@ try {
   assert.equal(originalReport.location.binding, "cell");
   assert.equal(
     originalReport.location.start,
-    staleAst.functions[0].body[2].pos[0],
+    metadataAst.functions[0].body.at(-1).pos[0],
   );
   assert.equal(originalReport.obligation, undefined);
   assert.equal(originalReport.location.reason, "unexpanded-type");
   for (const mode of ["absent", "unknown", "malformed"]) {
-    const variant = structuredClone(missingStaleClaims);
-    for (const f of variant.find((f: any) => f.file === staleFile).functions) {
+    const variant = structuredClone(missingMetadataClaims);
+    for (const f of variant.find((f: any) => f.file === guardFile).functions) {
       if (mode === "absent") delete f.unavailableTypes;
       else if (mode === "malformed") f.unavailableTypes = { bad: true };
       else for (const d of f.unavailableTypes) d.reason = "future-reason";
     }
     const result = verifySkjs(
-      staleFile,
-      staleText,
+      guardFile,
+      guardText,
       variant,
-      staleFile,
-      fromSkjs(staleText, staleFile, variant, "skjs"),
+      guardFile,
+      fromSkjs(guardText, guardFile, variant, "skjs"),
       verifier,
       10,
     ).results[0];
@@ -618,15 +583,6 @@ try {
     else delete expected.location.reason;
     assert.deepEqual(result, expected);
   }
-  const candidateReport = fromSkjs(staleText, staleFile, weakened, "candidate");
-  assert(
-    !candidateReport.functions[0]!.unavailableTypes!.some(
-      (d) =>
-        d.kind === "entry" &&
-        d.binding === "cell" &&
-        d.pos![0] === originalReport.location.start,
-    ),
-  );
   // Successful function export follows cell refusal; no refusal may leak through.
   for (const f of guardClaims.find((f: any) => f.file === guardFile).functions) {
     for (const e of f.exprs.filter((e: any) =>
@@ -643,7 +599,7 @@ try {
   }
 
   console.log(
-    "  unavailable type is distinguished from failed proof search: OK",
+    "  unavailable entry metadata is located before proof search: OK",
   );
   passed++;
   const unavailableExpression = structuredClone(guardClaims);
@@ -681,21 +637,6 @@ try {
     "  unavailable expression type is located before proof search: OK",
   );
   passed++;
-  const staleResult = run(
-    "--produce-stateful-source",
-    staleAst,
-    weakened,
-    undefined,
-    staleFile,
-  );
-  expect(
-    "direct write leaves an unprovable singleton read claim",
-    staleResult,
-    false,
-    "evidence search failed",
-  );
-  const staleRead = staleAst.functions[0].body[1].body[1].e.pos;
-  assert(staleResult.stderr.includes(`[${staleRead[0]},${staleRead[1]})`));
   const staleRuntime = vm.createContext({});
   vm.runInContext(
     stripTypes(fs.readFileSync(staleFile, "utf8")),

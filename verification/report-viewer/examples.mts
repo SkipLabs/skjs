@@ -40,10 +40,13 @@ const groups = [
     label: "SKJS unsound · unsafe programs accepted",
     files: [
       "verification/tests/skjs-unsound/captured-refinement.ts",
-      "verification/tests/skjs-unsound/compound-write-refinement.ts",
       "verification/tests/skjs-unsound/never-completes.ts",
       "verification/tests/skjs-unsound/arrow-intersection.ts",
     ],
+  },
+  {
+    label: "SKJS repaired · unsafe programs rejected",
+    files: ["verification/tests/skjs-unsound/compound-write-refinement.ts"],
   },
   {
     label: "Unsupported examples · expected limitations",

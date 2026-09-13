@@ -2746,6 +2746,12 @@ extension class TypeChecker {
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
         ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
+        e1.value match {
+        | Dot _
+        | Get _ ->
+          tcenv.forgetObjectRefinements(this)
+        | _ -> void
+        };
         // Record the assignment target's type. The `Var` and local-object
         // field-write branches of `assign` never typecheck `e1` themselves, so
         // this is the only place their lvalue type is recorded (the CFG builder
@@ -3121,7 +3127,7 @@ extension class TypeChecker {
               TSCode(2322),
             )
           )
-        | _ -> void
+        | _ -> tcenv.forgetObjectRefinements(this)
         };
         num
       | POExcl() ->
@@ -4022,7 +4028,8 @@ extension class TypeChecker {
         valueType,
         ty1,
         TSCode(2322),
-      )
+      );
+      tcenv.forgetObjectRefinements(this)
     }
   }
 

@@ -1,14 +1,9 @@
 /**
- * SKJS accepts the singleton result, but either Boolean input returns false.
- * The compound loop guard refines the cell read to true. A direct write then
- * stores false, yet SKJS still types the following read as true. No callback
- * or hidden alias is needed. Null skips the body and returns true.
- *
- * The exit-cell union is exported in full and simplifies to a Boolean invariant.
- * Current-content assertions inside the loop become checked graph obligations.
- * The original export fails proof search; a diagnostic candidate forgetting
- * those assertions still fails at the singleton read. Runtime behavior, not
- * failure to find a proof, establishes the counterexample.
+ * Repaired SKJS regression for #598. The compound guard refines the cell read,
+ * then a direct write invalidates it. SKJS rejects the singleton return and
+ * exports Boolean for the read in its partial first-error snapshot.
+ * Either Boolean input returns false; null returns true. The runtime behavior
+ * establishes the counterexample independently of verifier proof search.
  */
 function staleCompound(value: null | boolean): true {
   const cell: { value: boolean } = { value: true };
@@ -20,11 +15,9 @@ function staleCompound(value: null | boolean): true {
 }
 
 /**
- * Opposite-polarity regression for the same direct-write defect (#598).
- * The negated guard establishes false, then a true write leaves a stale false
- * read claim. Both Boolean inputs return true against the false annotation;
- * null skips the loop and returns false. SKJS accepts; TypeScript rejects.
- * This is a variant of staleCompound, not an independent bug mechanism.
+ * Opposite-polarity control for the same repaired defect. Both Boolean inputs
+ * return true against the false result annotation; null returns false.
+ * SKJS and TypeScript both reject the stale return.
  */
 function staleFlip(value: null | boolean): false {
   const cell: { value: boolean } = { value: false };

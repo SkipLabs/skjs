@@ -212,9 +212,61 @@ mutable class Scope{
     }
   }
 
-  // Every binding visible from this scope, innermost shadowing outer. Used
-  // only by claim recording (SkjsTypeClaims.sk), which needs the environment
-  // as a flat map rather than as a chain.
+  // A property write may affect any visible object alias. Restore object
+  // contents from lasting contracts, while retaining current primitive
+  // alternatives: changing a field cannot turn a non-null reference into null.
+  // Do not reset inferred objects to an initial type their writes may outgrow.
+  mutable fun forgetObjectRefinements(
+    subst: mutable Subst,
+    tenv: TEnv,
+    hasStableContents: Name -> Bool,
+  ): void {
+    for (entry in this.visibleRefs().items()) {
+      ref = entry.i1;
+      if (
+        ref.hasDeclaredContract &&
+        hasStableContents(Name(ref.type.pos, entry.i0)) &&
+        ref.type != ref.declaredType &&
+        !ref.type.isFieldFree()
+      ) {
+        objects = ref.declaredType.mapSTypes(
+          subst,
+          tenv,
+          Some(Covariant()),
+          stypes ->
+            Some(
+              stypes
+                .map(types ->
+                  types.filterMap(st ->
+                    st match {
+                    | obj @ TObject _ -> Some(obj)
+                    | TPrim _ -> None()
+                    }
+                  )
+                )
+                .default(STypes::single(TObject::createEmpty(ref.type.pos))),
+            )
+          ,
+        );
+        values = ref.type.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
+          stypes.map(types ->
+            types.filterMap(st ->
+              st match {
+              | prim @ TPrim _ -> Some(prim)
+              | TObject _ -> None()
+              }
+            )
+          )
+        );
+        this.!refs[entry.i0] = ref with {
+          type => TType::union(subst, tenv, objects, values),
+        }
+      }
+    }
+  }
+
+  // Every binding visible from this scope, innermost shadowing outer, as a
+  // flat map for claim recording and refinement invalidation.
   readonly fun visibleRefs(): SortedMap<String, LocalRef> {
     acc = this.up match {
     | None() -> SortedMap[]

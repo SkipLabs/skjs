@@ -227,7 +227,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture negation "$NEGATION"
   build fixture null-tests "$NULL_TESTS"
   build fixture null-guard "$NULL_GUARD"
-  build fixture compound-stale "$COMPOUND_STALE"
+  build rejected_fixture compound-stale "$COMPOUND_STALE" 2
   build fixture refinement-controls "$CONTROLS"
   build fixture loops "$LOOPS"
   build fixture transfers "$TRANSFERS"

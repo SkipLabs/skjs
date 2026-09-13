@@ -5,8 +5,8 @@ import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
 const __dirname = path.dirname(import.meta.filename);
-// The original exports must fail only at the stale observation. Controls differ
-// solely by removal of the invalidating operation, and use fresh producer claims.
+// The still-accepted captured-call witness fails at its stale observation.
+// Direct writes now reject in SKJS; their unchanged controls still verify.
 
 
 
@@ -62,6 +62,7 @@ try {
   ]) {
     const ast = load(ap),
       raw = load(cp);
+    if (file === capturedFile) {
     test("every original obligation audited in " + path.basename(file), () => {
       const r = run(
         "lake",
@@ -79,6 +80,7 @@ try {
       assert.equal(r.status, 0, r.stdout + r.stderr);
       process.stdout.write(r.stdout);
     });
+    }
     for (const f of ast.functions) {
       const target = f.name.replace("stale", "stable");
       const expected = strip(f);
@@ -91,6 +93,11 @@ try {
           strip(controls.find((c: any) => c.name === target)),
           expected,
         ));
+      if (file === compoundFile) {
+        assert.equal(raw.find((x: any) => x.file === file).functions
+          .find((x: any) => x.name === f.name).collection.completion, "aborted");
+        continue;
+      }
       const arm =
         f.name === "staleCapturedCell" ? f.body[2].then : f.body[1].body;
       const ret = arm.at(-1);

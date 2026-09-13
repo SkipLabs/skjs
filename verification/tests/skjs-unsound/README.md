@@ -1,6 +1,7 @@
 # SKJS unsoundness examples
 
-Programs accepted by SKJS whose declared types are contradicted by runtime behavior.
+Runtime counterexamples to declared types. Each entry states whether SKJS
+still accepts it or now rejects it after a checker repair.
 
 ## Captured writer
 
@@ -23,61 +24,21 @@ original proof-search failure as a semantic proof that the program is unsound.
 `stableSnapshot` in [the primitive callback fixture](../stateful-source/primitive-callbacks.ts) verifies and returns
 true: it tests and returns the same immutable value saved before the callback.
 
-## Direct write after a compound guard
+## Repaired: direct writes after compound guards
 
-`compound-write-refinement.ts` is a verifier-compatible instance of the already
-tracked issue #598, covered by `testFieldReassignInBranch` in
-[the existing refinement corpus](../../../tests/expect-error/unsound-refinement.ts)
-and deep dive F on branch `docs/type-soundness-corpus`. It is not a new bug.
-It needs no callback: after the compound loop guard,
-`cell.value = false` is followed by a read that SKJS still types as `true`.
-`staleCompound(true)` and `staleCompound(false)` both return false despite the
-accepted `true` result annotation; null skips the body and returns true. The local
-TypeScript checker rejects the stale return.
+`compound-write-refinement.ts` retains the two polarities of the #598 runtime
+counterexample. SKJS now rejects both singleton returns after invalidating the
+field refinement, as TypeScript does. The post-write expression is exported as
+Boolean; normal first-error collection aborts before the final loop-exit entry.
+The fixture runner requires rejection. `null-tests.mts` and
+`write-observations.mts` check the broad read, partial export, and runtime results.
 
-`null-tests.mts` checks that the original exit-cell union is exported with both
-alternatives; Lean absorbs its redundant arm into the existing Boolean invariant.
-Standalone current-content assertions inside the loop now reach graph checking. A manual
-diagnostic candidate forgets four such observations while preserving the exit union;
-the unchanged singleton expression claim then fails proof search. The test also
-executes all three inputs. The safe `compoundContinue` example uses a checked
-read callback to avoid exporting a retained property refinement; every loop back
-edge rechecks its supplied invariant.
-
-The original now reports a located proof obligation; the diagnostic candidate
-reports a proof-search failure at the unchanged singleton read. The completed
-[audit](../refinement-witnesses.mts) checks every ordinary obligation and heap edge:
-exactly one edge fails, at the post-write return assertion. Structurally matched
-[controls](../refinement-controls.ts) with the mutation removed verify using fresh
-SKJS claims, including the compound and negated guards. Given fresh AST
-and raw claims, the shared [candidate generator](compound-write-candidate.js)
-prints candidate claims on stdout and exact edits on stderr:
-
-```sh
-node verification/tests/skjs-unsound/compound-write-candidate.js \
-  ast.json original.json verification/tests/skjs-unsound/compound-write-refinement.ts \
-  > candidate.json 2> edits.json
-```
-
-These are explicit candidate edits, not automatic widening of SKJS claims. The
-source result annotation and stale read claim remain unchanged. The runtime
-counterexample is separate from the proof-search failure; verifying the original
-function for all admitted inputs requires a source fix.
-
-## Direct write after a negated guard
-
-`staleFlip` in the same `compound-write-refinement.ts` file is another witness of the same #598 defect, through
-the negated guard. `!cell.value` refines the read to false, the body writes true,
-and the following read is still typed false. SKJS accepts the declared `false`
-result and both Boolean inputs return true; null skips the body. TypeScript
-rejects the stale return. This covers the opposite refinement outcome from
-`compound-write-refinement.ts`, not a new independent unsoundness mechanism.
-
-The exit-cell union is exported with both alternatives and simplifies to the
-Boolean invariant. Standalone current-content assertions now reach checked
-obligations. `write-observations.mts` checks the complete normal export, the false
-claim at the actual post-write read, all three runtime inputs, and the distinction
-between an unproved obligation and a runtime counterexample.
+The obsolete diagnostic candidate generator and compound-specific failing-edge
+audit have been retired: fresh SKJS exports no longer contain those false claims.
+The captured-call witness above still exercises the full failing-edge audit,
+and all three mutation-free [controls](../refinement-controls.ts) still verify
+in both source formats. Missing-type metadata tests now use the complete valid
+`compoundContinue` export, independently of this repaired checker bug.
 
 ## An intersection of arrows collapses to never
 

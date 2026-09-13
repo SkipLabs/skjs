@@ -1,6 +1,5 @@
-// Known-unsound refinements that SKJS currently accepts.
-// Each function would be soundly rejected once SKJS models the relevant
-// aliasing / mutation. Today they all compile without error.
+// Mutation refinement regressions. Visible property writes invalidate known
+// object contracts; effects hidden behind calls remain open.
 
 declare function sideEffect(): void;
 
@@ -16,11 +15,11 @@ function testFieldRefineThenSideEffect(x: { f: number | null }): void {
 
 // 2. #598 — Field is reassigned to a wider value inside the refined
 // branch. The setter typechecks (the field still accepts
-// `number | null`), but the getter's narrowed type is not re-widened by
-// SKJS. TypeScript catches this; SKJS currently doesn't.
+// `number | null`), so the getter must lose its earlier narrowing.
 function testFieldReassignInBranch(x: { f: number | null }): void {
   if (x.f !== null) {
     x.f = null;
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const n: number = x.f;
   }
 }
@@ -39,22 +38,22 @@ function testLocalCapturedAndMutated(): void {
   }
 }
 
-// FIXME: writes through an alias must invalidate an earlier source read fact.
-// tsc also accepts this stale read.
+// Writes through an alias invalidate the source read fact; tsc accepts it.
 function aliasBeforeNarrow(x: { f: number | null }): number {
   const y = x;
   if (x.f !== null) {
     y.f = null;
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   }
   return 0;
 }
-// FIXME: readonly prohibits writes through this view, not through other views.
-// tsc also accepts this stale read.
+// Readonly prohibits writes through this view, not other views; tsc accepts it.
 function readonlyView(x: { f: number | null }): number {
   const y: { readonly f: number | null } = x;
   if (y.f !== null) {
     x.f = null;
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return y.f;
   }
   return 0;
@@ -73,11 +72,11 @@ function checkedAfterWrite(
   }
   return 0;
 }
-// FIXME: destructuring writes must invalidate the same facts as plain writes.
-// tsc rejects the stale return here.
+// Destructuring invalidates the same facts as plain writes.
 function destructuredWrite(x: { f: number | null }): number {
   if (x.f !== null) {
     [x.f] = [null];
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   }
   return 0;

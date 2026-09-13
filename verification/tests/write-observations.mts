@@ -134,22 +134,20 @@ test("TypeScript accepts the safe function and rejects the stale false return", 
   assert(flipped);
   assert.match(flipped.text, /Type 'true' is not assignable to type 'false'/);
 });
-test("accepted negated-guard export retains a false read after a true write", () => {
+test("rejected negated guard exports a broad read instead of stale false", () => {
   const f = claim(badClaims, badFile, "staleFlip"),
     loop = badAst.functions.find((f: any) => f.name === "staleFlip").body[1];
-  assert.equal(f.collection.completion, "complete");
+  assert.equal(f.collection.completion, "aborted");
   assert.equal(f.collection.mode, "normal");
   assert.deepEqual(f.retType, lit(false));
   assert.deepEqual(loop.body[0].e.rhs.lit, { a: "booleanlit", v: "true" });
-  assert.deepEqual(at(f, loop.body[1].e.pos).type, lit(false));
-  const exit = f.envs.at(-1).vars.find((v: any) => v.name === "cell").type;
-  assert.equal(exit.atoms.length, 2);
-  assert(exit.atoms.every((a: any) => a.a === "record"));
+  assert.deepEqual(at(f, loop.body[1].e.pos).type, bool);
 });
-test("negated witness reaches a checked obligation with its original observations", () => {
+test("rejected negated witness cannot certify its partial export", () => {
   const r = check(badFile, badClaims, "staleFlip");
   assert.equal(r.status, "not-established");
-  assert.equal(r.obligation.phase, "proof-search");
+  assert.equal(r.location.kind, "missing-environment-claim");
+  assert.equal(r.obligation, undefined);
 });
 test("the original broad entry claim cannot retain a prior write fact", () => {
   const r = check(safeFile, safeClaims);

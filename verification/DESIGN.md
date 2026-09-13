@@ -1299,8 +1299,10 @@ truthiness. See [derived forms](PROGRAM-TYPING.md#derived-source-forms),
 [regression index](tests/README.md) for their respective details.
 
 The [compound-write witness](tests/skjs-unsound/README.md) connects that syntax
-to known issue #598. Its runtime counterexample, original interpretation limit,
-and explicitly edited diagnostic candidate are documented with the fixture;
+to known issue #598. SKJS now rejects its stale singleton returns; its partial
+first-error export cannot certify the whole source. The runtime counterexample
+and repaired status are documented with the fixture. The still-accepted
+captured-call witness retains the diagnostic candidate and failing-edge audit;
 a boundary rejection is not evidence of unsoundness.
 
 ### Initialized callable field
