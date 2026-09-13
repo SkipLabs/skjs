@@ -460,3 +460,37 @@ function checkedDestructuredDefault(): boolean {
   cell = { value: null };
   return read();
 }
+
+// FIXME: selecting a result must not discard the contract that a direct
+// call initializer retains.
+function selectedResultReplacement(flag: boolean): number {
+  let cell = flag ? makeCapturedNumberCell() : makeCapturedNumberCell();
+  const read = (): number => cell.value;
+  cell = { value: "changed" };
+  return read();
+}
+
+// FIXME: a property access produces an existing object whose nullable field
+// remains writable through the original holder after a callback is checked.
+function propertyResultCapture(holder: {
+  cell: { value: boolean | null };
+}): boolean {
+  const cell = holder.cell;
+  if (cell.value !== null) {
+    const read = (): boolean => cell.value;
+    holder.cell.value = null;
+    return read();
+  }
+  return false;
+}
+function checkedPropertyResult(holder: {
+  cell: { value: boolean | null };
+}): boolean {
+  const cell = holder.cell;
+  const read = (): boolean => {
+    if (cell.value !== null) return cell.value;
+    return false;
+  };
+  holder.cell.value = null;
+  return read();
+}
