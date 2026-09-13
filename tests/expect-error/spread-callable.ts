@@ -152,3 +152,22 @@ function returnPrototypeProperty(source: PrototypeReader): ReaderProperty {
 function passOwnMethodProperty(source: PrototypeReader): number {
   return copyReaderArgument({ read: source.read }, source);
 }
+
+// Static methods are own properties, but are not enumerable.
+class StaticReader {
+  static readonly value: number = 1;
+  static read(): number {
+    return 1;
+  }
+}
+
+function copyStaticMethod(): number {
+  const copy = { ...StaticReader };
+  // FIXME: spread omits non-enumerable static methods; tsc rejects this call.
+  return copy.read();
+}
+
+function copyStaticData(): number {
+  const copy = { ...StaticReader };
+  return copy.value;
+}
