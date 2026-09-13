@@ -2800,6 +2800,7 @@ extension class TypeChecker {
         | BOLogicalOr() -> ("||", false)
         };
         ty1 = this.expr(tcenv, e1, true);
+        stable1 = this.stableAliasExprType(tcenv, e1, ty1);
         // The left operand is truthiness-tested, so it is checked per the
         // truthiness mode.
         this.checkCondition(
@@ -2813,6 +2814,7 @@ extension class TypeChecker {
         tcenv.!scope = branch2;
         this.evalCond(tcenv, e1, continuationTarget);
         ty2 = this.expr(tcenv, e2, true);
+        stable2 = this.stableAliasExprType(tcenv, e2, ty2);
         tcenv.!scope = savedScope;
         tcenv.popScope(this, branch2);
         // In `boolean` mode the operator must produce a boolean, so the right
@@ -2842,7 +2844,14 @@ extension class TypeChecker {
           this,
           !continuationTarget,
         );
-        TType::union(tcenv.subst, this, e1Part, ty2)
+        this.composeSelectionType(
+          tcenv,
+          pos,
+          e1Part,
+          ty2,
+          stable1.truthinessValuePart(tcenv.subst, this, !continuationTarget),
+          stable2,
+        )
 
       | BOLessThan()
       | BOLessThanOrEqual()
@@ -2939,8 +2948,30 @@ extension class TypeChecker {
           mostPrecise,
           false,
         );
+        stable1 = this.stableAliasExprType(
+          tcenv,
+          e1,
+          this.lookupExprType(tcenv, e1),
+        );
+        stable1WithoutNullish = TType::removeUndefined(
+          tcenv.subst,
+          this,
+          TType::removeConstant(
+            tcenv.subst,
+            this,
+            stable1,
+            TPrimUnit(TNull(), pos),
+          ),
+        );
         ty2 = this.expr(tcenv, e2, mostPrecise);
-        TType::union(tcenv.subst, this, ty1WithoutNullish, ty2)
+        this.composeSelectionType(
+          tcenv,
+          pos,
+          ty1WithoutNullish,
+          ty2,
+          stable1WithoutNullish,
+          this.stableAliasExprType(tcenv, e2, ty2),
+        )
       }
 
     | InstanceOf(e1, e2) ->
@@ -3374,14 +3405,14 @@ extension class TypeChecker {
       stableRight = this.stableAliasExprType(tcenv, e3, right);
       tcenv.!scope = scopeCopy;
 
-      result = TType::union(tcenv.subst, this, left, right);
-      tcenv.!stableExprTypes[(pos, result)] = TType::union(
-        tcenv.subst,
-        this,
+      this.composeSelectionType(
+        tcenv,
+        pos,
+        left,
+        right,
         stableLeft,
         stableRight,
-      );
-      result
+      )
     | AsConst(subExpr) ->
       this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> ty
@@ -3804,6 +3835,25 @@ extension class TypeChecker {
     | Some(cstr) ->
       _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true, None())
     }
+  }
+
+  // Selection expressions keep separate current-read and stored-alias types.
+  private fun composeSelectionType(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    left: TType,
+    right: TType,
+    stableLeft: TType,
+    stableRight: TType,
+  ): TType {
+    result = TType::union(tcenv.subst, this, left, right);
+    tcenv.!stableExprTypes[(pos, result)] = TType::union(
+      tcenv.subst,
+      this,
+      stableLeft,
+      stableRight,
+    );
+    result
   }
 
   // A direct alias must satisfy lasting contracts with stable contents, while
