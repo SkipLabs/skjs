@@ -234,3 +234,56 @@ function checkedArrayAlias(x: { f: number } | null): number {
   }
   return 0;
 }
+
+// FIXME: defaults from tuple elements must retain the source's nullable field.
+function tupleDeclarationDefault(
+  x: { f: number | null },
+  input: [{ f: number } | undefined],
+): number {
+  if (x.f !== null) {
+    const [y = x] = input;
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+// Iterable extraction follows a separate path from positional tuple binding.
+// FIXME: the default must not give an optional array element a stale guarantee.
+function iterableDeclarationDefault(
+  x: { f: number | null },
+  input: { f: number }[],
+): number {
+  if (x.f !== null) {
+    const [y = x] = input;
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+// Optional object fields have a separate default-binding path.
+// FIXME: the returned callback must handle writes through the default's source.
+function objectDeclarationDefault(
+  x: { f: number | null },
+  input: { item?: { f: number } },
+): () => number {
+  if (x.f !== null) {
+    const { item: y = x } = input;
+    return () => y.f;
+  }
+  return () => 0;
+}
+
+function checkedDeclarationDefault(
+  x: { f: number | null },
+  input: { item?: { f: number } },
+): number {
+  if (x.f !== null) {
+    const { item: y = x } = input;
+    x.f = null;
+    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
+    if (y.f !== null) return y.f;
+  }
+  return 0;
+}
