@@ -1839,7 +1839,9 @@ extension class TType {
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
     res = TType::isSub_(subst, tenv, u1, u2);
-    if (res is STOk()) {
+    // A freeze query may read an open candidate without sealing it. Its
+    // success is not stable under later growth, so do not publish that memo.
+    if (res is STOk() && !subst.freezeCandidates) {
       subst.!seenSub = subst.seenSub.set(pair);
     };
     res

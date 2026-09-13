@@ -63,7 +63,7 @@ contract → targeted repair → regression before broader R1/R2 restructuring.
 | R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | not started | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
 | R2 | Propose vs validate, **and** later uses respect the snapshot | not started | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
-| R3b | Substitution-dependent answers track what can invalidate them | not started | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
+| R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
 | R3c | Speculative clone results authorize the parent only with a justified transfer | not started | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
 | M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | not started | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | not started | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
@@ -78,6 +78,15 @@ so equivalent imported mentions do not lose their cycle guard. Regression covera
 the rejected flow, reverse expansion order, a renamed declaration, and a renamed
 re-export of the same declaration. `make test-in-docker`, `make verify`, and
 strict tsc on the regression project pass. The declaration-identity repair is complete.
+
+R3b implementation note: subtype and intersection results computed while
+`freezeCandidates` is set are not inserted into the substitution caches.
+Those queries can read open candidates without sealing them, so their results
+have no stability guarantee after growth. Ordinary cache reuse is unchanged.
+[`freeze-window-stale-cache.ts`](../tests/expect-error/freeze-window-stale-cache.ts)
+checks rejection with and without priming, plus repeated valid queries when
+later growth remains within the constraint. `make test-in-docker` and
+`make verify` pass. The freeze-window repair is complete.
 
 The initial M1–M3 Boolean/null reductions were accepted and returned null at a
 declared Boolean result. Lean does not have to
