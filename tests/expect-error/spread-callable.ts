@@ -96,3 +96,34 @@ function captureAssignedOwn(source: PrototypeReader): () => number {
     return copy.read.call(source);
   };
 }
+
+function captureConditionalPrototype(
+  source: PrototypeReader,
+  choose: boolean,
+): () => number {
+  let alias: { readonly read: (this: PrototypeReader) => number } = {
+    read: readOwn,
+  };
+  if (choose) alias = source;
+  return () => {
+    const copy = { ...alias };
+    // FIXME: branch merging discards the assigned copy provenance.
+    return copy.read.call(source);
+  };
+}
+
+function captureCatchPrototype(source: PrototypeReader): () => number {
+  let alias: { readonly read: (this: PrototypeReader) => number } = {
+    read: readOwn,
+  };
+  try {
+    alias = source;
+    throw 0;
+  } catch {
+    return () => {
+      const copy = { ...alias };
+      // FIXME: the exception write log does not update the captured contract.
+      return copy.read.call(source);
+    };
+  }
+}
