@@ -564,6 +564,24 @@ mutable class Scope{
     );
   }
 
+  // Capture and loop entry use the declared contract. A write cannot let
+  // those views forget that an assigned method may live on the prototype.
+  mutable fun preserveAssignedCopyProvenance(
+    tenv: TEnv,
+    subst: mutable Subst,
+    name: Name,
+    source: TType,
+  ): void {
+    ref = this.refs.get(name.value);
+    this.!refs[name.value] = ref with {
+      declaredType => tenv.preserveCopyProvenance(
+        subst,
+        source,
+        ref.declaredType,
+      ),
+    }
+  }
+
   readonly fun escapingRefs(): mutable Iterator<NameRef> {
     this.refs.items()
       .filter(x -> !this.locals.containsKey(x.i0))

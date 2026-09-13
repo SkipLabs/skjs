@@ -81,7 +81,7 @@ function captureAssignedPrototype(source: PrototypeReader): () => number {
   alias = source;
   return () => {
     const copy = { ...alias };
-    // FIXME: capture restores a contract that lost the assigned method's provenance.
+    // @skjs-expect-error Property access is not allowed on this type
     return copy.read.call(source);
   };
 }

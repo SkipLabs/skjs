@@ -328,7 +328,8 @@ mutable class TCEnv private {
         bounds![name.value] = TType::union(this.subst, tenv, previous, ty)
       )
     };
-    this.scope.set(name, ty, isSubType)
+    this.scope.set(name, ty, isSubType);
+    this.scope.preserveAssignedCopyProvenance(tenv, this.subst, name, ty)
   }
 
   mutable fun beginLoopWrites(entryValues: SortedMap<String, TType>): void {

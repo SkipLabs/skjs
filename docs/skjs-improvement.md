@@ -474,6 +474,14 @@ corresponding annotated field conservative. `spread-callable.ts` covers a
 readonly function-property annotation that previously enabled a missing-method
 call, and an annotated own function field that remains copyable.
 
+Runtime variable writes also retain the assigned value's recorded copy
+provenance in the binding's declared contract. Capture can otherwise restore
+an older structural annotation after a class-instance assignment and promise
+that the missing method will be copied. `spread-callable.ts` pins this
+assignment-to-capture path and the counterpart using an own function field.
+The shared write path adds provenance monotonically; it does not replace the
+declared value types with the assigned value's narrower types.
+
 This is a bounded repair for recorded method provenance, not a complete model
 of own enumerable properties. Parameter and return contracts, later assignments
 from types that already erased provenance, and nested structural annotations

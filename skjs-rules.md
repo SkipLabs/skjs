@@ -577,6 +577,7 @@ cases and conservatively under-approximates a few others.
   class-declared instance methods optional, since prototype properties are not
   copied. For example, `const copy = { ...instance }; copy.method()` is rejected.
   Annotated local initializers retain this copy uncertainty from their source.
+  Variable writes also retain it in the declared contract used by captures.
   Own function-valued fields remain copyable. TypeScript omits class methods
   from the copy's type; SKJS conservatively allows for an own override.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
