@@ -171,3 +171,31 @@ function copyStaticData(): number {
   const copy = { ...StaticReader };
   return copy.value;
 }
+
+// A real index signature must not hide a named method's copy constraint.
+declare class IndexedReader {
+  readonly [key: string]: (this: IndexedReader) => number;
+  read(): number;
+}
+
+function indexedPrototypeCopy(source: IndexedReader): number {
+  // FIXME: the index contract discards the named method's copy constraint.
+  const alias: { readonly [key: string]: (this: IndexedReader) => number } =
+    source;
+  if ("read" in alias) {
+    const copy = { ...alias };
+    return copy.read.call(source);
+  }
+  return 0;
+}
+
+function indexedOwnCopy(source: IndexedReader): number {
+  const alias: { readonly [key: string]: (this: IndexedReader) => number } = {
+    read: source.read,
+  };
+  if ("read" in alias) {
+    const copy = { ...alias };
+    return copy.read.call(source);
+  }
+  return 0;
+}
