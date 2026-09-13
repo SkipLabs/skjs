@@ -994,13 +994,14 @@ extension class TypeChecker {
   // `.apply` models only required positional params (its argument tuple is
   // exact). Returns None (so the access falls through to "Unbound field") for
   // generic call signatures — which TS resolves to `unknown` through these
-  // methods — rather than diverge. Partial-application `.bind(thisArg, ...args)`
-  // is not modeled yet.
+  // methods — rather than diverge. Direct .bind calls can save a prefix of
+  // fixed required parameters; optional/rest signatures retain receiver-only binding.
   fun maybeFunctionMethod(
     tcenv: mutable TCEnv,
     obj: TObject,
     fieldName: String,
     pos: PosRange,
+    boundCount: Int = 0,
   ): ?TType {
     if (fieldName != "call" && fieldName != "apply" && fieldName != "bind") {
       return None()
@@ -1073,13 +1074,17 @@ extension class TypeChecker {
         )
       }
     } else {
-      // bind(thisArg) => the function with its `this` removed, preserving the
-      // remaining (incl. optional/rest) parameters.
-      // TODO: partial application `bind(thisArg, ...args)` is not modeled (it
-      // would drop the bound parameters from the result, an OmitThisParameter
-      // variant). For now a `never[]` rest makes any extra bound argument fail
-      // (rejecting it like TS's TS2554) rather than be silently ignored.
-      bound = f with {thisParam => NoThis()};
+      // A direct call supplies its syntactic bound-argument count. Only a
+      // fixed required prefix is supported; other cases retain the never rest
+      // so extra arguments are rejected rather than ignored.
+      count = if (
+        boundCount <= f.params.size() &&
+        f.optionalParams.isEmpty() &&
+        f.spreadParam.isNone()
+      ) boundCount else {
+        0
+      };
+      bound = f with {thisParam => NoThis(), params => f.params.slice(count)};
       boundTy = funType(bound);
       neverRest = TType::inst(
         Name(pos, "ReadonlyArray"),
@@ -1089,7 +1094,7 @@ extension class TypeChecker {
         TFun(
           Array[],
           NoThis(),
-          Array[thisType],
+          Array[thisType].concat(f.params.slice(0, count)),
           Array[],
           Some(neverRest),
           boundTy,
@@ -1127,6 +1132,7 @@ extension class TypeChecker {
     idxType: TType,
     idxPos: PosRange,
     accessKind: AccessKind,
+    boundCount: Int = 0,
   ): TType {
     idxSType = idxType
       .getSTypes(tcenv.subst, this, Covariant())
@@ -1315,6 +1321,7 @@ extension class TypeChecker {
                   obj,
                   fieldLit.val,
                   fieldLit.pos,
+                  boundCount,
                 ) match {
                 | Some(methodTy) ->
                   addResultCase(methodTy);
@@ -2417,7 +2424,19 @@ extension class TypeChecker {
         e1Ty = this.expr(tcenv, e1, mostPrecise);
         idxTy = this.expr(tcenv, idx, true);
         resolve = (recv: TType, ak: AccessKind) ->
-          this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
+          this.getWithIndexType(
+            tcenv,
+            getPos,
+            recv,
+            idxTy,
+            idx.pos,
+            ak,
+            if (args.isEmpty() || args.any(arg -> arg.value is Spread _)) {
+              0
+            } else {
+              args.size() - 1
+            },
+          );
         callOn = (recv: TType) ->
           dispatchCall(resolve(recv, AKNormal()), Some(recv));
         distributeOver = (stypes: STypes) ->

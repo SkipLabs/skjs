@@ -555,9 +555,10 @@ cases and conservatively under-approximates a few others.
   method body reads the class's fields off the rebound `this`.
 - **Generic call signatures** report "Unbound field" for `.call`/`.apply`/`.bind`
   (TS resolves their type parameters to `unknown` through these methods).
-- **`.apply` models only required positional parameters**, and partial
-  application **`.bind(thisArg, ...args)`** is rejected (a `never[]` rest) rather
-  than dropping the bound parameters (`OmitThisParameter`).
+- **`.apply` models only required positional parameters**. Direct `.bind` calls
+  support a prefix of fixed required parameters. Partial binding of optional/rest
+  signatures and spread bound arguments remain unsupported; detached `.bind`
+  values retain receiver-only binding.
 - **A no-`this` function type is a free-call permit** (sound; TS erases the
   distinction). A `this`-declaring function or a class method is NOT assignable
   where `() => R` is expected — `const b: () => void = fnBase` then `b()` would

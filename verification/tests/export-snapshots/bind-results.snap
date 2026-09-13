@@ -1,0 +1,11 @@
+# bind-results.ts
+
+## bindResult [complete unverified normal]
+params: target: (boolean, null) => boolean [construct=unknown array=unknown]; saved: boolean
+result: (null) => boolean [construct=unknown array=unknown]
+entry 125-156: saved!: boolean; target!: (boolean, null) => boolean [construct=unknown array=unknown]; this: (unavailable: void-type)
+expr 132-138 `target`: (boolean, null) => boolean [construct=unknown array=unknown]
+expr 132-156 `target.bind(null, saved)`: (null) => boolean [construct=unknown array=unknown]
+expr 139-143 `bind`: "bind"
+expr 144-148 `null`: null
+expr 150-155 `saved`: boolean

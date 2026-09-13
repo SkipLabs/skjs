@@ -105,9 +105,7 @@ function applyZeroArgExtraRejected(): number {
   return noArgs.apply(ctx, [1]);
 }
 
-// Partial application is not modeled: extra bound args to .bind are rejected
-// (a never[] rest) rather than silently ignored, like TS's TS2554.
-function bindExtraArgsRejected(o: Impl): void {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
+// Required arguments can be bound while preserving the class receiver check.
+function bindRequiredArgument(o: Impl): void {
   let _ = o.mm.bind(o, 99);
 }
