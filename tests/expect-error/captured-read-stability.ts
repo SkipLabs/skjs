@@ -424,3 +424,39 @@ function checkedGenericCallResult(seed: boolean | null): boolean {
   cell = { value: null };
   return read();
 }
+
+// FIXME: destructuring a call result must preserve the extracted field's
+// contract just as binding that object directly would.
+declare function makeCapturedObjectResult(): { cell: { value: number } };
+function replacedDestructuredResult(): number {
+  let { cell } = makeCapturedObjectResult();
+  const read = (): number => cell.value;
+  cell = { value: "changed" };
+  return read();
+}
+
+// An undefined tuple slot activates an inferred object default. The resulting
+// field contract must protect captures regardless of which object was chosen.
+declare function makeCapturedTupleResult(): [
+  { value: boolean | null } | undefined,
+];
+function staleDestructuredDefault(): boolean {
+  const [cell = { value: null }] = makeCapturedTupleResult();
+  if (cell.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
+    const read = (): boolean => cell.value;
+    cell.value = null;
+    return read();
+  }
+  return false;
+}
+function checkedDestructuredDefault(): boolean {
+  let [cell = { value: null }] = makeCapturedTupleResult();
+  const read = (): boolean => {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    if (cell.value !== null) return cell.value;
+    return false;
+  };
+  cell = { value: null };
+  return read();
+}
