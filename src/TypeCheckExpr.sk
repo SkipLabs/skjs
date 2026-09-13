@@ -2591,8 +2591,15 @@ extension class TypeChecker {
           xEltTy = x.value match {
           | Spread(spreadExpr) ->
             spreadTy = this.expr(tcenv, spreadExpr, true);
-            this.getValueType(tcenv, x.pos, spreadTy, "spread")
-          | _ -> this.expr(tcenv, x, mostPrecise)
+            this.getValueType(
+              tcenv,
+              x.pos,
+              this.stableAliasExprType(tcenv, spreadExpr, spreadTy),
+              "spread",
+            )
+          | _ ->
+            ty = this.expr(tcenv, x, mostPrecise);
+            this.stableAliasExprType(tcenv, x, ty)
           };
           !eltType = TType::union(tcenv.subst, this, eltType, xEltTy)
         };
@@ -2602,7 +2609,8 @@ extension class TypeChecker {
           tcenv,
           pos,
           arr.map(x -> {
-            ty = this.expr(tcenv, x, mostPrecise);
+            currentType = this.expr(tcenv, x, mostPrecise);
+            ty = this.stableAliasExprType(tcenv, x, currentType);
             if (x.value is Object _ || ty.isConcretePrimitive()) {
               this.makeBoundTVarForLiteralCommitment(
                 tcenv,
@@ -3433,7 +3441,9 @@ extension class TypeChecker {
         elt.value match {
         | EArray(nested) if (nested.all(x -> !(x.value is Spread _))) ->
           this.constArrayLit(tcenv, elt.pos, nested)
-        | _ -> this.expr(tcenv, elt, true)
+        | _ ->
+          ty = this.expr(tcenv, elt, true);
+          this.stableAliasExprType(tcenv, elt, ty)
         }
       ),
       true,
@@ -4003,7 +4013,7 @@ extension class TypeChecker {
           tcenv.subst,
           this,
           TType::removeUndefined(tcenv.subst, this, eltType),
-          defaultType,
+          this.stableAliasExprType(tcenv, defaultExpr, defaultType),
         ),
       )
     | _ -> (elt, eltType)

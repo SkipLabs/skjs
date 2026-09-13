@@ -188,10 +188,11 @@ function grownAliasField(x: { f: number | null }): number {
   return 0;
 }
 
-// FIXME: tsc rejects destructuring an alias into a permanently narrow binding.
+// Destructuring cannot install a permanently narrow alias from a field check.
 function destructuredAlias(x: { f: number | null }): number {
   let y: { readonly f: number } = { f: 0 };
   if (x.f !== null) {
+    // @ts-expect-error Type is not assignable to the variable's type
     [y] = [x];
     x.f = null;
     return y.f;
@@ -200,21 +201,21 @@ function destructuredAlias(x: { f: number | null }): number {
 }
 
 // Readonly tuple slots do not freeze the objects stored in them.
-// FIXME: tsc rejects the stale read, even though the tuple is created narrowed.
 function readonlyTupleAlias(x: { f: number | null }): number {
   if (x.f !== null) {
     let saved = [x] as const;
     x.f = null;
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return saved[0].f;
   }
   return 0;
 }
 
 // Defaults bypass literal element typing and need their own stable contract.
-// FIXME: tsc rejects the narrow binding populated by this default.
 function defaultAlias(x: { f: number | null }, missing: [undefined]): number {
   let y: { readonly f: number } = { f: 0 };
   if (x.f !== null) {
+    // @ts-expect-error Type is not assignable to the variable's type
     [y = x] = missing;
     x.f = null;
     return y.f;
