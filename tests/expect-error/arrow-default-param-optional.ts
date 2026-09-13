@@ -55,3 +55,25 @@ function laterParameterDefault(
 ): number {
   return result;
 }
+
+const nestedDefaultValue: number = 1;
+// FIXME: SKJS resolves the global instead of the later nested parameter.
+function laterNestedParameterDefault(
+  result: number = nestedDefaultValue,
+  {
+    values: { nestedDefaultValue },
+  }: { values: { nestedDefaultValue: number } } = {
+    values: { nestedDefaultValue: 2 },
+  },
+): number {
+  return result;
+}
+
+const restDefaultValue: string = "outer";
+// FIXME: SKJS resolves the global instead of the later array rest binding.
+function laterRestParameterDefault(
+  result: number = restDefaultValue.length,
+  [...restDefaultValue]: number[] = [],
+): number {
+  return result;
+}
