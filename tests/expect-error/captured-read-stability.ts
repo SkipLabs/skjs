@@ -313,11 +313,12 @@ function reassignedAlias(cell: { value: boolean | null }): boolean {
   return read() === true;
 }
 
-// FIXME: replacing the object after the callback is checked changes its
-// numeric result to a string. tsc rejects the replacement.
+// Replacing the object must preserve the numeric result already promised by
+// the callback, even when that callback contained the binding's first read.
 function replacedObjectCapture(): number {
   let cell = { value: 1 };
   const read = (): number => cell.value;
+  // @ts-expect-error Type is not assignable to the variable's type
   cell = { value: "changed" };
   return read();
 }
@@ -326,7 +327,6 @@ function replacedObjectCapture(): number {
 function checkedMutableObjectReplacement(seed: boolean | null): boolean {
   let cell = { value: seed };
   const read = (): boolean => {
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     if (cell.value !== null) return cell.value;
     return false;
   };
@@ -334,30 +334,33 @@ function checkedMutableObjectReplacement(seed: boolean | null): boolean {
   return read();
 }
 
-// FIXME: the first read occurs in a nested callback/branch. Its contract must
+// The first read occurs in a nested callback/branch. Its contract must
 // survive that scope before a later replacement drops the required field.
 function branchObjectCapture(flag: boolean): number {
   let cell = { value: 1 };
   let read: () => number = (): number => 0;
   if (flag) read = (): number => cell.value;
+  // @ts-expect-error Type is not assignable to the variable's type
   cell = { other: true };
   return read();
 }
 
-// FIXME: a callback write checked before any read still constrains future
+// A callback write checked before any read still constrains future
 // replacements. Otherwise reset writes a number after read promises string.
 function objectWriterBeforeReader(): string {
   let cell = { value: 1 };
   const reset = (): void => {
     cell = { value: 1 };
   };
+  // @ts-expect-error Type is not assignable to the variable's type
   cell = { value: "changed" };
+  // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
   const read = (): string => cell.value;
   reset();
   return read();
 }
 
-// FIXME: the optimized property-write path does not read the receiver, but
+// The optimized property-write path does not read the receiver, but
 // still promises that this captured binding will accept a numeric field write.
 function objectFieldWriterBeforeReader(): string {
   let cell = { value: 1 };
@@ -365,6 +368,7 @@ function objectFieldWriterBeforeReader(): string {
     cell.value = 1;
   };
   cell = { value: "changed" };
+  // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
   const read = (): string => cell.value;
   reset();
   return read();

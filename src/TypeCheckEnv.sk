@@ -164,6 +164,9 @@ mutable class TCEnv private {
   // name: a name can be reused by distinct bindings in sibling/sequential (and,
   // later, shadowing) scopes, which must not share growth state.
   localObjects: mutable Map<PosRange, LocalObjectState> = mutable Map[],
+  // First-use contents contracts survive child scopes and callback checking.
+  // Their symbolic field types remain dependencies of the live substitution.
+  localObjectContracts: mutable Map<PosRange, TType> = mutable Map[],
   mutable forInContext: ?ForInContext = None(),
   // Stack of enclosing loops/switches, innermost last; see `JumpCatcher`.
   mutable jumpCatchers: mutable Vector<mutable JumpCatcher> = mutable Vector[],
@@ -259,10 +262,12 @@ mutable class TCEnv private {
   mutable fun markLocalObjectUsed(local: Name): void {
     this.scope.bindingPos(local) match {
     | Some(p) if (this.localObjects.containsKey(p)) ->
-      // A use in a child scope may not have installed a contract in its
-      // parent, even though growth state is shared. Establish it on each read
-      // where needed, before that read can introduce field refinements.
-      this.scope.establishConstObjectContract(local);
+      contract = this.localObjectContracts.maybeGet(p) match {
+      | Some(ty) -> ty
+      | None() -> this.scope.objectContentsContract(local)
+      };
+      this.localObjectContracts![p] = contract;
+      this.scope.establishObjectContract(local, contract);
       this.localObjects![p] = LOUsed(local.pos)
     | _ -> void
     }
@@ -305,6 +310,12 @@ mutable class TCEnv private {
     ty: TType,
     isSubType: (TType, TType) -> void,
   ): void {
+    // A callback can run after its enclosing frame replaces this binding.
+    // Its write is an observable use even if no value has been read yet.
+    if (this.scope.isThroughFunction(name)) this.markLocalObjectUsed(name);
+    this.scope.bindingPos(name)
+      .flatMap(p -> this.localObjectContracts.maybeGet(p))
+      .each(contract -> this.scope.establishObjectContract(name, contract));
     this.recordTryWrite(tenv, name, ty);
     for (bounds in this.loopWriteBounds) {
       bounds.maybeGet(name.value).each(previous ->

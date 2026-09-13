@@ -4242,9 +4242,10 @@ extension class TypeChecker {
     e2: Expr,
     mostPrecise: Bool,
   ): TType {
-    // This optimized write does not read the receiver through expr(): doing so
-    // would freeze a growable local object. Export its existing pre-write type
-    // without changing that growth state, including inside captured closures.
+    // Same-frame writes may initialize new fields. A captured write may run
+    // later, so it must establish the receiver's lasting contents contract.
+    if (tcenv.scope.isThroughFunction(local)) tcenv.markLocalObjectUsed(local);
+    // This optimized write bypasses expr(); record its pre-write receiver type.
     if (getConfig(tcenv.context).emitSkjsTypeClaims) {
       tcenv.claimedExprVisits.push(local.pos);
       tcenv.!exprTypes[(local.pos, false, false)] = tcenv.scope.get(local)

@@ -216,8 +216,9 @@ retain their types. Claim environments use the same capture view.
 
 The guarded, never-reassigned parameter examples in `callables/unions.ts`
 remain accepted. Direct local aliases now inherit an explicit or previously
-inherited source object contract. Mutable inferred objects, other alias-producing
-expressions, and compound types containing inference variables remain open work. Other noncaptured bindings retain ordinary
+inherited source object contract. Inferred objects obtained through other
+alias-producing expressions and compound types containing inference variables
+remain open work. Other noncaptured bindings retain ordinary
 type evolution. Coverage:
 [`captured-read-stability.ts`](../tests/expect-error/captured-read-stability.ts).
 The full checker suite and all 41 pipeline suites pass, including inferred
@@ -248,15 +249,27 @@ The M2 regressions in the same test file distinguish three obligations:
   Recursive read-before-write inference may need an annotation: the AVL
   example declares its intended `node | null` root contract explicitly.
 - `inferredObjectCapture` rejects the stale read, and `checkedInferredObject`
-  now accepts its invocation-time check. A tracked const object acquires a
-  contents contract at its first read, after field initialization has finished.
+  now accepts its invocation-time check. A tracked object literal binding acquires a
+  contents contract at its first read, after field initialization has finished. Captured writes also establish this
+  contract: both whole-binding replacements and optimized property writes can
+  run after the enclosing frame has changed the binding.
   The contract retains the symbolic inferred field types, so ordinary reads
   seal inference dependencies rather than taking an unprotected snapshot.
   Direct aliases inherit that contract; captured reads and visible property
   writes discard transient field facts through the existing contract machinery.
   Field refinement resolves candidates in the live substitution only when the
   binding has a contract. Doing so for uncontracted objects would make stale
-  closure reads unsoundly pass. Mutable inferred object bindings remain open.
+  closure reads unsoundly pass. The contract is keyed by declaration position
+  in the type-checking environment, so a first read inside a callback or branch
+  constrains later whole-binding replacements after that scope has been left.
+  `replacedObjectCapture` and `branchObjectCapture` reject replacements that
+  would change a callback's result or remove a required field;
+  `checkedMutableObjectReplacement` accepts a guarded compatible replacement.
+  The writer-before-reader witnesses preserve earlier callback writes: an
+  incompatible whole-binding replacement rejects; an open field candidate can
+  widen, but the later reader must then handle the earlier numeric field write.
+  Both const and mutable tracked bindings use the same contract. This is a
+  symbolic inference dependency, not the immutable snapshot required by R2.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc

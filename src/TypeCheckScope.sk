@@ -9,9 +9,9 @@ module SKJS;
 // escapes the current frame — through a loop or into an enclosing-function
 // capture — can be checked against the declared type rather than a transient
 // narrowing (see `Scope::set`). `hasDeclaredContract` records an explicit
-// annotation, a completed inferred const object, or an object contract inherited
-// from an alias source. Every write
-// must preserve that contract. Captured primitive initializers and bare
+// annotation, a completed inferred object, or an object contract inherited
+// from an alias source. Every write must preserve that contract.
+// Captured primitive initializers and bare
 // inference variables also constrain writes; other unannotated bindings evolve.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
@@ -311,14 +311,22 @@ mutable class Scope{
     }
   }
 
-  // A const object's first use ends shape initialization. Keep the completed
-  // symbolic shape as its contents contract; candidate field types still use
-  // the ordinary inference/sealing discipline. The binding cannot be replaced.
-  mutable fun establishConstObjectContract(name: Name): void {
+  // Use an existing contract when this binding inherited one from an alias.
+  // Otherwise the completed initialization shape is the first-use contract.
+  readonly fun objectContentsContract(name: Name): TType {
+    ref = this.maybeGetRef(name.value).fromSome().i1;
+    if (ref.hasDeclaredContract) ref.declaredType else ref.type
+  }
+
+  // Install the binding's shared first-use contract in the current scope.
+  // A callback's first read must forget enclosing flow facts; refinements
+  // already made against a contract in this scope remain valid.
+  mutable fun establishObjectContract(name: Name, contract: TType): void {
     this.maybeGetRef(name.value) match {
-    | Some((_, ref)) if (!ref.isMutable && !ref.hasDeclaredContract) ->
+    | Some((_, ref)) if (!ref.hasDeclaredContract) ->
       this.!refs[name.value] = ref with {
-        declaredType => ref.type,
+        type => if (this.isThroughFunction(name)) contract else ref.type,
+        declaredType => contract,
         hasDeclaredContract => true,
       }
     | _ -> void
