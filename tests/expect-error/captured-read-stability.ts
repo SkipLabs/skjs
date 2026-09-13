@@ -280,3 +280,34 @@ function sealedEvolvingCapture(): number {
   value = "s";
   return read();
 }
+
+// FIXME: a captured alias narrowed after creation also needs the source
+// object contract. SKJS accepts this stale read; tsc rejects it.
+function aliasThenNarrow(cell: { value: boolean | null }): boolean {
+  const alias = cell;
+  if (alias.value !== null) {
+    const read = (): boolean => alias.value;
+    cell.value = null;
+    return read();
+  }
+  return false;
+}
+// Transferring a contract through several aliases must preserve fresh checks.
+function checkedAliasChain(cell: { value: boolean | null }): boolean {
+  const first = cell;
+  const alias = first;
+  const read = (): boolean => {
+    if (alias.value !== null) return alias.value;
+    return false;
+  };
+  cell.value = null;
+  return read();
+}
+// FIXME: writes to a mutable alias must preserve the callback's object
+// contract. SKJS accepts this incompatible replacement; tsc rejects it.
+function reassignedAlias(cell: { value: boolean | null }): boolean {
+  let alias = cell;
+  const read = (): boolean | null => alias.value;
+  alias = { value: "s" };
+  return read() === true;
+}
