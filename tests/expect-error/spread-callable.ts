@@ -193,8 +193,8 @@ function indexedOwnCopy(source: IndexedReader): number {
   const alias: { readonly [key: string]: (this: IndexedReader) => number } = {
     read: source.read,
   };
-  if ("read" in alias) {
-    const copy = { ...alias };
+  const copy = { ...alias };
+  if ("read" in copy) {
     return copy.read.call(source);
   }
   return 0;
