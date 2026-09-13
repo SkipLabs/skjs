@@ -47,3 +47,12 @@ function unchangedLoopRead(x: string | null, again: boolean): void {
     }
   }
 }
+
+// The for condition is rechecked after its increment, just like a while guard.
+function guardedIncrementRead(x: string | null): void {
+  if (x !== null) {
+    for (; x !== null; x = null) {
+      const text: string = x;
+    }
+  }
+}
