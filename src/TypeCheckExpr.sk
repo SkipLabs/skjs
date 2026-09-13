@@ -2440,7 +2440,10 @@ extension class TypeChecker {
         resolve = (recv: TType, ak: AccessKind) ->
           this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
         callOn = (recv: TType) ->
-          dispatchCall(resolve(recv, AKNormal()), Some(recv));
+          dispatchCall(
+            resolve(recv, AKNormal()),
+            Some(this.stableAliasExprType(tcenv, e1, recv)),
+          );
         distributeOver = (stypes: STypes) ->
           TType::unionN(
             tcenv.subst,
@@ -2475,7 +2478,10 @@ extension class TypeChecker {
             // Receiver is never nullish (or Top): the `?.` does not change the
             // call. Defer to the normal resolution, which emits the "unnecessary
             // `?.`" warning and the member error/call exactly as before.
-            dispatchCall(resolve(e1Ty, accessKind), Some(e1Ty))
+            dispatchCall(
+              resolve(e1Ty, accessKind),
+              Some(this.stableAliasExprType(tcenv, e1, e1Ty)),
+            )
           }
         } else {
           maybeStypes match {
@@ -3873,7 +3879,7 @@ extension class TypeChecker {
     e.value match {
     | Var(source) if (!(tcenv.localObjectState(source) is Some(LOCanGrow _))) ->
       tcenv.scope
-        .stableAliasType(source, tcenv.subst, this)
+        .stableAliasType(source, currentType, tcenv.subst, this)
         .default(currentType)
     | _ ->
       tcenv.stableExprTypes.maybeGet((e.pos, currentType)).default(currentType)

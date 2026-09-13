@@ -131,7 +131,12 @@ Ordinary call arguments also use stable contracts before parameter checking and
 generic inference. The regression covers a retained readonly argument, a generic
 identity result, and a fresh scalar copy. Contextual callback typing remains on
 its existing path.
-M1 stays open for spread-source and receiver contracts, other alias-producing expressions,
+Direct receiver aliases now validate explicit `this` contracts using stable
+contents while member lookup uses the current read type. The projection accepts
+the selected receiver branch, preserving distributed union calls and optional
+receiver short-circuiting. A retained receiver and a fresh scalar-copy receiver
+are covered; existing receiver tests cover dot/index access and union dispatch.
+M1 stays open for spread-source contracts, distributed composed receivers, other alias-producing expressions,
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.

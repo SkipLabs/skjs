@@ -328,11 +328,13 @@ mutable class Scope{
   // turning a temporary field refinement into a lasting read guarantee.
   readonly fun stableAliasType(
     name: Name,
+    currentType: TType,
     subst: mutable Subst,
     tenv: TEnv,
   ): ?TType {
     this.maybeGetRef(name.value).map(pair ->
-      pair.i1.stableContentsType(subst, tenv, true)
+      // A distributed receiver call checks only its selected branch.
+      (pair.i1 with {type => currentType}).stableContentsType(subst, tenv, true)
     )
   }
 

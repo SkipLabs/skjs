@@ -429,7 +429,8 @@ function retainedReceiver(x: {
   retain: (this: { readonly f: number }) => () => number;
 }): () => number {
   if (x.f !== null) {
-    // FIXME: a method can retain this after its field refinement expires.
+    // A method can retain this after its field refinement expires.
+    // @ts-expect-error The 'this' context is not assignable to method's 'this' type
     const read = x.retain();
     x.f = null;
     return read;
