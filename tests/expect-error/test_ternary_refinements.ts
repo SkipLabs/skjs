@@ -48,14 +48,13 @@ function branchWriteInvalidatesEarlierNarrowing(flag: boolean): number {
   let state: number | null = 1;
   state = 1;
   const result = flag ? (state = null) : 0;
-  // FIXME: the true branch can leave state null.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return state;
 }
 
 function bothBranchesInitialize(flag: boolean): number {
   let state: number;
   const result = flag ? (state = 1) : (state = 2);
-  // @skjs-expect-error Variable 'state' is used before being assigned
   return state;
 }
 

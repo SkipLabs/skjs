@@ -252,6 +252,15 @@ paths. `optional-chaining-method-call.ts` covers a rejected read after a skipped
 argument, a possible invalidating write, and using the optional result. This does
 not add optional function-call or optional computed-access syntax.
 
+Ternary expressions now merge both branch scopes after retaining their current
+and stable result types. Previously both scopes were discarded: a possible
+write could leave an earlier narrowing incorrectly available, while assigning
+in both branches still failed definite assignment. `test_ternary_refinements.ts`
+covers the rejected stale read, the newly accepted two-branch initialization,
+and continued rejection when only one branch initializes. The existing scope
+merge supplies the union of values and intersection of initialization facts;
+there is no untouched third path for a ternary expression.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

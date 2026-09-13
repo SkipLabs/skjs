@@ -3471,6 +3471,10 @@ extension class TypeChecker {
       stableRight = this.stableAliasExprType(tcenv, e3, right);
       tcenv.!scope = scopeCopy;
 
+      // Exactly one branch runs. Retain either branch's writes and establish
+      // definite assignment only when both branches establish it.
+      tcenv.mergeScope(this, trueScope, falseScope);
+
       this.composeSelectionType(
         tcenv,
         pos,
