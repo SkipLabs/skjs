@@ -187,3 +187,49 @@ function grownAliasField(x: { f: number | null }): number {
   }
   return 0;
 }
+
+// FIXME: tsc rejects destructuring an alias into a permanently narrow binding.
+function destructuredAlias(x: { f: number | null }): number {
+  let y: { readonly f: number } = { f: 0 };
+  if (x.f !== null) {
+    [y] = [x];
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+// Readonly tuple slots do not freeze the objects stored in them.
+// FIXME: tsc rejects the stale read, even though the tuple is created narrowed.
+function readonlyTupleAlias(x: { f: number | null }): number {
+  if (x.f !== null) {
+    let saved = [x] as const;
+    x.f = null;
+    return saved[0].f;
+  }
+  return 0;
+}
+
+// Defaults bypass literal element typing and need their own stable contract.
+// FIXME: tsc rejects the narrow binding populated by this default.
+function defaultAlias(x: { f: number | null }, missing: [undefined]): number {
+  let y: { readonly f: number } = { f: 0 };
+  if (x.f !== null) {
+    [y = x] = missing;
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+// Stable object contents and copied scalar facts survive array storage.
+function checkedArrayAlias(x: { f: number } | null): number {
+  if (x !== null && x.f === 1) {
+    let saved = [x] as const;
+    let [snapshot] = [x.f] as const;
+    x.f = 2;
+    const one: 1 = snapshot;
+    return saved[0].f + one;
+  }
+  return 0;
+}
