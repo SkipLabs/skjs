@@ -54,9 +54,11 @@ to an incompleteness fix, not the only permitted one. A verification-pipeline
 
 Statuses: `not started` · `in progress` · `done`.
 
-R3a (declaration identity, `1e9f6330`) and R3b (freeze-window, `68c3b742`)
-are complete. M2 has an initial capture-contract repair (`66bc1e32`); the
-next step is to establish contracts for the remaining inferred captures.
+R3a (declaration identity), R3b (freeze-window), M2 (stale captured reads),
+and M3 (loop-carried narrowing) meet their stated completion criteria.
+The next architectural milestone is durable validation under substitution
+changes (R2), including justified use of speculative clone results (R3c).
+R1's later hidden-witness growth and M1's general alias mutation remain open.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
@@ -66,7 +68,7 @@ next step is to establish contracts for the remaining inferred captures.
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
 | R3c | Speculative clone results authorize the parent only with a justified transfer | not started | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
 | M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | in progress | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
-| M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | in progress | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
+| M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
 R3a implementation note: the initial cache-key patch alone still accepted the
@@ -226,10 +228,14 @@ and object initialization retain their separate rules. Stability under later
 substitution growth (R2) and general alias mutation (M1) remain open work. Coverage:
 [`captured-read-stability.ts`](../tests/expect-error/captured-read-stability.ts).
 The full checker suite and all 41 pipeline suites pass, including inferred
-primitive contracts, with no corpus outcome mismatches. This is not completion
-of M2; the remaining inferred-contract cases are still open.
+primitive contracts, with no corpus outcome mismatches. The completion audit
+at `b12c517c` reran both original stale-capture reproductions: each rejects at
+the captured nullable access. `checkedCapturedLocal` and
+`snapshotCapturedLocal` remain accepted. This meets M2's stated criterion;
+it does not establish general stability under later substitution growth (R2),
+hidden-witness growth (R1), or arbitrary alias mutation (M1).
 
-The M2 regressions in the same test file distinguish three obligations:
+The M2 regressions in the same test file cover:
 
 - `inferredAliasCapture` and `aliasThenNarrow` reject stale captured reads
   using the source's declared object contract, preserved through direct local
@@ -240,8 +246,8 @@ The M2 regressions in the same test file distinguish three obligations:
   Field-free value snapshots retain their copied type. This is a capture repair,
   not M1 completion: visible writes now invalidate refinements of established
   object contracts and direct annotated aliases use stable contents. The general
-  field-subtyping gap remains; destructuring, calls, and property-access initializers are
-  outside the direct-alias transfer implemented here.
+  field-subtyping gap remains. Completed values from destructuring, calls, and
+  property access use the contents-contract propagation described below.
 - The evolving-binding repair makes every write constrain the same bare
   inference variable used by captured reads. Resolution seals that variable:
   `evolvingNullCapture` now rejects the unguarded nullable read,
@@ -324,7 +330,8 @@ The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc
 rejects the two stale object callbacks and the evolving binding's implicit
 `any`, and accepts the invocation-time object check. The evolving-binding
-repair changes the SKJS outcomes described above; M2 remains in progress.
+repair changes the SKJS outcomes described above; M2's bounded completion
+criterion is met.
 
 The initial M1–M3 Boolean/null reductions were accepted and returned null at a
 declared Boolean result. Lean does not have to
