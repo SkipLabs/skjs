@@ -476,7 +476,16 @@ extension class TypeChecker {
           | None() -> /* skipped element */ void
           | Some((eltPat, Some(defaultExpr))) ->
             eltType = tyl[i];
-            defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
+            currentDefaultType = this.expr(
+              tcenv,
+              defaultExpr,
+              kind is BKConst(),
+            );
+            defaultType = this.stableAliasExprType(
+              tcenv,
+              defaultExpr,
+              currentDefaultType,
+            );
             undefined = TType::single(TPrimUnit(TUndefined(), defaultExpr.pos));
             canBeUndefined = TType::isSub(
               tcenv.subst.clone(),
@@ -601,7 +610,16 @@ extension class TypeChecker {
             arrPat[i] match {
             | None() -> void
             | Some((eltPat, Some(defaultExpr))) ->
-              defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
+              currentDefaultType = this.expr(
+                tcenv,
+                defaultExpr,
+                kind is BKConst(),
+              );
+              defaultType = this.stableAliasExprType(
+                tcenv,
+                defaultExpr,
+                currentDefaultType,
+              );
               boundType = TType::union(
                 tcenv.subst,
                 this,
@@ -697,9 +715,10 @@ extension class TypeChecker {
           };
           for (field in objectFields) {
             (fieldName, fieldPat, fieldDefault) = field;
-            defaultOpt = fieldDefault.map(e ->
-              (e.pos, this.expr(tcenv, e, kind is BKConst()))
-            );
+            defaultOpt = fieldDefault.map(e -> {
+              ty = this.expr(tcenv, e, kind is BKConst());
+              (e.pos, this.stableAliasExprType(tcenv, e, ty))
+            });
             defaultIsUseless = fieldDefault.map(e -> e.pos);
             typeForField = TType::bottom(fieldName.pos);
             for (fields in branches) {

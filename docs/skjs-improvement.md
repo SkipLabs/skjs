@@ -111,8 +111,10 @@ from safe widening of an inferred slot followed by rejection of a stale read;
 a checked scalar snapshot remains usable. Nested field narrowing is separate.
 Array literals and readonly tuples store stable types for direct alias elements,
 including the spread-array path. This protects subsequent destructuring as well
-as saved arrays. Destructuring-assignment defaults use the same projection.
-M1 stays open for other alias-producing expressions, declaration defaults,
+as saved arrays. Destructuring defaults use the same projection for assignments
+and declarations (tuple, iterable, and object patterns). The declaration cases
+include a callback escape and a fresh field check.
+M1 stays open for other alias-producing expressions,
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.
