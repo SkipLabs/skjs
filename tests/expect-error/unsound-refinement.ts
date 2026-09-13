@@ -119,3 +119,30 @@ function stableAnnotatedAlias(x: { f: number } | null): number {
   }
   return 0;
 }
+
+// FIXME: tsc rejects this assignment. Initializing the alias earlier must not
+// let a later assignment install a view invalidated by the source's writes.
+function assignedNarrowAlias(x: { f: number | null }): number {
+  let y: { readonly f: number } = { f: 0 };
+  if (x.f !== null) {
+    y = x;
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+// Reassignment can select a declared alternative and retain its stable fields.
+function assignedUnionAlternative(
+  x: { kind: "value"; f: number } | { kind: "empty" },
+): number {
+  let y: { readonly kind: "value"; readonly f: number } = {
+    kind: "value",
+    f: 0,
+  };
+  if (x.kind === "value") {
+    y = x;
+    x.f = 2;
+  }
+  return y.f;
+}
