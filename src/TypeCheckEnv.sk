@@ -328,7 +328,9 @@ mutable class TCEnv private {
         bounds![name.value] = TType::union(this.subst, tenv, previous, ty)
       )
     };
-    this.scope.set(name, ty, isSubType);
+    this.scope.set(name, ty, (source, target) ->
+      isSubType(source, tenv.preserveCopyProvenance(this.subst, source, target))
+    );
     this.scope.preserveAssignedCopyProvenance(tenv, this.subst, name, ty)
   }
 

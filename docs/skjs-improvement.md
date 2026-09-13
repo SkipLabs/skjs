@@ -488,10 +488,19 @@ recorded value types. The conditional-assignment and catch-capture regressions
 in `spread-callable.ts` distinguish ordinary branch contracts from the type-only
 exception log; both previously restored an unsafe contract for a closure.
 
+Named-field subtyping now rejects erasing recorded prototype provenance. This
+closes parameter and declared-result boundaries: a class instance cannot satisfy
+a readonly function-property contract that would promise a copied method.
+Local annotations and variable writes retain the marker before validation;
+function boundaries can instead receive an explicitly constructed own property,
+such as `{ read: source.read }`. `spread-callable.ts` pins parameter/result
+erasure and this own-property counterpart. Nested named-field comparisons use
+the same check; local provenance propagation remains shallow.
+
 This is a bounded repair for recorded method provenance, not a complete model
-of own enumerable properties. Parameter and return contracts, later assignments
-from types that already erased provenance, and nested structural annotations
-remain open. Ordinary fields supplied by inherited accessors and non-enumerable
+of own enumerable properties. Sources whose provenance is already absent,
+including structural declarations without a recorded class-method origin,
+remain outside that guarantee. Ordinary fields supplied by inherited accessors and non-enumerable
 properties are not classified. Union and intersection field construction
 conservatively retain the marker when either input carries it. A general
 ownership contract must also constrain subtyping and provenance-erasing

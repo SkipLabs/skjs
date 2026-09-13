@@ -581,6 +581,11 @@ cases and conservatively under-approximates a few others.
   contract used by captures.
   Own function-valued fields remain copyable. TypeScript omits class methods
   from the copy's type; SKJS conservatively allows for an own override.
+- **Function contracts cannot discard recorded prototype provenance**: a class
+  method cannot become an ordinary function-valued property through a parameter
+  or return type. Construct an own property, such as `{ read: source.read }`,
+  when the receiving contract needs it to survive copying. Local annotations
+  retain the source's provenance instead. This is stricter than TypeScript.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
   `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
   `this` and accepts any receiver; SKJS requires the class instance, since the

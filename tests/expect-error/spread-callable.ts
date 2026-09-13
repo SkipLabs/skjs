@@ -139,12 +139,12 @@ function copyReaderArgument(
 }
 
 function passPrototypeProperty(source: PrototypeReader): number {
-  // FIXME: parameter subtyping erases prototype-copy provenance.
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return copyReaderArgument(source, source);
 }
 
 function returnPrototypeProperty(source: PrototypeReader): ReaderProperty {
-  // FIXME: the declared result erases prototype-copy provenance.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return source;
 }
 

@@ -694,6 +694,7 @@ base class STErrorOnTFields(
   | STRecFieldsMissingField(TField)
   | STRecFieldsField(?STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsFieldAccess(TField, TField)
+  | STRecFieldsCopyProvenance(TField, TField)
 
   fun toError(
     subst: mutable Subst,
@@ -752,6 +753,23 @@ base class STErrorOnTFields(
         "Missing constructor signature"
       };
       (List.Nil(), List[(pos1, msg)], None())
+    | STRecFieldsCopyProvenance(field, target, _fields1, _fields2) ->
+      (
+        List.Nil(),
+        List[
+          (
+            field.pos,
+            `The field '${TypePp::escapeName(
+              field.name.value,
+            )}' may be inherited; its copy provenance cannot be discarded`,
+          ),
+          (
+            target.pos,
+            "Construct an own property explicitly to use this field type",
+          ),
+        ],
+        None(),
+      )
     | STRecFieldsMissingField(field, _fields1, _fields2) ->
       (
         List.Nil(),
@@ -1116,7 +1134,10 @@ extension class TFields {
         setterResult match {
         | STOk() ->
           getterResult match {
-          | STOk() -> void
+          | STOk() ->
+            if (f1.isPrototypeMethod && !f2.isPrototypeMethod) {
+              return STRecFieldsCopyProvenance(f1, f2, fields1, fields2)
+            }
           | err @ STErrorOnTType _ ->
             return STRecFieldsField(
               Some(err),

@@ -924,6 +924,7 @@ extension class TypeChecker {
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
         aliasType = this.stableAliasExprType(tcenv, e, ty);
+        !annot = this.preserveCopyProvenance(tcenv.subst, aliasType, annot);
         this.checkSubType(
           tcenv,
           annotAst.pos,
@@ -932,7 +933,7 @@ extension class TypeChecker {
           annot,
           TSCode(2322),
         );
-        (this.preserveCopyProvenance(tcenv.subst, aliasType, annot), true)
+        (annot, true)
       }
     }
   }
