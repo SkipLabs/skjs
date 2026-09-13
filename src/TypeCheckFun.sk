@@ -89,7 +89,7 @@ extension class TypeChecker {
     allowThis: Bool,
     expectedParamTypes: Array<?TType> = Array[],
   ): Array<TType> {
-    params.mapWithIndex((i, param) -> {
+    paramTypes = params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
         param.isRest.each(restPos ->
@@ -196,7 +196,7 @@ extension class TypeChecker {
       };
       param.default match {
       | None() -> void
-      | Some(defaultExpr) ->
+      | Some _ ->
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
@@ -209,22 +209,7 @@ extension class TypeChecker {
             ],
             TSCode(1015),
           )
-        };
-        savedScope = tcenv.scope;
-        // The default initializer can only reference enclosing-frame names
-        // (sibling params are bound later), so mark this as a function boundary:
-        // a write to a captured local here is checked against its declared type.
-        paramScope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
-        tcenv.!scope = paramScope;
-        this.checkSubType(
-          tcenv,
-          defaultExpr.pos,
-          "Type of default value is not assignable to the parameter's type",
-          this.expr(tcenv, defaultExpr, true),
-          paramType,
-          TSCode(2322),
-        );
-        tcenv.!scope = savedScope
+        }
       };
       for (modifier in param.modifiers.modifiers) {
         tcenv.error(
@@ -237,8 +222,56 @@ extension class TypeChecker {
           SKJSCode(2067),
         )
       };
+
       paramType
-    })
+    });
+    if (params.any(param -> param.default.isSome())) {
+      savedScope = tcenv.scope;
+      savedPendingParameters = tcenv.pendingParameters;
+      tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
+      // Reserve plain parameter names before evaluating any defaults, so a
+      // self/later reference cannot resolve an enclosing name instead.
+      for (i => param in params) {
+        if (!param.isThisParam()) {
+          param.name.value match {
+          | PVar(name) ->
+            tcenv.scope.bind(tcenv, name, paramTypes[i], true, false, true);
+            tcenv.!pendingParameters = tcenv.pendingParameters.set(name.pos)
+          | _ -> void
+          }
+        }
+      };
+      for (i => param in params) {
+        param.default.each(defaultExpr -> {
+          savedDefaultScope = tcenv.scope;
+          // A supplied argument skips its default. Do not carry a default's
+          // writes or refinements into another initializer or the body.
+          tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
+          this.checkSubType(
+            tcenv,
+            defaultExpr.pos,
+            "Type of default value is not assignable to the parameter's type",
+            this.expr(tcenv, defaultExpr, true),
+            paramTypes[i],
+            TSCode(2322),
+          );
+          tcenv.!scope = savedDefaultScope
+        });
+        if (!param.isThisParam()) {
+          param.name.value match {
+          | PVar(name) ->
+            tcenv.scope.set(name, paramTypes[i], (_, _) -> void);
+            tcenv.!pendingParameters = tcenv.pendingParameters.remove(name.pos)
+          // Destructured defaults are checked by bindParams. Do not execute
+          // their type-checking side effects a second time here.
+          | _ -> void
+          }
+        }
+      };
+      tcenv.!scope = savedScope;
+      tcenv.!pendingParameters = savedPendingParameters
+    };
+    paramTypes
   }
 
   fun funDef(

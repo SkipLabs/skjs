@@ -17,14 +17,12 @@ function assignArrow(): void {
 }
 
 // A later default must see the earlier parameter's rigid generic type.
-// @skjs-expect-error Cannot find name
 function earlierGenericDefault<T>(value: T, result: T = value): T {
   return result;
 }
 
 // An earlier defaulted parameter is available when a later default runs.
 function earlierArrowDefault(): number {
-  // @skjs-expect-error Cannot find name
   const read = (value: string = "ready", text: string = value): number =>
     text.length;
   return read();
@@ -34,23 +32,24 @@ function earlierArrowDefault(): number {
 // second default's non-null promise.
 function skippedEarlierDefault(
   value: string | null,
-  // @skjs-expect-error Cannot find name 'value'
   first: string = (value = "ready"),
+  // @ts-expect-error Type of default value is not assignable to the parameter's type
   second: string = value,
 ): string {
   return second;
 }
 
 // A parameter is unavailable during its own initializer.
-// @skjs-expect-error Cannot find name
+// @ts-expect-error Variable 'value' is used before being assigned
 function selfReferentialDefault(value: number = value): number {
   return value;
 }
 
-// FIXME: a later parameter shadows this top-level name before it is
+// A later parameter shadows this top-level name before it is
 // initialized; resolving the top-level value hides a runtime ReferenceError.
 const nextDefaultValue: number = 1;
 function laterParameterDefault(
+  // @ts-expect-error Variable 'nextDefaultValue' is used before being assigned
   result: number = nextDefaultValue,
   nextDefaultValue: number = 2,
 ): number {
