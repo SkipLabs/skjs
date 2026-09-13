@@ -220,7 +220,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 
 ### 16a. Parameter Default Scope
 - Defaults may refer to earlier plain parameters, including generic and defaulted parameters. Their types remain the declared parameter contracts.
-- Plain parameter names are reserved before defaults are checked. A self or later parameter cannot be read or assigned before its initialization, even if a top-level variable has the same name.
+- All parameter names, including nested destructuring and rest bindings, are reserved before whole-parameter defaults are checked. A self or later parameter cannot be read or assigned before its initialization, even if a top-level variable has the same name.
 - Each default is checked independently: passing an argument skips its initializer, so assignments or refinements in one default cannot justify a later default or the function body. Enclosing captures retain the usual capture contracts.
 - References from defaults to destructured sibling parameters, and deferred references to later parameters inside default-created closures, remain unsupported. Existing restrictions on local-name shadowing remain unchanged.
 - **Verified by**: `tests/expect-error/arrow-default-param-optional.ts` and `tests/expect-error/captured-local-write.ts`.

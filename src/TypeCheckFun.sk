@@ -72,6 +72,35 @@ extension class TypeChecker {
     }
   }
 
+  // Reserve every binding without projecting types or evaluating pattern
+  // defaults. The placeholder type is inaccessible while uninitialized;
+  // processParams installs the actual contract for supported plain bindings.
+  fun reserveParameterNames(
+    tcenv: mutable TCEnv,
+    pattern: Pattern,
+    placeholder: TType,
+  ): void {
+    name = pattern.value match {
+    | PVar(name) -> Some(name)
+    | PArray(elements, rest) ->
+      elements.each(element ->
+        element.each(item ->
+          this.reserveParameterNames(tcenv, item.i0, placeholder)
+        )
+      );
+      rest
+    | PObject{fields, rest} ->
+      fields.each(field ->
+        this.reserveParameterNames(tcenv, field.i1, placeholder)
+      );
+      rest
+    };
+    name.each(name -> {
+      tcenv.scope.bind(tcenv, name, placeholder, true, false, true);
+      tcenv.!pendingParameters = tcenv.pendingParameters.set(name.pos)
+    })
+  }
+
   // Compute the effective types of a function parameters by applying the
   // isRest (arrayToReadonlyArray), optional (unionUndefined), and default
   // (checkSubType) modifiers in order. Reports an error if the parameter
@@ -229,16 +258,11 @@ extension class TypeChecker {
       savedScope = tcenv.scope;
       savedPendingParameters = tcenv.pendingParameters;
       tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
-      // Reserve plain parameter names before evaluating any defaults, so a
+      // Reserve all parameter names before evaluating any defaults, so a
       // self/later reference cannot resolve an enclosing name instead.
       for (i => param in params) {
         if (!param.isThisParam()) {
-          param.name.value match {
-          | PVar(name) ->
-            tcenv.scope.bind(tcenv, name, paramTypes[i], true, false, true);
-            tcenv.!pendingParameters = tcenv.pendingParameters.set(name.pos)
-          | _ -> void
-          }
+          this.reserveParameterNames(tcenv, param.name, paramTypes[i])
         }
       };
       for (i => param in params) {

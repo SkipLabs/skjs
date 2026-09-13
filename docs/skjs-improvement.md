@@ -293,7 +293,8 @@ The M2 regressions in the same test file distinguish three obligations:
   eagerly converted into contents contracts.
 
 Parameter defaults use an invocation scope distinct from the enclosing frame.
-Plain parameter names are reserved before initializer checking and become
+All parameter binding names, including nested patterns and rest bindings, are
+reserved before whole-parameter initializer checking. Plain bindings become
 initialized in declaration order. This supports defaults referring to earlier
 parameters without confusing them with captures or top-level names. A default's
 child scope is discarded because supplying an argument skips the initializer;
@@ -301,8 +302,10 @@ its assignments cannot narrow later defaults or the body. Pending parameter
 identities also prevent writes before initialization. Coverage in
 `arrow-default-param-optional.ts` includes a rigid generic dependency, an arrow
 with chained defaults, a skipped assignment, self-reference, and the previously
-accepted later-parameter/top-level-name collision. Destructured sibling and
-deferred later-parameter references remain outside this bounded scope repair.
+accepted later-parameter/top-level-name collision, including nested object and
+array rest bindings. Reading earlier destructured siblings and deferred
+later-parameter references remain unsupported: reservation does not project
+destructured types or evaluate their defaults a second time.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc

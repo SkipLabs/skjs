@@ -57,8 +57,9 @@ function laterParameterDefault(
 }
 
 const nestedDefaultValue: number = 1;
-// FIXME: SKJS resolves the global instead of the later nested parameter.
+// Nested bindings shadow globals throughout the parameter list.
 function laterNestedParameterDefault(
+  // @ts-expect-error Variable 'nestedDefaultValue' is used before being assigned
   result: number = nestedDefaultValue,
   {
     values: { nestedDefaultValue },
@@ -70,8 +71,9 @@ function laterNestedParameterDefault(
 }
 
 const restDefaultValue: string = "outer";
-// FIXME: SKJS resolves the global instead of the later array rest binding.
+// Rest bindings participate in the same temporal dead zone.
 function laterRestParameterDefault(
+  // @ts-expect-error Variable 'restDefaultValue' is used before being assigned
   result: number = restDefaultValue.length,
   [...restDefaultValue]: number[] = [],
 ): number {
