@@ -40,7 +40,7 @@ function testOrLeftEqNullNoPosRefinement(x: N | null, other: boolean): void {
 
 function staleLeftFact(value: number | null): number {
   if (value !== null && (value = null) === null) {
-    // @ts-expect-error Type of returned value is not assignable to the function's return type
+    // FIXME: the earlier non-null test predates the write.
     return value;
   }
   return 0;
@@ -48,7 +48,7 @@ function staleLeftFact(value: number | null): number {
 
 function comparisonWritesOperand(value: number | null): number {
   if (value !== (value = null)) {
-    // @ts-expect-error Type of returned value is not assignable to the function's return type
+    // FIXME: the comparison reads the old value, but the body sees null.
     return value;
   }
   return 0;
