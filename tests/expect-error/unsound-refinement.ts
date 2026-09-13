@@ -289,3 +289,30 @@ function checkedDeclarationDefault(
   }
   return 0;
 }
+
+// FIXME: a conditional's temporary field check cannot justify a lasting view.
+function conditionalAnnotatedAlias(x: { f: number | null }): number {
+  const y: { readonly f: number } = x.f !== null ? x : { f: 0 };
+  x.f = null;
+  return y.f;
+}
+
+// Nested conditionals must compose contracts before their branch scopes end.
+// FIXME: an inferred alias must not export the transient type through a callback.
+function nestedConditionalCapture(
+  x: { f: number | null },
+  choose: boolean,
+): () => number {
+  const y = choose ? (x.f !== null ? x : { f: 0 }) : { f: 0 };
+  return () => y.f;
+}
+
+// Scalar selection and selecting an existing union alternative remain precise.
+function checkedConditionalAlias(
+  x: { kind: "value"; f: number } | { kind: "empty" },
+): number {
+  const y = x.kind === "value" ? x : { kind: "value", f: 0 };
+  const snapshot = y.f === 1 ? y.f : 1;
+  const one: 1 = snapshot;
+  return y.f + one;
+}
