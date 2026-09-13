@@ -383,3 +383,41 @@ function assignedBroadAlias(x: { f: number | null }): number {
   }
   return 0;
 }
+
+function retainedArgument(
+  x: { f: number | null },
+  retain: (value: { readonly f: number }) => () => number,
+): () => number {
+  if (x.f !== null) {
+    // FIXME: a callee can retain an alias after the field check stops holding.
+    const read = retain(x);
+    x.f = null;
+    return read;
+  }
+  return () => 0;
+}
+
+function genericArgument(
+  x: { f: number | null },
+  identity: <T>(value: T) => T,
+): number {
+  if (x.f !== null) {
+    // FIXME: generic inference exports the temporary field fact through T.
+    const y = identity(x);
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}
+
+function snapshotArgument(
+  x: { f: number | null },
+  retain: (value: { readonly f: number }) => () => number,
+): () => number {
+  if (x.f !== null) {
+    const read = retain({ f: x.f });
+    x.f = null;
+    return read;
+  }
+  return () => 0;
+}
