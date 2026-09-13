@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { spawnSync } from "node:child_process";
+import surface from "../tools/claim-types.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 
 const [astPath, claimsPath, file, verifier, tscPath] = process.argv.slice(2);
@@ -46,6 +47,25 @@ try {
     const r = check(mode, ast, claims);
     assert.equal(r.status, 0, r.stdout + r.stderr);
   }
+  // The viewer must let a user supply the missing bind-result claim without
+  // already having a function-type template from the rejecting producer.
+  const factoryAst = structuredClone(ast);
+  factoryAst.functions = factoryAst.functions.filter((f: any) => f.name === "boundFactory");
+  const manual = structuredClone(original);
+  const block = manual.find((b: any) => b.file === file);
+  block.functions = block.functions.filter((f: any) => f.name === "boundFactory");
+  const resultPos = factoryAst.functions[0].body.at(-1).e.pos;
+  assert(!block.functions[0].exprs.some((e: any) => JSON.stringify(e.pos) === JSON.stringify(resultPos)));
+  block.functions[0].exprs.push({pos: resultPos,
+    type: surface.readClaimValue("expression", "() => boolean", undefined)});
+  for (const mode of ["--produce-stateful-source", "--check-stateful-source"]) {
+    const r = check(mode, factoryAst, manual);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  }
+  block.functions[0].exprs.at(-1).type = surface.readClaimValue("expression", "() => null", undefined);
+  assert.notEqual(check("--produce-stateful-source", factoryAst, manual).status, 0,
+    "a newly entered function type remains an independently checked claim");
+  assert.equal(check("--produce-stateful-source", ast, claims).status, 0);
   const bind = ast.functions[0].body.find((s: any) => s.name === "bound").init;
   const at = (c: any, pos: number[]) => c.functions
     .find((f: any) => f.name === "boundArguments").expressions

@@ -10,7 +10,7 @@ import * as ts from "typescript/unstable/ast";
 import { createScanner } from "typescript/unstable/ast/scanner";
 import { createRequire } from "node:module";
 import surface from "./claim-types.mts";
-import obligationReader from "../report-viewer/obligation.mts";
+import obligationReader, { presentObligation } from "../tools/obligation-view.mts";
 import { readDiagnostic } from "./obligation-diagnostic.mts";
 // The source annotation encoding has exactly one implementation; a second
 // would be a second opinion about what a source type means.
@@ -592,7 +592,7 @@ function verifySkjs(
         const obligation=diagnostic ? {...diagnostic,input:{file,functionName:f.name,
           namePos:f.namePos,sourceSha256:hash(source),claimsSha256:hash(JSON.stringify(c))}} : null;
         return {status:"not-established",detail,...((unavailableType || nonInvariant) ? {stage:"source-extraction"} : {}),...(location ? {location} : {}),
-          ...(obligation ? {obligation} : {})};
+          ...(obligation ? {obligation, obligationView: presentObligation(obligation, source)} : {})};
       }
       const checked=run(verifier,[normalized?"--check-source-claims":"--check-stateful-source",ap,cp,file,ep]);
       if(checked.status!==0)return {status:"not-established",detail:(checked.stderr||checked.stdout).trim()};

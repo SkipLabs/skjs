@@ -51,22 +51,20 @@ prose as text that may be reworded.
 Manifest records carry the same `id`, so a tool can display a mark and look up
 its exact producer payload without matching on positions or prose.
 
-Types are displayed in surface syntax: primitive names, literals as the literal
-(`"string"`, `3`, `true`), unions as `a | b`, cells as `{ value: boolean }`, and
-arrows as `(boolean) => null`. A cell whose read and write types differ shows
-both (`{ value: read true write boolean }`), because that distinction is exactly
-what a stale refinement looks like and TypeScript has no shape for it.
-`tools/claim-types.mts` does this printing, and the reader uses the same module,
-so a comment and a panel never disagree.
+Types use the self-contained [viewer language](VIEWER-LANGUAGE.md): primitive
+names, literals, unions, records with optional fields, function signatures, and
+callable objects. `{ value: boolean = (true) }` states both a storage invariant
+and current contents. Nondefault object modes appear explicitly after `@`.
+`tools/claim-types.mts` parses and prints this language for both reports and the
+editor; `tools/claim-language.mts` declares and validates its types.
 
-The displayed text is a **view of the claim, not an encoding of it**. Surface
-syntax does not show index signatures, callable shapes or per-field optionality,
-so reading a type back requires the claim it came from: what the text names is
-replaced, and what it does not name comes from that original. A shape the
-printer cannot name is written verbatim as JSON rather than summarized, so no
-requirement is silently hidden. A binding the producer could not decode has no
-claimed type at all and reads `(unavailable)`; it is named in the `unsupported`
-field rather than given an invented type.
+Objects and functions can be entered from scratch, including missing or
+unavailable expression claims and unavailable environment bindings. Editing
+never takes hidden requirements from an earlier type. The binding set of an
+existing environment is still fixed by its source site. A claim outside the
+language remains in the raw JSON editor; it is never approximated into a
+supported shape. Entering a claim does not establish it: the independent
+consumer still checks it, and unsupported source constructs remain unsupported.
 
 **The manifest keeps the producer's exact payloads** in `raw`, whatever the
 comment shows. Claim identity, certificates and verification results depend on

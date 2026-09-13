@@ -12,7 +12,9 @@ import {
 } from "../report-viewer/model.mts";
 import * as marks from "../report-viewer/marks.mts";
 import surface from "../tools/claim-types.mts";
-import ob from "../report-viewer/obligation.mts";
+import { decodeGraph, parseGraph, printGraph, graphDefinitions } from "../tools/type-graph.mts";
+import { decodeTerm, parseTerm, printTerm } from "../tools/calculus-language.mts";
+import ob from "../tools/obligation-view.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const source =
@@ -422,13 +424,11 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
     "3",
     "unknown",
     "never",
-    "{ value: boolean }",
-    "{ value: boolean = (true) }",
+    '{ value: boolean } @{"call":"absent","construct":"absent","array":"absent","indexes":{"string":"synthetic","number":"absent","symbol":"synthetic"}}',
+    '{ value: boolean = (true) } @{"call":"absent","construct":"absent","array":"absent","indexes":{"string":"synthetic","number":"absent","symbol":"synthetic"}}',
     "(boolean) => null",
   ]);
-  // A printed type must read back, against the type it came from, as exactly
-  // that type. The text is a view: it does not carry index signatures, callable
-  // shapes or optionality, which reading takes from the original.
+  // Printed types read back without a template, including their object modes.
   for (const [i, type] of shapes.entries())
     assert(surface.roundTrips(type), "round trip: " + printed[i]);
 
@@ -437,49 +437,56 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   // are the documented form; a bare union is accepted too.
   {
     const plain = cell(boolean, boolean);
-    const observed = surface.parseType("{ value: boolean = (true) }", plain);
+    const observed: any = surface.parseType("{ value: boolean = (true) }");
     assert.deepEqual(observed.atoms[0].fields[0].read, trueLit);
     assert.deepEqual(observed.atoms[0].fields[0].write, boolean);
     assert.equal(surface.printType(observed).text, "{ value: boolean = (true) }");
     assert.deepEqual(
-      surface.parseType("{ value: boolean = true }", plain),
+      surface.parseType("{ value: boolean = true }"),
       observed,
     );
     // Dropping the assertion says both at once again.
     assert.deepEqual(
-      surface.parseType("{ value: boolean }", observed).atoms[0].fields[0].read,
+      (surface.parseType("{ value: boolean }").atoms[0] as any).fields[0].read,
       boolean,
     );
   }
 
-  // Editing replaces what the surface names and keeps what it does not: index
-  // signatures and call shapes are the original's, never this reader's.
+  // Bare text states default modes; printed nondefault modes are explicit.
   const original = cell(trueLit, boolean);
-  const edited = surface.parseType("{ value: boolean }", original);
-  assert.deepEqual(edited.atoms[0].indexes, original.atoms[0].indexes);
+  const edited: any = surface.parseType("{ value: boolean }");
+  assert.deepEqual(edited.atoms[0].indexes, {string:"absent",number:"absent",symbol:"absent"});
+  assert.deepEqual(surface.parseType(surface.printType(original).text), original);
   assert.deepEqual(edited.atoms[0].fields[0].read, edited.atoms[0].fields[0].write);
   assert.equal(surface.printType(edited).text, "{ value: boolean }");
-  assert.deepEqual(surface.parseType("true | null", boolean), {
+  assert.deepEqual(surface.parseType("true | null"), {
     top: false,
     atoms: [{ a: "booleanlit", v: "true" }, { a: "null" }],
   });
 
-  // A structural type with nothing to edit against is refused rather than
-  // guessed at, and so is syntax this reader does not accept.
-  assert.throws(
-    () => surface.parseType("{ value: boolean }", boolean),
-    /existing object type/,
-  );
-  assert.throws(() => surface.parseType("(boolean) => null", boolean), /existing function/);
-  assert.throws(() => surface.parseType("boolean &", boolean), /unexpected/);
-  assert.throws(() => surface.parseType("{ value boolean }", original), /expected :/);
-  assert.throws(
-    () => surface.parseType("{ nope: boolean }", original),
-    /no field 'nope'/,
-  );
+  // Missing objects and free signatures use the same self-contained language.
+  assert.equal(surface.parseType("{ value: boolean }").atoms[0].a, "record");
+  const freshArrow = surface.readClaimValue("expression", "(boolean) => null", undefined);
+  assert.deepEqual(freshArrow, of({a: "function", construct: "unknown", array: "unknown",
+    params: [boolean], result: of({a: "null"})}));
+  assert.deepEqual(surface.parseType("(boolean) => null"), freshArrow);
+  assert.deepEqual(surface.readClaimValue("expression", "(boolean) => null", {unsupported: true}), freshArrow);
+  const factory: any = surface.parseType("() => (boolean) => null");
+  assert.deepEqual(factory.atoms[0].result, freshArrow);
+  assert(surface.roundTrips(factory));
+  const restricted = structuredClone(freshArrow);
+  restricted.atoms[0].construct = "absent";
+  restricted.atoms[0].array = "absent";
+  const changedArrow: any = surface.parseType("(null, boolean) => boolean");
+  assert.equal(changedArrow.atoms[0].construct, "unknown");
+  assert.equal(changedArrow.atoms[0].array, "unknown");
+  assert.deepEqual(surface.parseType(surface.printType(restricted).text), restricted);
+  assert.throws(() => surface.parseType("boolean &"), /unexpected/);
+  assert.throws(() => surface.parseType("{ value boolean }"), /expected :/);
+  assert.equal((surface.parseType("{ nope: boolean }").atoms[0] as any).fields[0].name,"nope");
   // Dropping a field is expressible, so it is allowed.
-  assert.deepEqual(surface.parseType("{ }", original).atoms[0].fields, []);
-  assert.throws(() => surface.parseType("boolean boolean", boolean), /after the type/);
+  assert.deepEqual((surface.parseType("{ }").atoms[0] as any).fields, []);
+  assert.throws(() => surface.parseType("boolean boolean"), /after the type/);
 
   // An encoding this reader cannot name is summarized, and then not editable.
   const exotic = of({ a: "tuple", parts: [] });
@@ -527,20 +534,14 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   );
   // An undecoded claim has nothing to edit against, and is not invented here.
   assert.equal(surface.printClaimValue("expression", { unsupported: true }), "(unavailable)");
-  assert.throws(
-    () => surface.readClaimValue("environment", "this: boolean, value: null, cell: { value: boolean }", env),
-    /could not decode 'this'/,
-  );
+  assert.deepEqual(surface.readClaimValue("environment", "this: boolean, value: null, cell: { value: boolean }", env)[0].type, boolean);
   // An expression claim that was never decoded can still be given a type that
   // needs no original to edit against.
   assert.deepEqual(
     surface.readClaimValue("expression", "null", { unsupported: true }),
     { top: false, atoms: [{ a: "null" }] },
   );
-  assert.throws(
-    () => surface.readClaimValue("expression", "{ value: boolean }", { unsupported: true }),
-    /existing object type/,
-  );
+  assert.equal(surface.readClaimValue("expression", "{ value: boolean }", { unsupported: true }).atoms[0].a, "record");
   // The binding set is the original's: none added, none dropped, none doubled.
   for (const [bad, complaint] of [
     ["value: null", /binding 'this' is missing/],
@@ -584,20 +585,20 @@ assert.equal(of(parseReport(annotated).functions[0], "expression")[0].type, clai
   assert.equal(surface.lift(types, [1], [1]), null);
   const table = structuredClone(types);
   assert.deepEqual(
-    surface.lower(table, surface.parseType("{ value: boolean = (true) }", lifted)),
+    surface.lower(table, surface.parseType("{ value: boolean = (true) }")),
     { type: [3], current: [1] },
   );
-  assert.deepEqual(surface.lower(table, surface.parseType("{ value: true }", lifted)), {
+  assert.deepEqual(surface.lower(table, surface.parseType("{ value: true }")), {
     type: [types.length],
     current: null,
   });
   assert.deepEqual(table[types.length], [{ refs: { first: [1], rest: [] } }]);
-  assert.deepEqual(surface.lower(table, surface.parseType("null | boolean", null)), {
+  assert.deepEqual(surface.lower(table, surface.parseType("null | boolean")), {
     type: [0, 1, 2],
     current: null,
   });
   assert.deepEqual(surface.lower(table, [0, 3]), { type: [0, 3] });
-  assert.throws(() => surface.lower(table, surface.parseType("unknown", null)), /fragment/);
+  assert.throws(() => surface.lower(table, surface.parseType("unknown")), /fragment/);
   assert.equal(table.length, types.length + 1);
   assert.equal(ob.typeText(types, [5]), JSON.stringify({ mystery: 7 }));
   assert.equal(ob.typeText(types, [99]), "type 99");
@@ -951,3 +952,64 @@ absentEnv.manifest.results![0].location = {
 assert.equal(failedAt(absentEnv)!.kind, "missing-environment-claim");
 assert.equal(failedAt(absentEnv)!.binding, "x");
 assert.equal(failedAt(absentEnv)!.site, "unclaimed");
+
+// Self-contained claim language: fields and callable structure do not depend on
+// what the producer happened to export, including missing environment bindings.
+{
+  const texts = [
+    '{ flag: boolean, next?: () => { "a,b": null } }',
+    '((boolean, null) => () => boolean) & { value: boolean }',
+    '{ "x:y": boolean, "a,b": "a,b" }',
+  ];
+  for (const text of texts) {
+    const claim = surface.parseType(text);
+    assert.deepEqual(surface.parseType(surface.printType(claim).text),claim);
+    assert(surface.roundTrips(claim));
+  }
+  assert.throws(() => surface.parseType('{ x: boolean, x?: null }'),/twice/);
+  assert.throws(() => surface.parseType('{ x: boolean } @{"fields":[]}'),/metadata/);
+  const arrow: any = surface.parseType('(boolean) => null');
+  arrow.atoms[0].and = [surface.parseType('() => boolean').atoms[0]];
+  assert.deepEqual(surface.parseType(surface.printType(arrow).text),arrow);
+  const callable: any = surface.parseType('((boolean) => null) & { value: boolean }');
+  callable.atoms[0].function.construct = 'absent';
+  callable.atoms[0].bag.call = 'absent';
+  assert.deepEqual(surface.parseType(surface.printType(callable).text),callable);
+  const env = [{name:'x',type:surface.parseType('{ "a,b": "a,b" }')}];
+  assert.deepEqual(surface.readClaimValue('environment',surface.printClaimValue('environment',env),env),env);
+}
+
+// The exact native graph covers cycles and simultaneous contracts without
+// unfolding or dropping overloads. Its complete syntax is validated JSON.
+{
+  const graph = decodeGraph([
+    [{refs:{first:[0],rest:[[1]]}}],
+    [{callable:{first:[0],rest:[[1]],arrows:[[[[0],[1]],[1]],[[],[]]]}}],
+    [{arrs:{arrows:[]}}], ["bool"], ["undef"], ["nul"],
+    [{boolLit:{value:false}}], [{boolLit:{value:true}}],
+  ]);
+  assert.deepEqual(parseGraph(printGraph(graph)),graph);
+  const rows = graphDefinitions(graph);
+  assert.equal(rows[0].definition,'ref(#0) & ref(#1)');
+  assert.match(rows[1].definition,/\(#0, #1\) => #1; \(\) => never/);
+  assert.equal(rows.length,graph.length);
+  assert.equal(ob.typeText(graph,[6,7]),'boolean');
+  for (const invalid of [[["new-clause"]],[[{refs:{first:[1],rest:[]}}]],[[{boolLit:{value:true,extra:0}}]]])
+    assert.throws(() => decodeGraph(invalid));
+  const term = decodeTerm({make:{call:{closure:{arity:2,body:{call:{f:{var:{i:0}},args:["tru","nul"]}}}},a:"undef"}});
+  assert.deepEqual(parseTerm(printTerm(term)),term);
+  assert.throws(() => decodeTerm({var:{i:-1}}));
+  assert.throws(() => decodeTerm({read:{a:"nul",extra:0}}));
+}
+
+{
+  const first = surface.parseType('((boolean) => boolean) & { value: boolean }');
+  const union = {top:false,atoms:[...first.atoms,{a:"null"}]};
+  assert.deepEqual(surface.parseType(surface.printType(union).text),union);
+  const number = surface.parseType('1e+21');
+  assert.deepEqual(surface.parseType(surface.printType(number).text),number);
+  const rows = [["nul"],[{boolLit:{value:true}}],[{boolLit:{value:false}}],["undef"]];
+  // A current-content edit must not erase another field during normalization.
+  assert.throws(() => surface.lower(rows,surface.parseType('{ value: boolean = (true), other: null }')),/one field/);
+  assert.throws(() => surface.lower(rows,surface.parseType('{ value: boolean } @{"call":"custom"}')),/mode/);
+}

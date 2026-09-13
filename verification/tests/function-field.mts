@@ -28,6 +28,16 @@ try {
   const combined=at(fc,assign.pos).type;
   assert.equal(combined.atoms[0].a,"callable");
   assert(surface.roundTrips(combined),"combined call/property contract must survive report editing");
+  // Supply a complete callable/object claim from text with no producer template.
+  const manual = structuredClone(claims);
+  const manualFn = manual.find((b:any)=>b.file===file).functions.find((f:any)=>f.name===fn.name);
+  at(manualFn,assign.pos).type = surface.parseType("((boolean) => boolean) & { value: boolean }");
+  for (const mode of ["--produce-stateful-source","--check-stateful-source"]) {
+    const r = run(mode,ast,manual); assert.equal(r.status,0,r.stdout+r.stderr);
+  }
+  at(manualFn,assign.pos).type = surface.parseType("((boolean) => boolean) & { value: null }");
+  assert.notEqual(run("--produce-stateful-source",ast,manual).status,0,"fresh field claims still require evidence");
+  assert.equal(run("--produce-stateful-source",ast,claims).status,0);
   const rows: any[] = [["nul"], [{boolLit: {value: true}}], [{boolLit: {value: false}}], ["undef"]];
   const normalized = surface.lower(rows, combined);
   const lifted = surface.lift(rows, normalized.type);

@@ -4,6 +4,8 @@ import os from "node:os";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { hash, fromSourceClaims, verifySkjs, } from "../tools/annotate-source.mts";
+import { presentObligation } from "../tools/obligation-view.mts";
+import { parseGraph, printGraph } from "../tools/type-graph.mts";
 import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 const __dirname = path.dirname(import.meta.filename);
@@ -151,6 +153,10 @@ try {
     assert.notEqual(r.status, 0);
     const d = readDiagnostic(r.stderr);
     assert(d, r.stderr);
+    assert.deepEqual(parseGraph(printGraph(d.types)),d.types);
+    const shown = presentObligation(d,"");
+    assert.match(shown.judgement!.text,/⊢/);
+    assert.equal(shown.graph.length,d.types.length);
     assert(d.kind === "edge-coverage");
     // The transfer and the destination's claim are optional in the record and
     // required by what follows, so assert them rather than assume them.
@@ -186,10 +192,13 @@ try {
     });
   });
   test("unknown malformed and duplicate diagnostic records are not interpreted", () => {
-    const line =
-      "obligation-diagnostic: " +
-      JSON.stringify(verify([1, 2], [1, 2]).obligation);
+    const {input, ...rawDiagnostic} = verify([1, 2], [1, 2]).obligation;
+    const line = "obligation-diagnostic: " + JSON.stringify(rawDiagnostic);
     assert(readDiagnostic(line));
+    const parsed = JSON.parse(line.slice("obligation-diagnostic: ".length));
+    assert.equal(readDiagnostic("obligation-diagnostic: null"),undefined);
+    for (const types of [[["new-clause"]],[[{refs:{first:[99],rest:[]}}]]])
+      assert.equal(readDiagnostic("obligation-diagnostic: " + JSON.stringify({...parsed,types})),undefined);
     assert.equal(readDiagnostic(line + "\n" + line), undefined);
     assert.equal(readDiagnostic("obligation-diagnostic: {"), undefined);
     assert.equal(

@@ -1,3 +1,4 @@
+import type { ObligationView } from "../tools/obligation-view.mts";
 // Surface type printing is shared with the report writer.
 import type { Bundle, Producer } from "./types.ts";
 import type { Span } from "../tools/source-claims.mts";
@@ -86,6 +87,7 @@ export interface ShownFunction {
   quality?: string;
   /** The obligation record, kept as recorded for the panel; never evidence. */
   obligation?: unknown;
+  obligationView?: ObligationView;
   /** True for a source function the candidate says nothing about at all. */
   candidateMissing?: boolean;
   /** Its parameter names, in source order, for the contract it needs. */
@@ -387,6 +389,7 @@ function fromBundle(bundle: any) {
       detail: result?.detail || "",
       // Explanatory metadata about an unsuccessful attempt, kept as recorded.
       obligation: result?.obligation || null,
+      obligationView: result?.obligationView,
       collection: f.collection?.completion || "",
       quality: f.collection?.quality || "",
     };

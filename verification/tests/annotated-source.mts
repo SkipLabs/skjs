@@ -219,7 +219,7 @@ try {
     const printable=types.filter(t=>t&&!t.unsupported&&surface.printType(t).printable);
     assert(printable.length>50,`only ${printable.length} printable types`);
     for(const type of printable)
-      assert.deepEqual(surface.parseType(surface.printType(type).text,type),type,surface.printType(type).text);
+      assert.deepEqual(surface.parseType(surface.printType(type).text),type,surface.printType(type).text);
   });
   test("all real exported claims attach without changing syntax",()=>render(real,fromSkjs(real,fileKey,claims,"skjs")));
   const out=path.join(tmp,"real.annotated.ts");

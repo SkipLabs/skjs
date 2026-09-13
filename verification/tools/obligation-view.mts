@@ -7,7 +7,10 @@
  * exercise it without a browser.
  */
 
-import surface from "../tools/claim-types.mts";
+import surface from "./claim-types.mts";
+import { decodeGraph, graphDefinitions, printLabels, type GraphDefinition } from "./type-graph.mts";
+import type { ObligationDiagnostic } from "./obligation-diagnostic.mts";
+import { printTerm } from "./calculus-language.mts";
 import type { Span } from "../tools/source-claims.mts";
 
 /** One binding of the context: what was carried, and what was required. */
@@ -54,6 +57,8 @@ export interface Endpoint {
  * a claim is false.
  */
 export interface ObligationView {
+  judgement?: { assumptions: string[]; conclusion: string; text: string };
+  graph: GraphDefinition[];
   kind: string;
   kindLabel: string;
   /** The role's own name, where the record gives a specific one. */
@@ -82,7 +87,7 @@ export interface ObligationView {
 
 
 
-const obligationReader = (() => {
+
 
 // Roles come from extraction. An unknown role stays generic rather than being
 // guessed into a more specific story.
@@ -242,6 +247,7 @@ function obligationView(ob: any, source = "") {
       ? typeText(types, ob.requiredResult)
       : "",
     rows: [],
+    graph: [],
     endpoints: [],
     observation: undefined,
     note: "",
@@ -332,7 +338,7 @@ function obligationView(ob: any, source = "") {
   return view;
 }
 
-  return {
+  const obligationReader = {
     typeText,
     termText,
     contentsText,
@@ -343,6 +349,40 @@ function obligationView(ob: any, source = "") {
     obligationView,
     roleView,
   };
-})();
 
 export default obligationReader;
+/** Uniform report contract: the UI renders these strings without decoding the
+ * calculus or applying slot transfers. Keep the raw diagnostic beside it.
+ * Edge goals name the transfer explicitly: heap facts cannot simply be copied
+ * across calls/writes. JSON terms are the complete native term language.
+ */
+export function presentObligation(ob: ObligationDiagnostic, source: string): ObligationView {
+  const view = obligationReader.obligationView(ob,source)!;
+  view.graph = graphDefinitions(decodeGraph(ob.types));
+  if (ob.kind === "production-failure") {
+    view.title = "Certificate production stopped";
+    view.what = ob.failure;
+    return view;
+  }
+  const context = (entries: number[][], prefix = "slot") => entries.map((t,i) => `${prefix} ${i}: ${printLabels(t)}`);
+  let assumptions: string[], conclusion: string;
+  if (ob.kind === "edge-coverage") {
+    const t = ob.transfer!;
+    assumptions = context(t.available,"available");
+    if (t.booleanObservation !== null) assumptions.push(`available 0 = ${t.booleanObservation}`);
+    if (t.tagObservation) assumptions.push(`${JSON.stringify(t.tagObservation.test)}(available ${t.tagObservation.slot}) = ${t.tagObservation.answer}`);
+    assumptions.push(`source node = ${JSON.stringify(ob.source.node)}`);
+    if (ob.source.requiredKnowledge) assumptions.push(`source heap requirements = ${JSON.stringify(ob.source.requiredKnowledge)}`);
+    const mapping = t.target.mapping;
+    const destination = ob.destination.claim!.context.map((type,i) =>
+      `available ${mapping === null ? i : mapping[i]}: ${printLabels(type)}`);
+    conclusion = `transfer to node ${t.target.label} establishes { ${destination.join(", ")} }`;
+    if (ob.destination.requiredKnowledge) conclusion += ` and heap ${JSON.stringify(ob.destination.requiredKnowledge)}`;
+  } else {
+    const q = ob.sequent!;
+    assumptions = context(q.context);
+    conclusion = `${printTerm(q.term)} : ${printLabels(q.type)}`;
+  }
+  view.judgement = {assumptions,conclusion,text:`${assumptions.length ? assumptions.join("; ") : "∅"} ⊢ ${conclusion}`};
+  return view;
+}

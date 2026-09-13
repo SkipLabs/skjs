@@ -12,19 +12,8 @@
 /** A half-open span of the original source, in UTF-16 code units. */
 export type Span = [start: number, end: number];
 
-/**
- * A type, as a sorted list of row indices into the document's own table. The
- * list is a union: `[1, 2]` is `true | false`, and the empty list is `never`.
- */
-export type Labels = number[];
-
-/**
- * One row of the document's type table. The first four rows are fixed — null,
- * true, false, undefined — and every other row is a clause the file mentions,
- * interned on first use. The clause encoding is the verifier's own, decoded in
- * Lean rather than here, so it stays opaque at this boundary.
- */
-export type Row = unknown[];
+import type { Labels, Row } from "./type-graph.mts";
+export type { Labels, Row } from "./type-graph.mts";
 
 /**
  * What a producer believes at one site: the type it claims, and — where the

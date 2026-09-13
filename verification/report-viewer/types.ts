@@ -1,3 +1,4 @@
+import type { ObligationView } from "../tools/obligation-view.mts";
 // The report the reader displays.
 //
 // One description of the shape that `tools/annotate-source.js` writes, the
@@ -151,6 +152,7 @@ export interface Result {
   location?: Failure;
   /** Explanatory metadata about an unsuccessful attempt. Never evidence. */
   obligation?: unknown;
+  obligationView?: ObligationView;
   /** What a successful check covers, in the verifier's own words. */
   scope?: string;
   /** The certificate that was checked, for provenance only. */

@@ -243,3 +243,21 @@ classification; [viewer tests](tests/report-viewer.mts) cover known, unknown, an
 absent reasons. [Source-claim export tests](tests/source-claim-export.mts) check
 that observations survive conversion and become proof obligations rather than
 being silently erased.
+
+## Report presentation
+
+The report writer attaches `obligationView` beside the exact raw `obligation`.
+`tools/obligation-view.mts` prepares it once; Svelte only renders the typed
+presentation. Its `judgement` has `assumptions`, `conclusion`, and their printed
+`A ⊢ B` form. Node and expression failures use the recorded sequent. Edge
+failures state the available slots, branch premise, target mapping, and heap
+requirements explicitly; a transfer is not reduced to plain subtyping. A
+production failure without a goal has no invented sequent.
+
+Every graph row is shown once in `graph`, with labels in the judgement referring
+to these definitions. Cycles and overloads are preserved without recursive
+unfolding or a depth limit. The compact type summaries elsewhere in the report
+are conveniences; this graph legend and the native term in the judgement give
+the exact language. See [VIEWER-LANGUAGE](VIEWER-LANGUAGE.md) for the typed codecs
+and their consistency tests. Search failure continues to mean not established,
+not refuted.

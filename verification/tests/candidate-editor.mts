@@ -93,7 +93,7 @@ for (const params of [
     result: {top: false, atoms: [{a: "boolean"}]}, construct: "unknown", array: "unknown"}]};
   const changed = editClaim(tabled, fn, item, arrow);
   assert.deepEqual(changed.claims.types[4], [{arrs: {arrows: [[params.length ? [[1,2],[0]] : [],[1,2]]]}}]);
-  assert.deepEqual(editable(changed, fn, item), {top: false, atoms: [{a: "function", params, result: arrow.atoms[0].result}]});
+  assert.deepEqual(editable(changed, fn, item), arrow);
 }
 
 (async () => {

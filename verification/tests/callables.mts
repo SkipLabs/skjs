@@ -404,7 +404,7 @@ try {
   assert(types.length > 0);
   for (const type of types) {
     if (type && !type.unsupported && surface.printType(type).printable)
-      assert.deepEqual(surface.parseType(surface.printType(type).text, type), type);
+      assert.deepEqual(surface.parseType(surface.printType(type).text), type);
   }
   passed++;
   console.log("  callable claim types survive report round trips: OK");

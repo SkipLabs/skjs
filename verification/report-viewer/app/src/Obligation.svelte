@@ -9,7 +9,7 @@
    * claim share a span and are different obligations — and where the record
    * names no specific role, this says nothing rather than inventing one.
    */
-  import reader, { type ObligationView } from "../../obligation.mts";
+  import type { ObligationView } from "../../../tools/obligation-view.mts";
   import type { ShownFunction } from "../../model.mts";
 
   let {
@@ -24,7 +24,7 @@
   } = $props();
 
   const view = $derived<ObligationView | null>(
-    reader.obligationView(fn.obligation, source),
+    fn.obligationView ?? null,
   );
 </script>
 
@@ -39,19 +39,28 @@
       <p class="what">{view.what}</p>
     {/if}
 
+    {#if view.judgement}
+      <pre class="sequent">{view.judgement.text}</pre>
+      <details>
+        <summary>Type graph (exact row definitions)</summary>
+        {#each view.graph as row (row.label)}
+          <div class="type">{row.label} = {row.definition}</div>
+        {/each}
+      </details>
+    {/if}
+
     {#if view.rows.length}
       <table>
-        <caption>what the edge carried, against what it had to establish</caption
-        >
+        <caption>{view.kind === "edge-coverage" ? "Carried and required context" : "Context"}</caption>
         <thead>
-          <tr><th>binding</th><th>carried</th><th>required</th></tr>
+          <tr><th>binding</th><th>carried</th>{#if view.kind === "edge-coverage"}<th>required</th>{/if}</tr>
         </thead>
         <tbody>
           {#each view.rows as row (row.slot)}
             <tr class:differs={row.differs}>
               <td class="name">{row.binding}</td>
               <td class="type">{row.have}</td>
-              <td class="type">{row.need}</td>
+              {#if view.kind === "edge-coverage"}<td class="type">{row.need}</td>{/if}
             </tr>
           {/each}
         </tbody>
@@ -108,6 +117,7 @@
 {/if}
 
 <style>
+  .sequent { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
   .why {
     border-top: 1px solid var(--rule);
     padding: 12px 16px 16px;

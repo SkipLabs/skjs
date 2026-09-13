@@ -25,37 +25,8 @@ import { dirname, resolve } from "node:path";
 /** A half-open span of the source, in UTF-16 code units. */
 export type Span = [start: number, end: number];
 
-/** A type as the claim format writes it: a union of atoms, or everything. */
-export interface WireType {
-  top: boolean;
-  atoms: Atom[];
-}
-
-export type Atom =
-  | { a: "null" | "undefined" | "boolean" | "string" | "number" }
-  | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
-  | {
-      a: "record";
-      fields: {
-        name: string;
-        optional: boolean;
-        read: WireType;
-        write: WireType;
-      }[];
-      indexes: { string: string; number: string; symbol: string };
-      call: string;
-      construct: string;
-      array: string;
-      and?: Atom[];
-    }
-  | {
-      a: "function";
-      params: WireType[];
-      result: WireType;
-      construct: string;
-      array: string;
-      and?: Atom[];
-    };
+import type { WireType, Atom } from "./claim-language.mts";
+export type { WireType, Atom } from "./claim-language.mts";
 
 export type Expr =
   | { k: "id"; pos: Span; name: string }
