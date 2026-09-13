@@ -59,7 +59,7 @@ function withAnotherTypeParamMorePrecise<T extends null | undefined | string>(
 function skippedFallback(seed: number | undefined): number {
   let state: number | null = null;
   const result = seed ?? (state = 1);
-  // FIXME: a supplied seed skips the assignment, leaving state null.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return state;
 }
 

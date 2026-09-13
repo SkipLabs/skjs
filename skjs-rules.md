@@ -226,10 +226,11 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - Deferred references to later parameters inside default-created closures remain unsupported. Existing restrictions on local-name shadowing remain unchanged.
 - **Verified by**: `tests/expect-error/arrow-default-param-optional.ts` and `tests/expect-error/captured-local-write.ts`.
 
-### 16b. Local Destructuring Default Effects
+### 16b. Conditional Expression and Default Effects
 - A default in a local destructuring declaration or assignment may be skipped. Subsequent reads must account for both the original state and the default's writes; a default alone cannot establish definite assignment.
-- The merge conservatively includes both paths even when the source type could show that the default always or never runs. Check the resulting value explicitly when needed.
-- **Verified by**: `tests/expect-error/destructuring.ts`.
+- The right operand of `&&`, `||`, or `??` also has conditional effects. Its expression result retains its own type, while subsequent reads account for the path that skipped it.
+- The merge conservatively includes both paths even when the source type could show that the conditional expression or default always or never runs. Check the resulting value explicitly when needed.
+- **Verified by**: `tests/expect-error/destructuring.ts` and `tests/expect-error/nullish-coalescing.ts`.
 
 ### 16b. Un-annotated Class Fields Are Opaque (Ambient Classes)
 - **Rule**: Every class field needs an explicit type annotation. A non-ambient class field without one is an error (`Member 'x' must have an explicit type annotation`). An **ambient** class (`declare class`) may omit the annotation — its bodies are never checked — but the field then has an **opaque** type: it is a subtype of nothing but itself and `unknown`, and no concrete value is a subtype of it. So both **reading** such a field into a concrete type and **writing** a concrete value into it are rejected. This is stricter than tsc, which treats the field as implicit `any` and reports the missing annotation (TS7008) at the declaration instead.

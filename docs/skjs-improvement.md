@@ -233,6 +233,16 @@ retains rejection when the source includes `null` or the default can itself
 return `undefined`. This is a completeness repair with a shared read contract;
 the conditional-effect merge and general R2 obligations remain separate.
 
+Nullish coalescing now checks its fallback in a child scope and uses the same
+conditional scope merge as `&&` and `||`. Previously `??` checked the fallback
+in the enclosing scope, so a skipped assignment could justify an invalid
+numeric return. The fallback's current and stable result types are captured
+inside its branch, before merging effects; the expression's selected value
+does not acquire the untouched binding's old value. `nullish-coalescing.ts`
+covers the rejected stale read, a possible invalidating write, and returning
+the expression result. As with the other conditional merges, both effect
+paths are conservatively retained even for a statically known left operand.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

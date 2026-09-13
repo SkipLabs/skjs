@@ -3017,14 +3017,23 @@ extension class TypeChecker {
             TPrimUnit(TNull(), pos),
           ),
         );
+        // The fallback runs only when the left value is nullish. Preserve
+        // its expression type, but merge its writes with the skipped path,
+        // just as for the right operand of && or ||.
+        savedScope = tcenv.scope;
+        fallbackScope = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = fallbackScope;
         ty2 = this.expr(tcenv, e2, mostPrecise);
+        stable2 = this.stableAliasExprType(tcenv, e2, ty2);
+        tcenv.!scope = savedScope;
+        tcenv.popScope(this, fallbackScope);
         this.composeSelectionType(
           tcenv,
           pos,
           ty1WithoutNullish,
           ty2,
           stable1WithoutNullish,
-          this.stableAliasExprType(tcenv, e2, ty2),
+          stable2,
         )
       }
 
