@@ -239,14 +239,14 @@ inductive HasTy (G : NormalGraph ι) : List (Ty ι) → Tm → Ty ι → Prop wh
   | makeCallable : Represents G F (.callable P [] L) → HasTy G Γ a P →
       (∀ p ∈ L, p.1.length = arity) →
       (∀ p ∈ L, HasTy G (p.1 ++ Γ) b p.2) → HasTy G Γ (.make (.closure arity b) a) F
-  | callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → ([A],B) ∈ L →
-      HasTy G Γ a A → HasTy G Γ (.app f a) B
+  | callCallable : HasTy G Γ f F → Represents G F (.callable P Ps L) → ((xs : List (Ty ι × Tm)).map Prod.fst,B) ∈ L →
+      (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
   | readCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) →
       HasTy G Γ (.read a) P
   | writeCallable : HasTy G Γ a F → Represents G F (.callable P Ps L) → HasTy G Γ b P →
       Represents G N .nul → HasTy G Γ (.write a b) N
-  | app : HasTy G Γ f F → Represents G F (.arrs L) → ([A], B) ∈ L →
-      HasTy G Γ a A → HasTy G Γ (.app f a) B
+  | app : HasTy G Γ f F → Represents G F (.arrs L) → ((xs : List (Ty ι × Tm)).map Prod.fst, B) ∈ L →
+      (∀ p ∈ xs, HasTy G Γ p.2 p.1) → HasTy G Γ (.call f (xs.map Prod.snd)) B
   | letE : HasTy G Γ a A → HasTy G (A :: Γ) b B → HasTy G Γ (.letE a b) B
   | alloc : HasTy G Γ a A → Represents G Ref (.refs A []) → HasTy G Γ (.alloc a) Ref
   | read : HasTy G Γ a Ref → Represents G Ref (.refs A []) → HasTy G Γ (.read a) A
@@ -310,17 +310,23 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
         ((callsT_adm _).down_le n j hj W _ ((callsT_code_iff _ arity 0 _ n W).mpr hcode)))
     have hs := make_callable_rule (meaning_adm G P) arity j U heap _ av hc hav hu hok ha'
     exact Safe_mono j (fun k _ V v hv => (represents_sem hr k V v).mpr ⟨⟨hv.1,by simp⟩,hv.2⟩) U heap _ hs
-  | @callCallable Γ f F P Ps L A B a hf hr hp ha ihf iha =>
+  | @callCallable Γ f F P Ps L xs B hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
-    apply call_safe [(meaning G A,instantiate 0 ρ a)]
-      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_adm G A)
-      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_valOnly G A) hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+    have hs := call_safe (B := meaning G B) (f := instantiate 0 ρ f)
+      (xs.map fun p => (meaning G p.1,instantiate 0 ρ p.2))
+      (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
+      (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
+      hw hh
+    apply (by simpa only [List.map_map,Function.comp_def] using hs)
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
-      exact callsT_select (((represents_sem hr k U v).mp hv).2) (List.mem_map.mpr ⟨([A],B), hp, rfl⟩)
-    · intro p hp; cases List.mem_singleton.mp hp
+      simpa only [List.map_map,Function.comp_def] using
+        callsT_select (((represents_sem hr k U v).mp hv).2) (List.mem_map.mpr ⟨(xs.map Prod.fst,B), hp, rfl⟩)
+    · intro p hp
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
       intro j hj U hx hu heap hok
-      exact iha j U heap ρ (he.transfer j hj U hx) hu hok
+      exact iha q hq j U heap ρ (he.transfer j hj U hx) hu hok
   | @readCallable Γ a Ref A Ps L ha hr ih =>
     intro n W h ρ he hw hh
     apply bind Tm.read Step.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -337,17 +343,23 @@ theorem HasTy.sound {G : NormalGraph ι} {Γ t A} (ht : HasTy G Γ t A) :
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
     apply Safe_mono k (fun i _ X v hval => (represents_sem hn i X v).mpr hval)
     exact bag_write (meaning_adm G A) ((represents_sem hr k V av).mp ha'').1.1 hb' hbval hv hok'
-  | @app Γ f F L A B a hf hr hp ha ihf iha =>
+  | @app Γ f F L xs B hf hr hp ha ihf iha =>
     intro n W h ρ he hw hh
-    apply call_safe [(meaning G A,instantiate 0 ρ a)]
-      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_adm G A)
-      (by intro p hp; cases List.mem_singleton.mp hp; exact meaning_valOnly G A) hw hh
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+    have hs := call_safe (B := meaning G B) (f := instantiate 0 ρ f)
+      (xs.map fun p => (meaning G p.1,instantiate 0 ρ p.2))
+      (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
+      (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
+      hw hh
+    apply (by simpa only [List.map_map,Function.comp_def] using hs)
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
-      exact callsT_select ((represents_sem hr k U v).mp hv) (List.mem_map.mpr ⟨([A],B), hp, rfl⟩)
-    · intro p hp; cases List.mem_singleton.mp hp
+      simpa only [List.map_map,Function.comp_def] using
+        callsT_select ((represents_sem hr k U v).mp hv) (List.mem_map.mpr ⟨(xs.map Prod.fst,B), hp, rfl⟩)
+    · intro p hp
+      obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp
       intro j hj U hx hu heap hok
-      exact iha j U heap ρ (he.transfer j hj U hx) hu hok
+      exact iha q hq j U heap ρ (he.transfer j hj U hx) hu hok
   | @letE Γ a A b B ha hb iha ihb =>
     intro n W h ρ he hw hh
     apply bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC n W h _ hw hh

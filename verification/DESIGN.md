@@ -959,7 +959,7 @@ uses that general rule. Native operand reduction now handles any argument count:
 callee first, then the leftmost unfinished actual. Its transitions are proved
 equivalent to the preparation/dispatch interface, deterministic, and coherent.
 Compositional call safety now covers effectful callees and argument lists; both
-unary application typing proofs use it, preserving saved values across effects.
+application typing proofs use it, preserving saved values across effects.
 Graph signatures now store ordered domain lists. Their normalization and
 subtyping use native callable semantics directly; the unary graph adapters and
 separate unary coverage rules have been retired. Subtype search can split a union
@@ -969,8 +969,12 @@ descriptor's arity and placing all parameters before captured bindings.
 The JSON protocol, source claim producers, and report rendering use the same
 list-shaped signatures. A three-parameter creation/widening example goes through
 production and JSON consumption; a mismatched descriptor arity is rejected.
-Next, extend application evidence and source call/lambda lowering to argument
-lists. Source thunks still use their existing implicit undefined parameter, and
+Application typing, evidence checking, and proof search now accept full argument
+lists, including zero arguments. Evidence preserves operand order and requires
+one premise per actual; search requires an exact signature argument count.
+Pipeline checks cover native calls and a callable cell written by one operand
+and read by the next, as well as omitted, extra, and reordered operands.
+Next, extend source call/lambda lowering to argument lists. Source thunks still use their existing implicit undefined parameter, and
 multi-argument source calls remain gated.
 
 ### Next callable and object milestones
@@ -983,7 +987,7 @@ behavior through actual producer claims and independent consumption:
 | Milestone | Completion example | Semantic work to preserve |
 | --- | --- | --- |
 | Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Reuse `isFun` and checked tag refinements without inventing a signature for unknown code. |
-| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Native reduction, graph signatures, subtyping and creation evidence support argument lists. Extend application evidence and source lowering next. Zero-argument source thunks currently use an unused undefined parameter. |
+| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Native reduction, graph signatures, subtyping, creation and application evidence support argument lists. Extend source lowering next. Zero-argument source thunks currently use an unused undefined parameter. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`; distinguish lexical arrow `this` from ordinary receivers. |

@@ -157,19 +157,19 @@ def expressionWith [DecidableEq ι] (G : NormalGraph ι) (pool : List (Ty ι))
         let ea ← recur Γ a B
         let eb ← recur (B :: Γ) b A
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
-    | .app f a =>
+    | .call f args =>
       let direct := pool.findSome? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L] => some (L,Rule.app)
           | [.callable _ _ L] => some (L,Rule.callCallable)
           | _ => none
         L.findSome? fun p => do
-          -- Check the result relation before searching both premises.
-          let _ ← subtype G pool p.2 A
-          let ef ← recur Γ f F
-          let [D] := p.1 | none
-          let ea ← recur Γ a D
-          coerce G pool (.node ⟨Γ,t,p.2⟩ r [ef,ea]) A
+          -- Require every operand before searching the premises.
+          if args.length != p.1.length then none else do
+            let _ ← subtype G pool p.2 A
+            let ef ← recur Γ f F
+            let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
+            coerce G pool (.node ⟨Γ,t,p.2⟩ r (ef :: eas)) A
       if let some e := direct then return some e
       return splitReceiver f
     | .alloc a =>

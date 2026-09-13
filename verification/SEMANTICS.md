@@ -202,8 +202,10 @@ call spends one step and the body uses the remaining budget. The existing unary
 spend budget and change the heap. `bind_list` evaluates the arguments in order,
 transfers saved values' types to each later world, and invokes its continuation
 only after the complete list is ready. `call_safe` first evaluates the callee,
-then uses that list composition and `call_elim`. Both unary application cases
-in the typing soundness theorem now specialize this proof.
+then uses that list composition and `call_elim`. Both application cases
+in the typing soundness theorem use this proof for ordered lists of typed
+operands. Their certificate rules require the same operand terms in the same
+order, with one premise per argument and a matching signature domain list.
 
 `callsT_adm` proves admissibility without assuming admissible domains, and
 `callsT_congr` proves that every argument position and result is guarded by the

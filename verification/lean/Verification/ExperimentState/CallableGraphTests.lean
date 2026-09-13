@@ -149,6 +149,52 @@ private def zeroReq : Request := ⟨rows,[⟨.make (.closure 0 .nul) .nul,.ret�
   verifyJson r (← produceJson r 8))
 #guard (subtype graph (List.range rows.length |>.map fun i => [i]) [7] [9]).isNone
 #guard !validRequest {req with types := rows ++ [[.arrs [([[0],[99]],[1])]]]}
+-- Native invocation reaches the same producer/JSON consumer as unary calls.
+private def callReq : Request :=
+  {req with
+    program := [⟨body,.bind 1⟩,⟨.call (.var 0) [.nul,.tru,.fls],.ret⟩],
+    claims := [⟨[],[7]⟩,⟨[[7]],[1]⟩], result := [1]}
+#guard ok (do
+  let r := toJson callReq
+  verifyJson r (← produceJson r 8))
+private def zeroCallReq : Request :=
+  {zeroReq with
+    program := [⟨.call (.make (.closure 0 .nul) .nul) [],.ret⟩],
+    claims := [⟨[],[0]⟩], result := [0]}
+#guard ok (do
+  let r := toJson zeroCallReq
+  verifyJson r (← produceJson r 8))
+
+-- A callable's cell is updated by the first operand and read by the second.
+-- This exercises effectful operands through the callable-object application rule.
+private def cellRows := rows ++ [[.callable [1] [] [([[0],[1]],[1])]]]
+private def cellCallReq : Request :=
+  ⟨cellRows,
+   [⟨.make (.closure 2 (.var 1)) .tru,.bind 1⟩,
+    ⟨.call (.var 0) [.write (.var 0) .fls,.read (.var 0)],.ret⟩],
+   [⟨[],[10]⟩,⟨[[10]],[1]⟩],[1],0,[]⟩
+#guard ok (do
+  let r := toJson cellCallReq
+  verifyJson r (← produceJson r 8))
+
+private def argPool := List.range rows.length |>.map fun i => [i]
+-- Search may neither truncate extra actuals nor supply missing ones silently.
+#guard (expression graph argPool 8 [[7]] (.call (.var 0) [.nul,.tru]) [1]).isNone
+#guard (expression graph argPool 8 [[9]] (.call (.var 0) [.nul]) [0]).isNone
+#guard (expression graph argPool 8 [[7]] (.call (.var 0) [.nul,.tru,.nul]) [1]).isNone
+-- Even valid operand derivations cannot certify a differently ordered call.
+private def callClaim : ProgramCertificates.Sequent Nat :=
+  ⟨[[7]],.call (.var 0) [.nul,.tru,.fls],[1]⟩
+private def callPremises : List (ProgramCertificates.Evidence Nat) :=
+  [.node ⟨[[7]],.var 0,[7]⟩ .var [],
+   .node ⟨[[7]],.nul,[0]⟩ .nul [],
+   .node ⟨[[7]],.tru,[1]⟩ .tru [],
+   .node ⟨[[7]],.fls,[1]⟩ .fls []]
+#guard ProgramCertificates.checkTree graph (.node callClaim .app callPremises)
+#guard !ProgramCertificates.checkTree graph (.node callClaim .app (callPremises.take 3))
+#guard !ProgramCertificates.checkTree graph
+  (.node callClaim .app (callPremises.set 2 callPremises[3] |>.set 3 callPremises[2]))
+
 end ArgumentGraphs
 
 #print axioms checked

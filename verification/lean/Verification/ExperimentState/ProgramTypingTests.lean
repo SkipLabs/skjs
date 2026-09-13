@@ -44,7 +44,8 @@ theorem higher_order_typed : HasTy G [] (.funE (.app (.var 0) .nul)) [5] := by
   intro p hp
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
   subst p
-  exact .app (A := [0]) (.var rfl) (by rfl) (by simp) (.nul (by rfl))
+  exact .app (xs := [([0],.nul)]) (.var rfl) (by rfl) (by simp)
+    (by intro p hp; cases List.mem_singleton.mp hp; exact .nul (by rfl))
 
 theorem higher_order_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaning G [5]) n W h (.funE (.app (.var 0) .nul)) :=
@@ -78,10 +79,12 @@ theorem program_typed : HasTy G [] program [0, 1] := by
   apply HasTy.letE (A := [2]) (.var rfl)
   apply HasTy.letE (A := [0]) (.write (.var rfl) (by rfl) (.fls (by rfl)) (by rfl))
   apply HasTy.letE (A := [0])
-    (.app (A := [1]) (.var rfl) (by rfl) (by simp) (.tru (by rfl)))
-  exact .app (A := [0, 1])
+    (.app (xs := [([1],.tru)]) (.var rfl) (by rfl) (by simp)
+      (by intro p hp; cases List.mem_singleton.mp hp; exact .tru (by rfl)))
+  exact .app (xs := [([0,1],.nul)])
     (.sub (.var rfl) (by decide : check G [3] [4] widenCert = true)) (by rfl) (by simp)
-    (.sub (.nul (by rfl)) (by decide : check G [0] [0, 1] .subset = true))
+    (by intro p hp; cases List.mem_singleton.mp hp
+        exact .sub (.nul (by rfl)) (by decide : check G [0] [0, 1] .subset = true))
 
 theorem program_safe (n W h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (meaning G [0, 1]) n W h program :=

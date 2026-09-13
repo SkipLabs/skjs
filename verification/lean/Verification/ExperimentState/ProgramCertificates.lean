@@ -41,10 +41,11 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match expand G j.type with
     | [.arrs L] => (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ j.context, b, p.2⟩)
     | _ => False
-  | .app, .app f a, [jf, ja] =>
-    jf.context = j.context ∧ jf.term = f ∧ ja.context = j.context ∧ ja.term = a ∧
+  | .app, .call f args, jf :: jas =>
+    jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
+    (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
-    | [.arrs L] => ([ja.type], j.type) ∈ L
+    | [.arrs L] => (jas.map Sequent.type, j.type) ∈ L
     | _ => False
   | .letE, .letE a b, [ja, jb] =>
     ja.context = j.context ∧ ja.term = a ∧ jb = ⟨ja.type :: j.context, b, j.type⟩
@@ -83,10 +84,11 @@ def Local [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (r : Rule ι) (
     match expand G j.type with
     | [.callable P [] L] => ja = ⟨j.context,a,P⟩ ∧ (∀ p ∈ L, p.1.length = arity) ∧ ps = L.map (fun p => ⟨p.1 ++ j.context,b,p.2⟩)
     | _ => False
-  | .callCallable, .app f a, [jf,ja] =>
-    jf.context = j.context ∧ jf.term = f ∧ ja.context = j.context ∧ ja.term = a ∧
+  | .callCallable, .call f args, jf :: jas =>
+    jf.context = j.context ∧ jf.term = f ∧ jas.map Sequent.term = args ∧
+    (∀ ja ∈ jas, ja.context = j.context) ∧
     match expand G jf.type with
-    | [.callable _ _ L] => ([ja.type],j.type) ∈ L
+    | [.callable _ _ L] => (jas.map Sequent.type,j.type) ∈ L
     | _ => False
   | .readCallable, .read a, [ja] =>
     ja.context = j.context ∧ ja.term = a ∧
@@ -170,15 +172,21 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       rw [hl.2]
       exact List.mem_map.mpr ⟨p, hmem, rfl⟩
     · contradiction
-  · rename_i f a jf ja
-    rcases hl with ⟨hΓf, htf, hΓa, hta, hL⟩
+  · rename_i f args jf jas
+    rcases hl with ⟨hΓf, htf, hargs, hcontexts, hL⟩
     have hf := hp jf (by simp)
-    have ha := hp ja (by simp)
     rw [hΓf, htf] at hf
-    rw [hΓa, hta] at ha
     split at hL
     · rename_i L he
-      exact .app hf he hL ha
+      have ha : ∀ p ∈ jas.map (fun ja => (ja.type,ja.term)), HasTy G Γ p.2 p.1 := by
+        intro p hm
+        obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
+        have h := hp ja (List.mem_cons_of_mem _ hja)
+        rw [hcontexts ja hja] at h
+        exact h
+      have h := HasTy.app hf he (xs := jas.map (fun ja => (ja.type,ja.term)))
+        (by simpa only [List.map_map,Function.comp_def] using hL) ha
+      simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a b ja jb
     rcases hl with ⟨hΓ, ht, rfl⟩
@@ -247,15 +255,21 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι} {j r ps}
       intro p hm
       exact hp _ (List.mem_cons_of_mem _ (List.mem_map.mpr ⟨p,hm,rfl⟩))
     · contradiction
-  · rename_i f a jf ja
-    rcases hl with ⟨hΓf,htf,hΓa,hta,hL⟩
+  · rename_i f args jf jas
+    rcases hl with ⟨hΓf, htf, hargs, hcontexts, hL⟩
     have hf := hp jf (by simp)
-    have ha := hp ja (by simp)
-    rw [hΓf,htf] at hf
-    rw [hΓa,hta] at ha
+    rw [hΓf, htf] at hf
     split at hL
     · rename_i P Ps L he
-      exact .callCallable hf he hL ha
+      have ha : ∀ p ∈ jas.map (fun ja => (ja.type,ja.term)), HasTy G Γ p.2 p.1 := by
+        intro p hm
+        obtain ⟨ja,hja,rfl⟩ := List.mem_map.mp hm
+        have h := hp ja (List.mem_cons_of_mem _ hja)
+        rw [hcontexts ja hja] at h
+        exact h
+      have h := HasTy.callCallable hf he (xs := jas.map (fun ja => (ja.type,ja.term)))
+        (by simpa only [List.map_map,Function.comp_def] using hL) ha
+      simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a ja
     rcases hl with ⟨hΓ,ht,hL⟩
@@ -357,14 +371,20 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       · exact iha
       · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
         exact ihb p hp
-  | @callCallable Γ f F P Ps L A B a hf hr hp ha ihf iha =>
-    apply node_complete (r := .callCallable) (js := [⟨Γ,f,F⟩, ⟨Γ,a,A⟩])
-    · simpa only [Local, show expand G F = [.callable P Ps L] from hr, true_and] using hp
+  | @callCallable Γ f F P Ps L xs B hf hr hp ha ihf iha =>
+    apply node_complete (r := .callCallable)
+      (js := ⟨Γ,f,F⟩ :: xs.map (fun p => ⟨Γ,p.2,p.1⟩))
+    · refine ⟨rfl,rfl,?_,?_,?_⟩
+      · simp only [List.map_map,Function.comp_def]
+      · intro ja hj
+        obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+        rfl
+      · simpa only [show expand G F = [.callable P Ps L] from hr,List.map_map,Function.comp_def] using hp
     · intro j hj
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
-      rcases hj with rfl | rfl
+      rcases List.mem_cons.mp hj with rfl | hj
       · exact ihf
-      · exact iha
+      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+        exact iha p hp
   | @readCallable Γ a F P Ps L ha hr ih =>
     apply node_complete (G := G) (j := ⟨Γ,.read a,P⟩) (r := .readCallable) (js := [⟨Γ,a,F⟩])
     · simp [Local,show expand G F = [.callable P Ps L] from hr]
@@ -378,14 +398,20 @@ theorem checkTree_complete [DecidableEq ι] {G : NormalGraph ι} {Γ t A}
       rcases hj with rfl | rfl
       · exact iha
       · exact ihb
-  | @app Γ f F L A B a hf hr hp ha ihf iha =>
-    apply node_complete (r := .app) (js := [⟨Γ,f,F⟩, ⟨Γ,a,A⟩])
-    · simpa only [Local, show expand G F = [.arrs L] from hr, true_and] using hp
+  | @app Γ f F L xs B hf hr hp ha ihf iha =>
+    apply node_complete (r := .app)
+      (js := ⟨Γ,f,F⟩ :: xs.map (fun p => ⟨Γ,p.2,p.1⟩))
+    · refine ⟨rfl,rfl,?_,?_,?_⟩
+      · simp only [List.map_map,Function.comp_def]
+      · intro ja hj
+        obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+        rfl
+      · simpa only [show expand G F = [.arrs L] from hr,List.map_map,Function.comp_def] using hp
     · intro j hj
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at hj
-      rcases hj with rfl | rfl
+      rcases List.mem_cons.mp hj with rfl | hj
       · exact ihf
-      · exact iha
+      · obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hj
+        exact iha p hp
   | @letE Γ a A b B ha hb iha ihb =>
     apply node_complete (r := .letE) (js := [⟨Γ,a,A⟩, ⟨A::Γ,b,B⟩])
     · exact ⟨rfl, rfl, rfl⟩
