@@ -12,8 +12,9 @@ function primedThenWidened(): number[] {
   a.push(1);
   const f = () => a;
   const first = frozenNumbers(f);
-  a.push("s");
+  // The first call establishes a number[] alias and seals its element type.
   // @skjs-expect-error Argument is not assignable to the parameter's type
+  a.push("s");
   return frozenNumbers(f);
 }
 

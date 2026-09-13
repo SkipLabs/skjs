@@ -18,7 +18,8 @@ function inferenceBox<T>(value: T): InferenceBox<T> {
 function laterGrowthMustPreserveAlias(value: number): number {
   const box = inferenceBox(value);
   const alias: InferenceBox<number> = box;
-  // FIXME: accepting the alias must seal the candidate it reads as number.
+  // Accepting the alias seals the candidate it reads as number.
+  // @ts-expect-error Argument is not assignable to the parameter's type
   box.set("changed");
   return alias.get();
 }

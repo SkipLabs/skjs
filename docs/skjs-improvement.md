@@ -61,7 +61,7 @@ next step is to establish contracts for the remaining inferred captures.
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
 | R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | not started | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
-| R2 | Propose vs validate, **and** later uses respect the snapshot | not started | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
+| R2 | Propose vs validate, **and** later uses respect the snapshot | in progress | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
 | R3c | Speculative clone results authorize the parent only with a justified transfer | not started | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
@@ -78,6 +78,20 @@ so equivalent imported mentions do not lose their cycle guard. Regression covera
 the rejected flow, reverse expansion order, a renamed declaration, and a renamed
 re-export of the same declaration. `make test-in-docker`, `make verify`, and
 strict tsc on the regression project pass. The declaration-identity repair is complete.
+
+R2 initial stability repair: retire the `TSInst` subtype shortcut that equated
+an open inference candidate with a concrete argument using `peekRaw`. That
+instantaneous equality does not justify an enduring alias contract. The normal
+subtype path applies the existing covariant sealing discipline, rejecting later
+incompatible growth while allowing compatible writes. Coverage is in
+`alias-inference-stability.ts`; the existing recursive-generic performance
+regression remains the guard for structural expansion. This removes one
+acceptance bypass; it does not introduce immutable validation snapshots or
+complete R2. The primed freeze-window regression now rejects the incompatible
+push itself: the first call has already established a number[] result. Without
+priming, the later incompatible call still rejects.
+The resolved-declaration identity protections from R3a remain in
+normal expansion and recursive comparisons.
 
 R3b implementation note: subtype and intersection results computed while
 `freezeCandidates` is set are not inserted into the substitution caches.
