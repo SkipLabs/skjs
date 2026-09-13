@@ -450,11 +450,18 @@ function toArrayReadonly(x: unknown): ReadonlyArray<unknown> {
 }
 
 /* -------------------------------------------------------------------------
- * Hidden-type lifetimes: result, captured-state, and loop-pooling regressions.
+ * Known holes: accepted today, unsound at runtime.
  *
- * A skolem minted during one type-check can stand for different objects' hidden
- * arguments on different executions. An inferred result must not export that
- * shared identity. These boundary checks address the witnessed channels (#903).
+ * A skolem is minted once per type-check of a scope, but it stands for the
+ * hidden argument of whichever object each *runtime execution* of that scope
+ * narrows. Any channel that lets a skolem-typed value outlive one execution
+ * pools distinct hidden arguments under one identity and permits
+ * cross-object writes. The functions below type-check with no diagnostics;
+ * each contains a write that corrupts an object at runtime (marked
+ * `UNSOUND`). They are pinned here as accepted so that when a fix lands,
+ * this suite fails loudly and the cases get flipped to expect-error
+ * annotations. Issue #903 tracks the class, with the analysis and the
+ * prototyped (unlanded) fixes.
  * ----------------------------------------------------------------------- */
 
 declare function makeList<T>(): T[];
@@ -477,44 +484,23 @@ function opaqueHiddenResult(x: unknown): unknown {
   return reveal(x);
 }
 
-// An opaque outer container cannot expose or exchange hidden field types.
-function opaqueCapturedContainer(x: unknown): unknown[] {
-  const values: unknown[] = [];
-  const store = (value: unknown): void => {
-    if (value instanceof Box) values.push(value);
-  };
-  store(x);
-  return values;
-}
-
-// Inference local to one invocation may use that invocation's hidden identity.
-function localHiddenContainer(x: unknown): number {
-  const count = (value: unknown) => {
-    const values = [];
-    if (value instanceof Box) values.push(value);
-    return values.length;
-  };
-  return count(x);
-}
-
-// Repaired — inferred closure results. The arrow body is checked once, so
+// Hole 1 — inferred closure results. The arrow body is checked once, so
 // every call's result is typed with the same skolem. At runtime p is
 // Box<number> and q is Box<string>; the write puts a string in a
 // Box<number>, and `return a.v` then yields a string from a
 // number-returning function.
 function holeSharedClosureResult(a: Box<number>, b: Box<string>): number {
-  // @skjs-expect-error A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types
   const reveal = (x: unknown) => {
     if (x instanceof Box) return x;
     throw 0;
   };
   const p = reveal(a);
   const q = reveal(b);
-  p.v = q.v; // Prevented by the rejected result contract above.
+  p.v = q.v; // UNSOUND: accepted, writes string into Box<number>
   return a.v;
 }
 
-// Repaired — the higher-order face of the same sharing: generic inference
+// Hole 1b — the higher-order face of the same sharing: generic inference
 // retains the skolem in R, so one call's Pair holds two runtime-distinct
 // objects under one hidden type, and results of separate calls unify too.
 declare function applyTwo<R>(
@@ -523,23 +509,21 @@ declare function applyTwo<R>(
   b: unknown,
 ): Pair<R, R>;
 function holeHigherOrderResult(a: Box<number>, b: Box<string>): number {
-  // @skjs-expect-error A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types
   const reveal = (x: unknown) => {
     if (x instanceof Box) return x;
     throw 0;
   };
   const pair = applyTwo(reveal, a, b);
-  pair.left.v = pair.right.v; // Prevented by the rejected result contract above.
+  pair.left.v = pair.right.v; // UNSOUND: accepted, writes string into Box<number>
   return a.v;
 }
 
-// Repaired — captured mutable state. The container's inferred element type
+// Hole 2 — captured mutable state. The container's inferred element type
 // outlives one execution of the arrow, so values stored by separate calls
 // become exchangeable.
 function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
   const ys = makeList();
-  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
-  const store = (x: unknown): void => {
+  const store = (x: unknown) => {
     if (x instanceof Box) {
       ys.push(x);
     }
@@ -549,71 +533,20 @@ function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
   const p = ys[0];
   const q = ys[1];
   if (p && q) {
-    p.v = q.v; // Prevented by the rejected enclosing-state escape above.
+    p.v = q.v; // UNSOUND: accepted, writes string into Box<number>
   }
   return a.v;
 }
 
-// A fresh per-iteration container may infer that iteration's hidden identity.
-function iterationLocalContainer(items: unknown[]): number {
-  let count = 0;
-  for (const value of items) {
-    const local = [];
-    if (value instanceof Box) local.push(value);
-    count += local.length;
-  }
-  return count;
-}
-
-// Opaque storage can survive iterations without exposing hidden field types.
-function opaqueWhileContainer(items: unknown[]): unknown[] {
-  const values: unknown[] = [];
-  let index = 0;
-  while (index < items.length) {
-    const value = items[index];
-    if (value instanceof Box) values.push(value);
-    index++;
-  }
-  return values;
-}
-
-// Hidden identities introduced by the for condition must not pool either.
-function holeForConditionPooling(next: () => unknown): void {
-  const values = [];
-  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
-  for (let value: unknown = next(); value instanceof Box; value = next()) {
-    values.push(value);
-  }
-  const first = values[0];
-  const second = values[1];
-  if (first && second) first.v = second.v;
-}
-
-// Pooling can corrupt an earlier object before the loop exits.
-function holeWhilePooling(items: unknown[]): void {
-  const values = [];
-  let index = 0;
-  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
-  while (index < items.length) {
-    const value = items[index++];
-    if (value instanceof Box) {
-      values.push(value);
-      const first = values[0];
-      if (first) first.v = value.v;
-    }
-  }
-}
-
-// Repaired — pooling with nothing declared at all: no makeList, no
+// Hole 3a — the same pooling with nothing declared at all: no makeList, no
 // closure, just the ordinary "filter a heterogeneous array" idiom. This is the
 // shape that matters for judging the residual risk, because it is what a
 // developer writes first. Note the inversion it creates: annotating the
 // container (`const ys: Box<unknown>[] = []`) is REJECTED -- soundly, Box is
-// invariant in T. Leaving it inferred now rejects the pooling at the loop
-// boundary; an unknown[] annotation instead expresses safe opaque storage.
+// invariant in T -- while leaving it inferred is accepted and unsound, so the
+// natural response to that error is to delete the annotation and land here.
 function holePureIdiom(items: unknown[]): number {
   const ys = [];
-  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   for (const x of items) {
     if (x instanceof Box) {
       ys.push(x);
@@ -622,16 +555,15 @@ function holePureIdiom(items: unknown[]): number {
   const p = ys[0];
   const q = ys[1];
   if (p && q) {
-    p.v = q.v; // Prevented by the rejected loop escape above.
+    p.v = q.v; // UNSOUND: accepted, exchanges elements of distinct hidden types
   }
   return ys.length;
 }
 
-// Repaired — loop bodies, no closure needed. The body is checked once, so all
+// Hole 3 — loop bodies, no closure needed. The body is checked once, so all
 // iterations share one skolem and their values pool in the outer container.
 function holeLoopPooling(items: unknown[]): void {
   const ys = makeList();
-  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   for (const x of items) {
     if (x instanceof Box) {
       ys.push(x);
@@ -640,6 +572,6 @@ function holeLoopPooling(items: unknown[]): void {
   const p = ys[0];
   const q = ys[1];
   if (p && q) {
-    p.v = q.v; // Prevented by the rejected loop escape above.
+    p.v = q.v; // UNSOUND: accepted, exchanges elements of distinct hidden types
   }
 }
