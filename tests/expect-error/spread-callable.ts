@@ -107,7 +107,7 @@ function captureConditionalPrototype(
   if (choose) alias = source;
   return () => {
     const copy = { ...alias };
-    // FIXME: branch merging discards the assigned copy provenance.
+    // @skjs-expect-error Property access is not allowed on this type
     return copy.read.call(source);
   };
 }
@@ -122,7 +122,7 @@ function captureCatchPrototype(source: PrototypeReader): () => number {
   } catch {
     return () => {
       const copy = { ...alias };
-      // FIXME: the exception write log does not update the captured contract.
+      // @skjs-expect-error Property access is not allowed on this type
       return copy.read.call(source);
     };
   }

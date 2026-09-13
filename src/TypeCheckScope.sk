@@ -619,7 +619,11 @@ mutable class Scope{
       (_, curRef) = this.maybeGetRef(nameRef.name).fromSome();
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, nameRef.ref.type, curRef.type),
-        curRef.declaredType,
+        tenv.preserveCopyProvenance(
+          subst,
+          nameRef.ref.declaredType,
+          curRef.declaredType,
+        ),
         curRef.hasDeclaredContract,
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
@@ -698,7 +702,11 @@ mutable class Scope{
       (_, curRef) = this.maybeGetRef(kv.i0).fromSome();
       this.!refs[kv.i0] = LocalRef(
         TType::union(subst, tenv, kv.i1.type, curRef.type),
-        curRef.declaredType,
+        tenv.preserveCopyProvenance(
+          subst,
+          kv.i1.declaredType,
+          curRef.declaredType,
+        ),
         curRef.hasDeclaredContract,
         kv.i1.isInitialized && curRef.isInitialized,
         curRef.isMutable,
@@ -747,7 +755,7 @@ mutable class Scope{
       | Some((_, cur)) ->
         this.!refs[kv.i0] = LocalRef(
           TType::union(subst, tenv, cur.type, kv.i1),
-          cur.declaredType,
+          tenv.preserveCopyProvenance(subst, kv.i1, cur.declaredType),
           cur.hasDeclaredContract,
           cur.isInitialized,
           cur.isMutable,
@@ -781,7 +789,11 @@ mutable class Scope{
       };
       snap![nameRef.name] = LocalRef(
         TType::union(subst, tenv, cur.type, nameRef.ref.type),
-        cur.declaredType,
+        tenv.preserveCopyProvenance(
+          subst,
+          nameRef.ref.declaredType,
+          cur.declaredType,
+        ),
         cur.hasDeclaredContract,
         cur.isInitialized,
         cur.isMutable,
@@ -832,6 +844,7 @@ mutable class Scope{
       // Every path that leaves the binding alone — a scope that does not touch
       // it, or the untouched path — contributes the same parent value, so it is
       // unioned in once rather than once per such path.
+      declaredType = upRef.declaredType;
       untouched = untouchedPath;
       tyOpt: ?TType = None();
       isInitialized = true;
@@ -839,6 +852,11 @@ mutable class Scope{
       for (scope in scopes) {
         scope.escapingRef(name) match {
         | Some(ref) ->
+          !declaredType = tenv.preserveCopyProvenance(
+            subst,
+            ref.declaredType,
+            declaredType,
+          );
           !tyOpt = Some(
             tyOpt match {
             | None() -> ref.type
@@ -860,7 +878,7 @@ mutable class Scope{
       };
       this.!refs[name] = LocalRef(
         ty,
-        upRef.declaredType,
+        declaredType,
         upRef.hasDeclaredContract,
         isInitialized,
         upRef.isMutable,
@@ -888,21 +906,31 @@ mutable class Scope{
         (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
         this.!refs[nameRef.name] = LocalRef(
           TType::union(subst, tenv, upRef.type, nameRef.ref.type),
-          upRef.declaredType,
+          tenv.preserveCopyProvenance(
+            subst,
+            nameRef.ref.declaredType,
+            upRef.declaredType,
+          ),
           upRef.hasDeclaredContract,
           upRef.isInitialized,
           upRef.isMutable,
           upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
         )
       | Both(nameRef1, nameRef2) ->
-        // Only the narrowed type and the initialization state differ between
-        // the branches. How the binding was declared does not: both branches
-        // narrow the same binding, so take it from the binding itself rather
-        // than from one arbitrary branch.
+        // Value contracts belong to the binding. Copy provenance may have
+        // accumulated on either branch and must survive alongside that contract.
         (_, upRef) = this.maybeGetRef(nameRef1.name).fromSome();
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
-          upRef.declaredType,
+          tenv.preserveCopyProvenance(
+            subst,
+            nameRef2.ref.declaredType,
+            tenv.preserveCopyProvenance(
+              subst,
+              nameRef1.ref.declaredType,
+              upRef.declaredType,
+            ),
+          ),
           upRef.hasDeclaredContract,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
@@ -924,7 +952,11 @@ mutable class Scope{
       (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, upRef.type, nameRef.ref.type),
-        upRef.declaredType,
+        tenv.preserveCopyProvenance(
+          subst,
+          nameRef.ref.declaredType,
+          upRef.declaredType,
+        ),
         upRef.hasDeclaredContract,
         upRef.isInitialized,
         upRef.isMutable,

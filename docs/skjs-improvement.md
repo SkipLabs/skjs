@@ -480,7 +480,13 @@ an older structural annotation after a class-instance assignment and promise
 that the missing method will be copied. `spread-callable.ts` pins this
 assignment-to-capture path and the counterpart using an own function field.
 The shared write path adds provenance monotonically; it does not replace the
-declared value types with the assigned value's narrower types.
+declared value types with the assigned value's narrower types. Control-flow
+merges retain the incoming contracts' copy provenance alongside the parent's
+value contract: sibling and N-way merges, fallthrough, jump snapshots, and
+finally edges follow this rule. Exception write logs recover it from their
+recorded value types. The conditional-assignment and catch-capture regressions
+in `spread-callable.ts` distinguish ordinary branch contracts from the type-only
+exception log; both previously restored an unsafe contract for a closure.
 
 This is a bounded repair for recorded method provenance, not a complete model
 of own enumerable properties. Parameter and return contracts, later assignments
