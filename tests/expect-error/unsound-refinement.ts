@@ -368,3 +368,15 @@ async function freshReturnSnapshot(x: {
   if (x.f !== null) return { f: x.f };
   return { f: 0 };
 }
+
+// A direct assignment carries field-refinement provenance to its destination.
+function assignedBroadAlias(x: { f: number | null }): number {
+  let y: { f: number | null } = { f: 0 };
+  if (x.f !== null) {
+    y = x;
+    x.f = null;
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    return y.f;
+  }
+  return 0;
+}
