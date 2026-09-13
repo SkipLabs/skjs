@@ -54,9 +54,9 @@ to an incompleteness fix, not the only permitted one. A verification-pipeline
 
 Statuses: `not started` · `in progress` · `done`.
 
-Start with R3a (expansion-key collision), then R3b (freeze-window). Both have
-witnesses, a local cache obligation, and a positive control. That demonstrates
-contract → targeted repair → regression before broader R1/R2 restructuring.
+R3a (declaration identity, `1e9f6330`) and R3b (freeze-window, `68c3b742`)
+are complete. M2 has an initial capture-contract repair (`66bc1e32`); the
+next step is to establish contracts for the remaining inferred captures.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
@@ -111,6 +111,24 @@ remain open work. Noncaptured bindings retain ordinary type evolution. Coverage:
 The full checker suite and all 41 pipeline suites pass, including inferred
 primitive contracts, with no corpus outcome mismatches. This is not completion
 of M2; the remaining inferred-contract cases are still open.
+
+The next M2 regressions in the same test file distinguish three problems:
+
+- `inferredAliasCapture` is still accepted unsoundly: an alias initialized from
+  a narrowed object stores a transient read fact as its inferred type. Resetting
+  capture reads to that initial type would not repair it. Its field contract
+  must account for writes through the original alias (the M1 connection).
+- `evolvingNullCapture` is still accepted unsoundly: its unresolved initializer
+  has no stable primitive write contract. Reads and subsequent writes must agree
+  on one inferred contract; snapshotting a read alone does not establish that.
+- `inferredObjectCapture` already rejects the stale read, but the safe
+  `checkedInferredObject` is also rejected. Restoring invocation-time narrowing
+  is a separate completeness obligation; widening every read would lose it.
+
+All four outcomes also occur with the saved pre-repair binary. Strict tsc
+rejects the two stale object callbacks and the evolving binding's implicit
+`any`, and accepts the invocation-time check. These tests record current
+behavior; they do not mark the remaining M2 work complete.
 
 The initial M1–M3 Boolean/null reductions were accepted and returned null at a
 declared Boolean result. Lean does not have to

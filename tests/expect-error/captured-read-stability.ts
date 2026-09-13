@@ -203,3 +203,53 @@ function inferredSetterBeforeReader(seed: boolean | null): boolean {
   }
   return false;
 }
+
+// A fresh inferred object's field already keeps the nullable member in its
+// read type. This stale read is rejected without an explicit object annotation.
+function inferredObjectCapture(seed: boolean | null): boolean {
+  const cell = { value: seed };
+  if (cell.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
+    const read = (): boolean => cell.value;
+    cell.value = null;
+    return read();
+  }
+  return false;
+}
+
+// FIXME: an inferred alias created after narrowing exports the transient read
+// fact. SKJS accepts the stale callback; tsc rejects its nullable result.
+function inferredAliasCapture(cell: { value: boolean | null }): boolean {
+  if (cell.value !== null) {
+    const alias = cell;
+    const read = (): boolean => alias.value;
+    cell.value = null;
+    return read();
+  }
+  return false;
+}
+
+// FIXME: the unresolved initializer bypasses the primitive capture contract;
+// a later write changes the value returned as number. tsc rejects implicit any.
+function evolvingNullCapture(): number {
+  let value = null;
+  value = 1;
+  const read = (): number => value;
+  value = "s";
+  return read();
+}
+
+// FIXME: invocation-time checking is safe, but inference still prevents the
+// field narrowing from reaching this read. tsc accepts this function.
+function checkedInferredObject(seed: boolean | null): boolean {
+  const cell = { value: seed };
+  const read = (): boolean => {
+    if (cell.value !== null) {
+      // @skjs-expect-error Type of returned value is not assignable to the function's return type
+      return cell.value;
+    }
+    return false;
+  };
+  cell.value = null;
+  return read();
+}
