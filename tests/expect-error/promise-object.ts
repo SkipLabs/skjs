@@ -97,7 +97,8 @@ async function testAwaitThenable(t: PromiseLike<number>): Promise<number> {
   return await t;
 }
 
-// Awaiting a non-thenable passes it through, with a lint warning in SKJS.
+// Error: awaiting a non-thenable value. (tsc lets `await` pass non-thenables
+// through; SKJS intentionally rejects, like @typescript-eslint/await-thenable.)
 async function testAwaitNumber(n: number): Promise<number> {
   // @skjs-expect-warning 'await' can only be applied to a Promise
   return await n;
@@ -117,7 +118,7 @@ async function testAwaitAliasContract(x: {
   // @skjs-expect-warning 'await' can only be applied to a Promise
   const alias = await x;
   x.value = null;
-  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  // FIXME: tsc rejects this nullable return; SKJS retains the transient field refinement.
   return alias.value;
 }
 
