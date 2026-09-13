@@ -68,3 +68,31 @@ function annotatedOwnCopy(source: OwnReader): number {
   const copy = { ...alias };
   return copy.read();
 }
+
+function readOwn(this: PrototypeReader): number {
+  return this.value;
+}
+
+// Capture reads the declared contract, not the last assignment's flow type.
+function captureAssignedPrototype(source: PrototypeReader): () => number {
+  let alias: { readonly read: (this: PrototypeReader) => number } = {
+    read: readOwn,
+  };
+  alias = source;
+  return () => {
+    const copy = { ...alias };
+    // FIXME: capture restores a contract that lost the assigned method's provenance.
+    return copy.read.call(source);
+  };
+}
+
+function captureAssignedOwn(source: PrototypeReader): () => number {
+  let alias: { readonly read: (this: PrototypeReader) => number } = {
+    read: readOwn,
+  };
+  alias = { read: readOwn };
+  return () => {
+    const copy = { ...alias };
+    return copy.read.call(source);
+  };
+}
