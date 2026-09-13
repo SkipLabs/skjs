@@ -624,3 +624,12 @@ The adapter evaluates the callee, receiver and actuals in that order, checking
 every operand claim. It discards only the receiver value and invokes the existing
 native call rule with exactly the listed actuals. No receiver binding is added
 to the arrow body; this slice does not implement ordinary function `this`.
+
+A bound local arrow uses the same operand fields as `callWithReceiver`, with
+`"k":"bindWithReceiver"`: `callee`, `receiver`, and `args` (the saved prefix).
+The decoder requires that exact shape. The source gate establishes a local arrow
+or bound-arrow target, without optional calls, spread or missing receivers.
+The result claim must be a single free signature. Its parameters describe the
+remaining actuals; their ordered concatenation with the bound prefix must satisfy
+the target's exact signature. The adapter saves operands once and creates a
+native closure. Binding every parameter yields an ordinary zero-argument closure.

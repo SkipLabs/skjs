@@ -117,6 +117,7 @@ inductive Expr where
   | write (pos : Span) (receiver rhs : Expr)
   | withValue (pos : Span) (fn initial : Expr) (functionType bagType : Json)
   | lambda (pos : Span) (params : List (String × Json)) (result : Json) (body : Expr)
+  | bindWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | callWithReceiver (pos : Span) (callee receiver : Expr) (args : List Expr)
   | call (pos : Span) (callee : Expr) (args : List Expr)
   /-- The return statement's entry environment; the expression retains its own span. -/
@@ -137,7 +138,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -191,6 +192,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
   | "read" => return .read p (← decodeExpr (← jField j "e"))
+  | "bindWithReceiver" => do
+    CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
+    return .bindWithReceiver p (← decodeExpr (← jField j "callee"))
+      (← decodeExpr (← jField j "receiver")) (← (← jArr j "args").mapM decodeExpr)
   | "callWithReceiver" => do
     CellClaims.fieldsExactly j ["k","pos","callee","receiver","args"]
     return .callWithReceiver p (← decodeExpr (← jField j "callee"))

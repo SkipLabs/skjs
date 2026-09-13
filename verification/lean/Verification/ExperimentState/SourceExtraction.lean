@@ -356,6 +356,34 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
           [DirectProof.var H 0 [label]])
       pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
         (.read (.var 0)) R (.unionVar 0) children))
+  | .bindWithReceiver _ f receiver args => do
+    let callee ← closureExpr fc scope Γ f
+    let receiverPlan ← closureExpr fc (⟨"",some f.span⟩::scope) (callee.type::Γ) receiver
+    let startScope := ⟨"",some receiver.span⟩::⟨"",some f.span⟩::scope
+    let (plans,K,_) ← args.attach.foldlM (fun (ps,H,ds) ⟨arg,_⟩ => do
+      let p ← closureExpr fc ds H arg
+      pure (ps ++ [p],p.type::H,⟨"",some arg.span⟩::ds))
+      ([callee,receiverPlan],receiverPlan.type::callee.type::Γ,startScope)
+    let G := SourceTypes.graph (← table)
+    let [.arrs [(Ds,R)]] := PositiveRules.expand G A
+      | throw "bound function claim requires one free signature"
+    let L ← match PositiveRules.expand G callee.type with
+      | [.arrs L] | [.callable _ _ L] => pure L
+      | _ => throw "bind target requires a single callable contract"
+    let boundTypes := (plans.drop 2).map (·.type)
+    let (domains,result) ← selectSignature L (boundTypes ++ Ds)
+    let H := Ds ++ K
+    let indexes := (List.range args.length).map (fun i => Ds.length + args.length - 1 - i) ++
+      List.range Ds.length
+    let fn := DirectProof.var H (Ds.length + args.length + 1) callee.type
+    let actuals := (indexes.zip domains).map fun (i,D) => DirectProof.var H i D
+    let rule := match PositiveRules.expand G callee.type with
+      | [.callable ..] => ProgramCertificates.Rule.callCallable
+      | _ => .app
+    let body := DirectProof.cast H R
+      (DirectProof.node H (.call fn.term (actuals.map (·.term))) result rule (fn::actuals))
+    let bound := DirectProof.node K (.make (.closure Ds.length body.term) .nul) A .funE [body]
+    pure (saveOperands plans bound)
   | .callWithReceiver _ f receiver args => do
     let callee ← closureExpr fc scope Γ f
     let K := callee.type :: Γ
@@ -537,7 +565,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       (scope := ⟨"",some a.span⟩::scope)
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .withValue .. | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
+  | .bindWithReceiver .. | .withValue .. | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .shapeTest _ tag equal operand =>

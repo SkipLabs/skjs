@@ -19,6 +19,7 @@
  * This producer is UNTRUSTED. The verifier checks what it claims.
  */
 import {
+  ElementFlags,
   SignatureKind,
   SymbolFlags,
   TypeFlags,
@@ -110,6 +111,7 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
+    case "bindWithReceiver":
     case "callWithReceiver":
       addExpr(out, e.pos, e.k);
       walkExpr(e.callee, out);
@@ -361,8 +363,23 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
   const sig = sigs[0]!;
   if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
   if (sig.thisParameter !== undefined) return { ok: false, reason: "this-param" };
-  if (sig.hasRestParameter)
-    return { ok: false, reason: "arrow-arity" };
+  let parameterCount = sig.parameters.length;
+  let tail: Type[] = [];
+  if (sig.hasRestParameter) {
+    // Instantiated bind results use (...args: [A, B]) internally. Expand only
+    // fixed required tuples; their syntax is not a variadic source contract.
+    const symbol = sig.getParameters().at(-1);
+    const rest = symbol && checker.getTypeOfSymbol(symbol);
+    if (!rest?.isTypeReference()) return { ok: false, reason: "arrow-arity" };
+    const target = rest.getTarget();
+    if (!target.isTupleType()) return { ok: false, reason: "arrow-arity" };
+    tail = [...checker.getTypeArguments(rest)];
+    const flags = target.elementFlags ?? [];
+    if (flags.length !== tail.length || target.fixedLength !== flags.length ||
+        flags.some(flag => flag !== ElementFlags.Required))
+      return { ok: false, reason: "arrow-arity" };
+    parameterCount--;
+  }
   // Optionality is on the declared parameter: a signature transports its
   // parameters as ids, and asking the checker for one of those symbols is
   // not the way to reach a type here — `getParameterType` is.
@@ -371,7 +388,7 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
     return { ok: false, reason: "optional-param" };
   return {
     ok: true,
-    domains: sig.parameters.map((_, i) => must(checker.getParameterType(sig, i), "parameter-type")),
+    domains: sig.parameters.slice(0, parameterCount).map((_, i) => must(checker.getParameterType(sig, i), "parameter-type")).concat(tail),
     result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
   };
 }

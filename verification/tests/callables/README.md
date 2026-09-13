@@ -142,3 +142,11 @@ is ignored. [receiver-call.mts](../receiver-call.mts) distinguishes dropping tha
 effect, checks exact arity and receiver claims, and rejects targets whose inherited
 intrinsic is not established by their source construction. Both producers verify
 these examples; ordinary receiver-dependent methods remain outside the fragment.
+
+[bound-arguments.ts](bound-arguments.ts) separates a `.bind` argument's saved value
+from the target's live cell capture, then checks a fully bound function escaping
+as a thunk. [bound-arguments.mts](../bound-arguments.mts) rejects a wrong saved
+argument type, remaining arity and result claim. A JavaScript control delays the
+argument read and changes the outcome. Both producers verify the supported fixed
+required signatures; the pipeline permits only source-established local arrows
+and their bound results as intrinsic targets.

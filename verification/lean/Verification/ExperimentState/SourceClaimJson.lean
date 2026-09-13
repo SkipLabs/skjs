@@ -86,7 +86,7 @@ private def exprSites : SourceInput.Expr → Sites
   | .shapeTest p _ _ e | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
   | .withValue p a b _ _ | .write p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
-  | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
+  | .bindWithReceiver p f receiver args | .callWithReceiver p f receiver args => args.foldl (fun acc a => joinSites acc (exprSites a))
       (joinSites ([],[p]) (joinSites (exprSites f) (exprSites receiver)))
   | .call p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p]) (exprSites f))
   | .done _ => ([],[])

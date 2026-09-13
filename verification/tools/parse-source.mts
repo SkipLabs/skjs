@@ -67,7 +67,7 @@ export type Expr =
   | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: WireType; bagType: WireType }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
-  | { k: "callWithReceiver"; pos: Span; callee: Expr; receiver: Expr; args: Expr[] }
+  | { k: "callWithReceiver" | "bindWithReceiver"; pos: Span; callee: Expr; receiver: Expr; args: Expr[] }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
   | {
       k: "lambda";
@@ -530,12 +530,12 @@ class Gate {
             initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
             bagType: this.typeOf(node.typeArguments[1])};
         }
-        if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "call") {
+        if (ts.isPropertyAccessExpression(node.expression) && ["call", "bind"].includes(node.expression.name.text)) {
           if (node.questionDotToken || node.expression.questionDotToken || node.typeArguments?.length ||
               node.arguments.length === 0 || node.arguments.some((arg: any) => ts.isSpreadElement(arg)) ||
               !this.localArrow(node.expression.expression))
-            this.fail(node, ".call requires a known local arrow, an explicit receiver and ordinary arguments");
-          return {k: "callWithReceiver", pos: this.span(node), callee: this.expr(node.expression.expression),
+            this.fail(node, `.${node.expression.name.text} requires a known local arrow, an explicit receiver and ordinary arguments`);
+          return {k: node.expression.name.text === "bind" ? "bindWithReceiver" : "callWithReceiver", pos: this.span(node), callee: this.expr(node.expression.expression),
             receiver: this.expr(node.arguments[0]), args: node.arguments.slice(1).map((arg: any) => this.expr(arg))};
         }
         if (
@@ -573,6 +573,9 @@ class Gate {
       // gate. Do not parse it again here: its body may refer back to this name.
       return node.arguments.length === 2 && ts.isArrowFunction(node.arguments[0]) &&
         ts.isObjectLiteralExpression(node.arguments[1]);
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "bind")
+      return this.localArrow(node.expression.expression, seen);
     if (!ts.isIdentifier(node)) return false;
     for (let scope = node.parent; scope; scope = scope.parent) {
       if (ts.isBlock(scope)) {

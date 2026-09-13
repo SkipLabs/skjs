@@ -1001,7 +1001,8 @@ behavior through actual producer claims and independent consumption:
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Local source-created arrows now preserve receiver evaluation through the pipeline. Receiver-dependent methods remain pending. [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
 
 Functions returning functions, including escaping callback parameters, already
-have pipeline coverage. `.apply`, `.bind`, optional/rest arguments, constructors
+have pipeline coverage. Partial `.bind` on local arrows now saves required
+arguments through the pipeline. `.apply`, optional/rest arguments, constructors
 and receiver-dependent methods extend the call interface further; they should
 follow explicit argument and receiver contracts rather than be erased into free
 unary calls. These milestones are not prerequisites for the completed bounded
@@ -1166,3 +1167,30 @@ path. That path records the receiver's pre-write type for export without routing
 it through the ordinary variable-read operation, which would freeze object
 growth. The dedicated `assignment-receiver` export snapshot preserves this
 collection obligation independently of the `.call` source lowering.
+
+### Bound arrow arguments
+
+`bound-arguments.ts` distinguishes saved argument values from a target's live
+cell capture and returns a fully bound nullary function. The parser restricts
+`.bind` to the same source-established arrow provenance as `.call`; a bound
+result retains that provenance. Receiver and prefix expressions run once at
+binding time, in source order. Lowering saves them in native lets and constructs
+an ordinary closure that calls the saved target with the saved prefix followed
+by its new parameters. No new runtime operation or semantic axiom is introduced.
+
+The claimed result signature determines the proposed remaining parameters, but
+does not authorize them: the independent consumer checks their concatenation
+with the saved prefix against the original callee contract, then checks the
+result. Incorrect arity, prefix type and result claims fail independently.
+
+SKJS now derives the same remaining signature for direct `.bind` calls on fixed
+required signatures. Actual bound values and explicit/class receivers retain
+normal checking. Optional/rest or generic signatures, spread binding and partial
+application via a detached `.bind` value remain outside that checker slice.
+Declared properties named `bind` still take precedence over synthesis.
+
+The tsc producer expands an instantiated fixed tuple-rest signature into its
+required parameter list. TypeScript uses this representation for `.bind` results,
+including an empty tuple for full binding. Tuple element flags and length must
+establish that every element is required; optional and variadic tails are refused.
+This does not admit rest-parameter syntax through the source gate.
