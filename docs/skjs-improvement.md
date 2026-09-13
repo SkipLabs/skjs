@@ -274,6 +274,15 @@ not model hidden callee effects or provide general alias-effect analysis.
 Separate a write from a subsequent test when the conservative dependency check
 cannot retain an otherwise valid narrowing.
 
+The `satisfies` wrapper now propagates the operand's stable alias contract after
+restoring its speculative substitution. It still returns the inferred expression
+type and does not commit its compatibility probe. Previously wrapping a narrowed
+object in `x satisfies unknown` erased the stable-expression metadata, allowing
+both an annotated narrow alias and an inferred alias to survive an invalidating
+write through `x`. `satisfies.ts` covers both rejections and an accepted scalar
+snapshot. This addresses M1 contract propagation through this identity wrapper;
+it does not make the speculative check itself a durable R2 validation.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

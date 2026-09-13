@@ -36,7 +36,7 @@ function testNested(): void {
 
 function satisfiesAlias(x: { value: number | null }): number {
   if (x.value === null) return 0;
-  // FIXME: wrapping x must not turn its field refinement into a lasting view.
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const alias: { readonly value: number } = x satisfies unknown;
   x.value = null;
   return alias.value;
@@ -46,7 +46,7 @@ function satisfiesStored(x: { value: number | null }): number {
   if (x.value === null) return 0;
   const alias = x satisfies unknown;
   x.value = null;
-  // FIXME: the inferred alias must retain x's stable contents contract too.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return alias.value;
 }
 

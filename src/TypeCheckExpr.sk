@@ -3367,6 +3367,13 @@ extension class TypeChecker {
         TSCode(1360),
       );
       tcenv.subst.restore(savedSubst);
+      // satisfies returns the same value. Its speculative check must not
+      // erase the stable contents contract needed when that value is aliased.
+      tcenv.!stableExprTypes[(pos, inferredTy)] = this.stableAliasExprType(
+        tcenv,
+        subExpr,
+        inferredTy,
+      );
       inferredTy
     | Async _ ->
       fatalError(
