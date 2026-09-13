@@ -64,6 +64,7 @@ export type Expr =
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
+  | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: WireType; bagType: WireType }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
@@ -508,6 +509,26 @@ class Gate {
         return this.binary(node);
 
       case ts.SyntaxKind.CallExpression: {
+        if (ts.isPropertyAccessExpression(node.expression) &&
+            ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
+            node.expression.name.text === "assign") {
+          if (node.questionDotToken || node.expression.questionDotToken ||
+              node.typeArguments?.length !== 2 || node.arguments.length !== 2 ||
+              !ts.isArrowFunction(node.arguments[0]) || !ts.isObjectLiteralExpression(node.arguments[1]))
+            this.fail(node, "Object.assign requires a fresh arrow, one value-field literal and two explicit type arguments");
+          // The fragment cannot assign to Object.assign or pass Object as a value.
+          // Reject any local declaration that could shadow the standard builtin.
+          const checkBinding = (n: any) => {
+            if ((n.kind === ts.SyntaxKind.Parameter || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n)) &&
+                n.name && ts.isIdentifier(n.name) && n.name.text === "Object")
+              this.fail(n, "shadowing Object is outside intrinsic callable initialization");
+            n.forEachChild(checkBinding);
+          };
+          checkBinding(this.file);
+          return {k: "withValue", pos: this.span(node), fn: this.expr(node.arguments[0]),
+            initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
+            bagType: this.typeOf(node.typeArguments[1])};
+        }
         if (
           node.questionDotToken ||
           node.typeArguments?.length ||

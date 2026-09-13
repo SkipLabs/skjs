@@ -89,6 +89,11 @@ function walkExpr(e: Expr, out: Sites): void {
     case "lit":
       addExpr(out, e.pos, e.k);
       return;
+    case "withValue":
+      addExpr(out, e.pos, "withValue");
+      walkExpr(e.fn, out);
+      walkExpr(e.initial, out);
+      return;
     case "functionTest":
     case "not":
     case "alloc":
@@ -295,10 +300,10 @@ interface RecordRead {
  * reason means "not object-shaped at all, try the arrow reading instead";
  * with a reason it means "object-shaped but not this exact contract".
  */
-function tryRecord(type: Type, checker: Checker): RecordRead {
-  if (!(type.flags & TypeFlags.Object)) return { ok: false };
+function tryRecord(type: Type, checker: Checker, callableBag = false): RecordRead {
+  if (!(type.flags & TypeFlags.Object) && !callableBag) return { ok: false };
   if (
-    checker.getSignaturesOfType(type, SignatureKind.Call).length ||
+    (!callableBag && checker.getSignaturesOfType(type, SignatureKind.Call).length) ||
     checker.getSignaturesOfType(type, SignatureKind.Construct).length
   )
     return { ok: false };
@@ -445,6 +450,17 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   if (prim !== null) return prim;
   if (!records && (checker.getPropertiesOfType(type).length || checker.getIndexInfosOfType(type).length))
     throw new Refusal("callable-operand-properties", checker.typeToString(type));
+  if (records && checker.getSignaturesOfType(type, SignatureKind.Call).length &&
+      checker.getPropertiesOfType(type).length) {
+    const bag = tryRecord(type, checker, true);
+    if (!bag.ok) throw new Refusal(bag.reason || "callable-field", checker.typeToString(type));
+    const arrow = tryArrow(type, checker);
+    if (!arrow.ok) throw new Refusal(arrow.reason || "callable-signature", checker.typeToString(type));
+    const P = translateType(bag.valueType!, checker, types, false, fuel - 1);
+    const Ds = arrow.domains!.map(D => translateType(D, checker, types, false, fuel - 1));
+    const R = translateType(arrow.result!, checker, types, false, fuel - 1);
+    return [internRow(types, [{callable: {first: P, rest: [], arrows: [[Ds,R]]}}])];
+  }
   if (type.flags & TypeFlags.Intersection) {
     const parts = (type as unknown as { getTypes(): readonly Type[] }).getTypes();
     const refs = records ? tryRecordIntersection(type, checker, parts, types, fuel) : null;
@@ -522,6 +538,7 @@ function readInvariant(node: any, checker: Checker, types: Row[]): number[] {
     const row = types[cellLabels[0]!];
     const clause = Array.isArray(row) && row.length === 1 ? (row[0] as any) : null;
     if (clause?.refs) return clause.refs.first;
+    if (clause?.callable) return clause.callable.first;
   }
   throw new Refusal("read-of-non-reference", checker.typeToString(cellType));
 }
@@ -658,7 +675,7 @@ function tagGuardLabels(node: any, checker: Checker, types: Row[], labels: numbe
     return test?.sym.id === sym.id
       ? base.filter((label) => (test.label === "function"
           ? (types[label]?.some((clause) =>
-              (clause !== null && typeof clause === "object" && "arrs" in clause) === (test.equal === truth)) ?? true)
+              (clause !== null && typeof clause === "object" && ("arrs" in clause || "callable" in clause)) === (test.equal === truth)) ?? true)
           : (label === test.label) === (test.equal === truth)))
       : base;
   };

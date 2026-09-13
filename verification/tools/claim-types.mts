@@ -24,7 +24,7 @@ const PRIMITIVE = ["null", "boolean", "string", "number", "undefined"];
 const LITERAL: Record<string, number> = { booleanlit: 1, stringlit: 1, numberlit: 1, numlit: 1 };
 
 /* ---------- printing ---------- */
-function atomText(atom: any, state: any) {
+function atomText(atom: any, state: any): string {
   if (!atom || typeof atom !== "object") {
     state.printable = false;
     return String(atom);
@@ -60,6 +60,8 @@ function atomText(atom: any, state: any) {
         .join(", ") +
       " }"
     );
+  if (atom.a === "callable")
+    return "(" + atomText(atom.function, state) + ") & " + atomText(atom.bag, state);
   if (atom.a === "function" && Array.isArray(atom.params))
     return (
       "(" +
@@ -111,7 +113,7 @@ class TypeSyntaxError extends Error {}
 function tokenize(text: string) {
   const tokens = [];
   const re =
-    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}(),:|?=]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?/g;
+    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}(),:|?=&]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?/g;
   let at = 0,
     m;
   while ((m = re.exec(text))) {
@@ -194,6 +196,15 @@ function parseType(text: string, template: any) {
         if (tokens[end] === ")") depth--;
         end++;
       } while (end < tokens.length && depth > 0);
+      if (tokens[end] === "&") {
+        const base = templateAtom(from, "callable");
+        if (!base) throw new TypeSyntaxError("callable field template required");
+        take("(");
+        const fn = arrow({atoms: [base.function]});
+        take(")"); take("&");
+        const bag = record({atoms: [base.bag]});
+        return {...base, a: "callable", function: fn, bag};
+      }
       if (tokens[end] === "=>") return arrow(from);
       take("(");
       const grouped = union(from);
@@ -339,6 +350,11 @@ function roundTrips(type: any) {
       return "";
     if (type.top) return "any";
     for (const atom of type.atoms) {
+      if (atom.a === "callable") {
+        const found = outsideFragment({top: false, atoms: [atom.function, atom.bag]});
+        if (found) return found;
+        continue;
+      }
       if (atom.a === "record") {
         for (const field of atom.fields || []) {
           const found =
@@ -448,6 +464,15 @@ function roundTrips(type: any) {
       const cells = [clause.refs.first, ...(clause.refs.rest || [])].map((c) => cell(types, c, null, depth - 1));
       return cells.length === 1 ? cells[0] : shown(cells);
     }
+    if (clause && clause.callable) {
+      const c = clause.callable;
+      if (c.rest.length || c.arrows.length !== 1) return JSON.stringify(clause);
+      const [Ds,R] = c.arrows[0];
+      return {a: "callable",
+        function: {a: "function", params: Ds.map((D: any) => liftType(types,D,depth-1)),
+          result: liftType(types,R,depth-1)},
+        bag: cell(types,c.first,null,depth-1)};
+    }
     if (clause && clause.arrs && (clause.arrs.arrows || []).length) {
       const arrows = clause.arrs.arrows.map(([domain, result]: [any, any]) => ({
         a: "function",
@@ -510,6 +535,15 @@ function roundTrips(type: any) {
         throw new TypeSyntaxError("what a cell holds is asserted at the top of a claim, not inside a type");
       return [intern(types, [{ refs: { first: lowerType(types, field.write), rest: [] } }])];
     }
+    if (atom.a === "callable") {
+      const f = atom.function, bag = atom.bag;
+      const [field, ...more] = bag?.fields || [];
+      if (f?.a !== "function" || bag?.a !== "record" || !field || more.length ||
+          field.name !== "value" || field.optional || !same(field.read, field.write))
+        throw new TypeSyntaxError("a callable field requires one invariant value property");
+      return [intern(types, [{callable: {first: lowerType(types,field.write), rest: [],
+        arrows: [[f.params.map((D: any) => lowerType(types,D)), lowerType(types,f.result)]]}}])];
+    }
     if (atom.a === "function") {
       if (!Array.isArray(atom.params)) throw new TypeSyntaxError("a function needs a parameter list");
       const domains = atom.params.map((domain: any) => lowerType(types, domain));
@@ -557,7 +591,7 @@ function roundTrips(type: any) {
           parts.push(kind + "-index=" + atom.indexes[kind]);
     return parts.length ? " [" + parts.join(" ") + "]" : "";
   }
-  function fullAtomText(atom: any) {
+  function fullAtomText(atom: any): string {
     if (!atom || typeof atom !== "object") return String(atom);
     if (atom.unsupported === true) return "(unavailable)";
     let text;
@@ -576,6 +610,8 @@ function roundTrips(type: any) {
           .join(", ") +
         " }" +
         modesText(atom);
+    else if (atom.a === "callable")
+      text = "(" + fullAtomText(atom.function) + ") & " + fullAtomText(atom.bag);
     else if (atom.a === "function" && Array.isArray(atom.params))
       text =
         "(" +

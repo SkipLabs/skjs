@@ -82,6 +82,10 @@ follows them, including through `&&`, `||`, `??`, `?:` and negation.
 Strict `typeof e === "function"` and `!==` tests evaluate the operand once;
 tests on immutable variables retain only the corresponding callable alternatives. Every path must reach an explicit return.
 
+A fresh arrow can acquire one initialized mutable `value` field using explicitly
+typed `Object.assign`; aliases preserve both the field invariant and call signature.
+See [function-field.ts](tests/callables/function-field.ts).
+
 Mutable bindings, loops inside closures, external cell parameters,
 labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,
 generics and overloads are outside it. The fragment is smaller than the calculus,

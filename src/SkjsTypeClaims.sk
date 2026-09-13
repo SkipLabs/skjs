@@ -334,6 +334,7 @@ fun claimCellBranchJson(
   fields: TFields,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
+  callableBag: Bool = false,
 ): Result<String, String> {
   callMode = fields.call match {
   | CUnknown() -> Some("unknown")
@@ -350,7 +351,7 @@ fun claimCellBranchJson(
   if (fields.isArray == Some(true)) return Failure("cell-is-array");
   if (!fields.symbolFields.isEmpty()) return Failure("cell-symbol-field");
   if (fields.hasNonSyntheticIndex()) return Failure("cell-index-signature");
-  if (callMode.isNone()) return Failure("cell-callable");
+  if (callMode.isNone() && !callableBag) return Failure("cell-callable");
   if (newMode.isNone()) return Failure("cell-constructible");
   entries = mutable Vector<String>[];
   for (field in fields.fields) {
@@ -447,13 +448,19 @@ fun claimFunctionBranchJson(
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
 ): Result<String, String> {
-  if (!fields.fields.isEmpty() || !fields.symbolFields.isEmpty()) {
-    return Failure("function-has-fields")
+  bag = if (fields.fields.isEmpty()) None() else {
+    claimCellBranchJson(fields, values, fuel, true) match {
+    | Success(json) -> Some(json)
+    | Failure(reason) -> return Failure(reason)
+    }
   };
+  if (!fields.symbolFields.isEmpty()) return Failure("function-has-fields");
   if (
-    fields.stringIndex.isSome() ||
-    fields.numberIndex.isSome() ||
-    fields.symbolIndex.isSome()
+    fields.hasNonSyntheticIndex() ||
+    (bag.isNone() &&
+      (fields.stringIndex.isSome() ||
+        fields.numberIndex.isSome() ||
+        fields.symbolIndex.isSome()))
   ) {
     return Failure("function-index-signature")
   };
@@ -477,26 +484,37 @@ fun claimFunctionBranchJson(
     };
     ret = claimTypeJsonBounded(f.retType, false, true, values, fuel);
     if (ret.reason != "") return Failure(ret.reason);
+    signature = jsonObj(
+      Array[
+        ("a", jsonStr("function")),
+        ("params", jsonArr(args.toArray())),
+        ("result", ret.json),
+        (
+          "construct",
+          jsonStr(if (fields.new is CAbsent()) "absent" else "unknown"),
+        ),
+        (
+          "array",
+          jsonStr(
+            if (fields.isArray == Some(false)) "absent" else {
+              "unknown"
+            },
+          ),
+        ),
+      ],
+    );
     Success(
-      jsonObj(
-        Array[
-          ("a", jsonStr("function")),
-          ("params", jsonArr(args.toArray())),
-          ("result", ret.json),
-          (
-            "construct",
-            jsonStr(if (fields.new is CAbsent()) "absent" else "unknown"),
-          ),
-          (
-            "array",
-            jsonStr(
-              if (fields.isArray == Some(false)) "absent" else {
-                "unknown"
-              },
-            ),
-          ),
-        ],
-      ),
+      bag match {
+      | None() -> signature
+      | Some(property) ->
+        jsonObj(
+          Array[
+            ("a", jsonStr("callable")),
+            ("function", signature),
+            ("bag", property),
+          ],
+        )
+      },
     )
   | CFunction() -> Failure("function-without-signature")
   | _ -> Failure("not-callable")

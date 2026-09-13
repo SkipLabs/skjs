@@ -453,7 +453,7 @@ The bounded function atom is:
 ```
 
 The exporter preserves the ordered list of free required parameters and the result. It rejects
-`this` requirements, generics, optional/rest parameters, fields, indexes, positive
+`this` requirements, generics, optional/rest parameters, unsupported fields, indexes, positive
 construct requirements and record-valued operands. Arrow arguments and results
 may recursively union bounded function contracts with the
 supported primitives null, undefined, true and false. The SKJS exporter uses
@@ -598,3 +598,18 @@ guards use existing expression certificate forms (`letE`, `unionVar`, `ifTrue` /
 `ifFalse`), preserving condition evaluation and all source claims. No new closure
 wire form is needed. Other strict comparisons, loose equality, retained property
 refinement and loops inside closures remain source boundaries.
+
+A function with one required invariant `value` field is exported as
+`{"a":"callable","function":F,"bag":B}`, where `F` is the bounded function
+atom above and `B` is a bounded record atom with `call: "unknown"`. Both describe
+the same object. The source decoder requires equal read/write field contracts
+and lowers to the native graph callable clause; current-content field assertions
+and nested callable objects are outside this slice.
+
+The initialization AST is
+`{"k":"withValue","pos":[start,end],"fn":arrow,"initial":objectLiteral,"functionType":F,"bagType":B}`.
+Here the annotation fields are wire types, not atoms. The parser emits this only
+for standard `Object.assign<F, B>(freshArrow, {value: initializer})`, with no
+shadowed `Object`, extra arguments, spread or accessors. Both explicit type
+arguments and both source expression claims are independently checked before
+constructing the initialized callable.

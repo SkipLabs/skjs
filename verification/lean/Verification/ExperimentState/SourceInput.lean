@@ -48,6 +48,17 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering Nat := do
     | throw "an empty conjunction is not a contract"
   SourceTypes.use (.refs first rest)
 
+/-- A callable bag is one value satisfying both contracts, never a union. -/
+private def callableObject (atom : Json) : SourceTypes.Lowering Nat := do
+  CellClaims.fieldsExactly atom ["a","function","bag"]
+  let fn ← jField atom "function"
+  let (args,result) ← callableShape fn
+  let Ds ← args.mapM callableType
+  let R ← callableType result
+  let c ← cellContract (← jField atom "bag")
+  if c.read != c.write then throw "callable field requires an invariant read/write contract"
+  SourceTypes.use (.callable c.write [] [(Ds,R)])
+
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).
 Other unsupported arms reject the whole type; no projection is allowed.
@@ -71,6 +82,7 @@ def translate (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let arms ← (tagged.filter (fun p => p.1 != "record")).mapM fun (_,atom) => do
     let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]
     match ← jStr (← jField atom "a") with
+    | "callable" => return [← callableObject atom]
     | "function" => callableType single
     | _ => SourceTypes.translate (← CellClaims.primitive single)
   return (records ++ conjunctions ++ arms).flatten.mergeSort (· ≤ ·) |>.eraseDups
@@ -103,6 +115,7 @@ inductive Expr where
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
   | write (pos : Span) (receiver rhs : Expr)
+  | withValue (pos : Span) (fn initial : Expr) (functionType bagType : Json)
   | lambda (pos : Span) (params : List (String × Json)) (result : Json) (body : Expr)
   | call (pos : Span) (callee : Expr) (args : List Expr)
   /-- The return statement's entry environment; the expression retains its own span. -/
@@ -123,7 +136,7 @@ abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lambda p _ _ _ | .call p _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .withValue p _ _ _ _ | .lambda p _ _ _ | .call p _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -177,6 +190,10 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "not" => return .not p (← decodeExpr (← jField j "e"))
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
   | "read" => return .read p (← decodeExpr (← jField j "e"))
+  | "withValue" => do
+    CellClaims.fieldsExactly j ["k","pos","fn","initial","functionType","bagType"]
+    return .withValue p (← decodeExpr (← jField j "fn")) (← decodeExpr (← jField j "initial"))
+      (← jField j "functionType") (← jField j "bagType")
   | "lambda" => do
     CellClaims.fieldsExactly j ["k","pos","params","result","body"]
     let params ← (← jArr j "params").mapM fun param => do

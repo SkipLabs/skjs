@@ -260,6 +260,15 @@ private def selectSignature (L : PositiveRules.Ops Nat) (As : List (Ty Nat)) :
 private def saveOperands (ps : List DirectProof.Plan) (body : DirectProof.Plan) : DirectProof.Plan :=
   ps.foldr (fun p b => DirectProof.letE p.goal.context p b) body
 
+private def creationChildren : DirectProof.Plan → Option (List DirectProof.Plan)
+  | .cast _ p => creationChildren p
+  | .rule _ .funE ps => some ps
+  | _ => none
+private def allocationChild : DirectProof.Plan → Option DirectProof.Plan
+  | .cast _ p => allocationChild p
+  | .rule _ .alloc [p] => some p
+  | _ => none
+
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
@@ -333,6 +342,7 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let a ← closureExpr fc scope Γ a
     match PositiveRules.expand G a.type with
     | [.refs B []] => pure (DirectProof.node Γ (.read a.term) B .read [a])
+    | [.callable B _ _] => pure (DirectProof.node Γ (.read a.term) B .readCallable [a])
     | _ =>
       if a.type.length ≤ 1 then throw "read receiver must name a cell contract"
       let alternatives ← a.type.mapM fun label => do
@@ -349,10 +359,13 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .call _ f args => do
     let callee ← closureExpr fc scope Γ f
     match PositiveRules.expand G callee.type with
-    | [.arrs L] =>
+    | [.arrs L] | [.callable _ _ L] =>
+      let rule := match PositiveRules.expand G callee.type with
+        | [.callable ..] => ProgramCertificates.Rule.callCallable
+        | _ => .app
       let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
       let (Ds,R) ← selectSignature L (actuals.map (·.type))
-      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R .app
+      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R rule
         (callee :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a))
     | _ =>
       if callee.type.length ≤ 1 then throw "callee must name a source arrow"
@@ -439,6 +452,24 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     for (B,i) in H.zipIdx do
       obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     closureExpr fc scope H body
+  | .withValue pos fn initial functionType bagType => do
+    let f ← closureExpr fc scope Γ fn
+    let property ← closureExpr fc scope Γ initial
+    let F ← lower (SourceInput.translate functionType)
+    let PRef ← lower (SourceInput.translate bagType)
+    let G := SourceTypes.graph (← table)
+    let [.arrs L] := PositiveRules.expand G F | throw "initializer requires a free function annotation"
+    let [.refs P []] := PositiveRules.expand G PRef | throw "initializer requires one invariant field"
+    let .make (.closure arity body) .nul := f.term | throw "initializer requires a fresh arrow"
+    let some bodies := creationChildren f | throw "initializer requires a checked arrow body"
+    let some value := allocationChild property | throw "initializer requires a fresh value-field literal"
+    let fp := DirectProof.cast Γ F f
+    let pp := DirectProof.cast Γ PRef property
+    obligation fn.span fp.goal (some fp) "callable-function-annotation" scope
+    obligation initial.span pp.goal (some pp) "callable-field-annotation" scope
+    let C ← lower (SourceTypes.use (.callable P [] L))
+    pure (DirectProof.node Γ (.make (.closure arity body) value.term) [C] .makeCallable
+      (DirectProof.cast Γ P value :: bodies))
   | .lambda pos params ret body => do
     let paramNames := params.map Prod.fst
     if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
@@ -489,7 +520,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       (scope := ⟨"",some a.span⟩::scope)
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
+  | .withValue .. | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .shapeTest _ tag equal operand =>

@@ -202,7 +202,7 @@ For `unavailable-type-claim`, [SkjsTypeClaims.sk](../src/SkjsTypeClaims.sk) emit
 | `nested-object-type` | An object occurs as a field, parameter or result type; objects are exported at the top of a claim only. |
 | `cell-is-array`, `cell-symbol-field`, `cell-index-signature`, `cell-callable`, `cell-constructible` | A branch read as a cell has an array brand, a symbol field, a real index signature, or positive callability or constructibility. |
 | `cell-field-name`, `cell-field-access`, `cell-field-count` | A branch read as a cell has a field not named `value`, a non-public field, or a number of fields other than one. |
-| `function-has-fields`, `function-index-signature`, `function-is-array`, `function-constructible` | A branch read as a function carries fields, an index signature, an array brand, or a construct signature. |
+| `function-has-fields`, `function-index-signature`, `function-is-array`, `function-constructible` | A branch read as a function carries unsupported symbol fields, an index signature, an array brand, or a construct signature. A supported required `value` field uses a combined callable contract; unsupported property shapes use the cell refusal reasons. |
 | `function-generic`, `function-this-parameter`, `function-optional-parameter`, `function-rest-parameter` | A signature has type parameters, a `this` parameter, optional or rest parameters. |
 | `function-without-signature`, `not-callable` | A branch is provably callable with no signature, or has no call at all. |
 | `no-object-branch` | The object has no branches. |

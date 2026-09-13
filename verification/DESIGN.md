@@ -995,6 +995,7 @@ behavior through actual producer claims and independent consumption:
 | --- | --- | --- |
 | Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Complete through the existing `isFun` tag rule and checked source refinements; includes mixed unions, captured guards and effectful operands. No signature is invented. |
 | Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Complete through source lowering and both producers, including native zero-argument thunks. Optional/rest parameters and spread actuals remain separate work. |
+| Initialized function field | A fresh arrow receives a `value` field, an alias observes a write, then calls the function. | Complete through both producers and the existing native callable allocation/read/write/call rules. Construction is restricted to explicitly typed `Object.assign` of a fresh arrow and a fresh one-field literal. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
@@ -1124,3 +1125,20 @@ The [compound-write witness](tests/skjs-unsound/README.md) connects that syntax
 to known issue #598. Its runtime counterexample, original interpretation limit,
 and explicitly edited diagnostic candidate are documented with the fixture;
 a boundary rejection is not evidence of unsoundness.
+
+### Initialized callable field
+
+`function-field.ts` carries one invariant mutable `value` field on the same
+object as a free call signature. The exporter preserves both in a `callable`
+atom; the source gate lowers their conjunction to the existing graph callable
+clause. It does not treat the components as union alternatives.
+
+The trusted parser recognizes only standard `Object.assign` with two explicit
+type arguments, a fresh arrow, and a fresh single-field literal. It rejects
+shadowing of `Object`. The adapter checks both annotations and fuses the
+unexposed arrow and temporary object allocations into one initialized callable
+allocation, preserving initializer evaluation. This is part of the reviewed
+source extraction boundary, not a theorem about arbitrary JavaScript builtins.
+Explicit type arguments avoid SKJS's current inference of `never` for the
+unannotated construction. Named/multiple/optional fields, general expando
+assignment, receiver-dependent functions and `.call` remain separate milestones.

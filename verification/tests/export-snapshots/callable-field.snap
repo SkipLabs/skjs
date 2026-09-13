@@ -1,0 +1,7 @@
+# callable-field.ts
+
+## callableFieldContract [complete unverified normal]
+params: f: ((boolean) => boolean [construct=unknown array=unknown]) & { value: boolean } [call=unknown construct=unknown array=unknown]
+result: null
+entry 100-111: f!: ((boolean) => boolean [construct=unknown array=unknown]) & { value: boolean } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
+expr 107-111 `null`: null

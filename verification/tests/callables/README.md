@@ -126,3 +126,11 @@ This is a **boundary example**, shown in the Callables group but not counted as
 source-verifiable. The independent verifier still needs multi-field objects,
 ordinary receiver-dependent methods, and a justified `Function.prototype.call`
 operation. Its parser currently rejects the multi-field allocation.
+
+[function-field.ts](function-field.ts) initializes one mutable field on a fresh
+arrow, writes through the original reference and reads/calls through an alias.
+Both producers verify it. Explicit `Object.assign` type arguments are required:
+SKJS currently infers `never` without them. [function-field.mts](../function-field.mts)
+checks independent rejection of corrupted field/signature contracts and source
+annotations, report editing, and the intrinsic syntax restrictions. This does
+not yet cover general field addition, multiple fields, or receiver behavior.
