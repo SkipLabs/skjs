@@ -8,7 +8,10 @@ calculus whose rules are proved sound against its execution model.
 The chosen architecture has a stateful positive-type calculus, a serialized
 certificate consumer, and a source adapter for parameterized null/undefined/boolean functions.
 The extraction format may change to provide the program points, binding identities and exact
-types needed by the chosen calculus.
+types needed by the chosen calculus. SKJS acceptance, inference and diagnostics
+must remain unchanged by this experiment. A rejected safe program is an
+incompleteness finding to preserve, not a reason to extend the checker.
+Extraction-only changes must preserve that behavior.
 
 This document owns architecture, design decisions, trust boundaries, priorities,
 and integration status. The [documentation map](README.md#documentation-ownership)
@@ -1183,11 +1186,11 @@ does not authorize them: the independent consumer checks their concatenation
 with the saved prefix against the original callee contract, then checks the
 result. Incorrect arity, prefix type and result claims fail independently.
 
-SKJS now derives the same remaining signature for direct `.bind` calls on fixed
-required signatures. Actual bound values and explicit/class receivers retain
-normal checking. Optional/rest or generic signatures, spread binding and partial
-application via a detached `.bind` value remain outside that checker slice.
-Declared properties named `bind` still take precedence over synthesis.
+SKJS deliberately rejects bound arguments. Preserve that behavior: this is an
+[SKJS incompleteness example](tests/skjs-incomplete/bound-arguments.ts), whose
+original export does not verify while TypeScript's claims do. The suite asserts
+SKJS's rejection and separately checks the tsc candidate; it never silently
+repairs the original export or changes SKJS to accept the program.
 
 The tsc producer expands an instantiated fixed tuple-rest signature into its
 required parameter list. TypeScript uses this representation for `.bind` results,

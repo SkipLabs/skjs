@@ -89,7 +89,9 @@ their immutable aliases support `.call(receiver, ...actuals)`: the receiver is
 evaluated before the actuals, then discarded. Arbitrary callable parameters and
 receiver-dependent methods remain excluded. `.bind` on the same local arrows
 saves a required argument prefix and returns a closure over the remaining
-parameters, including a thunk when all parameters are bound.
+parameters, including a thunk when all parameters are bound. SKJS rejects this
+partial binding; the [incompleteness example](tests/skjs-incomplete/bound-arguments.ts)
+verifies using TypeScript’s claims.
 
 Mutable bindings, loops inside closures, external cell parameters,
 labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,

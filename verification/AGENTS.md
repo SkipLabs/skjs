@@ -7,6 +7,10 @@ asks whether they are derivable. [README.md](README.md) is the entry point;
 [DESIGN.md](DESIGN.md) holds the decisions. Everything below is what an agent
 needs to change things here without breaking the suite's shape.
 
+Preserve SKJS acceptance, inference and diagnostics while doing this experiment.
+Keep rejected safe programs as incompleteness findings; only behavior-preserving
+claim extraction changes belong here. [DESIGN.md](DESIGN.md) owns this boundary.
+
 ## Commands
 
 ```sh

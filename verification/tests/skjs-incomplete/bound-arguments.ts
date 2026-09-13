@@ -1,3 +1,7 @@
+/**
+ * SKJS incompleteness: partial .bind is deliberately rejected. TypeScript's
+ * claims verify independently for this source; the checker is left unchanged.
+ */
 /** Binding saves an argument value while the closure retains a live cell. */
 function boundArguments(seed: boolean): boolean {
   const cell = { value: seed };

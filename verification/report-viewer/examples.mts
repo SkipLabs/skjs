@@ -13,7 +13,7 @@ const stateful = [
   "null-tests",
   "null-guards",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
-const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call", "bound-arguments"].map((name) => `verification/tests/callables/${name}.ts`);
+const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards", "function-field", "receiver-call"].map((name) => `verification/tests/callables/${name}.ts`);
 const callableBoundaries = ["verification/tests/callables/call-objects.ts"];
 const supported = [...stateful, ...callables];
 const groups = [
@@ -33,6 +33,7 @@ const groups = [
       "verification/tests/skjs-incomplete/empty-domain-escape.ts",
       "verification/tests/skjs-incomplete/undefined-completes.ts",
       "verification/tests/skjs-incomplete/arrow-intersection.ts",
+      "verification/tests/skjs-incomplete/bound-arguments.ts",
     ],
   },
   {

@@ -7,7 +7,7 @@ import vm from "node:vm";
 import { spawnSync } from "node:child_process";
 import { stripTypes } from "../tools/strip-types.mts";
 
-const [astPath, claimsPath, file, verifier] = process.argv.slice(2);
+const [astPath, claimsPath, file, verifier, tscPath] = process.argv.slice(2);
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "bound-arguments-"));
 try {
   const source = fs.readFileSync(file, "utf8");
@@ -27,32 +27,37 @@ try {
   }
 
   const ast = JSON.parse(fs.readFileSync(astPath, "utf8"));
-  const claims = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const original = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const claims = JSON.parse(fs.readFileSync(tscPath, "utf8"));
   const input = path.join(work, "ast"), contract = path.join(work, "claims"), evidence = path.join(work, "evidence");
   const check = (mode: string, a: any, c: any) => {
     fs.writeFileSync(input, JSON.stringify(a));
     fs.writeFileSync(contract, JSON.stringify(c));
-    const args = [mode, input, contract, file, evidence];
+    const command = Array.isArray(c) ? mode : mode.replace("stateful-source", "source-claims");
+    const args = [command, input, contract, file, evidence];
     if (mode === "--produce-stateful-source") args.push("10");
     const r = spawnSync(verifier, args, {encoding: "utf8"});
     if (r.error || r.signal) throw r.error || Error(String(r.signal));
     return r;
   };
+  assert.notEqual(check("--produce-stateful-source", ast, original).status, 0,
+    "preserve SKJS rejection and its insufficient original claims");
   for (const mode of ["--produce-stateful-source", "--check-stateful-source"]) {
     const r = check(mode, ast, claims);
     assert.equal(r.status, 0, r.stdout + r.stderr);
   }
   const bind = ast.functions[0].body.find((s: any) => s.name === "bound").init;
-  const at = (c: any, pos: number[]) => c.find((b: any) => b.file === file).functions
-    .find((f: any) => f.name === "boundArguments").exprs
+  const at = (c: any, pos: number[]) => c.functions
+    .find((f: any) => f.name === "boundArguments").expressions
     .find((e: any) => e.pos[0] === pos[0] && e.pos[1] === pos[1]);
+  const signature = (c: any) => c.types[at(c, bind.pos).type[0]][0].arrs.arrows[0];
   for (const [name, edit] of [
-    ["remaining arity", (a: any, c: any) => at(c, bind.pos).type.atoms[0].params.push({top: false, atoms: [{a: "boolean"}]})],
-    ["bound result", (a: any, c: any) => { at(c, bind.pos).type.atoms[0].result = {top: false, atoms: [{a: "null"}]}; }],
+    ["remaining arity", (a: any, c: any) => signature(c)[0].push([1, 2])],
+    ["bound result", (a: any, c: any) => { signature(c)[1] = [0]; }],
     ["bound argument domain", (a: any, c: any) => {
       const expr = a.functions[0].body.find((s: any) => s.name === "bound").init;
       expr.args[0] = {k: "lit", pos: expr.args[0].pos, lit: {a: "null"}};
-      at(c, expr.args[0].pos).type = {top: false, atoms: [{a: "null"}]};
+      at(c, expr.args[0].pos).type = [0];
     }],
   ] as [string, (a: any, c: any) => void][]) {
     const a = structuredClone(ast), c = structuredClone(claims);
@@ -71,5 +76,5 @@ try {
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /\.bind requires a known local arrow/);
   }
-  console.log("  bound arrows: saved prefix versus live capture, escaping thunk, remaining signature and intrinsic gate OK");
+  console.log("  SKJS incompleteness: original claims rejected, tsc claims verified; saved prefix versus live capture, escaping thunk, remaining signature and intrinsic gate OK");
 } finally { fs.rmSync(work, {recursive: true, force: true}); }

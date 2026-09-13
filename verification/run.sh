@@ -173,7 +173,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   FACTORIES=verification/tests/callables/factories.ts
   CALLABLE_THUNKS=verification/tests/callables/thunks.ts
   CALLABLE_CELLS=verification/tests/callables/cells.ts
-  BOUND_ARGUMENTS=verification/tests/callables/bound-arguments.ts
+  BOUND_ARGUMENTS=verification/tests/skjs-incomplete/bound-arguments.ts
   RECEIVER_CALL=verification/tests/callables/receiver-call.ts
   CALLABLE_FIELD=verification/tests/callables/function-field.ts
   CALLABLE_GUARDS=verification/tests/callables/guards.ts
@@ -208,7 +208,11 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture factories "$FACTORIES"
   build fixture callable_thunks "$CALLABLE_THUNKS"
   build fixture callable_cells "$CALLABLE_CELLS"
-  build fixture bound_arguments "$BOUND_ARGUMENTS"
+  bound_arguments_fixture() {
+    rejected_fixture bound_arguments "$BOUND_ARGUMENTS" 2 &&
+      node verification/tools/tsc-claims.mts "$BOUND_ARGUMENTS" --out "$WORK/bound_arguments.tsc"
+  }
+  build bound_arguments_fixture
   build fixture receiver_call "$RECEIVER_CALL"
   build fixture callable_field "$CALLABLE_FIELD"
   build fixture callable_guards "$CALLABLE_GUARDS"
@@ -251,7 +255,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
-  run_test "Bound arrow arguments" node verification/tests/bound-arguments.mts "$WORK/bound_arguments.ast" "$WORK/bound_arguments.claims" "$BOUND_ARGUMENTS" "$VERIFIER"
+  run_test "Bound arrow arguments" node verification/tests/bound-arguments.mts "$WORK/bound_arguments.ast" "$WORK/bound_arguments.claims" "$BOUND_ARGUMENTS" "$VERIFIER" "$WORK/bound_arguments.tsc"
   run_test "Local arrow receiver calls" node verification/tests/receiver-call.mts "$WORK/receiver_call.ast" "$WORK/receiver_call.claims" "$RECEIVER_CALL" "$VERIFIER"
   run_test "Initialized callable field" node verification/tests/function-field.mts "$WORK/callable_field.ast" "$WORK/callable_field.claims" "$CALLABLE_FIELD" "$VERIFIER"
   run_test "Callable shape guards" node verification/tests/callable-guards.mts "$WORK/callable_guards.ast" "$WORK/callable_guards.claims" "$CALLABLE_GUARDS" "$VERIFIER"

@@ -119,3 +119,12 @@ intersection as the source declares it, and rejects a body that meets only one
 signature. The producer's own export cannot be repaired into this: the claim
 it would need is the one it computes as empty. The same collapse taken as an
 assumption is `skjs-unsound/arrow-intersection.ts`.
+
+`bound-arguments.ts` records SKJS's deliberate rejection of partial `.bind`.
+The verifier establishes TypeScript's claims for the unchanged source: a bound
+argument is saved once while the target retains a live cell capture, and full
+binding produces an escaping thunk. The original SKJS export is retained and
+does not verify. `bound-arguments.mts` checks that rejection, independently
+checks the tsc candidate, and rejects corrupted bound-argument, remaining-arity
+and result claims. JavaScript controls distinguish saved from delayed reads.
+No checker feature is added to make the witness pass.
