@@ -472,3 +472,33 @@ function assignmentResultSnapshot(
   x.value = null;
   return value;
 }
+
+// Identity equality must not import another object's temporary field facts.
+function identityMemberAlias(
+  x: { child: { value: number | null } },
+  y: { value: number | null },
+): number {
+  if (y.value !== null && x.child === y) {
+    const alias = x.child;
+    y.value = null;
+    // FIXME: tsc rejects; SKJS transfers y's transient contents into x.child.
+    return alias.value;
+  }
+  return 0;
+}
+
+// Check the selected child itself, then copy the scalar before mutation.
+function identityMemberSnapshot(
+  x: { child: { value: number | null } },
+  y: { value: number | null },
+): number {
+  if (y.value !== null && x.child === y) {
+    const child = x.child;
+    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
+    if (child.value === null) return 0;
+    const value = child.value;
+    y.value = null;
+    return value;
+  }
+  return 0;
+}
