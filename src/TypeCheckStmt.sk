@@ -143,6 +143,11 @@ extension class TypeChecker {
       tcenv.!scope = initScope;
       initTerm = this.stmt(tcenv, initStmt);
       loopScope = tcenv.mcreateSubScope{isLoop => true};
+      writes = mutable CaptureWrites{};
+      writes.expr(cond);
+      writes.expr(incr);
+      writes.stmts(block);
+      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
       // The loop catches the `break`/`continue` inside its body — they bind to
@@ -150,7 +155,7 @@ extension class TypeChecker {
       // jump leaves mid-body with the state at the jump, which the body's
       // end-of-block state no longer holds.
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
-        this.block(tcenv, block)
+        this.block(tcenv, block, Some((cond, true)))
       );
       tcenv.popScopeReplace(loopBody);
       // A `continue` runs the increment on its way back to the header, so its
@@ -163,6 +168,7 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -233,6 +239,9 @@ extension class TypeChecker {
       // See the `For` case: the loop catches its body's jumps and folds their
       // edges into its exit. With no condition or increment to run on the way
       // out, break and continue edges join at the same point.
+      writes = mutable CaptureWrites{};
+      writes.stmts(block);
+      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       ((loopBody, bodyTerm), catcher) = tcenv.withJumpCatcher(true, () ->
         this.block(tcenv, block)
       );
@@ -243,6 +252,7 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
@@ -259,6 +269,10 @@ extension class TypeChecker {
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
       loopScope = tcenv.mcreateSubScope{isLoop => true};
+      writes = mutable CaptureWrites{};
+      writes.expr(cond);
+      writes.stmts(block);
+      tcenv.beginLoopWrites(loopScope.widenLoopBindings(writes.result()));
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
       // See the `For` case: the loop catches its body's jumps and folds their
@@ -275,6 +289,7 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope);
       StmtTermination::cond(cond).loop_(() -> bodyTerm)

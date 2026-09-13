@@ -362,6 +362,46 @@ mutable class Scope{
     }
   }
 
+  // Repeated reads must cover every value a loop may write. A fresh condition
+  // or body check can narrow again, but a pre-loop fact is not an invariant.
+  // Unknown write summaries conservatively include every visible binding.
+  mutable fun widenLoopBindings(
+    writes: ?SortedSet<String>,
+  ): SortedMap<String, TType> {
+    entryValues = SortedMap[];
+    for (entry in this.visibleRefs().items()) {
+      ref = entry.i1;
+      if (
+        ref.isMutable &&
+        ref.hasDeclaredContract &&
+        writes.map(names -> names.contains(entry.i0)).default(true)
+      ) {
+        if (ref.declaredType.isConcretePrimitive()) {
+          !entryValues[entry.i0] = ref.type
+        };
+        this.!refs[entry.i0] = ref with {type => ref.declaredType}
+      }
+    };
+    entryValues
+  }
+
+  // The invariant used inside a loop may be broader than any value actually
+  // stored. Recover scalar exit precision from entry values and runtime writes.
+  // Object contents need alias/effect tracking and are deliberately excluded.
+  mutable fun limitLoopExit(
+    subst: mutable Subst,
+    tenv: TEnv,
+    bounds: readonly Map<String, TType>,
+  ): void {
+    for (entry in bounds.items()) {
+      this.maybeGetRef(entry.i0).each(pair ->
+        this.!refs[entry.i0] = pair.i1 with {
+          type => TType::inter(subst, tenv, pair.i1.type, entry.i1),
+        }
+      )
+    }
+  }
+
   // Every binding visible from this scope, innermost shadowing outer, as a
   // flat map for claim recording and refinement invalidation.
   readonly fun visibleRefs(): SortedMap<String, LocalRef> {

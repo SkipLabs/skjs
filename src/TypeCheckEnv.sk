@@ -176,6 +176,11 @@ mutable class TCEnv private {
   mutable tryWriteLogs: mutable Vector<
     mutable Map<String, TType>,
   > = mutable Vector[],
+  // Scalar values possible at loop exit: seed with entry values and include
+  // every runtime write, including nested loops, closures and finally blocks.
+  mutable loopWriteBounds: mutable Vector<
+    mutable Map<String, TType>,
+  > = mutable Vector[],
   // Type-claim recording (--emit-skjs-type-claims): the environment held on
   // entry to each statement, in check order. Empty unless emitSkjsTypeClaims is set.
   claimedEnvs: mutable Vector<TypeClaimEnv> = mutable Vector[],
@@ -297,7 +302,20 @@ mutable class TCEnv private {
     isSubType: (TType, TType) -> void,
   ): void {
     this.recordTryWrite(tenv, name, ty);
+    for (bounds in this.loopWriteBounds) {
+      bounds.maybeGet(name.value).each(previous ->
+        bounds![name.value] = TType::union(this.subst, tenv, previous, ty)
+      )
+    };
     this.scope.set(name, ty, isSubType)
+  }
+
+  mutable fun beginLoopWrites(entryValues: SortedMap<String, TType>): void {
+    bounds = mutable Map[];
+    for (entry in entryValues.items()) {
+      bounds![entry.i0] = entry.i1
+    };
+    this.loopWriteBounds.push(bounds)
   }
 
   // Record a write for the innermost block being logged. The log is keyed

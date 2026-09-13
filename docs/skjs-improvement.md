@@ -67,7 +67,7 @@ next step is to establish contracts for the remaining inferred captures.
 | R3c | Speculative clone results authorize the parent only with a justified transfer | not started | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
 | M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | in progress | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | in progress | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
-| M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | not started | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
+| M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
 R3a implementation note: the initial cache-key patch alone still accepted the
 witness. Named-instance hashes and a subtype shortcut also identified types by
@@ -140,6 +140,22 @@ M1 stays open for spread-source contracts, distributed composed receivers, other
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.
+
+M3 implementation scope: loop entry widens possibly assigned mutable bindings
+with declared or inherited contracts before the repeated condition/body is
+checked. The syntactic summary includes `for` increments and nested bodies,
+including `continue`/`finally` paths; unknown targets conservatively include all
+such bindings. Fresh guards narrow again, and unwritten bindings retain their
+facts. Scalar exit bounds combine entry values with actual runtime writes, so
+a broader loop invariant does not invent extra exit values. Both while and for
+conditions establish fresh body refinements. Coverage in
+`loop-carried-narrowing.ts` distinguishes while-body writes,
+for increments reached by continue, and for-of body writes. Hidden call effects,
+uncontracted evolving bindings, and general alias mutation remain separate work.
+The original reduction is rejected, the valid guarded counterparts pass, and
+the existing break/finally exit tests retain their behavior. The checker suite
+and all 41 pipeline suites pass with zero corpus mismatches; M3's stated
+completion criterion is met.
 
 M2 implementation scope: reads across a function boundary discard enclosing
 flow refinements for **annotated captures** and **captured mutable bindings with

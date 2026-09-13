@@ -150,6 +150,28 @@ function go(d: Derived): void {
 
 ## Narrowing & control flow
 
+### A for increment preserves a stale pre-loop narrowing
+
+Strict tsc accepts this read as `string`, although `continue` executes the
+increment and the next iteration reads `null`:
+
+```ts
+function staleIncrementRead(x: string | null, again: boolean): void {
+  if (x !== null) {
+    for (; again; x = null) {
+      const text: string = x;
+      continue;
+    }
+  }
+}
+```
+
+**Test:** [loop-carried-narrowing.ts](../tests/expect-error/loop-carried-narrowing.ts)
+· **SKJS:** rejects the read by widening possibly assigned bindings at loop
+entry. A condition that checks `x !== null` on every iteration remains usable.
+The analogous while-body and for-of-body writes are rejected by strict tsc.
+
+
 ### Array.isArray narrows to a mutable any[]
 
 `Array.isArray` is declared `arg is any[]`, so its true branch type is a *mutable* array: a `readonly number[]` scrutinee narrows to a pushable array, a tuple loses its arity, and in a union like `number[] | { a: string; b: number }` the object arm is dropped in favour of the mutable arm. The guard proves only that the value is *an* array, never that it is mutable at its declared type. `a.push(1)` then mutates a value its declared type forbids mutating — a `TypeError: Cannot add property 2, object is not extensible` when the argument is frozen, which `readonly number[]` permits. The union form is unsound for a second reason: a plain object type can be inhabited at runtime by a readonly array carrying extra properties (`readonly number[] & { a: string; b: number }` is a legal argument), so dropping the object arm hands out a mutable view of a readonly array.
