@@ -56,3 +56,20 @@ function satisfiesSnapshot(x: { value: number | null }): number {
   x.value = null;
   return value;
 }
+
+// A successful satisfies check must survive later inference growth.
+function satisfiesValidationStability(seed: number): void {
+  const box = { value: seed };
+  const first = box satisfies { readonly value: number };
+  // FIXME: tsc rejects this write; SKJS discards the first validation's sealing.
+  box.value = "changed";
+  // @skjs-expect-error Type does not satisfy the expected type
+  const second = box satisfies { readonly value: number };
+}
+
+function satisfiesCompatibleWrite(seed: number): void {
+  const box = { value: seed };
+  const first = box satisfies { readonly value: number };
+  box.value = 2;
+  const second = box satisfies { readonly value: number };
+}
