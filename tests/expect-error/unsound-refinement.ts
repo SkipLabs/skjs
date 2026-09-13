@@ -481,7 +481,7 @@ function identityMemberAlias(
   if (y.value !== null && x.child === y) {
     const alias = x.child;
     y.value = null;
-    // FIXME: tsc rejects; SKJS transfers y's transient contents into x.child.
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return alias.value;
   }
   return 0;
@@ -494,7 +494,6 @@ function identityMemberSnapshot(
 ): number {
   if (y.value !== null && x.child === y) {
     const child = x.child;
-    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (child.value === null) return 0;
     const value = child.value;
     y.value = null;

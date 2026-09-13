@@ -204,6 +204,16 @@ used to narrow another field; existing nonsingleton and mutation regressions
 retain their rejections. Field narrowing still uses the established-contract
 policy for the receiver and keeps its branch filtering on a clone.
 
+Object identity comparisons also use the other expression's stable alias
+contract before intersection. Comparing `x.child === y` after narrowing
+`y.value` used to import that temporary field fact into `x.child`; reading a
+new alias from the member lost its provenance and survived a null write through
+`y`. `identityMemberAlias` in `unsound-refinement.ts` now rejects the stale read.
+Its positive counterpart checks the child itself and copies the scalar before
+the write. Both local and field equality use this boundary; scalar singleton
+narrowing retains its current value type. This closes a concrete M1 channel
+without requiring general nested-field refinement or new member-lookup rules.
+
 This separates the lasting observation from the branch-local filtering without
 committing the intersection's speculative constraints. The change fixes an
 incompleteness in scalar comparison narrowing, not a newly demonstrated runtime
