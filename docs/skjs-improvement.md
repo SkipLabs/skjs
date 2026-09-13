@@ -250,6 +250,12 @@ The M2 regressions in the same test file distinguish three obligations:
 - `inferredObjectCapture` already rejects the stale read, but the safe
   `checkedInferredObject` is also rejected. Restoring invocation-time narrowing
   is a separate completeness obligation; widening every read would lose it.
+  Resolving the inferred field in the live substitution before narrowing makes
+  the guarded read work, but also makes `inferredObjectCapture` unsoundly pass:
+  the uncontracted inferred object retains its creation-time field refinement
+  across the closure boundary. Establish a stable inferred-object capture
+  contract before enabling that refinement. Validate both existing tests
+  together: the guarded read must accept and the stale read must remain rejected.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc
