@@ -283,6 +283,22 @@ write through `x`. `satisfies.ts` covers both rejections and an accepted scalar
 snapshot. This addresses M1 contract propagation through this identity wrapper;
 it does not make the speculative check itself a durable R2 validation.
 
+The next R2/R3c witness is `satisfiesValidationStability` in `satisfies.ts`:
+a numeric inferred field passes `satisfies`, a string write succeeds, and the
+same check then fails. Strict tsc rejects the write. The existing rollback
+loses the first check's sealing. This is a validation-stability witness, not
+a demonstrated runtime failure; the compatible numeric-write case passes.
+
+Removing that rollback is insufficient: live target checking widens the
+`8080` field in `testObjectPreservation` to `number`, breaking the existing
+inferred-result precision. Literal-shape commitments and lasting inference
+constraints currently share the substitution. A repair must distinguish which
+commitments the compatibility check may use from which source facts it must
+establish, preserving the inferred result without discarding validation
+stability. The implementation is unchanged pending that distinction; neither
+blindly committing nor blindly rolling back the whole substitution meets both
+requirements.
+
 Non-null assertions now apply their nullish removal to the operand's stable
 alias contract as well as its current expression type. Removing null from a
 reference cannot strengthen the lasting contract of its fields.
