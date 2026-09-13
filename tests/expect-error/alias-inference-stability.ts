@@ -30,3 +30,24 @@ function compatibleWritePreservesAlias(value: number): number {
   box.set(2);
   return alias.get();
 }
+
+// No value argument or result use can independently establish this bound.
+declare function requireNumberField<
+  T extends { readonly value: number },
+>(): void;
+
+function explicitConstraintMustRemainValid(seed: number): void {
+  const box = { value: seed };
+  requireNumberField<typeof box>();
+  // FIXME: This write invalidates the successful explicit-argument check.
+  box.value = "changed";
+  // @skjs-expect-error Type argument does not satisfy the constraint
+  requireNumberField<typeof box>();
+}
+
+function compatibleWritePreservesExplicitConstraint(seed: number): void {
+  const box = { value: seed };
+  requireNumberField<typeof box>();
+  box.value = 2;
+  requireNumberField<typeof box>();
+}
