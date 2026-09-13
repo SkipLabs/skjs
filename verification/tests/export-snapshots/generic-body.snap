@@ -1,0 +1,10 @@
+# generic-body.ts
+
+## bind [complete unverified normal]
+params: x: T
+result: T
+entry 30-44: this: (unavailable: void-type); x!: T
+entry 48-56: this: (unavailable: void-type); x!: T; y: T
+expr 43-44 `x`: T
+expr 55-56 `y`: T
+lvalue 36-37 `y`: T

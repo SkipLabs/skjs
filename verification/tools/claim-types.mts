@@ -29,6 +29,10 @@ function bareAtomText(atom: any, state: any): string {
   }
   if (PRIMITIVE.includes(atom.a) && Object.keys(atom).join() === "a")
     return atom.a;
+  if (atom.a === "param" && typeof atom.name === "string")
+    return atom.name;
+  if (atom.a === "alias" && typeof atom.name === "string" && Array.isArray(atom.args))
+    return atom.name + "<" + atom.args.map((t: any) => typeText(t, state)).join(", ") + ">";
   if (atom.a === "booleanlit" && ["true", "false"].includes(atom.v))
     return atom.v;
   if (atom.a === "stringlit" && typeof atom.v === "string")
@@ -106,7 +110,7 @@ class TypeSyntaxError extends Error {}
 function tokenize(text: string) {
   const tokens = [];
   const re =
-    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}\[\](),:|?=&@]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+    /\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|=>|[{}\[\](),:|?=&@<>]|[A-Za-z_$][\w$]*|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
   let at = 0,
     m;
   while ((m = re.exec(text))) {
@@ -177,6 +181,25 @@ function parseType(text: string): WireType {
     if (PRIMITIVE.includes(token)) return { a: take() };
     if (token === "true" || token === "false")
       return { a: "booleanlit", v: take() };
+    if (
+      typeof token === "string" &&
+      /^[A-Za-z_$][\w$]*$/.test(token) &&
+      token !== "unknown" &&
+      token !== "never"
+    ) {
+      if (tokens[i + 1] === "<") {
+        const name = take();
+        take("<");
+        const args = [union()];
+        while (peek() === ",") {
+          take(",");
+          args.push(union());
+        }
+        take(">");
+        return { a: "alias", name, args };
+      }
+      return { a: "param", name: take() };
+    }
     if (/^["']/.test(token)) {
       // A double-quoted token is already JSON; a single-quoted one becomes JSON
       // by swapping which quote is escaped.
@@ -635,6 +658,10 @@ function roundTrips(type: any) {
         modesText(atom);
     else if (PRIMITIVE.includes(atom.a) && Object.keys(atom).join() === "a")
       text = atom.a;
+    else if (atom.a === "param" && typeof atom.name === "string")
+      text = atom.name;
+    else if (atom.a === "alias" && typeof atom.name === "string" && Array.isArray(atom.args))
+      text = atom.name + "<" + atom.args.map(fullTypeText).join(", ") + ">";
     else if (LITERAL[atom.a] && "v" in atom)
       text = atom.a === "stringlit" ? JSON.stringify(atom.v) : String(atom.v);
     else {

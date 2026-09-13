@@ -5,3 +5,4 @@ params: a: boolean | null; b: boolean; c: number | string; d: null | { value: bo
 result: boolean
 entry 169-180: a!: boolean | null; b!: boolean; c!: number | string; d!: null | { value: boolean } [call=unknown construct=unknown array=unknown]; e!: { value: boolean } [call=unknown construct=unknown array=unknown] | { value: null } [call=unknown construct=unknown array=unknown]; this: (unavailable: void-type)
 expr 176-180 `true`: true
+subtype true ≤ boolean

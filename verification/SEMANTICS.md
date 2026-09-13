@@ -487,4 +487,10 @@ correspondence. Source current-content claims are connected to graph checkpoints
 graph-backed closure bodies remain integration work. Type parameters, bounded polymorphism, and general
 difference/negation require further syntax and sound rules; definability of
 quantification over semantic families alone is not a generics result.
+Rigid parameters, substitution on the identity and `Ref T` aliases (source
+`type Id<T> = T` and `type Box<T> = { value: T }`), and the
+identity function at every `T` are in
+[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean).
+The intended path is the
+[operation-level contracts, then a small first-order fragment](DESIGN.md#semantic-contracts-for-skjs-operations).
 [Design](DESIGN.md#later-feature-gates) owns the feature roadmap and priorities.

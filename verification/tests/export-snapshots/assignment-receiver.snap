@@ -15,3 +15,5 @@ expr 125-130 `!seed`: boolean
 expr 126-130 `seed`: boolean
 lvalue 63-67 `cell`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
 lvalue 112-122 `cell.value`: boolean
+subtype boolean ≤ boolean
+subtype () => boolean [construct=unknown array=unknown] ≤ () => boolean [construct=unknown array=unknown]

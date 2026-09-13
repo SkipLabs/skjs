@@ -383,6 +383,9 @@ extension class TypeChecker {
         if (getConfig(tcenv.context).emitSkjsTypeClaims) {
           // Preserve the first-error snapshot, then rethrow: this is recording,
           // not recovery. Non-typing exceptions retain their ordinary behavior.
+          // The operation frame is the body's closed judgments only; clones
+          // of this substitution start empty and cannot write it.
+          tcenv.subst.pushClaimedOpFrame();
           try {
             checkBody()
           } catch {

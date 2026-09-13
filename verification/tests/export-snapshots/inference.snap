@@ -1,10 +1,10 @@
 # inference.ts
 
 ## id [complete unverified normal]
-params: x: (unavailable: unsupported-type)
-result: (unavailable: unsupported-type)
-entry 28-36: this: (unavailable: void-type); x!: (unavailable: unsupported-type)
-expr 35-36 `x`: (unavailable: unsupported-type)
+params: x: T
+result: T
+entry 28-36: this: (unavailable: void-type); x!: T
+expr 35-36 `x`: T
 
 ## infer [complete unverified normal]
 params: none
@@ -16,3 +16,5 @@ expr 80-88 `id(true)`: true
 expr 83-87 `true`: true
 expr 99-100 `y`: true
 lvalue 76-77 `y`: true
+subtype true ≤ true
+subtype true ≤ boolean

@@ -1,5 +1,7 @@
 import Verification.ExperimentState.SkjsSourceClaims
 import Verification.ExperimentState.ExpressionClaims
+import Verification.ExperimentState.GenericSource
+import Verification.ExperimentState.GenericAlias
 
 /-! First source adapter for the stateful consumer. Names are resolved against
 initialized local bindings. Supplied expression types and source annotations
@@ -881,19 +883,32 @@ def extract (ast claims : Json) (fileKey : String) : Except String (List SourceR
   let files ← claims.getArr?
   let selected ← files.toList.filterM fun f => do return (← jStr (← jField f "file")) == fileKey
   if selected.length != 1 then throw "expected exactly one matching claim file"
-  let fs ← SourceInput.decodeAst ast
+  let aliases ← GenericAlias.decodeAliases ast
+  for a in aliases do GenericAlias.admit a
+  let decoded ← SourceInput.decodeAstWithParams ast
+  let decoded ← decoded.mapM fun (f, tps) => do
+    return (← GenericAlias.expandFn aliases f, tps)
+  let fs := decoded.map Prod.fst
   let cs ← SourceInput.decodeTypeClaims claims fileKey
+  let cs ← cs.mapM (GenericAlias.expandClaims aliases)
   if fs.isEmpty then throw "no source functions to verify"
   if !distinct (fs.map (fun f => (f.name, f.namePos))) then throw "duplicate source function identities"
   if !distinct (cs.map (fun f => (f.name, f.namePos))) then throw "duplicate function claims"
   if fs.length != cs.length then throw "function claim count mismatch"
+  let generic := decoded.filter (fun (_, tps) => !tps.isEmpty)
+  let ground := decoded.filter (fun (_, tps) => tps.isEmpty) |>.map Prod.fst
+  for (f, tps) in generic do
+    let some c := cs.find? (fun c => c.name == f.name && c.namePos == f.namePos)
+      | throw s!"missing claims for '{f.name}'"
+    GenericSource.check f tps c
+  if ground.isEmpty then return []
   -- One table for the file, lowered in source declaration order so that the
   -- neutral export of the same claims names the same labels.
   let lower (f : SourceInput.Fn) : SourceTypes.Lowering (SourceInput.Fn × SourceClaims.Function) := do
     let some c := cs.find? (fun c => c.name == f.name && c.namePos == f.namePos)
       | throw s!"missing claims for '{f.name}'"
     return (f, ← SkjsSourceClaims.translate c)
-  let (lowered, T) ← (fs.mapM lower).run SourceTypes.initial
+  let (lowered, T) ← (ground.mapM lower).run SourceTypes.initial
   lowered.mapM fun (f, fc) => extractNormalizedFn T f fc
 
 /-- Evidence order is source declaration order, independent of export order. -/

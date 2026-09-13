@@ -1,4 +1,5 @@
 import Verification.ExperimentState.SourceClaimExport
+import Verification.ExperimentState.SkjsOperations
 
 /-! File interfaces to raw calculus requests and to the supported source adapter.
 Source parsing remains external; source-mode checking reconstructs its request. -/
@@ -68,5 +69,13 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
         IO.println s!"checked source evidence written: {evidencePath}"
         return 0
       catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
+
+def checkOperations (claimsPath : String) : IO UInt32 := do
+  let claims ← readJson claimsPath
+  match claims.bind SkjsOperations.checkJson with
+  | .ok r =>
+    IO.println s!"accept: {r.checked} closed operations, {r.skipped} skipped"
+    return 0
+  | .error e => IO.eprintln s!"reject: {e}"; return 1
 
 end Verification.ExperimentState.RequestCli

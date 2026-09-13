@@ -1,0 +1,8 @@
+# bounded-extends.ts
+
+## asBoolean [complete unverified normal]
+params: x: T
+result: boolean
+entry 57-65: this: (unavailable: void-type); x!: T
+expr 64-65 `x`: T
+subtype T ≤ boolean

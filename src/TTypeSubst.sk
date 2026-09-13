@@ -4,121 +4,47 @@
 
 module SKJS;
 
-// A solver proposal is deliberately not an accepted subtype result.
-base class SubtypeProposalResult {
-  children =
-  | SubtypeProposed()
-  | SubtypeProposalRejected(STErrorOnTType)
-}
-
 base class SubstValue uses Equality {
   children =
   | SVOpen(TType)
   | SVClosed(TType)
 }
 
-// A coinductive result may discharge its own recursive assumptions only after
-// its complete query succeeds. Descendant results still depend on that query.
-base class TypeQueryAssumption uses Equality {
-  children =
-  | TQSubtype(Int, TType, TType)
-  | TQNamedSubtype(Int, ExpansionKey, ExpansionKey)
-  | TQIntersection(TType, TType)
-}
-
-mutable class TypeQueryFrame{
-  depth: Int,
-  mutable dependencyDepth: Int,
-  mutable assumptions: Vector<TypeQueryAssumption> = Vector[],
-}
-
-// Shared with scratch descendants and deliberately outside rollback state.
-mutable class TypeQueryReads{
-  mutable unsealed: Int = 0,
-  mutable provisional: Int = 0,
-  mutable mutations: Int = 0,
-  mutable recursive: Int = 0,
-  frames: mutable Vector<mutable TypeQueryFrame> = mutable Vector[],
-} {
-  mutable fun record(assumption: TypeQueryAssumption): void {
-    owner = 0;
-    for (i in Range(0, this.frames.size())) {
-      if (this.frames[i].assumptions.contains(assumption)) {
-        !owner = i + 1
-      }
-    };
-    if (owner == 0) {
-      // The premise came from a caller context outside the active query tree.
-      this.!recursive = this.recursive + 1
-    };
-    if (this.frames.size() > 0) {
-      frame = this.frames[this.frames.size() - 1];
-      frame.!dependencyDepth = min(frame.dependencyDepth, owner)
-    }
-  }
-
-  mutable fun finish(success: Bool): void {
-    frame = this.frames.pop();
-    if (frame.dependencyDepth < frame.depth) {
-      if (this.frames.size() > 0) {
-        parent = this.frames[this.frames.size() - 1];
-        parent.!dependencyDepth = min(
-          parent.dependencyDepth,
-          frame.dependencyDepth,
-        )
-      }
-    } else if (!success && frame.dependencyDepth == frame.depth) {
-      // A failed/abandoned query cannot discharge a premise it introduced.
-      this.!recursive = this.recursive + 1
-    }
-  }
-}
-
 mutable base class SubstState private {
-  // The four normalization memos. An entry answers a query under the CURRENT
-  // bindings, so it belongs to this rollback state: `restore` rewinds it with
-  // them, and a scratch that reads under a different frame starts cold rather
-  // than inheriting entries whose provenance it cannot account for. Whether an
-  // answer may be remembered at all is decided before it gets here, by the
-  // query's own `canCacheTypeQuerySince` check; the owner's memoize operations
-  // store what that check has already allowed and add no rule of their own.
-  // Keyed by the operand pair. Recursive premises are qualified before an
-  // entry is published, so a child that depends on an ancestor's unfinished
-  // premise cannot leave one behind.
-  protected mutable seenSub: SortedSet<(TType, TType)>,
-  // Keyed by the operand pair, and only when neither side is a single
-  // candidate: an intersection over a solvable operand is not reusable.
-  protected mutable seenInter: SortedMap<(TType, TType), TType>,
-  // Keyed by the operand pair. Structural union combines symbolic inputs
-  // without reading a payload, so it needs no dependency beyond the key.
-  protected mutable seenUnion: SortedMap<(TType, TType), TType>,
-  // TEnv.expandNamed is the sole named-expansion publisher. Checking entries
-  // are released only after instantiate establishes its inspected payloads in
-  // the candidate owner. Uninspected arguments remain symbolic. Observation,
-  // probe and diagnostic caches are local and never transferred to the owner;
-  // restore discards observed caches whose read-frame provenance is unknown.
-  // This contract is not a proof of the other subtype/intersection caches.
-  protected mutable seenExpansion: SortedMap<ExpansionKey, TType>,
-  // Rollbackable inference-state version. TVar allocation uses this identity
-  // space, so restore intentionally rewinds it with the rest of SubstState.
-  protected mutable version: Int,
-  // Monotone mutation identity for acceptance-relevant observations. Unlike
-  // version, this never rewinds on restore: two states reached on different
-  // timelines must not look unchanged merely because rollback reused a version.
-  protected mutable semanticEpoch: Int,
-  protected mutable values: SortedMap<TVarID, SubstValue>,
-  protected mutable origins: SortedMap<TVarID, TVarOrigin>,
+  mutable seenSub: SortedSet<(TType, TType)>,
+  mutable seenInter: SortedMap<(TType, TType), TType>,
+  mutable seenUnion: SortedMap<(TType, TType), TType>,
+  // Caches the expansion of an instantiated named type `TSInst(name, targs)`
+  // to its expanded body. Reuse stays sound as inference proceeds and `values`
+  // changes, because the cached body substitutes each type parameter
+  // SYMBOLICALLY: a type argument appears in the cached TType as a free
+  // variable, not as its current binding. normalize resolves a parameter
+  // reference to the symbolic argument (bindings[P]); union/inter never resolve
+  // an unbound TVar (TTypeUnion caches independently of later growth, TTypeInter
+  // attaches the operand as a constraint via setConstraint). So a type
+  // argument's binding is re-resolved at every USE of the cached type — through
+  // Subst::get, which re-applies the variable's constraints — never frozen into
+  // the cache. The only construct that reads an argument's binding while
+  // expanding, `keyof`, approximates an abstract or unresolved operand
+  // identically (string | number) whether or not the variable is bound, so even
+  // there the cached value cannot diverge from a fresh recomputation.
+  mutable seenExpansion: SortedMap<ExpansionKey, TType>,
+  mutable version: Int,
+  mutable values: SortedMap<TVarID, SubstValue>,
+  mutable origins: SortedMap<TVarID, TVarOrigin>,
 } {
-  // Immutable inspection only; mutation belongs to the owning substitution.
-  readonly fun inferenceVersion(): Int {
-    this.version
-  }
-  readonly fun typeOwnerEpoch(): Int {
-    this.semanticEpoch
-  }
-
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
+  }
+
+  mutable fun restore(saved: SavedSubst): void {
+    this.!version = saved.version;
+    this.!values = saved.values;
+    this.!origins = saved.origins;
+    this.!seenSub = saved.seenSub;
+    this.!seenInter = saved.seenInter;
+    this.!seenUnion = saved.seenUnion;
+    this.!seenExpansion = saved.seenExpansion;
   }
 }
 
@@ -129,7 +55,6 @@ mutable class SavedSubst private {} extends SubstState {
     seenUnion => SortedMap[],
     seenExpansion => SortedMap[],
     version => 0,
-    semanticEpoch => 0,
     values => SortedMap[],
     origins => SortedMap[],
   };
@@ -142,7 +67,6 @@ mutable class SavedSubst private {} extends SubstState {
       seenUnion => state.seenUnion,
       seenExpansion => state.seenExpansion,
       version => state.version,
-      semanticEpoch => state.semanticEpoch,
       values => state.values,
       origins => state.origins,
     }
@@ -150,14 +74,6 @@ mutable class SavedSubst private {} extends SubstState {
 }
 
 mutable class Subst private {
-  private queryReads: mutable TypeQueryReads = mutable TypeQueryReads{},
-  // This purpose is not rollback state. A proposal/diagnostic computation may
-  // normalize locally, but its results are not checking-owner evidence.
-  private computationPurpose: TypeComputationPurpose = TCPChecking(),
-  private mutable subtypeProposal: Bool = false,
-  // Present only on isolated shape-read state. Descendants share this frame;
-  // save/restore never clear it. Normal inference retains its existing behavior.
-  private readObservation: ?mutable SubstReadObservation = None(),
   // While set, a candidate variable that ALREADY has a binding is fully
   // read-only: the remaining candidate-write sites (grow's contravariant
   // lower-bound union, and get's covariant seal) refuse to touch an existing
@@ -174,105 +90,56 @@ mutable class Subst private {
   // Fresh ids for skolem type parameters. This counter is separate from the
   // version and from SubstState because restore rewinds the version; reusing an
   // id on a restored timeline would merge two distinct hidden type arguments.
-  // Disabled by default: only createCheckingOwner enables witness allocation.
-  // Scratch, normalization, observation and diagnostic state never gain it.
-  private mutable nextSkolemId: Int = -1,
+  mutable nextSkolemId: Int = 0,
   // Where the pretty-printer reports the type-parameter names it emits, set
   // for the length of one diagnostic's rendering (see PpNames). Unlike
-  // witness allocation, a clone SHARES this rather than being cut off from
+  // nextSkolemId below, a clone SHARES this rather than being cut off from
   // it: prettyPrintType renders through a clone, so a copy would lose exactly
   // the emissions it exists to collect. That is safe because it is a record
   // of output only -- nothing reads it back into typing, and save/restore
   // never touch it.
   mutable ppNames: ?mutable PpNames = None(),
+  // Closed subtype/expansion judgments recorded for --emit-skjs-type-claims.
+  // One frame per function body; clones start empty, so speculative checks
+  // are discarded. Not part of SubstState: save/restore must not rewind it.
+  mutable opFrames: mutable Vector<
+    mutable Vector<(String, String, String)>,
+  > = mutable Vector[],
 } extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
-  // Only a fresh source-checking root owns a witness namespace. A light
-  // environment carries no existing candidate owner or rollback state.
-  static fun createCheckingOwner(tcenvl: mutable TCEnvLight): mutable Subst {
-    owner = static::mcreate(tcenvl);
-    owner.!nextSkolemId = 0;
-    owner
+  mutable fun pushClaimedOpFrame(): void {
+    this.opFrames.push(mutable Vector[])
   }
 
-  // A fresh normalization state for an environment: the caller's purpose,
-  // query bookkeeping and results, and no bindings of its own. Writes it makes
-  // stay in it. An environment that already owns candidates keeps them --
-  // nothing here copies them, which is why this cannot stand in for the
-  // retired general clone.
-  static fun mcreate(tcenvb: mutable TCEnvBase): mutable Subst {
-    static::mcreateWithState(tcenvb, SavedSubst::empty)
+  mutable fun popClaimedOpFrame(): Array<(String, String, String)> {
+    if (this.opFrames.size() == 0) return Array[];
+    this.opFrames.pop().toArray()
   }
 
-  // The candidate owner a computation should run in: the environment's own,
-  // or a fresh state when it is a light or declaration environment that has
-  // none. Those carry no candidates, so nothing is shared or lost.
-  static fun computationOwner(tcenvb: mutable TCEnvBase): mutable Subst {
-    static::candidateOwner(tcenvb) match {
-    | Some(owner) -> owner
-    | None() -> static::mcreate(tcenvb)
-    }
-  }
-
-  // The only consumer of a copied normalization state is detached declaration
-  // instantiation. Return its symbolic result, never the mutable state: a public
-  // normalizationScratch would recreate the general checking clone we retired.
-  mutable fun instantiateDetachedDeclaration(
-    tenv: TEnv,
-    name: Name,
-    targs: TArgs,
-  ): TType {
-    invariant(
-      !(this.typeComputationPurpose() is TCPChecking()),
-      "Detached declaration instantiation requires a detached computation",
-    );
-    tenv.instantiateDeclaration(
-      static::mcreateWithState(this, this),
-      name,
-      targs,
-    )
-  }
-
-  // Copying a state into a new substitution is how a caller would rebuild the
-  // retired clone, so it stays private: the operations above say which copies
-  // are legitimate and what each one is for.
-  private static fun mcreateWithState(
-    tcenvb: mutable TCEnvBase,
-    state: readonly SubstState,
-  ): mutable Subst {
-    invariant(
-      !(tcenvb is TypeReadDeclaration _),
-      "Declaration reads cannot create a solver",
-    );
-    // Normalization often asks for a fresh Subst even though its type operands
-    // contain candidates. During an observation it must use the SAME snapshot
-    // and read frame, not an empty or privately solvable candidate store.
-    parentOpt = static::candidateOwner(tcenvb);
-    parentOpt match {
-    | Some(parent) ->
-      parent.readObservation match {
-      | Some(frame) ->
-        if (!state.values.isEmpty() && state.values != parent.values) {
-          frame.block()
-        };
-        return static::observationScratch(parent, frame)
-      | None() -> void
+  mutable fun recordClaimedOp(
+    kind: String,
+    sourceJson: String,
+    targetJson: String,
+  ): void {
+    n = this.opFrames.size();
+    if (n == 0) return void;
+    frame = this.opFrames[n - 1];
+    for (op in frame) {
+      if (op.i0 == kind && op.i1 == sourceJson && op.i2 == targetJson) {
+        return void
       }
-    // A declaration-only/light environment has no candidate-read owner.
-    | None() -> void
     };
+    frame.push((kind, sourceJson, targetJson));
+    this.opFrames![n - 1] = frame
+  }
+
+  static fun mcreate(
+    tcenvb: mutable TCEnvBase,
+    state: readonly SubstState = SavedSubst::empty,
+  ): mutable Subst {
     mutable Subst{
-      computationPurpose => parentOpt
-        .map(parent -> parent.typeComputationPurpose())
-        .default(TCPChecking()),
-      subtypeProposal => parentOpt
-        .map(parent -> parent.isProposingSubtype())
-        .default(false),
-      queryReads => parentOpt
-        .map(parent -> parent.queryReads)
-        .default(mutable TypeQueryReads{}),
       context => tcenvb.context,
       results => tcenvb.results,
       seenSub => state.seenSub,
@@ -280,7 +147,6 @@ mutable class Subst private {
       seenUnion => state.seenUnion,
       seenExpansion => state.seenExpansion,
       version => state.version,
-      semanticEpoch => state.semanticEpoch,
       values => state.values,
       origins => state.origins,
     }
@@ -295,668 +161,42 @@ mutable class Subst private {
     stateAndResults: (SubstState, TCResultsAcc),
   ): mutable this {
     (state, results) = stateAndResults;
-    // Saved-error reconstruction is for rendering, not for producing type facts.
     mutable Subst{
-      computationPurpose => TCPDiagnostic(),
       context,
       seenSub => state.seenSub,
       seenInter => state.seenInter,
       seenUnion => state.seenUnion,
       seenExpansion => state.seenExpansion,
       version => state.version,
-      semanticEpoch => state.semanticEpoch,
       values => state.values,
       origins => state.origins,
       results => results.mclone(),
     }
   }
 
-  // A nested read computation of the SAME observation: the parent's snapshot
-  // and read frame, with isolated normalization caches. This is not an
-  // inference clone -- every read the descendant makes still belongs to the
-  // enclosing observation, so it is published or discarded with it.
-  mutable fun observationDescendant(): mutable Subst {
-    this.readObservation match {
-    | Some(frame) -> Subst::observationScratch(this, frame)
-    | None() ->
-      invariant_violation("An observation descendant requires a read frame")
-    }
-  }
-
-  readonly fun isProposingSubtype(): Bool {
-    this.subtypeProposal
-  }
-
-  // Reads and writes of the normalization memos. They are deliberately the
-  // whole interface: a consumer can ask what this substitution remembers and
-  // tell it to remember an answer it has already qualified, and cannot swap
-  // in a table of its own or carry one across owners.
-  readonly fun memoizedSubtype(source: TType, target: TType): Bool {
-    this.seenSub.contains((source, target))
-  }
-
-  mutable fun memoizeSubtype(source: TType, target: TType): void {
-    this.!seenSub = this.seenSub.set((source, target))
-  }
-
-  readonly fun memoizedIntersection(left: TType, right: TType): ?TType {
-    this.seenInter.maybeGet((left, right))
-  }
-
-  mutable fun memoizeIntersection(
-    left: TType,
-    right: TType,
-    result: TType,
-  ): void {
-    this.!seenInter[(left, right)] = result
-  }
-
-  readonly fun memoizedUnion(left: TType, right: TType): ?TType {
-    this.seenUnion.maybeGet((left, right))
-  }
-
-  mutable fun memoizeUnion(left: TType, right: TType, result: TType): void {
-    this.!seenUnion[(left, right)] = result
-  }
-
-  readonly fun memoizedExpansion(key: ExpansionKey): ?TType {
-    this.seenExpansion.maybeGet(key)
-  }
-
-  mutable fun memoizeExpansion(key: ExpansionKey, expanded: TType): void {
-    this.!seenExpansion[key] = expanded
-  }
-
-  // Proposal results guide inference. The ordinary entry point separately
-  // validates its original operands before reporting an accepted judgment.
-  mutable fun proposeSubtype(
-    tenv: TEnv,
-    source: TType,
-    target: TType,
-  ): SubtypeProposalResult {
-    saved = this.save();
-    wasProposing = this.subtypeProposal;
-    this.!subtypeProposal = true;
-    result = try {
-      TType::subtypeProposal(this, tenv, source, target)
-    } catch {
-    | exn ->
-      this.!subtypeProposal = wasProposing;
-      this.restore(saved);
-      throw exn
-    };
-    this.!subtypeProposal = wasProposing;
-    result match {
-    | STOk() -> SubtypeProposed()
-    | err @ STErrorOnTType _ ->
-      this.restore(saved);
-      SubtypeProposalRejected(err)
-    }
-  }
-
-  readonly fun isObservingTypeReads(): Bool {
-    this.readObservation.isSome()
-  }
-
-  // Extracting the live mutable owner from an environment is `Subst`'s own
-  // business: `computationOwner` is what a consumer asks for, and it refuses
-  // a declaration environment, which has no owner to hand out.
-  private static fun candidateOwner(tcenvb: mutable TCEnvBase): ?mutable Subst {
-    tcenvb match {
-    | subst @ Subst _ -> Some(subst)
-    | tcenv @ TCEnv _ -> Some(tcenv.subst)
-    // Light/declaration environments do not contain a candidate owner.
-    | _ -> None()
-    }
-  }
-
-  readonly fun typeComputationPurpose(): TypeComputationPurpose {
-    this.computationPurpose
-  }
-
-  // A type-argument probe's proposal, run on a detached computation. The
-  // caller may learn that the relation could not be proposed, and nothing
-  // else: no solved type, environment, cache or success receipt crosses back.
-  mutable fun probeSubtypeProposal(
-    tenv: TEnv,
-    source: TType,
-    target: TType,
-  ): SubtypeProposalResult {
-    this.compatibilityProbe().proposeSubtype(tenv, source, target)
-  }
-
-  // A detached inference state for a compatibility question: whether a type
-  // argument could satisfy a constraint, or whether SOME instantiation of a
-  // view accepts a branch. Either way the answer is a decision, not a
-  // solution: the inference variables it mints never reach this substitution,
-  // so there is nothing to roll back, and successive attempts taken from the
-  // same probe cannot reach each other's solutions.
-  mutable fun compatibilityProbe(): mutable Subst {
-    this.detachedTypeComputation(TCPTypeArgumentProbe())
-  }
-
-  // Representation guidance: what a contextual target contains, looked at on
-  // a detached computation. The answer selects an inference proposal and
-  // nothing more -- it establishes no read dependency in this substitution,
-  // closes no candidate and cannot authorize acceptance. Resolving the target
-  // covariantly on the live state would instead close open inference
-  // variables prematurely.
-  mutable fun guidanceSTypes(
-    tenv: TEnv,
-    ty: TType,
-    variance: Variance,
-  ): ?STypes {
-    ty.getSTypes(this.detachedTypeComputation(TCPGuidance()), tenv, variance)
-  }
-
-  // Only rendering and error-hint construction may use this untraced state.
-  // It must never supply a type fact to a checking consumer.
-  mutable fun diagnosticComputation(): mutable Subst {
-    this.detachedTypeComputation(TCPDiagnostic())
-  }
-
-  private mutable fun detachedTypeComputation(
-    purpose: TypeComputationPurpose,
-  ): mutable Subst {
-    reuseCaches =
-      !this.isObservingTypeReads() &&
-      (purpose is TCPTypeArgumentProbe());
+  /* Use Subst#clone to create a temporary subst when there is already
+     one that shouldn't be polluted.
+     One would typically do this to check subtyping relations that are
+     non-mandatory. */
+  mutable fun clone(): mutable this {
     mutable Subst{
-      queryReads => this.queryReads,
-      computationPurpose => purpose,
       context => this.context,
       results => this.results,
-      seenSub => if (reuseCaches) this.seenSub else SortedSet[],
-      seenInter => if (reuseCaches) this.seenInter else SortedMap[],
-      seenUnion => if (reuseCaches) this.seenUnion else SortedMap[],
-      seenExpansion => if (reuseCaches) this.seenExpansion else SortedMap[],
+      seenSub => this.seenSub,
+      seenInter => this.seenInter,
+      seenUnion => this.seenUnion,
+      seenExpansion => this.seenExpansion,
       version => this.version,
-      semanticEpoch => this.semanticEpoch,
       values => this.values,
       origins => this.origins,
-      freezeCandidates => this.freezeCandidates,
+      // A skolem minted inside a clone would not advance the parent's
+      // counter, so the parent could later mint a distinct hidden type
+      // argument with the same id, silently merging the two. No caller mints
+      // skolems speculatively, so poison the counter: genSkolemTParam fails
+      // hard on it the moment that changes.
+      nextSkolemId => -1,
       ppNames => this.ppNames,
     }
-  }
-
-  // Exporters receive an immutable map value, never writable owner storage.
-  // This is serialization data, not evidence for an acceptance decision.
-  readonly fun bindingsForExport(): SortedMap<TVarID, SubstValue> {
-    this.values
-  }
-
-  // Read-only traversals that do not install materialized type facts use this
-  // immutable view instead of the tracing live-state accessors.
-  readonly fun snapshot(): SubstSnapshot {
-    SubstSnapshot::create(this.values)
-  }
-
-  // Purity of a computation includes mutations in scratch descendants and
-  // mutations later undone by rollback. This is not a cache key or a promise
-  // that an unchanged answer remains valid after future inference changes.
-  readonly fun typeMutationStamp(): Int {
-    this.queryReads.mutations
-  }
-
-  // Capture immediately before a query. Track both all unsealed reads (for
-  // a caller still frozen at publication) and provisional materializations
-  // (frozen reads or default literal shapes). Counters include scratch descendants
-  // and are never restored with substitution state.
-  readonly fun typeQueryReadStamp(): (Int, Int, Int) {
-    (
-      this.queryReads.unsealed,
-      this.queryReads.recursive,
-      this.queryReads.provisional,
-    )
-  }
-
-  // A materialized answer used provisional contents that were not committed.
-  // This evidence survives mode changes, scratch disposal, and rollback.
-  mutable fun recordProvisionalTypeRead(): void {
-    this.queryReads.!provisional = this.queryReads.provisional + 1
-  }
-
-  mutable fun recordRecursiveTypeQuery(assumption: TypeQueryAssumption): void {
-    this.queryReads.record(assumption)
-  }
-
-  mutable fun introduceTypeQueryAssumption(
-    assumption: TypeQueryAssumption,
-  ): void {
-    frame = this.queryReads.frames[this.queryReads.frames.size() - 1];
-    frame.!assumptions = frame.assumptions.concat(Vector[assumption])
-  }
-
-  mutable fun withTypeQuery<T>(compute: () -> (T, Bool)): T {
-    depth = this.queryReads.frames.size() + 1;
-    this.queryReads.frames.push(
-      mutable TypeQueryFrame{depth, dependencyDepth => depth + 1},
-    );
-    cell = SubstReadCell::mcreate();
-    try {
-      cell.!value = Some(compute())
-    } catch {
-    | exn ->
-      this.queryReads.finish(false);
-      throw exn
-    };
-    (result, success) = cell.value.fromSome();
-    this.queryReads.finish(success);
-    result
-  }
-
-  // Successful queries may discharge only premises introduced in their own
-  // scope. Other recursive dependencies prevent publication. The binding-read
-  // part retains the existing non-frozen sealing/rollback contract; this is
-  // not a general theorem about substitution or normalization stability.
-  readonly fun canCacheTypeQuerySince(stamp: (Int, Int, Int)): Bool {
-    (this.queryReads.frames.size() == 0 ||
-      {
-        frame = this.queryReads.frames[this.queryReads.frames.size() - 1];
-        frame.dependencyDepth >= frame.depth
-      }) &&
-      this.queryReads.recursive == stamp.i1 &&
-      this.queryReads.provisional == stamp.i2 &&
-      (!this.freezeCandidates || this.queryReads.unsealed == stamp.i0)
-  }
-
-  private mutable fun readBinding(
-    tvar: TVar,
-    requirement: TypeReadRequirement = FixedTypeRead(),
-  ): ?SubstValue {
-    value = this.values.maybeGet(tvar.identity());
-    if (!(value is Some(SVClosed _))) {
-      this.queryReads.!unsealed = this.queryReads.unsealed + 1;
-      // A nested admissibility check restores freezeCandidates before its
-      // caller decides whether to retain an answer. Keep the read's mode,
-      // including in scratch descendants, rather than only the final mode.
-      if (this.freezeCandidates) {
-        this.recordProvisionalTypeRead()
-      }
-    };
-    this.readObservation.each(frame -> frame.record(tvar, value, requirement));
-    value
-  }
-
-  mutable fun restore(saved: SavedSubst): void {
-    state: readonly SubstState = saved;
-    this.readObservation match {
-    | Some(frame) ->
-      // Local cache rollback is harmless. Candidate-state replacement is not
-      // a read, even if the caller plans to restore it again before returning.
-      if (state.version != this.version || state.values != this.values) {
-        frame.block()
-      }
-    | None() -> void
-    };
-    // Restoring caches alone does not change candidate state. A real state
-    // transition advances the shared stamp even when it rewinds the version.
-    if (state.version != this.version || state.values != this.values) {
-      this.queryReads.!mutations = this.queryReads.mutations + 1
-    };
-    nextSemanticEpoch = this.semanticEpoch + 1;
-    this.!version = state.version;
-    this.!semanticEpoch = nextSemanticEpoch;
-    this.!values = state.values;
-    this.!origins = state.origins;
-    this.readObservation match {
-    | Some(_) ->
-      // Equal candidate bindings do not establish a saved cache's provenance.
-      // The save may come from the live owner, before this observation began;
-      // importing it would let a cache hit bypass the observation's read set.
-      // Even local saves are discarded here: SavedSubst carries no read-frame
-      // identity. The shared frame retains every dependency already inspected.
-      this.!seenSub = SortedSet[];
-      this.!seenInter = SortedMap[];
-      this.!seenUnion = SortedMap[];
-      this.!seenExpansion = SortedMap[]
-    | None() ->
-      this.!seenSub = state.seenSub;
-      this.!seenInter = state.seenInter;
-      this.!seenUnion = state.seenUnion;
-      this.!seenExpansion = state.seenExpansion
-    }
-  }
-
-  static private fun observationScratch(
-    parent: mutable Subst,
-    frame: mutable SubstReadObservation,
-  ): mutable Subst {
-    mutable Subst{
-      queryReads => parent.queryReads,
-      computationPurpose => parent.computationPurpose,
-      context => parent.context,
-      // Preserve the existing clone discipline for diagnostics/reachability.
-      // Reported source errors still reject the program in keep-going mode;
-      // this read result is not itself a whole-program acceptance certificate.
-      results => parent.results,
-      seenSub => SortedSet[],
-      seenInter => SortedMap[],
-      seenUnion => SortedMap[],
-      seenExpansion => SortedMap[],
-      version => parent.version,
-      semanticEpoch => parent.semanticEpoch,
-      values => parent.values,
-      origins => parent.origins,
-      freezeCandidates => parent.freezeCandidates,
-      readObservation => Some(frame),
-    }
-  }
-
-  mutable fun recordValidatedSubtypeEdge(source: CGNode, target: CGNode): void {
-    invariant(this.isObservingTypeReads());
-    this.readObservation.each(frame -> frame.recordSubtypeEdge(source, target))
-  }
-
-  // Establish all inspected payloads before exposing a materialized answer.
-  // The first pass checks EVERY binding before the second pass writes ANY of
-  // them, so a failed transfer never leaves a partially sealed parent.
-  private mutable fun commitObservedBindings(
-    frame: readonly SubstReadObservation,
-    entryEpoch: Int,
-    allowSealing: Bool = true,
-  ): Bool {
-    if (frame.isBlocked() || this.semanticEpoch != entryEpoch) {
-      return false
-    };
-    bindings = frame.bindings();
-    // Positive target reads do not seal the candidate, but must still belong
-    // to this snapshot. Subst.grow preserves their lower bound by union; source
-    // reads also present in bindings below take the stronger fixed requirement.
-    for ((id, expected) in frame.monotoneBindings().items()) {
-      this.values.maybeGet(id) match {
-      | Some(SVOpen(actual)) ->
-        if (!allowSealing || actual != expected) return false
-      | Some(SVClosed(actual)) -> if (actual != expected) return false
-      | None() -> return false
-      }
-    };
-    for ((id, expected) in bindings.items()) {
-      this.values.maybeGet(id) match {
-      | Some(SVClosed(actual)) ->
-        if (actual != expected) {
-          return false
-        }
-      | Some(SVOpen(actual)) ->
-        if (
-          !allowSealing ||
-          actual != expected ||
-          (this.freezeCandidates && id.isCandidate())
-        ) {
-          return false
-        }
-      | None() -> return false
-      }
-    };
-    for ((id, expected) in bindings.items()) {
-      this.values.maybeGet(id) match {
-      | Some(SVOpen(_)) ->
-        _ = this.bumpVersion();
-        this.!values[id] = SVClosed(expected)
-      // Validated by the first pass; already closed bindings need no write.
-      | _ -> void
-      }
-    };
-    for ((source, target) in frame.validatedSubtypeEdges()) {
-      this.results.recordSubtypingEdge(source, target)
-    };
-    true
-  }
-
-  // Private transaction kernel. Only the restricted context factory calls it
-  // in production; test-only class extensions inject illegal scratch operations.
-  // This is a synchronous shape-read transaction, NOT a proof/certificate API.
-  // `read` must compute its result from its symbolic operands using `scratch`;
-  // passing in an already materialized answer does not establish its provenance.
-  // Every supported inspected candidate payload is pinned in this owner before
-  // TRReady(result) escapes. Symbolic members that were not inspected remain open.
-  // These commitments have the lifetime of the enclosing inference transaction:
-  // ordinary rollback must abandon its derived answers as well as its state.
-  // No receipt or scratch cache is transferable across owners or rollback.
-  private mutable fun withCommittedTypeReads<T>(
-    read: (mutable Subst) -> ?T,
-  ): TypeReadResult<T> {
-    this.readObservation match {
-    | Some(frame) ->
-      // Nested consumers contribute to the same outer read set. They cannot
-      // mint an independent commitment in a scratch substitution.
-      if (frame.isBlocked()) {
-        TRBlocked()
-      } else {
-        result = read(this);
-        if (frame.isBlocked()) {
-          TRBlocked()
-        } else {
-          result match {
-          | Some(value) -> TRReady(value)
-          | None() -> TRUnavailable()
-          }
-        }
-      }
-    | None() ->
-      entryEpoch = this.semanticEpoch;
-      entryFreeze = this.freezeCandidates;
-      frame = SubstReadObservation::mcreate(this.snapshot());
-      scratch = Subst::observationScratch(this, frame);
-      cell = SubstReadCell::mcreate();
-      try {
-        cell.!value = read(scratch)
-      } catch {
-      // block() already latched the frame before throwing.
-      | SubstObservationBlocked() -> void
-      | exn -> throw exn
-      };
-      result = cell.value;
-      if (
-        frame.isBlocked() ||
-        this.semanticEpoch != entryEpoch ||
-        this.freezeCandidates != entryFreeze
-      ) {
-        TRBlocked()
-      } else {
-        result match {
-        | None() -> TRUnavailable()
-        | Some(value) ->
-          if (this.commitObservedBindings(frame, entryEpoch)) {
-            TRReady(value)
-          } else {
-            TRBlocked()
-          }
-        }
-      }
-    }
-  }
-
-  // Restricted consumer boundary. Clear caller recursion assumptions once,
-  // preserve them for nested observations, and retain the existing atomic
-  // owner commitment. The callback never receives the backing substitution.
-  mutable fun withCommittedReadContext<T>(
-    tenv: TEnv,
-    read: (mutable TypeReadContext) -> ?T,
-  ): TypeReadResult<T> {
-    readEnv = if (this.isObservingTypeReads()) {
-      tenv
-    } else {
-      tenv.forTypeReadObservation()
-    };
-    this.withCommittedTypeReads(scratch ->
-      TypeReadContext::runObserved(scratch, readEnv, read)
-    )
-  }
-
-  // A negative/absent decision still publishes the dependencies it inspected.
-  mutable fun withCommittedReadDecision<T>(
-    tenv: TEnv,
-    decide: (mutable TypeReadContext) -> T,
-  ): TypeReadResult<T> {
-    this.withCommittedReadContext<T>(tenv, context -> Some(decide(context)))
-  }
-
-  // Establish an actual positive judgment without proposing any candidate or
-  // literal representation. Unavailable means no proof, not a stable negation;
-  // Blocked means an interpretation is missing or publication is forbidden.
-  // The result has the lifetime of this owner's enclosing inference transaction.
-  mutable fun proveSubtype(
-    tenv: TEnv,
-    source: TType,
-    target: TType,
-  ): TypeReadResult<Void> {
-    this.proveSubtypeRead(tenv, source, target, true)
-  }
-
-  // Skip proposals only when all inspected meanings are already established.
-  // Otherwise inference may still need to widen a literal/storage contract.
-  mutable fun proveEstablishedSubtype(
-    tenv: TEnv,
-    source: TType,
-    target: TType,
-  ): TypeReadResult<Void> {
-    this.proveSubtypeRead(tenv, source, target, false)
-  }
-
-  private mutable fun proveSubtypeRead(
-    tenv: TEnv,
-    source: TType,
-    target: TType,
-    allowSealing: Bool,
-  ): TypeReadResult<Void> {
-    this.proveSubtypesRead(tenv, Array[(source, target)], allowSealing) match {
-    | SubtypesProved() -> TRReady(void)
-    | SubtypesUnproved(_, SVFUnresolved()) -> TRBlocked()
-    | SubtypesUnproved(_, SVFUnproved()) -> TRUnavailable()
-    }
-  }
-
-  mutable fun proveSubtypes(
-    tenv: TEnv,
-    obligations: Array<(TType, TType)>,
-  ): SubtypeBatchResult {
-    this.proveSubtypesRead(tenv, obligations, true)
-  }
-
-  private mutable fun proveSubtypesRead(
-    tenv: TEnv,
-    obligations: Array<(TType, TType)>,
-    allowSealing: Bool,
-  ): SubtypeBatchResult {
-    if (
-      !(this.computationPurpose is TCPChecking()) ||
-      this.isObservingTypeReads()
-    ) {
-      SubtypesUnproved(0, SVFUnresolved())
-    } else {
-      bindings = this.values;
-      origins = this.origins;
-      version = this.version;
-      entryEpoch = this.semanticEpoch;
-      entryFreeze = this.freezeCandidates;
-      errorHandling = this.results.errorHandling;
-      readEnv = tenv.forTypeReadObservation();
-      // Proof search allocates large temporary declaration/type graphs. A region
-      // returns only its immutable read footprint and diagnostics; it cannot
-      // retain pointers into a discarded proof or mutate the candidate owner.
-      (
-        frame,
-        failure,
-        diagnostics,
-        reads,
-        mutations,
-        exception,
-      ) = SKStore.withRegion(this.context, (_, context) ~> {
-        observation = SubstReadObservation::mcreate(
-          SubstSnapshot::create(bindings),
-        );
-        results = TCResultsAcc::mcreate{errorHandling};
-        scratch = mutable Subst{
-          context,
-          results,
-          seenSub => SortedSet[],
-          seenInter => SortedMap[],
-          seenUnion => SortedMap[],
-          seenExpansion => SortedMap[],
-          version => version,
-          semanticEpoch => entryEpoch,
-          values => bindings,
-          origins => origins,
-          freezeCandidates => entryFreeze,
-          readObservation => Some(observation),
-        };
-        exception: ?Exception = None();
-        failure = try {
-          TypeReadContext::runSubtypeProofs(scratch, readEnv, obligations)
-        } catch {
-        | SubstObservationBlocked() -> Some(0)
-        | exn ->
-          !exception = Some(exn);
-          Some(0)
-        };
-        (
-          observation.freeze(),
-          failure,
-          results.chill(),
-          scratch.typeQueryReadStamp(),
-          scratch.typeMutationStamp(),
-          exception,
-        )
-      });
-      // Preserve the existing conservative qualification counters. Query scopes
-      // themselves are local: readEnv carries no caller recursion assumptions.
-      this.queryReads.!unsealed = this.queryReads.unsealed + reads.i0;
-      this.queryReads.!recursive = this.queryReads.recursive + reads.i1;
-      this.queryReads.!provisional = this.queryReads.provisional + reads.i2;
-      this.queryReads.!mutations = this.queryReads.mutations + mutations;
-      this.results.appendDiagnostics(diagnostics);
-      // Return exceptions as data across the region, so both their payload and
-      // the updated declaration context are copied before any outer recovery.
-      exception.each(exn -> throw exn);
-      if (
-        frame.isBlocked() ||
-        this.semanticEpoch != entryEpoch ||
-        this.freezeCandidates != entryFreeze
-      ) {
-        SubtypesUnproved(failure.default(0), SVFUnresolved())
-      } else if (failure.isSome()) {
-        SubtypesUnproved(failure.fromSome(), SVFUnproved())
-      } else if (this.commitObservedBindings(frame, entryEpoch, allowSealing)) {
-        this.results.appendPublication(diagnostics);
-        SubtypesProved()
-      } else {
-        SubtypesUnproved(failure.default(0), SVFUnresolved())
-      }
-    }
-  }
-
-  // A proof of a known target sub-union needs no interpretation of an opaque
-  // alternative. If that proof fails, absence makes the result blocked rather
-  // than a negative judgment. No candidate is solved or given a default.
-  mutable fun blockIfMissingSubtypeTarget(): void {
-    this.readObservation.each(frame -> frame.blockIfMissingSubtypeTarget())
-  }
-
-  // Only positive subtype validation requests this lower-bound view.
-  mutable fun peekSubtypeTarget(tvar: TVar): ?TType {
-    invariant(this.isObservingTypeReads());
-    this.readBinding(tvar, MonotoneTypeRead()) match {
-    | Some(SVOpen(type))
-    | Some(SVClosed(type)) ->
-      Some(type)
-    | None() -> None()
-    }
-  }
-
-  // Record one supported mutation of inference state. Callers that need to
-  // know whether a speculative computation was observationally pure compare
-  // typeMutationStamp for a computation including scratch descendants;
-  // semanticEpoch describes only this owner. Neither counter rewinds.
-  private mutable fun bumpVersion(): Int {
-    // All supported allocation and binding writes pass this boundary. A
-    // private read cannot solve or seal a candidate to make its answer valid.
-    this.readObservation.each(frame -> frame.block());
-    this.queryReads.!mutations = this.queryReads.mutations + 1;
-    oldVersion = this.version;
-    this.!version = this.version + 1;
-    this.!semanticEpoch = this.semanticEpoch + 1;
-    oldVersion
   }
 
   mutable fun grow(
@@ -965,7 +205,7 @@ mutable class Subst private {
     ty: TType,
     variance: Variance,
   ): void {
-    newTy = this.readBinding(tvar) match {
+    newTy = this.values.maybeGet(tvar.id) match {
     | None() -> ty
     | Some(SVClosed(_)) -> return void
     | Some(SVOpen(ty2)) ->
@@ -979,7 +219,7 @@ mutable class Subst private {
       // contravariant grow of a bound candidate is suppressed too: a query
       // must not add lower bounds either.
       if (
-        tvar.identity().isCandidate() &&
+        tvar.id.isCandidate() &&
         (variance is Covariant _ || this.freezeCandidates)
       ) {
         return void
@@ -989,57 +229,37 @@ mutable class Subst private {
         newTy
       }
     };
-    _ = this.bumpVersion();
-    this.!values[tvar.identity()] = variance match {
+    this.!version = this.version + 1;
+    this.!values[tvar.id] = variance match {
     | Contravariant() -> SVOpen(newTy)
     | Covariant() -> SVClosed(newTy)
     }
   }
 
   mutable fun get(tenv: TEnv, tvar: TVar, variance: Variance): TType {
-    this.readObservation match {
-    | Some(frame) ->
-      // Read the fixed payload without the ordinary covariant sealing step.
-      // Occurrence constraints still apply, but any attempted solution during
-      // their evaluation blocks the entire observation.
-      value = this.readBinding(tvar);
-      result = value match {
-      | Some(SVOpen(ty))
-      | Some(SVClosed(ty)) ->
-        ty
-      | None() ->
-        frame.block();
-        invariant_violation("an unbound observed read cannot return")
-      };
-      for (cstr in tvar.constraints) {
-        !result = TType::inter(this, tenv, result, cstr)
-      };
-      return result
-    | None() -> void
-    };
     result = variance match {
     | Covariant() ->
-      this.readBinding(tvar) match {
+      this.values.maybeGet(tvar.id) match {
       | None() ->
         // Fresh: sealing to top is a new addition, allowed.
         topTy = TType::top(tvar.pos);
-        _ = this.bumpVersion();
-        this.!values[tvar.identity()] = SVClosed(topTy);
+        this.!version = this.version + 1;
+        this.!values[tvar.id] = SVClosed(topTy);
         topTy
       | Some(SVClosed(ty)) -> ty
       | Some(SVOpen(ty)) ->
         // Sealing changes an existing binding, so inside an admissibility check
         // suppress it for a candidate and return the value unsealed.
-        if (this.freezeCandidates && tvar.identity().isCandidate()) {
+        if (this.freezeCandidates && tvar.id.isCandidate()) {
           ty
         } else {
-          _ = this.bumpVersion();
-          this.!values[tvar.identity()] = SVClosed(ty);
+          this.!version = this.version + 1;
+          this.!values[tvar.id] = SVClosed(ty);
           ty
         }
       }
     | Contravariant() ->
-      this.readBinding(tvar) match {
+      this.values.maybeGet(tvar.id) match {
       | None() -> TType::bottom(tvar.pos)
       | Some(SVOpen(ty))
       | Some(SVClosed(ty)) ->
@@ -1053,7 +273,7 @@ mutable class Subst private {
   }
 
   mutable fun peek(tenv: TEnv, tvar: TVar): ?TType {
-    this.readBinding(tvar) match {
+    this.values.maybeGet(tvar.id) match {
     | None() -> None()
     | Some(SVOpen(ty))
     | Some(SVClosed(ty)) ->
@@ -1066,34 +286,9 @@ mutable class Subst private {
   }
 
   mutable fun gen(pos: PosRange): TVar {
-    TVar::create(this, pos)
-  }
-
-  // A scope may record allocation progress but cannot rewind the allocator.
-  readonly fun skolemCheckpoint(): Int {
-    this.nextSkolemId
-  }
-
-  readonly fun skolemIdsSince(first: Int): SortedSet<Id> {
-    Id::hiddenWitnessesSince(this, first)
-  }
-
-  // Solver/witness factories consume owner-controlled serials, not an
-  // arbitrary caller-supplied number. Consuming a serial alone grants no ID.
-  mutable fun allocateCandidateSerial(): Int {
-    this.bumpVersion()
-  }
-
-  mutable fun allocateHiddenWitnessSerial(): Int {
-    this.readObservation.each(frame -> frame.block());
-    invariant(
-      this.nextSkolemId >= 0,
-      "A hidden witness must be minted in a checking owner, not in " +
-        "scratch, normalization or diagnostic state",
-    );
-    id = this.nextSkolemId;
-    this.!nextSkolemId = this.nextSkolemId + 1;
-    id
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, TVarID::create(id))
   }
 
   mutable fun genSkolemTParam(
@@ -1101,50 +296,62 @@ mutable class Subst private {
     name: String,
     cstr: ?TType,
   ): TParamWithConstraint {
+    invariant(
+      this.nextSkolemId >= 0,
+      "A skolem must not be minted in a cloned Subst: its id could collide " +
+        "with one the parent mints later, merging two distinct hidden type " +
+        "arguments",
+    );
+    id = this.nextSkolemId;
+    this.!nextSkolemId = this.nextSkolemId + 1;
     TParamWithConstraint(
       name,
       pos.fileName,
-      Id::createHiddenWitness(this),
+      Id::createSynthetic(`skolem:${id}`),
       cstr,
     )
   }
 
   mutable fun genForField(pos: PosRange): TVar {
-    TVar::createForField(this, pos)
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, TVarID::createForField(id))
   }
 
-  mutable fun genForContextualElement(pos: PosRange): TVar {
-    TVar::createForContextualElement(this, pos)
+  mutable fun genForLiteralCommitment(pos: PosRange): TVar {
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, TVarID::createForLiteralCommitment(id))
   }
 
-  mutable fun isOpen(tvar: TVar): Bool {
-    this.readBinding(tvar) match {
+  readonly fun isOpen(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) match {
     | Some(SVOpen _) -> true
     | _ -> false
     }
   }
 
-  mutable fun isClosed(tvar: TVar): Bool {
-    this.readBinding(tvar) is Some(SVClosed _)
+  readonly fun isClosed(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) is Some(SVClosed _)
   }
 
   // Returns true if the type variable has no binding at all
-  mutable fun isUnbound(tvar: TVar): Bool {
-    this.readBinding(tvar) is None()
+  readonly fun isUnbound(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) is None()
   }
 
   mutable fun setOrigin(tvar: TVar, origin: TVarOrigin): void {
-    this.!origins[tvar.identity()] = origin;
+    this.!origins[tvar.id] = origin;
   }
 
   readonly fun getOrigin(tvar: TVar): ?TVarOrigin {
-    this.origins.maybeGet(tvar.identity())
+    this.origins.maybeGet(tvar.id)
   }
 
   // Returns the raw bound value without applying constraints
   // Used for checking if a type variable is bound to a tuple for spread param expansion
-  mutable fun peekRaw(tvar: TVar): ?TType {
-    this.readBinding(tvar) match {
+  readonly fun peekRaw(tvar: TVar): ?TType {
+    this.values.maybeGet(tvar.id) match {
     | None() -> None()
     | Some(SVOpen(ty))
     | Some(SVClosed(ty)) ->

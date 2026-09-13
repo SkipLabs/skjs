@@ -2,9 +2,10 @@
 
 Small probe programs and, beside each, SKJS's exported claims for it printed
 in the syntax the viewer shows: one line per parameter, result, statement
-entry and expression, with every unavailable type carrying the exporter's
-reason. They exist to make changes to the exporter reviewable: a change shows
-as a diff in a `.snap` file, at the site it affects.
+entry, expression, and closed subtype or expansion judgment, with every
+unavailable type carrying the exporter's reason. They exist to make changes
+to the exporter reviewable: a change shows as a diff in a `.snap` file, at
+the site it affects.
 
 The probes are chosen for what the exporter does with them, one phenomenon
 each, and are independent of the verification corpus: nothing here is parsed

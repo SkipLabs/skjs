@@ -257,6 +257,21 @@ alternative by the checked read/write rule below; unsupported encodings are
 never omitted. Other constructs
 are covered by the cell and closure extensions below or rejected by the slice
 gate, including active-name shadowing and statements after an explicit return. This restriction is not a final dead-code policy.
+The identity scheme `id<T>(x: T): T { return x }` is also accepted, with one
+type parameter exported as a `param` atom. Function AST objects always
+include `typeParams` (empty when the function is not generic). Each type
+parameter is `{ "name": "T", "bound": null }` or `{ "name": "T", "bound": boolean }`
+for `T extends boolean`. The file AST always includes `aliases` (empty when the
+file declares none). `type Id<T> = T` and `type Box<T> = { value: T }` are the
+admitted alias schemes; a one-argument named instantiation is an `alias` atom
+`{ "a": "alias", "name": "Id", "args": [A] }`.
+The adapter substitutes using the identity and cell theorems before identity
+checking or ground extraction. `asBoolean<T extends boolean>(x: T): boolean { return x }`
+is accepted; returning `true` as `T` is not. A generic body may copy `T`
+through `const y: T = x` and extra parameters of type `T`, then return one of
+those bindings. Other generic functions remain outside the slice. A file of
+only these schemes produces an empty evidence bundle: the scheme is checked,
+then omitted from the graph request.
 
 Generate an AST with `tools/parse-source.mts`, and claims with SKJS's
 `--emit-skjs-type-claims`. Then run:
@@ -387,6 +402,30 @@ constraints, named instances and cycles remain unsupported. This exposes the
 field bounds of fresh object literals without replacing their expression claims
 with declaration annotations. Faithfulness of this bounded export to SKJS's
 internal types is not a Lean theorem.
+
+### Closed operation export
+
+Each function also exports `operations`: the closed subtype and expansion
+judgments SKJS accepted while checking that body. Types are serialized under
+the substitution in force at the judgment, not the function's final snapshot.
+Live inference variables, named instances, `unknown`, and anything outside the
+fragment are omitted rather than approximated. Speculative checks on a cloned
+substitution are not recorded. The independent consumer
+(`--check-skjs-operations`) translates those that lower into the source
+fragment and asks the existing subtype checker for a derivation. A skipped
+operation is outside the fragment; an unproved one is a failed search, not a
+semantic disproof. This export does not change SKJS acceptance.
+
+```json
+{
+  "kind": "subtype",
+  "source": {"top": false, "atoms": [{"a": "booleanlit", "v": "true"}]},
+  "target": {"top": false, "atoms": [{"a": "boolean"}]}
+}
+```
+
+`expand` uses the same two fields: `source` is the type before expansion,
+`target` the clause view. Exact expansion is checked in both directions.
 
 A supported multi-branch object is serialized as multiple `record` or `function`
 atoms in the same `atoms` list. Every branch must export successfully; one

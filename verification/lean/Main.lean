@@ -19,6 +19,8 @@ def main (args : List String) : IO UInt32 := do
       match depth.toNat? with
       | some fuel => ExperimentState.RequestCli.sourceFiles astPath claimsPath fileKey evidencePath (some fuel)
       | none => IO.eprintln "reject: search depth must be a natural number"; return 2
+  | ["--check-skjs-operations", claimsPath] =>
+      ExperimentState.RequestCli.checkOperations claimsPath
   | ["--check-stateful", requestPath, evidencePath] =>
       ExperimentState.RequestCli.checkFiles requestPath evidencePath
   | ["--produce-stateful", requestPath, evidencePath, depth] =>
@@ -33,4 +35,5 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln "       verifier --produce-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json> <depth>"
       IO.eprintln "       verifier --export-source-claims <ast.json> <skjs-claims.json> <file-key>"
       IO.eprintln "       verifier --check-source-claims <ast.json> <source-claims.json> <file-key> <evidence.json>"
+      IO.eprintln "       verifier --check-skjs-operations <claims.json>"
       return 2

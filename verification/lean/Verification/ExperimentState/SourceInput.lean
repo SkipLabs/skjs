@@ -252,13 +252,30 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
     return .ite p (← decodeExpr (← jField j "cond")) thn els
   | _ => throw "statement outside the stateful source slice"
 
-def decodeFn (j : Json) : Except String Fn := do
-  return ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
+structure TypeParam where
+  name : String
+  bound : Option Json
+
+def decodeTypeParam (j : Json) : Except String TypeParam := do
+  CellClaims.fieldsExactly j ["name", "bound"]
+  let name ← jStr (← jField j "name")
+  if name.isEmpty then throw "empty type-parameter name"
+  let b ← jField j "bound"
+  return ⟨name, if b == Json.null then none else some b⟩
+
+def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
+  let typeParams ← (← jArr j "typeParams").mapM decodeTypeParam
+  return (⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do return ⟨← jStr (← jField p "name"), ← jField p "type"⟩),
-    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩
+    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt⟩, typeParams)
+
+def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
+  (← jArr j "functions").mapM decodeFn
 
 def decodeAst (j : Json) : Except String (List Fn) := do
-  (← jArr j "functions").mapM decodeFn
+  (← decodeAstWithParams j).mapM fun (f, tps) => do
+    if !tps.isEmpty then throw "generic functions are checked through source extraction"
+    return f
 
 def decodeClaims (j : Json) : Except String Claims := do
   let vars := fun j => do

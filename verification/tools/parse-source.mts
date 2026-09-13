@@ -85,17 +85,30 @@ export type Stmt =
       init: Expr;
     };
 
+export interface TypeParamAst {
+  name: string;
+  bound: WireType | null;
+}
+
 export interface FunctionAst {
   name: string;
   namePos: Span;
+  typeParams: TypeParamAst[];
   params: { name: string; pos: Span; type: WireType }[];
   retType: WireType;
   body: Stmt[];
 }
 
+export interface TypeAliasAst {
+  name: string;
+  typeParams: TypeParamAst[];
+  body: WireType;
+}
+
 export interface Ast {
   file: string;
   sourceSha256: string;
+  aliases: TypeAliasAst[];
   functions: FunctionAst[];
 }
 
@@ -206,8 +219,20 @@ class Gate {
   // Written out rather than a parameter property: node strips types, it does
   // not compile them, so the syntax has to be erasable.
   private readonly file: SourceFile;
+  private readonly typeParams = new Set<string>();
+  private readonly aliasNames = new Set<string>();
+  private aliasApps = false;
   constructor(file: SourceFile) {
     this.file = file;
+  }
+
+  registerAlias(name: string, node: Node): void {
+    if (this.aliasNames.has(name)) this.fail(node, "duplicate type alias");
+    this.aliasNames.add(name);
+  }
+
+  enableAliasApps(): void {
+    this.aliasApps = true;
   }
 
   fail(node: Node | null, message: string): never {
@@ -337,6 +362,33 @@ class Gate {
       case ts.SyntaxKind.UndefinedKeyword:
         acc.push({ a: "undefined" });
         return;
+
+      case ts.SyntaxKind.TypeReference: {
+        if (node.typeName.kind !== ts.SyntaxKind.Identifier)
+          this.fail(node, "type reference outside the fragment");
+        const name = node.typeName.text as string;
+        if (node.typeArguments?.length) {
+          if (!this.aliasApps)
+            this.fail(
+              node,
+              "alias applications in alias bodies are outside the fragment",
+            );
+          if (node.typeArguments.length !== 1)
+            this.fail(node, "only one type argument is in the fragment");
+          if (!this.aliasNames.has(name))
+            this.fail(node, "unknown type alias");
+          acc.push({
+            a: "alias",
+            name,
+            args: [this.typeOf(node.typeArguments[0])],
+          });
+          return;
+        }
+        if (!this.typeParams.has(name))
+          this.fail(node, "unknown type parameter");
+        acc.push({ a: "param", name });
+        return;
+      }
 
       case ts.SyntaxKind.LiteralType: {
         const lit = node.literal;
@@ -861,20 +913,72 @@ class Gate {
     }
   }
 
+  /* ---------------------------------------------------------- aliases -- */
+
+  aliasDecl(node: any): TypeAliasAst {
+    if (!node.name) this.fail(node, "anonymous type alias");
+    if (node.name.text === "undefined")
+      this.fail(node, "shadowing undefined is outside the fragment");
+    if (node.modifiers?.length)
+      this.fail(node, "modifiers (export/declare) are outside the fragment");
+    if (!node.typeParameters || node.typeParameters.length !== 1)
+      this.fail(node, "only one type parameter is in the fragment");
+    const tp = node.typeParameters[0];
+    if (tp.constraint || tp.default)
+      this.fail(
+        tp,
+        "type parameter bounds and defaults are outside the fragment",
+      );
+    if (tp.name.kind !== ts.SyntaxKind.Identifier)
+      this.fail(tp, "expected a type-parameter name");
+    const param = tp.name.text as string;
+    this.typeParams.add(param);
+    this.aliasApps = false;
+    try {
+      return {
+        name: node.name.text,
+        typeParams: [{ name: param, bound: null }],
+        body: this.typeOf(node.type),
+      };
+    } finally {
+      this.typeParams.clear();
+    }
+  }
+
   /* --------------------------------------------------------- functions -- */
 
   functionDecl(node: any): FunctionAst {
     if (!node.name) this.fail(node, "anonymous function");
     if (node.name.text === "undefined")
       this.fail(node, "shadowing undefined is outside the fragment");
-    if (node.typeParameters?.length)
-      this.fail(node, "generics are outside the fragment");
     if (node.modifiers?.length)
       this.fail(
         node,
         "modifiers (export/async/declare) are outside the fragment",
       );
     if (!node.body) this.fail(node, "a function must have a body");
+    const typeParams: TypeParamAst[] = [];
+    if (node.typeParameters?.length) {
+      if (node.typeParameters.length !== 1)
+        this.fail(node, "only one type parameter is in the fragment");
+      const tp = node.typeParameters[0];
+      if (tp.default)
+        this.fail(tp, "type parameter defaults are outside the fragment");
+      if (tp.name.kind !== ts.SyntaxKind.Identifier)
+        this.fail(tp, "expected a type-parameter name");
+      let bound: WireType | null = null;
+      if (tp.constraint) {
+        if (tp.constraint.kind !== ts.SyntaxKind.BooleanKeyword)
+          this.fail(
+            tp.constraint,
+            "only `extends boolean` is in the fragment",
+          );
+        bound = this.typeOf(tp.constraint);
+      }
+      typeParams.push({ name: tp.name.text, bound });
+      this.typeParams.add(tp.name.text);
+    }
+    try {
     const params = node.parameters.map((p: any) => {
       if (p.name.kind !== ts.SyntaxKind.Identifier)
         this.fail(p, "destructuring parameter");
@@ -895,10 +999,14 @@ class Gate {
     return {
       name: node.name.text,
       namePos: this.span(node.name),
+      typeParams,
       params,
       retType: this.typeOf(node.type),
       body: this.block(node.body),
     };
+    } finally {
+      this.typeParams.clear();
+    }
   }
 }
 
@@ -914,18 +1022,29 @@ export function parseFile(file: string): Ast {
   const text = readFileSync(absolute, "utf8");
   const source = openFile(absolute, text);
   const gate = new Gate(source);
-  const functions = source.statements.map((s: any) => {
-    if (s.kind !== ts.SyntaxKind.FunctionDeclaration)
+  const aliasNodes: any[] = [];
+  const fnNodes: any[] = [];
+  for (const s of source.statements as readonly any[]) {
+    if (s.kind === ts.SyntaxKind.TypeAliasDeclaration) aliasNodes.push(s);
+    else if (s.kind === ts.SyntaxKind.FunctionDeclaration) fnNodes.push(s);
+    else
       gate.fail(
         s,
         `top-level statement outside the fragment (${ts.SyntaxKind[s.kind]})`,
       );
-    return gate.functionDecl(s);
-  });
+  }
+  for (const node of aliasNodes) {
+    if (!node.name) gate.fail(node, "anonymous type alias");
+    gate.registerAlias(node.name.text, node);
+  }
+  const aliases = aliasNodes.map((s) => gate.aliasDecl(s));
+  gate.enableAliasApps();
+  const functions = fnNodes.map((s) => gate.functionDecl(s));
   if (functions.length === 0) gate.fail(null, "no functions in file");
   return {
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
+    aliases,
     functions,
   };
 }

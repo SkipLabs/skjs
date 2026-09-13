@@ -74,3 +74,4 @@ Read these before starting the relevant task:
 | [Testing](docs/testing.md) | Before writing or modifying tests |
 | [Commits and PRs](docs/commits-and-prs.md) | Before committing or opening a pull request |
 | [Verification](verification/AGENTS.md) | Before touching `verification/`: the independent verifier, its suite's shape and rules, and what its results mean |
+| [SKJS improvement](docs/skjs-improvement.md) | Before changing the checker to be more principled: contracts, active rows, and what not to do |

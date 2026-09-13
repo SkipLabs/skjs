@@ -16,6 +16,8 @@ export interface FunctionAtom {
 export type Atom =
   | { a: "null" | "undefined" | "boolean" | "string" | "number" }
   | { a: "stringlit" | "numberlit" | "booleanlit"; v: string }
+  | { a: "param"; name: string }
+  | { a: "alias"; name: string; args: WireType[] }
   | RecordAtom | FunctionAtom
   | { a: "callable"; function: FunctionAtom; bag: RecordAtom };
 
@@ -60,6 +62,15 @@ function atom(v: unknown): void {
     case "callable":
       keys(o,["a","function","bag"]); atom(o.function); atom(o.bag);
       if (object(o.function).a !== "function" || object(o.bag).a !== "record") throw Error("invalid callable");
+      break;
+    case "param":
+      keys(o,["a","name"]); str(o.name);
+      if (!(o.name as string).length) throw Error("empty type-parameter name");
+      break;
+    case "alias":
+      keys(o,["a","name","args"]); str(o.name);
+      if (!(o.name as string).length) throw Error("empty alias name");
+      list(o.args).forEach(decodeClaimType);
       break;
     default: throw Error("unknown claim atom");
   }

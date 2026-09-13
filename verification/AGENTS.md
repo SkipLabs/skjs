@@ -31,6 +31,7 @@ One file end to end, with `$F` a repository-relative path:
 node verification/tools/parse-source.mts $F > ast.json
 bash verification/skjs.sh --emit-skjs-type-claims $F > claims.json
 verification/lean/.lake/build/bin/verifier --produce-stateful-source ast.json claims.json $F evidence.json 10
+verification/lean/.lake/build/bin/verifier --check-skjs-operations claims.json
 ```
 
 `skjs.sh` runs SKJS in the `skiplabs/skip` container; inside a devcontainer it

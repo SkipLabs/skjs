@@ -52,6 +52,9 @@ class FunTypeClaims(
   // Snapshot at successful completion or a body error that aborts checking.
   // Export reads existing bounds; it cannot solve, seal or grow inference variables.
   substValues: SortedMap<TVarID, SubstValue>,
+  // Closed subtype and expansion judgments recorded during this body, with
+  // types serialized under the substitution in force at the judgment.
+  operations: Array<(String, String, String)>,
   aborted: Bool,
   recovered: Bool,
   mode: String,
@@ -133,6 +136,7 @@ fun buildFunTypeClaims(
     exprs.toArray(),
     lvalues.toArray(),
     tcenv.subst.values,
+    tcenv.subst.popClaimedOpFrame(),
     aborted,
     tcenv.results.errors.size() > errorsBefore,
     mode,
@@ -249,13 +253,15 @@ fun claimTypeJsonBounded(
   functions: Bool,
   values: SortedMap<TVarID, SubstValue>,
   fuel: Int,
+  allowParam: Bool = true,
 ): ClaimExport {
   if (fuel <= 0) {
     claimUnavailable("fuel-exhausted")
   } else if (!ty.insts.isEmpty()) {
     // Only an isolated, bound, unconstrained inference variable can be read
-    // from the snapshot. Do not approximate constraints or expand named types.
-    // Everything else is refused under the name of what it is.
+    // from the snapshot. Do not approximate constraints. A one-argument named
+    // instantiation is serialized as an alias application; it is not expanded
+    // here. Everything else is refused under the name of what it is.
     ty.getSingleVar() match {
     | Some(tv) ->
       if (!tv.constraints.isEmpty()) {
@@ -264,64 +270,131 @@ fun claimTypeJsonBounded(
         values.maybeGet(tv.id) match {
         | Some(SVOpen(bound))
         | Some(SVClosed(bound)) ->
-          claimTypeJsonBounded(bound, records, functions, values, fuel - 1)
+          claimTypeJsonBounded(
+            bound,
+            records,
+            functions,
+            values,
+            fuel - 1,
+            allowParam,
+          )
         | None() -> claimUnavailable("unbound-inference-variable")
         }
       }
     | None() ->
       if (ty.insts.size() > 1) {
         claimUnavailable("several-unexpanded-types")
-      } else if (ty.getSingleInst().isSome()) {
-        claimUnavailable("unexpanded-named-type")
-      } else if (ty.getSingleInter().isSome()) {
-        // A conjunction of two object types is merged by TObject::inter
-        // (src/TTypeInter.sk) before it can reach export, and an unexpanded
-        // TInter survives only around an unbound inference variable, which
-        // the surface never leaves open. So no export carries a conjunction
-        // to write as `and`, and this refusal is what remains.
-        claimUnavailable("unexpanded-intersection")
       } else {
-        claimUnavailable("unexpanded-type")
+        ty.getSingleInst() match {
+        | Some(inst) if (inst.targs.targs.size() == 1) ->
+          // A single named instantiation with one argument is an alias
+          // application, not an expansion. The verifier substitutes using the
+          // identity and cell schemes; classes and nullary aliases stay refused.
+          arg = claimTypeJsonBounded(
+            inst.targs.targs[0],
+            records,
+            functions,
+            values,
+            fuel - 1,
+            allowParam,
+          );
+          if (arg.reason != "") {
+            claimUnavailable(arg.reason)
+          } else {
+            ClaimExport(
+              `{"top": false, "atoms": ${jsonArr(
+                Array[
+                  jsonObj(
+                    Array[
+                      ("a", jsonStr("alias")),
+                      ("name", jsonStr(inst.name.value)),
+                      ("args", jsonArr(Array[arg.json])),
+                    ],
+                  ),
+                ],
+              )}}`,
+              "",
+            )
+          }
+        | Some(_) -> claimUnavailable("unexpanded-named-type")
+        | None() ->
+          if (ty.getSingleInter().isSome()) {
+            // A conjunction of two object types is merged by TObject::inter
+            // (src/TTypeInter.sk) before it can reach export, and an unexpanded
+            // TInter survives only around an unbound inference variable, which
+            // the surface never leaves open. So no export carries a conjunction
+            // to write as `and`, and this refusal is what remains.
+            claimUnavailable("unexpanded-intersection")
+          } else {
+            claimUnavailable("unexpanded-type")
+          }
+        }
       }
     }
   } else if (ty.clauses.isTop()) {
     ClaimExport("{\"top\": true, \"atoms\": []}", "")
   } else {
-    atoms = mutable Vector<String>[];
-    reason = "";
-    nClauses = 0;
-    for (clause in ty.clauses) {
-      !nClauses = nClauses + 1;
-      if (clause.vars.size() != 0) {
-        // A universally quantified type parameter: outside the fragment.
-        !reason = "type-parameter"
-      };
-      clause.stypes match {
-      | None() -> !reason = "unsupported-type"
-      | Some(stypes) ->
-        for (sty in stypes) {
-          refusal = claimPushAtoms(
-            sty,
-            atoms,
-            records,
-            functions,
-            values,
-            fuel - 1,
-          );
-          if (reason == "" && refusal != "") {
-            !reason = refusal
+    // A lone type-parameter clause is a rigid parameter. SKJS may store
+    // `T extends boolean` as that variable plus the bound; the bound is Δ,
+    // not a second source type. Nested uses and several variables stay refused.
+    paramName = "";
+    if (allowParam && ty.clauses.size() == 1) {
+      for (clause in ty.clauses) {
+        if (clause.vars.size() == 1) {
+          for (v in clause.vars) {
+            !paramName = v.name
           }
         }
       }
     };
-    // `never` is zero clauses; more than one clause is a DNF outside the fragment.
-    if (nClauses > 1) {
-      !reason = "union-of-clauses"
-    };
-    if (reason == "") {
-      ClaimExport(`{"top": false, "atoms": ${jsonArr(atoms)}}`, "")
+    if (paramName != "") {
+      ClaimExport(
+        `{"top": false, "atoms": ${jsonArr(
+          Array[
+            jsonObj(
+              Array[("a", jsonStr("param")), ("name", jsonStr(paramName))],
+            ),
+          ],
+        )}}`,
+        "",
+      )
     } else {
-      claimUnavailable(reason)
+      atoms = mutable Vector<String>[];
+      reason = "";
+      nClauses = 0;
+      for (clause in ty.clauses) {
+        !nClauses = nClauses + 1;
+        if (clause.vars.size() != 0) {
+          // A universally quantified type parameter: outside the fragment.
+          !reason = "type-parameter"
+        };
+        clause.stypes match {
+        | None() -> !reason = "unsupported-type"
+        | Some(stypes) ->
+          for (sty in stypes) {
+            refusal = claimPushAtoms(
+              sty,
+              atoms,
+              records,
+              functions,
+              values,
+              fuel - 1,
+            );
+            if (reason == "" && refusal != "") {
+              !reason = refusal
+            }
+          }
+        }
+      };
+      // `never` is zero clauses; more than one clause is a DNF outside the fragment.
+      if (nClauses > 1) {
+        !reason = "union-of-clauses"
+      };
+      if (reason == "") {
+        ClaimExport(`{"top": false, "atoms": ${jsonArr(atoms)}}`, "")
+      } else {
+        claimUnavailable(reason)
+      }
     }
   }
 }
@@ -358,9 +431,9 @@ fun claimCellBranchJson(
     if (field.name.value != "value") return Failure("cell-field-name");
     if (!(field.access is FAPublic())) return Failure("cell-field-access");
     // A field type that cannot be exported names its own reason.
-    read = claimTypeJsonBounded(field.get, false, true, values, fuel);
+    read = claimTypeJsonBounded(field.get, false, true, values, fuel, false);
     if (read.reason != "") return Failure(read.reason);
-    write = claimTypeJsonBounded(field.set, false, true, values, fuel);
+    write = claimTypeJsonBounded(field.set, false, true, values, fuel, false);
     if (write.reason != "") return Failure(write.reason);
     entries.push(
       jsonObj(
@@ -478,11 +551,11 @@ fun claimFunctionBranchJson(
     if (f.spreadParam.isSome()) return Failure("function-rest-parameter");
     args = mutable Vector<String>[];
     for (param in f.params) {
-      arg = claimTypeJsonBounded(param, false, true, values, fuel);
+      arg = claimTypeJsonBounded(param, false, true, values, fuel, false);
       if (arg.reason != "") return Failure(arg.reason);
       args.push(arg.json)
     };
-    ret = claimTypeJsonBounded(f.retType, false, true, values, fuel);
+    ret = claimTypeJsonBounded(f.retType, false, true, values, fuel, false);
     if (ret.reason != "") return Failure(ret.reason);
     signature = jsonObj(
       Array[
@@ -527,6 +600,26 @@ fun claimFunctionBranchJson(
 
 fun claimPosJson(pos: PosRange, symbols: Map<SymbolicPos, Int>): String {
   `[${pos.getStart(symbols).value}, ${pos.getEnd(symbols).value}]`
+}
+
+// Record a successful closed operation. Live inference variables, named
+// instances, top, and anything outside the fragment are skipped rather than
+// approximated. Adds no work unless --emit-skjs-type-claims is set and a
+// function body frame is open.
+fun recordClosedClaimedOp(
+  subst: mutable Subst,
+  kind: String,
+  src: TType,
+  dst: TType,
+): void {
+  if (!getConfig(subst.context).emitSkjsTypeClaims) return void;
+  if (src.clauses.isTop() || dst.clauses.isTop()) return void;
+  srcEx = claimTypeJsonBounded(src, true, true, subst.values, 64);
+  if (srcEx.reason != "") return void;
+  dstEx = claimTypeJsonBounded(dst, true, true, subst.values, 64);
+  if (dstEx.reason != "") return void;
+  if (kind == "expand" && srcEx.json == dstEx.json) return void;
+  subst.recordClaimedOp(kind, srcEx.json, dstEx.json)
 }
 
 // Addresses are scoped to this function's name/namePos. Only failed exports
@@ -718,6 +811,20 @@ fun funTypeClaimsJson(
                   unavailable,
                 ),
               ),
+            ],
+          )
+        ),
+      ),
+    ),
+    (
+      "operations",
+      jsonArr(
+        fc.operations.map(op ->
+          jsonObj(
+            Array[
+              ("kind", jsonStr(op.i0)),
+              ("source", op.i1),
+              ("target", op.i2),
             ],
           )
         ),

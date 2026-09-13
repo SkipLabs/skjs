@@ -121,7 +121,7 @@ or treating the initializer as a permanent invariant.
 | **Incomparable function signatures are not disjoint — `L-INTER-BOT`.** [Witness](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/tfun-inter-incomparable-not-disjoint.md). | Directly exercises the positive calculus's function intersections. Begin with a calculus witness: one checked constant-null closure inhabits both a null-domain arrow and a Boolean-domain arrow. | Source integration needs richer callable claims and a sound identity/comparison story to reproduce the equality branch. Extensional arrow membership does not establish JavaScript function identity. Do not add intersection completeness or unrestricted arrow-result merging as a prerequisite. |
 | **Numeric false disjointness — `L-LIT`, deep dive G.** [Witness family](https://github.com/SkipLabs/skjs/blob/bf20814b4c0bfc72305e9e58411e13da68f94bca/docs/deep-dives/issues/beyond-precision-numeric-literals.md). | Distinct decimal spellings can denote the same binary64 value, making a claimed unreachable branch live. It tests runtime grounding independently of mutation. | The current calculus does not model numbers; the historical numeric success is not present coverage. Ground literal conversion, equality, signed zero and underflow first. Do not interpret decimal spellings as distinct mathematical integers. General truthiness and arithmetic are separate additions. |
 | **Callability/absence, getters and void.** `F-CABSENT`, `ACCESSOR-METHOD`, `L-SEQ`. | The corpus has concrete reachable-never and non-callable-call witnesses. | They require object-shape guarantees, accessor execution, or an explicit distinction between void as a typing convention and undefined as a value. Preserve the external-object boundary; do not trust structural declarations or treat void as a disjoint runtime tag. |
-| **Inference-state and expansion failures.** `MR-1`, `C-FREEZE-CACHE`, `L-SUB-TSINST`, `E-EXPKEY`. | Wrong inferred types remain valid verifier targets even when their cause is a cache or substitution bug. | Select a concrete escaping wrong claim whose ground types fit the calculus. This pipeline should check that consequence, not model SKJS caches, rollback or its entire generic inference algorithm. Universal generic certification needs separate rules; checking one ground instance does not supply it. |
+| **Inference-state and expansion failures.** `MR-1`, `C-FREEZE-CACHE`, `L-SUB-TSINST`, `E-EXPKEY`. | Wrong inferred types remain valid verifier targets even when their cause is a cache or substitution bug. | Select a concrete escaping wrong claim whose ground types fit the calculus. This pipeline should check that consequence, not model SKJS caches, rollback or its entire generic inference algorithm. Once a ground consequence is in reach, export the responsible subtype or expansion judgment with the snapshot in force at that judgment and check that operation's contract independently. Universal generic certification needs separate rules; checking one ground instance does not supply it. See [Semantic contracts for SKJS operations](#semantic-contracts-for-skjs-operations). |
 
 ### Completion criteria for every corpus target
 
@@ -204,6 +204,168 @@ The depth limit is not a work limit: failed searches for composite closure-write
 claims can be expensive. Independent checking does not run this search.
 The consumer must remain usable with evidence from any producer.
 
+The same split applies to SKJS itself. Inference may propose solutions; it does
+not authorize acceptance. [Semantic contracts for SKJS
+operations](#semantic-contracts-for-skjs-operations) is the path from this
+model to repairing SKJS's reasoning, without taking the current implementation
+as the specification.
+
+## Semantic contracts for SKJS operations
+
+The pipeline currently checks SKJS's *conclusions*: program-point types and
+invariants, translated into the calculus. That remains the source integration.
+The stronger use of the model is to give SKJS's individual operations precise
+semantic contracts, so a transformation is legitimate or unnecessary relative
+to those contracts rather than relative to the current implementation.
+
+Three similar-looking kinds have different meanings:
+
+| Kind | Semantic obligation |
+| --- | --- |
+| Generic parameter `T` | The body must work for **every** admissible `T`. |
+| Inference variable `?T` | The checker may **choose** a type satisfying the constraints. |
+| Hidden type argument of an object | There **exists a fixed type**, but the checker cannot choose or change it. |
+
+Confusing them is a source of unsoundness. `T extends boolean` establishes
+`T ≤ boolean`; it does not establish `boolean ≤ T`. A generic function
+returning `T` therefore cannot return `true` merely because `T` is bounded by
+`boolean`: `T` might be `false`. Likewise, an object's hidden type argument
+is not an inference variable for an expected type to solve.
+
+The distinction also holds across time. A hidden witness must retain its
+identity within its scope, without identifying the hidden arguments of
+different runtime objects. That is the same identity issue as escaping
+skolems, closures and loops.
+
+### Contracts
+
+1. **Substitution preserves meaning.** Substituting type arguments into syntax
+   must mean the same thing as interpreting the original syntax under the
+   corresponding type assignment. Capture avoidance, parameter identity and
+   composition become correctness properties rather than implementation
+   details.
+2. **Expansion and normalization have explicit guarantees.** An exact
+   expansion preserves denotation. An approximation must establish the
+   appropriate inclusion direction. A cache must preserve that guarantee under
+   the state in which its answer is reused.
+3. **Successful subtyping establishes semantic inclusion.** Schematically,
+   `Δ ⊢ A ≤ B` implies `⟦A⟧_η ⊆ ⟦B⟧_η` for every assignment `η` satisfying
+   `Δ`. The interpretation retains the model's heap and world conditions.
+   `extends` constraints contribute assumptions to `Δ`; conditional types
+   would need their own computation rules in addition. This inclusion is
+   already the proved meaning of the independent calculus's subtype rules
+   ([`Sub.sound`](POSITIVE-TYPES.md)); the bridge asks the same of selected
+   SKJS operations, without treating SKJS's `isSub` as the specification.
+4. **Inference cannot invalidate previous checks.** Validating a judgment
+   under substitution state `ρ` is insufficient if later growth changes what
+   its types mean. The options are stable commitments, a justified
+   preservation argument across state changes, or revalidation of affected
+   obligations.
+
+The last contract is already a theme of the
+[mathematical audit](../docs/skjs-type-soundness.tex). That model
+distinguishes inference guidance from validation ("Guidance vs. Validation")
+and treats stale-state reads and caches as failures of judgment stability.
+Those arguments are a starting specification. They are not Lean proofs of
+SKJS.
+
+### Repair architecture
+
+Let inference propose solutions, then validate them against an immutable,
+explicit representation. The inference machinery can remain heuristic, evolve
+or eventually be replaced. Its success does not authorize acceptance by
+itself. Optimizations and caches then have local obligations instead of
+silently becoming part of the meaning of subtyping.
+
+SKJS implementation progress against these contracts is tracked in
+[docs/skjs-improvement.md](../docs/skjs-improvement.md). That file is not a
+plan to make SKJS implement this pipeline.
+
+Extraction-only recording of selected operations must preserve SKJS
+acceptance, inference and diagnostics. A rejected safe program with an
+independently checked derivation is a precise incompleteness target for
+improving inference. Failure to find a derivation proves neither unsoundness
+nor incompleteness.
+
+### Progression
+
+- **First, check ground consequences of existing bugs.** A generic-inference
+  bug can produce an incorrect concrete claim that the current pipeline can
+  already reject. No universal generic semantics is needed to expose that
+  particular failure. This is already the policy for the inference-state and
+  expansion targets above.
+- **Next, audit individual operations.** Export selected subtype and expansion
+  judgments together with the substitution snapshot that was in force at the
+  judgment, or with types already closed at that point. Check those contracts
+  independently. This locates a failure closer to its cause than a later
+  program-point claim does. A first slice should use committed or fully
+  substituted operands in the existing primitive, cell and arrow fragment, so
+  contract 3 is checkable with the current consumer and contract 4 holds by
+  construction for those exports. Live inference variables are not the
+  starting representation.
+- **Then add bounded, first-order polymorphism:** generic aliases, generic
+  function bodies checked under rigid parameters, and explicit instantiation.
+  Prove substitution and instantiation soundness before tackling conditional
+  types, higher-rank polymorphism or parameter-changing recursion.
+
+Checking several concrete instantiations remains regression testing; it does
+not certify a generic body universally. The [established calculus
+boundary](#types-and-recursion) leaves that explicit.
+
+### Preferred next milestone
+
+The next model-to-checker milestone is the operation-level bridge, followed
+by a deliberately small generic fragment. The aim is a reference for
+repairing SKJS's reasoning, not a commitment to formalizing the current
+implementation wholesale.
+
+The first slice of the operation-level bridge is implemented: SKJS exports
+closed subtype and expansion judgments from a function body, serialized under
+the substitution in force at the judgment. `--check-skjs-operations` translates
+those that fit the existing primitive, cell and arrow fragment and checks them
+with the current subtype consumer. Live inference variables are not the
+representation; clones do not contribute; a failed search is unproved, not a
+disproof. See [Request protocol](REQUEST-PROTOCOL.md#closed-operation-export).
+
+The first-order generic fragment is implemented in the model, and the identity
+scheme is connected through source extraction. Rigid parameters are labels
+interpreted by an assignment `η`.
+Substituting `A` for `T` on the identity alias and on `Ref T` is interpreting
+the original syntax under `η[T ↦ ⟦A⟧]`. The identity function inhabits
+`T → T` for every value-only family `T`.
+
+A generic body is now checked under that assignment. `HasTy` is unchanged;
+every constructor has a `meaningP` soundness lemma, including branches,
+callables and union split. Branch and `typeof` tests require a non-parameter
+scrutinee: an opaque `T` has no shape. `function id<T>(x: T): T { return x }`
+is safe at `T → T` for every admissible `T`. Instantiating and applying
+`id<boolean>(true)` is specializing that theorem, not a second typing rule.
+
+`extends` is an assumption in `Δ`. `SubP` is inclusion for every `η`
+satisfying `Δ`: `T extends boolean` derives `T ≤ boolean` and, independently,
+`true ≤ boolean`. It does not derive `true ≤ T`. Transport of a checked
+term along `SubP` is `sub_safeP`. See
+[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean).
+
+Source extraction of `id<T>(x: T): T { return x }` is connected: the parser
+admits one unbounded type parameter, SKJS exports it as a rigid `param`
+atom, and the adapter checks that shape against the identity theorem.
+First-order generic aliases are connected too: `type Id<T> = T` and
+`type Box<T> = { value: T }` are the admitted schemes, SKJS exports a
+one-argument named instantiation as an `alias` application, and the adapter
+substitutes using `instantiate_param` / `instantiate_ref`.
+`T extends boolean` is connected as `T ≤ boolean`:
+`asBoolean<T extends boolean>(x: T): boolean { return x }` transports along
+that inclusion. It does not justify `true ≤ T`. Bodies that copy `T` through
+`const y: T = x; return y` and extra `T` parameters (`fst`) are connected
+along `letE_safeP` and `var_safeP`. Higher-rank or parameter-changing forms
+remain later work.
+
+This is independent of the mutation and loop source-fragment targets above.
+Those remain the next programs to cover with the existing stateful
+foundation; they are not a prerequisite for exporting and checking SKJS
+operations.
+
 ## Established calculus commitments
 
 ### Types and recursion
@@ -223,7 +385,9 @@ values. Its definitions and proofs are in [SEMANTICS](SEMANTICS.md).
 Finite regular recursion is the established boundary. Parameter-changing
 recursive aliases are not covered merely because they use recursive syntax.
 Generics, bounds and a surface `extends` language need their own interpretation
-and typing rules.
+and typing rules. The intended path is the
+[operation-level bridge, then a small first-order fragment](#semantic-contracts-for-skjs-operations),
+not an implicit extension of the present type language.
 
 ### Mutable storage and functions
 
@@ -406,6 +570,15 @@ and the bounded local closures and calls described below. Every syntactic exit
 path must reach an explicit return; loops may diverge.
 It rejects active-name shadowing, calls to named top-level functions, statements after
 an explicit return, and unsupported types. This is a coverage gate for this slice, not the intended final dead-code policy.
+The identity scheme `id<T>(x: T): T { return x }` is checked under a rigid
+parameter and omitted from the graph request; other generic functions remain
+outside the slice. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
+`type Id<T> = T` and `type Box<T> = { value: T }` are expanded by substitution
+before that check and before ground extraction. See
+[GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean).
+`T extends boolean` is an assumption in `Δ`; returning `x` at `boolean` is
+transport along `SubP`. A generic body may copy `T` through annotated `const`
+bindings and extra parameters. See [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean).
 
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, undefined, boolean, their singleton types, unions and bottom exactly into
@@ -868,7 +1041,7 @@ assumptions and historical coverage counts are not an implementation plan.
 | Mutable structural objects | Specify field presence, width, aliasing and allowed mutation; extend beyond the current invariant cells and export their types. |
 | More primitives and operators | Define their runtime behavior and validate agreement, particularly numbers and JavaScript equality. |
 | Graph-backed closure bodies | Extend the call/body interface if source functions require graph control flow internally; surrounding graph loops are insufficient. |
-| Generics and bounds | Add syntax, substitution, disciplined quantification and a uniform program-typing theorem; distinguish regular recursion from parameter-changing aliases. |
+| Generics and bounds | The model slice is in [TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). Source extraction of identity, `T extends boolean`, `const y: T = x`, and extra `T` parameters is in [GenericSource.lean](lean/Verification/ExperimentState/GenericSource.lean). Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }` is in [GenericAlias.lean](lean/Verification/ExperimentState/GenericAlias.lean). Remaining: conditional types, higher-rank polymorphism or parameter-changing recursion. Generic parameters, inference variables and hidden object type arguments are not interchangeable. Checking concrete instantiations remains regression testing, not universal certification of a generic body. |
 | Difference and negation | Supply sound rules or approximations: pointwise complement need not preserve admissibility. They do not follow from positive normalization. |
 | Exceptions | Model abrupt completion, state at raising, and pending returns/exceptions through `finally`; ordinary graph edges alone are insufficient. |
 

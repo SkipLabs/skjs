@@ -95,7 +95,12 @@ verifies using TypeScript’s claims.
 
 Mutable bindings, loops inside closures, external cell parameters,
 labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,
-generics and overloads are outside it. The fragment is smaller than the calculus,
+and overloads are outside it. One type parameter is admitted for the
+identity scheme `id<T>(x: T): T { return x }`, for `T extends boolean` as
+`T ≤ boolean`, for bodies that copy `T` through `const` and extra parameters,
+and for first-order aliases `type Id<T> = T` and
+`type Box<T> = { value: T }`; other generics remain outside.
+The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a
 rejection is a limitation, never evidence that a producer claim is false.
 

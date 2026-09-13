@@ -80,6 +80,12 @@ function render(source: string, fn: any) {
     lines.push(
       `lvalue ${span(x.pos)} \`${excerpt(source, x.pos)}\`: ${type(x.type, "lvalue", x.pos, "")}`,
     );
+  for (const op of fn.operations || []) {
+    const relation = op.kind === "expand" ? "→" : "≤";
+    lines.push(
+      `${op.kind} ${type(op.source, "expression", null, "")} ${relation} ${type(op.target, "expression", null, "")}`,
+    );
+  }
   return lines.join("\n");
 }
 

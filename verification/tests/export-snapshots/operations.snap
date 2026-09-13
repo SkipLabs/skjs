@@ -1,0 +1,14 @@
+# operations.ts
+
+## copyTrue [complete unverified normal]
+params: none
+result: boolean
+entry 33-53: this: (unavailable: void-type)
+entry 57-77: this: (unavailable: void-type); x: true
+entry 81-89: this: (unavailable: void-type); x: true; y: boolean
+expr 49-53 `true`: true
+expr 76-77 `x`: true
+expr 88-89 `y`: boolean
+lvalue 39-40 `x`: true
+lvalue 63-64 `y`: boolean
+subtype true ≤ boolean

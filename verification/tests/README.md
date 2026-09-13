@@ -17,6 +17,11 @@ and tsc claims for the viewer's corpus, without the repairs or corruptions used 
 | `write-observations.mts` | Post-write precision and negated stale-refinement witnesses: SKJS/TypeScript results, execution, source shape for the Lean observation proof, and the current checker limitation. |
 | `primitive-callbacks.mts` | Primitive domains, contravariant call contracts, returned writers, a stale captured-refinement witness and a verified immutable-snapshot counterpart. |
 | `source-claims.mts`, `source-claim-export.mts` | Producer-independent claims, conversion fidelity and source association. |
+| `skjs-operations.mts` | Closed subtype and expansion judgments from a real SKJS export; missing/extra fields and unsound inclusions are unproved, not accepted. |
+| `generic-source.mts` / `stateful-source/generic-identity.ts` | Source extraction of rigid `id<T>(x: T): T { return x }`; returning `true` and extra type parameters are rejected. |
+| `generic-aliases.mts` / `stateful-source/generic-aliases.ts` | Source extraction of `type Id<T> = T` and `type Box<T> = { value: T }`; a non-identity body, an unknown alias, and extra type parameters are rejected. |
+| `generic-extends.mts` / `stateful-source/generic-extends.ts` | `T extends boolean` as `T ≤ boolean`; returning `x` at boolean is accepted, returning `true` as `T` is not. |
+| `generic-bodies.mts` / `stateful-source/generic-bodies.ts` | Generic bodies that copy `T` through `const y: T = x` and `fst`; missing annotations and `return true` are rejected. |
 | `partial-claims.mts` | Partial collections without recovery, optional keep-going quality and diagnostics. |
 | `annotated-source.mts`, `report-viewer.mts`, `candidate-editor.mts` | Source-preserving display, failure locations and independent candidate repair. |
 | `obligation-diagnostics.mts` | Distinct obligations sharing a return span, claim repair combinations, selected edge mappings, records the reader must refuse and report identity. |

@@ -387,8 +387,15 @@ language and trust boundary are documented in
 The representational blocker for positive intersections of references is
 removed. This graph syntax can retain general finite positive formulas at
 program-type nodes and under guarded recursive reference/arrow operands. The
-extension does not add negation, difference, polymorphism, primitive types other
+clause grammar does not add negation, difference, primitive types other
 than null/undefined/boolean, object records, or a surface `extends` language.
+First-order rigid parameters are a layer over graph labels, not a new clause:
+a parameter is a label whose meaning is an assignment `η`, and substituting a
+type argument is interpreting the original syntax under `η[T ↦ ⟦A⟧]`. See
+[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). That
+layer's source connection is the identity scheme, `T extends boolean`, T-copy
+bodies, and the identity/cell aliases; it does not yet handle higher-rank
+polymorphism or parameter-changing recursion.
 
 The program-typing theorem now incorporates these certificates, including an
 overload domain-splitting example. Executable program evidence checking and
@@ -411,6 +418,9 @@ Implementation files:
 - `lean/Verification/ExperimentState/PositiveRules.lean`
 - `lean/Verification/ExperimentState/PositiveCertificates.lean`
 - `lean/Verification/ExperimentState/PositiveNormalizationTests.lean`
+- `lean/Verification/ExperimentState/TypeParams.lean`
+- `lean/Verification/ExperimentState/GenericSource.lean`
+- `lean/Verification/ExperimentState/GenericAlias.lean`
 
 Tests cover distribution, cross-shape elimination, retained incompatible
 contracts, nested constraints, cyclic normalization/checking, domain splitting,

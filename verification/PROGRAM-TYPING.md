@@ -1764,6 +1764,19 @@ monomorphic arrows this document has so far. It needs a specified
 quantification discipline and rules connecting those richer contracts to the
 existing type fragment.
 
+A first-order slice is in
+[TypeParams.lean](lean/Verification/ExperimentState/TypeParams.lean). The
+`HasTy` rules are unchanged. Every constructor has a soundness lemma under a
+rigid assignment `η`, including branches, callables and union split. Branch
+and `typeof` tests require a non-parameter scrutinee. Instantiating and
+applying `id<boolean>(true)` specializes the generic-identity theorem.
+`extends` contributes assumptions to `Δ`; `SubP` is inclusion for every `η`
+that satisfies `Δ`. `T extends boolean` yields `T ≤ boolean`, not `true ≤ T`.
+Source extraction of `id<T>(x: T): T { return x }` is connected, as is
+`type Id<T> = T` / `type Box<T> = { value: T }` via substitution,
+`T extends boolean` as `T ≤ boolean`, and bodies that copy `T` through
+`const` and extra parameters. Other generic bodies are not.
+
 **Effects and state.** The behavioural obligation must use the computation
 semantics, not just a relation between input and output values. Schematically,
 

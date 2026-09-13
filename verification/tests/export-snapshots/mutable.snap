@@ -39,3 +39,6 @@ lvalue 93-98 `count`: number
 lvalue 114-124 `cell.value`: boolean
 lvalue 139-140 `x`: boolean | number
 lvalue 199-200 `x`: number
+subtype 1 ≤ number
+subtype number ≤ boolean | number
+subtype 10 ≤ number
