@@ -250,27 +250,58 @@ extension class TypeChecker {
       }
     };
     for (i => param in params) {
-      param.default.each(defaultExpr -> {
-        this.checkSubType(
-          tcenv,
-          defaultExpr.pos,
-          "Type of default value is not assignable to the parameter's type",
-          this.bindingDefaultType(tcenv, defaultExpr, true, true),
-          paramTypes[i],
-          TSCode(2322),
-        )
-      });
+      initialType = param.default match {
+      | None() -> paramTypes[i]
+      | Some(defaultExpr) ->
+        defaultType = this.bindingDefaultType(tcenv, defaultExpr, true, true);
+        TType::isSub(tcenv.subst, this, defaultType, paramTypes[i]) match {
+        | STOk() ->
+          // A supplied non-undefined argument or the initializer's result.
+          // The initializer may itself return undefined; retain that possibility.
+          TType::union(
+            tcenv.subst,
+            this,
+            TType::removeUndefined(tcenv.subst, this, paramTypes[i]),
+            defaultType,
+          )
+        | err @ STErrorOnTType _ ->
+          tcenv.subtypingError(
+            tcenv.subst,
+            this,
+            Array[
+              (
+                defaultExpr.pos,
+                "Type of default value is not assignable to the parameter's type",
+              ),
+            ],
+            err,
+            TSCode(2322),
+          );
+          // Recovery must not install a value that already failed the contract.
+          paramTypes[i]
+        }
+      };
       if (!param.isThisParam()) {
-        this.bind(
-          tcenv,
-          BKLet(),
-          param.name,
-          paramTypes[i],
-          true,
-          true,
-          false,
-          true,
-        )
+        param.name.value match {
+        | PVar(name) ->
+          // The annotation remains the write/capture contract. Only this
+          // invocation's initial flow type reflects the default's result.
+          tcenv.scope.initializeParameter(name, paramTypes[i]);
+          tcenv.!pendingParameters = tcenv.pendingParameters.remove(name.pos);
+          tcenv.scope.set(name, initialType, (_, _) -> void)
+        | PArray _
+        | PObject _ ->
+          this.bind(
+            tcenv,
+            BKLet(),
+            param.name,
+            initialType,
+            true,
+            true,
+            false,
+            true,
+          )
+        }
       }
     };
     tcenv.!pendingParameters = savedPendingParameters;

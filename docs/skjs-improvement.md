@@ -304,7 +304,17 @@ plain and destructured parameters, chained defaults, skipped assignments,
 self-reference, and collisions with top-level names, both across parameters and
 inside patterns. `skippedPatternDefault` rejects a nullable return previously
 justified by a write in an optional field initializer. Deferred references to
-later parameters inside default-created closures remain unsupported.
+later parameters inside default-created closures remain unsupported. Allowing
+such captures needs evidence about when callbacks execute: a subsequent default
+can call them before the captured parameter is initialized, even in a program
+accepted by tsc.
+
+Whole-parameter defaults distinguish the incoming contract from the initialized
+value: the latter is the union of non-undefined incoming values and the default
+result. Plain parameters retain their original annotation as the write/capture
+contract. Destructuring projects from the initialized value. Coverage includes
+preserving null, defaults that return undefined, reassignment to undefined,
+deferred reads after such writes, and an optional whole-object input.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc

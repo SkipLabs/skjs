@@ -220,6 +220,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 
 ### 16a. Parameter Default Scope
 - Defaults may refer to earlier parameters, including destructured, generic, and defaulted bindings. Destructured bindings retain their projected contracts, including the possible values supplied by field or element defaults.
+- A whole-parameter default gives the initial value type `(declared type without undefined) | default result`. Plain parameters keep their original declared write contract; later assignments and captures must respect it. Destructuring projects from the initialized value.
 - All parameter names, including nested destructuring and rest bindings, are reserved before any parameter initializer is checked. A self or later parameter cannot be read or assigned before its initialization, even if a top-level variable has the same name.
 - Whole-parameter, field, and element defaults are checked once in initialization order. Each default is checked independently: passing an argument skips its initializer, so assignments or refinements in one default cannot justify a later default or the function body. Enclosing captures retain the usual capture contracts.
 - Deferred references to later parameters inside default-created closures remain unsupported. Existing restrictions on local-name shadowing remain unchanged.

@@ -118,11 +118,10 @@ function patternTdz({
   return first;
 }
 
-// FIXME: A default replaces undefined, but preserves a supplied null.
+// A default replaces undefined, but preserves a supplied null.
 function initializedDefault(
   value: string | null | undefined = "ready",
 ): string | null {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return value;
 }
 
@@ -147,9 +146,8 @@ function capturedDefault(value: string | undefined = "ready"): () => string {
   return read;
 }
 
-// FIXME: Destructuring receives the value after the whole-parameter default.
+// Destructuring receives the value after the whole-parameter default.
 function defaultObject(
-  // @skjs-expect-error Cannot use object-destructuring on this type
   { value }: { value: string } | undefined = { value: "ready" },
 ): string {
   return value;
