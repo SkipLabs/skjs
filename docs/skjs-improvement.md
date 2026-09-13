@@ -86,7 +86,11 @@ those objects exchange incompatible values. A read-only traversal inspects the
 result's symbolic structure, constraints, and current inference bindings.
 Concrete observations and explicit opaque results remain usable. Existing
 `instanceof-generic-skolem-args.ts` witnesses cover direct and higher-order
-result escapes. Captured containers, loop pooling, and later inference growth
+result escapes. At the same boundary, the enclosing bindings' current and
+declared types are inspected under the updated substitution. This catches
+locally minted hidden identities inferred into captured containers, including
+closures with explicit void results. Opaque outer containers and invocation-local
+inference remain usable. Loop pooling and later inference growth
 that introduces a hidden type after this boundary check remain open; this does
 not complete R1 or provide general existential packaging.
 

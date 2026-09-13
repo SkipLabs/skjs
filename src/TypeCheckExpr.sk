@@ -3760,22 +3760,43 @@ extension class TypeChecker {
       annotatedType
     };
 
-    if (retTypeAstOpt.isNone() && tcenv.subst.nextSkolemId > firstLocalSkolem) {
+    if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
       localIds = SortedSet[];
       for (id in Range(firstLocalSkolem, tcenv.subst.nextSkolemId)) {
         !localIds = localIds.set(Id::createSynthetic(`skolem:${id}`))
       };
-      escape = mutable EscapingTypeParams(localIds);
-      _ = escape.type(tcenv.subst, retType);
-      if (!escape.found.isEmpty()) {
+      if (retTypeAstOpt.isNone()) {
+        escape = mutable EscapingTypeParams(localIds);
+        _ = escape.type(tcenv.subst, retType);
+        if (!escape.found.isEmpty()) {
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation",
+              ),
+            ],
+            SKJSCode(2080),
+          )
+        }
+      };
+      // Inference can export an identity through an outer container even when
+      // this closure's result is void. Inspect the enclosing binding graph
+      // under the current substitution, including indirect candidate growth.
+      outerEscape = mutable EscapingTypeParams(localIds);
+      for (entry in savedScope.visibleRefs().items()) {
+        _ = outerEscape.type(tcenv.subst, entry.i1.type);
+        _ = outerEscape.type(tcenv.subst, entry.i1.declaredType)
+      };
+      if (!outerEscape.found.isEmpty()) {
         tcenv.error(
           Array[
             (
               pos,
-              "An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation",
+              "A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type",
             ),
           ],
-          SKJSCode(2080),
+          SKJSCode(2081),
         )
       }
     };

@@ -450,11 +450,12 @@ function toArrayReadonly(x: unknown): ReadonlyArray<unknown> {
 }
 
 /* -------------------------------------------------------------------------
- * Hidden-type lifetimes: result escapes are rejected; pooling remains open.
+ * Hidden-type lifetimes: result and captured-state escapes are rejected;
+ * loop pooling remains open.
  *
  * A skolem minted during one type-check can stand for different objects' hidden
  * arguments on different executions. An inferred result must not export that
- * shared identity. Captured containers and loop pooling still permit it (#903).
+ * shared identity. Loop pooling still permits it (#903).
  * ----------------------------------------------------------------------- */
 
 declare function makeList<T>(): T[];
@@ -533,11 +534,12 @@ function holeHigherOrderResult(a: Box<number>, b: Box<string>): number {
   return a.v;
 }
 
-// Hole 2 — captured mutable state. The container's inferred element type
+// Repaired — captured mutable state. The container's inferred element type
 // outlives one execution of the arrow, so values stored by separate calls
 // become exchangeable.
 function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
   const ys = makeList();
+  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   const store = (x: unknown): void => {
     if (x instanceof Box) {
       ys.push(x);
@@ -548,7 +550,7 @@ function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
   const p = ys[0];
   const q = ys[1];
   if (p && q) {
-    p.v = q.v; // UNSOUND: accepted, writes string into Box<number>
+    p.v = q.v; // Prevented by the rejected enclosing-state escape above.
   }
   return a.v;
 }
