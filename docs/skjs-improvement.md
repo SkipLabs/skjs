@@ -66,7 +66,7 @@ R1's later hidden-witness growth and M1's general alias mutation remain open.
 | R2 | Propose vs validate, **and** later uses respect the snapshot | in progress | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
-| R3c | Speculative clone results authorize the parent only with a justified transfer | not started | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
+| R3c | Speculative clone results authorize the parent only with a justified transfer | in progress | A clone that does not commit cannot make the parent accept; any transfer of a clone result is justified by an explicit obligation |
 | M1 | Alias writes: a narrow alias must not promise contents another alias may legally overwrite (`L-MUT-ALIAS`) | in progress | Reduced [narrowed-alias-stale-write](deep-dives/issues/narrowed-alias-stale-write.md) programs are rejected; a positive counterpart with a shared invariant still checks |
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
@@ -123,6 +123,40 @@ have no stability guarantee after growth. Ordinary cache reuse is unchanged.
 checks rejection with and without priming, plus repeated valid queries when
 later growth remains within the constraint. `make test-in-docker` and
 `make verify` pass. The freeze-window repair is complete.
+
+R2/R3c audit: the first boundary is explicit generic-call constraint checking
+in `TypeChecker.call` (`src/TypeCheckExpr.sk`). `typeof` of a local uses the
+ordinary expression checker (`TEnv.typeOfExpr`), so an explicit type argument
+can contain symbolic inferred field types. The call instantiates dependent
+constraints with the type-argument map, checks each on `subst.clone()`, and
+continues on success without committing the clone. It then instantiates the
+signature on the parent, checks receiver/arguments there, repeats positional
+argument checks until the substitution version stabilizes, checks rest
+arguments, and returns the instantiated result type.
+
+That sequence is a candidate for a transfer audit, not a demonstrated unsound
+acceptance. A probe passing an inferred generic box through an explicit constrained alias
+call still rejects a later incompatible setter argument, after the original
+constrained call succeeds. A fresh callback-return probe likewise rejects at the live
+argument check. A return-only constrained call over `typeof` an evolving object
+does not by itself establish a runtime counterexample: subsequent observations
+still pass through live checking. These exploratory probes do not add permanent
+regressions for already-covered rejections.
+
+The next bounded obligation is to identify which constraint dependencies are
+already enforced in the parent and which, if any, depend only on successful
+speculation. An unbound inference variable carrying its own bound differs from
+an open candidate nested inside an explicit argument. `TEnv.instantiateTParams`
+already documents the former's intended justification: normalized bounded
+parameters carry constraints, enforced when variables grow or resolve. Audit
+that justification for the call path and the nested-candidate case before
+changing acceptance. Include receiver and rest checks when considering the
+final substitution; the positional fixed-point loop alone is not the whole
+call. A repair should retain/revalidate a missing obligation or commit its
+necessary constraints, with a counterexample and a valid counterpart. Blanket
+replacement of clone checks with live checks can prematurely commit inference.
+R3c is in progress because this boundary is now traced; no clone-transfer repair
+or general R2 validation mechanism has landed.
 
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
