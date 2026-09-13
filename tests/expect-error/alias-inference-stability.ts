@@ -50,3 +50,35 @@ function compatibleWritePreservesExplicitConstraint(seed: number): void {
   box.value = 2;
   requireNumberField<typeof box>();
 }
+
+// The alias erases T, so expanding its body cannot enforce T's bound.
+type NumberMarker<T extends { readonly value: number }> = null;
+// No constructor call can independently enforce this class's type arguments.
+class NumberMarkerClass<T extends { readonly value: number }> {}
+
+function aliasConstraintMustRemainValid(seed: number): void {
+  const box = { value: seed };
+  const first: NumberMarker<typeof box> = null;
+  // FIXME: Invalidates the accepted alias argument; the cached alias also hides
+  // the violation at the second reference.
+  box.value = "changed";
+  const second: NumberMarker<typeof box> = null;
+}
+
+function classConstraintWithoutConstructor(seed: number): void {
+  const box = { value: seed };
+  const first = new NumberMarkerClass<typeof box>();
+  // FIXME: The first explicit instantiation did not preserve its constraint.
+  box.value = "changed";
+  // @skjs-expect-error Type argument does not satisfy the constraint
+  const second = new NumberMarkerClass<typeof box>();
+}
+
+function compatibleAliasAndClassConstraints(seed: number): void {
+  const box = { value: seed };
+  const marker: NumberMarker<typeof box> = null;
+  const instance = new NumberMarkerClass<typeof box>();
+  box.value = 2;
+  const repeated: NumberMarker<typeof box> = null;
+  const another = new NumberMarkerClass<typeof box>();
+}
