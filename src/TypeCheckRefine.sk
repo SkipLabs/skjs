@@ -125,7 +125,13 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    otherType = this.lookupExprType(tcenv, otherExpr);
+    // As with local equality, establish the observed operand in the live
+    // substitution before recognizing a singleton or refining on a clone.
+    otherType = this.lookupExprType(tcenv, otherExpr).expand(
+      tcenv.subst,
+      this,
+      Some(Covariant()),
+    );
     this.evalFieldEqualityType(tcenv, local, fieldName, otherType, target)
   }
 

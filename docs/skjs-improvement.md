@@ -198,6 +198,12 @@ value. An inferred singleton on the other side was also invisible to subtraction
 `local-vs-local-refinement.ts` covers both accepted cases and rejection when the
 other operand is not a singleton; strict tsc confirms those outcomes.
 
+Field equality establishes the other operand through the same live expansion
+before detecting a singleton. `field-refinement.ts` covers an inferred field
+used to narrow another field; existing nonsingleton and mutation regressions
+retain their rejections. Field narrowing still uses the established-contract
+policy for the receiver and keeps its branch filtering on a clone.
+
 This separates the lasting observation from the branch-local filtering without
 committing the intersection's speculative constraints. The change fixes an
 incompleteness in scalar comparison narrowing, not a newly demonstrated runtime
