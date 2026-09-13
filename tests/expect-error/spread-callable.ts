@@ -127,3 +127,28 @@ function captureCatchPrototype(source: PrototypeReader): () => number {
     };
   }
 }
+
+type ReaderProperty = { readonly read: (this: PrototypeReader) => number };
+
+function copyReaderArgument(
+  source: ReaderProperty,
+  receiver: PrototypeReader,
+): number {
+  const copy = { ...source };
+  return copy.read.call(receiver);
+}
+
+function passPrototypeProperty(source: PrototypeReader): number {
+  // FIXME: parameter subtyping erases prototype-copy provenance.
+  return copyReaderArgument(source, source);
+}
+
+function returnPrototypeProperty(source: PrototypeReader): ReaderProperty {
+  // FIXME: the declared result erases prototype-copy provenance.
+  return source;
+}
+
+// Constructing an own property establishes what the callee's copy needs.
+function passOwnMethodProperty(source: PrototypeReader): number {
+  return copyReaderArgument({ read: source.read }, source);
+}
