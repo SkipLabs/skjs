@@ -318,3 +318,23 @@ function checkedConditionalAlias(
   const one: 1 = snapshot;
   return y.f + one;
 }
+
+// FIXME: nullish selection must carry a nested conditional's stable contract.
+function nullishConditionalAlias(x: { f: number | null }): number {
+  const y = (x.f !== null ? x : null) ?? { f: 0 };
+  x.f = null;
+  return y.f;
+}
+
+// FIXME: an aliased fallback has a contract even when the first operand is safe.
+function nullishFallbackAlias(
+  x: { f: number | null },
+  preferred: { f: number } | undefined,
+): number {
+  if (x.f !== null) {
+    const y = preferred ?? x;
+    x.f = null;
+    return y.f;
+  }
+  return 0;
+}

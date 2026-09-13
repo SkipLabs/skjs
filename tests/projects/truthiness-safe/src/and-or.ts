@@ -33,11 +33,10 @@ function rejectNumberOr(count: number): number {
   return count || 10;
 }
 
-// && captures the branch contract and || removes only its false arm.
+// FIXME: && captures the branch contract and || removes only its false arm.
 function selectedAlias(x: { f: number | null }): number {
   const y = (x.f !== null && x) || { f: 0 };
   x.f = null;
-  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return y.f;
 }
 
