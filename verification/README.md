@@ -76,7 +76,8 @@ parameters, initialized `const` bindings, nested branches, `while` loops with `b
 returns**, over local cells and bounded expression closures and calls. Cell
 fields, arrow arguments and arrow results admit primitive and recursively
 callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
-zero-argument and unary function types. Immutable Boolean, null and undefined tests refine what
+function types with ordered required parameters. Creating and invoking closures
+currently supports zero or one argument. Immutable Boolean, null and undefined tests refine what
 follows them, including through `&&`, `||`, `??`, `?:` and negation. Every path must reach an explicit return.
 
 Mutable bindings, loops inside closures, external cell parameters,

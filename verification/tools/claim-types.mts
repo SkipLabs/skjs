@@ -511,9 +511,9 @@ function roundTrips(type: any) {
       return [intern(types, [{ refs: { first: lowerType(types, field.write), rest: [] } }])];
     }
     if (atom.a === "function") {
-      const [domain, ...more] = atom.params || [];
-      if (!domain || more.length) throw new TypeSyntaxError("a function takes exactly one parameter here");
-      return [intern(types, [{ arrs: { arrows: [[[lowerType(types, domain)], lowerType(types, atom.result)]] } }])];
+      if (!Array.isArray(atom.params)) throw new TypeSyntaxError("a function needs a parameter list");
+      const domains = atom.params.map((domain: any) => lowerType(types, domain));
+      return [intern(types, [{ arrs: { arrows: [[domains, lowerType(types, atom.result)]] } }])];
     }
     throw new TypeSyntaxError("'" + (atom.a || "type") + "' is outside the checked fragment");
   }

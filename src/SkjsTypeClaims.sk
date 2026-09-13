@@ -438,7 +438,7 @@ fun claimCellBranchJson(
   )
 }
 
-// One free zero-argument or unary call signature with bounded operands.
+// One free call signature with ordered required parameters and bounded operands.
 // Recursive operands consume the shared serialization fuel.
 // No methods, generics, optional/rest parameters, object fields or construct
 // requirements are erased.
@@ -469,7 +469,6 @@ fun claimFunctionBranchJson(
       return Failure("function-optional-parameter")
     };
     if (f.spreadParam.isSome()) return Failure("function-rest-parameter");
-    if (f.params.size() > 1) return Failure("function-arity");
     args = mutable Vector<String>[];
     for (param in f.params) {
       arg = claimTypeJsonBounded(param, false, true, values, fuel);

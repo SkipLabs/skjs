@@ -265,20 +265,21 @@ class Gate {
         return;
 
       case ts.SyntaxKind.FunctionType: {
-        if (node.typeParameters?.length || node.parameters.length > 1)
-          this.fail(node, "expected a function type with zero or one required parameter");
-        const p = node.parameters[0];
-        if (p && (
-          !ts.isIdentifier(p.name) ||
-          p.name.text === "this" ||
-          p.questionToken ||
-          p.dotDotDotToken ||
-          p.initializer
-        ))
-          this.fail(p, "expected a required ordinary parameter");
+        if (node.typeParameters?.length)
+          this.fail(node, "generic function types are outside the source slice");
+        for (const p of node.parameters) {
+          if (
+            !ts.isIdentifier(p.name) ||
+            p.name.text === "this" ||
+            p.questionToken ||
+            p.dotDotDotToken ||
+            p.initializer
+          )
+            this.fail(p, "expected a required ordinary parameter");
+        }
         acc.push({
           a: "function",
-          params: p ? [this.typeOf(p.type)] : [],
+          params: node.parameters.map((p: any) => this.typeOf(p.type)),
           result: this.typeOf(node.type),
           construct: "unknown",
           array: "unknown",

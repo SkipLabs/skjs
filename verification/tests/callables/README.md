@@ -102,3 +102,10 @@ its JavaScript result and controls that reverse argument order or delay callee
 evaluation; the tsc suite retains its expected source-gate rejection. The
 [model preparation interface](../../SEMANTICS.md#argument-list-preparation)
 establishes operand sequencing separately from the remaining invocation work.
+
+[arguments.ts](arguments.ts)'s `exchangeMultiArgument` transports a two-argument
+function through a mutable cell and narrows its first domain on return. Both
+producers verify it; the argument suite rejects a widened second domain and a
+dropped second parameter. Required function **types** can now carry multiple
+parameters through the source pipeline. Multi-argument call and lambda syntax
+remains gated pending native source evaluation lowering.

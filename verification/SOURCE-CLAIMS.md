@@ -78,7 +78,7 @@ lists into the same table:
 | `0`, `1`, `2`, `3` | `"nul"`, `boolLit true`, `boolLit false`, `"undef"` | The primitives, fixed |
 | any | `{"refs": {"first": A, "rest": []}}` | `Ref<A>`, an invariant plain cell holding the union `A` |
 | any | `{"refs": {"first": A, "rest": [B, ...]}}` | One location under every listed contract, `Ref<A> & Ref<B>` |
-| any | `{"arrs": {"arrows": [[D, R]]}}` | The unary arrow `D => R` |
+| any | `{"arrs": {"arrows": [[D, R]]}}` | A signature with ordered domain list `D` and result union `R` |
 
 The table starts with the four primitives and holds one further row per compound
 type the source mentions, in order of first use: a compound type gets a row the

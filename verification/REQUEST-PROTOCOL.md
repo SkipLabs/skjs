@@ -161,8 +161,9 @@ from `a ++ b` into the two branches. `combine` retains its result types `b` and
 `b'` and two branches; `empty` requires an empty type at some argument position,
 not merely a zero-length argument list. Every label in these fields is bounds
 checked. Graph subtype search supports native argument lists and splits any
-position. Source lowering still emits singleton domains for its current
-zero-or-one-parameter fragment. There is one accepted certificate shape.
+position. Source function types preserve required parameter lists; closure and
+call syntax remains bounded to zero or one argument. Source thunks still use
+a singleton undefined domain until native zero-argument syntax lowering lands. There is one accepted certificate shape.
 
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
@@ -452,7 +453,7 @@ The bounded function atom is:
 }
 ```
 
-The exporter preserves zero or one free required parameter and the result. It rejects
+The exporter preserves the ordered list of free required parameters and the result. It rejects
 `this` requirements, generics, optional/rest parameters, fields, indexes, positive
 construct requirements and record-valued operands. Arrow arguments and results
 may recursively union bounded function contracts with the

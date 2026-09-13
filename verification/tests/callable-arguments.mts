@@ -29,6 +29,27 @@ try {
     assert.equal(result.status, 0, result.stdout + result.stderr);
   }
   console.log("  stateful callable arguments: original claims and independent consumer OK");
+
+  const transported = source.functions.find((f: any) => f.name === "exchangeMultiArgument");
+  assert(transported);
+  const returned = transported.body.at(-1).e;
+  for (const [name, domains] of [
+    ["later parameter cannot widen from null to Boolean",
+      [{top: false, atoms: [{a: "boolean"}]}, {top: false, atoms: [{a: "boolean"}]}]],
+    ["a native signature cannot lose its second parameter",
+      [{top: false, atoms: [{a: "boolean"}]}]],
+  ] as [string, any[]][]) {
+    const changed = structuredClone(exported);
+    const fc = changed.find((b: any) => b.file === file).functions.find((f: any) => f.name === transported.name);
+    const site = fc.exprs.find((e: any) => e.pos[0] === returned.pos[0] && e.pos[1] === returned.pos[1]);
+    assert(site);
+    site.type.atoms[0].params = domains;
+    for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
+      const result = run(mode, source, changed);
+      assert.notEqual(result.status, 0, name);
+    }
+  }
+  console.log("  transported multi-argument contracts retain later domains and arity: OK");
   const omitted = structuredClone(source);
   omitted.functions.find((f: any) => f.name === "callableArgument").body[3].init.arg = null;
   for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {

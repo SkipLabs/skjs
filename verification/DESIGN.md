@@ -974,6 +974,10 @@ lists, including zero arguments. Evidence preserves operand order and requires
 one premise per actual; search requires an exact signature argument count.
 Pipeline checks cover native calls and a callable cell written by one operand
 and read by the next, as well as omitted, extra, and reordered operands.
+Source function types now preserve all required parameters through annotations,
+SKJS claim decoding, the TypeScript claim producer, and the report editor.
+A two-argument function crosses a mutable cell and escapes with a narrower first
+domain; forged widening or omission of its second domain fails.
 Next, extend source call/lambda lowering to argument lists. Source thunks still use their existing implicit undefined parameter, and
 multi-argument source calls remain gated.
 

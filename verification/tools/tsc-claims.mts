@@ -330,12 +330,12 @@ function tryRecord(type: Type, checker: Checker): RecordRead {
 interface ArrowRead {
   ok: boolean;
   reason?: string;
-  domain?: Type;
+  domains?: Type[];
   result?: Type;
 }
 
 /**
- * `() => R` or `(x: D) => R`: one signature, at most one required parameter, no
+ * One signature with ordered required parameters, no
  * type parameters, no `this` parameter.
  */
 function tryArrow(type: Type, checker: Checker): ArrowRead {
@@ -349,18 +349,17 @@ function tryArrow(type: Type, checker: Checker): ArrowRead {
   const sig = sigs[0]!;
   if (sig.typeParameters?.length) return { ok: false, reason: "generic-arrow" };
   if (sig.thisParameter !== undefined) return { ok: false, reason: "this-param" };
-  if (sig.hasRestParameter || sig.parameters.length > 1)
+  if (sig.hasRestParameter)
     return { ok: false, reason: "arrow-arity" };
   // Optionality is on the declared parameter: a signature transports its
   // parameters as ids, and asking the checker for one of those symbols is
   // not the way to reach a type here — `getParameterType` is.
   const declared = sig.declaration?.resolve() as any;
-  const p0 = declared?.parameters?.[0];
-  if (p0 && (p0.questionToken || p0.initializer))
+  if (declared?.parameters?.some((p: any) => p.questionToken || p.initializer))
     return { ok: false, reason: "optional-param" };
   return {
     ok: true,
-    domain: sig.parameters.length ? must(checker.getParameterType(sig, 0), "parameter-type") : undefined,
+    domains: sig.parameters.map((_, i) => must(checker.getParameterType(sig, i), "parameter-type")),
     result: must(checker.getReturnTypeOfSignature(sig), "return-type"),
   };
 }
@@ -428,7 +427,9 @@ function tryArrowIntersection(
   const arrows: [number[][], number[]][] = [];
   for (const r of results) {
     const pair: [number[][], number[]] = [
-      [r.domain ? translateType(r.domain, checker, types, false, fuel - 1) : [3]],
+      r.domains!.length
+        ? r.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1))
+        : [[3]],
       translateType(r.result!, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -473,7 +474,9 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair: [number[][], number[]] = [
-      [arr.domain ? translateType(arr.domain, checker, types, false, fuel - 1) : [3]],
+      arr.domains!.length
+        ? arr.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1))
+        : [[3]],
       translateType(arr.result!, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];

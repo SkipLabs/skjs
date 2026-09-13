@@ -9,18 +9,17 @@ open Lean ProgramTyping PositiveRules
 private def undefinedType : Json :=
   Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "undefined")]])]
 
-/-- Validate a free zero-argument or unary signature without projecting away object requirements. -/
-private def callableShape (a : Json) : Except String (Json × Json) := do
+/-- Validate a free required-parameter signature without projecting away object requirements. -/
+private def callableShape (a : Json) : Except String (List Json × Json) := do
   CellClaims.fieldsExactly a ["a","params","result","construct","array"]
   if (← jStr (← jField a "a")) != "function" then throw "expected a function atom"
   for key in ["construct","array"] do
     let mode ← jStr (← jField a key)
     if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
-  let arg ← match ← jArr a "params" with
-    | [] => pure undefinedType
-    | [arg] => pure arg
-    | _ => throw "expected zero or one required function parameter"
-  return (arg, ← jField a "result")
+  let args ← jArr a "params"
+  -- Source thunks retain their implicit undefined parameter until syntax lowering
+  -- also uses native zero-argument closures and calls.
+  return (if args.isEmpty then [undefinedType] else args, ← jField a "result")
 
 /-- Callable operands may recursively contain callables and primitives.
 Every union and overload arm is checked; record operands remain excluded. -/
@@ -30,8 +29,8 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Nat) := do
   let arms ← (← jArr j "atoms").mapM fun atom => do
     if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
-        let (arg, result) ← callableShape a
-        return ([← callableType arg], ← callableType result)
+        let (args, result) ← callableShape a
+        return (← args.mapM callableType, ← callableType result)
       return [← SourceTypes.use (.arrs signatures.eraseDups)]
     else
       let single := Json.mkObj [("top",toJson false),("atoms",toJson [atom])]

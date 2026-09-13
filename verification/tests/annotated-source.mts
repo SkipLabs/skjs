@@ -8,6 +8,7 @@ import { hash,render,fromSkjs,compareClaims,typeText } from "../tools/annotate-s
 import { createRequire } from "node:module";
 import { parseReport } from "../report-viewer/model.mts";
 import surface from "../tools/claim-types.mts";
+import { parseFile } from "../tools/parse-source.mts";
 // Plain JavaScript modules; the reader loads these in a browser too.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(import.meta.filename);
@@ -35,6 +36,15 @@ try {
       {top:false,atoms:[arrow([unit],{top:false,atoms:[...truth.atoms,...falsity.atoms]})]},
       {top:false,atoms:[arrow([{top:false,atoms:[arrow([unit],truth)]}],falsity)]}])
       assert.equal(surface.roundTrips(type),true);
+  });
+
+  test("required-parameter gate checks later positions",()=>{
+    for (const parameter of ["second?: null", "...rest: null[]"]) {
+      const input=path.join(tmp,"later-parameter.ts");
+      fs.writeFileSync(input,`function f(callback: (first: boolean, ${parameter}) => boolean): null { return null; }
+`);
+      assert.throws(()=>parseFile(input),/required ordinary parameter/);
+    }
   });
   const source='// Unicode: 😀\nfunction f(x: boolean): boolean { return x; }\n';
   const ns=source.indexOf("f("), es=source.lastIndexOf("x;");

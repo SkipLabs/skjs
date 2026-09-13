@@ -82,6 +82,20 @@ assert.deepEqual(
   assert.equal(surface.printType(editable(held, fn, item)).text, "{ value: boolean = (true) }");
   assert.equal(tabled.claims.types.length, 4);
 }
+// Native signature edits preserve every parameter, including a true empty list.
+for (const params of [
+  [],
+  [{top: false, atoms: [{a: "boolean"}]}, {top: false, atoms: [{a: "null"}]}],
+]) {
+  const tabled: any = structuredClone(normalized);
+  tabled.claims.types = [["nul"], [{boolLit: {value: true}}], [{boolLit: {value: false}}], ["undef"]];
+  const arrow = {top: false, atoms: [{a: "function", params,
+    result: {top: false, atoms: [{a: "boolean"}]}, construct: "unknown", array: "unknown"}]};
+  const changed = editClaim(tabled, fn, item, arrow);
+  assert.deepEqual(changed.claims.types[4], [{arrs: {arrows: [[params.length ? [[1,2],[0]] : [],[1,2]]]}}]);
+  assert.deepEqual(editable(changed, fn, item), {top: false, atoms: [{a: "function", params, result: arrow.atoms[0].result}]});
+}
+
 (async () => {
   const preview = await candidateReport(edited, false);
   assert.equal(preview.manifest.results, null);

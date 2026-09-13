@@ -41,3 +41,19 @@ function escapedCallbackArgument(seed: boolean): boolean {
   const old: boolean = invoke(wrapped);
   return old;
 }
+
+/**
+ * Multi-argument functions cross an invariant cell boundary and escape through
+ * a narrower first-parameter contract. The second parameter must remain null.
+ */
+function exchangeMultiArgument(
+  initial: (flag: boolean, marker: null) => boolean,
+  replacement: (flag: boolean, marker: null) => boolean,
+): (flag: true, marker: null) => boolean {
+  const cell: { value: (flag: boolean, marker: null) => boolean } = {
+    value: initial,
+  };
+  const old: (flag: boolean, marker: null) => boolean = cell.value;
+  cell.value = replacement;
+  return old;
+}
