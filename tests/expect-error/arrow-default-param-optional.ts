@@ -79,3 +79,43 @@ function laterRestParameterDefault(
 ): number {
   return result;
 }
+
+// FIXME: tsc accepts a rigid generic extracted by an earlier parameter.
+function extractedGeneric<T>(
+  { value }: { value: T },
+  // @skjs-expect-error Variable 'value' is used before being assigned
+  result: T = value,
+): T {
+  return result;
+}
+
+// Pattern defaults can depend on earlier fields in the same pattern.
+function siblingDefaults({
+  first = "ready",
+  second = first,
+}: {
+  first?: string;
+  second?: string;
+}): string {
+  return second;
+}
+
+// FIXME: Supplying first skips the write, so value may still be null.
+function skippedPatternDefault(
+  value: string | null,
+  { first = (value = "ready") }: { first?: string },
+): string {
+  return value;
+}
+
+const laterPatternValue: number = 1;
+// FIXME: A later pattern binding shadows the global during field defaults.
+function patternTdz({
+  first = laterPatternValue,
+  laterPatternValue,
+}: {
+  first?: number;
+  laterPatternValue: number;
+}): number {
+  return first;
+}
