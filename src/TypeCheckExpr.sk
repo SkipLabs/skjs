@@ -2462,7 +2462,16 @@ extension class TypeChecker {
           | None() -> fatalError(errorArgs, TSCode(2349))
           }
         };
-        this.call(tcenv, pos, tfuns, normTargs, args, mostPrecise, thisArgOpt)
+        this.call(
+          tcenv,
+          pos,
+          tfuns,
+          normTargs,
+          args,
+          mostPrecise,
+          thisArgOpt,
+          ValidateTypeArguments(),
+        )
       };
       // When the callee is `e1.field` / `e1[idx]`, capture the receiver so the
       // method's `this` is checked against it. For a (non-optional) union
@@ -2622,7 +2631,16 @@ extension class TypeChecker {
         | Some(obj @ TObject _) ->
           obj.maybeGetNew(tcenv.subst, this) match {
           | Some(f) ->
-            this.call(tcenv, pos, f, tArgs, args, mostPrecise, None())
+            this.call(
+              tcenv,
+              pos,
+              f,
+              tArgs,
+              args,
+              mostPrecise,
+              None(),
+              ValidateTypeArguments(),
+            )
           | None() ->
             fatalError(
               Array[
@@ -3973,7 +3991,7 @@ extension class TypeChecker {
         None(),
         // Written class arguments were checked at new; synthesized ones
         // must stay open until constructor arguments determine their shape.
-        false,
+        ProbeTypeArguments(),
       )
     }
   }
@@ -4712,7 +4730,7 @@ extension class TypeChecker {
     argExprs: Array<Expr>,
     mostPrecise: Bool,
     thisArgOpt: ?TType,
-    typeArgsAreExplicit: Bool = true,
+    argumentCheck: TypeArgumentCheck,
   ): TType {
     args = mutable Vector<TType>[];
     moreArgs: ?TType = None();
@@ -4848,11 +4866,7 @@ extension class TypeChecker {
               (tcenv.subst, this, frozenMap),
               cstr,
             );
-            constraintSubst = if (typeArgsAreExplicit) {
-              tcenv.subst
-            } else {
-              tcenv.subst.clone()
-            };
+            constraintSubst = argumentCheck.substitution(tcenv.subst);
             TType::isSub(constraintSubst, this, tArg, cstrTy) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->

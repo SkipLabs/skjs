@@ -7,6 +7,21 @@
 
 module SKJS;
 
+// Every type-argument check chooses its inference role explicitly. A probe
+// cannot by itself establish a source-level constraint in the live state.
+base class TypeArgumentCheck {
+  children =
+  | ValidateTypeArguments()
+  | ProbeTypeArguments()
+
+  fun substitution(subst: mutable Subst): mutable Subst {
+    this match {
+    | ValidateTypeArguments() -> subst
+    | ProbeTypeArguments() -> subst.clone()
+    }
+  }
+}
+
 value class CstrType(cstr: ?TFuns, tArgs: Array<TType>)
 
 // The number of members past which a template literal type's expansion is
@@ -261,6 +276,7 @@ base class TEnv{
         name.pos,
         targs.targs,
         tdefParams,
+        ProbeTypeArguments(),
         Some(ta),
       );
       !this.instantiateAt = Some(name.pos);
@@ -283,7 +299,14 @@ base class TEnv{
     tparams: Array<TypeParam>,
     selfTd: ?TypeDef = None(),
   ): void {
-    _ = this.instantiateTParams(tcenv.subst, pos, targs, tparams, selfTd, true)
+    _ = this.instantiateTParams(
+      tcenv.subst,
+      pos,
+      targs,
+      tparams,
+      ValidateTypeArguments(),
+      selfTd,
+    )
   }
 
   // Binds each type parameter to its corresponding type argument, checking the
@@ -311,6 +334,7 @@ base class TEnv{
     pos: PosRange,
     tArgs: Array<TType>,
     tParams: Array<TypeParam>,
+    argumentCheck: TypeArgumentCheck,
     // The alias being instantiated, when it is one (None for a class). A
     // parameter's default or constraint may name it, and resolving either then
     // needs itself — a cycle SKJS cannot compute (issue #1000). A circular
@@ -319,7 +343,6 @@ base class TEnv{
     // self-referential constraint is a check SKJS cannot verify, so any
     // instantiation reaching it is refused.
     selfTd: ?TypeDef = None(),
-    commitConstraints: Bool = false,
   ): this {
     tcenvb: mutable TCEnvBase = subst;
 
@@ -429,7 +452,7 @@ base class TEnv{
         // string). For an unbound inference-variable argument this makes the
         // check vacuous, which is sound — see the constraint-check soundness
         // note on this function.
-        constraintSubst = if (commitConstraints) subst else subst.clone();
+        constraintSubst = argumentCheck.substitution(subst);
         TType::isSub(constraintSubst, this, tArg, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
@@ -1292,7 +1315,13 @@ base class TEnv{
       )
     };
     if (withTParams) {
-      !this = this.instantiateTParams(subst, className.pos, targs, cls.tparams);
+      !this = this.instantiateTParams(
+        subst,
+        className.pos,
+        targs,
+        cls.tparams,
+        ProbeTypeArguments(),
+      );
     };
     (this, cls)
   }
@@ -2178,6 +2207,7 @@ base class TEnv{
               n.pos,
               normTargs,
               tparams,
+              ProbeTypeArguments(),
               selfTd,
             )
           }

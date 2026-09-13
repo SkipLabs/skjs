@@ -174,6 +174,22 @@ remains open: these repairs establish selected source-level constraints through
 existing sealing, not general immutable validation evidence or dependency-aware
 revalidation.
 
+Generic constraint routing uses the required `TypeArgumentCheck` sum type,
+shared by function calls and alias/class parameter instantiation. There is no
+default role: every caller selects live validation or a discarded probe.
+
+| Caller | Role | Why |
+| --- | --- | --- |
+| Source function calls and callable construction signatures | `ValidateTypeArguments` | Written arguments establish their bounds in the active substitution. Fresh omitted arguments follow their separate constrained inference path. |
+| Explicit alias/class source references and `new` arguments | `ValidateTypeArguments` | Bounds must hold independently of body expansion or constructor availability. |
+| Class constructor forwarding | `ProbeTypeArguments` | Written class arguments were validated at `new`; synthesized arguments must remain open for constructor inference. |
+| Alias expansion, class shape setup, and declaration normalization | `ProbeTypeArguments` | Compatibility does not itself establish a new source-level fact; declaration bounds and inference constraints supply the independent obligation. |
+
+This replaces defaulted booleans with a compiler-checked choice and centralizes
+substitution selection. It preserves behavior; the explicit-bound stability
+regressions and constructor shape-inference tests exercise the two roles. It
+does not prove the probe transfer conditions or complete R2/R3c.
+
 The call-validation fixed point now includes receiver, required/optional
 arguments, and rest arguments in the same pass. A successful call exits only
 after a complete pass leaves `subst.version` unchanged. Previously receiver
