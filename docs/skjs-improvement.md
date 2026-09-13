@@ -305,6 +305,14 @@ passed through `await` whose field is later overwritten and an accepted scalar
 snapshot. Non-thenable awaits remain lint warnings. This closes a contract
 propagation gap; it does not model mutations by other code during suspension.
 
+Assignment expressions now forward the right-hand side's stable alias contract
+at the shared assignment boundary, before property-write invalidation. Updating
+the target correctly was insufficient: retaining `(y = x)` could still expose
+`x`'s temporary field facts as a new alias contract. `unsound-refinement.ts`
+covers rejection through that result and an accepted scalar assignment snapshot.
+The right-hand side is looked up after its existing evaluation, not evaluated
+again; target validation and recorded lvalue types are unchanged.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

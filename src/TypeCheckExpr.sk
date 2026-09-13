@@ -2832,6 +2832,14 @@ extension class TypeChecker {
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
         ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
+        // The assignment expression returns its RHS, independently of the
+        // target's contract. Preserve that value's stable alias type before
+        // a property write invalidates the scope's transient field facts.
+        tcenv.!stableExprTypes[(pos, ty)] = this.stableAliasExprType(
+          tcenv,
+          e2,
+          this.lookupExprType(tcenv, e2),
+        );
         e1.value match {
         | Dot _
         | Get _ ->

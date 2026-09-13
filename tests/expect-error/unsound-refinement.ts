@@ -459,7 +459,7 @@ function assignmentResultAlias(
   if (x.value === null) return 0;
   const alias = (y = x);
   x.value = null;
-  // FIXME: tsc rejects this nullable return; SKJS loses the assignment result's contract.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return alias.value;
 }
 
