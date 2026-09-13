@@ -206,10 +206,14 @@ inference variables share an inferred contract between writes and reads, as
 described below. A const
 binding does not stabilize mutable object contents, so field-bearing const
 captures also fall back to their declared type. A whole-function assignment
-summary, including nested closures and parameter defaults, recovers field-free
-capture facts when the binding is never reassigned. Unknown write targets,
-destructuring patterns,
-and uninspected method bodies conservatively disable this recovery. Name-based
+summary, including nested closures, parameter defaults, and defaults inside
+binding patterns, recovers field-free capture facts when the binding is never
+reassigned. Pattern binding names are declarations; default expressions supply
+the writes and captures, at their actual closure depth. `stablePattern` retains
+a never-written scalar capture alongside unrelated destructuring, while
+`patternWriter` and `patternReader` preserve checks for writes and reads nested
+inside defaults. Unknown write targets and uninspected method bodies
+conservatively disable this recovery. Name-based
 write collection can over-approximate shadowed bindings, never overlook them.
 Checks made inside the closure still narrow its reads; const value snapshots
 retain their types. Claim environments use the same capture view.

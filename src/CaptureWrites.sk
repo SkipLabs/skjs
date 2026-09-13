@@ -35,13 +35,23 @@ mutable class CaptureWrites{
   }
 
   mutable fun pattern(p: Pattern): void {
-    // Destructuring patterns can execute defaults/computed keys. Until those
-    // are traversed explicitly, do not infer absence of writes through them.
+    // Binding names (including rest names) are declarations, not reads or
+    // assignments to existing bindings. Defaults are ordinary expressions;
+    // traverse them at the current closure depth before their nested pattern.
     p.value match {
     | PVar _ -> void
-    | _ ->
-      this.!unknown = true;
-      this.!unknownCaptures = true
+    | PArray(elements, _) ->
+      elements.each(element ->
+        element.each(item -> {
+          item.i1.each(e -> this.expr(e));
+          this.pattern(item.i0)
+        })
+      )
+    | PObject{fields, rest => _} ->
+      for (field in fields) {
+        field.i2.each(e -> this.expr(e));
+        this.pattern(field.i1)
+      }
     }
   }
 

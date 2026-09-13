@@ -497,12 +497,11 @@ function checkedPropertyResult(holder: {
   return read();
 }
 
-// FIXME: An unrelated pattern must not hide that value is never assigned.
+// An unrelated pattern does not hide that value is never assigned.
 function stablePattern(
   value: string | undefined = "ready",
   { tag }: { tag: number } = { tag: 1 },
 ): () => string {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return () => value;
 }
 
