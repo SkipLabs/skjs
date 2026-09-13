@@ -148,12 +148,13 @@ function assignedUnionAlternative(
   return y.f;
 }
 
-// FIXME: tsc rejects storing the narrowed source in a permanently narrow slot.
+// A narrowed source cannot satisfy a permanently narrow slot.
 function storedNarrowAlias(
   x: { f: number | null },
   box: { item: { readonly f: number } },
 ): number {
   if (x.f !== null) {
+    // @ts-expect-error Type is not assignable to the assignment target's type
     box.item = x;
     x.f = null;
     return box.item.f;
@@ -167,6 +168,7 @@ function storedLocalAlias(x: { f: number | null }): number {
   if (x.f !== null) {
     box.item = x;
     x.f = null;
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return box.item.f;
   }
   return 0;

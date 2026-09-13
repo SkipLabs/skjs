@@ -3847,7 +3847,7 @@ extension class TypeChecker {
         tcenv,
         e2.pos,
         "Type is not assignable to the assignment target's type",
-        ty2,
+        this.stableAliasExprType(tcenv, e2, ty2),
         ty1,
         TSCode(2322),
       );
@@ -4084,6 +4084,7 @@ extension class TypeChecker {
       tcenv.!exprTypes[(local.pos, false, false)] = tcenv.scope.get(local)
     };
     fieldType = this.expr(tcenv, e2, mostPrecise);
+    stableFieldType = this.stableAliasExprType(tcenv, e2, fieldType);
     keyType = this.expr(tcenv, keyExpr, true);
     fieldKeys = keyType
       .getSTypes(tcenv.subst, this, Covariant())
@@ -4108,7 +4109,7 @@ extension class TypeChecker {
         tcenv,
         fieldType.pos,
         "Type is not assignable to the index signature's value type",
-        fieldType,
+        stableFieldType,
         elemType,
         TSCode(2322),
       );
@@ -4122,6 +4123,7 @@ extension class TypeChecker {
         keyExpr,
         keyType,
         fieldType,
+        stableFieldType,
         fieldKeys,
       )
     }
@@ -4129,6 +4131,7 @@ extension class TypeChecker {
 
   // Grows a local object by one or more literal keys.
   // When there are multiple keys (e.g. key: "a" | "b"), fields are optional.
+  // Slots use stableFieldType; fieldType is the assignment expression's value.
   private fun assignLocalObjectByKeys(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -4137,6 +4140,7 @@ extension class TypeChecker {
     keyExpr: Expr,
     keyType: TType,
     fieldType: TType,
+    stableFieldType: TType,
     fieldKeys: Array<FieldKey>,
   ): TType {
     isOptional = fieldKeys.size() > 1;
@@ -4153,7 +4157,7 @@ extension class TypeChecker {
           tcenv,
           fieldType.pos,
           "Type is not assignable to the field's type",
-          fieldType,
+          stableFieldType,
           // The key was already typechecked by the caller; reuse its type
           // rather than re-typechecking keyExpr.
           this.getWithIndexType(
@@ -4194,7 +4198,7 @@ extension class TypeChecker {
               tcenv,
               fieldType.pos,
               "Type is not assignable to the field's type",
-              fieldType,
+              stableFieldType,
               fd.set,
               TSCode(2322),
             )
@@ -4214,7 +4218,7 @@ extension class TypeChecker {
               name => key.value(),
               isOptional,
               isReadonly => None(),
-              type => fieldType,
+              type => stableFieldType,
               access,
             };
             key match {
