@@ -997,7 +997,7 @@ behavior through actual producer claims and independent consumption:
 | Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Complete through source lowering and both producers, including native zero-argument thunks. Optional/rest parameters and spread actuals remain separate work. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
-| `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`; distinguish lexical arrow `this` from ordinary receivers. |
+| `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
 
 Functions returning functions, including escaping callback parameters, already
 have pipeline coverage. `.apply`, `.bind`, optional/rest arguments, constructors

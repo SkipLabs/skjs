@@ -114,3 +114,15 @@ union, a returned thunk retaining a negative guard's refinement, and a call used
 as the tested value. Both producers verify the examples; the guard suite rejects
 opposite polarity, refinement of another variable, and an invented narrower
 callable result. General string/typeof expressions remain outside the fragment.
+
+[call-objects.ts](call-objects.ts) demonstrates an object containing an ordinary
+method and an arrow, extracting the method, and using `.call` with a different
+object as receiver. The method reads the supplied receiver; the arrow retains
+its lexical capture. Both outcomes matter: changing either behavior flips the
+example's result. SKJS and strict TypeScript accept it, and JavaScript controls
+check both seeds.
+
+This is a **boundary example**, shown in the Callables group but not counted as
+source-verifiable. The independent verifier still needs multi-field objects,
+ordinary receiver-dependent methods, and a justified `Function.prototype.call`
+operation. Its parser currently rejects the multi-field allocation.

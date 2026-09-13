@@ -14,10 +14,11 @@ const stateful = [
   "null-guards",
 ].map((name) => `verification/tests/stateful-source/${name}.ts`);
 const callables = ["unions", "factories", "arguments", "cells", "thunks", "arity", "guards"].map((name) => `verification/tests/callables/${name}.ts`);
+const callableBoundaries = ["verification/tests/callables/call-objects.ts"];
 const supported = [...stateful, ...callables];
 const groups = [
   { label: "Current verifier examples", files: stateful },
-  { label: "Callables", files: callables },
+  { label: "Callables", files: [...callables, ...callableBoundaries] },
   {
     label: "Claim repair · producer rejects",
     files: ["verification/tests/partial-claims.ts"],

@@ -31,6 +31,7 @@ const expected = {
   "callables/thunks": "verified",
   "callables/arity": "verified",
   "callables/guards": "verified",
+  "callables/call-objects": "out-of-fragment",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
   // Compound absence guards preserve all facts established by their outcome.
