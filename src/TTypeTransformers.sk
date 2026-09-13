@@ -147,10 +147,10 @@ mutable base class ApplyType(
     | TSInst(name, targs) -> Success(TSInst(name, this.targs(env, targs)))
     | tInter @ TInter _ -> tInter.map(x -> this.type(env, x))
     | tvar @ TVar _ -> Success(tvar.mapConstraints(ty -> this.type(env, ty)))
-    | TArrayLit(selector, tupleElts, freshElts) ->
+    | TArrayLit(tvar, tupleElts, freshElts) ->
       Success(
         TArrayLit(
-          selector,
+          tvar.mapConstraints(ty -> this.type(env, ty)),
           tupleElts.map(ty -> this.type(env, ty)),
           freshElts.map(opt -> opt.map(ty -> this.type(env, ty))),
         ),
@@ -211,10 +211,12 @@ mutable class EscapingTypeParams(
   mutable fun type_(subst: this::Env, ty: TType): TType {
     for (inst in ty.insts) {
       inst match {
-      | tv @ TVar _ -> this.boundType(subst, subst.snapshot().peekRaw(tv))
-      | TArrayLit(selector, _, _) ->
-        this.boundType(subst, selector.peekSnapshot(subst.snapshot()))
-      // Named arguments and intersections are traversed by rawMap below.
+      | tv @ TVar _ ->
+        subst.peekRaw(tv).each(bound -> {
+          if (!this.visiting.contains(bound)) {
+            _ = this.type(subst, bound)
+          }
+        })
       | _ -> void
       }
     };
@@ -222,16 +224,6 @@ mutable class EscapingTypeParams(
       insts -> this.insts(subst, insts),
       clauses -> this.clauses(subst, clauses),
     )
-  }
-
-  private mutable fun boundType(subst: readonly Subst, type: ?TType): void {
-    // This traversal installs no materialized type or subtype fact. Keep it
-    // read-only; the retained escape roots are rechecked by TCEnv after growth.
-    type.each(bound -> {
-      if (!this.visiting.contains(bound)) {
-        _ = this.type(subst, bound)
-      }
-    })
   }
 
   mutable fun typeParam(_subst: this::Env, param: TParam): TParam {

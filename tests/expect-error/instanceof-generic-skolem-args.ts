@@ -450,18 +450,11 @@ function toArrayReadonly(x: unknown): ReadonlyArray<unknown> {
 }
 
 /* -------------------------------------------------------------------------
- * Known holes: accepted today, unsound at runtime.
+ * Hidden-type lifetimes: result escapes are rejected; pooling remains open.
  *
- * A skolem is minted once per type-check of a scope, but it stands for the
- * hidden argument of whichever object each *runtime execution* of that scope
- * narrows. Any channel that lets a skolem-typed value outlive one execution
- * pools distinct hidden arguments under one identity and permits
- * cross-object writes. The functions below type-check with no diagnostics;
- * each contains a write that corrupts an object at runtime (marked
- * `UNSOUND`). They are pinned here as accepted so that when a fix lands,
- * this suite fails loudly and the cases get flipped to expect-error
- * annotations. Issue #903 tracks the class, with the analysis and the
- * prototyped (unlanded) fixes.
+ * A skolem minted during one type-check can stand for different objects' hidden
+ * arguments on different executions. An inferred result must not export that
+ * shared identity. Captured containers and loop pooling still permit it (#903).
  * ----------------------------------------------------------------------- */
 
 declare function makeList<T>(): T[];
@@ -484,23 +477,24 @@ function opaqueHiddenResult(x: unknown): unknown {
   return reveal(x);
 }
 
-// Hole 1 — inferred closure results. The arrow body is checked once, so
+// Repaired — inferred closure results. The arrow body is checked once, so
 // every call's result is typed with the same skolem. At runtime p is
 // Box<number> and q is Box<string>; the write puts a string in a
 // Box<number>, and `return a.v` then yields a string from a
 // number-returning function.
 function holeSharedClosureResult(a: Box<number>, b: Box<string>): number {
+  // @skjs-expect-error An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation
   const reveal = (x: unknown) => {
     if (x instanceof Box) return x;
     throw 0;
   };
   const p = reveal(a);
   const q = reveal(b);
-  p.v = q.v; // UNSOUND: accepted, writes string into Box<number>
+  p.v = q.v; // Prevented by the rejected result contract above.
   return a.v;
 }
 
-// Hole 1b — the higher-order face of the same sharing: generic inference
+// Repaired — the higher-order face of the same sharing: generic inference
 // retains the skolem in R, so one call's Pair holds two runtime-distinct
 // objects under one hidden type, and results of separate calls unify too.
 declare function applyTwo<R>(
@@ -509,12 +503,13 @@ declare function applyTwo<R>(
   b: unknown,
 ): Pair<R, R>;
 function holeHigherOrderResult(a: Box<number>, b: Box<string>): number {
+  // @skjs-expect-error An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation
   const reveal = (x: unknown) => {
     if (x instanceof Box) return x;
     throw 0;
   };
   const pair = applyTwo(reveal, a, b);
-  pair.left.v = pair.right.v; // UNSOUND: accepted, writes string into Box<number>
+  pair.left.v = pair.right.v; // Prevented by the rejected result contract above.
   return a.v;
 }
 

@@ -60,7 +60,7 @@ next step is to establish contracts for the remaining inferred captures.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
-| R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | not started | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
+| R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | in progress | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
 | R2 | Propose vs validate, **and** later uses respect the snapshot | in progress | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
@@ -78,6 +78,17 @@ so equivalent imported mentions do not lose their cycle guard. Regression covera
 the rejected flow, reverse expansion order, a renamed declaration, and a renamed
 re-export of the same declaration. `make test-in-docker`, `make verify`, and
 strict tsc on the regression project pass. The declaration-identity repair is complete.
+
+R1 initial scope repair: an inferred closure result cannot expose a hidden type
+minted while checking that closure. The same syntactic `instanceof` runs on
+different objects across calls; exporting its one checker identity would let
+those objects exchange incompatible values. A read-only traversal inspects the
+result's symbolic structure, constraints, and current inference bindings.
+Concrete observations and explicit opaque results remain usable. Existing
+`instanceof-generic-skolem-args.ts` witnesses cover direct and higher-order
+result escapes. Captured containers, loop pooling, and later inference growth
+that introduces a hidden type after this boundary check remain open; this does
+not complete R1 or provide general existential packaging.
 
 R2 initial stability repair: retire the `TSInst` subtype shortcut that equated
 an open inference candidate with a concrete argument using `peekRaw`. That
