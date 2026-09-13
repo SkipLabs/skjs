@@ -879,12 +879,17 @@ extension class TypeChecker {
         // initializer is already reported above). If the declared type
         // accepts `undefined`, that read is a genuine member of the type, so
         // exempt it from the used-before-assigned check (TS2454's carve-out).
+        // A typeof annotation can contain an open inferred field candidate.
+        // Establish its current type in the live substitution before probing:
+        // otherwise the clone can grow it to admit undefined and authorize
+        // an uninitialized read under a different type in the parent.
+        establishedTy = ty.expand(tcenv.subst, this, Some(Covariant()));
         undefinedTy = TType::single(TPrimUnit(TUndefined(), pos));
         isInitialized = TType::isSub(
           tcenv.subst.clone(),
           this,
           undefinedTy,
-          ty,
+          establishedTy,
         ) is STOk();
         (ty, isInitialized)
       }

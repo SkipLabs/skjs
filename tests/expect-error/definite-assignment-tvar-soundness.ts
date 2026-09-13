@@ -5,8 +5,7 @@
 function typeofInferredFieldNeedsAssignment(seed: number): number {
   const box = { value: seed };
   let result: typeof box.value;
-  // FIXME: tsc reports TS2454; SKJS widens the field candidate in a clone
-  // and treats this uninitialized binding as holding a number.
+  // @ts-expect-error Variable 'result' is used before being assigned
   return result;
 }
 
@@ -50,7 +49,9 @@ declare function make<T>(): T;
 function typeofUnconstrainedCallExempted(): void {
   let a = make();
   let x: typeof a;
-  return x; // no used-before-assigned error -- typeof a is unknown, which admits undefined
+  // No used-before-assigned error: unknown admits undefined, but is not void.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
+  return x;
 }
 
 function typeofUnconstrainedCallStillCaughtDownstream(): number {

@@ -190,6 +190,24 @@ and later substitution changes still require their own justification. The
 checker does not yet retain immutable evidence or track all dependencies of a
 successful call after it returns.
 
+R2/R3c initialization repair: an annotation's admission of `undefined` is a
+mandatory fact when it exempts a binding from definite assignment. A written
+`typeof box.value` annotation can contain an open field candidate. Previously,
+`bindType` checked `undefined` against that candidate in a clone, which could
+grow it to include `undefined`; the parent retained the numeric type and
+accepted returning an uninitialized local as `number`. This is a runtime
+counterexample, unlike the earlier phantom-constraint stability witnesses.
+
+`bindType` now expands the annotation covariantly in the live substitution
+before the membership probe. This establishes the candidate type on which the
+exemption depends; the clone cannot choose a different type just to admit the
+initial value. `definite-assignment-tvar-soundness.ts` covers the rejected read,
+assignment before reading, and a field type that already includes `undefined`.
+The existing rigid-generic cases still reject. An uninferred generic result
+establishes `unknown`, which admits the initial value but now correctly fails
+the existing test's `void` return contract. This is not a ban on all
+uninitialized declarations or a change to error recovery.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar
