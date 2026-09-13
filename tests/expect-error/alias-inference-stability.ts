@@ -39,9 +39,8 @@ declare function requireNumberField<
 function explicitConstraintMustRemainValid(seed: number): void {
   const box = { value: seed };
   requireNumberField<typeof box>();
-  // FIXME: This write invalidates the successful explicit-argument check.
+  // @ts-expect-error Type is not assignable to the field's type
   box.value = "changed";
-  // @skjs-expect-error Type argument does not satisfy the constraint
   requireNumberField<typeof box>();
 }
 

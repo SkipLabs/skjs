@@ -124,39 +124,39 @@ checks rejection with and without priming, plus repeated valid queries when
 later growth remains within the constraint. `make test-in-docker` and
 `make verify` pass. The freeze-window repair is complete.
 
-R2/R3c audit: the first boundary is explicit generic-call constraint checking
-in `TypeChecker.call` (`src/TypeCheckExpr.sk`). `typeof` of a local uses the
-ordinary expression checker (`TEnv.typeOfExpr`), so an explicit type argument
-can contain symbolic inferred field types. The call instantiates dependent
-constraints with the type-argument map, checks each on `subst.clone()`, and
-continues on success without committing the clone. It then instantiates the
-signature on the parent, checks receiver/arguments there, repeats positional
-argument checks until the substitution version stabilizes, checks rest
-arguments, and returns the instantiated result type.
+R2/R3c first repair: explicit generic-call constraints are mandatory checks on
+the live substitution in `TypeChecker.call` (`src/TypeCheckExpr.sk`). `typeof`
+of a local uses the ordinary expression checker, so an explicit argument can
+contain open inferred field candidates. A discarded clone could validate and
+seal those candidates only in the clone, leaving later writes free to invalidate
+the earlier judgment. `explicitConstraintMustRemainValid` in
+`alias-inference-stability.ts` isolates this: a no-value-argument, void-result
+call accepts the numeric field bound; a string write used to succeed; repeating
+the same constraint check then failed. The write now rejects, and
+`compatibleWritePreservesExplicitConstraint` still accepts numeric writes.
+This witnesses loss of validation stability, not a demonstrated runtime failure.
 
-That sequence is a candidate for a transfer audit, not a demonstrated unsound
-acceptance. A probe passing an inferred generic box through an explicit constrained alias
-call still rejects a later incompatible setter argument, after the original
-constrained call succeeds. A fresh callback-return probe likewise rejects at the live
-argument check. A return-only constrained call over `typeof` an evolving object
-does not by itself establish a runtime counterexample: subsequent observations
-still pass through live checking. These exploratory probes do not add permanent
-regressions for already-covered rejections.
+The check instantiates dependent constraints with the explicit type-argument
+map and uses ordinary live subtyping to establish them. This reuses existing
+candidate sealing rather than introducing a second constraint store. The shared
+call routine distinguishes written type arguments from synthesized class
+constructor arguments; merely having a populated argument array does not make
+them explicit. Inferred constructors keep compatibility probing on a clone so
+arguments can determine their full shape. Existing `class-ctor-tparam-unsound.ts`
+tests preserve fields beyond the constraint and explicit constructor arguments.
+Inferred generic arguments retain their constraint-carrying growth path. Receiver and
+positional/rest arguments still undergo their normal live checks. The explicit
+constraint is no longer justified solely by successful discarded speculation.
 
-The next bounded obligation is to identify which constraint dependencies are
-already enforced in the parent and which, if any, depend only on successful
-speculation. An unbound inference variable carrying its own bound differs from
-an open candidate nested inside an explicit argument. `TEnv.instantiateTParams`
-already documents the former's intended justification: normalized bounded
-parameters carry constraints, enforced when variables grow or resolve. Audit
-that justification for the call path and the nested-candidate case before
-changing acceptance. Include receiver and rest checks when considering the
-final substitution; the positional fixed-point loop alone is not the whole
-call. A repair should retain/revalidate a missing obligation or commit its
-necessary constraints, with a counterexample and a valid counterpart. Blanket
-replacement of clone checks with live checks can prematurely commit inference.
-R3c is in progress because this boundary is now traced; no clone-transfer repair
-or general R2 validation mechanism has landed.
+R3c remains in progress: `TEnv.instantiateTParams` still uses clone checks with a
+separate justification for constrained unbound inference variables; open
+candidates nested in explicit alias/class arguments need their own audit.
+Diagnostic and literal-guidance probes do not establish the same acceptance
+obligation and should not be changed indiscriminately. R2 also remains open:
+this closes one acceptance path through existing sealing, not general immutable
+validation evidence or dependency-aware revalidation. Later substitution growth,
+receiver checks, and rest checks outside the positional fixed-point loop still
+need to be considered when defining the final call-validation boundary.
 
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives

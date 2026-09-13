@@ -2595,7 +2595,7 @@ extension class TypeChecker {
           !tArgs = this.makeTArgsOf(tcenv.subst, c, className)
         };
         cstr = this.newConstructorOf(tcenv.subst, c, className, tArgs);
-        this.callConstructor(tcenv, pos, cstr, args);
+        this.callConstructor(tcenv, pos, cstr, args, !targsAst.isEmpty());
         this.newOf(tcenv.subst, c, className, tArgs)
       | None() ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
@@ -3884,6 +3884,7 @@ extension class TypeChecker {
     pos: PosRange,
     cstrType: CstrType,
     args: Array<Expr>,
+    typeArgsAreExplicit: Bool = false,
   ): void {
     cstrType.cstr match {
     | None() ->
@@ -3893,7 +3894,16 @@ extension class TypeChecker {
         TSCode(2554),
       )
     | Some(cstr) ->
-      _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true, None())
+      _ = this.call(
+        tcenv,
+        pos,
+        cstr,
+        cstrType.tArgs,
+        args,
+        true,
+        None(),
+        typeArgsAreExplicit,
+      )
     }
   }
 
@@ -4639,6 +4649,7 @@ extension class TypeChecker {
     argExprs: Array<Expr>,
     mostPrecise: Bool,
     thisArgOpt: ?TType,
+    typeArgsAreExplicit: Bool = true,
   ): TType {
     args = mutable Vector<TType>[];
     moreArgs: ?TType = None();
@@ -4746,13 +4757,18 @@ extension class TypeChecker {
       // Validate each explicit type argument against its parameter's constraint.
       // Inferred arguments (the fresh TVars above) carry their constraint on the
       // variable and have it enforced at growth, so only explicit arguments need
-      // checking here. The constraint is a subtyping obligation -- every
+      // checking here. Class constructor calls also supply synthesized arguments
+      // in targs: their compatibility probes must not preempt argument inference.
+      // The constraint is a subtyping obligation -- every
       // inhabitant of the argument must inhabit the bound -- so it is checked
       // with `isSub`. The constraint is instantiated with `frozenMap` first, so
       // a constraint that references another type parameter (a dependent
       // constraint like `<A, B extends A>`) is checked against that parameter's
-      // argument. The clone keeps the speculative check from growing inference
-      // variables on the live subst.
+      // argument. This is a mandatory validation, so use the live substitution:
+      // explicit arguments can contain open candidates (e.g. typeof a local
+      // object's fields). Discarding their sealing would let later writes
+      // invalidate the successful constraint check. Inferred arguments retain
+      // their separate constraint-carrying growth path.
       //
       // Without this check, an argument that violates the bound is substituted
       // anyway; where the parameter occurs only covariantly (e.g. the return
@@ -4769,7 +4785,12 @@ extension class TypeChecker {
               (tcenv.subst, this, frozenMap),
               cstr,
             );
-            TType::isSub(tcenv.subst.clone(), this, tArg, cstrTy) match {
+            constraintSubst = if (typeArgsAreExplicit) {
+              tcenv.subst
+            } else {
+              tcenv.subst.clone()
+            };
+            TType::isSub(constraintSubst, this, tArg, cstrTy) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
               tcenv.subtypingError(
