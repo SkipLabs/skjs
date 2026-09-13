@@ -425,12 +425,13 @@ function checkedGenericCallResult(seed: boolean | null): boolean {
   return read();
 }
 
-// FIXME: destructuring a call result must preserve the extracted field's
+// Destructuring a call result must preserve the extracted field's
 // contract just as binding that object directly would.
 declare function makeCapturedObjectResult(): { cell: { value: number } };
 function replacedDestructuredResult(): number {
   let { cell } = makeCapturedObjectResult();
   const read = (): number => cell.value;
+  // @ts-expect-error Type is not assignable to the variable's type
   cell = { value: "changed" };
   return read();
 }
@@ -453,7 +454,6 @@ function staleDestructuredDefault(): boolean {
 function checkedDestructuredDefault(): boolean {
   let [cell = { value: null }] = makeCapturedTupleResult();
   const read = (): boolean => {
-    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     if (cell.value !== null) return cell.value;
     return false;
   };

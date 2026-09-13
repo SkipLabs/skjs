@@ -96,13 +96,21 @@ extension class TypeChecker {
         isLocalObject =
           binding.type.isNone() &&
           binding.value is Some(Expr(_, Object _));
+        // Completed call results carry a contract through the whole binding
+        // pattern. Preserve symbolic fields without sealing bare candidates.
+        hasResultContract = binding.value match {
+        | Some(Expr(_, Call _))
+        | Some(Expr(_, New _)) ->
+          !ty.isFieldFree() && ty.getSingleVar().isNone()
+        | _ -> false
+        };
         tcenv.!exprTypes[(binding.pat.pos, false, true)] = ty;
         this.bind(
           tcenv,
           bkind,
           binding.pat,
           ty,
-          binding.type.isSome(),
+          binding.type.isSome() || hasResultContract,
           isInitialized,
           isLocalObject,
         );
@@ -110,15 +118,6 @@ extension class TypeChecker {
           (binding.pat.value, binding.value) match {
           | (PVar(alias), Some(Expr(_, Var(source)))) ->
             tcenv.scope.inheritAliasContract(alias, source)
-          | (PVar(local), Some(Expr(_, Call _)))
-          | (PVar(local), Some(Expr(_, New _))) if (
-            !ty.isFieldFree() &&
-            ty.getSingleVar().isNone()
-          ) ->
-            // A call has already established its result shape. Preserve that
-            // symbolic contract without expanding or sealing generic fields.
-            // Bare inference candidates retain their separate evolving rule.
-            tcenv.scope.establishObjectContract(local, ty)
           | _ -> void
           }
         }

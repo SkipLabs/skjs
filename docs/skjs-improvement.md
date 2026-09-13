@@ -278,8 +278,14 @@ The M2 regressions in the same test file distinguish three obligations:
   `narrowedCallResult`, and `replacedConstructorResult` reject the witnessed
   escapes; `checkedGenericCallResult` keeps a fresh nullable-field check and
   compatible replacement usable. Bare inference-variable results keep their
-  existing evolving-binding discipline. Other expression forms and
-  destructuring result bindings remain separate work.
+  existing evolving-binding discipline. Result contracts enter the recursive
+  pattern binder, so object fields, tuple/iterable elements, defaults, and rest
+  bindings use the same propagation as explicit contracts. This replaces the
+  direct-variable-only result special case. `replacedDestructuredResult` rejects
+  replacement of an extracted object; `checkedDestructuredDefault` accepts a
+  fresh check after a tuple-slot default, while `staleDestructuredDefault` still
+  rejects the creation-time field promise. Other initializer expression forms
+  remain separate work.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc

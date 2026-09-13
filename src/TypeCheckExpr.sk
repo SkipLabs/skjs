@@ -447,7 +447,7 @@ extension class TypeChecker {
     kind: BindKind,
     pat: Pattern,
     type: TType,
-    isAnnotated: Bool,
+    hasDeclaredContract: Bool,
     isInitialized: Bool,
     isLocalObject: Bool,
   ): void {
@@ -463,7 +463,7 @@ extension class TypeChecker {
         tcenv,
         local,
         type,
-        isAnnotated,
+        hasDeclaredContract,
         isInitialized,
         !(kind is BKConst()),
       )
@@ -536,7 +536,7 @@ extension class TypeChecker {
               kind,
               eltPat,
               boundType,
-              isAnnotated,
+              hasDeclaredContract,
               isInitialized,
               false,
             )
@@ -546,7 +546,7 @@ extension class TypeChecker {
               kind,
               eltPat,
               tyl[i],
-              isAnnotated,
+              hasDeclaredContract,
               isInitialized,
               false,
             )
@@ -583,7 +583,7 @@ extension class TypeChecker {
             kind,
             Pattern(restName.pos, PVar(restName)),
             restType,
-            isAnnotated,
+            hasDeclaredContract,
             isInitialized,
             false,
           )
@@ -631,7 +631,7 @@ extension class TypeChecker {
                 kind,
                 eltPat,
                 boundType,
-                isAnnotated,
+                hasDeclaredContract,
                 isInitialized,
                 false,
               )
@@ -647,7 +647,7 @@ extension class TypeChecker {
                 kind,
                 eltPat,
                 optionalEltType,
-                isAnnotated,
+                hasDeclaredContract,
                 isInitialized,
                 false,
               )
@@ -664,7 +664,7 @@ extension class TypeChecker {
               kind,
               Pattern(restName.pos, PVar(restName)),
               restType,
-              isAnnotated,
+              hasDeclaredContract,
               isInitialized,
               false,
             )
@@ -794,7 +794,7 @@ extension class TypeChecker {
               kind,
               fieldPat,
               typeForField,
-              isAnnotated,
+              hasDeclaredContract,
               isInitialized,
               false,
             )
@@ -805,7 +805,7 @@ extension class TypeChecker {
               kind,
               Pattern(name.pos, PVar(name)),
               TType::single(typeForRest),
-              isAnnotated,
+              hasDeclaredContract,
               isInitialized,
               false,
             )
