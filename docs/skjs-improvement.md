@@ -127,7 +127,11 @@ these transient facts from runtime-kind checks (`typeof`, `instanceof`, and
 `Array.isArray`), preserving the existing runtime-kind return tests. The marker
 propagates through aliases and control-flow merges; combining runtime-kind and
 field narrowing can still lose precision.
-M1 stays open for argument passing and other alias-producing expressions,
+Ordinary call arguments also use stable contracts before parameter checking and
+generic inference. The regression covers a retained readonly argument, a generic
+identity result, and a fresh scalar copy. Contextual callback typing remains on
+its existing path.
+M1 stays open for spread-source and receiver contracts, other alias-producing expressions,
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.

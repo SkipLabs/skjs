@@ -4534,7 +4534,10 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    this.expr(tcenv, argExpr, mostPrecise)
+    // The callee may retain an argument or return it through an inferred type.
+    // Its contract cannot depend on the caller's temporary field refinements.
+    currentType = this.expr(tcenv, argExpr, mostPrecise);
+    this.stableAliasExprType(tcenv, argExpr, currentType)
   }
 
   fun call(

@@ -389,7 +389,8 @@ function retainedArgument(
   retain: (value: { readonly f: number }) => () => number,
 ): () => number {
   if (x.f !== null) {
-    // FIXME: a callee can retain an alias after the field check stops holding.
+    // A callee can retain an alias after the field check stops holding.
+    // @ts-expect-error Argument is not assignable to the parameter's type
     const read = retain(x);
     x.f = null;
     return read;
@@ -402,9 +403,10 @@ function genericArgument(
   identity: <T>(value: T) => T,
 ): number {
   if (x.f !== null) {
-    // FIXME: generic inference exports the temporary field fact through T.
+    // Generic inference preserves the stable contract through T.
     const y = identity(x);
     x.f = null;
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return y.f;
   }
   return 0;
