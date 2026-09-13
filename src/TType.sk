@@ -2497,6 +2497,26 @@ class TFields protected {
     }
   }
 
+  fun preservePrototypeMethods(
+    names: SortedSet<FieldNameString>,
+    symbols: SortedSet<FieldNameString>,
+  ): TFields {
+    this with {
+      fields => this.fields.mapKeyed(field ->
+        field with {
+          isPrototypeMethod => field.isPrototypeMethod ||
+            names.contains(field.name),
+        }
+      ),
+      symbolFields => this.symbolFields.mapKeyed(field ->
+        field with {
+          isPrototypeMethod => field.isPrototypeMethod ||
+            symbols.contains(field.name),
+        }
+      ),
+    }
+  }
+
   fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {
     TFields{
       fields => this.fields.mapKeyed(fField),

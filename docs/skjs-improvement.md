@@ -466,9 +466,18 @@ explicit receiver requirement. Own function-valued fields and class data fields
 remain copyable. `spread-callable.ts` pins the previously accepted missing-method
 calls through spread/rest and these positive controls.
 
+Annotated local initializers now retain recorded prototype-method provenance
+on matching fields of the annotation. This preserves the annotation's value
+contract while avoiding a new promise about ownership. Names and unique-symbol
+keys are tracked separately; any source branch carrying the marker makes the
+corresponding annotated field conservative. `spread-callable.ts` covers a
+readonly function-property annotation that previously enabled a missing-method
+call, and an annotated own function field that remains copyable.
+
 This is a bounded repair for recorded method provenance, not a complete model
-of own enumerable properties. Structural annotations can still lose declaration
-provenance; ordinary fields supplied by inherited accessors and non-enumerable
+of own enumerable properties. Parameter and return contracts, later assignments
+from types that already erased provenance, and nested structural annotations
+remain open. Ordinary fields supplied by inherited accessors and non-enumerable
 properties are not classified. Union and intersection field construction
 conservatively retain the marker when either input carries it. A general
 ownership contract must also constrain subtyping and provenance-erasing

@@ -59,7 +59,7 @@ function spreadClassData(source: PrototypeReader): number {
 function annotatedPrototypeCopy(source: PrototypeReader): number {
   const alias: { readonly read: (this: PrototypeReader) => number } = source;
   const copy = { ...alias };
-  // FIXME: the annotation erases the fact that copying may omit this method.
+  // @skjs-expect-error Property access is not allowed on this type
   return copy.read.call(source);
 }
 

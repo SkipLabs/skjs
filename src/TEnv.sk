@@ -2499,6 +2499,57 @@ base class TEnv{
     }
   }
 
+  // An annotation changes the value contract, but cannot establish that a
+  // source method is an own property. Keep that uncertainty on local aliases.
+  fun preserveCopyProvenance(
+    subst: mutable Subst,
+    source: TType,
+    target: TType,
+  ): TType {
+    names = SortedSet<FieldNameString>[];
+    symbols = SortedSet<FieldNameString>[];
+    _source = source.mapSTypes(subst, this, None(), stypes -> {
+      stypes.each(types ->
+        for (stype in types) {
+          stype match {
+          | obj @ TObject _ ->
+            for (fields in obj.getBranches()) {
+              for (field in fields.fields) {
+                if (field.isPrototypeMethod) !names = names.set(field.name)
+              };
+              for (field in fields.symbolFields) {
+                if (field.isPrototypeMethod) !symbols = symbols.set(field.name)
+              }
+            }
+          | TPrim _ -> void
+          }
+        }
+      );
+      stypes
+    });
+    if (names.isEmpty() && symbols.isEmpty()) {
+      target
+    } else {
+      changed = false;
+      result = target.mapSTypes(subst, this, None(), stypes ->
+        stypes.map(types ->
+          types.mapSTypes(stype ->
+            stype match {
+            | obj @ TObject _ ->
+              obj.map(fields -> {
+                result = fields.preservePrototypeMethods(names, symbols);
+                if (result != fields) !changed = true;
+                result
+              })
+            | prim @ TPrim _ -> prim
+            }
+          )
+        )
+      );
+      if (changed) result else target
+    }
+  }
+
   // Copying reads own enumerable values. A prototype method may be absent,
   // or present as an own override; preserve both cases for spread overwrites.
   fun propertyCopyFields(subst: mutable Subst, fields: TFields): TFields {

@@ -932,7 +932,7 @@ extension class TypeChecker {
           annot,
           TSCode(2322),
         );
-        (annot, true)
+        (this.preserveCopyProvenance(tcenv.subst, aliasType, annot), true)
       }
     }
   }

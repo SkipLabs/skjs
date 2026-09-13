@@ -576,6 +576,7 @@ cases and conservatively under-approximates a few others.
 - **Copied class methods may be absent**: object spread and rest make
   class-declared instance methods optional, since prototype properties are not
   copied. For example, `const copy = { ...instance }; copy.method()` is rejected.
+  Annotated local initializers retain this copy uncertainty from their source.
   Own function-valued fields remain copyable. TypeScript omits class methods
   from the copy's type; SKJS conservatively allows for an own override.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
