@@ -19,12 +19,13 @@ function testLiteralPreservation(): void {
   const narrow: "foo" = s;
 }
 
-// Object field preservation: widened target type doesn't widen inferred fields
+// A writable target determines the inferred fields' lasting write types.
 function testObjectPreservation(): void {
   const config = { port: 8080, host: "localhost" } satisfies {
     port: number;
     host: string;
   };
+  // FIXME: tsc rejects this literal annotation; SKJS rolls back target-guided widening.
   const port: 8080 = config.port;
   const host: "localhost" = config.host;
 }
@@ -72,4 +73,14 @@ function satisfiesCompatibleWrite(seed: number): void {
   const first = box satisfies { readonly value: number };
   box.value = 2;
   const second = box satisfies { readonly value: number };
+}
+
+// Literal targets retain exact field types through validation.
+function satisfiesLiteralTarget(): void {
+  const config = { port: 8080, host: "localhost" } satisfies {
+    readonly port: 8080;
+    readonly host: "localhost";
+  };
+  const port: 8080 = config.port;
+  const host: "localhost" = config.host;
 }
