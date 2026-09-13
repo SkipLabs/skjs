@@ -496,3 +496,41 @@ function checkedPropertyResult(holder: {
   holder.cell.value = null;
   return read();
 }
+
+// FIXME: An unrelated pattern must not hide that value is never assigned.
+function stablePattern(
+  value: string | undefined = "ready",
+  { tag }: { tag: number } = { tag: 1 },
+): () => string {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  return () => value;
+}
+
+// A writer nested inside a pattern default still invalidates capture narrowing.
+function patternWriter(
+  value: string | null,
+  input: { items: [(() => void) | undefined] },
+): () => string {
+  if (value !== null) {
+    const {
+      items: [
+        write = () => {
+          value = null;
+        },
+      ],
+    } = input;
+    void write();
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
+    return () => value;
+  }
+  return () => "";
+}
+
+// Reads inside defaults count as captures, so later writes retain the contract.
+function patternReader(input: { read?: () => number }): () => number {
+  let value = 1;
+  const { read = () => value } = input;
+  // @ts-expect-error Type is not assignable to the variable's type
+  value = "changed";
+  return read;
+}
