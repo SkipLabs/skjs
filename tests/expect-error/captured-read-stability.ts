@@ -343,3 +343,29 @@ function branchObjectCapture(flag: boolean): number {
   cell = { other: true };
   return read();
 }
+
+// FIXME: a callback write checked before any read still constrains future
+// replacements. Otherwise reset writes a number after read promises string.
+function objectWriterBeforeReader(): string {
+  let cell = { value: 1 };
+  const reset = (): void => {
+    cell = { value: 1 };
+  };
+  cell = { value: "changed" };
+  const read = (): string => cell.value;
+  reset();
+  return read();
+}
+
+// FIXME: the optimized property-write path does not read the receiver, but
+// still promises that this captured binding will accept a numeric field write.
+function objectFieldWriterBeforeReader(): string {
+  let cell = { value: 1 };
+  const reset = (): void => {
+    cell.value = 1;
+  };
+  cell = { value: "changed" };
+  const read = (): string => cell.value;
+  reset();
+  return read();
+}
