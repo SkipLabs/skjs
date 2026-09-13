@@ -4048,6 +4048,13 @@ extension class TypeChecker {
     e2: Expr,
     mostPrecise: Bool,
   ): TType {
+    // This optimized write does not read the receiver through expr(): doing so
+    // would freeze a growable local object. Export its existing pre-write type
+    // without changing that growth state, including inside captured closures.
+    if (getConfig(tcenv.context).emitSkjsTypeClaims) {
+      tcenv.claimedExprVisits.push(local.pos);
+      tcenv.!exprTypes[(local.pos, false, false)] = tcenv.scope.get(local)
+    };
     fieldType = this.expr(tcenv, e2, mostPrecise);
     keyType = this.expr(tcenv, keyExpr, true);
     fieldKeys = keyType

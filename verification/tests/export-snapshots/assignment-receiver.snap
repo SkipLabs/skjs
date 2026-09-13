@@ -1,0 +1,17 @@
+# assignment-receiver.ts
+
+## capturedWrite [complete unverified normal]
+params: seed: boolean
+result: () => boolean [construct=unknown array=unknown]
+entry 57-85: seed!: boolean; this: (unavailable: void-type)
+entry 89-131: cell: { value: boolean } [string-index=synthetic symbol-index=synthetic]; seed!: boolean; this: (unavailable: void-type)
+expr 70-85 `{ value: seed }`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
+expr 79-83 `seed`: boolean
+expr 96-131 `(): boolean => (cell.value = !seed)`: () => boolean [construct=unknown array=unknown]
+expr 111-131 `(cell.value = !seed)`: boolean
+expr 112-116 `cell`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
+expr 117-122 `value`: "value"
+expr 125-130 `!seed`: boolean
+expr 126-130 `seed`: boolean
+lvalue 63-67 `cell`: { value: boolean } [string-index=synthetic symbol-index=synthetic]
+lvalue 112-122 `cell.value`: boolean
