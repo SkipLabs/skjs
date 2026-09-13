@@ -190,6 +190,19 @@ substitution selection. It preserves behavior; the explicit-bound stability
 regressions and constructor shape-inference tests exercise the two roles. It
 does not prove the probe transfer conditions or complete R2/R3c.
 
+Equality narrowing now establishes both operands' current inferred types in the
+live substitution before intersection or singleton subtraction on a clone.
+Previously the live read was special-cased to the spelling `null`: an inferred
+nullable read narrowed against literal null but failed against a named null
+value. An inferred singleton on the other side was also invisible to subtraction.
+`local-vs-local-refinement.ts` covers both accepted cases and rejection when the
+other operand is not a singleton; strict tsc confirms those outcomes.
+
+This separates the lasting observation from the branch-local filtering without
+committing the intersection's speculative constraints. The change fixes an
+incompleteness in scalar comparison narrowing, not a newly demonstrated runtime
+failure or general proof that all narrowing probes transfer correctly.
+
 The call-validation fixed point now includes receiver, required/optional
 arguments, and rest arguments in the same pass. A successful call exits only
 after a complete pass leaves `subst.version` unchanged. Previously receiver

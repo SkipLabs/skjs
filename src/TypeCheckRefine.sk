@@ -81,15 +81,15 @@ extension class TypeChecker {
         default = None();
         this.setLocal(tcenv, local, default, filter)
       | _ ->
-        otherType = this.lookupExprType(tcenv, otherExpr);
-        // Resolve a null-checked local in the main substitution, as the
-        // undefined path above does. Subtracting from an unresolved TVar in
-        // a clone leaves its nullable candidate unchanged.
-        comparisonType = otherExpr.value match {
-        | Var(Name(_, "null")) ->
-          localType.expand(tcenv.subst, this, Some(Covariant()))
-        | _ -> localType
-        };
+        // Equality observes both values. Establish their inferred types in
+        // the live substitution before computing a branch-local refinement;
+        // resolving only in the clone loses the read and can hide a singleton.
+        otherType = this.lookupExprType(tcenv, otherExpr).expand(
+          tcenv.subst,
+          this,
+          Some(Covariant()),
+        );
+        comparisonType = localType.expand(tcenv.subst, this, Some(Covariant()));
         // Clone subst because inter may unify type variables as a side
         // effect; we want the exploratory narrowing not to mutate the main subst.
         if (target) {

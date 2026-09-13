@@ -137,8 +137,6 @@ function inferredReadNamedNull(seed: number | null): number {
   const box = { value: seed };
   const x = box.value;
   const absent: null = null;
-  // FIXME: tsc accepts; SKJS resolves the read only for the spelling `null`.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   if (x !== absent) return x;
   return 0;
 }
@@ -148,8 +146,6 @@ function inferredReadSingleton(seed: 0 | 1, zeroSeed: 0): 1 {
   const box = { value: seed, zero: zeroSeed };
   const x = box.value;
   const zero = box.zero;
-  // FIXME: tsc accepts; SKJS does not find the singleton behind inference.
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   if (x !== zero) return x;
   return 1;
 }
