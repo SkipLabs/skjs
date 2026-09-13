@@ -439,6 +439,21 @@ uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates recorded alias contracts, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.
 
+Extracting a class method now converts its implicit class receiver into an
+explicit receiver requirement. The implicit receiver shortcuts are justified
+for attached methods and whole-object comparisons; retaining them on a detached
+value allowed both retyping a method to a different class's method type and
+reattaching it to an incompatible object. The method could then access missing
+fields on its new carrier. Strict tsc also accepts these unsafe programs.
+
+`this-parameter-implicit-class.ts` covers incompatible retyping, direct
+reattachment, and a declaration-level `typeof` alias, plus compatible
+reattachment. Expression property reads (dot/index, including optional reads)
+and declaration-level member `typeof` share the extraction rule. Direct attached
+calls keep their existing path, preserving generic-container variance and
+union-receiver dispatch. This is a receiver-provenance repair, not general
+callee-effect tracking or R2 completion.
+
 M3 implementation scope: loop entry widens possibly assigned mutable bindings
 with declared or inherited contracts before the repeated condition/body is
 checked. The syntactic summary includes `for` increments and nested bodies,

@@ -2686,7 +2686,8 @@ extension class TypeChecker {
     | Get(arr, idx) ->
       objOrArray = this.expr(tcenv, arr, mostPrecise);
       accessKind = if (isLValue) AKLValue() else AKNormal();
-      this.get(tcenv, pos, objOrArray, idx, accessKind)
+      result = this.get(tcenv, pos, objOrArray, idx, accessKind);
+      if (isLValue) result else this.extractedMethodType(tcenv.subst, result)
 
     // We always interpret `[]` as an array, not a tuple.
     // Because an empty tuple is not very meaningful.
@@ -2825,13 +2826,14 @@ extension class TypeChecker {
       | (false, OptionalDot()) -> AKOptionalChain()
       | (false, NormalDot()) -> AKNormal()
       };
-      this.dot(
+      result = this.dot(
         tcenv,
         e1.pos,
         this.expr(tcenv, e1, mostPrecise),
         fieldName,
         accessKind,
-      )
+      );
+      if (isLValue) result else this.extractedMethodType(tcenv.subst, result)
 
     | Binop(op, e1, e2) ->
       op match {

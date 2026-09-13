@@ -51,7 +51,7 @@ class OtherReceiver {
 
 // Extracted methods must not borrow a different class's receiver contract.
 function retypedMethod(source: C, other: OtherReceiver): void {
-  // FIXME: SKJS accepts incompatible implicit class receivers during subtyping.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const method: typeof source.m = other.m;
   const carrier = { value: 1, m: method };
   carrier.m(0);
@@ -60,7 +60,7 @@ function retypedMethod(source: C, other: OtherReceiver): void {
 // Reattachment without an annotation must also validate the actual carrier.
 function reattachedMethod(other: OtherReceiver): void {
   const carrier = { value: 1, m: other.m };
-  // FIXME: SKJS treats the new carrier as the method's original class instance.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }
 
@@ -74,6 +74,6 @@ type ExtractedCMethod = typeof c.m;
 function reattachmentThroughTypeof(other: C): void {
   const method: ExtractedCMethod = other.m;
   const carrier = { m: method };
-  // FIXME: a declaration-level typeof can restore the implicit receiver shortcut.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }

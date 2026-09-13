@@ -2497,6 +2497,41 @@ base class TEnv{
     }
   }
 
+  // Extraction loses the guarantee that a class method runs on its original
+  // carrier. Preserve the instance type as an explicit this requirement.
+  fun extractedMethodType(subst: mutable Subst, ty: TType): TType {
+    changed = false;
+    result = ty.mapSTypes(subst, this, None(), stypes ->
+      stypes.map(types ->
+        types.mapSTypes(stype ->
+          stype match {
+          | obj @ TObject _ ->
+            obj.map(fields ->
+              fields.map(
+                field -> field,
+                funs ->
+                  funs.mapFuns(f ->
+                    f.thisParam match {
+                    | ImplicitClass(receiver) ->
+                      !changed = true;
+                      f with {thisParam => Explicit(receiver)}
+                    | NoThis()
+                    | Explicit _
+                    | ImplicitShape() ->
+                      f
+                    }
+                  )
+                ,
+              )
+            )
+          | prim @ TPrim _ -> prim
+          }
+        )
+      )
+    );
+    if (changed) result else ty
+  }
+
   fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
@@ -2589,7 +2624,10 @@ base class TEnv{
         sTypes.singleElt()
       ) match {
       | Some(obj @ TObject _) ->
-        obj.getType(subst, this, propertyName.value, expr.pos)
+        this.extractedMethodType(
+          subst,
+          obj.getType(subst, this, propertyName.value, expr.pos),
+        )
       | _ ->
         fatalError(
           Array[
