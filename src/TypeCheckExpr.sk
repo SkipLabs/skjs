@@ -3594,6 +3594,10 @@ extension class TypeChecker {
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
     tcenv.!callingContext = callingContext;
 
+    writes = mutable CaptureWrites{};
+    writes.params(params);
+    writes.body(body);
+    tcenv.scope.setCaptureWrites(writes.result(), writes.capturedNames());
     this.bindParams(tcenv, params, paramTypes);
 
     retType = retTypeAstOpt match {

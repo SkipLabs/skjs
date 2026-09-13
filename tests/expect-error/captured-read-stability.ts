@@ -1,9 +1,8 @@
-// FIXME: stale captures below are accepted; only the already-evolved
-// inferred binding is rejected. These cases pin the pre-repair behavior.
 // A closure may run after its enclosing mutable binding changes.
 function staleCapturedLocal(seed: boolean | null): boolean {
   let value: boolean | null = seed;
   if (value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     value = null;
     return read();
@@ -39,6 +38,7 @@ function snapshotCapturedLocal(seed: boolean | null): boolean {
 // Parameters are mutable bindings too, including through nested closures.
 function staleCapturedParameter(value: boolean | null): boolean {
   if (value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const makeRead = () => (): boolean => value;
     value = null;
     return makeRead()();
@@ -46,12 +46,12 @@ function staleCapturedParameter(value: boolean | null): boolean {
   return false;
 }
 
-// An inferred binding can evolve before its first closure declaration.
+// Captured concrete primitive bindings keep their initializer's type as
+// a write contract, including writes before the first closure declaration.
 function evolvedInferredCapture(): number {
   let value = 1;
-
+  // @ts-expect-error Type is not assignable to the variable's type
   value = "s";
-  // @skjs-expect-error Type of the callback's returned value is not assignable to the expected return type
   const read = (): number => value;
   return read();
 }
@@ -69,6 +69,7 @@ function evolvedInferredSnapshotStillString(): string {
 // The mutable parameter's declared contract also removes stale field facts.
 function staleCapturedField(cell: { value: boolean | null }): boolean {
   if (cell.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     cell.value = null;
     return read();
@@ -88,6 +89,7 @@ function neverReassigned(value: boolean | null): boolean {
 // The summary must include writes in a nested function's default initializer.
 function writtenByDefault(value: boolean | null): boolean {
   if (value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     const reset = (ignored: boolean | null = (value = null)): null => null;
     const resetResult = reset();
@@ -102,6 +104,7 @@ function stableReferenceMutableContents(
   reset: () => void,
 ): boolean {
   if (cell.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     reset();
     return read();
@@ -116,6 +119,7 @@ function writtenByDestructuring(
   source: { reset?: boolean | null },
 ): boolean {
   if (value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     const { reset = (value = null) } = source;
     return read();
@@ -127,6 +131,7 @@ function writtenByDestructuring(
 function staleAnnotatedConstField(seed: boolean | null): boolean {
   const cell: { value: boolean | null } = { value: seed };
   if (cell.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     cell.value = null;
     return read();
@@ -160,7 +165,7 @@ function stableAnnotatedConstValue(seed: boolean | null): boolean {
 function staleInferredPrimitive(): number {
   let value = 1;
   const read = (): number => value;
-
+  // @ts-expect-error Type is not assignable to the variable's type
   value = "s";
   return read();
 }
@@ -168,6 +173,7 @@ function staleInferredPrimitive(): number {
 function staleInferredUnion(seed: boolean | null): boolean {
   let value = seed;
   if (value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     value = null;
     return read();
@@ -190,6 +196,7 @@ function inferredSetterBeforeReader(seed: boolean | null): boolean {
     value = null;
   };
   if (value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     reset();
     return read();

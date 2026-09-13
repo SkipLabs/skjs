@@ -10,7 +10,8 @@ module SKJS;
 // capture — can be checked against the declared type rather than a transient
 // narrowing (see `Scope::set`). `isAnnotated` records whether the binding had an
 // explicit type annotation: an annotation is a hard constraint that every write
-// must satisfy, whereas an un-annotated binding's inferred type evolves on write.
+// must satisfy. Captured concrete primitive initializers also constrain every
+// write; other unannotated bindings can evolve.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
@@ -39,9 +40,95 @@ mutable class Scope{
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
+  private mutable hasCaptureSummary: Bool = false,
+  private mutable captureWrites: ?SortedSet<String> = None(),
+  private mutable capturedNames: ?SortedSet<String> = None(),
 } {
   static fun mcreateToplevel(): mutable this {
     mutable static{id => 0, isLoop => false}
+  }
+
+  mutable fun setCaptureWrites(
+    writes: ?SortedSet<String>,
+    captures: ?SortedSet<String>,
+  ): void {
+    this.!hasCaptureSummary = true;
+    this.!captureWrites = writes;
+    this.!capturedNames = captures
+  }
+
+  readonly private fun functionWrites(): ?SortedSet<String> {
+    if (this.hasCaptureSummary) {
+      this.captureWrites
+    } else {
+      this.up.flatMap(up -> up.functionWrites())
+    }
+  }
+
+  readonly private fun captureNeverWritten(name: String): Bool {
+    if (this.locals.containsKey(name)) {
+      this.functionWrites().map(writes -> !writes.contains(name)).default(false)
+    } else {
+      this.up.map(up -> up.captureNeverWritten(name)).default(false)
+    }
+  }
+
+  readonly private fun functionCaptures(): ?SortedSet<String> {
+    if (this.hasCaptureSummary) {
+      this.capturedNames
+    } else {
+      this.up.flatMap(up -> up.functionCaptures())
+    }
+  }
+
+  readonly private fun isCapturedBinding(name: String): Bool {
+    if (this.locals.containsKey(name)) {
+      this.functionCaptures().map(names -> names.contains(name)).default(true)
+    } else {
+      this.up.map(up -> up.isCapturedBinding(name)).default(false)
+    }
+  }
+
+  readonly private fun hasCaptureContract(name: String, ref: LocalRef): Bool {
+    ref.isAnnotated ||
+      (ref.isMutable &&
+        ref.declaredType.isConcretePrimitive() &&
+        this.isCapturedBinding(name))
+  }
+
+  readonly private fun captureView(name: String, ref: LocalRef): LocalRef {
+    // Stable binding identity does not stabilize mutable properties. Recover
+    // only field-free facts (primitive values and callable signatures).
+    fieldFree =
+      ref.type.insts.isEmpty() &&
+      ref.type.clauses.all(clause ->
+        clause.vars.isEmpty() &&
+          clause.stypes
+            .map(stypes ->
+              stypes.all(st ->
+                st match {
+                | TPrim _ -> true
+                | obj @ TObject _ ->
+                  obj.getBranches().all(fields ->
+                    fields.fields.isEmpty() &&
+                      fields.symbolFields.isEmpty() &&
+                      fields.stringIndex.isNone() &&
+                      fields.numberIndex.isNone() &&
+                      fields.symbolIndex.isNone()
+                  )
+                }
+              )
+            )
+            .default(false)
+      );
+    if (
+      this.hasCaptureContract(name, ref) &&
+      (!fieldFree || (ref.isMutable && !this.captureNeverWritten(name)))
+    ) {
+      ref with {type => ref.declaredType}
+    } else {
+      ref
+    }
   }
 
   readonly private fun maybeGetLocal(name: Name): ?Name {
@@ -65,6 +152,7 @@ mutable class Scope{
 
   readonly private fun maybeGetRefHelper(
     throughLoop: Bool,
+    throughFunction: Bool,
     name: String,
   ): ?(Bool, LocalRef) {
     !throughLoop = this.isLoop || throughLoop;
@@ -72,14 +160,30 @@ mutable class Scope{
     | None() ->
       this.up match {
       | None() -> None()
-      | Some(up) -> up.maybeGetRefHelper(throughLoop, name)
+      | Some(up) ->
+        up.maybeGetRefHelper(
+          throughLoop,
+          throughFunction || this.isFunction,
+          name,
+        )
       }
-    | Some(x) -> Some((throughLoop, x))
+    | Some(x) ->
+      // Enclosing flow facts may expire before this function runs, but an
+      // capture with a write contract retains its declared type. Other inferred
+      // bindings can evolve beyond their initial type, so it is not a fallback.
+      // Refinements made inside this function are found before crossing its
+      // boundary, so invocation-time checks still narrow subsequent reads.
+      ref = if (throughFunction) {
+        this.captureView(name, x)
+      } else {
+        x
+      };
+      Some((throughLoop, ref))
     }
   }
 
   readonly private fun maybeGetRef(name: String): ?(Bool, LocalRef) {
-    this.maybeGetRefHelper(false, name)
+    this.maybeGetRefHelper(false, false, name)
   }
 
   mutable fun bind(
@@ -118,6 +222,14 @@ mutable class Scope{
     acc = this.up match {
     | None() -> SortedMap[]
     | Some(up) -> up.visibleRefs()
+    };
+    // Export the same capture view used by lookup, not creation-time flow
+    // refinements from an enclosing mutable binding.
+    if (this.isFunction) {
+      for (kv in acc.items()) {
+        ref = kv.i1;
+        !acc = acc.set(kv.i0, this.captureView(kv.i0, ref))
+      }
     };
     for (kv in this.refs.items()) {
       !acc = acc.set(kv.i0, kv.i1)
@@ -200,11 +312,11 @@ mutable class Scope{
       )
     | Some(x) -> x
     };
-    if (upRef.isAnnotated) {
-      // An explicit type annotation is a hard constraint: every write must
-      // satisfy the declared type, wherever it happens. The value still narrows
-      // the binding for later reads in this frame, but it may not escape the
-      // annotation.
+    if (this.hasCaptureContract(name.value, upRef)) {
+      // An explicit annotation, or a concrete primitive initializer of a
+      // captured mutable binding, is a contract every write must preserve.
+      // The value still narrows the binding for later reads in this frame,
+      // but it may not escape that contract.
       isSubType(ty, upRef.declaredType);
     } else if (this.isThroughFunction(name)) {
       // An un-annotated binding's inferred type evolves on same-frame writes,

@@ -11,9 +11,6 @@ mutable class CaptureWrites{
   mutable captures: SortedSet<String> = SortedSet[],
   mutable unknownCaptures: Bool = false,
   mutable depth: Int = 0,
-  trackReads: Bool = false,
-  reads: mutable Vector<Expr> = mutable Vector[],
-  mutable hasCallEffects: Bool = false,
 } {
   readonly fun result(): ?SortedSet<String> {
     if (this.unknown) None() else Some(this.names)
@@ -26,13 +23,6 @@ mutable class CaptureWrites{
   mutable fun target(e: Expr): void {
     e.value match {
     | Var(n) -> this.!names = this.names.set(n.value)
-    | EArray(elements) ->
-      this.!hasCallEffects = true;
-      // Preserve the existing unknown-target summary, but retain the binding
-      // names too for consumers distinguishing rebinding from property writes.
-      this.!unknown = true;
-      elements.each(element -> this.target(element))
-    | Spread(inner) -> this.target(inner)
     | _ -> this.!unknown = true
     }
   }
@@ -45,24 +35,13 @@ mutable class CaptureWrites{
   }
 
   mutable fun pattern(p: Pattern): void {
-    // Binding names (including rest names) are declarations, not reads or
-    // assignments to existing bindings. Defaults are ordinary expressions;
-    // traverse them at the current closure depth before their nested pattern.
+    // Destructuring patterns can execute defaults/computed keys. Until those
+    // are traversed explicitly, do not infer absence of writes through them.
     p.value match {
     | PVar _ -> void
-    | PArray(elements, _) ->
-      this.!hasCallEffects = true;
-      elements.each(element ->
-        element.each(item -> {
-          item.i1.each(e -> this.expr(e));
-          this.pattern(item.i0)
-        })
-      )
-    | PObject{fields, rest => _} ->
-      for (field in fields) {
-        field.i2.each(e -> this.expr(e));
-        this.pattern(field.i1)
-      }
+    | _ ->
+      this.!unknown = true;
+      this.!unknownCaptures = true
     }
   }
 
@@ -93,8 +72,7 @@ mutable class CaptureWrites{
       this.expr(e);
       this.stmts(yes);
       no.each(ss -> this.stmts(ss))
-    | ForInOf(kind, init, e, body) ->
-      if (kind is ForOf()) this.!hasCallEffects = true;
+    | ForInOf(_, init, e, body) ->
       init.value match {
       | StmtExpr(target) -> this.target(target)
       | Bind _ -> void
@@ -141,15 +119,6 @@ mutable class CaptureWrites{
   }
 
   mutable fun expr(e: Expr): void {
-    if (this.trackReads) {
-      e.value match {
-      | Var _
-      | Dot _
-      | Get _ ->
-        this.reads.push(e)
-      | _ -> void
-      }
-    };
     e.value match {
     | Number _
     | BigInt _
@@ -160,36 +129,24 @@ mutable class CaptureWrites{
       if (this.depth > 0) {
         this.!captures = this.captures.set(n.value)
       }
-    | Spread(x) ->
-      this.!hasCallEffects = true;
-      this.expr(x)
+    | Spread(x)
     | TypeOf(x)
     | VoidOp(x)
+    | Await(x)
     | As(x, _)
     | AsConst(x)
     | Satisfies(x, _)
     | Async(x) ->
       this.expr(x)
-    | Await(x) ->
-      this.!hasCallEffects = true;
-      this.expr(x)
     | Dot(_, x, _) -> this.expr(x)
     | Get(x, y)
-    | In(x, y) ->
-      this.expr(x);
-      this.expr(y)
+    | In(x, y)
     | InstanceOf(x, y) ->
-      // Membership can invoke an inherited/custom Symbol.hasInstance hook.
-      this.!hasCallEffects = true;
       this.expr(x);
       this.expr(y)
     | New(x, _, args)
     | Call(x, _, args) ->
-      this.!hasCallEffects = true;
-      // A callee lookup is not the observation a returned type guard tests.
-      // Capture/write summaries still traverse it; read-footprint scans use
-      // the arguments whose observed values can justify narrowing.
-      if (!this.trackReads) this.expr(x);
+      this.expr(x);
       for (arg in args) {
         this.expr(arg)
       }

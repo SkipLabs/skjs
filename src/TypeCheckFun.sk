@@ -10,6 +10,13 @@ extension class TypeChecker {
     sig = this.getFunSig(subst.context, fd);
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
+    writes = mutable CaptureWrites{};
+    writes.params(sig.params);
+    this.getFunBody(subst.context, fd) match {
+    | FDBSome(body) -> writes.stmts(body)
+    | FDBNone() -> void
+    };
+    tcenv.scope.setCaptureWrites(writes.result(), writes.capturedNames());
     fdPos = fd.name.getPos();
     !this = this.addTParams(subst, sig.tparams);
     // An explicit `this: T` as the first parameter overrides the enclosing
