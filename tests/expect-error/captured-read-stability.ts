@@ -217,11 +217,12 @@ function inferredObjectCapture(seed: boolean | null): boolean {
   return false;
 }
 
-// FIXME: an inferred alias created after narrowing exports the transient read
-// fact. SKJS accepts the stale callback; tsc rejects its nullable result.
+// An inferred alias created after narrowing retains the source object
+// contract, so its callback cannot promise a transient non-null field.
 function inferredAliasCapture(cell: { value: boolean | null }): boolean {
   if (cell.value !== null) {
     const alias = cell;
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => alias.value;
     cell.value = null;
     return read();
@@ -281,11 +282,12 @@ function sealedEvolvingCapture(): number {
   return read();
 }
 
-// FIXME: a captured alias narrowed after creation also needs the source
-// object contract. SKJS accepts this stale read; tsc rejects it.
+// Narrowing after alias creation must not replace the inherited contract
+// used by a captured read.
 function aliasThenNarrow(cell: { value: boolean | null }): boolean {
   const alias = cell;
   if (alias.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => alias.value;
     cell.value = null;
     return read();
@@ -303,11 +305,11 @@ function checkedAliasChain(cell: { value: boolean | null }): boolean {
   cell.value = null;
   return read();
 }
-// FIXME: writes to a mutable alias must preserve the callback's object
-// contract. SKJS accepts this incompatible replacement; tsc rejects it.
+// Replacing a mutable alias must preserve its inherited object contract.
 function reassignedAlias(cell: { value: boolean | null }): boolean {
   let alias = cell;
   const read = (): boolean | null => alias.value;
+  // @ts-expect-error Type is not assignable to the variable's type
   alias = { value: "s" };
   return read() === true;
 }

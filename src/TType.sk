@@ -542,6 +542,33 @@ class TType private {
     this.clauses.isTop()
   }
 
+  // Conservatively recognize types whose values have no mutable field facts
+  // to forget when copied or captured. Unexpanded instances are not assumed
+  // field-free; call signatures without properties are safe value snapshots.
+  fun isFieldFree(): Bool {
+    this.insts.isEmpty() &&
+      this.clauses.all(clause ->
+        clause.vars.isEmpty() &&
+          clause.stypes
+            .map(stypes ->
+              stypes.all(st ->
+                st match {
+                | TPrim _ -> true
+                | obj @ TObject _ ->
+                  obj.getBranches().all(fields ->
+                    fields.fields.isEmpty() &&
+                      fields.symbolFields.isEmpty() &&
+                      fields.stringIndex.isNone() &&
+                      fields.numberIndex.isNone() &&
+                      fields.symbolIndex.isNone()
+                  )
+                }
+              )
+            )
+            .default(false)
+      )
+  }
+
   fun isConcretePrimitive(): Bool {
     if (!this.insts.isEmpty()) return false;
     for (clause in this.clauses) {

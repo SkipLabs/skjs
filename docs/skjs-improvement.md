@@ -106,8 +106,9 @@ Checks made inside the closure still narrow its reads; const value snapshots
 retain their types. Claim environments use the same capture view.
 
 The guarded, never-reassigned parameter examples in `callables/unions.ts`
-remain accepted. Inferred object contracts and compound types containing
-inference variables remain open work. Noncaptured bindings retain ordinary
+remain accepted. Direct local aliases now inherit an explicit or previously
+inherited source object contract. Fresh inferred objects, other alias-producing
+expressions, and compound types containing inference variables remain open work. Other noncaptured bindings retain ordinary
 type evolution. Coverage:
 [`captured-read-stability.ts`](../tests/expect-error/captured-read-stability.ts).
 The full checker suite and all 41 pipeline suites pass, including inferred
@@ -116,10 +117,17 @@ of M2; the remaining inferred-contract cases are still open.
 
 The M2 regressions in the same test file distinguish three obligations:
 
-- `inferredAliasCapture` is still accepted unsoundly: an alias initialized from
-  a narrowed object stores a transient read fact as its inferred type. Resetting
-  capture reads to that initial type would not repair it. Its field contract
-  must account for writes through the original alias (the M1 connection).
+- `inferredAliasCapture` and `aliasThenNarrow` reject stale captured reads
+  using the source's declared object contract, preserved through direct local
+  alias declarations. `checkedAliasChain` keeps an invocation-time check usable;
+  `reassignedAlias` rejects a replacement that would invalidate that contract.
+  `LocalRef.hasDeclaredContract` distinguishes these lasting contracts from
+  transient flow types; it includes explicit annotations and inherited aliases.
+  Field-free value snapshots retain their copied type. This is a capture repair,
+  not M1 completion: writes through other aliases still do not invalidate every
+  same-function refinement, and explicit narrower annotations can still exploit
+  the field-subtyping gap. Destructuring, calls, and property-access initializers
+  are outside the direct-alias transfer implemented here.
 - The evolving-binding repair makes every write constrain the same bare
   inference variable used by captured reads. Resolution seals that variable:
   `evolvingNullCapture` now rejects the unguarded nullable read,
@@ -134,7 +142,7 @@ The M2 regressions in the same test file distinguish three obligations:
   `checkedInferredObject` is also rejected. Restoring invocation-time narrowing
   is a separate completeness obligation; widening every read would lose it.
 
-The original four outcomes also occur with the saved pre-repair binary.
+The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc
 rejects the two stale object callbacks and the evolving binding's implicit
 `any`, and accepts the invocation-time object check. The evolving-binding

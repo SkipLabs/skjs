@@ -4,21 +4,21 @@
 
 module SKJS;
 
-// `type` is the binding's current (flow-narrowed) type; `declaredType` is the
-// type it was declared with, preserved across narrowing writes so a write that
+// `type` is the binding's current (flow-narrowed) type; `declaredType` is its
+// initial or inherited contract, preserved across narrowing so a write that
 // escapes the current frame — through a loop or into an enclosing-function
 // capture — can be checked against the declared type rather than a transient
-// narrowing (see `Scope::set`). `isAnnotated` records whether the binding had an
-// explicit type annotation: an annotation is a hard constraint that every write
-// must satisfy. Captured primitive initializers and bare inference variables
-// also constrain every write; other unannotated bindings can evolve.
+// narrowing (see `Scope::set`). `hasDeclaredContract` records an explicit
+// annotation or an object contract inherited from an alias source. Every write
+// must preserve that contract. Captured primitive initializers and bare
+// inference variables also constrain writes; other unannotated bindings evolve.
 // `isMutable` is false for a `const` binding and true for `let`, `var`, a
 // parameter, or a catch clause's variable; `this` is also not mutable, since
 // it cannot be reassigned.
 value class LocalRef(
   type: TType,
   declaredType: TType,
-  isAnnotated: Bool,
+  hasDeclaredContract: Bool,
   isInitialized: Bool,
   isMutable: Bool,
 )
@@ -90,7 +90,7 @@ mutable class Scope{
   }
 
   readonly private fun hasCaptureContract(name: String, ref: LocalRef): Bool {
-    ref.isAnnotated ||
+    ref.hasDeclaredContract ||
       (ref.isMutable &&
         (ref.declaredType.isConcretePrimitive() ||
           ref.declaredType.getSingleVar().isSome()) &&
@@ -100,31 +100,10 @@ mutable class Scope{
   readonly private fun captureView(name: String, ref: LocalRef): LocalRef {
     // Stable binding identity does not stabilize mutable properties. Recover
     // only field-free facts (primitive values and callable signatures).
-    fieldFree =
-      ref.type.insts.isEmpty() &&
-      ref.type.clauses.all(clause ->
-        clause.vars.isEmpty() &&
-          clause.stypes
-            .map(stypes ->
-              stypes.all(st ->
-                st match {
-                | TPrim _ -> true
-                | obj @ TObject _ ->
-                  obj.getBranches().all(fields ->
-                    fields.fields.isEmpty() &&
-                      fields.symbolFields.isEmpty() &&
-                      fields.stringIndex.isNone() &&
-                      fields.numberIndex.isNone() &&
-                      fields.symbolIndex.isNone()
-                  )
-                }
-              )
-            )
-            .default(false)
-      );
     if (
       this.hasCaptureContract(name, ref) &&
-      (!fieldFree || (ref.isMutable && !this.captureNeverWritten(name)))
+      (!ref.type.isFieldFree() ||
+        (ref.isMutable && !this.captureNeverWritten(name)))
     ) {
       ref with {type => ref.declaredType}
     } else {
@@ -169,7 +148,7 @@ mutable class Scope{
         )
       }
     | Some(x) ->
-      // Enclosing flow facts may expire before this function runs, but an
+      // Enclosing flow facts may expire before this function runs, but a
       // capture with a write contract retains its declared type. Other inferred
       // bindings can evolve beyond their initial type, so it is not a fallback.
       // Refinements made inside this function are found before crossing its
@@ -191,7 +170,7 @@ mutable class Scope{
     tcenvb: mutable TCEnvBase,
     name: Name,
     ty: TType,
-    isAnnotated: Bool,
+    hasDeclaredContract: Bool,
     isInitialized: Bool,
     isMutable: Bool,
   ): void {
@@ -210,10 +189,27 @@ mutable class Scope{
     this.!refs[name.value] = LocalRef(
       ty,
       ty,
-      isAnnotated,
+      hasDeclaredContract,
       isInitialized,
       isMutable,
     )
+  }
+
+  // A direct object alias shares its source's lasting contents contract, not
+  // just the source's current field refinements. Scalar/callable snapshots
+  // without fields copy stable values and retain their narrower type.
+  mutable fun inheritAliasContract(alias: Name, source: Name): void {
+    this.maybeGetRef(source.value) match {
+    | Some(
+      (_, sourceRef),
+    ) if (sourceRef.hasDeclaredContract && !sourceRef.type.isFieldFree()) ->
+      aliasRef = this.refs.get(alias.value);
+      this.!refs[alias.value] = aliasRef with {
+        declaredType => sourceRef.declaredType,
+        hasDeclaredContract => true,
+      }
+    | _ -> void
+    }
   }
 
   // Every binding visible from this scope, innermost shadowing outer. Used
@@ -331,7 +327,7 @@ mutable class Scope{
     this.!refs[name.value] = LocalRef(
       ty,
       upRef.declaredType,
-      upRef.isAnnotated,
+      upRef.hasDeclaredContract,
       true,
       upRef.isMutable,
     );
@@ -375,7 +371,7 @@ mutable class Scope{
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, nameRef.ref.type, curRef.type),
         curRef.declaredType,
-        curRef.isAnnotated,
+        curRef.hasDeclaredContract,
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
       )
@@ -453,7 +449,7 @@ mutable class Scope{
       this.!refs[kv.i0] = LocalRef(
         TType::union(subst, tenv, kv.i1.type, curRef.type),
         curRef.declaredType,
-        curRef.isAnnotated,
+        curRef.hasDeclaredContract,
         kv.i1.isInitialized && curRef.isInitialized,
         curRef.isMutable,
       )
@@ -473,7 +469,7 @@ mutable class Scope{
           this.!refs[nameRef.name] = LocalRef(
             nameRef.ref.type,
             nameRef.ref.declaredType,
-            nameRef.ref.isAnnotated,
+            nameRef.ref.hasDeclaredContract,
             false,
             nameRef.ref.isMutable,
           )
@@ -500,7 +496,7 @@ mutable class Scope{
         this.!refs[kv.i0] = LocalRef(
           TType::union(subst, tenv, cur.type, kv.i1),
           cur.declaredType,
-          cur.isAnnotated,
+          cur.hasDeclaredContract,
           cur.isInitialized,
           cur.isMutable,
         )
@@ -533,7 +529,7 @@ mutable class Scope{
       snap![nameRef.name] = LocalRef(
         TType::union(subst, tenv, cur.type, nameRef.ref.type),
         cur.declaredType,
-        cur.isAnnotated,
+        cur.hasDeclaredContract,
         cur.isInitialized,
         cur.isMutable,
       )
@@ -608,7 +604,7 @@ mutable class Scope{
       this.!refs[name] = LocalRef(
         ty,
         upRef.declaredType,
-        upRef.isAnnotated,
+        upRef.hasDeclaredContract,
         isInitialized,
         upRef.isMutable,
       )
@@ -635,7 +631,7 @@ mutable class Scope{
         this.!refs[nameRef.name] = LocalRef(
           TType::union(subst, tenv, upRef.type, nameRef.ref.type),
           upRef.declaredType,
-          upRef.isAnnotated,
+          upRef.hasDeclaredContract,
           upRef.isInitialized,
           upRef.isMutable,
         )
@@ -648,7 +644,7 @@ mutable class Scope{
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
           upRef.declaredType,
-          upRef.isAnnotated,
+          upRef.hasDeclaredContract,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
         )
@@ -669,7 +665,7 @@ mutable class Scope{
       this.!refs[nameRef.name] = LocalRef(
         TType::union(subst, tenv, upRef.type, nameRef.ref.type),
         upRef.declaredType,
-        upRef.isAnnotated,
+        upRef.hasDeclaredContract,
         upRef.isInitialized,
         upRef.isMutable,
       )
