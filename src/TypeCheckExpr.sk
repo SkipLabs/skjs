@@ -3681,7 +3681,7 @@ extension class TypeChecker {
     | None() ->
       body match {
       | CBExpr(e) ->
-        inferredType = this.expr(tcenv, e, true);
+        inferredType = this.returnExprType(tcenv, e);
         isAsync match {
         | None() -> inferredType
         | Some(asyncPos) ->
@@ -3718,7 +3718,7 @@ extension class TypeChecker {
       tcenv.collectErrors(() ->
         body match {
         | CBExpr(e) ->
-          inferredType = this.expr(tcenv, e, true);
+          inferredType = this.returnExprType(tcenv, e);
           this.checkSubType(
             tcenv,
             e.pos,
@@ -3837,6 +3837,13 @@ extension class TypeChecker {
     }
   }
 
+  // A returned alias outlives this frame's field refinements. Record the
+  // expression's current type normally, but infer/check its stable contract.
+  fun returnExprType(tcenv: mutable TCEnv, e: Expr): TType {
+    currentType = this.expr(tcenv, e, true);
+    this.stableAliasExprType(tcenv, e, currentType)
+  }
+
   // Selection expressions keep separate current-read and stored-alias types.
   private fun composeSelectionType(
     tcenv: mutable TCEnv,
@@ -3895,6 +3902,11 @@ extension class TypeChecker {
           TSCode(2322),
         )
       );
+      e2.value match {
+      | Var(source) if (tcenv.scope.hasFieldRefinement(source)) ->
+        tcenv.scope.markFieldRefinement(n)
+      | _ -> void
+      };
       ty2
     | Dot(
       NormalDot(),
@@ -4124,7 +4136,10 @@ extension class TypeChecker {
           y,
           TSCode(2322),
         )
-      )
+      );
+      // This path has only the extracted type, not the source expression's
+      // refinement provenance. Conservatively retain field invalidation.
+      tcenv.scope.markFieldRefinement(n)
     | EArray(nested) ->
       this.assignArray(tcenv, target.pos, nested, valueType, mostPrecise)
     | _ ->

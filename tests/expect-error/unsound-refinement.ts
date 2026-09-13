@@ -341,23 +341,26 @@ function nullishFallbackAlias(
   return 0;
 }
 
-// FIXME: returning through a Promise does not stabilize an aliased object's fields.
+// Returning through a Promise does not stabilize an aliased object's fields.
 async function asyncNarrowReturn(x: {
   f: number | null;
 }): Promise<{ readonly f: number }> {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   if (x.f !== null) return x;
   return { f: 0 };
 }
 
-// FIXME: an annotated expression body must validate the stable branch contract.
+// An annotated expression body validates the stable branch contract.
 function annotatedAliasReturn(): void {
   const select = (x: { f: number | null }): { readonly f: number } =>
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     x.f !== null ? x : { f: 0 };
 }
 
 function inferredAliasReturn(): void {
   const select = (x: { f: number | null }) => (x.f !== null ? x : { f: 0 });
-  // FIXME: inference must not export a temporary field fact as a result contract.
+  // Inference must not export a temporary field fact as a result contract.
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const narrow: (x: { f: number | null }) => { readonly f: number } = select;
 }
 

@@ -21,6 +21,7 @@ value class LocalRef(
   hasDeclaredContract: Bool,
   isInitialized: Bool,
   isMutable: Bool,
+  hasFieldRefinement: Bool = false,
 ) {
   // Project transient field facts back to the lasting object contract, keeping
   // primitive alternatives from the current flow type (including null checks).
@@ -31,6 +32,7 @@ value class LocalRef(
   ): TType {
     if (
       this.hasDeclaredContract &&
+      this.hasFieldRefinement &&
       this.type != this.declaredType &&
       !this.type.isFieldFree()
     ) {
@@ -302,9 +304,24 @@ mutable class Scope{
       this.!refs[alias.value] = aliasRef with {
         declaredType => sourceRef.declaredType,
         hasDeclaredContract => true,
+        hasFieldRefinement => sourceRef.hasFieldRefinement,
       }
     | _ -> void
     }
+  }
+
+  mutable fun markFieldRefinement(name: Name): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) ->
+      this.!refs[name.value] = ref with {hasFieldRefinement => true}
+    | None() -> void
+    }
+  }
+
+  readonly fun hasFieldRefinement(name: Name): Bool {
+    this.maybeGetRef(name.value)
+      .map(pair -> pair.i1.hasFieldRefinement)
+      .default(false)
   }
 
   // An annotated direct alias must promise stable contents, rather than
@@ -460,6 +477,7 @@ mutable class Scope{
       upRef.hasDeclaredContract,
       true,
       upRef.isMutable,
+      upRef.hasFieldRefinement,
     );
   }
 
@@ -504,6 +522,7 @@ mutable class Scope{
         curRef.hasDeclaredContract,
         nameRef.ref.isInitialized && curRef.isInitialized,
         curRef.isMutable,
+        curRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }
@@ -582,6 +601,7 @@ mutable class Scope{
         curRef.hasDeclaredContract,
         kv.i1.isInitialized && curRef.isInitialized,
         curRef.isMutable,
+        curRef.hasFieldRefinement || kv.i1.hasFieldRefinement,
       )
     };
     // The edge speaks for every binding, not only the ones it mentions: one it
@@ -602,6 +622,7 @@ mutable class Scope{
             nameRef.ref.hasDeclaredContract,
             false,
             nameRef.ref.isMutable,
+            nameRef.ref.hasFieldRefinement,
           )
         | _ -> void
         }
@@ -629,6 +650,7 @@ mutable class Scope{
           cur.hasDeclaredContract,
           cur.isInitialized,
           cur.isMutable,
+          true, // The write log carries types without refinement provenance.
         )
       | None() -> void
       }
@@ -662,6 +684,7 @@ mutable class Scope{
         cur.hasDeclaredContract,
         cur.isInitialized,
         cur.isMutable,
+        cur.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }
@@ -711,6 +734,7 @@ mutable class Scope{
       untouched = untouchedPath;
       tyOpt: ?TType = None();
       isInitialized = true;
+      hasFieldRefinement = false;
       for (scope in scopes) {
         scope.escapingRef(name) match {
         | Some(ref) ->
@@ -720,6 +744,7 @@ mutable class Scope{
             | Some(ty) -> TType::union(subst, tenv, ty, ref.type)
             },
           );
+          !hasFieldRefinement = hasFieldRefinement || ref.hasFieldRefinement;
           !isInitialized = isInitialized && ref.isInitialized
         | None() -> !untouched = true
         }
@@ -729,6 +754,7 @@ mutable class Scope{
       ty = tyOpt.fromSome();
       if (untouched) {
         !ty = TType::union(subst, tenv, ty, upRef.type);
+        !hasFieldRefinement = hasFieldRefinement || upRef.hasFieldRefinement;
         !isInitialized = isInitialized && upRef.isInitialized
       };
       this.!refs[name] = LocalRef(
@@ -737,6 +763,7 @@ mutable class Scope{
         upRef.hasDeclaredContract,
         isInitialized,
         upRef.isMutable,
+        hasFieldRefinement,
       )
     }
   }
@@ -764,6 +791,7 @@ mutable class Scope{
           upRef.hasDeclaredContract,
           upRef.isInitialized,
           upRef.isMutable,
+          upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
         )
       | Both(nameRef1, nameRef2) ->
         // Only the narrowed type and the initialization state differ between
@@ -777,6 +805,7 @@ mutable class Scope{
           upRef.hasDeclaredContract,
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
           upRef.isMutable,
+          nameRef1.ref.hasFieldRefinement || nameRef2.ref.hasFieldRefinement,
         )
       }
     })
@@ -798,6 +827,7 @@ mutable class Scope{
         upRef.hasDeclaredContract,
         upRef.isInitialized,
         upRef.isMutable,
+        upRef.hasFieldRefinement || nameRef.ref.hasFieldRefinement,
       )
     }
   }

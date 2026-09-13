@@ -160,7 +160,8 @@ extension class TypeChecker {
         )
       | x -> Some(x)
       }
-    )
+    );
+    tcenv.scope.markFieldRefinement(local)
   }
 
   // Narrows `local` based on `(local.fieldName === <type>) === target`.

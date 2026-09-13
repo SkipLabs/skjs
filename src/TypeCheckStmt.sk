@@ -42,7 +42,7 @@ extension class TypeChecker {
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(tcenv, e, true))
+      | Some(e) -> (e.pos, this.returnExprType(tcenv, e))
       };
       // In an async function the returned expression and the declared
       // return type are compared by awaited type, like tsc: `return p`

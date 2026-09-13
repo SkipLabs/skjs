@@ -120,7 +120,14 @@ separately from their current read type. Storage and annotated alias validation
 consume the composed type, including nested conditionals and inferred captures.
 These symbolic expression contracts are not immutable substitution snapshots and
 do not complete R2.
-M1 stays open for call/return boundaries and other alias-producing expressions,
+Return boundaries use stable alias contracts in block and expression bodies,
+for explicit result checks and inference, before async awaiting. Fresh scalar
+copies retain their precise result types. Field-refinement provenance distinguishes
+these transient facts from runtime-kind checks (`typeof`, `instanceof`, and
+`Array.isArray`), preserving the existing runtime-kind return tests. The marker
+propagates through aliases and control-flow merges; combining runtime-kind and
+field narrowing can still lose precision.
+M1 stays open for argument passing and other alias-producing expressions,
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.
