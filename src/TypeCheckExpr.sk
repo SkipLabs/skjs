@@ -442,8 +442,8 @@ extension class TypeChecker {
     (scope, term)
   }
 
-  // Defaults may be skipped. Parameter initialization must not retain their
-  // writes/refinements as facts about later defaults or the function body.
+  // Defaults may be skipped. Local defaults merge their effects with the
+  // untouched path; parameter initialization keeps its separate contract scope.
   fun bindingDefaultType(
     tcenv: mutable TCEnv,
     expr: Expr,
@@ -451,12 +451,14 @@ extension class TypeChecker {
     isParameter: Bool,
   ): TType {
     savedScope = tcenv.scope;
-    if (isParameter) {
-      tcenv.!scope = tcenv.mcreateSubScope{isLoop => false}
-    };
+    defaultScope = tcenv.mcreateSubScope{isLoop => false};
+    tcenv.!scope = defaultScope;
     currentType = this.expr(tcenv, expr, isConst);
     type = this.stableAliasExprType(tcenv, expr, currentType);
     tcenv.!scope = savedScope;
+    if (!isParameter) {
+      tcenv.mergeScopes(this, Array[defaultScope], true)
+    };
     type
   }
 
@@ -4207,14 +4209,14 @@ extension class TypeChecker {
   ): void {
     (target, targetType) = elt.value match {
     | Binop(BOAssignment(), lhs, defaultExpr) ->
-      defaultType = this.expr(tcenv, defaultExpr, false);
+      defaultType = this.bindingDefaultType(tcenv, defaultExpr, false, false);
       (
         lhs,
         TType::union(
           tcenv.subst,
           this,
           TType::removeUndefined(tcenv.subst, this, eltType),
-          this.stableAliasExprType(tcenv, defaultExpr, defaultType),
+          defaultType,
         ),
       )
     | _ -> (elt, eltType)

@@ -208,6 +208,23 @@ establishes `unknown`, which admits the initial value but now correctly fails
 the existing test's `void` return contract. This is not a ban on all
 uninitialized declarations or a change to error recovery.
 
+Local destructuring defaults have a separate control-flow obligation: their
+effects occur only when the source value is `undefined`. Declaration defaults
+previously ran in the enclosing scope, so a skipped assignment could justify a
+numeric return or establish definite assignment. Assignment defaults used the
+same unconditional evaluation through another entry point. Both now check the
+default in a child scope and merge it with an untouched path. This preserves
+both the pre-default value and any invalidating write the default can perform;
+discarding the child scope alone would be unsound for local bindings.
+`destructuring.ts` covers these distinct obligations and a fresh check after
+the merge. Parameter defaults retain their existing isolated contract scope.
+The local merge conservatively includes both paths even when the source type
+could establish that the default always or never runs.
+One nearby completeness gap remains: defaulting an inferred object field or
+array element can retain `undefined` because `removeUndefined` leaves the
+symbolic candidate unresolved. An annotated source or an established tuple
+does not show the same failure; this is separate from the effect merge.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

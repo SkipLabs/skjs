@@ -73,14 +73,14 @@ function optionalMeansUndefinedWitness(x: { f: number }): number {
 function skippedDefaultKeepsPreviousValue(seed: number | undefined): number {
   let state: number | null = null;
   const { value = (state = 1) } = { value: seed };
-  // FIXME: supplying seed skips the assignment and returns null.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return state;
 }
 
 function skippedDefaultDoesNotInitialize(seed: number | undefined): number {
   let state: number;
   const { value = (state = 1) } = { value: seed };
-  // FIXME: the skipped path leaves state uninitialized.
+  // @ts-expect-error Variable 'state' is used before being assigned
   return state;
 }
 
@@ -95,7 +95,6 @@ function defaultCanInvalidatePreviousValue(seed: number | undefined): number {
 function checkedStateAfterDefault(seed: number | undefined): number {
   let state: number | null = null;
   const { value = (state = 1) } = { value: seed };
-  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return state ?? 0;
 }
 
@@ -105,6 +104,7 @@ function skippedAssignmentDefaultKeepsPreviousValue(
   let state: number | null = null;
   let value: number | undefined = 0;
   [value = (state = 1)] = [seed];
-  // FIXME: tsc also accepts this; supplying seed leaves state null.
+  // tsc accepts this, but supplying seed leaves state null.
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return state;
 }
