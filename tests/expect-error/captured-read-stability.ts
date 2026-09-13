@@ -373,3 +373,52 @@ function objectFieldWriterBeforeReader(): string {
   reset();
   return read();
 }
+
+// FIXME: a call's result contract must also constrain later replacements.
+declare function makeCapturedNumberCell(): { value: number };
+function replacedCallResult(): number {
+  let cell = makeCapturedNumberCell();
+  const read = (): number => cell.value;
+  cell = { value: "changed" };
+  return read();
+}
+
+// FIXME: a returned object's field refinement is not a callback guarantee.
+declare function makeCapturedNullableCell(): { value: boolean | null };
+function narrowedCallResult(): boolean {
+  const cell = makeCapturedNullableCell();
+  if (cell.value !== null) {
+    const read = (): boolean => cell.value;
+    cell.value = null;
+    return read();
+  }
+  return false;
+}
+
+// Constructor results carry a named generic instance rather than an object
+// literal shape. FIXME: its checked numeric argument must survive replacement.
+class CapturedResultCell<T> {
+  value: T;
+  constructor(value: T) {
+    this.value = value;
+  }
+}
+function replacedConstructorResult(): number {
+  let cell = new CapturedResultCell(1);
+  const read = (): number => cell.value;
+  cell = new CapturedResultCell("changed");
+  return read();
+}
+
+// Keep symbolic generic result fields usable under fresh callback checks.
+declare function makeCapturedGenericCell<T>(value: T): { value: T };
+function checkedGenericCallResult(seed: boolean | null): boolean {
+  let cell = makeCapturedGenericCell(seed);
+  const read = (): boolean => {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    if (cell.value !== null) return cell.value;
+    return false;
+  };
+  cell = { value: null };
+  return read();
+}
