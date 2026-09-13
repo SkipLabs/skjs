@@ -3399,9 +3399,8 @@ extension class TypeChecker {
       aeType = this.expr(tcenv, ae, mostPrecise);
       // Unwrap the thenable branches and pass the non-thenable parts
       // through unchanged, like the runtime does (and like tsc types it).
-      // Non-thenable parts are an error, but a non-fatal one as long as at
-      // least one branch is a thenable: checking continues with the
-      // combined result type.
+      // Non-thenable parts produce a lint warning; checking continues
+      // with the combined result type.
       resultTys = mutable Vector[];
       hasThenable = false;
       hasNonThenable = false;
@@ -3440,7 +3439,7 @@ extension class TypeChecker {
           }
         }
       };
-      if (!hasThenable) {
+      awaitedType = if (!hasThenable) {
         // `await` of a non-thenable yields the value itself (the runtime and
         // tsc pass it through), so this is a lint concern (`await-thenable`,
         // where SKJS is deliberately stricter than tsc), not a soundness error.
@@ -3464,7 +3463,17 @@ extension class TypeChecker {
           )
         };
         TType::unionN(tcenv.subst, this, pos, resultTys)
-      }
+      };
+      stableOperand = this.stableAliasExprType(tcenv, ae, aeType);
+      if (stableOperand != aeType) {
+        // Await can pass an object through unchanged. Flatten the stable
+        // contract too, so an alias cannot retain transient field facts.
+        tcenv.!stableExprTypes[(pos, awaitedType)] = stableOperand
+          .expand(tcenv.subst, this, Some(Covariant()))
+          .maybeAwaited(tcenv.subst, this, pos)
+          .default(TType::top(pos))
+      };
+      awaitedType
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1, true);
       this.checkCondition(

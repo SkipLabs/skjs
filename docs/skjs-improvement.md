@@ -297,6 +297,14 @@ narrowing and object upcasts. The cast still produces the target type, including
 during error recovery. This uses the same source-validation boundary as an
 annotation rather than merely forwarding identity metadata.
 
+`await` now carries an awaited stable operand contract when its operand has
+transient field refinements. The normal expression result still uses the
+current type; storing or passing an alias uses the stable contract, flattened
+through the existing thenable operation. `promise-object.ts` covers an object
+passed through `await` whose field is later overwritten and an accepted scalar
+snapshot. Non-thenable awaits remain lint warnings. This closes a contract
+propagation gap; it does not model mutations by other code during suspension.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar
