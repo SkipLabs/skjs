@@ -33,7 +33,7 @@ export function optionalMember(
 function skippedArgument(obj: { m(x: number): number } | undefined): number {
   let state: number | null = null;
   const result = obj?.m((state = 1));
-  // FIXME: an absent receiver skips the argument, leaving state null.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return state;
 }
 

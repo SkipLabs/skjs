@@ -2513,12 +2513,15 @@ extension class TypeChecker {
               // warning.
               resolve(e1Ty, accessKind)
             } else {
-              TType::unionUndefined(
-                tcenv.subst,
-                this,
-                distributeOver(definedSTypes),
-                pos,
-              )
+              // A nullish receiver skips argument evaluation too. Keep the
+              // call result, but merge argument effects with that skipped path.
+              savedScope = tcenv.scope;
+              callScope = tcenv.mcreateSubScope{isLoop => false};
+              tcenv.!scope = callScope;
+              calledType = distributeOver(definedSTypes);
+              tcenv.!scope = savedScope;
+              tcenv.popScope(this, callScope);
+              TType::unionUndefined(tcenv.subst, this, calledType, pos)
             }
           | _ ->
             // Receiver is never nullish (or Top): the `?.` does not change the

@@ -243,6 +243,15 @@ covers the rejected stale read, a possible invalidating write, and returning
 the expression result. As with the other conditional merges, both effect
 paths are conservatively retained even for a statically known left operand.
 
+Optional method calls `obj?.m(args)` likewise merge argument effects with the
+skipped path when the receiver may be nullish. Previously the receiver's
+short-circuit contributed `undefined` to the result but argument writes were
+unconditional in the surrounding scope. The existing receiver classification
+keeps definitely present calls and always-nullish receivers on their original
+paths. `optional-chaining-method-call.ts` covers a rejected read after a skipped
+argument, a possible invalidating write, and using the optional result. This does
+not add optional function-call or optional computed-access syntax.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar
