@@ -219,10 +219,10 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - **Verified by**: `tests/expect-error/function-args.ts`, `tests/expect-error/anonymous-function-annotations.ts`, `tests/expect-error/function-type-omitted-param-annotation.ts`, `tests/expect-error/function-type-parameter-names.ts`, and `tests/expect-error/missing-return-type.ts`.
 
 ### 16a. Parameter Default Scope
-- Defaults may refer to earlier plain parameters, including generic and defaulted parameters. Their types remain the declared parameter contracts.
-- All parameter names, including nested destructuring and rest bindings, are reserved before whole-parameter defaults are checked. A self or later parameter cannot be read or assigned before its initialization, even if a top-level variable has the same name.
-- Each default is checked independently: passing an argument skips its initializer, so assignments or refinements in one default cannot justify a later default or the function body. Enclosing captures retain the usual capture contracts.
-- References from defaults to destructured sibling parameters, and deferred references to later parameters inside default-created closures, remain unsupported. Existing restrictions on local-name shadowing remain unchanged.
+- Defaults may refer to earlier parameters, including destructured, generic, and defaulted bindings. Destructured bindings retain their projected contracts, including the possible values supplied by field or element defaults.
+- All parameter names, including nested destructuring and rest bindings, are reserved before any parameter initializer is checked. A self or later parameter cannot be read or assigned before its initialization, even if a top-level variable has the same name.
+- Whole-parameter, field, and element defaults are checked once in initialization order. Each default is checked independently: passing an argument skips its initializer, so assignments or refinements in one default cannot justify a later default or the function body. Enclosing captures retain the usual capture contracts.
+- Deferred references to later parameters inside default-created closures remain unsupported. Existing restrictions on local-name shadowing remain unchanged.
 - **Verified by**: `tests/expect-error/arrow-default-param-optional.ts` and `tests/expect-error/captured-local-write.ts`.
 
 ### 16b. Un-annotated Class Fields Are Opaque (Ambient Classes)

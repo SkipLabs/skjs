@@ -294,18 +294,17 @@ The M2 regressions in the same test file distinguish three obligations:
 
 Parameter defaults use an invocation scope distinct from the enclosing frame.
 All parameter binding names, including nested patterns and rest bindings, are
-reserved before whole-parameter initializer checking. Plain bindings become
-initialized in declaration order. This supports defaults referring to earlier
-parameters without confusing them with captures or top-level names. A default's
-child scope is discarded because supplying an argument skips the initializer;
-its assignments cannot narrow later defaults or the body. Pending parameter
-identities also prevent writes before initialization. Coverage in
-`arrow-default-param-optional.ts` includes a rigid generic dependency, an arrow
-with chained defaults, a skipped assignment, self-reference, and the previously
-accepted later-parameter/top-level-name collision, including nested object and
-array rest bindings. Reading earlier destructured siblings and deferred
-later-parameter references remain unsupported: reservation does not project
-destructured types or evaluate their defaults a second time.
+reserved before initializer checking. One ordered binding pass checks defaults
+and establishes each projected contract for subsequent parameters and the body.
+A default's child scope is discarded because supplying a value skips the
+initializer; its assignments cannot narrow later defaults or the body. Pending
+parameter identities also prevent writes before initialization. Coverage in
+`arrow-default-param-optional.ts` includes rigid generic dependencies through
+plain and destructured parameters, chained defaults, skipped assignments,
+self-reference, and collisions with top-level names, both across parameters and
+inside patterns. `skippedPatternDefault` rejects a nullable return previously
+justified by a write in an optional field initializer. Deferred references to
+later parameters inside default-created closures remain unsupported.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc

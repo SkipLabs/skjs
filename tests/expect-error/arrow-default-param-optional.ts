@@ -80,12 +80,8 @@ function laterRestParameterDefault(
   return result;
 }
 
-// FIXME: tsc accepts a rigid generic extracted by an earlier parameter.
-function extractedGeneric<T>(
-  { value }: { value: T },
-  // @skjs-expect-error Variable 'value' is used before being assigned
-  result: T = value,
-): T {
+// An extracted generic retains its rigidity in later defaults.
+function extractedGeneric<T>({ value }: { value: T }, result: T = value): T {
   return result;
 }
 
@@ -100,17 +96,19 @@ function siblingDefaults({
   return second;
 }
 
-// FIXME: Supplying first skips the write, so value may still be null.
+// Supplying first skips the write, so value may still be null.
 function skippedPatternDefault(
   value: string | null,
   { first = (value = "ready") }: { first?: string },
 ): string {
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return value;
 }
 
 const laterPatternValue: number = 1;
-// FIXME: A later pattern binding shadows the global during field defaults.
+// A later pattern binding shadows the global during field defaults.
 function patternTdz({
+  // @ts-expect-error Variable 'laterPatternValue' is used before being assigned
   first = laterPatternValue,
   laterPatternValue,
 }: {

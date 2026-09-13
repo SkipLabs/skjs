@@ -442,6 +442,24 @@ extension class TypeChecker {
     (scope, term)
   }
 
+  // Defaults may be skipped. Parameter initialization must not retain their
+  // writes/refinements as facts about later defaults or the function body.
+  fun bindingDefaultType(
+    tcenv: mutable TCEnv,
+    expr: Expr,
+    isConst: Bool,
+    isParameter: Bool,
+  ): TType {
+    savedScope = tcenv.scope;
+    if (isParameter) {
+      tcenv.!scope = tcenv.mcreateSubScope{isLoop => false}
+    };
+    currentType = this.expr(tcenv, expr, isConst);
+    type = this.stableAliasExprType(tcenv, expr, currentType);
+    tcenv.!scope = savedScope;
+    type
+  }
+
   fun bind(
     tcenv: mutable TCEnv,
     kind: BindKind,
@@ -450,6 +468,7 @@ extension class TypeChecker {
     hasDeclaredContract: Bool,
     isInitialized: Bool,
     isLocalObject: Bool,
+    isParameter: Bool = false,
   ): void {
     pos = pat.pos;
     pat.value match {
@@ -459,14 +478,19 @@ extension class TypeChecker {
         // bindings get distinct entries (no stale reuse).
         tcenv.localObjects![local.pos] = LOCanGrow(None())
       };
-      tcenv.scope.bind(
-        tcenv,
-        local,
-        type,
-        hasDeclaredContract,
-        isInitialized,
-        !(kind is BKConst()),
-      )
+      if (isParameter && tcenv.pendingParameters.contains(local.pos)) {
+        tcenv.scope.initializeParameter(local, type);
+        tcenv.!pendingParameters = tcenv.pendingParameters.remove(local.pos)
+      } else {
+        tcenv.scope.bind(
+          tcenv,
+          local,
+          type,
+          hasDeclaredContract,
+          isInitialized,
+          !(kind is BKConst()),
+        )
+      }
     | PArray(arrPat, rest) ->
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
       stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
@@ -476,15 +500,11 @@ extension class TypeChecker {
           | None() -> /* skipped element */ void
           | Some((eltPat, Some(defaultExpr))) ->
             eltType = tyl[i];
-            currentDefaultType = this.expr(
+            defaultType = this.bindingDefaultType(
               tcenv,
               defaultExpr,
               kind is BKConst(),
-            );
-            defaultType = this.stableAliasExprType(
-              tcenv,
-              defaultExpr,
-              currentDefaultType,
+              isParameter,
             );
             undefined = TType::single(TPrimUnit(TUndefined(), defaultExpr.pos));
             canBeUndefined = TType::isSub(
@@ -539,6 +559,7 @@ extension class TypeChecker {
               hasDeclaredContract,
               isInitialized,
               false,
+              isParameter,
             )
           | Some((eltPat, None())) ->
             this.bind(
@@ -549,6 +570,7 @@ extension class TypeChecker {
               hasDeclaredContract,
               isInitialized,
               false,
+              isParameter,
             )
           };
         };
@@ -586,6 +608,7 @@ extension class TypeChecker {
             hasDeclaredContract,
             isInitialized,
             false,
+            isParameter,
           )
         | None() -> void
         }
@@ -610,15 +633,11 @@ extension class TypeChecker {
             arrPat[i] match {
             | None() -> void
             | Some((eltPat, Some(defaultExpr))) ->
-              currentDefaultType = this.expr(
+              defaultType = this.bindingDefaultType(
                 tcenv,
                 defaultExpr,
                 kind is BKConst(),
-              );
-              defaultType = this.stableAliasExprType(
-                tcenv,
-                defaultExpr,
-                currentDefaultType,
+                isParameter,
               );
               boundType = TType::union(
                 tcenv.subst,
@@ -634,6 +653,7 @@ extension class TypeChecker {
                 hasDeclaredContract,
                 isInitialized,
                 false,
+                isParameter,
               )
             | Some((eltPat, None())) ->
               optionalEltType = TType::unionUndefined(
@@ -650,6 +670,7 @@ extension class TypeChecker {
                 hasDeclaredContract,
                 isInitialized,
                 false,
+                isParameter,
               )
             }
           };
@@ -667,6 +688,7 @@ extension class TypeChecker {
               hasDeclaredContract,
               isInitialized,
               false,
+              isParameter,
             )
           | None() -> void
           }
@@ -716,8 +738,15 @@ extension class TypeChecker {
           for (field in objectFields) {
             (fieldName, fieldPat, fieldDefault) = field;
             defaultOpt = fieldDefault.map(e -> {
-              ty = this.expr(tcenv, e, kind is BKConst());
-              (e.pos, this.stableAliasExprType(tcenv, e, ty))
+              (
+                e.pos,
+                this.bindingDefaultType(
+                  tcenv,
+                  e,
+                  kind is BKConst(),
+                  isParameter,
+                ),
+              )
             });
             defaultIsUseless = fieldDefault.map(e -> e.pos);
             typeForField = TType::bottom(fieldName.pos);
@@ -797,6 +826,7 @@ extension class TypeChecker {
               hasDeclaredContract,
               isInitialized,
               false,
+              isParameter,
             )
           };
           rest.each(name ->
@@ -808,6 +838,7 @@ extension class TypeChecker {
               hasDeclaredContract,
               isInitialized,
               false,
+              isParameter,
             )
           )
         }
@@ -3661,13 +3692,6 @@ extension class TypeChecker {
       OptionalTypeParamsForbidden(),
     );
     !this = this.addTParams(tcenv.subst, tparams);
-    paramTypes = this.processParams(
-      tcenv,
-      params,
-      tparams,
-      false,
-      expectedParamTypes,
-    );
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -3685,7 +3709,13 @@ extension class TypeChecker {
     writes.params(params);
     writes.body(body);
     tcenv.scope.setCaptureWrites(writes.result(), writes.capturedNames());
-    this.bindParams(tcenv, params, paramTypes);
+    paramTypes = this.processParams(
+      tcenv,
+      params,
+      tparams,
+      false,
+      expectedParamTypes,
+    );
 
     retType = retTypeAstOpt match {
     | None() ->

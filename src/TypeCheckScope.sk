@@ -293,6 +293,18 @@ mutable class Scope{
     )
   }
 
+  // Only for names already reserved in this parameter scope. Initialization
+  // establishes the projected contract; it is not an assignment to the
+  // inaccessible placeholder type used during reservation.
+  mutable fun initializeParameter(name: Name, ty: TType): void {
+    ref = this.refs.get(name.value);
+    this.!refs[name.value] = ref with {
+      type => ty,
+      declaredType => ty,
+      isInitialized => true,
+    }
+  }
+
   // A direct object alias shares its source's lasting contents contract, not
   // just the source's current field refinements. Scalar/callable snapshots
   // without fields copy stable values and retain their narrower type.

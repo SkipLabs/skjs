@@ -50,7 +50,6 @@ extension class TypeChecker {
       tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true, true, false)
     };
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
-    this.bindParams(tcenv, sig.params, paramTypes);
     typedParams = sig.params.mapWithIndex((i, param) ->
       (param.name, paramTypes[i])
     );
@@ -60,21 +59,9 @@ extension class TypeChecker {
     (this, tcenv, typedParams)
   }
 
-  fun bindParams(
-    tcenv: mutable TCEnv,
-    params: Array<Param>,
-    paramTypes: Array<TType>,
-  ): void {
-    for (i => param in params) {
-      if (!param.isThisParam()) {
-        this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, true, false)
-      }
-    }
-  }
-
   // Reserve every binding without projecting types or evaluating pattern
   // defaults. The placeholder type is inaccessible while uninitialized;
-  // processParams installs the actual contract for supported plain bindings.
+  // bind installs the projected contract when each binding is initialized.
   fun reserveParameterNames(
     tcenv: mutable TCEnv,
     pattern: Pattern,
@@ -254,47 +241,39 @@ extension class TypeChecker {
 
       paramType
     });
-    if (params.any(param -> param.default.isSome())) {
-      savedScope = tcenv.scope;
-      savedPendingParameters = tcenv.pendingParameters;
-      tcenv.!scope = tcenv.mcreateSubScope{isLoop => false, isFunction => true};
-      // Reserve all parameter names before evaluating any defaults, so a
-      // self/later reference cannot resolve an enclosing name instead.
-      for (i => param in params) {
-        if (!param.isThisParam()) {
-          this.reserveParameterNames(tcenv, param.name, paramTypes[i])
-        }
-      };
-      for (i => param in params) {
-        param.default.each(defaultExpr -> {
-          savedDefaultScope = tcenv.scope;
-          // A supplied argument skips its default. Do not carry a default's
-          // writes or refinements into another initializer or the body.
-          tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
-          this.checkSubType(
-            tcenv,
-            defaultExpr.pos,
-            "Type of default value is not assignable to the parameter's type",
-            this.expr(tcenv, defaultExpr, true),
-            paramTypes[i],
-            TSCode(2322),
-          );
-          tcenv.!scope = savedDefaultScope
-        });
-        if (!param.isThisParam()) {
-          param.name.value match {
-          | PVar(name) ->
-            tcenv.scope.set(name, paramTypes[i], (_, _) -> void);
-            tcenv.!pendingParameters = tcenv.pendingParameters.remove(name.pos)
-          // Destructured defaults are checked by bindParams. Do not execute
-          // their type-checking side effects a second time here.
-          | _ -> void
-          }
-        }
-      };
-      tcenv.!scope = savedScope;
-      tcenv.!pendingParameters = savedPendingParameters
+    savedPendingParameters = tcenv.pendingParameters;
+    // Reserve the whole list, including names inside patterns, before any
+    // initializer runs. Binding then proceeds in runtime initialization order.
+    for (i => param in params) {
+      if (!param.isThisParam()) {
+        this.reserveParameterNames(tcenv, param.name, paramTypes[i])
+      }
     };
+    for (i => param in params) {
+      param.default.each(defaultExpr -> {
+        this.checkSubType(
+          tcenv,
+          defaultExpr.pos,
+          "Type of default value is not assignable to the parameter's type",
+          this.bindingDefaultType(tcenv, defaultExpr, true, true),
+          paramTypes[i],
+          TSCode(2322),
+        )
+      });
+      if (!param.isThisParam()) {
+        this.bind(
+          tcenv,
+          BKLet(),
+          param.name,
+          paramTypes[i],
+          true,
+          true,
+          false,
+          true,
+        )
+      }
+    };
+    tcenv.!pendingParameters = savedPendingParameters;
     paramTypes
   }
 
