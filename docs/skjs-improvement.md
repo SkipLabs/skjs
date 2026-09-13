@@ -283,6 +283,16 @@ write through `x`. `satisfies.ts` covers both rejections and an accepted scalar
 snapshot. This addresses M1 contract propagation through this identity wrapper;
 it does not make the speculative check itself a durable R2 validation.
 
+Non-null assertions now apply their nullish removal to the operand's stable
+alias contract as well as its current expression type. Removing null from a
+reference cannot strengthen the lasting contract of its fields.
+`postfix-exclamation.ts` covers rejection of an annotated alias formed through
+a redundant `!`, while a copied scalar still survives a later field write.
+The existing assertion restrictions and for-in exception are unchanged.
+Checked `as` casts remain a confirmed nearby gap: validating their target
+against a transient source refinement can also manufacture an unsafe lasting
+alias. That needs a source-validation repair rather than identity metadata.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

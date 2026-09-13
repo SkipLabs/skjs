@@ -3315,6 +3315,21 @@ extension class TypeChecker {
             )
           }
         };
+        // ! changes reference nullishness, not the lasting contents of an
+        // aliased object. Apply the same null removal to its stable contract.
+        stableOperand = this.stableAliasExprType(
+          tcenv,
+          subExpr,
+          this.lookupExprType(tcenv, subExpr),
+        );
+        tcenv.!stableExprTypes[
+          (pos, tyWithoutNullish),
+        ] = stableOperand.mapSTypes(
+          tcenv.subst,
+          this,
+          Some(Covariant()),
+          stypes -> stypes.map(ss -> ss.filterSTypes(st -> !st.isNullish())),
+        );
         tyWithoutNullish
       }
 
