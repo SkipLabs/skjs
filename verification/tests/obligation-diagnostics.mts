@@ -99,6 +99,19 @@ try {
     assert.deepEqual(d.sequent.context[0], [1, 2]);
     assert.equal(d.input.sourceSha256, hash(source));
     assert.equal(d.input.functionName, f.name);
+    assert.deepEqual(r.obligationView.focus, {
+      subject:"flag", available:"boolean", required:"true", requiredLabel:"Required return type",
+    });
+    assert.equal(r.obligationView.summary,"The available claim for flag is boolean. This return requires true.");
+    assert.equal(r.obligationView.namedConclusion,"flag: true");
+    // Names follow the actual term slot, not a guess that every goal is slot 0.
+    const changed = structuredClone(d);
+    changed.sequent.term = {var:{i:1}};
+    changed.source.sourceMap.context = [{name:"saved",span:null},{name:"cell.value",span:null}];
+    assert.equal(presentObligation(changed,source).focus?.subject,"cell.value");
+    changed.sequent.term = {read:{a:{var:{i:1}}}};
+    assert.equal(presentObligation(changed,source).focus,undefined);
+
   });
   test("a checked immutable value justifies the return despite a wider expression claim", () => {
     const r = verify([1], [1, 2]);

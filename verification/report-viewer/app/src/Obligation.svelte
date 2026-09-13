@@ -1,240 +1,127 @@
 <script lang="ts">
-  /*
-   * Why verification stopped.
-   *
-   * What the verifier had, and what had to follow from it. This is explanatory
-   * metadata about an unsuccessful attempt: it is never evidence, and it never
-   * says a claim is false. The role is taken from the record rather than
-   * guessed from the span — a return contract and the returned expression's own
-   * claim share a span and are different obligations — and where the record
-   * names no specific role, this says nothing rather than inventing one.
-   */
-  import type { ObligationView } from "../../../tools/obligation-view.mts";
+  // The report writer names values and prepares the comparison. The panel only
+  // renders it; the exact sequent remains available alongside that explanation.
   import type { ShownFunction } from "../../model.mts";
-
-  let {
-    fn,
-    source,
-    onselect,
-  }: {
+  let { fn, onselect }: {
     fn: ShownFunction;
-    source: string;
-    /** Jump to one end of an edge, by source offset. */
     onselect: (offset: number) => void;
   } = $props();
-
-  const view = $derived<ObligationView | null>(
-    fn.obligationView ?? null,
-  );
+  const view = $derived(fn.obligationView ?? null);
 </script>
 
 {#if view}
-  <section class="why">
-    <header>
-      <h2>{view.title || view.kindLabel}</h2>
-      <span class="meta">{view.kindLabel}</span>
-    </header>
+  <section class="why" aria-label="Failed obligation">
+    <h2>{view.title || view.kindLabel}</h2>
+    <p class="explanation">{view.summary || view.what}</p>
 
-    {#if view.what}
-      <p class="what">{view.what}</p>
-    {/if}
-
-    {#if view.judgement}
-      <pre class="sequent">{view.judgement.text}</pre>
-      <details>
-        <summary>Type graph (exact row definitions)</summary>
-        {#each view.graph as row (row.label)}
-          <div class="type">{row.label} = {row.definition}</div>
-        {/each}
-      </details>
-    {/if}
-
-    {#if view.rows.length}
-      <table>
-        <caption>{view.kind === "edge-coverage" ? "Carried and required context" : "Context"}</caption>
-        <thead>
-          <tr><th>binding</th><th>carried</th>{#if view.kind === "edge-coverage"}<th>required</th>{/if}</tr>
-        </thead>
-        <tbody>
-          {#each view.rows as row (row.slot)}
-            <tr class:differs={row.differs}>
-              <td class="name">{row.binding}</td>
-              <td class="type">{row.have}</td>
-              {#if view.kind === "edge-coverage"}<td class="type">{row.need}</td>{/if}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    {/if}
-
-    {#if view.conclusion}
-      <dl>
-        {#if view.term}<dt>term</dt>
-          <dd class="type">{view.term}</dd>{/if}
-        <dt>had to conclude</dt>
-        <dd class="type">{view.conclusion}</dd>
-      </dl>
+    {#if view.focus}
+      <div class="table-scroll">
+        <table class="comparison">
+          <caption>Type requirement for <code>{view.focus.subject}</code></caption>
+          <thead><tr>
+            <th scope="col">Available claim</th>
+            <th scope="col">{view.focus.requiredLabel}</th>
+          </tr></thead>
+          <tbody><tr>
+            <td><code>{view.focus.available}</code></td>
+            <td class="required"><code>{view.focus.required}</code></td>
+          </tr></tbody>
+        </table>
+      </div>
     {/if}
 
     {#if view.knowledge.length}
       <ul class="facts">
-        {#each view.knowledge as k (k.slot)}
-          <li><span class="name">{k.binding}</span> {k.what}</li>
+        {#each view.knowledge as k}
+          <li>Required: <code>{k.binding}</code> {k.what}</li>
         {/each}
       </ul>
     {/if}
+    {#if view.observation}<p>{view.observation}</p>{/if}
+    <p class="status">Not established from the supplied claims.</p>
 
-    {#if view.observation}
-      <p class="observation">{view.observation}</p>
+    {#if view.rows.length}
+      <details>
+        <summary>Full context ({view.rows.length} bindings)</summary>
+        <div class="table-scroll">
+          <table>
+            <caption>{view.kind === "edge-coverage" ? "Incoming and destination claims" : "Assumptions available at this point"}</caption>
+            <thead><tr>
+              <th scope="col">Binding</th>
+              <th scope="col">Available type</th>
+              {#if view.kind === "edge-coverage"}<th scope="col">Required type</th>{/if}
+            </tr></thead>
+            <tbody>
+              {#each view.rows as row (row.slot)}
+                <tr class:focused={row.binding === view.focus?.subject}>
+                  <th scope="row"><code>{row.binding}</code></th>
+                  <td><code>{row.have}</code></td>
+                  {#if view.kind === "edge-coverage"}<td><code>{row.need}</code></td>{/if}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        {#if view.namedConclusion}
+          <p class="conclusion">Required conclusion: <code>⊢ {view.namedConclusion}</code></p>
+        {/if}
+        {#if view.note}<p class="note">{view.note}</p>{/if}
+      </details>
     {/if}
+
+    <details class="technical">
+      <summary>Exact obligation and type graph</summary>
+      <p class="meta">{view.kindLabel} · {view.id} · {view.phase}</p>
+      {#if view.judgement}<pre>{view.judgement.text}</pre>{/if}
+      <div class="table-scroll">
+        <table>
+          <caption>Exact type graph</caption>
+          <thead><tr><th scope="col">Label</th><th scope="col">Definition</th></tr></thead>
+          <tbody>{#each view.graph as row (row.label)}
+            <tr><th scope="row"><code>{row.label}</code></th><td><code>{row.definition}</code></td></tr>
+          {/each}</tbody>
+        </table>
+      </div>
+      <p class="meta">Search budget: {view.fuel}. No derivation was found; this does not prove the claim false.</p>
+    </details>
 
     {#if view.endpoints.length}
-      <p class="ends">
+      <div class="ends">
         {#each view.endpoints as end (end.end)}
           {@const at = end.sourceMap?.pos?.[0]}
-          <button
-            disabled={at === undefined}
-            onclick={() => at !== undefined && onselect(at)}
-          >
-            {end.end === "from" ? "from" : "to"}
-            {end.sourceMap?.role ? `· ${end.sourceMap.role}` : ""}
+          <button disabled={at === undefined} onclick={() => at !== undefined && onselect(at)}>
+            {end.end === "from" ? "Incoming point" : "Destination"}
           </button>
         {/each}
-      </p>
+      </div>
     {/if}
-
-    {#if view.note}
-      <p class="note">{view.note}</p>
-    {/if}
-
-    <!-- What the number means, rather than the number on its own. A search
-         that ran out of budget stopped looking; it did not conclude. -->
-    <p class="budget">
-      Proof search was given a budget of {view.fuel}. Failing within it means no
-      derivation was found, never that the claim is false.
-    </p>
   </section>
 {/if}
 
 <style>
-  .sequent { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-  .why {
-    border-top: 1px solid var(--rule);
-    padding: 12px 16px 16px;
-    background: var(--panel);
-  }
-  header {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-  }
-  h2 {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--bad);
-  }
-  .meta {
-    color: var(--faint);
-    font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .budget {
-    margin: 10px 0 0;
-    max-width: 68ch;
-    color: var(--faint);
-    font-size: 12px;
-  }
-  .what,
-  .note,
-  .observation {
-    margin: 6px 0 10px;
-    max-width: 68ch;
-    color: var(--faint);
-  }
-  .observation {
-    color: var(--ink);
-  }
-  table {
-    border-collapse: collapse;
-    margin: 0 0 10px;
-    font:
-      12px/1.5 ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      monospace;
-  }
-  caption {
-    text-align: left;
-    color: var(--faint);
-    padding-bottom: 4px;
-  }
-  th {
-    text-align: left;
-    font-weight: 400;
-    color: var(--faint);
-    padding-right: 20px;
-  }
-  td {
-    padding-right: 20px;
-    vertical-align: top;
-  }
-  .name {
-    color: var(--faint);
-  }
-  .type {
-    color: var(--claim);
-  }
-  /* The bindings that differ are the ones the edge could not carry across. */
-  tr.differs .name,
-  tr.differs .type {
-    color: var(--bad);
-  }
-  dl {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 3px 14px;
-    margin: 0 0 10px;
-    font:
-      12px/1.5 ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      monospace;
-  }
-  dt {
-    color: var(--faint);
-  }
-  dd {
-    margin: 0;
-    color: var(--claim);
-  }
-  .facts {
-    list-style: none;
-    margin: 0 0 10px;
-    padding: 0;
-    font:
-      12px/1.6 ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      monospace;
-    color: var(--claim);
-  }
-  .ends {
-    display: flex;
-    gap: 8px;
-    margin: 0 0 8px;
-  }
-  .ends button {
-    font: inherit;
-    padding: 3px 10px;
-    border: 1px solid var(--rule);
-    border-radius: 5px;
-    background: var(--field);
-    color: var(--ink);
-    cursor: pointer;
-  }
-  .ends button:disabled {
-    color: var(--faint);
-    cursor: default;
-  }
+  .why { border-top: 1px solid var(--rule); padding: 16px; background: var(--panel); font-size: 13px; line-height: 1.55; }
+  h2 { margin: 0 0 8px; font-size: 15px; color: var(--bad); }
+  p { margin: 8px 0 12px; max-width: 80ch; }
+  .explanation { color: var(--ink); }
+  .status, .meta, .note { color: var(--faint); font-size: 12px; }
+  details { border-top: 1px solid var(--rule); margin-top: 12px; padding-top: 10px; }
+  summary { cursor: pointer; color: var(--ink); font-weight: 500; margin-bottom: 8px; }
+  .table-scroll { overflow-x: auto; margin: 8px 0 12px; }
+  table { width: 100%; border-collapse: collapse; border: 1px solid var(--rule); font-size: 12px; }
+  caption { text-align: left; padding: 0 0 8px; color: var(--faint); font-size: 12px; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border: 1px solid var(--rule); }
+  thead th { background: var(--field); color: var(--ink); font-weight: 600; white-space: nowrap; }
+  tbody th { font-weight: 400; color: var(--ink); }
+  td { color: var(--claim); }
+  .comparison { table-layout: fixed; }
+  .comparison td { font-size: 14px; }
+  .required { color: var(--bad); font-weight: 600; }
+  .focused { background: var(--field); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 12px; border: 1px solid var(--rule); }
+  .facts { padding-left: 20px; }
+  .conclusion { color: var(--ink); }
+  .ends { display: flex; gap: 8px; margin-top: 12px; }
+  .ends button { font: inherit; padding: 5px 10px; border: 1px solid var(--rule); border-radius: 5px; background: var(--field); color: var(--ink); cursor: pointer; }
+  .ends button:disabled { color: var(--faint); cursor: default; }
 </style>

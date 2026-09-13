@@ -57,6 +57,11 @@ export interface Endpoint {
  * a claim is false.
  */
 export interface ObligationView {
+  /** Source-named explanation prepared by the report writer. */
+  summary?: string;
+  focus?: { subject: string; available: string; required: string; requiredLabel: string };
+  /** Conclusion in source names; the complete assumptions are the context rows. */
+  namedConclusion?: string;
   judgement?: { assumptions: string[]; conclusion: string; text: string };
   graph: GraphDefinition[];
   kind: string;
@@ -368,6 +373,13 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
   let assumptions: string[], conclusion: string;
   if (ob.kind === "edge-coverage") {
     const t = ob.transfer!;
+    const differing = view.rows.find(r => r.differs);
+    if (differing?.need) {
+      view.focus = {subject:differing.binding,available:differing.have,required:differing.need,requiredLabel:"Required at destination"};
+      view.summary = `The incoming claim for ${differing.binding} is ${differing.have}. The next point requires ${differing.need}.`;
+    } else if (view.knowledge.length) {
+      view.summary = "The incoming claims do not establish the required current-content facts below.";
+    }
     assumptions = context(t.available,"available");
     if (t.booleanObservation !== null) assumptions.push(`available 0 = ${t.booleanObservation}`);
     if (t.tagObservation) assumptions.push(`${JSON.stringify(t.tagObservation.test)}(available ${t.tagObservation.slot}) = ${t.tagObservation.answer}`);
@@ -380,6 +392,16 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
     if (ob.destination.requiredKnowledge) conclusion += ` and heap ${JSON.stringify(ob.destination.requiredKnowledge)}`;
   } else {
     const q = ob.sequent!;
+    const slot = typeof q.term === "object" && "var" in q.term ? q.term.var.i : undefined;
+    const row = slot === undefined ? undefined : view.rows.find(r => r.slot === slot);
+    if (row) {
+      const required = typeText(ob.types,q.type);
+      const isReturn = view.role === "return-contract" || view.role === "closure-result";
+      view.focus = {subject:row.binding,available:row.have,required,
+        requiredLabel:isReturn ? "Required return type" : "Required type"};
+      view.summary = `The available claim for ${row.binding} is ${row.have}. ${isReturn ? "This return" : "This obligation"} requires ${required}.`;
+      view.namedConclusion = `${row.binding}: ${required}`;
+    }
     assumptions = context(q.context);
     conclusion = `${printTerm(q.term)} : ${printLabels(q.type)}`;
   }

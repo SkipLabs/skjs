@@ -247,7 +247,6 @@
           />
           <Obligation
             {fn}
-            source={report.source}
             onselect={(offset) => reader.selectAt(fn, offset)}
           />
           <Provenance bundle={reader.bundle} collection={reader.collection} />

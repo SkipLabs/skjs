@@ -261,3 +261,11 @@ are conveniences; this graph legend and the native term in the judgement give
 the exact language. See [VIEWER-LANGUAGE](VIEWER-LANGUAGE.md) for the typed codecs
 and their consistency tests. Search failure continues to mean not established,
 not refuted.
+
+The panel leads with a source-named comparison, for example `cell.value` with
+available type `boolean` and required return type `true`. The report writer
+resolves the goal term's actual variable slot through the source map; it does
+not assume slot zero or invent an available type for a compound term. Full
+context is a bordered table under a disclosure. Exact graph labels, native
+terms and the proof-search budget remain under a separate technical disclosure.
+This presentation describes the failed requirement, not a counterexample.
