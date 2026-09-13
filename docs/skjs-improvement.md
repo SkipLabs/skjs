@@ -456,6 +456,23 @@ check. Direct attached calls keep their existing path, preserving
 generic-container variance and union-receiver dispatch. This repairs receiver
 provenance; general callee-effect tracking and R2 remain open.
 
+Next property-copy boundary: object spread and rest currently retain prototype
+methods from class-typed sources. `spread-callable.ts` pins calls through both
+copies that SKJS accepts and strict tsc rejects, with own function-valued fields
+and class data fields as positive controls. These calls fail because the method
+is absent, before receiver compatibility matters. This remains unfixed.
+
+The repair needs an explicit distinction between property lookup and copying
+own enumerable properties. `TField` currently records read/write types,
+optionality and access, but no ownership/enumerability information. Reusing
+`ImplicitClass` as an ownership flag would conflate a callable's receiver
+requirement with where its containing property lives. Simply dropping every
+method-shaped property would also lose own methods; copying all of them retains
+the known interface/prototype hole. Any new copy abstraction must account for
+possibly absent copied properties when they overwrite earlier spread fields,
+and share its rules between spread and rest. This is a separate obligation from
+receiver extraction and durable substitution validation.
+
 M3 implementation scope: loop entry widens possibly assigned mutable bindings
 with declared or inherited contracts before the repeated condition/body is
 checked. The syntactic summary includes `for` increments and nested bodies,

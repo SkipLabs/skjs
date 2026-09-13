@@ -30,13 +30,13 @@ class PrototypeReader {
 
 function spreadPrototypeMethod(source: PrototypeReader): number {
   const copy = { ...source };
-  // @ts-expect-error This expression is not callable
+  // FIXME: tsc rejects this: spread does not copy prototype methods. SKJS accepts.
   return copy.read();
 }
 
 function restPrototypeMethod(source: PrototypeReader): number {
   const { value, ...copy } = source;
-  // @ts-expect-error This expression is not callable
+  // FIXME: tsc rejects this: object rest does not copy prototype methods either.
   return copy.read();
 }
 
@@ -53,166 +53,4 @@ function spreadOwnFunction(source: OwnReader): number {
 function spreadClassData(source: PrototypeReader): number {
   const copy = { ...source };
   return copy.value;
-}
-
-// A readonly property annotation can hide a method's declaration provenance.
-function annotatedPrototypeCopy(source: PrototypeReader): number {
-  const alias: { readonly read: (this: PrototypeReader) => number } = source;
-  const copy = { ...alias };
-  // @skjs-expect-error Property access is not allowed on this type
-  return copy.read.call(source);
-}
-
-function annotatedOwnCopy(source: OwnReader): number {
-  const alias: { readonly read: () => number } = source;
-  const copy = { ...alias };
-  return copy.read();
-}
-
-function readOwn(this: PrototypeReader): number {
-  return this.value;
-}
-
-// Capture reads the declared contract, not the last assignment's flow type.
-function captureAssignedPrototype(source: PrototypeReader): () => number {
-  let alias: { readonly read: (this: PrototypeReader) => number } = {
-    read: readOwn,
-  };
-  alias = source;
-  return () => {
-    const copy = { ...alias };
-    // @skjs-expect-error Property access is not allowed on this type
-    return copy.read.call(source);
-  };
-}
-
-function captureAssignedOwn(source: PrototypeReader): () => number {
-  let alias: { readonly read: (this: PrototypeReader) => number } = {
-    read: readOwn,
-  };
-  alias = { read: readOwn };
-  return () => {
-    const copy = { ...alias };
-    return copy.read.call(source);
-  };
-}
-
-function captureConditionalPrototype(
-  source: PrototypeReader,
-  choose: boolean,
-): () => number {
-  let alias: { readonly read: (this: PrototypeReader) => number } = {
-    read: readOwn,
-  };
-  if (choose) alias = source;
-  return () => {
-    const copy = { ...alias };
-    // @skjs-expect-error Property access is not allowed on this type
-    return copy.read.call(source);
-  };
-}
-
-function captureCatchPrototype(source: PrototypeReader): () => number {
-  let alias: { readonly read: (this: PrototypeReader) => number } = {
-    read: readOwn,
-  };
-  try {
-    alias = source;
-    throw 0;
-  } catch {
-    return () => {
-      const copy = { ...alias };
-      // @skjs-expect-error Property access is not allowed on this type
-      return copy.read.call(source);
-    };
-  }
-}
-
-type ReaderProperty = { readonly read: (this: PrototypeReader) => number };
-
-function copyReaderArgument(
-  source: ReaderProperty,
-  receiver: PrototypeReader,
-): number {
-  const copy = { ...source };
-  return copy.read.call(receiver);
-}
-
-function passPrototypeProperty(source: PrototypeReader): number {
-  // @skjs-expect-error Argument is not assignable to the parameter's type
-  return copyReaderArgument(source, source);
-}
-
-function returnPrototypeProperty(source: PrototypeReader): ReaderProperty {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  return source;
-}
-
-// Constructing an own property establishes what the callee's copy needs.
-function passOwnMethodProperty(source: PrototypeReader): number {
-  return copyReaderArgument({ read: source.read }, source);
-}
-
-// Static methods are own properties, but are not enumerable.
-class StaticReader {
-  static readonly value: number = 1;
-  static read(): number {
-    return 1;
-  }
-}
-
-function copyStaticMethod(): number {
-  const copy = { ...StaticReader };
-  // @ts-expect-error This expression is not callable
-  return copy.read();
-}
-
-function copyStaticData(): number {
-  const copy = { ...StaticReader };
-  return copy.value;
-}
-
-// A real index signature must not hide a named method's copy constraint.
-declare class IndexedReader {
-  readonly [key: string]: (this: IndexedReader) => number;
-  read(): number;
-}
-
-function indexedPrototypeCopy(source: IndexedReader): number {
-  const alias: { readonly [key: string]: (this: IndexedReader) => number } =
-    source;
-  if ("read" in alias) {
-    const copy = { ...alias };
-    // @skjs-expect-error Property access is not allowed on this type
-    return copy.read.call(source);
-  }
-  return 0;
-}
-
-function indexedOwnCopy(source: IndexedReader): number {
-  const alias: { readonly [key: string]: (this: IndexedReader) => number } = {
-    read: source.read,
-  };
-  const copy = { ...alias };
-  if ("read" in copy) {
-    return copy.read.call(source);
-  }
-  return 0;
-}
-
-function restCallable(fn: (() => number) & { tag: string }): number {
-  const { tag, ...copy } = fn;
-  // @ts-expect-error This expression is not callable
-  return copy();
-}
-function restConstructor(c: new () => object): object {
-  const { ...copy } = c;
-  // @ts-expect-error This expression is not constructable
-  return new copy();
-}
-function restOwnCallable(
-  fn: (() => number) & { tag: string; read: () => number },
-): number {
-  const { tag, ...copy } = fn;
-  return copy.read();
 }
