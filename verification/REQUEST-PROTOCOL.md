@@ -470,7 +470,7 @@ parameter count, with those bindings before captured variables. Calls evaluate
 the callee first and actuals left to right; checked signatures require the exact
 actual count. No synthetic undefined actual, anonymous parameter, or source
 claim is introduced for an empty list. Optional/rest parameters, spread actuals,
-`arguments`, receiver behavior and argument-count introspection remain excluded.
+`arguments`, receiver-dependent bodies and argument-count introspection remain excluded.
 
 A strict `typeof e === "function"` or `!==` comparison has source AST shape
 `{"k":"functionTest","pos":[start,end],"equal":true,"e":operand}`.
@@ -613,3 +613,14 @@ for standard `Object.assign<F, B>(freshArrow, {value: initializer})`, with no
 shadowed `Object`, extra arguments, spread or accessors. Both explicit type
 arguments and both source expression claims are independently checked before
 constructing the initialized callable.
+
+Local-arrow `.call` expressions use
+`{"k":"callWithReceiver","pos":[start,end],"callee":expression,"receiver":expression,"args":[expression,...]}`.
+The trusted parser requires a source-created arrow (possibly initialized with a
+field) or an immutable lexical alias of one. Parameters, arbitrary call results,
+optional access/calls, spreads and omitted receivers are refused. The standard
+intrinsic is a source-boundary assumption, not inferred from a call signature.
+The adapter evaluates the callee, receiver and actuals in that order, checking
+every operand claim. It discards only the receiver value and invokes the existing
+native call rule with exactly the listed actuals. No receiver binding is added
+to the arrow body; this slice does not implement ordinary function `this`.

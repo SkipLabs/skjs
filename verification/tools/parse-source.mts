@@ -67,6 +67,7 @@ export type Expr =
   | { k: "withValue"; pos: Span; fn: Expr; initial: Expr; functionType: WireType; bagType: WireType }
   | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
+  | { k: "callWithReceiver"; pos: Span; callee: Expr; receiver: Expr; args: Expr[] }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
   | {
       k: "lambda";
@@ -529,6 +530,14 @@ class Gate {
             initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
             bagType: this.typeOf(node.typeArguments[1])};
         }
+        if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "call") {
+          if (node.questionDotToken || node.expression.questionDotToken || node.typeArguments?.length ||
+              node.arguments.length === 0 || node.arguments.some((arg: any) => ts.isSpreadElement(arg)) ||
+              !this.localArrow(node.expression.expression))
+            this.fail(node, ".call requires a known local arrow, an explicit receiver and ordinary arguments");
+          return {k: "callWithReceiver", pos: this.span(node), callee: this.expr(node.expression.expression),
+            receiver: this.expr(node.arguments[0]), args: node.arguments.slice(1).map((arg: any) => this.expr(arg))};
+        }
         if (
           node.questionDotToken ||
           node.typeArguments?.length ||
@@ -549,6 +558,38 @@ class Gate {
           `expression outside the fragment (${ts.SyntaxKind[node.kind]})`,
         );
     }
+  }
+
+  // A call signature alone does not establish the inherited .call intrinsic.
+  // Follow immutable lexical aliases to source-created arrows. Parameters and
+  // arbitrary call results may carry their own .call property, so are refused.
+  private localArrow(node: any, seen = new Set<number>()): boolean {
+    if (ts.isParenthesizedExpression(node)) return this.localArrow(node.expression, seen);
+    if (ts.isArrowFunction(node)) return true;
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
+        node.expression.name.text === "assign")
+      // Its initializer is separately parsed through the full Object.assign
+      // gate. Do not parse it again here: its body may refer back to this name.
+      return node.arguments.length === 2 && ts.isArrowFunction(node.arguments[0]) &&
+        ts.isObjectLiteralExpression(node.arguments[1]);
+    if (!ts.isIdentifier(node)) return false;
+    for (let scope = node.parent; scope; scope = scope.parent) {
+      if (ts.isBlock(scope)) {
+        for (const statement of scope.statements) {
+          if (!ts.isVariableStatement(statement)) continue;
+          for (const decl of statement.declarationList.declarations) {
+            if (!ts.isIdentifier(decl.name) || decl.name.text !== node.text) continue;
+            if (!(statement.declarationList.flags & ts.NodeFlags.Const) || !decl.initializer || seen.has(decl.getStart(this.file))) return false;
+            seen.add(decl.getStart(this.file));
+            return this.localArrow(decl.initializer, seen);
+          }
+        }
+      }
+      if (FUNCTION_LIKE.has(scope.kind) && (scope as any).parameters?.some((p: any) =>
+          ts.isIdentifier(p.name) && p.name.text === node.text)) return false;
+    }
+    return false;
   }
 
   private binary(node: any): Expr {

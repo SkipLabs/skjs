@@ -356,6 +356,23 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
           [DirectProof.var H 0 [label]])
       pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
         (.read (.var 0)) R (.unionVar 0) children))
+  | .callWithReceiver _ f receiver args => do
+    let callee ← closureExpr fc scope Γ f
+    let K := callee.type :: Γ
+    let receiverPlan ← closureExpr fc (⟨"",some f.span⟩::scope) K receiver
+    let H := receiverPlan.type :: K
+    let ds := ⟨"",some receiver.span⟩::⟨"",some f.span⟩::scope
+    let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc ds H a
+    let L ← match PositiveRules.expand G callee.type with
+      | [.arrs L] | [.callable _ _ L] => pure L
+      | _ => throw ".call target requires a single callable contract"
+    let (Ds,R) ← selectSignature L (actuals.map (·.type))
+    let rule := match PositiveRules.expand G callee.type with
+      | [.callable ..] => ProgramCertificates.Rule.callCallable
+      | _ => .app
+    let call := DirectProof.node H (.call (.var 1) (actuals.map (·.term))) R rule
+      (DirectProof.var H 1 callee.type :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast H D a)
+    pure (DirectProof.letE Γ callee (DirectProof.letE K receiverPlan call))
   | .call _ f args => do
     let callee ← closureExpr fc scope Γ f
     match PositiveRules.expand G callee.type with
@@ -501,7 +518,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
     | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next (scope := ⟨"",some e.span⟩::scope)
-  match e with
+  match he : e with
   | .var _ name =>
     let i ← match (names scope).idxOf? name with
       | some i => pure i
@@ -539,18 +556,21 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       (scope := ⟨"",some right.span⟩::⟨"",some left.span⟩::scope)
     let right ← compileExpr fc (⟨"",some left.span⟩::scope) (B::Γ) right test
     compileExpr fc scope Γ left right
-  | .call _ callee args =>
+  | .call _ callee args | .callWithReceiver _ callee _ args =>
+    let operands := match e with
+      | .callWithReceiver _ _ receiver _ => receiver :: args
+      | _ => args
     let B ← exprType fc callee
-    let As ← args.mapM (exprType fc)
+    let As ← operands.mapM (exprType fc)
     let n := As.length
-    let temporaries := (args.map fun a => ⟨"",some a.span⟩).reverse ++ [⟨"",some callee.span⟩]
+    let temporaries := (operands.map fun a => ⟨"",some a.span⟩).reverse ++ [⟨"",some callee.span⟩]
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+n+1))⟩
-    let call ← emitAt e.span (.call (.var n) ((List.range n).map fun i => .var (n-1-i)))
+    let call ← emitAt e.span (.call (.var n) ((List.range args.length).map fun i => .var (args.length-1-i)))
       (.bind drop) (As.reverse ++ B::Γ) A (scope := temporaries ++ scope)
-    let right ← args.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
+    let right ← operands.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
       compileExpr fc
-        ((args.take i |>.map fun a => ⟨"",some a.span⟩).reverse ++ ⟨"",some callee.span⟩::scope)
+        ((operands.take i |>.map fun a => ⟨"",some a.span⟩).reverse ++ ⟨"",some callee.span⟩::scope)
         ((As.take i).reverse ++ B::Γ) arg next) call
     compileExpr fc scope Γ callee right
   | .write _ receiver rhs =>
@@ -566,6 +586,14 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     let right ← compileExpr fc (⟨"",some receiver.span⟩::scope) (B::Γ) rhs write
     compileExpr fc scope Γ receiver right
 termination_by e
+decreasing_by
+  all_goals simp_all +zetaDelta
+  all_goals first
+    | decreasing_tactic
+    | (rcases ‹_ ∨ _› with h | h
+       · subst_vars; decreasing_tactic
+       · have := List.sizeOf_lt_of_mem h; omega)
+
 
 /-- Leaving a block drops its local slots simultaneously. Active-name shadowing
 is gated until the export can identify hidden bindings independently. With no

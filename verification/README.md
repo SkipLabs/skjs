@@ -84,7 +84,10 @@ tests on immutable variables retain only the corresponding callable alternatives
 
 A fresh arrow can acquire one initialized mutable `value` field using explicitly
 typed `Object.assign`; aliases preserve both the field invariant and call signature.
-See [function-field.ts](tests/callables/function-field.ts).
+See [function-field.ts](tests/callables/function-field.ts). Known local arrows and
+their immutable aliases support `.call(receiver, ...actuals)`: the receiver is
+evaluated before the actuals, then discarded. Arbitrary callable parameters and
+receiver-dependent methods remain excluded.
 
 Mutable bindings, loops inside closures, external cell parameters,
 labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,

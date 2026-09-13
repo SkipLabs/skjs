@@ -4,7 +4,8 @@
  * its lexical capture. The result is true for either seed.
  *
  * SKJS checks this example, but the independent verifier does not yet model
- * multi-field objects, explicit receivers, or Function.prototype.call.
+ * multi-field objects or receiver-dependent methods. Local-arrow .call is
+ * covered separately in receiver-call.ts.
  */
 function callObjects(seed: boolean): boolean {
   const owner = {

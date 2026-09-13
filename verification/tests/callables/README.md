@@ -124,8 +124,8 @@ check both seeds.
 
 This is a **boundary example**, shown in the Callables group but not counted as
 source-verifiable. The independent verifier still needs multi-field objects,
-ordinary receiver-dependent methods, and a justified `Function.prototype.call`
-operation. Its parser currently rejects the multi-field allocation.
+ordinary receiver-dependent methods, and receiver-dependent `Function.prototype.call`
+behavior. Its parser currently rejects the multi-field allocation.
 
 [function-field.ts](function-field.ts) initializes one mutable field on a fresh
 arrow, writes through the original reference and reads/calls through an alias.
@@ -134,3 +134,11 @@ SKJS currently infers `never` without them. [function-field.mts](../function-fie
 checks independent rejection of corrupted field/signature contracts and source
 annotations, report editing, and the intrinsic syntax restrictions. This does
 not yet cover general field addition, multiple fields, or receiver behavior.
+
+[receiver-call.ts](receiver-call.ts) brings `.call` on local arrows into the
+pipeline, including an alias of a function with a field and a captured nullary
+arrow. The receiver expression is evaluated before actuals even though its value
+is ignored. [receiver-call.mts](../receiver-call.mts) distinguishes dropping that
+effect, checks exact arity and receiver claims, and rejects targets whose inherited
+intrinsic is not established by their source construction. Both producers verify
+these examples; ordinary receiver-dependent methods remain outside the fragment.

@@ -998,7 +998,7 @@ behavior through actual producer claims and independent consumption:
 | Initialized function field | A fresh arrow receives a `value` field, an alias observes a write, then calls the function. | Complete through both producers and the existing native callable allocation/read/write/call rules. Construction is restricted to explicitly typed `Object.assign` of a fresh arrow and a fresh one-field literal. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
-| `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
+| `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Local source-created arrows now preserve receiver evaluation through the pipeline. Receiver-dependent methods remain pending. [call-objects.ts](tests/callables/call-objects.ts) is the boundary example: an extracted method uses a new receiver, while an arrow retains its capture. Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`. |
 
 Functions returning functions, including escaping callback parameters, already
 have pipeline coverage. `.apply`, `.bind`, optional/rest arguments, constructors
@@ -1141,4 +1141,28 @@ allocation, preserving initializer evaluation. This is part of the reviewed
 source extraction boundary, not a theorem about arbitrary JavaScript builtins.
 Explicit type arguments avoid SKJS's current inference of `never` for the
 unannotated construction. Named/multiple/optional fields, general expando
-assignment, receiver-dependent functions and `.call` remain separate milestones.
+assignment and receiver-dependent functions remain separate milestones.
+
+### Local arrow receiver calls
+
+The source gate recognizes `.call` only on fresh arrows, the restricted callable
+field initializer, and immutable lexical aliases of those values, including
+captures. It checks lexical bindings rather than relying on a type's call
+signature: an arbitrary function parameter or call result could have its own
+`call` property. The supported source fragment cannot write that property or
+mutate the standard function prototype. As with `Object.assign`, identification
+of the standard intrinsic belongs to the trusted source boundary.
+
+`receiver-call.ts` exercises a function with a field and a captured nullary arrow.
+Both producers verify its claims. Lowering saves the callee, evaluates and checks
+the receiver, then evaluates actuals left to right. The native call receives only
+the actuals. The receiver's effects persist even though arrows ignore its value;
+a JavaScript control that omits the write changes the result. The independent
+consumer rejects changed receiver evidence, false receiver claims and wrong
+actual counts. Ordinary `this`-dependent methods still require receiver semantics.
+
+The captured receiver test also covers SKJS's optimized local-object assignment
+path. That path records the receiver's pre-write type for export without routing
+it through the ordinary variable-read operation, which would freeze object
+growth. The dedicated `assignment-receiver` export snapshot preserves this
+collection obligation independently of the `.call` source lowering.

@@ -110,6 +110,12 @@ function walkExpr(e: Expr, out: Sites): void {
       walkExpr(e.receiver, out);
       walkExpr(e.rhs, out);
       return;
+    case "callWithReceiver":
+      addExpr(out, e.pos, e.k);
+      walkExpr(e.callee, out);
+      walkExpr(e.receiver, out);
+      for (const arg of e.args) walkExpr(arg, out);
+      return;
     case "apply":
       addExpr(out, e.pos, "apply");
       walkExpr(e.callee, out);

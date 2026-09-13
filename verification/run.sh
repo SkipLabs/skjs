@@ -173,6 +173,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   FACTORIES=verification/tests/callables/factories.ts
   CALLABLE_THUNKS=verification/tests/callables/thunks.ts
   CALLABLE_CELLS=verification/tests/callables/cells.ts
+  RECEIVER_CALL=verification/tests/callables/receiver-call.ts
   CALLABLE_FIELD=verification/tests/callables/function-field.ts
   CALLABLE_GUARDS=verification/tests/callables/guards.ts
   CALLABLE_ARITY=verification/tests/callables/arity.ts
@@ -206,6 +207,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture factories "$FACTORIES"
   build fixture callable_thunks "$CALLABLE_THUNKS"
   build fixture callable_cells "$CALLABLE_CELLS"
+  build fixture receiver_call "$RECEIVER_CALL"
   build fixture callable_field "$CALLABLE_FIELD"
   build fixture callable_guards "$CALLABLE_GUARDS"
   build fixture callable_arity "$CALLABLE_ARITY"
@@ -247,6 +249,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   run_test "Undefined values and contracts" node verification/tests/undefined.mts        "$WORK/undefined.ast" "$WORK/undefined.claims" "$UNDEFINED_SOURCE" "$VERIFIER"
   run_test "Closures" node verification/tests/stateful-closures.mts        "$WORK/closures.ast" "$WORK/closures.claims" "$CLOSURES" "$VERIFIER"
   run_test "Callables" node verification/tests/callables.mts "$WORK/callables.ast" "$WORK/callables.claims" "$CALLABLES" "$VERIFIER"
+  run_test "Local arrow receiver calls" node verification/tests/receiver-call.mts "$WORK/receiver_call.ast" "$WORK/receiver_call.claims" "$RECEIVER_CALL" "$VERIFIER"
   run_test "Initialized callable field" node verification/tests/function-field.mts "$WORK/callable_field.ast" "$WORK/callable_field.claims" "$CALLABLE_FIELD" "$VERIFIER"
   run_test "Callable shape guards" node verification/tests/callable-guards.mts "$WORK/callable_guards.ast" "$WORK/callable_guards.claims" "$CALLABLE_GUARDS" "$VERIFIER"
   run_test "Function/object receiver boundary" node verification/tests/call-objects.mts

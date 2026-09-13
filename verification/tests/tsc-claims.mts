@@ -32,6 +32,7 @@ const expected = {
   "callables/arity": "verified",
   "callables/guards": "verified",
   "callables/function-field": "verified",
+  "callables/receiver-call": "verified",
   "callables/call-objects": "out-of-fragment",
   // Factories return closures that capture either private or shared cells.
   "callables/factories": "verified",
