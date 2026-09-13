@@ -449,10 +449,12 @@ fields on its new carrier. Strict tsc also accepts these unsafe programs.
 `this-parameter-implicit-class.ts` covers incompatible retyping, direct
 reattachment, and a declaration-level `typeof` alias, plus compatible
 reattachment. Expression property reads (dot/index, including optional reads)
-and declaration-level member `typeof` share the extraction rule. Direct attached
-calls keep their existing path, preserving generic-container variance and
-union-receiver dispatch. This is a receiver-provenance repair, not general
-callee-effect tracking or R2 completion.
+and declaration-level member `typeof` share the extraction rule. Object
+destructuring applies it at field binding too, covering local and parameter
+patterns that bypass expression property access; compatible carriers still
+check. Direct attached calls keep their existing path, preserving
+generic-container variance and union-receiver dispatch. This repairs receiver
+provenance; general callee-effect tracking and R2 remain open.
 
 M3 implementation scope: loop entry widens possibly assigned mutable bindings
 with declared or inherited contracts before the repeated condition/body is

@@ -829,7 +829,7 @@ extension class TypeChecker {
               tcenv,
               kind,
               fieldPat,
-              typeForField,
+              this.extractedMethodType(tcenv.subst, typeForField),
               hasDeclaredContract,
               isInitialized,
               false,

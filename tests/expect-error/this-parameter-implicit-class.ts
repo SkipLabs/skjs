@@ -82,13 +82,13 @@ function reattachmentThroughTypeof(other: C): void {
 function destructuredReattachment(other: OtherReceiver): void {
   const { m } = other;
   const carrier = { m };
-  // FIXME: destructuring drops the requirement to validate a new receiver.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }
 
 function parameterReattachment({ m }: OtherReceiver): void {
   const carrier = { m };
-  // FIXME: parameter binding has the same extraction obligation.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   carrier.m(0);
 }
 

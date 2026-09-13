@@ -568,9 +568,9 @@ cases and conservatively under-approximates a few others.
 - **Detached method calls are rejected** (sound; `tsc --strict` accepts them).
   `const g = obj.m; g()` loses the receiver, so the `this` context (`void`) is
   not assignable to the method's `this`.
-- **Extracted class methods retain their receiver requirement**: property reads
-  and member `typeof` types turn the implicit class receiver into an explicit
-  requirement. Retyping or reattaching the extracted method must preserve it;
+- **Extracted class methods retain their receiver requirement**: property reads,
+  object destructuring (including parameters), and member `typeof` types turn
+  the implicit class receiver into an explicit requirement. Retyping or reattaching the extracted method must preserve it;
   a compatible carrier is accepted. TypeScript can accept incompatible carriers
   here, but the method body may access fields they do not have.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
