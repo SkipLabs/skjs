@@ -1561,6 +1561,7 @@ base class TEnv{
             isReadonly => Some(exprPos),
             type => metType,
             access => metAccess,
+            isPrototypeMethod => !metIsStatic,
           };
 
           symbolFields![field.name] = field
@@ -1572,6 +1573,7 @@ base class TEnv{
             isReadonly => Some(name.pos),
             type => metType,
             access => metAccess,
+            isPrototypeMethod => !metIsStatic,
           };
 
           acc![field.name] = field
@@ -2495,6 +2497,24 @@ base class TEnv{
     | Dot(_, baseExpr, _) -> this.isValidTypeofExpr(baseExpr)
     | _ -> false
     }
+  }
+
+  // Copying reads own enumerable values. A prototype method may be absent,
+  // or present as an own override; preserve both cases for spread overwrites.
+  fun propertyCopyFields(subst: mutable Subst, fields: TFields): TFields {
+    fields.map(
+      field ->
+        if (field.isPrototypeMethod) {
+          field with {
+            get => this.extractedMethodType(subst, field.get),
+            isOptional => true,
+            isPrototypeMethod => false,
+          }
+        } else {
+          field
+        },
+      funs -> funs,
+    )
   }
 
   // Extraction loses the guarantee that a class method runs on its original

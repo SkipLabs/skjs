@@ -456,22 +456,23 @@ check. Direct attached calls keep their existing path, preserving
 generic-container variance and union-receiver dispatch. This repairs receiver
 provenance; general callee-effect tracking and R2 remain open.
 
-Next property-copy boundary: object spread and rest currently retain prototype
-methods from class-typed sources. `spread-callable.ts` pins calls through both
-copies that SKJS accepts and strict tsc rejects, with own function-valued fields
-and class data fields as positive controls. These calls fail because the method
-is absent, before receiver compatibility matters. This remains unfixed.
+Property-copy boundary: class-declared instance methods now carry declaration
+provenance separately from their callable receiver. Spread and rest make these
+copied properties optional: lookup can find a prototype method that copying
+omits, but an own override may supply the property. Existing spread merging
+therefore keeps the earlier property's alternative instead of assuming that
+the method always overwrites it. Copies also establish the extracted method's
+explicit receiver requirement. Own function-valued fields and class data fields
+remain copyable. `spread-callable.ts` pins the previously accepted missing-method
+calls through spread/rest and these positive controls.
 
-The repair needs an explicit distinction between property lookup and copying
-own enumerable properties. `TField` currently records read/write types,
-optionality and access, but no ownership/enumerability information. Reusing
-`ImplicitClass` as an ownership flag would conflate a callable's receiver
-requirement with where its containing property lives. Simply dropping every
-method-shaped property would also lose own methods; copying all of them retains
-the known interface/prototype hole. Any new copy abstraction must account for
-possibly absent copied properties when they overwrite earlier spread fields,
-and share its rules between spread and rest. This is a separate obligation from
-receiver extraction and durable substitution validation.
+This is a bounded repair for recorded method provenance, not a complete model
+of own enumerable properties. Structural annotations can still lose declaration
+provenance; ordinary fields supplied by inherited accessors and non-enumerable
+properties are not classified. Union and intersection field construction
+conservatively retain the marker when either input carries it. A general
+ownership contract must also constrain subtyping and provenance-erasing
+annotations. Receiver types alone cannot supply that contract.
 
 M3 implementation scope: loop entry widens possibly assigned mutable bindings
 with declared or inherited contracts before the repeated condition/body is

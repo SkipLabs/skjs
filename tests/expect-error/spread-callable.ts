@@ -30,13 +30,13 @@ class PrototypeReader {
 
 function spreadPrototypeMethod(source: PrototypeReader): number {
   const copy = { ...source };
-  // FIXME: tsc rejects this: spread does not copy prototype methods. SKJS accepts.
+  // @ts-expect-error This expression is not callable
   return copy.read();
 }
 
 function restPrototypeMethod(source: PrototypeReader): number {
   const { value, ...copy } = source;
-  // FIXME: tsc rejects this: object rest does not copy prototype methods either.
+  // @ts-expect-error This expression is not callable
   return copy.read();
 }
 

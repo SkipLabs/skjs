@@ -241,6 +241,7 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
+      isPrototypeMethod => x.isPrototypeMethod || y.isPrototypeMethod,
     }
   }
 
@@ -260,6 +261,7 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
+      isPrototypeMethod => x.isPrototypeMethod || y.isPrototypeMethod,
     }
   }
 }

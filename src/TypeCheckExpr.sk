@@ -735,7 +735,12 @@ extension class TypeChecker {
         for (stype in stypes) {
           (branches, typeForRest) = stype match {
           | tobj @ TObject(_, _, _) ->
-            (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
+            (
+              tobj.getBranches(),
+              tobj.removeFields(fieldsToRemoveForRest).map(fields ->
+                this.propertyCopyFields(tcenv.subst, fields)
+              ),
+            )
           | _ ->
             fatalError(
               Array[
@@ -2135,7 +2140,12 @@ extension class TypeChecker {
             invalid = false;
             for (stype in sTypes.values()) {
               stype match {
-              | obj @ TObject _ -> sourceBranches.extend(obj.getBranches())
+              | obj @ TObject _ ->
+                sourceBranches.extend(
+                  obj.getBranches().map(fields ->
+                    this.propertyCopyFields(tcenv.subst, fields)
+                  ),
+                )
               | TPrimUnit(TVoid(), _)
               | TPrimValue(TString(), _, _) ->
                 !invalid = true

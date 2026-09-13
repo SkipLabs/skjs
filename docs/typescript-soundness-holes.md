@@ -429,7 +429,7 @@ function probe(): string {
 }
 ```
 
-**Test:** [tests/expect-error/spread-callable.ts](../tests/expect-error/spread-callable.ts) pins the stronger class-typed spread/rest failure, which tsc rejects, alongside own function-valued fields and class data fields that must remain copyable. The interface-typed case above remains unpinned. · **SKJS:** also accepts — SKJS shares the interface hole and additionally retains prototype methods from class-typed sources.
+**Test:** [tests/expect-error/spread-callable.ts](../tests/expect-error/spread-callable.ts) pins the stronger class-typed spread/rest failure, which tsc rejects, alongside own function-valued fields and class data fields that must remain copyable. The interface-typed case above remains unpinned. · **SKJS:** rejects the pinned class-typed cases by making copied prototype methods optional. The repair follows recorded declaration provenance; it is not a general guarantee that structural properties are own and enumerable.
 
 ## Index signatures
 

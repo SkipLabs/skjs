@@ -573,6 +573,11 @@ cases and conservatively under-approximates a few others.
   the implicit class receiver into an explicit requirement. Retyping or reattaching the extracted method must preserve it;
   a compatible carrier is accepted. TypeScript can accept incompatible carriers
   here, but the method body may access fields they do not have.
+- **Copied class methods may be absent**: object spread and rest make
+  class-declared instance methods optional, since prototype properties are not
+  copied. For example, `const copy = { ...instance }; copy.method()` is rejected.
+  Own function-valued fields remain copyable. TypeScript omits class methods
+  from the copy's type; SKJS conservatively allows for an own override.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
   `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
   `this` and accepts any receiver; SKJS requires the class instance, since the
