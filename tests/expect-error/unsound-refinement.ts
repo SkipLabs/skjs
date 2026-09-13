@@ -423,3 +423,29 @@ function snapshotArgument(
   }
   return () => 0;
 }
+
+function retainedReceiver(x: {
+  f: number | null;
+  retain: (this: { readonly f: number }) => () => number;
+}): () => number {
+  if (x.f !== null) {
+    // FIXME: a method can retain this after its field refinement expires.
+    const read = x.retain();
+    x.f = null;
+    return read;
+  }
+  return () => 0;
+}
+
+function receiverSnapshot(x: {
+  f: number | null;
+  retain: (this: { readonly f: number }) => () => number;
+}): () => number {
+  if (x.f !== null) {
+    const snapshot = { f: x.f, retain: x.retain };
+    const read = snapshot.retain();
+    x.f = null;
+    return read;
+  }
+  return () => 0;
+}
