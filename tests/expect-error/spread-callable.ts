@@ -54,3 +54,17 @@ function spreadClassData(source: PrototypeReader): number {
   const copy = { ...source };
   return copy.value;
 }
+
+// A readonly property annotation can hide a method's declaration provenance.
+function annotatedPrototypeCopy(source: PrototypeReader): number {
+  const alias: { readonly read: (this: PrototypeReader) => number } = source;
+  const copy = { ...alias };
+  // FIXME: the annotation erases the fact that copying may omit this method.
+  return copy.read.call(source);
+}
+
+function annotatedOwnCopy(source: OwnReader): number {
+  const alias: { readonly read: () => number } = source;
+  const copy = { ...alias };
+  return copy.read();
+}
