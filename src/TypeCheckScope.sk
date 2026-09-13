@@ -21,7 +21,102 @@ value class LocalRef(
   hasDeclaredContract: Bool,
   isInitialized: Bool,
   isMutable: Bool,
-)
+) {
+  // Project transient field facts back to the lasting object contract, keeping
+  // primitive alternatives from the current flow type (including null checks).
+  fun stableContentsType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    preserveAlternatives: Bool = false,
+  ): TType {
+    if (
+      this.hasDeclaredContract &&
+      this.type != this.declaredType &&
+      !this.type.isFieldFree()
+    ) {
+      objects = this.declaredType.mapSTypes(
+        subst,
+        tenv,
+        Some(Covariant()),
+        stypes ->
+          Some(
+            stypes
+              .map(types ->
+                types.filterMap(st ->
+                  st match {
+                  | obj @ TObject _ ->
+                    if (preserveAlternatives) {
+                      obj.mapOpt(fields ->
+                        if (this.mayMatchAlternative(subst, tenv, fields)) {
+                          Some(fields)
+                        } else {
+                          None()
+                        }
+                      )
+                    } else {
+                      Some(obj)
+                    }
+                  | TPrim _ -> None()
+                  }
+                )
+              )
+              .default(STypes::single(TObject::createEmpty(this.type.pos))),
+          )
+        ,
+      );
+      values = this.type.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
+        stypes.map(types ->
+          types.filterMap(st ->
+            st match {
+            | prim @ TPrim _ -> Some(prim)
+            | TObject _ -> None()
+            }
+          )
+        )
+      );
+      TType::union(subst, tenv, objects, values)
+    } else {
+      this.type
+    }
+  }
+
+  // Selecting a declared union alternative does not strengthen that
+  // alternative's contents contract. Discard only alternatives separated by
+  // incompatible required field values; uncertainty keeps the alternative.
+  private fun mayMatchAlternative(
+    subst: mutable Subst,
+    tenv: TEnv,
+    declared: TFields,
+  ): Bool {
+    this.type.getSTypes(subst.clone(), tenv, Covariant())
+      .map(current ->
+        current.any(st ->
+          st match {
+          | obj @ TObject _ ->
+            obj.getBranches().any(branch ->
+              !declared.fields.any(field ->
+                branch.fields
+                  .maybeGet(field.name)
+                  .map(other ->
+                    !field.isOptional &&
+                      !other.isOptional &&
+                      TType::inter(
+                        subst.clone(),
+                        tenv,
+                        field.get,
+                        other.get,
+                      ).isBottom()
+                  )
+                  .default(false)
+              )
+            )
+          | TPrim _ -> true
+          }
+        )
+      )
+      .default(true)
+  }
+}
 
 class NameRef(name: String, ref: LocalRef) uses Projectable<String> {
   fun project(): String {
@@ -212,6 +307,18 @@ mutable class Scope{
     }
   }
 
+  // An annotated direct alias must promise stable contents, rather than
+  // turning a temporary field refinement into a lasting read guarantee.
+  readonly fun stableAliasType(
+    name: Name,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): ?TType {
+    this.maybeGetRef(name.value).map(pair ->
+      pair.i1.stableContentsType(subst, tenv, true)
+    )
+  }
+
   // A property write may affect any visible object alias. Restore object
   // contents from lasting contracts, while retaining current primitive
   // alternatives: changing a field cannot turn a non-null reference into null.
@@ -229,37 +336,8 @@ mutable class Scope{
         ref.type != ref.declaredType &&
         !ref.type.isFieldFree()
       ) {
-        objects = ref.declaredType.mapSTypes(
-          subst,
-          tenv,
-          Some(Covariant()),
-          stypes ->
-            Some(
-              stypes
-                .map(types ->
-                  types.filterMap(st ->
-                    st match {
-                    | obj @ TObject _ -> Some(obj)
-                    | TPrim _ -> None()
-                    }
-                  )
-                )
-                .default(STypes::single(TObject::createEmpty(ref.type.pos))),
-            )
-          ,
-        );
-        values = ref.type.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
-          stypes.map(types ->
-            types.filterMap(st ->
-              st match {
-              | prim @ TPrim _ -> Some(prim)
-              | TObject _ -> None()
-              }
-            )
-          )
-        );
         this.!refs[entry.i0] = ref with {
-          type => TType::union(subst, tenv, objects, values),
+          type => ref.stableContentsType(subst, tenv),
         }
       }
     }

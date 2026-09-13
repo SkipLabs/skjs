@@ -855,11 +855,18 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
+        aliasType = e.value match {
+        | Var(
+          source,
+        ) if (!(tcenv.localObjectState(source) is Some(LOCanGrow _))) ->
+          tcenv.scope.stableAliasType(source, tcenv.subst, this).default(ty)
+        | _ -> ty
+        };
         this.checkSubType(
           tcenv,
           annotAst.pos,
           "Type of value is not assignable to the variable's type annotation",
-          ty,
+          aliasType,
           annot,
           TSCode(2322),
         );

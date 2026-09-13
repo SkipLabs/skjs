@@ -1,5 +1,5 @@
 // Mutation refinement regressions. Visible property writes invalidate known
-// object contracts; effects hidden behind calls remain open.
+// object refinements; effects hidden behind calls remain open.
 
 declare function sideEffect(): void;
 
@@ -82,10 +82,11 @@ function destructuredWrite(x: { f: number | null }): number {
   return 0;
 }
 
-// FIXME: tsc rejects the narrow annotation; a field check cannot establish
-// a lasting alias contract while the original view can still write null.
+// A field check cannot establish a lasting alias contract while the original
+// view can still write null.
 function annotatedNarrowAlias(x: { f: number | null }): number {
   if (x.f !== null) {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const y: { f: number } = x;
     x.f = null;
     return y.f;
@@ -93,10 +94,10 @@ function annotatedNarrowAlias(x: { f: number | null }): number {
   return 0;
 }
 
-// FIXME: readonly restricts writes through y, not writes through x. tsc
-// rejects this annotation too; it does not narrow x's object type.
+// Readonly restricts writes through y, not writes through x.
 function annotatedReadonlyAlias(x: { f: number | null }): number {
   if (x.f !== null) {
+    // @ts-expect-error Type of value is not assignable to the variable's type annotation
     const y: { readonly f: number } = x;
     x.f = null;
     return y.f;

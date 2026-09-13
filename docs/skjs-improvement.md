@@ -98,8 +98,14 @@ initialization state. Coverage is in
 aliases established before narrowing, readonly views, and fresh checks after writes.
 This also rejects the pipeline's compound-write #598 witnesses. Their obsolete
 candidate generator has been retired; first-error exports and runtime results
-remain tested. M1 stays open for narrower alias annotations, uncontracted inferred
-objects, growing objects, and effects hidden behind calls.
+remain tested. Direct annotated aliases now validate against that same stable
+content projection: a temporary field check cannot justify a permanently narrow
+mutable or readonly view. Non-null references, scalar snapshots, and selection
+among declared discriminated-union alternatives remain usable. Existing
+`field-refinement.ts` tests cover the latter; no duplicate examples are needed.
+M1 stays open for other alias-producing expressions and assignments, uncontracted
+inferred objects, growing objects, and effects hidden behind calls. This is an
+alias-binding repair, not a general change to field subtyping.
 
 M2 implementation scope: reads across a function boundary discard enclosing
 flow refinements for **annotated captures** and **captured mutable bindings with
@@ -138,8 +144,8 @@ The M2 regressions in the same test file distinguish three obligations:
   transient flow types; it includes explicit annotations and inherited aliases.
   Field-free value snapshots retain their copied type. This is a capture repair,
   not M1 completion: visible writes now invalidate refinements of established
-  object contracts, but explicit narrower annotations can still exploit the
-  field-subtyping gap. Destructuring, calls, and property-access initializers are
+  object contracts and direct annotated aliases use stable contents. The general
+  field-subtyping gap remains; destructuring, calls, and property-access initializers are
   outside the direct-alias transfer implemented here.
 - The evolving-binding repair makes every write constrain the same bare
   inference variable used by captured reads. Resolution seals that variable:
