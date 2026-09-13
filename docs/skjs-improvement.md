@@ -261,6 +261,19 @@ and continued rejection when only one branch initializes. The existing scope
 merge supplies the union of values and intersection of initialization facts;
 there is no untouched third path for a ternary expression.
 
+Condition refinement now carries a conservative write summary through logical
+structure. Tests whose referenced names intersect that summary do not refine:
+the expression has already run, and a fact about a pre-write value cannot be
+applied to the post-evaluation scope. This rejects both a non-null test followed
+by a null assignment in `&&` and a comparison that overwrites its own operand.
+Tests independent of the written names still contribute facts.
+`issue-89-and-or-narrowing.ts` covers both failures and an unaffected check.
+The summary reuses `CaptureWrites`: shadowed and nested names may reduce
+precision, and unknown write targets suppress condition refinement. It does
+not model hidden callee effects or provide general alias-effect analysis.
+Separate a write from a subsequent test when the conservative dependency check
+cannot retain an otherwise valid narrowing.
+
 M1 implementation scope: visible property writes invalidate object-content
 refinements on bindings with declared or inherited contracts. Object alternatives
 come from the contract; current primitive alternatives remain, preserving scalar

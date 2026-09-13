@@ -495,6 +495,42 @@ extension class TypeChecker {
   // Array.isArray, `in`, &&, ||, !) and narrows `tcenv` accordingly.
   // `target === true` when the condition holds, `target === false` when it doesn't.
   fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
+    writes = mutable CaptureWrites{};
+    writes.expr(e);
+    this.evalStableCond(tcenv, writes.result(), e, target)
+  }
+
+  private fun evalStableCond(
+    tcenv: mutable TCEnv,
+    writes: ?SortedSet<String>,
+    e: Expr,
+    target: Bool,
+  ): void {
+    // expr has already applied the condition's effects. A test mentioning a
+    // written binding may describe its earlier value, not the value now in
+    // scope. Only replay facts independent of those writes. Logical structure
+    // is traversed so an unrelated test can still contribute a stable fact.
+    e.value match {
+    | Binop(BOLogicalAnd(), _, _)
+    | Binop(BOLogicalOr(), _, _)
+    | Unop(UOExclamationMark(), _) ->
+      void
+    | _ ->
+      writes match {
+      | None() -> return void
+      | Some(names) if (!names.isEmpty()) ->
+        // At nonzero depth the capture traversal records every referenced
+        // name, conservatively including nested bodies and shadowed names.
+        reads = mutable CaptureWrites{depth => 1};
+        reads.expr(e);
+        stable = reads
+          .capturedNames()
+          .map(refs -> !refs.any(name -> names.contains(name)))
+          .default(false);
+        if (!stable) return void
+      | Some(_) -> void
+      }
+    };
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, target)
@@ -635,21 +671,22 @@ extension class TypeChecker {
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMapSType)
 
-    | Unop(UOExclamationMark(), subE) -> this.evalCond(tcenv, subE, !target)
+    | Unop(UOExclamationMark(), subE) ->
+      this.evalStableCond(tcenv, writes, subE, !target)
 
     | Binop(BOLogicalAnd(), e1, e2) ->
       if (target) {
-        this.evalCond(tcenv, e1, true);
-        this.evalCond(tcenv, e2, true)
+        this.evalStableCond(tcenv, writes, e1, true);
+        this.evalStableCond(tcenv, writes, e2, true)
       } else {
         savedScope = tcenv.scope;
         scope1 = tcenv.mcreateSubScope{isLoop => false};
         scope2 = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = scope1;
-        this.evalCond(tcenv, e1, false);
+        this.evalStableCond(tcenv, writes, e1, false);
         tcenv.!scope = scope2;
-        this.evalCond(tcenv, e1, true);
-        this.evalCond(tcenv, e2, false);
+        this.evalStableCond(tcenv, writes, e1, true);
+        this.evalStableCond(tcenv, writes, e2, false);
         tcenv.!scope = savedScope;
         tcenv.mergeScope(this, scope1, scope2)
       }
@@ -659,15 +696,15 @@ extension class TypeChecker {
         scope1 = tcenv.mcreateSubScope{isLoop => false};
         scope2 = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = scope1;
-        this.evalCond(tcenv, e1, true);
+        this.evalStableCond(tcenv, writes, e1, true);
         tcenv.!scope = scope2;
-        this.evalCond(tcenv, e1, false);
-        this.evalCond(tcenv, e2, true);
+        this.evalStableCond(tcenv, writes, e1, false);
+        this.evalStableCond(tcenv, writes, e2, true);
         tcenv.!scope = savedScope;
         tcenv.mergeScope(this, scope1, scope2)
       } else {
-        this.evalCond(tcenv, e1, false);
-        this.evalCond(tcenv, e2, false)
+        this.evalStableCond(tcenv, writes, e1, false);
+        this.evalStableCond(tcenv, writes, e2, false)
       }
 
     // Truthiness: if (x) treated as if (x === true)

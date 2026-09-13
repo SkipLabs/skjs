@@ -231,6 +231,7 @@ let s2: 'urgent' = save(['urgent']);           // ✗ Error: T widened to string
 - The right operand of `&&`, `||`, or `??` also has conditional effects. Its expression result retains its own type, while subsequent reads account for the path that skipped it.
 - In `obj?.m(args)`, a possibly nullish receiver also makes argument effects conditional. A definitely present receiver evaluates the arguments normally; an always-nullish receiver skips them.
 - The merge conservatively includes both paths even when the source type could show that the conditional expression or default always or never runs. Check the resulting value explicitly when needed.
+- A condition does not establish refinements from tests that reference names written within that condition. Independent tests still narrow. Unknown write targets suppress refinement; split writes and subsequent checks into separate statements when needed. This conservative rule does not model hidden callee effects.
 - **Verified by**: `tests/expect-error/destructuring.ts`, `tests/expect-error/nullish-coalescing.ts`, and `tests/expect-error/optional-chaining-method-call.ts`.
 
 ### 16b. Un-annotated Class Fields Are Opaque (Ambient Classes)
