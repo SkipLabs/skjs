@@ -161,7 +161,7 @@ function storedNarrowAlias(
   return 0;
 }
 
-// FIXME: the optimized local-object write must enforce the same contract.
+// The inferred local slot can widen, but cannot retain an unsound narrow read.
 function storedLocalAlias(x: { f: number | null }): number {
   const box = { item: { f: 0 } };
   if (x.f !== null) {
@@ -172,16 +172,16 @@ function storedLocalAlias(x: { f: number | null }): number {
   return 0;
 }
 
-// A new field inherits stable contents from an aliased value. A fresh read
-// check must remain usable after mutation of that value through its source.
+// A new field inherits stable contents from an aliased value. A fresh scalar
+// snapshot can be checked after mutation through the source.
 // SKJS supports adding this field to {}; tsc requires declaring it upfront.
 function grownAliasField(x: { f: number | null }): number {
   const box = {};
   if (x.f !== null) {
     box.item = x;
     x.f = null;
-    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
-    if (box.item.f !== null) return box.item.f;
+    const value: number | null = box.item.f;
+    if (value !== null) return value;
   }
   return 0;
 }
