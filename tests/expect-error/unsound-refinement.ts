@@ -290,20 +290,22 @@ function checkedDeclarationDefault(
   return 0;
 }
 
-// FIXME: a conditional's temporary field check cannot justify a lasting view.
+// A conditional's temporary field check cannot justify a lasting view.
 function conditionalAnnotatedAlias(x: { f: number | null }): number {
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const y: { readonly f: number } = x.f !== null ? x : { f: 0 };
   x.f = null;
   return y.f;
 }
 
 // Nested conditionals must compose contracts before their branch scopes end.
-// FIXME: an inferred alias must not export the transient type through a callback.
+// An inferred alias must not export the transient type through a callback.
 function nestedConditionalCapture(
   x: { f: number | null },
   choose: boolean,
 ): () => number {
   const y = choose ? (x.f !== null ? x : { f: 0 }) : { f: 0 };
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return () => y.f;
 }
 

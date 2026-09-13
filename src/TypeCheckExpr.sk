@@ -871,7 +871,8 @@ extension class TypeChecker {
       | _ -> ty
       };
       type match {
-      | None() -> (ty, true)
+      | None() ->
+        (tcenv.stableExprTypes.maybeGet((e.pos, ty)).default(ty), true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
         aliasType = this.stableAliasExprType(tcenv, e, ty);
@@ -3362,6 +3363,7 @@ extension class TypeChecker {
       tcenv.!scope = trueScope;
       this.evalCond(tcenv, e1, true);
       left = this.expr(tcenv, e2, mostPrecise);
+      stableLeft = this.stableAliasExprType(tcenv, e2, left);
       tcenv.!scope = scopeCopy;
 
       // False branch - evaluate e3 with refinements from e1 being false
@@ -3369,9 +3371,17 @@ extension class TypeChecker {
       tcenv.!scope = falseScope;
       this.evalCond(tcenv, e1, false);
       right = this.expr(tcenv, e3, mostPrecise);
+      stableRight = this.stableAliasExprType(tcenv, e3, right);
       tcenv.!scope = scopeCopy;
 
-      TType::union(tcenv.subst, this, left, right)
+      result = TType::union(tcenv.subst, this, left, right);
+      tcenv.!stableExprTypes[(pos, result)] = TType::union(
+        tcenv.subst,
+        this,
+        stableLeft,
+        stableRight,
+      );
+      result
     | AsConst(subExpr) ->
       this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> ty
@@ -3808,7 +3818,8 @@ extension class TypeChecker {
       tcenv.scope
         .stableAliasType(source, tcenv.subst, this)
         .default(currentType)
-    | _ -> currentType
+    | _ ->
+      tcenv.stableExprTypes.maybeGet((e.pos, currentType)).default(currentType)
     }
   }
 
@@ -3823,7 +3834,8 @@ extension class TypeChecker {
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      tcenv.writeVar(this, n, ty2, (x, y) ->
+      storedType = tcenv.stableExprTypes.maybeGet((e2.pos, ty2)).default(ty2);
+      tcenv.writeVar(this, n, storedType, (x, y) ->
         this.checkSubType(
           tcenv,
           pos,

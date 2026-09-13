@@ -127,6 +127,10 @@ mutable class TCEnv private {
   // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
   // construction and as a generic cache for expression typechecking
   mutable exprTypes: SortedMap<(PosRange, Bool, Bool), TType> = SortedMap[],
+  // Composed alias contracts captured while branch scopes are still available.
+  // Key by occurrence and its current type, so different precision modes do
+  // not confuse results. These are symbolic types, not subtype-result caches.
+  mutable stableExprTypes: SortedMap<(PosRange, TType), TType> = SortedMap[],
   mutable stmtTerminations: SortedMap<PosRange, StmtTermination> = SortedMap[],
   /*
    * Tracks local objects: object literals bound to variables that can grow.

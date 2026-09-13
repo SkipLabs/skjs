@@ -114,7 +114,13 @@ including the spread-array path. This protects subsequent destructuring as well
 as saved arrays. Destructuring defaults use the same projection for assignments
 and declarations (tuple, iterable, and object patterns). The declaration cases
 include a callback escape and a fresh field check.
-M1 stays open for other alias-producing expressions,
+Conditional expressions compose stable alias types in their branch scopes,
+separately from their current read type. Storage and annotated alias validation
+consume the composed type, including nested conditionals and inferred captures.
+These symbolic expression contracts are not immutable substitution snapshots and
+do not complete R2.
+M1 stays open for call/return boundaries, other alias-producing expressions
+(including logical selection and nullish coalescing),
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.
