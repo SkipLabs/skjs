@@ -855,13 +855,7 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        aliasType = e.value match {
-        | Var(
-          source,
-        ) if (!(tcenv.localObjectState(source) is Some(LOCanGrow _))) ->
-          tcenv.scope.stableAliasType(source, tcenv.subst, this).default(ty)
-        | _ -> ty
-        };
+        aliasType = this.stableAliasExprType(tcenv, e, ty);
         this.checkSubType(
           tcenv,
           annotAst.pos,
@@ -3773,6 +3767,22 @@ extension class TypeChecker {
     }
   }
 
+  // A direct alias must satisfy lasting contracts with stable contents, while
+  // its current expression type may still carry transient read refinements.
+  private fun stableAliasExprType(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    currentType: TType,
+  ): TType {
+    e.value match {
+    | Var(source) if (!(tcenv.localObjectState(source) is Some(LOCanGrow _))) ->
+      tcenv.scope
+        .stableAliasType(source, tcenv.subst, this)
+        .default(currentType)
+    | _ -> currentType
+    }
+  }
+
   fun assign(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -3789,7 +3799,7 @@ extension class TypeChecker {
           tcenv,
           pos,
           "Type is not assignable to the variable's type",
-          x,
+          this.stableAliasExprType(tcenv, e2, x),
           y,
           TSCode(2322),
         )

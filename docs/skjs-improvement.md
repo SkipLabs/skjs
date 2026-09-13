@@ -98,14 +98,17 @@ initialization state. Coverage is in
 aliases established before narrowing, readonly views, and fresh checks after writes.
 This also rejects the pipeline's compound-write #598 witnesses. Their obsolete
 candidate generator has been retired; first-error exports and runtime results
-remain tested. Direct annotated aliases now validate against that same stable
-content projection: a temporary field check cannot justify a permanently narrow
-mutable or readonly view. Non-null references, scalar snapshots, and selection
+remain tested. Direct annotated aliases and later direct variable assignments
+validate against that same stable content projection: a temporary field check
+cannot justify a permanently narrow mutable or readonly view. Non-null
+references, scalar snapshots, and selection
 among declared discriminated-union alternatives remain usable. Existing
 `field-refinement.ts` tests cover the latter; no duplicate examples are needed.
-M1 stays open for other alias-producing expressions and assignments, uncontracted
-inferred objects, growing objects, and effects hidden behind calls. This is an
-alias-binding repair, not a general change to field subtyping.
+M1 stays open for other alias-producing expressions, property and destructuring
+assignment targets, uncontracted inferred objects, growing objects, and effects
+hidden behind calls. This validates direct variable aliases, not general field
+subtyping. Assignment validation preserves the destination contract while the
+current read type can still reflect the assigned value.
 
 M2 implementation scope: reads across a function boundary discard enclosing
 flow refinements for **annotated captures** and **captured mutable bindings with
