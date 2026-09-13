@@ -555,6 +555,54 @@ function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
   return a.v;
 }
 
+// A fresh per-iteration container may infer that iteration's hidden identity.
+function iterationLocalContainer(items: unknown[]): number {
+  let count = 0;
+  for (const value of items) {
+    const local = [];
+    if (value instanceof Box) local.push(value);
+    count += local.length;
+  }
+  return count;
+}
+
+// Opaque storage can survive iterations without exposing hidden field types.
+function opaqueWhileContainer(items: unknown[]): unknown[] {
+  const values: unknown[] = [];
+  let index = 0;
+  while (index < items.length) {
+    const value = items[index];
+    if (value instanceof Box) values.push(value);
+    index++;
+  }
+  return values;
+}
+
+// FIXME: hidden identities introduced by the for condition must not pool either.
+function holeForConditionPooling(next: () => unknown): void {
+  const values = [];
+  for (let value: unknown = next(); value instanceof Box; value = next()) {
+    values.push(value);
+  }
+  const first = values[0];
+  const second = values[1];
+  if (first && second) first.v = second.v;
+}
+
+// FIXME: pooling can corrupt an earlier object before the loop exits.
+function holeWhilePooling(items: unknown[]): void {
+  const values = [];
+  let index = 0;
+  while (index < items.length) {
+    const value = items[index++];
+    if (value instanceof Box) {
+      values.push(value);
+      const first = values[0];
+      if (first) first.v = value.v;
+    }
+  }
+}
+
 // Hole 3a — the same pooling with nothing declared at all: no makeList, no
 // closure, just the ordinary "filter a heterogeneous array" idiom. This is the
 // shape that matters for judging the residual risk, because it is what a
