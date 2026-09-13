@@ -253,3 +253,30 @@ function checkedInferredObject(seed: boolean | null): boolean {
   cell.value = null;
   return read();
 }
+
+// A null check at invocation time should handle both initializer and later
+// numeric writes. tsc requires an annotation here (implicit any).
+function checkedEvolvingCapture(): number {
+  let value = null;
+  value = 1;
+  const read = (): number => {
+    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
+    if (value !== null) return value;
+    return 0;
+  };
+  value = null;
+  return read();
+}
+// FIXME: after the read establishes a numeric-or-undefined contract, a string
+// write must fail. SKJS currently accepts it; tsc rejects implicit any.
+function sealedEvolvingCapture(): number {
+  let value = undefined;
+  value = 1;
+  const read = (): number => {
+    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
+    if (value !== undefined) return value;
+    return 0;
+  };
+  value = "s";
+  return read();
+}
