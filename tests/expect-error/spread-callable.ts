@@ -179,11 +179,11 @@ declare class IndexedReader {
 }
 
 function indexedPrototypeCopy(source: IndexedReader): number {
-  // FIXME: the index contract discards the named method's copy constraint.
   const alias: { readonly [key: string]: (this: IndexedReader) => number } =
     source;
   if ("read" in alias) {
     const copy = { ...alias };
+    // @skjs-expect-error Property access is not allowed on this type
     return copy.read.call(source);
   }
   return 0;

@@ -586,7 +586,10 @@ cases and conservatively under-approximates a few others.
   method cannot become an ordinary function-valued property through a parameter
   or return type. Construct an own property, such as `{ read: source.read }`,
   when the receiving contract needs it to survive copying. Local annotations
-  retain the source's provenance instead. This is stricter than TypeScript.
+  retain the source's provenance instead. Declared index signatures also permit
+  entries that copying may omit. An `in` guard on the source preserves that
+  uncertainty; check presence on the copy before using its entry.
+  This is stricter than TypeScript.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
   `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
   `this` and accepts any receiver; SKJS requires the class instance, since the

@@ -241,7 +241,8 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
-      mayBeOmittedByCopy => x.mayBeOmittedByCopy || y.mayBeOmittedByCopy,
+      // Either conjunct can establish that the present property is copied.
+      mayBeOmittedByCopy => x.mayBeOmittedByCopy && y.mayBeOmittedByCopy,
     }
   }
 
@@ -261,7 +262,8 @@ extension class TField {
       get,
       set,
       access => x.access.combine(y.access),
-      mayBeOmittedByCopy => x.mayBeOmittedByCopy || y.mayBeOmittedByCopy,
+      // Either conjunct can establish that the present property is copied.
+      mayBeOmittedByCopy => x.mayBeOmittedByCopy && y.mayBeOmittedByCopy,
     }
   }
 }

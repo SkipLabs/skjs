@@ -1057,7 +1057,17 @@ extension class TFields {
                 fields1,
                 fields2,
               )
-            | STOk() -> void
+            | STOk() ->
+              // A real index is a usable field contract: an `in` guard can
+              // materialize a named field from it. Synthetic indexes only
+              // guide literal inference and do not authorize property reads.
+              if (
+                !idx2.isSynthetic() &&
+                f1.mayBeOmittedByCopy &&
+                !idx2.mayBeOmittedByCopy
+              ) {
+                return STRecFieldsCopyProvenance(f1, idx2, fields1, fields2)
+              }
             }
           }
         }

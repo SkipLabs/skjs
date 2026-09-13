@@ -503,12 +503,26 @@ such as `{ read: source.read }`. `spread-callable.ts` pins parameter/result
 erasure and this own-property counterpart. Nested named-field comparisons use
 the same check; local provenance propagation remains shallow.
 
+Declared index signatures retain copy uncertainty: they constrain lookup
+values without promising own enumerable entries. This includes class, object,
+and mapped index declarations. An `in` guard can make an indexed field required
+without proving it will be copied; the materialized field keeps the marker.
+The indexed-copy regression in `spread-callable.ts` rejects checking presence
+on the source and then calling through the copy, while checking the copy's
+presence remains accepted. Named-to-index subtyping also preserves the
+constraint. Synthetic literal indexes remain inference-only and are excluded
+from this field-contract check. The recursive EagerCollection regression
+remains accepted; index contracts admit lookup-only members instead of
+rejecting those values outright.
+
 This is a bounded repair for recorded method provenance, not a complete model
 of own enumerable properties. Sources whose provenance is already absent,
 including structural declarations without a recorded class-method origin,
 remain outside that guarantee. Ordinary fields supplied by inherited accessors and non-enumerable
-properties are not classified. Union and intersection field construction
-conservatively retain the marker when either input carries it. A general
+properties are not classified. Union field construction retains uncertainty
+from either input; intersection preserves a definite copy guarantee from either
+conjunct. The existing tuple refinement and variadic inference tests guard the
+intersection of definite tuple elements with uncertain array indexes. A general
 ownership contract must also constrain subtyping and provenance-erasing
 annotations. Receiver types alone cannot supply that contract.
 

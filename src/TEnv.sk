@@ -1495,6 +1495,7 @@ base class TEnv{
                 isReadonly => fieldIsReadonly,
                 type,
                 access => FAPublic(),
+                mayBeOmittedByCopy => true,
               },
             ),
           )
@@ -3220,6 +3221,7 @@ base class TEnv{
                       isReadonly => None(),
                       type => valueType,
                       access => FAPublic(),
+                      mayBeOmittedByCopy => true,
                     },
                   ),
                 )
@@ -3290,6 +3292,7 @@ base class TEnv{
                 isReadonly => readonly_.map(r -> r.pos),
                 type => valueType,
                 access => FAPublic(),
+                mayBeOmittedByCopy => true,
               },
             ),
           )
