@@ -2494,11 +2494,27 @@ extension class TypeChecker {
         idxTy = this.expr(tcenv, idx, true);
         resolve = (recv: TType, ak: AccessKind) ->
           this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
-        callOn = (recv: TType) ->
-          dispatchCall(
-            resolve(recv, AKNormal()),
-            Some(this.stableAliasExprType(tcenv, e1, recv)),
-          );
+        stableReceiver = this.stableAliasExprType(tcenv, e1, e1Ty);
+        callOn = (recv: TType) -> {
+          stableBranch = if (stableReceiver == e1Ty) {
+            this.stableAliasExprType(tcenv, e1, recv)
+          } else {
+            // Distribution and optional chaining select a branch of the
+            // expression's current type. Its metadata is keyed by the whole
+            // type, so project that contract onto the selected branch using
+            // the same rule as a narrowed local: retain stable object fields
+            // and current primitive alternatives (including null removal).
+            LocalRef(
+              recv,
+              stableReceiver,
+              true,
+              true,
+              false,
+              true,
+            ).stableContentsType(tcenv.subst, this, true)
+          };
+          dispatchCall(resolve(recv, AKNormal()), Some(stableBranch))
+        };
         distributeOver = (stypes: STypes) ->
           TType::unionN(
             tcenv.subst,

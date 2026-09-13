@@ -416,9 +416,17 @@ contents while member lookup uses the current read type. The projection accepts
 the selected receiver branch, preserving distributed union calls and optional
 receiver short-circuiting. A retained receiver and a fresh scalar-copy receiver
 are covered; existing receiver tests cover dot/index access and union dispatch.
-M1 stays open for spread-source contracts, distributed composed receivers, other alias-producing expressions,
+Composed receivers with stable-expression metadata now retrieve the contract
+using the whole expression type, then project it onto the selected call branch.
+Previously optional chaining removed null before metadata lookup, so
+`(choose ? x : null)?.read()` could retain a transient numeric field through an
+explicit `this` contract. `optional-chaining-method-call.ts` covers rejection
+of that call and acceptance when the receiver copies the checked scalar.
+The projection reuses the narrowed-local rule, including branch compatibility
+and primitive/nullish selection; member lookup keeps the current receiver type.
+M1 stays open for spread-source contracts, other alias-producing expressions,
 uncontracted inferred source objects, growing source objects, and effects hidden
-behind calls. This validates direct aliases, not general field subtyping. Assignment validation preserves the destination contract while the
+behind calls. This validates recorded alias contracts, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.
 
 M3 implementation scope: loop entry widens possibly assigned mutable bindings

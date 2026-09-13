@@ -60,7 +60,7 @@ function composedReceiverContract(
   choose: boolean,
 ): () => number {
   if (x.value === null) return () => 0;
-  // FIXME: tsc rejects this this-context; SKJS loses the composed alias contract.
+  // @ts-expect-error The 'this' context is not assignable to method's 'this' type
   const read = (choose ? x : null)?.read();
   x.value = null;
   return read ?? (() => 0);
