@@ -68,3 +68,12 @@ function compatibleReattachment(other: OtherReceiver): void {
   const carrier = { text: "ok", m: other.m };
   carrier.m(0);
 }
+
+// Declaration-level typeof must preserve extraction requirements too.
+type ExtractedCMethod = typeof c.m;
+function reattachmentThroughTypeof(other: C): void {
+  const method: ExtractedCMethod = other.m;
+  const carrier = { m: method };
+  // FIXME: a declaration-level typeof can restore the implicit receiver shortcut.
+  carrier.m(0);
+}
