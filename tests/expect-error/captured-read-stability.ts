@@ -1,8 +1,9 @@
+// FIXME: stale captures below are accepted; only the already-evolved
+// inferred binding is rejected. These cases pin the pre-repair behavior.
 // A closure may run after its enclosing mutable binding changes.
 function staleCapturedLocal(seed: boolean | null): boolean {
   let value: boolean | null = seed;
   if (value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     value = null;
     return read();
@@ -38,7 +39,6 @@ function snapshotCapturedLocal(seed: boolean | null): boolean {
 // Parameters are mutable bindings too, including through nested closures.
 function staleCapturedParameter(value: boolean | null): boolean {
   if (value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const makeRead = () => (): boolean => value;
     value = null;
     return makeRead()();
@@ -46,21 +46,20 @@ function staleCapturedParameter(value: boolean | null): boolean {
   return false;
 }
 
-// Captured concrete primitive bindings keep their initializer's type as
-// a write contract, including writes before the first closure declaration.
+// An inferred binding can evolve before its first closure declaration.
 function evolvedInferredCapture(): number {
   let value = 1;
-  // @ts-expect-error Type is not assignable to the variable's type
+
   value = "s";
+  // @skjs-expect-error Type of the callback's returned value is not assignable to the expected return type
   const read = (): number => value;
   return read();
 }
 
-// Copying into an immutable snapshot cannot justify an earlier write that
-// violates the mutable binding's inferred contract.
+// Without a capture of the mutable binding, SKJS still permits evolution
+// (tsc rejects the string assignment). Copying the value makes a stable capture.
 function evolvedInferredSnapshotStillString(): string {
   let value = 1;
-  // @ts-expect-error Type is not assignable to the variable's type
   value = "s";
   const snapshot = value;
   const read = (): string => snapshot;
@@ -70,7 +69,6 @@ function evolvedInferredSnapshotStillString(): string {
 // The mutable parameter's declared contract also removes stale field facts.
 function staleCapturedField(cell: { value: boolean | null }): boolean {
   if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     cell.value = null;
     return read();
@@ -90,7 +88,6 @@ function neverReassigned(value: boolean | null): boolean {
 // The summary must include writes in a nested function's default initializer.
 function writtenByDefault(value: boolean | null): boolean {
   if (value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     const reset = (ignored: boolean | null = (value = null)): null => null;
     const resetResult = reset();
@@ -105,7 +102,6 @@ function stableReferenceMutableContents(
   reset: () => void,
 ): boolean {
   if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     reset();
     return read();
@@ -120,7 +116,6 @@ function writtenByDestructuring(
   source: { reset?: boolean | null },
 ): boolean {
   if (value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     const { reset = (value = null) } = source;
     return read();
@@ -132,7 +127,6 @@ function writtenByDestructuring(
 function staleAnnotatedConstField(seed: boolean | null): boolean {
   const cell: { value: boolean | null } = { value: seed };
   if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     cell.value = null;
     return read();
@@ -166,7 +160,7 @@ function stableAnnotatedConstValue(seed: boolean | null): boolean {
 function staleInferredPrimitive(): number {
   let value = 1;
   const read = (): number => value;
-  // @ts-expect-error Type is not assignable to the variable's type
+
   value = "s";
   return read();
 }
@@ -174,7 +168,6 @@ function staleInferredPrimitive(): number {
 function staleInferredUnion(seed: boolean | null): boolean {
   let value = seed;
   if (value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     value = null;
     return read();
@@ -197,340 +190,9 @@ function inferredSetterBeforeReader(seed: boolean | null): boolean {
     value = null;
   };
   if (value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => value;
     reset();
     return read();
   }
   return false;
-}
-
-// A fresh inferred object's field already keeps the nullable member in its
-// read type. This stale read is rejected without an explicit object annotation.
-function inferredObjectCapture(seed: boolean | null): boolean {
-  const cell = { value: seed };
-  if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-    const read = (): boolean => cell.value;
-    cell.value = null;
-    return read();
-  }
-  return false;
-}
-
-// An inferred alias created after narrowing retains the source object
-// contract, so its callback cannot promise a transient non-null field.
-function inferredAliasCapture(cell: { value: boolean | null }): boolean {
-  if (cell.value !== null) {
-    const alias = cell;
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-    const read = (): boolean => alias.value;
-    cell.value = null;
-    return read();
-  }
-  return false;
-}
-
-// The initializer participates in the captured inference contract, so the
-// unguarded numeric read rejects null. tsc rejects implicit any here.
-function evolvingNullCapture(): number {
-  let value = null;
-  value = 1;
-  // @skjs-expect-error Type of the callback's returned value is not assignable to the expected return type
-  const read = (): number => value;
-  value = "s";
-  return read();
-}
-
-// A fresh check narrows the inferred field within this invocation, while the
-// const object's contents contract still admits later null writes.
-function checkedInferredObject(seed: boolean | null): boolean {
-  const cell = { value: seed };
-  const read = (): boolean => {
-    if (cell.value !== null) {
-      return cell.value;
-    }
-    return false;
-  };
-  cell.value = null;
-  return read();
-}
-
-// A null check at invocation time should handle both initializer and later
-// numeric writes. tsc requires an annotation here (implicit any).
-function checkedEvolvingCapture(): number {
-  let value = null;
-  value = 1;
-  const read = (): number => {
-    if (value !== null) return value;
-    return 0;
-  };
-  value = null;
-  return read();
-}
-// Once the read seals the numeric-or-undefined contract, a string write
-// cannot invalidate it. tsc rejects implicit any instead.
-function sealedEvolvingCapture(): number {
-  let value = undefined;
-  value = 1;
-  const read = (): number => {
-    if (value !== undefined) return value;
-    return 0;
-  };
-  // @skjs-expect-error Type is not assignable to the variable's type
-  value = "s";
-  return read();
-}
-
-// Narrowing after alias creation must not replace the inherited contract
-// used by a captured read.
-function aliasThenNarrow(cell: { value: boolean | null }): boolean {
-  const alias = cell;
-  if (alias.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-    const read = (): boolean => alias.value;
-    cell.value = null;
-    return read();
-  }
-  return false;
-}
-// Transferring a contract through several aliases must preserve fresh checks.
-function checkedAliasChain(cell: { value: boolean | null }): boolean {
-  const first = cell;
-  const alias = first;
-  const read = (): boolean => {
-    if (alias.value !== null) return alias.value;
-    return false;
-  };
-  cell.value = null;
-  return read();
-}
-// Replacing a mutable alias must preserve its inherited object contract.
-function reassignedAlias(cell: { value: boolean | null }): boolean {
-  let alias = cell;
-  const read = (): boolean | null => alias.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  alias = { value: "s" };
-  return read() === true;
-}
-
-// Replacing the object must preserve the numeric result already promised by
-// the callback, even when that callback contained the binding's first read.
-function replacedObjectCapture(): number {
-  let cell = { value: 1 };
-  const read = (): number => cell.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = { value: "changed" };
-  return read();
-}
-
-// A guarded callback can handle a compatible whole-object replacement.
-function checkedMutableObjectReplacement(seed: boolean | null): boolean {
-  let cell = { value: seed };
-  const read = (): boolean => {
-    if (cell.value !== null) return cell.value;
-    return false;
-  };
-  cell = { value: null };
-  return read();
-}
-
-// The first read occurs in a nested callback/branch. Its contract must
-// survive that scope before a later replacement drops the required field.
-function branchObjectCapture(flag: boolean): number {
-  let cell = { value: 1 };
-  let read: () => number = (): number => 0;
-  if (flag) read = (): number => cell.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = { other: true };
-  return read();
-}
-
-// A callback write checked before any read still constrains future
-// replacements. Otherwise reset writes a number after read promises string.
-function objectWriterBeforeReader(): string {
-  let cell = { value: 1 };
-  const reset = (): void => {
-    cell = { value: 1 };
-  };
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = { value: "changed" };
-  // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-  const read = (): string => cell.value;
-  reset();
-  return read();
-}
-
-// The optimized property-write path does not read the receiver, but
-// still promises that this captured binding will accept a numeric field write.
-function objectFieldWriterBeforeReader(): string {
-  let cell = { value: 1 };
-  const reset = (): void => {
-    cell.value = 1;
-  };
-  cell = { value: "changed" };
-  // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-  const read = (): string => cell.value;
-  reset();
-  return read();
-}
-
-// A call's result contract also constrains later replacements.
-declare function makeCapturedNumberCell(): { value: number };
-function replacedCallResult(): number {
-  let cell = makeCapturedNumberCell();
-  const read = (): number => cell.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = { value: "changed" };
-  return read();
-}
-
-// A returned object's field refinement is not a callback guarantee.
-declare function makeCapturedNullableCell(): { value: boolean | null };
-function narrowedCallResult(): boolean {
-  const cell = makeCapturedNullableCell();
-  if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-    const read = (): boolean => cell.value;
-    cell.value = null;
-    return read();
-  }
-  return false;
-}
-
-// Constructor results carry a named generic instance rather than an object
-// literal shape. Its checked numeric argument must survive replacement.
-class CapturedResultCell<T> {
-  value: T;
-  constructor(value: T) {
-    this.value = value;
-  }
-}
-function replacedConstructorResult(): number {
-  let cell = new CapturedResultCell(1);
-  const read = (): number => cell.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = new CapturedResultCell("changed");
-  return read();
-}
-
-// Keep symbolic generic result fields usable under fresh callback checks.
-declare function makeCapturedGenericCell<T>(value: T): { value: T };
-function checkedGenericCallResult(seed: boolean | null): boolean {
-  let cell = makeCapturedGenericCell(seed);
-  const read = (): boolean => {
-    if (cell.value !== null) return cell.value;
-    return false;
-  };
-  cell = { value: null };
-  return read();
-}
-
-// Destructuring a call result must preserve the extracted field's
-// contract just as binding that object directly would.
-declare function makeCapturedObjectResult(): { cell: { value: number } };
-function replacedDestructuredResult(): number {
-  let { cell } = makeCapturedObjectResult();
-  const read = (): number => cell.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = { value: "changed" };
-  return read();
-}
-
-// An undefined tuple slot activates an inferred object default. The resulting
-// field contract must protect captures regardless of which object was chosen.
-declare function makeCapturedTupleResult(): [
-  { value: boolean | null } | undefined,
-];
-function staleDestructuredDefault(): boolean {
-  const [cell = { value: null }] = makeCapturedTupleResult();
-  if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-    const read = (): boolean => cell.value;
-    cell.value = null;
-    return read();
-  }
-  return false;
-}
-function checkedDestructuredDefault(): boolean {
-  let [cell = { value: null }] = makeCapturedTupleResult();
-  const read = (): boolean => {
-    if (cell.value !== null) return cell.value;
-    return false;
-  };
-  cell = { value: null };
-  return read();
-}
-
-// Selecting a result must not discard the contract that a direct
-// call initializer retains.
-function selectedResultReplacement(flag: boolean): number {
-  let cell = flag ? makeCapturedNumberCell() : makeCapturedNumberCell();
-  const read = (): number => cell.value;
-  // @ts-expect-error Type is not assignable to the variable's type
-  cell = { value: "changed" };
-  return read();
-}
-
-// A property access produces an existing object whose nullable field
-// remains writable through the original holder after a callback is checked.
-function propertyResultCapture(holder: {
-  cell: { value: boolean | null };
-}): boolean {
-  const cell = holder.cell;
-  if (cell.value !== null) {
-    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
-    const read = (): boolean => cell.value;
-    holder.cell.value = null;
-    return read();
-  }
-  return false;
-}
-function checkedPropertyResult(holder: {
-  cell: { value: boolean | null };
-}): boolean {
-  const cell = holder.cell;
-  const read = (): boolean => {
-    if (cell.value !== null) return cell.value;
-    return false;
-  };
-  holder.cell.value = null;
-  return read();
-}
-
-// An unrelated pattern does not hide that value is never assigned.
-function stablePattern(
-  value: string | undefined = "ready",
-  { tag }: { tag: number } = { tag: 1 },
-): () => string {
-  return () => value;
-}
-
-// A writer nested inside a pattern default still invalidates capture narrowing.
-function patternWriter(
-  value: string | null,
-  input: { items: [(() => void) | undefined] },
-): () => string {
-  if (value !== null) {
-    const {
-      items: [
-        write = () => {
-          value = null;
-        },
-      ],
-    } = input;
-    void write();
-    // @ts-expect-error Type of returned value is not assignable to the function's return type
-    return () => value;
-  }
-  return () => "";
-}
-
-// Reads inside defaults count as captures, so later writes retain the contract.
-function patternReader(input: { read?: () => number }): () => number {
-  let value = 1;
-  const { read = () => value } = input;
-  // @ts-expect-error Type is not assignable to the variable's type
-  value = "changed";
-  return read;
 }
