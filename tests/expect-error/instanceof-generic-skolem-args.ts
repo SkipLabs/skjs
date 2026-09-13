@@ -477,6 +477,26 @@ function opaqueHiddenResult(x: unknown): unknown {
   return reveal(x);
 }
 
+// An opaque outer container cannot expose or exchange hidden field types.
+function opaqueCapturedContainer(x: unknown): unknown[] {
+  const values: unknown[] = [];
+  const store = (value: unknown): void => {
+    if (value instanceof Box) values.push(value);
+  };
+  store(x);
+  return values;
+}
+
+// Inference local to one invocation may use that invocation's hidden identity.
+function localHiddenContainer(x: unknown): number {
+  const count = (value: unknown) => {
+    const values = [];
+    if (value instanceof Box) values.push(value);
+    return values.length;
+  };
+  return count(x);
+}
+
 // Repaired — inferred closure results. The arrow body is checked once, so
 // every call's result is typed with the same skolem. At runtime p is
 // Box<number> and q is Box<string>; the write puts a string in a
@@ -518,7 +538,7 @@ function holeHigherOrderResult(a: Box<number>, b: Box<string>): number {
 // become exchangeable.
 function holeCapturedContainer(a: Box<number>, b: Box<string>): number {
   const ys = makeList();
-  const store = (x: unknown) => {
+  const store = (x: unknown): void => {
     if (x instanceof Box) {
       ys.push(x);
     }
