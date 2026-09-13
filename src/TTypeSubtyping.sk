@@ -1529,7 +1529,7 @@ extension class TType {
         | TSInst(name, targs) ->
           // Cached expansion is symbolic in the type arguments, so reuse is
           // sound as inference proceeds (see seenExpansion in TTypeSubst.sk).
-          key = expansionCacheKey(name, targs);
+          key = tenv.expansionCacheKey(subst, name, targs);
           expandedType = subst.seenExpansion.maybeGet(key) match {
           | None() ->
             e = tenv.instantiate(subst, subst, name, targs);
@@ -1796,8 +1796,7 @@ extension class TType {
     if (u1 == u2) return STOk();
     // Fast path: a pure TSInst whose type args are all pure TVars that
     // individually resolve to the concrete args of u2 is equal to u2 after
-    // substitution. Names are compared by string value (position-independent),
-    // matching how TType hash equality works (PosRange hashes to a constant).
+    // substitution. Compare resolved declarations, not their mention spelling.
     // Avoiding structural expansion is critical for recursive generics like
     // EagerCollection whose methods reference EC itself, causing an exponential
     // blowup when the value type is a deeply nested record.
@@ -1806,7 +1805,11 @@ extension class TType {
       | Some(TSInst(name1, TArgs(targs1))) ->
         u2.insts.getUnique() match {
         | Some(TSInst(name2, TArgs(targs2))) ->
-          if (name1.value == name2.value && targs1.size() == targs2.size()) {
+          if (
+            targs1.size() == targs2.size() &&
+            tenv.typeDefinitionIdentity(subst, name1) ==
+              tenv.typeDefinitionIdentity(subst, name2)
+          ) {
             argsMatch = (
               for (i in Range(0, targs1.size())) {
                 t1 = targs1[i];
@@ -1858,6 +1861,13 @@ extension class TType {
     // given pair only a few times, so it is untouched.
     (u1.getSingleInst(), u2.getSingleInst()) match {
     | (Some(inst1), Some(inst2)) ->
+      namedPair = (
+        subst.version,
+        tenv.expansionCacheKey(subst, inst1.name, inst1.targs),
+        tenv.expansionCacheKey(subst, inst2.name, inst2.targs),
+      );
+      if (tenv.seenNamedSub.contains(namedPair)) return STOk();
+      !tenv.seenNamedSub = tenv.seenNamedSub.set(namedPair);
       key = (inst1.name.value, inst2.name.value);
       count = tenv.subtypingHeadDepth.maybeGet(key).default(0);
       if (count >= kMaxSubtypingHeadDepth) {

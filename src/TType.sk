@@ -160,13 +160,13 @@ class TType private {
 
   // Delayed array literal instance.
   static fun arrayLit(
-    selector: ArrayLiteralSelector,
+    tvar: TVar,
     tupleElts: Array<TType>,
     freshElts: Array<?TType>,
   ): TType {
     TType::create(
-      selector.pos(),
-      TInsts::single(TArrayLit(selector, tupleElts, freshElts)),
+      tvar.pos,
+      TInsts::single(TArrayLit(tvar, tupleElts, freshElts)),
       Clauses::empty(),
     )
   }
@@ -192,20 +192,10 @@ class TType private {
     pos: PosRange,
     tparam: TParamWithConstraint,
   ): TType {
-    TType::fromTParamWithConstraintWith(pos, tparam, (left, right) ->
-      TType::interForTypeConstruction(subst, tenv, left, right)
-    )
-  }
-
-  static fun fromTParamWithConstraintWith(
-    pos: PosRange,
-    tparam: TParamWithConstraint,
-    intersect: (TType, TType) -> TType,
-  ): TType {
     ty = TType::fromTParam(pos, tparam.withoutConstraint());
     tparam.cstr match {
     | None() -> ty
-    | Some(cstr) -> intersect(ty, cstr)
+    | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
     }
   }
 
@@ -250,16 +240,7 @@ class TType private {
         "this",
         className.pos.fileName,
         Id::createThis(),
-        Some(
-          tenv.materializeReadContext<TType>(
-            subst,
-            className.pos,
-            context -> context.expand(cstr, Some(Covariant())),
-            (scratch, readEnv) ->
-              cstr.expand(scratch, readEnv, Some(Covariant()))
-            ,
-          ),
-        ),
+        Some(cstr.expand(subst, tenv, Some(Covariant()))),
       ),
     )
   }
@@ -279,18 +260,7 @@ class TType private {
     ty: TType,
     prim: TPrim,
   ): TType {
-    TType::removeConstantFromExpanded(
-      ty.pos,
-      ty.expand(subst, tenv, None()),
-      prim,
-    )
-  }
-
-  static fun removeConstantFromExpanded(
-    resultPos: PosRange,
-    expanded: TType,
-    prim: TPrim,
-  ): TType {
+    expanded = ty.expand(subst, tenv, None());
     newClauses = expanded.clauses.mapSTypes(stypesOpt ->
       stypesOpt.map(stypes ->
         stypes.filterMap(stype ->
@@ -324,7 +294,7 @@ class TType private {
         )
       )
     );
-    TType::create(resultPos, expanded.insts, newClauses)
+    TType::create(ty.pos, expanded.insts, newClauses)
   }
 
   static fun removeUndefined(
@@ -363,7 +333,7 @@ class TType private {
     for (clause in clauses) {
       clause.stypes match {
       | None() -> !incomplete = true
-      | Some(stypes) -> !concrete = STypes::union(concrete, stypes)
+      | Some(stypes) -> !concrete = STypes::union(subst, tenv, concrete, stypes)
       }
     };
     falsyCount: FalsyCount = FZero();
@@ -472,17 +442,7 @@ class TType private {
     expandTVars: ?Variance,
     f: (?STypes) -> ?STypes,
   ): TType {
-    this.mapSTypesWith(
-      inst -> this.expandInstance(subst, tenv, expandTVars, inst),
-      f,
-    )
-  }
-
-  fun mapSTypesWith(
-    expandInst: (TInst) -> ?TType,
-    f: (?STypes) -> ?STypes,
-  ): TType {
-    this.expandGraph(expandInst) match {
+    this.expandToVectors(subst, tenv, expandTVars) match {
     | None() ->
       f(None()) match {
       | Some(stypes) -> TType::fromSTypes(this.pos, stypes)
@@ -499,7 +459,7 @@ class TType private {
       TType::create(
         this.pos,
         TInsts::unionN(insts),
-        Clauses::unionN(mappedClauses),
+        Clauses::unionN(subst, tenv, mappedClauses),
       )
     }
   }
@@ -535,12 +495,7 @@ class TType private {
         | None() -> TType::fromTParam(this.pos, tparam)
         | Some(ty) -> ty
         };
-        !clause1 = TType::interForTypeConstruction(
-          subst,
-          tenv,
-          clause1,
-          paramTy,
-        )
+        !clause1 = TType::inter(subst, tenv, clause1, paramTy)
       };
       clause0.stypes match {
       | None() -> clause1
@@ -553,29 +508,19 @@ class TType private {
         // top-level (a TVar/TInter/TArrayLit inst) or nested inside the
         // structure — and committing them to the constraint instead of to the
         // actual argument types would be unsound. So only take the shortcut
-        // when isSub succeeds without mutation AND its inspected dependencies
-        // permit reuse. A frozen read can be pure while its candidate still
-        // grows later. In that case retain the original symbolic intersection:
-        // dropping the constraint or materializing a current bottom both lose
-        // information needed after later inference changes.
+        // when isSub SUCCEEDS WITHOUT MUTATING the substitution (its version
+        // is unchanged), which proves clause1 already satisfies the constraint
+        // on its own; otherwise restore whatever isSub sealed and fall back to
+        // the real intersection.
         saved = subst.save();
-        stamp = subst.typeMutationStamp();
-        readStamp = subst.typeQueryReadStamp();
-        result = TType::isSub(subst, tenv, clause1, sty);
-        reusable = subst.canCacheTypeQuerySince(readStamp);
         if (
-          result is STOk() &&
-          subst.typeMutationStamp() == stamp &&
-          reusable
+          TType::isSub(subst, tenv, clause1, sty) is STOk() &&
+          subst.version == saved.version
         ) {
           clause1
         } else {
           subst.restore(saved);
-          if (reusable) {
-            TType::inter(subst, tenv, clause1, sty)
-          } else {
-            TType::unexpandedInter(clause1, sty)
-          }
+          TType::inter(subst, tenv, clause1, sty)
         }
       }
     })
@@ -595,33 +540,6 @@ class TType private {
 
   fun isTop(): Bool {
     this.clauses.isTop()
-  }
-
-  // Conservatively recognize types whose values have no mutable field facts
-  // to forget when copied or captured. Unexpanded instances are not assumed
-  // field-free; call signatures without properties are safe value snapshots.
-  fun isFieldFree(): Bool {
-    this.insts.isEmpty() &&
-      this.clauses.all(clause ->
-        clause.vars.isEmpty() &&
-          clause.stypes
-            .map(stypes ->
-              stypes.all(st ->
-                st match {
-                | TPrim _ -> true
-                | obj @ TObject _ ->
-                  obj.getBranches().all(fields ->
-                    fields.fields.isEmpty() &&
-                      fields.symbolFields.isEmpty() &&
-                      fields.stringIndex.isNone() &&
-                      fields.numberIndex.isNone() &&
-                      fields.symbolIndex.isNone()
-                  )
-                }
-              )
-            )
-            .default(false)
-      )
   }
 
   fun isConcretePrimitive(): Bool {
@@ -698,15 +616,6 @@ class TType private {
     if (visited.contains(this)) return true;
     visited.insert(this);
     !chain = chain.set(this);
-    // Keep candidate identities symbolic, but retain any literal form that
-    // flattening would otherwise replace with its provisional tuple shape.
-    ArrayLitTyping::establishLiteralForms(
-      subst,
-      tenv,
-      this,
-      TType::top(pos),
-      None(),
-    );
     // Expand without resolving type variables: resolving would force (and
     // thereby seal) them, breaking inference for e.g. unannotated async
     // lambdas whose return type is Promise<tvar>. Leftover variables are
@@ -727,7 +636,10 @@ class TType private {
       | _ -> invariant_violation("unexpected unexpanded inst")
       }
     };
-    stypes = Clauses::unionN(clausesVec).getSTypes() match {
+    stypes = Clauses::unionN(subst, tenv, clausesVec).getSTypes(
+      subst,
+      tenv,
+    ) match {
     | None() ->
       tys.push(this);
       return true
@@ -767,39 +679,13 @@ class TType private {
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, tenv: TEnv, variance: Variance): ?STypes {
-    this.expandToClauses(subst, tenv, variance).getSTypes()
+    this.expandToClauses(subst, tenv, variance).getSTypes(subst, tenv)
   }
 
   fun expandToVectors(
     subst: mutable Subst,
     tenv: TEnv,
     expandTVars: ?Variance,
-  ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
-    this.expandGraph(inst ->
-      this.expandInstance(subst, tenv, expandTVars, inst)
-    )
-  }
-
-  private fun expandInstance(
-    subst: mutable Subst,
-    tenv: TEnv,
-    expandTVars: ?Variance,
-    inst: TInst,
-  ): ?TType {
-    inst match {
-    | TSInst(name, targs) -> Some(tenv.expandNamed(subst, name, targs))
-    | tInter @ TInter _ -> Some(tInter.expand(subst, tenv))
-    | tvar @ TVar _ ->
-      expandTVars.map(variance -> subst.get(tenv, tvar, variance))
-    | arrLit @ TArrayLit _ -> Some(ArrayLitTyping::expand(subst, tenv, arrLit))
-    }
-  }
-
-  // Shared graph traversal has no solver capability. The adapter supplies one
-  // expansion step; None preserves a symbolic inst rather than inspecting it.
-  // Inference and validation differ in that adapter, not in cycle/top handling.
-  fun expandGraph(
-    expandInst: (TInst) -> ?TType,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
     if (this.isTop()) return None();
     clauses = Vector::mcreateFromItems(this.clauses);
@@ -808,11 +694,27 @@ class TType private {
     seen = SortedSet::createFromItems(todo);
     while (!todo.isEmpty()) {
       inst = todo.pop();
-      tyDef = expandInst(inst) match {
-      | Some(ty) -> ty
-      | None() ->
-        insts.push(inst);
-        continue
+      tyDef = inst match {
+      | TSInst(name, targs) ->
+        // Expand once and cache; reuse is sound because the cached body is
+        // symbolic in the type arguments (see seenExpansion in TTypeSubst.sk).
+        key = tenv.expansionCacheKey(subst, name, targs);
+        subst.seenExpansion.maybeGet(key) match {
+        | None() ->
+          expandedType = tenv.instantiate(subst, subst, name, targs);
+          subst.!seenExpansion[key] = expandedType;
+          expandedType
+        | Some(expandedType) -> expandedType
+        }
+      | tInter @ TInter _ -> tInter.expand(subst, tenv)
+      | tvar @ TVar _ ->
+        expandTVars match {
+        | Some(variance) -> subst.get(tenv, tvar, variance)
+        | None() ->
+          insts.push(tvar);
+          continue
+        }
+      | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
       };
       if (tyDef.clauses.isTop()) {
         return None();
@@ -828,14 +730,14 @@ class TType private {
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, expandTVars: ?Variance): TType {
-    this.expandWith(inst -> this.expandInstance(subst, tenv, expandTVars, inst))
-  }
-
-  fun expandWith(expandInst: (TInst) -> ?TType): TType {
-    this.expandGraph(expandInst) match {
+    this.expandToVectors(subst, tenv, expandTVars) match {
     | None() -> TType::top(this.pos)
     | Some((insts, clauses)) ->
-      TType::create(this.pos, TInsts::unionN(insts), Clauses::unionN(clauses))
+      TType::create(
+        this.pos,
+        TInsts::unionN(insts),
+        Clauses::unionN(subst, tenv, clauses),
+      )
     }
   }
 
@@ -846,7 +748,7 @@ class TType private {
   ): Clauses {
     this.expandToVectors(subst, tenv, Some(variance)) match {
     | None() -> Clauses::top()
-    | Some((_, clauses)) -> Clauses::unionN(clauses)
+    | Some((_, clauses)) -> Clauses::unionN(subst, tenv, clauses)
     }
   }
 
@@ -858,8 +760,8 @@ class TType private {
     while (i < insts.size()) {
       ty = insts[i] match {
       | tv @ TVar _ ->
-        if (seenTVars.contains(tv.identity())) TType::empty else {
-          seenTVars.insert(tv.identity());
+        if (seenTVars.contains(tv.id)) TType::empty else {
+          seenTVars.insert(tv.id);
           subst.get(tenv, tv, Covariant())
         }
       | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
@@ -884,7 +786,7 @@ class TType private {
       TType::create(
         this.pos,
         TInsts::createFromMVector(insts),
-        Clauses::unionN(clauses),
+        Clauses::unionN(subst, tenv, clauses),
       )
     }
   }
@@ -909,12 +811,6 @@ class TType private {
 
   fun getSingleInter(): ?TInter {
     if (this.clauses.isEmpty()) this.insts.getSingleInter() else {
-      None()
-    }
-  }
-
-  fun getSingleArrayLit(): ?TArrayLit {
-    if (this.clauses.isEmpty()) this.insts.getSingleArrayLit() else {
       None()
     }
   }
@@ -1087,16 +983,6 @@ class TObject private (
   // positionally. Returns None() if any branch is not a tuple or arities
   // differ (the caller sees the raw TObject in that case).
   fun asTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
-    this.asTupleWith((pos, elements) ->
-      TType::unionN_it(subst, tenv, pos, elements)
-    )
-  }
-
-  // Structural projection has no solver access. Only positional element
-  // unioning needs normalization, supplied by the inference/read adapter.
-  fun asTupleWith(
-    merge: (PosRange, mutable Iterator<TType>) -> TType,
-  ): ?Array<TType> {
     branches = this.branches.toArray();
     if (branches.isEmpty()) return None();
     first = branches[0].asTuple() match {
@@ -1114,76 +1000,14 @@ class TObject private (
     };
     Some(
       Array::fillBy(arity, i ->
-        merge(this.pos, branchesElts.values().map(be -> be[i]))
-      ),
-    )
-  }
-
-  private fun tupleAlternatives(): ?Array<Array<TType>> {
-    alternatives = mutable Vector[];
-    for (fields in this.branches) {
-      fields.asTuple() match {
-      | Some(elts) -> alternatives.push(elts)
-      | None() -> return None()
-      }
-    };
-    if (alternatives.isEmpty()) return None();
-    Some(alternatives.toArray())
-  }
-
-  // Project values read by a fixed-size destructuring pattern. This is not
-  // a tuple type: absent positions contribute undefined, and alternatives
-  // may have different lengths. Do not use this vector to type a rest array.
-  fun tuplePrefix(subst: mutable Subst, tenv: TEnv, count: Int): ?Array<TType> {
-    alternatives = this.tupleAlternatives() match {
-    | Some(elts) -> elts
-    | None() -> return None()
-    };
-    Some(
-      Array::fillBy(count, i ->
         TType::unionN_it(
           subst,
           tenv,
           this.pos,
-          alternatives.values().map(elts ->
-            if (i < elts.size()) elts[i] else {
-              TType::single(TPrimUnit(TUndefined(), this.pos))
-            }
-          ),
+          branchesElts.values().map(be -> be[i]),
         )
       ),
     )
-  }
-
-  // Rest arrays contain only values after the consumed prefix. An exhausted
-  // alternative contributes no elements, rather than an undefined slot.
-  fun tupleRestElement(subst: mutable Subst, tenv: TEnv, start: Int): ?TType {
-    this.tupleAlternatives().map(alternatives -> {
-      remaining = mutable Vector[];
-      for (elts in alternatives) {
-        for (i in Range(min(start, elts.size()), elts.size())) {
-          remaining.push(elts[i])
-        }
-      };
-      TType::unionN_it(subst, tenv, this.pos, remaining.values())
-    })
-  }
-
-  // Project every object branch, failing if any branch lacks the requested
-  // member. Structure and failure order are shared; the adapter owns algebra.
-  fun projectBranches(
-    pos: PosRange,
-    project: (TFields) -> ?TType,
-    merge: (PosRange, readonly Vector<TType>) -> TType,
-  ): ?TType {
-    types = mutable Vector[];
-    for (fields in this.branches) {
-      project(fields) match {
-      | None() -> return None()
-      | Some(type) -> types.push(type)
-      }
-    };
-    Some(merge(pos, types))
   }
 
   fun maybeGetType(
@@ -1192,11 +1016,14 @@ class TObject private (
     fieldName: String,
     pos: PosRange,
   ): ?TType {
-    this.projectBranches(
-      pos,
-      fields -> fields.maybeGetType(subst, tenv, fieldName, pos, false),
-      (position, types) -> TType::unionN(subst, tenv, position, types),
-    )
+    tys = mutable Vector[];
+    for (fields in this.branches) {
+      fields.maybeGetType(subst, tenv, fieldName, pos, false) match {
+      | None() -> return None()
+      | Some(ty) -> tys.push(ty)
+      }
+    };
+    Some(TType::unionN(subst, tenv, pos, tys))
   }
 
   fun getType(
@@ -1272,17 +1099,15 @@ class TObject private (
     pos: PosRange,
     isLValue: Bool,
   ): ?TType {
-    this.projectBranches(
-      pos,
-      fields -> fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, isLValue),
-      (position, types) ->
-        (if (isLValue) TType::interN else TType::unionN)(
-          subst,
-          tenv,
-          position,
-          types,
-        )
-      ,
+    tys = mutable Vector[];
+    for (fields in this.branches) {
+      fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, isLValue) match {
+      | None() -> return None()
+      | Some(ty) -> tys.push(ty)
+      }
+    };
+    Some(
+      (if (isLValue) TType::interN else TType::unionN)(subst, tenv, pos, tys),
     )
   }
 
@@ -1394,11 +1219,17 @@ class TObject private (
   }
 
   fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
-    this.projectBranches(
-      this.pos,
-      fields -> fields.callReturnType(),
-      (pos, types) -> TType::unionN(subst, tenv, pos, types),
-    )
+    tys = mutable Vector[];
+    for (fields in this.branches) {
+      fields match {
+      | TFields{call => CPresent(TFuns(fun_, _))} -> tys.push(fun_.retType)
+      | TFields{call => CAbsent()}
+      | TFields{call => CUnknown()}
+      | TFields{call => CFunction()} ->
+        return None()
+      }
+    };
+    Some(TType::unionN(subst, tenv, this.pos, tys))
   }
 
   // Awaited type via the thenable protocol; every branch must be a
@@ -1602,27 +1433,6 @@ class TFun(
 /* Rest-parameter element extraction */
 /***************************************************************************/
 
-extension class TType {
-  // Follow the iterator protocol without access to a solver. Both inference
-  // and validation use this order and these failure points.
-  static fun iteratorElementWith(
-    iteratorMethod: ?TType,
-    asObject: (TType) -> ?TObject,
-    callResult: (TObject) -> ?TType,
-    field: (TObject, String) -> ?TType,
-  ): ?TType {
-    iteratorMethod
-      .flatMap(asObject)
-      .flatMap(callResult)
-      .flatMap(asObject)
-      .flatMap(obj -> field(obj, "next"))
-      .flatMap(asObject)
-      .flatMap(callResult)
-      .flatMap(asObject)
-      .flatMap(obj -> field(obj, "value"))
-  }
-}
-
 // Element extraction for a rest-parameter type: expand to a single TObject and
 // walk its Symbol.iterator protocol. Returns None for tuples, intersections, or
 // anything that doesn't reduce to a single iterable object.
@@ -1632,18 +1442,12 @@ fun maybeGetRestElementType(
   spreadType: TType,
   variance: Variance,
 ): ?TType {
-  spreadType.expandToClauses(subst, tenv, variance).restElement(subst, tenv)
-}
-
-extension class Clauses {
-  // Projection is shared after either inference or validation has expanded the
-  // head. Iterator/member normalization still uses the legacy guarded kernel.
-  fun restElement(subst: mutable Subst, tenv: TEnv): ?TType {
-    this.getSTypes().flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _, objectPos)) ->
-      tenv.getIteratorElementType(subst, obj, objectPos)
-    | _ -> None()
-    }
+  spreadType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
+    stypes.singleElt()
+  ) match {
+  | Some(obj @ TObject(_, _, objectPos)) ->
+    tenv.getIteratorElementType(subst, obj, objectPos)
+  | _ -> None()
   }
 }
 
@@ -2141,8 +1945,6 @@ class TField{
   get: TType,
   set: TType,
   access: FieldAccess,
-  // Declaration provenance: lookup can succeed without an own enumerable key.
-  mayBeOmittedByCopy: Bool,
 } uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
@@ -2151,7 +1953,6 @@ class TField{
     isReadonly: ?PosRange,
     type: TType,
     access: FieldAccess,
-    mayBeOmittedByCopy: Bool = false,
   }: TField {
     setType = isReadonly match {
     | Some(roPos) -> TType::bottom(roPos)
@@ -2164,7 +1965,6 @@ class TField{
       get => type,
       set => setType,
       access,
-      mayBeOmittedByCopy,
     }
   }
 
@@ -2185,7 +1985,6 @@ class TField{
       get,
       set,
       access => FAPublic(),
-      mayBeOmittedByCopy => false,
     }
   }
 
@@ -2212,8 +2011,7 @@ class TField{
       this.isOptional == other.isOptional &&
       this.get == other.get &&
       this.set == other.set &&
-      this.access == other.access &&
-      this.mayBeOmittedByCopy == other.mayBeOmittedByCopy
+      this.access == other.access
   }
 
   fun mapType(f: TType -> TType): TField {
@@ -2359,32 +2157,6 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
     tenv: TEnv,
     indexes: readonly Vector<(IndexKeyKinds, TField)>,
   ): TIndexes {
-    if (indexes.isEmpty()) {
-      TIndexes::empty
-    } else {
-      tenv.materializeReadContext<TIndexes>(
-        tcenvb,
-        indexes[0].i1.pos,
-        context ->
-          TIndexes::createWith(indexes, fields ->
-            context.mergeIndexKind(fields)
-          ),
-        (scratch, readEnv) ->
-          TIndexes::createWith(indexes, fields -> {
-            subst = Subst::mcreate(scratch);
-            TIndexes::mergeKindWith(fields, (left, right) ->
-              TField::interIndex(subst, readEnv, left, right)
-            )
-          })
-        ,
-      )
-    }
-  }
-
-  static fun createWith(
-    indexes: readonly Vector<(IndexKeyKinds, TField)>,
-    mergeKind: (readonly Vector<TField>) -> ?TField,
-  ): TIndexes {
     stringIndexes: mutable Vector<TField> = mutable Vector[];
     numberIndexes: mutable Vector<TField> = mutable Vector[];
     symbolIndexes: mutable Vector<TField> = mutable Vector[];
@@ -2393,25 +2165,27 @@ class TIndexes{} extends TIndexesBase uses XXHashable, Orderable {
       if (keyKinds.hasNumber) numberIndexes.push(f);
       if (keyKinds.hasSymbol) symbolIndexes.push(f);
     };
-    stringIndex = mergeKind(stringIndexes);
-    numberIndex = mergeKind(numberIndexes);
-    symbolIndex = mergeKind(symbolIndexes);
+    stringIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, stringIndexes);
+    numberIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, numberIndexes);
+    symbolIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, symbolIndexes);
     TIndexes{stringIndex, numberIndex, symbolIndex}
   }
 
   // Merge multiple indexes for the same key kind into a single TField.
   // Getter (covariant) → intersection, setter (contravariant) → union.
-  static fun mergeKindWith(
+  private static fun mergeIndexesForKind(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
     indexes: readonly Vector<TField>,
-    meetIndex: (TField, TField) -> TField,
   ): ?TField {
     indexesIt = indexes.iterator();
     result = indexesIt.next() match {
     | None() -> return None()
     | Some(first) -> first
     };
+    subst = Subst::mcreate(tcenvb);
     for (other in indexesIt) {
-      !result = meetIndex(result, other);
+      !result = TField::interIndex(subst, tenv, result, other);
     };
     Some(result)
   }
@@ -2690,31 +2464,6 @@ class TFields protected {
     }
   }
 
-  // Copying properties creates a plain object, regardless of the source kind.
-  fun asPropertyCopy(): TFields {
-    this with {call => CAbsent(), new => CAbsent(), isArray => Some(false)}
-  }
-
-  fun preserveCopyUncertainty(
-    names: SortedSet<FieldNameString>,
-    symbols: SortedSet<FieldNameString>,
-  ): TFields {
-    this with {
-      fields => this.fields.mapKeyed(field ->
-        field with {
-          mayBeOmittedByCopy => field.mayBeOmittedByCopy ||
-            names.contains(field.name),
-        }
-      ),
-      symbolFields => this.symbolFields.mapKeyed(field ->
-        field with {
-          mayBeOmittedByCopy => field.mayBeOmittedByCopy ||
-            symbols.contains(field.name),
-        }
-      ),
-    }
-  }
-
   fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {
     TFields{
       fields => this.fields.mapKeyed(fField),
@@ -2921,24 +2670,6 @@ class TFields protected {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
 
-  fun callReturnType(): ?TType {
-    this.call match {
-    | CPresent(TFuns(fun_, _)) -> Some(fun_.retType)
-    | CAbsent()
-    | CUnknown()
-    | CFunction() ->
-      None()
-    }
-  }
-
-  static fun resolveFieldReadWith(
-    field: TField,
-    pos: PosRange,
-    includeUndefined: (TType, PosRange) -> TType,
-  ): TType {
-    if (field.isOptional) includeUndefined(field.get, pos) else field.get
-  }
-
   static fun resolveFieldType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -2948,10 +2679,10 @@ class TFields protected {
   ): TType {
     if (isLValue) {
       fd.set
+    } else if (fd.isOptional) {
+      TType::unionUndefined(subst, tenv, fd.get, pos)
     } else {
-      TFields::resolveFieldReadWith(fd, pos, (type, position) ->
-        TType::unionUndefined(subst, tenv, type, position)
-      )
+      fd.get
     }
   }
 
@@ -3168,39 +2899,6 @@ class STypes private (
     }
   }
 
-  fun destructuringElements(
-    subst: mutable Subst,
-    tenv: TEnv,
-    prefixSize: Int,
-  ): ?Array<TType> {
-    this.getSingleTuple(subst, tenv) match {
-    | result @ Some(_) -> result
-    | None() ->
-      this.singleElt().flatMap(stype ->
-        stype match {
-        | obj @ TObject _ -> obj.tuplePrefix(subst, tenv, prefixSize)
-        | _ -> None()
-        }
-      )
-    }
-  }
-
-  // Uniform-length tuples retain the existing precise rest representation.
-  fun destructuringRestElement(
-    subst: mutable Subst,
-    tenv: TEnv,
-    start: Int,
-  ): ?TType {
-    if (this.getSingleTuple(subst, tenv).isSome()) None() else {
-      this.singleElt().flatMap(stype ->
-        stype match {
-        | obj @ TObject _ -> obj.tupleRestElement(subst, tenv, start)
-        | _ -> None()
-        }
-      )
-    }
-  }
-
   fun staticValue(): ?String {
     this.singleElt() match {
     | Some(TPrimValue(_, Some(lits), _)) -> lits.singleElt().map(lit -> lit.val)
@@ -3220,12 +2918,12 @@ class STypes private (
 // - when instantiating a generic type or a function
 //
 // Interpretation:
-// 〚 tvar 〛 = more or less* subst[tvar.identity()] ⨅ 〚 tvar.constraints 〛
+// 〚 tvar 〛 = more or less* subst[tvar.id] ⨅ 〚 tvar.constraints 〛
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
 base class TVarID private final (
-  protected value: Int,
+  value: Int,
 ) uses Orderable, XXHashable, Hashable {
   children =
   // A normal type variable identifier
@@ -3233,20 +2931,20 @@ base class TVarID private final (
   // A type variable that was introduced to infer the type of a field
   // in a literal object.
   | TVIDForField
-  // A contextual array-element value, which may widen before sealing.
-  // This is not the selector that chooses array versus tuple representation.
-  | TVIDForContextualElement
+  // A type variable that commits literal structure rather than representing
+  // an ordinary inference candidate.
+  | TVIDForLiteralCommitment
 
-  static fun create(owner: mutable Subst): TVarID {
-    TVID(owner.allocateCandidateSerial())
+  static fun create(id: Int): TVarID {
+    TVID(id)
   }
 
-  static fun createForField(owner: mutable Subst): TVarID {
-    TVIDForField(owner.allocateCandidateSerial())
+  static fun createForField(id: Int): TVarID {
+    TVIDForField(id)
   }
 
-  static fun createForContextualElement(owner: mutable Subst): TVarID {
-    TVIDForContextualElement(owner.allocateCandidateSerial())
+  static fun createForLiteralCommitment(id: Int): TVarID {
+    TVIDForLiteralCommitment(id)
   }
 
   fun toString(): String {
@@ -3255,7 +2953,7 @@ base class TVarID private final (
 
   fun isForField(): Bool
   | TVIDForField _ -> true
-  | TVIDForContextualElement _
+  | TVIDForLiteralCommitment _
   | TVID _ ->
     false
 
@@ -3268,7 +2966,7 @@ base class TVarID private final (
   fun isCandidate(): Bool
   | TVID _ -> true
   | TVIDForField _
-  | TVIDForContextualElement _ ->
+  | TVIDForLiteralCommitment _ ->
     false
 
   fun xxhash(): XXHash {
@@ -3294,28 +2992,11 @@ base class TVarOrigin {
 
 class TVar private (
   pos: PosRange,
-  protected id: TVarID,
+  id: TVarID,
   constraints: SortedSet<TType>,
 ) extends TInst {
-  static fun create(owner: mutable Subst, pos: PosRange): TVar {
-    TVar(pos, TVarID::create(owner), SortedSet[])
-  }
-
-  static fun createForField(owner: mutable Subst, pos: PosRange): TVar {
-    TVar(pos, TVarID::createForField(owner), SortedSet[])
-  }
-
-  static fun createForContextualElement(
-    owner: mutable Subst,
-    pos: PosRange,
-  ): TVar {
-    TVar(pos, TVarID::createForContextualElement(owner), SortedSet[])
-  }
-
-  // Identity is observable for lookup/export, but cannot be replaced or wrapped
-  // in another variable. Occurrence constraints preserve this identity.
-  fun identity(): TVarID {
-    this.id
+  static fun create(pos: PosRange, id: TVarID): TVar {
+    TVar(pos, id, SortedSet[])
   }
 
   fun isForField(): Bool {
@@ -3343,45 +3024,6 @@ class TVar private (
   }
 }
 
-// A one-shot representation choice, not a value-inference variable. Its private
-// backing candidate shares the owner's tracking and rollback machinery, but no
-// caller can grow it, add occurrence constraints, or use it as a TType::var.
-class ArrayLiteralSelector private (
-  private binding: TVar,
-) uses XXHashable, Hashable, Orderable {
-  static fun create(owner: mutable Subst, pos: PosRange): ArrayLiteralSelector {
-    binding = owner.gen(pos);
-    owner.setOrigin(binding, FromArrayLiteral(pos));
-    ArrayLiteralSelector(binding)
-  }
-
-  fun pos(): PosRange {
-    this.binding.pos
-  }
-
-  fun peek(owner: mutable Subst, tenv: TEnv): ?TType {
-    owner.peek(tenv, this.binding)
-  }
-
-  // The private selector binding has no occurrence constraints. Validation
-  // reads its fixed payload; an absent choice blocks, never supplies a default.
-  fun read(context: mutable TypeReadContext): TType {
-    context.peekRaw(this.binding).fromSome()
-  }
-
-  // For diagnostics/export and escape traversal, never acceptance evidence.
-  fun peekSnapshot(snapshot: SubstSnapshot): ?TType {
-    snapshot.peekRaw(this.binding)
-  }
-
-  // First choice seals; later choices cannot replace it. Callers must still
-  // validate the chosen representation against the literal's elements. Like
-  // every inference commitment, this is undone by enclosing rollback.
-  fun commit(owner: mutable Subst, tenv: TEnv, type: TType): void {
-    owner.grow(tenv, this.binding, type, Covariant())
-  }
-}
-
 /* Array literal with delayed typing.
  * Invariant: tupleElts must be non-empty (empty array literals are handled separately).
  * freshElts[i] is the precise literal type of element i when it was written as
@@ -3391,7 +3033,7 @@ class ArrayLiteralSelector private (
  * (a literal type, or an inference variable constrained by one) can check the
  * precise type, while every other exit widens to tupleElts[i] as before. */
 class TArrayLit(
-  selector: ArrayLiteralSelector,
+  tvar: TVar,
   tupleElts: Array<TType>,
   freshElts: Array<?TType>,
 ) extends TInst {}
@@ -3517,70 +3159,29 @@ class TInsts private (
   }
 }
 
-// Rigid declaration parameters and hidden existential witnesses share the
-// parameter algebra, but their origins must survive renaming and cannot be
-// inferred from a printable name. Solver candidates use TVarID, never Id.
-base class ParamOrigin uses XXHashable, Orderable {
-  children =
-  | PODeclared()
-  | POSynthetic()
-  | POHiddenWitness()
-}
-
-value class Id private (
-  private id: String,
-  private origin: ParamOrigin,
-) uses XXHashable, Orderable, Show {
+value class Id private (id: String) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): Id {
-    Id(`${name}:${id}:${lexer.relativeFileNameHash}`, PODeclared())
+    Id(`${name}:${id}:${lexer.relativeFileNameHash}`)
   }
 
   fun prefixWith(pre: String): Id {
-    Id(pre + this.id, this.origin)
+    Id(pre + this.id)
   }
 
   static fun createThis(): Id {
-    Id("this", PODeclared())
+    Id("this")
   }
 
   static fun createSynthetic(id: String): Id {
-    Id(`synthetic:${id}`, POSynthetic())
+    Id(`synthetic:${id}`)
   }
 
-  // Only the owning substitution allocates witness serials. A synthetic name
-  // with the same spelling is a different identity by construction.
-  static fun createHiddenWitness(owner: mutable Subst): Id {
-    serial = owner.allocateHiddenWitnessSerial();
-    Id(`synthetic:skolem:${serial}`, POHiddenWitness())
-  }
-
-  // Recover only witnesses already allocated by this owner. A checkpoint
-  // cannot fabricate an identity beyond the allocator's current extent.
-  static fun hiddenWitnessesSince(
-    owner: readonly Subst,
-    first: Int,
-  ): SortedSet<Id> {
-    last = owner.skolemCheckpoint();
-    invariant(first >= 0 && first <= last, "Invalid hidden-witness checkpoint");
-    ids = SortedSet[];
-    for (serial in Range(first, last)) {
-      !ids = ids.set(Id(`synthetic:skolem:${serial}`, POHiddenWitness()))
-    };
-    ids
-  }
-
-  fun isHiddenWitness(): Bool {
-    this.origin is POHiddenWitness()
-  }
-
-  // Generated parameters have no writable source name, even after renaming.
+  // A synthetic id belongs to a type the checker minted rather than one the
+  // program declared -- a hidden type argument from `instanceof` narrowing, an
+  // ambient field's missing-annotation placeholder. Such a type has no name in
+  // source, so a diagnostic must never suggest writing it.
   fun isSynthetic(): Bool {
-    this.origin match {
-    | PODeclared() -> false
-    | POSynthetic()
-    | POHiddenWitness() ->
-      true
-    }
+    this.id.startsWith("synthetic:")
   }
 
   fun toString(): String {
@@ -3764,23 +3365,8 @@ class Clauses private (
 
   // Returns the tuple if clauses is a single clause whose only stype is a Tuple.
   fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
-    this.getSingleTupleWith((pos, elements) ->
-      TType::unionN_it(subst, tenv, pos, elements)
-    )
-  }
-
-  fun getSingleTupleWith(
-    merge: (PosRange, mutable Iterator<TType>) -> TType,
-  ): ?Array<TType> {
     this.clauses.singleElt().flatMap(clause ->
-      clause.stypes
-        .flatMap(stypes -> stypes.singleElt())
-        .flatMap(stype ->
-          stype match {
-          | obj @ TObject _ -> obj.asTupleWith(merge)
-          | _ -> None()
-          }
-        )
+      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple(subst, tenv))
     )
   }
 
@@ -3792,12 +3378,13 @@ class Clauses private (
   // Returns the actual STypes, forgetting type parameters,
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
-  fun getSTypes(): ?STypes {
+  fun getSTypes(subst: mutable Subst, tenv: TEnv): ?STypes {
     result = STypes::empty();
     for (clause in this.clauses) {
       clause.stypes match {
       | None() -> return None()
-      | Some(clauseSTypes) -> !result = STypes::union(result, clauseSTypes)
+      | Some(clauseSTypes) ->
+        !result = STypes::union(subst, tenv, result, clauseSTypes)
       }
     };
     Some(result)
