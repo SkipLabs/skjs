@@ -17,7 +17,7 @@ and [state assertions](POSITIVE-TYPES.md#state-assertion-grammar) are layered on
 those two rather than alternatives to them.
 
 The supported source profile includes null, undefined and Boolean unions, required
-cell fields, and bounded zero-argument and unary callbacks. The
+cell fields, and callbacks with ordered required parameters. The
 [undefined examples](tests/stateful-source/undefined.ts) exercise contracts, alias
 writes, strict comparisons and nullish coalescing. This does not imply support
 for `void`, optional properties or implicit returns; see the
@@ -77,7 +77,7 @@ returns**, over local cells and bounded expression closures and calls. Cell
 fields, arrow arguments and arrow results admit primitive and recursively
 callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
 function types with ordered required parameters. Creating and invoking closures
-currently supports zero or one argument. Immutable Boolean, null and undefined tests refine what
+preserves parameter order and requires an exact argument count, including zero. Immutable Boolean, null and undefined tests refine what
 follows them, including through `&&`, `||`, `??`, `?:` and negation. Every path must reach an explicit return.
 
 Mutable bindings, loops inside closures, external cell parameters,

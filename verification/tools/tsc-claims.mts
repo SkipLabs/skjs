@@ -107,7 +107,7 @@ function walkExpr(e: Expr, out: Sites): void {
     case "apply":
       addExpr(out, e.pos, "apply");
       walkExpr(e.callee, out);
-      if (e.arg) walkExpr(e.arg, out);
+      for (const arg of e.args) walkExpr(arg, out);
       return;
     case "bin":
       addExpr(out, e.pos, "bin");
@@ -427,9 +427,7 @@ function tryArrowIntersection(
   const arrows: [number[][], number[]][] = [];
   for (const r of results) {
     const pair: [number[][], number[]] = [
-      r.domains!.length
-        ? r.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1))
-        : [[3]],
+      r.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
       translateType(r.result!, checker, types, false, fuel - 1),
     ];
     if (!arrows.some((a) => JSON.stringify(a) === JSON.stringify(pair)))
@@ -474,9 +472,7 @@ function translateType(type: Type, checker: Checker, types: Row[], records = tru
   const arr = tryArrow(type, checker);
   if (arr.ok) {
     const pair: [number[][], number[]] = [
-      arr.domains!.length
-        ? arr.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1))
-        : [[3]],
+      arr.domains!.map((domain) => translateType(domain, checker, types, false, fuel - 1)),
       translateType(arr.result!, checker, types, false, fuel - 1),
     ];
     return [internRow(types, [{ arrs: { arrows: [pair] } }])];

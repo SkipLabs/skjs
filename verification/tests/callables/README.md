@@ -95,17 +95,15 @@ claims are independently checked. Forged domains/results fail, and the callable
 argument suite checks that omission does not satisfy a required callback parameter.
 JavaScript witnesses check delayed reads and replacement for both seeds.
 
-[arity.ts](arity.ts) is a **source-boundary fixture**, not a supported corpus
-example. It requires callee evaluation first, argument evaluation left to right,
-and body execution afterward. [callable-arity.mts](../callable-arity.mts) checks
-its JavaScript result and controls that reverse argument order or delay callee
-evaluation; the tsc suite retains its expected source-gate rejection. The
-[model preparation interface](../../SEMANTICS.md#argument-list-preparation)
-establishes operand sequencing separately from the remaining invocation work.
+[arity.ts](arity.ts) checks native argument lists through both producers and the
+independent consumer. Its order-sensitive example requires callee evaluation
+first, actuals left to right, then the body. The existing JavaScript controls
+distinguish reversed argument order and delayed callee evaluation; reused
+evidence rejects swapped actuals. The same file checks a returned closure that
+captures its second parameter and a multi-argument union callee.
 
 [arguments.ts](arguments.ts)'s `exchangeMultiArgument` transports a two-argument
 function through a mutable cell and narrows its first domain on return. Both
 producers verify it; the argument suite rejects a widened second domain and a
 dropped second parameter. Required function **types** can now carry multiple
-parameters through the source pipeline. Multi-argument call and lambda syntax
-remains gated pending native source evaluation lowering.
+parameters through the source pipeline, with native call and lambda lowering.

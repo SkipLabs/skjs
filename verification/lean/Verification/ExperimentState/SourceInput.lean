@@ -6,9 +6,6 @@ claims use the same bounded contract decoder. -/
 namespace Verification.ExperimentState.SourceInput
 open Lean ProgramTyping PositiveRules
 
-private def undefinedType : Json :=
-  Json.mkObj [("top",toJson false),("atoms",toJson [Json.mkObj [("a",toJson "undefined")]])]
-
 /-- Validate a free required-parameter signature without projecting away object requirements. -/
 private def callableShape (a : Json) : Except String (List Json × Json) := do
   CellClaims.fieldsExactly a ["a","params","result","construct","array"]
@@ -17,9 +14,7 @@ private def callableShape (a : Json) : Except String (List Json × Json) := do
     let mode ← jStr (← jField a key)
     if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
   let args ← jArr a "params"
-  -- Source thunks retain their implicit undefined parameter until syntax lowering
-  -- also uses native zero-argument closures and calls.
-  return (if args.isEmpty then [undefinedType] else args, ← jField a "result")
+  return (args, ← jField a "result")
 
 /-- Callable operands may recursively contain callables and primitives.
 Every union and overload arm is checked; record operands remain excluded. -/
@@ -98,8 +93,6 @@ def translatePoint (j : Json) : SourceTypes.Lowering PointType := do
     return ⟨[← CellClaims.reference W],some R⟩
 
 inductive Expr where
-  /-- Generated only for an omitted call argument; never a claimed source expression. -/
-  | implicitUndef (pos : Span)
   | var (pos : Span) (name : String)
   | lit (pos : Span) (v : Wire.Val)
   | logical (pos : Span) (andOp : Bool) (left right : Expr)
@@ -109,8 +102,8 @@ inductive Expr where
   | alloc (pos : Span) (e : Expr)
   | read (pos : Span) (e : Expr)
   | write (pos : Span) (receiver rhs : Expr)
-  | lam (pos : Span) (name : String) (arg result : Json) (body : Expr)
-  | app (pos : Span) (callee arg : Expr)
+  | lambda (pos : Span) (params : List (String × Json)) (result : Json) (body : Expr)
+  | call (pos : Span) (callee : Expr) (args : List Expr)
   /-- The return statement's entry environment; the expression retains its own span. -/
   | atEnv (pos : Span) (body : Expr)
   /-- Administrative completion and sequencing; neither invents a source expression claim. -/
@@ -121,14 +114,15 @@ inductive Expr where
   | ifBody (pos : Span) (result : Option Json) (cond thn els : Expr)
   | letBody (pos : Span) (name : String) (annot : Option Json) (init body : Expr)
 
-def Expr.isImplicit : Expr → Bool
-  | .implicitUndef _ => true
-  | _ => false
+/-- Singleton notation for small source-adapter fixtures. -/
+abbrev Expr.lam (p : Span) (name : String) (arg result : Json) (body : Expr) : Expr :=
+  .lambda p [(name,arg)] result body
+abbrev Expr.app (p : Span) (callee arg : Expr) : Expr := .call p callee [arg]
 
 def Expr.span : Expr → Span
   | .atEnv _ body | .letBody _ _ _ _ body | .seqBody _ _ body => body.span
   | .ifBody p _ _ _ _ | .done p | .unitTest p _ _ _ _ _ | .coalesce p _ _ | .logical p _ _ _ => p
-  | .implicitUndef p | .var p _ | .lit p _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lam p _ _ _ _ | .app p _ _ => p
+  | .var p _ | .lit p _ | .not p _ | .alloc p _ | .read p _ | .write p _ _ | .lambda p _ _ _ | .call p _ _ => p
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -180,11 +174,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
   | "alloc" => return .alloc p (← decodeExpr (← jField j "e"))
   | "read" => return .read p (← decodeExpr (← jField j "e"))
   | "lambda" => do
-    let name ← jStr (← jField j "name")
-    let arg ← jField j "arg"
-    if (arg == Json.null) != (name == "") then throw "unnamed closure parameter must be absent"
-    return .lam p name (if arg == Json.null then undefinedType else arg)
-      (← jField j "result") (← decodeExpr (← jField j "body"))
+    CellClaims.fieldsExactly j ["k","pos","params","result","body"]
+    let params ← (← jArr j "params").mapM fun param => do
+      CellClaims.fieldsExactly param ["name","type"]
+      return (← jStr (← jField param "name"), ← jField param "type")
+    return .lambda p params (← jField j "result") (← decodeExpr (← jField j "body"))
   | "doneBody" => return .done p
   | "seqBody" => return .seqBody p (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "ifBody" =>
@@ -200,9 +194,9 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       (← decodeExpr (← jField j "init")) (← decodeExpr (← jField j "body"))
   | "returnBody" => return .atEnv p (← decodeExpr (← jField j "e"))
   | "apply" => do
-    let arg ← jField j "arg"
-    return .app p (← decodeExpr (← jField j "callee"))
-      (← if arg == Json.null then pure (.implicitUndef p) else decodeExpr arg)
+    CellClaims.fieldsExactly j ["k","pos","callee","args"]
+    return .call p (← decodeExpr (← jField j "callee"))
+      (← (← jArr j "args").mapM decodeExpr)
   | "write" => return .write p (← decodeExpr (← jField j "receiver")) (← decodeExpr (← jField j "rhs"))
   | _ => throw s!"unsupported source expression at [{p.1},{p.2}): expression outside the stateful source slice"
 

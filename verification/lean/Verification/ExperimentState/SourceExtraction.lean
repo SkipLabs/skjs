@@ -64,7 +64,6 @@ private def env (fc : SourceClaims.Function) (pos : Nat) (scope : List Descripto
     s!"source environment obligation at {pos}: {msg}"
 
 private def exprType (fc : SourceClaims.Function) (e : SourceInput.Expr) : Compiler (Ty Nat) := do
-  if e.isImplicit then return [3]
   match fc.exprs.lookup e.span with
   | some t => (SourceClaims.resolve (← table).length t).mapError fun msg =>
       s!"source expression obligation at [{e.span.1},{e.span.2}): {msg}"
@@ -247,25 +246,28 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
       let e ← noBranch scope H
       pure (DirectProof.ifE G H A c t e)
 
-/-- The source fragment still admits at most one required parameter. Graph
-signatures themselves carry native lists, so enforce that boundary explicitly. -/
-private def unarySignatures (L : PositiveRules.Ops Nat) : Except String (List (Ty Nat × Ty Nat)) :=
-  L.mapM fun p => match p.1 with
-    | [D] => pure (D,p.2)
-    | _ => throw "source calls require a unary signature"
+/-- Select an exact-arity signature, preferring one covering every actual type. -/
+private def selectSignature (L : PositiveRules.Ops Nat) (As : List (Ty Nat)) :
+    Except String (List (Ty Nat) × Ty Nat) := do
+  let choices := L.filter fun p => p.1.length == As.length
+  let some p := (choices.find? fun p => (As.zip p.1).all fun (A,D) => A.all D.contains) <|> choices.head?
+    | throw "callee has no signature with the actual argument count"
+  return p
+
+/-- Nest saved operand plans in their original evaluation order. -/
+private def saveOperands (ps : List DirectProof.Plan) (body : DirectProof.Plan) : DirectProof.Plan :=
+  ps.foldr (fun p b => DirectProof.letE p.goal.context p b) body
 
 /-- Build compositional proofs for lambda bodies and source ternaries without
 losing their individual claims. Requirements use the lexical context at the occurrence; synthetic let
 slots are introduced only after the operand supplying their type is checked. -/
 private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) : Compiler DirectProof.Plan := do
-  if e.isImplicit then return DirectProof.node Γ .undef [3] .undef
   let A ← closureType fc e
   let G := SourceTypes.graph (← table)
   if let some R := fc.exprCurrent.lookup e.span then
     persistentObservation ⟨"",some e.span⟩ e.span A R
   let p ← match e with
-  | .implicitUndef _ => pure (DirectProof.node Γ .undef [3] .undef)
   | .var _ name =>
     match (names scope).idxOf? name with
     | some i => pure (DirectProof.var Γ i A)
@@ -338,40 +340,39 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
           [DirectProof.var H 0 [label]])
       pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
         (.read (.var 0)) R (.unionVar 0) children))
-  | .app _ f a => do
+  | .call _ f args => do
     let callee ← closureExpr fc scope Γ f
-    -- Keep single-arrow recipes unchanged. Union callees are saved before the
-    -- argument, then eliminated in that immutable slot without reevaluation.
     match PositiveRules.expand G callee.type with
     | [.arrs L] =>
-      let L ← unarySignatures L
-      let arg ← closureExpr fc scope Γ a
-      -- Preserve the existing overload order and mismatch diagnostics.
-      let some (D,R) := (L.find? fun (D,_) => arg.type.all D.contains) <|> L.head?
-        | throw "callee has no signature"
-      pure (DirectProof.node Γ (.app callee.term arg.term) R .app
-        [callee,DirectProof.cast Γ D arg])
+      let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr fc scope Γ a
+      let (Ds,R) ← selectSignature L (actuals.map (·.type))
+      pure (DirectProof.node Γ (.call callee.term (actuals.map (·.term))) R .app
+        (callee :: (actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a))
     | _ =>
       if callee.type.length ≤ 1 then throw "callee must name a source arrow"
-      let K := callee.type :: Γ
-      let arg ← closureExpr fc (⟨"",some f.span⟩::scope) K a
+      -- Save callee first, then each actual, before splitting its immutable slot.
+      let (_,_,actuals) ← args.attach.foldlM (fun (ctx,sc,ps) ⟨a,_⟩ => do
+        let p ← closureExpr fc sc ctx a
+        pure (p.type::ctx,⟨"",some a.span⟩::sc,ps ++ [p]))
+        (callee.type::Γ,⟨"",some f.span⟩::scope,[])
+      let As := actuals.map (·.type)
       let alternatives ← callee.type.mapM fun label => do
         let [.arrs L] := PositiveRules.expand G [label]
           | throw "every callee alternative must name a source arrow"
-        let L ← unarySignatures L
-        let some (D,R) := (L.find? fun (D,_) => arg.type.all D.contains) <|> L.head?
-          | throw "callee alternative has no signature"
-        pure (label,D,R)
+        let (Ds,R) ← selectSignature L As
+        pure (label,Ds,R)
       let R := (alternatives.flatMap fun (_,_,R) => R).eraseDups
-      let H := arg.type :: K
-      let term := Tm.app (.var 1) (.var 0)
-      let children := alternatives.map fun (label,D,result) =>
-        let branch := arg.type :: [label] :: Γ
+      let n := As.length
+      let H := As.reverse ++ callee.type::Γ
+      let term := Tm.call (.var n) ((List.range n).map fun i => .var (n-1-i))
+      let children := alternatives.map fun (label,Ds,result) =>
+        let branch := As.reverse ++ [label]::Γ
         DirectProof.cast branch R (DirectProof.node branch term result .app
-          [DirectProof.var branch 1 [label],
-           DirectProof.cast branch D (DirectProof.var branch 0 arg.type)])
-      pure (DirectProof.letE Γ callee (DirectProof.letE K arg
-        (DirectProof.node H term R (.unionVar 1) children)))
+          (DirectProof.var branch n [label] ::
+            ((As.zip Ds).zipIdx.map fun ((A,D),i) =>
+              DirectProof.cast branch D (DirectProof.var branch (n-1-i) A))))
+      pure (saveOperands (callee::actuals)
+        (DirectProof.node H term R (.unionVar n) children))
   | .write _ receiver rhs => do
     let B ← exprType fc receiver
     let single := match PositiveRules.expand G B with | [.refs D []] => some D | _ => none
@@ -432,27 +433,23 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
     for (B,i) in H.zipIdx do
       obligation pos ⟨Γ,.var i,B⟩ (some (DirectProof.var Γ i B)) "closure-entry" scope
     closureExpr fc scope H body
-  | .lam pos name arg ret body => do
-    if name == "undefined" then throw "shadowing undefined is outside the source slice"
-    if name != "" && (names scope).contains name then throw "shadowing closure parameter is outside the source slice"
-    let D ← lower (SourceInput.callableType arg)
+  | .lambda pos params ret body => do
+    let paramNames := params.map Prod.fst
+    if !distinct paramNames || paramNames.any (fun name => name == "" || name == "undefined" || (names scope).contains name) then
+      throw "shadowing or duplicate closure parameter is outside the source slice"
+    let Ds ← params.mapM fun p => lower (SourceInput.callableType p.2)
     let R ← lower (SourceInput.callableType ret)
-    let inner := ⟨name,some pos⟩::scope
-    -- The annotation is one obligation on the body; the claim may be several
-    -- signatures, each proved on the body under its own parameter type, as
-    -- the lambda rule requires. A claimed parameter must lie within the
-    -- annotated one, so no signature leaves the source's declared domain.
+    let inner := (paramNames.map fun name => ⟨name,some pos⟩) ++ scope
     let [.arrs L] := PositiveRules.expand G A | throw "closure claim must name a source arrow"
-    let L ← unarySignatures L
-    if L.isEmpty || !L.all (fun (Di,_) => Di.all D.contains) then
+    if L.isEmpty || !L.all (fun (Di,_) => Di.length == Ds.length && (Di.zip Ds).all (fun (D,A) => D.all A.contains)) then
       throw "closure signature claim is outside the source annotation"
-    let b ← closureExpr fc inner (D::Γ) body
-    let annotation := DirectProof.cast (D::Γ) R b
+    let b ← closureExpr fc inner (Ds ++ Γ) body
+    let annotation := DirectProof.cast (Ds ++ Γ) R b
     obligation pos annotation.goal (some annotation) "closure-result" inner
     let bodies ← L.mapM fun (Di,Ri) => do
-      if (Di,Ri) == (D,R) then pure annotation
-      else return DirectProof.cast (Di::Γ) Ri (← closureExpr fc inner (Di::Γ) body)
-    pure (DirectProof.node Γ (.funE b.term) A .funE bodies)
+      if (Di,Ri) == (Ds,R) then pure annotation
+      else return DirectProof.cast (Di ++ Γ) Ri (← closureExpr fc inner (Di ++ Γ) body)
+    pure (DirectProof.node Γ (.make (.closure Ds.length b.term) .nul) A .funE bodies)
   let plan := DirectProof.cast Γ A p
   obligation e.span plan.goal (some plan) "expression-claim" scope
   return plan
@@ -463,14 +460,11 @@ slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
 private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (Γ : List (Ty Nat))
     (e : SourceInput.Expr) (next : Target) : Compiler Target := do
-  if e.isImplicit then
-    return ← emitAt e.span .undef (.bind next) Γ [3] "implicit-argument" (scope := scope)
   let A ← exprType fc e
   let next ← match fc.exprCurrent.lookup e.span with
     | none => pure next
     | some R => checkpoint e.span (A::Γ) [⟨0,← contents R⟩] next (scope := ⟨"",some e.span⟩::scope)
   match e with
-  | .implicitUndef _ => emitAt e.span .undef (.bind next) Γ [3] "implicit-argument" (scope := scope)
   | .var _ name =>
     let i ← match (names scope).idxOf? name with
       | some i => pure i
@@ -489,7 +483,7 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       (scope := ⟨"",some a.span⟩::scope)
     compileExpr fc scope Γ a node
   | .atEnv .. | .letBody .. | .ifBody _ (some _) .. | .done .. | .seqBody .. => throw "statement environment wrapper is only supported inside a closure"
-  | .lam .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
+  | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
   | .unitTest _ tag equal testLeft left right =>
@@ -501,14 +495,19 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       (scope := ⟨"",some right.span⟩::⟨"",some left.span⟩::scope)
     let right ← compileExpr fc (⟨"",some left.span⟩::scope) (B::Γ) right test
     compileExpr fc scope Γ left right
-  | .app _ callee arg =>
+  | .call _ callee args =>
     let B ← exprType fc callee
-    let C ← exprType fc arg
+    let As ← args.mapM (exprType fc)
+    let n := As.length
+    let temporaries := (args.map fun a => ⟨"",some a.span⟩).reverse ++ [⟨"",some callee.span⟩]
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
-      (fun i => if i == 0 then 0 else i+2))⟩
-    let call ← emitAt e.span (.app (.var 1) (.var 0)) (.bind drop) (C::B::Γ) A
-      (scope := ⟨"",some arg.span⟩::⟨"",some callee.span⟩::scope)
-    let right ← compileExpr fc (⟨"",some callee.span⟩::scope) (B::Γ) arg call
+      (fun i => if i == 0 then 0 else i+n+1))⟩
+    let call ← emitAt e.span (.call (.var n) ((List.range n).map fun i => .var (n-1-i)))
+      (.bind drop) (As.reverse ++ B::Γ) A (scope := temporaries ++ scope)
+    let right ← args.attach.zipIdx.reverse.foldlM (fun next (⟨arg,_⟩,i) =>
+      compileExpr fc
+        ((args.take i |>.map fun a => ⟨"",some a.span⟩).reverse ++ ⟨"",some callee.span⟩::scope)
+        ((As.take i).reverse ++ B::Γ) arg next) call
     compileExpr fc scope Γ callee right
   | .write _ receiver rhs =>
     let B ← exprType fc receiver

@@ -28,7 +28,7 @@ try {
   }
   const fn = source.functions.find((f: any) => f.name === "returnedThunk");
   const call = fn.body.at(-1).e;
-  assert.equal(call.arg, null);
+  assert.deepEqual(call.args, []);
   for (const [name, edit] of [
     ["omission cannot supply a Boolean argument", (type: any) => {
       type.atoms[0].params = [{top: false, atoms: [{a: "boolean"}]}];

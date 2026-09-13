@@ -83,10 +83,11 @@ private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private def exprSites : SourceInput.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
-  | .not p e | .alloc p e | .read p e | .lam p _ _ _ e => joinSites ([],[p]) (exprSites e)
-  | .write p a b | .app p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
+  | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
+  | .write p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
-  | .done _ | .implicitUndef _ => ([],[])
+  | .call p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p]) (exprSites f))
+  | .done _ => ([],[])
   | .seqBody p a b | .letBody p _ _ a b => joinSites ([p.1],[]) (joinSites (exprSites a) (exprSites b))
   | .ifBody p result a b c => joinSites (if result.isSome then ([p.1],[]) else ([],[p])) (joinSites (exprSites a) (joinSites (exprSites b) (exprSites c)))
 private partial def stmtSites : SourceInput.Stmt → Sites

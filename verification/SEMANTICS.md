@@ -183,7 +183,7 @@ actuals than the descriptor declares.
 by `Step.callArg`. `call_step_iff` then proves both directions of the connection
 to the maintained machine for every argument count: every call step is
 preparation or dispatch, and either operation reconstructs a call step.
-`unary_step_iff` specializes this to the existing source application view.
+`unary_step_iff` specializes this to singleton application notation.
 `Invoke.step` embeds dispatch of every ready argument list into native reduction. `ready_step_iff` proves the converse:
 a ready call can only dispatch the saved code, and that step leaves the heap
 unchanged.

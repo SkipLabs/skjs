@@ -52,7 +52,7 @@ try {
       b.callee.right={k:"lit",pos:r.pos,lit:{a:"null"}};
     }],
     ["coalesced callable checks the argument",(b,at)=>{
-      at(b.arg).type=lit("true");b.arg={k:"lit",pos:b.arg.pos,lit:{a:"booleanlit",v:"true"}};
+      at(b.args[0]).type=lit("true");b.args[0]={k:"lit",pos:b.args[0].pos,lit:{a:"booleanlit",v:"true"}};
     }],
   ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims);
@@ -146,24 +146,24 @@ try {
 
   for (const [name, edit] of [
     ["argument must fit every selected callable", (call, at) => {
-      call.arg.lit.v = "false";
-      at(call.arg).type = lit("false");
+      call.args[0].lit.v = "false";
+      at(call.args[0]).type = lit("false");
     }],
     ["claimed callee cannot widen a narrow domain", (call, at) => {
       const arrows = at(call.callee).type.atoms;
       assertCallableAlternatives(arrows);
       assert(arrows.some((a: any) => JSON.stringify(a.params[0]) === JSON.stringify(lit("true"))));
       for (const arrow of arrows) arrow.params[0] = {top: false, atoms: [{a: "boolean"}]};
-      call.arg.lit.v = "false";
-      at(call.arg).type = lit("false");
+      call.args[0].lit.v = "false";
+      at(call.args[0]).type = lit("false");
     }],
     ["callee claim cannot discard the restrictive alternative", (call, at) => {
       const type = at(call.callee).type;
       assertCallableAlternatives(type.atoms);
       type.atoms = type.atoms.filter((a: any) => a.params[0].atoms.some((p: any) => p.a === "boolean"));
       assert.equal(type.atoms.length, 1);
-      call.arg.lit.v = "false";
-      at(call.arg).type = lit("false");
+      call.args[0].lit.v = "false";
+      at(call.args[0]).type = lit("false");
     }],
     ["shared-domain result must retain both alternatives", (call, at) => {
       at(call).type = lit("true");
@@ -180,14 +180,14 @@ try {
 
   for (const [name, edit] of [
     ["false branch cannot borrow the true-only domain", (b, at) => {
-      assert.deepEqual(at(b.then.arg).type, lit("true"));
-      assert.deepEqual(at(b.else_.arg).type, lit("false"));
+      assert.deepEqual(at(b.then.args[0]).type, lit("true"));
+      assert.deepEqual(at(b.else_.args[0]).type, lit("false"));
       b.else_.callee.name = "narrow";
       at(b.else_.callee).type = clone(at(b.then.callee).type);
       at(b.else_).type = clone(at(b.then).type);
     }],
     ["branch argument claim must match the tested value", (b, at) => {
-      at(b.else_.arg).type = lit("true");
+      at(b.else_.args[0]).type = lit("true");
     }],
     ["branch result must match its own callee", (b, at) => {
       assert.deepEqual(at(b.then).type, lit("false"));
@@ -211,13 +211,13 @@ try {
       at(body[2].init.callee).type.atoms[0].params[0] = lit("true");
     }],
     ["argument write must satisfy the cell invariant", (body, at) => {
-      const arg = body[2].init.arg;
+      const arg = body[2].init.args[0];
       arg.rhs.lit = {a: "null"};
       at(arg.rhs).type = {top: false, atoms: [{a: "null"}]};
       at(arg).type = clone(at(arg.rhs).type);
     }],
     ["assignment argument must return its RHS", (body, at) => {
-      at(body[2].init.arg).type = {top: false, atoms: [{a: "null"}]};
+      at(body[2].init.args[0]).type = {top: false, atoms: [{a: "null"}]};
     }],
     ["captured read cannot invent a singleton", (body, at) => {
       at(body[1].init.body).type = lit("true");
@@ -240,8 +240,8 @@ try {
     const fc = c.find((f: any) => f.file === fileKey).functions.find((f: any) => f.name === "callableArgumentWrite");
     const at = (e: any) => fc.exprs.find((q: any) => q.pos[0] === e.pos[0] && q.pos[1] === e.pos[1]);
     const call = f.body[2].init;
-    assert.deepEqual(at(call.arg).type, {top: false, atoms: [{a: "boolean"}]});
-    at(call.arg).type = lit("false");
+    assert.deepEqual(at(call.args[0]).type, {top: false, atoms: [{a: "boolean"}]});
+    at(call.args[0]).type = lit("false");
     at(call.callee).type.atoms[0].params[0] = lit("false");
     expect("explicit assignment refinement satisfies false-only view", run("--produce-stateful-source", ast, c), true);
     const refined = JSON.parse(fs.readFileSync(path.join(tmp, "evidence"), "utf8"));
@@ -251,13 +251,13 @@ try {
 
   for (const [name, edit] of [
     ["nested argument receiver must remain the captured cell", (call, at) => {
-      call.arg.receiver.name = "next";
+      call.args[0].receiver.name = "next";
     }],
     ["nested argument RHS must retain its parameter contract", (call, at) => {
-      at(call.arg.rhs).type = lit("false");
+      at(call.args[0].rhs).type = lit("false");
     }],
     ["nested assignment must return its saved RHS", (call, at) => {
-      at(call.arg).type = {top: false, atoms: [{a: "null"}]};
+      at(call.args[0]).type = {top: false, atoms: [{a: "null"}]};
     }],
   ] as [string, (...xs: any[]) => any][]) {
     const a = clone(ast), c = clone(claims);
@@ -309,9 +309,9 @@ try {
     }],
     ["returned callable requires the shared true-only domain", (f: any, at: any) => {
       const call = f.body[2].e;
-      assert.deepEqual(at(call.arg).type, lit("true"));
-      call.arg.lit.v = "false";
-      at(call.arg).type = lit("false");
+      assert.deepEqual(at(call.args[0]).type, lit("true"));
+      call.args[0].lit.v = "false";
+      at(call.args[0]).type = lit("false");
     }],
   ] as [string, (f: any, at: any) => void][]) {
     const a = clone(ast), c = clone(claims);

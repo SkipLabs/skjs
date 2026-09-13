@@ -34,9 +34,10 @@ try {
     ["closure annotation checked",a=>{sf(a).body[1].init.result=lit("true");}],
     ["consistent false closure claim",(a,c)=>{const e=sf(a).body[1].init;e.result=lit("true");at(c,e).type.atoms[0].result=lit("true");at(c,e.body).type=lit("true");}],
     ["wrong call result",(a,c)=>{at(c,sf(a).body[4].e).type=lit("true");}],
-    ["wrong call argument",(a,c)=>{const e=sf(a).body[4].e.arg;e.lit={a:"booleanlit",v:"true"};at(c,e).type=lit("true");}],
+    ["wrong call argument",(a,c)=>{const e=sf(a).body[4].e.args[0];e.lit={a:"booleanlit",v:"true"};at(c,e).type=lit("true");}],
     ["callee claim is checked",(a,c)=>{at(c,sf(a).body[4].e.callee).type=lit("true");}],
-    ["shadowing closure parameter gated",a=>{sf(a).body[1].init.name="cell";}],
+    ["shadowing closure parameter gated",a=>{sf(a).body[1].init.params[0].name="cell";}],
+    ["obsolete lambda field rejected",a=>{sf(a).body[1].init.name="ignored";}],
     ["function requirements cannot disappear",(a,c)=>{at(c,sf(a).body[1].init).type.atoms[0].construct="present";}],
     ["extra signature fields rejected",(a,c)=>{at(c,sf(a).body[1].init).type.atoms[0].optional=true;}],
   ] as [string, (...xs: any[]) => any][]){
@@ -63,7 +64,7 @@ try {
   for(const [name,select] of [
     ["writingBody", e=>e.body.rhs],
     ["allocatingBody", e=>e.body.e.e],
-    ["callingBody", e=>e.body.arg],
+    ["callingBody", e=>e.body.args[0]],
   ] as [string, (...xs: any[]) => any][]) {
     const a=clone(ast),c=clone(claims),f=a.functions.find((f: any) =>f.name===name);
     const closure=f.body.filter((s: any) =>s.init && s.init.k==="lambda").at(-1).init;

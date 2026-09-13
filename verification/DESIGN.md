@@ -407,7 +407,7 @@ an explicit return, and unsupported types. This is a coverage gate for this slic
 [SourceTypes.lean](lean/Verification/ExperimentState/SourceTypes.lean) translates
 null, undefined, boolean, their singleton types, unions and bottom exactly into
 four primitive labels, and interns each compound type a program mentions, an
-invariant reference, a conjunction of references or a unary arrow, as one row
+invariant reference, a conjunction of references or a callable signature, as one row
 of the request's own type table. A label exists only because something used
 it, and `label_meaning` proves a labelled clause means exactly that clause over
 any table holding the row; a clause the table lacks has no label rather than a
@@ -522,7 +522,7 @@ regression checks the extracted alias-assignment graph's heap and result.
 
 Closure contracts are decoded by
 [SourceInput.lean](lean/Verification/ExperimentState/SourceInput.lean).
-`callableType` checks zero-argument and unary signature shapes and recursively lowers primitive
+`callableType` checks ordered required-parameter signature shapes and recursively lowers primitive
 and callable arguments and results, including every union and overload arm.
 Bodies compose literals, variables, cell allocation, reads, assignments and
 calls, including nested expression arrows.
@@ -926,13 +926,9 @@ a completeness claim. A request's table holds only what its file mentions, but
 enumerating every unused arrow at each subtype query was already expensive at
 that size; a larger file must not silently expand every local search problem.
 
-Zero-argument thunks reuse unary application with an internally supplied
-`undefined` value and an anonymous parameter. Returned and cell-stored thunks
-have real-export coverage; the implicit argument has no fabricated source claim.
-General multi-argument functions cannot simply be identified with curried arrows:
-`(a, b) => r` and `a => b => r` have different source invocation behavior even
-when their nested type encoding would coincide. Argument-list work must retain
-that distinction as well as evaluation order.
+Zero-argument thunks use native empty argument lists and zero-parameter
+descriptors. Their source pipeline checks creation, delayed captured reads,
+stored replacements, and invocation through both producers.
 
 The [argument preparation interface](SEMANTICS.md#argument-list-preparation)
 now separates callee evaluation, left-to-right argument evaluation and readiness
@@ -978,8 +974,15 @@ Source function types now preserve all required parameters through annotations,
 SKJS claim decoding, the TypeScript claim producer, and the report editor.
 A two-argument function crosses a mutable cell and escapes with a narrower first
 domain; forged widening or omission of its second domain fails.
-Next, extend source call/lambda lowering to argument lists. Source thunks still use their existing implicit undefined parameter, and
-multi-argument source calls remain gated.
+Source calls and lambdas now lower native argument and parameter lists.
+The callee is saved first, then actuals left to right; temporary-slot maps retain
+the original bindings. Lambda bodies put parameters in source order before
+captures. Union-callee elimination saves all operands before splitting the
+callee's type. Zero-argument calls and closures use empty lists and arity zero;
+the synthetic undefined argument and anonymous parameter have been retired.
+The source suite covers effect order, a returned closure capturing the second
+parameter, and a multi-argument union callee. Calls require an exact signature
+argument count; optional/rest parameters and spread actuals remain excluded.
 
 ### Next callable and object milestones
 
@@ -991,7 +994,7 @@ behavior through actual producer claims and independent consumption:
 | Milestone | Completion example | Semantic work to preserve |
 | --- | --- | --- |
 | Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Reuse `isFun` and checked tag refinements without inventing a signature for unknown code. |
-| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Native reduction, graph signatures, subtyping, creation and application evidence support argument lists. Extend source lowering next. Zero-argument source thunks currently use an unused undefined parameter. |
+| Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Complete through source lowering and both producers, including native zero-argument thunks. Optional/rest parameters and spread actuals remain separate work. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
 | `.call` | Explicit receiver and argument effects reach the intended function; incompatible receiver or argument claims fail. | Establish the intrinsic operation rather than assuming every property named `call` is `Function.prototype.call`; distinguish lexical arrow `this` from ordinary receivers. |

@@ -64,13 +64,12 @@ export type Expr =
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
-  | { k: "apply"; pos: Span; callee: Expr; arg: Expr | null }
+  | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
   | {
       k: "lambda";
       pos: Span;
-      name: string;
-      arg: WireType | null;
+      params: { name: string; type: WireType }[];
       result: WireType;
       body: Expr;
     }
@@ -511,15 +510,14 @@ class Gate {
         if (
           node.questionDotToken ||
           node.typeArguments?.length ||
-          node.arguments.length > 1 ||
-          (node.arguments.length === 1 && ts.isSpreadElement(node.arguments[0]))
+          node.arguments.some((arg: any) => ts.isSpreadElement(arg))
         )
-          this.fail(node, "expected zero or one ordinary call argument");
+          this.fail(node, "expected ordinary call arguments without spread or type arguments");
         return {
           k: "apply",
           pos: this.span(node),
           callee: this.expr(node.expression),
-          arg: node.arguments.length ? this.expr(node.arguments[0]) : null,
+          args: node.arguments.map((arg: any) => this.expr(arg)),
         };
       }
 
@@ -581,23 +579,20 @@ class Gate {
   // owns what the source means.
 
   private lambda(node: any): Expr {
-    if (
-      node.modifiers?.length ||
-      node.typeParameters?.length ||
-      node.parameters.length > 1
-    )
-      this.fail(node, "expected a closure with zero or one required parameter");
-    const p = node.parameters[0];
-    if (p && (
-      !ts.isIdentifier(p.name) ||
-      p.name.text === "this" ||
-      p.questionToken ||
-      p.dotDotDotToken ||
-      p.initializer
-    ))
-      this.fail(p, "expected a required closure parameter");
-    if (p?.name.text === "undefined")
-      this.fail(p, "shadowing undefined is outside the fragment");
+    if (node.modifiers?.length || node.typeParameters?.length)
+      this.fail(node, "expected a non-generic synchronous closure");
+    for (const p of node.parameters) {
+      if (
+        !ts.isIdentifier(p.name) ||
+        p.name.text === "this" ||
+        p.questionToken ||
+        p.dotDotDotToken ||
+        p.initializer
+      )
+        this.fail(p, "expected a required closure parameter");
+      if (p.name.text === "undefined")
+        this.fail(p, "shadowing undefined is outside the fragment");
+    }
 
     const result = () => this.typeOf(node.type);
     const body = ts.isBlock(node.body)
@@ -610,8 +605,7 @@ class Gate {
     return {
       k: "lambda",
       pos: this.span(node),
-      name: p ? p.name.text : "",
-      arg: p ? this.typeOf(p.type) : null,
+      params: node.parameters.map((p: any) => ({name: p.name.text, type: this.typeOf(p.type)})),
       result: this.typeOf(node.type),
       body,
     };

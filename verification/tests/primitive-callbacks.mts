@@ -95,8 +95,8 @@ try {
     c = clone(claims);
   const f = a.functions.find((f: any) => f.name === "booleanIdentity");
   const call = f.body.at(-1).e;
-  const pos = call.arg.pos;
-  call.arg = { k: "lit", pos, lit: { a: "null" } };
+  const pos = call.args[0].pos;
+  call.args[0] = { k: "lit", pos, lit: { a: "null" } };
   c
     .find((f: any) => f.file === file)
     .functions.find((f: any) => f.name === "booleanIdentity")

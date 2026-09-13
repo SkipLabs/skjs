@@ -161,9 +161,8 @@ from `a ++ b` into the two branches. `combine` retains its result types `b` and
 `b'` and two branches; `empty` requires an empty type at some argument position,
 not merely a zero-length argument list. Every label in these fields is bounds
 checked. Graph subtype search supports native argument lists and splits any
-position. Source function types preserve required parameter lists; closure and
-call syntax remains bounded to zero or one argument. Source thunks still use
-a singleton undefined domain until native zero-argument syntax lowering lands. There is one accepted certificate shape.
+position. Source function types, closures and calls preserve required parameter
+lists, including empty lists for zero-argument thunks. There is one accepted certificate shape.
 
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
 and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
@@ -464,20 +463,18 @@ nested operands. No unsupported union alternative is discarded.
 `SourceInput.callableType` lowers every supported operand to graph labels.
 See [callable integration](DESIGN.md#callable-integration) for the proof boundary.
 
-Zero-argument signatures use `"params": []`. Their calculus domain is the
-singleton `undefined` label, `[3]`; their bodies receive an anonymous unused slot.
-In source ASTs a zero-argument lambda has `"name": ""` and `"arg": null`, and a
-zero-argument application has `"arg": null`. The adapter generates the omitted
-argument's `undefined` value internally, without requesting a source expression
-claim or borrowing the enclosing call's claim. Existing application rules still
-check the domain, so omission cannot satisfy a Boolean or callable parameter.
-This interpretation relies on the fragment excluding `arguments`, receiver
-behavior and argument-count introspection. It is not a general multi-argument
-encoding.
+Source lambda ASTs carry `"params": [{"name": "x", "type": T}, ...]`;
+applications carry `"args": [expression, ...]` alongside `"callee"`.
+Both use empty lists for zero-argument forms. A lambda's descriptor records its
+parameter count, with those bindings before captured variables. Calls evaluate
+the callee first and actuals left to right; checked signatures require the exact
+actual count. No synthetic undefined actual, anonymous parameter, or source
+claim is introduced for an empty list. Optional/rest parameters, spread actuals,
+`arguments`, receiver behavior and argument-count introspection remain excluded.
 
 Source arrows require explicit parameter and result annotations. Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including
-nested expression arrows under the same signature limits. Each expression's
+nested expression arrows with required parameter lists. Each expression's
 claim is checked as a separate exact sequent in its lexical context. The body
 also has to satisfy the declared result. A narrower body claim with a wider
 result annotation is supported when both judgments are derivable. A block with

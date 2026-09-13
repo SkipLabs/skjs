@@ -51,7 +51,7 @@ try {
   }
   console.log("  transported multi-argument contracts retain later domains and arity: OK");
   const omitted = structuredClone(source);
-  omitted.functions.find((f: any) => f.name === "callableArgument").body[3].init.arg = null;
+  omitted.functions.find((f: any) => f.name === "callableArgument").body[3].init.args = [];
   for (const mode of ["--check-stateful-source", "--produce-stateful-source"]) {
     const result = run(mode, omitted, exported);
     assert.notEqual(result.status, 0, "omission cannot satisfy a required callback parameter");
@@ -75,7 +75,7 @@ try {
   console.log("  escaped callback argument observes the write and forwards the argument: JavaScript witness OK");
   for (const [name, change] of [
     ["callback must accept the invoker's full Boolean domain", (fc: any) => {
-      const arg = fn.body[3].init.arg;
+      const arg = fn.body[3].init.args[0];
       const site = fc.exprs.find((e: any) => e.pos[0] === arg.pos[0] && e.pos[1] === arg.pos[1]);
       site.type.atoms[0].params[0] = {top: false, atoms: [{a: "booleanlit", v: "false"}]};
     }],

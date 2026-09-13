@@ -65,7 +65,7 @@ try {
       // The parser writes the second signature under `and` on the first.
       assert.deepEqual(cst.annot.atoms.map((x: any) =>x.a),["function"]);assert.equal(cst.annot.atoms[0].and.length,1);
       const expressions=[{pos:cst.init.pos,type:[4],current:null},{pos:cst.init.body.pos,type:bodyType,current:null},
-        {pos:ret.e.pos,type:[0],current:null},{pos:ret.e.callee.pos,type:[4],current:null},{pos:ret.e.arg.pos,type:[1],current:null}];
+        {pos:ret.e.pos,type:[0],current:null},{pos:ret.e.callee.pos,type:[4],current:null},{pos:ret.e.args[0].pos,type:[1],current:null}];
       const entries=[{start:cst.pos[0],bindings:[]},{start:ret.pos[0],bindings:[{name:"f",type:[4],current:null}]}];
       fs.writeFileSync(sc,JSON.stringify({file:sf,sourceSha256:hash(source),types,functions:[{name:f.name,namePos:f.namePos,params:[],result:[0],entries,expressions}]}));
     };
@@ -116,7 +116,7 @@ try {
         case "read":type=[1,2];expr(e.e);break;
         case "lambda":type=[5];expr(e.body);break;
         case "write":type=[2];expr(e.receiver);expr(e.rhs);break;
-        case "apply":type=[1,2];expr(e.callee);expr(e.arg);break;
+        case "apply":type=[1,2];expr(e.callee);e.args.forEach(expr);break;
         default:throw Error(`unexpected fixture expression ${e.k}`);
       }
       expressions.push({pos:e.pos,type,current:null});
