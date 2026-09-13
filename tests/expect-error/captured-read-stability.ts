@@ -461,22 +461,24 @@ function checkedDestructuredDefault(): boolean {
   return read();
 }
 
-// FIXME: selecting a result must not discard the contract that a direct
+// Selecting a result must not discard the contract that a direct
 // call initializer retains.
 function selectedResultReplacement(flag: boolean): number {
   let cell = flag ? makeCapturedNumberCell() : makeCapturedNumberCell();
   const read = (): number => cell.value;
+  // @ts-expect-error Type is not assignable to the variable's type
   cell = { value: "changed" };
   return read();
 }
 
-// FIXME: a property access produces an existing object whose nullable field
+// A property access produces an existing object whose nullable field
 // remains writable through the original holder after a callback is checked.
 function propertyResultCapture(holder: {
   cell: { value: boolean | null };
 }): boolean {
   const cell = holder.cell;
   if (cell.value !== null) {
+    // @ts-expect-error Type of the callback's returned value is not assignable to the expected return type
     const read = (): boolean => cell.value;
     holder.cell.value = null;
     return read();

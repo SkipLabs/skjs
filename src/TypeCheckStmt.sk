@@ -95,22 +95,22 @@ extension class TypeChecker {
         // before being used. See TypeCheckEnv.sk:LocalObjectState for details.
         isLocalObject =
           binding.type.isNone() &&
+          binding.pat.value is PVar _ &&
           binding.value is Some(Expr(_, Object _));
-        // Completed call results carry a contract through the whole binding
-        // pattern. Preserve symbolic fields without sealing bare candidates.
-        hasResultContract = binding.value match {
-        | Some(Expr(_, Call _))
-        | Some(Expr(_, New _)) ->
-          !ty.isFieldFree() && ty.getSingleVar().isNone()
-        | _ -> false
-        };
+        // Completed values retain their symbolic contents contracts regardless
+        // of initializer syntax. Object literals may still be initializing
+        // their shape; bare candidates retain their evolving-binding rule.
+        hasContentsContract =
+          !isLocalObject &&
+          !ty.isFieldFree() &&
+          ty.getSingleVar().isNone();
         tcenv.!exprTypes[(binding.pat.pos, false, true)] = ty;
         this.bind(
           tcenv,
           bkind,
           binding.pat,
           ty,
-          binding.type.isSome() || hasResultContract,
+          binding.type.isSome() || hasContentsContract,
           isInitialized,
           isLocalObject,
         );

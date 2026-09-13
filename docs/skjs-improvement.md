@@ -216,10 +216,10 @@ retain their types. Claim environments use the same capture view.
 
 The guarded, never-reassigned parameter examples in `callables/unions.ts`
 remain accepted. Direct local aliases now inherit an explicit or previously
-inherited source object contract. Inferred objects obtained through other
-alias-producing expressions and compound types containing inference variables
-remain open work. Other noncaptured bindings retain ordinary
-type evolution. Coverage:
+inherited source object contract. Completed inferred values retain symbolic
+contents contracts regardless of initializer syntax. Bare inference candidates
+and object initialization retain their separate rules. Stability under later
+substitution growth (R2) and general alias mutation (M1) remain open work. Coverage:
 [`captured-read-stability.ts`](../tests/expect-error/captured-read-stability.ts).
 The full checker suite and all 41 pipeline suites pass, including inferred
 primitive contracts, with no corpus outcome mismatches. This is not completion
@@ -270,9 +270,9 @@ The M2 regressions in the same test file distinguish three obligations:
   widen, but the later reader must then handle the earlier numeric field write.
   Both const and mutable tracked bindings use the same contract. This is a
   symbolic inference dependency, not the immutable snapshot required by R2.
-- Direct call and constructor initializers retain their result's symbolic
-  contents contract at binding time. They have already produced a value, so
-  there is no local field-initialization phase to finish. This makes later
+- Completed inferred initializers retain a symbolic contents contract at
+  binding time, independently of their syntax. The exceptions are growable
+  local object literals and bare inference candidates. This makes later
   replacements and captured reads obey the same contract as explicitly typed
   bindings, without expanding generic result fields. `replacedCallResult`,
   `narrowedCallResult`, and `replacedConstructorResult` reject the witnessed
@@ -284,8 +284,13 @@ The M2 regressions in the same test file distinguish three obligations:
   direct-variable-only result special case. `replacedDestructuredResult` rejects
   replacement of an extracted object; `checkedDestructuredDefault` accepts a
   fresh check after a tuple-slot default, while `staleDestructuredDefault` still
-  rejects the creation-time field promise. Other initializer expression forms
-  remain separate work.
+  rejects the creation-time field promise. The same rule handles selection
+  expressions and property reads: `selectedResultReplacement` rejects an
+  incompatible replacement, `propertyResultCapture` rejects a stale captured
+  field, and `checkedPropertyResult` preserves a fresh check. Destructuring an
+  object literal also extracts completed values; it does not start local shape
+  initialization. Field-free snapshots and bare inference candidates are not
+  eagerly converted into contents contracts.
 
 The original four outcomes occurred with the saved pre-repair binary.
 Strict tsc
