@@ -291,6 +291,14 @@ mutable class Subst private {
     TVar::create(pos, TVarID::create(id))
   }
 
+  readonly fun skolemIdsSince(first: Int): SortedSet<Id> {
+    ids = SortedSet[];
+    for (id in Range(first, this.nextSkolemId)) {
+      !ids = ids.set(Id::createSynthetic(`skolem:${id}`))
+    };
+    ids
+  }
+
   mutable fun genSkolemTParam(
     pos: PosRange,
     name: String,

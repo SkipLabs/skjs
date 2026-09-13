@@ -90,8 +90,13 @@ result escapes. At the same boundary, the enclosing bindings' current and
 declared types are inspected under the updated substitution. This catches
 locally minted hidden identities inferred into captured containers, including
 closures with explicit void results. Opaque outer containers and invocation-local
-inference remain usable. Loop pooling and later inference growth
-that introduces a hidden type after this boundary check remain open; this does
+inference remain usable. The same enclosing-binding check runs at while, for,
+and for-in/of boundaries, including hidden identities introduced by conditions
+and increments. For-in/of excludes its fresh iteration binding; a for
+initializer remains persistent across iterations. Existing loop-pooling
+witnesses are rejected while per-iteration inferred containers remain valid.
+Later inference growth that introduces a hidden type after a boundary check
+remains open; this does
 not complete R1 or provide general existential packaging.
 
 R2 initial stability repair: retire the `TSInst` subtype shortcut that equated

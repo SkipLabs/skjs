@@ -3761,10 +3761,7 @@ extension class TypeChecker {
     };
 
     if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
-      localIds = SortedSet[];
-      for (id in Range(firstLocalSkolem, tcenv.subst.nextSkolemId)) {
-        !localIds = localIds.set(Id::createSynthetic(`skolem:${id}`))
-      };
+      localIds = tcenv.subst.skolemIdsSince(firstLocalSkolem);
       if (retTypeAstOpt.isNone()) {
         escape = mutable EscapingTypeParams(localIds);
         _ = escape.type(tcenv.subst, retType);
@@ -3780,25 +3777,7 @@ extension class TypeChecker {
           )
         }
       };
-      // Inference can export an identity through an outer container even when
-      // this closure's result is void. Inspect the enclosing binding graph
-      // under the current substitution, including indirect candidate growth.
-      outerEscape = mutable EscapingTypeParams(localIds);
-      for (entry in savedScope.visibleRefs().items()) {
-        _ = outerEscape.type(tcenv.subst, entry.i1.type);
-        _ = outerEscape.type(tcenv.subst, entry.i1.declaredType)
-      };
-      if (!outerEscape.found.isEmpty()) {
-        tcenv.error(
-          Array[
-            (
-              pos,
-              "A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type",
-            ),
-          ],
-          SKJSCode(2081),
-        )
-      }
+      this.checkHiddenBindingEscape(tcenv, pos, firstLocalSkolem, savedScope)
     };
 
     tcenv.!scope = savedScope;
@@ -3885,6 +3864,36 @@ extension class TypeChecker {
       )
     | Some(cstr) ->
       _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true, None())
+    }
+  }
+
+  // Shared by closure and loop boundaries: inference may mutate types reachable
+  // from persistent bindings without assigning those bindings directly.
+  fun checkHiddenBindingEscape(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    firstLocalSkolem: Int,
+    enclosingScope: readonly Scope,
+  ): void {
+    if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
+      escape = mutable EscapingTypeParams(
+        tcenv.subst.skolemIdsSince(firstLocalSkolem),
+      );
+      for (entry in enclosingScope.visibleRefs().items()) {
+        _ = escape.type(tcenv.subst, entry.i1.type);
+        _ = escape.type(tcenv.subst, entry.i1.declaredType)
+      };
+      if (!escape.found.isEmpty()) {
+        tcenv.error(
+          Array[
+            (
+              pos,
+              "A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type",
+            ),
+          ],
+          SKJSCode(2081),
+        )
+      }
     }
   }
 

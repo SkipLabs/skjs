@@ -450,12 +450,11 @@ function toArrayReadonly(x: unknown): ReadonlyArray<unknown> {
 }
 
 /* -------------------------------------------------------------------------
- * Hidden-type lifetimes: result and captured-state escapes are rejected;
- * loop pooling remains open.
+ * Hidden-type lifetimes: result, captured-state, and loop-pooling regressions.
  *
  * A skolem minted during one type-check can stand for different objects' hidden
  * arguments on different executions. An inferred result must not export that
- * shared identity. Loop pooling still permits it (#903).
+ * shared identity. These boundary checks address the witnessed channels (#903).
  * ----------------------------------------------------------------------- */
 
 declare function makeList<T>(): T[];
@@ -578,9 +577,10 @@ function opaqueWhileContainer(items: unknown[]): unknown[] {
   return values;
 }
 
-// FIXME: hidden identities introduced by the for condition must not pool either.
+// Hidden identities introduced by the for condition must not pool either.
 function holeForConditionPooling(next: () => unknown): void {
   const values = [];
+  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   for (let value: unknown = next(); value instanceof Box; value = next()) {
     values.push(value);
   }
@@ -589,10 +589,11 @@ function holeForConditionPooling(next: () => unknown): void {
   if (first && second) first.v = second.v;
 }
 
-// FIXME: pooling can corrupt an earlier object before the loop exits.
+// Pooling can corrupt an earlier object before the loop exits.
 function holeWhilePooling(items: unknown[]): void {
   const values = [];
   let index = 0;
+  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   while (index < items.length) {
     const value = items[index++];
     if (value instanceof Box) {
@@ -603,15 +604,16 @@ function holeWhilePooling(items: unknown[]): void {
   }
 }
 
-// Hole 3a — the same pooling with nothing declared at all: no makeList, no
+// Repaired — pooling with nothing declared at all: no makeList, no
 // closure, just the ordinary "filter a heterogeneous array" idiom. This is the
 // shape that matters for judging the residual risk, because it is what a
 // developer writes first. Note the inversion it creates: annotating the
 // container (`const ys: Box<unknown>[] = []`) is REJECTED -- soundly, Box is
-// invariant in T -- while leaving it inferred is accepted and unsound, so the
-// natural response to that error is to delete the annotation and land here.
+// invariant in T. Leaving it inferred now rejects the pooling at the loop
+// boundary; an unknown[] annotation instead expresses safe opaque storage.
 function holePureIdiom(items: unknown[]): number {
   const ys = [];
+  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   for (const x of items) {
     if (x instanceof Box) {
       ys.push(x);
@@ -620,15 +622,16 @@ function holePureIdiom(items: unknown[]): number {
   const p = ys[0];
   const q = ys[1];
   if (p && q) {
-    p.v = q.v; // UNSOUND: accepted, exchanges elements of distinct hidden types
+    p.v = q.v; // Prevented by the rejected loop escape above.
   }
   return ys.length;
 }
 
-// Hole 3 — loop bodies, no closure needed. The body is checked once, so all
+// Repaired — loop bodies, no closure needed. The body is checked once, so all
 // iterations share one skolem and their values pool in the outer container.
 function holeLoopPooling(items: unknown[]): void {
   const ys = makeList();
+  // @skjs-expect-error A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type
   for (const x of items) {
     if (x instanceof Box) {
       ys.push(x);
@@ -637,6 +640,6 @@ function holeLoopPooling(items: unknown[]): void {
   const p = ys[0];
   const q = ys[1];
   if (p && q) {
-    p.v = q.v; // UNSOUND: accepted, exchanges elements of distinct hidden types
+    p.v = q.v; // Prevented by the rejected loop escape above.
   }
 }

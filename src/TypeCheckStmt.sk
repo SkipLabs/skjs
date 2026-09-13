@@ -142,6 +142,7 @@ extension class TypeChecker {
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
       initTerm = this.stmt(tcenv, initStmt);
+      firstLocalSkolem = tcenv.subst.nextSkolemId;
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       writes = mutable CaptureWrites{};
       writes.expr(cond);
@@ -168,6 +169,7 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, initScope);
       loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
@@ -234,6 +236,7 @@ extension class TypeChecker {
         | _ -> false
         };
 
+      firstLocalSkolem = tcenv.subst.nextSkolemId;
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       // See the `For` case: the loop catches its body's jumps and folds their
@@ -252,6 +255,7 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, scopeCopy);
       loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
@@ -268,6 +272,7 @@ extension class TypeChecker {
       StmtTermination::expr(e).then(StmtTermination::throw_)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
+      firstLocalSkolem = tcenv.subst.nextSkolemId;
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       writes = mutable CaptureWrites{};
       writes.expr(cond);
@@ -289,6 +294,7 @@ extension class TypeChecker {
       for (snap in catcher.breaks) {
         loopScope.uniteSnapshot(tcenv.subst, this, snap)
       };
+      this.checkHiddenBindingEscape(tcenv, st.pos, firstLocalSkolem, scopeCopy);
       loopScope.limitLoopExit(tcenv.subst, this, tcenv.loopWriteBounds.pop());
       tcenv.!scope = scopeCopy;
       tcenv.popScope(this, loopScope);
