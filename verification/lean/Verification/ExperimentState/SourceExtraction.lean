@@ -177,23 +177,25 @@ private def conditionVariable (scope : List Descriptor) : SourceInput.Expr → O
 
 /-- Only a syntactic immutable variable retains an alias to the observed value.
 Reads and calls deliberately do not qualify, even if their types look stable. -/
-private def unitConditionVariable (scope : List Descriptor) : SourceInput.Expr → Option (Nat × Tag × Bool)
-  | .not _ e => (unitConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
+private def tagConditionVariable (scope : List Descriptor) : SourceInput.Expr → Option (Nat × Tag × Bool)
+  | .not _ e => (tagConditionVariable scope e).map fun (i, tag, equal) => (i, tag, !equal)
+  | .shapeTest _ tag equal (.var _ name) =>
+    ((names scope).idxOf? name).map (·, tag, equal)
   | .unitTest _ tag equal testLeft left right =>
     match (if testLeft then left else right) with
     | .var _ name => ((names scope).idxOf? name).map (·, tag, equal)
     | _ => none
   | _ => none
 
-private def unitTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
+private def tagTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
 
 /-- Every source label has a uniform head shape. Splitting the explicit union
 lets the ordinary tag rule prove each alternative. -/
-private def unitTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : List (Ty Nat)) (slot : Nat)
+private def tagTestPlan (G : PositiveGraphs.NormalGraph Nat) (tag : Tag) (Γ : List (Ty Nat)) (slot : Nat)
     (equal : Bool) (A : Ty Nat) : Except String DirectProof.Plan := do
-  let some C := Γ[slot]? | throw "internal null-test slot mismatch"
-  let term := unitTestTerm tag equal slot
+  let some C := Γ[slot]? | throw "internal tag-test slot mismatch"
+  let term := tagTestTerm tag equal slot
   let children ← C.mapM fun a => do
     let H := Γ.set slot [a]
     let q := decide (Answers G [a] tag true)
@@ -212,8 +214,8 @@ private def conditionalPlan (scope : List Descriptor) (H : List (Ty Nat)) (A : T
     (yesBranch noBranch : List Descriptor → List (Ty Nat) → Compiler DirectProof.Plan) :
     Compiler DirectProof.Plan := do
   let G := SourceTypes.graph (← table)
-  if let some (i, tag, equal) := unitConditionVariable scope cond then
-    let some C := H[i]? | throw "internal closure null-guard slot mismatch"
+  if let some (i, tag, equal) := tagConditionVariable scope cond then
+    let some C := H[i]? | throw "internal closure tag-guard slot mismatch"
     -- Preserve the evaluated predicate and its claims in an anonymous slot.
     let K := c.type :: H
     let tested := i+1
@@ -281,12 +283,16 @@ private def closureExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
       | .fls => pure ([2],ProgramCertificates.Rule.flsLit)
       | _ => throw "unsupported closure literal"
     pure (DirectProof.node Γ t B r)
+  | .shapeTest _ tag equal e => do
+    let operand ← closureExpr fc scope Γ e
+    let result ← tagTestPlan G tag (operand.type::Γ) 0 equal A
+    pure (DirectProof.letE Γ operand result)
   | .unitTest _ tag equal testLeft left right => do
     let leftSpan := left.span
     let left ← closureExpr fc scope Γ left
     let right ← closureExpr fc (⟨"",some leftSpan⟩::scope) (left.type::Γ) right
     let H := right.type::left.type::Γ
-    let result ← unitTestPlan G tag H (if testLeft then 1 else 0) equal A
+    let result ← tagTestPlan G tag H (if testLeft then 1 else 0) equal A
     pure (DirectProof.letE Γ left (DirectProof.letE (left.type::Γ) right result))
   | .logical _ andOp left right => do
     let l ← closureExpr fc scope Γ left
@@ -486,12 +492,19 @@ private def compileExpr (fc : SourceClaims.Function) (scope : List Descriptor) (
   | .lambda .. | .ifBody _ none .. | .coalesce .. | .logical .. =>
     let t ← closureExpr fc scope Γ e
     emitAt e.span t.term (.bind next) Γ A (scope := scope)
+  | .shapeTest _ tag equal operand =>
+    let B ← exprType fc operand
+    let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else i+1))⟩
+    let test ← emitAt e.span (tagTestTerm tag equal 0) (.bind drop) (B::Γ) A
+      (scope := ⟨"",some operand.span⟩::scope)
+    compileExpr fc scope Γ operand test
   | .unitTest _ tag equal testLeft left right =>
     let B ← exprType fc left
     let C ← exprType fc right
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
-    let test ← emitAt e.span (unitTestTerm tag equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
+    let test ← emitAt e.span (tagTestTerm tag equal (if testLeft then 1 else 0)) (.bind drop) (C::B::Γ) A
       (scope := ⟨"",some right.span⟩::⟨"",some left.span⟩::scope)
     let right ← compileExpr fc (⟨"",some left.span⟩::scope) (B::Γ) right test
     compileExpr fc scope Γ left right
@@ -560,8 +573,8 @@ condition is in slot zero. Only a syntactically identified immutable variable
 may be replaced by the recovered Boolean witness. -/
 private def emitBranch (scope : List Descriptor) (Γ : List (Ty Nat)) (cond : SourceInput.Expr)
     (A : Ty Nat) (yes no : Target) : Compiler Target := do
-  if let some (i, tag, equal) := unitConditionVariable scope cond then
-    let some C := Γ[i]? | throw "internal null-guard slot mismatch"
+  if let some (i, tag, equal) := tagConditionVariable scope cond then
+    let some C := Γ[i]? | throw "internal tag-guard slot mismatch"
     let adapt := fun t =>
       let mapped := branchMapping scope.length (some i) t
       ⟨mapped.label, some ((mapped.mapping.getD []).map
@@ -597,7 +610,7 @@ private def conditionContext (G : PositiveGraphs.NormalGraph Nat) (scope : List 
       conditionContext G scope (conditionContext G scope Γ left answer) right answer
     else Γ
   | _ =>
-    if let some (i, tag, equal) := unitConditionVariable scope cond then
+    if let some (i, tag, equal) := tagConditionVariable scope cond then
       Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       Γ.set i (if answer then [1] else [2])

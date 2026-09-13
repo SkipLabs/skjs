@@ -78,10 +78,12 @@ fields, arrow arguments and arrow results admit primitive and recursively
 callable contracts; nested record operands remain excluded. Annotations may union the supported primitive, cell and
 function types with ordered required parameters. Creating and invoking closures
 preserves parameter order and requires an exact argument count, including zero. Immutable Boolean, null and undefined tests refine what
-follows them, including through `&&`, `||`, `??`, `?:` and negation. Every path must reach an explicit return.
+follows them, including through `&&`, `||`, `??`, `?:` and negation.
+Strict `typeof e === "function"` and `!==` tests evaluate the operand once;
+tests on immutable variables retain only the corresponding callable alternatives. Every path must reach an explicit return.
 
 Mutable bindings, loops inside closures, external cell parameters,
-labeled transfers, active-name shadowing, `typeof`, general strings and numbers,
+labeled transfers, active-name shadowing, other `typeof` comparisons, general strings and numbers,
 generics and overloads are outside it. The fragment is smaller than the calculus,
 and the parser can represent syntax the Lean adapter then rejects: such a
 rejection is a limitation, never evidence that a producer claim is false.

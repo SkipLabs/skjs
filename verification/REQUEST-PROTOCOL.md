@@ -472,6 +472,14 @@ actual count. No synthetic undefined actual, anonymous parameter, or source
 claim is introduced for an empty list. Optional/rest parameters, spread actuals,
 `arguments`, receiver behavior and argument-count introspection remain excluded.
 
+A strict `typeof e === "function"` or `!==` comparison has source AST shape
+`{"k":"functionTest","pos":[start,end],"equal":true,"e":operand}`.
+Reversed operands use the same shape. The trusted parser checks the `typeof`
+operator and literal; the adapter checks the operand and Boolean predicate
+claims and lowers through `isFun`. Only an immutable identifier operand can
+refine a binding. Other `typeof` comparisons and general string expressions
+remain outside the source fragment.
+
 Source arrows require explicit parameter and result annotations. Bodies compose
 literals, variables, cell allocation, reads, assignments and calls, including
 nested expression arrows with required parameter lists. Each expression's

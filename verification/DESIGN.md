@@ -993,7 +993,7 @@ behavior through actual producer claims and independent consumption:
 
 | Milestone | Completion example | Semantic work to preserve |
 | --- | --- | --- |
-| Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Reuse `isFun` and checked tag refinements without inventing a signature for unknown code. |
+| Function-shape guards | Select a callable from a mixed union with `typeof x === "function"`, then invoke it. | Complete through the existing `isFun` tag rule and checked source refinements; includes mixed unions, captured guards and effectful operands. No signature is invented. |
 | Required argument lists | Two arguments with effects distinguish callee-first and left-to-right evaluation, and a wrong second argument fails. | Complete through source lowering and both producers, including native zero-argument thunks. Optional/rest parameters and spread actuals remain separate work. |
 | Multiple object fields | A write through one alias updates one field while a callback reads another. | Extend the one-cell bag with field-indexed storage and preserve object identity and each field invariant. |
 | Optional fields | Distinguish an absent field from a present field containing `undefined`, including reads and initialization. | Define presence separately from value type, then support the chosen presence tests and mutation policy. |
@@ -1027,6 +1027,23 @@ SKJS forgets the loop-exit refinement and rejects the `true` annotation. Repairi
 only the exit binding and returned-expression claim makes the program verifiable
 with the existing calculus rules. The regression uses the ordinary partial
 export without `--keep-going`, and independently checks the produced evidence.
+
+### Function-shape predicates
+
+The trusted parser recognizes strict equality or inequality between `typeof e`
+and the literal `"function"`, in either operand order. It lowers that syntax to
+one Boolean shape test; neither a general string value nor a separate claim for
+the `typeof` intermediate is introduced. The operand and the complete predicate
+retain their source claims. The operand runs once through the existing tag-test
+plan and graph rules.
+
+Only a syntactic immutable variable may carry the guard's refinement into a
+branch. The existing `isFun` slice retains its callable signatures and removes
+other shapes; testing a call or mutable read does not refine another expression.
+The TypeScript producer follows the same explicit guard edges for fixed binding
+contracts and immutable captures. [guards.ts](tests/callables/guards.ts) checks
+mixed unions, a returning negative guard captured by a thunk, and a call operand.
+Forged polarity, variable identity and stronger result guarantees are rejected.
 
 ### Null predicates through union elimination
 

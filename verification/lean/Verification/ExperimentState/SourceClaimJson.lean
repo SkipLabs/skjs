@@ -83,7 +83,7 @@ private abbrev Sites := List Nat × List Span
 private def joinSites (a b : Sites) : Sites := (a.1 ++ b.1,a.2 ++ b.2)
 private def exprSites : SourceInput.Expr → Sites
   | .var p _ | .lit p _ => ([],[p])
-  | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
+  | .shapeTest p _ _ e | .not p e | .alloc p e | .read p e | .lambda p _ _ e => joinSites ([],[p]) (exprSites e)
   | .write p a b | .unitTest p _ _ _ a b | .coalesce p a b | .logical p _ a b => joinSites ([],[p]) (joinSites (exprSites a) (exprSites b))
   | .atEnv p e => joinSites ([p.1],[]) (exprSites e)
   | .call p f args => args.foldl (fun acc a => joinSites acc (exprSites a)) (joinSites ([],[p]) (exprSites f))

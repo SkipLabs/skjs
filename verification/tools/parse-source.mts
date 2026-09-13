@@ -64,6 +64,7 @@ export type Expr =
   | { k: "bin"; pos: Span; op: string; l: Expr; r: Expr }
   | { k: "coalesce"; pos: Span; left: Expr; right: Expr }
   | { k: "write"; pos: Span; receiver: Expr; rhs: Expr }
+  | { k: "functionTest"; pos: Span; equal: boolean; e: Expr }
   | { k: "apply"; pos: Span; callee: Expr; args: Expr[] }
   | { k: "conditional"; pos: Span; cond: Expr; then: Expr; else_: Expr }
   | {
@@ -563,6 +564,15 @@ class Gate {
         node,
         `binary operator outside the fragment (${this.text(node.operatorToken)})`,
       );
+    if (op === "===" || op === "!==") {
+      const unwrap = (e: any): any => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
+      const left = unwrap(node.left), right = unwrap(node.right);
+      const pair = ts.isTypeOfExpression(left) && ts.isStringLiteral(right) && right.text === "function"
+        ? left : ts.isTypeOfExpression(right) && ts.isStringLiteral(left) && left.text === "function"
+          ? right : null;
+      if (pair)
+        return {k: "functionTest", pos: this.span(node), equal: op === "===", e: this.expr(pair.expression)};
+    }
     return {
       k: "bin",
       pos: this.span(node),

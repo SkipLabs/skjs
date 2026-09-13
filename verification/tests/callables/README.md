@@ -107,3 +107,10 @@ function through a mutable cell and narrows its first domain on return. Both
 producers verify it; the argument suite rejects a widened second domain and a
 dropped second parameter. Required function **types** can now carry multiple
 parameters through the source pipeline, with native call and lambda lowering.
+
+[guards.ts](guards.ts) selects existing callable signatures with strict
+`typeof ... === "function"` and `!==` guards. It covers a mixed runtime-shape
+union, a returned thunk retaining a negative guard's refinement, and a call used
+as the tested value. Both producers verify the examples; the guard suite rejects
+opposite polarity, refinement of another variable, and an invented narrower
+callable result. General string/typeof expressions remain outside the fragment.
