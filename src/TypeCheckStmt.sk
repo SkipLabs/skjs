@@ -467,6 +467,7 @@ extension class TypeChecker {
       );
       finalTerm
     };
+    tcenv.validateHiddenEscapes();
     tcenv.!stmtTerminations[st.pos] = term;
     term
   }

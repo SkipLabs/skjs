@@ -4,6 +4,22 @@
 
 module SKJS;
 
+// Keep symbolic roots, not their current expansion: later inference can add
+// a hidden identity through a candidate that was empty at the boundary.
+value class HiddenEscapeCheck(
+  pos: PosRange,
+  forbidden: SortedSet<Id>,
+  roots: Array<TType>,
+  message: String,
+  code: Int,
+) {
+  fun fails(subst: readonly Subst): Bool {
+    scan = mutable EscapingTypeParams(this.forbidden);
+    for (root in this.roots) _ = scan.type(subst, root);
+    !scan.found.isEmpty()
+  }
+}
+
 mutable base class TCEnvBase private {
   context: mutable SKStore.Context,
   results: mutable TCResultsAcc,
@@ -130,6 +146,10 @@ mutable class TCEnv private {
   // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
   // construction and as a generic cache for expression typechecking
   mutable exprTypes: SortedMap<(PosRange, Bool, Bool), TType> = SortedMap[],
+  // Successful escape checks remain obligations on later inference growth.
+  mutable hiddenEscapeChecks: mutable Vector<
+    HiddenEscapeCheck,
+  > = mutable Vector[],
   // Observation order prevents condition replay from restoring pre-call facts.
   mutable effectEpoch: Int = 0,
   mutable exprEffectEpochs: SortedMap<PosRange, Int> = SortedMap[],
@@ -205,6 +225,25 @@ mutable class TCEnv private {
     results = subst.results;
     scope = Scope::mcreateToplevel();
     mutable static{context, subst, scope, callingContext, results}
+  }
+
+  mutable fun registerHiddenEscape(check: HiddenEscapeCheck): void {
+    this.hiddenEscapeChecks.push(check);
+    this.validateHiddenEscapes()
+  }
+
+  // Recheck only live expression/statement results, never a speculative
+  // substitution while a subtype alternative is being tried.
+  mutable fun validateHiddenEscapes(): void {
+    checks = this.hiddenEscapeChecks;
+    this.!hiddenEscapeChecks = mutable Vector[];
+    for (check in checks) {
+      if (check.fails(this.subst)) {
+        this.error(Array[(check.pos, check.message)], SKJSCode(check.code))
+      } else {
+        this.hiddenEscapeChecks.push(check)
+      }
+    }
   }
 
   private mutable fun next(): Int {

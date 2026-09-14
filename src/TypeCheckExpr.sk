@@ -2049,6 +2049,7 @@ extension class TypeChecker {
         tcenv.invalidateCallEffects(this)
       | _ -> void
       };
+      tcenv.validateHiddenEscapes();
       tcenv.!exprEffectEpochs[e.pos] = tcenv.effectEpoch;
       tcenv.!exprTypes[key] = ty;
       ty
@@ -4067,19 +4068,15 @@ extension class TypeChecker {
     if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
       localIds = tcenv.subst.skolemIdsSince(firstLocalSkolem);
       if (retTypeAstOpt.isNone()) {
-        escape = mutable EscapingTypeParams(localIds);
-        _ = escape.type(tcenv.subst, retType);
-        if (!escape.found.isEmpty()) {
-          tcenv.error(
-            Array[
-              (
-                pos,
-                "An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation",
-              ),
-            ],
-            SKJSCode(2080),
-          )
-        }
+        tcenv.registerHiddenEscape(
+          HiddenEscapeCheck(
+            pos,
+            localIds,
+            Array[retType],
+            "An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation",
+            2080,
+          ),
+        )
       };
       this.checkHiddenBindingEscape(tcenv, pos, firstLocalSkolem, savedScope)
     };
@@ -4191,24 +4188,20 @@ extension class TypeChecker {
     enclosingScope: readonly Scope,
   ): void {
     if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
-      escape = mutable EscapingTypeParams(
-        tcenv.subst.skolemIdsSince(firstLocalSkolem),
-      );
+      roots = mutable Vector[];
       for (entry in enclosingScope.visibleRefs().items()) {
-        _ = escape.type(tcenv.subst, entry.i1.type);
-        _ = escape.type(tcenv.subst, entry.i1.declaredType)
+        roots.push(entry.i1.type);
+        roots.push(entry.i1.declaredType)
       };
-      if (!escape.found.isEmpty()) {
-        tcenv.error(
-          Array[
-            (
-              pos,
-              "A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type",
-            ),
-          ],
-          SKJSCode(2081),
-        )
-      }
+      tcenv.registerHiddenEscape(
+        HiddenEscapeCheck(
+          pos,
+          tcenv.subst.skolemIdsSince(firstLocalSkolem),
+          roots.toArray(),
+          "A locally discovered hidden type cannot escape through an enclosing binding; give the container an opaque element type",
+          2081,
+        ),
+      )
     }
   }
 

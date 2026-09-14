@@ -58,7 +58,8 @@ R3a (declaration identity), R3b (freeze-window), M2 (stale captured reads),
 and M3 (loop-carried narrowing) meet their stated completion criteria.
 The next architectural milestone is durable validation under substitution
 changes (R2), including justified use of speculative clone results (R3c).
-R1's later hidden-witness growth and M1's general alias mutation remain open.
+R1 now revalidates recorded escape roots within a checking environment; root
+coverage and environment transfers remain open, as does M1's general alias mutation.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
@@ -161,7 +162,7 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | `evalInstanceof` preservation probe | A successful branch probe retains the original branch; it does not import the clone's solved type arguments. A failed probe intersects with fresh rigid witnesses live. Preserving a branch therefore does not itself identify two hidden witnesses. Their later escape remains R1. |
 | `Scope.mayMatchAlternative` | Alternative elimination now requires both the current-type expansion and the disjointness probe to leave their clone versions unchanged. Otherwise the alternative is retained. This prevents clone-only solving/sealing from authorizing elimination. It still relies on the ordinary cache and symbolic-dependency invariants for non-mutating results. |
 | Diagnostic overlap, `showTypes`, `originSuggestions` | Clone/raw results supply warnings, display assertions or advice, not a program typing premise. Keep these separate from mandatory validation; making them live would change inference merely by requesting diagnostics. |
-| `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. **Open R1:** later growth can introduce an identity after the traversal; this requires a lifetime mechanism, not more traversals of the same snapshot. |
+| `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. Retained escape obligations now revisit the symbolic roots after later live checks. **Open R1:** root publication and transfers across checking environments still need coverage. |
 
 The cache/storage part of the inventory is separate from those consumers:
 
@@ -201,6 +202,31 @@ seal every clone input: constructor inference and literal guidance intentionally
 remain open, and a probe is not authorization to constrain the parent.
 
 ## Implementation record
+
+R1 escape-lifetime hardening: successful closure-result and enclosing-binding
+checks now retain their symbolic roots, forbidden hidden identities, and original
+diagnostic location in the current `TCEnv`. After subsequent expression and
+statement checks, the same obligations traverse the current substitution again.
+A root that reaches a candidate which later reaches another candidate is followed
+transitively by `EscapingTypeParams`; the retained roots are not frozen expansions.
+The initial check and late check share one implementation and the existing error
+codes. An invalid obligation is not retained for repeated recovery diagnostics.
+
+This supplies live-state revalidation within a checking environment without
+adding side effects to `Subst.grow` or rejecting a tentative subtype alternative
+before its normal rollback. Existing closure/loop pooling regressions and opaque
+or invocation-local controls cover the boundary behavior. No newly accepted
+source-level late-growth counterexample was established in this pass; an attempted
+parameter-default/`typeof` result escape was already blocked by required parameter
+annotations. This is a structural strengthening, not a new runtime witness.
+
+The retained checks cover growth reachable from the boundary's recorded roots.
+They do not prove that every persistent root was enumerated, establish scope
+transfer between separately created checking environments, or replace the wider
+R2 dependency argument. R1 therefore remains in progress. The next audit should
+follow root publication and checking-environment boundaries, rather than add more
+variants of already rejected pooling.
+
 
 R3c alternative-elimination hardening: `mayMatchAlternative` is an acceptance
 consumer, unlike the overlap check used only for warnings. It used clone
@@ -269,9 +295,9 @@ and for-in/of boundaries, including hidden identities introduced by conditions
 and increments. For-in/of excludes its fresh iteration binding; a for
 initializer remains persistent across iterations. Existing loop-pooling
 witnesses are rejected while per-iteration inferred containers remain valid.
-Later inference growth that introduces a hidden type after a boundary check
-remains open; this does
-not complete R1 or provide general existential packaging.
+The escape-lifetime hardening above now revalidates these symbolic roots after
+later live checks. Root coverage and checking-environment transfers still need
+auditing; this does not complete R1 or provide general existential packaging.
 
 R2 initial stability repair: retire the `TSInst` subtype shortcut that equated
 an open inference candidate with a concrete argument using `peekRaw`. That
