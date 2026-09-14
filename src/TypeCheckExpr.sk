@@ -3019,33 +3019,14 @@ extension class TypeChecker {
     | Binop(op, e1, e2) ->
       op match {
       | BOAddition() ->
-        ty1 = this.expr(tcenv, e1, true);
-        ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-          stypes.singleElt()
-        ) match {
-        | Some(TPrimValue(k @ TNum(), _, primPos))
-        | Some(TPrimValue(k @ TString(), _, primPos))
-        | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
-          ty2 = this.expr(tcenv, e2, true);
-          res = TType::single(TPrimValue::full(k, primPos));
-          this.checkSubType(
-            tcenv,
-            e2.pos,
-            "Right operand of '+' is not assignable to the left operand's type",
-            ty2,
-            res,
-            TSCode(2365),
-          );
-          res
-        | _ ->
-          fatalError(
-            Array[
-              (pos, "Operator '+' cannot be applied to these types"),
-              (e1.pos, `For an object of type: ${this.ppType(tcenv, ty1)}`),
-            ],
-            TSCode(2365),
-          )
-        }
+        this.arithmeticRhs(
+          tcenv,
+          pos,
+          true,
+          e1.pos,
+          this.expr(tcenv, e1, true),
+          e2,
+        )
       | BOAssignment() ->
         tcenv.markForInImpure(pos);
         ty = this.assign(tcenv, pos, e1, e2, mostPrecise);
@@ -3176,11 +3157,32 @@ extension class TypeChecker {
         TType::single(TPrimValue::boolean(pos))
 
       | BOOpAssignment(assOp) ->
-        this.expr(
-          tcenv,
-          Expr(pos, Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2)))),
-          mostPrecise,
-        )
+        assOp match {
+        | BOLogicalAnd()
+        | BOLogicalOr()
+        | BONullishCoalescing() ->
+          this.expr(
+            tcenv,
+            Expr(
+              pos,
+              Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2))),
+            ),
+            mostPrecise,
+          )
+        | BOAddition()
+        | BOExponentiation()
+        | BOMultiplication()
+        | BODivision()
+        | BORemainder()
+        | BOSubtraction()
+        | BOBitwiseAnd()
+        | BOBitwiseOr()
+        | BOBitwiseXor()
+        | BOLeftShift()
+        | BOSignedRightShift()
+        | BOZeroFilledRightShift() ->
+          this.compoundArithmetic(tcenv, pos, assOp is BOAddition(), e1, e2)
+        }
 
       | BOExponentiation()
       | BOMultiplication()
@@ -3193,34 +3195,14 @@ extension class TypeChecker {
       | BOLeftShift()
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
-        ty1 = this.expr(tcenv, e1, true);
-        kind1 = this.checkIsNumeric(
+        this.arithmeticRhs(
           tcenv,
+          pos,
+          false,
           e1.pos,
-          "This operator requires a numeric operand",
-          ty1,
-        );
-        ty2 = this.expr(tcenv, e2, true);
-        kind2 = this.checkIsNumeric(
-          tcenv,
-          e2.pos,
-          "This operator requires a numeric operand",
-          ty2,
-        );
-        if (kind1 != kind2) {
-          fatalError(
-            Array[
-              (
-                pos,
-                "Arithmetic operations require both operands to be the same numeric type",
-              ),
-              (e1.pos, `Left operand is ${kind1}`),
-              (e2.pos, `Right operand is ${kind2}`),
-            ],
-            TSCode(2365),
-          )
-        };
-        TType::single(TPrimValue::full(kind1, pos))
+          this.expr(tcenv, e1, true),
+          e2,
+        )
 
       | BONullishCoalescing() ->
         (_isValid, ty1WithoutNullish) = this.exprWithoutNullish(
@@ -4710,6 +4692,149 @@ extension class TypeChecker {
       );
       tcenv.forgetObjectRefinements(this)
     }
+  }
+
+  // Arithmetic reads the left value before evaluating the RHS. Sharing this
+  // operation lets compound assignments supply a captured read, without
+  // manufacturing a second evaluation of their target.
+  private fun arithmeticRhs(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    addition: Bool,
+    leftPos: PosRange,
+    ty1: TType,
+    e2: Expr,
+  ): TType {
+    if (addition) {
+      ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+        stypes.singleElt()
+      ) match {
+      | Some(TPrimValue(k @ TNum(), _, primPos))
+      | Some(TPrimValue(k @ TString(), _, primPos))
+      | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
+        ty2 = this.expr(tcenv, e2, true);
+        res = TType::single(TPrimValue::full(k, primPos));
+        this.checkSubType(
+          tcenv,
+          e2.pos,
+          "Right operand of '+' is not assignable to the left operand's type",
+          ty2,
+          res,
+          TSCode(2365),
+        );
+        res
+      | _ ->
+        fatalError(
+          Array[
+            (pos, "Operator '+' cannot be applied to these types"),
+            (leftPos, `For an object of type: ${this.ppType(tcenv, ty1)}`),
+          ],
+          TSCode(2365),
+        )
+      }
+    } else {
+      kind1 = this.checkIsNumeric(
+        tcenv,
+        leftPos,
+        "This operator requires a numeric operand",
+        ty1,
+      );
+      ty2 = this.expr(tcenv, e2, true);
+      kind2 = this.checkIsNumeric(
+        tcenv,
+        e2.pos,
+        "This operator requires a numeric operand",
+        ty2,
+      );
+      if (kind1 != kind2) {
+        fatalError(
+          Array[
+            (
+              pos,
+              "Arithmetic operations require both operands to be the same numeric type",
+            ),
+            (leftPos, `Left operand is ${kind1}`),
+            (e2.pos, `Right operand is ${kind2}`),
+          ],
+          TSCode(2365),
+        )
+      };
+      TType::single(TPrimValue::full(kind1, pos))
+    }
+  }
+
+  private fun compoundArithmetic(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    addition: Bool,
+    target: Expr,
+    rhs: Expr,
+  ): TType {
+    tcenv.markForInImpure(pos);
+    this.checkLValue(tcenv, target);
+    readType = this.expr(tcenv, target, true);
+    setter = target.value match {
+    | Var _ -> None()
+    | Dot(_, receiver, field) ->
+      Some(
+        this.getWithIndexType(
+          tcenv,
+          target.pos,
+          this.lookupExprType(tcenv, receiver),
+          FKName(field, TString()).toType(),
+          field.pos,
+          AKLValue(),
+        ),
+      )
+    | Get(receiver, index) ->
+      Some(
+        this.getWithIndexType(
+          tcenv,
+          target.pos,
+          this.lookupExprType(tcenv, receiver),
+          this.lookupExprType(tcenv, index),
+          index.pos,
+          AKLValue(),
+        ),
+      )
+    | _ ->
+      fatalError(
+        Array[(target.pos, "Invalid compound assignment target")],
+        TSCode(2364),
+      )
+    };
+    result = this.arithmeticRhs(
+      tcenv,
+      pos,
+      addition,
+      target.pos,
+      readType,
+      rhs,
+    );
+    target.value match {
+    | Var(name) ->
+      tcenv.writeVar(this, name, result, (value, contract) ->
+        this.checkSubType(
+          tcenv,
+          target.pos,
+          "Type is not assignable to the variable's type",
+          value,
+          contract,
+          TSCode(2322),
+        )
+      )
+    | _ ->
+      this.checkSubType(
+        tcenv,
+        target.pos,
+        "Type is not assignable to the assignment target's type",
+        result,
+        setter.fromSome(),
+        TSCode(2322),
+      );
+      tcenv.forgetObjectRefinements(this)
+    };
+    result
   }
 
   // Growing through a local name is valid only while it denotes the captured

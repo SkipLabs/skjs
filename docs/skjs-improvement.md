@@ -341,6 +341,18 @@ remain open. `replacedReceiver` rejects growth attributed to the replacement,
 while `retainedReceiver` keeps an existing-field write through the original
 object valid in `obj-literal-var-field-growth.ts`.
 
+Arithmetic compound assignments now capture the target read and setter before
+checking the RHS, then validate the result against that setter. They share the
+ordinary arithmetic typing operation instead of duplicating the target through
+an assignment rewrite. `compound-computed-key.ts`, promoted from unsupported
+conformance coverage, exercises a side-effecting computed key that previously
+triggered the duplicate-expression invariant. An explicitly typed numeric field
+accepts; the unannotated literal-field case retains the widening restriction
+also seen in ordinary read/write assignments, now as a diagnostic rather than
+a crash. Logical and nullish compound
+assignments still use their existing short-circuit path and require a separate
+single-evaluation repair.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single
