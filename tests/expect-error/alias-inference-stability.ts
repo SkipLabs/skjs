@@ -80,3 +80,19 @@ function compatibleAliasAndClassConstraints(seed: number): void {
   const repeated: NumberMarker<typeof box> = null;
   const another = new NumberMarkerClass<typeof box>();
 }
+
+// A sealed argument is a validation target, even when the new source is an
+// uncommitted array literal. Proposing growth of a sealed candidate does nothing.
+function arrayLiteralAfterSealedArgument(seed: number[]): number {
+  const box = inferenceBox(seed);
+  const established: number[] = box.value;
+  box.set(["changed"]);
+  return box.value[0] ?? 0;
+}
+
+function compatibleArrayLiteralAfterSealedArgument(seed: number[]): number {
+  const box = inferenceBox(seed);
+  const established: number[] = box.value;
+  box.set([2]);
+  return box.value[0] ?? 0;
+}
