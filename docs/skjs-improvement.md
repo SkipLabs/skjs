@@ -194,14 +194,35 @@ same four negative sites. These probes found no new acceptance bug and overlap
 existing regression families, so they were not added as repetitive permanent
 tests. They do not discharge the structural open obligations above.
 
-The next implementation target is the shared dependency boundary: distinguish
-an established value/shape from a symbolic type with growable dependencies, and
-make acceptance consumers either seal those dependencies or retain a judgment to
-revalidate. The rest-shape repair below closes one concrete consumer. Continue
-with alternative elimination, then use the same dependency inventory for
-hidden-witness escape. Do not globally
-seal every clone input: constructor inference and literal guidance intentionally
-remain open, and a probe is not authorization to constrain the parent.
+## Normalization-transfer audit (2026-09-14)
+
+The next R2/R3c target is transfer of normalization results between substitutions,
+not another syntax family. Changing cache keys would not by itself repair a
+result already materialized from the wrong state.
+
+| Path | What the source audit establishes |
+| --- | --- |
+| `seenUnion` | `TType.union` combines symbolic instances and clauses; `TObject.union` retains branches. The shape-inspecting `TField.union` and `TFun.union` helpers belong to subsequent branch projection, not this cache's construction path. No freeze-window cache fix follows merely from those helpers having the same operation name. |
+| `seenSub` / `seenInter` | Frozen candidate queries do not publish entries. Ordinary reads seal directly inspected candidates; untouched nested types can remain symbolic. This is a local justification, not a transitive proof for every subtype shortcut and materialized projection. |
+| `seenExpansion` | Both `TType.expandToVectors` and `collectTVars` cache `instantiate` results by resolved declaration and symbolic arguments. Cache-key identity does not establish that the result remains symbolic. The previous source comment claimed only `keyof` could inspect arguments; that inventory was incomplete. |
+| `instantiate` | Creates a separate `Subst` initialized from the caller's state. Its values/caches can diverge, and `Subst.mcreate` does not copy `freezeCandidates`. A seal in that substitution is not a seal in the caller. Returning symbolic arguments is sufficient only for branches that actually preserve them. |
+| `keyof`, numeric indexed access and `Closed<T>` | Their normalizers create fresh substitution state and inspect expanded operands. Bounds/shape restrictions can make an outcome conservative or reject it, but the successful cases need an explicit transfer argument. Neither the fresh state nor an unchanged parent version supplies that argument. |
+| Template holes and mapped keys | Use `expandToVectors(..., None())`, preserving unresolved TVars and refusing/deferring abstract shapes under their existing rules. Their named expansions and any concrete shape they materialize still belong in the normalization contract. Index-key classification also performs a covariant read in fresh state. |
+
+Batched source probes rejected a string write through a nested inferred array
+following a readonly numeric view, while accepting its compatible-write control.
+Concrete and inferred `T[number]` value annotations also passed; a delayed
+callback-result form rejected conservatively. Strict tsc agrees with the nested
+write rejection. These outcomes do not demonstrate a new runtime counterexample,
+and overlap existing lifetime and indexed-access families, so no repetitive
+regressions were added. No behavior or R2/R3c completion status changed.
+
+The next experiment should isolate a shape-inspecting normalization with a
+reachable candidate, compare its returned result with recomputation after legal
+candidate growth, and identify which state justifies that result. Only then
+choose between retaining a symbolic operation, validating in the owning state,
+or recording a dependency. Preserve declaration-only normalization and inference
+probes as separate roles; globally sealing their inputs would change inference.
 
 ## Bounded R1 closure audit (2026-09-14)
 

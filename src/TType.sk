@@ -723,8 +723,8 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) ->
-        // Expand once and cache; reuse is sound because the cached body is
-        // symbolic in the type arguments (see seenExpansion in TTypeSubst.sk).
+        // Reuse requires the expansion contract documented at
+        // SubstState.seenExpansion, including shape-inspecting operators.
         key = tenv.expansionCacheKey(subst, name, targs);
         subst.seenExpansion.maybeGet(key) match {
         | None() ->

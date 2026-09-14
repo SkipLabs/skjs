@@ -1588,8 +1588,8 @@ extension class TType {
             }
           }
         | TSInst(name, targs) ->
-          // Cached expansion is symbolic in the type arguments, so reuse is
-          // sound as inference proceeds (see seenExpansion in TTypeSubst.sk).
+          // This shares the expansion contract of TType.expand:
+          // see SubstState.seenExpansion for its remaining obligations.
           key = tenv.expansionCacheKey(subst, name, targs);
           expandedType = subst.seenExpansion.maybeGet(key) match {
           | None() ->
