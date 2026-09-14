@@ -54,16 +54,17 @@ to an incompleteness fix, not the only permitted one. A verification-pipeline
 
 Statuses: `not started` · `in progress` · `done`.
 
-R3a (declaration identity), R3b (freeze-window), M2 (stale captured reads),
-and M3 (loop-carried narrowing) meet their stated completion criteria.
+R1 (hidden identity and escape), R3a (declaration identity), R3b (freeze-window),
+M2 (stale captured reads), and M3 (loop-carried narrowing) meet their stated
+bounded completion criteria.
 The next architectural milestone is durable validation under substitution
 changes (R2), including justified use of speculative clone results (R3c).
-R1 now revalidates recorded escape roots within a checking environment; root
-coverage and environment transfers remain open, as does M1's general alias mutation.
+R1 records and revalidates signature and persistent-binding escape roots.
+General substitution stability remains R2; general alias mutation remains M1.
 
 | ID | Work | Status | Done when |
 | --- | --- | --- | --- |
-| R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | in progress | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
+| R1 | Uses of `TParam`, inference `TVar`, and hidden witnesses preserve rigidity, scope, and identity | done | Specific forbidden transitions and escapes fail (a parameter is not solved as `?T`; a hidden witness does not become another object's; a captured/loop-escaped witness keeps its identity). Legitimate repeated uses of the *same* hidden witness still check. Not a wholesale TVar rewrite. |
 | R2 | Propose vs validate, **and** later uses respect the snapshot | in progress | A subtype/expansion result is valid against an explicit snapshot **and** subsequent uses of that result respect the same snapshot, or the judgment is revalidated when a recorded dependency changes. Exporting a closed record under the subst at validation time does **not** count: that stabilizes the *exported* record, not SKJS's earlier acceptance. |
 | R3a | Expansion keys identify the resolved declaration, not spelling | done | [expansion-key-collision](deep-dives/issues/expansion-key-collision.md): same-named aliases from different modules no longer share a cache entry; the unsound call is rejected; renaming the local alias still rejects; valid uses of each definition still check |
 | R3b | Substitution-dependent answers track what can invalidate them | done | [freeze-window](deep-dives/issues/freeze-window-stale-memo-caches.md): a memo written while a candidate is unsealed is not reused after that candidate grows; the order-dependent acceptance is gone; the program without the priming call still rejects |
@@ -76,8 +77,9 @@ coverage and environment transfers remain open, as does M1's general alias mutat
 
 The remaining work is architectural. Recent assignment, initialization, and
 iterator repairs are useful, but more syntax-level completeness examples do not
-close R1, R2, R3c, or general M1. Treat those examples as a separate backlog unless
-they expose an acceptance bug or block one of the contracts below.
+by themselves close R2, R3c, or general M1. R1's bounded closure is recorded
+below. Treat those examples as a separate backlog unless they expose an
+acceptance bug or block one of the contracts below.
 
 The broad read-only audit inspected substitution mutation/cache boundaries,
 clone/raw-read consumers, hidden-type escape boundaries, and call/refinement
@@ -162,7 +164,7 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | `evalInstanceof` preservation probe | A successful branch probe retains the original branch; it does not import the clone's solved type arguments. A failed probe intersects with fresh rigid witnesses live. Preserving a branch therefore does not itself identify two hidden witnesses. Their later escape remains R1. |
 | `Scope.mayMatchAlternative` | Alternative elimination now requires both the current-type expansion and the disjointness probe to leave their clone versions unchanged. Otherwise the alternative is retained. This prevents clone-only solving/sealing from authorizing elimination. It still relies on the ordinary cache and symbolic-dependency invariants for non-mutating results. |
 | Diagnostic overlap, `showTypes`, `originSuggestions` | Clone/raw results supply warnings, display assertions or advice, not a program typing premise. Keep these separate from mandatory validation; making them live would change inference merely by requesting diagnostics. |
-| `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. Retained escape obligations now revisit the symbolic roots after later live checks. **Open R1:** root publication and transfers across checking environments still need coverage. |
+| `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. Retained escape obligations now revisit the symbolic roots after later live checks. The completed bounded R1 audit below covers root publication and checking-environment boundaries; general subtype/cache stability remains R2. |
 
 The cache/storage part of the inventory is separate from those consumers:
 
@@ -200,6 +202,34 @@ with alternative elimination, then use the same dependency inventory for
 hidden-witness escape. Do not globally
 seal every clone input: constructor inference and literal guidance intentionally
 remain open, and a probe is not authorization to constrain the parent.
+
+## Bounded R1 closure audit (2026-09-14)
+
+R1 meets its stated use-level criterion. This is a source audit backed by the
+existing escape regressions and the dependent-bound repair, not a proof of all
+subtyping or all generic programs.
+
+| Boundary | Established rule and evidence |
+| --- | --- |
+| Hidden identity creation | `evalInstanceof` is the sole consumer of hidden argument creation. `genSkolemTParam` never rewinds on rollback and refuses creation in a speculative clone. Different discoveries therefore do not reuse an identity within a substitution. |
+| Parameter bounds | Declaration parameters stay rigid; inferred arguments remain candidates; hidden arguments are rigid identities. Later bounds refer to the corresponding earlier arguments. `hidden-dependent-bounds.ts` exercises same-witness inclusion, forbidden reversal, cross-witness writes and constructor inference. |
+| Callback publication | The complete signature and enclosing bindings are retained as escape roots. This includes contextual parameters supplied by a temporary generic receiver and explicit `typeof` results. `contextual-hidden-escape.ts` and the closure cases in `instanceof-generic-skolem-args.ts` distinguish escaping identities from opaque results and invocation-local inference. |
+| Repeated execution | While/for checks include conditions and increments; for initializers persist, while for-in/of iteration bindings are fresh. Persistent binding roots reject pooling; per-iteration containers remain accepted in `instanceof-generic-skolem-args.ts`. |
+| Later inference | The traversal follows symbolic arguments, fields, call/construct signatures, constraints, raw candidate bindings and array commitments. Each live expression/statement and the final publication sites revisit retained roots. `tests/HiddenEscape.sk` changes a dependency after registration and checks rollback without replacing the obligation. |
+| Checking environments | Callbacks and loops share their environment. Named functions/methods publish declared signatures, class fields have declared types, and top-level constants cannot publish objects. These paths do not publish an inferred hidden object signature from a discarded body environment. The detailed environment inventory below separates conformance and diagnostic-only environments. |
+
+The combined run after these repairs passed all 148 checker tests and 41 verifier
+suites, with zero corpus mismatches. Extra probes confirmed that a captured object
+cannot acquire a new hidden-typed field after use, and that an outer alias named
+`T` cannot supply a dependent class argument's bound. These overlap the existing
+boundary families and were not added as repetitive permanent tests.
+
+Residual limits remain explicit: forward/recursive bounds and first-class
+existential packaging are not established here. Capture contracts can erase safe
+hidden-type precision; supporting every such program is not R1's criterion.
+General transitive cache/subtyping stability is still R2/R3c, and implicit runtime
+effects and growing-object aliasing remain M1. The escape traversal does not make
+an independently unsound subtype judgment sound.
 
 ## Implementation record
 
@@ -266,9 +296,9 @@ The checking-environment inventory distinguishes these boundaries:
 
 This closes the identified post-expression final-check gaps. The contextual
 signature repair above adds the missing publication root for receiver-owned
-parameter candidates. R1 remains in progress pending the combined closure audit;
-no generic signature publication is justified merely by the absence of a
-diagnostic-clone transfer.
+parameter candidates. The combined closure audit above closes the bounded R1
+criterion; no generic signature publication is justified merely by the absence
+of a diagnostic-clone transfer.
 
 
 R1 escape-lifetime hardening: successful closure-result and enclosing-binding
@@ -364,8 +394,8 @@ and increments. For-in/of excludes its fresh iteration binding; a for
 initializer remains persistent across iterations. Existing loop-pooling
 witnesses are rejected while per-iteration inferred containers remain valid.
 The escape-lifetime hardening above now revalidates these symbolic roots after
-later live checks. Root coverage and checking-environment transfers still need
-auditing; this does not complete R1 or provide general existential packaging.
+later live checks. The combined closure audit above records the completed
+bounded R1 criterion; this does not provide general existential packaging.
 
 R2 initial stability repair: retire the `TSInst` subtype shortcut that equated
 an open inference candidate with a concrete argument using `peekRaw`. That

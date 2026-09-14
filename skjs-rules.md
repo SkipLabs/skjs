@@ -550,7 +550,7 @@ x = 5; // Error: Type is not assignable to the variable's type
 ```
 
 - A parameter's type is an annotation too, so reassigning a parameter is checked the same way.
-- An inferred closure result may not expose a hidden generic type discovered by `instanceof` inside that closure: separate calls may discover different hidden arguments. Annotate a result as `unknown` when the caller should treat it opaquely, or return a concrete observation such as a length. The closure boundary also rejects hidden identities inferred into enclosing bindings, even for an explicit `void` result. An outer `unknown[]` container and inference local to one invocation remain usable. Loop boundaries apply the same check to bindings persistent across iterations, preventing hidden identities from being pooled in outer inferred containers. Fresh per-iteration containers remain usable. Later inference growth can still introduce a hidden type after these boundary checks. See `tests/expect-error/instanceof-generic-skolem-args.ts`.
+- A callback signature may not expose a hidden generic type discovered by `instanceof` inside that callback: separate invocations may discover different hidden arguments. The check includes contextual parameters and explicit `typeof` results. Use opaque types such as `unknown`, or return a concrete observation. The enclosing-binding check also prevents pooling hidden identities across invocations or loop iterations; opaque outer containers and fresh invocation/iteration-local inference remain usable. These checks retain symbolic roots and revisit them after later inference growth. See `tests/expect-error/instanceof-generic-skolem-args.ts` and `tests/expect-error/contextual-hidden-escape.ts`.
 - Explicit generic function arguments are checked against their bounds in the live substitution. An argument such as `typeof box` can contain inferred field candidates; successful checking commits those dependencies under the existing inference rules, so later writes cannot invalidate the checked bound. Inferred generic arguments keep their constraint-carrying inference path. See `tests/expect-error/alias-inference-stability.ts`.
 - Explicit alias/class type references checked in a function-body environment establish their bounds against the active inference state, even if the alias erases the argument or its body is cached. Explicit `new` arguments are checked before constructor lookup, including classes without constructors. Inferred constructor arguments retain their inference path. See `tests/expect-error/alias-inference-stability.ts`.
 - Establishing a concrete generic alias must stabilize the inference candidates its contract depends on. After `const alias: Box<number> = box`, where `box` was inferred from a number, a later string write through `box` is rejected; a compatible number write remains valid. A current open candidate is not a lasting equality guarantee. See `tests/expect-error/alias-inference-stability.ts`.
@@ -1050,14 +1050,3 @@ checks remain usable. Ordinary calls have no purity summaries, so even pure
 formatting and recursive helpers can lose discriminant refinements. Checker-only
 `__SKJS_show` and `__SKJS_show_expanded` are exempt. This policy does not cover
 implicit accessor/iterator effects or growing, uncontracted objects.
-
-### Locally discovered hidden types in callbacks
-
-A callback cannot publish a generic object's locally discovered hidden identity
-in its signature. This includes contextual parameter types and explicit `typeof`
-return annotations, not only inferred returns. Use opaque parameter and return
-types, such as `unknown`, when the callback may discover differently typed objects
-on different invocations. For example, a generic runner initialized with `null`
-cannot infer a shared hidden box type from a callback default and then return
-boxes from separate invocations as interchangeable. Hidden identities already
-established outside the callback remain usable.
