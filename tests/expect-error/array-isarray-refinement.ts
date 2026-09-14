@@ -336,12 +336,13 @@ function testMutableArrayStillMutable(x: number[] | string): void {
 function restArrayBrand(source: number[]): boolean {
   const { ...copy } = source;
   if (Array.isArray(copy)) return true;
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // FIXME: the inherited array brand makes this reachable branch look impossible.
   return copy;
 }
 
 function restArrayEntries(source: number[]): number {
   const { ...copy } = source;
   if (Array.isArray(copy)) return 0;
+  // @skjs-expect-error Cannot access a property on type 'never'
   return copy[0] ?? 0;
 }
