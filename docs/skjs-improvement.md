@@ -278,14 +278,15 @@ field from the safe reversed order. This conservatively forgets field refinement
 after any default; it does not analyze whether that particular default mutates
 the source. General hidden call effects and evolving source contracts remain open.
 
-Local object and array binding patterns reserve their names before checking
-the source or defaults, using the same pending-binding mechanism as parameters.
-A later pattern binding therefore shadows a top-level namesake while still
-uninitialized; a default cannot read or assign it prematurely. Initialization
-installs the projected type and preserves local const/let mutability and contract
-flags. `destructuring.ts` covers the previously accepted namesake lookup and
-an earlier initialized binding used by a later default. This is pattern-local
-reservation, not a complete block-wide temporal-dead-zone implementation. For-in
+Local declaration statements reserve all their names before checking any
+source or default, using the same pending-binding mechanism as parameters.
+This includes plain names, nested patterns, and later declarators in a single
+statement. Each reserved name shadows top-level namesakes while uninitialized;
+initialization then installs its projected type and preserves const/let
+mutability and contract flags. `binding-initialization.ts` covers self-reference,
+a later declarator, and an earlier initialized declarator; `destructuring.ts`
+covers references within patterns. This is declaration-statement reservation,
+not a complete block-wide temporal-dead-zone implementation. For-in
 and for-of declarations use the same reservation before evaluating their source;
 otherwise `for (const items of items)` could resolve the outer name instead of
 rejecting the uninitialized loop binding. `for-in-for-of-invalid.ts` covers this

@@ -82,20 +82,17 @@ extension class TypeChecker {
         )
       };
 
+      // Every name in the declaration shadows outer names before any
+      // initializer runs. Initialize the reserved bindings in source order.
       for (binding in bindings) {
-        // Pattern names shadow outer declarations before the source and
-        // defaults run, but become readable only as each binding initializes.
-        binding.pat.value match {
-        | PVar _ -> void
-        | PArray _
-        | PObject _ ->
-          this.reserveBindingNames(
-            tcenv,
-            binding.pat,
-            TType::top(binding.pat.pos),
-            !(bkind is BKConst()),
-          )
-        };
+        this.reserveBindingNames(
+          tcenv,
+          binding.pat,
+          TType::top(binding.pat.pos),
+          !(bkind is BKConst()),
+        )
+      };
+      for (binding in bindings) {
         (ty, isInitialized) = this.bindType(
           binding.pat.pos,
           tcenv,

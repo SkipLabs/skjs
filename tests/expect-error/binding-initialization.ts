@@ -1,11 +1,11 @@
 const seed: number = 1;
 function selfInitializer(): number {
-  // FIXME: this reads its own uninitialized binding, not the outer seed.
+  // @ts-expect-error Variable 'seed' is used before being assigned
   const seed = seed;
   return seed;
 }
 function laterDeclarator(): number {
-  // FIXME: the later declarator already shadows the outer seed.
+  // @ts-expect-error Variable 'seed' is used before being assigned
   const first = seed,
     seed = 2;
   return first;
