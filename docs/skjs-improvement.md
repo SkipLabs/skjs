@@ -73,6 +73,28 @@ General substitution stability remains R2; general alias mutation remains M1.
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
+## Progress assessment (2026-09-14)
+
+The completed rows are bounded repairs, not a percentage of overall soundness.
+Recent work has improved both directions: dependent class bounds now accept
+legitimate uses, while hidden callback escapes and abstract indexed/key/template
+results reject concrete runtime counterexamples. The projection fixes expose
+unsupported semantics rather than implementing symbolic projections. The active
+objective still lacks a general durable-validation argument (R2/R3c) and a general
+alias/effect policy (M1).
+
+The independent verifier is used for regression checks and its contracts guide
+the audit. Passing its 41 suites and corpus expectations does not independently
+prove these checker repairs: the generic normalization and inference-lifetime
+witnesses exceed its current source fragment. Their direct evidence is source
+checking, runtime counterexamples where applicable, and focused checker tests.
+
+Next milestones remain architectural: establish the ownership/transfer rule for
+normalization results under candidate growth, then extend the alias policy to
+implicit execution and growing objects. Symbolic abstract projections are a
+separate completeness milestone; removing the current guards requires preserving
+the same dependency in body validation and caller instantiation.
+
 ## Convergence audit (2026-09-14)
 
 The remaining work is architectural. Recent assignment, initialization, and
