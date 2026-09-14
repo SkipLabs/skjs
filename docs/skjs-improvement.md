@@ -239,6 +239,35 @@ same four negative sites. These probes found no new acceptance bug and overlap
 existing regression families, so they were not added as repetitive permanent
 tests. They do not discharge the structural open obligations above.
 
+## Final growth-site sweep (2026-09-14)
+
+A final pass traced all nine direct `Subst.grow` calls to their consumers:
+
+- The three `makeBoundTVar` helpers generate a fresh identity before binding it;
+  they return a symbolic variable rather than a successful subtype judgment.
+- `inferRestTypeVar` requires an unbound target, validates its constraints, and
+  is followed by rest-argument checking. Failed constraints restore state.
+- The three calls in `growTVars` propose bounds; `isSub_` subsequently expands
+  and checks the relation live. Their coverage probes do not authorize acceptance.
+- Array literal commitment selects a representation. Its consumers either check
+  the source against the selected target or, for an unconstrained growable
+  variable, establish a binding containing the source. The repaired sealed/frozen
+  branch checks the established target instead of treating no-op growth as success.
+
+No additional proposal-as-validation bypass was found in this finite surface.
+This is a local source-audit conclusion, not R2/R3c completion or a transitive
+stability proof. Temporary batched probes rejected incompatible constrained and
+nested array writes and invalid numeric rest arguments. The valid rest control
+passed, but the valid constrained/nested array writes were also rejected; strict
+tsc accepted those controls. Those precision gaps remain open and must not be
+counted as evidence of soundness. The probes overlap existing inference families,
+so this round adds no repetitive permanent cases or checker changes.
+
+The stopping decision for this sweep is its exhausted call-site inventory and
+explicit residual obligations, not a claim that no bugs remain. The next substantive
+milestone remains separating candidate ownership from normalization/cache lifetime
+and justifying materialized results under transitive substitution growth.
+
 ## Array literal validation after proposal
 
 The unconstrained-variable array-literal shortcut now distinguishes proposals
