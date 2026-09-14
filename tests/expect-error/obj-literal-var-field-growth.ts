@@ -102,13 +102,11 @@ function keyClearsRhs(x: number | null): number {
   if (x === null) return 0;
   const box = { slot: 0 };
   const before: number = box.slot;
-  // FIXME: the key clears x before the right-hand side is evaluated.
+  // @ts-expect-error Type is not assignable to the field's type
   box[(x = null) === null ? "slot" : "slot"] = x;
   return box.slot;
 }
 function keyInitializesRhs(): number {
-  // FIXME: the key initializes x before the right-hand side is evaluated.
-  // @skjs-expect-error Type is not assignable to the field's type
   let x: number | null = null;
   const box = { slot: 0 };
   const before: number = box.slot;

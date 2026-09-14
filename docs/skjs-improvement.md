@@ -325,6 +325,13 @@ than looking up that name again. `computedRead` and `computedCall` in
 The summary is conservative about nested syntax and unrelated property writes;
 hidden callee effects and uncontracted source contents remain separate limits.
 
+The optimized local-object assignment path evaluates a computed key before its
+right-hand side, matching ordinary assignment evaluation. Previously the reverse
+order accepted a numeric field write whose key first cleared the RHS variable,
+and rejected a safe write whose key initialized it. `keyClearsRhs` and
+`keyInitializesRhs` in `obj-literal-var-field-growth.ts` cover both directions.
+This retains the existing field validation and growth rules.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

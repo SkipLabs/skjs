@@ -4740,9 +4740,11 @@ extension class TypeChecker {
       tcenv.claimedExprVisits.push(local.pos);
       tcenv.!exprTypes[(local.pos, false, false)] = tcenv.scope.get(local)
     };
+    // The computed key runs before the RHS, including any writes that affect
+    // the RHS's type. Keep the optimized local-object path in source order.
+    keyType = this.expr(tcenv, keyExpr, true);
     fieldType = this.expr(tcenv, e2, mostPrecise);
     stableFieldType = this.stableAliasExprType(tcenv, e2, fieldType);
-    keyType = this.expr(tcenv, keyExpr, true);
     fieldKeys = keyType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes -> stypes.singleElt()) match {
