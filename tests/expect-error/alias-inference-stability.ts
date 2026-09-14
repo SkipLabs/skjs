@@ -86,6 +86,7 @@ function compatibleAliasAndClassConstraints(seed: number): void {
 function arrayLiteralAfterSealedArgument(seed: number[]): number {
   const box = inferenceBox(seed);
   const established: number[] = box.value;
+  // @ts-expect-error Argument is not assignable to the parameter's type
   box.set(["changed"]);
   return box.value[0] ?? 0;
 }

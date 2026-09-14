@@ -239,6 +239,30 @@ same four negative sites. These probes found no new acceptance bug and overlap
 existing regression families, so they were not added as repetitive permanent
 tests. They do not discharge the structural open obligations above.
 
+## Array literal validation after proposal
+
+The unconstrained-variable array-literal shortcut now distinguishes proposals
+that can establish a target from reads of an already established target. A
+sealed target, or a bound candidate under `freezeCandidates`, cannot grow;
+`Subst.grow` returning normally therefore does not justify `STOk`. Those paths
+keep the literal uncommitted and validate against the target's current type,
+preserving its array/tuple context. Ordinary open-variable inference retains
+its existing proposal path. `alias-inference-stability.ts` covers a sealed
+numeric-array argument followed by an incompatible literal and a compatible
+literal. This is an acceptance-boundary repair for R2, independent of projection
+precision or the verifier's source fragment.
+
+The normalization-owner prototype recovered inferred indexed/key projections,
+but twice ended the full checker run with six tests failing after a worker was killed by
+SIGKILL. That broader implementation was withdrawn; it did not meet the regression
+bar. `normalization-owner.ts` retains the pre-repair outcomes. Candidate ownership
+and cache lifetime need separate treatment before retrying live normalization;
+the exact cause of the resource failure has not yet been isolated. The array
+shortcut repair does not depend on that prototype. With the prototype withdrawn,
+all 148 checker tests and 41 verifier suites pass, with zero corpus mismatches.
+The verifier run is regression evidence, not an independent proof of this
+inference-lifetime repair.
+
 ## Normalization-transfer audit (2026-09-14)
 
 The next R2/R3c target is transfer of normalization results between substitutions,
