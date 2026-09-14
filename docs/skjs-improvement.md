@@ -358,6 +358,13 @@ contracts; local bindings retain that selected value after the effect merge.
 and that `??=` leaves a local non-null. Hidden callee effects and general R2
 validation remain separate obligations.
 
+Postfix updates use the same captured setter and write validation. Previously
+member/index `++` and `--` checked only the old numeric value, accepting writes
+to readonly and numeric-literal fields. `increment-narrowing.ts` covers both
+rejections and a valid computed-key update. Local updates now use `TCEnv.writeVar`
+so exception and loop write tracking observe them as ordinary assignments.
+The existing numeric operand restriction and widened expression result remain.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

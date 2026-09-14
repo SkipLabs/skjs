@@ -30,20 +30,20 @@ function incrementWidensToNumber(): void {
   const z: number = y;
 }
 
-// A `++` on a member target is unaffected: there is no narrowed binding to
-// clear, and the field keeps its declared `number` type.
+// A writable `number` field admits the numeric result of an update.
 function incrementMemberIsFine(o: { n: number }): void {
   o.n++;
   const z: number = o.n;
 }
 
 function literalUpdate(box: { value: 0 }): 0 {
-  // FIXME: the numeric result is not checked against the literal field contract.
+  // The write must preserve the field contract for every alias.
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   box.value++;
   return box.value;
 }
 function readonlyUpdate(box: { readonly value: number }): number {
-  // FIXME: the update does not check that the field is writable.
+  // @ts-expect-error Type is not assignable to the assignment target's type
   return box.value--;
 }
 function computedUpdate(): number {
