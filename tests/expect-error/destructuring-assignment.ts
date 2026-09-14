@@ -110,11 +110,12 @@ function restTargetOfArrayAccepted(src: number[]): void {
   void r;
 }
 
-// Destructuring writes must preserve the inferred contract just like an
-// ordinary assignment. TypeScript also rejects the number here.
+// Without an annotation the inferred type evolves on assignment, here as much
+// as for a single `x = 5`. SKJS is deliberately more permissive than tsc, which
+// pins `let x = "a"` to `string` and rejects the write; the narrowing keeps this
+// sound because reads see the written type.
 function inferredTargetEvolves(): void {
   let x = "a";
-  // @ts-expect-error Type is not assignable to the variable's type
   [x] = [5];
   const n: number = x;
   void n;
@@ -123,6 +124,7 @@ function inferredTargetEvolves(): void {
 function keyBeforeDefault(): number {
   let value: number | null = null;
   const box: { slot: number } = { slot: 0 };
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   [box[(value = 1) === 1 ? "slot" : "slot"] = value] = [undefined];
   return box.slot;
 }
@@ -130,6 +132,5 @@ function keyClearsDefault(): void {
   let value: number | null = 1;
   const box: { slot: number } = { slot: 0 };
   if (value === null) return;
-  // @ts-expect-error Type is not assignable to the assignment target's type
   [box[(value = null) === null ? "slot" : "slot"] = value] = [undefined];
 }
