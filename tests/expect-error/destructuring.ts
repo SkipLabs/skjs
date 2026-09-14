@@ -193,3 +193,26 @@ function patternEarlierBinding(source: {
   const { later = 2, first = later } = source;
   return first;
 }
+
+function identityPatternAlias(
+  x: { child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  const { child } = x;
+  x.child.value = null;
+  // FIXME: the saved object retains a transient contents refinement.
+  return child.value;
+}
+
+function identityPatternScalar(
+  x: { child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  const {
+    child: { value },
+  } = x;
+  x.child.value = null;
+  return value;
+}
