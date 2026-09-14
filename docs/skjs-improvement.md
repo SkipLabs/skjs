@@ -349,9 +349,14 @@ conformance coverage, exercises a side-effecting computed key that previously
 triggered the duplicate-expression invariant. An explicitly typed numeric field
 accepts; the unannotated literal-field case retains the widening restriction
 also seen in ordinary read/write assignments, now as a diagnostic rather than
-a crash. Logical and nullish compound
-assignments still use their existing short-circuit path and require a separate
-single-evaluation repair.
+a crash. Logical and nullish compound assignments share the captured setter
+and write validation, with the RHS and write inside a conditional scope. Their
+expression result combines the skipped value and RHS, preserving stable alias
+contracts; local bindings retain that selected value after the effect merge.
+`logical-compound-computed-key.ts` covers computed `??=` and `&&=` targets;
+`logical-compound-flow.ts` checks that `||=` does not make RHS effects definite
+and that `??=` leaves a local non-null. Hidden callee effects and general R2
+validation remain separate obligations.
 
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.

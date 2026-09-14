@@ -3161,13 +3161,13 @@ extension class TypeChecker {
         | BOLogicalAnd()
         | BOLogicalOr()
         | BONullishCoalescing() ->
-          this.expr(
+          this.compoundLogical(
             tcenv,
-            Expr(
-              pos,
-              Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2))),
-            ),
-            mostPrecise,
+            pos,
+            assOp is BONullishCoalescing(),
+            assOp is BOLogicalAnd(),
+            e1,
+            e2,
           )
         | BOAddition()
         | BOExponentiation()
@@ -4773,7 +4773,22 @@ extension class TypeChecker {
     tcenv.markForInImpure(pos);
     this.checkLValue(tcenv, target);
     readType = this.expr(tcenv, target, true);
-    setter = target.value match {
+    setter = this.compoundSetter(tcenv, target);
+    result = this.arithmeticRhs(
+      tcenv,
+      pos,
+      addition,
+      target.pos,
+      readType,
+      rhs,
+    );
+    this.writeCompoundTarget(tcenv, target, setter, result);
+    result
+  }
+
+  // The receiver and key have already been evaluated by the target read.
+  private fun compoundSetter(tcenv: mutable TCEnv, target: Expr): ?TType {
+    target.value match {
     | Var _ -> None()
     | Dot(_, receiver, field) ->
       Some(
@@ -4802,15 +4817,15 @@ extension class TypeChecker {
         Array[(target.pos, "Invalid compound assignment target")],
         TSCode(2364),
       )
-    };
-    result = this.arithmeticRhs(
-      tcenv,
-      pos,
-      addition,
-      target.pos,
-      readType,
-      rhs,
-    );
+    }
+  }
+
+  private fun writeCompoundTarget(
+    tcenv: mutable TCEnv,
+    target: Expr,
+    setter: ?TType,
+    result: TType,
+  ): void {
     target.value match {
     | Var(name) ->
       tcenv.writeVar(this, name, result, (value, contract) ->
@@ -4833,6 +4848,95 @@ extension class TypeChecker {
         TSCode(2322),
       );
       tcenv.forgetObjectRefinements(this)
+    }
+  }
+
+  private fun compoundLogical(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    nullish: Bool,
+    continuationTarget: Bool,
+    target: Expr,
+    rhs: Expr,
+  ): TType {
+    tcenv.markForInImpure(pos);
+    this.checkLValue(tcenv, target);
+    skipped = if (nullish) {
+      this.exprWithoutNullish(pos, tcenv, target, true, false).i1
+    } else {
+      readType = this.expr(tcenv, target, true);
+      this.checkCondition(
+        tcenv,
+        pos,
+        readType,
+        if (continuationTarget) {
+          "Operand of '&&' must be of type 'boolean'"
+        } else {
+          "Operand of '||' must be of type 'boolean'"
+        },
+      );
+      readType.truthinessValuePart(tcenv.subst, this, !continuationTarget)
+    };
+    stable = this.stableAliasExprType(
+      tcenv,
+      target,
+      this.lookupExprType(tcenv, target),
+    );
+    stableSkipped = if (nullish) {
+      TType::removeUndefined(
+        tcenv.subst,
+        this,
+        TType::removeConstant(
+          tcenv.subst,
+          this,
+          stable,
+          TPrimUnit(TNull(), pos),
+        ),
+      )
+    } else {
+      stable.truthinessValuePart(tcenv.subst, this, !continuationTarget)
+    };
+    setter = this.compoundSetter(tcenv, target);
+    savedScope = tcenv.scope;
+    branch = tcenv.mcreateSubScope{isLoop => false};
+    tcenv.!scope = branch;
+    if (!nullish) this.evalCond(tcenv, target, continuationTarget);
+    rhsType = this.expr(tcenv, rhs, true);
+    stableRhs = this.stableAliasExprType(tcenv, rhs, rhsType);
+    if (!nullish && this.truthiness is TBoolean()) {
+      this.checkCondition(
+        tcenv,
+        rhs.pos,
+        rhsType,
+        if (continuationTarget) {
+          "Operand of '&&' must be of type 'boolean'"
+        } else {
+          "Operand of '||' must be of type 'boolean'"
+        },
+      );
+    };
+    // The setter sees only the RHS value. The skipped path performs no write.
+    this.writeCompoundTarget(tcenv, target, setter, stableRhs);
+    tcenv.!scope = savedScope;
+    tcenv.popScope(this, branch);
+    result = this.composeSelectionType(
+      tcenv,
+      pos,
+      skipped,
+      rhsType,
+      stableSkipped,
+      stableRhs,
+    );
+    target.value match {
+    | Var(name) ->
+      // The local contains the selected value on both paths. Recover that
+      // correlation after the general effect merge (not another runtime write).
+      tcenv.scope.set(
+        name,
+        TType::union(tcenv.subst, this, stableSkipped, stableRhs),
+        (_, _) -> void,
+      )
+    | _ -> void
     };
     result
   }
