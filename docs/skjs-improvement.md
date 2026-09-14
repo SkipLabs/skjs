@@ -214,6 +214,25 @@ rollback. The same retained obligation must observe each state. Source probes
 returning direct and nested arrays were already rejected, so this is a direct
 representation regression rather than a new accepted runtime counterexample.
 
+The checking-environment inventory distinguishes these boundaries:
+
+| Environment | Publication / final check |
+| --- | --- |
+| Named functions and methods | `funDefSetup` creates one environment for parameters and body. Anonymous functions and loops reuse it. Revalidation now also runs after fallthrough/result checks, before CFG or successful claim publication. |
+| Constructors | The same setup checks the body, followed by a final initialized-fields subtype check. Revalidation now follows that check. The body-specific `this` view is checked against declared fields, not published as a new class signature. |
+| Instance field initializers | A fresh environment checks the expression and then its declared field type. Revalidation now follows that final subtype check. |
+| Top-level expressions/constants and computed enum members | Final void, annotation or numeric checks can run after expression checking; each expression-bearing environment now revalidates afterward. Constants are additionally restricted to primitive published types. |
+| Class/interface conformance | The four remaining class environments perform declared-type compatibility checks only; they do not evaluate closure/loop bodies or register local escape obligations. |
+| Top-level CFG reconstruction | Uses one separate environment over the full statement list; statement revalidation applies. Its diagnostics are discarded and only CFG output is retained. It does not authorize source acceptance. |
+| `saveAll` / `mcreateFromSaved` | The saved substitution is used for diagnostic rendering in `TypingError`, not another acceptance environment. Obligations need not be transferred into a diagnostic clone. |
+
+This closes the identified post-expression final-check gaps. It does not establish
+that contextual callback parameter candidates are all represented by the current
+closure-result/enclosing-binding roots. That is the next concrete root audit;
+R1 remains in progress. No generic signature publication is justified merely by
+the absence of a diagnostic-clone transfer.
+
+
 R1 escape-lifetime hardening: successful closure-result and enclosing-binding
 checks now retain their symbolic roots, forbidden hidden identities, and original
 diagnostic location in the current `TCEnv`. After subsequent expression and

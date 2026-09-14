@@ -449,6 +449,7 @@ extension class TypeChecker {
               TSCode(2366),
             )
           };
+          tcenv.validateHiddenEscapes();
           if (getConfig(tcenv.context).buildCfg) {
             cfg = CFGBuilder::build(
               cgNode.id.toString(),
