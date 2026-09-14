@@ -2832,9 +2832,29 @@ extension class TypeChecker {
 
     | Get(arr, idx) ->
       objOrArray = this.expr(tcenv, arr, mostPrecise);
+      stableReceiver = if (isLValue) objOrArray else {
+        this.stableAliasExprType(tcenv, arr, objOrArray)
+      };
       accessKind = if (isLValue) AKLValue() else AKNormal();
-      result = this.get(tcenv, pos, objOrArray, idx, accessKind);
-      if (isLValue) result else this.extractedMethodType(tcenv.subst, result)
+      idxType = this.expr(tcenv, idx, true);
+      result = this.getWithIndexType(
+        tcenv,
+        pos,
+        objOrArray,
+        idxType,
+        idx.pos,
+        accessKind,
+      );
+      if (isLValue) result else {
+        this.propertyReadType(
+          tcenv,
+          pos,
+          objOrArray,
+          stableReceiver,
+          idxType,
+          result,
+        )
+      }
 
     // We always interpret `[]` as an array, not a tuple.
     // Because an empty tuple is not very meaningful.
@@ -2973,14 +2993,21 @@ extension class TypeChecker {
       | (false, OptionalDot()) -> AKOptionalChain()
       | (false, NormalDot()) -> AKNormal()
       };
-      result = this.dot(
-        tcenv,
-        e1.pos,
-        this.expr(tcenv, e1, mostPrecise),
-        fieldName,
-        accessKind,
-      );
-      if (isLValue) result else this.extractedMethodType(tcenv.subst, result)
+      receiverType = this.expr(tcenv, e1, mostPrecise);
+      stableReceiver = if (isLValue) receiverType else {
+        this.stableAliasExprType(tcenv, e1, receiverType)
+      };
+      result = this.dot(tcenv, e1.pos, receiverType, fieldName, accessKind);
+      if (isLValue) result else {
+        this.propertyReadType(
+          tcenv,
+          pos,
+          receiverType,
+          stableReceiver,
+          FKName(fieldName, TString()).toType(),
+          result,
+        )
+      }
 
     | Binop(op, e1, e2) ->
       op match {
@@ -4214,6 +4241,91 @@ extension class TypeChecker {
       stableLeft,
       stableRight,
     );
+    result
+  }
+
+  // The ordinary access has already checked presence, visibility, and key
+  // validity. Project only the lasting contents of its result here: a missing
+  // declaration supplies no object-content guarantee, rather than a new error.
+  private fun propertyContentsContract(
+    tcenv: mutable TCEnv,
+    receiver: TType,
+    index: TType,
+  ): TType {
+    pos = index.pos;
+    (
+      receiver.getSTypes(tcenv.subst, this, Covariant()),
+      index.getSTypes(tcenv.subst, this, Covariant()),
+    ) match {
+    | (Some(receivers), Some(indexes)) ->
+      result = TType::bottom(pos);
+      add = ty -> !result = TType::union(tcenv.subst, this, result, ty);
+      for (receiverBranch in receivers) {
+        receiverBranch match {
+        | obj @ TObject _ ->
+          for (fields in obj.getBranches()) {
+            for (indexBranch in indexes) {
+              keys = FieldKey::allOfSType(pos, indexBranch);
+              if (!keys.isEmpty()) {
+                for (key in keys) {
+                  add(
+                    fields
+                      .maybeGetFieldOrIndex(key)
+                      .map(field -> field.get)
+                      .default(TType::top(pos)),
+                  )
+                }
+              } else {
+                indexBranch match {
+                | TPrimValue(kind, None(), _) ->
+                  add(
+                    fields
+                      .nonSyntheticIndexForKeyKind(kind)
+                      .map(field -> field.get)
+                      .default(TType::top(pos)),
+                  );
+                  for (field in fields.namedFieldsForKeyKind(kind)) {
+                    add(field.get)
+                  }
+                | _ -> add(TType::top(pos))
+                }
+              }
+            }
+          }
+        | TPrimUnit(TNull(), _)
+        | TPrimUnit(TUndefined(), _) ->
+          void
+        | TPrim _ -> add(TType::top(pos))
+        }
+      };
+      result
+    | _ -> TType::top(pos)
+    }
+  }
+
+  private fun propertyReadType(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    receiver: TType,
+    stableReceiver: TType,
+    index: TType,
+    readType: TType,
+  ): TType {
+    result = this.extractedMethodType(tcenv.subst, readType);
+    if (receiver != stableReceiver && !result.isFieldFree()) {
+      contract = this.extractedMethodType(
+        tcenv.subst,
+        this.propertyContentsContract(tcenv, stableReceiver, index),
+      );
+      tcenv.!stableExprTypes[(pos, result)] = LocalRef(
+        result,
+        contract,
+        true,
+        true,
+        false,
+        true,
+      ).stableContentsType(tcenv.subst, this, true)
+    };
     result
   }
 

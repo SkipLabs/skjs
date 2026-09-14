@@ -283,9 +283,20 @@ patterns. Binding an object value uses that contract; extracting a scalar keeps
 the observed value. `identityPatternAlias` in `destructuring.ts` rejects a saved
 child narrowed by reference equality whose contents are subsequently overwritten;
 `identityPatternScalar` preserves the scalar copied by a nested pattern before
-the write. This closes the object-pattern binding boundary. Direct property
-aliases, spread, and object rest still reproduce the same equality-based gap
-and need their own contract propagation.
+the write. This closes the object-pattern binding boundary. Spread and object
+rest still reproduce the same equality-based gap and need contract propagation
+for copied object-valued fields.
+
+Property reads now record a separate stable result contract from the receiver's
+contract, before that result can be stored or passed elsewhere. Dot and indexed
+reads share the projection, including literal string/number/symbol keys and
+general index keys. Resolution uses the existing field/index lookup operations;
+an absent contract supplies no object-content guarantee and produces no second
+access diagnostic. The current expression type and its primitive alternatives
+remain available, so immediate scalar reads and non-null reference checks keep
+their precision. `unsound-refinement.ts` covers an inferred property alias,
+an annotated indexed alias, and a scalar snapshot. This is contract propagation,
+not general nested-field refinement or callee-effect tracking.
 
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.

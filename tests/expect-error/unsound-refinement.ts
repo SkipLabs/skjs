@@ -509,7 +509,7 @@ function stableMemberAlias(
   if (x.child !== narrow) return 0;
   const alias = x.child;
   x.child.value = null;
-  // FIXME: property extraction loses the source's stable contents contract.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return alias.value;
 }
 
@@ -518,7 +518,7 @@ function stableIndexedMemberAnnotation(
   narrow: { value: number },
 ): number {
   if (x.child !== narrow) return 0;
-  // FIXME: the annotated alias promises more than the source's lasting contract.
+  // @ts-expect-error Type of value is not assignable to the variable's type annotation
   const alias: { value: number } = x["child"];
   x.child.value = null;
   return alias.value;
