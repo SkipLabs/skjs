@@ -27,6 +27,7 @@ mutable class CaptureWrites{
     e.value match {
     | Var(n) -> this.!names = this.names.set(n.value)
     | EArray(elements) ->
+      this.!hasCallEffects = true;
       // Preserve the existing unknown-target summary, but retain the binding
       // names too for consumers distinguishing rebinding from property writes.
       this.!unknown = true;
@@ -50,6 +51,7 @@ mutable class CaptureWrites{
     p.value match {
     | PVar _ -> void
     | PArray(elements, _) ->
+      this.!hasCallEffects = true;
       elements.each(element ->
         element.each(item -> {
           item.i1.each(e -> this.expr(e));
@@ -91,7 +93,8 @@ mutable class CaptureWrites{
       this.expr(e);
       this.stmts(yes);
       no.each(ss -> this.stmts(ss))
-    | ForInOf(_, init, e, body) ->
+    | ForInOf(kind, init, e, body) ->
+      if (kind is ForOf()) this.!hasCallEffects = true;
       init.value match {
       | StmtExpr(target) -> this.target(target)
       | Bind _ -> void
@@ -157,7 +160,9 @@ mutable class CaptureWrites{
       if (this.depth > 0) {
         this.!captures = this.captures.set(n.value)
       }
-    | Spread(x)
+    | Spread(x) ->
+      this.!hasCallEffects = true;
+      this.expr(x)
     | TypeOf(x)
     | VoidOp(x)
     | As(x, _)

@@ -95,6 +95,29 @@ implicit execution and growing objects. Symbolic abstract projections are a
 separate completeness milestone; removing the current guards requires preserving
 the same dependency in body validation and caller instantiation.
 
+## Iterator effect boundary
+
+Iteration uses the same conservative effect invalidation as explicit calls.
+`for…of` invalidates before binding/checking the body and after exhaustion or
+closing. Array and argument spread invalidate before subsequent expressions;
+destructuring invalidates on acquisition, between targets and at closing. The
+syntactic effect summary includes these operations so assignment/guard consumers
+do not treat them as effect-free. Tuple shape shortcuts do not exempt iteration.
+
+`iterator-effects.ts` distinguishes body entry, completed spread, declaration and
+assignment destructuring, closing after a body guard, and later call arguments.
+The pre-repair checker accepted nullable returns with numeric contracts; runtime
+iterator witnesses return null. Scalar snapshots and fresh body guards remain
+positive controls. This closes the explicit iterator-invalidation gap, not M1's
+growing-object or general external accessor/proxy boundary, nor the semantics of
+custom iterators overriding tuple element order.
+
+For convergence, further syntax-level work needs a concrete acceptance failure
+that blocks a remaining row. The next central deliverable is R2/R3c: justify
+transitive stability of normalization results transferred from private
+substitutions, or replace that transfer with live validation/dependency tracking.
+A further inventory or another projection guard alone does not meet that goal.
+
 ## Convergence audit (2026-09-14)
 
 The remaining work is architectural. Recent assignment, initialization, and

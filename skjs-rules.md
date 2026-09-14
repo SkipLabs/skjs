@@ -1043,14 +1043,16 @@ All examples follow SKJS constraints and pass type checking successfully.
 
 ### Effect boundaries
 
-Explicit calls, `new`, and `await` invalidate transient object contents on lasting
-contracts. Captured mutable bindings also widen when they may be reassigned.
+Explicit calls, `new`, `await`, and iterator execution invalidate transient object
+contents on lasting contracts. Iteration includes `for…of`, array and argument
+spread, and array destructuring; advancing and closing an iterator can execute
+user code. Captured mutable bindings also widen when they may be reassigned.
 Checks observed before a later effect cannot re-establish stale field or captured
 binding facts. Copied scalar values, private scalar locals and fresh post-call
 checks remain usable. Ordinary calls have no purity summaries, so even pure
 formatting and recursive helpers can lose discriminant refinements. Checker-only
 `__SKJS_show` and `__SKJS_show_expanded` are exempt. This policy does not cover
-implicit accessor/iterator effects or growing, uncontracted objects.
+externally supplied accessor/proxy effects or growing, uncontracted objects.
 
 ### Abstract type projections
 

@@ -547,12 +547,15 @@ extension class TypeChecker {
         )
       }
     | PArray(arrPat, rest) ->
+      // Iterator acquisition, advancement, and closing can invoke user code.
+      tcenv.invalidateCallEffects(this);
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
       stypes.flatMap(s ->
         s.destructuringElements(tcenv.subst, this, arrPat.size())
       ) match {
       | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
+          tcenv.invalidateCallEffects(this);
           arrPat[i] match {
           | None() -> /* skipped element */ void
           | Some((eltPat, Some(defaultExpr))) ->
@@ -687,6 +690,7 @@ extension class TypeChecker {
             )
           };
           for (i in Range(0, arrPat.size())) {
+            tcenv.invalidateCallEffects(this);
             arrPat[i] match {
             | None() -> void
             | Some((eltPat, Some(defaultExpr))) ->
@@ -756,7 +760,8 @@ extension class TypeChecker {
             TSCode(2461),
           )
         }
-      }
+      };
+      tcenv.invalidateCallEffects(this)
 
     | PObject{fields => objectFields, rest} ->
       fieldsToRemoveForRest = rest match {
@@ -4553,12 +4558,14 @@ extension class TypeChecker {
     mostPrecise: Bool,
   ): void {
     (targets, restInner) = this.splitRest(tcenv, elements);
+    tcenv.invalidateCallEffects(this);
     stypes = rhsType.getSTypes(tcenv.subst, this, Covariant());
     stypes.flatMap(s ->
       s.destructuringElements(tcenv.subst, this, targets.size())
     ) match {
     | Some(tyl) ->
       for (i => elt in targets) {
+        tcenv.invalidateCallEffects(this);
         eltType = if (i < tyl.size()) {
           tyl[i]
         } else {
@@ -4567,6 +4574,7 @@ extension class TypeChecker {
         this.assignElement(tcenv, elt, eltType, mostPrecise)
       };
       restInner.each(inner -> {
+        tcenv.invalidateCallEffects(this);
         // Destructuring a rest allocates a fresh array, so nothing aliases it
         // at the tuple's arity: it can be read as a growable array just as well
         // as a tuple. Type it the way an array literal is typed — delayed, so
@@ -4616,6 +4624,7 @@ extension class TypeChecker {
           )
         };
         for (elt in targets) {
+          tcenv.invalidateCallEffects(this);
           this.assignElement(
             tcenv,
             elt,
@@ -4623,14 +4632,15 @@ extension class TypeChecker {
             mostPrecise,
           )
         };
-        restInner.each(inner ->
+        restInner.each(inner -> {
+          tcenv.invalidateCallEffects(this);
           this.assignTarget(
             tcenv,
             inner,
             TType::inst(Name(inner.pos, "Array"), TArgs(Array[baseElt])),
             mostPrecise,
           )
-        )
+        })
       | _ ->
         fatalError(
           Array[
@@ -4643,7 +4653,9 @@ extension class TypeChecker {
           TSCode(2461),
         )
       }
-    }
+    };
+    // IteratorClose may overwrite facts established by the final target.
+    tcenv.invalidateCallEffects(this)
   }
 
   private fun tupleUnionRestType(
@@ -5387,7 +5399,10 @@ extension class TypeChecker {
     for (argExpr in argExprs) {
       argExpr.value match {
       | Spread(spreadExpr) ->
-        spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
+        currentSpreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
+        spreadTy = this.stableAliasExprType(tcenv, spreadExpr, currentSpreadTy);
+        // Consume the iterator before evaluating the following argument.
+        tcenv.invalidateCallEffects(this);
         stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
         if (moreArgs is None()) {
           stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {

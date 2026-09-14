@@ -301,6 +301,9 @@ extension class TypeChecker {
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope);
 
+      // Exhaustion and IteratorClose happen after the last body observation,
+      // including an early break. Do not export that observation past the loop.
+      if (kind is ForOf()) tcenv.invalidateCallEffects(this);
       if (enteredForIn) tcenv.exitForIn();
       StmtTermination::expr(iterable).thenk(() ->
         CondTermination::any.loop_(() -> bodyTerm)
@@ -954,6 +957,8 @@ extension class TypeChecker {
     iterableType: TType,
     iterationKind: String,
   ): TType {
+    // Runtime iteration invokes Symbol.iterator and next, even for arrays.
+    tcenv.invalidateCallEffects(this);
     result = TType::bottom(pos);
 
     stypes = iterableType.getSTypes(tcenv.subst, this, Covariant()) match {

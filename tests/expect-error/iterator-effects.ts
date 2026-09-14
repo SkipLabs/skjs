@@ -6,6 +6,7 @@ function loopEffect(
 ): number {
   if (cell.value === null) return 0;
   for (const value of values) {
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return cell.value;
   }
   return 0;
@@ -17,6 +18,7 @@ function spreadEffect(
 ): number {
   if (cell.value === null) return 0;
   const copy = [...values];
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return cell.value;
 }
 
@@ -26,6 +28,7 @@ function destructureEffect(
 ): number {
   if (cell.value === null) return 0;
   const [value] = values;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return cell.value;
 }
 
@@ -36,10 +39,10 @@ function closeAfterGuard(
 ): number {
   if (cell.value === null) return 0;
   for (const value of values) {
-    // @skjs-expect-warning This comparison is always false because the operand types do not overlap
     if (cell.value === null) return 0;
     break;
   }
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return cell.value;
 }
 
@@ -49,6 +52,7 @@ function spreadBeforeArgument(
   values: Iterable<number>,
 ): void {
   if (cell.value === null) return;
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   consumeNumbers(...values, cell.value);
 }
 
@@ -59,6 +63,7 @@ function assignedIteration(
   if (cell.value === null) return 0;
   let first: number | undefined;
   [first] = values;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return cell.value;
 }
 
@@ -69,7 +74,6 @@ function freshGuardAndSnapshot(
   if (cell.value === null) return 0;
   const snapshot = cell.value;
   for (const value of values) {
-    // @skjs-expect-warning This comparison is always true because the operand types do not overlap
     if (cell.value !== null) return cell.value;
   }
   return snapshot;
