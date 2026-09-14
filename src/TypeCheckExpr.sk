@@ -420,6 +420,7 @@ extension class TypeChecker {
     // one: its statements have already run when the fallthrough is what reached
     // this block. See `Scope::uniteFallenInto`.
     fallenFrom: ?readonly Scope = None(),
+    reservedStatements: Array<Stmt> = Array[],
   ): (readonly Scope, StmtTermination) {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
@@ -431,6 +432,7 @@ extension class TypeChecker {
     // After `cond`: the fallthrough entry is a separate way in, so its values
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
+    this.reserveBlockBindings(tcenv, reservedStatements);
     this.reserveBlockBindings(tcenv, stmts);
     // Checking a statement also answers how it ends; the block's termination
     // folds the answers left to right, where `then` stops accumulating once

@@ -563,6 +563,18 @@ extension class TypeChecker {
     // reached below: a condition can only be refined once the types of what it
     // compares are known, so a `default` could otherwise only rule out the cases
     // that happened to precede it.
+    // Case declarations share lexical visibility. Keep each direct-entry
+    // path uninitialized; declarations inside explicit blocks are excluded
+    // by reserveBlockBindings. The discriminant was evaluated outside here.
+    caseStatements = mutable Vector<Stmt>[];
+    for (branch in branches) {
+      caseStatements.extend(branch.block)
+    };
+    reservations = caseStatements.toArray();
+    savedPendingBindings = tcenv.pendingBindings;
+    labelParent = tcenv.scope;
+    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
+    this.reserveBlockBindings(tcenv, reservations);
     noCaseMatched: ?Expr = None();
     for (branch in branches) {
       branch match {
@@ -578,6 +590,8 @@ extension class TypeChecker {
       | SwitchBranch(Default(), _, _) -> void
       }
     };
+    tcenv.!scope = labelParent;
+    tcenv.!pendingBindings = savedPendingBindings;
     // Two `default` positions, which differ only in a switch that has more
     // than one (already an error): the first names the clause a duplicate
     // conflicts with, and answers whether the switch has a `default` at all;
@@ -741,7 +755,14 @@ extension class TypeChecker {
           | Some(noCase) -> Some((noCase, true))
           }
         };
-        (scopeBranch, blockTerm) = this.block(tcenv, block, cond, fallenFrom);
+        (scopeBranch, blockTerm) = this.block(
+          tcenv,
+          block,
+          cond,
+          fallenFrom,
+          reservations,
+        );
+        tcenv.!pendingBindings = savedPendingBindings;
         // Falling *through* means running one clause's statements and then
         // running the next clause's too. An empty clause has none to run — it is
         // how several labels are given one body — and the last clause has nothing

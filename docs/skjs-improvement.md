@@ -294,8 +294,13 @@ callback parameters and sibling local-object reuse. Reserved placeholders
 are not value claims and are omitted from exported statement environments. `binding-initialization.ts` covers a read
 before a later statement and a condition evaluated before entering a block
 with a same-named local. Nested blocks reserve their own direct declarations;
-shared switch-case scope and deferred reads before initialization remain separate
-limitations. For-in
+switch labels and case entries reserve the union of direct case declarations,
+while explicit nested blocks stay separate. The discriminant is checked before
+that scope is introduced. Each case starts conservatively uninitialized because
+execution can jump to it directly; deferred reads and proving initialization
+solely through case-to-case fallthrough remain separate limitations.
+`switch-scope-merge.ts` covers cross-case and label lookup plus an explicit-block
+control. Existing outer-variable switch merges retain their behavior. For-in
 and for-of declarations use the same reservation before evaluating their source;
 otherwise `for (const items of items)` could resolve the outer name instead of
 rejecting the uninitialized loop binding. `for-in-for-of-invalid.ts` covers this
