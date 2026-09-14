@@ -49,7 +49,7 @@ function testForOfWithUndefined(): void {
 declare const items: number[];
 function loopSourceShadow(): number {
   let total = 0;
-  // FIXME: the loop binding shadows the outer name before iterable evaluation.
+  // @ts-expect-error Variable 'items' is used before being assigned
   for (const items of items) total += items;
   return total;
 }

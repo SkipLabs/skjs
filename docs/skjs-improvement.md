@@ -285,7 +285,11 @@ uninitialized; a default cannot read or assign it prematurely. Initialization
 installs the projected type and preserves local const/let mutability and contract
 flags. `destructuring.ts` covers the previously accepted namesake lookup and
 an earlier initialized binding used by a later default. This is pattern-local
-reservation, not a complete block-wide temporal-dead-zone implementation.
+reservation, not a complete block-wide temporal-dead-zone implementation. For-in
+and for-of declarations use the same reservation before evaluating their source;
+otherwise `for (const items of items)` could resolve the outer name instead of
+rejecting the uninitialized loop binding. `for-in-for-of-invalid.ts` covers this
+failure and restoration of a shadowed outer name after a valid loop.
 
 Default-result typing now uses one `defaultedValueType` operation for object,
 tuple, iterable, assignment, and whole-parameter defaults. It establishes the

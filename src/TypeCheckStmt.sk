@@ -214,6 +214,22 @@ extension class TypeChecker {
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
 
+      // The loop's lexical bindings shadow outer names even while its
+      // iterable is evaluated. Binding each iteration then initializes them.
+      initStmt.value match {
+      | Bind(bindingKind, bindings) ->
+        for (binding in bindings) {
+          this.reserveBindingNames(
+            tcenv,
+            binding.pat,
+            TType::top(binding.pat.pos),
+            !(bindingKind is BKConst()),
+          )
+        }
+      | _ ->
+        void // Invalid loop targets are diagnosed by bindLoopVar.
+      };
+
       iterableType = this.expr(tcenv, iterable, true);
       ty = kind match {
       | ForIn() ->
