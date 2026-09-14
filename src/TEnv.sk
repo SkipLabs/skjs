@@ -872,7 +872,7 @@ base class TEnv{
       // are `Box#T` and `Crate#T` rather than `T` twice. `#` cannot appear in
       // a type reference, so the name also cannot be mistaken for something
       // writable.
-      TType::fromTParamWithConstraint(
+      argument = TType::fromTParamWithConstraint(
         subst,
         this,
         className.pos,
@@ -881,7 +881,11 @@ base class TEnv{
           `${className.value}#${tparam.name.value}`,
           cstr,
         ),
-      )
+      );
+      // Later bounds refer to this object's hidden arguments, not to names
+      // in the environment performing the instanceof check.
+      !this.bindings[tparam.name.value] = argument;
+      argument
     })
   }
 
@@ -908,6 +912,9 @@ base class TEnv{
         tparam.constraint.each(cstr ->
           !tvar = tvar.setConstraint(this.normalize(subst, cstr))
         );
+        // Preserve dependencies between inferred arguments just as for
+        // rigid declaration parameters and hidden arguments.
+        !this.bindings[tparam.name.value] = TType::var(tvar);
         tvar
       })
       .collect(Array);

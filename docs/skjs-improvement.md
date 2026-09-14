@@ -203,6 +203,22 @@ remain open, and a probe is not authorization to constrain the parent.
 
 ## Implementation record
 
+R1 dependent-bound repair: class declaration checking, inferred constructor
+arguments and hidden `instanceof` arguments now resolve each later bound with
+the preceding parameters already bound. In `C<T, U extends T>`, the bound of
+`U` therefore refers to this declaration's rigid `T`, this constructor's
+inference candidate, or this object's hidden identity, respectively. Class
+checking reuses `addTParams` instead of independently rebuilding its arguments
+before establishing their scope.
+
+`hidden-dependent-bounds.ts` covers the accepted same-object direction and
+constructor inference, with rejected reverse, cross-object and incompatible
+constructor cases. Previously every case stopped at an unresolved `T`. A probe
+with an outer `type T = number` also confirms that this unrelated name cannot
+justify a numeric result from an unknown object's hidden field. This repairs
+incompleteness and binder identity; it is not a newly demonstrated runtime
+unsoundness. Forward and recursive bounds are not established by this change.
+
 R1 contextual-signature repair: a non-generic method can still contain inference
 candidates from its generic receiver. For a temporary `new ContextRunner(null)`,
 those candidates are not enclosing bindings. A contextual default

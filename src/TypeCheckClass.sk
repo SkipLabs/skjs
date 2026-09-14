@@ -23,7 +23,7 @@ extension class TypeChecker {
       }
     };
     static::checkTypeParams(tcenvl, c.tparams, OptionalTypeParamsForbidden());
-    subst = Subst::createCheckingOwner(tcenvl);
+    subst = Subst::mcreate(tcenvl);
     !this = this.addTParams(subst, c.tparams);
     targs = TArgs(c.tparams.map(tparam -> this.bindings[tparam.name.value]));
     fileName = c.name.pos.fileName;

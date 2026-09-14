@@ -1,6 +1,5 @@
 // Bounds refer to this instantiation's parameters, including when an
 // instanceof check reveals only their hidden identities.
-// @skjs-expect-error Cannot find type 'T'
 class DependentBox<T, U extends T> {
   first: T;
   second: U;
@@ -15,11 +14,13 @@ function sameWitness(x: unknown): void {
 }
 
 function reverseBound(x: unknown): void {
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   if (x instanceof DependentBox) x.second = x.first;
 }
 
 function crossWitness(x: unknown, y: unknown): void {
   if (x instanceof DependentBox && y instanceof DependentBox) {
+    // @skjs-expect-error Type is not assignable to the assignment target's type
     x.first = y.second;
   }
 }
@@ -30,5 +31,6 @@ function inferredBound(n: number): number {
 }
 
 function incompatibleBound(n: number): void {
+  // @ts-expect-error Argument is not assignable to the parameter's type
   const box = new DependentBox(n, "wrong");
 }
