@@ -15,3 +15,19 @@ function earlierDeclarator(): number {
     second = seed;
   return second;
 }
+
+function laterStatement(): number {
+  // FIXME: the later local already shadows the outer seed.
+  const first = seed;
+  const seed = 2;
+  return first;
+}
+
+// The condition runs before entering the block containing the local seed.
+function conditionBeforeLocal(): number {
+  if (seed === 1) {
+    const seed = 2;
+    return seed;
+  }
+  return 0;
+}
