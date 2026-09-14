@@ -254,6 +254,29 @@ an independently unsound subtype judgment sound.
 
 ## Implementation record
 
+R2/R3c template-bound repair: the remaining shape-normalizer sweep found a
+another way to erase an abstract result dependency. `templateHole` marked a
+clause as irreducible when it contained `T`, but then let the `string` upper
+bound in that same clause set the whole-string flag. The latter took priority.
+Thus `` type TextOf<T extends string> = `${T}` `` normalized to `string` in a
+generic body and to `"good"` at an explicit literal instantiation. A body returning
+`"wrong"` was accepted; erased execution confirmed that value at a `"good"`
+result. Strict tsc rejects the fabricated body.
+
+Only a clause without abstract parameters now establishes the whole-string
+flag. The existing unsupported-template diagnostic rejects the abstract hole,
+including the alias declaration. The regression and genuine `${T | string}`
+absorption control are in `abstract-type-projection.ts`; existing finite-template
+and expansion-sharing coverage remains in place. This preserves actual union
+absorption without treating an upper bound as an equality.
+
+Mapped-key and `Closed<T>` probes rejected the analogous abstract-result bodies
+and accepted known shapes containing a symbolic member type. Their abstract
+checks already run before shape materialization. They were not duplicated in
+permanent tests. The finite shape-normalizer sweep therefore found and repaired
+indexed access, `keyof`, and template classification; it does not close general
+candidate-growth transfer or R2/R3c.
+
 R2/R3c abstract-projection repair: the normalization-transfer experiment exposed
 an acceptance bug before any later candidate growth was needed. For
 `type ElementOf<T extends readonly unknown[]> = T[number]`, a generic function
@@ -273,10 +296,10 @@ use an explicit element parameter (`readonly E[]`) instead. Full support needs a
 symbolic projection type, not approximation by the upper bound.
 
 Strict tsc accepts the indexed-access counterexample but rejects the fabricated
-`keyof` return. The other shape normalizers already reject/defer abstract inputs
-under their existing policies. This fixes the demonstrated representation
-mismatch without changing caches or claiming the remaining candidate-growth
-transfer obligations are complete.
+`keyof` return. The subsequent template-bound audit above found an additional
+classification gap; mapped keys and closed objects reject abstract inputs.
+This fixes the demonstrated representation mismatch without changing caches or
+claiming the remaining candidate-growth transfer obligations are complete.
 
 R1 dependent-bound repair: class declaration checking, inferred constructor
 arguments and hidden `instanceof` arguments now resolve each later bound with

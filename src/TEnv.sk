@@ -2435,7 +2435,11 @@ base class TEnv{
               // normalizes to None().
               values.push("false");
               values.push("true")
-            | TPrimValue(TString(), None(), _) -> !bareString = true
+            | TPrimValue(TString(), None(), _) ->
+              // T & string is only a bound when this clause carries an
+              // abstract parameter. Only a genuine string union member
+              // absorbs the hole's other alternatives.
+              if (clause.vars.isEmpty()) !bareString = true
             | TPrimValue(TNum(), None(), _)
             | TPrimValue(TBigInt(), None(), _) ->
               !irreducible = true

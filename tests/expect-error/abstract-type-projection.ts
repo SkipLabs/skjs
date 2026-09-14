@@ -41,6 +41,7 @@ function shapeKey<E>(x: { good: E }): Keys<{ good: E }> {
 
 // A string upper bound is not the complete string domain. A real string
 // union member, in contrast, absorbs the dependent interpolation.
+// @skjs-expect-error Template literal types are only supported when every interpolation has finitely many values, which this one does not
 type TextOf<T extends string> = `${T}`;
 function fabricatedText<T extends string>(x: T): TextOf<T> {
   return "wrong";
