@@ -15,7 +15,6 @@ class ContextRunner<T> {
 }
 function contextualRoot(a: ContextBox<number>, b: ContextBox<string>): number {
   const pair = new ContextRunner(null).twice(
-    // @ts-expect-error A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types
     (x, y = x instanceof ContextBox ? x : null): typeof y => y,
     a,
     b,
