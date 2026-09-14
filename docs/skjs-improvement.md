@@ -203,6 +203,17 @@ remain open, and a probe is not authorization to constrain the parent.
 
 ## Implementation record
 
+R1 root/publication audit: the traversal follows fields (read and write types),
+call/construct signatures, receiver/parameter/result types, generic arguments,
+intersections, candidate constraints and current candidate bindings. It missed
+one representation edge: `TArrayLit` stores its committed array/tuple type in a
+separate candidate. That binding is now traversed just like an ordinary `TVar`.
+`tests/HiddenEscape.sk` exercises an initially empty literal, a commitment to an
+array of another candidate, later introduction of a forbidden identity, and
+rollback. The same retained obligation must observe each state. Source probes
+returning direct and nested arrays were already rejected, so this is a direct
+representation regression rather than a new accepted runtime counterexample.
+
 R1 escape-lifetime hardening: successful closure-result and enclosing-binding
 checks now retain their symbolic roots, forbidden hidden identities, and original
 diagnostic location in the current `TCEnv`. After subsequent expression and

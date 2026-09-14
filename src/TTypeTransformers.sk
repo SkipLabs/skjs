@@ -211,12 +211,9 @@ mutable class EscapingTypeParams(
   mutable fun type_(subst: this::Env, ty: TType): TType {
     for (inst in ty.insts) {
       inst match {
-      | tv @ TVar _ ->
-        subst.peekRaw(tv).each(bound -> {
-          if (!this.visiting.contains(bound)) {
-            _ = this.type(subst, bound)
-          }
-        })
+      | tv @ TVar _ -> this.boundType(subst, tv)
+      | TArrayLit(tv, _, _) -> this.boundType(subst, tv)
+      // Named arguments and intersections are traversed by rawMap below.
       | _ -> void
       }
     };
@@ -224,6 +221,14 @@ mutable class EscapingTypeParams(
       insts -> this.insts(subst, insts),
       clauses -> this.clauses(subst, clauses),
     )
+  }
+
+  private mutable fun boundType(subst: readonly Subst, tv: TVar): void {
+    subst.peekRaw(tv).each(bound -> {
+      if (!this.visiting.contains(bound)) {
+        _ = this.type(subst, bound)
+      }
+    })
   }
 
   mutable fun typeParam(_subst: this::Env, param: TParam): TParam {

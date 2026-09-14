@@ -42,8 +42,7 @@ fun testHiddenEscapeThroughArrayCommitment(): void {
     2080,
   );
   SKTest.expectEq(true, direct.fails(subst));
-  // Current gap: traversal ignores the array commitment's bound type.
-  SKTest.expectEq(false, check.fails(subst));
+  SKTest.expectEq(true, check.fails(subst));
   subst.restore(saved);
   SKTest.expectEq(false, check.fails(subst));
 }
