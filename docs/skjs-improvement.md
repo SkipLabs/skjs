@@ -136,6 +136,69 @@ iteration. Do not add extracted Lean programs absent a credible verifier issue.
 The existing semantic contracts remain the reference; passing concrete generic
 instantiations does not prove a generic body.
 
+## Validation-lifetime inventory (2026-09-14)
+
+This pass traces the clone, save/restore and raw-binding consumers in the checker,
+including the surrounding successful-check and cache paths. It is a source audit,
+not a soundness proof. “Local justification” below identifies why that operation
+can transfer its result; it does not establish stability of every reachable
+inference dependency. No R2/R3c completion status changes follow from this table.
+
+| Consumer | Local justification / remaining obligation |
+| --- | --- |
+| `TEnv.instantiateTParams`, `TypeChecker.call`: written arguments | `ValidateTypeArguments` checks the live substitution. Explicit source aliases/classes validate before expansion; explicit construction validates before constructor forwarding. Phantom bodies cannot erase the check. Existing `alias-inference-stability.ts` covers later incompatible growth. |
+| Alias expansion, class setup and declaration normalization | `ProbeTypeArguments` discards speculation. The independent obligation is the checked rigid declaration plus constraints carried by fresh inferred arguments. This depends on every entry path maintaining that invariant; it is not evidence produced by the successful probe itself. |
+| `TypeChecker.call`: inferred positional/rest arguments | The complete argument pass repeats until the substitution version stops changing. This checks consistency within that call. It supplies no revalidation when a dependency changes after the call returns. |
+| `TType`, `STypes`, `Clauses`, `TFun`, `TObject` subtyping | Successful alternatives retain their substitution changes. Failed alternatives restore state; an entirely failed check restores its entry state. These are transactional acceptance paths, not successful checks on discarded clones. Stability of previously successful checks still depends on sealing and symbolic types. |
+| `growTVars.isCovered` | Its subtype probes always restore, but only choose which lower bounds to propose. The outer `TType.isSub_` subsequently expands and validates the complete relation in the live substitution. A probe success is not the final acceptance result. |
+| `growTVars`: constraint admissibility | `freezeCandidates` suppresses growth/sealing of already determined candidates while permitting fresh determinations. Success commits fresh determinations before growth; failure restores. The outer subtype check validates afterward. Frozen-query results are not published to subtype/intersection caches. |
+| `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the substitution version is unchanged. Otherwise it restores and computes the intersection. The shortcut establishes non-mutation now; its dependence on earlier cached answers belongs to the cache obligation below. |
+| `VariadicTyping.resolveSpreadToTuple` | Success consumes a tuple shape from contravariant expansion, with a raw-binding fallback when constraint intersection hides the tuple. Failure restores. Callers validate individual arguments or function parameters, but do not retain an explicit dependency on the outer rest shape. **Open:** establish when that shape is sealed or revalidated after later growth, particularly for function subtyping outside the call fixed point. |
+| `VariadicTyping.inferRestTypeVar`, array literal commitment | Successful constraint/element checks commit; failure restores in the transactional paths. Literal-precision probing chooses guidance, followed by live element checking. Error-recovery state is outside this soundness objective. |
+| `bindType`: uninitialized annotations | The annotation expands covariantly in the live substitution before the clone tests whether it admits `undefined`. The clone cannot alone choose an uninitialized variable's accepted type. Existing definite-assignment stability coverage exercises this boundary. |
+| Tuple/object defaults | Clone queries decide whether the default contributes and produce warnings. The selected value passes through live source expansion/default-result typing and subsequent binding. The negative reachability decision still relies on those reads establishing the relevant candidate. Probes below exercise both tuple and field paths. |
+| Equality/truthiness refinements | Local equality establishes both operands live; contracted field refinement establishes the field live before clone intersection/subtraction. **Open:** nested symbolic dependencies and uncontracted inferred fields need a transitive stability argument. The new effect epoch addresses runtime effects, not substitution growth. |
+| `evalInstanceof` preservation probe | A successful branch probe retains the original branch; it does not import the clone's solved type arguments. A failed probe intersects with fresh rigid witnesses live. Preserving a branch therefore does not itself identify two hidden witnesses. Their later escape remains R1. |
+| `Scope.mayMatchAlternative` | Clone intersections decide which contract alternatives to discard; uncertainty retains them. **Open:** a disjointness result used to discard an alternative must stay disjoint under later growth. Unlike diagnostic overlap, this result affects accepted reads. |
+| Diagnostic overlap, `showTypes`, `originSuggestions` | Clone/raw results supply warnings, display assertions or advice, not a program typing premise. Keep these separate from mandatory validation; making them live would change inference merely by requesting diagnostics. |
+| `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. **Open R1:** later growth can introduce an identity after the traversal; this requires a lifetime mechanism, not more traversals of the same snapshot. |
+
+The cache/storage part of the inventory is separate from those consumers:
+
+- `SubstState.restore` restores candidate values, origins and all four caches
+  together. A failed branch does not leave its successful subtype memo in the
+  restored state. The recursion guards in `TEnv` are value-scoped to the active
+  call chain, distinct from substitution-owned success caches.
+- Union and named expansion caches retain symbolic arguments. Their obligation
+  is that no cached construction materializes a changing argument's current
+  value. The existing resolved-declaration identity checks remain necessary.
+- Subtype and compound-intersection caches rely on covariant reads sealing the
+  candidates whose current values they inspect. Suppressing publication during
+  candidate freezing closes that specific exception. **R2 remains open:** neither
+  cache records transitive dependencies or schedules later revalidation.
+- `SVClosed` closes one candidate binding; its payload can still contain symbolic
+  types. Treating “closed” as an immutable, fully resolved graph would skip the
+  very dependency argument this audit requires.
+
+Focused source probes tested a rest factory with a numeric seed, assignment of
+its result to a numeric function alias, and a subsequent incompatible argument;
+SKJS rejects the incompatible call and accepts a compatible numeric call. The
+seed was a `number` parameter so literal inference did not reject the alias
+before the intended check. Tuple and object defaults from an inferred undefined
+field reject later numeric writes. An `instanceof`-preserved generic instance
+rejects a string write after establishing a numeric alias. Strict tsc reports the
+same four negative sites. These probes found no new acceptance bug and overlap
+existing regression families, so they were not added as repetitive permanent
+tests. They do not discharge the structural open obligations above.
+
+The next implementation target is the shared dependency boundary: distinguish
+an established value/shape from a symbolic type with growable dependencies, and
+make acceptance consumers either seal those dependencies or retain a judgment to
+revalidate. Start with rest-shape consumption and alternative elimination, then
+use the same dependency inventory for hidden-witness escape. Do not globally
+seal every clone input: constructor inference and literal guidance intentionally
+remain open, and a probe is not authorization to constrain the parent.
+
 ## Implementation record
 
 R3a implementation note: the initial cache-key patch alone still accepted the
