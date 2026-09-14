@@ -864,26 +864,48 @@ extension class TypeChecker {
             SKJSCode(2063),
           )
         };
+        fieldContract = if (
+          !typeForField.isFieldFree() ||
+          this.patternHasDefault(fieldPat)
+        ) {
+          Some(
+            defaultOpt match {
+            | None() -> stableFieldType
+            | Some((_, defaultType)) ->
+              this.defaultedValueType(tcenv, stableFieldType, defaultType)
+            },
+          )
+        } else {
+          None()
+        };
+        // Saving the field retains an alias to its object contents. Nested
+        // patterns keep the current read type until they actually bind a value.
+        boundType = if (fieldPat.value is PVar _) {
+          fieldContract
+            .map(contract ->
+              LocalRef(
+                typeForField,
+                contract,
+                true,
+                true,
+                false,
+                true,
+              ).stableContentsType(tcenv.subst, this, true)
+            )
+            .default(typeForField)
+        } else {
+          typeForField
+        };
         this.bind(
           tcenv,
           kind,
           fieldPat,
-          this.extractedMethodType(tcenv.subst, typeForField),
+          this.extractedMethodType(tcenv.subst, boundType),
           hasDeclaredContract,
           isInitialized,
           false,
           isParameter,
-          if (this.patternHasDefault(fieldPat)) {
-            Some(
-              defaultOpt match {
-              | None() -> stableFieldType
-              | Some((_, defaultType)) ->
-                this.defaultedValueType(tcenv, stableFieldType, defaultType)
-              },
-            )
-          } else {
-            None()
-          },
+          fieldContract,
         );
         !sawDefault =
           sawDefault ||

@@ -278,6 +278,15 @@ field from the safe reversed order. This conservatively forgets field refinement
 after any default; it does not analyze whether that particular default mutates
 the source. General hidden call effects and evolving source contracts remain open.
 
+Object patterns also carry each source field's stable contract through nested
+patterns. Binding an object value uses that contract; extracting a scalar keeps
+the observed value. `identityPatternAlias` in `destructuring.ts` rejects a saved
+child narrowed by reference equality whose contents are subsequently overwritten;
+`identityPatternScalar` preserves the scalar copied by a nested pattern before
+the write. This closes the object-pattern binding boundary. Direct property
+aliases, spread, and object rest still reproduce the same equality-based gap
+and need their own contract propagation.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

@@ -201,10 +201,12 @@ function identityPatternAlias(
   if (x.child !== narrow) return 0;
   const { child } = x;
   x.child.value = null;
-  // FIXME: the saved object retains a transient contents refinement.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return child.value;
 }
 
+// The nested pattern copies a scalar before the write. TypeScript
+// conservatively rejects this return, but no object alias escapes the pattern.
 function identityPatternScalar(
   x: { child: { value: number | null } },
   narrow: { value: number },
