@@ -102,7 +102,13 @@ extension class TType {
     tenv: TEnv,
     declared: TFields,
   ): Bool {
-    this.getSTypes(subst.clone(), tenv, Covariant())
+    probe = subst.clone();
+    version = probe.version;
+    current = this.getSTypes(probe, tenv, Covariant());
+    // Discarding a branch installs a fact in the parent. A clone-only read
+    // that seals or solves candidates cannot justify that lasting fact.
+    if (probe.version != version) return true;
+    current
       .map(current ->
         current.any(st ->
           st match {
@@ -114,12 +120,7 @@ extension class TType {
                   .map(other ->
                     !field.isOptional &&
                       !other.isOptional &&
-                      TType::inter(
-                        subst.clone(),
-                        tenv,
-                        field.get,
-                        other.get,
-                      ).isBottom()
+                      TType::stablyDisjoint(subst, tenv, field.get, other.get)
                   )
                   .default(false)
               )
@@ -129,6 +130,18 @@ extension class TType {
         )
       )
       .default(true)
+  }
+
+  private static fun stablyDisjoint(
+    subst: mutable Subst,
+    tenv: TEnv,
+    left: TType,
+    right: TType,
+  ): Bool {
+    probe = subst.clone();
+    version = probe.version;
+    disjoint = TType::inter(probe, tenv, left, right).isBottom();
+    disjoint && probe.version == version
   }
 }
 

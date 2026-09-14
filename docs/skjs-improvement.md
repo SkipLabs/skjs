@@ -159,7 +159,7 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | Tuple/object defaults | Clone queries decide whether the default contributes and produce warnings. The selected value passes through live source expansion/default-result typing and subsequent binding. The negative reachability decision still relies on those reads establishing the relevant candidate. Probes below exercise both tuple and field paths. |
 | Equality/truthiness refinements | Local equality establishes both operands live; contracted field refinement establishes the field live before clone intersection/subtraction. **Open:** nested symbolic dependencies and uncontracted inferred fields need a transitive stability argument. The new effect epoch addresses runtime effects, not substitution growth. |
 | `evalInstanceof` preservation probe | A successful branch probe retains the original branch; it does not import the clone's solved type arguments. A failed probe intersects with fresh rigid witnesses live. Preserving a branch therefore does not itself identify two hidden witnesses. Their later escape remains R1. |
-| `Scope.mayMatchAlternative` | Clone intersections decide which contract alternatives to discard; uncertainty retains them. **Open:** a disjointness result used to discard an alternative must stay disjoint under later growth. Unlike diagnostic overlap, this result affects accepted reads. |
+| `Scope.mayMatchAlternative` | Alternative elimination now requires both the current-type expansion and the disjointness probe to leave their clone versions unchanged. Otherwise the alternative is retained. This prevents clone-only solving/sealing from authorizing elimination. It still relies on the ordinary cache and symbolic-dependency invariants for non-mutating results. |
 | Diagnostic overlap, `showTypes`, `originSuggestions` | Clone/raw results supply warnings, display assertions or advice, not a program typing premise. Keep these separate from mandatory validation; making them live would change inference merely by requesting diagnostics. |
 | `EscapingTypeParams` | `peekRaw` traverses current bindings without installing its rebuilt type. This detects identities reachable now. **Open R1:** later growth can introduce an identity after the traversal; this requires a lifetime mechanism, not more traversals of the same snapshot. |
 
@@ -201,6 +201,26 @@ seal every clone input: constructor inference and literal guidance intentionally
 remain open, and a probe is not authorization to constrain the parent.
 
 ## Implementation record
+
+R3c alternative-elimination hardening: `mayMatchAlternative` is an acceptance
+consumer, unlike the overlap check used only for warnings. It used clone
+expansion and intersection to discard declared object alternatives without
+checking whether the clone had solved or sealed any inference candidate.
+The transfer now requires an unchanged substitution version at both boundaries:
+the expansion that supplies current branches and each intersection that proves
+required fields disjoint. If either computation changes its clone, the alternative
+is retained. The parent is not constrained merely to make a speculative branch
+selection succeed. This uses the same non-mutation criterion as the existing
+redundant-constraint shortcut in `TType.mapTParams`.
+
+This is a structural strengthening, not a newly demonstrated source-level
+unsoundness fix. Existing `assignedUnionAlternative` and
+`checkedConditionalAlias` cases in `unsound-refinement.ts` guard concrete
+alternative precision; the file's stale alias cases guard rejection. No redundant
+source fixture was added without a distinct observed behavior. Unchanged clone
+versions do not constitute a general dependency proof: success-cache validity
+and later hidden-witness growth remain R2/R1 obligations.
+
 
 R2/R3c rest-shape repair: `resolveSpreadToTuple` consumed a bound candidate with
 a contravariant read, then flattened away the candidate's identity. Parameter
