@@ -5,7 +5,6 @@ function clearEffect(x: { value: number | null }): boolean {
 function directEffect(x: { value: number | null }): number {
   if (x.value === null) return 0;
   void clearEffect(x);
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x.value;
 }
 function methodEffect(
@@ -14,7 +13,6 @@ function methodEffect(
 ): number {
   if (x.value === null) return 0;
   action.run();
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x.value;
 }
 class EffectConstructor {
@@ -27,7 +25,6 @@ function constructorEffect(x: { value: number | null }): number {
   const action = new EffectConstructor(() => {
     x.value = null;
   });
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x.value;
 }
 async function suspensionEffect(
@@ -36,11 +33,9 @@ async function suspensionEffect(
 ): Promise<number> {
   if (x.value === null) return 0;
   await ready;
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x.value;
 }
 function conditionEffect(x: { value: number | null }): number {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   if (x.value !== null && clearEffect(x)) return x.value;
   return 0;
 }
