@@ -161,7 +161,6 @@ function checkedNestedPattern(x: {
 }): number {
   if (x.child !== null) {
     const {
-      // @skjs-expect-error Cannot use object-destructuring on this type
       child: { a = 0, b },
     } = x;
     return a + b;

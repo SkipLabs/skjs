@@ -269,7 +269,10 @@ could establish that the default always or never runs.
 Object binding patterns preserve source order, including in the parser. Each
 field's default and binding is checked once across the source's type branches.
 After a default (including one in a nested pattern), later object fields and
-rest copies use the source's stable contents contract. Earlier scalar reads
+rest copies use the source's stable contents contract. The actual read must
+establish an object reference first; projecting its contents contract then
+discards primitive alternatives, preserving a checked non-null child through
+nested defaults. Unchecked nullable children still reject. Earlier scalar reads
 remain snapshots. `destructuring.ts` distinguishes a default overwriting a later
 field from the safe reversed order. This conservatively forgets field refinements
 after any default; it does not analyze whether that particular default mutates

@@ -727,7 +727,7 @@ extension class TypeChecker {
       // Defaults can mutate the retained source object before later reads.
       branches = this.bindingObjectBranches(tcenv, type, pos);
       stableBranches = stableType
-        .map(ty -> this.bindingObjectBranches(tcenv, ty, pos))
+        .map(ty -> this.bindingObjectBranches(tcenv, ty, pos, false))
         .default(branches);
       sawDefault = false;
       for (field in objectFields) {
@@ -890,6 +890,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     type: TType,
     pos: PosRange,
+    requireObject: Bool = true,
   ): Array<TFields> {
     branches = mutable Vector<TFields>[];
     type.getSTypes(tcenv.subst, this, Covariant()) match {
@@ -905,6 +906,10 @@ extension class TypeChecker {
       for (stype in stypes) {
         stype match {
         | obj @ TObject _ -> branches.extend(obj.getBranches())
+        | TPrim _ if (!requireObject) ->
+          // The actual read has already established an object reference.
+          // Its contents contract must not reintroduce primitive alternatives.
+          void
         | _ ->
           fatalError(
             Array[
