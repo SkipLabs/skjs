@@ -85,8 +85,19 @@ extension class TypeChecker {
       rest
     };
     name.each(name -> {
-      tcenv.scope.bind(tcenv, name, placeholder, true, false, isMutable);
-      tcenv.!pendingBindings = tcenv.pendingBindings.set(name.pos)
+      // A block prepass and the declaration itself reserve the same identity.
+      if (!tcenv.pendingBindings.contains(name.pos)) {
+        tcenv.scope.bind(
+          tcenv,
+          name,
+          placeholder,
+          true,
+          false,
+          isMutable,
+          tcenv.pendingBindings,
+        );
+        tcenv.!pendingBindings = tcenv.pendingBindings.set(name.pos)
+      }
     })
   }
 

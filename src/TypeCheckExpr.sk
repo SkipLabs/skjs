@@ -431,6 +431,7 @@ extension class TypeChecker {
     // After `cond`: the fallthrough entry is a separate way in, so its values
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
+    this.reserveBlockBindings(tcenv, stmts);
     // Checking a statement also answers how it ends; the block's termination
     // folds the answers left to right, where `then` stops accumulating once
     // control cannot reach the next statement — which is still checked.
@@ -440,6 +441,25 @@ extension class TypeChecker {
     };
     tcenv.!scope = scopeCopy;
     (scope, term)
+  }
+
+  // Only direct declarations belong to this block; nested scopes reserve
+  // their own names when entered. Conditions have already been checked.
+  fun reserveBlockBindings(tcenv: mutable TCEnv, stmts: Array<Stmt>): void {
+    for (stmt in stmts) {
+      stmt.value match {
+      | Bind(kind, bindings) ->
+        for (binding in bindings) {
+          this.reserveBindingNames(
+            tcenv,
+            binding.pat,
+            TType::top(binding.pat.pos),
+            !(kind is BKConst()),
+          )
+        }
+      | _ -> void
+      }
+    }
   }
 
   // Defaults may be skipped. Local defaults merge their effects with the

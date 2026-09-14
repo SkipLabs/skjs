@@ -285,8 +285,17 @@ statement. Each reserved name shadows top-level namesakes while uninitialized;
 initialization then installs its projected type and preserves const/let
 mutability and contract flags. `binding-initialization.ts` covers self-reference,
 a later declarator, and an earlier initialized declarator; `destructuring.ts`
-covers references within patterns. This is declaration-statement reservation,
-not a complete block-wide temporal-dead-zone implementation. For-in
+covers references within patterns. Block entry also reserves direct declarations before checking its statements,
+after the entry condition has been interpreted in the enclosing environment.
+Reservation is idempotent by declaration position, so the statement pass cannot
+replace the block's binding identity. The redeclaration check distinguishes
+a future outer reservation from the current scope, preserving existing valid
+callback parameters and sibling local-object reuse. Reserved placeholders
+are not value claims and are omitted from exported statement environments. `binding-initialization.ts` covers a read
+before a later statement and a condition evaluated before entering a block
+with a same-named local. Nested blocks reserve their own direct declarations;
+shared switch-case scope and deferred reads before initialization remain separate
+limitations. For-in
 and for-of declarations use the same reservation before evaluating their source;
 otherwise `for (const items of items)` could resolve the outer name instead of
 rejecting the uninitialized loop binding. `for-in-for-of-invalid.ts` covers this

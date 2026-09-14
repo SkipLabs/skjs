@@ -271,9 +271,19 @@ mutable class Scope{
     hasDeclaredContract: Bool,
     isInitialized: Bool,
     isMutable: Bool,
+    pendingBindings: SortedSet<PosRange> = SortedSet[],
   ): void {
     this.maybeGetLocal(name) match {
     | None() -> void
+    | Some(
+      otherDef,
+    ) if (
+      !this.locals.containsKey(name.value) &&
+      pendingBindings.contains(otherDef.pos)
+    ) ->
+      // An inner binding remains distinct from a future outer declaration.
+      // Pre-reservation must not turn that valid reuse into a redeclaration.
+      void
     | Some(otherDef) ->
       tcenvb.error(
         Array[

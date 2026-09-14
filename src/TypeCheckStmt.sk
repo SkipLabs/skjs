@@ -10,13 +10,21 @@ extension class TypeChecker {
     if (getConfig(tcenv.context).emitSkjsTypeClaims) {
       vars = mutable Vector<TypeClaimVar>[];
       for (kv in tcenv.scope.visibleRefs().items()) {
-        ref = kv.i1;
-        // The declared type is worth a separate claim only when a write has
-        // narrowed away from it; otherwise it says nothing `type` does not.
-        declared = if (ref.declaredType == ref.type) None() else {
-          Some(ref.declaredType)
-        };
-        vars.push(TypeClaimVar(kv.i0, ref.type, ref.isMutable, declared))
+        // Reservations establish lexical identity, not an available value.
+        // Keep internal TDZ placeholders out of source typing environments.
+        pending = tcenv.scope
+          .bindingPos(Name(st.pos, kv.i0))
+          .map(pos -> tcenv.pendingBindings.contains(pos))
+          .default(false);
+        if (!pending) {
+          ref = kv.i1;
+          // The declared type is worth a separate claim only when a write has
+          // narrowed away from it; otherwise it says nothing `type` does not.
+          declared = if (ref.declaredType == ref.type) None() else {
+            Some(ref.declaredType)
+          };
+          vars.push(TypeClaimVar(kv.i0, ref.type, ref.isMutable, declared))
+        }
       };
       tcenv.claimedEnvs.push(TypeClaimEnv(st.pos, vars.toArray()))
     };
@@ -201,6 +209,7 @@ extension class TypeChecker {
         )
       )
     | Block(stmts) ->
+      this.reserveBlockBindings(tcenv, stmts);
       blockTerm = StmtTermination::skip;
       for (stmt in stmts) {
         !blockTerm = blockTerm.then(this.stmt(tcenv, stmt))
