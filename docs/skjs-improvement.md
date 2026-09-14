@@ -332,6 +332,15 @@ and rejected a safe write whose key initialized it. `keyClearsRhs` and
 `keyInitializesRhs` in `obj-literal-var-field-growth.ts` cover both directions.
 This retains the existing field validation and growth rules.
 
+Local-object growth also requires the receiver name not to be visibly rebound
+by the key or RHS. Such assignments use ordinary target checking before RHS
+evaluation, so a write through the captured object cannot add fields to the
+replacement object's type. The write-name scan includes array-destructuring
+targets and conservatively includes nested closure bodies; hidden callee effects
+remain open. `replacedReceiver` rejects growth attributed to the replacement,
+while `retainedReceiver` keeps an existing-field write through the original
+object valid in `obj-literal-var-field-growth.ts`.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

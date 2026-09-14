@@ -4470,7 +4470,10 @@ extension class TypeChecker {
       NormalDot(),
       Expr(_, Var(local)),
       fieldName,
-    ) if (tcenv.localObjectState(local).isSome()) ->
+    ) if (
+      tcenv.localObjectState(local).isSome() &&
+      !this.assignmentRebinds(local, None(), e2)
+    ) ->
       keyExpr = Expr(fieldName.pos, EString(fieldName.value));
       this.assignLocalObject(
         tcenv,
@@ -4484,7 +4487,10 @@ extension class TypeChecker {
     | Get(
       Expr(_, Var(local)),
       keyExpr,
-    ) if (tcenv.localObjectState(local).isSome()) ->
+    ) if (
+      tcenv.localObjectState(local).isSome() &&
+      !this.assignmentRebinds(local, Some(keyExpr), e2)
+    ) ->
       this.assignLocalObject(
         tcenv,
         pos,
@@ -4704,6 +4710,16 @@ extension class TypeChecker {
       );
       tcenv.forgetObjectRefinements(this)
     }
+  }
+
+  // Growing through a local name is valid only while it denotes the captured
+  // assignment receiver. Otherwise ordinary assignment checks the original
+  // target before evaluating the RHS and cannot grow the replacement object.
+  private fun assignmentRebinds(local: Name, key: ?Expr, value: Expr): Bool {
+    writes = mutable CaptureWrites{};
+    key.each(e -> writes.expr(e));
+    writes.expr(value);
+    writes.names.contains(local.value)
   }
 
   /*

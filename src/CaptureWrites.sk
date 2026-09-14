@@ -23,6 +23,12 @@ mutable class CaptureWrites{
   mutable fun target(e: Expr): void {
     e.value match {
     | Var(n) -> this.!names = this.names.set(n.value)
+    | EArray(elements) ->
+      // Preserve the existing unknown-target summary, but retain the binding
+      // names too for consumers distinguishing rebinding from property writes.
+      this.!unknown = true;
+      elements.each(element -> this.target(element))
+    | Spread(inner) -> this.target(inner)
     | _ -> this.!unknown = true
     }
   }

@@ -116,7 +116,7 @@ function keyInitializesRhs(): number {
 
 function replacedReceiver(): number {
   let box = {};
-  // FIXME: the write targets the original object, not the replacement.
+  // @ts-expect-error Property 'slot' does not exist on this type
   box.slot = (box = { value: 1 }).value;
   return box.slot;
 }
