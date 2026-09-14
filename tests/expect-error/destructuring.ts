@@ -155,3 +155,25 @@ function earlierPatternRead(x: { a?: null; b: number | null }): number {
   }
   return 0;
 }
+
+function checkedNestedPattern(x: {
+  child: { a?: number; b: number } | null;
+}): number {
+  if (x.child !== null) {
+    const {
+      // @skjs-expect-error Cannot use object-destructuring on this type
+      child: { a = 0, b },
+    } = x;
+    return a + b;
+  }
+  return 0;
+}
+function nestedPatternWithNull(x: {
+  child: { a?: number; b: number } | null;
+}): number {
+  const {
+    // @ts-expect-error Cannot use object-destructuring on this type
+    child: { a = 0, b },
+  } = x;
+  return a + b;
+}
