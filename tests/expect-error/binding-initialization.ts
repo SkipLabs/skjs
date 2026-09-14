@@ -31,3 +31,27 @@ function conditionBeforeLocal(): number {
   }
   return 0;
 }
+
+function finallyLater(): number {
+  let result = 0;
+  try {
+    result = 1;
+  } finally {
+    // FIXME: the later finally-local shadows the outer seed.
+    const first = seed;
+    const seed = 2;
+    result = first;
+  }
+  return result;
+}
+
+function exceptionScopesSeparate(): number {
+  let result = 0;
+  try {
+    const seed = 2;
+    result = seed;
+  } finally {
+    result += seed;
+  }
+  return result;
+}
