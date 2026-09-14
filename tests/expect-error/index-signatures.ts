@@ -722,3 +722,21 @@ function symGeneralNoIndex(x: { [symA]: number }, s: symbol): void {
   // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
   const v = x[s];
 }
+
+// Include both key kinds so the copy's open symbol index is not a separate error.
+type CopyEntries = { [key: string]: number; [key: symbol]: unknown };
+
+function reuseCopiedIndexContract(source: CopyEntries): number {
+  const template = { ...source };
+  // FIXME: index-to-index subtyping forgets that source entries may not copy.
+  const alias: typeof template = source;
+  if ("value" in alias) return { ...alias }.value;
+  return 0;
+}
+
+function satisfyCopiedIndexContract(source: CopyEntries): number {
+  const template = { ...source };
+  const alias: typeof template = { ...source };
+  if ("value" in alias) return { ...alias }.value;
+  return 0;
+}
