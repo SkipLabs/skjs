@@ -374,6 +374,13 @@ separate scope operations and do not count as reassignment. Object-field growth
 uses `updateObjectType`: it updates the view of the same reference, retaining
 effect tracking without requiring a mutable binding, including constructor `this`.
 
+Assignment-target validation treats receivers as values rather than nested
+assignment targets. `assignment-receivers.ts` accepts ordinary, compound, and
+postfix writes through returned objects and logical writes through a selected
+object. The access-chain check still rejects optional links, including through
+computed access and calls; the parser's existing loss of parenthesis boundaries
+means this remains conservative for explicitly grouped optional chains.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single
