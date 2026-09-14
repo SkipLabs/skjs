@@ -365,6 +365,15 @@ rejections and a valid computed-key update. Local updates now use `TCEnv.writeVa
 so exception and loop write tracking observe them as ordinary assignments.
 The existing numeric operand restriction and widened expression result remain.
 
+Local runtime writes check binding immutability in `TCEnv.writeVar`, before
+recording effects or changing flow types. This enforces the const assumption
+already used when retaining binding facts across captures and loops. `const-writes.ts` covers assignments,
+updates, destructuring, and captured compound writes; a const-bound object's
+writable fields remain mutable. Initialization and control-flow refinement use
+separate scope operations and do not count as reassignment. Object-field growth
+uses `updateObjectType`: it updates the view of the same reference, retaining
+effect tracking without requiring a mutable binding, including constructor `this`.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

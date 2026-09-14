@@ -1,17 +1,19 @@
-// FIXME: writes currently ignore the binding's const flag.
 function assignConstant(): number {
   const value: number = 0;
+  // @ts-expect-error Cannot assign to 'value' because it is a constant
   value = 1;
   return value;
 }
 
 function updateConstant(): number {
   const value: number = 0;
+  // @ts-expect-error Cannot assign to 'value' because it is a constant
   return value++;
 }
 
 function destructureConstant(): number {
   const value: number = 0;
+  // @ts-expect-error Cannot assign to 'value' because it is a constant
   [value] = [1];
   return value;
 }
@@ -19,6 +21,7 @@ function destructureConstant(): number {
 function captureConstant(): () => void {
   const value: number = 0;
   return () => {
+    // @ts-expect-error Cannot assign to 'value' because it is a constant
     value += 1;
   };
 }

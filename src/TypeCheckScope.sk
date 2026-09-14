@@ -553,6 +553,24 @@ mutable class Scope{
     }
   }
 
+  // Runtime writes must respect binding immutability. Flow refinements and
+  // declaration initialization use set/initializeReservedBinding separately.
+  readonly fun checkWritable(name: Name): void {
+    this.maybeGetRef(name.value) match {
+    | Some((_, ref)) if (!ref.isMutable) ->
+      fatalError(
+        Array[
+          (
+            name.pos,
+            `Cannot assign to '${name.value}' because it is a constant`,
+          ),
+        ],
+        TSCode(2588),
+      )
+    | _ -> void
+    }
+  }
+
   mutable fun set(
     name: Name,
     ty: TType,

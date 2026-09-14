@@ -5159,7 +5159,7 @@ extension class TypeChecker {
         | Some(o) -> TType::single(o)
         | None() -> TType::bottom(objPos)
         };
-        tcenv.writeVar(this, local, newTy, (x, y) -> {
+        tcenv.updateObjectType(this, local, newTy, (x, y) -> {
           this.checkSubType(
             tcenv,
             fieldType.pos,
