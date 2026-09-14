@@ -573,7 +573,7 @@ function stablePropertyCopiesScalar(x: {
 
 function computedRead(x: { value: number | null }): number {
   if (x.value === null) return 0;
-  // FIXME: the key mutates the field before it is read.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return x[(x.value = null) === null ? "value" : "value"];
 }
 // Rebinding x in the key does not change the receiver already captured.
@@ -584,6 +584,6 @@ function capturedReceiver(x: { value: number | null }): number {
 }
 function computedCall(x: { fn: (() => number) | null }): number {
   if (x.fn === null) return 0;
-  // FIXME: method lookup occurs after the key clears the callable.
+  // @ts-expect-error This expression is not callable
   return x[(x.fn = null) === null ? "fn" : "fn"]();
 }

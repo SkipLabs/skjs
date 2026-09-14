@@ -315,6 +315,16 @@ records with initialization and mutability flags to request a type projection.
 This consolidates the existing algorithm without changing acceptance or making
 its symbolic contracts immutable substitution snapshots.
 
+Computed property reads capture the receiver before evaluating the key, then
+drop transient contents if the key's existing `CaptureWrites` summary includes
+a property write or unknown target. The same operation runs before computed
+method lookup. Rebinding a local alone preserves the captured receiver rather
+than looking up that name again. `computedRead` and `computedCall` in
+`unsound-refinement.ts` reject reads/calls after the key clears their field;
+`capturedReceiver` retains the original object's checked value after rebinding.
+The summary is conservative about nested syntax and unrelated property writes;
+hidden callee effects and uncontracted source contents remain separate limits.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

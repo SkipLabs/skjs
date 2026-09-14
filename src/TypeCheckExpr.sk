@@ -2643,10 +2643,11 @@ extension class TypeChecker {
         accessKind: AccessKind,
       ) -> {
         e1Ty = this.expr(tcenv, e1, mostPrecise);
+        stableReceiver = this.stableAliasExprType(tcenv, e1, e1Ty);
         idxTy = this.expr(tcenv, idx, true);
+        !e1Ty = this.indexedReadReceiver(tcenv, e1Ty, stableReceiver, idx);
         resolve = (recv: TType, ak: AccessKind) ->
           this.getWithIndexType(tcenv, getPos, recv, idxTy, idx.pos, ak);
-        stableReceiver = this.stableAliasExprType(tcenv, e1, e1Ty);
         callOn = (recv: TType) -> {
           stableBranch = if (stableReceiver == e1Ty) {
             this.stableAliasExprType(tcenv, e1, recv)
@@ -2835,6 +2836,14 @@ extension class TypeChecker {
       };
       accessKind = if (isLValue) AKLValue() else AKNormal();
       idxType = this.expr(tcenv, idx, true);
+      if (!isLValue) {
+        !objOrArray = this.indexedReadReceiver(
+          tcenv,
+          objOrArray,
+          stableReceiver,
+          idx,
+        )
+      };
       result = this.getWithIndexType(
         tcenv,
         pos,
@@ -4240,6 +4249,24 @@ extension class TypeChecker {
       stableRight,
     );
     result
+  }
+
+  // The receiver reference is captured before the key, but its field is read
+  // afterwards. A property write in the key can invalidate those contents;
+  // rebinding a local alone cannot change the already captured reference.
+  private fun indexedReadReceiver(
+    tcenv: mutable TCEnv,
+    receiver: TType,
+    contract: TType,
+    index: Expr,
+  ): TType {
+    writes = mutable CaptureWrites{};
+    writes.expr(index);
+    if (writes.result().isNone()) {
+      receiver.withStableContents(tcenv.subst, this, contract, true)
+    } else {
+      receiver
+    }
   }
 
   // The ordinary access has already checked presence, visibility, and key
