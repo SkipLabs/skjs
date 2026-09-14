@@ -113,3 +113,16 @@ function keyInitializesRhs(): number {
   box[(x = 1) === 1 ? "slot" : "slot"] = x;
   return box.slot;
 }
+
+function replacedReceiver(): number {
+  let box = {};
+  // FIXME: the write targets the original object, not the replacement.
+  box.slot = (box = { value: 1 }).value;
+  return box.slot;
+}
+function retainedReceiver(seed: number | null): number | null {
+  let box = { slot: seed };
+  const original = box;
+  box.slot = (box = { slot: 1 }).slot === 1 ? null : null;
+  return original.slot;
+}
