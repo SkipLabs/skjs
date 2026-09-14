@@ -305,6 +305,16 @@ copying the carrier does not copy the contents of objects its fields reference.
 write and scalar copies that survive it. General mutation through uncontracted
 or growing source objects remains open.
 
+The projection is one type operation, `TType.withStableContents`: combine the
+current type's primitive alternatives with the contract's object alternatives.
+Alias creation may preserve selected contract alternatives; invalidation can
+restore all of them. Local bindings decide whether their refinement provenance
+requires projection, while property reads, copies, object patterns, and composed
+receivers call the operation directly. They no longer manufacture local-binding
+records with initialization and mutability flags to request a type projection.
+This consolidates the existing algorithm without changing acceptance or making
+its symbolic contracts immutable substitution snapshots.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single

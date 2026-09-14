@@ -883,14 +883,7 @@ extension class TypeChecker {
         boundType = if (fieldPat.value is PVar _) {
           fieldContract
             .map(contract ->
-              LocalRef(
-                typeForField,
-                contract,
-                true,
-                true,
-                false,
-                true,
-              ).stableContentsType(tcenv.subst, this, true)
+              typeForField.withStableContents(tcenv.subst, this, contract, true)
             )
             .default(typeForField)
         } else {
@@ -2663,14 +2656,7 @@ extension class TypeChecker {
             // type, so project that contract onto the selected branch using
             // the same rule as a narrowed local: retain stable object fields
             // and current primitive alternatives (including null removal).
-            LocalRef(
-              recv,
-              stableReceiver,
-              true,
-              true,
-              false,
-              true,
-            ).stableContentsType(tcenv.subst, this, true)
+            recv.withStableContents(tcenv.subst, this, stableReceiver, true)
           };
           dispatchCall(resolve(recv, AKNormal()), Some(stableBranch))
         };
@@ -4336,14 +4322,12 @@ extension class TypeChecker {
             this.propertyContentsContract(tcenv, source, key),
           );
           field with {
-            get => LocalRef(
-              field.get,
+            get => field.get.withStableContents(
+              tcenv.subst,
+              this,
               contract,
               true,
-              true,
-              false,
-              true,
-            ).stableContentsType(tcenv.subst, this, true),
+            ),
           }
         };
       projectIndex = (field: TField, kind: TPrimValueKind) ->
@@ -4400,14 +4384,12 @@ extension class TypeChecker {
         tcenv.subst,
         this.propertyContentsContract(tcenv, stableReceiver, index),
       );
-      tcenv.!stableExprTypes[(pos, result)] = LocalRef(
-        result,
+      tcenv.!stableExprTypes[(pos, result)] = result.withStableContents(
+        tcenv.subst,
+        this,
         contract,
         true,
-        true,
-        false,
-        true,
-      ).stableContentsType(tcenv.subst, this, true)
+      )
     };
     result
   }

@@ -24,50 +24,61 @@ value class LocalRef(
   isMutable: Bool,
   hasFieldRefinement: Bool = false,
 ) {
-  // Project transient field facts back to the lasting object contract, keeping
-  // primitive alternatives from the current flow type (including null checks).
+  // Only a binding carrying transient field facts needs contract projection.
   fun stableContentsType(
     subst: mutable Subst,
     tenv: TEnv,
     preserveAlternatives: Bool = false,
   ): TType {
-    if (
-      this.hasDeclaredContract &&
-      this.hasFieldRefinement &&
-      this.type != this.declaredType &&
-      !this.type.isFieldFree()
-    ) {
-      objects = this.declaredType.mapSTypes(
+    if (this.hasDeclaredContract && this.hasFieldRefinement) {
+      this.type.withStableContents(
         subst,
         tenv,
-        Some(Covariant()),
-        stypes ->
-          Some(
-            stypes
-              .map(types ->
-                types.filterMap(st ->
-                  st match {
-                  | obj @ TObject _ ->
-                    if (preserveAlternatives) {
-                      obj.mapOpt(fields ->
-                        if (this.mayMatchAlternative(subst, tenv, fields)) {
-                          Some(fields)
-                        } else {
-                          None()
-                        }
-                      )
-                    } else {
-                      Some(obj)
-                    }
-                  | TPrim _ -> None()
+        this.declaredType,
+        preserveAlternatives,
+      )
+    } else {
+      this.type
+    }
+  }
+}
+
+extension class TType {
+  // Project transient field facts back to the lasting object contract, keeping
+  // primitive alternatives from the current flow type (including null checks).
+  fun withStableContents(
+    subst: mutable Subst,
+    tenv: TEnv,
+    contract: TType,
+    preserveAlternatives: Bool,
+  ): TType {
+    if (this != contract && !this.isFieldFree()) {
+      objects = contract.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
+        Some(
+          stypes
+            .map(types ->
+              types.filterMap(st ->
+                st match {
+                | obj @ TObject _ ->
+                  if (preserveAlternatives) {
+                    obj.mapOpt(fields ->
+                      if (this.mayMatchAlternative(subst, tenv, fields)) {
+                        Some(fields)
+                      } else {
+                        None()
+                      }
+                    )
+                  } else {
+                    Some(obj)
                   }
-                )
+                | TPrim _ -> None()
+                }
               )
-              .default(STypes::single(TObject::createEmpty(this.type.pos))),
-          )
-        ,
+            )
+            .default(STypes::single(TObject::createEmpty(this.pos))),
+        )
       );
-      values = this.type.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
+      values = this.mapSTypes(subst, tenv, Some(Covariant()), stypes ->
         stypes.map(types ->
           types.filterMap(st ->
             st match {
@@ -79,7 +90,7 @@ value class LocalRef(
       );
       TType::union(subst, tenv, objects, values)
     } else {
-      this.type
+      this
     }
   }
 
@@ -91,7 +102,7 @@ value class LocalRef(
     tenv: TEnv,
     declared: TFields,
   ): Bool {
-    this.type.getSTypes(subst.clone(), tenv, Covariant())
+    this.getSTypes(subst.clone(), tenv, Covariant())
       .map(current ->
         current.any(st ->
           st match {
