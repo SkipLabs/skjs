@@ -176,3 +176,20 @@ function nestedPatternWithNull(x: {
   } = x;
   return a + b;
 }
+
+const later: number = 1;
+function patternLaterBinding(source: {
+  first?: number;
+  later?: number;
+}): number {
+  // FIXME: this reads the uninitialized local, not the top-level namesake.
+  const { first = later, later = 2 } = source;
+  return first;
+}
+function patternEarlierBinding(source: {
+  first?: number;
+  later?: number;
+}): number {
+  const { later = 2, first = later } = source;
+  return first;
+}
