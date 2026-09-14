@@ -548,7 +548,13 @@ extension class TypeChecker {
       }
     | PArray(arrPat, rest) ->
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
-      stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
+      stypes.flatMap(s ->
+        s.destructuringElements(
+          tcenv.subst,
+          this,
+          if (rest.isNone()) Some(arrPat.size()) else None(),
+        )
+      ) match {
       | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
@@ -4538,7 +4544,13 @@ extension class TypeChecker {
   ): void {
     (targets, restInner) = this.splitRest(tcenv, elements);
     stypes = rhsType.getSTypes(tcenv.subst, this, Covariant());
-    stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
+    stypes.flatMap(s ->
+      s.destructuringElements(
+        tcenv.subst,
+        this,
+        if (restInner.isNone()) Some(targets.size()) else None(),
+      )
+    ) match {
     | Some(tyl) ->
       for (i => elt in targets) {
         eltType = if (i < tyl.size()) {

@@ -1037,6 +1037,34 @@ class TObject private (
     )
   }
 
+  // Project values read by a fixed-size destructuring pattern. This is not
+  // a tuple type: absent positions contribute undefined, and alternatives
+  // may have different lengths. Do not use this vector to type a rest array.
+  fun tuplePrefix(subst: mutable Subst, tenv: TEnv, count: Int): ?Array<TType> {
+    alternatives = mutable Vector[];
+    for (fields in this.branches) {
+      fields.asTuple() match {
+      | Some(elts) -> alternatives.push(elts)
+      | None() -> return None()
+      }
+    };
+    if (alternatives.isEmpty()) return None();
+    Some(
+      Array::fillBy(count, i ->
+        TType::unionN_it(
+          subst,
+          tenv,
+          this.pos,
+          alternatives.values().map(elts ->
+            if (i < elts.size()) elts[i] else {
+              TType::single(TPrimUnit(TUndefined(), this.pos))
+            }
+          ),
+        )
+      ),
+    )
+  }
+
   fun maybeGetType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -2954,6 +2982,25 @@ class STypes private (
     this.singleElt() match {
     | Some(obj @ TObject _) -> obj.asTuple(subst, tenv)
     | _ -> None()
+    }
+  }
+
+  fun destructuringElements(
+    subst: mutable Subst,
+    tenv: TEnv,
+    prefixSize: ?Int,
+  ): ?Array<TType> {
+    this.getSingleTuple(subst, tenv) match {
+    | result @ Some(_) -> result
+    | None() ->
+      prefixSize.flatMap(count ->
+        this.singleElt().flatMap(stype ->
+          stype match {
+          | obj @ TObject _ -> obj.tuplePrefix(subst, tenv, count)
+          | _ -> None()
+          }
+        )
+      )
     }
   }
 

@@ -391,6 +391,16 @@ Destructuring targets, with or without defaults, and update expressions share
 `writeCapturedTarget` for contract validation, local write tracking, and property
 refinement invalidation; target evaluation remains with each syntax form.
 
+Fixed-size destructuring patterns also project differing-length tuple unions
+positionally. Every alternative must be tuple-shaped; a missing position adds
+`undefined`, while a position present in every alternative keeps its element
+union. Declarations and assignments share the projection through
+`destructuringElements`. `destructuring-tuple-union.ts` accepts the guaranteed first element in an
+assignment, keeps distinct positional types in a heterogeneous declaration,
+and rejects reading a possibly missing second element as `number`. This value projection is not a new tuple
+type and is not used to infer rest-array lengths; rest patterns keep their
+existing conservative iterable path when tuple arities differ.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single
