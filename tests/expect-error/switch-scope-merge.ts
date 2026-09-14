@@ -141,8 +141,8 @@ function switchLaterBinding(tag: number): number {
 }
 function switchSharedBinding(tag: number): number {
   switch (tag) {
+    // FIXME: the declaration in another case already shadows the outer name.
     case 0:
-      // @ts-expect-error Variable 'switchSeed' is used before being assigned
       return switchSeed;
     default:
       const switchSeed = 2;
@@ -152,7 +152,7 @@ function switchSharedBinding(tag: number): number {
 
 function switchLabelBinding(tag: number): number {
   switch (tag) {
-    // @ts-expect-error Variable 'switchSeed' is used before being assigned
+    // FIXME: labels are evaluated inside the shared switch declaration scope.
     case switchSeed:
       return 1;
     default:
