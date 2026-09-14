@@ -199,3 +199,20 @@ function indexedOwnCopy(source: IndexedReader): number {
   }
   return 0;
 }
+
+function restCallable(fn: (() => number) & { tag: string }): number {
+  const { tag, ...copy } = fn;
+  // FIXME: object rest retains the source call signature; tsc rejects this.
+  return copy();
+}
+function restConstructor(c: new () => object): object {
+  const { ...copy } = c;
+  // FIXME: object rest retains the source construct signature; tsc rejects this.
+  return new copy();
+}
+function restOwnCallable(
+  fn: (() => number) & { tag: string; read: () => number },
+): number {
+  const { tag, ...copy } = fn;
+  return copy.read();
+}
