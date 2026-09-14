@@ -918,9 +918,10 @@ extension class TypeChecker {
         copiedBranches = mutable Vector<TFields>[];
         for (fields in restBranches) {
           copiedBranches.push(
-            this.propertyCopyFields(
-              tcenv.subst,
+            this.stablePropertyCopyFields(
+              tcenv,
               fields.removeFields(fieldsToRemoveForRest),
+              stableType.flatMap(ty -> if (ty == type) None() else Some(ty)),
             ),
           )
         };
@@ -2254,6 +2255,11 @@ extension class TypeChecker {
 
         | FDSpread(spreadExpr) ->
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
+          stableSpreadTy = this.stableAliasExprType(
+            tcenv,
+            spreadExpr,
+            spreadTy,
+          );
           // Collect the source branches to distribute over. `{ ...(A | B) }`
           // is `(spread A) | (spread B)`: each object arm contributes its
           // TObject branches. A union arm that is a primitive spreading to a
@@ -2280,7 +2286,13 @@ extension class TypeChecker {
               | obj @ TObject _ ->
                 sourceBranches.extend(
                   obj.getBranches().map(fields ->
-                    this.propertyCopyFields(tcenv.subst, fields)
+                    this.stablePropertyCopyFields(
+                      tcenv,
+                      fields,
+                      if (stableSpreadTy == spreadTy) None() else {
+                        Some(stableSpreadTy)
+                      },
+                    )
                   ),
                 )
               | TPrimUnit(TVoid(), _)
@@ -4300,6 +4312,77 @@ extension class TypeChecker {
       };
       result
     | _ -> TType::top(pos)
+    }
+  }
+
+  // Copying allocates the carrier, not the objects referenced by its fields.
+  // Preserve the existing own-property/callability rules, then stabilize only
+  // object contents. Scalar values and property presence remain snapshots.
+  private fun stablePropertyCopyFields(
+    tcenv: mutable TCEnv,
+    fields: TFields,
+    stableSource: ?TType,
+  ): TFields {
+    copied = this.propertyCopyFields(tcenv.subst, fields);
+    stableSource match {
+    | None() -> copied
+    | Some(source) ->
+      project = (field: TField, key: TType) ->
+        if (field.get.isFieldFree()) {
+          field
+        } else {
+          contract = this.extractedMethodType(
+            tcenv.subst,
+            this.propertyContentsContract(tcenv, source, key),
+          );
+          field with {
+            get => LocalRef(
+              field.get,
+              contract,
+              true,
+              true,
+              false,
+              true,
+            ).stableContentsType(tcenv.subst, this, true),
+          }
+        };
+      projectIndex = (field: TField, kind: TPrimValueKind) ->
+        project(field, TType::single(TPrimValue::full(kind, field.pos)));
+      TFields::createFromSorted{
+        fields => SortedMap::createFromItems(
+          copied.fields.toArray().map(field ->
+            (
+              field.name,
+              project(
+                field,
+                FKName(Name(field.pos, field.name.value), TString()).toType(),
+              ),
+            )
+          ),
+        ),
+        symbolFields => SortedMap::createFromItems(
+          copied.symbolFields.toArray().map(field ->
+            (
+              field.name,
+              project(field, FKSymbol(field.pos, field.name.value).toType()),
+            )
+          ),
+        ),
+        tIndexes => TIndexes{
+          stringIndex => copied.stringIndex.map(field ->
+            projectIndex(field, TString())
+          ),
+          numberIndex => copied.numberIndex.map(field ->
+            projectIndex(field, TNum())
+          ),
+          symbolIndex => copied.symbolIndex.map(field ->
+            projectIndex(field, TSymbol())
+          ),
+        },
+        call => copied.call,
+        new => copied.new,
+        isArray => copied.isArray,
+      }
     }
   }
 

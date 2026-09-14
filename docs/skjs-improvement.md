@@ -283,9 +283,7 @@ patterns. Binding an object value uses that contract; extracting a scalar keeps
 the observed value. `identityPatternAlias` in `destructuring.ts` rejects a saved
 child narrowed by reference equality whose contents are subsequently overwritten;
 `identityPatternScalar` preserves the scalar copied by a nested pattern before
-the write. This closes the object-pattern binding boundary. Spread and object
-rest still reproduce the same equality-based gap and need contract propagation
-for copied object-valued fields.
+the write. This closes the object-pattern binding boundary.
 
 Property reads now record a separate stable result contract from the receiver's
 contract, before that result can be stored or passed elsewhere. Dot and indexed
@@ -297,6 +295,15 @@ remain available, so immediate scalar reads and non-null reference checks keep
 their precision. `unsound-refinement.ts` covers an inferred property alias,
 an annotated indexed alias, and a scalar snapshot. This is contract propagation,
 not general nested-field refinement or callee-effect tracking.
+
+Spread and object rest share a property-copy step that projects object-valued
+fields through the source's stable contract, using the same lookup as direct
+property reads. Named fields, symbol fields, and index slots retain their
+existing copy-presence and callability treatment. Scalar values stay snapshots;
+copying the carrier does not copy the contents of objects its fields reference.
+`unsound-refinement.ts` covers spread/rest child aliases invalidated by a later
+write and scalar copies that survive it. General mutation through uncontracted
+or growing source objects remains open.
 
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
@@ -460,8 +467,9 @@ a checked scalar snapshot remains usable. Nested field narrowing is separate.
 Named and computed object-literal fields use the same stable alias projection
 before field inference/growth. This includes a conditional alias stored in a
 computed field; the computation of the key does not change the value contract.
-Object spread still reads current fields: copying a narrowed scalar is a
-snapshot, while nested aliases and general field subtyping remain separate.
+Object spread and rest keep current scalar snapshots while projecting copied
+object aliases through stable source contracts, as described above. General
+field subtyping remains separate.
 Coverage is in `obj-literal-var-field-growth.ts`.
 Array literals and readonly tuples store stable types for direct alias elements,
 including the spread-array path. This protects subsequent destructuring as well
@@ -498,7 +506,7 @@ explicit `this` contract. `optional-chaining-method-call.ts` covers rejection
 of that call and acceptance when the receiver copies the checked scalar.
 The projection reuses the narrowed-local rule, including branch compatibility
 and primitive/nullish selection; member lookup keeps the current receiver type.
-M1 stays open for spread-source contracts, other alias-producing expressions,
+M1 stays open for other alias-producing expressions,
 uncontracted inferred source objects, growing source objects, and effects hidden
 behind calls. This validates recorded alias contracts, not general field subtyping. Assignment validation preserves the destination contract while the
 current read type can still reflect the assigned value.

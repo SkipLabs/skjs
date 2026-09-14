@@ -543,7 +543,7 @@ function stableSpreadMember(
   if (x.child !== narrow) return 0;
   const copy = { ...x };
   x.child.value = null;
-  // FIXME: spread copies the child reference, not its contents.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return copy.child.value;
 }
 
@@ -554,7 +554,7 @@ function stableRestMember(
   if (x.child !== narrow) return 0;
   const { tag, ...copy } = x;
   x.child.value = null;
-  // FIXME: rest copies the child reference, not its contents.
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return copy.child.value;
 }
 
