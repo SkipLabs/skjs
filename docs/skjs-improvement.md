@@ -203,6 +203,28 @@ remain open, and a probe is not authorization to constrain the parent.
 
 ## Implementation record
 
+R1 contextual-signature repair: a non-generic method can still contain inference
+candidates from its generic receiver. For a temporary `new ContextRunner(null)`,
+those candidates are not enclosing bindings. A contextual default
+`y = x instanceof ContextBox ? x : null` grew such a candidate to include the
+fresh hidden identity; the explicit result annotation `typeof y` then published
+it without the inferred-result check. The callback ran twice on independently
+typed boxes, and the returned pair made their fields exchangeable.
+`contextual-hidden-escape.ts` demonstrates a string returned at a declared numeric
+result; strict tsc rejects the default. An explicit `unknown` receiver argument
+and opaque callback result form the accepted counterpart.
+
+Every anonymous function now registers its complete published signature as a
+retained escape root when it minted local hidden identities. This covers required,
+optional and rest parameters, result types and generic constraints through the
+existing type traversal. This subsumes the earlier inferred-result-only check,
+which is removed to avoid duplicate obligations and diagnostics; signature escape
+uses SKJS2080. Both the initial signature and later candidate growth are checked,
+independently of whether the receiver or
+candidate appears in the enclosing scope. A hidden identity discovered outside
+the callback is not forbidden by this callback's local identity set.
+
+
 R1 root/publication audit: the traversal follows fields (read and write types),
 call/construct signatures, receiver/parameter/result types, generic arguments,
 intersections, candidate constraints and current candidate bindings. It missed
@@ -226,11 +248,11 @@ The checking-environment inventory distinguishes these boundaries:
 | Top-level CFG reconstruction | Uses one separate environment over the full statement list; statement revalidation applies. Its diagnostics are discarded and only CFG output is retained. It does not authorize source acceptance. |
 | `saveAll` / `mcreateFromSaved` | The saved substitution is used for diagnostic rendering in `TypingError`, not another acceptance environment. Obligations need not be transferred into a diagnostic clone. |
 
-This closes the identified post-expression final-check gaps. It does not establish
-that contextual callback parameter candidates are all represented by the current
-closure-result/enclosing-binding roots. That is the next concrete root audit;
-R1 remains in progress. No generic signature publication is justified merely by
-the absence of a diagnostic-clone transfer.
+This closes the identified post-expression final-check gaps. The contextual
+signature repair above adds the missing publication root for receiver-owned
+parameter candidates. R1 remains in progress pending the combined closure audit;
+no generic signature publication is justified merely by the absence of a
+diagnostic-clone transfer.
 
 
 R1 escape-lifetime hardening: successful closure-result and enclosing-binding

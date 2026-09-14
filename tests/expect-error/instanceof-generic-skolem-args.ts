@@ -503,7 +503,7 @@ function localHiddenContainer(x: unknown): number {
 // Box<number>, and `return a.v` then yields a string from a
 // number-returning function.
 function holeSharedClosureResult(a: Box<number>, b: Box<string>): number {
-  // @skjs-expect-error An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation
+  // @skjs-expect-error A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types
   const reveal = (x: unknown) => {
     if (x instanceof Box) return x;
     throw 0;
@@ -523,7 +523,7 @@ declare function applyTwo<R>(
   b: unknown,
 ): Pair<R, R>;
 function holeHigherOrderResult(a: Box<number>, b: Box<string>): number {
-  // @skjs-expect-error An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation
+  // @skjs-expect-error A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types
   const reveal = (x: unknown) => {
     if (x instanceof Box) return x;
     throw 0;

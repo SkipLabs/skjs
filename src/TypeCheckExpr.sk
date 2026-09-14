@@ -4066,18 +4066,6 @@ extension class TypeChecker {
     };
 
     if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
-      localIds = tcenv.subst.skolemIdsSince(firstLocalSkolem);
-      if (retTypeAstOpt.isNone()) {
-        tcenv.registerHiddenEscape(
-          HiddenEscapeCheck(
-            pos,
-            localIds,
-            Array[retType],
-            "An inferred function result cannot expose a locally discovered hidden type; add an opaque return type annotation",
-            2080,
-          ),
-        )
-      };
       this.checkHiddenBindingEscape(tcenv, pos, firstLocalSkolem, savedScope)
     };
 
@@ -4132,7 +4120,7 @@ extension class TypeChecker {
     };
 
     funClauses = tparams.map(tparam -> this.makeTParam(tcenv.subst, tparam));
-    TType::single(
+    signature = TType::single(
       TObject::createCall(
         TFuns::singleFun(
           TFun(
@@ -4147,7 +4135,22 @@ extension class TypeChecker {
           pos,
         ),
       ),
-    )
+    );
+    // A contextual parameter may carry a candidate owned by a temporary
+    // receiver, absent from the enclosing scope. Explicit typeof annotations
+    // can expose that candidate too. Retain the whole published signature.
+    if (tcenv.subst.nextSkolemId > firstLocalSkolem) {
+      tcenv.registerHiddenEscape(
+        HiddenEscapeCheck(
+          pos,
+          tcenv.subst.skolemIdsSince(firstLocalSkolem),
+          Array[signature],
+          "A function signature cannot expose a locally discovered hidden type; use opaque parameter and return types",
+          2080,
+        ),
+      )
+    };
+    signature
   }
 
   fun callConstructor(
@@ -5284,7 +5287,8 @@ extension class TypeChecker {
   // for each of the closure's parameters — used to fill in un-annotated ones.
   // Returns the empty array (no contextual typing) unless the expected type is
   // a single callable object (ignoring undefined/null branches) whose own call
-  // signature is non-generic, so the extracted parameter types are concrete.
+  // signature is non-generic. Its parameters may still contain inference
+  // candidates owned by an instantiated receiver.
   fun expectedCallbackParamTypes(
     tcenv: mutable TCEnv,
     expectedFnTy: TType,
@@ -5320,9 +5324,9 @@ extension class TypeChecker {
 
   // Type a call argument, applying contextual typing when it is a closure with
   // un-annotated parameters: fill those from the callee's expected parameter
-  // type at this position. Restricted to a non-generic callee (so the expected
-  // parameter types are concrete, not references to the callee's own
-  // not-yet-inferred type parameters) at an unambiguous position (before any
+  // type at this position. Restricted to a non-generic callee (so parameters
+  // cannot refer to the callee's own not-yet-inferred type parameters) at an
+  // unambiguous position (before any
   // spread argument). Everything else is typed as usual.
   fun typeCallArg(
     tcenv: mutable TCEnv,

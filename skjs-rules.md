@@ -1050,3 +1050,14 @@ checks remain usable. Ordinary calls have no purity summaries, so even pure
 formatting and recursive helpers can lose discriminant refinements. Checker-only
 `__SKJS_show` and `__SKJS_show_expanded` are exempt. This policy does not cover
 implicit accessor/iterator effects or growing, uncontracted objects.
+
+### Locally discovered hidden types in callbacks
+
+A callback cannot publish a generic object's locally discovered hidden identity
+in its signature. This includes contextual parameter types and explicit `typeof`
+return annotations, not only inferred returns. Use opaque parameter and return
+types, such as `unknown`, when the callback may discover differently typed objects
+on different invocations. For example, a generic runner initialized with `null`
+cannot infer a shared hidden box type from a callback default and then return
+boxes from separate invocations as interchangeable. Hidden identities already
+established outside the callback remain usable.
