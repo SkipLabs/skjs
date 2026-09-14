@@ -2556,7 +2556,7 @@ base class TEnv{
   // Preserve both cases for spread overwrites.
   fun propertyCopyFields(subst: mutable Subst, fields: TFields): TFields {
     fields
-      .withoutCallOrConstruct()
+      .asPropertyCopy()
       .map(
         field ->
           if (field.mayBeOmittedByCopy) {

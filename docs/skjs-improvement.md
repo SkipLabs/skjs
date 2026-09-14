@@ -470,7 +470,11 @@ The shared property-copy operation removes the source's call and constructor
 signatures. Rest previously retained both and accepted invoking the fresh plain
 object. `spread-callable.ts` rejects both operations and preserves a callable
 property on the copy. Spread already discarded these capabilities when merging
-fields; both paths now apply the same rule before field processing.
+fields; both paths now apply the same rule before field processing. Copying
+also establishes the non-array brand. Retaining an array source's brand made
+the reachable negative branch of `Array.isArray(copy)` type as `never`, allowing
+the plain copy to satisfy a Boolean return contract. `array-isarray-refinement.ts`
+pins this rejection and numeric-entry access in that branch.
 
 Annotated local initializers retain recorded class-method copy provenance
 on matching fields of the annotation. This preserves the annotation's value

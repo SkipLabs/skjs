@@ -2497,9 +2497,9 @@ class TFields protected {
     }
   }
 
-  // Invocation capabilities belong to the source object, not its properties.
-  fun withoutCallOrConstruct(): TFields {
-    this with {call => CAbsent(), new => CAbsent()}
+  // Copying properties creates a plain object, regardless of the source kind.
+  fun asPropertyCopy(): TFields {
+    this with {call => CAbsent(), new => CAbsent(), isArray => Some(false)}
   }
 
   fun preserveCopyUncertainty(
