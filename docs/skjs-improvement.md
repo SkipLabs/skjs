@@ -254,6 +254,21 @@ an independently unsound subtype judgment sound.
 
 ## Implementation record
 
+M1 accessor declaration repair: an audit of implicit execution found that the
+parser retained `get`/`set` markers, but signature construction ignored them.
+A getter returning `1` was typed as a zero-argument method returning a number,
+so `x.value()` was accepted and erased execution threw `TypeError`. The same
+misinterpretation affected class, object-literal and object-type declarations.
+
+`getFunSig`, shared by signature construction and body checking, now rejects
+accessors before their marker can be lost in an ordinary call signature.
+`accessor-declarations.ts` covers those declaration paths, a setter previously
+misdiagnosed as missing a return annotation, and ordinary methods named `get`
+and `set`. TypeScript rejects the calls in the getter witnesses and accepts the
+accessor declarations themselves; this is an explicit SKJS support restriction.
+It does not establish an effect policy for accessors on externally supplied
+objects or for iterator hooks, so general M1 remains open.
+
 R2/R3c template-bound repair: the remaining shape-normalizer sweep found a
 another way to erase an abstract result dependency. `templateHole` marked a
 clause as irreducible when it contained `T`, but then let the `string` upper

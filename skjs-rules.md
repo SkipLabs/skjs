@@ -1064,3 +1064,11 @@ be declared and instantiated with a known shape. `ElementOf<readonly E[]>` keeps
 its symbolic element type `E`, so prefer an explicit element parameter to an
 abstract whole-array parameter. Concrete `keyof` and numeric indexed access
 remain supported. See `tests/expect-error/abstract-type-projection.ts`.
+
+### Accessor declarations
+
+`get` and `set` accessors are not supported in classes, object literals, or
+object types (SKJS9035). They execute on property reads and writes; treating them
+as ordinary methods gives the wrong callable type. Use an ordinary method or a
+data field. Methods named `get()` and `set()` are ordinary methods and remain
+supported. See `tests/expect-error/accessor-declarations.ts`.

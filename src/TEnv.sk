@@ -826,6 +826,20 @@ base class TEnv{
     context: mutable SKStore.Context,
     fd: FunDef<FunDefName>,
   ): FunDefSigData {
+    // Accessors execute on property reads/writes. Dropping their marker when
+    // synthesizing a call signature would accept calls to non-callable values.
+    // This boundary covers both declaration signatures and body checking.
+    fd.isGetSet.each(accessor ->
+      fatalError(
+        Array[
+          (
+            accessor.pos,
+            "Get and set accessors are not supported by SKJS; use an ordinary method or data field",
+          ),
+        ],
+        SKJSCode(9035),
+      )
+    );
     fd.sig match {
     | FSInline(tparams, params, retType) ->
       FunDefSigData(tparams, params, retType)
