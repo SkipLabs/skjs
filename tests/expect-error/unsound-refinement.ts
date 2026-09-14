@@ -535,3 +535,38 @@ function stableMemberScalar(
   x.child.value = null;
   return value;
 }
+
+function stableSpreadMember(
+  x: { child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  const copy = { ...x };
+  x.child.value = null;
+  // FIXME: spread copies the child reference, not its contents.
+  return copy.child.value;
+}
+
+function stableRestMember(
+  x: { tag: boolean; child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  const { tag, ...copy } = x;
+  x.child.value = null;
+  // FIXME: rest copies the child reference, not its contents.
+  return copy.child.value;
+}
+
+// Scalar copies survive the write. TypeScript conservatively loses their
+// non-null refinement when constructing the spread/rest types.
+function stablePropertyCopiesScalar(x: {
+  tag: boolean;
+  value: number | null;
+}): number {
+  if (x.value === null) return 0;
+  const spread = { ...x };
+  const { tag, ...rest } = x;
+  x.value = null;
+  return spread.value + rest.value;
+}
