@@ -266,6 +266,15 @@ the merge. Parameter defaults retain their existing isolated contract scope.
 The local merge conservatively includes both paths even when the source type
 could establish that the default always or never runs.
 
+Object binding patterns preserve source order, including in the parser. Each
+field's default and binding is checked once across the source's type branches.
+After a default (including one in a nested pattern), later object fields and
+rest copies use the source's stable contents contract. Earlier scalar reads
+remain snapshots. `destructuring.ts` distinguishes a default overwriting a later
+field from the safe reversed order. This conservatively forgets field refinements
+after any default; it does not analyze whether that particular default mutates
+the source. General hidden call effects and evolving source contracts remain open.
+
 Default-result typing now uses one `defaultedValueType` operation for object,
 tuple, iterable, assignment, and whole-parameter defaults. It establishes the
 source read type in the live substitution, removes `undefined`, and then unions

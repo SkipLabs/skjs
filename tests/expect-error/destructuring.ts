@@ -141,7 +141,7 @@ function inferredDefaultCanReturnUndefined(seed: number | undefined): number {
 function laterPatternRead(x: { a?: null; b: number | null }): number {
   if (x.b !== null) {
     const { a = (x.b = null), b } = x;
-    // FIXME: an earlier default can invalidate the later field read.
+    // @ts-expect-error Type of returned value is not assignable to the function's return type
     return b;
   }
   return 0;

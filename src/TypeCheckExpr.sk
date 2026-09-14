@@ -489,6 +489,7 @@ extension class TypeChecker {
     isInitialized: Bool,
     isLocalObject: Bool,
     isParameter: Bool = false,
+    stableType: ?TType = None(),
   ): void {
     pos = pat.pos;
     pat.value match {
@@ -722,139 +723,213 @@ extension class TypeChecker {
       | Some(_name) ->
         SortedSet::createFromItems(objectFields.map(f -> f.i0.value))
       };
-      type.getSTypes(tcenv.subst, this, Covariant()) match {
-      | None() ->
-        fatalError(
-          Array[
-            (pos, "Cannot use object-destructuring on this type"),
-            (type.pos, `This is ${this.ppType(tcenv, type)}`),
-          ],
-          SKJSCode(2035),
-        )
-      | Some(stypes) ->
-        for (stype in stypes) {
-          (branches, typeForRest) = stype match {
-          | tobj @ TObject(_, _, _) ->
-            (
-              tobj.getBranches(),
-              tobj.removeFields(fieldsToRemoveForRest).map(fields ->
-                this.propertyCopyFields(tcenv.subst, fields)
-              ),
-            )
-          | _ ->
-            fatalError(
+      // Bind each field once in source order, not once per type alternative.
+      // Defaults can mutate the retained source object before later reads.
+      branches = this.bindingObjectBranches(tcenv, type, pos);
+      stableBranches = stableType
+        .map(ty -> this.bindingObjectBranches(tcenv, ty, pos))
+        .default(branches);
+      sawDefault = false;
+      for (field in objectFields) {
+        (fieldName, fieldPat, fieldDefault) = field;
+        // Earlier scalar reads are snapshots. After a possible default effect,
+        // use the original object's contract, not a re-evaluated source name.
+        readBranches = if (sawDefault) stableBranches else branches;
+        stableFieldType = TType::bottom(fieldName.pos);
+        for (fields in stableBranches) {
+          fieldType = fields.maybeGet(fieldName.value) match {
+          | None() -> TType::top(fieldName.pos)
+          | Some(fd) ->
+            if (fd.isOptional) {
+              TType::union(
+                tcenv.subst,
+                this,
+                fd.get,
+                TType::single(TPrimUnit(TUndefined(), fieldName.pos)),
+              )
+            } else {
+              fd.get
+            }
+          };
+          !stableFieldType = TType::union(
+            tcenv.subst,
+            this,
+            stableFieldType,
+            fieldType,
+          )
+        };
+        defaultOpt = fieldDefault.map(e -> {
+          (
+            e.pos,
+            this.bindingDefaultType(tcenv, e, kind is BKConst(), isParameter),
+          )
+        });
+        defaultIsUseless = fieldDefault.map(e -> e.pos);
+        typeForField = TType::bottom(fieldName.pos);
+        for (fields in readBranches) {
+          fields.maybeGet(fieldName.value) match {
+          | None() ->
+            // The key is absent, so a default is the ONLY thing that can
+            // fire at runtime — it is not useless (#799). The 2339 error
+            // below already covers the misuse.
+            !defaultIsUseless = None();
+            tcenv.error(
               Array[
-                (pos, "Cannot use object-destructuring on this type"),
-                (type.pos, `This is ${this.ppType(tcenv, type)}`),
-              ],
-              SKJSCode(2035),
-            )
-          };
-          for (field in objectFields) {
-            (fieldName, fieldPat, fieldDefault) = field;
-            defaultOpt = fieldDefault.map(e -> {
-              (
-                e.pos,
-                this.bindingDefaultType(
-                  tcenv,
-                  e,
-                  kind is BKConst(),
-                  isParameter,
+                (
+                  fieldName.pos,
+                  `Property '${TypePp::escapeName(
+                    fieldName.value,
+                  )}' does not exist on this type`,
                 ),
-              )
-            });
-            defaultIsUseless = fieldDefault.map(e -> e.pos);
-            typeForField = TType::bottom(fieldName.pos);
-            for (fields in branches) {
-              fields.maybeGet(fieldName.value) match {
+                (type.pos, `Out of ${this.ppType(tcenv, type)}`),
+              ],
+              TSCode(2339),
+            )
+          | Some(tfield) ->
+            this.checkFieldAccess(tcenv, tfield, fieldName.pos);
+            undefined = (pos) -> TType::single(TPrimUnit(TUndefined(), pos));
+            union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);
+            !typeForField = union(
+              typeForField,
+              defaultOpt match {
+              | Some((defaultPos, defaultType)) ->
+                if (
+                  tfield.isOptional ||
+                  TType::isSub(
+                    tcenv.subst.clone(),
+                    this,
+                    undefined(defaultPos),
+                    tfield.get,
+                  ) is STOk()
+                ) {
+                  !defaultIsUseless = None();
+                  this.defaultedValueType(tcenv, tfield.get, defaultType)
+                } else {
+                  tfield.get
+                }
               | None() ->
-                // The key is absent, so a default is the ONLY thing that can
-                // fire at runtime — it is not useless (#799). The 2339 error
-                // below already covers the misuse.
-                !defaultIsUseless = None();
-                tcenv.error(
-                  Array[
-                    (
-                      fieldName.pos,
-                      `Property '${TypePp::escapeName(
-                        fieldName.value,
-                      )}' does not exist on this type`,
-                    ),
-                    (type.pos, `Out of ${this.ppType(tcenv, type)}`),
-                  ],
-                  TSCode(2339),
-                )
-              | Some(tfield) ->
-                this.checkFieldAccess(tcenv, tfield, fieldName.pos);
-                undefined = (pos) ->
-                  TType::single(TPrimUnit(TUndefined(), pos));
-                union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);
-                !typeForField = union(
-                  typeForField,
-                  defaultOpt match {
-                  | Some((defaultPos, defaultType)) ->
-                    if (
-                      tfield.isOptional ||
-                      TType::isSub(
-                        tcenv.subst.clone(),
-                        this,
-                        undefined(defaultPos),
-                        tfield.get,
-                      ) is STOk()
-                    ) {
-                      !defaultIsUseless = None();
-                      this.defaultedValueType(tcenv, tfield.get, defaultType)
-                    } else {
-                      tfield.get
-                    }
-                  | None() ->
-                    if (tfield.isOptional) {
-                      union(tfield.get, undefined(tfield.pos))
-                    } else {
-                      tfield.get
-                    }
-                  },
-                )
-              }
-            };
-            defaultIsUseless match {
-            | None() -> void
-            | Some(defaultPos) ->
-              tcenv.warning(
-                Array[
-                  (
-                    defaultPos,
-                    "This default is unreachable because the field cannot be 'undefined'",
-                  ),
-                ],
-                SKJSCode(2063),
-              )
-            };
-            this.bind(
-              tcenv,
-              kind,
-              fieldPat,
-              this.extractedMethodType(tcenv.subst, typeForField),
-              hasDeclaredContract,
-              isInitialized,
-              false,
-              isParameter,
+                if (tfield.isOptional) {
+                  union(tfield.get, undefined(tfield.pos))
+                } else {
+                  tfield.get
+                }
+              },
             )
-          };
-          rest.each(name ->
-            this.bind(
-              tcenv,
-              kind,
-              Pattern(name.pos, PVar(name)),
-              TType::single(typeForRest),
-              hasDeclaredContract,
-              isInitialized,
-              false,
-              isParameter,
+          }
+        };
+        defaultIsUseless match {
+        | None() -> void
+        | Some(defaultPos) ->
+          tcenv.warning(
+            Array[
+              (
+                defaultPos,
+                "This default is unreachable because the field cannot be 'undefined'",
+              ),
+            ],
+            SKJSCode(2063),
+          )
+        };
+        this.bind(
+          tcenv,
+          kind,
+          fieldPat,
+          this.extractedMethodType(tcenv.subst, typeForField),
+          hasDeclaredContract,
+          isInitialized,
+          false,
+          isParameter,
+          if (this.patternHasDefault(fieldPat)) {
+            Some(
+              defaultOpt match {
+              | None() -> stableFieldType
+              | Some((_, defaultType)) ->
+                this.defaultedValueType(tcenv, stableFieldType, defaultType)
+              },
             )
+          } else {
+            None()
+          },
+        );
+        !sawDefault =
+          sawDefault ||
+          fieldDefault.isSome() ||
+          this.patternHasDefault(fieldPat)
+      };
+
+      rest.each(name -> {
+        restBranches = if (sawDefault) stableBranches else branches;
+        copiedBranches = mutable Vector<TFields>[];
+        for (fields in restBranches) {
+          copiedBranches.push(
+            this.propertyCopyFields(
+              tcenv.subst,
+              fields.removeFields(fieldsToRemoveForRest),
+            ),
+          )
+        };
+        this.bind(
+          tcenv,
+          kind,
+          Pattern(name.pos, PVar(name)),
+          if (copiedBranches.isEmpty()) {
+            TType::bottom(type.pos)
+          } else {
+            TType::single(TObject::createFromBranches(copiedBranches, type.pos))
+          },
+          hasDeclaredContract,
+          isInitialized,
+          false,
+          isParameter,
+        )
+      })
+    }
+  }
+
+  private fun bindingObjectBranches(
+    tcenv: mutable TCEnv,
+    type: TType,
+    pos: PosRange,
+  ): Array<TFields> {
+    branches = mutable Vector<TFields>[];
+    type.getSTypes(tcenv.subst, this, Covariant()) match {
+    | None() ->
+      fatalError(
+        Array[
+          (pos, "Cannot use object-destructuring on this type"),
+          (type.pos, `This is ${this.ppType(tcenv, type)}`),
+        ],
+        SKJSCode(2035),
+      )
+    | Some(stypes) ->
+      for (stype in stypes) {
+        stype match {
+        | obj @ TObject _ -> branches.extend(obj.getBranches())
+        | _ ->
+          fatalError(
+            Array[
+              (pos, "Cannot use object-destructuring on this type"),
+              (type.pos, `This is ${this.ppType(tcenv, type)}`),
+            ],
+            SKJSCode(2035),
           )
         }
       }
+    };
+    branches.toArray()
+  }
+
+  private fun patternHasDefault(pat: Pattern): Bool {
+    pat.value match {
+    | PVar _ -> false
+    | PArray(elements, _) ->
+      elements.any(elt ->
+        elt
+          .map(pair -> pair.i1.isSome() || this.patternHasDefault(pair.i0))
+          .default(false)
+      )
+    | PObject{fields, rest => _} ->
+      fields.any(field -> field.i2.isSome() || this.patternHasDefault(field.i1))
     }
   }
 

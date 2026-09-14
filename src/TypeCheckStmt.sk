@@ -113,6 +113,8 @@ extension class TypeChecker {
           binding.type.isSome() || hasContentsContract,
           isInitialized,
           isLocalObject,
+          false,
+          binding.value.map(e -> this.stableAliasExprType(tcenv, e, ty)),
         );
         if (binding.type.isNone()) {
           (binding.pat.value, binding.value) match {
