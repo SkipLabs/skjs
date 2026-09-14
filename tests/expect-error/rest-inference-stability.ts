@@ -15,7 +15,6 @@ class RestRunner<T extends readonly unknown[]> {
 function loseArgument(seed: number): number {
   // @skjs-expect-warning This 'as const' is unnecessary
   const runner = new RestRunner([seed] as const, (x: number): number => x);
-  // @ts-expect-error Argument is not assignable to the parameter's type
   runner.set([] as const);
   return runner.run();
 }
@@ -28,7 +27,6 @@ function keepArgument(seed: number): number {
 function changeArgument(seed: number): number {
   // @skjs-expect-warning This 'as const' is unnecessary
   const runner = new RestRunner([seed] as const, (x: number): number => x);
-  // @ts-expect-error Argument is not assignable to the parameter's type
   runner.set(["changed"] as const);
   return runner.run();
 }
