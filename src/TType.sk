@@ -1037,10 +1037,7 @@ class TObject private (
     )
   }
 
-  // Project values read by a fixed-size destructuring pattern. This is not
-  // a tuple type: absent positions contribute undefined, and alternatives
-  // may have different lengths. Do not use this vector to type a rest array.
-  fun tuplePrefix(subst: mutable Subst, tenv: TEnv, count: Int): ?Array<TType> {
+  private fun tupleAlternatives(): ?Array<Array<TType>> {
     alternatives = mutable Vector[];
     for (fields in this.branches) {
       fields.asTuple() match {
@@ -1049,6 +1046,17 @@ class TObject private (
       }
     };
     if (alternatives.isEmpty()) return None();
+    Some(alternatives.toArray())
+  }
+
+  // Project values read by a fixed-size destructuring pattern. This is not
+  // a tuple type: absent positions contribute undefined, and alternatives
+  // may have different lengths. Do not use this vector to type a rest array.
+  fun tuplePrefix(subst: mutable Subst, tenv: TEnv, count: Int): ?Array<TType> {
+    alternatives = this.tupleAlternatives() match {
+    | Some(elts) -> elts
+    | None() -> return None()
+    };
     Some(
       Array::fillBy(count, i ->
         TType::unionN_it(
@@ -1063,6 +1071,20 @@ class TObject private (
         )
       ),
     )
+  }
+
+  // Rest arrays contain only values after the consumed prefix. An exhausted
+  // alternative contributes no elements, rather than an undefined slot.
+  fun tupleRestElement(subst: mutable Subst, tenv: TEnv, start: Int): ?TType {
+    this.tupleAlternatives().map(alternatives -> {
+      remaining = mutable Vector[];
+      for (elts in alternatives) {
+        for (i in Range(min(start, elts.size()), elts.size())) {
+          remaining.push(elts[i])
+        }
+      };
+      TType::unionN_it(subst, tenv, this.pos, remaining.values())
+    })
   }
 
   fun maybeGetType(
@@ -2988,18 +3010,32 @@ class STypes private (
   fun destructuringElements(
     subst: mutable Subst,
     tenv: TEnv,
-    prefixSize: ?Int,
+    prefixSize: Int,
   ): ?Array<TType> {
     this.getSingleTuple(subst, tenv) match {
     | result @ Some(_) -> result
     | None() ->
-      prefixSize.flatMap(count ->
-        this.singleElt().flatMap(stype ->
-          stype match {
-          | obj @ TObject _ -> obj.tuplePrefix(subst, tenv, count)
-          | _ -> None()
-          }
-        )
+      this.singleElt().flatMap(stype ->
+        stype match {
+        | obj @ TObject _ -> obj.tuplePrefix(subst, tenv, prefixSize)
+        | _ -> None()
+        }
+      )
+    }
+  }
+
+  // Uniform-length tuples retain the existing precise rest representation.
+  fun destructuringRestElement(
+    subst: mutable Subst,
+    tenv: TEnv,
+    start: Int,
+  ): ?TType {
+    if (this.getSingleTuple(subst, tenv).isSome()) None() else {
+      this.singleElt().flatMap(stype ->
+        stype match {
+        | obj @ TObject _ -> obj.tupleRestElement(subst, tenv, start)
+        | _ -> None()
+        }
       )
     }
   }

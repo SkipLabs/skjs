@@ -398,8 +398,14 @@ union. Declarations and assignments share the projection through
 `destructuringElements`. `destructuring-tuple-union.ts` accepts the guaranteed first element in an
 assignment, keeps distinct positional types in a heterogeneous declaration,
 and rejects reading a possibly missing second element as `number`. This value projection is not a new tuple
-type and is not used to infer rest-array lengths; rest patterns keep their
-existing conservative iterable path when tuple arities differ.
+type and is not used to infer rest-array lengths. Rest patterns separately union
+the unconsumed elements of every tuple alternative into a fresh array type.
+An exhausted alternative contributes no elements, whereas an absent prefix
+position contributes `undefined`. `destructuring-tuple-rest-union.ts` covers
+excluding a consumed head, preserving a generic tail element, and rejecting an
+incompatible tail target. All-empty remainders retain fresh-array inference.
+Uniform-length tuple rest representations remain unchanged; differing lengths
+are not exposed as a precise union of tuple lengths.
 
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.

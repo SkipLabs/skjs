@@ -549,11 +549,7 @@ extension class TypeChecker {
     | PArray(arrPat, rest) ->
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
       stypes.flatMap(s ->
-        s.destructuringElements(
-          tcenv.subst,
-          this,
-          if (rest.isNone()) Some(arrPat.size()) else None(),
-        )
+        s.destructuringElements(tcenv.subst, this, arrPat.size())
       ) match {
       | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
@@ -651,11 +647,16 @@ extension class TypeChecker {
         };
         rest match {
         | Some(restName) ->
-          restType = TType::tuple(
+          restType = this.tupleUnionRestType(
+            tcenv,
+            stypes,
             restName.pos,
-            tyl.slice(arrPat.size()),
-            false,
-          );
+            arrPat.size(),
+          ) match {
+          | Some(restType) -> restType
+          | None() ->
+            TType::tuple(restName.pos, tyl.slice(arrPat.size()), false)
+          };
           this.bind(
             tcenv,
             kind,
@@ -4545,11 +4546,7 @@ extension class TypeChecker {
     (targets, restInner) = this.splitRest(tcenv, elements);
     stypes = rhsType.getSTypes(tcenv.subst, this, Covariant());
     stypes.flatMap(s ->
-      s.destructuringElements(
-        tcenv.subst,
-        this,
-        if (restInner.isNone()) Some(targets.size()) else None(),
-      )
+      s.destructuringElements(tcenv.subst, this, targets.size())
     ) match {
     | Some(tyl) ->
       for (i => elt in targets) {
@@ -4570,16 +4567,25 @@ extension class TypeChecker {
         // through the array view would break its arity.
         start = min(targets.size(), tyl.size());
         restElts = tyl.slice(start);
-        restType = if (restElts.isEmpty()) {
-          eltTvar = this.newTVar(tcenv, inner.pos, FromEmptyArray(inner.pos));
-          TType::inst(Name(inner.pos, "Array"), TArgs(Array[eltTvar]))
-        } else {
-          ArrayLitTyping::typeFromLiteral(
-            tcenv,
-            inner.pos,
-            restElts,
-            restElts.map(_ -> None()),
-          )
+        restType = this.tupleUnionRestType(
+          tcenv,
+          stypes,
+          inner.pos,
+          targets.size(),
+        ) match {
+        | Some(restType) -> restType
+        | None() ->
+          if (restElts.isEmpty()) {
+            eltTvar = this.newTVar(tcenv, inner.pos, FromEmptyArray(inner.pos));
+            TType::inst(Name(inner.pos, "Array"), TArgs(Array[eltTvar]))
+          } else {
+            ArrayLitTyping::typeFromLiteral(
+              tcenv,
+              inner.pos,
+              restElts,
+              restElts.map(_ -> None()),
+            )
+          }
         };
         this.assignTarget(tcenv, inner, restType, mostPrecise)
       })
@@ -4629,6 +4635,24 @@ extension class TypeChecker {
         )
       }
     }
+  }
+
+  private fun tupleUnionRestType(
+    tcenv: mutable TCEnv,
+    stypes: ?STypes,
+    pos: PosRange,
+    start: Int,
+  ): ?TType {
+    stypes
+      .flatMap(s -> s.destructuringRestElement(tcenv.subst, this, start))
+      .map(elt -> {
+        element = if (elt.isBottom()) {
+          this.newTVar(tcenv, pos, FromEmptyArray(pos))
+        } else {
+          elt
+        };
+        TType::inst(Name(pos, "Array"), TArgs(Array[element]))
+      })
   }
 
   // Assign one destructured element, applying its default first: `[x = d]`
