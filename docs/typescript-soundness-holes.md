@@ -738,6 +738,30 @@ function boom(): void {
 
 ## Generics & type parameters
 
+### Abstract indexed results are checked through their upper bound
+
+TypeScript 5.7.3 accepts a generic implementation returning a fabricated value at
+`T[number]` when `T extends readonly unknown[]`. Its body is checked using the
+broad element bound, but a caller can specialize the result to `number`:
+
+```ts
+type ElementOf<T extends readonly unknown[]> = T[number];
+function fabricatedElement<T extends readonly unknown[]>(xs: T): ElementOf<T> {
+  return "wrong";
+}
+function numericElement(xs: number[]): number {
+  return fabricatedElement<number[]>(xs);
+}
+```
+
+The erased caller returns `"wrong"`. A numeric indexed projection of an abstract
+array must retain its dependence on that array, rather than being identified
+with `unknown`. SKJS rejects the abstract projection with SKJS9034; a known array
+shape with an explicit element parameter remains supported. The analogous
+fabricated `keyof T` body is rejected by tsc and is not a TypeScript hole.
+
+**Test:** [abstract-type-projection.ts](../tests/expect-error/abstract-type-projection.ts).
+
 ### instanceof on a generic class binds the hidden type arguments to `any`
 
 `x instanceof Box` for a generic `Box<T>` narrows `x` to `Box<any>` (and `x instanceof Array` to `any[]`): tsc erases the runtime object's unknown hidden type arguments rather than representing them. Every member typed `T` then reads at any type and accepts a write of any value, with no implicit-any error under `--strict`. But `instanceof` proves the object has *some* type argument, not which one, so the write stores a string in a `Box<number>` and every later read of `.v` at `number` is a false claim. The user writes no `any`, `as` or `!` — tsc synthesizes the `any` from the narrowing itself.

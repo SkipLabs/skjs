@@ -2244,8 +2244,8 @@ base class TEnv{
     | TAGet(tyObj, tyKey) ->
       tyKey.value match {
       | TAPrim(TPKNum()) ->
-        // T[number]: extract element type.  TVars are expanded to their
-        // constraints so e.g. `N extends string[]` resolves to `string`.
+        // T[number] requires an established shape. A generic bound is not
+        // an exact result type for every instantiation of the parameter.
         subst = Subst::mcreate(tcenvb);
         objType = this.normalize(tcenvb, tyObj);
         this.numberIndexedType(subst, objType, pos)
@@ -3459,6 +3459,30 @@ base class TEnv{
     }
   }
 
+  // A type alias may defer a projection until instantiated, but a generic
+  // body must not validate against an approximation that its callers later
+  // specialize. Known shapes with symbolic field/element types remain valid.
+  private fun checkAbstractProjection(
+    clauses: Clauses,
+    pos: PosRange,
+    operator: String,
+  ): void {
+    if (
+      !this.inTypeDefValidation &&
+      clauses.any(clause -> !clause.vars.isEmpty())
+    ) {
+      fatalError(
+        Array[
+          (
+            this.instantiateAt.default(pos),
+            `${operator} on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters`,
+          ),
+        ],
+        SKJSCode(9034),
+      )
+    }
+  }
+
   /* Over-approximates keyof ty
      Though keyof should be treated symbolically because it is a decreasing
      function of types.
@@ -3468,6 +3492,7 @@ base class TEnv{
   */
   fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
     clauses = ty.expandToClauses(subst, this, Covariant());
+    this.checkAbstractProjection(clauses, pos, "keyof");
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
     ) {
@@ -3550,9 +3575,8 @@ base class TEnv{
     TType::unionN(subst, this, pos, resultTys)
   }
 
-  // `T[number]`: the element type of T when T is an array or array-constrained
-  // type variable.  Expands TVars to their constraints so that `N extends
-  // string[]` resolves to `string`.  Returns the union of all numberIndex
+  // `T[number]`: the element type of a known array or indexed object shape.
+  // Returns the union of all numberIndex
   // element types across the clauses of the expanded object type.
   // TODO: generalize to `T[K]` for any `K: TPrimValue` (e.g. `string`), by
   // parameterizing this over the index kind (numberIndex/stringIndex/
@@ -3563,9 +3587,7 @@ base class TEnv{
     pos: PosRange,
   ): TType {
     clauses = objType.expandToClauses(subst, this, Covariant());
-    // Clauses with `vars` (TParams) are OK: vars are universally-quantified
-    // type parameters; their `stypes` still carry concrete constraint info.
-    // Only reject when `stypes is None()` (top — no type information at all).
+    this.checkAbstractProjection(clauses, pos, "Indexed access");
     if (clauses.any(clause -> clause.stypes is None())) {
       fatalError(
         Array[

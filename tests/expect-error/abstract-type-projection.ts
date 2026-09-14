@@ -2,6 +2,7 @@ type ElementOf<T extends readonly unknown[]> = T[number];
 
 // The abstract body check must not erase the dependency that an explicit
 // instantiation later uses to specialize the result.
+// @skjs-expect-error Indexed access on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters
 function fabricatedElement<T extends readonly unknown[]>(xs: T): ElementOf<T> {
   return "wrong";
 }
@@ -13,6 +14,7 @@ function numericElement(xs: number[]): number {
 // when the whole array type is the parameter.
 function abstractRead<T extends readonly unknown[]>(
   xs: T,
+  // @skjs-expect-error Indexed access on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters
 ): T[number] | undefined {
   return xs[0];
 }
@@ -26,6 +28,7 @@ function concreteElement(xs: readonly number[]): ElementOf<readonly number[]> {
 }
 
 type Keys<T> = keyof T;
+// @skjs-expect-error keyof on an abstract type is not yet supported by SKJS; use a known object or array shape with explicit type parameters
 function fabricatedKey<T>(x: T): Keys<T> {
   return "wrong";
 }

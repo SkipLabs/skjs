@@ -1050,3 +1050,16 @@ checks remain usable. Ordinary calls have no purity summaries, so even pure
 formatting and recursive helpers can lose discriminant refinements. Checker-only
 `__SKJS_show` and `__SKJS_show_expanded` are exempt. This policy does not cover
 implicit accessor/iterator effects or growing, uncontracted objects.
+
+### Abstract type projections
+
+`keyof T` and `T[number]` are not supported when the operand is an abstract type
+parameter in a function contract or body. Its upper bound is not an exact
+replacement: checking a body against that approximation and later specializing
+the result can accept fabricated keys or elements. SKJS reports SKJS9034.
+
+Aliases such as `type ElementOf<T extends readonly unknown[]> = T[number]` may
+be declared and instantiated with a known shape. `ElementOf<readonly E[]>` keeps
+its symbolic element type `E`, so prefer an explicit element parameter to an
+abstract whole-array parameter. Concrete `keyof` and numeric indexed access
+remain supported. See `tests/expect-error/abstract-type-projection.ts`.

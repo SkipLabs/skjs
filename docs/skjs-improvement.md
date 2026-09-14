@@ -254,6 +254,30 @@ an independently unsound subtype judgment sound.
 
 ## Implementation record
 
+R2/R3c abstract-projection repair: the normalization-transfer experiment exposed
+an acceptance bug before any later candidate growth was needed. For
+`type ElementOf<T extends readonly unknown[]> = T[number]`, a generic function
+returning `ElementOf<T>` could return `"wrong"`: the body normalized the abstract
+array's upper bound to `unknown`. An explicit `number[]` instantiation later
+normalized the same alias to `number`. The accepted erased program returned a
+string at that numeric result. `type Keys<T> = keyof T` had the same mismatch:
+a fabricated key became a different literal type after concrete instantiation.
+
+`keyOfType` and `numberIndexedType` now share a guard against projecting an
+abstract parameter outside type-alias validation. Alias declarations may defer
+until concrete instantiation; known object/array shapes with symbolic members
+remain supported. `abstract-type-projection.ts` covers both witnesses, the
+explicit-instantiation consumers, and concrete/symbolic-element controls. A real
+read through an abstract whole-array parameter is also conservatively rejected;
+use an explicit element parameter (`readonly E[]`) instead. Full support needs a
+symbolic projection type, not approximation by the upper bound.
+
+Strict tsc accepts the indexed-access counterexample but rejects the fabricated
+`keyof` return. The other shape normalizers already reject/defer abstract inputs
+under their existing policies. This fixes the demonstrated representation
+mismatch without changing caches or claiming the remaining candidate-growth
+transfer obligations are complete.
+
 R1 dependent-bound repair: class declaration checking, inferred constructor
 arguments and hidden `instanceof` arguments now resolve each later bound with
 the preceding parameters already bound. In `C<T, U extends T>`, the bound of
