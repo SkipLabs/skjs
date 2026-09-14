@@ -153,7 +153,7 @@ inference dependency. No R2/R3c completion status changes follow from this table
 | `growTVars.isCovered` | Its subtype probes always restore, but only choose which lower bounds to propose. The outer `TType.isSub_` subsequently expands and validates the complete relation in the live substitution. A probe success is not the final acceptance result. |
 | `growTVars`: constraint admissibility | `freezeCandidates` suppresses growth/sealing of already determined candidates while permitting fresh determinations. Success commits fresh determinations before growth; failure restores. The outer subtype check validates afterward. Frozen-query results are not published to subtype/intersection caches. |
 | `TType.mapTParams`: redundant-constraint shortcut | Success skips an intersection only when the substitution version is unchanged. Otherwise it restores and computes the intersection. The shortcut establishes non-mutation now; its dependence on earlier cached answers belongs to the cache obligation below. |
-| `VariadicTyping.resolveSpreadToTuple` | Success consumes a tuple shape from contravariant expansion, with a raw-binding fallback when constraint intersection hides the tuple. Failure restores. Callers validate individual arguments or function parameters, but do not retain an explicit dependency on the outer rest shape. **Open:** establish when that shape is sealed or revalidated after later growth, particularly for function subtyping outside the call fixed point. |
+| `VariadicTyping.resolveSpreadToTuple` | Success consumes a tuple shape from contravariant expansion, with a raw-binding fallback when constraint intersection hides the tuple. Failure restores. The stored-callback witness below showed that element checks did not protect the outer shape. Tuple resolution now establishes that shape through a covariant read before flattening; unsuccessful resolution restores the read. General transitive dependency tracking remains open. |
 | `VariadicTyping.inferRestTypeVar`, array literal commitment | Successful constraint/element checks commit; failure restores in the transactional paths. Literal-precision probing chooses guidance, followed by live element checking. Error-recovery state is outside this soundness objective. |
 | `bindType`: uninitialized annotations | The annotation expands covariantly in the live substitution before the clone tests whether it admits `undefined`. The clone cannot alone choose an uninitialized variable's accepted type. Existing definite-assignment stability coverage exercises this boundary. |
 | Tuple/object defaults | Clone queries decide whether the default contributes and produce warnings. The selected value passes through live source expansion/default-result typing and subsequent binding. The negative reachability decision still relies on those reads establishing the relevant candidate. Probes below exercise both tuple and field paths. |
@@ -194,12 +194,34 @@ tests. They do not discharge the structural open obligations above.
 The next implementation target is the shared dependency boundary: distinguish
 an established value/shape from a symbolic type with growable dependencies, and
 make acceptance consumers either seal those dependencies or retain a judgment to
-revalidate. Start with rest-shape consumption and alternative elimination, then
-use the same dependency inventory for hidden-witness escape. Do not globally
+revalidate. The rest-shape repair below closes one concrete consumer. Continue
+with alternative elimination, then use the same dependency inventory for
+hidden-witness escape. Do not globally
 seal every clone input: constructor inference and literal guidance intentionally
 remain open, and a probe is not authorization to constrain the parent.
 
 ## Implementation record
+
+R2/R3c rest-shape repair: `resolveSpreadToTuple` consumed a bound candidate with
+a contravariant read, then flattened away the candidate's identity. Parameter
+checks could establish the tuple's elements without establishing its length or
+preventing replacement of the outer tuple. `rest-inference-stability.ts` stores
+`(x: number) => number` beside an inferred one-element argument tuple in a
+generic runner. SKJS accepted replacing that tuple by `[]` or `["changed"]`;
+the runner then returned undefined or a string at its declared numeric result.
+Strict tsc rejects both replacements. The compatible numeric replacement remains
+the positive control. These are runtime counterexamples, not merely inconsistent
+diagnostics across two checks.
+
+Resolution now uses covariant expansion in both its ordinary and raw-binding
+fallback paths. Consuming an exact shape establishes the outer candidate before
+flattening it into parameters. Returning no tuple restores the entry substitution,
+so an unsuccessful shape probe does not seal an unrelated array candidate.
+Both call checking and function subtyping share this boundary. This is a local
+sealing repair; it does not provide general immutable validation evidence or
+finish R2/R3c. Clone-based alternative elimination and late hidden-witness growth
+remain separate obligations.
+
 
 R3a implementation note: the initial cache-key patch alone still accepted the
 witness. Named-instance hashes and a subtype shortcut also identified types by
