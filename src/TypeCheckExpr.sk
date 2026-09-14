@@ -4628,13 +4628,26 @@ extension class TypeChecker {
     eltType: TType,
     mostPrecise: Bool,
   ): void {
-    (target, targetType) = elt.value match {
+    elt.value match {
     | Binop(BOAssignment(), lhs, defaultExpr) ->
+      // A property reference (including its computed key) is evaluated before
+      // the default. Nested patterns instead evaluate their own targets after
+      // the default has produced the value they destructure.
+      setter = lhs.value match {
+      | Dot _
+      | Get _ ->
+        this.checkLValue(tcenv, lhs);
+        Some(this.expr(tcenv, lhs, false, true))
+      | _ -> None()
+      };
       defaultType = this.bindingDefaultType(tcenv, defaultExpr, false, false);
-      (lhs, this.defaultedValueType(tcenv, eltType, defaultType))
-    | _ -> (elt, eltType)
-    };
-    this.assignTarget(tcenv, target, targetType, mostPrecise)
+      targetType = this.defaultedValueType(tcenv, eltType, defaultType);
+      setter match {
+      | Some(_) -> this.writeCompoundTarget(tcenv, lhs, setter, targetType)
+      | None() -> this.assignTarget(tcenv, lhs, targetType, mostPrecise)
+      }
+    | _ -> this.assignTarget(tcenv, elt, eltType, mostPrecise)
+    }
   }
 
   // Write `valueType` to one destructuring target, routing it through the same

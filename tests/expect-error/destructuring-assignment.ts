@@ -124,7 +124,6 @@ function inferredTargetEvolves(): void {
 function keyBeforeDefault(): number {
   let value: number | null = null;
   const box: { slot: number } = { slot: 0 };
-  // @skjs-expect-error Type is not assignable to the assignment target's type
   [box[(value = 1) === 1 ? "slot" : "slot"] = value] = [undefined];
   return box.slot;
 }
@@ -132,5 +131,6 @@ function keyClearsDefault(): void {
   let value: number | null = 1;
   const box: { slot: number } = { slot: 0 };
   if (value === null) return;
+  // @ts-expect-error Type is not assignable to the assignment target's type
   [box[(value = null) === null ? "slot" : "slot"] = value] = [undefined];
 }

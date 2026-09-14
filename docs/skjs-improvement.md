@@ -381,6 +381,13 @@ object. The access-chain check still rejects optional links, including through
 computed access and calls; the parser's existing loss of parenthesis boundaries
 means this remains conservative for explicitly grouped optional chains.
 
+Array-destructuring assignment defaults capture a property/index target before
+checking the fallback, retaining the receiver and setter through fallback
+effects. Nested patterns still process their targets after defaulting the
+nested source. `keyBeforeDefault` and `keyClearsDefault` in
+`destructuring-assignment.ts` cover keys that initialize or clear a fallback
+variable: the former now accepts and the latter rejects the null write.
+
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.
 This includes plain names, nested patterns, and later declarators in a single
