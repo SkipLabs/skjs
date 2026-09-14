@@ -501,3 +501,37 @@ function identityMemberSnapshot(
   }
   return 0;
 }
+
+function stableMemberAlias(
+  x: { child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  const alias = x.child;
+  x.child.value = null;
+  // FIXME: property extraction loses the source's stable contents contract.
+  return alias.value;
+}
+
+function stableIndexedMemberAnnotation(
+  x: { child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  // FIXME: the annotated alias promises more than the source's lasting contract.
+  const alias: { value: number } = x["child"];
+  x.child.value = null;
+  return alias.value;
+}
+
+// Extracting the scalar observes a value before the mutation, not an alias.
+// TypeScript conservatively rejects the return after the reference comparison.
+function stableMemberScalar(
+  x: { child: { value: number | null } },
+  narrow: { value: number },
+): number {
+  if (x.child !== narrow) return 0;
+  const value = x["child"].value;
+  x.child.value = null;
+  return value;
+}
