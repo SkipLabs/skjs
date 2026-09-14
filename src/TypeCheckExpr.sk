@@ -499,9 +499,14 @@ extension class TypeChecker {
         // bindings get distinct entries (no stale reuse).
         tcenv.localObjects![local.pos] = LOCanGrow(None())
       };
-      if (isParameter && tcenv.pendingParameters.contains(local.pos)) {
-        tcenv.scope.initializeParameter(local, type);
-        tcenv.!pendingParameters = tcenv.pendingParameters.remove(local.pos)
+      if (tcenv.pendingBindings.contains(local.pos)) {
+        tcenv.scope.initializeReservedBinding(
+          local,
+          type,
+          hasDeclaredContract,
+          isInitialized,
+        );
+        tcenv.!pendingBindings = tcenv.pendingBindings.remove(local.pos)
       } else {
         tcenv.scope.bind(
           tcenv,

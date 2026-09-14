@@ -182,7 +182,7 @@ function patternLaterBinding(source: {
   first?: number;
   later?: number;
 }): number {
-  // FIXME: this reads the uninitialized local, not the top-level namesake.
+  // @ts-expect-error Variable 'later' is used before being assigned
   const { first = later, later = 2 } = source;
   return first;
 }

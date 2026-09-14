@@ -278,6 +278,15 @@ field from the safe reversed order. This conservatively forgets field refinement
 after any default; it does not analyze whether that particular default mutates
 the source. General hidden call effects and evolving source contracts remain open.
 
+Local object and array binding patterns reserve their names before checking
+the source or defaults, using the same pending-binding mechanism as parameters.
+A later pattern binding therefore shadows a top-level namesake while still
+uninitialized; a default cannot read or assign it prematurely. Initialization
+installs the projected type and preserves local const/let mutability and contract
+flags. `destructuring.ts` covers the previously accepted namesake lookup and
+an earlier initialized binding used by a later default. This is pattern-local
+reservation, not a complete block-wide temporal-dead-zone implementation.
+
 Default-result typing now uses one `defaultedValueType` operation for object,
 tuple, iterable, assignment, and whole-parameter defaults. It establishes the
 source read type in the live substitution, removes `undefined`, and then unions

@@ -83,6 +83,19 @@ extension class TypeChecker {
       };
 
       for (binding in bindings) {
+        // Pattern names shadow outer declarations before the source and
+        // defaults run, but become readable only as each binding initializes.
+        binding.pat.value match {
+        | PVar _ -> void
+        | PArray _
+        | PObject _ ->
+          this.reserveBindingNames(
+            tcenv,
+            binding.pat,
+            TType::top(binding.pat.pos),
+            !(bkind is BKConst()),
+          )
+        };
         (ty, isInitialized) = this.bindType(
           binding.pat.pos,
           tcenv,

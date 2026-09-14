@@ -123,9 +123,9 @@ mutable class TCEnv private {
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
-  // Parameter bindings still in their temporal dead zone while defaults run.
+  // Reserved bindings still in their temporal dead zone while initializers run.
   // Unlike ordinary uninitialized locals, they cannot be assigned yet either.
-  mutable pendingParameters: SortedSet<PosRange> = SortedSet[],
+  mutable pendingBindings: SortedSet<PosRange> = SortedSet[],
   // exprTypes cache is keyed on (pos, mostPrecise, isLValue) triples.
   // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
   // construction and as a generic cache for expression typechecking
@@ -314,7 +314,7 @@ mutable class TCEnv private {
     isSubType: (TType, TType) -> void,
   ): void {
     this.scope.bindingPos(name).each(pos -> {
-      if (this.pendingParameters.contains(pos)) _ = this.scope.get(name)
+      if (this.pendingBindings.contains(pos)) _ = this.scope.get(name)
     });
     // A callback can run after its enclosing frame replaces this binding.
     // Its write is an observable use even if no value has been read yet.

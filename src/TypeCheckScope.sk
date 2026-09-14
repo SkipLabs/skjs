@@ -293,15 +293,21 @@ mutable class Scope{
     )
   }
 
-  // Only for names already reserved in this parameter scope. Initialization
+  // Only for names already reserved in this scope. Initialization
   // establishes the projected contract; it is not an assignment to the
   // inaccessible placeholder type used during reservation.
-  mutable fun initializeParameter(name: Name, ty: TType): void {
+  mutable fun initializeReservedBinding(
+    name: Name,
+    ty: TType,
+    hasDeclaredContract: Bool = true,
+    isInitialized: Bool = true,
+  ): void {
     ref = this.refs.get(name.value);
     this.!refs[name.value] = ref with {
       type => ty,
       declaredType => ty,
-      isInitialized => true,
+      isInitialized,
+      hasDeclaredContract,
     }
   }
 
