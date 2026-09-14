@@ -71,6 +71,58 @@ R1's later hidden-witness growth and M1's general alias mutation remain open.
 | M2 | Stale captured reads: a creation-time narrowing is not a captured arrow guarantee (`L-STALE-READ`) | done | Reduced [stale-closure-reads](deep-dives/issues/stale-closure-reads-narrowing.md) programs are rejected; a snapshot-or-null-check counterpart still checks |
 | M3 | Loop-carried narrowing (`L-LOOP-CARRIED`) | done | SKJS rejects the [loop-carried](deep-dives/issues/loop-carried-narrowing-stale.md) reduction using its existing language and tests. Independent pipeline coverage of `let` is **not** a prerequisite. A counterpart that remains correct under SKJS's own loop checking (not source-level supplied invariants) still checks |
 
+## Convergence audit (2026-09-14)
+
+The remaining work is architectural. Recent assignment, initialization, and
+iterator repairs are useful, but more syntax-level completeness examples do not
+close R1, R2, R3c, or general M1. Treat those examples as a separate backlog unless
+they expose an acceptance bug or block one of the contracts below.
+
+The broad read-only audit inspected substitution mutation/cache boundaries,
+clone/raw-read consumers, hidden-type escape boundaries, and call/refinement
+handling. A batched source probe confirmed:
+
+- A direct call that writes null still leaves a numeric field refinement usable;
+  its erased JavaScript returns null. An unknown callback has the same gap.
+  A post-call null check also gets a stale "always false" warning.
+- Scalar snapshots and explicit rechecks remain accepted. Direct alias writes,
+  returning a concrete number as arbitrary `T extends number`, and exchanging
+  values between two independently discovered hidden types reject.
+- The call-effect family already has #597/#599 witnesses in
+  `tests/expect-error/unsound-refinement.ts`; do not duplicate them just to grow
+  coverage. M2/M3's completed bounded criteria do not cover arbitrary callee
+  effects. M1's original direct-alias examples are repaired, but its broader
+  mutation objective is still open.
+
+These probes are evidence for the listed outcomes, not an exhaustive audit or
+a proof of generic soundness. R1's late-growth gap remains a structural concern;
+this pass did not produce a new accepted hidden-escape witness.
+
+Use three broad sweeps to converge:
+
+| Sweep | Scope and completion evidence |
+| --- | --- |
+| **1. Effect boundaries (M1)** | Audit direct, method, constructor and callback calls, captured-local writes, and suspension together. Establish one conservative invalidation policy, with explicit exceptions only for justified effects. Existing stale-read witnesses must reject; scalar snapshots, rechecks, and shared invariant contracts must remain usable. Record any unsupported effect classes. |
+| **2. Validation lifetime (R2/R3c)** | Inventory every acceptance-relevant clone, save/restore, raw candidate read, cache shortcut and successful subtype consumer. Each needs a documented reason it remains valid in the parent and after growth: committed constraints, sealed dependencies, or explicit revalidation. Cover calls, source type references, defaults/definite assignment, narrowing and variadic inference as one pass. Diagnostics, printing and literal guidance are distinct roles, not candidates for indiscriminate live checking. A call-local fixed point and exported evidence alone do not finish this sweep. |
+| **3. Escape lifetime (R1) and closure audit** | Reuse the validation-lifetime mechanism to guard hidden identities reachable through later inference growth, not just the types visible at closure/loop exit. Audit every candidate-growth path and persistent container boundary. Preserve same-witness use and opaque packaging; reject cross-witness identification and invocation/iteration escape. Finish with the combined regression/verification run and an explicit residual-risk list. |
+
+The finite validation audit surface includes `TEnv`'s argument-check roles;
+`TypeCheckExpr`'s default and initialization decisions; `TypeCheckRefine` and
+`TypeCheckScope`'s installed filtering/projections; `TTypeSubtyping`'s speculative
+admissibility and rollback; `TVariadicTyping`'s raw tuple fallback; and the
+substitution caches. `TArrayLitTyping`'s literal guidance and diagnostic/printing
+clones should be classified separately. Listing a site here does not assert that
+it contains a bug.
+
+For each sweep, collect independent witnesses in one batch, repair the shared
+boundary, then run focused probes and the full suites once the batch stabilizes.
+Commit coherent fixes separately without turning every fixture into a user
+iteration. Do not add extracted Lean programs absent a credible verifier issue.
+The existing semantic contracts remain the reference; passing concrete generic
+instantiations does not prove a generic body.
+
+## Implementation record
+
 R3a implementation note: the initial cache-key patch alone still accepted the
 witness. Named-instance hashes and a subtype shortcut also identified types by
 spelling. The repair covers those equality paths as well as expansion keys and
