@@ -38,3 +38,17 @@ function concreteKey(x: { good: number }): "good" {
 function shapeKey<E>(x: { good: E }): Keys<{ good: E }> {
   return "good";
 }
+
+// A string upper bound is not the complete string domain. A real string
+// union member, in contrast, absorbs the dependent interpolation.
+type TextOf<T extends string> = `${T}`;
+function fabricatedText<T extends string>(x: T): TextOf<T> {
+  return "wrong";
+}
+function concreteText(): "good" {
+  return fabricatedText<"good">("good");
+}
+type AbsorbedText<T extends string> = `${T | string}`;
+function absorbedText<T extends string>(x: T): AbsorbedText<T> {
+  return "any string";
+}
