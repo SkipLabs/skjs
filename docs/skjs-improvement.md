@@ -517,7 +517,10 @@ rejecting those values outright. The reverse comparison, from an index to an
 optional named field, likewise rejects dropping the copy constraint. Optionality
 allows absence during lookup; an `in` guard does not make an inherited entry
 copyable. `index-signatures.ts` pins the erasing result contract and a counterpart
-that reads the value and explicitly constructs an own field.
+that reads the value and explicitly constructs an own field. Index-to-index
+comparison preserves the same constraint: `typeof` an actual copy cannot be
+reused to give its source an own-entry guarantee. `index-signatures.ts` covers
+this annotation bypass and accepting an actual copy under the same contract.
 
 This is a bounded repair for recorded method provenance, not a complete model
 of own enumerable properties. Sources whose provenance is already absent,

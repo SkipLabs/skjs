@@ -728,7 +728,7 @@ type CopyEntries = { [key: string]: number; [key: symbol]: unknown };
 
 function reuseCopiedIndexContract(source: CopyEntries): number {
   const template = { ...source };
-  // FIXME: index-to-index subtyping forgets that source entries may not copy.
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const alias: typeof template = source;
   if ("value" in alias) return { ...alias }.value;
   return 0;

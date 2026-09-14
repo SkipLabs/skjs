@@ -589,7 +589,9 @@ cases and conservatively under-approximates a few others.
   retain the source's provenance instead. Declared index signatures also permit
   entries that copying may omit. An `in` guard on the source preserves that
   uncertainty; check presence on the copy before using its entry. An optional
-  named-field contract cannot erase the index's copy constraint either.
+  named-field contract cannot erase the index's copy constraint either. Nor can
+  another index contract: `const copy = { ...source }; const alias: typeof copy =
+  source` is rejected when the source's entries may be omitted by copying.
   This is stricter than TypeScript.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
   `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit

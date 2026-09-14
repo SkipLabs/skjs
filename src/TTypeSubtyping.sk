@@ -695,6 +695,7 @@ base class STErrorOnTFields(
   | STRecFieldsField(?STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsFieldAccess(TField, TField)
   | STRecFieldsCopyProvenance(TField, TField)
+  | STRecIndexCopyProvenance(TField, TField)
 
   fun toError(
     subst: mutable Subst,
@@ -753,6 +754,18 @@ base class STErrorOnTFields(
         "Missing constructor signature"
       };
       (List.Nil(), List[(pos1, msg)], None())
+    | STRecIndexCopyProvenance(index, target, _fields1, _fields2) ->
+      (
+        List.Nil(),
+        List[
+          (
+            index.pos,
+            "Indexed entries may be absent from an object copy; this type must preserve that possibility",
+          ),
+          (target.pos, "Copy the source to establish own enumerable entries"),
+        ],
+        None(),
+      )
     | STRecFieldsCopyProvenance(field, target, _fields1, _fields2) ->
       (
         List.Nil(),
@@ -998,7 +1011,16 @@ extension class TFields {
             fields1,
             fields2,
           )
-        | STOk() -> STOk()
+        | STOk() ->
+          if (
+            !index2.isSynthetic() &&
+            index1.mayBeOmittedByCopy &&
+            !index2.mayBeOmittedByCopy
+          ) {
+            STRecIndexCopyProvenance(index1, index2, fields1, fields2)
+          } else {
+            STOk()
+          }
         }
       }
     | (None(), Some(index2)) ->
