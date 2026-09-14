@@ -223,7 +223,7 @@ if [ "$SUITE" = stateful-source ] || [ "$SUITE" = all ]; then
   build fixture callable_arity "$CALLABLE_ARITY"
   build fixture callable_arguments "$CALLABLE_ARGUMENTS"
   build fixture callbacks "$CALLBACKS"
-  build fixture counterexample "$COUNTEREXAMPLE"
+  build rejected_fixture counterexample "$COUNTEREXAMPLE" 2
   build fixture negation "$NEGATION"
   build fixture null-tests "$NULL_TESTS"
   build fixture null-guard "$NULL_GUARD"

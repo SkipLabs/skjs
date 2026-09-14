@@ -406,6 +406,30 @@ mutable class Scope{
     )
   }
 
+  readonly fun mayBeReassignedByCall(name: Name): Bool {
+    this.maybeGetRef(name.value)
+      .map(pair ->
+        pair.i1.isMutable &&
+          this.isCapturedBinding(name.value) &&
+          !this.captureNeverWritten(name.value)
+      )
+      .default(false)
+  }
+
+  readonly fun callWriteBounds(): SortedMap<String, TType> {
+    bounds = SortedMap[];
+    for (entry in this.visibleRefs().items()) {
+      ref = entry.i1;
+      if (
+        this.hasCaptureContract(entry.i0, ref) &&
+        this.mayBeReassignedByCall(Name(ref.type.pos, entry.i0))
+      ) {
+        !bounds = bounds.set(entry.i0, ref.declaredType)
+      }
+    };
+    bounds
+  }
+
   // A property write may affect any visible object alias. Restore object
   // contents from lasting contracts, while retaining current primitive
   // alternatives: changing a field cannot turn a non-null reference into null.

@@ -853,15 +853,16 @@ The three milestones are:
    merges, backedges, empty predicates and changed claims. Ordinary signatures
    retain their existing meaning. Closure observations require uniform invariant
    justification, pending graph-backed closure bodies.
-3. **Original-witness diagnosis — implemented.** The three unedited exports each
-   have exactly one failing heap edge: the required observation at the return
-   after the write/callback. Every ordinary expression/edge obligation, external
-   entry, and other heap edge checks. Both source formats report the same site.
-   [The audit](tests/refinement-witnesses.mts) also verifies fresh producer claims
-   for [three structurally matched controls](tests/refinement-controls.ts), which
-   remove only the invalidating operation. `writeRefinedRead` needs an explicit
-   current-true return-entry claim; its original broad claim is insufficient.
-   Immutable snapshot controls remain verified.
+3. **Original-witness diagnosis — implemented; checker witnesses since repaired.**
+   The original exports exposed stale heap observations after writes and calls.
+   SKJS now rejects all three singleton returns, so their partial exports no
+   longer carry the old stale assertions. The obsolete failing-edge audit has
+   been retired. [The current audit](tests/refinement-witnesses.mts) requires
+   rejection and verifies fresh producer claims for
+   [three structurally matched controls](tests/refinement-controls.ts), which
+   remove only the invalidating operation. Runtime counterexamples and immutable
+   snapshot controls remain tested. `writeRefinedRead` still needs an explicit
+   current-true return-entry claim; its broad claim is insufficient.
 
 The audit exposed an earlier precision loss hidden behind the first reported
 failure: null tests discarded observations before the valid loop-body entry.
@@ -1301,9 +1302,9 @@ truthiness. See [derived forms](PROGRAM-TYPING.md#derived-source-forms),
 The [compound-write witness](tests/skjs-unsound/README.md) connects that syntax
 to known issue #598. SKJS now rejects its stale singleton returns; its partial
 first-error export cannot certify the whole source. The runtime counterexample
-and repaired status are documented with the fixture. The still-accepted
-captured-call witness retains the diagnostic candidate and failing-edge audit;
-a boundary rejection is not evidence of unsoundness.
+and repaired status are documented with the fixture. The captured-call witness
+now also rejects, and its obsolete diagnostic candidate and failing-edge audit
+have been retired. A boundary rejection is not evidence of unsoundness.
 
 ### Initialized callable field
 

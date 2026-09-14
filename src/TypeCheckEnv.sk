@@ -130,6 +130,9 @@ mutable class TCEnv private {
   // i.e. the args of TypeChecker.expr, so that it can be used both for CFG
   // construction and as a generic cache for expression typechecking
   mutable exprTypes: SortedMap<(PosRange, Bool, Bool), TType> = SortedMap[],
+  // Observation order prevents condition replay from restoring pre-call facts.
+  mutable effectEpoch: Int = 0,
+  mutable exprEffectEpochs: SortedMap<PosRange, Int> = SortedMap[],
   // Composed alias contracts captured while branch scopes are still available.
   // Key by occurrence and its current type, so different precision modes do
   // not confuse results. These are symbolic types, not subtype-result caches.
@@ -258,6 +261,22 @@ mutable class TCEnv private {
     this.scope.forgetObjectRefinements(this.subst, tenv, name ->
       !(this.localObjectState(name) is Some(LOCanGrow _))
     )
+  }
+
+  mutable fun invalidateCallEffects(tenv: TEnv): void {
+    this.!effectEpoch = this.effectEpoch + 1;
+    for (entry in this.scope.callWriteBounds().items()) {
+      name = Name(entry.i1.pos, entry.i0);
+      // A call cannot initialize a binding whose declaration is still pending.
+      if (
+        !this.scope.bindingPos(name)
+          .map(p -> this.pendingBindings.contains(p))
+          .default(false)
+      ) {
+        this.updateLocalType(tenv, name, entry.i1, (_, _) -> void)
+      }
+    };
+    this.forgetObjectRefinements(tenv)
   }
 
   // Freeze the in-scope growable local object `local` (no-op if it is not one),

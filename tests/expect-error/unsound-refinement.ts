@@ -1,5 +1,5 @@
 // Mutation refinement regressions. Visible property writes invalidate known
-// object refinements; effects hidden behind calls remain open.
+// object refinements; explicit calls now apply the same conservative boundary.
 
 declare function sideEffect(): void;
 
@@ -9,6 +9,7 @@ declare function sideEffect(): void;
 function testFieldRefineThenSideEffect(x: { f: number | null }): void {
   if (x.f !== null) {
     sideEffect();
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const n: number = x.f;
   }
 }
@@ -34,6 +35,7 @@ function testLocalCapturedAndMutated(): void {
       x = null;
     };
     reset();
+    // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const s: string = x;
   }
 }

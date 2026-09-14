@@ -518,12 +518,29 @@ extension class TypeChecker {
     // written binding may describe its earlier value, not the value now in
     // scope. Only replay facts independent of those writes. Logical structure
     // is traversed so an unrelated test can still contribute a stable fact.
+    observedReads = mutable CaptureWrites{trackReads => true};
+    observedReads.expr(e);
+    stale = observedReads.reads.any(read -> {
+      beforeEffect = tcenv.exprEffectEpochs
+        .maybeGet(read.pos)
+        .map(epoch -> epoch < tcenv.effectEpoch)
+        .default(false);
+      beforeEffect &&
+        (read.value match {
+        | Var(name) -> tcenv.scope.mayBeReassignedByCall(name)
+        | Dot _
+        | Get _ ->
+          true
+        | _ -> false
+        })
+    });
     e.value match {
     | Binop(BOLogicalAnd(), _, _)
     | Binop(BOLogicalOr(), _, _)
     | Unop(UOExclamationMark(), _) ->
       void
     | _ ->
+      if (stale) return void;
       writes match {
       | None() -> return void
       | Some(names) if (!names.isEmpty()) ->

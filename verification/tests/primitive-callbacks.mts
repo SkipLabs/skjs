@@ -115,33 +115,10 @@ try {
   );
   const bad = JSON.parse(fs.readFileSync(badClaimsPath, "utf8")),
     ba = JSON.parse(fs.readFileSync(badAstPath, "utf8"));
-  expect(
-    "original refined reference fails after the callback",
-    run("--produce-stateful-source", ba, bad, badFile),
-    false,
-    "source incoming edge obligation at",
-  );
-  // Soundly forget only reference read refinements, retaining every expression claim.
-  // This is a manual candidate experiment, not acceptance of the original export.
-  const weakened = clone(bad);
-  function forget(x: any) {
-    if (!x || typeof x !== "object") return;
-    if (x.a === "record")
-      for (const field of x.fields) field.read = clone(field.write);
-    for (const value of Object.values(x)) forget(value);
-  }
-  forget(weakened);
-  const rejected = run("--produce-stateful-source", ba, weakened, badFile);
-  expect(
-    "stale singleton read fails a typing obligation",
-    rejected,
-    false,
-    "source expression obligation at",
-  );
-  assert(rejected.stderr.includes("evidence search failed"));
-  const body = ba.functions[0].body;
-  const stale = body.find((s: any) => s.k === "if").then.at(-1).e.pos;
-  assert(rejected.stderr.includes(`[${stale[0]},${stale[1]})`));
+  assert.equal(bad.find((x: any) => x.file === badFile).functions[0]
+    .collection.completion, "aborted");
+  const rejected = run("--produce-stateful-source", ba, bad, badFile);
+  expect("rejected singleton return is not certified", rejected, false);
   const goodRuntime = runtime(file),
     badRuntime = runtime(badFile);
   assert.equal(badRuntime.staleCapturedCell(true), false);

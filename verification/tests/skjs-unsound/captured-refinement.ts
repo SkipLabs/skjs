@@ -1,9 +1,7 @@
 /**
- * Unsoundness witness: SKJS accepts the true result annotation, but seed=true
- * returns false. The callback invalidates the tested cell contents before the
- * return reads them again. The original exported current-content assertion
- * now fails a checked incoming-edge obligation after the callback. A candidate
- * forgetting that reference observation still fails at the stale read.
+ * Repaired unsoundness witness: seed=true returns false, violating the true
+ * result annotation. SKJS now forgets the field refinement across the callback
+ * and rejects the return. The fixture retains the runtime counterexample.
  */
 function staleCapturedCell(seed: boolean): true {
   const cell: { value: boolean } = { value: seed };

@@ -3,10 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
-import { readDiagnostic } from "../tools/obligation-diagnostic.mts";
 const __dirname = path.dirname(import.meta.filename);
-// The still-accepted captured-call witness fails at its stale observation.
-// Direct writes now reject in SKJS; their unchanged controls still verify.
+// Explicit calls and direct writes now reject in SKJS; unchanged controls verify.
 
 
 
@@ -62,25 +60,6 @@ try {
   ]) {
     const ast = load(ap),
       raw = load(cp);
-    if (file === capturedFile) {
-    test("every original obligation audited in " + path.basename(file), () => {
-      const r = run(
-        "lake",
-        [
-          "env",
-          "lean",
-          "--run",
-          path.join(__dirname, "witness-audit.lean"),
-          ap,
-          cp,
-          file,
-        ],
-        path.join(root, "verification/lean"),
-      );
-      assert.equal(r.status, 0, r.stdout + r.stderr);
-      process.stdout.write(r.stdout);
-    });
-    }
     for (const f of ast.functions) {
       const target = f.name.replace("stale", "stable");
       const expected = strip(f);
@@ -93,57 +72,10 @@ try {
           strip(controls.find((c: any) => c.name === target)),
           expected,
         ));
-      if (file === compoundFile) {
+      test(`${f.name}: SKJS rejects the stale return`, () => {
         assert.equal(raw.find((x: any) => x.file === file).functions
           .find((x: any) => x.name === f.name).collection.completion, "aborted");
-        continue;
-      }
-      const arm =
-        f.name === "staleCapturedCell" ? f.body[2].then : f.body[1].body;
-      const ret = arm.at(-1);
-      const a = { ...ast, functions: [f] },
-        c = structuredClone(raw);
-      c.find((x: any) => x.file === file).functions = c
-        .find((x: any) => x.file === file)
-        .functions.filter((x: any) => x.name === f.name);
-      const ax = path.join(tmp, "ast.json"),
-        cx = path.join(tmp, "raw.json"),
-        sx = path.join(tmp, "sidecar.json"),
-        ep = path.join(tmp, "evidence.json");
-      fs.writeFileSync(ax, JSON.stringify(a));
-      fs.writeFileSync(cx, JSON.stringify(c));
-      const converted = run(verifier, ["--export-source-claims", ax, cx, file]);
-      assert.equal(converted.status, 0, converted.stderr);
-      fs.writeFileSync(sx, JSON.stringify(JSON.parse(converted.stdout).claims));
-      for (const [mode, claims] of [
-        ["stateful-source", cx],
-        ["source-claims", sx],
-      ])
-        test(`${f.name}: ${mode} locates the post-mutation assertion`, () => {
-          const r = run(verifier, [
-            "--produce-" + mode,
-            ax,
-            claims,
-            file,
-            ep,
-            "10",
-          ]);
-          assert.notEqual(r.status, 0);
-          const d = readDiagnostic(r.stderr);
-          assert(d, r.stderr);
-          assert.equal(d.phase, "proof-search");
-          assert(d.kind === "edge-coverage");
-          assert(d.destination.sourceMap && d.destination.requiredKnowledge?.cells);
-          assert.equal(d.destination.sourceMap.role, "heap-observation");
-          assert.equal(d.destination.sourceMap.environmentStart, ret.pos[0]);
-          assert.deepEqual(d.destination.sourceMap.pos, ret.pos);
-          const literal = f.name === "staleFlip" ? "fls" : "tru";
-          assert(
-            d.destination.requiredKnowledge.cells.some(
-              (x) => String(x.contents) === literal,
-            ),
-          );
-        });
+      });
     }
   }
   const sidecar = path.join(tmp, "controls.json"),

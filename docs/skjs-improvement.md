@@ -94,6 +94,21 @@ handling. A batched source probe confirmed:
   effects. M1's original direct-alias examples are repaired, but its broader
   mutation objective is still open.
 
+The effect-boundary repair now invalidates contracted object contents after
+explicit calls, construction and suspension. Captured mutable bindings widen to
+their lasting contracts when the capture/write summary permits reassignment.
+Condition replay tracks when field and captured-binding reads were observed, so
+a later call cannot resurrect an earlier guard. Scalar snapshots, private scalar
+locals and fresh post-call guards retain their precision. The #597/#599 witnesses
+now reject. The checker display intrinsics do not execute user callbacks and are
+exempt; ordinary calls have no inferred purity exemption.
+
+This is conservative: pure formatting and recursive ADT helpers can lose their
+discriminant refinement, recorded in the ADT tests. Remaining M1 boundaries are
+implicit execution (accessors, iterator hooks and similar operations), growing or
+uncontracted inferred objects, and general alias/substitution lifetime. These are
+explicit residual risks, not covered by the explicit-call criterion.
+
 These probes are evidence for the listed outcomes, not an exhaustive audit or
 a proof of generic soundness. R1's late-growth gap remains a structural concern;
 this pass did not produce a new accepted hidden-escape witness.

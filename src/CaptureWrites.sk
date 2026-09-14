@@ -11,6 +11,9 @@ mutable class CaptureWrites{
   mutable captures: SortedSet<String> = SortedSet[],
   mutable unknownCaptures: Bool = false,
   mutable depth: Int = 0,
+  trackReads: Bool = false,
+  reads: mutable Vector<Expr> = mutable Vector[],
+  mutable hasCallEffects: Bool = false,
 } {
   readonly fun result(): ?SortedSet<String> {
     if (this.unknown) None() else Some(this.names)
@@ -135,6 +138,15 @@ mutable class CaptureWrites{
   }
 
   mutable fun expr(e: Expr): void {
+    if (this.trackReads) {
+      e.value match {
+      | Var _
+      | Dot _
+      | Get _ ->
+        this.reads.push(e)
+      | _ -> void
+      }
+    };
     e.value match {
     | Number _
     | BigInt _
@@ -148,11 +160,13 @@ mutable class CaptureWrites{
     | Spread(x)
     | TypeOf(x)
     | VoidOp(x)
-    | Await(x)
     | As(x, _)
     | AsConst(x)
     | Satisfies(x, _)
     | Async(x) ->
+      this.expr(x)
+    | Await(x) ->
+      this.!hasCallEffects = true;
       this.expr(x)
     | Dot(_, x, _) -> this.expr(x)
     | Get(x, y)
@@ -162,7 +176,11 @@ mutable class CaptureWrites{
       this.expr(y)
     | New(x, _, args)
     | Call(x, _, args) ->
-      this.expr(x);
+      this.!hasCallEffects = true;
+      // A callee lookup is not the observation a returned type guard tests.
+      // Capture/write summaries still traverse it; read-footprint scans use
+      // the arguments whose observed values can justify narrowing.
+      if (!this.trackReads) this.expr(x);
       for (arg in args) {
         this.expr(arg)
       }

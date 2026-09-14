@@ -2037,6 +2037,19 @@ extension class TypeChecker {
       )
     | None() ->
       ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
+      e.value match {
+      | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, _)
+      | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, _) ->
+        void
+      | Call _
+      | New _ ->
+        tcenv.invalidateCallEffects(this)
+      | Await _ ->
+        !ty = this.stableAliasExprType(tcenv, e, ty);
+        tcenv.invalidateCallEffects(this)
+      | _ -> void
+      };
+      tcenv.!exprEffectEpochs[e.pos] = tcenv.effectEpoch;
       tcenv.!exprTypes[key] = ty;
       ty
     };
@@ -4236,7 +4249,7 @@ extension class TypeChecker {
   ): TType {
     writes = mutable CaptureWrites{};
     writes.expr(index);
-    if (writes.result().isNone()) {
+    if (writes.result().isNone() || writes.hasCallEffects) {
       receiver.withStableContents(tcenv.subst, this, contract, true)
     } else {
       receiver
@@ -4446,7 +4459,7 @@ extension class TypeChecker {
       fieldName,
     ) if (
       tcenv.localObjectState(local).isSome() &&
-      !this.assignmentRebinds(local, None(), e2)
+      !this.assignmentRebinds(tcenv, local, None(), e2)
     ) ->
       keyExpr = Expr(fieldName.pos, EString(fieldName.value));
       this.assignLocalObject(
@@ -4463,7 +4476,7 @@ extension class TypeChecker {
       keyExpr,
     ) if (
       tcenv.localObjectState(local).isSome() &&
-      !this.assignmentRebinds(local, Some(keyExpr), e2)
+      !this.assignmentRebinds(tcenv, local, Some(keyExpr), e2)
     ) ->
       this.assignLocalObject(
         tcenv,
@@ -4961,11 +4974,17 @@ extension class TypeChecker {
   // Growing through a local name is valid only while it denotes the captured
   // assignment receiver. Otherwise ordinary assignment checks the original
   // target before evaluating the RHS and cannot grow the replacement object.
-  private fun assignmentRebinds(local: Name, key: ?Expr, value: Expr): Bool {
+  private fun assignmentRebinds(
+    tcenv: readonly TCEnv,
+    local: Name,
+    key: ?Expr,
+    value: Expr,
+  ): Bool {
     writes = mutable CaptureWrites{};
     key.each(e -> writes.expr(e));
     writes.expr(value);
-    writes.names.contains(local.value)
+    writes.names.contains(local.value) ||
+      (writes.hasCallEffects && tcenv.scope.mayBeReassignedByCall(local))
   }
 
   /*

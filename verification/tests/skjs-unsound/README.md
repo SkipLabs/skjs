@@ -5,22 +5,13 @@ still accepts it or now rejects it after a checker repair.
 
 ## Captured writer
 
-`captured-refinement.ts` is accepted by SKJS. `staleCapturedCell(true)` returns
-`false`, contradicting its declared `true` result: a callback writes the captured
-cell after the branch test, but SKJS retains the read refinement.
-
-The current verifier distinguishes two checks in `primitive-callbacks.mts`:
-
-1. The actual export reaches a checked incoming-edge obligation for the current
-   contents claimed after the callback. Calls discard such observations.
-2. A manually weakened candidate forgets only reference read refinements, retaining
-   SKJS's expression types. It reaches proof checking and fails at the stale read.
-
-The cross-format witness audit also checks that this is the only failing heap
-edge, and that every ordinary obligation checks. The matched control removes the
-call, keeps the guard and return read, and verifies with unedited producer claims.
-The tests pin the source location and the runtime result. It does not label the
-original proof-search failure as a semantic proof that the program is unsound.
+`captured-refinement.ts` is now rejected by SKJS. `staleCapturedCell(true)`
+returns `false`, contradicting its declared `true` result. The callback boundary
+forgets the field refinement and the return fails against its declared result.
+The fixture requires rejection and partial claim collection; the verifier must
+not certify that export. The runtime witness and matched control remain tested.
+The obsolete failing-heap-edge audit was removed because the checker no longer
+exports the stale assertion it audited.
 `stableSnapshot` in [the primitive callback fixture](../stateful-source/primitive-callbacks.ts) verifies and returns
 true: it tests and returns the same immutable value saved before the callback.
 
