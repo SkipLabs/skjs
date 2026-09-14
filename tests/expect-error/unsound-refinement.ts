@@ -570,3 +570,20 @@ function stablePropertyCopiesScalar(x: {
   x.value = null;
   return spread.value + rest.value;
 }
+
+function computedRead(x: { value: number | null }): number {
+  if (x.value === null) return 0;
+  // FIXME: the key mutates the field before it is read.
+  return x[(x.value = null) === null ? "value" : "value"];
+}
+// Rebinding x in the key does not change the receiver already captured.
+// TypeScript conservatively rejects this return.
+function capturedReceiver(x: { value: number | null }): number {
+  if (x.value === null) return 0;
+  return x[(x = { value: null }) === x ? "value" : "value"];
+}
+function computedCall(x: { fn: (() => number) | null }): number {
+  if (x.fn === null) return 0;
+  // FIXME: method lookup occurs after the key clears the callable.
+  return x[(x.fn = null) === null ? "fn" : "fn"]();
+}
