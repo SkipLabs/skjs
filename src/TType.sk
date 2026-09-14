@@ -2497,6 +2497,11 @@ class TFields protected {
     }
   }
 
+  // Invocation capabilities belong to the source object, not its properties.
+  fun withoutCallOrConstruct(): TFields {
+    this with {call => CAbsent(), new => CAbsent()}
+  }
+
   fun preserveCopyUncertainty(
     names: SortedSet<FieldNameString>,
     symbols: SortedSet<FieldNameString>,

@@ -2555,19 +2555,21 @@ base class TEnv{
   // (inherited or non-enumerable), or supplied by an enumerable own override.
   // Preserve both cases for spread overwrites.
   fun propertyCopyFields(subst: mutable Subst, fields: TFields): TFields {
-    fields.map(
-      field ->
-        if (field.mayBeOmittedByCopy) {
-          field with {
-            get => this.extractedMethodType(subst, field.get),
-            isOptional => true,
-            mayBeOmittedByCopy => false,
-          }
-        } else {
-          field
-        },
-      funs -> funs,
-    )
+    fields
+      .withoutCallOrConstruct()
+      .map(
+        field ->
+          if (field.mayBeOmittedByCopy) {
+            field with {
+              get => this.extractedMethodType(subst, field.get),
+              isOptional => true,
+              mayBeOmittedByCopy => false,
+            }
+          } else {
+            field
+          },
+        funs -> funs,
+      )
   }
 
   // Extraction loses the guarantee that a class method runs on its original

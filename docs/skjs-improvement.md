@@ -466,6 +466,12 @@ explicit receiver requirement. Own function-valued fields and class data fields
 remain copyable. `spread-callable.ts` pins the previously accepted missing-method
 calls through spread/rest and these positive controls.
 
+The shared property-copy operation removes the source's call and constructor
+signatures. Rest previously retained both and accepted invoking the fresh plain
+object. `spread-callable.ts` rejects both operations and preserves a callable
+property on the copy. Spread already discarded these capabilities when merging
+fields; both paths now apply the same rule before field processing.
+
 Annotated local initializers retain recorded class-method copy provenance
 on matching fields of the annotation. This preserves the annotation's value
 contract while avoiding a new promise about ownership. Names and unique-symbol

@@ -202,12 +202,12 @@ function indexedOwnCopy(source: IndexedReader): number {
 
 function restCallable(fn: (() => number) & { tag: string }): number {
   const { tag, ...copy } = fn;
-  // FIXME: object rest retains the source call signature; tsc rejects this.
+  // @ts-expect-error This expression is not callable
   return copy();
 }
 function restConstructor(c: new () => object): object {
   const { ...copy } = c;
-  // FIXME: object rest retains the source construct signature; tsc rejects this.
+  // @ts-expect-error This expression is not constructable
   return new copy();
 }
 function restOwnCallable(
