@@ -387,6 +387,9 @@ effects. Nested patterns still process their targets after defaulting the
 nested source. `keyBeforeDefault` and `keyClearsDefault` in
 `destructuring-assignment.ts` cover keys that initialize or clear a fallback
 variable: the former now accepts and the latter rejects the null write.
+Destructuring targets, with or without defaults, and update expressions share
+`writeCapturedTarget` for contract validation, local write tracking, and property
+refinement invalidation; target evaluation remains with each syntax form.
 
 Local declaration statements reserve all their names before checking any
 source or default, using the same pending-binding mechanism as parameters.

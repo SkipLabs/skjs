@@ -3446,7 +3446,7 @@ extension class TypeChecker {
           TSCode(2356),
         );
         setter = this.compoundSetter(tcenv, subExpr);
-        this.writeCompoundTarget(tcenv, subExpr, setter, num);
+        this.writeCapturedTarget(tcenv, subExpr, setter, num);
         num
       | POExcl() ->
         (isValid, tyWithoutNullish) = this.exprWithoutNullish(
@@ -4643,7 +4643,7 @@ extension class TypeChecker {
       defaultType = this.bindingDefaultType(tcenv, defaultExpr, false, false);
       targetType = this.defaultedValueType(tcenv, eltType, defaultType);
       setter match {
-      | Some(_) -> this.writeCompoundTarget(tcenv, lhs, setter, targetType)
+      | Some(_) -> this.writeCapturedTarget(tcenv, lhs, setter, targetType)
       | None() -> this.assignTarget(tcenv, lhs, targetType, mostPrecise)
       }
     | _ -> this.assignTarget(tcenv, elt, eltType, mostPrecise)
@@ -4652,7 +4652,7 @@ extension class TypeChecker {
 
   // Write `valueType` to one destructuring target, routing it through the same
   // path the equivalent single assignment uses: a variable is narrowed and
-  // checked by `Scope::set`, a property or index is checked against the type it
+  // checked by `TCEnv.writeVar`, a property or index is checked against the type it
   // can be set to, and a nested pattern destructures in turn.
   private fun assignTarget(
     tcenv: mutable TCEnv,
@@ -4663,16 +4663,7 @@ extension class TypeChecker {
     this.checkLValue(tcenv, target);
     target.value match {
     | Var(n) ->
-      tcenv.writeVar(this, n, valueType, (x, y) ->
-        this.checkSubType(
-          tcenv,
-          target.pos,
-          "Type is not assignable to the variable's type",
-          x,
-          y,
-          TSCode(2322),
-        )
-      );
+      this.writeCapturedTarget(tcenv, target, None(), valueType);
       // This path has only the extracted type, not the source expression's
       // refinement provenance. Conservatively retain field invalidation.
       tcenv.scope.markFieldRefinement(n)
@@ -4680,15 +4671,7 @@ extension class TypeChecker {
       this.assignArray(tcenv, target.pos, nested, valueType, mostPrecise)
     | _ ->
       ty1 = this.expr(tcenv, target, false, true);
-      this.checkSubType(
-        tcenv,
-        target.pos,
-        "Type is not assignable to the assignment target's type",
-        valueType,
-        ty1,
-        TSCode(2322),
-      );
-      tcenv.forgetObjectRefinements(this)
+      this.writeCapturedTarget(tcenv, target, Some(ty1), valueType)
     }
   }
 
@@ -4780,7 +4763,7 @@ extension class TypeChecker {
       readType,
       rhs,
     );
-    this.writeCompoundTarget(tcenv, target, setter, result);
+    this.writeCapturedTarget(tcenv, target, setter, result);
     result
   }
 
@@ -4818,7 +4801,7 @@ extension class TypeChecker {
     }
   }
 
-  private fun writeCompoundTarget(
+  private fun writeCapturedTarget(
     tcenv: mutable TCEnv,
     target: Expr,
     setter: ?TType,
@@ -4914,7 +4897,7 @@ extension class TypeChecker {
       );
     };
     // The setter sees only the RHS value. The skipped path performs no write.
-    this.writeCompoundTarget(tcenv, target, setter, stableRhs);
+    this.writeCapturedTarget(tcenv, target, setter, stableRhs);
     tcenv.!scope = savedScope;
     tcenv.popScope(this, branch);
     result = this.composeSelectionType(
