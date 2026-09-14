@@ -513,7 +513,11 @@ presence remains accepted. Named-to-index subtyping also preserves the
 constraint. Synthetic literal indexes remain inference-only and are excluded
 from this field-contract check. The recursive EagerCollection regression
 remains accepted; index contracts admit lookup-only members instead of
-rejecting those values outright.
+rejecting those values outright. The reverse comparison, from an index to an
+optional named field, likewise rejects dropping the copy constraint. Optionality
+allows absence during lookup; an `in` guard does not make an inherited entry
+copyable. `index-signatures.ts` pins the erasing result contract and a counterpart
+that reads the value and explicitly constructs an own field.
 
 This is a bounded repair for recorded method provenance, not a complete model
 of own enumerable properties. Sources whose provenance is already absent,

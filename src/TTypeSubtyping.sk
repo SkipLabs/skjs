@@ -1109,7 +1109,15 @@ extension class TFields {
                 fields1,
                 fields2,
               )
-            | STOk() -> void
+            | STOk() ->
+              if (idx1.mayBeOmittedByCopy && !f2.mayBeOmittedByCopy) {
+                return STRecFieldsCopyProvenance(
+                  idx1.asNamed(f2.name),
+                  f2,
+                  fields1,
+                  fields2,
+                )
+              }
             }
           }
         }

@@ -588,7 +588,8 @@ cases and conservatively under-approximates a few others.
   when the receiving contract needs it to survive copying. Local annotations
   retain the source's provenance instead. Declared index signatures also permit
   entries that copying may omit. An `in` guard on the source preserves that
-  uncertainty; check presence on the copy before using its entry.
+  uncertainty; check presence on the copy before using its entry. An optional
+  named-field contract cannot erase the index's copy constraint either.
   This is stricter than TypeScript.
 - **`.call` / `.apply` / `.bind` check the receiver** against an implicit class
   `this` (sound). TS resolves `ThisParameterType` to `unknown` for an implicit
