@@ -208,13 +208,7 @@ extension class TypeChecker {
           bodyTerm.thenk(() ~> StmtTermination::expr(incr))
         )
       )
-    | Block(stmts) ->
-      this.reserveBlockBindings(tcenv, stmts);
-      blockTerm = StmtTermination::skip;
-      for (stmt in stmts) {
-        !blockTerm = blockTerm.then(this.stmt(tcenv, stmt))
-      };
-      blockTerm
+    | Block(stmts) -> this.blockStatements(tcenv, stmts)
     | ForInOf(kind, initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
@@ -358,10 +352,7 @@ extension class TypeChecker {
       (tryTerm, tryLog) = tcenv.withTryWriteLog(() -> {
         tryScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = tryScope;
-        term = StmtTermination::skip;
-        for (stmt in tryBlock) {
-          !term = term.then(this.stmt(tcenv, stmt))
-        };
+        term = this.blockStatements(tcenv, tryBlock);
         tcenv.!scope = scopeCopy;
         tcenv.popScope(this, tryScope);
         term
@@ -395,10 +386,7 @@ extension class TypeChecker {
             this.bind(tcenv, BKLet(), pat, errorType, false, true, false)
           | None() -> void
           };
-          term = StmtTermination::skip;
-          for (stmt in catchBlock) {
-            !term = term.then(this.stmt(tcenv, stmt))
-          };
+          term = this.blockStatements(tcenv, catchBlock);
           tcenv.!scope = scopeCopy;
           term
         });
@@ -430,10 +418,7 @@ extension class TypeChecker {
         );
         (finallyTerm, finallyLog) = tcenv.withTryWriteLog(() -> {
           tcenv.!scope = finallyScope;
-          term = StmtTermination::skip;
-          for (stmt in finallyStmts) {
-            !term = term.then(this.stmt(tcenv, stmt))
-          };
+          term = this.blockStatements(tcenv, finallyStmts);
           tcenv.!scope = scopeCopy;
           tcenv.popScope(this, finallyScope);
           tcenv.foldFinallyIntoJumpEdges(this, edgeMarks, finallyScope);

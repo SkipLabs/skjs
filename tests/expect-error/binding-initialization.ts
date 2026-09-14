@@ -37,7 +37,7 @@ function finallyLater(): number {
   try {
     result = 1;
   } finally {
-    // FIXME: the later finally-local shadows the outer seed.
+    // @ts-expect-error Variable 'seed' is used before being assigned
     const first = seed;
     const seed = 2;
     result = first;

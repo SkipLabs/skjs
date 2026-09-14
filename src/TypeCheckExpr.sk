@@ -433,16 +433,23 @@ extension class TypeChecker {
     // are unioned with the narrowed own-entry ones, not narrowed by `cond`.
     fallenFrom.each(from -> scope.uniteFallenInto(tcenv.subst, this, from));
     this.reserveBlockBindings(tcenv, reservedStatements);
-    this.reserveBlockBindings(tcenv, stmts);
-    // Checking a statement also answers how it ends; the block's termination
-    // folds the answers left to right, where `then` stops accumulating once
-    // control cannot reach the next statement — which is still checked.
-    term = StmtTermination::skip;
-    for (st in stmts) {
-      !term = term.then(this.stmt(tcenv, st))
-    };
+    term = this.blockStatements(tcenv, stmts);
     tcenv.!scope = scopeCopy;
     (scope, term)
+  }
+
+  // Shared by ordinary and exception-handling blocks. Reserve lexical
+  // identities before checking any statement; retain source execution order.
+  fun blockStatements(
+    tcenv: mutable TCEnv,
+    stmts: Array<Stmt>,
+  ): StmtTermination {
+    this.reserveBlockBindings(tcenv, stmts);
+    term = StmtTermination::skip;
+    for (stmt in stmts) {
+      !term = term.then(this.stmt(tcenv, stmt))
+    };
+    term
   }
 
   // Only direct declarations belong to this block; nested scopes reserve

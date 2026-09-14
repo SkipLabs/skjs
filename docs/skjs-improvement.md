@@ -287,6 +287,10 @@ mutability and contract flags. `binding-initialization.ts` covers self-reference
 a later declarator, and an earlier initialized declarator; `destructuring.ts`
 covers references within patterns. Block entry also reserves direct declarations before checking its statements,
 after the entry condition has been interpreted in the enclosing environment.
+One statement-list checker performs reservation and ordered checking for ordinary,
+try, catch, and finally blocks. Their exception-write logs and scope merges
+remain at the existing boundaries. `binding-initialization.ts` covers a later
+finally declaration and separation between try and finally locals.
 Reservation is idempotent by declaration position, so the statement pass cannot
 replace the block's binding identity. The redeclaration check distinguishes
 a future outer reservation from the current scope, preserving existing valid
