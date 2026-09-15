@@ -38,6 +38,11 @@ type Corpus = {
 };
 type Entry = { slug: string; source: string; fn: string };
 
+/* One file's entry in the producer's own claims export, as this tool reads it:
+ * the file it speaks about and the functions it stated something for. The
+ * entry is handed to the verifier whole, so nothing else in it is described. */
+type Exported = { file: string; functions?: { name: string }[] };
+
 /* Outcomes are `stage:reason`, most advanced stage last. A reason is the
  * producer's own text, normalized: positions and identifiers are dropped so
  * that the same refusal groups across functions. The normalization is
@@ -62,6 +67,15 @@ function producerRejected(errPath: string | undefined): Set<string> {
       out.add(path.basename(named[1]).replace(/\.ts$/, ""));
   }
   return out;
+}
+
+/** What a thrown value says: its `message` where it carries one, the value
+ * itself where it does not. A caught value is `unknown`, and nothing here
+ * assumes the thrower was the gate. */
+function thrown(err: unknown): string {
+  const message = typeof err === "object" && err !== null && "message" in err
+    ? err.message : undefined;
+  return String(message ?? err);
 }
 
 function reason(text: string): string {
@@ -133,8 +147,8 @@ function extract(corpus: Corpus, dir: string): void {
 function report(dir: string, claimsPath: string, verifier: string,
                 errPath?: string): Entry_Result[] {
   const index: Entry[] = JSON.parse(fs.readFileSync(`${dir}/index.json`, "utf8"));
-  const raw: any[] = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
-  const byFile = new Map(raw.map(f => [f.file, f]));
+  const raw: Exported[] = JSON.parse(fs.readFileSync(claimsPath, "utf8"));
+  const byFile = new Map<string, Exported>(raw.map(f => [f.file, f]));
   const rejected = producerRejected(errPath);
   const results: Entry_Result[] = [];
   for (const e of index) {
@@ -147,17 +161,17 @@ function report(dir: string, claimsPath: string, verifier: string,
 
 type Entry_Result = Entry & { outcome: string };
 
-function outcomeFor(file: string, e: Entry, byFile: Map<string, any>,
+function outcomeFor(file: string, e: Entry, byFile: Map<string, Exported>,
                     verifier: string, dir: string): string {
   let ast;
   try {
     ast = parseFile(file, true);
-  } catch (err: any) {
-    return `${GATE}:${reason(String(err?.message ?? err))}`;
+  } catch (err) {
+    return `${GATE}:${reason(thrown(err))}`;
   }
   const exported = byFile.get(file);
   if (!exported) return `${CLAIMS}:no export for this file`;
-  const fn = (exported.functions ?? []).find((f: any) => f.name === e.fn);
+  const fn = (exported.functions ?? []).find(f => f.name === e.fn);
   if (!fn) return `${CLAIMS}:function absent from the export`;
   // Sites SKJS declined to state are not screened here. Some unavailable
   // sites are benign — every function carries an unavailable `this` entry —

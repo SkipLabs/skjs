@@ -15,10 +15,15 @@
 import { API } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type {
+  ArrowFunction,
+  BinaryExpression,
+  Expression,
   FunctionDeclaration,
   Node,
   SourceFile,
+  Statement,
   TypeAliasDeclaration,
+  TypeNode,
 } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -109,23 +114,6 @@ export function close(): void {
   contents.clear();
 }
 
-/* ------------------------------------------------------- the predicates -- */
-// The two the AST module does not carry, written against `kind` because that is
-// all they ever were.
-
-const FUNCTION_LIKE = new Set<number>([
-  ts.SyntaxKind.FunctionDeclaration,
-  ts.SyntaxKind.FunctionExpression,
-  ts.SyntaxKind.ArrowFunction,
-  ts.SyntaxKind.MethodDeclaration,
-  ts.SyntaxKind.Constructor,
-  ts.SyntaxKind.GetAccessor,
-  ts.SyntaxKind.SetAccessor,
-]);
-const isFunctionLike = (n: Node) => FUNCTION_LIKE.has(n.kind);
-const isPropertySignature = (n: Node) =>
-  n.kind === ts.SyntaxKind.PropertySignature;
-
 /* -------------------------------------------------------------- the gate -- */
 // One parse owns one source file. `fail` and `span` are the only two things
 // that need it, and they are the only two that should: a gate rejection names
@@ -175,98 +163,157 @@ class Gate {
 
   /* ------------------------------------------------------------- types -- */
 
-  atomsOf(node: any, acc: Atom[]): void {
-    switch (node.kind) {
-      case ts.SyntaxKind.ParenthesizedType:
-        return this.atomsOf(node.type, acc);
+  atomsOf(node: TypeNode, acc: Atom[]): void {
+    // `kind` narrows nothing here: the AST module's TypeNode is one base
+    // interface rather than a union, so each shape is recognized by its own
+    // predicate, which is what lets the compiler read the fields below.
+    if (ts.isParenthesizedTypeNode(node)) return this.atomsOf(node.type, acc);
 
-      case ts.SyntaxKind.UnionType:
-        for (const t of node.types) this.atomsOf(t, acc);
-        return;
+    if (ts.isUnionTypeNode(node)) {
+      for (const t of node.types) this.atomsOf(t, acc);
+      return;
+    }
 
-      case ts.SyntaxKind.FunctionType: {
-        if (node.typeParameters?.length)
-          this.fail(node, "generic function types are outside the fragment");
-        for (const p of node.parameters) {
-          if (
-            !ts.isIdentifier(p.name) ||
-            p.name.text === "this" ||
-            p.questionToken ||
-            p.dotDotDotToken ||
-            p.initializer
-          )
-            this.fail(p, "expected a required ordinary parameter");
-        }
-        acc.push({
-          a: "function",
-          params: node.parameters.map((p: any) => this.typeOf(p.type)),
-          result: this.typeOf(node.type),
-          construct: "unknown",
-          array: "unknown",
-        });
-        return;
-      }
-
-      case ts.SyntaxKind.TypeLiteral: {
-        if (node.members.length !== 1)
-          this.fail(node, "expected a single cell field");
-        const f = node.members[0];
+    if (ts.isFunctionTypeNode(node)) {
+      if (node.typeParameters?.length)
+        this.fail(node, "generic function types are outside the fragment");
+      for (const p of node.parameters) {
         if (
-          !isPropertySignature(f) ||
-          !ts.isIdentifier(f.name) ||
-          f.name.text !== "value" ||
-          // A member's `?` (or `!`) is its postfix token; a parameter's is a
-          // question token. Different nodes, different names.
-          f.postfixToken ||
-          f.modifiers?.length
+          !ts.isIdentifier(p.name) ||
+          p.name.text === "this" ||
+          p.questionToken ||
+          p.dotDotDotToken ||
+          p.initializer
         )
-          this.fail(f, "expected required mutable value field");
-        const t = this.typeOf(f.type);
-        acc.push({
-          a: "record",
-          fields: [{ name: "value", optional: false, read: t, write: t }],
-          indexes: { string: "absent", number: "absent", symbol: "absent" },
-          call: "unknown",
-          construct: "unknown",
-          array: "unknown",
-        });
-        return;
+          this.fail(p, "expected a required ordinary parameter");
       }
+      acc.push({
+        a: "function",
+        params: node.parameters.map((p) => this.typeOf(p.type)),
+        result: this.typeOf(node.type),
+        construct: "unknown",
+        array: "unknown",
+      });
+      return;
+    }
 
-      case ts.SyntaxKind.IntersectionType: {
-        // Union is the atom list; conjunction lives inside the atom kinds that
-        // have one, mirroring the clause language, where only a location under
-        // several contracts and a function with several signatures conjoin.
-        // Nothing else does, so nothing else may be written here: a format
-        // that could say `null & boolean` would say something no clause holds.
-        // Conjunction is associative, so a parenthesized intersection inside
-        // one contributes its operands to the same flat list.
-        const operands: any[] = [];
-        const flatten = (t: any) => {
-          while (ts.isParenthesizedTypeNode(t)) t = t.type;
-          if (ts.isIntersectionTypeNode(t)) t.types.forEach(flatten);
-          else operands.push(t);
-        };
-        flatten(node);
-        const parts = operands.map((operand) => {
-          const one: Atom[] = [];
-          this.atomsOf(operand, one);
-          if (one.length !== 1)
-            this.fail(operand, "an intersection operand must be a single type");
-          return one[0]!;
-        });
-        const head = parts[0]!;
-        if (parts.some((p) => p.a !== head.a))
-          this.fail(node, "intersection operands must have the same shape");
-        if (head.a !== "record" && head.a !== "function")
+    if (ts.isTypeLiteralNode(node)) {
+      if (node.members.length !== 1)
+        this.fail(node, "expected a single cell field");
+      const f = node.members[0];
+      if (
+        !ts.isPropertySignatureDeclaration(f) ||
+        !ts.isIdentifier(f.name) ||
+        f.name.text !== "value" ||
+        // A member's `?` (or `!`) is its postfix token; a parameter's is a
+        // question token. Different nodes, different names.
+        f.postfixToken ||
+        f.modifiers?.length
+      )
+        this.fail(f, "expected required mutable value field");
+      const t = this.typeOf(f.type);
+      acc.push({
+        a: "record",
+        fields: [{ name: "value", optional: false, read: t, write: t }],
+        indexes: { string: "absent", number: "absent", symbol: "absent" },
+        call: "unknown",
+        construct: "unknown",
+        array: "unknown",
+      });
+      return;
+    }
+
+    if (ts.isIntersectionTypeNode(node)) {
+      // Union is the atom list; conjunction lives inside the atom kinds that
+      // have one, mirroring the clause language, where only a location under
+      // several contracts and a function with several signatures conjoin.
+      // Nothing else does, so nothing else may be written here: a format
+      // that could say `null & boolean` would say something no clause holds.
+      // Conjunction is associative, so a parenthesized intersection inside
+      // one contributes its operands to the same flat list.
+      const operands: TypeNode[] = [];
+      const flatten = (t: TypeNode): void => {
+        while (ts.isParenthesizedTypeNode(t)) t = t.type;
+        if (ts.isIntersectionTypeNode(t)) t.types.forEach(flatten);
+        else operands.push(t);
+      };
+      flatten(node);
+      const parts = operands.map((operand) => {
+        const one: Atom[] = [];
+        this.atomsOf(operand, one);
+        if (one.length !== 1)
+          this.fail(operand, "an intersection operand must be a single type");
+        return one[0]!;
+      });
+      const head = parts[0]!;
+      if (parts.some((p) => p.a !== head.a))
+        this.fail(node, "intersection operands must have the same shape");
+      if (head.a !== "record" && head.a !== "function")
+        this.fail(
+          node,
+          `intersection of ${head.a} types is outside the fragment`,
+        );
+      acc.push({ ...head, and: parts.slice(1) });
+      return;
+    }
+
+    if (ts.isTypeReferenceNode(node)) {
+      if (node.typeName.kind !== ts.SyntaxKind.Identifier)
+        this.fail(node, "type reference outside the fragment");
+      const name = node.typeName.text;
+      if (node.typeArguments?.length) {
+        if (!this.aliasApps)
           this.fail(
             node,
-            `intersection of ${head.a} types is outside the fragment`,
+            "alias applications in alias bodies are outside the fragment",
           );
-        acc.push({ ...head, and: parts.slice(1) });
+        if (node.typeArguments.length !== 1)
+          this.fail(node, "only one type argument is in the fragment");
+        if (!this.aliasNames.has(name))
+          this.fail(node, "unknown type alias");
+        acc.push({
+          a: "alias",
+          name,
+          args: [this.typeOf(node.typeArguments[0])],
+        });
         return;
       }
+      if (!this.typeParams.has(name))
+        this.fail(node, "unknown type parameter");
+      acc.push({ a: "param", name });
+      return;
+    }
 
+    if (ts.isLiteralTypeNode(node)) {
+      // `literal` is declared as a bare Node, so it too is read by predicate.
+      const lit = node.literal;
+      if (lit.kind === ts.SyntaxKind.NullKeyword) {
+        acc.push({ a: "null" });
+        return;
+      }
+      if (ts.isStringLiteral(lit)) {
+        acc.push({ a: "stringlit", v: lit.text });
+        return;
+      }
+      if (ts.isNumericLiteral(lit)) {
+        if (!DECIMAL.test(lit.text))
+          this.fail(lit, "non-decimal numeric literal type");
+        acc.push({ a: "numberlit", v: lit.text });
+        return;
+      }
+      if (lit.kind === ts.SyntaxKind.TrueKeyword) {
+        acc.push({ a: "booleanlit", v: "true" });
+        return;
+      }
+      if (lit.kind === ts.SyntaxKind.FalseKeyword) {
+        acc.push({ a: "booleanlit", v: "false" });
+        return;
+      }
+      this.fail(lit, "literal type outside the fragment");
+    }
+
+    switch (node.kind) {
+      // Keyword types carry nothing to read: the kind is the whole node.
       case ts.SyntaxKind.NeverKeyword:
         // The empty union: no atoms. Nothing inhabits it, so it contributes
         // nothing to the alternatives a value of this type may take.
@@ -285,58 +332,6 @@ class Gate {
         acc.push({ a: "undefined" });
         return;
 
-      case ts.SyntaxKind.TypeReference: {
-        if (node.typeName.kind !== ts.SyntaxKind.Identifier)
-          this.fail(node, "type reference outside the fragment");
-        const name = node.typeName.text as string;
-        if (node.typeArguments?.length) {
-          if (!this.aliasApps)
-            this.fail(
-              node,
-              "alias applications in alias bodies are outside the fragment",
-            );
-          if (node.typeArguments.length !== 1)
-            this.fail(node, "only one type argument is in the fragment");
-          if (!this.aliasNames.has(name))
-            this.fail(node, "unknown type alias");
-          acc.push({
-            a: "alias",
-            name,
-            args: [this.typeOf(node.typeArguments[0])],
-          });
-          return;
-        }
-        if (!this.typeParams.has(name))
-          this.fail(node, "unknown type parameter");
-        acc.push({ a: "param", name });
-        return;
-      }
-
-      case ts.SyntaxKind.LiteralType: {
-        const lit = node.literal;
-        switch (lit.kind) {
-          case ts.SyntaxKind.NullKeyword:
-            acc.push({ a: "null" });
-            return;
-          case ts.SyntaxKind.StringLiteral:
-            acc.push({ a: "stringlit", v: lit.text });
-            return;
-          case ts.SyntaxKind.NumericLiteral:
-            if (!DECIMAL.test(lit.text))
-              this.fail(lit, "non-decimal numeric literal type");
-            acc.push({ a: "numberlit", v: lit.text });
-            return;
-          case ts.SyntaxKind.TrueKeyword:
-            acc.push({ a: "booleanlit", v: "true" });
-            return;
-          case ts.SyntaxKind.FalseKeyword:
-            acc.push({ a: "booleanlit", v: "false" });
-            return;
-          default:
-            this.fail(lit, "literal type outside the fragment");
-        }
-      }
-
       default:
         this.fail(
           node,
@@ -345,7 +340,7 @@ class Gate {
     }
   }
 
-  typeOf(node: any): ClaimType {
+  typeOf(node: TypeNode | undefined): ClaimType {
     if (!node) this.fail(null, "missing type annotation");
     const atoms: Atom[] = [];
     this.atomsOf(node, atoms);
@@ -354,161 +349,164 @@ class Gate {
 
   /* ------------------------------------------------------- expressions -- */
 
-  expr(node: any): Expr {
-    switch (node.kind) {
-      case ts.SyntaxKind.ParenthesizedExpression:
-        // Parentheses carry no meaning of their own, but the producer records
-        // the type of a parenthesized expression at the span of the outermost
-        // parenthesis. Unwrap, and widen the span to match, so the two agree
-        // on the key. Nested parentheses widen again at each level.
-        return { ...this.expr(node.expression), pos: this.span(node) };
+  expr(node: Expression): Expr {
+    // As in `atomsOf`: Expression is one base interface, so each form of
+    // expression is recognized by its own predicate.
+    if (ts.isParenthesizedExpression(node))
+      // Parentheses carry no meaning of their own, but the producer records
+      // the type of a parenthesized expression at the span of the outermost
+      // parenthesis. Unwrap, and widen the span to match, so the two agree
+      // on the key. Nested parentheses widen again at each level.
+      return { ...this.expr(node.expression), pos: this.span(node) };
 
-      case ts.SyntaxKind.ConditionalExpression:
-        return {
-          k: "conditional",
-          pos: this.span(node),
-          cond: this.expr(node.condition),
-          then: this.expr(node.whenTrue),
-          else_: this.expr(node.whenFalse),
-        };
+    if (ts.isConditionalExpression(node))
+      return {
+        k: "conditional",
+        pos: this.span(node),
+        cond: this.expr(node.condition),
+        then: this.expr(node.whenTrue),
+        else_: this.expr(node.whenFalse),
+      };
 
-      case ts.SyntaxKind.Identifier:
-        if (node.text === "undefined")
-          return { k: "lit", pos: this.span(node), lit: { a: "undefined" } };
-        return { k: "id", pos: this.span(node), name: node.text };
-
-      case ts.SyntaxKind.NullKeyword:
-        return { k: "lit", pos: this.span(node), lit: { a: "null" } };
-      case ts.SyntaxKind.TrueKeyword:
-        return {
-          k: "lit",
-          pos: this.span(node),
-          lit: { a: "booleanlit", v: "true" },
-        };
-      case ts.SyntaxKind.FalseKeyword:
-        return {
-          k: "lit",
-          pos: this.span(node),
-          lit: { a: "booleanlit", v: "false" },
-        };
-      case ts.SyntaxKind.StringLiteral:
-        // `text` is the DECODED value, which is what a literal type denotes.
-        return {
-          k: "lit",
-          pos: this.span(node),
-          lit: { a: "stringlit", v: node.text },
-        };
-      case ts.SyntaxKind.NumericLiteral:
-        if (!DECIMAL.test(node.text))
-          this.fail(node, "non-decimal numeric literal");
-        return {
-          k: "lit",
-          pos: this.span(node),
-          lit: { a: "numberlit", v: node.text },
-        };
-
-      case ts.SyntaxKind.ArrowFunction:
-        return this.lambda(node);
-
-      case ts.SyntaxKind.ObjectLiteralExpression: {
-        if (node.properties.length !== 1)
-          this.fail(node, "expected plain single-field allocation");
-        const f = node.properties[0];
-        if (
-          !ts.isPropertyAssignment(f) ||
-          !ts.isIdentifier(f.name) ||
-          f.name.text !== "value"
-        )
-          this.fail(
-            f,
-            "expected plain value property; no accessors, methods or spreads",
-          );
-        return {
-          k: "alloc",
-          pos: this.span(node),
-          e: this.expr(f.initializer),
-        };
-      }
-
-      case ts.SyntaxKind.PropertyAccessExpression:
-        if (node.questionDotToken || node.name.text !== "value")
-          this.fail(node, "expected cell.value");
-        return {
-          k: "read",
-          pos: this.span(node),
-          e: this.expr(node.expression),
-        };
-
-      case ts.SyntaxKind.TypeOfExpression:
-        return {
-          k: "typeof",
-          pos: this.span(node),
-          e: this.expr(node.expression),
-        };
-
-      case ts.SyntaxKind.PrefixUnaryExpression:
-        if (node.operator !== ts.SyntaxKind.ExclamationToken)
-          this.fail(node, "unary operator outside the fragment");
-        return { k: "not", pos: this.span(node), e: this.expr(node.operand) };
-
-      case ts.SyntaxKind.BinaryExpression:
-        return this.binary(node);
-
-      case ts.SyntaxKind.CallExpression: {
-        if (ts.isPropertyAccessExpression(node.expression) &&
-            ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
-            node.expression.name.text === "assign") {
-          if (node.questionDotToken || node.expression.questionDotToken ||
-              node.typeArguments?.length !== 2 || node.arguments.length !== 2 ||
-              !ts.isArrowFunction(node.arguments[0]) || !ts.isObjectLiteralExpression(node.arguments[1]))
-            this.fail(node, "Object.assign requires a fresh arrow, one value-field literal and two explicit type arguments");
-          // The fragment cannot assign to Object.assign or pass Object as a value.
-          // Reject any local declaration that could shadow the standard builtin.
-          const checkBinding = (n: any) => {
-            if ((n.kind === ts.SyntaxKind.Parameter || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n)) &&
-                n.name && ts.isIdentifier(n.name) && n.name.text === "Object")
-              this.fail(n, "shadowing Object is outside intrinsic callable initialization");
-            n.forEachChild(checkBinding);
-          };
-          checkBinding(this.file);
-          return {k: "withValue", pos: this.span(node), fn: this.expr(node.arguments[0]),
-            initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
-            bagType: this.typeOf(node.typeArguments[1])};
-        }
-        if (ts.isPropertyAccessExpression(node.expression) && ["call", "bind"].includes(node.expression.name.text)) {
-          if (node.questionDotToken || node.expression.questionDotToken || node.typeArguments?.length ||
-              node.arguments.length === 0 || node.arguments.some((arg: any) => ts.isSpreadElement(arg)) ||
-              !this.localArrow(node.expression.expression))
-            this.fail(node, `.${node.expression.name.text} requires a known local arrow, an explicit receiver and ordinary arguments`);
-          return {k: node.expression.name.text === "bind" ? "bindWithReceiver" : "callWithReceiver", pos: this.span(node), callee: this.expr(node.expression.expression),
-            receiver: this.expr(node.arguments[0]), args: node.arguments.slice(1).map((arg: any) => this.expr(arg))};
-        }
-        if (
-          node.questionDotToken ||
-          node.typeArguments?.length ||
-          node.arguments.some((arg: any) => ts.isSpreadElement(arg))
-        )
-          this.fail(node, "expected ordinary call arguments without spread or type arguments");
-        return {
-          k: "apply",
-          pos: this.span(node),
-          callee: this.expr(node.expression),
-          args: node.arguments.map((arg: any) => this.expr(arg)),
-        };
-      }
-
-      default:
-        this.fail(
-          node,
-          `expression outside the fragment (${ts.SyntaxKind[node.kind]})`,
-        );
+    if (ts.isIdentifier(node)) {
+      if (node.text === "undefined")
+        return { k: "lit", pos: this.span(node), lit: { a: "undefined" } };
+      return { k: "id", pos: this.span(node), name: node.text };
     }
+
+    if (node.kind === ts.SyntaxKind.NullKeyword)
+      return { k: "lit", pos: this.span(node), lit: { a: "null" } };
+    if (node.kind === ts.SyntaxKind.TrueKeyword)
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "booleanlit", v: "true" },
+      };
+    if (node.kind === ts.SyntaxKind.FalseKeyword)
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "booleanlit", v: "false" },
+      };
+
+    if (ts.isStringLiteral(node))
+      // `text` is the DECODED value, which is what a literal type denotes.
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "stringlit", v: node.text },
+      };
+
+    if (ts.isNumericLiteral(node)) {
+      if (!DECIMAL.test(node.text))
+        this.fail(node, "non-decimal numeric literal");
+      return {
+        k: "lit",
+        pos: this.span(node),
+        lit: { a: "numberlit", v: node.text },
+      };
+    }
+
+    if (ts.isArrowFunction(node)) return this.lambda(node);
+
+    if (ts.isObjectLiteralExpression(node)) {
+      if (node.properties.length !== 1)
+        this.fail(node, "expected plain single-field allocation");
+      const f = node.properties[0];
+      if (
+        !ts.isPropertyAssignment(f) ||
+        !ts.isIdentifier(f.name) ||
+        f.name.text !== "value"
+      )
+        this.fail(
+          f,
+          "expected plain value property; no accessors, methods or spreads",
+        );
+      return {
+        k: "alloc",
+        pos: this.span(node),
+        e: this.expr(f.initializer),
+      };
+    }
+
+    if (ts.isPropertyAccessExpression(node)) {
+      if (node.questionDotToken || node.name.text !== "value")
+        this.fail(node, "expected cell.value");
+      return {
+        k: "read",
+        pos: this.span(node),
+        e: this.expr(node.expression),
+      };
+    }
+
+    if (ts.isTypeOfExpression(node))
+      return {
+        k: "typeof",
+        pos: this.span(node),
+        e: this.expr(node.expression),
+      };
+
+    if (ts.isPrefixUnaryExpression(node)) {
+      if (node.operator !== ts.SyntaxKind.ExclamationToken)
+        this.fail(node, "unary operator outside the fragment");
+      return { k: "not", pos: this.span(node), e: this.expr(node.operand) };
+    }
+
+    if (ts.isBinaryExpression(node)) return this.binary(node);
+
+    if (ts.isCallExpression(node)) {
+      if (ts.isPropertyAccessExpression(node.expression) &&
+          ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
+          node.expression.name.text === "assign") {
+        if (node.questionDotToken || node.expression.questionDotToken ||
+            node.typeArguments?.length !== 2 || node.arguments.length !== 2 ||
+            !ts.isArrowFunction(node.arguments[0]) || !ts.isObjectLiteralExpression(node.arguments[1]))
+          this.fail(node, "Object.assign requires a fresh arrow, one value-field literal and two explicit type arguments");
+        // The fragment cannot assign to Object.assign or pass Object as a value.
+        // Reject any local declaration that could shadow the standard builtin.
+        const checkBinding = (n: Node): void => {
+          if ((ts.isParameterDeclaration(n) || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n)) &&
+              n.name && ts.isIdentifier(n.name) && n.name.text === "Object")
+            this.fail(n, "shadowing Object is outside intrinsic callable initialization");
+          n.forEachChild(checkBinding);
+        };
+        checkBinding(this.file);
+        return {k: "withValue", pos: this.span(node), fn: this.expr(node.arguments[0]),
+          initial: this.expr(node.arguments[1]), functionType: this.typeOf(node.typeArguments[0]),
+          bagType: this.typeOf(node.typeArguments[1])};
+      }
+      if (ts.isPropertyAccessExpression(node.expression) && ["call", "bind"].includes(node.expression.name.text)) {
+        if (node.questionDotToken || node.expression.questionDotToken || node.typeArguments?.length ||
+            node.arguments.length === 0 || node.arguments.some((arg) => ts.isSpreadElement(arg)) ||
+            !this.localArrow(node.expression.expression))
+          this.fail(node, `.${node.expression.name.text} requires a known local arrow, an explicit receiver and ordinary arguments`);
+        return {k: node.expression.name.text === "bind" ? "bindWithReceiver" : "callWithReceiver", pos: this.span(node), callee: this.expr(node.expression.expression),
+          receiver: this.expr(node.arguments[0]), args: node.arguments.slice(1).map((arg) => this.expr(arg))};
+      }
+      if (
+        node.questionDotToken ||
+        node.typeArguments?.length ||
+        node.arguments.some((arg) => ts.isSpreadElement(arg))
+      )
+        this.fail(node, "expected ordinary call arguments without spread or type arguments");
+      return {
+        k: "apply",
+        pos: this.span(node),
+        callee: this.expr(node.expression),
+        args: node.arguments.map((arg) => this.expr(arg)),
+      };
+    }
+
+    this.fail(
+      node,
+      `expression outside the fragment (${ts.SyntaxKind[node.kind]})`,
+    );
   }
 
   // A call signature alone does not establish the inherited .call intrinsic.
   // Follow immutable lexical aliases to source-created arrows. Parameters and
   // arbitrary call results may carry their own .call property, so are refused.
-  private localArrow(node: any, seen = new Set<number>()): boolean {
+  private localArrow(node: Expression, seen = new Set<number>()): boolean {
     if (ts.isParenthesizedExpression(node)) return this.localArrow(node.expression, seen);
     if (ts.isArrowFunction(node)) return true;
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -522,25 +520,27 @@ class Gate {
         node.expression.name.text === "bind")
       return this.localArrow(node.expression.expression, seen);
     if (!ts.isIdentifier(node)) return false;
+    // Held as a string: a narrowing of `node` does not reach into a closure.
+    const name = node.text;
     for (let scope = node.parent; scope; scope = scope.parent) {
       if (ts.isBlock(scope)) {
         for (const statement of scope.statements) {
           if (!ts.isVariableStatement(statement)) continue;
           for (const decl of statement.declarationList.declarations) {
-            if (!ts.isIdentifier(decl.name) || decl.name.text !== node.text) continue;
+            if (!ts.isIdentifier(decl.name) || decl.name.text !== name) continue;
             if (!(statement.declarationList.flags & ts.NodeFlags.Const) || !decl.initializer || seen.has(decl.getStart(this.file))) return false;
             seen.add(decl.getStart(this.file));
             return this.localArrow(decl.initializer, seen);
           }
         }
       }
-      if (FUNCTION_LIKE.has(scope.kind) && (scope as any).parameters?.some((p: any) =>
-          ts.isIdentifier(p.name) && p.name.text === node.text)) return false;
+      if (ts.isFunctionLikeDeclaration(scope) && scope.parameters?.some((p) =>
+          ts.isIdentifier(p.name) && p.name.text === name)) return false;
     }
     return false;
   }
 
-  private binary(node: any): Expr {
+  private binary(node: BinaryExpression): Expr {
     if (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
       return {
         k: "coalesce",
@@ -589,7 +589,7 @@ class Gate {
         `binary operator outside the fragment (${this.text(node.operatorToken)})`,
       );
     if (op === "===" || op === "!==") {
-      const unwrap = (e: any): any => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
+      const unwrap = (e: Expression): Expression => ts.isParenthesizedExpression(e) ? unwrap(e.expression) : e;
       const left = unwrap(node.left), right = unwrap(node.right);
       const pair = ts.isTypeOfExpression(left) && ts.isStringLiteral(right) && right.text === "function"
         ? left : ts.isTypeOfExpression(right) && ts.isStringLiteral(left) && left.text === "function"
@@ -612,10 +612,12 @@ class Gate {
   // inside a closure become one: the parser owns that translation because it
   // owns what the source means.
 
-  private lambda(node: any): Expr {
+  private lambda(node: ArrowFunction): Expr {
     if (node.modifiers?.length || node.typeParameters?.length)
       this.fail(node, "expected a non-generic synchronous closure");
-    for (const p of node.parameters) {
+    // Each name is taken where its parameter has just been checked: a
+    // narrowing does not survive into the second pass over the same list.
+    const names = node.parameters.map((p) => {
       if (
         !ts.isIdentifier(p.name) ||
         p.name.text === "this" ||
@@ -626,20 +628,21 @@ class Gate {
         this.fail(p, "expected a required closure parameter");
       if (p.name.text === "undefined")
         this.fail(p, "shadowing undefined is outside the fragment");
-    }
+      return p.name.text;
+    });
 
     const result = () => this.typeOf(node.type);
     const body = ts.isBlock(node.body)
       ? this.closureBlock(
           node.body,
-          node.body.statements.map((s: any) => this.stmt(s)),
+          node.body.statements.map((s) => this.stmt(s)),
           result,
         )
       : this.expr(node.body);
     return {
       k: "lambda",
       pos: this.span(node),
-      params: node.parameters.map((p: any) => ({name: p.name.text, type: this.typeOf(p.type)})),
+      params: node.parameters.map((p, i) => ({name: names[i], type: this.typeOf(p.type)})),
       result: this.typeOf(node.type),
       body,
     };
@@ -751,61 +754,52 @@ class Gate {
 
   /* -------------------------------------------------------- statements -- */
 
-  block(node: any): Stmt[] {
-    if (node.kind !== ts.SyntaxKind.Block) this.fail(node, "expected a block");
-    return node.statements.map((s: any) => this.stmt(s));
+  block(node: Statement): Stmt[] {
+    if (!ts.isBlock(node)) this.fail(node, "expected a block");
+    return node.statements.map((s) => this.stmt(s));
   }
 
-  stmt(node: any): Stmt {
-    switch (node.kind) {
-      case ts.SyntaxKind.ExpressionStatement:
-        return {
-          k: "effect",
-          pos: this.span(node),
-          e: this.expr(node.expression),
-        };
+  stmt(node: Statement): Stmt {
+    if (ts.isExpressionStatement(node))
+      return {
+        k: "effect",
+        pos: this.span(node),
+        e: this.expr(node.expression),
+      };
 
-      case ts.SyntaxKind.ReturnStatement:
-        if (!node.expression)
-          this.fail(node, "a bare `return` is outside the fragment");
-        return {
-          k: "return",
-          pos: this.span(node),
-          e: this.expr(node.expression),
-        };
+    if (ts.isReturnStatement(node)) {
+      if (!node.expression)
+        this.fail(node, "a bare `return` is outside the fragment");
+      return {
+        k: "return",
+        pos: this.span(node),
+        e: this.expr(node.expression),
+      };
+    }
 
-      case ts.SyntaxKind.VariableStatement: {
-        const list = node.declarationList;
-        const mutable = !(list.flags & ts.NodeFlags.Const);
-        // `var` is function-scoped and hoisted, so it is not this binding form.
-        if (mutable && !(list.flags & ts.NodeFlags.Let))
-          this.fail(node, "`var` is outside the fragment");
-        const kindWord = mutable ? "let" : "const";
-        if (list.declarations.length !== 1)
-          this.fail(node, `one binding per \`${kindWord}\` in the fragment`);
-        const d = list.declarations[0];
-        if (d.name.kind !== ts.SyntaxKind.Identifier)
-          this.fail(d, "destructuring is outside the fragment");
-        if (d.name.text === "undefined")
-          this.fail(d, "shadowing undefined is outside the fragment");
-        if (!d.initializer)
-          this.fail(d, `a \`${kindWord}\` needs an initializer`);
-        if (mutable) {
-          // The storage contract is what every later assignment is checked
-          // against. Written, it is the annotation; unwritten, the producer
-          // states one for the binding and the adapter checks that, rather
-          // than this taking the initializer's type for the contract.
-          return {
-            k: "let",
-            pos: this.span(node),
-            name: d.name.text,
-            namePos: this.span(d.name),
-            annot: d.type ? this.typeOf(d.type) : null,
-            init: this.expr(d.initializer),
-          };
-        }
+    if (ts.isVariableStatement(node)) {
+      const list = node.declarationList;
+      const mutable = !(list.flags & ts.NodeFlags.Const);
+      // `var` is function-scoped and hoisted, so it is not this binding form.
+      if (mutable && !(list.flags & ts.NodeFlags.Let))
+        this.fail(node, "`var` is outside the fragment");
+      const kindWord = mutable ? "let" : "const";
+      if (list.declarations.length !== 1)
+        this.fail(node, `one binding per \`${kindWord}\` in the fragment`);
+      const d = list.declarations[0];
+      if (d.name.kind !== ts.SyntaxKind.Identifier)
+        this.fail(d, "destructuring is outside the fragment");
+      if (d.name.text === "undefined")
+        this.fail(d, "shadowing undefined is outside the fragment");
+      if (!d.initializer)
+        this.fail(d, `a \`${kindWord}\` needs an initializer`);
+      if (mutable) {
+        // The storage contract is what every later assignment is checked
+        // against. Written, it is the annotation; unwritten, the producer
+        // states one for the binding and the adapter checks that, rather
+        // than this taking the initializer's type for the contract.
         return {
-          k: "const",
+          k: "let",
           pos: this.span(node),
           name: d.name.text,
           namePos: this.span(d.name),
@@ -813,63 +807,70 @@ class Gate {
           init: this.expr(d.initializer),
         };
       }
-
-      case ts.SyntaxKind.BreakStatement:
-      case ts.SyntaxKind.ContinueStatement: {
-        if (node.label)
-          this.fail(node, "only unlabeled loop transfers are supported");
-        // The nearest enclosing loop, not crossing into another function.
-        let parent = node.parent;
-        while (
-          parent &&
-          !isFunctionLike(parent) &&
-          !ts.isWhileStatement(parent)
-        )
-          parent = parent.parent;
-        if (!parent || !ts.isWhileStatement(parent))
-          this.fail(node, "break or continue outside a supported loop");
-        return {
-          k: ts.isBreakStatement(node) ? "break" : "continue",
-          pos: this.span(node),
-        };
-      }
-
-      case ts.SyntaxKind.WhileStatement:
-        return {
-          k: "while",
-          pos: this.span(node),
-          cond: this.expr(node.expression),
-          body: this.block(node.statement),
-        };
-
-      case ts.SyntaxKind.IfStatement:
-        if (
-          node.elseStatement &&
-          node.elseStatement.kind !== ts.SyntaxKind.Block
-        )
-          this.fail(
-            node.elseStatement,
-            "`else if` and non-block branches are outside the fragment",
-          );
-        return {
-          k: "if",
-          pos: this.span(node),
-          cond: this.expr(node.expression),
-          then: this.block(node.thenStatement),
-          else_: node.elseStatement ? this.block(node.elseStatement) : null,
-        };
-
-      default:
-        this.fail(
-          node,
-          `statement outside the fragment (${ts.SyntaxKind[node.kind]})`,
-        );
+      return {
+        k: "const",
+        pos: this.span(node),
+        name: d.name.text,
+        namePos: this.span(d.name),
+        annot: d.type ? this.typeOf(d.type) : null,
+        init: this.expr(d.initializer),
+      };
     }
+
+    if (ts.isBreakStatement(node) || ts.isContinueStatement(node)) {
+      if (node.label)
+        this.fail(node, "only unlabeled loop transfers are supported");
+      // The nearest enclosing loop, not crossing into another function.
+      let parent = node.parent;
+      while (
+        parent &&
+        !ts.isFunctionLikeDeclaration(parent) &&
+        !ts.isWhileStatement(parent)
+      )
+        parent = parent.parent;
+      if (!parent || !ts.isWhileStatement(parent))
+        this.fail(node, "break or continue outside a supported loop");
+      return {
+        k: ts.isBreakStatement(node) ? "break" : "continue",
+        pos: this.span(node),
+      };
+    }
+
+    if (ts.isWhileStatement(node))
+      return {
+        k: "while",
+        pos: this.span(node),
+        cond: this.expr(node.expression),
+        body: this.block(node.statement),
+      };
+
+    if (ts.isIfStatement(node)) {
+      if (
+        node.elseStatement &&
+        node.elseStatement.kind !== ts.SyntaxKind.Block
+      )
+        this.fail(
+          node.elseStatement,
+          "`else if` and non-block branches are outside the fragment",
+        );
+      return {
+        k: "if",
+        pos: this.span(node),
+        cond: this.expr(node.expression),
+        then: this.block(node.thenStatement),
+        else_: node.elseStatement ? this.block(node.elseStatement) : null,
+      };
+    }
+
+    this.fail(
+      node,
+      `statement outside the fragment (${ts.SyntaxKind[node.kind]})`,
+    );
   }
 
   /* ---------------------------------------------------------- aliases -- */
 
-  aliasDecl(node: any): TypeAliasAst {
+  aliasDecl(node: TypeAliasDeclaration): TypeAliasAst {
     if (!node.name) this.fail(node, "anonymous type alias");
     if (node.name.text === "undefined")
       this.fail(node, "shadowing undefined is outside the fragment");
@@ -885,7 +886,7 @@ class Gate {
       );
     if (tp.name.kind !== ts.SyntaxKind.Identifier)
       this.fail(tp, "expected a type-parameter name");
-    const param = tp.name.text as string;
+    const param = tp.name.text;
     this.typeParams.add(param);
     this.aliasApps = false;
     try {
@@ -901,7 +902,7 @@ class Gate {
 
   /* --------------------------------------------------------- functions -- */
 
-  functionDecl(node: any): FunctionAst {
+  functionDecl(node: FunctionDeclaration): FunctionAst {
     if (!node.name) this.fail(node, "anonymous function");
     if (node.name.text === "undefined")
       this.fail(node, "shadowing undefined is outside the fragment");
@@ -922,7 +923,7 @@ class Gate {
           this.fail(tp, "duplicate type parameter");
         let bound: ClaimType | null = null;
         if (tp.constraint) {
-          const earlier = tp.constraint.kind === ts.SyntaxKind.TypeReference &&
+          const earlier = ts.isTypeReferenceNode(tp.constraint) &&
             tp.constraint.typeName.kind === ts.SyntaxKind.Identifier &&
             !tp.constraint.typeArguments?.length &&
             this.typeParams.has(tp.constraint.typeName.text);
@@ -936,7 +937,7 @@ class Gate {
       }
     }
     try {
-    const params = node.parameters.map((p: any) => {
+    const params = node.parameters.map((p) => {
       if (p.name.kind !== ts.SyntaxKind.Identifier)
         this.fail(p, "destructuring parameter");
       if (p.name.text === "undefined")
@@ -1044,12 +1045,8 @@ export function definedFunctions(
   const source = projectFor(absolute).program.getSourceFile(absolute);
   if (!source) throw new Error(`the compiler produced no tree for ${file}`);
   const out: { name: string; namePos: Span }[] = [];
-  for (const statement of source.statements as readonly any[])
-    if (
-      statement.kind === ts.SyntaxKind.FunctionDeclaration &&
-      statement.name &&
-      statement.body
-    )
+  for (const statement of source.statements)
+    if (ts.isFunctionDeclaration(statement) && statement.name && statement.body)
       out.push({
         name: statement.name.text,
         namePos: [statement.name.getStart(source), statement.name.end],
@@ -1062,7 +1059,7 @@ export function definedFunctions(
  * node and needs the type the gate would give it. The annotation's own file is
  * the place a rejection names, which is why the node carries it.
  */
-export function typeOf(node: any): ClaimType {
+export function typeOf(node: TypeNode): ClaimType {
   return new Gate(node.getSourceFile()).typeOf(node);
 }
 

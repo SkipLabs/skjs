@@ -5,6 +5,16 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
+import type { Span } from "./span.mts";
+
+/* One file's entry in the producer's own claims document, as this tool reads
+ * it: the manifest records which functions the producer spoke about and where
+ * their names are. `collection` is the producer's own progress record, copied
+ * across without being read. */
+interface ProducerFile {
+  file: string;
+  functions: {name: string, namePos: Span, collection?: unknown}[];
+}
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 const hash = (x: crypto.BinaryLike) =>
@@ -31,7 +41,7 @@ export function main(args: string[]) {
   if(!opts.claims)throw Error("missing --claims");
   const output=opts.out||sourcePath.replace(/\.ts$/,"")+".source-claims.json",manifest=output+".conversion.json";
   if(fs.existsSync(output)||fs.existsSync(manifest))throw Error("output already exists; choose another --out path");
-  const source=fs.readFileSync(sourcePath,"utf8"),raw=fs.readFileSync(opts.claims,"utf8"),originalClaims=JSON.parse(raw);
+  const source=fs.readFileSync(sourcePath,"utf8"),raw=fs.readFileSync(opts.claims,"utf8"),originalClaims: ProducerFile[]=JSON.parse(raw);
   const parser=path.resolve(__dirname,"fragment-parse.mts"),temp=fs.mkdtempSync(path.join(os.tmpdir(),"source-export-"));
   const diagnostics=opts.diagnostics?fs.readFileSync(opts.diagnostics,"utf8"):null;
   try {
@@ -53,13 +63,13 @@ export function main(args: string[]) {
     }
     if(fs.readFileSync(sourcePath,"utf8")!==source||hash(fs.readFileSync(opts.claims,"utf8"))!==hash(raw))throw Error("input changed during conversion");
     const bytes=JSON.stringify(converted.claims,null,2)+"\n";
-    const selected=originalClaims.find((f: any)=>f.file===file);
+    const selected=originalClaims.find(f=>f.file===file);
     if(!selected)throw Error(`the producer said nothing about ${file}`);
     const provenance={kind:"skjs-source-claim-conversion",source:{file,sha256:hash(source)},
       sourcePath:path.resolve(sourcePath),claimsPath:path.resolve(opts.claims),claimsSha256:hash(raw),
       sidecarPath:path.resolve(output),sidecarSha256:hash(bytes),
       converterSha256:hash(fs.readFileSync(opts.verifier)),
-      functions:selected.functions.map((f: any)=>({name:f.name,namePos:f.namePos,...(f.collection?{collection:f.collection}:{})})),
+      functions:selected.functions.map(f=>({name:f.name,namePos:f.namePos,...(f.collection?{collection:f.collection}:{})})),
       originalClaims,omissions:converted.omissions,
       ...(diagnostics!==null?{diagnostics,diagnosticsPath:path.resolve(opts.diagnostics!),diagnosticsSha256:hash(diagnostics)}:{})};
     fs.writeFileSync(output,bytes,{flag:"wx"});
